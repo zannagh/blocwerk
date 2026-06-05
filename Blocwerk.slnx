@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Blocwerk.Core/Blocwerk.Core.csproj" />
+  </Folder>
+  <Folder Name="/test/">
+    <Project Path="test/Blocwerk.Core.Tests/Blocwerk.Core.Tests.csproj" />
+  </Folder>
+</Solution>

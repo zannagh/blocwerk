@@ -1,0 +1,14 @@
+{
+    "$schema": "https://raw.githubusercontent.com/DotNetAnalyzers/StyleCopAnalyzers/master/StyleCop.Analyzers/StyleCop.Analyzers/Settings/stylecop.schema.json",
+    "settings": {
+        "documentationRules": {
+            "copyrightText": "Copyright (c) 2026, zannagh. All rights reserved.\nSee License in the project root for license information.",
+            "xmlHeader": false,
+            "documentInterfaces": false,
+            "documentInternalElements": false
+        },
+        "orderingRules": {
+            "usingDirectivesPlacement": "outsideNamespace"
+        }
+    }
+}

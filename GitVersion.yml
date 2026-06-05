@@ -1,0 +1,53 @@
+assembly-file-versioning-format: '{Major}.{Minor}.{Patch}.{WeightedPreReleaseNumber ?? 0}'
+assembly-informational-format: '{FullSemVer}'
+assembly-versioning-format: '{Major}.{Minor}.{Patch}.{WeightedPreReleaseNumber ?? 0}'
+tag-prefix: '[vV]?'
+tag-pre-release-weight: 0
+no-bump-message: '(none|skip|docs|ci|build)'
+update-build-number: true
+branches:
+  main:
+    mode: ContinuousDelivery
+    increment: Patch
+    label: ''
+    source-branches: [ ]
+    tracks-release-branches: true
+    regex: ^master$|^main$
+    prevent-increment:
+      when-current-commit-tagged: true
+    pre-release-weight: 0
+    is-main-branch: true
+    is-release-branch: true
+  pull-request:
+    mode: ContinuousDelivery
+    label: 'ci'
+    increment: Inherit
+    prevent-increment:
+      when-current-commit-tagged: true
+    track-merge-message: true
+    source-branches:
+      - develop
+      - main
+      - release
+      - feature
+      - support
+      - hotfix
+    is-source-branch-for: [ ]
+    pre-release-weight: 0
+  unknown:
+    mode: ContinuousDelivery
+    label: 'preview'
+    increment: Inherit
+    tracks-release-branches: true
+    prevent-increment:
+      when-current-commit-tagged: true
+    source-branches:
+      - develop
+      - main
+      - release
+      - feature
+      - support
+      - hotfix
+    track-merge-message: true
+    is-source-branch-for: [ ]
+    pre-release-weight: 0

@@ -1,0 +1,105 @@
+<Project InitialTargets="DecideVersioningBehavior">
+  <Target Name="DecideVersioningBehavior">
+    <PropertyGroup Condition="'$(OS)' == 'Windows_NT'">
+      <GitVersionTool>dotnet gitversion</GitVersionTool>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(OS)' != 'Windows_NT'">
+      <GitVersionTool>dotnet-gitversion</GitVersionTool>
+    </PropertyGroup>
+    <PropertyGroup>
+      <RepositoryRoot>$([MSBuild]::GetDirectoryNameOfFileAbove($(MSBuildThisFileDirectory),
+        'GitVersion.yml'))</RepositoryRoot>
+      <GitVersionMarkerFile>$(RepositoryRoot)/.gitversion.done</GitVersionMarkerFile>
+    </PropertyGroup>
+    <Exec Condition="Exists($(GitVersionMarkerFile)) and '$(Configuration)' != 'Debug'"
+          Command="git rev-parse HEAD" ConsoleToMsBuild="true" StandardOutputImportance="low"
+          IgnoreStandardErrorWarningFormat="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="GitSha" />
+    </Exec>
+
+    <PropertyGroup Condition="!Exists($(GitVersionMarkerFile))">
+      <IsGitVersionUpToDate>Unknown</IsGitVersionUpToDate>
+    </PropertyGroup>
+    <PropertyGroup Condition="Exists($(GitVersionMarkerFile))">
+      <GitVersionJson>$([System.IO.File]::ReadAllText($(GitVersionMarkerFile)))</GitVersionJson>
+      <IsGitVersionUpToDate>$([System.Convert]::ToString($([System.Text.RegularExpressions.Regex]::IsMatch($(GitVersionJson),
+        '$(GitSha)'))))</IsGitVersionUpToDate>
+    </PropertyGroup>
+
+    <PropertyGroup
+      Condition="$(IsGitVersionUpToDate) == 'False' or $(IsGitVersionOutdated) == 'Unknown'">
+      <RunGitVersion>true</RunGitVersion>
+    </PropertyGroup>
+    <PropertyGroup Condition="Exists($(GitVersionMarkerFile)) and $(IsGitVersionUpToDate) == 'True'">
+      <RunGitVersion>false</RunGitVersion>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="!Exists($(GitVersionMarkerFile))">
+      <RunGitVersion>true</RunGitVersion>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+      <RunGitVersion>false</RunGitVersion>
+      <Version>0.0.1.0</Version>
+      <AssemblyVersion>0.0.1.0</AssemblyVersion>
+      <FileVersion>0.0.1.0</FileVersion>
+      <InformationalVersion>0.0.1.0</InformationalVersion>
+    </PropertyGroup>
+  </Target>
+
+  <Target Name="GlobalVersioningInit" AfterTargets="DecideVersioningBehavior"
+          Condition="!Exists($(GitVersionMarkerFile)) or $(RunGitVersion) == 'true'">
+    <Message Importance="high" Text="Running global versioning init."
+             Condition="!Exists($(GitVersionMarkerFile)) or $(RunGitVersion) == 'true'" />
+    <PropertyGroup>
+      <GitVersionToolInstalled Condition="Exists($(GitVersionMarkerFile))">true</GitVersionToolInstalled>
+    </PropertyGroup>
+    <Exec Condition="'$(GitVersionToolInstalled)' != 'true'" Command="dotnet tool list -g"
+          ConsoleToMsBuild="true" IgnoreExitCode="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="GlobalToolsList" />
+    </Exec>
+
+    <PropertyGroup Condition="'$(GitVersionToolInstalled)' != 'true'">
+      <GitVersionToolInstalled
+        Condition=" '$(GlobalToolsList)' != '' and $(GlobalToolsList.Contains('gitversion.tool')) ">
+        true</GitVersionToolInstalled>
+      <GitVersionToolInstalled Condition="'$(GitVersionToolInstalled)' == ''">false</GitVersionToolInstalled>
+    </PropertyGroup>
+
+    <Exec Condition="'$(GitVersionToolInstalled)' != 'true'"
+          Command="dotnet tool update --global gitversion.tool" />
+
+    <Message Condition="'$(GitVersionToolInstalled)' != 'true'" Importance="High"
+             Text="🔧 GitVersion.Tool installed: $(GitVersionToolInstalled)" />
+
+    <Message Text="Operating GitVersion in: $(RepositoryRoot)" Importance="High"
+             Condition="!Exists($(GitVersionMarkerFile)) or $(RunGitVersion) == 'true'" />
+    <Exec Condition="!Exists($(GitVersionMarkerFile)) or $(RunGitVersion) == 'true'"
+          Command="$(GitVersionTool) /output json" StdOutEncoding="utf-8" StdErrEncoding="utf-8"
+          ConsoleToMsBuild="true" WorkingDirectory="$(RepositoryRoot)">
+      <Output TaskParameter="ConsoleOutput" PropertyName="GitVersionJson" />
+    </Exec>
+
+    <WriteLinesToFile Condition="!Exists($(GitVersionMarkerFile)) or $(RunGitVersion) == 'true'"
+                      File="$(GitVersionMarkerFile)" Lines="$(GitVersionJson)" Overwrite="true" Encoding="UTF-8" />
+  </Target>
+
+  <Target Name="GlobalVersioning" AfterTargets="GlobalVersioningInit"
+          Condition="Exists($(GitVersionMarkerFile)) and !($(ProjectName.Contains('EventHub.GraphQL')))">
+    <PropertyGroup>
+      <GitVersionJson>$([System.IO.File]::ReadAllText($(GitVersionMarkerFile)))</GitVersionJson>
+      <Version>$([System.Text.RegularExpressions.Regex]::Match($(GitVersionJson),
+        'AssemblySemFileVer.:\s*.?([^"“”\r\n,]+)').Groups[1].Value)</Version>
+      <AssemblyVersion>$([System.Text.RegularExpressions.Regex]::Match($(GitVersionJson),
+        'AssemblySemFileVer.:\s*.?([^"“”\r\n,]+)').Groups[1].Value)</AssemblyVersion>
+      <FileVersion>$([System.Text.RegularExpressions.Regex]::Match($(GitVersionJson),
+        'AssemblySemFileVer.:\s*.?([^"“”\r\n,]+)').Groups[1].Value)</FileVersion>
+      <InformationalVersion>$([System.Text.RegularExpressions.Regex]::Match($(GitVersionJson),
+        'AssemblySemFileVer.:\s*.?([^"“”\r\n,]+)').Groups[1].Value)</InformationalVersion>
+      <ApplicationVersion>$([System.Text.RegularExpressions.Regex]::Match($(GitVersionJson),
+        'AssemblySemFileVer.:\s*.?([^"“”\r\n,]+)').Groups[1].Value)</ApplicationVersion>
+      <PackageVersion>$(AssemblyVersion)</PackageVersion>
+      <ApplicationRevision>0</ApplicationRevision>
+    </PropertyGroup>
+  </Target>
+</Project>
