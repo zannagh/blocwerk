@@ -1,0 +1,260 @@
+@page "/walls/{WallId:guid}/boulders/{BoulderId:guid}"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject IBoulderService BoulderService
+@inject IAttemptService AttemptService
+@inject ICurrentUserService CurrentUserService
+@inject NavigationManager Navigation
+
+<PageTitle>@(_boulder?.Name ?? "Boulder") - Blocwerk</PageTitle>
+
+@if (_boulder == null)
+{
+    <p class="loading">Loading...</p>
+}
+else
+{
+    <div class="boulder-detail">
+        <div class="page-header">
+            <a href="/walls/@WallId" class="back-link">&larr; Back to wall</a>
+            <div class="title-row">
+                <h1>@_boulder.Name</h1>
+                @if (!string.IsNullOrEmpty(_boulder.Grade))
+                {
+                    <span class="grade-badge">@_boulder.Grade</span>
+                }
+            </div>
+            <p class="meta">by @_boulder.CreatedBy.DisplayName &middot; @_boulder.CreatedAt.ToString("MMM d, yyyy")</p>
+        </div>
+
+        <div class="photo-section">
+            <img src="/api/walls/@WallId/photo" alt="Wall" class="wall-photo" />
+            <svg class="hold-overlay">
+                @foreach (var bh in _boulder.BoulderHolds)
+                {
+                    var fill = bh.Type switch
+                    {
+                        HoldType.Start => "rgba(76, 175, 80, 0.55)",
+                        HoldType.Top => "rgba(244, 67, 54, 0.55)",
+                        _ => "rgba(33, 150, 243, 0.55)",
+                    };
+                    var stroke = bh.Type switch
+                    {
+                        HoldType.Start => "#4CAF50",
+                        HoldType.Top => "#F44336",
+                        _ => "#2196F3",
+                    };
+
+                    <circle cx="@F(bh.Hold.X * 100)%" cy="@F(bh.Hold.Y * 100)%"
+                            r="@F(bh.Hold.Radius * 100)%"
+                            fill="@fill" stroke="@stroke" stroke-width="3" />
+                }
+            </svg>
+        </div>
+
+        <div class="legend-bar">
+            @{ var starts = _boulder.BoulderHolds.Count(h => h.Type == HoldType.Start); }
+            @{ var tops = _boulder.BoulderHolds.Count(h => h.Type == HoldType.Top); }
+            <span class="legend-chip start">@starts start</span>
+            <span class="legend-chip normal">@(_boulder.BoulderHolds.Count - starts - tops) moves</span>
+            <span class="legend-chip top">@tops top</span>
+        </div>
+
+        <div class="attempt-section">
+            <h2>Log Attempt</h2>
+            <div class="attempt-buttons">
+                <button class="attempt-btn try" @onclick="() => LogAttempt(AttemptType.Attempt)" disabled="@_isLogging">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
+                        <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
+                        <path d="M8 12h8" />
+                    </svg>
+                    <span>Attempt</span>
+                </button>
+                <button class="attempt-btn send" @onclick="() => LogAttempt(AttemptType.Send)" disabled="@_isLogging">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                        <polyline points="22 4 12 14.01 9 11.01" />
+                    </svg>
+                    <span>Send</span>
+                </button>
+                <button class="attempt-btn flash" @onclick="() => LogAttempt(AttemptType.Flash)" disabled="@_isLogging">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
+                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                    </svg>
+                    <span>Flash</span>
+                </button>
+            </div>
+        </div>
+
+        @if (_summary.TotalAttempts > 0)
+        {
+            <div class="my-stats">
+                <span>My stats: @_summary.TotalAttempts attempt@(_summary.TotalAttempts != 1 ? "s" : "")</span>
+                @if (_summary.HasFlashed) { <span class="chip flash-chip">Flashed!</span> }
+                else if (_summary.HasSent) { <span class="chip send-chip">Sent</span> }
+            </div>
+        }
+
+        @if (_attempts.Count > 0)
+        {
+            <div class="history-section">
+                <h2>History</h2>
+                @foreach (var attempt in _attempts)
+                {
+                    <div class="attempt-row">
+                        <div class="attempt-info">
+                            <span class="attempt-type @attempt.Type.ToString().ToLower()">@attempt.Type</span>
+                            <span class="attempt-user">@attempt.User.DisplayName</span>
+                        </div>
+                        <span class="attempt-time">@attempt.Timestamp.ToString("MMM d, HH:mm")</span>
+                        @if (attempt.UserId == _currentUserId)
+                        {
+                            <button class="delete-btn" @onclick="() => DeleteAttempt(attempt.Id)">x</button>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(_toast))
+{
+    <div class="toast-msg">@_toast</div>
+}
+
+@code {
+    [Parameter] public Guid WallId { get; set; }
+    [Parameter] public Guid BoulderId { get; set; }
+
+    private Boulder? _boulder;
+    private List<Attempt> _attempts = [];
+    private AttemptSummary _summary = new(0, false, false);
+    private Guid _currentUserId;
+    private bool _isLogging;
+    private string? _toast;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = await CurrentUserService.GetCurrentUserAsync();
+        _currentUserId = user.Id;
+        await LoadBoulder();
+    }
+
+    private async Task LoadBoulder()
+    {
+        _boulder = await BoulderService.GetBoulderAsync(BoulderId);
+        _attempts = await AttemptService.GetAttemptsForBoulderAsync(BoulderId);
+        _summary = await AttemptService.GetBoulderSummaryForUserAsync(BoulderId);
+    }
+
+    private async Task LogAttempt(AttemptType type)
+    {
+        _isLogging = true;
+        await AttemptService.LogAttemptAsync(BoulderId, type);
+        await LoadBoulder();
+        _isLogging = false;
+        await ShowToast($"{type} logged!");
+    }
+
+    private async Task DeleteAttempt(Guid attemptId)
+    {
+        await AttemptService.DeleteAttemptAsync(attemptId);
+        await LoadBoulder();
+    }
+
+    private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+
+    private async Task ShowToast(string message)
+    {
+        _toast = message;
+        StateHasChanged();
+        await Task.Delay(2000);
+        _toast = null;
+        StateHasChanged();
+    }
+}
+
+<style>
+    .boulder-detail { padding: 16px; max-width: 600px; margin: 0 auto; }
+
+    .page-header { margin-bottom: 12px; }
+    .back-link { color: #888; text-decoration: none; font-size: 0.9rem; }
+    .title-row { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+    .title-row h1 { font-size: 1.4rem; font-weight: 700; color: #1a1a2e; }
+    .grade-badge {
+        padding: 4px 12px; background: #e94560; color: white;
+        border-radius: 6px; font-weight: 700; font-size: 0.95rem;
+    }
+    .meta { color: #888; font-size: 0.85rem; margin-top: 2px; }
+
+    .photo-section {
+        position: relative; border-radius: 12px; overflow: hidden; margin-bottom: 12px;
+    }
+    .photo-section .wall-photo { width: 100%; display: block; }
+    .photo-section .hold-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+
+    .legend-bar { display: flex; gap: 8px; margin-bottom: 16px; }
+    .legend-chip {
+        padding: 4px 10px; border-radius: 6px; font-size: 0.8rem; font-weight: 600;
+    }
+    .legend-chip.start { background: #E8F5E9; color: #2E7D32; }
+    .legend-chip.normal { background: #E3F2FD; color: #1565C0; }
+    .legend-chip.top { background: #FFEBEE; color: #C62828; }
+
+    .attempt-section { margin-bottom: 16px; }
+    .attempt-section h2 { font-size: 1.1rem; font-weight: 600; color: #1a1a2e; margin-bottom: 10px; }
+
+    .attempt-buttons { display: flex; gap: 10px; }
+    .attempt-btn {
+        flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;
+        padding: 14px 8px; border: 2px solid #e0e0e0; border-radius: 12px;
+        background: white; cursor: pointer; font-weight: 600; font-size: 0.85rem;
+        transition: all 0.15s;
+    }
+    .attempt-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .attempt-btn.try { color: #FF9800; }
+    .attempt-btn.try:hover:not(:disabled) { border-color: #FF9800; background: #FFF3E0; }
+    .attempt-btn.send { color: #4CAF50; }
+    .attempt-btn.send:hover:not(:disabled) { border-color: #4CAF50; background: #E8F5E9; }
+    .attempt-btn.flash { color: #FF5722; }
+    .attempt-btn.flash:hover:not(:disabled) { border-color: #FF5722; background: #FBE9E7; }
+
+    .my-stats {
+        display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+        background: #f5f5f7; border-radius: 8px; font-size: 0.9rem;
+        color: #555; margin-bottom: 16px;
+    }
+    .chip { padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: 600; }
+    .flash-chip { background: #FBE9E7; color: #D84315; }
+    .send-chip { background: #E8F5E9; color: #2E7D32; }
+
+    .history-section h2 { font-size: 1.1rem; font-weight: 600; color: #1a1a2e; margin-bottom: 8px; }
+    .attempt-row {
+        display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+        background: white; border-radius: 8px; margin-bottom: 6px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .attempt-info { flex: 1; display: flex; align-items: center; gap: 8px; }
+    .attempt-type {
+        padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;
+        font-weight: 700; text-transform: uppercase;
+    }
+    .attempt-type.attempt { background: #FFF3E0; color: #E65100; }
+    .attempt-type.send { background: #E8F5E9; color: #2E7D32; }
+    .attempt-type.flash { background: #FBE9E7; color: #D84315; }
+    .attempt-user { font-size: 0.9rem; color: #333; }
+    .attempt-time { font-size: 0.8rem; color: #999; }
+    .delete-btn {
+        background: none; border: none; color: #ccc; cursor: pointer;
+        font-size: 0.85rem; padding: 2px 6px;
+    }
+    .delete-btn:hover { color: #e94560; }
+
+    .loading { text-align: center; color: #888; padding: 48px; }
+    .toast-msg {
+        position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+        background: #1a1a2e; color: white; padding: 10px 24px;
+        border-radius: 8px; font-size: 0.9rem; z-index: 100;
+    }
+</style>

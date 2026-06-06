@@ -1,0 +1,42 @@
+@inherits LayoutComponentBase
+
+<div class="app-shell">
+    <header class="top-bar">
+        <a href="/walls" class="app-title">Blocwerk</a>
+        <AuthorizeView>
+            <Authorized>
+                <a href="/account/logout" class="header-link">Logout</a>
+            </Authorized>
+            <NotAuthorized>
+                <a href="/account/login" class="header-link">Login</a>
+            </NotAuthorized>
+        </AuthorizeView>
+    </header>
+
+    <main class="content">
+        @Body
+    </main>
+
+    <AuthorizeView>
+        <Authorized>
+            <nav class="bottom-nav">
+                <a href="/walls" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
+                        <rect x="3" y="3" width="7" height="7" />
+                        <rect x="14" y="3" width="7" height="7" />
+                        <rect x="3" y="14" width="7" height="7" />
+                        <rect x="14" y="14" width="7" height="7" />
+                    </svg>
+                    <span>Walls</span>
+                </a>
+                <a href="/profile" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
+                        <circle cx="12" cy="8" r="4" />
+                        <path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2" />
+                    </svg>
+                    <span>Profile</span>
+                </a>
+            </nav>
+        </Authorized>
+    </AuthorizeView>
+</div>

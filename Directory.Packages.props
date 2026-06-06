@@ -1,10 +1,26 @@
 <Project>
   <ItemGroup>
     <PackageVersion Include="Serilog" Version="4.2.0" />
+    <PackageVersion Include="Serilog.AspNetCore" Version="9.0.0" />
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
-    <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.0" />
     <PackageVersion Include="JetBrains.Annotations" Version="2025.2.4" />
+
+    <!-- EF Core -->
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0" />
+    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
+
+    <!-- Authentication -->
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.0" />
+    <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.8.0" />
+
+    <!-- HTTP -->
+    <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.0" />
+
+    <!-- Hold Detection -->
+    <PackageVersion Include="YoloDotNet.ExecutionProvider.Cpu" Version="1.1.0" />
+    <PackageVersion Include="SkiaSharp" Version="3.119.1" />
 
     <!-- Testing packages -->
     <PackageVersion Include="coverlet.collector" Version="6.0.2" />
@@ -18,20 +34,7 @@
     <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
     <PackageVersion Include="Xunit.SkippableFact" Version="1.5.23" />
 
-    <!-- gRPC -->
-    <PackageVersion Include="Grpc.AspNetCore" Version="2.71.0" />
-    <PackageVersion Include="Grpc.Net.Client" Version="2.71.0" />
-    <PackageVersion Include="Google.Protobuf" Version="3.30.2" />
-    <PackageVersion Include="Grpc.Tools" Version="2.71.0" />
-
     <!-- Analyzers -->
     <PackageVersion Include="Stylecop.Analyzers" Version="1.2.0-beta.556" />
-
-    <!-- YAML -->
-    <PackageVersion Include="YamlDotNet" Version="16.3.0" />
-
-    <!-- OpenAPI -->
-    <PackageVersion Include="Microsoft.OpenApi" Version="1.6.24" />
-    <PackageVersion Include="Microsoft.OpenApi.Readers" Version="1.6.24" />
   </ItemGroup>
 </Project>

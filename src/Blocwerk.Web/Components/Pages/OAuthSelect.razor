@@ -1,0 +1,183 @@
+@page "/oauth-select"
+@using Blocwerk.Authentication.Providers
+@using Blocwerk.Authentication.Resources
+@rendermode InteractiveServer
+@inject BlocwerkSettings Settings
+@inject NavigationManager Navigation
+@inject RedirectUriProvider RedirectUriProvider
+@layout EmptyLayout
+
+<PageTitle>Sign In - Blocwerk</PageTitle>
+
+<div class="oauth-container">
+    <div class="header">
+        <h1>Blocwerk</h1>
+        <p>Sign in to track your climbing walls</p>
+    </div>
+
+    <div class="providers">
+        @if (Settings.GitHubOAuth.Enabled)
+        {
+            <a href="#" class="provider-button github" @onclick="@(() => RedirectToProvider("github"))" @onclick:preventDefault>
+                <div class="provider-icon">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                    </svg>
+                </div>
+                <div class="provider-text">Sign in with GitHub</div>
+            </a>
+        }
+
+        @if (Settings.MicrosoftOAuth.Enabled)
+        {
+            <a href="#" class="provider-button microsoft" @onclick="@(() => RedirectToProvider("microsoft"))" @onclick:preventDefault>
+                <div class="provider-icon">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M11.4 24H0V12.6h11.4V24zM24 24H12.6V12.6H24V24zM11.4 11.4H0V0h11.4v11.4zM24 11.4H12.6V0H24v11.4z"/>
+                    </svg>
+                </div>
+                <div class="provider-text">Sign in with Microsoft</div>
+            </a>
+        }
+
+        @if (Settings.GoogleOAuth.Enabled)
+        {
+            <a href="#" class="provider-button google" @onclick="@(() => RedirectToProvider("google"))" @onclick:preventDefault>
+                <div class="provider-icon">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                    </svg>
+                </div>
+                <div class="provider-text">Sign in with Google</div>
+            </a>
+        }
+    </div>
+
+    <div class="footer">
+        <p>Secure authentication via OAuth 2.0</p>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery] public string? RedirectUri { get; set; }
+
+    private readonly Dictionary<string, string> _queryParams = new();
+
+    protected override void OnInitialized()
+    {
+        var uri = new Uri(Navigation.Uri);
+        var queryCollection = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
+
+        foreach (var kvp in queryCollection)
+        {
+            if (kvp.Key != null && kvp.Value.Count > 0 && !string.IsNullOrEmpty(kvp.Value.First()))
+            {
+                _queryParams.Add(kvp.Key, kvp.Value.First()!);
+            }
+        }
+    }
+
+    private void RedirectToProvider(string provider)
+    {
+        var config = GetProviderConfig(provider);
+        if (config == null)
+        {
+            return;
+        }
+
+        var parameters = new Dictionary<string, string>(_queryParams)
+        {
+            ["client_id"] = config.Value.ClientId,
+        };
+
+        if (!parameters.ContainsKey("state"))
+        {
+            parameters["state"] = Guid.NewGuid().ToString();
+        }
+
+        var baseUrl = new Uri(Navigation.Uri).GetLeftPart(UriPartial.Authority);
+
+        if (!parameters.ContainsKey("redirect_uri"))
+        {
+            parameters["redirect_uri"] = $"{baseUrl}/account/callback";
+        }
+
+        RedirectUriProvider.AddRedirectUri(parameters["state"], new RedirectSettings
+        {
+            Uri = parameters["redirect_uri"],
+            Provider = provider,
+        });
+
+        parameters["redirect_uri"] = $"{baseUrl}/oauth-callback";
+
+        if (provider == "google")
+        {
+            parameters["scope"] = "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile";
+            parameters["response_type"] = "code";
+        }
+
+        if (provider == "microsoft")
+        {
+            parameters.Remove("resource");
+            parameters["scope"] = "User.Read";
+            parameters["response_type"] = "code";
+        }
+
+        string queryString = string.Join("&", parameters
+            .Where(k => k.Key != null && k.Value != null)
+            .Select(kvp => $"{Uri.EscapeDataString(kvp.Key)}={Uri.EscapeDataString(kvp.Value)}"));
+
+        Navigation.NavigateTo($"{config.Value.AuthUrl}?{queryString}", forceLoad: true);
+    }
+
+    private (string AuthUrl, string ClientId)? GetProviderConfig(string provider)
+    {
+        return provider switch
+        {
+            "github" when Settings.GitHubOAuth.Enabled => (Settings.GitHubOAuth.OAuthUrl, Settings.GitHubOAuth.ClientId),
+            "microsoft" when Settings.MicrosoftOAuth.Enabled => (Settings.MicrosoftOAuth.OAuthUrl, Settings.MicrosoftOAuth.ClientId),
+            "google" when Settings.GoogleOAuth.Enabled => (Settings.GoogleOAuth.OAuthUrl, Settings.GoogleOAuth.ClientId),
+            _ => null,
+        };
+    }
+}
+
+<style>
+    .oauth-container {
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 16px;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        padding: 40px 24px;
+        max-width: 420px;
+        width: 100%;
+        margin: 60px auto;
+    }
+
+    .header { text-align: center; margin-bottom: 32px; }
+    .header h1 { color: #1a1a2e; font-size: 2rem; font-weight: 700; margin-bottom: 8px; }
+    .header p { color: #666; font-size: 1rem; }
+
+    .providers { display: flex; flex-direction: column; gap: 12px; }
+
+    .provider-button {
+        display: flex; align-items: center; padding: 14px 16px;
+        border: 2px solid #e0e0e0; border-radius: 10px;
+        text-decoration: none; font-size: 1rem; font-weight: 500;
+        transition: all 0.2s; background: #fff; color: #333;
+        cursor: pointer;
+    }
+    .provider-button:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+    .github:hover { border-color: #333; background: #333; color: white; }
+    .microsoft:hover { border-color: #0078d4; background: #0078d4; color: white; }
+    .google:hover { border-color: #db4437; background: #db4437; color: white; }
+
+    .provider-icon { width: 24px; height: 24px; margin-right: 12px; flex-shrink: 0; }
+    .provider-text { flex: 1; text-align: left; }
+
+    .footer { text-align: center; margin-top: 24px; color: #999; font-size: 0.85rem; }
+
+    body { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%); min-height: 100vh; }
+</style>

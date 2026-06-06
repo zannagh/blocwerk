@@ -1,0 +1,354 @@
+@page "/walls/{WallId:guid}"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject IWallService WallService
+@inject IBoulderService BoulderService
+@inject IAttemptService AttemptService
+@inject ICurrentUserService CurrentUserService
+@inject NavigationManager Navigation
+@using Blocwerk.Web.Components.Shared
+
+<PageTitle>@(_wall?.Name ?? "Wall") - Blocwerk</PageTitle>
+
+@if (_wall == null)
+{
+    <p class="loading">Loading...</p>
+}
+else
+{
+    <div class="wall-detail">
+        <div class="detail-header">
+            <h1>@_wall.Name</h1>
+            @if (_isAdmin)
+            {
+                <button class="btn-icon" @onclick="ToggleSettings">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
+                        <circle cx="12" cy="12" r="3" />
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                    </svg>
+                </button>
+            }
+        </div>
+
+        @if (!string.IsNullOrEmpty(_wall.Description))
+        {
+            <p class="description">@_wall.Description</p>
+        }
+
+        <div class="wall-photo-container">
+            @if (_wall.Photo != null)
+            {
+                <WallPhotoEditor WallId="_wall.Id"
+                                 Holds="_holds"
+                                 CanEdit="_isAdmin"
+                                 OnHoldAdded="OnHoldAdded"
+                                 OnHoldUpdated="OnHoldUpdated"
+                                 OnHoldDeleted="OnHoldDeleted"
+                                 OnRedetectRequested="OnRedetect" />
+            }
+            else if (_isAdmin)
+            {
+                <div class="upload-prompt">
+                    <p>Upload a frontal photo of your wall to get started.</p>
+                    <InputFile OnChange="OnPhotoSelected" accept="image/*" class="form-input" />
+                </div>
+            }
+        </div>
+
+        <div class="stats-bar">
+            <div class="stat">
+                <span class="stat-value">@_holds.Count</span>
+                <span class="stat-label">Holds</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value">@_wall.Boulders.Count</span>
+                <span class="stat-label">Boulders</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value">@_wall.Members.Count</span>
+                <span class="stat-label">Members</span>
+            </div>
+        </div>
+
+        <div class="boulder-section">
+            <div class="section-header">
+                <h2>Boulders</h2>
+                @if (_holds.Count > 0)
+                {
+                    <a href="/walls/@WallId/boulders/create" class="btn-add-boulder">+ New</a>
+                }
+            </div>
+
+            @if (_boulders.Count == 0)
+            {
+                <div class="empty-boulders">
+                    <p>No boulders yet. @(_holds.Count > 0 ? "Create your first boulder!" : "Add holds to the wall first.")</p>
+                </div>
+            }
+            else
+            {
+                @foreach (var boulder in _boulders)
+                {
+                    var summary = _boulderSummaries.GetValueOrDefault(boulder.Id);
+                    <a href="/walls/@WallId/boulders/@boulder.Id" class="boulder-card">
+                        <div class="boulder-card-left">
+                            <span class="boulder-name">@boulder.Name</span>
+                            <span class="boulder-meta">
+                                @boulder.BoulderHolds.Count holds &middot; by @boulder.CreatedBy.DisplayName
+                            </span>
+                        </div>
+                        <div class="boulder-card-right">
+                            @if (summary is { HasFlashed: true })
+                            {
+                                <span class="status-icon flash-icon" title="Flashed">&#9889;</span>
+                            }
+                            else if (summary is { HasSent: true })
+                            {
+                                <span class="status-icon send-icon" title="Sent">&#10003;</span>
+                            }
+                            else if (summary is { TotalAttempts: > 0 })
+                            {
+                                <span class="status-icon try-icon" title="@summary.TotalAttempts attempts">@summary.TotalAttempts</span>
+                            }
+                            @if (!string.IsNullOrEmpty(boulder.Grade))
+                            {
+                                <span class="boulder-grade">@boulder.Grade</span>
+                            }
+                        </div>
+                    </a>
+                }
+            }
+        </div>
+
+        @if (_showSettings && _isAdmin)
+        {
+            <div class="settings-panel">
+                <h2>Wall Settings</h2>
+
+                <div class="form-group">
+                    <label>Upload New Photo</label>
+                    <InputFile OnChange="OnPhotoSelected" accept="image/*" class="form-input" />
+                </div>
+
+                @if (string.IsNullOrEmpty(_shareLink))
+                {
+                    <button class="btn-secondary" @onclick="GenerateShareLink">Generate Share Link</button>
+                }
+                else
+                {
+                    <div class="share-link">
+                        <input value="@_shareLink" readonly class="form-input" />
+                    </div>
+                }
+
+                <button class="btn-danger" @onclick="DeleteWall">Delete Wall</button>
+            </div>
+        }
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(_toast))
+{
+    <div class="toast-msg">@_toast</div>
+}
+
+@code {
+    [Parameter] public Guid WallId { get; set; }
+
+    private Wall? _wall;
+    private List<Hold> _holds = [];
+    private List<Boulder> _boulders = [];
+    private Dictionary<Guid, AttemptSummary> _boulderSummaries = [];
+    private bool _isAdmin;
+    private bool _showSettings;
+    private string? _shareLink;
+    private string? _toast;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadWall();
+    }
+
+    private async Task LoadWall()
+    {
+        _wall = await WallService.GetWallAsync(WallId);
+        if (_wall != null)
+        {
+            var user = await CurrentUserService.GetCurrentUserAsync();
+            _isAdmin = _wall.OwnerId == user.Id;
+            _holds = _wall.Holds.ToList();
+            _boulders = await BoulderService.GetBouldersForWallAsync(WallId);
+
+            _boulderSummaries = [];
+            foreach (var b in _boulders)
+            {
+                _boulderSummaries[b.Id] = await AttemptService.GetBoulderSummaryForUserAsync(b.Id);
+            }
+
+            if (!string.IsNullOrEmpty(_wall.ShareToken))
+            {
+                _shareLink = $"{Navigation.BaseUri}join/{_wall.ShareToken}";
+            }
+        }
+    }
+
+    private async Task OnHoldAdded(Hold hold)
+    {
+        var saved = await WallService.AddHoldAsync(WallId, hold.X, hold.Y, hold.Radius, hold.Color);
+        _holds.Add(saved);
+        await ShowToast("Hold added");
+    }
+
+    private async Task OnHoldUpdated(Hold hold)
+    {
+        await WallService.UpdateHoldAsync(hold.Id, hold.X, hold.Y, hold.Radius);
+    }
+
+    private async Task OnHoldDeleted(Guid holdId)
+    {
+        await WallService.DeleteHoldAsync(holdId);
+        _holds.RemoveAll(h => h.Id == holdId);
+        await ShowToast("Hold removed");
+    }
+
+    private async Task OnRedetect()
+    {
+        var count = await WallService.RedetectHoldsAsync(WallId);
+        await LoadWall();
+        await ShowToast($"Detected {count} holds");
+    }
+
+    private void ToggleSettings() => _showSettings = !_showSettings;
+
+    private async Task GenerateShareLink()
+    {
+        var token = await WallService.GenerateShareTokenAsync(WallId);
+        _shareLink = $"{Navigation.BaseUri}join/{token}";
+    }
+
+    private async Task DeleteWall()
+    {
+        await WallService.DeleteWallAsync(WallId);
+        Navigation.NavigateTo("/walls");
+    }
+
+    private async Task OnPhotoSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file.Size > 10 * 1024 * 1024) return;
+
+        using var stream = file.OpenReadStream(10 * 1024 * 1024);
+        using var ms = new MemoryStream();
+        await stream.CopyToAsync(ms);
+
+        await WallService.UploadPhotoAsync(WallId, ms.ToArray(), file.ContentType);
+        await LoadWall();
+        await ShowToast($"Photo uploaded — {_holds.Count} holds detected");
+    }
+
+    private async Task ShowToast(string message)
+    {
+        _toast = message;
+        StateHasChanged();
+        await Task.Delay(2500);
+        _toast = null;
+        StateHasChanged();
+    }
+}
+
+<style>
+    .wall-detail { padding: 16px; max-width: 600px; margin: 0 auto; }
+
+    .detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .detail-header h1 { font-size: 1.5rem; font-weight: 700; color: #1a1a2e; }
+
+    .btn-icon { background: none; border: none; cursor: pointer; color: #666; padding: 4px; }
+    .btn-icon:hover { color: #1a1a2e; }
+
+    .description { color: #666; margin-bottom: 16px; font-size: 0.95rem; }
+
+    .wall-photo-container { margin-bottom: 16px; }
+
+    .upload-prompt {
+        padding: 40px 20px; text-align: center; background: #f5f5f5;
+        border-radius: 12px; border: 2px dashed #ccc;
+    }
+    .upload-prompt p { color: #888; margin-bottom: 12px; }
+
+    .stats-bar { display: flex; gap: 12px; margin-bottom: 20px; }
+    .stat {
+        flex: 1; text-align: center; padding: 12px; background: white;
+        border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    .stat-value { display: block; font-size: 1.4rem; font-weight: 700; color: #1a1a2e; }
+    .stat-label { font-size: 0.8rem; color: #888; }
+
+    .boulder-section { margin-bottom: 20px; }
+    .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .section-header h2 { font-size: 1.1rem; font-weight: 600; color: #1a1a2e; }
+    .btn-add-boulder {
+        padding: 6px 14px; background: #e94560; color: white;
+        text-decoration: none; border-radius: 6px; font-weight: 600;
+        font-size: 0.85rem;
+    }
+
+    .boulder-card {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 12px 16px; background: white; border-radius: 10px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 8px;
+        text-decoration: none; color: inherit; transition: transform 0.1s;
+    }
+    .boulder-card:hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(0,0,0,0.1); }
+    .boulder-card-left { display: flex; flex-direction: column; gap: 2px; }
+    .boulder-card-right { display: flex; align-items: center; gap: 8px; }
+    .boulder-name { font-weight: 600; color: #1a1a2e; font-size: 0.95rem; }
+    .boulder-meta { font-size: 0.8rem; color: #999; }
+    .boulder-grade {
+        padding: 4px 10px; background: #e94560; color: white;
+        border-radius: 6px; font-weight: 700; font-size: 0.85rem;
+    }
+    .status-icon { font-size: 1rem; }
+    .flash-icon { color: #FF5722; }
+    .send-icon { color: #4CAF50; font-weight: 700; }
+    .try-icon {
+        font-size: 0.75rem; font-weight: 700; color: #FF9800;
+        background: #FFF3E0; padding: 2px 6px; border-radius: 4px;
+    }
+    .empty-boulders {
+        text-align: center; padding: 24px; color: #888; background: white;
+        border-radius: 10px; font-size: 0.9rem;
+    }
+
+    .settings-panel {
+        margin-top: 24px; padding: 20px; background: #f9f9f9; border-radius: 12px;
+    }
+    .settings-panel h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 12px; }
+    .form-group { margin-bottom: 12px; }
+    .form-group label { display: block; font-weight: 600; color: #333; margin-bottom: 6px; font-size: 0.9rem; }
+
+    .share-link { margin-bottom: 12px; }
+    .form-input {
+        width: 100%; padding: 10px 14px; border: 2px solid #e0e0e0;
+        border-radius: 8px; font-size: 0.9rem; box-sizing: border-box;
+    }
+
+    .btn-secondary {
+        width: 100%; padding: 12px; background: #0f3460; color: white;
+        border: none; border-radius: 8px; font-weight: 600; cursor: pointer;
+        margin-bottom: 8px;
+    }
+    .btn-danger {
+        width: 100%; padding: 12px; background: white; color: #e94560;
+        border: 2px solid #e94560; border-radius: 8px; font-weight: 600; cursor: pointer;
+    }
+    .btn-danger:hover { background: #e94560; color: white; }
+
+    .loading { text-align: center; color: #888; padding: 48px; }
+
+    .toast-msg {
+        position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+        background: #1a1a2e; color: white; padding: 10px 24px;
+        border-radius: 8px; font-size: 0.9rem; z-index: 100;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+</style>

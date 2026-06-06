@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Blocwerk.HoldDetection\Blocwerk.HoldDetection.csproj" />
+    <ProjectReference Include="..\..\src\Blocwerk.Core\Blocwerk.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="walls\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp" />
+  </ItemGroup>
+
+</Project>

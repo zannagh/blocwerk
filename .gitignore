@@ -1,8 +1,26 @@
+# ONNX models (large binary files)
+*.onnx
+
+# Secrets
+.secrets.md
+**/appsettings.json
+!**/appsettings.template.json
+
+# Test wall images and detection output
+test/**/walls/*.jpg
+test/**/walls/*.jpeg
+test/**/walls/*.png
+test/**/walls/*.heic
+test/**/walls/*.webp
+test/**/walls/*.bmp
+test/**/walls/output/
+
 BRIEF.md
 PLATFORM.md
 INSTRUCTIONS.md
 
 .gitversion.done
+.secrets.md
 
 
 ## Ignore Visual Studio temporary files, build results, and

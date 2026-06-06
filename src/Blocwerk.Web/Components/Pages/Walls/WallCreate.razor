@@ -1,0 +1,140 @@
+@page "/walls/create"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject IWallService WallService
+@inject NavigationManager Navigation
+
+<PageTitle>Create Wall - Blocwerk</PageTitle>
+
+<div class="create-wall">
+    <h1>Create Wall</h1>
+
+    <EditForm Model="_model" OnValidSubmit="Submit" FormName="create-wall">
+        <div class="form-group">
+            <label>Wall Name</label>
+            <InputText @bind-Value="_model.Name" class="form-input" placeholder="e.g. Garage Wall" />
+        </div>
+
+        <div class="form-group">
+            <label>Description (optional)</label>
+            <InputTextArea @bind-Value="_model.Description" class="form-input" rows="3" placeholder="Describe your wall..." />
+        </div>
+
+        <div class="form-group">
+            <label>Wall Photo</label>
+            <InputFile OnChange="OnFileSelected" class="form-input" accept="image/*" />
+            <p class="hint">Take a frontal photo of your climbing wall with all holds visible.</p>
+        </div>
+
+        @if (_photoPreview != null)
+        {
+            <div class="photo-preview">
+                <img src="@_photoPreview" alt="Wall preview" />
+            </div>
+        }
+
+        <button type="submit" class="btn-submit" disabled="@(_isSubmitting || string.IsNullOrWhiteSpace(_model.Name))">
+            @if (_isSubmitting)
+            {
+                <span>Creating...</span>
+            }
+            else
+            {
+                <span>Create Wall</span>
+            }
+        </button>
+    </EditForm>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="error-msg">@_error</div>
+    }
+</div>
+
+@code {
+    private readonly WallCreateModel _model = new();
+    private byte[]? _photoData;
+    private string? _photoContentType;
+    private string? _photoPreview;
+    private bool _isSubmitting;
+    private string? _error;
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file.Size > 10 * 1024 * 1024)
+        {
+            _error = "Photo must be under 10MB";
+            return;
+        }
+
+        _photoContentType = file.ContentType;
+        using var stream = file.OpenReadStream(10 * 1024 * 1024);
+        using var ms = new MemoryStream();
+        await stream.CopyToAsync(ms);
+        _photoData = ms.ToArray();
+        _photoPreview = $"data:{_photoContentType};base64,{Convert.ToBase64String(_photoData)}";
+    }
+
+    private async Task Submit()
+    {
+        _isSubmitting = true;
+        _error = null;
+
+        try
+        {
+            var wall = await WallService.CreateWallAsync(_model.Name, _model.Description);
+
+            if (_photoData != null && _photoContentType != null)
+            {
+                await WallService.UploadPhotoAsync(wall.Id, _photoData, _photoContentType);
+            }
+
+            Navigation.NavigateTo($"/walls/{wall.Id}");
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            _isSubmitting = false;
+        }
+    }
+
+    private class WallCreateModel
+    {
+        public string Name { get; set; } = string.Empty;
+
+        public string? Description { get; set; }
+    }
+}
+
+<style>
+    .create-wall { padding: 16px; max-width: 500px; margin: 0 auto; }
+    .create-wall h1 { font-size: 1.5rem; font-weight: 700; color: #1a1a2e; margin-bottom: 20px; }
+
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; font-weight: 600; color: #333; margin-bottom: 6px; font-size: 0.9rem; }
+
+    .form-input {
+        width: 100%; padding: 12px 14px; border: 2px solid #e0e0e0;
+        border-radius: 8px; font-size: 1rem; outline: none; box-sizing: border-box;
+    }
+    .form-input:focus { border-color: #0f3460; }
+
+    .hint { font-size: 0.8rem; color: #888; margin-top: 4px; }
+
+    .photo-preview {
+        margin-bottom: 16px; border-radius: 12px; overflow: hidden;
+        max-height: 300px;
+    }
+    .photo-preview img { width: 100%; object-fit: contain; }
+
+    .btn-submit {
+        width: 100%; padding: 14px; background: #e94560; color: white;
+        border: none; border-radius: 8px; font-weight: 600; font-size: 1rem;
+        cursor: pointer; transition: background 0.2s;
+    }
+    .btn-submit:hover:not(:disabled) { background: #d63851; }
+    .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .error-msg { margin-top: 12px; color: #e94560; text-align: center; }
+</style>

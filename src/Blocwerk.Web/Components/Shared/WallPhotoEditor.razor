@@ -1,0 +1,289 @@
+@inject IJSRuntime JS
+
+<div class="editor-toolbar">
+    <div class="toolbar-left">
+        <span class="hold-count">@Holds.Count holds</span>
+        @if (_selectedHoldId.HasValue)
+        {
+            <span class="selected-label">Selected</span>
+        }
+    </div>
+    <div class="toolbar-right">
+        @if (CanEdit)
+        {
+            <button class="tool-btn @(_mode == EditMode.Add ? "active" : "")" @onclick="() => SetMode(EditMode.Add)" title="Add hold">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                    <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" />
+                </svg>
+            </button>
+            <button class="tool-btn @(_mode == EditMode.Move ? "active" : "")" @onclick="() => SetMode(EditMode.Move)" title="Move hold">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                    <path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20" />
+                </svg>
+            </button>
+            @if (_selectedHoldId.HasValue)
+            {
+                <button class="tool-btn danger" @onclick="DeleteSelected" title="Delete selected">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                        <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    </svg>
+                </button>
+                <div class="radius-control">
+                    <label>Size</label>
+                    <input type="range" min="3" max="40" value="@((int)(_selectedRadius * 1000))"
+                           @oninput="OnRadiusChange" />
+                </div>
+            }
+            <button class="tool-btn" @onclick="OnRedetect" title="Re-detect holds" disabled="@_isDetecting">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                    <path d="M23 4v6h-6M1 20v-6h6" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                </svg>
+            </button>
+        }
+    </div>
+</div>
+
+<div class="photo-editor" @ref="_containerRef">
+    <img src="/api/walls/@WallId/photo" alt="Wall" class="wall-photo" @ref="_imgRef" />
+    <svg class="hold-overlay"
+         @onclick="OnSvgClick"
+         @onmousemove="OnSvgMouseMove"
+         @onmouseup="OnSvgMouseUp"
+         @ontouchend="OnSvgMouseUp">
+        @foreach (var hold in Holds)
+        {
+            var isSelected = _selectedHoldId == hold.Id;
+            var fillColor = GetHoldFillColor(hold, isSelected);
+            var strokeColor = isSelected ? "#ffffff" : GetHoldStrokeColor(hold);
+
+            <circle cx="@F(hold.X * 100)%" cy="@F(hold.Y * 100)%"
+                    r="@F(hold.Radius * 100)%"
+                    fill="@fillColor" stroke="@strokeColor"
+                    stroke-width="@(isSelected ? "3" : "2")"
+                    style="cursor: pointer"
+                    @onclick="() => SelectHold(hold)"
+                    @onclick:stopPropagation="true"
+                    @onmousedown="() => StartDrag(hold)"
+                    @onmousedown:stopPropagation="true" />
+
+            @if (isSelected)
+            {
+                <circle cx="@F(hold.X * 100)%" cy="@F(hold.Y * 100)%"
+                        r="@F(hold.Radius * 100 + 1.5)%"
+                        fill="none" stroke="white" stroke-width="1"
+                        stroke-dasharray="4 3" style="pointer-events: none" />
+            }
+        }
+    </svg>
+
+    @if (_isDetecting)
+    {
+        <div class="detecting-overlay">
+            <span>Detecting holds...</span>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid WallId { get; set; }
+    [Parameter] public List<Hold> Holds { get; set; } = [];
+    [Parameter] public bool CanEdit { get; set; }
+    [Parameter] public EventCallback<Hold> OnHoldAdded { get; set; }
+    [Parameter] public EventCallback<Hold> OnHoldUpdated { get; set; }
+    [Parameter] public EventCallback<Guid> OnHoldDeleted { get; set; }
+    [Parameter] public EventCallback OnRedetectRequested { get; set; }
+
+    private ElementReference _containerRef;
+    private ElementReference _imgRef;
+    private Guid? _selectedHoldId;
+    private double _selectedRadius = 0.015;
+    private EditMode _mode = EditMode.Add;
+    private Guid? _draggingHoldId;
+    private bool _isDetecting;
+
+    private enum EditMode { Add, Move }
+
+    private void SetMode(EditMode mode)
+    {
+        _mode = mode;
+        if (mode == EditMode.Add)
+        {
+            _selectedHoldId = null;
+        }
+    }
+
+    private void SelectHold(Hold hold)
+    {
+        if (_mode == EditMode.Add) return;
+        _selectedHoldId = hold.Id;
+        _selectedRadius = hold.Radius;
+    }
+
+    private void StartDrag(Hold hold)
+    {
+        if (!CanEdit || _mode != EditMode.Move) return;
+        _selectedHoldId = hold.Id;
+        _selectedRadius = hold.Radius;
+        _draggingHoldId = hold.Id;
+    }
+
+    private async Task OnSvgClick(MouseEventArgs e)
+    {
+        if (!CanEdit || _mode != EditMode.Add) return;
+
+        var pos = await JS.InvokeAsync<RelativePos>("wallEditor.getRelativePosition", _containerRef, e.ClientX, e.ClientY);
+
+        var hold = new Hold
+        {
+            Id = Guid.NewGuid(),
+            WallId = WallId,
+            X = Math.Clamp(pos.X, 0, 1),
+            Y = Math.Clamp(pos.Y, 0, 1),
+            Radius = _selectedRadius,
+            IsAutoDetected = false,
+        };
+
+        await OnHoldAdded.InvokeAsync(hold);
+    }
+
+    private async Task OnSvgMouseMove(MouseEventArgs e)
+    {
+        if (_draggingHoldId == null) return;
+
+        var pos = await JS.InvokeAsync<RelativePos>("wallEditor.getRelativePosition", _containerRef, e.ClientX, e.ClientY);
+
+        var hold = Holds.FirstOrDefault(h => h.Id == _draggingHoldId);
+        if (hold == null) return;
+
+        hold.X = Math.Clamp(pos.X, 0, 1);
+        hold.Y = Math.Clamp(pos.Y, 0, 1);
+        StateHasChanged();
+    }
+
+    private async Task OnSvgMouseUp(EventArgs e)
+    {
+        if (_draggingHoldId == null) return;
+
+        var hold = Holds.FirstOrDefault(h => h.Id == _draggingHoldId);
+        _draggingHoldId = null;
+
+        if (hold != null)
+        {
+            await OnHoldUpdated.InvokeAsync(hold);
+        }
+    }
+
+    private async Task DeleteSelected()
+    {
+        if (_selectedHoldId == null) return;
+        var id = _selectedHoldId.Value;
+        _selectedHoldId = null;
+        await OnHoldDeleted.InvokeAsync(id);
+    }
+
+    private async Task OnRadiusChange(ChangeEventArgs e)
+    {
+        if (_selectedHoldId == null || !int.TryParse(e.Value?.ToString(), out var val)) return;
+        _selectedRadius = val / 1000.0;
+
+        var hold = Holds.FirstOrDefault(h => h.Id == _selectedHoldId);
+        if (hold == null) return;
+
+        hold.Radius = _selectedRadius;
+        await OnHoldUpdated.InvokeAsync(hold);
+    }
+
+    private async Task OnRedetect()
+    {
+        _isDetecting = true;
+        StateHasChanged();
+        await OnRedetectRequested.InvokeAsync();
+        _isDetecting = false;
+    }
+
+    private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string GetHoldFillColor(Hold hold, bool selected)
+    {
+        if (selected) return "rgba(255, 255, 255, 0.4)";
+        return hold.Color switch
+        {
+            "yellow" => "rgba(255, 220, 0, 0.45)",
+            "red" => "rgba(220, 50, 50, 0.45)",
+            "pink" => "rgba(255, 100, 160, 0.45)",
+            "blue" => "rgba(60, 120, 230, 0.45)",
+            "green" => "rgba(60, 200, 90, 0.45)",
+            "orange" => "rgba(255, 150, 30, 0.45)",
+            "purple" => "rgba(160, 60, 210, 0.45)",
+            "white" => "rgba(255, 255, 255, 0.45)",
+            "black" => "rgba(60, 60, 60, 0.45)",
+            _ => "rgba(229, 69, 96, 0.35)",
+        };
+    }
+
+    private static string GetHoldStrokeColor(Hold hold)
+    {
+        return hold.Color switch
+        {
+            "yellow" => "#e6c800",
+            "red" => "#cc3333",
+            "pink" => "#e05590",
+            "blue" => "#3366dd",
+            "green" => "#33aa44",
+            "orange" => "#dd8800",
+            "purple" => "#8833bb",
+            "white" => "#cccccc",
+            "black" => "#444444",
+            _ => "#e94560",
+        };
+    }
+
+    private record RelativePos(double X, double Y);
+}
+
+<style>
+    .editor-toolbar {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 8px 12px; background: #1a1a2e; border-radius: 10px 10px 0 0;
+        gap: 8px; flex-wrap: wrap;
+    }
+    .toolbar-left { display: flex; align-items: center; gap: 8px; }
+    .toolbar-right { display: flex; align-items: center; gap: 6px; }
+    .hold-count { color: rgba(255,255,255,0.7); font-size: 0.85rem; }
+    .selected-label {
+        font-size: 0.75rem; padding: 2px 8px; background: #e94560;
+        color: white; border-radius: 4px;
+    }
+
+    .tool-btn {
+        background: rgba(255,255,255,0.1); border: none; color: white;
+        padding: 6px; border-radius: 6px; cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        transition: background 0.15s;
+    }
+    .tool-btn:hover { background: rgba(255,255,255,0.2); }
+    .tool-btn.active { background: #e94560; }
+    .tool-btn.danger:hover { background: #cc2244; }
+    .tool-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .radius-control {
+        display: flex; align-items: center; gap: 4px; color: white; font-size: 0.8rem;
+    }
+    .radius-control input[type=range] { width: 60px; accent-color: #e94560; }
+
+    .photo-editor {
+        position: relative; border-radius: 0 0 12px 12px; overflow: hidden;
+        touch-action: none; user-select: none;
+    }
+    .photo-editor .wall-photo { width: 100%; display: block; }
+    .photo-editor .hold-overlay {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        cursor: crosshair;
+    }
+
+    .detecting-overlay {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.5); display: flex; align-items: center;
+        justify-content: center; color: white; font-size: 1.1rem; font-weight: 600;
+    }
+</style>

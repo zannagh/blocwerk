@@ -1,0 +1,122 @@
+@page "/walls/{WallId:guid}/boulders/create"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject IWallService WallService
+@inject IBoulderService BoulderService
+@inject NavigationManager Navigation
+@using Blocwerk.Web.Components.Shared
+
+<PageTitle>Create Boulder - Blocwerk</PageTitle>
+
+<div class="boulder-create">
+    <div class="page-header">
+        <a href="/walls/@WallId" class="back-link">&larr; Back</a>
+        <h1>Create Boulder</h1>
+    </div>
+
+    @if (_wall == null)
+    {
+        <p class="loading">Loading...</p>
+    }
+    else
+    {
+        <div class="form-section">
+            <div class="form-row">
+                <div class="form-group flex-grow">
+                    <label>Name</label>
+                    <input @bind="_name" class="form-input" placeholder="e.g. Crimpy Traverse" />
+                </div>
+                <div class="form-group">
+                    <label>Grade</label>
+                    <input @bind="_grade" class="form-input grade-input" placeholder="V3" />
+                </div>
+            </div>
+        </div>
+
+        <p class="instruction">Tap holds to select them for this boulder. Use Start/Normal/Top to set hold roles.</p>
+
+        <HoldPicker WallId="WallId"
+                    AllHolds="_holds"
+                    @bind-SelectedHolds="_selectedHolds" />
+
+        <button class="btn-submit" @onclick="Submit"
+                disabled="@(string.IsNullOrWhiteSpace(_name) || _selectedHolds.Count == 0 || _isSubmitting)">
+            @(_isSubmitting ? "Creating..." : $"Create Boulder ({_selectedHolds.Count} holds)")
+        </button>
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div class="error-msg">@_error</div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public Guid WallId { get; set; }
+
+    private Wall? _wall;
+    private List<Hold> _holds = [];
+    private List<BoulderHoldInput> _selectedHolds = [];
+    private string _name = string.Empty;
+    private string? _grade;
+    private bool _isSubmitting;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _wall = await WallService.GetWallAsync(WallId);
+        if (_wall != null)
+        {
+            _holds = _wall.Holds.ToList();
+        }
+    }
+
+    private async Task Submit()
+    {
+        _isSubmitting = true;
+        _error = null;
+
+        try
+        {
+            var boulder = await BoulderService.CreateBoulderAsync(WallId, _name, _grade, _selectedHolds);
+            Navigation.NavigateTo($"/walls/{WallId}/boulders/{boulder.Id}");
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            _isSubmitting = false;
+        }
+    }
+}
+
+<style>
+    .boulder-create { padding: 16px; max-width: 600px; margin: 0 auto; }
+    .page-header { margin-bottom: 12px; }
+    .back-link { color: #888; text-decoration: none; font-size: 0.9rem; }
+    .back-link:hover { color: #333; }
+    .page-header h1 { font-size: 1.4rem; font-weight: 700; color: #1a1a2e; margin-top: 4px; }
+
+    .form-section { margin-bottom: 12px; }
+    .form-row { display: flex; gap: 10px; }
+    .flex-grow { flex: 1; }
+    .form-group label { display: block; font-weight: 600; color: #333; margin-bottom: 4px; font-size: 0.85rem; }
+    .form-input {
+        width: 100%; padding: 10px 12px; border: 2px solid #e0e0e0;
+        border-radius: 8px; font-size: 1rem; box-sizing: border-box;
+    }
+    .form-input:focus { border-color: #0f3460; outline: none; }
+    .grade-input { width: 80px; text-align: center; font-weight: 700; }
+
+    .instruction { font-size: 0.85rem; color: #888; margin-bottom: 8px; }
+
+    .btn-submit {
+        width: 100%; padding: 14px; background: #e94560; color: white;
+        border: none; border-radius: 8px; font-weight: 600; font-size: 1rem;
+        cursor: pointer; margin-top: 16px;
+    }
+    .btn-submit:hover:not(:disabled) { background: #d63851; }
+    .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .error-msg { margin-top: 12px; color: #e94560; text-align: center; }
+    .loading { text-align: center; color: #888; padding: 48px; }
+</style>

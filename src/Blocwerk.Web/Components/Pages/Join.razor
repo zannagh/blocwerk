@@ -1,0 +1,53 @@
+@page "/join/{ShareToken}"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject IWallService WallService
+@inject NavigationManager Navigation
+
+<PageTitle>Join Wall - Blocwerk</PageTitle>
+
+<div class="join-page">
+    @if (_isJoining)
+    {
+        <p>Joining wall...</p>
+    }
+    else if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="error-state">
+            <h2>Could not join wall</h2>
+            <p>@_error</p>
+            <a href="/walls" class="btn-primary">Go to My Walls</a>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string ShareToken { get; set; } = string.Empty;
+
+    private bool _isJoining = true;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var wall = await WallService.JoinWallAsync(ShareToken);
+            Navigation.NavigateTo($"/walls/{wall.Id}");
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            _isJoining = false;
+        }
+    }
+}
+
+<style>
+    .join-page { padding: 48px 20px; text-align: center; max-width: 400px; margin: 0 auto; }
+    .error-state h2 { color: #1a1a2e; margin-bottom: 8px; }
+    .error-state p { color: #666; margin-bottom: 20px; }
+    .btn-primary {
+        display: inline-block; padding: 12px 24px; background: #e94560;
+        color: white; text-decoration: none; border-radius: 8px; font-weight: 600;
+    }
+</style>

@@ -1,0 +1,60 @@
+using Blocwerk.Authentication;
+using Blocwerk.Authentication.Controllers;
+using Blocwerk.Core;
+using Blocwerk.Core.Services;
+using Blocwerk.HoldDetection;
+using Blocwerk.Web.Components;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Mvc;
+using Serilog;
+
+var builder = WebApplication.CreateBuilder(args);
+
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Debug()
+    .WriteTo.Console(restrictedToMinimumLevel: Serilog.Events.LogEventLevel.Information)
+    .WriteTo.File("logs/blocwerk.log", rollingInterval: RollingInterval.Day)
+    .CreateLogger();
+
+builder.Host.UseSerilog();
+
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost;
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
+builder.ConfigureCoreServices(out var settings);
+builder.ConfigureAuthenticationAndAuthorization(settings);
+builder.ConfigureHoldDetection(settings);
+
+builder.Services.AddControllersWithViews()
+    .AddApplicationPart(typeof(AccountController).Assembly);
+
+builder.Services.AddRazorComponents()
+    .AddInteractiveServerComponents();
+
+builder.Services.AddRazorPages();
+builder.Services.AddServerSideBlazor();
+
+var app = builder.Build();
+
+app.UseForwardedHeaders();
+app.UseStaticFiles();
+app.ConfigureCoreApplication();
+app.ConfigureAuthenticationMiddlewares();
+app.MapControllers();
+
+app.MapRazorComponents<BlocwerkApp>()
+    .AddInteractiveServerRenderMode();
+
+app.MapGet("/api/walls/{wallId:guid}/photo", async (
+    Guid wallId,
+    [FromServices] IWallService wallService) =>
+{
+    var photo = await wallService.GetPhotoAsync(wallId);
+    return photo == null ? Results.NotFound() : Results.File(photo, "image/jpeg");
+}).RequireAuthorization();
+
+app.Run();

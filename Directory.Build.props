@@ -4,8 +4,8 @@
 
   <PropertyGroup>
     <Authors>Zannagh</Authors>
-    <Company>Biosero Inc.</Company>
-    <Copyright>Copyright © 2026 Automata</Copyright>
+    <Company>Blocwerk</Company>
+    <Copyright>Copyright © 2026 Zannagh</Copyright>
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -41,7 +41,7 @@
   <!-- Ignore package source mapping warning as we do not want nuget.config files within the
   repositories. -->
   <PropertyGroup>
-    <NoWarn>$(NoWarn);NU1507;NU5118;CS8032</NoWarn>
+    <NoWarn>$(NoWarn);NU1507;NU5118;CS8032;SA1633;SA1402;SA1649;SA1201;SA1204;SA1117</NoWarn>
   </PropertyGroup>
 
   <PropertyGroup>

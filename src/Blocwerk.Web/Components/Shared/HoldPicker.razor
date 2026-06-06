@@ -1,0 +1,111 @@
+@inject IJSRuntime JS
+
+<div class="picker-toolbar">
+    <span class="pick-count">@SelectedHolds.Count holds selected</span>
+    <div class="pick-legend">
+        <span class="legend-item"><span class="dot start"></span> Start</span>
+        <span class="legend-item"><span class="dot normal"></span> Normal</span>
+        <span class="legend-item"><span class="dot top"></span> Top</span>
+    </div>
+    <div class="pick-mode">
+        <button class="mode-btn @(_placeType == HoldType.Start ? "active start-active" : "")" @onclick="() => _placeType = HoldType.Start">Start</button>
+        <button class="mode-btn @(_placeType == HoldType.Normal ? "active" : "")" @onclick="() => _placeType = HoldType.Normal">Normal</button>
+        <button class="mode-btn @(_placeType == HoldType.Top ? "active top-active" : "")" @onclick="() => _placeType = HoldType.Top">Top</button>
+    </div>
+</div>
+
+<div class="photo-picker">
+    <img src="/api/walls/@WallId/photo" alt="Wall" class="wall-photo" />
+    <svg class="hold-overlay">
+        @foreach (var hold in AllHolds)
+        {
+            var selection = SelectedHolds.FirstOrDefault(s => s.HoldId == hold.Id);
+            var isSelected = selection != null;
+            var fillColor = isSelected ? GetSelectionFill(selection!.Type) : "rgba(255,255,255,0.15)";
+            var strokeColor = isSelected ? GetSelectionStroke(selection!.Type) : "rgba(255,255,255,0.4)";
+            var strokeWidth = isSelected ? "3" : "1.5";
+
+            <circle cx="@F(hold.X * 100)%" cy="@F(hold.Y * 100)%"
+                    r="@F(hold.Radius * 100)%"
+                    fill="@fillColor" stroke="@strokeColor" stroke-width="@strokeWidth"
+                    style="cursor: pointer"
+                    @onclick="() => ToggleHold(hold)" />
+        }
+    </svg>
+</div>
+
+@code {
+    [Parameter] public Guid WallId { get; set; }
+    [Parameter] public List<Hold> AllHolds { get; set; } = [];
+    [Parameter] public List<BoulderHoldInput> SelectedHolds { get; set; } = [];
+    [Parameter] public EventCallback<List<BoulderHoldInput>> SelectedHoldsChanged { get; set; }
+
+    private HoldType _placeType = HoldType.Normal;
+
+    private void ToggleHold(Hold hold)
+    {
+        var existing = SelectedHolds.FirstOrDefault(s => s.HoldId == hold.Id);
+        if (existing != null)
+        {
+            if (existing.Type == _placeType)
+            {
+                SelectedHolds.Remove(existing);
+            }
+            else
+            {
+                SelectedHolds.Remove(existing);
+                SelectedHolds.Add(new BoulderHoldInput(hold.Id, _placeType));
+            }
+        }
+        else
+        {
+            SelectedHolds.Add(new BoulderHoldInput(hold.Id, _placeType));
+        }
+
+        SelectedHoldsChanged.InvokeAsync(SelectedHolds);
+    }
+
+    private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string GetSelectionFill(HoldType type) => type switch
+    {
+        HoldType.Start => "rgba(76, 175, 80, 0.5)",
+        HoldType.Top => "rgba(244, 67, 54, 0.5)",
+        _ => "rgba(33, 150, 243, 0.5)",
+    };
+
+    private static string GetSelectionStroke(HoldType type) => type switch
+    {
+        HoldType.Start => "#4CAF50",
+        HoldType.Top => "#F44336",
+        _ => "#2196F3",
+    };
+}
+
+<style>
+    .picker-toolbar {
+        padding: 8px 12px; background: #1a1a2e; border-radius: 10px 10px 0 0;
+        display: flex; justify-content: space-between; align-items: center;
+        flex-wrap: wrap; gap: 6px;
+    }
+    .pick-count { color: rgba(255,255,255,0.7); font-size: 0.85rem; }
+    .pick-legend { display: flex; gap: 10px; }
+    .legend-item { color: rgba(255,255,255,0.6); font-size: 0.75rem; display: flex; align-items: center; gap: 4px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    .dot.start { background: #4CAF50; }
+    .dot.normal { background: #2196F3; }
+    .dot.top { background: #F44336; }
+
+    .pick-mode { display: flex; gap: 4px; }
+    .mode-btn {
+        padding: 4px 10px; border: 1px solid rgba(255,255,255,0.3); background: none;
+        color: white; border-radius: 4px; font-size: 0.8rem; cursor: pointer;
+    }
+    .mode-btn.active { background: #2196F3; border-color: #2196F3; }
+    .mode-btn.start-active { background: #4CAF50; border-color: #4CAF50; }
+    .mode-btn.top-active { background: #F44336; border-color: #F44336; }
+
+    .photo-picker { position: relative; border-radius: 0 0 12px 12px; overflow: hidden; }
+    .photo-picker .wall-photo { width: 100%; display: block; }
+    .photo-picker .hold-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+</style>
