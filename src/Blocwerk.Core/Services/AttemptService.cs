@@ -25,11 +25,16 @@ public class AttemptService : IAttemptService
 {
     private readonly IDbContextFactory<BlocwerkDbContext> _dbContextFactory;
     private readonly ICurrentUserService _currentUserService;
+    private readonly IActivityLogService _activityLogService;
 
-    public AttemptService(IDbContextFactory<BlocwerkDbContext> dbContextFactory, ICurrentUserService currentUserService)
+    public AttemptService(
+        IDbContextFactory<BlocwerkDbContext> dbContextFactory,
+        ICurrentUserService currentUserService,
+        IActivityLogService activityLogService)
     {
         _dbContextFactory = dbContextFactory;
         _currentUserService = currentUserService;
+        _activityLogService = activityLogService;
     }
 
     public async Task<Attempt> LogAttemptAsync(Guid boulderId, AttemptType type, string? notes = null)
@@ -51,6 +56,8 @@ public class AttemptService : IAttemptService
 
         db.Attempts.Add(attempt);
         await db.SaveChangesAsync();
+
+        await _activityLogService.LogAsync(boulder.WallId, boulderId, ActivityType.AttemptLogged, type.ToString());
         return attempt;
     }
 

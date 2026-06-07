@@ -22,6 +22,9 @@ public class Hold
 
     public List<ShapePoint>? ShapePoints { get; set; }
 
+    [MaxLength(64)]
+    public string? Name { get; set; }
+
     [MaxLength(32)]
     public string? Color { get; set; }
 

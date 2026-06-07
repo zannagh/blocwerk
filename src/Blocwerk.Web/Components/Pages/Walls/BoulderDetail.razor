@@ -1,10 +1,14 @@
 @page "/walls/{WallId:guid}/boulders/{BoulderId:guid}"
+@page "/walls/{WallId:guid}/boulders/{BoulderId:guid}/shared/{ShareToken}"
 @rendermode InteractiveServer
-@attribute [Authorize]
 @inject IBoulderService BoulderService
 @inject IAttemptService AttemptService
+@inject IActivityLogService ActivityLogService
+@inject ICommentService CommentService
+@inject IWallService WallService
 @inject ICurrentUserService CurrentUserService
 @inject NavigationManager Navigation
+@using Blocwerk.Web.Components.Shared
 
 <PageTitle>@(_boulder?.Name ?? "Boulder") - Blocwerk</PageTitle>
 
@@ -16,41 +20,84 @@ else
 {
     <div class="boulder-detail">
         <div class="page-header">
-            <a href="/walls/@WallId" class="back-link">&larr; Back to wall</a>
+            @{ var backUrl = !string.IsNullOrEmpty(ShareToken) ? $"/walls/{WallId}/shared/{ShareToken}" : $"/walls/{WallId}"; }
+            <a href="@backUrl" class="back-link">&larr; Back to wall</a>
             <div class="title-row">
                 <h1>@_boulder.Name</h1>
                 @if (!string.IsNullOrEmpty(_boulder.Grade))
                 {
                     <span class="grade-badge">@_boulder.Grade</span>
                 }
+                @if (_boulder.IsHistoric)
+                {
+                    <span class="historic-badge">historic</span>
+                }
             </div>
             <p class="meta">by @_boulder.CreatedBy.DisplayName &middot; @_boulder.CreatedAt.ToString("MMM d, yyyy")</p>
         </div>
 
-        <div class="photo-section">
-            <img src="/api/walls/@WallId/photo" alt="Wall" class="wall-photo" />
-            <svg class="hold-overlay">
-                @foreach (var bh in _boulder.BoulderHolds)
-                {
-                    var fill = bh.Type switch
-                    {
-                        HoldType.Start => "rgba(76, 175, 80, 0.55)",
-                        HoldType.Top => "rgba(244, 67, 54, 0.55)",
-                        _ => "rgba(33, 150, 243, 0.55)",
-                    };
-                    var stroke = bh.Type switch
-                    {
-                        HoldType.Start => "#4CAF50",
-                        HoldType.Top => "#F44336",
-                        _ => "#2196F3",
-                    };
+        @if (_boulder.IsHistoric && _isCreator)
+        {
+            <div class="revision-banner">
+                <p>The wall has changed since this boulder was created. Some holds may no longer exist.</p>
+                <a href="/walls/@WallId/boulders/@BoulderId/revise" class="btn-revise">Revise Boulder</a>
+            </div>
+        }
 
-                    <circle cx="@F(bh.Hold.X * 100)%" cy="@F(bh.Hold.Y * 100)%"
-                            r="@F(bh.Hold.Radius * 100)%"
-                            fill="@fill" stroke="@stroke" stroke-width="3" />
-                }
-            </svg>
+        @if (_activeProposal != null && _isCreator)
+        {
+            <div class="grade-proposal-banner creator">
+                <p><strong>@_activeProposal.ProposedBy.DisplayName</strong> proposed changing the grade to <strong>@_activeProposal.ProposedGrade</strong></p>
+                <div class="proposal-actions">
+                    <button class="proposal-btn accept" @onclick="AcceptProposal">Accept</button>
+                    <button class="proposal-btn reject" @onclick="RejectProposal">Reject</button>
+                </div>
+            </div>
+        }
+        else if (_activeProposal != null)
+        {
+            <div class="grade-proposal-banner viewer">
+                <p>A grade change to <strong>@_activeProposal.ProposedGrade</strong> has been proposed by @_activeProposal.ProposedBy.DisplayName</p>
+            </div>
+        }
+
+        <div class="view-toggle">
+            <button class="toggle-btn @(_viewMode == ViewMode.Photo ? "active" : "")" @onclick="() => _viewMode = ViewMode.Photo">Photo</button>
+            <button class="toggle-btn @(_viewMode == ViewMode.Schematic ? "active" : "")" @onclick="() => _viewMode = ViewMode.Schematic">Schematic</button>
         </div>
+
+        @if (_viewMode == ViewMode.Photo)
+        {
+            <div class="photo-section">
+                <img src="@PhotoUrl" alt="Wall" class="wall-photo" />
+                <svg class="hold-overlay">
+                    @foreach (var bh in _boulder.BoulderHolds)
+                    {
+                        var fill = bh.Type switch
+                        {
+                            HoldType.Start => "rgba(76, 175, 80, 0.55)",
+                            HoldType.Top => "rgba(244, 67, 54, 0.55)",
+                            _ => "rgba(33, 150, 243, 0.55)",
+                        };
+                        var stroke = bh.Type switch
+                        {
+                            HoldType.Start => "#4CAF50",
+                            HoldType.Top => "#F44336",
+                            _ => "#2196F3",
+                        };
+
+                        <circle cx="@F(bh.Hold.X * 100)%" cy="@F(bh.Hold.Y * 100)%"
+                                r="@F(bh.Hold.Radius * 100)%"
+                                fill="@fill" stroke="@stroke" stroke-width="3" />
+                    }
+                </svg>
+            </div>
+        }
+        else if (_wallHolds != null)
+        {
+            <WallSchematicView Holds="_wallHolds" Angle="_boulder.Wall.Angle"
+                               HighlightedHoldIds="_boulderHoldIds" />
+        }
 
         <div class="legend-bar">
             @{ var starts = _boulder.BoulderHolds.Count(h => h.Type == HoldType.Start); }
@@ -60,42 +107,137 @@ else
             <span class="legend-chip top">@tops top</span>
         </div>
 
-        <div class="attempt-section">
-            <h2>Log Attempt</h2>
-            <div class="attempt-buttons">
-                <button class="attempt-btn try" @onclick="() => LogAttempt(AttemptType.Attempt)" disabled="@_isLogging">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
-                        <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
-                        <path d="M8 12h8" />
-                    </svg>
-                    <span>Attempt</span>
-                </button>
-                <button class="attempt-btn send" @onclick="() => LogAttempt(AttemptType.Send)" disabled="@_isLogging">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
-                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                        <polyline points="22 4 12 14.01 9 11.01" />
-                    </svg>
-                    <span>Send</span>
-                </button>
-                <button class="attempt-btn flash" @onclick="() => LogAttempt(AttemptType.Flash)" disabled="@_isLogging">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
-                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                    </svg>
-                    <span>Flash</span>
-                </button>
-            </div>
-        </div>
-
-        @if (_summary.TotalAttempts > 0)
+        @if (!_isAnonymous)
         {
-            <div class="my-stats">
-                <span>My stats: @_summary.TotalAttempts attempt@(_summary.TotalAttempts != 1 ? "s" : "")</span>
-                @if (_summary.HasFlashed) { <span class="chip flash-chip">Flashed!</span> }
-                else if (_summary.HasSent) { <span class="chip send-chip">Sent</span> }
+            <div class="attempt-section">
+                <h2>Log Attempt</h2>
+                <div class="attempt-buttons">
+                    <button class="attempt-btn try" @onclick="() => LogAttempt(AttemptType.Attempt)" disabled="@_isLogging">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
+                            <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
+                            <path d="M8 12h8" />
+                        </svg>
+                        <span>Attempt</span>
+                    </button>
+                    <button class="attempt-btn send" @onclick="() => LogAttempt(AttemptType.Send)" disabled="@_isLogging">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                            <polyline points="22 4 12 14.01 9 11.01" />
+                        </svg>
+                        <span>Send</span>
+                    </button>
+                    <button class="attempt-btn flash" @onclick="() => LogAttempt(AttemptType.Flash)" disabled="@_isLogging">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
+                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                        </svg>
+                        <span>Flash</span>
+                    </button>
+                </div>
+            </div>
+
+            @if (_summary.TotalAttempts > 0)
+            {
+                <div class="my-stats">
+                    <span>My stats: @_summary.TotalAttempts attempt@(_summary.TotalAttempts != 1 ? "s" : "")</span>
+                    @if (_summary.HasFlashed) { <span class="chip flash-chip">Flashed!</span> }
+                    else if (_summary.HasSent) { <span class="chip send-chip">Sent</span> }
+                </div>
+            }
+
+            @if (!_isCreator)
+            {
+                @if (_showGradeForm)
+                {
+                    <div class="grade-propose-form">
+                        <GradePicker @bind-Value="_proposedGrade" />
+                        <div class="grade-propose-actions">
+                            <button class="proposal-btn accept" @onclick="SubmitGradeProposal"
+                                    disabled="@(string.IsNullOrEmpty(_proposedGrade))">Propose</button>
+                            <button class="proposal-btn reject" @onclick="() => _showGradeForm = false">Cancel</button>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <button class="btn-propose-grade" @onclick="() => _showGradeForm = true">Propose different grade</button>
+                }
+            }
+        }
+        else
+        {
+            <div class="anon-banner">
+                <a href="/account/login">Log in</a> to log attempts and comment.
             </div>
         }
 
-        @if (_attempts.Count > 0)
+        <div class="activity-feed">
+            <h2>Activity</h2>
+            @if (_activityItems != null)
+            {
+                @foreach (var item in _activityItems)
+                {
+                    <div class="activity-row">
+                        <span class="activity-text">@FormatActivity(item)</span>
+                        <span class="activity-time">@RelativeTime(item.Timestamp)</span>
+                    </div>
+                }
+                @if (_activityItems.Count == 0)
+                {
+                    <p class="empty-msg">No activity yet.</p>
+                }
+                @if (_activityTotal > (_activityPage + 1) * 5)
+                {
+                    <div class="activity-pager">
+                        @if (_activityPage > 0)
+                        {
+                            <button class="pager-btn" @onclick="() => LoadActivity(_activityPage - 1)">&larr; Newer</button>
+                        }
+                        <button class="pager-btn" @onclick="() => LoadActivity(_activityPage + 1)">Older &rarr;</button>
+                    </div>
+                }
+            }
+        </div>
+
+        <div class="comments-section">
+            <h2>Comments</h2>
+            @if (!_isAnonymous)
+            {
+                <div class="comment-form">
+                    <input @bind="_commentText" @bind:event="oninput" placeholder="Write a comment..."
+                           class="comment-input" maxlength="1024" />
+                    <button class="comment-submit" @onclick="PostComment"
+                            disabled="@(string.IsNullOrWhiteSpace(_commentText) || _isPostingComment)">Post</button>
+                </div>
+            }
+
+            @if (_comments != null)
+            {
+                @foreach (var comment in _comments)
+                {
+                    <div class="comment-row">
+                        <div class="comment-header">
+                            <span class="comment-author">@comment.User.DisplayName</span>
+                            <span class="comment-time">@RelativeTime(comment.CreatedAt)</span>
+                            @if (comment.UserId == _currentUserId)
+                            {
+                                <button class="delete-btn" @onclick="() => DeleteComment(comment.Id)">x</button>
+                            }
+                        </div>
+                        <p class="comment-text">@comment.Text</p>
+                    </div>
+                }
+                @if (_comments.Count == 0)
+                {
+                    <p class="empty-msg">No comments yet.</p>
+                }
+                @if (_commentsTotal > (_commentsPage + 1) * 10)
+                {
+                    <button class="pager-btn" @onclick="() => LoadComments(_commentsPage + 1)">Load more</button>
+                }
+            }
+        </div>
+
+        @if (!_isAnonymous && _attempts.Count > 0)
         {
             <div class="history-section">
                 <h2>History</h2>
@@ -126,26 +268,119 @@ else
 @code {
     [Parameter] public Guid WallId { get; set; }
     [Parameter] public Guid BoulderId { get; set; }
+    [Parameter] public string? ShareToken { get; set; }
 
     private Boulder? _boulder;
     private List<Attempt> _attempts = [];
     private AttemptSummary _summary = new(0, false, false);
     private Guid _currentUserId;
     private bool _isLogging;
+    private bool _isAnonymous;
+    private bool _isCreator;
     private string? _toast;
+
+    private List<ActivityLogEntry>? _activityItems;
+    private int _activityTotal;
+    private int _activityPage;
+
+    private List<BoulderComment>? _comments;
+    private int _commentsTotal;
+    private int _commentsPage;
+    private string _commentText = string.Empty;
+    private bool _isPostingComment;
+    private ViewMode _viewMode = ViewMode.Photo;
+    private List<Hold>? _wallHolds;
+    private HashSet<Guid> _boulderHoldIds = [];
+    private GradeProposal? _activeProposal;
+    private bool _showGradeForm;
+    private string? _proposedGrade;
+
+    private enum ViewMode { Photo, Schematic }
+
+    private string PhotoUrl => !string.IsNullOrEmpty(ShareToken)
+        ? $"/api/walls/{WallId}/photo?token={ShareToken}"
+        : $"/api/walls/{WallId}/photo";
 
     protected override async Task OnInitializedAsync()
     {
-        var user = await CurrentUserService.GetCurrentUserAsync();
-        _currentUserId = user.Id;
-        await LoadBoulder();
+        if (!string.IsNullOrEmpty(ShareToken))
+        {
+            _isAnonymous = true;
+            try
+            {
+                var user = await CurrentUserService.GetCurrentUserAsync();
+                _currentUserId = user.Id;
+                _isAnonymous = false;
+            }
+            catch (UnauthorizedAccessException) { }
+
+            _boulder = await BoulderService.GetBoulderByShareTokenAsync(BoulderId, ShareToken);
+        }
+        else
+        {
+            try
+            {
+                var user = await CurrentUserService.GetCurrentUserAsync();
+                _currentUserId = user.Id;
+                await LoadBoulder();
+            }
+            catch (UnauthorizedAccessException)
+            {
+                Navigation.NavigateTo("/account/login", replace: true);
+                return;
+            }
+        }
+
+        if (_boulder != null)
+        {
+            _isCreator = _boulder.CreatedByUserId == _currentUserId;
+            _boulderHoldIds = _boulder.BoulderHolds.Select(bh => bh.HoldId).ToHashSet();
+            await LoadWallHolds();
+            _activeProposal = await BoulderService.GetActiveProposalAsync(BoulderId);
+        }
+
+        await LoadActivity(0);
+        await LoadComments(0);
+    }
+
+    private async Task LoadWallHolds()
+    {
+        Wall? wall;
+        if (!string.IsNullOrEmpty(ShareToken))
+            wall = await WallService.GetWallByShareTokenAsync(ShareToken);
+        else
+            wall = await WallService.GetWallAsync(WallId);
+
+        _wallHolds = wall?.Holds.ToList() ?? [];
     }
 
     private async Task LoadBoulder()
     {
         _boulder = await BoulderService.GetBoulderAsync(BoulderId);
-        _attempts = await AttemptService.GetAttemptsForBoulderAsync(BoulderId);
-        _summary = await AttemptService.GetBoulderSummaryForUserAsync(BoulderId);
+        if (!_isAnonymous)
+        {
+            _attempts = await AttemptService.GetAttemptsForBoulderAsync(BoulderId);
+            _summary = await AttemptService.GetBoulderSummaryForUserAsync(BoulderId);
+        }
+    }
+
+    private async Task LoadActivity(int page)
+    {
+        _activityPage = page;
+        var (items, total) = await ActivityLogService.GetBoulderActivityAsync(BoulderId, page);
+        _activityItems = items;
+        _activityTotal = total;
+    }
+
+    private async Task LoadComments(int page)
+    {
+        _commentsPage = page;
+        var (items, total) = await CommentService.GetCommentsAsync(BoulderId, page);
+        if (page == 0)
+            _comments = items;
+        else
+            _comments?.AddRange(items);
+        _commentsTotal = total;
     }
 
     private async Task LogAttempt(AttemptType type)
@@ -153,6 +388,7 @@ else
         _isLogging = true;
         await AttemptService.LogAttemptAsync(BoulderId, type);
         await LoadBoulder();
+        await LoadActivity(0);
         _isLogging = false;
         await ShowToast($"{type} logged!");
     }
@@ -161,6 +397,78 @@ else
     {
         await AttemptService.DeleteAttemptAsync(attemptId);
         await LoadBoulder();
+    }
+
+    private async Task PostComment()
+    {
+        if (string.IsNullOrWhiteSpace(_commentText)) return;
+        _isPostingComment = true;
+        var comment = await CommentService.AddCommentAsync(BoulderId, _commentText.Trim());
+        _comments?.Insert(0, comment);
+        _commentsTotal++;
+        _commentText = string.Empty;
+        _isPostingComment = false;
+        await LoadActivity(0);
+    }
+
+    private async Task DeleteComment(Guid commentId)
+    {
+        await CommentService.DeleteCommentAsync(commentId);
+        _comments?.RemoveAll(c => c.Id == commentId);
+        _commentsTotal--;
+    }
+
+    private async Task SubmitGradeProposal()
+    {
+        if (string.IsNullOrEmpty(_proposedGrade)) return;
+        _activeProposal = await BoulderService.ProposeGradeAsync(BoulderId, _proposedGrade);
+        _showGradeForm = false;
+        await ShowToast("Grade proposal submitted");
+    }
+
+    private async Task AcceptProposal()
+    {
+        if (_activeProposal == null) return;
+        await BoulderService.AcceptGradeProposalAsync(_activeProposal.Id);
+        if (_boulder != null) _boulder.Grade = _activeProposal.ProposedGrade;
+        _activeProposal = null;
+        await ShowToast("Grade updated");
+    }
+
+    private async Task RejectProposal()
+    {
+        if (_activeProposal == null) return;
+        await BoulderService.RejectGradeProposalAsync(_activeProposal.Id);
+        _activeProposal = null;
+        await ShowToast("Proposal rejected");
+    }
+
+    private string FormatActivity(ActivityLogEntry item) => item.Type switch
+    {
+        ActivityType.AttemptLogged => $"{item.User.DisplayName} {FormatAttemptType(item.Details)} this",
+        ActivityType.CommentAdded => $"{item.User.DisplayName} commented",
+        ActivityType.BoulderCreated => $"{item.User.DisplayName} created this",
+        ActivityType.BoulderRevised => $"{item.User.DisplayName} revised this",
+        _ => $"{item.User.DisplayName} made a change",
+    };
+
+    private static string FormatAttemptType(string? details) => details switch
+    {
+        "Flash" => "flashed",
+        "Send" => "sent",
+        "Attempt" => "attempted",
+        _ => "tried",
+    };
+
+    private static string RelativeTime(DateTimeOffset timestamp)
+    {
+        var diff = DateTimeOffset.UtcNow - timestamp;
+        if (diff.TotalMinutes < 1) return "just now";
+        if (diff.TotalHours < 1) return $"{(int)diff.TotalMinutes}m ago";
+        if (diff.TotalDays < 1) return $"{(int)diff.TotalHours}h ago";
+        if (diff.TotalDays < 1.5) return "yesterday";
+        if (diff.TotalDays < 7) return $"{(int)diff.TotalDays}d ago";
+        return timestamp.ToString("MMM d");
     }
 
     private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
@@ -180,13 +488,70 @@ else
 
     .page-header { margin-bottom: 12px; }
     .back-link { color: #888; text-decoration: none; font-size: 0.9rem; }
-    .title-row { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+    .title-row { display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap; }
     .title-row h1 { font-size: 1.4rem; font-weight: 700; color: #1a1a2e; }
     .grade-badge {
         padding: 4px 12px; background: #e94560; color: white;
         border-radius: 6px; font-weight: 700; font-size: 0.95rem;
     }
+    .historic-badge {
+        padding: 3px 10px; background: #FFF3E0; color: #E65100;
+        border-radius: 6px; font-weight: 600; font-size: 0.8rem;
+    }
     .meta { color: #888; font-size: 0.85rem; margin-top: 2px; }
+
+    .view-toggle { display: flex; gap: 4px; margin-bottom: 8px; }
+    .toggle-btn {
+        flex: 1; padding: 8px; border: 2px solid #e0e0e0; background: white;
+        border-radius: 8px; font-weight: 600; font-size: 0.85rem;
+        cursor: pointer; text-align: center; color: #666;
+    }
+    .toggle-btn.active { border-color: #1a1a2e; background: #1a1a2e; color: white; }
+
+    .revision-banner {
+        padding: 12px 14px; background: #FFF3E0; border-radius: 8px; margin-bottom: 12px;
+    }
+    .revision-banner p { color: #E65100; font-size: 0.9rem; margin-bottom: 8px; }
+    .btn-revise {
+        display: inline-block; padding: 8px 16px; background: #E65100; color: white;
+        text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 0.85rem;
+    }
+
+    .grade-proposal-banner {
+        padding: 12px 14px; border-radius: 8px; margin-bottom: 12px; font-size: 0.9rem;
+    }
+    .grade-proposal-banner.creator { background: #E3F2FD; color: #0D47A1; }
+    .grade-proposal-banner.viewer { background: #FFF8E1; color: #F57F17; }
+    .grade-proposal-banner p { margin: 0 0 8px 0; }
+    .proposal-actions { display: flex; gap: 8px; }
+    .proposal-btn {
+        padding: 6px 16px; border: none; border-radius: 6px;
+        font-weight: 600; font-size: 0.85rem; cursor: pointer;
+    }
+    .proposal-btn.accept { background: #4CAF50; color: white; }
+    .proposal-btn.accept:hover { background: #43A047; }
+    .proposal-btn.accept:disabled { opacity: 0.5; cursor: not-allowed; }
+    .proposal-btn.reject { background: white; color: #666; border: 1px solid #ccc; }
+    .proposal-btn.reject:hover { background: #f5f5f5; }
+
+    .btn-propose-grade {
+        display: block; width: 100%; padding: 10px; background: white;
+        border: 2px dashed #ccc; border-radius: 8px; color: #888;
+        font-size: 0.85rem; cursor: pointer; margin-bottom: 16px; text-align: center;
+    }
+    .btn-propose-grade:hover { border-color: #999; color: #555; }
+
+    .grade-propose-form {
+        padding: 12px 14px; background: #f9f9f9; border-radius: 8px;
+        margin-bottom: 16px;
+    }
+    .grade-propose-actions { display: flex; gap: 8px; margin-top: 10px; }
+
+    .anon-banner {
+        padding: 10px 14px; background: #FFF3E0; border-radius: 8px; margin-bottom: 12px;
+        font-size: 0.9rem; color: #E65100;
+    }
+    .anon-banner a { color: #0f3460; font-weight: 600; text-decoration: underline; }
 
     .photo-section {
         position: relative; border-radius: 12px; overflow: hidden; margin-bottom: 12px;
@@ -229,6 +594,46 @@ else
     .flash-chip { background: #FBE9E7; color: #D84315; }
     .send-chip { background: #E8F5E9; color: #2E7D32; }
 
+    .activity-feed { margin-bottom: 20px; }
+    .activity-feed h2 { font-size: 1.1rem; font-weight: 600; color: #1a1a2e; margin-bottom: 8px; }
+    .activity-row {
+        display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+        background: white; border-radius: 6px; margin-bottom: 4px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.04); font-size: 0.85rem;
+    }
+    .activity-text { flex: 1; color: #333; }
+    .activity-time { font-size: 0.75rem; color: #999; white-space: nowrap; }
+    .activity-pager { display: flex; gap: 6px; margin-top: 6px; }
+    .pager-btn {
+        padding: 4px 12px; background: white; border: 1px solid #ccc;
+        border-radius: 4px; font-size: 0.8rem; cursor: pointer;
+    }
+    .pager-btn:hover { background: #f5f5f5; }
+    .empty-msg { text-align: center; color: #888; font-size: 0.85rem; padding: 8px; }
+
+    .comments-section { margin-bottom: 20px; }
+    .comments-section h2 { font-size: 1.1rem; font-weight: 600; color: #1a1a2e; margin-bottom: 8px; }
+    .comment-form { display: flex; gap: 8px; margin-bottom: 12px; }
+    .comment-input {
+        flex: 1; padding: 8px 12px; border: 2px solid #e0e0e0; border-radius: 8px;
+        font-size: 0.9rem; outline: none; box-sizing: border-box;
+    }
+    .comment-input:focus { border-color: #0f3460; }
+    .comment-submit {
+        padding: 8px 16px; background: #0f3460; color: white; border: none;
+        border-radius: 8px; font-weight: 600; font-size: 0.85rem; cursor: pointer;
+    }
+    .comment-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+    .comment-row {
+        padding: 10px 12px; background: white; border-radius: 8px; margin-bottom: 6px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .comment-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+    .comment-author { font-weight: 600; color: #333; font-size: 0.85rem; }
+    .comment-time { font-size: 0.75rem; color: #999; }
+    .comment-text { font-size: 0.9rem; color: #444; margin: 0; }
+
+    .history-section { margin-bottom: 20px; }
     .history-section h2 { font-size: 1.1rem; font-weight: 600; color: #1a1a2e; margin-bottom: 8px; }
     .attempt-row {
         display: flex; align-items: center; gap: 8px; padding: 10px 12px;

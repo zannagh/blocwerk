@@ -61,7 +61,7 @@ public class BlocwerkSettings
                 section["Postgres:Port"] ?? Environment.GetEnvironmentVariable("POSTGRES__PORT"),
                 out var pgPort)
                 ? pgPort
-                : 5432,
+                : 5051,
             Database = section["Postgres:Database"] ?? Environment.GetEnvironmentVariable("POSTGRES__DATABASE") ?? "blocwerk",
             Username = section["Postgres:Username"] ?? Environment.GetEnvironmentVariable("POSTGRES__USERNAME") ?? "postgres",
             Password = section["Postgres:Password"] ?? Environment.GetEnvironmentVariable("POSTGRES__PASSWORD") ?? string.Empty,
@@ -139,7 +139,7 @@ public class PostgresSettings
 {
     public string Host { get; set; } = "localhost";
 
-    public int Port { get; set; } = 5432;
+    public int Port { get; set; } = 5051;
 
     public string Database { get; set; } = "blocwerk";
 

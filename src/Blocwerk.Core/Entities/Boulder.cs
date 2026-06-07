@@ -32,9 +32,15 @@ public class Boulder
 
     public bool IsArchived { get; set; }
 
+    public bool IsHistoric { get; set; }
+
     public int Generation { get; set; }
 
     public ICollection<BoulderHold> BoulderHolds { get; set; } = [];
 
     public ICollection<Attempt> Attempts { get; set; } = [];
+
+    public ICollection<BoulderComment> Comments { get; set; } = [];
+
+    public ICollection<GradeProposal> GradeProposals { get; set; } = [];
 }

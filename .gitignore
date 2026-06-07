@@ -5,6 +5,7 @@ docker/pgdata
 *.onnx
 
 # Secrets
+claude
 .secrets.md
 **/appsettings.json
 !**/appsettings.template.json

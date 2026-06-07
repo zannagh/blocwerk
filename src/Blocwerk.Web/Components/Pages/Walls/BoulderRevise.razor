@@ -1,0 +1,110 @@
+@page "/walls/{WallId:guid}/boulders/{BoulderId:guid}/revise"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject IWallService WallService
+@inject IBoulderService BoulderService
+@inject NavigationManager Navigation
+@using Blocwerk.Web.Components.Shared
+
+<PageTitle>Revise Boulder - Blocwerk</PageTitle>
+
+<div class="boulder-create">
+    <div class="page-header">
+        <a href="/walls/@WallId/boulders/@BoulderId" class="back-link">&larr; Back</a>
+        <h1>Revise Boulder</h1>
+    </div>
+
+    @if (_boulder == null || _wall == null)
+    {
+        <p class="loading">Loading...</p>
+    }
+    else if (!_isCreator)
+    {
+        <p class="error-msg">Only the creator can revise this boulder.</p>
+    }
+    else
+    {
+        <p class="revision-hint">Some holds from the original boulder may no longer exist on the wall.
+            Adjust the selected holds to match the current wall setup.</p>
+
+        <HoldPicker WallId="WallId"
+                    AllHolds="_displayHolds"
+                    WallAngle="_wall.Angle"
+                    @bind-SelectedHolds="_selectedHolds" />
+
+        <button class="btn-submit" @onclick="Submit"
+                disabled="@(_selectedHolds.Count == 0 || _isSubmitting)">
+            @(_isSubmitting ? "Saving..." : $"Save Revision ({_selectedHolds.Count} holds)")
+        </button>
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div class="error-msg">@_error</div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public Guid WallId { get; set; }
+    [Parameter] public Guid BoulderId { get; set; }
+
+    private Wall? _wall;
+    private Boulder? _boulder;
+    private List<Hold> _displayHolds = [];
+    private List<BoulderHoldInput> _selectedHolds = [];
+    private bool _isCreator;
+    private bool _isSubmitting;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _wall = await WallService.GetWallAsync(WallId);
+        _boulder = await BoulderService.GetBoulderAsync(BoulderId);
+
+        if (_wall != null && _boulder != null)
+        {
+            _displayHolds = _wall.Holds.ToList();
+            _isCreator = true;
+
+            var currentHoldIds = _wall.Holds.Select(h => h.Id).ToHashSet();
+            _selectedHolds = _boulder.BoulderHolds
+                .Where(bh => currentHoldIds.Contains(bh.HoldId))
+                .Select(bh => new BoulderHoldInput(bh.HoldId, bh.Type))
+                .ToList();
+        }
+    }
+
+    private async Task Submit()
+    {
+        _isSubmitting = true;
+        _error = null;
+
+        try
+        {
+            await BoulderService.ReviseBoulderAsync(BoulderId, _selectedHolds);
+            Navigation.NavigateTo($"/walls/{WallId}/boulders/{BoulderId}");
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            _isSubmitting = false;
+        }
+    }
+}
+
+<style>
+    .boulder-create { padding: 16px; max-width: 600px; margin: 0 auto; }
+    .page-header { margin-bottom: 12px; }
+    .back-link { color: #888; text-decoration: none; font-size: 0.9rem; }
+    .page-header h1 { font-size: 1.4rem; font-weight: 700; color: #1a1a2e; margin-top: 4px; }
+    .revision-hint { color: #E65100; font-size: 0.9rem; background: #FFF3E0; padding: 10px 14px; border-radius: 8px; margin-bottom: 12px; }
+    .btn-submit {
+        width: 100%; padding: 14px; background: #e94560; color: white;
+        border: none; border-radius: 8px; font-weight: 600; font-size: 1rem;
+        cursor: pointer; margin-top: 16px;
+    }
+    .btn-submit:hover:not(:disabled) { background: #d63851; }
+    .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+    .error-msg { margin-top: 12px; color: #e94560; text-align: center; }
+    .loading { text-align: center; color: #888; padding: 48px; }
+</style>

@@ -33,9 +33,11 @@ public static class CoreServices
             return factory.CreateDbContext();
         });
 
+        builder.Services.AddScoped<IActivityLogService, ActivityLogService>();
         builder.Services.AddScoped<IWallService, WallService>();
         builder.Services.AddScoped<IBoulderService, BoulderService>();
         builder.Services.AddScoped<IAttemptService, AttemptService>();
+        builder.Services.AddScoped<ICommentService, CommentService>();
 
         return builder;
     }

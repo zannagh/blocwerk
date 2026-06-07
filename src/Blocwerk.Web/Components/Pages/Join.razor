@@ -1,7 +1,7 @@
 @page "/join/{ShareToken}"
 @rendermode InteractiveServer
-@attribute [Authorize]
 @inject IWallService WallService
+@inject ICurrentUserService CurrentUserService
 @inject NavigationManager Navigation
 
 <PageTitle>Join Wall - Blocwerk</PageTitle>
@@ -31,8 +31,22 @@
     {
         try
         {
+            var user = await CurrentUserService.GetCurrentUserAsync();
             var wall = await WallService.JoinWallAsync(ShareToken);
             Navigation.NavigateTo($"/walls/{wall.Id}");
+        }
+        catch (UnauthorizedAccessException)
+        {
+            var wall = await WallService.GetWallByShareTokenAsync(ShareToken);
+            if (wall != null)
+            {
+                Navigation.NavigateTo($"/walls/{wall.Id}/shared/{ShareToken}");
+            }
+            else
+            {
+                _error = "Invalid share link.";
+                _isJoining = false;
+            }
         }
         catch (Exception ex)
         {

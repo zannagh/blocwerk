@@ -1,9 +1,10 @@
 @page "/walls/{WallId:guid}"
+@page "/walls/{WallId:guid}/shared/{ShareToken}"
 @rendermode InteractiveServer
-@attribute [Authorize]
 @inject IWallService WallService
 @inject IBoulderService BoulderService
 @inject IAttemptService AttemptService
+@inject IActivityLogService ActivityLogService
 @inject ICurrentUserService CurrentUserService
 @inject NavigationManager Navigation
 @using Blocwerk.Web.Components.Shared
@@ -19,23 +20,41 @@ else
     <div class="wall-detail">
         <div class="detail-header">
             <h1>@_wall.Name</h1>
-            @if (_isAdmin)
-            {
-                <button class="btn-icon" @onclick="ToggleSettings">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
-                        <circle cx="12" cy="12" r="3" />
-                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                    </svg>
-                </button>
-            }
+            <div class="header-actions">
+                @if (!_isAnonymous)
+                {
+                    <button class="btn-icon" @onclick="ToggleActivity" title="Activity log">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
+                            <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+                        </svg>
+                    </button>
+                }
+                @if (_isAdmin)
+                {
+                    <button class="btn-icon @(_isEditing ? "editing" : "")" @onclick="ToggleEditing" title="@(_isEditing ? "Exit edit mode" : "Edit wall")">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
+                            <circle cx="12" cy="12" r="3" />
+                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                        </svg>
+                    </button>
+                }
+            </div>
         </div>
+
+        @if (_isAnonymous)
+        {
+            <div class="anon-banner">
+                <span>Viewing as guest.</span>
+                <a href="/account/login">Log in</a> to create boulders and log attempts.
+            </div>
+        }
 
         @if (!string.IsNullOrEmpty(_wall.Description))
         {
             <p class="description">@_wall.Description</p>
         }
 
-        @if (_wall.Photo != null)
+        @if (_wall.PhotoContentType != null)
         {
             <div class="view-toggle">
                 <button class="toggle-btn @(_viewMode == ViewMode.Photo ? "active" : "")" @onclick="() => _viewMode = ViewMode.Photo">Photo</button>
@@ -44,24 +63,23 @@ else
         }
 
         <div class="wall-photo-container">
-            @if (_wall.Photo != null && _viewMode == ViewMode.Photo)
+            @if (_wall.PhotoContentType != null && _viewMode == ViewMode.Photo)
             {
                 <WallPhotoEditor WallId="_wall.Id"
                                  Holds="_holds"
                                  BorderPoints="_borderPoints"
-                                 CanEdit="_isAdmin"
-                                 OnHoldAdded="OnHoldAdded"
-                                 OnHoldUpdated="OnHoldUpdated"
-                                 OnHoldDeleted="OnHoldDeleted"
+                                 CanEdit="_isAdmin && _isEditing"
+                                 ShareToken="@ShareToken"
+                                 OnBatchSave="OnBatchSave"
                                  OnRedetectRequested="OnRedetect"
                                  OnBorderChanged="OnBorderChanged"
                                  OnCleanArtifactsRequested="OnCleanArtifacts" />
             }
-            else if (_wall.Photo != null && _viewMode == ViewMode.Schematic)
+            else if (_wall.PhotoContentType != null && _viewMode == ViewMode.Schematic)
             {
                 <WallSchematicView Holds="_holds" Angle="_wall.Angle" />
             }
-            else if (_isAdmin)
+            else if (_isAdmin && _isEditing)
             {
                 <div class="upload-prompt">
                     <p>Upload a frontal photo of your wall to get started.</p>
@@ -79,7 +97,7 @@ else
                 <span class="stat-value">@_wall.Boulders.Count</span>
                 <span class="stat-label">Boulders</span>
             </div>
-            <div class="stat">
+            <div class="stat clickable" @onclick="ToggleMembers">
                 <span class="stat-value">@_wall.Members.Count</span>
                 <span class="stat-label">Members</span>
             </div>
@@ -88,7 +106,7 @@ else
         <div class="boulder-section">
             <div class="section-header">
                 <h2>Boulders</h2>
-                @if (_holds.Count > 0)
+                @if (_holds.Count > 0 && !_isAnonymous)
                 {
                     <a href="/walls/@WallId/boulders/create" class="btn-add-boulder">+ New</a>
                 }
@@ -119,25 +137,34 @@ else
                 @foreach (var boulder in FilteredBoulders)
                 {
                     var summary = _boulderSummaries.GetValueOrDefault(boulder.Id);
-                    <a href="/walls/@WallId/boulders/@boulder.Id" class="boulder-card">
+                    var boulderUrl = !string.IsNullOrEmpty(ShareToken)
+                        ? $"/walls/{WallId}/boulders/{boulder.Id}/shared/{ShareToken}"
+                        : $"/walls/{WallId}/boulders/{boulder.Id}";
+                    <a href="@boulderUrl" class="boulder-card">
                         <div class="boulder-card-left">
-                            <span class="boulder-name">@boulder.Name</span>
+                            <span class="boulder-name">
+                                @boulder.Name
+                                @if (boulder.IsHistoric) { <span class="historic-badge" title="Wall changed since creation">historic</span> }
+                            </span>
                             <span class="boulder-meta">
                                 @boulder.BoulderHolds.Count holds &middot; by @boulder.CreatedBy.DisplayName
                             </span>
                         </div>
                         <div class="boulder-card-right">
-                            @if (summary is { HasFlashed: true })
+                            @if (!_isAnonymous)
                             {
-                                <span class="status-icon flash-icon" title="Flashed">&#9889;</span>
-                            }
-                            else if (summary is { HasSent: true })
-                            {
-                                <span class="status-icon send-icon" title="Sent">&#10003;</span>
-                            }
-                            else if (summary is { TotalAttempts: > 0 })
-                            {
-                                <span class="status-icon try-icon" title="@summary.TotalAttempts attempts">@summary.TotalAttempts</span>
+                                @if (summary is { HasFlashed: true })
+                                {
+                                    <span class="status-icon flash-icon" title="Flashed">&#9889;</span>
+                                }
+                                else if (summary is { HasSent: true })
+                                {
+                                    <span class="status-icon send-icon" title="Sent">&#10003;</span>
+                                }
+                                else if (summary is { TotalAttempts: > 0 })
+                                {
+                                    <span class="status-icon try-icon" title="@summary.TotalAttempts attempts">@summary.TotalAttempts</span>
+                                }
                             }
                             @if (!string.IsNullOrEmpty(boulder.Grade))
                             {
@@ -148,6 +175,73 @@ else
                 }
             }
         </div>
+
+        @if (_showMembers && _isAdmin)
+        {
+            <div class="settings-panel">
+                <h2>Members</h2>
+                @if (_members == null)
+                {
+                    <p class="loading-small">Loading...</p>
+                }
+                else
+                {
+                    @foreach (var member in _members)
+                    {
+                        <div class="member-row">
+                            <span class="member-name">@member.User.DisplayName</span>
+                            @if (member.UserId == _wall.OwnerId)
+                            {
+                                <span class="member-role owner">Owner</span>
+                            }
+                            else
+                            {
+                                <button class="role-toggle @(member.Role == WallRole.Admin ? "admin" : "member")"
+                                        @onclick="() => ToggleMemberRole(member)">
+                                    @(member.Role == WallRole.Admin ? "Admin" : "Member")
+                                </button>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+        }
+
+        @if (_showActivity)
+        {
+            <div class="settings-panel">
+                <h2>Activity</h2>
+                @if (_activityItems == null)
+                {
+                    <p class="loading-small">Loading...</p>
+                }
+                else
+                {
+                    @foreach (var item in _activityItems)
+                    {
+                        <div class="activity-row">
+                            <span class="activity-icon">@ActivityIcon(item.Type)</span>
+                            <span class="activity-text">@item.User.DisplayName @ActivityVerb(item.Type)</span>
+                            <span class="activity-time">@RelativeTime(item.Timestamp)</span>
+                        </div>
+                    }
+                    @if (_activityTotal > _activityItems.Count)
+                    {
+                        <div class="activity-pager">
+                            @if (_activityPage > 0)
+                            {
+                                <button class="pager-btn" @onclick="() => LoadActivity(_activityPage - 1)">&larr; Newer</button>
+                            }
+                            <button class="pager-btn" @onclick="() => LoadActivity(_activityPage + 1)">Older &rarr;</button>
+                        </div>
+                    }
+                    @if (_activityItems.Count == 0)
+                    {
+                        <p class="empty-activity">No activity yet.</p>
+                    }
+                }
+            </div>
+        }
 
         @if (_showSettings && _isAdmin)
         {
@@ -183,6 +277,7 @@ else
 
 @code {
     [Parameter] public Guid WallId { get; set; }
+    [Parameter] public string? ShareToken { get; set; }
 
     private Wall? _wall;
     private List<Hold> _holds = [];
@@ -190,12 +285,21 @@ else
     private List<Boulder> _boulders = [];
     private Dictionary<Guid, AttemptSummary> _boulderSummaries = [];
     private bool _isAdmin;
+    private bool _isAnonymous;
+    private bool _isEditing;
     private bool _showSettings;
+    private bool _showActivity;
+    private bool _showMembers;
     private string? _shareLink;
     private string? _toast;
     private string _searchText = string.Empty;
     private string _gradeFilter = string.Empty;
     private ViewMode _viewMode = ViewMode.Photo;
+
+    private List<WallMember>? _members;
+    private List<ActivityLogEntry>? _activityItems;
+    private int _activityTotal;
+    private int _activityPage;
 
     private enum ViewMode { Photo, Schematic }
 
@@ -226,19 +330,60 @@ else
 
     private async Task LoadWall()
     {
-        _wall = await WallService.GetWallAsync(WallId);
+        if (!string.IsNullOrEmpty(ShareToken))
+        {
+            _wall = await WallService.GetWallByShareTokenAsync(ShareToken);
+            _isAnonymous = true;
+            _isAdmin = false;
+
+            try
+            {
+                var user = await CurrentUserService.GetCurrentUserAsync();
+                var membership = _wall?.Members.FirstOrDefault(m => m.UserId == user.Id);
+                if (membership != null)
+                {
+                    _isAnonymous = false;
+                    _isAdmin = membership.Role == WallRole.Admin;
+                }
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+        }
+        else
+        {
+            try
+            {
+                _wall = await WallService.GetWallAsync(WallId);
+                if (_wall != null)
+                {
+                    var user = await CurrentUserService.GetCurrentUserAsync();
+                    var membership = _wall.Members.FirstOrDefault(m => m.UserId == user.Id);
+                    _isAdmin = membership?.Role == WallRole.Admin;
+                }
+            }
+            catch (UnauthorizedAccessException)
+            {
+                Navigation.NavigateTo("/account/login", replace: true);
+                return;
+            }
+        }
+
         if (_wall != null)
         {
-            var user = await CurrentUserService.GetCurrentUserAsync();
-            _isAdmin = _wall.OwnerId == user.Id;
             _holds = _wall.Holds.ToList();
             _borderPoints = _wall.BorderPoints ?? [];
-            _boulders = await BoulderService.GetBouldersForWallAsync(WallId);
+            _boulders = !_isAnonymous
+                ? await BoulderService.GetBouldersForWallAsync(WallId)
+                : _wall.Boulders.ToList();
 
-            _boulderSummaries = [];
-            foreach (var b in _boulders)
+            if (!_isAnonymous)
             {
-                _boulderSummaries[b.Id] = await AttemptService.GetBoulderSummaryForUserAsync(b.Id);
+                _boulderSummaries = [];
+                foreach (var b in _boulders)
+                {
+                    _boulderSummaries[b.Id] = await AttemptService.GetBoulderSummaryForUserAsync(b.Id);
+                }
             }
 
             if (!string.IsNullOrEmpty(_wall.ShareToken))
@@ -248,23 +393,27 @@ else
         }
     }
 
-    private async Task OnHoldAdded(Hold hold)
+    private async Task OnBatchSave(WallPhotoEditor.BatchChanges changes)
     {
-        var saved = await WallService.AddHoldAsync(WallId, hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.ShapePoints);
-        _holds.Add(saved);
-        await ShowToast("Hold added");
-    }
+        foreach (var hold in changes.Added)
+        {
+            var saved = await WallService.AddHoldAsync(WallId, hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.ShapePoints);
+            var local = _holds.FirstOrDefault(h => h.Id == hold.Id);
+            if (local != null) local.Id = saved.Id;
+        }
 
-    private async Task OnHoldUpdated(Hold hold)
-    {
-        await WallService.UpdateHoldAsync(hold.Id, hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.IsOnKickboard, hold.ShapePoints);
-    }
+        foreach (var hold in changes.Updated)
+        {
+            await WallService.UpdateHoldAsync(hold.Id, hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.IsOnKickboard, hold.ShapePoints, hold.Name);
+        }
 
-    private async Task OnHoldDeleted(Guid holdId)
-    {
-        await WallService.DeleteHoldAsync(holdId);
-        _holds.RemoveAll(h => h.Id == holdId);
-        await ShowToast("Hold removed");
+        foreach (var holdId in changes.Deleted)
+        {
+            await WallService.DeleteHoldAsync(holdId);
+            _holds.RemoveAll(h => h.Id == holdId);
+        }
+
+        await ShowToast($"Saved {changes.Added.Count + changes.Updated.Count + changes.Deleted.Count} changes");
     }
 
     private async Task OnBorderChanged(List<ShapePoint> points)
@@ -286,7 +435,48 @@ else
         await ShowToast($"Detected {count} holds");
     }
 
-    private void ToggleSettings() => _showSettings = !_showSettings;
+    private void ToggleEditing()
+    {
+        _isEditing = !_isEditing;
+        _showSettings = _isEditing;
+    }
+
+    private async Task ToggleActivity()
+    {
+        _showActivity = !_showActivity;
+        _showMembers = false;
+        if (_showActivity && _activityItems == null)
+        {
+            await LoadActivity(0);
+        }
+    }
+
+    private async Task ToggleMembers()
+    {
+        if (!_isAdmin) return;
+        _showMembers = !_showMembers;
+        _showActivity = false;
+        if (_showMembers && _members == null)
+        {
+            _members = await WallService.GetMembersAsync(WallId);
+        }
+    }
+
+    private async Task LoadActivity(int page)
+    {
+        _activityPage = page;
+        var (items, total) = await ActivityLogService.GetWallActivityAsync(WallId, page);
+        _activityItems = items;
+        _activityTotal = total;
+    }
+
+    private async Task ToggleMemberRole(WallMember member)
+    {
+        var newRole = member.Role == WallRole.Admin ? WallRole.Member : WallRole.Admin;
+        await WallService.SetMemberRoleAsync(WallId, member.UserId, newRole);
+        member.Role = newRole;
+        await ShowToast($"{member.User.DisplayName} is now {newRole}");
+    }
 
     private async Task GenerateShareLink()
     {
@@ -314,6 +504,54 @@ else
         await ShowToast($"Photo uploaded — {_holds.Count} holds detected");
     }
 
+    private static string ActivityIcon(ActivityType type) => type switch
+    {
+        ActivityType.HoldAdded => "+",
+        ActivityType.HoldMoved => "~",
+        ActivityType.HoldDeleted => "-",
+        ActivityType.HoldColorChanged => "~",
+        ActivityType.HoldShapeChanged => "~",
+        ActivityType.HoldNamed => "T",
+        ActivityType.BoulderCreated => "B",
+        ActivityType.BoulderRevised => "R",
+        ActivityType.WallPhotoUploaded => "P",
+        ActivityType.WallReset => "!",
+        ActivityType.MemberJoined => "J",
+        ActivityType.MemberRoleChanged => "R",
+        ActivityType.AttemptLogged => "A",
+        ActivityType.CommentAdded => "C",
+        _ => "?",
+    };
+
+    private static string ActivityVerb(ActivityType type) => type switch
+    {
+        ActivityType.HoldAdded => "added a hold",
+        ActivityType.HoldMoved => "moved a hold",
+        ActivityType.HoldDeleted => "removed a hold",
+        ActivityType.HoldColorChanged => "changed a hold color",
+        ActivityType.HoldShapeChanged => "refined a hold shape",
+        ActivityType.HoldNamed => "named a hold",
+        ActivityType.BoulderCreated => "created a boulder",
+        ActivityType.BoulderRevised => "revised a boulder",
+        ActivityType.WallPhotoUploaded => "uploaded a photo",
+        ActivityType.WallReset => "reset the wall",
+        ActivityType.MemberJoined => "joined the wall",
+        ActivityType.MemberRoleChanged => "role was changed",
+        ActivityType.AttemptLogged => "logged an attempt",
+        ActivityType.CommentAdded => "commented on a boulder",
+        _ => "did something",
+    };
+
+    private static string RelativeTime(DateTimeOffset timestamp)
+    {
+        var diff = DateTimeOffset.UtcNow - timestamp;
+        if (diff.TotalMinutes < 1) return "just now";
+        if (diff.TotalHours < 1) return $"{(int)diff.TotalMinutes}m ago";
+        if (diff.TotalDays < 1) return $"{(int)diff.TotalHours}h ago";
+        if (diff.TotalDays < 7) return $"{(int)diff.TotalDays}d ago";
+        return timestamp.ToString("MMM d");
+    }
+
     private async Task ShowToast(string message)
     {
         _toast = message;
@@ -329,9 +567,17 @@ else
 
     .detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
     .detail-header h1 { font-size: 1.5rem; font-weight: 700; color: #1a1a2e; }
+    .header-actions { display: flex; gap: 4px; }
 
     .btn-icon { background: none; border: none; cursor: pointer; color: #666; padding: 4px; }
     .btn-icon:hover { color: #1a1a2e; }
+    .btn-icon.editing { color: #e94560; }
+
+    .anon-banner {
+        padding: 10px 14px; background: #FFF3E0; border-radius: 8px; margin-bottom: 12px;
+        font-size: 0.9rem; color: #E65100;
+    }
+    .anon-banner a { color: #0f3460; font-weight: 600; text-decoration: underline; }
 
     .description { color: #666; margin-bottom: 16px; font-size: 0.95rem; }
 
@@ -356,6 +602,8 @@ else
         flex: 1; text-align: center; padding: 12px; background: white;
         border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     }
+    .stat.clickable { cursor: pointer; }
+    .stat.clickable:hover { box-shadow: 0 3px 12px rgba(0,0,0,0.12); }
     .stat-value { display: block; font-size: 1.4rem; font-weight: 700; color: #1a1a2e; }
     .stat-label { font-size: 0.8rem; color: #888; }
 
@@ -394,6 +642,10 @@ else
         padding: 4px 10px; background: #e94560; color: white;
         border-radius: 6px; font-weight: 700; font-size: 0.85rem;
     }
+    .historic-badge {
+        font-size: 0.65rem; padding: 1px 6px; background: #FFF3E0; color: #E65100;
+        border-radius: 4px; font-weight: 600; margin-left: 6px; vertical-align: middle;
+    }
     .status-icon { font-size: 1rem; }
     .flash-icon { color: #FF5722; }
     .send-icon { color: #4CAF50; font-weight: 700; }
@@ -429,6 +681,41 @@ else
         border: 2px solid #e94560; border-radius: 8px; font-weight: 600; cursor: pointer;
     }
     .btn-danger:hover { background: #e94560; color: white; }
+
+    .member-row {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 10px 12px; background: white; border-radius: 8px;
+        margin-bottom: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .member-name { font-weight: 600; color: #333; font-size: 0.9rem; }
+    .member-role { font-size: 0.8rem; font-weight: 600; padding: 3px 10px; border-radius: 4px; }
+    .member-role.owner { background: #E8F5E9; color: #2E7D32; }
+    .role-toggle {
+        padding: 3px 10px; border: 1px solid #ccc; background: white; border-radius: 4px;
+        font-size: 0.8rem; font-weight: 600; cursor: pointer;
+    }
+    .role-toggle.admin { background: #E3F2FD; color: #1565C0; border-color: #1565C0; }
+    .role-toggle.member { color: #666; }
+
+    .activity-row {
+        display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+        background: white; border-radius: 6px; margin-bottom: 4px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.04); font-size: 0.85rem;
+    }
+    .activity-icon {
+        width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
+        background: #f0f0f0; border-radius: 4px; font-size: 0.7rem; font-weight: 700; color: #666;
+    }
+    .activity-text { flex: 1; color: #333; }
+    .activity-time { font-size: 0.75rem; color: #999; white-space: nowrap; }
+    .activity-pager { display: flex; gap: 6px; margin-top: 8px; }
+    .pager-btn {
+        padding: 4px 12px; background: white; border: 1px solid #ccc;
+        border-radius: 4px; font-size: 0.8rem; cursor: pointer;
+    }
+    .pager-btn:hover { background: #f5f5f5; }
+    .empty-activity { text-align: center; color: #888; font-size: 0.85rem; padding: 12px; }
+    .loading-small { text-align: center; color: #888; font-size: 0.85rem; }
 
     .loading { text-align: center; color: #888; padding: 48px; }
 

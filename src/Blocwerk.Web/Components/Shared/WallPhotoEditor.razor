@@ -30,15 +30,14 @@
                     <path d="M12 11v6a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-1" />
                 </svg>
             </button>
+            <button class="tool-btn @A(EditMode.Name)" @onclick="() => SetMode(EditMode.Name)" title="Name hold">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                    <path d="M4 7V4h16v3M9 20h6M12 4v16" />
+                </svg>
+            </button>
             <button class="tool-btn @(_mode == EditMode.Delete ? "active danger" : "")" @onclick="() => SetMode(EditMode.Delete)" title="Delete hold">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
                     <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                </svg>
-            </button>
-            <button class="tool-btn @A(EditMode.Pan)" @onclick="() => SetMode(EditMode.Pan)" title="Pan image">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                    <path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 9.5V5a2 2 0 0 0-4 0v9" />
-                    <path d="M18 11a2 2 0 0 1 4 0v6a8 8 0 0 1-8 8h-2c-2.5 0-4-1-6-4l-3.3-5.1a2 2 0 0 1 3.3-2.3L6 14" />
                 </svg>
             </button>
             <span class="toolbar-sep"></span>
@@ -98,7 +97,22 @@
 @if (CanEdit && _mode == EditMode.Shape)
 {
     <div class="option-bar">
-        <span class="option-hint">Click a hold to edit its shape. Drag the 8 control points.</span>
+        <span class="option-hint">Click a hold to edit its shape. Drag the control points.</span>
+        <div class="option-group"><label>Point size:</label><input type="range" min="2" max="20" value="@((int)(_shapePointRadius * 10))" @oninput="OnShapePointSizeChange" /></div>
+    </div>
+}
+@if (CanEdit && _mode == EditMode.Name)
+{
+    <div class="option-bar">
+        <span class="option-hint">Click a hold to name it.</span>
+        @if (_namingHoldId.HasValue)
+        {
+            <div class="option-group">
+                <input type="text" class="name-input" @bind="_nameInput" @bind:event="oninput" placeholder="Hold name..." maxlength="64" />
+                <button class="opt-btn active" @onclick="ApplyName">OK</button>
+                <button class="opt-btn" @onclick="() => _namingHoldId = null">Cancel</button>
+            </div>
+        }
     </div>
 }
 @if (CanEdit && _mode == EditMode.Move && _selectedHoldId.HasValue)
@@ -121,18 +135,34 @@
     }
 }
 
+@if (CanEdit && _pendingChanges > 0)
+{
+    <div class="batch-bar">
+        <button class="batch-save" @onclick="SaveChanges">Save Changes (@_pendingChanges)</button>
+        <button class="batch-discard" @onclick="DiscardChanges">Discard</button>
+    </div>
+}
+
 <div class="zoom-bar">
     <button class="zoom-btn" @onclick="ZoomIn">+</button>
     <button class="zoom-btn" @onclick="ZoomOut">&minus;</button>
     <button class="zoom-btn" @onclick="ResetZoom">Reset</button>
     @if (_zoom != 1.0) { <span class="zoom-label">@F(_zoom * 100)%</span> }
+    <span class="zoom-sep"></span>
+    <button class="zoom-btn @(_isPanning ? "pan-active" : "")" @onclick="() => _isPanning = !_isPanning" title="@(_isPanning ? "Disable pan" : "Enable pan")">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+            <path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 9.5V5a2 2 0 0 0-4 0v9" />
+            <path d="M18 11a2 2 0 0 1 4 0v6a8 8 0 0 1-8 8h-2c-2.5 0-4-1-6-4l-3.3-5.1a2 2 0 0 1 3.3-2.3L6 14" />
+        </svg>
+    </button>
 </div>
 
 <div class="photo-viewport" @ref="_viewportRef"
-     data-pan-mode="@(_mode == EditMode.Pan ? "true" : "")"
-     style="cursor: @CursorForMode();">
+     data-pan-mode="@(_isPanning ? "true" : "")"
+     data-current-zoom="@F(_zoom)"
+     style="cursor: @(_isPanning ? "grab" : CursorForMode());">
 <div class="photo-editor" @ref="_containerRef" style="width: @F(_zoom * 100)%; min-width: 100%;">
-    <img src="/api/walls/@WallId/photo" alt="Wall" class="wall-photo" />
+    <img src="@PhotoUrl" alt="Wall" class="wall-photo" />
     <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none"
          @onclick="OnSvgClick"
          @onmousemove="OnSvgMouseMove"
@@ -165,10 +195,11 @@
         {
             var isSelected = _selectedHoldId == hold.Id;
             var isShapeEditing = _mode == EditMode.Shape && _shapeEditHoldId == hold.Id;
+            var isNaming = _mode == EditMode.Name && _namingHoldId == hold.Id;
             var isFoot = hold.Category == HoldCategory.Foot;
-            var fillColor = GetHoldFillColor(hold, isSelected || isShapeEditing);
-            var strokeColor = (isSelected || isShapeEditing) ? "#ffffff" : GetHoldStrokeColor(hold);
-            var sw = (isSelected || isShapeEditing) ? "0.4" : "0.25";
+            var fillColor = GetHoldFillColor(hold, isSelected || isShapeEditing || isNaming);
+            var strokeColor = (isSelected || isShapeEditing || isNaming) ? "#ffffff" : GetHoldStrokeColor(hold);
+            var sw = (isSelected || isShapeEditing || isNaming) ? "0.4" : "0.25";
             var r = (isFoot ? hold.Radius * 0.7 : hold.Radius) * 100;
 
             @if (hold.ShapePoints is { Count: >= 3 })
@@ -204,7 +235,7 @@
                     var cpIdx = i;
                     var sp = hold.ShapePoints[cpIdx];
                     <circle cx="@F((hold.X + sp.Dx) * 100)" cy="@F((hold.Y + sp.Dy) * 100)"
-                            r="0.8" fill="white" stroke="#e94560" stroke-width="0.25"
+                            r="@F(_shapePointRadius)" fill="white" stroke="#e94560" stroke-width="0.25"
                             style="cursor: grab"
                             @onmousedown="() => StartShapePointDrag(hold, cpIdx)" @onmousedown:stopPropagation="true" />
                 }
@@ -215,6 +246,16 @@
                 <circle cx="@F(hold.X * 100)" cy="@F(hold.Y * 100)" r="@F(r + 0.5)"
                         fill="none" stroke="white" stroke-width="0.15"
                         stroke-dasharray="0.5 0.3" style="pointer-events: none" />
+            }
+
+            @if (!string.IsNullOrEmpty(hold.Name))
+            {
+                <foreignObject x="@F((hold.X - 0.08) * 100)" y="@F((hold.Y - hold.Radius - 0.025) * 100)"
+                               width="16" height="3" style="pointer-events: none; overflow: visible;">
+                    <span style="font-size: 1.8px; color: white; text-shadow: 0 0 1px #000, 0 0 1px #000;
+                                 font-family: sans-serif; font-weight: 600; white-space: nowrap;
+                                 display: block; text-align: center;">@hold.Name</span>
+                </foreignObject>
             }
         }
     </svg>
@@ -231,15 +272,18 @@
     [Parameter] public List<Hold> Holds { get; set; } = [];
     [Parameter] public List<ShapePoint> BorderPoints { get; set; } = [];
     [Parameter] public bool CanEdit { get; set; }
+    [Parameter] public string? ShareToken { get; set; }
     [Parameter] public EventCallback<Hold> OnHoldAdded { get; set; }
     [Parameter] public EventCallback<Hold> OnHoldUpdated { get; set; }
     [Parameter] public EventCallback<Guid> OnHoldDeleted { get; set; }
     [Parameter] public EventCallback OnRedetectRequested { get; set; }
     [Parameter] public EventCallback<List<ShapePoint>> OnBorderChanged { get; set; }
     [Parameter] public EventCallback OnCleanArtifactsRequested { get; set; }
+    [Parameter] public EventCallback<BatchChanges> OnBatchSave { get; set; }
 
     private ElementReference _containerRef;
     private ElementReference _viewportRef;
+    private DotNetObjectReference<WallPhotoEditor>? _dotnetRef;
     private Guid? _selectedHoldId;
     private Guid? _shapeEditHoldId;
     private double _selectedRadius = 0.015;
@@ -255,21 +299,42 @@
     private string _paintColor = "yellow";
     private double _zoom = 1.0;
     private bool _showBorder = true;
+    private bool _isPanning;
+
+    private Guid? _namingHoldId;
+    private string _nameInput = string.Empty;
+    private double _shapePointRadius = 0.8;
+
+    private List<Hold> _addedHolds = [];
+    private HashSet<Guid> _updatedHoldIds = [];
+    private HashSet<Guid> _deletedHoldIds = [];
+    private List<Hold>? _snapshotHolds;
+    private int _pendingChanges => _addedHolds.Count + _updatedHoldIds.Count + _deletedHoldIds.Count;
+
+    private string PhotoUrl => !string.IsNullOrEmpty(ShareToken)
+        ? $"/api/walls/{WallId}/photo?token={ShareToken}"
+        : $"/api/walls/{WallId}/photo";
 
     private static readonly string[] _colors = ["none", "yellow", "red", "pink", "blue", "green", "orange", "purple", "white", "black"];
-    private enum EditMode { Add, Move, Shape, Paint, Delete, Pan, Border }
+    private enum EditMode { Add, Move, Shape, Paint, Delete, Border, Name }
+
+    public record BatchChanges(List<Hold> Added, List<Hold> Updated, List<Guid> Deleted);
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender) await JS.InvokeVoidAsync("wallEditor.setupPan", _viewportRef, null);
+        if (firstRender)
+        {
+            _dotnetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("wallEditor.setupViewport", _viewportRef, _dotnetRef);
+        }
     }
 
     private string A(EditMode m) => _mode == m ? "active" : "";
 
     private string CursorForMode() => _mode switch
     {
-        EditMode.Pan => "grab", EditMode.Delete => "crosshair",
-        EditMode.Add => "crosshair", _ => "default"
+        EditMode.Delete => "crosshair",
+        EditMode.Add => "crosshair", EditMode.Name => "help", _ => "default"
     };
 
     private void SetMode(EditMode mode)
@@ -277,6 +342,27 @@
         _mode = mode;
         if (mode != EditMode.Move) _selectedHoldId = null;
         if (mode != EditMode.Shape) _shapeEditHoldId = null;
+        if (mode != EditMode.Name) _namingHoldId = null;
+    }
+
+    private void TakeSnapshot()
+    {
+        if (_snapshotHolds != null) return;
+        _snapshotHolds = Holds.Select(h => new Hold
+        {
+            Id = h.Id, WallId = h.WallId, X = h.X, Y = h.Y, Radius = h.Radius,
+            Color = h.Color, Category = h.Category, IsOnKickboard = h.IsOnKickboard,
+            IsAutoDetected = h.IsAutoDetected, Confidence = h.Confidence, Generation = h.Generation,
+            Name = h.Name,
+            ShapePoints = h.ShapePoints?.Select(sp => new ShapePoint { Dx = sp.Dx, Dy = sp.Dy }).ToList(),
+        }).ToList();
+    }
+
+    private void TrackUpdate(Hold hold)
+    {
+        TakeSnapshot();
+        if (!_addedHolds.Contains(hold))
+            _updatedHoldIds.Add(hold.Id);
     }
 
     private async Task OnHoldClick(Hold hold)
@@ -284,19 +370,27 @@
         switch (_mode)
         {
             case EditMode.Paint:
+                TakeSnapshot();
                 hold.Color = _paintColor;
-                await OnHoldUpdated.InvokeAsync(hold);
+                _updatedHoldIds.Add(hold.Id);
                 return;
             case EditMode.Delete:
-                await OnHoldDeleted.InvokeAsync(hold.Id);
+                TakeSnapshot();
+                _deletedHoldIds.Add(hold.Id);
+                Holds.RemoveAll(h => h.Id == hold.Id);
                 return;
             case EditMode.Shape:
                 _shapeEditHoldId = hold.Id;
                 if (hold.ShapePoints == null)
                 {
+                    TakeSnapshot();
                     hold.ShapePoints = ShapePoint.DefaultOctagon(hold.Radius);
-                    await OnHoldUpdated.InvokeAsync(hold);
+                    _updatedHoldIds.Add(hold.Id);
                 }
+                return;
+            case EditMode.Name:
+                _namingHoldId = hold.Id;
+                _nameInput = hold.Name ?? string.Empty;
                 return;
             case EditMode.Move:
                 _selectedHoldId = hold.Id;
@@ -305,16 +399,29 @@
         }
     }
 
+    private void ApplyName()
+    {
+        if (_namingHoldId == null) return;
+        var hold = Holds.FirstOrDefault(h => h.Id == _namingHoldId);
+        if (hold == null) return;
+        TakeSnapshot();
+        hold.Name = string.IsNullOrWhiteSpace(_nameInput) ? null : _nameInput.Trim();
+        _updatedHoldIds.Add(hold.Id);
+        _namingHoldId = null;
+    }
+
     private void StartDrag(Hold hold)
     {
         if (!CanEdit || _mode != EditMode.Move) return;
         _selectedHoldId = hold.Id;
         _selectedRadius = hold.Radius;
         _draggingHoldId = hold.Id;
+        TakeSnapshot();
     }
 
     private void StartShapePointDrag(Hold hold, int idx)
     {
+        TakeSnapshot();
         _draggingShapeHold = hold;
         _draggingShapePointIdx = idx;
     }
@@ -326,15 +433,17 @@
         if (!CanEdit || _mode != EditMode.Add) return;
         var pos = await JS.InvokeAsync<RelativePos>("wallEditor.getRelativePosition", _containerRef, e.ClientX, e.ClientY);
         var radius = _selectedRadius;
-        await OnHoldAdded.InvokeAsync(new Hold
+        TakeSnapshot();
+        var hold = new Hold
         {
             Id = Guid.NewGuid(), WallId = WallId,
             X = Math.Clamp(pos.X, 0, 1), Y = Math.Clamp(pos.Y, 0, 1),
             Radius = radius, Category = _addCategory,
             Color = _addColor == "none" ? null : _addColor,
             IsOnKickboard = _addOnKickboard, IsAutoDetected = false,
-            ShapePoints = ShapePoint.DefaultOctagon(radius),
-        });
+        };
+        _addedHolds.Add(hold);
+        Holds.Add(hold);
     }
 
     private async Task OnSvgMouseMove(MouseEventArgs e)
@@ -367,34 +476,104 @@
         if (_draggingShapePointIdx.HasValue && _draggingShapeHold != null)
         {
             var h = _draggingShapeHold; _draggingShapePointIdx = null; _draggingShapeHold = null;
-            await OnHoldUpdated.InvokeAsync(h); return;
+            _updatedHoldIds.Add(h.Id); return;
         }
         if (_draggingHoldId == null) return;
         var hold = Holds.FirstOrDefault(h => h.Id == _draggingHoldId);
         _draggingHoldId = null;
-        if (hold != null) await OnHoldUpdated.InvokeAsync(hold);
+        if (hold != null) _updatedHoldIds.Add(hold.Id);
     }
 
-    private async Task DeleteSelected() { if (_selectedHoldId == null) return; var id = _selectedHoldId.Value; _selectedHoldId = null; await OnHoldDeleted.InvokeAsync(id); }
+    private void DeleteSelected()
+    {
+        if (_selectedHoldId == null) return;
+        TakeSnapshot();
+        _deletedHoldIds.Add(_selectedHoldId.Value);
+        Holds.RemoveAll(h => h.Id == _selectedHoldId.Value);
+        _selectedHoldId = null;
+    }
 
-    private async Task OnRadiusChange(ChangeEventArgs e)
+    private void OnRadiusChange(ChangeEventArgs e)
     {
         if (_selectedHoldId == null || !int.TryParse(e.Value?.ToString(), out var val)) return;
         _selectedRadius = val / 1000.0;
         var hold = Holds.FirstOrDefault(h => h.Id == _selectedHoldId);
         if (hold == null) return;
+        TakeSnapshot();
         hold.Radius = _selectedRadius;
         if (hold.ShapePoints != null) hold.ShapePoints = ShapePoint.DefaultOctagon(_selectedRadius);
-        await OnHoldUpdated.InvokeAsync(hold);
+        _updatedHoldIds.Add(hold.Id);
     }
 
-    private async Task SetSelectedCategory(HoldCategory cat)
-    { var h = Holds.FirstOrDefault(h => h.Id == _selectedHoldId); if (h == null) return; h.Category = cat; await OnHoldUpdated.InvokeAsync(h); }
+    private void SetSelectedCategory(HoldCategory cat)
+    {
+        var h = Holds.FirstOrDefault(h => h.Id == _selectedHoldId);
+        if (h == null) return;
+        TakeSnapshot();
+        h.Category = cat;
+        _updatedHoldIds.Add(h.Id);
+    }
 
-    private async Task ToggleKickboard(Hold h) { h.IsOnKickboard = !h.IsOnKickboard; await OnHoldUpdated.InvokeAsync(h); }
+    private void ToggleKickboard(Hold h)
+    {
+        TakeSnapshot();
+        h.IsOnKickboard = !h.IsOnKickboard;
+        _updatedHoldIds.Add(h.Id);
+    }
 
-    private async Task OnSelectedColorChange(ChangeEventArgs e)
-    { var h = Holds.FirstOrDefault(h => h.Id == _selectedHoldId); if (h == null) return; var v = e.Value?.ToString(); h.Color = v == "none" ? null : v; await OnHoldUpdated.InvokeAsync(h); }
+    private void OnSelectedColorChange(ChangeEventArgs e)
+    {
+        var h = Holds.FirstOrDefault(h => h.Id == _selectedHoldId);
+        if (h == null) return;
+        TakeSnapshot();
+        var v = e.Value?.ToString();
+        h.Color = v == "none" ? null : v;
+        _updatedHoldIds.Add(h.Id);
+    }
+
+    private async Task SaveChanges()
+    {
+        var added = _addedHolds.ToList();
+        var updated = Holds.Where(h => _updatedHoldIds.Contains(h.Id) && !_addedHolds.Any(a => a.Id == h.Id)).ToList();
+        var deleted = _deletedHoldIds.ToList();
+
+        if (OnBatchSave.HasDelegate)
+        {
+            await OnBatchSave.InvokeAsync(new BatchChanges(added, updated, deleted));
+        }
+        else
+        {
+            foreach (var h in added) await OnHoldAdded.InvokeAsync(h);
+            foreach (var h in updated) await OnHoldUpdated.InvokeAsync(h);
+            foreach (var id in deleted) await OnHoldDeleted.InvokeAsync(id);
+        }
+
+        _addedHolds.Clear();
+        _updatedHoldIds.Clear();
+        _deletedHoldIds.Clear();
+        _snapshotHolds = null;
+    }
+
+    private void DiscardChanges()
+    {
+        if (_snapshotHolds != null)
+        {
+            Holds.Clear();
+            Holds.AddRange(_snapshotHolds);
+        }
+
+        _addedHolds.Clear();
+        _updatedHoldIds.Clear();
+        _deletedHoldIds.Clear();
+        _snapshotHolds = null;
+        _selectedHoldId = null;
+    }
+
+    private void OnShapePointSizeChange(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var val))
+            _shapePointRadius = val / 10.0;
+    }
 
     private async Task OnRedetect() { _isDetecting = true; StateHasChanged(); await OnRedetectRequested.InvokeAsync(); _isDetecting = false; }
 
@@ -413,6 +592,13 @@
 
     private async Task ClearBorder() { BorderPoints.Clear(); await OnBorderChanged.InvokeAsync(BorderPoints); }
     private async Task CleanArtifacts() { await OnCleanArtifactsRequested.InvokeAsync(); }
+
+    [JSInvokable]
+    public void SetZoomFromJs(double zoom)
+    {
+        _zoom = zoom;
+        StateHasChanged();
+    }
 
     private void ZoomIn() => _zoom = Math.Min(_zoom + 0.25, 4.0);
     private void ZoomOut() => _zoom = Math.Max(_zoom - 0.25, 0.5);
@@ -468,13 +654,23 @@
     .color-swatch.active { border-color: white; box-shadow: 0 0 0 2px rgba(255,255,255,0.5); }
     .cb-label { display: flex; align-items: center; gap: 4px; color: white; font-size: 0.75rem; cursor: pointer; }
     .cb-label input { accent-color: #8D6E63; }
+    .name-input { padding: 3px 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.3); background: #1a1a2e; color: white; font-size: 0.75rem; width: 120px; }
+
+    .batch-bar { display: flex; gap: 6px; padding: 8px 12px; background: #0f3460; }
+    .batch-save { flex: 1; padding: 8px; background: #4CAF50; color: white; border: none; border-radius: 6px; font-weight: 600; font-size: 0.85rem; cursor: pointer; }
+    .batch-save:hover { background: #43A047; }
+    .batch-discard { padding: 8px 16px; background: none; color: rgba(255,255,255,0.8); border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; font-size: 0.85rem; cursor: pointer; }
+    .batch-discard:hover { background: rgba(255,255,255,0.1); }
 
     .zoom-bar { display: flex; gap: 4px; padding: 4px 12px; background: #22223a; align-items: center; }
     .zoom-btn { padding: 4px 12px; background: rgba(255,255,255,0.1); border: none; color: white; border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
     .zoom-btn:hover { background: rgba(255,255,255,0.2); }
     .zoom-label { color: rgba(255,255,255,0.5); font-size: 0.75rem; margin-left: 4px; }
+    .zoom-sep { width: 1px; height: 16px; background: rgba(255,255,255,0.2); margin: 0 4px; }
+    .zoom-btn.pan-active { background: #e94560; }
+    .zoom-btn svg { display: block; }
 
-    .photo-viewport { max-height: 70vh; overflow: auto; -webkit-overflow-scrolling: touch; border-radius: 0 0 12px 12px; }
+    .photo-viewport { max-height: 70vh; overflow: auto; -webkit-overflow-scrolling: touch; border-radius: 0 0 12px 12px; touch-action: pan-x pan-y; }
     .photo-editor { position: relative; overflow: hidden; touch-action: none; user-select: none; }
     .photo-editor .wall-photo { width: 100%; display: block; }
     .photo-editor .hold-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }

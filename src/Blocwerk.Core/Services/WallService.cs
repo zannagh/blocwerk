@@ -13,6 +13,8 @@ public interface IWallService
 
     Task<Wall?> GetWallAsync(Guid wallId);
 
+    Task<Wall?> GetWallByShareTokenAsync(string shareToken);
+
     Task<List<Wall>> GetMyWallsAsync();
 
     Task<Wall> UpdateWallAsync(Guid wallId, string name, string? description, int? angle = null);
@@ -27,9 +29,11 @@ public interface IWallService
 
     Task<byte[]?> GetPhotoAsync(Guid wallId);
 
+    Task<byte[]?> GetPhotoByShareTokenAsync(Guid wallId, string shareToken);
+
     Task<Hold> AddHoldAsync(Guid wallId, double x, double y, double radius, string? color, HoldCategory category = HoldCategory.Hand, List<ShapePoint>? shapePoints = null);
 
-    Task<Hold> UpdateHoldAsync(Guid holdId, double x, double y, double radius, string? color = null, HoldCategory? category = null, bool? isOnKickboard = null, List<ShapePoint>? shapePoints = null);
+    Task<Hold> UpdateHoldAsync(Guid holdId, double x, double y, double radius, string? color = null, HoldCategory? category = null, bool? isOnKickboard = null, List<ShapePoint>? shapePoints = null, string? name = null);
 
     Task DeleteHoldAsync(Guid holdId);
 
@@ -40,6 +44,10 @@ public interface IWallService
     Task SetBorderPointsAsync(Guid wallId, List<ShapePoint> points);
 
     Task<int> CleanOutsideBorderAsync(Guid wallId);
+
+    Task<List<WallMember>> GetMembersAsync(Guid wallId);
+
+    Task SetMemberRoleAsync(Guid wallId, Guid userId, WallRole role);
 }
 
 public class WallService : IWallService
@@ -47,15 +55,18 @@ public class WallService : IWallService
     private readonly IDbContextFactory<BlocwerkDbContext> _dbContextFactory;
     private readonly ICurrentUserService _currentUserService;
     private readonly IHoldDetectionService _holdDetectionService;
+    private readonly IActivityLogService _activityLogService;
 
     public WallService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         ICurrentUserService currentUserService,
-        IHoldDetectionService holdDetectionService)
+        IHoldDetectionService holdDetectionService,
+        IActivityLogService activityLogService)
     {
         _dbContextFactory = dbContextFactory;
         _currentUserService = currentUserService;
         _holdDetectionService = holdDetectionService;
+        _activityLogService = activityLogService;
     }
 
     public async Task<Wall> CreateWallAsync(string name, string? description, int angle = 0)
@@ -91,11 +102,38 @@ public class WallService : IWallService
         await using var db = await _dbContextFactory.CreateDbContextAsync();
         db.CurrentUserId = user.Id;
 
-        return await db.Walls
+        var wall = await db.Walls
+            .AsSplitQuery()
             .Include(w => w.Members)
             .Include(w => w.Holds.Where(h => h.Generation == db.Walls.First(wl => wl.Id == wallId).CurrentGeneration))
-            .Include(w => w.Boulders.Where(b => !b.IsArchived))
+            .Include(w => w.Boulders.Where(b => !b.IsArchived)).ThenInclude(b => b.CreatedBy)
+            .Include(w => w.Boulders).ThenInclude(b => b.BoulderHolds)
             .FirstOrDefaultAsync(w => w.Id == wallId);
+
+        if (wall != null) wall.Photo = null;
+        return wall;
+    }
+
+    public async Task<Wall?> GetWallByShareTokenAsync(string shareToken)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = Guid.Empty;
+
+        var wall = await db.Walls
+            .AsSplitQuery()
+            .Include(w => w.Members)
+            .Include(w => w.Holds)
+            .Include(w => w.Boulders.Where(b => !b.IsArchived)).ThenInclude(b => b.CreatedBy)
+            .Include(w => w.Boulders).ThenInclude(b => b.BoulderHolds)
+            .FirstOrDefaultAsync(w => w.ShareToken == shareToken);
+
+        if (wall != null)
+        {
+            wall.Holds = wall.Holds.Where(h => h.Generation == wall.CurrentGeneration).ToList();
+            wall.Photo = null;
+        }
+
+        return wall;
     }
 
     public async Task<List<Wall>> GetMyWallsAsync()
@@ -104,9 +142,12 @@ public class WallService : IWallService
         await using var db = await _dbContextFactory.CreateDbContextAsync();
         db.CurrentUserId = user.Id;
 
-        return await db.Walls
+        var walls = await db.Walls
             .Include(w => w.Members)
             .ToListAsync();
+
+        foreach (var w in walls) w.Photo = null;
+        return walls;
     }
 
     public async Task<Wall> UpdateWallAsync(Guid wallId, string name, string? description, int? angle = null)
@@ -153,6 +194,7 @@ public class WallService : IWallService
         if (!autoDetect)
         {
             await db.SaveChangesAsync();
+            await _activityLogService.LogAsync(wallId, null, ActivityType.WallPhotoUploaded);
             return wall;
         }
 
@@ -173,6 +215,7 @@ public class WallService : IWallService
         }
 
         await db.SaveChangesAsync();
+        await _activityLogService.LogAsync(wallId, null, ActivityType.WallPhotoUploaded, $"{detectedHolds.Count} holds detected");
         return wall;
     }
 
@@ -182,8 +225,14 @@ public class WallService : IWallService
         await using var db = await _dbContextFactory.CreateDbContextAsync();
         db.CurrentUserId = user.Id;
 
-        var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId && w.OwnerId == user.Id)
-                   ?? throw new InvalidOperationException("Wall not found or not owner");
+        var wall = await db.Walls
+                       .Include(w => w.Members)
+                       .FirstOrDefaultAsync(w => w.Id == wallId)
+                   ?? throw new InvalidOperationException("Wall not found");
+
+        var membership = wall.Members.FirstOrDefault(m => m.UserId == user.Id);
+        if (membership?.Role != WallRole.Admin)
+            throw new InvalidOperationException("Not authorized");
 
         wall.ShareToken = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
         await db.SaveChangesAsync();
@@ -211,6 +260,7 @@ public class WallService : IWallService
                 Role = WallRole.Member,
             });
             await db.SaveChangesAsync();
+            await _activityLogService.LogAsync(wall.Id, null, ActivityType.MemberJoined);
         }
 
         return wall;
@@ -225,6 +275,20 @@ public class WallService : IWallService
         var wall = await db.Walls
             .AsNoTracking()
             .Where(w => w.Id == wallId)
+            .Select(w => new { w.Photo })
+            .FirstOrDefaultAsync();
+
+        return wall?.Photo;
+    }
+
+    public async Task<byte[]?> GetPhotoByShareTokenAsync(Guid wallId, string shareToken)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = Guid.Empty;
+
+        var wall = await db.Walls
+            .AsNoTracking()
+            .Where(w => w.Id == wallId && w.ShareToken == shareToken)
             .Select(w => new { w.Photo })
             .FirstOrDefaultAsync();
 
@@ -255,10 +319,12 @@ public class WallService : IWallService
 
         db.Holds.Add(hold);
         await db.SaveChangesAsync();
+
+        await _activityLogService.LogAsync(wallId, null, ActivityType.HoldAdded);
         return hold;
     }
 
-    public async Task<Hold> UpdateHoldAsync(Guid holdId, double x, double y, double radius, string? color = null, HoldCategory? category = null, bool? isOnKickboard = null, List<ShapePoint>? shapePoints = null)
+    public async Task<Hold> UpdateHoldAsync(Guid holdId, double x, double y, double radius, string? color = null, HoldCategory? category = null, bool? isOnKickboard = null, List<ShapePoint>? shapePoints = null, string? name = null)
     {
         var user = await _currentUserService.GetCurrentUserAsync();
         await using var db = await _dbContextFactory.CreateDbContextAsync();
@@ -267,6 +333,11 @@ public class WallService : IWallService
         var hold = await db.Holds.FirstOrDefaultAsync(h => h.Id == holdId)
                    ?? throw new InvalidOperationException("Hold not found");
 
+        bool positionChanged = Math.Abs(hold.X - x) > 0.0001 || Math.Abs(hold.Y - y) > 0.0001;
+        bool colorChanged = color != null && hold.Color != color;
+        bool shapeChanged = shapePoints != null;
+        bool nameChanged = name != null && hold.Name != name;
+
         hold.X = x;
         hold.Y = y;
         hold.Radius = radius;
@@ -274,6 +345,36 @@ public class WallService : IWallService
         if (category.HasValue) hold.Category = category.Value;
         if (isOnKickboard.HasValue) hold.IsOnKickboard = isOnKickboard.Value;
         if (shapePoints != null) hold.ShapePoints = shapePoints;
+        if (name != null) hold.Name = name;
+
+        if (positionChanged)
+        {
+            var affectedBoulders = await db.BoulderHolds
+                .Where(bh => bh.HoldId == holdId)
+                .Select(bh => bh.Boulder)
+                .Where(b => !b.IsArchived && !b.IsHistoric)
+                .ToListAsync();
+
+            foreach (var boulder in affectedBoulders)
+            {
+                boulder.IsHistoric = true;
+            }
+
+            await _activityLogService.LogAsync(hold.WallId, null, ActivityType.HoldMoved);
+        }
+        else if (nameChanged)
+        {
+            await _activityLogService.LogAsync(hold.WallId, null, ActivityType.HoldNamed, name);
+        }
+        else if (colorChanged)
+        {
+            await _activityLogService.LogAsync(hold.WallId, null, ActivityType.HoldColorChanged);
+        }
+        else if (shapeChanged)
+        {
+            await _activityLogService.LogAsync(hold.WallId, null, ActivityType.HoldShapeChanged);
+        }
+
         await db.SaveChangesAsync();
         return hold;
     }
@@ -287,8 +388,21 @@ public class WallService : IWallService
         var hold = await db.Holds.FirstOrDefaultAsync(h => h.Id == holdId)
                    ?? throw new InvalidOperationException("Hold not found");
 
+        var affectedBoulders = await db.BoulderHolds
+            .Where(bh => bh.HoldId == holdId)
+            .Select(bh => bh.Boulder)
+            .Where(b => !b.IsArchived && !b.IsHistoric)
+            .ToListAsync();
+
+        foreach (var boulder in affectedBoulders)
+        {
+            boulder.IsHistoric = true;
+        }
+
         db.Holds.Remove(hold);
         await db.SaveChangesAsync();
+
+        await _activityLogService.LogAsync(hold.WallId, null, ActivityType.HoldDeleted);
     }
 
     public async Task<int> RedetectHoldsAsync(Guid wallId, HoldDetectionParameters? parameters = null)
@@ -386,6 +500,44 @@ public class WallService : IWallService
         db.Holds.RemoveRange(toRemove);
         await db.SaveChangesAsync();
         return toRemove.Count;
+    }
+
+    public async Task<List<WallMember>> GetMembersAsync(Guid wallId)
+    {
+        var user = await _currentUserService.GetCurrentUserAsync();
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = user.Id;
+
+        return await db.WallMembers
+            .Include(wm => wm.User)
+            .Where(wm => wm.WallId == wallId)
+            .OrderBy(wm => wm.JoinedAt)
+            .ToListAsync();
+    }
+
+    public async Task SetMemberRoleAsync(Guid wallId, Guid userId, WallRole role)
+    {
+        var user = await _currentUserService.GetCurrentUserAsync();
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = user.Id;
+
+        var wall = await db.Walls
+                       .Include(w => w.Members)
+                       .FirstOrDefaultAsync(w => w.Id == wallId)
+                   ?? throw new InvalidOperationException("Wall not found");
+
+        var callerMembership = wall.Members.FirstOrDefault(m => m.UserId == user.Id);
+        if (callerMembership?.Role != WallRole.Admin)
+            throw new InvalidOperationException("Not authorized");
+
+        var membership = await db.WallMembers
+            .FirstOrDefaultAsync(wm => wm.WallId == wallId && wm.UserId == userId)
+            ?? throw new InvalidOperationException("Member not found");
+
+        membership.Role = role;
+        await db.SaveChangesAsync();
+
+        await _activityLogService.LogAsync(wallId, null, ActivityType.MemberRoleChanged, $"Role changed to {role}");
     }
 
     private static bool IsPointInPolygon(double px, double py, List<(double X, double Y)> polygon)

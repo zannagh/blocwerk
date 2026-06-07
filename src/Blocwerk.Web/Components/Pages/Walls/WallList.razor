@@ -34,7 +34,7 @@
             {
                 <a href="/walls/@wall.Id" class="wall-card">
                     <div class="wall-card-photo">
-                        @if (wall.Photo != null)
+                        @if (wall.PhotoContentType != null)
                         {
                             <img src="/api/walls/@wall.Id/photo" alt="@wall.Name" />
                         }

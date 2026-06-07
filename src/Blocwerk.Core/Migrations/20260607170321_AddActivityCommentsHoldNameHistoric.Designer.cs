@@ -3,6 +3,7 @@ using System;
 using Blocwerk.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blocwerk.Core.Migrations
 {
     [DbContext(typeof(BlocwerkDbContext))]
-    partial class BlocwerkDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260607170321_AddActivityCommentsHoldNameHistoric")]
+    partial class AddActivityCommentsHoldNameHistoric
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -179,38 +182,6 @@ namespace Blocwerk.Core.Migrations
                     b.HasIndex("HoldId");
 
                     b.ToTable("BoulderHolds");
-                });
-
-            modelBuilder.Entity("Blocwerk.Core.Entities.GradeProposal", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("BoulderId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsResolved")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("ProposedByUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("ProposedGrade")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("BoulderId");
-
-                    b.HasIndex("ProposedByUserId");
-
-                    b.ToTable("GradeProposals");
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.HangboardSession", b =>
@@ -602,25 +573,6 @@ namespace Blocwerk.Core.Migrations
                     b.Navigation("Hold");
                 });
 
-            modelBuilder.Entity("Blocwerk.Core.Entities.GradeProposal", b =>
-                {
-                    b.HasOne("Blocwerk.Core.Entities.Boulder", "Boulder")
-                        .WithMany("GradeProposals")
-                        .HasForeignKey("BoulderId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Blocwerk.Core.Entities.User", "ProposedBy")
-                        .WithMany()
-                        .HasForeignKey("ProposedByUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Boulder");
-
-                    b.Navigation("ProposedBy");
-                });
-
             modelBuilder.Entity("Blocwerk.Core.Entities.HangboardSession", b =>
                 {
                     b.HasOne("Blocwerk.Core.Entities.User", "User")
@@ -710,8 +662,6 @@ namespace Blocwerk.Core.Migrations
                     b.Navigation("BoulderHolds");
 
                     b.Navigation("Comments");
-
-                    b.Navigation("GradeProposals");
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.Hold", b =>

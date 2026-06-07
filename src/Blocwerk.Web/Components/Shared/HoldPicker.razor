@@ -14,13 +14,6 @@
         <span class="separator"></span>
         <button class="mode-btn @(_viewMode == ViewMode.Photo ? "view-active" : "")" @onclick="() => _viewMode = ViewMode.Photo">Photo</button>
         <button class="mode-btn @(_viewMode == ViewMode.Schematic ? "view-active" : "")" @onclick="() => _viewMode = ViewMode.Schematic">Map</button>
-        <span class="separator"></span>
-        <button class="mode-btn @(_isPanning ? "view-active" : "")" @onclick="() => _isPanning = !_isPanning" title="Pan">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
-                <path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 9.5V5a2 2 0 0 0-4 0v9" />
-                <path d="M18 11a2 2 0 0 1 4 0v6a8 8 0 0 1-8 8h-2c-2.5 0-4-1-6-4l-3.3-5.1a2 2 0 0 1 3.3-2.3L6 14" />
-            </svg>
-        </button>
     </div>
 </div>
 
@@ -29,10 +22,18 @@
     <button class="zoom-btn" @onclick="() => _zoom = Math.Max(_zoom - 0.25, 0.5)">&minus;</button>
     <button class="zoom-btn" @onclick="() => _zoom = 1.0">Reset</button>
     @if (_zoom != 1.0) { <span class="zoom-label">@F(_zoom * 100)%</span> }
+    <span class="zoom-sep"></span>
+    <button class="zoom-btn @(_isPanning ? "pan-active" : "")" @onclick="() => _isPanning = !_isPanning" title="@(_isPanning ? "Disable pan" : "Enable pan")">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+            <path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 9.5V5a2 2 0 0 0-4 0v9" />
+            <path d="M18 11a2 2 0 0 1 4 0v6a8 8 0 0 1-8 8h-2c-2.5 0-4-1-6-4l-3.3-5.1a2 2 0 0 1 3.3-2.3L6 14" />
+        </svg>
+    </button>
 </div>
 
 <div class="picker-viewport" @ref="_viewportRef"
      data-pan-mode="@(_isPanning ? "true" : "")"
+     data-current-zoom="@F(_zoom)"
      style="cursor: @(_isPanning ? "grab" : "default");">
 
 @if (_viewMode == ViewMode.Photo)
@@ -117,6 +118,7 @@ else
     [Parameter] public int WallAngle { get; set; }
 
     private ElementReference _viewportRef;
+    private DotNetObjectReference<HoldPicker>? _dotnetRef;
     private HoldType _placeType = HoldType.Normal;
     private ViewMode _viewMode = ViewMode.Photo;
     private double _zoom = 1.0;
@@ -126,7 +128,18 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender) await JS.InvokeVoidAsync("wallEditor.setupPan", _viewportRef, null);
+        if (firstRender)
+        {
+            _dotnetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("wallEditor.setupViewport", _viewportRef, _dotnetRef);
+        }
+    }
+
+    [JSInvokable]
+    public void SetZoomFromJs(double zoom)
+    {
+        _zoom = zoom;
+        StateHasChanged();
     }
 
     private void ToggleHold(Hold hold)
@@ -185,6 +198,9 @@ else
     .zoom-btn { padding: 4px 12px; background: rgba(255,255,255,0.1); border: none; color: white; border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
     .zoom-btn:hover { background: rgba(255,255,255,0.2); }
     .zoom-label { color: rgba(255,255,255,0.5); font-size: 0.75rem; margin-left: 4px; }
+    .zoom-sep { width: 1px; height: 16px; background: rgba(255,255,255,0.2); margin: 0 4px; }
+    .zoom-btn.pan-active { background: #e94560; }
+    .zoom-btn svg { display: block; }
 
     .picker-viewport { max-height: 70vh; overflow: auto; -webkit-overflow-scrolling: touch; border-radius: 0 0 12px 12px; }
     .photo-picker { position: relative; overflow: hidden; } .photo-picker .wall-photo { width: 100%; display: block; }

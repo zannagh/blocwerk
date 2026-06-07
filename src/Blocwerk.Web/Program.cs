@@ -51,10 +51,20 @@ app.MapRazorComponents<BlocwerkApp>()
 
 app.MapGet("/api/walls/{wallId:guid}/photo", async (
     Guid wallId,
+    [FromQuery] string? token,
     [FromServices] IWallService wallService) =>
 {
-    var photo = await wallService.GetPhotoAsync(wallId);
+    byte[]? photo;
+    if (!string.IsNullOrEmpty(token))
+    {
+        photo = await wallService.GetPhotoByShareTokenAsync(wallId, token);
+    }
+    else
+    {
+        photo = await wallService.GetPhotoAsync(wallId);
+    }
+
     return photo == null ? Results.NotFound() : Results.File(photo, "image/jpeg");
-}).RequireAuthorization();
+});
 
 app.Run();

@@ -1,24 +1,36 @@
 @page "/"
+@rendermode InteractiveServer
 @attribute [AllowAnonymous]
 @layout EmptyLayout
 @inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
 
 <PageTitle>Blocwerk</PageTitle>
 
-<AuthorizeView>
-    <Authorized>
-        @{ Navigation.NavigateTo("/walls", replace: true); }
-    </Authorized>
-    <NotAuthorized>
-        <div class="landing">
-            <div class="landing-content">
-                <h1>Blocwerk</h1>
-                <p>Track your climbing wall boulders, log sends, and watch your progression.</p>
-                <a href="/walls" class="btn-primary">Get Started</a>
-            </div>
+@if (!_redirecting)
+{
+    <div class="landing">
+        <div class="landing-content">
+            <h1>Blocwerk</h1>
+            <p>Track your climbing wall boulders, log sends, and watch your progression.</p>
+            <a href="/walls" class="btn-primary">Get Started</a>
         </div>
-    </NotAuthorized>
-</AuthorizeView>
+    </div>
+}
+
+@code {
+    private bool _redirecting;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        if (authState.User.Identity?.IsAuthenticated == true)
+        {
+            _redirecting = true;
+            Navigation.NavigateTo("/walls", replace: true);
+        }
+    }
+}
 
 <style>
     .landing {

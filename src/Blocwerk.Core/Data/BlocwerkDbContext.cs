@@ -25,6 +25,12 @@ public class BlocwerkDbContext : DbContext
 
     public DbSet<WallReset> WallResets => Set<WallReset>();
 
+    public DbSet<ActivityLogEntry> ActivityLog => Set<ActivityLogEntry>();
+
+    public DbSet<BoulderComment> BoulderComments => Set<BoulderComment>();
+
+    public DbSet<GradeProposal> GradeProposals => Set<GradeProposal>();
+
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     public DbSet<HangboardSession> HangboardSessions => Set<HangboardSession>();
@@ -61,6 +67,9 @@ public class BlocwerkDbContext : DbContext
         ConfigureBoulderHold(modelBuilder);
         ConfigureAttempt(modelBuilder);
         ConfigureWallReset(modelBuilder);
+        ConfigureActivityLog(modelBuilder);
+        ConfigureBoulderComment(modelBuilder);
+        ConfigureGradeProposal(modelBuilder);
     }
 
     private static void ConfigureUser(ModelBuilder modelBuilder)
@@ -191,6 +200,62 @@ public class BlocwerkDbContext : DbContext
             entity.HasOne(wr => wr.ResetBy)
                 .WithMany()
                 .HasForeignKey(wr => wr.ResetByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+    }
+
+    private static void ConfigureActivityLog(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<ActivityLogEntry>(entity =>
+        {
+            entity.HasOne(a => a.Wall)
+                .WithMany()
+                .HasForeignKey(a => a.WallId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(a => a.Boulder)
+                .WithMany()
+                .HasForeignKey(a => a.BoulderId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(a => a.User)
+                .WithMany()
+                .HasForeignKey(a => a.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(a => new { a.WallId, a.Timestamp });
+            entity.HasIndex(a => new { a.BoulderId, a.Timestamp });
+        });
+    }
+
+    private static void ConfigureGradeProposal(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<GradeProposal>(entity =>
+        {
+            entity.HasOne(gp => gp.Boulder)
+                .WithMany(b => b.GradeProposals)
+                .HasForeignKey(gp => gp.BoulderId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(gp => gp.ProposedBy)
+                .WithMany()
+                .HasForeignKey(gp => gp.ProposedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+    }
+
+    private static void ConfigureBoulderComment(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<BoulderComment>(entity =>
+        {
+            entity.HasOne(c => c.Boulder)
+                .WithMany(b => b.Comments)
+                .HasForeignKey(c => c.BoulderId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(c => c.User)
+                .WithMany()
+                .HasForeignKey(c => c.UserId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
     }
