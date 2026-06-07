@@ -17,7 +17,17 @@
 
         <div class="form-group">
             <label>Description (optional)</label>
-            <InputTextArea @bind-Value="_model.Description" class="form-input" rows="3" placeholder="Describe your wall..." />
+            <InputTextArea @bind-Value="_model.Description" class="form-input" rows="2" placeholder="Describe your wall..." />
+        </div>
+
+        <div class="form-group">
+            <label>Wall Angle: @(_model.Angle)&deg;</label>
+            <input type="range" min="0" max="70" @bind="_model.Angle" @bind:event="oninput" class="angle-slider" />
+            <div class="angle-labels">
+                <span>0&deg; Vertical</span>
+                <span>45&deg; Overhang</span>
+                <span>70&deg; Roof</span>
+            </div>
         </div>
 
         <div class="form-group">
@@ -30,6 +40,20 @@
         {
             <div class="photo-preview">
                 <img src="@_photoPreview" alt="Wall preview" />
+            </div>
+
+            <div class="form-group detect-choice">
+                <label>Hold Detection</label>
+                <div class="radio-group">
+                    <label class="radio-label">
+                        <input type="radio" name="detect" checked="@_autoDetect" @onchange="() => _autoDetect = true" />
+                        Auto-detect holds
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="detect" checked="@(!_autoDetect)" @onchange="() => _autoDetect = false" />
+                        Place holds manually
+                    </label>
+                </div>
             </div>
         }
 
@@ -56,6 +80,7 @@
     private byte[]? _photoData;
     private string? _photoContentType;
     private string? _photoPreview;
+    private bool _autoDetect = true;
     private bool _isSubmitting;
     private string? _error;
 
@@ -83,11 +108,11 @@
 
         try
         {
-            var wall = await WallService.CreateWallAsync(_model.Name, _model.Description);
+            var wall = await WallService.CreateWallAsync(_model.Name, _model.Description, _model.Angle);
 
             if (_photoData != null && _photoContentType != null)
             {
-                await WallService.UploadPhotoAsync(wall.Id, _photoData, _photoContentType);
+                await WallService.UploadPhotoAsync(wall.Id, _photoData, _photoContentType, _autoDetect);
             }
 
             Navigation.NavigateTo($"/walls/{wall.Id}");
@@ -104,6 +129,8 @@
         public string Name { get; set; } = string.Empty;
 
         public string? Description { get; set; }
+
+        public int Angle { get; set; }
     }
 }
 
@@ -122,16 +149,28 @@
 
     .hint { font-size: 0.8rem; color: #888; margin-top: 4px; }
 
+    .angle-slider { width: 100%; accent-color: #e94560; }
+    .angle-labels { display: flex; justify-content: space-between; font-size: 0.75rem; color: #999; }
+
     .photo-preview {
-        margin-bottom: 16px; border-radius: 12px; overflow: hidden;
-        max-height: 300px;
+        margin-bottom: 16px; border-radius: 12px; overflow: hidden; max-height: 300px;
     }
     .photo-preview img { width: 100%; object-fit: contain; }
+
+    .detect-choice { margin-bottom: 16px; }
+    .radio-group { display: flex; flex-direction: column; gap: 8px; }
+    .radio-label {
+        display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+        background: white; border: 2px solid #e0e0e0; border-radius: 8px;
+        cursor: pointer; font-size: 0.95rem;
+    }
+    .radio-label:has(input:checked) { border-color: #e94560; background: #fff5f6; }
+    .radio-label input[type=radio] { accent-color: #e94560; }
 
     .btn-submit {
         width: 100%; padding: 14px; background: #e94560; color: white;
         border: none; border-radius: 8px; font-weight: 600; font-size: 1rem;
-        cursor: pointer; transition: background 0.2s;
+        cursor: pointer;
     }
     .btn-submit:hover:not(:disabled) { background: #d63851; }
     .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }

@@ -35,16 +35,31 @@ else
             <p class="description">@_wall.Description</p>
         }
 
+        @if (_wall.Photo != null)
+        {
+            <div class="view-toggle">
+                <button class="toggle-btn @(_viewMode == ViewMode.Photo ? "active" : "")" @onclick="() => _viewMode = ViewMode.Photo">Photo</button>
+                <button class="toggle-btn @(_viewMode == ViewMode.Schematic ? "active" : "")" @onclick="() => _viewMode = ViewMode.Schematic">Schematic</button>
+            </div>
+        }
+
         <div class="wall-photo-container">
-            @if (_wall.Photo != null)
+            @if (_wall.Photo != null && _viewMode == ViewMode.Photo)
             {
                 <WallPhotoEditor WallId="_wall.Id"
                                  Holds="_holds"
+                                 BorderPoints="_borderPoints"
                                  CanEdit="_isAdmin"
                                  OnHoldAdded="OnHoldAdded"
                                  OnHoldUpdated="OnHoldUpdated"
                                  OnHoldDeleted="OnHoldDeleted"
-                                 OnRedetectRequested="OnRedetect" />
+                                 OnRedetectRequested="OnRedetect"
+                                 OnBorderChanged="OnBorderChanged"
+                                 OnCleanArtifactsRequested="OnCleanArtifacts" />
+            }
+            else if (_wall.Photo != null && _viewMode == ViewMode.Schematic)
+            {
+                <WallSchematicView Holds="_holds" Angle="_wall.Angle" />
             }
             else if (_isAdmin)
             {
@@ -79,6 +94,20 @@ else
                 }
             </div>
 
+            @if (_boulders.Count > 0)
+            {
+                <div class="filter-bar">
+                    <input @bind="_searchText" @bind:event="oninput" placeholder="Search..." class="filter-input" />
+                    <select @bind="_gradeFilter" class="filter-select">
+                        <option value="">All grades</option>
+                        @foreach (var g in _availableGrades)
+                        {
+                            <option value="@g">@g</option>
+                        }
+                    </select>
+                </div>
+            }
+
             @if (_boulders.Count == 0)
             {
                 <div class="empty-boulders">
@@ -87,7 +116,7 @@ else
             }
             else
             {
-                @foreach (var boulder in _boulders)
+                @foreach (var boulder in FilteredBoulders)
                 {
                     var summary = _boulderSummaries.GetValueOrDefault(boulder.Id);
                     <a href="/walls/@WallId/boulders/@boulder.Id" class="boulder-card">
@@ -157,12 +186,38 @@ else
 
     private Wall? _wall;
     private List<Hold> _holds = [];
+    private List<ShapePoint> _borderPoints = [];
     private List<Boulder> _boulders = [];
     private Dictionary<Guid, AttemptSummary> _boulderSummaries = [];
     private bool _isAdmin;
     private bool _showSettings;
     private string? _shareLink;
     private string? _toast;
+    private string _searchText = string.Empty;
+    private string _gradeFilter = string.Empty;
+    private ViewMode _viewMode = ViewMode.Photo;
+
+    private enum ViewMode { Photo, Schematic }
+
+    private List<string> _availableGrades => _boulders
+        .Where(b => !string.IsNullOrEmpty(b.Grade))
+        .Select(b => b.Grade!)
+        .Distinct()
+        .OrderBy(g => g)
+        .ToList();
+
+    private IEnumerable<Boulder> FilteredBoulders
+    {
+        get
+        {
+            var q = _boulders.AsEnumerable();
+            if (!string.IsNullOrWhiteSpace(_searchText))
+                q = q.Where(b => b.Name.Contains(_searchText, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrEmpty(_gradeFilter))
+                q = q.Where(b => b.Grade == _gradeFilter);
+            return q;
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -177,6 +232,7 @@ else
             var user = await CurrentUserService.GetCurrentUserAsync();
             _isAdmin = _wall.OwnerId == user.Id;
             _holds = _wall.Holds.ToList();
+            _borderPoints = _wall.BorderPoints ?? [];
             _boulders = await BoulderService.GetBouldersForWallAsync(WallId);
 
             _boulderSummaries = [];
@@ -194,14 +250,14 @@ else
 
     private async Task OnHoldAdded(Hold hold)
     {
-        var saved = await WallService.AddHoldAsync(WallId, hold.X, hold.Y, hold.Radius, hold.Color);
+        var saved = await WallService.AddHoldAsync(WallId, hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.ShapePoints);
         _holds.Add(saved);
         await ShowToast("Hold added");
     }
 
     private async Task OnHoldUpdated(Hold hold)
     {
-        await WallService.UpdateHoldAsync(hold.Id, hold.X, hold.Y, hold.Radius);
+        await WallService.UpdateHoldAsync(hold.Id, hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.IsOnKickboard, hold.ShapePoints);
     }
 
     private async Task OnHoldDeleted(Guid holdId)
@@ -209,6 +265,18 @@ else
         await WallService.DeleteHoldAsync(holdId);
         _holds.RemoveAll(h => h.Id == holdId);
         await ShowToast("Hold removed");
+    }
+
+    private async Task OnBorderChanged(List<ShapePoint> points)
+    {
+        await WallService.SetBorderPointsAsync(WallId, points);
+    }
+
+    private async Task OnCleanArtifacts()
+    {
+        var count = await WallService.CleanOutsideBorderAsync(WallId);
+        await LoadWall();
+        await ShowToast($"Removed {count} holds outside border");
     }
 
     private async Task OnRedetect()
@@ -267,6 +335,14 @@ else
 
     .description { color: #666; margin-bottom: 16px; font-size: 0.95rem; }
 
+    .view-toggle { display: flex; gap: 4px; margin-bottom: 8px; }
+    .toggle-btn {
+        flex: 1; padding: 8px; border: 2px solid #e0e0e0; background: white;
+        border-radius: 8px; font-weight: 600; font-size: 0.85rem;
+        cursor: pointer; text-align: center; color: #666;
+    }
+    .toggle-btn.active { border-color: #1a1a2e; background: #1a1a2e; color: white; }
+
     .wall-photo-container { margin-bottom: 16px; }
 
     .upload-prompt {
@@ -282,6 +358,17 @@ else
     }
     .stat-value { display: block; font-size: 1.4rem; font-weight: 700; color: #1a1a2e; }
     .stat-label { font-size: 0.8rem; color: #888; }
+
+    .filter-bar { display: flex; gap: 8px; margin-bottom: 10px; }
+    .filter-input {
+        flex: 1; padding: 8px 12px; border: 2px solid #e0e0e0;
+        border-radius: 8px; font-size: 0.9rem; outline: none; box-sizing: border-box;
+    }
+    .filter-input:focus { border-color: #0f3460; }
+    .filter-select {
+        padding: 8px 10px; border: 2px solid #e0e0e0; border-radius: 8px;
+        font-size: 0.9rem; background: white;
+    }
 
     .boulder-section { margin-bottom: 20px; }
     .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }

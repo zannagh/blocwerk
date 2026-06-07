@@ -2,8 +2,9 @@ using Blocwerk.Core.Abstractions;
 using Serilog;
 using SkiaSharp;
 using YoloDotNet;
-using YoloDotNet.ExecutionProvider.Cpu;
+using YoloDotNet.Enums;
 using YoloDotNet.Models;
+#pragma warning disable CS0618
 
 namespace Blocwerk.HoldDetection;
 
@@ -30,24 +31,27 @@ public class YoloHoldDetectionService : IHoldDetectionService, IDisposable
                 return Task.FromResult(new List<DetectedHold>());
             }
 
-            var results = _yolo!.RunObjectDetection(skImage, confidence: 0.15, iou: 0.4);
+            var results = _yolo!.RunObjectDetection(skImage, confidence: 0.25, iou: 0.45);
 
-            var holds = results.Select(r => new DetectedHold(
-                X: Math.Round((r.BoundingBox.Left + r.BoundingBox.Width / 2.0) / skImage.Width, 4),
-                Y: Math.Round((r.BoundingBox.Top + r.BoundingBox.Height / 2.0) / skImage.Height, 4),
-                Radius: Math.Round(Math.Max(r.BoundingBox.Width, r.BoundingBox.Height) / (2.0 * Math.Max(skImage.Width, skImage.Height)), 4),
-                Color: null,
-                Confidence: Math.Round(r.Confidence, 3)
-            )).ToList();
+            var holds = results
+                .Select(r =>
+                {
+                    double cx = (r.BoundingBox.Left + r.BoundingBox.Width / 2.0) / skImage.Width;
+                    double cy = (r.BoundingBox.Top + r.BoundingBox.Height / 2.0) / skImage.Height;
+                    return new DetectedHold(
+                        X: Math.Round(cx, 4),
+                        Y: Math.Round(cy, 4),
+                        Radius: Math.Round(Math.Max(r.BoundingBox.Width, r.BoundingBox.Height) / (2.0 * Math.Max(skImage.Width, skImage.Height)), 4),
+                        Color: r.Label.Name == "volume" ? "white" : null,
+                        Confidence: Math.Round(r.Confidence, 3));
+                })
+                .Where(h => h.X is >= 0 and <= 1 && h.Y is >= 0 and <= 1)
+                .ToList();
 
-            if (holds.Count > 0)
-            {
-                Log.Information("[Hold Detection] YOLO detected {Count} holds", holds.Count);
-                return Task.FromResult(holds);
-            }
+            Log.Information("[Hold Detection] YOLO detected {Count} valid holds ({Filtered} filtered out-of-bounds)",
+                holds.Count, results.Count - holds.Count);
 
-            Log.Information("[Hold Detection] YOLO found nothing, falling back to color-based detection");
-            return Task.FromResult(ColorBasedDetection.Detect(imageData, parameters));
+            return Task.FromResult(holds);
         }
         catch (FileNotFoundException)
         {
@@ -56,7 +60,7 @@ public class YoloHoldDetectionService : IHoldDetectionService, IDisposable
         }
         catch (Exception ex)
         {
-            Log.Warning("[Hold Detection] YOLO failed ({Message}), falling back to color-based detection", ex.Message);
+            Log.Warning("[Hold Detection] YOLO failed ({Type}: {Message}), falling back to color-based detection", ex.GetType().Name, ex.Message);
             return Task.FromResult(ColorBasedDetection.Detect(imageData, parameters));
         }
     }
@@ -75,7 +79,7 @@ public class YoloHoldDetectionService : IHoldDetectionService, IDisposable
 
         _yolo = new Yolo(new YoloOptions
         {
-            ExecutionProvider = new CpuExecutionProvider(_modelPath),
+            OnnxModel = _modelPath,
         });
 
         Log.Information("[Hold Detection] YOLO model loaded from {Path}", _modelPath);

@@ -2,39 +2,57 @@
 
 <div class="editor-toolbar">
     <div class="toolbar-left">
-        <span class="hold-count">@Holds.Count holds</span>
-        @if (_selectedHoldId.HasValue)
-        {
-            <span class="selected-label">Selected</span>
-        }
+        <span class="hold-count">@Holds.Count(h => h.Category == HoldCategory.Hand)H / @Holds.Count(h => h.Category == HoldCategory.Foot)F</span>
     </div>
     <div class="toolbar-right">
         @if (CanEdit)
         {
-            <button class="tool-btn @(_mode == EditMode.Add ? "active" : "")" @onclick="() => SetMode(EditMode.Add)" title="Add hold">
+            <button class="tool-btn @A(EditMode.Add)" @onclick="() => SetMode(EditMode.Add)" title="Add hold">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
                     <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" />
                 </svg>
             </button>
-            <button class="tool-btn @(_mode == EditMode.Move ? "active" : "")" @onclick="() => SetMode(EditMode.Move)" title="Move hold">
+            <button class="tool-btn @A(EditMode.Move)" @onclick="() => SetMode(EditMode.Move)" title="Select / Move">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
                     <path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20" />
                 </svg>
             </button>
-            @if (_selectedHoldId.HasValue)
-            {
-                <button class="tool-btn danger" @onclick="DeleteSelected" title="Delete selected">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                        <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                    </svg>
-                </button>
-                <div class="radius-control">
-                    <label>Size</label>
-                    <input type="range" min="3" max="40" value="@((int)(_selectedRadius * 1000))"
-                           @oninput="OnRadiusChange" />
-                </div>
-            }
-            <button class="tool-btn" @onclick="OnRedetect" title="Re-detect holds" disabled="@_isDetecting">
+            <button class="tool-btn @A(EditMode.Shape)" @onclick="() => SetMode(EditMode.Shape)" title="Edit hold shape">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                    <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5" />
+                    <circle cx="12" cy="2" r="1.5" fill="currentColor" /><circle cx="22" cy="8.5" r="1.5" fill="currentColor" />
+                </svg>
+            </button>
+            <button class="tool-btn @A(EditMode.Paint)" @onclick="() => SetMode(EditMode.Paint)" title="Paint color"
+                    style="@(_mode == EditMode.Paint ? $"background: {GetCssColor(_paintColor)};" : "")">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                    <path d="M19 3H5a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2z" />
+                    <path d="M12 11v6a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-1" />
+                </svg>
+            </button>
+            <button class="tool-btn @(_mode == EditMode.Delete ? "active danger" : "")" @onclick="() => SetMode(EditMode.Delete)" title="Delete hold">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                    <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                </svg>
+            </button>
+            <button class="tool-btn @A(EditMode.Pan)" @onclick="() => SetMode(EditMode.Pan)" title="Pan image">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                    <path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 9.5V5a2 2 0 0 0-4 0v9" />
+                    <path d="M18 11a2 2 0 0 1 4 0v6a8 8 0 0 1-8 8h-2c-2.5 0-4-1-6-4l-3.3-5.1a2 2 0 0 1 3.3-2.3L6 14" />
+                </svg>
+            </button>
+            <span class="toolbar-sep"></span>
+            <button class="tool-btn @A(EditMode.Border)" @onclick="() => SetMode(EditMode.Border)" title="Edit wall border">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                    <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2" />
+                </svg>
+            </button>
+            <button class="tool-btn" @onclick="() => _showBorder = !_showBorder" title="@(_showBorder ? "Hide" : "Show") border">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="@(_showBorder ? "2" : "1")" width="20" height="20" opacity="@(_showBorder ? "1" : "0.4")">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
+                </svg>
+            </button>
+            <button class="tool-btn" @onclick="OnRedetect" title="Re-detect" disabled="@_isDetecting">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
                     <path d="M23 4v6h-6M1 20v-6h6" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
                 </svg>
@@ -43,80 +61,248 @@
     </div>
 </div>
 
-<div class="photo-editor" @ref="_containerRef">
-    <img src="/api/walls/@WallId/photo" alt="Wall" class="wall-photo" @ref="_imgRef" />
-    <svg class="hold-overlay"
+@* Mode-specific option bars *@
+@if (CanEdit && _mode == EditMode.Add)
+{
+    <div class="option-bar">
+        <div class="option-group"><label>Type:</label>
+            <button class="opt-btn @(_addCategory == HoldCategory.Hand ? "active" : "")" @onclick="() => _addCategory = HoldCategory.Hand">Hand</button>
+            <button class="opt-btn foot @(_addCategory == HoldCategory.Foot ? "active" : "")" @onclick="() => _addCategory = HoldCategory.Foot">Foot</button>
+        </div>
+        <div class="option-group"><label>Color:</label>
+            <select class="color-select" @bind="_addColor">@foreach (var c in _colors) { <option value="@c">@c</option> }</select>
+            <span class="color-dot" style="background: @GetCssColor(_addColor);"></span>
+        </div>
+        <div class="option-group"><label class="cb-label"><input type="checkbox" @bind="_addOnKickboard" /> Kickboard</label></div>
+    </div>
+}
+@if (CanEdit && _mode == EditMode.Paint)
+{
+    <div class="option-bar">
+        <div class="option-group"><label>Paint:</label>
+            @foreach (var c in _colors.Where(c => c != "none"))
+            { <button class="color-swatch @(_paintColor == c ? "active" : "")" style="background: @GetCssColor(c);" @onclick="() => _paintColor = c" title="@c"></button> }
+        </div>
+    </div>
+}
+@if (CanEdit && _mode == EditMode.Border)
+{
+    <div class="option-bar">
+        <div class="option-group"><label>Border:</label>
+            @if (BorderPoints.Count == 0) { <button class="opt-btn" @onclick="InitBorder">Create</button> }
+            else { <button class="opt-btn" @onclick="CleanArtifacts">Clean outside</button> <button class="opt-btn danger" @onclick="ClearBorder">Remove</button> }
+        </div>
+        <span class="option-hint">Drag points to define wall area</span>
+    </div>
+}
+@if (CanEdit && _mode == EditMode.Shape)
+{
+    <div class="option-bar">
+        <span class="option-hint">Click a hold to edit its shape. Drag the 8 control points.</span>
+    </div>
+}
+@if (CanEdit && _mode == EditMode.Move && _selectedHoldId.HasValue)
+{
+    var sel = Holds.FirstOrDefault(h => h.Id == _selectedHoldId);
+    if (sel != null)
+    {
+        <div class="option-bar">
+            <div class="option-group"><label>Type:</label>
+                <button class="opt-btn @(sel.Category == HoldCategory.Hand ? "active" : "")" @onclick="() => SetSelectedCategory(HoldCategory.Hand)">Hand</button>
+                <button class="opt-btn foot @(sel.Category == HoldCategory.Foot ? "active" : "")" @onclick="() => SetSelectedCategory(HoldCategory.Foot)">Foot</button>
+            </div>
+            <div class="option-group"><label class="cb-label"><input type="checkbox" checked="@sel.IsOnKickboard" @onchange="() => ToggleKickboard(sel)" /> KB</label></div>
+            <div class="option-group"><label>Color:</label>
+                <select class="color-select" value="@(sel.Color ?? "none")" @onchange="OnSelectedColorChange">@foreach (var c in _colors) { <option value="@c">@c</option> }</select>
+            </div>
+            <div class="option-group"><label>Size:</label><input type="range" min="3" max="40" value="@((int)(_selectedRadius * 1000))" @oninput="OnRadiusChange" /></div>
+            <button class="opt-btn danger" @onclick="DeleteSelected">Del</button>
+        </div>
+    }
+}
+
+<div class="zoom-bar">
+    <button class="zoom-btn" @onclick="ZoomIn">+</button>
+    <button class="zoom-btn" @onclick="ZoomOut">&minus;</button>
+    <button class="zoom-btn" @onclick="ResetZoom">Reset</button>
+    @if (_zoom != 1.0) { <span class="zoom-label">@F(_zoom * 100)%</span> }
+</div>
+
+<div class="photo-viewport" @ref="_viewportRef"
+     data-pan-mode="@(_mode == EditMode.Pan ? "true" : "")"
+     style="cursor: @CursorForMode();">
+<div class="photo-editor" @ref="_containerRef" style="width: @F(_zoom * 100)%; min-width: 100%;">
+    <img src="/api/walls/@WallId/photo" alt="Wall" class="wall-photo" />
+    <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none"
          @onclick="OnSvgClick"
          @onmousemove="OnSvgMouseMove"
          @onmouseup="OnSvgMouseUp"
          @ontouchend="OnSvgMouseUp">
+
+        @* Wall border *@
+        @if (_showBorder && BorderPoints.Count >= 3)
+        {
+            <polygon points="@Pts(BorderPoints.Select(p => (p.Dx, p.Dy)))"
+                     fill="none" stroke="#FF9800" stroke-width="0.3" stroke-dasharray="1 0.5"
+                     style="pointer-events: none" />
+            @if (_mode == EditMode.Border)
+            {
+                @for (int i = 0; i < BorderPoints.Count; i++)
+                {
+                    var idx = i;
+                    var bp = BorderPoints[idx];
+                    <circle cx="@F(bp.Dx * 100)" cy="@F(bp.Dy * 100)" r="1.2"
+                            fill="#FF9800" stroke="white" stroke-width="0.3"
+                            style="cursor: grab"
+                            @onmousedown="() => StartBorderDrag(idx)"
+                            @onmousedown:stopPropagation="true" />
+                }
+            }
+        }
+
+        @* Holds *@
         @foreach (var hold in Holds)
         {
             var isSelected = _selectedHoldId == hold.Id;
-            var fillColor = GetHoldFillColor(hold, isSelected);
-            var strokeColor = isSelected ? "#ffffff" : GetHoldStrokeColor(hold);
+            var isShapeEditing = _mode == EditMode.Shape && _shapeEditHoldId == hold.Id;
+            var isFoot = hold.Category == HoldCategory.Foot;
+            var fillColor = GetHoldFillColor(hold, isSelected || isShapeEditing);
+            var strokeColor = (isSelected || isShapeEditing) ? "#ffffff" : GetHoldStrokeColor(hold);
+            var sw = (isSelected || isShapeEditing) ? "0.4" : "0.25";
+            var r = (isFoot ? hold.Radius * 0.7 : hold.Radius) * 100;
 
-            <circle cx="@F(hold.X * 100)%" cy="@F(hold.Y * 100)%"
-                    r="@F(hold.Radius * 100)%"
-                    fill="@fillColor" stroke="@strokeColor"
-                    stroke-width="@(isSelected ? "3" : "2")"
-                    style="cursor: pointer"
-                    @onclick="() => SelectHold(hold)"
-                    @onclick:stopPropagation="true"
-                    @onmousedown="() => StartDrag(hold)"
-                    @onmousedown:stopPropagation="true" />
-
-            @if (isSelected)
+            @if (hold.ShapePoints is { Count: >= 3 })
             {
-                <circle cx="@F(hold.X * 100)%" cy="@F(hold.Y * 100)%"
-                        r="@F(hold.Radius * 100 + 1.5)%"
-                        fill="none" stroke="white" stroke-width="1"
-                        stroke-dasharray="4 3" style="pointer-events: none" />
+                <polygon points="@Pts(hold.ShapePoints.Select(sp => (hold.X + sp.Dx, hold.Y + sp.Dy)))"
+                         fill="@fillColor" stroke="@strokeColor" stroke-width="@sw"
+                         style="cursor: pointer"
+                         @onclick="() => OnHoldClick(hold)" @onclick:stopPropagation="true"
+                         @onmousedown="() => StartDrag(hold)" @onmousedown:stopPropagation="true" />
+            }
+            else if (isFoot)
+            {
+                <rect x="@F((hold.X - r / 100.0) * 100)" y="@F((hold.Y - r / 100.0) * 100)"
+                      width="@F(r * 2 / 100.0 * 100)" height="@F(r * 2 / 100.0 * 100)"
+                      rx="0.3" fill="@fillColor" stroke="@strokeColor" stroke-width="@sw"
+                      style="cursor: pointer"
+                      @onclick="() => OnHoldClick(hold)" @onclick:stopPropagation="true"
+                      @onmousedown="() => StartDrag(hold)" @onmousedown:stopPropagation="true" />
+            }
+            else
+            {
+                <circle cx="@F(hold.X * 100)" cy="@F(hold.Y * 100)" r="@F(r)"
+                        fill="@fillColor" stroke="@strokeColor" stroke-width="@sw"
+                        style="cursor: pointer"
+                        @onclick="() => OnHoldClick(hold)" @onclick:stopPropagation="true"
+                        @onmousedown="() => StartDrag(hold)" @onmousedown:stopPropagation="true" />
+            }
+
+            @if (isShapeEditing && hold.ShapePoints is { Count: >= 3 })
+            {
+                @for (int i = 0; i < hold.ShapePoints.Count; i++)
+                {
+                    var cpIdx = i;
+                    var sp = hold.ShapePoints[cpIdx];
+                    <circle cx="@F((hold.X + sp.Dx) * 100)" cy="@F((hold.Y + sp.Dy) * 100)"
+                            r="0.8" fill="white" stroke="#e94560" stroke-width="0.25"
+                            style="cursor: grab"
+                            @onmousedown="() => StartShapePointDrag(hold, cpIdx)" @onmousedown:stopPropagation="true" />
+                }
+            }
+
+            @if (isSelected && hold.ShapePoints == null)
+            {
+                <circle cx="@F(hold.X * 100)" cy="@F(hold.Y * 100)" r="@F(r + 0.5)"
+                        fill="none" stroke="white" stroke-width="0.15"
+                        stroke-dasharray="0.5 0.3" style="pointer-events: none" />
             }
         }
     </svg>
 
     @if (_isDetecting)
     {
-        <div class="detecting-overlay">
-            <span>Detecting holds...</span>
-        </div>
+        <div class="detecting-overlay"><span>Detecting holds...</span></div>
     }
+</div>
 </div>
 
 @code {
     [Parameter] public Guid WallId { get; set; }
     [Parameter] public List<Hold> Holds { get; set; } = [];
+    [Parameter] public List<ShapePoint> BorderPoints { get; set; } = [];
     [Parameter] public bool CanEdit { get; set; }
     [Parameter] public EventCallback<Hold> OnHoldAdded { get; set; }
     [Parameter] public EventCallback<Hold> OnHoldUpdated { get; set; }
     [Parameter] public EventCallback<Guid> OnHoldDeleted { get; set; }
     [Parameter] public EventCallback OnRedetectRequested { get; set; }
+    [Parameter] public EventCallback<List<ShapePoint>> OnBorderChanged { get; set; }
+    [Parameter] public EventCallback OnCleanArtifactsRequested { get; set; }
 
     private ElementReference _containerRef;
-    private ElementReference _imgRef;
+    private ElementReference _viewportRef;
     private Guid? _selectedHoldId;
+    private Guid? _shapeEditHoldId;
     private double _selectedRadius = 0.015;
     private EditMode _mode = EditMode.Add;
     private Guid? _draggingHoldId;
+    private int? _draggingShapePointIdx;
+    private Hold? _draggingShapeHold;
+    private int? _draggingBorderIdx;
     private bool _isDetecting;
+    private HoldCategory _addCategory = HoldCategory.Hand;
+    private string _addColor = "none";
+    private bool _addOnKickboard;
+    private string _paintColor = "yellow";
+    private double _zoom = 1.0;
+    private bool _showBorder = true;
 
-    private enum EditMode { Add, Move }
+    private static readonly string[] _colors = ["none", "yellow", "red", "pink", "blue", "green", "orange", "purple", "white", "black"];
+    private enum EditMode { Add, Move, Shape, Paint, Delete, Pan, Border }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await JS.InvokeVoidAsync("wallEditor.setupPan", _viewportRef, null);
+    }
+
+    private string A(EditMode m) => _mode == m ? "active" : "";
+
+    private string CursorForMode() => _mode switch
+    {
+        EditMode.Pan => "grab", EditMode.Delete => "crosshair",
+        EditMode.Add => "crosshair", _ => "default"
+    };
 
     private void SetMode(EditMode mode)
     {
         _mode = mode;
-        if (mode == EditMode.Add)
-        {
-            _selectedHoldId = null;
-        }
+        if (mode != EditMode.Move) _selectedHoldId = null;
+        if (mode != EditMode.Shape) _shapeEditHoldId = null;
     }
 
-    private void SelectHold(Hold hold)
+    private async Task OnHoldClick(Hold hold)
     {
-        if (_mode == EditMode.Add) return;
-        _selectedHoldId = hold.Id;
-        _selectedRadius = hold.Radius;
+        switch (_mode)
+        {
+            case EditMode.Paint:
+                hold.Color = _paintColor;
+                await OnHoldUpdated.InvokeAsync(hold);
+                return;
+            case EditMode.Delete:
+                await OnHoldDeleted.InvokeAsync(hold.Id);
+                return;
+            case EditMode.Shape:
+                _shapeEditHoldId = hold.Id;
+                if (hold.ShapePoints == null)
+                {
+                    hold.ShapePoints = ShapePoint.DefaultOctagon(hold.Radius);
+                    await OnHoldUpdated.InvokeAsync(hold);
+                }
+                return;
+            case EditMode.Move:
+                _selectedHoldId = hold.Id;
+                _selectedRadius = hold.Radius;
+                return;
+        }
     }
 
     private void StartDrag(Hold hold)
@@ -127,34 +313,49 @@
         _draggingHoldId = hold.Id;
     }
 
+    private void StartShapePointDrag(Hold hold, int idx)
+    {
+        _draggingShapeHold = hold;
+        _draggingShapePointIdx = idx;
+    }
+
+    private void StartBorderDrag(int idx) => _draggingBorderIdx = idx;
+
     private async Task OnSvgClick(MouseEventArgs e)
     {
         if (!CanEdit || _mode != EditMode.Add) return;
-
         var pos = await JS.InvokeAsync<RelativePos>("wallEditor.getRelativePosition", _containerRef, e.ClientX, e.ClientY);
-
-        var hold = new Hold
+        var radius = _selectedRadius;
+        await OnHoldAdded.InvokeAsync(new Hold
         {
-            Id = Guid.NewGuid(),
-            WallId = WallId,
-            X = Math.Clamp(pos.X, 0, 1),
-            Y = Math.Clamp(pos.Y, 0, 1),
-            Radius = _selectedRadius,
-            IsAutoDetected = false,
-        };
-
-        await OnHoldAdded.InvokeAsync(hold);
+            Id = Guid.NewGuid(), WallId = WallId,
+            X = Math.Clamp(pos.X, 0, 1), Y = Math.Clamp(pos.Y, 0, 1),
+            Radius = radius, Category = _addCategory,
+            Color = _addColor == "none" ? null : _addColor,
+            IsOnKickboard = _addOnKickboard, IsAutoDetected = false,
+            ShapePoints = ShapePoint.DefaultOctagon(radius),
+        });
     }
 
     private async Task OnSvgMouseMove(MouseEventArgs e)
     {
-        if (_draggingHoldId == null) return;
-
         var pos = await JS.InvokeAsync<RelativePos>("wallEditor.getRelativePosition", _containerRef, e.ClientX, e.ClientY);
 
+        if (_draggingBorderIdx.HasValue && _draggingBorderIdx.Value < BorderPoints.Count)
+        {
+            BorderPoints[_draggingBorderIdx.Value] = new ShapePoint { Dx = Math.Clamp(pos.X, 0, 1), Dy = Math.Clamp(pos.Y, 0, 1) };
+            StateHasChanged(); return;
+        }
+        if (_draggingShapePointIdx.HasValue && _draggingShapeHold != null)
+        {
+            var sp = _draggingShapeHold.ShapePoints![_draggingShapePointIdx.Value];
+            sp.Dx = pos.X - _draggingShapeHold.X;
+            sp.Dy = pos.Y - _draggingShapeHold.Y;
+            StateHasChanged(); return;
+        }
+        if (_draggingHoldId == null) return;
         var hold = Holds.FirstOrDefault(h => h.Id == _draggingHoldId);
         if (hold == null) return;
-
         hold.X = Math.Clamp(pos.X, 0, 1);
         hold.Y = Math.Clamp(pos.Y, 0, 1);
         StateHasChanged();
@@ -162,128 +363,120 @@
 
     private async Task OnSvgMouseUp(EventArgs e)
     {
+        if (_draggingBorderIdx.HasValue) { _draggingBorderIdx = null; await OnBorderChanged.InvokeAsync(BorderPoints); return; }
+        if (_draggingShapePointIdx.HasValue && _draggingShapeHold != null)
+        {
+            var h = _draggingShapeHold; _draggingShapePointIdx = null; _draggingShapeHold = null;
+            await OnHoldUpdated.InvokeAsync(h); return;
+        }
         if (_draggingHoldId == null) return;
-
         var hold = Holds.FirstOrDefault(h => h.Id == _draggingHoldId);
         _draggingHoldId = null;
-
-        if (hold != null)
-        {
-            await OnHoldUpdated.InvokeAsync(hold);
-        }
+        if (hold != null) await OnHoldUpdated.InvokeAsync(hold);
     }
 
-    private async Task DeleteSelected()
-    {
-        if (_selectedHoldId == null) return;
-        var id = _selectedHoldId.Value;
-        _selectedHoldId = null;
-        await OnHoldDeleted.InvokeAsync(id);
-    }
+    private async Task DeleteSelected() { if (_selectedHoldId == null) return; var id = _selectedHoldId.Value; _selectedHoldId = null; await OnHoldDeleted.InvokeAsync(id); }
 
     private async Task OnRadiusChange(ChangeEventArgs e)
     {
         if (_selectedHoldId == null || !int.TryParse(e.Value?.ToString(), out var val)) return;
         _selectedRadius = val / 1000.0;
-
         var hold = Holds.FirstOrDefault(h => h.Id == _selectedHoldId);
         if (hold == null) return;
-
         hold.Radius = _selectedRadius;
+        if (hold.ShapePoints != null) hold.ShapePoints = ShapePoint.DefaultOctagon(_selectedRadius);
         await OnHoldUpdated.InvokeAsync(hold);
     }
 
-    private async Task OnRedetect()
+    private async Task SetSelectedCategory(HoldCategory cat)
+    { var h = Holds.FirstOrDefault(h => h.Id == _selectedHoldId); if (h == null) return; h.Category = cat; await OnHoldUpdated.InvokeAsync(h); }
+
+    private async Task ToggleKickboard(Hold h) { h.IsOnKickboard = !h.IsOnKickboard; await OnHoldUpdated.InvokeAsync(h); }
+
+    private async Task OnSelectedColorChange(ChangeEventArgs e)
+    { var h = Holds.FirstOrDefault(h => h.Id == _selectedHoldId); if (h == null) return; var v = e.Value?.ToString(); h.Color = v == "none" ? null : v; await OnHoldUpdated.InvokeAsync(h); }
+
+    private async Task OnRedetect() { _isDetecting = true; StateHasChanged(); await OnRedetectRequested.InvokeAsync(); _isDetecting = false; }
+
+    private async Task InitBorder()
     {
-        _isDetecting = true;
-        StateHasChanged();
-        await OnRedetectRequested.InvokeAsync();
-        _isDetecting = false;
+        BorderPoints.Clear();
+        BorderPoints.AddRange(new[] {
+            new ShapePoint { Dx = 0.05, Dy = 0.05 }, new ShapePoint { Dx = 0.35, Dy = 0.03 },
+            new ShapePoint { Dx = 0.65, Dy = 0.03 }, new ShapePoint { Dx = 0.95, Dy = 0.05 },
+            new ShapePoint { Dx = 0.95, Dy = 0.60 }, new ShapePoint { Dx = 0.85, Dy = 0.95 },
+            new ShapePoint { Dx = 0.15, Dy = 0.95 }, new ShapePoint { Dx = 0.05, Dy = 0.60 },
+        });
+        _showBorder = true;
+        await OnBorderChanged.InvokeAsync(BorderPoints);
     }
+
+    private async Task ClearBorder() { BorderPoints.Clear(); await OnBorderChanged.InvokeAsync(BorderPoints); }
+    private async Task CleanArtifacts() { await OnCleanArtifactsRequested.InvokeAsync(); }
+
+    private void ZoomIn() => _zoom = Math.Min(_zoom + 0.25, 4.0);
+    private void ZoomOut() => _zoom = Math.Max(_zoom - 0.25, 0.5);
+    private void ResetZoom() => _zoom = 1.0;
 
     private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+    private static string Pts(IEnumerable<(double X, double Y)> pts) =>
+        string.Join(" ", pts.Select(p => $"{F(p.X * 100)},{F(p.Y * 100)}"));
 
-    private static string GetHoldFillColor(Hold hold, bool selected)
-    {
-        if (selected) return "rgba(255, 255, 255, 0.4)";
-        return hold.Color switch
-        {
-            "yellow" => "rgba(255, 220, 0, 0.45)",
-            "red" => "rgba(220, 50, 50, 0.45)",
-            "pink" => "rgba(255, 100, 160, 0.45)",
-            "blue" => "rgba(60, 120, 230, 0.45)",
-            "green" => "rgba(60, 200, 90, 0.45)",
-            "orange" => "rgba(255, 150, 30, 0.45)",
-            "purple" => "rgba(160, 60, 210, 0.45)",
-            "white" => "rgba(255, 255, 255, 0.45)",
-            "black" => "rgba(60, 60, 60, 0.45)",
-            _ => "rgba(229, 69, 96, 0.35)",
-        };
-    }
+    private static string GetCssColor(string? c) => c switch {
+        "yellow" => "#e6c800", "red" => "#cc3333", "pink" => "#e05590", "blue" => "#3366dd",
+        "green" => "#33aa44", "orange" => "#dd8800", "purple" => "#8833bb", "white" => "#eee",
+        "black" => "#444", _ => "#e94560" };
 
-    private static string GetHoldStrokeColor(Hold hold)
-    {
-        return hold.Color switch
-        {
-            "yellow" => "#e6c800",
-            "red" => "#cc3333",
-            "pink" => "#e05590",
-            "blue" => "#3366dd",
-            "green" => "#33aa44",
-            "orange" => "#dd8800",
-            "purple" => "#8833bb",
-            "white" => "#cccccc",
-            "black" => "#444444",
-            _ => "#e94560",
-        };
-    }
+    private static string GetHoldFillColor(Hold h, bool sel) {
+        if (sel) return "rgba(255,255,255,0.4)";
+        return h.Color switch {
+            "yellow" => "rgba(255,220,0,0.45)", "red" => "rgba(220,50,50,0.45)",
+            "pink" => "rgba(255,100,160,0.45)", "blue" => "rgba(60,120,230,0.45)",
+            "green" => "rgba(60,200,90,0.45)", "orange" => "rgba(255,150,30,0.45)",
+            "purple" => "rgba(160,60,210,0.45)", "white" => "rgba(255,255,255,0.45)",
+            "black" => "rgba(60,60,60,0.45)", _ => "rgba(229,69,96,0.35)" }; }
 
+    private static string GetHoldStrokeColor(Hold h) => GetCssColor(h.Color);
     private record RelativePos(double X, double Y);
 }
 
 <style>
-    .editor-toolbar {
-        display: flex; justify-content: space-between; align-items: center;
-        padding: 8px 12px; background: #1a1a2e; border-radius: 10px 10px 0 0;
-        gap: 8px; flex-wrap: wrap;
-    }
+    .editor-toolbar { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: #1a1a2e; border-radius: 10px 10px 0 0; gap: 8px; flex-wrap: wrap; }
     .toolbar-left { display: flex; align-items: center; gap: 8px; }
-    .toolbar-right { display: flex; align-items: center; gap: 6px; }
-    .hold-count { color: rgba(255,255,255,0.7); font-size: 0.85rem; }
-    .selected-label {
-        font-size: 0.75rem; padding: 2px 8px; background: #e94560;
-        color: white; border-radius: 4px;
-    }
-
-    .tool-btn {
-        background: rgba(255,255,255,0.1); border: none; color: white;
-        padding: 6px; border-radius: 6px; cursor: pointer;
-        display: flex; align-items: center; justify-content: center;
-        transition: background 0.15s;
-    }
+    .toolbar-right { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+    .toolbar-sep { width: 1px; height: 20px; background: rgba(255,255,255,0.2); margin: 0 2px; }
+    .hold-count { color: rgba(255,255,255,0.7); font-size: 0.8rem; }
+    .tool-btn { background: rgba(255,255,255,0.1); border: none; color: white; padding: 6px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
     .tool-btn:hover { background: rgba(255,255,255,0.2); }
     .tool-btn.active { background: #e94560; }
-    .tool-btn.danger:hover { background: #cc2244; }
+    .tool-btn.active.danger { background: #cc2244; }
     .tool-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-    .radius-control {
-        display: flex; align-items: center; gap: 4px; color: white; font-size: 0.8rem;
-    }
-    .radius-control input[type=range] { width: 60px; accent-color: #e94560; }
+    .option-bar { display: flex; align-items: center; gap: 10px; padding: 6px 12px; background: #22223a; flex-wrap: wrap; }
+    .option-group { display: flex; align-items: center; gap: 4px; }
+    .option-group label { color: rgba(255,255,255,0.6); font-size: 0.75rem; }
+    .option-group input[type=range] { width: 60px; accent-color: #e94560; }
+    .option-hint { color: rgba(255,255,255,0.4); font-size: 0.7rem; font-style: italic; }
+    .opt-btn { padding: 3px 10px; border: 1px solid rgba(255,255,255,0.3); background: none; color: white; border-radius: 4px; font-size: 0.75rem; cursor: pointer; }
+    .opt-btn.active { background: #2196F3; border-color: #2196F3; }
+    .opt-btn.foot.active { background: #8D6E63; border-color: #8D6E63; }
+    .opt-btn.danger { border-color: #e94560; color: #e94560; }
+    .opt-btn.danger:hover { background: #e94560; color: white; }
+    .color-select { padding: 2px 4px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.3); background: #1a1a2e; color: white; font-size: 0.75rem; }
+    .color-dot { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.3); display: inline-block; }
+    .color-swatch { width: 22px; height: 22px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.3); cursor: pointer; padding: 0; }
+    .color-swatch.active { border-color: white; box-shadow: 0 0 0 2px rgba(255,255,255,0.5); }
+    .cb-label { display: flex; align-items: center; gap: 4px; color: white; font-size: 0.75rem; cursor: pointer; }
+    .cb-label input { accent-color: #8D6E63; }
 
-    .photo-editor {
-        position: relative; border-radius: 0 0 12px 12px; overflow: hidden;
-        touch-action: none; user-select: none;
-    }
+    .zoom-bar { display: flex; gap: 4px; padding: 4px 12px; background: #22223a; align-items: center; }
+    .zoom-btn { padding: 4px 12px; background: rgba(255,255,255,0.1); border: none; color: white; border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
+    .zoom-btn:hover { background: rgba(255,255,255,0.2); }
+    .zoom-label { color: rgba(255,255,255,0.5); font-size: 0.75rem; margin-left: 4px; }
+
+    .photo-viewport { max-height: 70vh; overflow: auto; -webkit-overflow-scrolling: touch; border-radius: 0 0 12px 12px; }
+    .photo-editor { position: relative; overflow: hidden; touch-action: none; user-select: none; }
     .photo-editor .wall-photo { width: 100%; display: block; }
-    .photo-editor .hold-overlay {
-        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-        cursor: crosshair;
-    }
-
-    .detecting-overlay {
-        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-        background: rgba(0,0,0,0.5); display: flex; align-items: center;
-        justify-content: center; color: white; font-size: 1.1rem; font-weight: 600;
-    }
+    .photo-editor .hold-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+    .detecting-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; color: white; font-size: 1.1rem; font-weight: 600; }
 </style>

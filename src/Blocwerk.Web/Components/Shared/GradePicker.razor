@@ -1,0 +1,59 @@
+@using Blocwerk.Core.Helpers
+
+<div class="grade-picker">
+    <div class="scale-toggle">
+        <button class="scale-btn @(_useFont ? "" : "active")" @onclick="() => SetScale(false)">V Scale</button>
+        <button class="scale-btn @(_useFont ? "active" : "")" @onclick="() => SetScale(true)">Font</button>
+    </div>
+    <select class="grade-select" value="@Value" @onchange="OnGradeChanged">
+        <option value="">No grade</option>
+        @foreach (var grade in _useFont ? GradeScale.FontGrades : GradeScale.VGrades)
+        {
+            <option value="@grade">@grade</option>
+        }
+    </select>
+</div>
+
+@code {
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+
+    private bool _useFont;
+
+    private void SetScale(bool font)
+    {
+        if (_useFont == font) return;
+        _useFont = font;
+
+        if (!string.IsNullOrEmpty(Value))
+        {
+            var converted = font ? GradeScale.ToFont(Value) : GradeScale.ToV(Value);
+            if (converted != null)
+            {
+                Value = converted;
+                ValueChanged.InvokeAsync(Value);
+            }
+        }
+    }
+
+    private async Task OnGradeChanged(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString();
+        Value = string.IsNullOrEmpty(val) ? null : val;
+        await ValueChanged.InvokeAsync(Value);
+    }
+}
+
+<style>
+    .grade-picker { display: flex; align-items: center; gap: 6px; }
+    .scale-toggle { display: flex; gap: 2px; }
+    .scale-btn {
+        padding: 4px 8px; border: 1px solid #e0e0e0; background: white;
+        border-radius: 4px; font-size: 0.75rem; cursor: pointer; color: #666;
+    }
+    .scale-btn.active { background: #1a1a2e; color: white; border-color: #1a1a2e; }
+    .grade-select {
+        padding: 8px 10px; border: 2px solid #e0e0e0; border-radius: 8px;
+        font-size: 1rem; font-weight: 700; background: white; min-width: 80px;
+    }
+</style>

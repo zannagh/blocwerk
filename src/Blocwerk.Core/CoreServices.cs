@@ -44,7 +44,7 @@ public static class CoreServices
     {
         using var scope = app.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<BlocwerkDbContext>();
-        db.Database.EnsureCreated();
+        db.Database.Migrate();
         return app;
     }
 }

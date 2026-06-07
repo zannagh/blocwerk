@@ -1,3 +1,6 @@
+
+docker/pgdata
+
 # ONNX models (large binary files)
 *.onnx
 

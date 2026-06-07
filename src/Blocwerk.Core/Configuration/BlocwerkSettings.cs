@@ -71,7 +71,7 @@ public class BlocwerkSettings
         {
             ModelPath = section["HoldDetection:ModelPath"]
                         ?? Environment.GetEnvironmentVariable("HOLDDETECTION__MODELPATH")
-                        ?? "models/yolov8s.onnx",
+                        ?? "models/climbingcrux.onnx",
         };
 
         GitHubOAuth = BindOAuthProvider(section, "GitHub", "https://github.com/login/oauth/authorize");
@@ -153,5 +153,5 @@ public class PostgresSettings
 
 public class HoldDetectionSettings
 {
-    public string ModelPath { get; set; } = "models/yolov8s.onnx";
+    public string ModelPath { get; set; } = "models/climbingcrux.onnx";
 }

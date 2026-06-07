@@ -11,7 +11,7 @@ public class HoldDetectionVisualTests : IDisposable
 
     public HoldDetectionVisualTests()
     {
-        var modelPath = HoldDetectionServices.ResolveModelPath("models/yolov8s.onnx");
+        var modelPath = HoldDetectionServices.ResolveModelPath("models/climbingcrux.onnx");
         _service = new YoloHoldDetectionService(modelPath);
     }
 

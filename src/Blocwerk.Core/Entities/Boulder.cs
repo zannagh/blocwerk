@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using Blocwerk.Core.Enums;
 
 namespace Blocwerk.Core.Entities;
 
@@ -26,6 +27,8 @@ public class Boulder
     public User CreatedBy { get; set; } = null!;
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    public FootholdMode FootholdMode { get; set; } = FootholdMode.AllKickboard;
 
     public bool IsArchived { get; set; }
 

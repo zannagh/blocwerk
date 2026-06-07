@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -25,6 +26,10 @@ public class BlocwerkDbContext : DbContext
     public DbSet<WallReset> WallResets => Set<WallReset>();
 
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+
+    public DbSet<HangboardSession> HangboardSessions => Set<HangboardSession>();
+
+    public DbSet<PullupSession> PullupSessions => Set<PullupSession>();
 
     public BlocwerkDbContext(DbContextOptions<BlocwerkDbContext> options)
         : base(options)
@@ -79,6 +84,11 @@ public class BlocwerkDbContext : DbContext
                 .IsUnique()
                 .HasFilter("\"ShareToken\" IS NOT NULL");
 
+            entity.Property(w => w.BorderPoints)
+                .HasConversion(
+                    v => v == null ? null : JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+                    v => v == null ? null : JsonSerializer.Deserialize<List<ShapePoint>>(v, (JsonSerializerOptions?)null));
+
             entity.HasQueryFilter(w =>
                 CurrentUserId == Guid.Empty
                 || w.Members.Any(m => m.UserId == CurrentUserId));
@@ -111,6 +121,11 @@ public class BlocwerkDbContext : DbContext
                 .WithMany(w => w.Holds)
                 .HasForeignKey(h => h.WallId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            entity.Property(h => h.ShapePoints)
+                .HasConversion(
+                    v => v == null ? null : JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+                    v => v == null ? null : JsonSerializer.Deserialize<List<ShapePoint>>(v, (JsonSerializerOptions?)null));
         });
     }
 

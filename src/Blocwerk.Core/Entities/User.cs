@@ -23,6 +23,10 @@ public class User : IEquatable<User>
 
     public ICollection<Attempt> Attempts { get; set; } = [];
 
+    public ICollection<HangboardSession> HangboardSessions { get; set; } = [];
+
+    public ICollection<PullupSession> PullupSessions { get; set; } = [];
+
     public string UserName => Identifier.Split("__").FirstOrDefault() ?? Identifier;
 
     public string UserAuthId => Identifier.Split("__").LastOrDefault() ?? Identifier;

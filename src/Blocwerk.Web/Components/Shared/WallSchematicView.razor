@@ -1,0 +1,113 @@
+@* Angle-corrected schematic view: transforms hold Y positions as if viewing the wall at 90 degrees *@
+
+<div class="schematic-container">
+    <div class="zoom-controls">
+        <button class="zoom-btn" @onclick="ZoomIn">+</button>
+        <button class="zoom-btn" @onclick="ZoomOut">&minus;</button>
+        <button class="zoom-btn" @onclick="ResetZoom">Reset</button>
+    </div>
+
+    <div class="schematic-viewport" style="overflow: auto;">
+        <svg viewBox="0 0 100 100" class="schematic-svg"
+             style="width: @F(_zoom * 100)%; min-width: 100%;"
+             xmlns="http://www.w3.org/2000/svg">
+            <rect x="0" y="0" width="100" height="100" fill="#f5f0eb" rx="1" />
+
+            <line x1="0" y1="100" x2="100" y2="100"
+                  stroke="#8D6E63" stroke-width="0.5" />
+
+            @foreach (var hold in Holds)
+            {
+                var correctedY = hold.IsOnKickboard ? hold.Y : CorrectY(hold.Y);
+                var isFoot = hold.Category == HoldCategory.Foot;
+                var r = (isFoot ? hold.Radius * 0.7 : hold.Radius) * 100;
+                var fill = GetFillColor(hold);
+                var stroke = GetStrokeColor(hold);
+
+                @if (isFoot)
+                {
+                    <rect x="@F(hold.X * 100 - r)" y="@F(correctedY * 100 - r)"
+                          width="@F(r * 2)" height="@F(r * 2)"
+                          rx="0.3" ry="0.3"
+                          fill="@fill" stroke="@stroke" stroke-width="0.3" />
+                }
+                else
+                {
+                    <circle cx="@F(hold.X * 100)" cy="@F(correctedY * 100)"
+                            r="@F(r)"
+                            fill="@fill" stroke="@stroke" stroke-width="0.3" />
+                }
+            }
+        </svg>
+    </div>
+
+    <div class="schematic-info">
+        <span>Wall angle: @Angle&deg;</span>
+        @if (Angle > 0)
+        {
+            <span>&middot; Corrected to straight-on view</span>
+        }
+        @if (_zoom != 1.0)
+        {
+            <span>&middot; @F(_zoom * 100)%</span>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public List<Hold> Holds { get; set; } = [];
+    [Parameter] public int Angle { get; set; }
+
+    private double _zoom = 1.0;
+
+    private double CorrectY(double y)
+    {
+        if (Angle <= 0) return y;
+        var cosA = Math.Cos(Angle * Math.PI / 180.0);
+        return y * cosA + (1 - cosA) * 0.5;
+    }
+
+    private void ZoomIn() => _zoom = Math.Min(_zoom + 0.25, 4.0);
+    private void ZoomOut() => _zoom = Math.Max(_zoom - 0.25, 0.5);
+    private void ResetZoom() => _zoom = 1.0;
+
+    private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string GetFillColor(Hold hold) => hold.Color switch
+    {
+        "yellow" => "#FFD600", "red" => "#E53935", "pink" => "#EC407A",
+        "blue" => "#1E88E5", "green" => "#43A047", "orange" => "#FB8C00",
+        "purple" => "#8E24AA", "white" => "#FAFAFA", "black" => "#424242",
+        _ => "#E94560",
+    };
+
+    private static string GetStrokeColor(Hold hold) => hold.Color switch
+    {
+        "yellow" => "#C6A700", "red" => "#B71C1C", "pink" => "#AD1457",
+        "blue" => "#0D47A1", "green" => "#1B5E20", "orange" => "#E65100",
+        "purple" => "#4A148C", "white" => "#BDBDBD", "black" => "#212121",
+        _ => "#C62828",
+    };
+}
+
+<style>
+    .schematic-container {
+        background: white; border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06); overflow: hidden;
+    }
+    .zoom-controls {
+        display: flex; gap: 4px; padding: 8px 12px; background: #1a1a2e;
+    }
+    .zoom-btn {
+        padding: 4px 12px; background: rgba(255,255,255,0.1); border: none;
+        color: white; border-radius: 4px; cursor: pointer; font-size: 0.85rem;
+    }
+    .zoom-btn:hover { background: rgba(255,255,255,0.2); }
+    .schematic-viewport {
+        max-height: 70vh; overflow: auto; -webkit-overflow-scrolling: touch;
+    }
+    .schematic-svg { display: block; }
+    .schematic-info {
+        text-align: center; padding: 8px; font-size: 0.8rem; color: #999;
+    }
+</style>

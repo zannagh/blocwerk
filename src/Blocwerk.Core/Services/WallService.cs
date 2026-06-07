@@ -9,17 +9,17 @@ namespace Blocwerk.Core.Services;
 
 public interface IWallService
 {
-    Task<Wall> CreateWallAsync(string name, string? description);
+    Task<Wall> CreateWallAsync(string name, string? description, int angle = 0);
 
     Task<Wall?> GetWallAsync(Guid wallId);
 
     Task<List<Wall>> GetMyWallsAsync();
 
-    Task<Wall> UpdateWallAsync(Guid wallId, string name, string? description);
+    Task<Wall> UpdateWallAsync(Guid wallId, string name, string? description, int? angle = null);
 
     Task DeleteWallAsync(Guid wallId);
 
-    Task<Wall> UploadPhotoAsync(Guid wallId, byte[] photo, string contentType);
+    Task<Wall> UploadPhotoAsync(Guid wallId, byte[] photo, string contentType, bool autoDetect = true);
 
     Task<string> GenerateShareTokenAsync(Guid wallId);
 
@@ -27,15 +27,19 @@ public interface IWallService
 
     Task<byte[]?> GetPhotoAsync(Guid wallId);
 
-    Task<Hold> AddHoldAsync(Guid wallId, double x, double y, double radius, string? color);
+    Task<Hold> AddHoldAsync(Guid wallId, double x, double y, double radius, string? color, HoldCategory category = HoldCategory.Hand, List<ShapePoint>? shapePoints = null);
 
-    Task<Hold> UpdateHoldAsync(Guid holdId, double x, double y, double radius);
+    Task<Hold> UpdateHoldAsync(Guid holdId, double x, double y, double radius, string? color = null, HoldCategory? category = null, bool? isOnKickboard = null, List<ShapePoint>? shapePoints = null);
 
     Task DeleteHoldAsync(Guid holdId);
 
     Task<int> RedetectHoldsAsync(Guid wallId, HoldDetectionParameters? parameters = null);
 
     Task ClearAutoDetectedHoldsAsync(Guid wallId);
+
+    Task SetBorderPointsAsync(Guid wallId, List<ShapePoint> points);
+
+    Task<int> CleanOutsideBorderAsync(Guid wallId);
 }
 
 public class WallService : IWallService
@@ -54,7 +58,7 @@ public class WallService : IWallService
         _holdDetectionService = holdDetectionService;
     }
 
-    public async Task<Wall> CreateWallAsync(string name, string? description)
+    public async Task<Wall> CreateWallAsync(string name, string? description, int angle = 0)
     {
         var user = await _currentUserService.GetCurrentUserAsync();
         await using var db = await _dbContextFactory.CreateDbContextAsync();
@@ -65,6 +69,7 @@ public class WallService : IWallService
             Name = name,
             Description = description,
             OwnerId = user.Id,
+            Angle = angle,
         };
 
         db.Walls.Add(wall);
@@ -104,7 +109,7 @@ public class WallService : IWallService
             .ToListAsync();
     }
 
-    public async Task<Wall> UpdateWallAsync(Guid wallId, string name, string? description)
+    public async Task<Wall> UpdateWallAsync(Guid wallId, string name, string? description, int? angle = null)
     {
         var user = await _currentUserService.GetCurrentUserAsync();
         await using var db = await _dbContextFactory.CreateDbContextAsync();
@@ -115,6 +120,7 @@ public class WallService : IWallService
 
         wall.Name = name;
         wall.Description = description;
+        if (angle.HasValue) wall.Angle = angle.Value;
         await db.SaveChangesAsync();
         return wall;
     }
@@ -132,7 +138,7 @@ public class WallService : IWallService
         await db.SaveChangesAsync();
     }
 
-    public async Task<Wall> UploadPhotoAsync(Guid wallId, byte[] photo, string contentType)
+    public async Task<Wall> UploadPhotoAsync(Guid wallId, byte[] photo, string contentType, bool autoDetect = true)
     {
         var user = await _currentUserService.GetCurrentUserAsync();
         await using var db = await _dbContextFactory.CreateDbContextAsync();
@@ -143,6 +149,12 @@ public class WallService : IWallService
 
         wall.Photo = photo;
         wall.PhotoContentType = contentType;
+
+        if (!autoDetect)
+        {
+            await db.SaveChangesAsync();
+            return wall;
+        }
 
         var detectedHolds = await _holdDetectionService.DetectHoldsAsync(photo);
         foreach (var detected in detectedHolds)
@@ -219,7 +231,7 @@ public class WallService : IWallService
         return wall?.Photo;
     }
 
-    public async Task<Hold> AddHoldAsync(Guid wallId, double x, double y, double radius, string? color)
+    public async Task<Hold> AddHoldAsync(Guid wallId, double x, double y, double radius, string? color, HoldCategory category = HoldCategory.Hand, List<ShapePoint>? shapePoints = null)
     {
         var user = await _currentUserService.GetCurrentUserAsync();
         await using var db = await _dbContextFactory.CreateDbContextAsync();
@@ -235,6 +247,8 @@ public class WallService : IWallService
             Y = y,
             Radius = radius,
             Color = color,
+            Category = category,
+            ShapePoints = shapePoints,
             IsAutoDetected = false,
             Generation = wall.CurrentGeneration,
         };
@@ -244,7 +258,7 @@ public class WallService : IWallService
         return hold;
     }
 
-    public async Task<Hold> UpdateHoldAsync(Guid holdId, double x, double y, double radius)
+    public async Task<Hold> UpdateHoldAsync(Guid holdId, double x, double y, double radius, string? color = null, HoldCategory? category = null, bool? isOnKickboard = null, List<ShapePoint>? shapePoints = null)
     {
         var user = await _currentUserService.GetCurrentUserAsync();
         await using var db = await _dbContextFactory.CreateDbContextAsync();
@@ -256,6 +270,10 @@ public class WallService : IWallService
         hold.X = x;
         hold.Y = y;
         hold.Radius = radius;
+        if (color != null) hold.Color = color;
+        if (category.HasValue) hold.Category = category.Value;
+        if (isOnKickboard.HasValue) hold.IsOnKickboard = isOnKickboard.Value;
+        if (shapePoints != null) hold.ShapePoints = shapePoints;
         await db.SaveChangesAsync();
         return hold;
     }
@@ -329,5 +347,62 @@ public class WallService : IWallService
 
         db.Holds.RemoveRange(autoHolds);
         await db.SaveChangesAsync();
+    }
+
+    public async Task SetBorderPointsAsync(Guid wallId, List<ShapePoint> points)
+    {
+        var user = await _currentUserService.GetCurrentUserAsync();
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = user.Id;
+
+        var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId)
+                   ?? throw new InvalidOperationException("Wall not found");
+
+        wall.BorderPoints = points;
+        await db.SaveChangesAsync();
+    }
+
+    public async Task<int> CleanOutsideBorderAsync(Guid wallId)
+    {
+        var user = await _currentUserService.GetCurrentUserAsync();
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = user.Id;
+
+        var wall = await db.Walls
+                       .Include(w => w.Holds)
+                       .FirstOrDefaultAsync(w => w.Id == wallId)
+                   ?? throw new InvalidOperationException("Wall not found");
+
+        if (wall.BorderPoints == null || wall.BorderPoints.Count < 3)
+        {
+            return 0;
+        }
+
+        var borderPolygon = wall.BorderPoints.Select(p => (p.Dx, p.Dy)).ToList();
+        var toRemove = wall.Holds
+            .Where(h => h.Generation == wall.CurrentGeneration && !IsPointInPolygon(h.X, h.Y, borderPolygon))
+            .ToList();
+
+        db.Holds.RemoveRange(toRemove);
+        await db.SaveChangesAsync();
+        return toRemove.Count;
+    }
+
+    private static bool IsPointInPolygon(double px, double py, List<(double X, double Y)> polygon)
+    {
+        bool inside = false;
+        int j = polygon.Count - 1;
+        for (int i = 0; i < polygon.Count; i++)
+        {
+            if ((polygon[i].Y > py) != (polygon[j].Y > py) &&
+                px < (polygon[j].X - polygon[i].X) * (py - polygon[i].Y) / (polygon[j].Y - polygon[i].Y) + polygon[i].X)
+            {
+                inside = !inside;
+            }
+
+            j = i;
+        }
+
+        return inside;
     }
 }

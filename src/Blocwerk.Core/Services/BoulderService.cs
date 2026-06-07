@@ -8,7 +8,7 @@ namespace Blocwerk.Core.Services;
 
 public interface IBoulderService
 {
-    Task<Boulder> CreateBoulderAsync(Guid wallId, string name, string? grade, List<BoulderHoldInput> holds);
+    Task<Boulder> CreateBoulderAsync(Guid wallId, string name, string? grade, List<BoulderHoldInput> holds, FootholdMode footholdMode = FootholdMode.AllKickboard);
 
     Task<Boulder?> GetBoulderAsync(Guid boulderId);
 
@@ -32,7 +32,7 @@ public class BoulderService : IBoulderService
         _currentUserService = currentUserService;
     }
 
-    public async Task<Boulder> CreateBoulderAsync(Guid wallId, string name, string? grade, List<BoulderHoldInput> holds)
+    public async Task<Boulder> CreateBoulderAsync(Guid wallId, string name, string? grade, List<BoulderHoldInput> holds, FootholdMode footholdMode = FootholdMode.AllKickboard)
     {
         var user = await _currentUserService.GetCurrentUserAsync();
         await using var db = await _dbContextFactory.CreateDbContextAsync();
@@ -48,6 +48,7 @@ public class BoulderService : IBoulderService
             Grade = grade,
             CreatedByUserId = user.Id,
             Generation = wall.CurrentGeneration,
+            FootholdMode = footholdMode,
         };
 
         db.Boulders.Add(boulder);

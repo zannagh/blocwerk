@@ -28,6 +28,10 @@ public class Wall
     [MaxLength(64)]
     public string? ShareToken { get; set; }
 
+    public int Angle { get; set; }
+
+    public List<ShapePoint>? BorderPoints { get; set; }
+
     public bool IsActive { get; set; } = true;
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;

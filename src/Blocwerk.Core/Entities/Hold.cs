@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using Blocwerk.Core.Enums;
 
 namespace Blocwerk.Core.Entities;
 
@@ -19,8 +20,14 @@ public class Hold
 
     public double Radius { get; set; } = 0.02;
 
+    public List<ShapePoint>? ShapePoints { get; set; }
+
     [MaxLength(32)]
     public string? Color { get; set; }
+
+    public HoldCategory Category { get; set; } = HoldCategory.Hand;
+
+    public bool IsOnKickboard { get; set; }
 
     public bool IsAutoDetected { get; set; }
 

@@ -1,37 +1,112 @@
 @inject IJSRuntime JS
 
 <div class="picker-toolbar">
-    <span class="pick-count">@SelectedHolds.Count holds selected</span>
+    <span class="pick-count">@SelectedHolds.Count selected</span>
     <div class="pick-legend">
         <span class="legend-item"><span class="dot start"></span> Start</span>
         <span class="legend-item"><span class="dot normal"></span> Normal</span>
         <span class="legend-item"><span class="dot top"></span> Top</span>
     </div>
-    <div class="pick-mode">
+    <div class="pick-controls">
         <button class="mode-btn @(_placeType == HoldType.Start ? "active start-active" : "")" @onclick="() => _placeType = HoldType.Start">Start</button>
         <button class="mode-btn @(_placeType == HoldType.Normal ? "active" : "")" @onclick="() => _placeType = HoldType.Normal">Normal</button>
         <button class="mode-btn @(_placeType == HoldType.Top ? "active top-active" : "")" @onclick="() => _placeType = HoldType.Top">Top</button>
+        <span class="separator"></span>
+        <button class="mode-btn @(_viewMode == ViewMode.Photo ? "view-active" : "")" @onclick="() => _viewMode = ViewMode.Photo">Photo</button>
+        <button class="mode-btn @(_viewMode == ViewMode.Schematic ? "view-active" : "")" @onclick="() => _viewMode = ViewMode.Schematic">Map</button>
+        <span class="separator"></span>
+        <button class="mode-btn @(_isPanning ? "view-active" : "")" @onclick="() => _isPanning = !_isPanning" title="Pan">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                <path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 9.5V5a2 2 0 0 0-4 0v9" />
+                <path d="M18 11a2 2 0 0 1 4 0v6a8 8 0 0 1-8 8h-2c-2.5 0-4-1-6-4l-3.3-5.1a2 2 0 0 1 3.3-2.3L6 14" />
+            </svg>
+        </button>
     </div>
 </div>
 
-<div class="photo-picker">
-    <img src="/api/walls/@WallId/photo" alt="Wall" class="wall-photo" />
-    <svg class="hold-overlay">
-        @foreach (var hold in AllHolds)
-        {
-            var selection = SelectedHolds.FirstOrDefault(s => s.HoldId == hold.Id);
-            var isSelected = selection != null;
-            var fillColor = isSelected ? GetSelectionFill(selection!.Type) : "rgba(255,255,255,0.15)";
-            var strokeColor = isSelected ? GetSelectionStroke(selection!.Type) : "rgba(255,255,255,0.4)";
-            var strokeWidth = isSelected ? "3" : "1.5";
+<div class="zoom-bar">
+    <button class="zoom-btn" @onclick="() => _zoom = Math.Min(_zoom + 0.25, 4.0)">+</button>
+    <button class="zoom-btn" @onclick="() => _zoom = Math.Max(_zoom - 0.25, 0.5)">&minus;</button>
+    <button class="zoom-btn" @onclick="() => _zoom = 1.0">Reset</button>
+    @if (_zoom != 1.0) { <span class="zoom-label">@F(_zoom * 100)%</span> }
+</div>
 
-            <circle cx="@F(hold.X * 100)%" cy="@F(hold.Y * 100)%"
-                    r="@F(hold.Radius * 100)%"
-                    fill="@fillColor" stroke="@strokeColor" stroke-width="@strokeWidth"
-                    style="cursor: pointer"
-                    @onclick="() => ToggleHold(hold)" />
-        }
-    </svg>
+<div class="picker-viewport" @ref="_viewportRef"
+     data-pan-mode="@(_isPanning ? "true" : "")"
+     style="cursor: @(_isPanning ? "grab" : "default");">
+
+@if (_viewMode == ViewMode.Photo)
+{
+    <div class="photo-picker" style="width: @F(_zoom * 100)%; min-width: 100%;">
+        <img src="/api/walls/@WallId/photo" alt="Wall" class="wall-photo" />
+        <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
+            @foreach (var hold in AllHolds)
+            {
+                var selection = SelectedHolds.FirstOrDefault(s => s.HoldId == hold.Id);
+                var isSelected = selection != null;
+                var fillColor = isSelected ? GetSelectionFill(selection!.Type) : "rgba(255,255,255,0.15)";
+                var strokeColor = isSelected ? GetSelectionStroke(selection!.Type) : "rgba(255,255,255,0.4)";
+                var sw = isSelected ? "0.4" : "0.2";
+                var isFoot = hold.Category == HoldCategory.Foot;
+                var r = (isFoot ? hold.Radius * 0.7 : hold.Radius) * 100;
+
+                @if (hold.ShapePoints is { Count: >= 3 })
+                {
+                    <polygon points="@Pts(hold.ShapePoints.Select(sp => (hold.X + sp.Dx, hold.Y + sp.Dy)))"
+                             fill="@fillColor" stroke="@strokeColor" stroke-width="@sw"
+                             style="cursor: pointer" @onclick="() => ToggleHold(hold)" />
+                }
+                else if (isFoot)
+                {
+                    <rect x="@F((hold.X - r/100)*100)" y="@F((hold.Y - r/100)*100)"
+                          width="@F(r*2/100*100)" height="@F(r*2/100*100)" rx="0.3"
+                          fill="@fillColor" stroke="@strokeColor" stroke-width="@sw"
+                          style="cursor: pointer" @onclick="() => ToggleHold(hold)" />
+                }
+                else
+                {
+                    <circle cx="@F(hold.X * 100)" cy="@F(hold.Y * 100)" r="@F(r)"
+                            fill="@fillColor" stroke="@strokeColor" stroke-width="@sw"
+                            style="cursor: pointer" @onclick="() => ToggleHold(hold)" />
+                }
+            }
+        </svg>
+    </div>
+}
+else
+{
+    <div class="schematic-picker" style="width: @F(_zoom * 100)%; min-width: 100%;">
+        <svg viewBox="0 0 100 100" class="schematic-svg" xmlns="http://www.w3.org/2000/svg">
+            <rect x="0" y="0" width="100" height="100" fill="#f5f0eb" rx="1" />
+            <line x1="0" y1="100" x2="100" y2="100" stroke="#8D6E63" stroke-width="0.5" />
+
+            @foreach (var hold in AllHolds)
+            {
+                var selection = SelectedHolds.FirstOrDefault(s => s.HoldId == hold.Id);
+                var isSelected = selection != null;
+                var fillColor = isSelected ? GetSelectionFill(selection!.Type) : GetDefaultFill(hold);
+                var strokeColor = isSelected ? GetSelectionStroke(selection!.Type) : GetDefaultStroke(hold);
+                var sw = isSelected ? "0.6" : "0.3";
+                var isFoot = hold.Category == HoldCategory.Foot;
+                var r = (isFoot ? hold.Radius * 0.7 : hold.Radius) * 100;
+                var cy = (hold.IsOnKickboard ? hold.Y : CorrectY(hold.Y)) * 100;
+
+                @if (isFoot)
+                {
+                    <rect x="@F(hold.X * 100 - r)" y="@F(cy - r)" width="@F(r * 2)" height="@F(r * 2)"
+                          rx="0.3" fill="@fillColor" stroke="@strokeColor" stroke-width="@sw"
+                          style="cursor: pointer" @onclick="() => ToggleHold(hold)" />
+                }
+                else
+                {
+                    <circle cx="@F(hold.X * 100)" cy="@F(cy)" r="@F(r)"
+                            fill="@fillColor" stroke="@strokeColor" stroke-width="@sw"
+                            style="cursor: pointer" @onclick="() => ToggleHold(hold)" />
+                }
+            }
+        </svg>
+    </div>
+}
 </div>
 
 @code {
@@ -39,73 +114,80 @@
     [Parameter] public List<Hold> AllHolds { get; set; } = [];
     [Parameter] public List<BoulderHoldInput> SelectedHolds { get; set; } = [];
     [Parameter] public EventCallback<List<BoulderHoldInput>> SelectedHoldsChanged { get; set; }
+    [Parameter] public int WallAngle { get; set; }
 
+    private ElementReference _viewportRef;
     private HoldType _placeType = HoldType.Normal;
+    private ViewMode _viewMode = ViewMode.Photo;
+    private double _zoom = 1.0;
+    private bool _isPanning;
+
+    private enum ViewMode { Photo, Schematic }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await JS.InvokeVoidAsync("wallEditor.setupPan", _viewportRef, null);
+    }
 
     private void ToggleHold(Hold hold)
     {
+        if (_isPanning) return;
         var existing = SelectedHolds.FirstOrDefault(s => s.HoldId == hold.Id);
         if (existing != null)
         {
-            if (existing.Type == _placeType)
-            {
-                SelectedHolds.Remove(existing);
-            }
-            else
-            {
-                SelectedHolds.Remove(existing);
-                SelectedHolds.Add(new BoulderHoldInput(hold.Id, _placeType));
-            }
+            if (existing.Type == _placeType) SelectedHolds.Remove(existing);
+            else { SelectedHolds.Remove(existing); SelectedHolds.Add(new BoulderHoldInput(hold.Id, _placeType)); }
         }
-        else
-        {
-            SelectedHolds.Add(new BoulderHoldInput(hold.Id, _placeType));
-        }
-
+        else { SelectedHolds.Add(new BoulderHoldInput(hold.Id, _placeType)); }
         SelectedHoldsChanged.InvokeAsync(SelectedHolds);
     }
 
+    private double CorrectY(double y)
+    {
+        if (WallAngle <= 0) return y;
+        var cosA = Math.Cos(WallAngle * Math.PI / 180.0);
+        return y * cosA + (1 - cosA) * 0.5;
+    }
+
     private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+    private static string Pts(IEnumerable<(double X, double Y)> pts) =>
+        string.Join(" ", pts.Select(p => $"{F(p.X * 100)},{F(p.Y * 100)}"));
 
-    private static string GetSelectionFill(HoldType type) => type switch
-    {
-        HoldType.Start => "rgba(76, 175, 80, 0.5)",
-        HoldType.Top => "rgba(244, 67, 54, 0.5)",
-        _ => "rgba(33, 150, 243, 0.5)",
-    };
-
-    private static string GetSelectionStroke(HoldType type) => type switch
-    {
-        HoldType.Start => "#4CAF50",
-        HoldType.Top => "#F44336",
-        _ => "#2196F3",
-    };
+    private static string GetSelectionFill(HoldType t) => t switch { HoldType.Start => "rgba(76,175,80,0.5)", HoldType.Top => "rgba(244,67,54,0.5)", _ => "rgba(33,150,243,0.5)" };
+    private static string GetSelectionStroke(HoldType t) => t switch { HoldType.Start => "#4CAF50", HoldType.Top => "#F44336", _ => "#2196F3" };
+    private static string GetDefaultFill(Hold h) => h.Color switch {
+        "yellow" => "rgba(255,220,0,0.4)", "red" => "rgba(220,50,50,0.4)", "blue" => "rgba(60,120,230,0.4)",
+        "green" => "rgba(60,200,90,0.4)", "orange" => "rgba(255,150,30,0.4)", "pink" => "rgba(255,100,160,0.4)",
+        "purple" => "rgba(160,60,210,0.4)", "white" => "rgba(250,250,250,0.4)", "black" => "rgba(60,60,60,0.4)",
+        _ => "rgba(200,200,200,0.25)" };
+    private static string GetDefaultStroke(Hold h) => h.Color switch {
+        "yellow" => "#C6A700", "red" => "#B71C1C", "blue" => "#0D47A1", "green" => "#1B5E20",
+        "orange" => "#E65100", "pink" => "#AD1457", "purple" => "#4A148C", "white" => "#BDBDBD",
+        "black" => "#212121", _ => "#999" };
 }
 
 <style>
-    .picker-toolbar {
-        padding: 8px 12px; background: #1a1a2e; border-radius: 10px 10px 0 0;
-        display: flex; justify-content: space-between; align-items: center;
-        flex-wrap: wrap; gap: 6px;
-    }
+    .picker-toolbar { padding: 8px 12px; background: #1a1a2e; border-radius: 10px 10px 0 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; }
     .pick-count { color: rgba(255,255,255,0.7); font-size: 0.85rem; }
     .pick-legend { display: flex; gap: 10px; }
     .legend-item { color: rgba(255,255,255,0.6); font-size: 0.75rem; display: flex; align-items: center; gap: 4px; }
     .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-    .dot.start { background: #4CAF50; }
-    .dot.normal { background: #2196F3; }
-    .dot.top { background: #F44336; }
-
-    .pick-mode { display: flex; gap: 4px; }
-    .mode-btn {
-        padding: 4px 10px; border: 1px solid rgba(255,255,255,0.3); background: none;
-        color: white; border-radius: 4px; font-size: 0.8rem; cursor: pointer;
-    }
+    .dot.start { background: #4CAF50; } .dot.normal { background: #2196F3; } .dot.top { background: #F44336; }
+    .pick-controls { display: flex; gap: 4px; align-items: center; }
+    .separator { width: 1px; height: 20px; background: rgba(255,255,255,0.2); margin: 0 2px; }
+    .mode-btn { padding: 4px 10px; border: 1px solid rgba(255,255,255,0.3); background: none; color: white; border-radius: 4px; font-size: 0.8rem; cursor: pointer; display: flex; align-items: center; gap: 4px; }
     .mode-btn.active { background: #2196F3; border-color: #2196F3; }
     .mode-btn.start-active { background: #4CAF50; border-color: #4CAF50; }
     .mode-btn.top-active { background: #F44336; border-color: #F44336; }
+    .mode-btn.view-active { background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.5); }
 
-    .photo-picker { position: relative; border-radius: 0 0 12px 12px; overflow: hidden; }
-    .photo-picker .wall-photo { width: 100%; display: block; }
+    .zoom-bar { display: flex; gap: 4px; padding: 4px 12px; background: #22223a; align-items: center; }
+    .zoom-btn { padding: 4px 12px; background: rgba(255,255,255,0.1); border: none; color: white; border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
+    .zoom-btn:hover { background: rgba(255,255,255,0.2); }
+    .zoom-label { color: rgba(255,255,255,0.5); font-size: 0.75rem; margin-left: 4px; }
+
+    .picker-viewport { max-height: 70vh; overflow: auto; -webkit-overflow-scrolling: touch; border-radius: 0 0 12px 12px; }
+    .photo-picker { position: relative; overflow: hidden; } .photo-picker .wall-photo { width: 100%; display: block; }
     .photo-picker .hold-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+    .schematic-picker { overflow: hidden; background: #f5f0eb; } .schematic-picker .schematic-svg { width: 100%; display: block; }
 </style>
