@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @attribute [Authorize]
 @inject ICurrentUserService CurrentUserService
+@inject IProgressionService ProgressionService
 
 <PageTitle>Profile - Blocwerk</PageTitle>
 
@@ -19,19 +20,87 @@
             <p class="member-since">Member since @_user.CreatedAt.ToString("MMMM yyyy")</p>
         </div>
 
-        <div class="section">
-            <h2>Progression</h2>
-            <p class="coming-soon">Progression charts coming soon.</p>
-        </div>
+        @if (_progression != null)
+        {
+            <div class="score-cards">
+                <div class="score-card">
+                    <span class="score-label">Boulder</span>
+                    <span class="score-value">@_progression.BoulderScore.ToString("F0")</span>
+                    @if (_progression.BoulderGrade != null)
+                    {
+                        <span class="score-grade">~@_progression.BoulderGrade</span>
+                    }
+                </div>
+                <div class="score-card">
+                    <span class="score-label">Training</span>
+                    <span class="score-value">@_progression.TrainingScore.ToString("F0")</span>
+                </div>
+            </div>
+
+            @if (_progression.BoulderCurve.Count > 1)
+            {
+                <div class="chart-section">
+                    <h2>Boulder Progression</h2>
+                    <div class="chart-box">
+                        @{ var maxB = _progression.BoulderCurve.Max(p => p.Score); }
+                        @if (maxB > 0)
+                        {
+                            <svg viewBox="0 0 @_progression.BoulderCurve.Count 100" class="chart-svg" preserveAspectRatio="none">
+                                <polyline points="@ChartPoints(_progression.BoulderCurve, maxB)"
+                                          fill="none" stroke="#e94560" stroke-width="1.5" />
+                            </svg>
+                        }
+                        else
+                        {
+                            <p class="chart-empty">No sends yet in the last 60 days.</p>
+                        }
+                    </div>
+                </div>
+            }
+
+            @if (_progression.TrainingCurve.Count > 1)
+            {
+                <div class="chart-section">
+                    <h2>Training Progression</h2>
+                    <div class="chart-box">
+                        @{ var maxT = _progression.TrainingCurve.Max(p => p.Score); }
+                        @if (maxT > 0)
+                        {
+                            <svg viewBox="0 0 @_progression.TrainingCurve.Count 100" class="chart-svg" preserveAspectRatio="none">
+                                <polyline points="@ChartPoints(_progression.TrainingCurve, maxT)"
+                                          fill="none" stroke="#0f3460" stroke-width="1.5" />
+                            </svg>
+                        }
+                        else
+                        {
+                            <p class="chart-empty">No training logged in the last 60 days.</p>
+                        }
+                    </div>
+                </div>
+            }
+
+            <p class="activity-hint">
+                <a href="/activity">Activity</a> has detailed progression with configurable time windows.
+            </p>
+        }
     }
 </div>
 
 @code {
     private User? _user;
+    private UserProgression? _progression;
 
     protected override async Task OnInitializedAsync()
     {
         _user = await CurrentUserService.GetCurrentUserAsync();
+        _progression = await ProgressionService.GetProgressionAsync();
+    }
+
+    private static string ChartPoints(List<ProgressionPoint> curve, double max)
+    {
+        if (max <= 0) return "";
+        return string.Join(" ", curve.Select((p, i) =>
+            $"{i},{(100 - p.Score / max * 100):F1}"));
     }
 }
 
@@ -56,11 +125,28 @@
     }
     .member-since { color: #888; font-size: 0.85rem; margin-top: 8px; }
 
-    .section h2 { font-size: 1.1rem; font-weight: 600; color: #1a1a2e; margin-bottom: 8px; }
-    .coming-soon {
-        text-align: center; padding: 32px; color: #888;
-        background: white; border-radius: 12px;
+    .score-cards { display: flex; gap: 12px; margin-bottom: 20px; }
+    .score-card {
+        flex: 1; padding: 16px; background: white; border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06); text-align: center;
     }
+    .score-label { display: block; font-size: 0.75rem; color: #888; font-weight: 600; text-transform: uppercase; }
+    .score-value { display: block; font-size: 1.6rem; font-weight: 700; color: #1a1a2e; margin: 4px 0; }
+    .score-grade { display: block; font-size: 0.85rem; color: #e94560; font-weight: 600; }
+
+    .chart-section { margin-bottom: 16px; }
+    .chart-section h2 { font-size: 1rem; font-weight: 600; color: #1a1a2e; margin-bottom: 8px; }
+    .chart-box {
+        height: 80px; background: white; border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06); padding: 12px;
+    }
+    .chart-svg { width: 100%; height: 100%; }
+    .chart-empty { text-align: center; color: #aaa; font-size: 0.85rem; margin: 0; line-height: 56px; }
+
+    .activity-hint {
+        text-align: center; color: #888; font-size: 0.85rem; margin-top: 8px;
+    }
+    .activity-hint a { color: #0f3460; font-weight: 600; text-decoration: underline; }
 
     .loading { text-align: center; color: #888; padding: 48px; }
 </style>

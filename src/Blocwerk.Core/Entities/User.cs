@@ -19,6 +19,8 @@ public class User : IEquatable<User>
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
+    public int ProgressionWindowDays { get; set; } = 60;
+
     public ICollection<WallMember> WallMemberships { get; set; } = [];
 
     public ICollection<Attempt> Attempts { get; set; } = [];

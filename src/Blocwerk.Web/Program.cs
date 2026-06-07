@@ -8,63 +8,71 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using Serilog;
 
-var builder = WebApplication.CreateBuilder(args);
+namespace Blocwerk.Web;
 
-Log.Logger = new LoggerConfiguration()
-    .MinimumLevel.Debug()
-    .WriteTo.Console(restrictedToMinimumLevel: Serilog.Events.LogEventLevel.Information)
-    .WriteTo.File("logs/blocwerk.log", rollingInterval: RollingInterval.Day)
-    .CreateLogger();
-
-builder.Host.UseSerilog();
-
-builder.Services.Configure<ForwardedHeadersOptions>(options =>
+public static class Program
 {
-    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost;
-    options.KnownNetworks.Clear();
-    options.KnownProxies.Clear();
-});
-
-builder.ConfigureCoreServices(out var settings);
-builder.ConfigureAuthenticationAndAuthorization(settings);
-builder.ConfigureHoldDetection(settings);
-
-builder.Services.AddControllersWithViews()
-    .AddApplicationPart(typeof(AccountController).Assembly);
-
-builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
-
-builder.Services.AddRazorPages();
-builder.Services.AddServerSideBlazor();
-
-var app = builder.Build();
-
-app.UseForwardedHeaders();
-app.UseStaticFiles();
-app.ConfigureCoreApplication();
-app.ConfigureAuthenticationMiddlewares();
-app.MapControllers();
-
-app.MapRazorComponents<BlocwerkApp>()
-    .AddInteractiveServerRenderMode();
-
-app.MapGet("/api/walls/{wallId:guid}/photo", async (
-    Guid wallId,
-    [FromQuery] string? token,
-    [FromServices] IWallService wallService) =>
-{
-    byte[]? photo;
-    if (!string.IsNullOrEmpty(token))
+    public static void Main(string[] args)
     {
-        photo = await wallService.GetPhotoByShareTokenAsync(wallId, token);
-    }
-    else
-    {
-        photo = await wallService.GetPhotoAsync(wallId);
-    }
+        var builder = WebApplication.CreateBuilder(args);
 
-    return photo == null ? Results.NotFound() : Results.File(photo, "image/jpeg");
-});
+        Log.Logger = new LoggerConfiguration()
+            .MinimumLevel.Debug()
+            .WriteTo.Console(restrictedToMinimumLevel: Serilog.Events.LogEventLevel.Information)
+            .WriteTo.File("logs/blocwerk.log", rollingInterval: RollingInterval.Day)
+            .CreateLogger();
 
-app.Run();
+        builder.Host.UseSerilog();
+
+        builder.Services.Configure<ForwardedHeadersOptions>(options =>
+        {
+            options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost;
+            options.KnownIPNetworks.Clear();
+            options.KnownProxies.Clear();
+        });
+
+        builder.ConfigureCoreServices(out var settings)
+            .ConfigureAuthenticationAndAuthorization(settings)
+            .ConfigureHoldDetection(settings);
+
+        builder.Services.AddControllersWithViews()
+            .AddApplicationPart(typeof(AccountController).Assembly);
+
+        builder.Services.AddRazorComponents()
+            .AddInteractiveServerComponents();
+
+        builder.Services.AddRazorPages();
+        builder.Services.AddServerSideBlazor();
+
+        var app = builder.Build();
+
+        app.UseForwardedHeaders();
+        app.UseStaticFiles();
+        app.ConfigureCoreApplication();
+        app.ConfigureAuthenticationMiddlewares();
+        app.MapControllers();
+
+        app.MapRazorComponents<BlocwerkApp>()
+            .AddInteractiveServerRenderMode();
+
+        app.MapGet("/api/walls/{wallId:guid}/photo", async (
+            Guid wallId,
+            [FromQuery] string? token,
+            [FromServices] IWallService wallService) =>
+        {
+            byte[]? photo;
+            if (!string.IsNullOrEmpty(token))
+            {
+                photo = await wallService.GetPhotoByShareTokenAsync(wallId, token);
+            }
+            else
+            {
+                photo = await wallService.GetPhotoAsync(wallId);
+            }
+
+            return photo == null ? Results.NotFound() : Results.File(photo, "image/jpeg");
+        });
+
+        app.Run();
+    }
+}

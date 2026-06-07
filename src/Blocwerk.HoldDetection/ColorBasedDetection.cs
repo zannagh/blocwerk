@@ -90,12 +90,12 @@ public static class ColorBasedDetection
             {
                 for (int x = 1; x < w - 1; x++)
                 {
-                    if (copy[y * w + x])
+                    if (copy[(y * w) + x])
                     {
-                        mask[(y - 1) * w + x] = true;
-                        mask[(y + 1) * w + x] = true;
-                        mask[y * w + x - 1] = true;
-                        mask[y * w + x + 1] = true;
+                        mask[((y - 1) * w) + x] = true;
+                        mask[((y + 1) * w) + x] = true;
+                        mask[(y * w) + x - 1] = true;
+                        mask[(y * w) + x + 1] = true;
                     }
                 }
             }
@@ -111,13 +111,13 @@ public static class ColorBasedDetection
             {
                 for (int x = 1; x < w - 1; x++)
                 {
-                    if (copy[y * w + x])
+                    if (copy[(y * w) + x])
                     {
-                        bool allNeighbors = copy[(y - 1) * w + x]
-                                            && copy[(y + 1) * w + x]
-                                            && copy[y * w + x - 1]
-                                            && copy[y * w + x + 1];
-                        mask[y * w + x] = allNeighbors;
+                        bool allNeighbors = copy[((y - 1) * w) + x]
+                                            && copy[((y + 1) * w) + x]
+                                            && copy[(y * w) + x - 1]
+                                            && copy[(y * w) + x + 1];
+                        mask[(y * w) + x] = allNeighbors;
                     }
                 }
             }
@@ -134,7 +134,7 @@ public static class ColorBasedDetection
         {
             for (int x = 0; x < w; x++)
             {
-                int idx = y * w + x;
+                int idx = (y * w) + x;
                 if (!mask[idx] || labels[idx] != 0)
                 {
                     continue;
@@ -155,7 +155,7 @@ public static class ColorBasedDetection
 
     private static Blob FloodFill(bool[] mask, int[] labels, int w, int h, int startX, int startY, int label)
     {
-        var stack = new Stack<(int x, int y)>();
+        var stack = new Stack<(int X, int Y)>();
         stack.Push((startX, startY));
 
         long sumX = 0, sumY = 0;
@@ -165,7 +165,7 @@ public static class ColorBasedDetection
         while (stack.Count > 0)
         {
             var (x, y) = stack.Pop();
-            int idx = y * w + x;
+            int idx = (y * w) + x;
 
             if (x < 0 || x >= w || y < 0 || y >= h || !mask[idx] || labels[idx] != 0)
             {
@@ -176,10 +176,25 @@ public static class ColorBasedDetection
             sumX += x;
             sumY += y;
             count++;
-            if (x < minX) minX = x;
-            if (x > maxX) maxX = x;
-            if (y < minY) minY = y;
-            if (y > maxY) maxY = y;
+            if (x < minX)
+            {
+                minX = x;
+            }
+
+            if (x > maxX)
+            {
+                maxX = x;
+            }
+
+            if (y < minY)
+            {
+                minY = y;
+            }
+
+            if (y > maxY)
+            {
+                maxY = y;
+            }
 
             stack.Push((x + 1, y));
             stack.Push((x - 1, y));
@@ -198,13 +213,20 @@ public static class ColorBasedDetection
         float cx = blob.SumX / (float)blob.PixelCount;
         float cy = blob.SumY / (float)blob.PixelCount;
         int px = Math.Clamp((int)cx, 0, w - 1);
-        int py = Math.Clamp((int)cy, 0, pixels.Length / w - 1);
+        int py = Math.Clamp((int)cy, 0, (pixels.Length / w) - 1);
 
-        var color = pixels[py * w + px];
+        var color = pixels[(py * w) + px];
         color.ToHsv(out float hue, out float sat, out float val);
 
-        if (sat < 15) return val > 70 ? "white" : "gray";
-        if (val < 25) return "black";
+        if (sat < 15)
+        {
+            return val > 70 ? "white" : "gray";
+        }
+
+        if (val < 25)
+        {
+            return "black";
+        }
 
         return hue switch
         {

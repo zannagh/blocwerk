@@ -1,0 +1,245 @@
+@page "/training/hangboard"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject ITrainingService TrainingService
+@inject NavigationManager Navigation
+
+<PageTitle>Hangboard - Blocwerk</PageTitle>
+
+<div class="training-page">
+    <div class="page-header">
+        <a href="/activity" class="back-link">&larr; Activity</a>
+        <h1>Hangboard</h1>
+    </div>
+
+    @if (_finished)
+    {
+        <div class="finish-card">
+            <h2>Session Complete</h2>
+            <div class="finish-stats">
+                <div class="finish-stat">
+                    <span class="finish-value">@_sets.Count</span>
+                    <span class="finish-label">Sets</span>
+                </div>
+                <div class="finish-stat">
+                    <span class="finish-value">@FormatTotal(_sets.Sum(s => s.TotalSeconds))</span>
+                    <span class="finish-label">Total Time</span>
+                </div>
+            </div>
+            <p class="finish-detail">@_edgeSize mm edge @(_weight > 0 ? $"+ {_weight} kg" : "")</p>
+            <a href="/activity" class="btn-done">Back to Activity</a>
+        </div>
+    }
+    else
+    {
+        <div class="setup-section">
+            <div class="form-group">
+                <label>Edge Size (mm)</label>
+                <div class="stepper">
+                    <button class="step-btn" @onclick="() => _edgeSize = Math.Max(6, _edgeSize - 2)">&minus;</button>
+                    <span class="step-value">@_edgeSize</span>
+                    <button class="step-btn" @onclick="() => _edgeSize += 2">+</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Additional Weight (kg)</label>
+                <div class="stepper">
+                    <button class="step-btn" @onclick="() => _weight = Math.Max(0, _weight - 2.5)">&minus;</button>
+                    <span class="step-value">@_weight.ToString("F1")</span>
+                    <button class="step-btn" @onclick="() => _weight += 2.5">+</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="timer-section">
+            @if (_sets.Count > 0)
+            {
+                <div class="sets-done">
+                    @foreach (var (s, idx) in _sets.Select((s, i) => (s, i)))
+                    {
+                        <span class="set-chip">Set @(idx + 1): @s.TotalSeconds.ToString("F1")s</span>
+                    }
+                </div>
+            }
+
+            <div class="timer-display">
+                @if (_isRunning)
+                {
+                    <span class="timer-value">@FormatTimer(_elapsed)</span>
+                }
+                else if (_sets.Count > 0)
+                {
+                    <span class="timer-value rest">Rest</span>
+                }
+                else
+                {
+                    <span class="timer-value idle">Ready</span>
+                }
+            </div>
+
+            @if (_isRunning)
+            {
+                <button class="btn-stop" @onclick="StopTimer">Stop</button>
+            }
+            else
+            {
+                <button class="btn-start" @onclick="StartTimer">Start</button>
+            }
+        </div>
+
+        @if (_sets.Count > 0 && !_isRunning)
+        {
+            <button class="btn-finish" @onclick="FinishSession" disabled="@_isSaving">
+                @(_isSaving ? "Saving..." : $"Finish ({_sets.Count} set{(_sets.Count != 1 ? "s" : "")})")
+            </button>
+            <button class="btn-discard" @onclick="DiscardSession">Discard</button>
+        }
+    }
+</div>
+
+@code {
+    private int _edgeSize = 20;
+    private double _weight;
+    private bool _isRunning;
+    private bool _finished;
+    private bool _isSaving;
+    private List<TimeSpan> _sets = [];
+    private DateTimeOffset _startTime;
+    private TimeSpan _elapsed;
+    private Timer? _timer;
+
+    private void StartTimer()
+    {
+        _startTime = DateTimeOffset.UtcNow;
+        _elapsed = TimeSpan.Zero;
+        _isRunning = true;
+        _timer = new Timer(Tick, null, 0, 100);
+    }
+
+    private void Tick(object? state)
+    {
+        _elapsed = DateTimeOffset.UtcNow - _startTime;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void StopTimer()
+    {
+        _timer?.Dispose();
+        _timer = null;
+        _isRunning = false;
+        _sets.Add(_elapsed);
+    }
+
+    private async Task FinishSession()
+    {
+        if (_sets.Count == 0) return;
+        _isSaving = true;
+
+        var totalDuration = TimeSpan.FromSeconds(_sets.Sum(s => s.TotalSeconds));
+        await TrainingService.SaveHangboardSessionAsync(_edgeSize, _weight, totalDuration, _sets.Count);
+
+        _finished = true;
+        _isSaving = false;
+    }
+
+    private void DiscardSession()
+    {
+        _sets.Clear();
+        _elapsed = TimeSpan.Zero;
+    }
+
+    private static string FormatTimer(TimeSpan ts) =>
+        ts.TotalMinutes >= 1 ? $"{(int)ts.TotalMinutes}:{ts.Seconds:D2}.{ts.Milliseconds / 100}" : $"{ts.Seconds}.{ts.Milliseconds / 100}s";
+
+    private static string FormatTotal(double totalSeconds) =>
+        totalSeconds >= 60 ? $"{(int)(totalSeconds / 60)}m {(int)(totalSeconds % 60)}s" : $"{totalSeconds:F0}s";
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+    }
+}
+
+<style>
+    .training-page { padding: 16px; max-width: 500px; margin: 0 auto; }
+    .page-header { margin-bottom: 16px; }
+    .back-link { color: #888; text-decoration: none; font-size: 0.9rem; }
+    .page-header h1 { font-size: 1.4rem; font-weight: 700; color: #1a1a2e; margin-top: 4px; }
+
+    .setup-section {
+        padding: 16px; background: white; border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 16px;
+    }
+    .form-group { margin-bottom: 12px; }
+    .form-group:last-child { margin-bottom: 0; }
+    .form-group label { display: block; font-weight: 600; color: #333; margin-bottom: 6px; font-size: 0.85rem; }
+    .stepper { display: flex; align-items: center; gap: 0; }
+    .step-btn {
+        width: 44px; height: 44px; border: 2px solid #e0e0e0; background: white;
+        font-size: 1.2rem; font-weight: 700; cursor: pointer; color: #333;
+    }
+    .step-btn:first-child { border-radius: 8px 0 0 8px; }
+    .step-btn:last-child { border-radius: 0 8px 8px 0; }
+    .step-btn:hover { background: #f5f5f5; }
+    .step-value {
+        flex: 1; text-align: center; font-size: 1.3rem; font-weight: 700;
+        color: #1a1a2e; border-top: 2px solid #e0e0e0; border-bottom: 2px solid #e0e0e0;
+        height: 44px; line-height: 40px;
+    }
+
+    .timer-section {
+        padding: 24px; background: white; border-radius: 16px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.08); text-align: center; margin-bottom: 16px;
+    }
+    .sets-done { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-bottom: 16px; }
+    .set-chip {
+        padding: 4px 10px; background: #E8F5E9; color: #2E7D32;
+        border-radius: 6px; font-size: 0.8rem; font-weight: 600;
+    }
+    .timer-display { margin-bottom: 20px; }
+    .timer-value { font-size: 3rem; font-weight: 700; color: #1a1a2e; font-variant-numeric: tabular-nums; }
+    .timer-value.rest { color: #FF9800; font-size: 2rem; }
+    .timer-value.idle { color: #ccc; font-size: 2rem; }
+
+    .btn-start {
+        width: 100%; padding: 20px; background: #4CAF50; color: white;
+        border: none; border-radius: 12px; font-size: 1.3rem; font-weight: 700;
+        cursor: pointer;
+    }
+    .btn-start:hover { background: #43A047; }
+    .btn-stop {
+        width: 100%; padding: 20px; background: #e94560; color: white;
+        border: none; border-radius: 12px; font-size: 1.3rem; font-weight: 700;
+        cursor: pointer;
+    }
+    .btn-stop:hover { background: #d63851; }
+
+    .btn-finish {
+        width: 100%; padding: 16px; background: #0f3460; color: white;
+        border: none; border-radius: 12px; font-size: 1.1rem; font-weight: 700;
+        cursor: pointer;
+    }
+    .btn-finish:hover:not(:disabled) { background: #0a2847; }
+    .btn-finish:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-discard {
+        width: 100%; padding: 12px; background: white; color: #e94560;
+        border: 2px solid #e94560; border-radius: 12px; font-size: 0.95rem;
+        font-weight: 600; cursor: pointer; margin-top: 8px;
+    }
+    .btn-discard:hover { background: #e94560; color: white; }
+
+    .finish-card {
+        text-align: center; padding: 32px 20px; background: white;
+        border-radius: 16px; box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    }
+    .finish-card h2 { font-size: 1.3rem; font-weight: 700; color: #2E7D32; margin-bottom: 16px; }
+    .finish-stats { display: flex; gap: 16px; justify-content: center; margin-bottom: 12px; }
+    .finish-stat { text-align: center; }
+    .finish-value { display: block; font-size: 1.8rem; font-weight: 700; color: #1a1a2e; }
+    .finish-label { font-size: 0.8rem; color: #888; }
+    .finish-detail { color: #666; font-size: 0.9rem; margin-bottom: 20px; }
+    .btn-done {
+        display: inline-block; padding: 12px 32px; background: #0f3460; color: white;
+        text-decoration: none; border-radius: 8px; font-weight: 600;
+    }
+</style>

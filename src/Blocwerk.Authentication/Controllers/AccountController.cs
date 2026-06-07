@@ -14,11 +14,16 @@ public class AccountController : Controller
 {
     private readonly BlocwerkSettings _configuration;
     private readonly RedirectUriProvider _redirectUriProvider;
+    private readonly IHttpClientFactory _httpClientFactory;
 
-    public AccountController(BlocwerkSettings settings, RedirectUriProvider redirectUriProvider)
+    public AccountController(
+        BlocwerkSettings settings,
+        RedirectUriProvider redirectUriProvider,
+        IHttpClientFactory httpClientFactory)
     {
         _configuration = settings;
         _redirectUriProvider = redirectUriProvider;
+        _httpClientFactory = httpClientFactory;
     }
 
     private string BaseUrl => $"{Request.Scheme}://{Request.Host}";
@@ -54,7 +59,7 @@ public class AccountController : Controller
 
         try
         {
-            var tokenRequest = new FormUrlEncodedContent(
+            FormUrlEncodedContent tokenRequest = new(
             [
                 new KeyValuePair<string, string>("grant_type", "authorization_code"),
                 new KeyValuePair<string, string>("code", code),
@@ -63,8 +68,8 @@ public class AccountController : Controller
                 new KeyValuePair<string, string>("redirect_uri", $"{BaseUrl}/oauth-callback"),
             ]);
 
-            using var httpClient = new HttpClient();
-            var tokenResponse = await httpClient.PostAsync($"{BaseUrl}/token", tokenRequest);
+            using var httpClient = _httpClientFactory.CreateClient();
+            HttpResponseMessage tokenResponse = await httpClient.PostAsync($"{BaseUrl}/token", tokenRequest);
 
             if (!tokenResponse.IsSuccessStatusCode)
             {
@@ -91,9 +96,9 @@ public class AccountController : Controller
 
             var claims = new List<Claim>
             {
-                new(ClaimTypes.NameIdentifier, jsonToken.Claims.FirstOrDefault(x => x.Type == "nameid")?.Value ?? ""),
-                new(ClaimTypes.Name, jsonToken.Claims.FirstOrDefault(x => x.Type == "unique_name")?.Value ?? ""),
-                new("Name", jsonToken.Claims.FirstOrDefault(x => x.Type == "unique_name")?.Value ?? ""),
+                new(ClaimTypes.NameIdentifier, jsonToken.Claims.FirstOrDefault(x => x.Type == "nameid")?.Value ?? string.Empty),
+                new(ClaimTypes.Name, jsonToken.Claims.FirstOrDefault(x => x.Type == "unique_name")?.Value ?? string.Empty),
+                new("Name", jsonToken.Claims.FirstOrDefault(x => x.Type == "unique_name")?.Value ?? string.Empty),
             };
 
             var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);

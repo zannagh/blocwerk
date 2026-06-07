@@ -1,0 +1,440 @@
+@page "/activity"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject IProgressionService ProgressionService
+@inject ITrainingService TrainingService
+@inject NavigationManager Navigation
+
+<PageTitle>Activity - Blocwerk</PageTitle>
+
+<div class="activity-page">
+    @if (_grid == null)
+    {
+        <p class="loading">Loading...</p>
+    }
+    else
+    {
+        <div class="section">
+            <div class="section-header">
+                <h2>Activity</h2>
+                <div class="training-menu">
+                    <button class="btn-add-training" @onclick="() => _showTrainingMenu = !_showTrainingMenu">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22">
+                            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                        </svg>
+                    </button>
+                    @if (_showTrainingMenu)
+                    {
+                        <div class="training-dropdown">
+                            <a href="/training/hangboard" class="dropdown-item">Hangboard</a>
+                            <a href="/training/pullups" class="dropdown-item">Pull-ups</a>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="contribution-grid">
+                @for (int week = 0; week < _weekCount; week++)
+                {
+                    var w = week;
+                    <div class="grid-column">
+                        @for (int day = 0; day < 7; day++)
+                        {
+                            var idx = w * 7 + day;
+                            if (idx < _grid.Count)
+                            {
+                                var item = _grid[idx];
+                                <div class="grid-cell intensity-@item.Intensity"
+                                     title="@item.Date.ToString("MMM d") — @IntensityLabel(item.Intensity)"
+                                     @onclick="() => SelectDay(item.Date)"></div>
+                            }
+                        }
+                    </div>
+                }
+            </div>
+            <div class="month-labels">
+                @foreach (var label in _monthLabels)
+                {
+                    <span class="month-label" style="left: @label.OffsetPercent%;">@label.Name</span>
+                }
+            </div>
+            <div class="grid-legend">
+                <span class="legend-text">Less</span>
+                <div class="grid-cell intensity-0 legend-cell"></div>
+                <div class="grid-cell intensity-1 legend-cell"></div>
+                <div class="grid-cell intensity-2 legend-cell"></div>
+                <div class="grid-cell intensity-3 legend-cell"></div>
+                <div class="grid-cell intensity-4 legend-cell"></div>
+                <span class="legend-text">More</span>
+            </div>
+        </div>
+
+        @if (_selectedDay != null)
+        {
+            <div class="day-summary">
+                <div class="summary-header">
+                    <h3>@_selectedDay.Date.ToString("dddd, MMM d")</h3>
+                    @if (_selectedDay.SessionDuration.HasValue)
+                    {
+                        <span class="duration-badge">@FormatDuration(_selectedDay.SessionDuration.Value)</span>
+                    }
+                    <button class="close-btn" @onclick="() => _selectedDay = null">x</button>
+                </div>
+
+                @if (_selectedDay.Boulders.Count > 0)
+                {
+                    <h4>Boulders</h4>
+                    @foreach (var b in _selectedDay.Boulders)
+                    {
+                        <div class="summary-row">
+                            <span class="summary-name">@b.BoulderName</span>
+                            <span class="summary-meta">
+                                @if (!string.IsNullOrEmpty(b.Grade)) { <span class="mini-grade">@b.Grade</span> }
+                                <span class="result-badge @b.BestResult.ToString().ToLower()">@b.BestResult</span>
+                                @if (b.AttemptCount > 1) { <span class="attempt-count">@b.AttemptCount tries</span> }
+                            </span>
+                        </div>
+                    }
+                }
+
+                @if (_selectedDay.Hangboard.Count > 0)
+                {
+                    <h4>Hangboard</h4>
+                    @foreach (var h in _selectedDay.Hangboard)
+                    {
+                        <div class="summary-row">
+                            <span class="summary-name">@h.EdgeSizeMm mm edge</span>
+                            <span class="summary-meta">
+                                @h.Sets x @h.Duration.TotalSeconds.ToString("F0")s
+                                @if (h.AdditionalWeightKg > 0) { <text>+@h.AdditionalWeightKg kg</text> }
+                                <button class="delete-btn" @onclick="() => DeleteHangboard(h.Id)">x</button>
+                            </span>
+                        </div>
+                    }
+                }
+
+                @if (_selectedDay.Pullups.Count > 0)
+                {
+                    <h4>Pull-ups</h4>
+                    @foreach (var p in _selectedDay.Pullups)
+                    {
+                        <div class="summary-row">
+                            <span class="summary-name">@p.Sets x @p.Repetitions reps</span>
+                            <span class="summary-meta">
+                                @if (p.AdditionalWeightKg > 0) { <text>+@p.AdditionalWeightKg kg</text> }
+                                <button class="delete-btn" @onclick="() => DeletePullup(p.Id)">x</button>
+                            </span>
+                        </div>
+                    }
+                }
+
+                @if (_selectedDay.Boulders.Count == 0 && _selectedDay.Hangboard.Count == 0 && _selectedDay.Pullups.Count == 0)
+                {
+                    <p class="empty-day">No activity on this day.</p>
+                }
+            </div>
+        }
+
+        @if (_progression != null)
+        {
+            <div class="section">
+                <div class="progression-header">
+                    <h2>Progression</h2>
+                    <div class="window-control">
+                        <select class="window-select" value="@_progression.WindowDays" @onchange="OnWindowChange">
+                            <option value="14">14 days</option>
+                            <option value="30">30 days</option>
+                            <option value="60">60 days</option>
+                            <option value="90">90 days</option>
+                            <option value="180">180 days</option>
+                            <option value="365">1 year</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="score-cards">
+                    <div class="score-card">
+                        <span class="score-label">Boulder</span>
+                        <span class="score-value">@_progression.BoulderScore.ToString("F0")</span>
+                        @if (_progression.BoulderGrade != null)
+                        {
+                            <span class="score-grade">~@_progression.BoulderGrade</span>
+                        }
+                    </div>
+                    <div class="score-card">
+                        <span class="score-label">Training</span>
+                        <span class="score-value">@_progression.TrainingScore.ToString("F0")</span>
+                    </div>
+                </div>
+
+                @if (_progression.BoulderCurve.Count > 1)
+                {
+                    <div class="chart-section">
+                        <h4>Boulder progression</h4>
+                        <div class="mini-chart">
+                            @{ var maxB = _progression.BoulderCurve.Max(p => p.Score); }
+                            @if (maxB > 0)
+                            {
+                                <svg viewBox="0 0 @_progression.BoulderCurve.Count 100" class="chart-svg" preserveAspectRatio="none">
+                                    <polyline points="@ChartPoints(_progression.BoulderCurve, maxB)"
+                                              fill="none" stroke="#e94560" stroke-width="1.5" />
+                                </svg>
+                            }
+                        </div>
+                    </div>
+                }
+
+                @if (_progression.TrainingCurve.Count > 1)
+                {
+                    <div class="chart-section">
+                        <h4>Training progression</h4>
+                        <div class="mini-chart">
+                            @{ var maxT = _progression.TrainingCurve.Max(p => p.Score); }
+                            @if (maxT > 0)
+                            {
+                                <svg viewBox="0 0 @_progression.TrainingCurve.Count 100" class="chart-svg" preserveAspectRatio="none">
+                                    <polyline points="@ChartPoints(_progression.TrainingCurve, maxT)"
+                                              fill="none" stroke="#0f3460" stroke-width="1.5" />
+                                </svg>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+
+        <div class="section">
+            <h2>Recent Days</h2>
+            @foreach (var day in _grid.Where(d => d.Intensity > 0).OrderByDescending(d => d.Date).Take(20))
+            {
+                <div class="day-row" @onclick="() => SelectDay(day.Date)">
+                    <span class="day-date">@day.Date.ToString("ddd, MMM d")</span>
+                    <div class="day-dots">
+                        @for (int i = 0; i < day.Intensity; i++)
+                        {
+                            <span class="dot intensity-@day.Intensity"></span>
+                        }
+                    </div>
+                </div>
+            }
+            @if (!_grid.Any(d => d.Intensity > 0))
+            {
+                <p class="empty-day">No activity yet. Start climbing!</p>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private List<DayActivity>? _grid;
+    private int _weekCount;
+    private UserProgression? _progression;
+    private DaySummary? _selectedDay;
+    private bool _showTrainingMenu;
+    private List<MonthLabel> _monthLabels = [];
+
+    private record MonthLabel(string Name, double OffsetPercent);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _grid = await ProgressionService.GetActivityGridAsync(20);
+        _weekCount = (_grid.Count + 6) / 7;
+        _progression = await ProgressionService.GetProgressionAsync();
+        BuildMonthLabels();
+    }
+
+    private void BuildMonthLabels()
+    {
+        if (_grid == null || _grid.Count == 0) return;
+
+        _monthLabels = [];
+        string? lastMonth = null;
+        for (int week = 0; week < _weekCount; week++)
+        {
+            var idx = week * 7;
+            if (idx >= _grid.Count) break;
+            var monthName = _grid[idx].Date.ToString("MMM");
+            if (monthName != lastMonth)
+            {
+                var pct = (double)week / _weekCount * 100;
+                _monthLabels.Add(new MonthLabel(monthName, pct));
+                lastMonth = monthName;
+            }
+        }
+    }
+
+    private async Task SelectDay(DateOnly date)
+    {
+        _selectedDay = await ProgressionService.GetDaySummaryAsync(date);
+    }
+
+    private async Task DeleteHangboard(Guid id)
+    {
+        await TrainingService.DeleteHangboardSessionAsync(id);
+        if (_selectedDay != null) _selectedDay = await ProgressionService.GetDaySummaryAsync(_selectedDay.Date);
+        _grid = await ProgressionService.GetActivityGridAsync(20);
+        _progression = await ProgressionService.GetProgressionAsync();
+    }
+
+    private async Task DeletePullup(Guid id)
+    {
+        await TrainingService.DeletePullupSessionAsync(id);
+        if (_selectedDay != null) _selectedDay = await ProgressionService.GetDaySummaryAsync(_selectedDay.Date);
+        _grid = await ProgressionService.GetActivityGridAsync(20);
+        _progression = await ProgressionService.GetProgressionAsync();
+    }
+
+    private async Task OnWindowChange(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var days))
+        {
+            await ProgressionService.UpdateProgressionWindowAsync(days);
+            _progression = await ProgressionService.GetProgressionAsync();
+        }
+    }
+
+    private static string IntensityLabel(int intensity) => intensity switch
+    {
+        0 => "No activity",
+        1 => "Light session",
+        2 => "Moderate session",
+        3 => "Hard session",
+        4 => "Intense session",
+        _ => "",
+    };
+
+    private static string FormatDuration(TimeSpan ts) =>
+        ts.TotalHours >= 1 ? $"{(int)ts.TotalHours}h {ts.Minutes}m" : $"{(int)ts.TotalMinutes}m";
+
+    private static string ChartPoints(List<ProgressionPoint> curve, double max)
+    {
+        if (max <= 0) return "";
+        return string.Join(" ", curve.Select((p, i) =>
+            $"{i},{(100 - p.Score / max * 100):F1}"));
+    }
+}
+
+<style>
+    .activity-page { padding: 16px; max-width: 600px; margin: 0 auto; }
+
+    .section { margin-bottom: 24px; }
+    .section h2 { font-size: 1.1rem; font-weight: 600; color: #1a1a2e; margin-bottom: 10px; }
+    .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .section-header h2 { margin-bottom: 0; }
+
+    .training-menu { position: relative; }
+    .btn-add-training {
+        width: 36px; height: 36px; border-radius: 50%; background: #e94560; color: white;
+        border: none; cursor: pointer; display: flex; align-items: center; justify-content: center;
+    }
+    .btn-add-training:hover { background: #d63851; }
+    .training-dropdown {
+        position: absolute; right: 0; top: 42px; background: white; border-radius: 8px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.15); overflow: hidden; z-index: 10; min-width: 140px;
+    }
+    .dropdown-item {
+        display: block; padding: 10px 16px; color: #333; text-decoration: none;
+        font-size: 0.9rem; font-weight: 500;
+    }
+    .dropdown-item:hover { background: #f5f5f5; }
+
+    .contribution-grid {
+        display: flex; gap: 2px; width: 100%;
+    }
+    .grid-column { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+    .grid-cell {
+        width: 100%; aspect-ratio: 1; border-radius: 2px; cursor: pointer;
+    }
+    .grid-cell.intensity-0 { background: #ebedf0; }
+    .grid-cell.intensity-1 { background: #9be9a8; }
+    .grid-cell.intensity-2 { background: #40c463; }
+    .grid-cell.intensity-3 { background: #30a14e; }
+    .grid-cell.intensity-4 { background: #216e39; }
+
+    .month-labels {
+        position: relative; height: 18px; margin-top: 4px;
+    }
+    .month-label {
+        position: absolute; font-size: 0.65rem; color: #888; transform: translateX(-50%);
+    }
+
+    .grid-legend {
+        display: flex; align-items: center; gap: 3px; margin-top: 2px; justify-content: flex-end;
+    }
+    .legend-text { font-size: 0.7rem; color: #888; }
+    .legend-cell { width: 10px; height: 10px; cursor: default; }
+
+    .day-summary {
+        padding: 16px; background: white; border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 16px;
+    }
+    .summary-header {
+        display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
+    }
+    .summary-header h3 { font-size: 1rem; font-weight: 600; color: #1a1a2e; flex: 1; margin: 0; }
+    .duration-badge {
+        padding: 2px 8px; background: #E3F2FD; color: #0D47A1;
+        border-radius: 4px; font-size: 0.75rem; font-weight: 600;
+    }
+    .close-btn { background: none; border: none; color: #999; font-size: 1.1rem; cursor: pointer; padding: 4px 8px; }
+    .day-summary h4 { font-size: 0.85rem; font-weight: 600; color: #666; margin: 10px 0 6px; }
+    .summary-row {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 6px 8px; background: #f9f9f9; border-radius: 6px; margin-bottom: 4px;
+    }
+    .summary-name { font-size: 0.85rem; color: #333; font-weight: 500; }
+    .summary-meta { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; }
+    .mini-grade { padding: 1px 6px; background: #e94560; color: white; border-radius: 3px; font-weight: 700; }
+    .result-badge { padding: 1px 6px; border-radius: 3px; font-weight: 600; text-transform: uppercase; font-size: 0.65rem; }
+    .result-badge.flash { background: #FBE9E7; color: #D84315; }
+    .result-badge.send { background: #E8F5E9; color: #2E7D32; }
+    .result-badge.attempt { background: #FFF3E0; color: #E65100; }
+    .attempt-count { color: #999; }
+    .delete-btn {
+        background: none; border: none; color: #ccc; cursor: pointer;
+        font-size: 0.85rem; padding: 2px 6px; margin-left: 2px;
+    }
+    .delete-btn:hover { color: #e94560; }
+    .empty-day { text-align: center; color: #888; font-size: 0.85rem; padding: 12px; }
+
+    .progression-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .progression-header h2 { margin-bottom: 0; }
+    .window-select {
+        padding: 4px 8px; border: 1px solid #ddd; border-radius: 6px;
+        font-size: 0.8rem; background: white;
+    }
+
+    .score-cards { display: flex; gap: 12px; margin-bottom: 16px; }
+    .score-card {
+        flex: 1; padding: 16px; background: white; border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06); text-align: center;
+    }
+    .score-label { display: block; font-size: 0.75rem; color: #888; font-weight: 600; text-transform: uppercase; }
+    .score-value { display: block; font-size: 1.6rem; font-weight: 700; color: #1a1a2e; margin: 4px 0; }
+    .score-grade { display: block; font-size: 0.85rem; color: #e94560; font-weight: 600; }
+
+    .chart-section { margin-bottom: 12px; }
+    .chart-section h4 { font-size: 0.85rem; color: #666; margin-bottom: 6px; }
+    .mini-chart {
+        height: 60px; background: white; border-radius: 8px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.04); padding: 8px;
+    }
+    .chart-svg { width: 100%; height: 100%; }
+
+    .day-row {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 10px 12px; background: white; border-radius: 8px;
+        margin-bottom: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+        cursor: pointer;
+    }
+    .day-row:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .day-date { font-size: 0.9rem; color: #333; font-weight: 500; }
+    .day-dots { display: flex; gap: 3px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; }
+    .dot.intensity-1 { background: #9be9a8; }
+    .dot.intensity-2 { background: #40c463; }
+    .dot.intensity-3 { background: #30a14e; }
+    .dot.intensity-4 { background: #216e39; }
+
+    .loading { text-align: center; color: #888; padding: 48px; }
+</style>

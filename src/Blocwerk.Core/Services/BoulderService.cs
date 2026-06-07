@@ -178,10 +178,14 @@ public class BoulderService : IBoulderService
                       ?? throw new InvalidOperationException("Boulder not found");
 
         if (boulder.CreatedByUserId != user.Id)
+        {
             throw new InvalidOperationException("Only the creator can revise a boulder");
+        }
 
         if (!boulder.IsHistoric)
+        {
             throw new InvalidOperationException("Boulder is not historic");
+        }
 
         db.BoulderHolds.RemoveRange(boulder.BoulderHolds);
         foreach (var h in updatedHolds)
@@ -197,7 +201,10 @@ public class BoulderService : IBoulderService
         boulder.IsHistoric = false;
 
         var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == boulder.WallId);
-        if (wall != null) boulder.Generation = wall.CurrentGeneration;
+        if (wall != null)
+        {
+            boulder.Generation = wall.CurrentGeneration;
+        }
 
         await db.SaveChangesAsync();
 
@@ -228,7 +235,9 @@ public class BoulderService : IBoulderService
                       ?? throw new InvalidOperationException("Boulder not found");
 
         if (boulder.CreatedByUserId == user.Id)
+        {
             throw new InvalidOperationException("Cannot propose a grade for your own boulder");
+        }
 
         var existing = await db.GradeProposals
             .FirstOrDefaultAsync(gp => gp.BoulderId == boulderId && !gp.IsResolved);
@@ -279,7 +288,9 @@ public class BoulderService : IBoulderService
                        ?? throw new InvalidOperationException("Proposal not found");
 
         if (proposal.Boulder.CreatedByUserId != user.Id)
+        {
             throw new InvalidOperationException("Only the creator can accept a grade proposal");
+        }
 
         proposal.Boulder.Grade = proposal.ProposedGrade;
         proposal.IsResolved = true;
@@ -298,7 +309,9 @@ public class BoulderService : IBoulderService
                        ?? throw new InvalidOperationException("Proposal not found");
 
         if (proposal.Boulder.CreatedByUserId != user.Id)
+        {
             throw new InvalidOperationException("Only the creator can reject a grade proposal");
+        }
 
         proposal.IsResolved = true;
         await db.SaveChangesAsync();

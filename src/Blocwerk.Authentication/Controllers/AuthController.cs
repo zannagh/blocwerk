@@ -41,6 +41,8 @@ public class AuthController : ControllerBase
         if (inputQuery != null)
         {
             queryString = string.Join("&", inputQuery
+
+                // ReSharper disable ConditionIsAlwaysTrueOrFalseAccordingToNullableAPIContract - this can actually be null.
                 .Where(k => k.Key != null && k.Value != null)
                 .Select(kvp => $"{Uri.EscapeDataString(kvp.Key)}={Uri.EscapeDataString(kvp.Value)}"));
         }
@@ -63,7 +65,7 @@ public class AuthController : ControllerBase
             return BadRequest("Missing state parameter.");
         }
 
-        if (!_redirectUriProvider.GetRedirectUri(state, out RedirectSettings redirectUri))
+        if (!_redirectUriProvider.GetRedirectUri(state, out var redirectUri))
         {
             return BadRequest("Unknown state parameter.");
         }

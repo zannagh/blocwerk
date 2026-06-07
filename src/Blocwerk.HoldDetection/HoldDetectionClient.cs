@@ -2,16 +2,15 @@ using Blocwerk.Core.Abstractions;
 using Serilog;
 using SkiaSharp;
 using YoloDotNet;
-using YoloDotNet.Enums;
 using YoloDotNet.Models;
 #pragma warning disable CS0618
 
 namespace Blocwerk.HoldDetection;
 
-public class YoloHoldDetectionService : IHoldDetectionService, IDisposable
+public sealed class YoloHoldDetectionService : IHoldDetectionService, IDisposable
 {
-    private Yolo? _yolo;
     private readonly string _modelPath;
+    private Yolo? _yolo;
 
     public YoloHoldDetectionService(string modelPath)
     {
@@ -36,8 +35,8 @@ public class YoloHoldDetectionService : IHoldDetectionService, IDisposable
             var holds = results
                 .Select(r =>
                 {
-                    double cx = (r.BoundingBox.Left + r.BoundingBox.Width / 2.0) / skImage.Width;
-                    double cy = (r.BoundingBox.Top + r.BoundingBox.Height / 2.0) / skImage.Height;
+                    double cx = (r.BoundingBox.Left + (r.BoundingBox.Width / 2.0)) / skImage.Width;
+                    double cy = (r.BoundingBox.Top + (r.BoundingBox.Height / 2.0)) / skImage.Height;
                     return new DetectedHold(
                         X: Math.Round(cx, 4),
                         Y: Math.Round(cy, 4),
@@ -48,8 +47,10 @@ public class YoloHoldDetectionService : IHoldDetectionService, IDisposable
                 .Where(h => h.X is >= 0 and <= 1 && h.Y is >= 0 and <= 1)
                 .ToList();
 
-            Log.Information("[Hold Detection] YOLO detected {Count} valid holds ({Filtered} filtered out-of-bounds)",
-                holds.Count, results.Count - holds.Count);
+            Log.Information(
+                "[Hold Detection] YOLO detected {Count} valid holds ({Filtered} filtered out-of-bounds)",
+                holds.Count,
+                results.Count - holds.Count);
 
             return Task.FromResult(holds);
         }
@@ -63,6 +64,12 @@ public class YoloHoldDetectionService : IHoldDetectionService, IDisposable
             Log.Warning("[Hold Detection] YOLO failed ({Type}: {Message}), falling back to color-based detection", ex.GetType().Name, ex.Message);
             return Task.FromResult(ColorBasedDetection.Detect(imageData, parameters));
         }
+    }
+
+    /// <inheritdoc/>
+    public void Dispose()
+    {
+        _yolo?.Dispose();
     }
 
     private void EnsureModelLoaded()
@@ -83,10 +90,5 @@ public class YoloHoldDetectionService : IHoldDetectionService, IDisposable
         });
 
         Log.Information("[Hold Detection] YOLO model loaded from {Path}", _modelPath);
-    }
-
-    public void Dispose()
-    {
-        _yolo?.Dispose();
     }
 }

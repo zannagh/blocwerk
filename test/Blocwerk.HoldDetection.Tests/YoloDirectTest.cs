@@ -1,6 +1,5 @@
 using SkiaSharp;
 using YoloDotNet;
-using YoloDotNet.Enums;
 using YoloDotNet.Models;
 #pragma warning disable CS0618
 

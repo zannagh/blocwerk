@@ -53,7 +53,7 @@ public class CookieAuthenticationStateProvider : AuthenticationStateProvider
             }
             catch (Exception ex)
             {
-                Log.Error(ex, "[Cookie Authentication] Failed to parse cookie.");
+                Log.Error(ex, "[Cookie Authentication] Failed to parse cookie");
             }
         }
 
@@ -81,7 +81,7 @@ public class CookieAuthenticationStateProvider : AuthenticationStateProvider
         }
         catch (Exception e)
         {
-            Log.Error(e, "[Cookie Authentication] Failed to parse cookie, it may have expired or been tampered with.");
+            Log.Error(e, "[Cookie Authentication] Failed to parse cookie, it may have expired or been tampered with");
         }
 
         return null;

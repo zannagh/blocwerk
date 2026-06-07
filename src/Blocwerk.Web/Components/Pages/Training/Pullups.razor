@@ -1,0 +1,224 @@
+@page "/training/pullups"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject ITrainingService TrainingService
+@inject NavigationManager Navigation
+
+<PageTitle>Pull-ups - Blocwerk</PageTitle>
+
+<div class="training-page">
+    <div class="page-header">
+        <a href="/activity" class="back-link">&larr; Activity</a>
+        <h1>Pull-ups</h1>
+    </div>
+
+    @if (_finished)
+    {
+        <div class="finish-card">
+            <h2>Session Complete</h2>
+            <div class="finish-stats">
+                <div class="finish-stat">
+                    <span class="finish-value">@_sets.Count</span>
+                    <span class="finish-label">Sets</span>
+                </div>
+                <div class="finish-stat">
+                    <span class="finish-value">@_sets.Sum()</span>
+                    <span class="finish-label">Total Reps</span>
+                </div>
+            </div>
+            <p class="finish-detail">@(_weight > 0 ? $"+ {_weight} kg" : "Bodyweight")</p>
+            <a href="/activity" class="btn-done">Back to Activity</a>
+        </div>
+    }
+    else
+    {
+        <div class="setup-section">
+            <div class="form-group">
+                <label>Additional Weight (kg)</label>
+                <div class="stepper">
+                    <button class="step-btn" @onclick="() => _weight = Math.Max(0, _weight - 2.5)">&minus;</button>
+                    <span class="step-value">@_weight.ToString("F1")</span>
+                    <button class="step-btn" @onclick="() => _weight += 2.5">+</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="reps-section">
+            @if (_sets.Count > 0)
+            {
+                <div class="sets-done">
+                    @foreach (var (reps, idx) in _sets.Select((r, i) => (r, i)))
+                    {
+                        <div class="set-card">
+                            <span class="set-number">Set @(idx + 1)</span>
+                            <span class="set-reps">@reps reps</span>
+                        </div>
+                    }
+                </div>
+            }
+
+            <div class="current-set">
+                <span class="set-label">@(_sets.Count > 0 ? $"Set {_sets.Count + 1}" : "Set 1")</span>
+                <span class="rep-count">@_currentReps</span>
+            </div>
+
+            <button class="btn-add-rep" @onclick="AddRep">
+                Add Rep
+            </button>
+
+            @if (_currentReps > 0)
+            {
+                <div class="set-actions">
+                    <button class="btn-next-set" @onclick="FinishSet">
+                        Finish Set (@_currentReps rep@(_currentReps != 1 ? "s" : ""))
+                    </button>
+                    <button class="btn-undo" @onclick="UndoRep">Undo</button>
+                </div>
+            }
+        </div>
+
+        @if (_sets.Count > 0 && _currentReps == 0)
+        {
+            <button class="btn-finish" @onclick="FinishSession" disabled="@_isSaving">
+                @(_isSaving ? "Saving..." : $"Finish ({_sets.Count} set{(_sets.Count != 1 ? "s" : "")}, {_sets.Sum()} reps)")
+            </button>
+            <button class="btn-discard" @onclick="DiscardSession">Discard</button>
+        }
+    }
+</div>
+
+@code {
+    private double _weight;
+    private int _currentReps;
+    private List<int> _sets = [];
+    private bool _finished;
+    private bool _isSaving;
+
+    private void AddRep()
+    {
+        _currentReps++;
+    }
+
+    private void UndoRep()
+    {
+        if (_currentReps > 0) _currentReps--;
+    }
+
+    private void FinishSet()
+    {
+        if (_currentReps == 0) return;
+        _sets.Add(_currentReps);
+        _currentReps = 0;
+    }
+
+    private void DiscardSession()
+    {
+        _sets.Clear();
+        _currentReps = 0;
+    }
+
+    private async Task FinishSession()
+    {
+        if (_sets.Count == 0) return;
+        _isSaving = true;
+
+        var totalReps = _sets.Sum();
+        await TrainingService.SavePullupSessionAsync(totalReps, _weight, _sets.Count);
+
+        _finished = true;
+        _isSaving = false;
+    }
+}
+
+<style>
+    .training-page { padding: 16px; max-width: 500px; margin: 0 auto; }
+    .page-header { margin-bottom: 16px; }
+    .back-link { color: #888; text-decoration: none; font-size: 0.9rem; }
+    .page-header h1 { font-size: 1.4rem; font-weight: 700; color: #1a1a2e; margin-top: 4px; }
+
+    .setup-section {
+        padding: 16px; background: white; border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 16px;
+    }
+    .form-group label { display: block; font-weight: 600; color: #333; margin-bottom: 6px; font-size: 0.85rem; }
+    .stepper { display: flex; align-items: center; gap: 0; }
+    .step-btn {
+        width: 44px; height: 44px; border: 2px solid #e0e0e0; background: white;
+        font-size: 1.2rem; font-weight: 700; cursor: pointer; color: #333;
+    }
+    .step-btn:first-child { border-radius: 8px 0 0 8px; }
+    .step-btn:last-child { border-radius: 0 8px 8px 0; }
+    .step-btn:hover { background: #f5f5f5; }
+    .step-value {
+        flex: 1; text-align: center; font-size: 1.3rem; font-weight: 700;
+        color: #1a1a2e; border-top: 2px solid #e0e0e0; border-bottom: 2px solid #e0e0e0;
+        height: 44px; line-height: 40px;
+    }
+
+    .reps-section {
+        padding: 24px; background: white; border-radius: 16px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.08); text-align: center; margin-bottom: 16px;
+    }
+    .sets-done { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 20px; }
+    .set-card {
+        display: flex; flex-direction: column; padding: 8px 14px; background: #E8F5E9;
+        border-radius: 8px; text-align: center;
+    }
+    .set-number { font-size: 0.7rem; color: #666; font-weight: 600; }
+    .set-reps { font-size: 1rem; font-weight: 700; color: #2E7D32; }
+
+    .current-set { margin-bottom: 20px; }
+    .set-label { display: block; font-size: 0.85rem; color: #888; font-weight: 600; margin-bottom: 4px; }
+    .rep-count { font-size: 4rem; font-weight: 700; color: #1a1a2e; font-variant-numeric: tabular-nums; }
+
+    .btn-add-rep {
+        width: 100%; padding: 24px; background: #4CAF50; color: white;
+        border: none; border-radius: 12px; font-size: 1.4rem; font-weight: 700;
+        cursor: pointer; margin-bottom: 12px;
+    }
+    .btn-add-rep:hover { background: #43A047; }
+    .btn-add-rep:active { background: #388E3C; transform: scale(0.98); }
+
+    .set-actions { display: flex; gap: 8px; }
+    .btn-next-set {
+        flex: 1; padding: 14px; background: #0f3460; color: white;
+        border: none; border-radius: 10px; font-size: 1rem; font-weight: 600;
+        cursor: pointer;
+    }
+    .btn-next-set:hover { background: #0a2847; }
+    .btn-undo {
+        padding: 14px 20px; background: white; color: #666;
+        border: 2px solid #e0e0e0; border-radius: 10px; font-size: 1rem;
+        font-weight: 600; cursor: pointer;
+    }
+    .btn-undo:hover { background: #f5f5f5; }
+
+    .btn-finish {
+        width: 100%; padding: 16px; background: #0f3460; color: white;
+        border: none; border-radius: 12px; font-size: 1.1rem; font-weight: 700;
+        cursor: pointer;
+    }
+    .btn-finish:hover:not(:disabled) { background: #0a2847; }
+    .btn-finish:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-discard {
+        width: 100%; padding: 12px; background: white; color: #e94560;
+        border: 2px solid #e94560; border-radius: 12px; font-size: 0.95rem;
+        font-weight: 600; cursor: pointer; margin-top: 8px;
+    }
+    .btn-discard:hover { background: #e94560; color: white; }
+
+    .finish-card {
+        text-align: center; padding: 32px 20px; background: white;
+        border-radius: 16px; box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    }
+    .finish-card h2 { font-size: 1.3rem; font-weight: 700; color: #2E7D32; margin-bottom: 16px; }
+    .finish-stats { display: flex; gap: 16px; justify-content: center; margin-bottom: 12px; }
+    .finish-stat { text-align: center; }
+    .finish-value { display: block; font-size: 1.8rem; font-weight: 700; color: #1a1a2e; }
+    .finish-label { font-size: 0.8rem; color: #888; }
+    .finish-detail { color: #666; font-size: 0.9rem; margin-bottom: 20px; }
+    .btn-done {
+        display: inline-block; padding: 12px 32px; background: #0f3460; color: white;
+        text-decoration: none; border-radius: 8px; font-weight: 600;
+    }
+</style>

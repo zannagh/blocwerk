@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using Microsoft.Extensions.Configuration;
+using Newtonsoft.Json;
 
 namespace Blocwerk.Core.Configuration;
 
@@ -22,6 +23,15 @@ public class BlocwerkSettings
     public HoldDetectionSettings HoldDetection { get; private set; } = new();
 
     public List<string> AdminIdentifiers { get; private set; } = [];
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="BlocwerkSettings"/> class.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonConstructor]
+    [JsonConstructor]
+    public BlocwerkSettings()
+    {
+    }
 
     public BlocwerkSettings(IConfiguration configuration)
     {

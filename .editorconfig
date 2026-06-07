@@ -24,6 +24,7 @@ dotnet_diagnostic.SA1116.severity = suggestion
 dotnet_diagnostic.SA1200.severity = none
 # whitespace at beginning of line (because it's very dependent on editor)
 dotnet_diagnostic.SA1028.severity = none
+dotnet_diagnostic.SA1600.severity = suggestion
 
 
 [*.cs]

@@ -110,7 +110,11 @@ public class WallService : IWallService
             .Include(w => w.Boulders).ThenInclude(b => b.BoulderHolds)
             .FirstOrDefaultAsync(w => w.Id == wallId);
 
-        if (wall != null) wall.Photo = null;
+        if (wall != null)
+        {
+            wall.Photo = null;
+        }
+
         return wall;
     }
 
@@ -146,7 +150,11 @@ public class WallService : IWallService
             .Include(w => w.Members)
             .ToListAsync();
 
-        foreach (var w in walls) w.Photo = null;
+        foreach (var w in walls)
+        {
+            w.Photo = null;
+        }
+
         return walls;
     }
 
@@ -161,7 +169,11 @@ public class WallService : IWallService
 
         wall.Name = name;
         wall.Description = description;
-        if (angle.HasValue) wall.Angle = angle.Value;
+        if (angle.HasValue)
+        {
+            wall.Angle = angle.Value;
+        }
+
         await db.SaveChangesAsync();
         return wall;
     }
@@ -232,7 +244,9 @@ public class WallService : IWallService
 
         var membership = wall.Members.FirstOrDefault(m => m.UserId == user.Id);
         if (membership?.Role != WallRole.Admin)
+        {
             throw new InvalidOperationException("Not authorized");
+        }
 
         wall.ShareToken = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
         await db.SaveChangesAsync();
@@ -341,11 +355,30 @@ public class WallService : IWallService
         hold.X = x;
         hold.Y = y;
         hold.Radius = radius;
-        if (color != null) hold.Color = color;
-        if (category.HasValue) hold.Category = category.Value;
-        if (isOnKickboard.HasValue) hold.IsOnKickboard = isOnKickboard.Value;
-        if (shapePoints != null) hold.ShapePoints = shapePoints;
-        if (name != null) hold.Name = name;
+        if (color != null)
+        {
+            hold.Color = color;
+        }
+
+        if (category.HasValue)
+        {
+            hold.Category = category.Value;
+        }
+
+        if (isOnKickboard.HasValue)
+        {
+            hold.IsOnKickboard = isOnKickboard.Value;
+        }
+
+        if (shapePoints != null)
+        {
+            hold.ShapePoints = shapePoints;
+        }
+
+        if (name != null)
+        {
+            hold.Name = name;
+        }
 
         if (positionChanged)
         {
@@ -528,7 +561,9 @@ public class WallService : IWallService
 
         var callerMembership = wall.Members.FirstOrDefault(m => m.UserId == user.Id);
         if (callerMembership?.Role != WallRole.Admin)
+        {
             throw new InvalidOperationException("Not authorized");
+        }
 
         var membership = await db.WallMembers
             .FirstOrDefaultAsync(wm => wm.WallId == wallId && wm.UserId == userId)
@@ -547,7 +582,7 @@ public class WallService : IWallService
         for (int i = 0; i < polygon.Count; i++)
         {
             if ((polygon[i].Y > py) != (polygon[j].Y > py) &&
-                px < (polygon[j].X - polygon[i].X) * (py - polygon[i].Y) / (polygon[j].Y - polygon[i].Y) + polygon[i].X)
+                px < ((polygon[j].X - polygon[i].X) * (py - polygon[i].Y) / (polygon[j].Y - polygon[i].Y)) + polygon[i].X)
             {
                 inside = !inside;
             }
