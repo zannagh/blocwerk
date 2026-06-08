@@ -77,6 +77,9 @@ jobs:
         with:
           versionSpec: '6.x'
 
+      - name: Install GitVersion
+        run: dotnet tool install --global gitversion.tool
+
       - name: Determine Version
         id: version
         uses: gittools/actions/gitversion/execute@v4.2.0
