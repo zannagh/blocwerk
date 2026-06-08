@@ -66,7 +66,7 @@ public static class Program
             await next();
         });
 
-        app.UseStaticFiles();
+        app.MapStaticAssets();
         app.ConfigureCoreApplication();
         app.ConfigureAuthenticationMiddlewares();
         app.MapControllers();

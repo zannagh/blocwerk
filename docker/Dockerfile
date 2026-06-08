@@ -10,7 +10,8 @@ COPY src/Blocwerk.Web/Blocwerk.Web.csproj src/Blocwerk.Web/
 RUN dotnet restore src/Blocwerk.Web/Blocwerk.Web.csproj -a $TARGETARCH
 
 COPY src/ src/
-RUN dotnet publish src/Blocwerk.Web/Blocwerk.Web.csproj -c Release -o /app -a $TARGETARCH --no-restore
+RUN dotnet publish src/Blocwerk.Web/Blocwerk.Web.csproj -c Release -o /app -a $TARGETARCH \
+    -p:GenerateStaticWebAssetsManifest=true
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS runtime
 RUN apk add --no-cache icu-libs
