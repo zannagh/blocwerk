@@ -116,7 +116,7 @@ public class ManualDetectionTest
         new(0.70, 0.80, 0.006, "yellow", 0.7),
     ];
 
-    [Fact]
+    [SkippableFact]
     public void RenderManualDetection()
     {
         Directory.CreateDirectory(OutputDir);
