@@ -84,6 +84,11 @@ jobs:
       - name: Install GitVersion
         run: dotnet tool install --global gitversion.tool
 
+      - name: Update project files with version
+        uses: gittools/actions/gitversion/command@v4.2.0
+        with:
+          arguments: -updateprojectfiles
+
       - name: Determine Version
         id: version
         uses: gittools/actions/gitversion/execute@v4.2.0

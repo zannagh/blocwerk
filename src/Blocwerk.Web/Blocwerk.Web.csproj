@@ -14,9 +14,4 @@
     <ProjectReference Include="..\Blocwerk.Authentication\Blocwerk.Authentication.csproj" />
     <ProjectReference Include="..\Blocwerk.HoldDetection\Blocwerk.HoldDetection.csproj" />
   </ItemGroup>
-
-  <ItemGroup>
-    <None Remove="Properties\PublishProfiles\MBA IIS.pubxml" />
-  </ItemGroup>
-
 </Project>

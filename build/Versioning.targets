@@ -85,7 +85,7 @@
   </Target>
 
   <Target Name="GlobalVersioning" AfterTargets="GlobalVersioningInit"
-          Condition="Exists($(GitVersionMarkerFile)) and !($(ProjectName.Contains('EventHub.GraphQL')))">
+          Condition="Exists($(GitVersionMarkerFile))">
     <PropertyGroup>
       <GitVersionJson>$([System.IO.File]::ReadAllText($(GitVersionMarkerFile)))</GitVersionJson>
       <Version>$([System.Text.RegularExpressions.Regex]::Match($(GitVersionJson),
