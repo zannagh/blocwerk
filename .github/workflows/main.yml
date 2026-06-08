@@ -73,13 +73,13 @@ jobs:
           global-json-file: "global.json"
 
       - name: Setup GitVersion
-        uses: gittools/actions/gitversion/setup@v3.1.11
+        uses: gittools/actions/gitversion/setup@v4.2.0
         with:
           versionSpec: '6.x'
 
       - name: Determine Version
         id: version
-        uses: gittools/actions/gitversion/execute@v3.1.11
+        uses: gittools/actions/gitversion/execute@v4.2.0
 
       - name: Extract Tag
         id: extract_tag
