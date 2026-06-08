@@ -158,7 +158,7 @@ public class PostgresSettings
     public string Password { get; set; } = string.Empty;
 
     public string ConnectionString =>
-        $"Host={Host};Port={Port};Database={Database};Username={Username};Password={Password}";
+        $"Host={Host};Port={Port};Database={Database};Username={Username};Password={Password};SSL Mode=Prefer";
 }
 
 public class HoldDetectionSettings

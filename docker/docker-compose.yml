@@ -9,3 +9,21 @@ services:
       - "5051:5432"
     volumes:
       - ./pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  blocwerk:
+    image: ghcr.io/zannagh/blocwerk:latest
+    ports:
+      - "5050:5050"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      POSTGRES__HOST: postgres
+      POSTGRES__PORT: "5432"
+      POSTGRES__DATABASE: blocwerk
+      POSTGRES__USERNAME: postgres
+      POSTGRES__PASSWORD: blocwerk_dev
+    volumes:
+      - ./appsettings.json:/app/appsettings.json:ro
+    depends_on:
+      - postgres
+    restart: unless-stopped

@@ -1,0 +1,33 @@
+@rendermode InteractiveServer
+@inject IJSRuntime JS
+
+@if (_showBanner)
+{
+    <div class="cookie-banner">
+        <p>This site uses cookies for authentication and functionality. No tracking or advertising cookies are used. <a href="/privacy">Learn more</a></p>
+        <button class="cookie-accept" @onclick="Accept">OK</button>
+    </div>
+}
+
+@code {
+    private bool _showBanner;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            var hasConsent = await JS.InvokeAsync<bool>("cookieConsent.hasConsent");
+            if (!hasConsent)
+            {
+                _showBanner = true;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task Accept()
+    {
+        await JS.InvokeVoidAsync("cookieConsent.accept");
+        _showBanner = false;
+    }
+}

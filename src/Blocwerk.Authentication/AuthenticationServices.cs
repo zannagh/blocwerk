@@ -1,5 +1,6 @@
 using System.Text;
 using Blocwerk.Authentication.Handlers;
+using Blocwerk.Authentication.Middleware;
 using Blocwerk.Authentication.Providers;
 using Blocwerk.Authentication.Services;
 using Blocwerk.Core.Abstractions;
@@ -8,6 +9,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
@@ -70,12 +72,28 @@ public static class AuthenticationServices
             });
 
         app.Services.AddAuthorization();
+
+        app.Services.AddAntiforgery(options =>
+        {
+            options.Cookie.SecurePolicy = app.Environment.IsDevelopment()
+                ? CookieSecurePolicy.SameAsRequest
+                : CookieSecurePolicy.Always;
+            options.Cookie.HttpOnly = true;
+            options.Cookie.SameSite = SameSiteMode.Strict;
+        });
+
         return app;
     }
 
     public static WebApplication ConfigureAuthenticationMiddlewares(this WebApplication app)
     {
         app.UseAuthentication();
+
+        if (app.Environment.IsDevelopment())
+        {
+            app.UseMiddleware<DevAuthenticationMiddleware>();
+        }
+
         app.UseAuthorization();
         app.UseAntiforgery();
         return app;

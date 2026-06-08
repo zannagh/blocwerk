@@ -1,5 +1,6 @@
 
 docker/pgdata
+docker/blocwerk.tar.gz
 
 # ONNX models (large binary files)
 *.onnx

@@ -1,16 +1,20 @@
 @inherits LayoutComponentBase
+@using Blocwerk.Web.Components.Shared
 
 <div class="app-shell">
     <header class="top-bar">
         <a href="/walls" class="app-title">Blocwerk</a>
-        <AuthorizeView>
-            <Authorized>
-                <a href="/account/logout" class="header-link">Logout</a>
-            </Authorized>
-            <NotAuthorized>
-                <a href="/account/login" class="header-link">Login</a>
-            </NotAuthorized>
-        </AuthorizeView>
+        <div class="header-actions">
+            <TopBarActions />
+            <AuthorizeView>
+                <Authorized>
+                    <a href="/account/logout" class="header-link">Logout</a>
+                </Authorized>
+                <NotAuthorized>
+                    <a href="/account/login" class="header-link">Login</a>
+                </NotAuthorized>
+            </AuthorizeView>
+        </div>
     </header>
 
     <main class="content">
@@ -45,4 +49,6 @@
             </nav>
         </Authorized>
     </AuthorizeView>
+
+    <CookieConsent />
 </div>

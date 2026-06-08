@@ -1,0 +1,179 @@
+name: Main
+
+on:
+  release:
+    types: [published]
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  determine-jobs:
+    name: Determine Jobs
+    outputs:
+      has_code_changes: ${{ steps.check_changes.outputs.has_code_changes }}
+      should_build: ${{ github.event_name == 'release' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && steps.check_changes.outputs.has_code_changes == 'true') }}
+      should_upload_to_release: ${{ github.event_name == 'release' }}
+      should_create_prerelease: ${{ github.event_name == 'push' && steps.check_changes.outputs.has_code_changes == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for code changes
+        id: check_changes
+        run: |
+          if [[ "${{ github.event_name }}" != "push" ]]; then
+            echo "has_code_changes=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          DOCS_PATTERN='\.(md|yaml|yml|html)$'
+          HAS_CODE=false
+
+          while IFS= read -r file; do
+            if [[ -n "$file" && "$file" =~ ^\.github/workflows/ ]]; then
+              HAS_CODE=true
+              break
+            fi
+            if [[ -n "$file" && ! "$file" =~ $DOCS_PATTERN ]]; then
+              HAS_CODE=true
+              break
+            fi
+          done <<< "$(git diff --name-only HEAD~1 HEAD)"
+
+          echo "has_code_changes=$HAS_CODE" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build & Package
+    runs-on: ubuntu-latest
+    needs: [determine-jobs]
+    outputs:
+      semVer: ${{ steps.version.outputs.semVer }}
+      tag: ${{ steps.extract_tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: "global.json"
+
+      - name: Setup GitVersion
+        uses: gittools/actions/gitversion/setup@v3.1.11
+        with:
+          versionSpec: '6.x'
+
+      - name: Determine Version
+        id: version
+        uses: gittools/actions/gitversion/execute@v3.1.11
+
+      - name: Extract Tag
+        id: extract_tag
+        run: echo "tag=${GITHUB_REF#refs/*/}" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: dotnet build -c Release
+
+      - name: Test
+        run: dotnet test -c Release --no-build
+
+      # Docker image + GHCR push (only when publishing artifacts)
+      - name: Set up Docker Buildx
+        if: needs.determine-jobs.outputs.should_build == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        if: needs.determine-jobs.outputs.should_build == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        if: needs.determine-jobs.outputs.should_build == 'true'
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ steps.version.outputs.semVer }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.version.outputs.semVer }}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        if: needs.determine-jobs.outputs.should_build == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Save Docker image as tarball
+        if: needs.determine-jobs.outputs.should_build == 'true'
+        run: |
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.semVer }}
+          docker save ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.semVer }} | gzip > blocwerk-${{ steps.version.outputs.semVer }}.tar.gz
+
+      - name: Upload tarball artifact
+        if: needs.determine-jobs.outputs.should_build == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: blocwerk-${{ steps.version.outputs.semVer }}
+          path: blocwerk-${{ steps.version.outputs.semVer }}.tar.gz
+          retention-days: 30
+
+  upload-to-release:
+    name: Upload to GitHub Release
+    needs: [build, determine-jobs]
+    if: needs.determine-jobs.outputs.should_upload_to_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.build.outputs.tag }}
+          files: "**/*.tar.gz"
+
+  create-prerelease:
+    name: Create GitHub Prerelease
+    runs-on: ubuntu-latest
+    needs: [determine-jobs, build]
+    if: needs.determine-jobs.outputs.should_create_prerelease == 'true' && needs.determine-jobs.outputs.has_code_changes == 'true'
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.build.outputs.semVer }}
+          name: ${{ needs.build.outputs.semVer }}
+          prerelease: true
+          files: "**/*.tar.gz"
+          generate_release_notes: true

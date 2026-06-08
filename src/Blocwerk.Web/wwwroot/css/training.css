@@ -1,0 +1,122 @@
+/* ========== Shared Training Styles ========== */
+
+.training-page { padding: 16px; max-width: 500px; margin: 0 auto; }
+.training-page .page-header { margin-bottom: 16px; }
+.training-page .page-header h1 { font-size: 1.4rem; font-weight: 700; color: var(--text-heading); margin-top: 4px; }
+
+.setup-section {
+    padding: 16px; background: var(--bg-surface); border-radius: 12px;
+    box-shadow: 0 2px 8px var(--shadow-md); margin-bottom: 16px;
+}
+.setup-section .form-group label { display: block; font-weight: 600; color: var(--text); margin-bottom: 6px; font-size: 0.85rem; }
+.stepper { display: flex; align-items: center; gap: 0; }
+.step-btn {
+    width: 44px; height: 44px; border: 2px solid var(--border); background: var(--bg-surface);
+    font-size: 1.2rem; font-weight: 700; cursor: pointer; color: var(--text);
+}
+.step-btn:first-child { border-radius: 8px 0 0 8px; }
+.step-btn:last-child { border-radius: 0 8px 8px 0; }
+.step-btn:hover { background: var(--bg-surface-alt); }
+.step-value {
+    flex: 1; text-align: center; font-size: 1.3rem; font-weight: 700;
+    color: var(--text-heading); border-top: 2px solid var(--border); border-bottom: 2px solid var(--border);
+    height: 44px; line-height: 40px;
+}
+
+.btn-finish {
+    width: 100%; padding: 16px; background: var(--secondary); color: white;
+    border: none; border-radius: 12px; font-size: 1.1rem; font-weight: 700;
+    cursor: pointer;
+}
+.btn-finish:hover:not(:disabled) { background: var(--secondary-hover); }
+.btn-finish:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-discard {
+    width: 100%; padding: 12px; background: var(--bg-surface); color: var(--accent);
+    border: 2px solid var(--accent); border-radius: 12px; font-size: 0.95rem;
+    font-weight: 600; cursor: pointer; margin-top: 8px;
+}
+.btn-discard:hover { background: var(--accent); color: white; }
+
+.finish-card {
+    text-align: center; padding: 32px 20px; background: var(--bg-surface);
+    border-radius: 16px; box-shadow: 0 2px 12px var(--shadow-md);
+}
+.finish-card h2 { font-size: 1.3rem; font-weight: 700; color: var(--success-text); margin-bottom: 16px; }
+.finish-stats { display: flex; gap: 16px; justify-content: center; margin-bottom: 12px; }
+.finish-stat { text-align: center; }
+.finish-value { display: block; font-size: 1.8rem; font-weight: 700; color: var(--text-heading); }
+.finish-label { font-size: 0.8rem; color: var(--text-secondary); }
+.finish-detail { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 20px; }
+.btn-done {
+    display: inline-block; padding: 12px 32px; background: var(--secondary); color: white;
+    text-decoration: none; border-radius: 8px; font-weight: 600;
+}
+
+/* ========== Pull-ups ========== */
+
+.reps-section {
+    padding: 24px; background: var(--bg-surface); border-radius: 16px;
+    box-shadow: 0 2px 12px var(--shadow-md); text-align: center; margin-bottom: 16px;
+}
+.sets-done { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 20px; }
+.set-card {
+    display: flex; flex-direction: column; padding: 8px 14px; background: var(--success-bg);
+    border-radius: 8px; text-align: center;
+}
+.set-number { font-size: 0.7rem; color: var(--text-secondary); font-weight: 600; }
+.set-reps { font-size: 1rem; font-weight: 700; color: var(--success-text); }
+
+.current-set { margin-bottom: 20px; }
+.set-label { display: block; font-size: 0.85rem; color: var(--text-secondary); font-weight: 600; margin-bottom: 4px; }
+.rep-count { font-size: 4rem; font-weight: 700; color: var(--text-heading); font-variant-numeric: tabular-nums; }
+
+.btn-add-rep {
+    width: 100%; padding: 24px; background: #4CAF50; color: white;
+    border: none; border-radius: 12px; font-size: 1.4rem; font-weight: 700;
+    cursor: pointer; margin-bottom: 12px;
+}
+.btn-add-rep:hover { background: #43A047; }
+.btn-add-rep:active { background: #388E3C; transform: scale(0.98); }
+
+.set-actions { display: flex; gap: 8px; }
+.btn-next-set {
+    flex: 1; padding: 14px; background: var(--secondary); color: white;
+    border: none; border-radius: 10px; font-size: 1rem; font-weight: 600;
+    cursor: pointer;
+}
+.btn-next-set:hover { background: var(--secondary-hover); }
+.btn-undo {
+    padding: 14px 20px; background: var(--bg-surface); color: var(--text-secondary);
+    border: 2px solid var(--border); border-radius: 10px; font-size: 1rem;
+    font-weight: 600; cursor: pointer;
+}
+.btn-undo:hover { background: var(--bg-surface-alt); }
+
+/* ========== Hangboard ========== */
+
+.timer-section {
+    padding: 24px; background: var(--bg-surface); border-radius: 16px;
+    box-shadow: 0 2px 12px var(--shadow-md); text-align: center; margin-bottom: 16px;
+}
+.timer-section .sets-done { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-bottom: 16px; }
+.set-chip {
+    padding: 4px 10px; background: var(--success-bg); color: var(--success-text);
+    border-radius: 6px; font-size: 0.8rem; font-weight: 600;
+}
+.timer-display { margin-bottom: 20px; }
+.timer-value { font-size: 3rem; font-weight: 700; color: var(--text-heading); font-variant-numeric: tabular-nums; }
+.timer-value.rest { color: #FF9800; font-size: 2rem; }
+.timer-value.idle { color: var(--border); font-size: 2rem; }
+
+.btn-start {
+    width: 100%; padding: 20px; background: #4CAF50; color: white;
+    border: none; border-radius: 12px; font-size: 1.3rem; font-weight: 700;
+    cursor: pointer;
+}
+.btn-start:hover { background: #43A047; }
+.btn-stop {
+    width: 100%; padding: 20px; background: var(--accent); color: white;
+    border: none; border-radius: 12px; font-size: 1.3rem; font-weight: 700;
+    cursor: pointer;
+}
+.btn-stop:hover { background: var(--accent-hover); }

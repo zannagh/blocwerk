@@ -47,6 +47,25 @@ public static class Program
         var app = builder.Build();
 
         app.UseForwardedHeaders();
+
+        app.Use(async (context, next) =>
+        {
+            var headers = context.Response.Headers;
+            headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
+            headers["X-Content-Type-Options"] = "nosniff";
+            headers["X-Frame-Options"] = "DENY";
+            headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+            headers["Content-Security-Policy"] =
+                "default-src 'self'; " +
+                "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
+                "style-src 'self' 'unsafe-inline'; " +
+                "img-src 'self' data: blob:; " +
+                "connect-src 'self' wss:; " +
+                "font-src 'self'; " +
+                "frame-ancestors 'none'";
+            await next();
+        });
+
         app.UseStaticFiles();
         app.ConfigureCoreApplication();
         app.ConfigureAuthenticationMiddlewares();

@@ -1,12 +1,10 @@
 <Solution>
-  <Folder Name="/src/">
-    <Project Path="src/Blocwerk.Core/Blocwerk.Core.csproj" />
-    <Project Path="src/Blocwerk.Authentication/Blocwerk.Authentication.csproj" />
-    <Project Path="src/Blocwerk.HoldDetection/Blocwerk.HoldDetection.csproj" />
-    <Project Path="src/Blocwerk.Web/Blocwerk.Web.csproj" />
-  </Folder>
   <Folder Name="/test/">
     <Project Path="test/Blocwerk.Core.Tests/Blocwerk.Core.Tests.csproj" />
     <Project Path="test/Blocwerk.HoldDetection.Tests/Blocwerk.HoldDetection.Tests.csproj" />
   </Folder>
+  <Project Path="src/Blocwerk.Authentication/Blocwerk.Authentication.csproj" />
+  <Project Path="src/Blocwerk.Core/Blocwerk.Core.csproj" />
+  <Project Path="src/Blocwerk.HoldDetection/Blocwerk.HoldDetection.csproj" />
+  <Project Path="src/Blocwerk.Web/Blocwerk.Web.csproj" />
 </Solution>

@@ -179,31 +179,3 @@ else
         "black" => "#212121", _ => "#999" };
 }
 
-<style>
-    .picker-toolbar { padding: 8px 12px; background: #1a1a2e; border-radius: 10px 10px 0 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; }
-    .pick-count { color: rgba(255,255,255,0.7); font-size: 0.85rem; }
-    .pick-legend { display: flex; gap: 10px; }
-    .legend-item { color: rgba(255,255,255,0.6); font-size: 0.75rem; display: flex; align-items: center; gap: 4px; }
-    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-    .dot.start { background: #4CAF50; } .dot.normal { background: #2196F3; } .dot.top { background: #F44336; }
-    .pick-controls { display: flex; gap: 4px; align-items: center; }
-    .separator { width: 1px; height: 20px; background: rgba(255,255,255,0.2); margin: 0 2px; }
-    .mode-btn { padding: 4px 10px; border: 1px solid rgba(255,255,255,0.3); background: none; color: white; border-radius: 4px; font-size: 0.8rem; cursor: pointer; display: flex; align-items: center; gap: 4px; }
-    .mode-btn.active { background: #2196F3; border-color: #2196F3; }
-    .mode-btn.start-active { background: #4CAF50; border-color: #4CAF50; }
-    .mode-btn.top-active { background: #F44336; border-color: #F44336; }
-    .mode-btn.view-active { background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.5); }
-
-    .zoom-bar { display: flex; gap: 4px; padding: 4px 12px; background: #22223a; align-items: center; }
-    .zoom-btn { padding: 4px 12px; background: rgba(255,255,255,0.1); border: none; color: white; border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
-    .zoom-btn:hover { background: rgba(255,255,255,0.2); }
-    .zoom-label { color: rgba(255,255,255,0.5); font-size: 0.75rem; margin-left: 4px; }
-    .zoom-sep { width: 1px; height: 16px; background: rgba(255,255,255,0.2); margin: 0 4px; }
-    .zoom-btn.pan-active { background: #e94560; }
-    .zoom-btn svg { display: block; }
-
-    .picker-viewport { max-height: 70vh; overflow: auto; -webkit-overflow-scrolling: touch; border-radius: 0 0 12px 12px; }
-    .photo-picker { position: relative; overflow: hidden; } .photo-picker .wall-photo { width: 100%; display: block; }
-    .photo-picker .hold-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
-    .schematic-picker { overflow: hidden; background: #f5f0eb; } .schematic-picker .schematic-svg { width: 100%; display: block; }
-</style>
