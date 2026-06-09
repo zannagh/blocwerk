@@ -1,0 +1,82 @@
+/* ========== Guides Landing ========== */
+
+.guides-page { padding: 16px; max-width: 600px; margin: 0 auto; }
+.guides-page h1 { font-size: 1.5rem; font-weight: 700; color: var(--text-heading); margin-bottom: 16px; }
+
+.guide-sections { display: flex; flex-direction: column; gap: 12px; }
+
+.guide-section-card {
+    padding: 16px; background: var(--bg-surface); border-radius: 12px;
+    box-shadow: 0 2px 8px var(--shadow-md);
+}
+.guide-section-card h2 { font-size: 1.1rem; font-weight: 600; color: var(--text-heading); margin-bottom: 8px; }
+.guide-section-card.coming-soon { opacity: 0.5; }
+.guide-section-card.coming-soon h2::after {
+    content: " — coming soon"; font-size: 0.75rem; font-weight: 400;
+    color: var(--text-secondary);
+}
+
+.guide-tools { display: flex; flex-direction: column; gap: 6px; }
+.guide-tool-link {
+    display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+    background: var(--bg-surface-alt); border-radius: 8px;
+    text-decoration: none; color: var(--text); font-weight: 500;
+    font-size: 0.9rem; transition: all 0.15s;
+}
+.guide-tool-link:hover { box-shadow: 0 2px 8px var(--shadow-md); color: var(--accent); }
+.guide-tool-link svg { width: 20px; height: 20px; color: var(--accent); flex-shrink: 0; }
+
+/* ========== Volume Calculator ========== */
+
+.volume-calc { padding: 16px; max-width: 600px; margin: 0 auto; }
+.volume-calc .page-header { margin-bottom: 16px; }
+.volume-calc .page-header h1 { font-size: 1.4rem; font-weight: 700; color: var(--text-heading); margin-top: 4px; }
+
+.volume-input { margin-bottom: 20px; }
+
+.input-row { display: flex; gap: 12px; margin-bottom: 12px; }
+.input-row .form-group { flex: 1; margin-bottom: 0; }
+
+.volume-results { margin-top: 24px; }
+
+.summary-grid {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;
+    margin-bottom: 20px;
+}
+.summary-item {
+    padding: 12px; background: var(--bg-surface); border-radius: 10px;
+    box-shadow: 0 1px 4px var(--shadow-sm); text-align: center;
+}
+.summary-item .label { display: block; font-size: 0.75rem; color: var(--text-secondary); font-weight: 600; text-transform: uppercase; margin-bottom: 2px; }
+.summary-item .value { display: block; font-size: 1.2rem; font-weight: 700; color: var(--text-heading); }
+.summary-item .unit { font-size: 0.8rem; color: var(--text-secondary); font-weight: 400; }
+
+.piece-list { margin-bottom: 24px; }
+.piece-list h2 { font-size: 1.1rem; font-weight: 600; color: var(--text-heading); margin-bottom: 10px; }
+
+.piece-card {
+    padding: 14px; background: var(--bg-surface); border-radius: 10px;
+    box-shadow: 0 1px 4px var(--shadow-sm); margin-bottom: 10px;
+}
+.piece-card h3 { font-size: 0.95rem; font-weight: 600; color: var(--text-heading); margin-bottom: 8px; }
+.piece-card .piece-details { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.piece-detail-chip {
+    padding: 3px 8px; background: var(--bg-surface-alt); border-radius: 4px;
+    font-size: 0.8rem; color: var(--text-secondary);
+}
+.piece-detail-chip strong { color: var(--text); }
+
+.piece-svg-container {
+    background: var(--bg-surface-alt); border-radius: 8px; padding: 12px;
+    display: flex; justify-content: center; overflow: hidden;
+}
+.piece-svg-container svg { max-width: 100%; height: auto; }
+
+.isometric-section { margin-bottom: 24px; }
+.isometric-section h2 { font-size: 1.1rem; font-weight: 600; color: var(--text-heading); margin-bottom: 10px; }
+
+.isometric-container {
+    background: var(--bg-surface); border-radius: 12px; padding: 16px;
+    box-shadow: 0 2px 8px var(--shadow-md); display: flex; justify-content: center;
+}
+.isometric-container svg { max-width: 100%; height: auto; }

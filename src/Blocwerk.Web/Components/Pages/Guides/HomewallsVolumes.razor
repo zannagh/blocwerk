@@ -1,0 +1,407 @@
+@page "/guides/homewalls/volumes"
+@rendermode InteractiveServer
+@attribute [AllowAnonymous]
+@using Blocwerk.Core.Helpers
+@using System.Globalization
+
+<PageTitle>Volume Calculator - Blocwerk</PageTitle>
+
+<div class="volume-calc">
+    <div class="page-header">
+        <a href="/guides" class="back-link">&larr; Guides</a>
+        <h1>Volume Calculator</h1>
+        <p class="description">Calculate cutting plans for climbing wall volumes. Enter your dimensions and get exact piece measurements with bevel angles.</p>
+        <div class="anon-banner">This tool is in active development. Double-check all measurements and angles before cutting wood.</div>
+    </div>
+
+    <div class="volume-input">
+        <div class="view-toggle">
+            <button class="toggle-btn @(_mode == VolumeMode.PyramidByDimensions ? "active" : "")"
+                    @onclick="() => SetMode(VolumeMode.PyramidByDimensions)">Pyramid</button>
+            <button class="toggle-btn @(_mode == VolumeMode.PyramidByAngle ? "active" : "")"
+                    @onclick="() => SetMode(VolumeMode.PyramidByAngle)">By Angle</button>
+            <button class="toggle-btn @(_mode == VolumeMode.Diamond ? "active" : "")"
+                    @onclick="() => SetMode(VolumeMode.Diamond)">Diamond</button>
+        </div>
+
+        @if (_mode == VolumeMode.PyramidByDimensions)
+        {
+            <div class="input-row">
+                <div class="form-group">
+                    <label>Sides</label>
+                    <select class="form-input" @bind="_sideCount">
+                        @for (var i = 3; i <= 8; i++)
+                        {
+                            <option value="@i">@i sides</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Wood Thickness (mm)</label>
+                    <input type="number" class="form-input" @bind="_thickness" min="1" step="1" />
+                </div>
+            </div>
+            <div class="input-row">
+                <div class="form-group">
+                    <label>Base Edge (mm)</label>
+                    <input type="number" class="form-input" @bind="_baseEdge" min="1" step="1" />
+                </div>
+                <div class="form-group">
+                    <label>Height (mm)</label>
+                    <input type="number" class="form-input" @bind="_height" min="1" step="1" />
+                </div>
+            </div>
+        }
+        else if (_mode == VolumeMode.PyramidByAngle)
+        {
+            <div class="input-row">
+                <div class="form-group">
+                    <label>Sides</label>
+                    <select class="form-input" @bind="_sideCount">
+                        @for (var i = 3; i <= 8; i++)
+                        {
+                            <option value="@i">@i sides</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Wood Thickness (mm)</label>
+                    <input type="number" class="form-input" @bind="_thickness" min="1" step="1" />
+                </div>
+            </div>
+            <div class="input-row">
+                <div class="form-group">
+                    <label>Face Angle (&deg;)</label>
+                    <input type="number" class="form-input" @bind="_faceAngle" min="1" max="89" step="1" />
+                </div>
+                <div class="form-group">
+                    <label>Edge Length (mm)</label>
+                    <input type="number" class="form-input" @bind="_edgeLength" min="1" step="1" />
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="input-row">
+                <div class="form-group">
+                    <label>Width (mm)</label>
+                    <input type="number" class="form-input" @bind="_diamondWidth" min="1" step="1" />
+                </div>
+                <div class="form-group">
+                    <label>Length (mm)</label>
+                    <input type="number" class="form-input" @bind="_diamondLength" min="1" step="1" />
+                </div>
+            </div>
+            <div class="input-row">
+                <div class="form-group">
+                    <label>Tip Height (mm)</label>
+                    <input type="number" class="form-input" @bind="_diamondHeight" min="1" step="1" />
+                </div>
+                <div class="form-group">
+                    <label>Wood Thickness (mm)</label>
+                    <input type="number" class="form-input" @bind="_thickness" min="1" step="1" />
+                </div>
+            </div>
+        }
+
+        <button class="btn-submit" @onclick="Calculate">Calculate</button>
+
+        @if (_error != null)
+        {
+            <div class="error-msg">@_error</div>
+        }
+    </div>
+
+    @if (_result != null)
+    {
+        <div class="volume-results">
+            <div class="summary-grid">
+                <div class="summary-item">
+                    <span class="label">Dihedral Angle</span>
+                    <span class="value">@F(_result.DihedralAngleDeg)<span class="unit">&deg;</span></span>
+                </div>
+                <div class="summary-item">
+                    <span class="label">Miter Angle</span>
+                    <span class="value">@F(_result.MiterAngleDeg)<span class="unit">&deg;</span></span>
+                </div>
+                <div class="summary-item">
+                    <span class="label">Base Bevel</span>
+                    <span class="value">@F(_result.BaseBevelAngleDeg)<span class="unit">&deg;</span></span>
+                </div>
+                <div class="summary-item">
+                    <span class="label">Slant Height</span>
+                    <span class="value">@F(_result.SlantHeight)<span class="unit"> mm</span></span>
+                </div>
+            </div>
+
+            <div class="isometric-section">
+                <h2>Assembled View</h2>
+                <div class="isometric-container">
+                    @RenderIsometric()
+                </div>
+            </div>
+
+            <div class="piece-list">
+                <h2>Cutting Plan (@_result.Pieces.Count pieces)</h2>
+
+                @{ var shown = new HashSet<string>(); }
+                @foreach (var piece in _result.Pieces)
+                {
+                    var key = PieceKey(piece);
+                    var isFirst = shown.Add(key);
+                    var duplicates = _result.Pieces.Count(p => PieceKey(p) == key);
+
+                    @if (isFirst)
+                    {
+                        <div class="piece-card">
+                            <h3>@piece.Name @(duplicates > 1 ? $"(x{duplicates})" : "")</h3>
+                            <div class="piece-details">
+                                @for (var i = 0; i < piece.EdgeLengths.Length; i++)
+                                {
+                                    <span class="piece-detail-chip">
+                                        Edge @(i + 1): <strong>@F(piece.EdgeLengths[i]) mm</strong>
+                                        &middot; bevel @F(piece.EdgeBevelAngles[i])&deg;
+                                    </span>
+                                }
+                            </div>
+                            <div class="piece-svg-container">
+                                @RenderPieceSvg(piece)
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private VolumeMode _mode = VolumeMode.PyramidByDimensions;
+    private int _sideCount = 4;
+    private double _baseEdge = 200;
+    private double _height = 150;
+    private double _thickness = 18;
+    private double _faceAngle = 30;
+    private double _edgeLength = 300;
+    private double _diamondWidth = 300;
+    private double _diamondLength = 400;
+    private double _diamondHeight = 100;
+    private VolumeResult? _result;
+    private string? _error;
+
+    private void SetMode(VolumeMode mode)
+    {
+        _mode = mode;
+        _result = null;
+        _error = null;
+    }
+
+    private void Calculate()
+    {
+        _error = null;
+        _result = null;
+        try
+        {
+            _result = _mode switch
+            {
+                VolumeMode.PyramidByDimensions => VolumeCalculator.CalculatePyramid(_sideCount, _baseEdge, _height, _thickness),
+                VolumeMode.PyramidByAngle => VolumeCalculator.CalculatePyramidByAngle(_sideCount, _faceAngle, _edgeLength, _thickness),
+                VolumeMode.Diamond => VolumeCalculator.CalculateDiamond(_diamondWidth, _diamondLength, _diamondHeight, _thickness),
+                _ => null,
+            };
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private RenderFragment RenderPieceSvg(VolumePiece piece) => builder =>
+    {
+        var verts = piece.FlatVertices;
+        if (verts.Length < 3) return;
+
+        var minX = verts.Min(v => v.X);
+        var maxX = verts.Max(v => v.X);
+        var minY = verts.Min(v => v.Y);
+        var maxY = verts.Max(v => v.Y);
+        var pad = Math.Max(maxX - minX, maxY - minY) * 0.15;
+
+        var vbX = minX - pad;
+        var vbY = -(maxY + pad);
+        var vbW = maxX - minX + 2 * pad;
+        var vbH = maxY - minY + 2 * pad;
+
+        var points = string.Join(" ", verts.Select(v => $"{F2(v.X)},{F2(-v.Y)}"));
+        var fontSize = Math.Max(vbW, vbH) * 0.045;
+
+        builder.OpenElement(0, "svg");
+        builder.AddAttribute(1, "viewBox", $"{F2(vbX)} {F2(vbY)} {F2(vbW)} {F2(vbH)}");
+        builder.AddAttribute(2, "width", "280");
+        builder.AddAttribute(3, "height", "280");
+        builder.AddAttribute(4, "xmlns", "http://www.w3.org/2000/svg");
+
+        // Fill
+        builder.OpenElement(5, "polygon");
+        builder.AddAttribute(6, "points", points);
+        builder.AddAttribute(7, "fill", "var(--bg-surface-alt, #f0f0f0)");
+        builder.AddAttribute(8, "stroke", "var(--text-heading, #1a1a2e)");
+        builder.AddAttribute(9, "stroke-width", F2(Math.Max(vbW, vbH) * 0.005));
+        builder.CloseElement();
+
+        // Edge labels
+        for (var i = 0; i < verts.Length; i++)
+        {
+            var a = verts[i];
+            var b = verts[(i + 1) % verts.Length];
+            var mx = (a.X + b.X) / 2.0;
+            var my = -(a.Y + b.Y) / 2.0;
+            var dx = b.X - a.X;
+            var dy = b.Y - a.Y;
+            var len = Math.Sqrt(dx * dx + dy * dy);
+            var nx = -dy / len * pad * 0.4;
+            var ny = dx / len * pad * 0.4;
+
+            builder.OpenElement(10, "text");
+            builder.AddAttribute(11, "x", F2(mx + nx));
+            builder.AddAttribute(12, "y", F2(my - ny));
+            builder.AddAttribute(13, "text-anchor", "middle");
+            builder.AddAttribute(14, "dominant-baseline", "middle");
+            builder.AddAttribute(15, "font-size", F2(fontSize));
+            builder.AddAttribute(16, "fill", "var(--accent, #e94560)");
+            builder.AddAttribute(17, "font-weight", "600");
+            builder.AddAttribute(18, "font-family", "sans-serif");
+            builder.AddMarkupContent(19, $"{F(piece.EdgeLengths[i])}mm");
+            builder.CloseElement();
+
+            builder.OpenElement(20, "text");
+            builder.AddAttribute(21, "x", F2(mx - nx));
+            builder.AddAttribute(22, "y", F2(my + ny));
+            builder.AddAttribute(23, "text-anchor", "middle");
+            builder.AddAttribute(24, "dominant-baseline", "middle");
+            builder.AddAttribute(25, "font-size", F2(fontSize * 0.8));
+            builder.AddAttribute(26, "fill", "var(--text-secondary, #888)");
+            builder.AddAttribute(27, "font-family", "sans-serif");
+            builder.AddMarkupContent(28, $"{F(piece.EdgeBevelAngles[i])}&deg;");
+            builder.CloseElement();
+        }
+
+        builder.CloseElement();
+    };
+
+    private RenderFragment RenderIsometric() => builder =>
+    {
+        if (_result == null) return;
+
+        var baseVerts = _result.BaseVertices;
+        var apex = _result.Apex;
+        var bottomApex = _result.BottomApex;
+
+        var allPts = baseVerts.Select(VolumeCalculator.ProjectIsometric).ToList();
+        var apexPt = VolumeCalculator.ProjectIsometric(apex);
+        allPts.Add(apexPt);
+
+        Point2D? bottomApexPt = null;
+        if (bottomApex != null)
+        {
+            bottomApexPt = VolumeCalculator.ProjectIsometric(bottomApex);
+            allPts.Add(bottomApexPt);
+        }
+
+        var minX = allPts.Min(p => p.X);
+        var maxX = allPts.Max(p => p.X);
+        var minY = allPts.Min(p => p.Y);
+        var maxY = allPts.Max(p => p.Y);
+        var pad = Math.Max(maxX - minX, maxY - minY) * 0.1;
+
+        var vbX = minX - pad;
+        var vbY = minY - pad;
+        var vbW = maxX - minX + 2 * pad;
+        var vbH = maxY - minY + 2 * pad;
+        var sw = F2(Math.Max(vbW, vbH) * 0.006);
+
+        builder.OpenElement(0, "svg");
+        builder.AddAttribute(1, "viewBox", $"{F2(vbX)} {F2(vbY)} {F2(vbW)} {F2(vbH)}");
+        builder.AddAttribute(2, "width", "320");
+        builder.AddAttribute(3, "height", "320");
+        builder.AddAttribute(4, "xmlns", "http://www.w3.org/2000/svg");
+
+        var baseProjPts = baseVerts.Select(VolumeCalculator.ProjectIsometric).ToArray();
+
+        // Base edges
+        for (var i = 0; i < baseProjPts.Length; i++)
+        {
+            var a = baseProjPts[i];
+            var b = baseProjPts[(i + 1) % baseProjPts.Length];
+            DrawLine(builder, a, b, "var(--text-secondary, #888)", sw, null);
+        }
+
+        // Faces to apex (semi-transparent fill)
+        for (var i = 0; i < baseProjPts.Length; i++)
+        {
+            var a = baseProjPts[i];
+            var b = baseProjPts[(i + 1) % baseProjPts.Length];
+            var facePoints = $"{F2(a.X)},{F2(a.Y)} {F2(b.X)},{F2(b.Y)} {F2(apexPt.X)},{F2(apexPt.Y)}";
+
+            builder.OpenElement(10, "polygon");
+            builder.AddAttribute(11, "points", facePoints);
+            builder.AddAttribute(12, "fill", i % 2 == 0 ? "rgba(233,69,96,0.15)" : "rgba(15,52,96,0.15)");
+            builder.AddAttribute(13, "stroke", "var(--text-heading, #1a1a2e)");
+            builder.AddAttribute(14, "stroke-width", sw);
+            builder.CloseElement();
+        }
+
+        // Edges to apex
+        foreach (var bp in baseProjPts)
+        {
+            DrawLine(builder, bp, apexPt, "var(--text-heading, #1a1a2e)", sw, null);
+        }
+
+        // Bottom apex for diamond
+        if (bottomApexPt != null)
+        {
+            for (var i = 0; i < baseProjPts.Length; i++)
+            {
+                var a = baseProjPts[i];
+                var b = baseProjPts[(i + 1) % baseProjPts.Length];
+                var facePoints = $"{F2(a.X)},{F2(a.Y)} {F2(b.X)},{F2(b.Y)} {F2(bottomApexPt.X)},{F2(bottomApexPt.Y)}";
+
+                builder.OpenElement(20, "polygon");
+                builder.AddAttribute(21, "points", facePoints);
+                builder.AddAttribute(22, "fill", i % 2 == 0 ? "rgba(233,69,96,0.1)" : "rgba(15,52,96,0.1)");
+                builder.AddAttribute(23, "stroke", "var(--text-heading, #1a1a2e)");
+                builder.AddAttribute(24, "stroke-width", sw);
+                builder.AddAttribute(25, "stroke-dasharray", $"{F2(Math.Max(vbW, vbH) * 0.02)} {F2(Math.Max(vbW, vbH) * 0.01)}");
+                builder.CloseElement();
+            }
+
+            foreach (var bp in baseProjPts)
+            {
+                DrawLine(builder, bp, bottomApexPt, "var(--text-heading, #1a1a2e)", sw, "4 2");
+            }
+        }
+
+        builder.CloseElement();
+    };
+
+    private static void DrawLine(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder builder, Point2D a, Point2D b, string stroke, string sw, string? dashArray)
+    {
+        builder.OpenElement(30, "line");
+        builder.AddAttribute(31, "x1", F2(a.X));
+        builder.AddAttribute(32, "y1", F2(a.Y));
+        builder.AddAttribute(33, "x2", F2(b.X));
+        builder.AddAttribute(34, "y2", F2(b.Y));
+        builder.AddAttribute(35, "stroke", stroke);
+        builder.AddAttribute(36, "stroke-width", sw);
+        if (dashArray != null) builder.AddAttribute(37, "stroke-dasharray", dashArray);
+        builder.CloseElement();
+    }
+
+    private static string PieceKey(VolumePiece p) =>
+        string.Join(",", p.EdgeLengths.Select(e => Math.Round(e, 1))) + "|" +
+        string.Join(",", p.EdgeBevelAngles.Select(a => Math.Round(a, 1)));
+
+    private static string F(double v) => v.ToString("F1", CultureInfo.InvariantCulture);
+
+    private static string F2(double v) => v.ToString("F2", CultureInfo.InvariantCulture);
+}
