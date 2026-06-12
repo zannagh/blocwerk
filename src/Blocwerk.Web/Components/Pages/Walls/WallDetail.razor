@@ -76,7 +76,8 @@ else
                                  OnRedetectRequested="OnRedetect"
                                  OnBorderChanged="OnBorderChanged"
                                  OnCleanArtifactsRequested="OnCleanArtifacts"
-                                 OnMarkHoldModified="OnMarkHoldModified" />
+                                 OnMarkHoldModified="OnMarkHoldModified"
+                                 OnMergeHolds="OnMergeHolds" />
             }
             else if (_wall.PhotoContentType != null && _viewMode == ViewMode.Schematic)
             {
@@ -550,6 +551,20 @@ else
         }
     }
 
+    private async Task OnMergeHolds((Guid stagedHoldId, Guid liveHoldId) pair)
+    {
+        try
+        {
+            await WallService.MergeHoldsAsync(pair.stagedHoldId, pair.liveHoldId);
+            await LoadWall();
+            await ShowToast("Holds merged");
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"Merge failed: {ex.Message}");
+        }
+    }
+
     private async Task OnMarkHoldModified(Guid holdId)
     {
         try
@@ -593,6 +608,7 @@ else
         ActivityType.WallPhotoConfirmed => "P",
         ActivityType.WallPhotoDiscarded => "P",
         ActivityType.HoldMarkedModified => "!",
+        ActivityType.HoldMerged => "M",
         ActivityType.WallReset => "!",
         ActivityType.MemberJoined => "J",
         ActivityType.MemberRoleChanged => "R",
@@ -616,6 +632,7 @@ else
         ActivityType.WallPhotoConfirmed => "confirmed the new photo",
         ActivityType.WallPhotoDiscarded => "discarded the staged photo",
         ActivityType.HoldMarkedModified => "marked a hold as modified",
+        ActivityType.HoldMerged => "merged holds across photos",
         ActivityType.WallReset => "reset the wall",
         ActivityType.MemberJoined => "joined the wall",
         ActivityType.MemberRoleChanged => "role was changed",

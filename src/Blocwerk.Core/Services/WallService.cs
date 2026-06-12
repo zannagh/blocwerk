@@ -33,6 +33,8 @@ public interface IWallService
 
     Task<Hold> MarkHoldModifiedAsync(Guid holdId);
 
+    Task<Hold> MergeHoldsAsync(Guid stagedHoldId, Guid liveHoldId);
+
     Task<string> GenerateShareTokenAsync(Guid wallId);
 
     Task<Wall> JoinWallAsync(string shareToken);
@@ -401,6 +403,69 @@ public class WallService : IWallService
         await _activityLogService.LogAsync(hold.WallId, null, ActivityType.HoldMarkedModified,
             $"{affectedBoulders.Count} boulder(s) flagged for review");
         return hold;
+    }
+
+    public async Task<Hold> MergeHoldsAsync(Guid stagedHoldId, Guid liveHoldId)
+    {
+        var user = await _currentUserService.GetCurrentUserAsync();
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = user.Id;
+
+        var staged = await db.Holds.FirstOrDefaultAsync(h => h.Id == stagedHoldId)
+                     ?? throw new InvalidOperationException("Staged hold not found");
+        var live = await db.Holds.FirstOrDefaultAsync(h => h.Id == liveHoldId)
+                   ?? throw new InvalidOperationException("Live hold not found");
+
+        if (staged.WallId != live.WallId)
+        {
+            throw new InvalidOperationException("Holds belong to different walls");
+        }
+
+        var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == staged.WallId)
+                   ?? throw new InvalidOperationException("Wall not found");
+
+        if (wall.StagedAt == null)
+        {
+            throw new InvalidOperationException("Wall is not in staging mode");
+        }
+
+        var liveGen = wall.CurrentGeneration;
+        var stagedGen = liveGen + 1;
+
+        if (staged.Generation != stagedGen || live.Generation > liveGen)
+        {
+            throw new InvalidOperationException("Holds are not on opposite generations");
+        }
+
+        live.X = staged.X;
+        live.Y = staged.Y;
+        live.Radius = staged.Radius;
+        if (staged.ShapePoints != null)
+        {
+            live.ShapePoints = staged.ShapePoints;
+        }
+        if (!string.IsNullOrEmpty(staged.Color))
+        {
+            live.Color = staged.Color;
+        }
+        live.NeedsReview = true;
+
+        var affectedBoulders = await db.BoulderHolds
+            .Where(bh => bh.HoldId == live.Id)
+            .Select(bh => bh.Boulder)
+            .Where(b => !b.IsArchived)
+            .ToListAsync();
+        foreach (var b in affectedBoulders)
+        {
+            b.NeedsReview = true;
+        }
+
+        db.Holds.Remove(staged);
+
+        await db.SaveChangesAsync();
+        await _activityLogService.LogAsync(wall.Id, null, ActivityType.HoldMerged,
+            $"{affectedBoulders.Count} boulder(s) flagged for review");
+        return live;
     }
 
     public async Task<string> GenerateShareTokenAsync(Guid wallId)

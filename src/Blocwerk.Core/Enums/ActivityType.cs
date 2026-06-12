@@ -17,6 +17,7 @@ public enum ActivityType
     WallPhotoConfirmed = 23,
     WallPhotoDiscarded = 24,
     HoldMarkedModified = 6,
+    HoldMerged = 7,
     MemberJoined = 30,
     MemberRoleChanged = 31,
     AttemptLogged = 40,
