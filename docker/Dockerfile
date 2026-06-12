@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG TARGETARCH
 WORKDIR /repo
 
@@ -13,8 +13,10 @@ COPY src/ src/
 RUN dotnet publish src/Blocwerk.Web/Blocwerk.Web.csproj -c Release -o /app -a $TARGETARCH \
     -p:GenerateStaticWebAssetsManifest=true
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS runtime
-RUN apk add --no-cache icu-libs fontconfig ttf-dejavu libstdc++
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libfontconfig1 fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /app .
 
