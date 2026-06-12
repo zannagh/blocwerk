@@ -597,17 +597,28 @@
         _alignCentroidCache = null;
     }
 
-    private void ApplyAlignRotate(double angleDelta)
+    private void ApplyAlignRotateScale(double angleDelta, double scale)
     {
         var c = _alignCentroidCache ?? LiveCentroid();
         var cos = Math.Cos(angleDelta);
         var sin = Math.Sin(angleDelta);
         foreach (var h in Holds.Where(IsLiveHold))
         {
-            var rx = h.X - c.X;
-            var ry = h.Y - c.Y;
+            var rx = (h.X - c.X) * scale;
+            var ry = (h.Y - c.Y) * scale;
             h.X = Math.Clamp(c.X + rx * cos - ry * sin, 0, 1);
             h.Y = Math.Clamp(c.Y + rx * sin + ry * cos, 0, 1);
+            h.Radius = Math.Clamp(h.Radius * scale, 0.003, 0.2);
+            if (h.ShapePoints != null)
+            {
+                foreach (var sp in h.ShapePoints)
+                {
+                    var px = sp.Dx * scale;
+                    var py = sp.Dy * scale;
+                    sp.Dx = px * cos - py * sin;
+                    sp.Dy = px * sin + py * cos;
+                }
+            }
             _updatedHoldIds.Add(h.Id);
         }
     }
@@ -673,9 +684,16 @@
         if (_alignRotating)
         {
             var c = _alignCentroidCache ?? LiveCentroid();
-            var prev = Math.Atan2(_alignLastY - c.Y, _alignLastX - c.X);
-            var curr = Math.Atan2(pos.Y - c.Y, pos.X - c.X);
-            ApplyAlignRotate(curr - prev);
+            var prevDx = _alignLastX - c.X;
+            var prevDy = _alignLastY - c.Y;
+            var currDx = pos.X - c.X;
+            var currDy = pos.Y - c.Y;
+            var prevR = Math.Sqrt(prevDx * prevDx + prevDy * prevDy);
+            var currR = Math.Sqrt(currDx * currDx + currDy * currDy);
+            var prevA = Math.Atan2(prevDy, prevDx);
+            var currA = Math.Atan2(currDy, currDx);
+            var scale = prevR > 0.001 ? Math.Clamp(currR / prevR, 0.5, 2.0) : 1.0;
+            ApplyAlignRotateScale(currA - prevA, scale);
             _alignLastX = pos.X;
             _alignLastY = pos.Y;
             StateHasChanged(); return;
