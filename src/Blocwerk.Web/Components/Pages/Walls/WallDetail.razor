@@ -70,10 +70,13 @@ else
                                  BorderPoints="_borderPoints"
                                  CanEdit="_isAdmin && _isEditing"
                                  ShareToken="@ShareToken"
+                                 IsStaging="@_wall.StagedAt.HasValue"
+                                 LiveGeneration="_wall.CurrentGeneration"
                                  OnBatchSave="OnBatchSave"
                                  OnRedetectRequested="OnRedetect"
                                  OnBorderChanged="OnBorderChanged"
-                                 OnCleanArtifactsRequested="OnCleanArtifacts" />
+                                 OnCleanArtifactsRequested="OnCleanArtifacts"
+                                 OnMarkHoldModified="OnMarkHoldModified" />
             }
             else if (_wall.PhotoContentType != null && _viewMode == ViewMode.Schematic)
             {
@@ -145,6 +148,7 @@ else
                             <span class="boulder-name">
                                 @boulder.Name
                                 @if (boulder.IsHistoric) { <span class="historic-badge" title="Wall changed since creation">historic</span> }
+                                @if (boulder.NeedsReview) { <span class="review-badge" title="A hold on this boulder changed — review needed">review</span> }
                             </span>
                             <span class="boulder-meta">
                                 @boulder.BoulderHolds.Count holds &middot; by @boulder.CreatedBy.DisplayName
@@ -249,8 +253,16 @@ else
                 <h2>Wall Settings</h2>
 
                 <div class="form-group">
-                    <label>Upload New Photo</label>
+                    <label>@(_wall.StagedAt.HasValue ? "Replace Staged Photo" : "Upload New Photo")</label>
                     <InputFile OnChange="OnPhotoSelected" accept="image/*" class="form-input" />
+                    @if (_wall.StagedAt.HasValue)
+                    {
+                        <p class="staged-hint">A new photo is staged. Adjust holds in the editor, then confirm or discard.</p>
+                        <div class="staged-actions">
+                            <button class="btn-primary" @onclick="ConfirmStagedPhoto">Confirm new photo</button>
+                            <button class="btn-secondary" @onclick="DiscardStagedPhoto">Discard</button>
+                        </div>
+                    }
                 </div>
 
                 @if (string.IsNullOrEmpty(_shareLink))
@@ -493,15 +505,77 @@ else
     private async Task OnPhotoSelected(InputFileChangeEventArgs e)
     {
         var file = e.File;
-        if (file.Size > 10 * 1024 * 1024) return;
+        if (file.Size > 10 * 1024 * 1024)
+        {
+            await ShowToast("Photo too large (max 10 MB)");
+            return;
+        }
 
-        using var stream = file.OpenReadStream(10 * 1024 * 1024);
-        using var ms = new MemoryStream();
-        await stream.CopyToAsync(ms);
+        try
+        {
+            using var stream = file.OpenReadStream(10 * 1024 * 1024);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
 
-        await WallService.UploadPhotoAsync(WallId, ms.ToArray(), file.ContentType);
-        await LoadWall();
-        await ShowToast($"Photo uploaded — {_holds.Count} holds detected");
+            if (_wall?.PhotoContentType != null)
+            {
+                await WallService.StagePhotoAsync(WallId, ms.ToArray(), file.ContentType);
+                await LoadWall();
+                await ShowToast($"Photo staged — review holds and click Confirm");
+            }
+            else
+            {
+                await WallService.UploadPhotoAsync(WallId, ms.ToArray(), file.ContentType);
+                await LoadWall();
+                await ShowToast($"Photo uploaded — {_holds.Count} holds detected");
+            }
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"Upload failed: {ex.Message}");
+        }
+    }
+
+    private async Task ConfirmStagedPhoto()
+    {
+        try
+        {
+            await WallService.ConfirmStagedPhotoAsync(WallId);
+            await LoadWall();
+            await ShowToast("New photo confirmed");
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"Confirm failed: {ex.Message}");
+        }
+    }
+
+    private async Task OnMarkHoldModified(Guid holdId)
+    {
+        try
+        {
+            await WallService.MarkHoldModifiedAsync(holdId);
+            await LoadWall();
+            await ShowToast("Hold marked as modified; affected boulders flagged for review");
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"Failed: {ex.Message}");
+        }
+    }
+
+    private async Task DiscardStagedPhoto()
+    {
+        try
+        {
+            await WallService.DiscardStagedPhotoAsync(WallId);
+            await LoadWall();
+            await ShowToast("Staged photo discarded");
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"Discard failed: {ex.Message}");
+        }
     }
 
     private static string ActivityIcon(ActivityType type) => type switch
@@ -515,6 +589,10 @@ else
         ActivityType.BoulderCreated => "B",
         ActivityType.BoulderRevised => "R",
         ActivityType.WallPhotoUploaded => "P",
+        ActivityType.WallPhotoStaged => "P",
+        ActivityType.WallPhotoConfirmed => "P",
+        ActivityType.WallPhotoDiscarded => "P",
+        ActivityType.HoldMarkedModified => "!",
         ActivityType.WallReset => "!",
         ActivityType.MemberJoined => "J",
         ActivityType.MemberRoleChanged => "R",
@@ -534,6 +612,10 @@ else
         ActivityType.BoulderCreated => "created a boulder",
         ActivityType.BoulderRevised => "revised a boulder",
         ActivityType.WallPhotoUploaded => "uploaded a photo",
+        ActivityType.WallPhotoStaged => "staged a new photo",
+        ActivityType.WallPhotoConfirmed => "confirmed the new photo",
+        ActivityType.WallPhotoDiscarded => "discarded the staged photo",
+        ActivityType.HoldMarkedModified => "marked a hold as modified",
         ActivityType.WallReset => "reset the wall",
         ActivityType.MemberJoined => "joined the wall",
         ActivityType.MemberRoleChanged => "role was changed",

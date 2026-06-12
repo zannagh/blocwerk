@@ -131,6 +131,11 @@
             </div>
             <div class="option-group"><label>Size:</label><input type="range" min="3" max="40" value="@((int)(_selectedRadius * 1000))" @oninput="OnRadiusChange" /></div>
             <button class="opt-btn danger" @onclick="DeleteSelected">Del</button>
+            @if (!IsStaging && _pendingChanges == 0)
+            {
+                <button class="opt-btn" title="Mark this hold as slightly modified; boulders using it will be flagged for review."
+                        @onclick="() => MarkSelectedModified(sel.Id)">Mark modified@(sel.NeedsReview ? " ✓" : "")</button>
+            }
         </div>
     }
 }
@@ -199,13 +204,20 @@
             var isFoot = hold.Category == HoldCategory.Foot;
             var fillColor = GetHoldFillColor(hold, isSelected || isShapeEditing || isNaming);
             var strokeColor = (isSelected || isShapeEditing || isNaming) ? "#ffffff" : GetHoldStrokeColor(hold);
-            var sw = (isSelected || isShapeEditing || isNaming) ? "0.4" : "0.25";
+            if (IsStaging && !(isSelected || isShapeEditing || isNaming))
+            {
+                strokeColor = IsStagedHold(hold) ? "#33dd66" : "#ff9933";
+            }
+            var sw = (isSelected || isShapeEditing || isNaming) ? "0.4" : (IsStaging ? "0.45" : "0.25");
+            var dash = IsStaging && !(isSelected || isShapeEditing || isNaming)
+                ? (IsStagedHold(hold) ? "0.6 0.3" : "0.3 0.3")
+                : "";
             var r = (isFoot ? hold.Radius * 0.7 : hold.Radius) * 100;
 
             @if (hold.ShapePoints is { Count: >= 3 })
             {
                 <polygon points="@Pts(hold.ShapePoints.Select(sp => (hold.X + sp.Dx, hold.Y + sp.Dy)))"
-                         fill="@fillColor" stroke="@strokeColor" stroke-width="@sw"
+                         fill="@fillColor" stroke="@strokeColor" stroke-width="@sw" stroke-dasharray="@dash"
                          style="cursor: pointer"
                          @onclick="() => OnHoldClick(hold)" @onclick:stopPropagation="true"
                          @onmousedown="() => StartDrag(hold)" @onmousedown:stopPropagation="true" />
@@ -214,7 +226,7 @@
             {
                 <rect x="@F((hold.X - r / 100.0) * 100)" y="@F((hold.Y - r / 100.0) * 100)"
                       width="@F(r * 2 / 100.0 * 100)" height="@F(r * 2 / 100.0 * 100)"
-                      rx="0.3" fill="@fillColor" stroke="@strokeColor" stroke-width="@sw"
+                      rx="0.3" fill="@fillColor" stroke="@strokeColor" stroke-width="@sw" stroke-dasharray="@dash"
                       style="cursor: pointer"
                       @onclick="() => OnHoldClick(hold)" @onclick:stopPropagation="true"
                       @onmousedown="() => StartDrag(hold)" @onmousedown:stopPropagation="true" />
@@ -222,7 +234,7 @@
             else
             {
                 <circle cx="@F(hold.X * 100)" cy="@F(hold.Y * 100)" r="@F(r)"
-                        fill="@fillColor" stroke="@strokeColor" stroke-width="@sw"
+                        fill="@fillColor" stroke="@strokeColor" stroke-width="@sw" stroke-dasharray="@dash"
                         style="cursor: pointer"
                         @onclick="() => OnHoldClick(hold)" @onclick:stopPropagation="true"
                         @onmousedown="() => StartDrag(hold)" @onmousedown:stopPropagation="true" />
@@ -280,6 +292,9 @@
     [Parameter] public EventCallback<List<ShapePoint>> OnBorderChanged { get; set; }
     [Parameter] public EventCallback OnCleanArtifactsRequested { get; set; }
     [Parameter] public EventCallback<BatchChanges> OnBatchSave { get; set; }
+    [Parameter] public EventCallback<Guid> OnMarkHoldModified { get; set; }
+    [Parameter] public bool IsStaging { get; set; }
+    [Parameter] public int LiveGeneration { get; set; }
 
     private ElementReference _containerRef;
     private ElementReference _viewportRef;
@@ -311,9 +326,14 @@
     private List<Hold>? _snapshotHolds;
     private int _pendingChanges => _addedHolds.Count + _updatedHoldIds.Count + _deletedHoldIds.Count;
 
-    private string PhotoUrl => !string.IsNullOrEmpty(ShareToken)
-        ? $"/api/walls/{WallId}/photo?token={ShareToken}"
-        : $"/api/walls/{WallId}/photo";
+    private string PhotoUrl => IsStaging
+        ? $"/api/walls/{WallId}/staged-photo"
+        : !string.IsNullOrEmpty(ShareToken)
+            ? $"/api/walls/{WallId}/photo?token={ShareToken}"
+            : $"/api/walls/{WallId}/photo";
+
+    private bool IsStagedHold(Hold h) => IsStaging && h.Generation > LiveGeneration;
+    private bool IsLiveHold(Hold h) => IsStaging && h.Generation <= LiveGeneration;
 
     private static readonly string[] _colors = ["none", "yellow", "red", "pink", "blue", "green", "orange", "purple", "white", "black"];
     private enum EditMode { Add, Move, Shape, Paint, Delete, Border, Name }
@@ -491,6 +511,11 @@
         _deletedHoldIds.Add(_selectedHoldId.Value);
         Holds.RemoveAll(h => h.Id == _selectedHoldId.Value);
         _selectedHoldId = null;
+    }
+
+    private async Task MarkSelectedModified(Guid holdId)
+    {
+        await OnMarkHoldModified.InvokeAsync(holdId);
     }
 
     private void OnRadiusChange(ChangeEventArgs e)

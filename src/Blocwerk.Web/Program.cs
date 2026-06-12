@@ -92,6 +92,14 @@ public static class Program
             return photo == null ? Results.NotFound() : Results.File(photo, "image/jpeg");
         });
 
+        app.MapGet("/api/walls/{wallId:guid}/staged-photo", async (
+            Guid wallId,
+            [FromServices] IWallService wallService) =>
+        {
+            var photo = await wallService.GetStagedPhotoAsync(wallId);
+            return photo == null ? Results.NotFound() : Results.File(photo, "image/jpeg");
+        });
+
         app.Run();
     }
 }

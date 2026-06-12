@@ -34,6 +34,8 @@ public class Boulder
 
     public bool IsHistoric { get; set; }
 
+    public bool NeedsReview { get; set; }
+
     public int Generation { get; set; }
 
     public ICollection<BoulderHold> BoulderHolds { get; set; } = [];

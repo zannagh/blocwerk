@@ -23,6 +23,16 @@ public interface IWallService
 
     Task<Wall> UploadPhotoAsync(Guid wallId, byte[] photo, string contentType, bool autoDetect = true);
 
+    Task<Wall> StagePhotoAsync(Guid wallId, byte[] photo, string contentType);
+
+    Task<Wall> ConfirmStagedPhotoAsync(Guid wallId);
+
+    Task DiscardStagedPhotoAsync(Guid wallId);
+
+    Task<byte[]?> GetStagedPhotoAsync(Guid wallId);
+
+    Task<Hold> MarkHoldModifiedAsync(Guid holdId);
+
     Task<string> GenerateShareTokenAsync(Guid wallId);
 
     Task<Wall> JoinWallAsync(string shareToken);
@@ -105,7 +115,8 @@ public class WallService : IWallService
         var wall = await db.Walls
             .AsSplitQuery()
             .Include(w => w.Members)
-            .Include(w => w.Holds.Where(h => h.Generation == db.Walls.First(wl => wl.Id == wallId).CurrentGeneration))
+            .Include(w => w.Holds.Where(h => h.Generation >= db.Walls.First(wl => wl.Id == wallId).CurrentGeneration
+                                             && h.Generation <= db.Walls.First(wl => wl.Id == wallId).CurrentGeneration + 1))
             .Include(w => w.Boulders.Where(b => !b.IsArchived)).ThenInclude(b => b.CreatedBy)
             .Include(w => w.Boulders).ThenInclude(b => b.BoulderHolds)
             .FirstOrDefaultAsync(w => w.Id == wallId);
@@ -113,6 +124,7 @@ public class WallService : IWallService
         if (wall != null)
         {
             wall.Photo = null;
+            wall.StagedPhoto = null;
         }
 
         return wall;
@@ -231,6 +243,166 @@ public class WallService : IWallService
         return wall;
     }
 
+    public async Task<Wall> StagePhotoAsync(Guid wallId, byte[] photo, string contentType)
+    {
+        var user = await _currentUserService.GetCurrentUserAsync();
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = user.Id;
+
+        var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId)
+                   ?? throw new InvalidOperationException("Wall not found");
+
+        if (wall.Photo == null)
+        {
+            throw new InvalidOperationException("No live photo yet; use UploadPhotoAsync for the first photo.");
+        }
+
+        var stagedGen = wall.CurrentGeneration + 1;
+        var oldStagedHolds = await db.Holds
+            .Where(h => h.WallId == wallId && h.Generation == stagedGen)
+            .ToListAsync();
+        db.Holds.RemoveRange(oldStagedHolds);
+
+        wall.StagedPhoto = photo;
+        wall.StagedPhotoContentType = contentType;
+        wall.StagedAt = DateTimeOffset.UtcNow;
+        wall.StagedByUserId = user.Id;
+
+        var detectedHolds = await _holdDetectionService.DetectHoldsAsync(photo);
+        foreach (var detected in detectedHolds)
+        {
+            db.Holds.Add(new Hold
+            {
+                WallId = wallId,
+                X = detected.X,
+                Y = detected.Y,
+                Radius = detected.Radius,
+                Color = detected.Color,
+                Confidence = detected.Confidence,
+                IsAutoDetected = true,
+                Generation = stagedGen,
+            });
+        }
+
+        await db.SaveChangesAsync();
+        await _activityLogService.LogAsync(wallId, null, ActivityType.WallPhotoStaged, $"{detectedHolds.Count} holds detected");
+        return wall;
+    }
+
+    public async Task<Wall> ConfirmStagedPhotoAsync(Guid wallId)
+    {
+        var user = await _currentUserService.GetCurrentUserAsync();
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = user.Id;
+
+        var wall = await db.Walls
+                       .Include(w => w.Holds)
+                       .FirstOrDefaultAsync(w => w.Id == wallId)
+                   ?? throw new InvalidOperationException("Wall not found");
+
+        if (wall.StagedPhoto == null)
+        {
+            throw new InvalidOperationException("No staged photo to confirm.");
+        }
+
+        var liveGen = wall.CurrentGeneration;
+        var stagedGen = liveGen + 1;
+
+        var carried = 0;
+        foreach (var hold in wall.Holds.Where(h => h.Generation == liveGen).ToList())
+        {
+            hold.Generation = stagedGen;
+            carried++;
+        }
+
+        var stagedCount = wall.Holds.Count(h => h.Generation == stagedGen) - carried;
+
+        wall.Photo = wall.StagedPhoto;
+        wall.PhotoContentType = wall.StagedPhotoContentType;
+        wall.StagedPhoto = null;
+        wall.StagedPhotoContentType = null;
+        wall.StagedAt = null;
+        wall.StagedByUserId = null;
+        wall.CurrentGeneration = stagedGen;
+
+        await db.SaveChangesAsync();
+        await _activityLogService.LogAsync(wallId, null, ActivityType.WallPhotoConfirmed,
+            $"{carried} carried, {stagedCount} new");
+        return wall;
+    }
+
+    public async Task DiscardStagedPhotoAsync(Guid wallId)
+    {
+        var user = await _currentUserService.GetCurrentUserAsync();
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = user.Id;
+
+        var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId)
+                   ?? throw new InvalidOperationException("Wall not found");
+
+        if (wall.StagedPhoto == null)
+        {
+            return;
+        }
+
+        var stagedGen = wall.CurrentGeneration + 1;
+        var stagedHolds = await db.Holds
+            .Where(h => h.WallId == wallId && h.Generation == stagedGen)
+            .ToListAsync();
+        db.Holds.RemoveRange(stagedHolds);
+
+        wall.StagedPhoto = null;
+        wall.StagedPhotoContentType = null;
+        wall.StagedAt = null;
+        wall.StagedByUserId = null;
+
+        await db.SaveChangesAsync();
+        await _activityLogService.LogAsync(wallId, null, ActivityType.WallPhotoDiscarded);
+    }
+
+    public async Task<byte[]?> GetStagedPhotoAsync(Guid wallId)
+    {
+        var user = await _currentUserService.GetCurrentUserAsync();
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = user.Id;
+
+        var wall = await db.Walls
+            .AsNoTracking()
+            .Where(w => w.Id == wallId)
+            .Select(w => new { w.StagedPhoto })
+            .FirstOrDefaultAsync();
+
+        return wall?.StagedPhoto;
+    }
+
+    public async Task<Hold> MarkHoldModifiedAsync(Guid holdId)
+    {
+        var user = await _currentUserService.GetCurrentUserAsync();
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = user.Id;
+
+        var hold = await db.Holds.FirstOrDefaultAsync(h => h.Id == holdId)
+                   ?? throw new InvalidOperationException("Hold not found");
+
+        hold.NeedsReview = true;
+
+        var affectedBoulders = await db.BoulderHolds
+            .Where(bh => bh.HoldId == holdId)
+            .Select(bh => bh.Boulder)
+            .Where(b => !b.IsArchived)
+            .ToListAsync();
+
+        foreach (var b in affectedBoulders)
+        {
+            b.NeedsReview = true;
+        }
+
+        await db.SaveChangesAsync();
+        await _activityLogService.LogAsync(hold.WallId, null, ActivityType.HoldMarkedModified,
+            $"{affectedBoulders.Count} boulder(s) flagged for review");
+        return hold;
+    }
+
     public async Task<string> GenerateShareTokenAsync(Guid wallId)
     {
         var user = await _currentUserService.GetCurrentUserAsync();
@@ -318,6 +490,7 @@ public class WallService : IWallService
         var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId)
                    ?? throw new InvalidOperationException("Wall not found");
 
+        var targetGen = wall.StagedAt != null ? wall.CurrentGeneration + 1 : wall.CurrentGeneration;
         var hold = new Hold
         {
             WallId = wallId,
@@ -328,7 +501,7 @@ public class WallService : IWallService
             Category = category,
             ShapePoints = shapePoints,
             IsAutoDetected = false,
-            Generation = wall.CurrentGeneration,
+            Generation = targetGen,
         };
 
         db.Holds.Add(hold);
@@ -346,6 +519,9 @@ public class WallService : IWallService
 
         var hold = await db.Holds.FirstOrDefaultAsync(h => h.Id == holdId)
                    ?? throw new InvalidOperationException("Hold not found");
+
+        var wallStagedAt = await db.Walls.Where(w => w.Id == hold.WallId).Select(w => w.StagedAt).FirstOrDefaultAsync();
+        bool isStaging = wallStagedAt != null;
 
         bool positionChanged = Math.Abs(hold.X - x) > 0.0001 || Math.Abs(hold.Y - y) > 0.0001;
         bool colorChanged = color != null && hold.Color != color;
@@ -385,12 +561,19 @@ public class WallService : IWallService
             var affectedBoulders = await db.BoulderHolds
                 .Where(bh => bh.HoldId == holdId)
                 .Select(bh => bh.Boulder)
-                .Where(b => !b.IsArchived && !b.IsHistoric)
+                .Where(b => !b.IsArchived)
                 .ToListAsync();
 
             foreach (var boulder in affectedBoulders)
             {
-                boulder.IsHistoric = true;
+                if (isStaging)
+                {
+                    boulder.NeedsReview = true;
+                }
+                else if (!boulder.IsHistoric)
+                {
+                    boulder.IsHistoric = true;
+                }
             }
 
             await _activityLogService.LogAsync(hold.WallId, null, ActivityType.HoldMoved);

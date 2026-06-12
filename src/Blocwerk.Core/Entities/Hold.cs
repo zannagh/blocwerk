@@ -38,5 +38,7 @@ public class Hold
 
     public int Generation { get; set; }
 
+    public bool NeedsReview { get; set; }
+
     public ICollection<BoulderHold> BoulderHolds { get; set; } = [];
 }

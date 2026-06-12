@@ -20,6 +20,15 @@ public class Wall
     [MaxLength(64)]
     public string? PhotoContentType { get; set; }
 
+    public byte[]? StagedPhoto { get; set; }
+
+    [MaxLength(64)]
+    public string? StagedPhotoContentType { get; set; }
+
+    public DateTimeOffset? StagedAt { get; set; }
+
+    public Guid? StagedByUserId { get; set; }
+
     public Guid OwnerId { get; set; }
 
     [ForeignKey(nameof(OwnerId))]
