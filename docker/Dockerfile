@@ -14,7 +14,7 @@ RUN dotnet publish src/Blocwerk.Web/Blocwerk.Web.csproj -c Release -o /app -a $T
     -p:GenerateStaticWebAssetsManifest=true
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS runtime
-RUN apk add --no-cache icu-libs
+RUN apk add --no-cache icu-libs fontconfig ttf-dejavu libstdc++
 WORKDIR /app
 COPY --from=build /app .
 
