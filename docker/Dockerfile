@@ -25,6 +25,9 @@ COPY --from=build /app .
 
 ENV ASPNETCORE_URLS=http://+:5050
 ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
+# SkiaSharp 3.x on Ubuntu Noble: libSkiaSharp.so references uuid_generate_random
+# without a NEEDED entry for libuuid.so.1 — force-load it.
+ENV LD_PRELOAD=libuuid.so.1
 EXPOSE 5050
 
 ENTRYPOINT ["dotnet", "Blocwerk.Web.dll"]
