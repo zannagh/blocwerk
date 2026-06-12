@@ -15,7 +15,7 @@ RUN dotnet publish src/Blocwerk.Web/Blocwerk.Web.csproj -c Release -o /app -a $T
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libfontconfig1 fonts-dejavu-core \
+    && apt-get install -y --no-install-recommends libfontconfig1 fonts-dejavu-core uuid-runtime libuuid1 \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /app .
