@@ -17,15 +17,7 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         libfontconfig1 \
-        libfreetype6 \
-        libpng16-16 \
-        libjpeg62-turbo \
-        libwebp7 \
-        libtiff6 \
         libuuid1 \
-        libexpat1 \
-        libstdc++6 \
-        zlib1g \
         fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
