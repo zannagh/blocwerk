@@ -74,124 +74,6 @@
     </div>
 </div>
 
-@* Mode-specific option bars *@
-@if (CanEdit && _mode == EditMode.Add)
-{
-    <div class="option-bar">
-        <div class="option-group"><label>Type:</label>
-            <button class="opt-btn @(_addCategory == HoldCategory.Hand ? "active" : "")" @onclick="() => _addCategory = HoldCategory.Hand">Hand</button>
-            <button class="opt-btn foot @(_addCategory == HoldCategory.Foot ? "active" : "")" @onclick="() => _addCategory = HoldCategory.Foot">Foot</button>
-        </div>
-        <div class="option-group"><label>Color:</label>
-            <select class="color-select" @bind="_addColor">@foreach (var c in _colors) { <option value="@c">@c</option> }</select>
-            <span class="color-dot" style="background: @GetCssColor(_addColor);"></span>
-        </div>
-        <div class="option-group"><label class="cb-label"><input type="checkbox" @bind="_addOnKickboard" /> Kickboard</label></div>
-    </div>
-}
-@if (CanEdit && _mode == EditMode.Paint)
-{
-    <div class="option-bar">
-        <div class="option-group"><label>Paint:</label>
-            @foreach (var c in _colors.Where(c => c != "none"))
-            { <button class="color-swatch @(_paintColor == c ? "active" : "")" style="background: @GetCssColor(c);" @onclick="() => _paintColor = c" title="@c"></button> }
-        </div>
-    </div>
-}
-@if (CanEdit && _mode == EditMode.Border)
-{
-    <div class="option-bar">
-        <div class="option-group"><label>Border:</label>
-            @if (BorderPoints.Count == 0) { <button class="opt-btn" @onclick="InitBorder">Create</button> }
-            else { <button class="opt-btn" @onclick="CleanArtifacts">Clean outside</button> <button class="opt-btn danger" @onclick="ClearBorder">Remove</button> }
-        </div>
-        <span class="option-hint">Drag points to define wall area</span>
-    </div>
-}
-@if (CanEdit && _mode == EditMode.Shape)
-{
-    <div class="option-bar">
-        <span class="option-hint">Click a hold to edit its shape. Drag the control points.</span>
-        <div class="option-group"><label>Point size:</label><input type="range" min="2" max="20" value="@((int)(_shapePointRadius * 10))" @oninput="OnShapePointSizeChange" /></div>
-    </div>
-}
-@if (CanEdit && _mode == EditMode.Name)
-{
-    <div class="option-bar">
-        <span class="option-hint">Click a hold to name it.</span>
-        @if (_namingHoldId.HasValue)
-        {
-            <div class="option-group">
-                <input type="text" class="name-input" @bind="_nameInput" @bind:event="oninput" placeholder="Hold name..." maxlength="64" />
-                <button class="opt-btn active" @onclick="ApplyName">OK</button>
-                <button class="opt-btn" @onclick="() => _namingHoldId = null">Cancel</button>
-            </div>
-        }
-    </div>
-}
-@if (CanEdit && _mode == EditMode.Move && _selectedHoldId.HasValue)
-{
-    var sel = Holds.FirstOrDefault(h => h.Id == _selectedHoldId);
-    if (sel != null)
-    {
-        <div class="option-bar">
-            <div class="option-group"><label>Type:</label>
-                <button class="opt-btn @(sel.Category == HoldCategory.Hand ? "active" : "")" @onclick="() => SetSelectedCategory(HoldCategory.Hand)">Hand</button>
-                <button class="opt-btn foot @(sel.Category == HoldCategory.Foot ? "active" : "")" @onclick="() => SetSelectedCategory(HoldCategory.Foot)">Foot</button>
-            </div>
-            <div class="option-group"><label class="cb-label"><input type="checkbox" checked="@sel.IsOnKickboard" @onchange="() => ToggleKickboard(sel)" /> KB</label></div>
-            <div class="option-group"><label>Color:</label>
-                <select class="color-select" value="@(sel.Color ?? "none")" @onchange="OnSelectedColorChange">@foreach (var c in _colors) { <option value="@c">@c</option> }</select>
-            </div>
-            <div class="option-group"><label>Size:</label><input type="range" min="3" max="40" value="@((int)(_selectedRadius * 1000))" @oninput="OnRadiusChange" /></div>
-            <button class="opt-btn danger" @onclick="DeleteSelected">Del</button>
-            @if (!IsStaging && _pendingChanges == 0)
-            {
-                <button class="opt-btn" title="Mark this hold as slightly modified; boulders using it will be flagged for review."
-                        @onclick="() => MarkSelectedModified(sel.Id)">Mark modified@(sel.NeedsReview ? " ✓" : "")</button>
-            }
-        </div>
-    }
-}
-
-@if (CanEdit && _pendingChanges > 0)
-{
-    <div class="batch-bar">
-        <button class="batch-save" @onclick="SaveChanges">Save Changes (@_pendingChanges)</button>
-        <button class="batch-discard" @onclick="DiscardChanges">Discard</button>
-    </div>
-}
-
-@if (CanEdit && _mode == EditMode.AlignLive && IsStaging)
-{
-    <div class="option-bar">
-        <span class="option-hint">Drag anywhere to translate all <strong>old</strong> holds as a group; use the gold handle to rotate around their centroid. Boulders touched will be flagged for review.</span>
-    </div>
-}
-
-@if (CanEdit && _mode == EditMode.Merge)
-{
-    <div class="option-bar">
-        @if (_pendingMerge.HasValue)
-        {
-            var staged = Holds.FirstOrDefault(h => h.Id == _pendingMerge.Value.stagedId);
-            var live = Holds.FirstOrDefault(h => h.Id == _pendingMerge.Value.liveId);
-            <span class="option-hint">Merge new <strong>@(staged?.Name ?? "hold")</strong> into old <strong>@(live?.Name ?? "hold")</strong>? Boulders using the old hold will be flagged for review.</span>
-            <button class="opt-btn active" @onclick="ConfirmMerge">Confirm merge</button>
-            <button class="opt-btn" @onclick="CancelMerge">Cancel</button>
-        }
-        else if (_mergeFirstPickId.HasValue)
-        {
-            <span class="option-hint">Now click the matching hold of the other generation.</span>
-            <button class="opt-btn" @onclick="CancelMerge">Cancel</button>
-        }
-        else
-        {
-            <span class="option-hint">Click a hold. If a hold of the other generation lies underneath, merge will be offered immediately; otherwise click a second hold to pair them.</span>
-        }
-    </div>
-}
-
 <div class="photo-viewport" @ref="_viewportRef"
      data-current-zoom="@F(_zoom)"
      style="cursor: @CursorForMode();">
@@ -325,6 +207,124 @@
         <div class="detecting-overlay"><span>Detecting holds...</span></div>
     }
 </div>
+</div>
+
+@* Mode-specific contextual controls — kept BELOW the viewport so the image
+   never shifts under the cursor when a tool's options appear or change. *@
+<div class="editor-bottom">
+    @if (CanEdit && _mode == EditMode.Add)
+    {
+        <div class="option-bar">
+            <div class="option-group"><label>Type:</label>
+                <button class="opt-btn @(_addCategory == HoldCategory.Hand ? "active" : "")" @onclick="() => _addCategory = HoldCategory.Hand">Hand</button>
+                <button class="opt-btn foot @(_addCategory == HoldCategory.Foot ? "active" : "")" @onclick="() => _addCategory = HoldCategory.Foot">Foot</button>
+            </div>
+            <div class="option-group"><label>Color:</label>
+                <select class="color-select" @bind="_addColor">@foreach (var c in _colors) { <option value="@c">@c</option> }</select>
+                <span class="color-dot" style="background: @GetCssColor(_addColor);"></span>
+            </div>
+            <div class="option-group"><label class="cb-label"><input type="checkbox" @bind="_addOnKickboard" /> Kickboard</label></div>
+        </div>
+    }
+    @if (CanEdit && _mode == EditMode.Paint)
+    {
+        <div class="option-bar">
+            <div class="option-group"><label>Paint:</label>
+                @foreach (var c in _colors.Where(c => c != "none"))
+                { <button class="color-swatch @(_paintColor == c ? "active" : "")" style="background: @GetCssColor(c);" @onclick="() => _paintColor = c" title="@c"></button> }
+            </div>
+        </div>
+    }
+    @if (CanEdit && _mode == EditMode.Border)
+    {
+        <div class="option-bar">
+            <div class="option-group"><label>Border:</label>
+                @if (BorderPoints.Count == 0) { <button class="opt-btn" @onclick="InitBorder">Create</button> }
+                else { <button class="opt-btn" @onclick="CleanArtifacts">Clean outside</button> <button class="opt-btn danger" @onclick="ClearBorder">Remove</button> }
+            </div>
+            <span class="option-hint">Drag points to define wall area</span>
+        </div>
+    }
+    @if (CanEdit && _mode == EditMode.Shape)
+    {
+        <div class="option-bar">
+            <span class="option-hint">Click a hold to edit its shape. Drag the control points.</span>
+            <div class="option-group"><label>Point size:</label><input type="range" min="2" max="20" value="@((int)(_shapePointRadius * 10))" @oninput="OnShapePointSizeChange" /></div>
+        </div>
+    }
+    @if (CanEdit && _mode == EditMode.Name)
+    {
+        <div class="option-bar">
+            <span class="option-hint">Click a hold to name it.</span>
+            @if (_namingHoldId.HasValue)
+            {
+                <div class="option-group">
+                    <input type="text" class="name-input" @bind="_nameInput" @bind:event="oninput" placeholder="Hold name..." maxlength="64" />
+                    <button class="opt-btn active" @onclick="ApplyName">OK</button>
+                    <button class="opt-btn" @onclick="() => _namingHoldId = null">Cancel</button>
+                </div>
+            }
+        </div>
+    }
+    @if (CanEdit && _mode == EditMode.Move && _selectedHoldId.HasValue)
+    {
+        var sel = Holds.FirstOrDefault(h => h.Id == _selectedHoldId);
+        if (sel != null)
+        {
+            <div class="option-bar">
+                <div class="option-group"><label>Type:</label>
+                    <button class="opt-btn @(sel.Category == HoldCategory.Hand ? "active" : "")" @onclick="() => SetSelectedCategory(HoldCategory.Hand)">Hand</button>
+                    <button class="opt-btn foot @(sel.Category == HoldCategory.Foot ? "active" : "")" @onclick="() => SetSelectedCategory(HoldCategory.Foot)">Foot</button>
+                </div>
+                <div class="option-group"><label class="cb-label"><input type="checkbox" checked="@sel.IsOnKickboard" @onchange="() => ToggleKickboard(sel)" /> KB</label></div>
+                <div class="option-group"><label>Color:</label>
+                    <select class="color-select" value="@(sel.Color ?? "none")" @onchange="OnSelectedColorChange">@foreach (var c in _colors) { <option value="@c">@c</option> }</select>
+                </div>
+                <div class="option-group"><label>Size:</label><input type="range" min="3" max="40" value="@((int)(_selectedRadius * 1000))" @oninput="OnRadiusChange" /></div>
+                <button class="opt-btn danger" @onclick="DeleteSelected">Del</button>
+                @if (!IsStaging && _pendingChanges == 0)
+                {
+                    <button class="opt-btn" title="Mark this hold as slightly modified; boulders using it will be flagged for review."
+                            @onclick="() => MarkSelectedModified(sel.Id)">Mark modified@(sel.NeedsReview ? " ✓" : "")</button>
+                }
+            </div>
+        }
+    }
+    @if (CanEdit && _mode == EditMode.AlignLive && IsStaging)
+    {
+        <div class="option-bar">
+            <span class="option-hint">Drag anywhere to translate all <strong>old</strong> holds as a group; use the gold handle to rotate around their centroid. Boulders touched will be flagged for review.</span>
+        </div>
+    }
+    @if (CanEdit && _mode == EditMode.Merge)
+    {
+        <div class="option-bar">
+            @if (_pendingMerge.HasValue)
+            {
+                var staged = Holds.FirstOrDefault(h => h.Id == _pendingMerge.Value.stagedId);
+                var live = Holds.FirstOrDefault(h => h.Id == _pendingMerge.Value.liveId);
+                <span class="option-hint">Merge new <strong>@(staged?.Name ?? "hold")</strong> into old <strong>@(live?.Name ?? "hold")</strong>? Boulders using the old hold will be flagged for review.</span>
+                <button class="opt-btn active" @onclick="ConfirmMerge">Confirm merge</button>
+                <button class="opt-btn" @onclick="CancelMerge">Cancel</button>
+            }
+            else if (_mergeFirstPickId.HasValue)
+            {
+                <span class="option-hint">Now click the matching hold of the other generation.</span>
+                <button class="opt-btn" @onclick="CancelMerge">Cancel</button>
+            }
+            else
+            {
+                <span class="option-hint">Click a hold. If a hold of the other generation lies underneath, merge will be offered immediately; otherwise click a second hold to pair them.</span>
+            }
+        </div>
+    }
+    @if (CanEdit && _pendingChanges > 0)
+    {
+        <div class="batch-bar">
+            <button class="batch-save" @onclick="SaveChanges">Save Changes (@_pendingChanges)</button>
+            <button class="batch-discard" @onclick="DiscardChanges">Discard</button>
+        </div>
+    }
 </div>
 
 @code {

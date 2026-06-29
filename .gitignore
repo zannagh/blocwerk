@@ -457,3 +457,6 @@ FodyWeavers.xsd
 *.msm
 *.msp
 dotnet-install.sh
+
+# Dev-only wall editor snapshot (BLOCWERK_DEV_WALL_SNAPSHOT)
+dev-wall-snapshot/

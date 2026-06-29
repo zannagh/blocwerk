@@ -1,6 +1,9 @@
 /* ========== WallPhotoEditor ========== */
 
-.editor-toolbar { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: var(--topbar-bg); border-radius: 10px 10px 0 0; gap: 8px; flex-wrap: wrap; }
+.editor-toolbar { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: var(--topbar-bg); border-radius: 10px 10px 0 0; gap: 8px; flex-wrap: wrap; min-height: 44px; box-sizing: border-box; }
+.editor-bottom { display: flex; flex-direction: column; border-radius: 0 0 10px 10px; overflow: hidden; }
+.editor-bottom > :last-child { border-radius: 0 0 10px 10px; }
+.editor-bottom:empty { display: none; }
 .toolbar-left { display: flex; align-items: center; gap: 8px; }
 .toolbar-right { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .toolbar-sep { width: 1px; height: 20px; background: rgba(255,255,255,0.2); margin: 0 2px; }
@@ -43,7 +46,36 @@
 .zoom-btn.pan-active { background: var(--accent); }
 .zoom-btn svg { display: block; }
 
-.photo-viewport { max-height: 70vh; overflow: auto; -webkit-overflow-scrolling: touch; border-radius: 0 0 12px 12px; touch-action: none; overscroll-behavior: contain; }
+.photo-viewport { height: 70vh; overflow: auto; -webkit-overflow-scrolling: touch; touch-action: none; overscroll-behavior: contain; }
+
+/* "First-fold" layout: the wall editor + stats panels size to fit in the visible
+   viewport (accounting for sticky top-bar and fixed bottom-nav), with a peek so
+   the Boulders header + first row remain visible to signal scrollable content. */
+:root {
+    --topbar-h: 56px;       /* sticky .top-bar */
+    --bottomnav-h: 72px;    /* fixed .bottom-nav + safe-area */
+    --fold-peek: 140px;     /* reserve below the fold for boulder peek */
+}
+.wall-fold {
+    height: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - var(--fold-peek));
+    min-height: 360px;      /* don't collapse to nothing on short windows */
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.wall-fold .wall-detail-card { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden;
+    border-radius: 12px; background: var(--bg-surface); }
+.wall-fold .wall-detail-card > .detail-header,
+.wall-fold .wall-detail-card > .anon-banner,
+.wall-fold .wall-detail-card > .description,
+.wall-fold .wall-detail-card > .view-toggle { padding-left: 12px; padding-right: 12px; }
+.wall-fold .wall-detail-card > .detail-header { padding-top: 10px; }
+.wall-fold .wall-detail-card > .view-toggle { margin-bottom: 0; padding-bottom: 8px; }
+.wall-fold .wall-photo-container { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+.wall-fold .photo-viewport,
+.wall-fold .schematic-viewport { flex: 1 1 0; height: auto; min-height: 0; }
+.wall-fold .editor-toolbar { border-radius: 0; }
+.wall-fold .editor-bottom > :last-child { border-radius: 0; }
 .photo-editor { position: relative; overflow: hidden; touch-action: none; user-select: none; }
 .photo-editor .wall-photo { width: 100%; display: block; }
 .photo-editor .hold-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
@@ -56,7 +88,7 @@
     box-shadow: 0 2px 8px var(--shadow-md); overflow: hidden;
 }
 .zoom-controls { display: flex; gap: 4px; padding: 8px 12px; background: var(--topbar-bg); }
-.schematic-viewport { max-height: 70vh; overflow: auto; -webkit-overflow-scrolling: touch; }
+.schematic-viewport { height: 70vh; overflow: auto; -webkit-overflow-scrolling: touch; }
 .schematic-svg { display: block; }
 .schematic-info { text-align: center; padding: 8px; font-size: 0.8rem; color: var(--text-secondary); }
 

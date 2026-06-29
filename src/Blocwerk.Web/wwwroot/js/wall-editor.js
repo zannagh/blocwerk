@@ -55,15 +55,34 @@ window.wallEditor = {
             }
         }, { passive: false });
 
+        // Whether the given element should suppress viewport panning when grabbed.
+        // Blazor's @onmousedown:stopPropagation runs via the root-delegated dispatcher,
+        // which is AFTER the native event has already bubbled past the viewport — so we
+        // can't rely on stopPropagation here. Detect interactive targets ourselves.
+        function isInteractiveTarget(target) {
+            if (!target) return false;
+            // SVG primitives used for holds / border points / shape points / align handle.
+            const tag = (target.tagName || '').toLowerCase();
+            if (tag === 'circle' || tag === 'polygon' || tag === 'rect' || tag === 'path' || tag === 'ellipse') {
+                return true;
+            }
+            // Fallback: anything whose cursor is set to a grabbable style is interactive.
+            try {
+                const cursor = window.getComputedStyle(target).cursor;
+                if (cursor === 'pointer' || cursor === 'grab' || cursor === 'grabbing') return true;
+            } catch (_) { /* ignore */ }
+            return false;
+        }
+
         // Mouse drag = pan (any button, when not on an interactive element handled by Blazor).
         let isMousePanning = false;
         let mouseStartX, mouseStartY, mouseStartScrollLeft, mouseStartScrollTop;
 
         viewport.addEventListener('mousedown', function (e) {
-            // Only pan on middle-click or when no svg element underneath consumes the event;
-            // svg holds/border stop propagation, so reaching here means empty area.
             if (e.button !== 0 && e.button !== 1) return;
             if (viewport.dataset.gestureLock === 'true') return;
+            // Don't pan if the user grabbed a hold / border point / shape point / etc.
+            if (isInteractiveTarget(e.target)) return;
             isMousePanning = true;
             mouseStartX = e.clientX;
             mouseStartY = e.clientY;
@@ -119,12 +138,36 @@ window.wallEditor = {
                 touchStartScrollLeft = viewport.scrollLeft;
                 touchStartScrollTop = viewport.scrollTop;
             } else if (e.touches.length === 1) {
+                if (isInteractiveTarget(e.target)) {
+                    touchMode = null;
+                    return;
+                }
+
                 touchMode = 'pan';
                 touchStartX = e.touches[0].clientX;
                 touchStartY = e.touches[0].clientY;
                 touchStartScrollLeft = viewport.scrollLeft;
                 touchStartScrollTop = viewport.scrollTop;
             }
+        }, { passive: false });
+
+        // Safari macOS / iOS pinch gestures (Chrome/Firefox synthesize ctrl+wheel and are
+        // handled above). The page-wide blockPageZoom calls preventDefault on these to
+        // stop browser zoom, but propagation still reaches us — handle them here first.
+        let gestureStartZoom = 1;
+        viewport.addEventListener('gesturestart', function (e) {
+            e.preventDefault();
+            gestureStartZoom = currentZoom();
+        }, { passive: false });
+
+        viewport.addEventListener('gesturechange', function (e) {
+            e.preventDefault();
+            const scale = e.scale || 1;
+            setZoom(gestureStartZoom * scale, e.clientX, e.clientY);
+        }, { passive: false });
+
+        viewport.addEventListener('gestureend', function (e) {
+            e.preventDefault();
         }, { passive: false });
 
         viewport.addEventListener('touchmove', function (e) {
