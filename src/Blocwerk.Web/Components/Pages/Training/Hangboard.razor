@@ -36,9 +36,11 @@
             <div class="form-group">
                 <label>Edge Size (mm)</label>
                 <div class="stepper">
-                    <button class="step-btn" @onclick="() => _edgeSize = Math.Max(6, _edgeSize - 2)">&minus;</button>
+                    <button class="step-btn" @onclick="() => _edgeSize = Math.Max(6, _edgeSize - 2)" title="−2 mm">&minus;&minus;</button>
+                    <button class="step-btn" @onclick="() => _edgeSize = Math.Max(6, _edgeSize - 1)" title="−1 mm">&minus;</button>
                     <span class="step-value">@_edgeSize</span>
-                    <button class="step-btn" @onclick="() => _edgeSize += 2">+</button>
+                    <button class="step-btn" @onclick="() => _edgeSize += 1" title="+1 mm">+</button>
+                    <button class="step-btn" @onclick="() => _edgeSize += 2" title="+2 mm">++</button>
                 </div>
             </div>
             <div class="form-group">

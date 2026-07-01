@@ -1,0 +1,332 @@
+@page "/tools/image-stitcher"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject IJSRuntime JS
+@inject IWallService WallService
+@inject ICurrentUserService CurrentUserService
+@inject NavigationManager Navigation
+
+<PageTitle>Image Stitcher - Blocwerk</PageTitle>
+
+<div class="stitcher-page">
+    <div class="stitcher-toolbar">
+        <label class="btn-secondary stitcher-upload">
+            + Add images
+            <InputFile OnChange="OnUpload" accept="image/*" multiple hidden />
+        </label>
+        <span class="option-hint">@_layers.Count image@(_layers.Count == 1 ? "" : "s")</span>
+        <div class="stitcher-spacer"></div>
+        @if (_layers.Count > 0)
+        {
+            <button class="btn-secondary" @onclick="ExportDownload" disabled="@_exporting">Export PNG</button>
+            @if (_myWalls?.Count > 0)
+            {
+                <select class="filter-select" @bind="_targetWallId">
+                    <option value="">Use on wall…</option>
+                    @foreach (var w in _myWalls)
+                    {
+                        <option value="@w.Id">@w.Name</option>
+                    }
+                </select>
+                <button class="btn-primary" @onclick="ExportToWall" disabled="@(_targetWallId == Guid.Empty || _exporting)">Stage</button>
+            }
+        }
+    </div>
+
+    <div class="stitcher-canvas-wrap" @ref="_canvasRef">
+        <svg viewBox="0 0 1000 1000" class="stitcher-canvas" preserveAspectRatio="xMidYMid meet"
+             @onmousedown="OnCanvasMouseDown"
+             @onmousemove="OnCanvasMouseMove"
+             @onmouseup="OnCanvasMouseUp"
+             @onmouseleave="OnCanvasMouseUp"
+             @ontouchend="OnCanvasMouseUp">
+            <rect x="0" y="0" width="1000" height="1000" fill="var(--bg-surface-alt)" />
+            @foreach (var layer in _layers)
+            {
+                var t = TransformString(layer);
+                <g transform="@t" style="cursor: pointer" @onclick="() => SelectLayer(layer.Id)" @onclick:stopPropagation="true">
+                    <image href="@layer.DataUrl"
+                           x="@F(-layer.Width / 2.0)" y="@F(-layer.Height / 2.0)"
+                           width="@F(layer.Width)" height="@F(layer.Height)" />
+                    @if (layer.Id == _selectedId)
+                    {
+                        <rect x="@F(-layer.Width / 2.0)" y="@F(-layer.Height / 2.0)"
+                              width="@F(layer.Width)" height="@F(layer.Height)"
+                              fill="none" stroke="#4aa8ff" stroke-width="@F(3 / layer.Scale)" stroke-dasharray="@F(6 / layer.Scale) @F(4 / layer.Scale)" />
+                    }
+                </g>
+            }
+            @if (_selectedId != null)
+            {
+                var sel = _layers.FirstOrDefault(l => l.Id == _selectedId);
+                if (sel != null)
+                {
+                    var (cx, cy) = (sel.X, sel.Y);
+                    var halfW = sel.Width * sel.Scale / 2;
+                    var halfH = sel.Height * sel.Scale / 2;
+                    var rad = sel.Rotation * Math.PI / 180.0;
+                    var cos = Math.Cos(rad);
+                    var sin = Math.Sin(rad);
+                    var scaleHx = cx + halfW * cos - halfH * sin;
+                    var scaleHy = cy + halfW * sin + halfH * cos;
+                    var rotHx = cx + 0 * cos - (halfH + 40) * sin;
+                    var rotHy = cy + 0 * sin + (halfH + 40) * cos;
+                    <line x1="@F(cx)" y1="@F(cy)" x2="@F(rotHx)" y2="@F(rotHy)" stroke="#4aa8ff" stroke-width="1.5" />
+                    <circle cx="@F(cx)" cy="@F(cy)" r="10" fill="rgba(255,215,0,0.9)" stroke="#000" stroke-width="1.5"
+                            style="cursor: move"
+                            @onmousedown="(e) => StartHandle(e, GizmoHandle.Translate)" @onmousedown:stopPropagation="true"
+                            @onclick:stopPropagation="true" />
+                    <rect x="@F(scaleHx - 8)" y="@F(scaleHy - 8)" width="16" height="16"
+                          fill="#f5a623" stroke="#fff" stroke-width="1.5"
+                          style="cursor: nwse-resize"
+                          @onmousedown="(e) => StartHandle(e, GizmoHandle.Scale)" @onmousedown:stopPropagation="true"
+                          @onclick:stopPropagation="true" />
+                    <circle cx="@F(rotHx)" cy="@F(rotHy)" r="8" fill="#4aa8ff" stroke="#fff" stroke-width="1.5"
+                            style="cursor: grab"
+                            @onmousedown="(e) => StartHandle(e, GizmoHandle.Rotate)" @onmousedown:stopPropagation="true"
+                            @onclick:stopPropagation="true" />
+                }
+            }
+        </svg>
+    </div>
+
+    @if (_selectedId != null)
+    {
+        <div class="stitcher-layer-controls">
+            <button class="opt-btn" @onclick="BringForward" title="Bring forward">▲</button>
+            <button class="opt-btn" @onclick="SendBackward" title="Send backward">▼</button>
+            <button class="opt-btn danger" @onclick="DeleteSelected">Delete</button>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(_toast))
+    {
+        <div class="toast-msg">@_toast</div>
+    }
+</div>
+
+@code {
+    private record StitcherLayer(Guid Id, string DataUrl, double Width, double Height)
+    {
+        public double X { get; set; } = 500;
+        public double Y { get; set; } = 500;
+        public double Scale { get; set; } = 1.0;
+        public double Rotation { get; set; }
+    }
+
+    private enum GizmoHandle { Translate, Scale, Rotate }
+
+    private List<StitcherLayer> _layers = [];
+    private Guid? _selectedId;
+    private ElementReference _canvasRef;
+    private List<Wall>? _myWalls;
+    private Guid _targetWallId;
+    private string? _toast;
+    private bool _exporting;
+
+    private GizmoHandle? _dragHandle;
+    private double _dragStartX, _dragStartY;
+    private double _dragStartLayerX, _dragStartLayerY;
+    private double _dragStartLayerScale;
+    private double _dragStartLayerRotation;
+    private double _dragStartAngle;
+    private double _dragStartRadius;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var me = await CurrentUserService.GetCurrentUserAsync();
+            var walls = await WallService.GetMyWallsAsync();
+            _myWalls = walls
+                .Where(w => w.Members.Any(m => m.UserId == me.Id && m.Role == WallRole.Admin))
+                .OrderBy(w => w.Name)
+                .ToList();
+        }
+        catch { _myWalls = []; }
+    }
+
+    private async Task OnUpload(InputFileChangeEventArgs e)
+    {
+        foreach (var file in e.GetMultipleFiles(20))
+        {
+            if (file.Size > 20 * 1024 * 1024)
+            {
+                await ShowToast($"{file.Name} exceeds 20 MB — skipped");
+                continue;
+            }
+            try
+            {
+                using var stream = file.OpenReadStream(20 * 1024 * 1024);
+                using var ms = new MemoryStream();
+                await stream.CopyToAsync(ms);
+                var bytes = ms.ToArray();
+                var base64 = Convert.ToBase64String(bytes);
+                var dataUrl = $"data:{file.ContentType};base64,{base64}";
+                var probed = await JS.InvokeAsync<ProbedImage>("imageStitcher.probeDimensions", dataUrl);
+                _layers.Add(new StitcherLayer(Guid.NewGuid(), dataUrl, probed.Width, probed.Height));
+            }
+            catch (Exception ex)
+            {
+                await ShowToast($"Failed to add {file.Name}: {ex.Message}");
+            }
+        }
+        _selectedId = _layers.LastOrDefault()?.Id;
+        StateHasChanged();
+    }
+
+    private record ProbedImage(double Width, double Height);
+
+    private void SelectLayer(Guid id) => _selectedId = id;
+
+    private void BringForward()
+    {
+        var idx = _layers.FindIndex(l => l.Id == _selectedId);
+        if (idx < 0 || idx == _layers.Count - 1) return;
+        (_layers[idx], _layers[idx + 1]) = (_layers[idx + 1], _layers[idx]);
+    }
+
+    private void SendBackward()
+    {
+        var idx = _layers.FindIndex(l => l.Id == _selectedId);
+        if (idx <= 0) return;
+        (_layers[idx], _layers[idx - 1]) = (_layers[idx - 1], _layers[idx]);
+    }
+
+    private void DeleteSelected()
+    {
+        _layers.RemoveAll(l => l.Id == _selectedId);
+        _selectedId = _layers.LastOrDefault()?.Id;
+    }
+
+    private async Task StartHandle(MouseEventArgs e, GizmoHandle handle)
+    {
+        var sel = _layers.FirstOrDefault(l => l.Id == _selectedId);
+        if (sel == null) return;
+        var pos = await ToCanvasCoords(e.ClientX, e.ClientY);
+        _dragHandle = handle;
+        _dragStartX = pos.X;
+        _dragStartY = pos.Y;
+        _dragStartLayerX = sel.X;
+        _dragStartLayerY = sel.Y;
+        _dragStartLayerScale = sel.Scale;
+        _dragStartLayerRotation = sel.Rotation;
+        var dx = pos.X - sel.X;
+        var dy = pos.Y - sel.Y;
+        _dragStartAngle = Math.Atan2(dy, dx);
+        _dragStartRadius = Math.Max(1.0, Math.Sqrt(dx * dx + dy * dy));
+    }
+
+    private Task OnCanvasMouseDown(MouseEventArgs e) => Task.CompletedTask;
+
+    private async Task OnCanvasMouseMove(MouseEventArgs e)
+    {
+        if (_dragHandle == null) return;
+        var sel = _layers.FirstOrDefault(l => l.Id == _selectedId);
+        if (sel == null) return;
+        var pos = await ToCanvasCoords(e.ClientX, e.ClientY);
+        switch (_dragHandle.Value)
+        {
+            case GizmoHandle.Translate:
+                sel.X = _dragStartLayerX + (pos.X - _dragStartX);
+                sel.Y = _dragStartLayerY + (pos.Y - _dragStartY);
+                break;
+            case GizmoHandle.Scale:
+                var dx = pos.X - sel.X;
+                var dy = pos.Y - sel.Y;
+                var r = Math.Sqrt(dx * dx + dy * dy);
+                sel.Scale = Math.Clamp(_dragStartLayerScale * r / _dragStartRadius, 0.05, 20.0);
+                break;
+            case GizmoHandle.Rotate:
+                var ang = Math.Atan2(pos.Y - sel.Y, pos.X - sel.X);
+                sel.Rotation = _dragStartLayerRotation + (ang - _dragStartAngle) * 180.0 / Math.PI;
+                break;
+        }
+        StateHasChanged();
+    }
+
+    private void OnCanvasMouseUp() => _dragHandle = null;
+
+    private async Task<(double X, double Y)> ToCanvasCoords(double clientX, double clientY)
+    {
+        var frac = await JS.InvokeAsync<RelativePos>("wallEditor.getRelativePosition", _canvasRef, clientX, clientY);
+        return (frac.X * 1000, frac.Y * 1000);
+    }
+
+    private record RelativePos(double X, double Y);
+
+    private string TransformString(StitcherLayer layer) =>
+        $"translate({F(layer.X)} {F(layer.Y)}) rotate({F(layer.Rotation)}) scale({F(layer.Scale)})";
+
+    private static string F(double v) => v.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+
+    private object LayerForJs(StitcherLayer l) => new
+    {
+        dataUrl = l.DataUrl,
+        width = l.Width,
+        height = l.Height,
+        x = l.X,
+        y = l.Y,
+        scale = l.Scale,
+        rotation = l.Rotation
+    };
+
+    private async Task<string?> BuildStitchedPngAsync()
+    {
+        if (_layers.Count == 0) return null;
+        var jsLayers = _layers.Select(LayerForJs).ToArray();
+        return await JS.InvokeAsync<string?>("imageStitcher.exportPng", (object)jsLayers);
+    }
+
+    private async Task ExportDownload()
+    {
+        _exporting = true; StateHasChanged();
+        try
+        {
+            var dataUrl = await BuildStitchedPngAsync();
+            if (string.IsNullOrEmpty(dataUrl)) { await ShowToast("Nothing to export"); return; }
+            await JS.InvokeVoidAsync("imageStitcher.downloadDataUrl", dataUrl, $"blocwerk-stitched-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}.png");
+        }
+        finally { _exporting = false; StateHasChanged(); }
+    }
+
+    private async Task ExportToWall()
+    {
+        if (_targetWallId == Guid.Empty) return;
+        _exporting = true; StateHasChanged();
+        try
+        {
+            var dataUrl = await BuildStitchedPngAsync();
+            if (string.IsNullOrEmpty(dataUrl)) { await ShowToast("Nothing to export"); return; }
+            var base64 = await JS.InvokeAsync<string>("imageStitcher.dataUrlToBase64", dataUrl);
+            var bytes = Convert.FromBase64String(base64);
+            var wall = _myWalls?.FirstOrDefault(w => w.Id == _targetWallId);
+            if (wall == null) { await ShowToast("Wall not found"); return; }
+            if (wall.PhotoContentType != null)
+            {
+                await WallService.StagePhotoAsync(_targetWallId, bytes, "image/png");
+                await ShowToast("Photo staged — go to the wall to align holds");
+            }
+            else
+            {
+                await WallService.UploadPhotoAsync(_targetWallId, bytes, "image/png");
+                await ShowToast("Photo uploaded");
+            }
+            Navigation.NavigateTo($"/walls/{_targetWallId}");
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"Stage failed: {ex.Message}");
+        }
+        finally { _exporting = false; StateHasChanged(); }
+    }
+
+    private async Task ShowToast(string message)
+    {
+        _toast = message;
+        StateHasChanged();
+        await Task.Delay(2500);
+        _toast = null;
+        StateHasChanged();
+    }
+}

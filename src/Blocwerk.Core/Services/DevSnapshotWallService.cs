@@ -335,6 +335,7 @@ public class DevSnapshotWallService : IWallService
             live.Color = staged.Color;
         }
 
+        live.IsVirtual = false;
         live.NeedsReview = true;
         Wall.Holds = Wall.Holds.Where(h => h.Id != staged.Id).ToList();
 
@@ -370,7 +371,7 @@ public class DevSnapshotWallService : IWallService
         return photoBytes;
     }
 
-    public async Task<Hold> AddHoldAsync(Guid wallId, double x, double y, double radius, string? color, HoldCategory category = HoldCategory.Hand, List<ShapePoint>? shapePoints = null)
+    public async Task<Hold> AddHoldAsync(Guid wallId, double x, double y, double radius, string? color, HoldCategory category = HoldCategory.Hand, List<ShapePoint>? shapePoints = null, bool isVirtual = false)
     {
         await EnsureLoadedAsync();
         var targetGen = Wall.StagedAt != null ? Wall.CurrentGeneration + 1 : Wall.CurrentGeneration;
@@ -384,6 +385,7 @@ public class DevSnapshotWallService : IWallService
             Category = category,
             ShapePoints = shapePoints,
             IsAutoDetected = false,
+            IsVirtual = isVirtual,
             Generation = targetGen,
         };
         Wall.Holds.Add(hold);

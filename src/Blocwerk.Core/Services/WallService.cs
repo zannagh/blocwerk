@@ -43,7 +43,7 @@ public interface IWallService
 
     Task<byte[]?> GetPhotoByShareTokenAsync(Guid wallId, string shareToken);
 
-    Task<Hold> AddHoldAsync(Guid wallId, double x, double y, double radius, string? color, HoldCategory category = HoldCategory.Hand, List<ShapePoint>? shapePoints = null);
+    Task<Hold> AddHoldAsync(Guid wallId, double x, double y, double radius, string? color, HoldCategory category = HoldCategory.Hand, List<ShapePoint>? shapePoints = null, bool isVirtual = false);
 
     Task<Hold> UpdateHoldAsync(Guid holdId, double x, double y, double radius, string? color = null, HoldCategory? category = null, bool? isOnKickboard = null, List<ShapePoint>? shapePoints = null, string? name = null);
 
@@ -448,6 +448,8 @@ public class WallService : IWallService
         {
             live.Color = staged.Color;
         }
+        // Merging always resolves the surviving hold to a real, detected one.
+        live.IsVirtual = false;
         live.NeedsReview = true;
 
         var affectedBoulders = await db.BoulderHolds
@@ -546,7 +548,7 @@ public class WallService : IWallService
         return wall?.Photo;
     }
 
-    public async Task<Hold> AddHoldAsync(Guid wallId, double x, double y, double radius, string? color, HoldCategory category = HoldCategory.Hand, List<ShapePoint>? shapePoints = null)
+    public async Task<Hold> AddHoldAsync(Guid wallId, double x, double y, double radius, string? color, HoldCategory category = HoldCategory.Hand, List<ShapePoint>? shapePoints = null, bool isVirtual = false)
     {
         var user = await _currentUserService.GetCurrentUserAsync();
         await using var db = await _dbContextFactory.CreateDbContextAsync();
@@ -566,6 +568,7 @@ public class WallService : IWallService
             Category = category,
             ShapePoints = shapePoints,
             IsAutoDetected = false,
+            IsVirtual = isVirtual,
             Generation = targetGen,
         };
 

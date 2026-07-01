@@ -132,6 +132,11 @@
             var dash = IsStaging && !(isSelected || isShapeEditing || isNaming)
                 ? (IsStagedHold(hold) ? "0.6 0.3" : "0.3 0.3")
                 : "";
+            if (hold.IsVirtual && !(isSelected || isShapeEditing || isNaming))
+            {
+                strokeColor = "#c86dff";
+                dash = "0.6 0.4";
+            }
             var r = (isFoot ? hold.Radius * 0.7 : hold.Radius) * 100;
 
             @if (hold.ShapePoints is { Count: >= 3 })

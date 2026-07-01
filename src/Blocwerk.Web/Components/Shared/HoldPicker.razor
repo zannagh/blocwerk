@@ -1,4 +1,5 @@
 @inject IJSRuntime JS
+@inject IWallService WallService
 
 <div class="picker-toolbar">
     <span class="pick-count">@SelectedHolds.Count selected</span>
@@ -11,6 +12,12 @@
         <button class="mode-btn @(_placeType == HoldType.Start ? "active start-active" : "")" @onclick="() => _placeType = HoldType.Start">Start</button>
         <button class="mode-btn @(_placeType == HoldType.Normal ? "active" : "")" @onclick="() => _placeType = HoldType.Normal">Normal</button>
         <button class="mode-btn @(_placeType == HoldType.Top ? "active top-active" : "")" @onclick="() => _placeType = HoldType.Top">Top</button>
+        <span class="separator"></span>
+        <button class="mode-btn @(_placingVirtual ? "active" : "")"
+                @onclick="() => _placingVirtual = !_placingVirtual"
+                title="Add a virtual hold at a spot that isn't in the wall photo yet. It'll be a dotted placeholder, mergeable with a real hold on the next wall update.">
+            + Virtual
+        </button>
         <span class="separator"></span>
         <button class="mode-btn @(_viewMode == ViewMode.Photo ? "view-active" : "")" @onclick="() => _viewMode = ViewMode.Photo">Photo</button>
         <button class="mode-btn @(_viewMode == ViewMode.Schematic ? "view-active" : "")" @onclick="() => _viewMode = ViewMode.Schematic">Map</button>
@@ -38,9 +45,11 @@
 
 @if (_viewMode == ViewMode.Photo)
 {
-    <div class="photo-picker" style="width: @F(_zoom * 100)%; min-width: 100%;">
+    <div class="photo-picker" @ref="_photoPickerRef" style="width: @F(_zoom * 100)%; min-width: 100%;">
         <img src="/api/walls/@WallId/photo" alt="Wall" class="wall-photo" />
-        <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
+        <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none"
+             @onclick="OnSvgClick"
+             style="cursor: @(_placingVirtual ? "crosshair" : "default");">
             @foreach (var hold in AllHolds)
             {
                 var selection = SelectedHolds.FirstOrDefault(s => s.HoldId == hold.Id);
@@ -48,27 +57,32 @@
                 var fillColor = isSelected ? GetSelectionFill(selection!.Type) : "rgba(255,255,255,0.15)";
                 var strokeColor = isSelected ? GetSelectionStroke(selection!.Type) : "rgba(255,255,255,0.4)";
                 var sw = isSelected ? "0.4" : "0.2";
+                var dash = hold.IsVirtual ? "0.6 0.4" : "";
+                if (hold.IsVirtual) { strokeColor = isSelected ? strokeColor : "#c86dff"; }
                 var isFoot = hold.Category == HoldCategory.Foot;
                 var r = (isFoot ? hold.Radius * 0.7 : hold.Radius) * 100;
 
                 @if (hold.ShapePoints is { Count: >= 3 })
                 {
                     <polygon points="@Pts(hold.ShapePoints.Select(sp => (hold.X + sp.Dx, hold.Y + sp.Dy)))"
-                             fill="@fillColor" stroke="@strokeColor" stroke-width="@sw"
-                             style="cursor: pointer" @onclick="() => ToggleHold(hold)" />
+                             fill="@fillColor" stroke="@strokeColor" stroke-width="@sw" stroke-dasharray="@dash"
+                             style="cursor: pointer"
+                             @onclick="() => ToggleHold(hold)" @onclick:stopPropagation="true" />
                 }
                 else if (isFoot)
                 {
                     <rect x="@F((hold.X - r/100)*100)" y="@F((hold.Y - r/100)*100)"
                           width="@F(r*2/100*100)" height="@F(r*2/100*100)" rx="0.3"
-                          fill="@fillColor" stroke="@strokeColor" stroke-width="@sw"
-                          style="cursor: pointer" @onclick="() => ToggleHold(hold)" />
+                          fill="@fillColor" stroke="@strokeColor" stroke-width="@sw" stroke-dasharray="@dash"
+                          style="cursor: pointer"
+                          @onclick="() => ToggleHold(hold)" @onclick:stopPropagation="true" />
                 }
                 else
                 {
                     <circle cx="@F(hold.X * 100)" cy="@F(hold.Y * 100)" r="@F(r)"
-                            fill="@fillColor" stroke="@strokeColor" stroke-width="@sw"
-                            style="cursor: pointer" @onclick="() => ToggleHold(hold)" />
+                            fill="@fillColor" stroke="@strokeColor" stroke-width="@sw" stroke-dasharray="@dash"
+                            style="cursor: pointer"
+                            @onclick="() => ToggleHold(hold)" @onclick:stopPropagation="true" />
                 }
             }
         </svg>
@@ -88,6 +102,8 @@ else
                 var fillColor = isSelected ? GetSelectionFill(selection!.Type) : GetDefaultFill(hold);
                 var strokeColor = isSelected ? GetSelectionStroke(selection!.Type) : GetDefaultStroke(hold);
                 var sw = isSelected ? "0.6" : "0.3";
+                var dash = hold.IsVirtual ? "0.8 0.5" : "";
+                if (hold.IsVirtual && !isSelected) { strokeColor = "#c86dff"; }
                 var isFoot = hold.Category == HoldCategory.Foot;
                 var r = (isFoot ? hold.Radius * 0.7 : hold.Radius) * 100;
                 var cy = (hold.IsOnKickboard ? hold.Y : CorrectY(hold.Y)) * 100;
@@ -95,13 +111,13 @@ else
                 @if (isFoot)
                 {
                     <rect x="@F(hold.X * 100 - r)" y="@F(cy - r)" width="@F(r * 2)" height="@F(r * 2)"
-                          rx="0.3" fill="@fillColor" stroke="@strokeColor" stroke-width="@sw"
+                          rx="0.3" fill="@fillColor" stroke="@strokeColor" stroke-width="@sw" stroke-dasharray="@dash"
                           style="cursor: pointer" @onclick="() => ToggleHold(hold)" />
                 }
                 else
                 {
                     <circle cx="@F(hold.X * 100)" cy="@F(cy)" r="@F(r)"
-                            fill="@fillColor" stroke="@strokeColor" stroke-width="@sw"
+                            fill="@fillColor" stroke="@strokeColor" stroke-width="@sw" stroke-dasharray="@dash"
                             style="cursor: pointer" @onclick="() => ToggleHold(hold)" />
                 }
             }
@@ -118,11 +134,13 @@ else
     [Parameter] public int WallAngle { get; set; }
 
     private ElementReference _viewportRef;
+    private ElementReference _photoPickerRef;
     private DotNetObjectReference<HoldPicker>? _dotnetRef;
     private HoldType _placeType = HoldType.Normal;
     private ViewMode _viewMode = ViewMode.Photo;
     private double _zoom = 1.0;
     private bool _isPanning;
+    private bool _placingVirtual;
 
     private enum ViewMode { Photo, Schematic }
 
@@ -141,6 +159,30 @@ else
         _zoom = zoom;
         StateHasChanged();
     }
+
+    private async Task OnSvgClick(MouseEventArgs e)
+    {
+        if (!_placingVirtual || _isPanning) return;
+        var pos = await JS.InvokeAsync<RelativePos>("wallEditor.getRelativePosition", _photoPickerRef, e.ClientX, e.ClientY);
+        var cat = _defineFootholdsCategory();
+        var hold = await WallService.AddHoldAsync(
+            WallId,
+            Math.Clamp(pos.X, 0, 1),
+            Math.Clamp(pos.Y, 0, 1),
+            0.02,
+            color: null,
+            category: cat,
+            shapePoints: null,
+            isVirtual: true);
+        AllHolds.Add(hold);
+        SelectedHolds.Add(new BoulderHoldInput(hold.Id, _placeType));
+        await SelectedHoldsChanged.InvokeAsync(SelectedHolds);
+        StateHasChanged();
+    }
+
+    private HoldCategory _defineFootholdsCategory() => HoldCategory.Hand;
+
+    private record RelativePos(double X, double Y);
 
     private void ToggleHold(Hold hold)
     {

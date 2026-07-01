@@ -40,5 +40,13 @@ public class Hold
 
     public bool NeedsReview { get; set; }
 
+    /// <summary>
+    /// A hold placed by a user during boulder creation when the physical hold
+    /// isn't visible in the current wall photo. Rendered with a dotted outline
+    /// and cleared when the hold is merged with a real detected hold during a
+    /// wall update.
+    /// </summary>
+    public bool IsVirtual { get; set; }
+
     public ICollection<BoulderHold> BoulderHolds { get; set; } = [];
 }
