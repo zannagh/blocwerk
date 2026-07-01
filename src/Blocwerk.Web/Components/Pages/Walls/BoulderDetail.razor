@@ -38,7 +38,7 @@ else
 
         @if (_boulder.IsHistoric && _isCreator)
         {
-            <div class="revision-banner">
+            <div class="bw-revision-notice">
                 <p>The wall has changed since this boulder was created. Some holds may no longer exist.</p>
                 <a href="/walls/@WallId/boulders/@BoulderId/revise" class="btn-revise">Revise Boulder</a>
             </div>
@@ -46,7 +46,7 @@ else
 
         @if (_activeProposal != null && _isCreator)
         {
-            <div class="grade-proposal-banner creator">
+            <div class="bw-grade-proposal-notice creator">
                 <p><strong>@_activeProposal.ProposedBy.DisplayName</strong> proposed changing the grade to <strong>@_activeProposal.ProposedGrade</strong></p>
                 <div class="proposal-actions">
                     <button class="proposal-btn accept" @onclick="AcceptProposal">Accept</button>
@@ -56,7 +56,7 @@ else
         }
         else if (_activeProposal != null)
         {
-            <div class="grade-proposal-banner viewer">
+            <div class="bw-grade-proposal-notice viewer">
                 <p>A grade change to <strong>@_activeProposal.ProposedGrade</strong> has been proposed by @_activeProposal.ProposedBy.DisplayName</p>
             </div>
         }
@@ -165,7 +165,7 @@ else
         }
         else
         {
-            <div class="anon-banner">
+            <div class="bw-anon-notice">
                 <a href="/account/login">Log in</a> to log attempts and comment.
             </div>
         }

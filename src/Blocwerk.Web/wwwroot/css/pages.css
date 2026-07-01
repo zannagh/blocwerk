@@ -324,21 +324,21 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
 }
 .meta { color: var(--text-secondary); font-size: 0.85rem; margin-top: 2px; }
 
-.revision-banner {
+.bw-revision-notice {
     padding: 12px 14px; background: var(--warning-bg); border-radius: 8px; margin-bottom: 12px;
 }
-.revision-banner p { color: var(--warning-text); font-size: 0.9rem; margin-bottom: 8px; }
+.bw-revision-notice p { color: var(--warning-text); font-size: 0.9rem; margin-bottom: 8px; }
 .btn-revise {
     display: inline-block; padding: 8px 16px; background: #E65100; color: white;
     text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 0.85rem;
 }
 
-.grade-proposal-banner {
+.bw-grade-proposal-notice {
     padding: 12px 14px; border-radius: 8px; margin-bottom: 12px; font-size: 0.9rem;
 }
-.grade-proposal-banner.creator { background: var(--info-bg); color: var(--info-text); }
-.grade-proposal-banner.viewer { background: #FFF8E1; color: #F57F17; }
-.grade-proposal-banner p { margin: 0 0 8px 0; }
+.bw-grade-proposal-notice.creator { background: var(--info-bg); color: var(--info-text); }
+.bw-grade-proposal-notice.viewer { background: #FFF8E1; color: #F57F17; }
+.bw-grade-proposal-notice p { margin: 0 0 8px 0; }
 .proposal-actions { display: flex; gap: 8px; }
 .proposal-btn {
     padding: 6px 16px; border: none; border-radius: 6px;

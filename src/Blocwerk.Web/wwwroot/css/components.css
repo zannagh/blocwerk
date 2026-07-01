@@ -50,11 +50,11 @@
 
 
 /* "First-fold" layout: the wall editor + stats panels size to fit in the visible
-   viewport (accounting for sticky top-bar and fixed bottom-nav), with a peek so
+   viewport (accounting for sticky bw-topbar and fixed bw-tabbar), with a peek so
    the Boulders header + first row remain visible to signal scrollable content. */
 :root {
-    --topbar-h: 56px;       /* sticky .top-bar */
-    --bottomnav-h: 72px;    /* fixed .bottom-nav + safe-area */
+    --topbar-h: 56px;       /* sticky .bw-topbar */
+    --bottomnav-h: 72px;    /* fixed .bw-tabbar + safe-area */
     --fold-peek: 140px;     /* reserve below the fold for boulder peek */
 }
 .wall-fold {
@@ -67,7 +67,7 @@
 .wall-fold .wall-detail-card { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden;
     border-radius: 12px; background: var(--bg-surface); }
 .wall-fold .wall-detail-card > .detail-header,
-.wall-fold .wall-detail-card > .anon-banner,
+.wall-fold .wall-detail-card > .bw-anon-notice,
 .wall-fold .wall-detail-card > .description,
 .wall-fold .wall-detail-card > .view-toggle { padding-left: 12px; padding-right: 12px; }
 .wall-fold .wall-detail-card > .detail-header { padding-top: 10px; }

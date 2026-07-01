@@ -2,9 +2,9 @@
 @using Blocwerk.Web.Components.Shared
 
 <div class="app-shell">
-    <header class="top-bar">
+    <header class="bw-topbar">
         <a href="/walls" class="app-title">Blocwerk</a>
-        <div class="top-bar-title"><SectionOutlet SectionName="TopBarTitle" /></div>
+        <div class="bw-topbar-title"><SectionOutlet SectionName="TopBarTitle" /></div>
         <div class="header-actions">
             <TopBarActions />
             <AuthorizeView>
@@ -22,7 +22,7 @@
         @Body
     </main>
 
-    <nav class="bottom-nav">
+    <nav class="bw-tabbar">
         <AuthorizeView>
             <Authorized>
                 <a href="/walls" class="nav-item">

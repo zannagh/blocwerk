@@ -117,7 +117,7 @@ html, body {
     min-height: 100vh;
 }
 
-.top-bar {
+.bw-topbar {
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
@@ -130,9 +130,9 @@ html, body {
     gap: 12px;
 }
 
-.top-bar > .app-title { justify-self: start; }
-.top-bar > .header-actions { justify-self: end; }
-.top-bar-title {
+.bw-topbar > .app-title { justify-self: start; }
+.bw-topbar > .header-actions { justify-self: end; }
+.bw-topbar-title {
     justify-self: center;
     font-size: 1rem;
     font-weight: 600;
@@ -143,7 +143,7 @@ html, body {
     white-space: nowrap;
     text-align: center;
 }
-.top-bar-title:empty { display: none; }
+.bw-topbar-title:empty { display: none; }
 
 .app-title {
     font-size: 1.2rem;
@@ -230,7 +230,7 @@ html, body {
     padding-bottom: 72px;
 }
 
-.bottom-nav {
+.bw-tabbar {
     position: fixed;
     bottom: 0;
     left: 0;
@@ -267,7 +267,7 @@ html, body {
 }
 
 /* When the wall is in edit mode, the docked editor toolbar replaces the bottom nav. */
-.app-shell:has(.editor-toolbar.docked-bottom) .bottom-nav { display: none; }
+.app-shell:has(.editor-toolbar.docked-bottom) .bw-tabbar { display: none; }
 .app-shell:has(.editor-toolbar.docked-bottom) .content { padding-bottom: 0; }
 
 .editor-toolbar.docked-bottom {
@@ -354,11 +354,11 @@ html, body {
 
 .back-link { color: var(--text-secondary); text-decoration: none; font-size: 0.9rem; }
 
-.anon-banner {
+.bw-anon-notice {
     padding: 10px 14px; background: var(--warning-bg); border-radius: 8px; margin-bottom: 12px;
     font-size: 0.9rem; color: var(--warning-text);
 }
-.anon-banner a { color: var(--secondary); font-weight: 600; text-decoration: underline; }
+.bw-anon-notice a { color: var(--secondary); font-weight: 600; text-decoration: underline; }
 
 .empty-msg { text-align: center; color: var(--text-secondary); font-size: 0.85rem; padding: 8px; }
 
@@ -382,18 +382,18 @@ html, body {
 }
 .toggle-btn.active { border-color: var(--topbar-bg); background: var(--topbar-bg); color: white; }
 
-.cookie-banner {
+.bw-consent {
     position: fixed; bottom: 0; left: 0; right: 0;
     background: var(--topbar-bg); color: white;
     padding: 16px 20px; z-index: 200;
     display: flex; justify-content: space-between; align-items: center; gap: 16px;
     box-shadow: 0 -2px 12px var(--shadow-lg);
 }
-.cookie-banner p { font-size: 0.9rem; flex: 1; margin: 0; }
-.cookie-banner a { color: rgba(255,255,255,0.8); text-decoration: underline; }
-.cookie-accept {
+.bw-consent p { font-size: 0.9rem; flex: 1; margin: 0; }
+.bw-consent a { color: rgba(255,255,255,0.8); text-decoration: underline; }
+.bw-consent-accept {
     padding: 8px 20px; background: var(--accent); color: white;
     border: none; border-radius: 6px; font-weight: 600; cursor: pointer;
     white-space: nowrap;
 }
-.cookie-accept:hover { background: var(--accent-hover); }
+.bw-consent-accept:hover { background: var(--accent-hover); }
