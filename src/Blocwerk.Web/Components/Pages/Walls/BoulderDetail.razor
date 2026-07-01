@@ -8,7 +8,9 @@
 @inject IWallService WallService
 @inject ICurrentUserService CurrentUserService
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
 @using Blocwerk.Web.Components.Shared
+@implements IAsyncDisposable
 
 <PageTitle>@(_boulder?.Name ?? "Boulder") - Blocwerk</PageTitle>
 
@@ -68,29 +70,31 @@ else
 
         @if (_viewMode == ViewMode.Photo)
         {
-            <div class="photo-section">
-                <img src="@PhotoUrl" alt="Wall" class="wall-photo" />
-                <svg class="hold-overlay">
-                    @foreach (var bh in _boulder.BoulderHolds)
-                    {
-                        var fill = bh.Type switch
+            <div class="photo-viewport photo-section" @ref="_photoViewportRef" data-current-zoom="@F(_photoZoom)">
+                <div class="photo-editor" style="width: @F(_photoZoom * 100)%; min-width: 100%;">
+                    <img src="@PhotoUrl" alt="Wall" class="wall-photo" />
+                    <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
+                        @foreach (var bh in _boulder.BoulderHolds)
                         {
-                            HoldType.Start => "rgba(76, 175, 80, 0.55)",
-                            HoldType.Top => "rgba(244, 67, 54, 0.55)",
-                            _ => "rgba(33, 150, 243, 0.55)",
-                        };
-                        var stroke = bh.Type switch
-                        {
-                            HoldType.Start => "#4CAF50",
-                            HoldType.Top => "#F44336",
-                            _ => "#2196F3",
-                        };
+                            var fill = bh.Type switch
+                            {
+                                HoldType.Start => "rgba(76, 175, 80, 0.55)",
+                                HoldType.Top => "rgba(244, 67, 54, 0.55)",
+                                _ => "rgba(33, 150, 243, 0.55)",
+                            };
+                            var stroke = bh.Type switch
+                            {
+                                HoldType.Start => "#4CAF50",
+                                HoldType.Top => "#F44336",
+                                _ => "#2196F3",
+                            };
 
-                        <circle cx="@F(bh.Hold.X * 100)%" cy="@F(bh.Hold.Y * 100)%"
-                                r="@F(bh.Hold.Radius * 100)%"
-                                fill="@fill" stroke="@stroke" stroke-width="3" />
-                    }
-                </svg>
+                            <circle cx="@F(bh.Hold.X * 100)" cy="@F(bh.Hold.Y * 100)"
+                                    r="@F(bh.Hold.Radius * 100)"
+                                    fill="@fill" stroke="@stroke" stroke-width="0.5" />
+                        }
+                    </svg>
+                </div>
             </div>
         }
         else if (_wallHolds != null)
@@ -295,7 +299,36 @@ else
     private bool _showGradeForm;
     private string? _proposedGrade;
 
+    private ElementReference _photoViewportRef;
+    private DotNetObjectReference<BoulderDetail>? _photoDotNetRef;
+    private bool _photoViewportInitialized;
+    private double _photoZoom = 1.0;
+
     private enum ViewMode { Photo, Schematic }
+
+    [JSInvokable]
+    public void SetZoomFromJs(double zoom)
+    {
+        _photoZoom = zoom;
+        StateHasChanged();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_viewMode == ViewMode.Photo && _boulder != null && !_photoViewportInitialized)
+        {
+            _photoViewportInitialized = true;
+            _photoDotNetRef ??= DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("wallEditor.setupViewport", _photoViewportRef, _photoDotNetRef);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _photoDotNetRef?.Dispose();
+        _photoDotNetRef = null;
+        await ValueTask.CompletedTask;
+    }
 
     private string PhotoUrl => !string.IsNullOrEmpty(ShareToken)
         ? $"/api/walls/{WallId}/photo?token={ShareToken}"
