@@ -1,0 +1,104 @@
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<div class="wall-carousel-root @(Locked ? "editing" : "")">
+    <div class="wall-carousel" @ref="_ref" @onscroll="OnScroll">
+        @foreach (var (frag, idx) in Pages())
+        {
+            <div class="wall-page @(PageClass(idx))">
+                @frag
+            </div>
+        }
+    </div>
+    <div class="carousel-dots">
+        @for (var i = 0; i < _fragCount; i++)
+        {
+            var idx = i;
+            <button type="button"
+                    class="dot @(idx == _currentPage ? "active" : "")"
+                    aria-label="@($"Page {idx + 1}")"
+                    @onclick="() => GoTo(idx)"></button>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public RenderFragment? Page1 { get; set; }
+    [Parameter] public RenderFragment? Page2 { get; set; }
+    [Parameter] public RenderFragment? Page3 { get; set; }
+    [Parameter] public RenderFragment? Page4 { get; set; }
+    [Parameter] public int InitialPage { get; set; } = 2;
+    [Parameter] public bool Locked { get; set; }
+    [Parameter] public string? PageClasses { get; set; }
+
+    private ElementReference _ref;
+    private int _currentPage;
+    private bool _initialized;
+    private int _fragCount;
+
+    private IEnumerable<(RenderFragment Fragment, int Index)> Pages()
+    {
+        var list = new List<RenderFragment?> { Page1, Page2, Page3, Page4 };
+        var i = 0;
+        foreach (var p in list)
+        {
+            if (p != null)
+            {
+                yield return (p, i);
+                i++;
+            }
+        }
+    }
+
+    private string PageClass(int idx)
+    {
+        if (string.IsNullOrEmpty(PageClasses)) return string.Empty;
+        var parts = PageClasses.Split('|');
+        return idx < parts.Length ? parts[idx] : string.Empty;
+    }
+
+    protected override void OnParametersSet()
+    {
+        _fragCount = Pages().Count();
+        if (_currentPage >= _fragCount) _currentPage = Math.Max(0, _fragCount - 1);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && _fragCount > 0)
+        {
+            _currentPage = Math.Clamp(InitialPage, 0, _fragCount - 1);
+            await JS.InvokeVoidAsync("wallCarousel.scrollToPage", _ref, _currentPage, false);
+            _initialized = true;
+            StateHasChanged();
+        }
+    }
+
+    private async Task GoTo(int idx)
+    {
+        if (Locked) return;
+        _currentPage = idx;
+        await JS.InvokeVoidAsync("wallCarousel.scrollToPage", _ref, idx, true);
+    }
+
+    public async Task GoToPageAsync(int idx, bool smooth = true)
+    {
+        var clamped = Math.Clamp(idx, 0, Math.Max(0, _fragCount - 1));
+        _currentPage = clamped;
+        await JS.InvokeVoidAsync("wallCarousel.scrollToPage", _ref, clamped, smooth);
+        StateHasChanged();
+    }
+
+    private async Task OnScroll()
+    {
+        if (!_initialized) return;
+        var frag = await JS.InvokeAsync<int>("wallCarousel.currentPage", _ref);
+        if (frag != _currentPage)
+        {
+            _currentPage = frag;
+            StateHasChanged();
+        }
+    }
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}

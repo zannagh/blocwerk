@@ -1,6 +1,6 @@
 @inject IJSRuntime JS
 
-<div class="editor-toolbar">
+<div class="editor-toolbar @(BottomToolbar ? "docked-bottom" : "")">
     <div class="toolbar-left">
         <span class="hold-count">@Holds.Count(h => h.Category == HoldCategory.Hand)H / @Holds.Count(h => h.Category == HoldCategory.Foot)F</span>
     </div>
@@ -56,14 +56,15 @@
                     <path d="M23 4v6h-6M1 20v-6h6" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
                 </svg>
             </button>
+            <button class="tool-btn @A(EditMode.ShapeTilt)" @onclick="() => SetMode(EditMode.ShapeTilt)" title="Tilt hold shape: click a hold, then drag the handle to rotate the polygon in X/Y">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                    <ellipse cx="12" cy="12" rx="9" ry="4" />
+                    <ellipse cx="12" cy="12" rx="4" ry="9" />
+                </svg>
+            </button>
             @if (IsStaging)
             {
                 <span class="toolbar-sep"></span>
-                <button class="tool-btn @A(EditMode.AlignLive)" @onclick="() => SetMode(EditMode.AlignLive)" title="Align old holds: drag to translate, twist to rotate">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                        <path d="M3 12a9 9 0 1 0 9-9" /><polyline points="3 4 3 12 11 12" />
-                    </svg>
-                </button>
                 <button class="tool-btn @A(EditMode.Merge)" @onclick="() => SetMode(EditMode.Merge)" title="Merge: click a new hold then the matching old hold">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
                         <circle cx="7" cy="12" r="4" /><circle cx="17" cy="12" r="4" /><line x1="11" y1="12" x2="13" y2="12" />
@@ -190,15 +191,50 @@
             }
         }
 
-        @if (CanEdit && _mode == EditMode.AlignLive && IsStaging)
+        @if (CanEdit && IsStaging && Holds.Any(IsLiveHold))
         {
             var (cx, cy) = LiveCentroid();
-            var rx = cx + 0.08;
-            <circle cx="@F(cx * 100)" cy="@F(cy * 100)" r="1.2" fill="#ffd700" stroke="#000" stroke-width="0.3" style="pointer-events: none" />
-            <line x1="@F(cx * 100)" y1="@F(cy * 100)" x2="@F(rx * 100)" y2="@F(cy * 100)" stroke="#ffd700" stroke-width="0.3" style="pointer-events: none" />
-            <circle cx="@F(rx * 100)" cy="@F(cy * 100)" r="1.6" fill="#22223a" stroke="#ffd700" stroke-width="0.4"
+            var arm = 0.12;
+            var hxR = cx + arm;
+            var hyT = cy - arm;
+            <circle cx="@F(cx * 100)" cy="@F(cy * 100)" r="3.0" fill="none" stroke="#4aa8ff" stroke-width="0.3" stroke-dasharray="0.8 0.4" style="pointer-events: none" opacity="0.7" />
+            <line x1="@F(cx * 100)" y1="@F(cy * 100)" x2="@F(hxR * 100)" y2="@F(cy * 100)" stroke="#ff4d4d" stroke-width="0.35" style="pointer-events: none" opacity="0.8" />
+            <line x1="@F(cx * 100)" y1="@F(cy * 100)" x2="@F(cx * 100)" y2="@F(hyT * 100)" stroke="#3ddc84" stroke-width="0.35" style="pointer-events: none" opacity="0.8" />
+            <circle cx="@F(hxR * 100)" cy="@F(cy * 100)" r="1.6" fill="#ff4d4d" stroke="#fff" stroke-width="0.3"
+                    style="cursor: ns-resize"
+                    @onmousedown="(e) => StartAlignDrag(e, AlignHandle.TiltX)" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" />
+            <circle cx="@F(cx * 100)" cy="@F(hyT * 100)" r="1.6" fill="#3ddc84" stroke="#fff" stroke-width="0.3"
+                    style="cursor: ew-resize"
+                    @onmousedown="(e) => StartAlignDrag(e, AlignHandle.TiltY)" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" />
+            var zr = 3.0 / 100.0;
+            var zhx = cx + zr * 0.7071;
+            var zhy = cy - zr * 0.7071;
+            <circle cx="@F(zhx * 100)" cy="@F(zhy * 100)" r="1.3" fill="#4aa8ff" stroke="#fff" stroke-width="0.3"
                     style="cursor: grab"
-                    @onmousedown="StartAlignRotate" @onmousedown:stopPropagation="true" />
+                    @onmousedown="(e) => StartAlignDrag(e, AlignHandle.RotateZ)" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" />
+            var shx = cx + zr * 0.7071;
+            var shy = cy + zr * 0.7071;
+            <rect x="@F((shx - 0.012) * 100)" y="@F((shy - 0.012) * 100)" width="2.4" height="2.4"
+                  fill="#f5a623" stroke="#fff" stroke-width="0.3"
+                  style="cursor: nwse-resize"
+                  @onmousedown="(e) => StartAlignDrag(e, AlignHandle.Scale)" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" />
+            <circle cx="@F(cx * 100)" cy="@F(cy * 100)" r="2.2" fill="rgba(255,215,0,0.85)" stroke="#000" stroke-width="0.3"
+                    style="cursor: move"
+                    @onmousedown="(e) => StartAlignDrag(e, AlignHandle.Translate)" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" />
+        }
+
+        @if (CanEdit && _mode == EditMode.ShapeTilt && _shapeTiltHoldId.HasValue)
+        {
+            var th = Holds.FirstOrDefault(h => h.Id == _shapeTiltHoldId);
+            if (th != null)
+            {
+                var hcx = th.X + th.Radius + 0.015;
+                var hcy = th.Y - th.Radius - 0.015;
+                <line x1="@F(th.X * 100)" y1="@F(th.Y * 100)" x2="@F(hcx * 100)" y2="@F(hcy * 100)" stroke="#9b59ff" stroke-width="0.25" stroke-dasharray="0.4 0.3" style="pointer-events: none" />
+                <circle cx="@F(hcx * 100)" cy="@F(hcy * 100)" r="1.4" fill="#9b59ff" stroke="#fff" stroke-width="0.3"
+                        style="cursor: grab" title="Drag to tilt polygon"
+                        @onmousedown="(e) => StartShapeTiltDrag(e, th)" @onmousedown:stopPropagation="true" />
+            }
         }
     </svg>
 
@@ -290,10 +326,20 @@
             </div>
         }
     }
-    @if (CanEdit && _mode == EditMode.AlignLive && IsStaging)
+    @if (CanEdit && IsStaging && Holds.Any(IsLiveHold))
     {
         <div class="option-bar">
-            <span class="option-hint">Drag anywhere to translate all <strong>old</strong> holds as a group; use the gold handle to rotate around their centroid. Boulders touched will be flagged for review.</span>
+            <span class="option-hint">Align the <strong>old</strong> overlay: <strong style="color:#ffd700">yellow</strong> = move, <strong style="color:#ff4d4d">red</strong> = X tilt, <strong style="color:#3ddc84">green</strong> = Y tilt, <strong style="color:#4aa8ff">blue</strong> = spin (Z), <strong style="color:#f5a623">orange</strong> = scale.</span>
+        </div>
+    }
+    @if (CanEdit && _mode == EditMode.ShapeTilt)
+    {
+        <div class="option-bar">
+            <span class="option-hint">Click a hold to select, then drag the violet handle to tilt its polygon outline in X/Y.</span>
+            @if (_shapeTiltHoldId.HasValue)
+            {
+                <button class="opt-btn" @onclick="ResetShapeTilt">Reset shape</button>
+            }
         </div>
     }
     @if (CanEdit && _mode == EditMode.Merge)
@@ -318,10 +364,19 @@
             }
         </div>
     }
-    @if (CanEdit && _pendingChanges > 0)
+    @if (CanEdit && (_pendingChanges > 0 || _alignmentChangedIds.Count > 0))
     {
         <div class="batch-bar">
-            <button class="batch-save" @onclick="SaveChanges">Save Changes (@_pendingChanges)</button>
+            <button class="batch-save" @onclick="SaveChanges">
+                @if (_pendingChanges > 0)
+                {
+                    @($"Save Changes ({_pendingChanges})")
+                }
+                else
+                {
+                    @("Save Alignment")
+                }
+            </button>
             <button class="batch-discard" @onclick="DiscardChanges">Discard</button>
         </div>
     }
@@ -344,6 +399,7 @@
     [Parameter] public EventCallback<(Guid stagedHoldId, Guid liveHoldId)> OnMergeHolds { get; set; }
     [Parameter] public bool IsStaging { get; set; }
     [Parameter] public int LiveGeneration { get; set; }
+    [Parameter] public bool BottomToolbar { get; set; }
 
     private ElementReference _containerRef;
     private ElementReference _viewportRef;
@@ -384,7 +440,7 @@
     private bool IsLiveHold(Hold h) => IsStaging && h.Generation <= LiveGeneration;
 
     private static readonly string[] _colors = ["none", "yellow", "red", "pink", "blue", "green", "orange", "purple", "white", "black"];
-    private enum EditMode { Add, Move, Shape, Paint, Delete, Border, Name, Merge, AlignLive }
+    private enum EditMode { Add, Move, Shape, Paint, Delete, Border, Name, Merge, ShapeTilt }
 
     public record BatchChanges(List<Hold> Added, List<Hold> Updated, List<Guid> Deleted);
 
@@ -403,13 +459,18 @@
     {
         EditMode.Delete => "crosshair",
         EditMode.Add => "crosshair", EditMode.Name => "help",
-        EditMode.AlignLive => "grab",
+        EditMode.ShapeTilt => "pointer",
         EditMode.Merge => "pointer",
         _ => "default"
     };
 
     private void SetMode(EditMode mode)
     {
+        if (mode != EditMode.ShapeTilt)
+        {
+            _shapeTiltHoldId = null;
+            ClearShapeTiltSnapshot();
+        }
         _mode = mode;
         if (mode != EditMode.Move) _selectedHoldId = null;
         if (mode != EditMode.Shape) _shapeEditHoldId = null;
@@ -469,6 +530,12 @@
                 return;
             case EditMode.Merge:
                 HandleMergeClick(hold);
+                return;
+            case EditMode.ShapeTilt:
+                _shapeTiltHoldId = hold.Id;
+                CaptureShapeTiltSnapshot(hold);
+                _shapeTiltAngleX = 0;
+                _shapeTiltAngleY = 0;
                 return;
         }
     }
@@ -545,83 +612,221 @@
         _mergeFirstPickId = null;
     }
 
-    private bool _alignTranslating;
-    private bool _alignRotating;
-    private double _alignLastX, _alignLastY;
-    private (double X, double Y)? _alignCentroidCache;
-
     private (double X, double Y) LiveCentroid()
     {
-        if (_alignCentroidCache.HasValue) return _alignCentroidCache.Value;
+        if (_alignSnapshot != null) return _alignSnapshotPivot;
         var live = Holds.Where(IsLiveHold).ToList();
         if (live.Count == 0) return (0.5, 0.5);
-        var cx = live.Average(h => h.X);
-        var cy = live.Average(h => h.Y);
-        return (cx, cy);
+        return (live.Average(h => h.X), live.Average(h => h.Y));
     }
 
     private async Task OnSvgMouseDown(MouseEventArgs e)
     {
-        if (!CanEdit || _mode != EditMode.AlignLive || !IsStaging) return;
-        if (_alignRotating) return;
+        if (!CanEdit) return;
+        await Task.CompletedTask;
+    }
+
+    // ---- Whole-overlay alignment gizmo (staging) ---------------------------
+    private enum AlignHandle { Translate, TiltX, TiltY, RotateZ, Scale }
+    private AlignHandle? _alignDragHandle;
+    private double _alignDragStartX, _alignDragStartY;
+    private double _alignDragStartAngleZ;
+    private double _alignDragStartRadius;
+    private const double AlignTiltGain = 8.0;
+    private const double AlignPerspective = 0.9;
+
+    private record LiveSnapshotEntry(Guid Id, double X, double Y, double Radius, List<ShapePoint>? Shape);
+    private List<LiveSnapshotEntry>? _alignSnapshot;
+    private (double X, double Y) _alignSnapshotPivot;
+
+    /// <summary>
+    /// IDs touched by a whole-overlay alignment drag. Saved with manual edits but not
+    /// counted in <see cref="_pendingChanges"/>, so realigning the overlay doesn't
+    /// look like the user manually moved every hold.
+    /// </summary>
+    private HashSet<Guid> _alignmentChangedIds = [];
+
+    private void CaptureAlignSnapshot()
+    {
+        var live = Holds.Where(IsLiveHold).ToList();
+        if (live.Count == 0) { _alignSnapshot = null; return; }
+        _alignSnapshotPivot = (live.Average(h => h.X), live.Average(h => h.Y));
+        _alignSnapshot = live.Select(h => new LiveSnapshotEntry(
+            h.Id, h.X, h.Y, h.Radius,
+            h.ShapePoints?.Select(sp => new ShapePoint { Dx = sp.Dx, Dy = sp.Dy }).ToList()
+        )).ToList();
+    }
+
+    private async Task StartAlignDrag(MouseEventArgs e, AlignHandle handle)
+    {
+        if (!CanEdit || !IsStaging) return;
+        CaptureAlignSnapshot();
+        if (_alignSnapshot == null) return;
         var pos = await JS.InvokeAsync<RelativePos>("wallEditor.getRelativePosition", _containerRef, e.ClientX, e.ClientY);
-        _alignTranslating = true;
-        _alignLastX = pos.X;
-        _alignLastY = pos.Y;
-        if (!_alignCentroidCache.HasValue)
+        _alignDragHandle = handle;
+        _alignDragStartX = pos.X;
+        _alignDragStartY = pos.Y;
+        if (handle == AlignHandle.RotateZ)
         {
-            _alignCentroidCache = LiveCentroid();
+            var (cx, cy) = _alignSnapshotPivot;
+            _alignDragStartAngleZ = Math.Atan2(pos.Y - cy, pos.X - cx);
+        }
+        else if (handle == AlignHandle.Scale)
+        {
+            var (cx, cy) = _alignSnapshotPivot;
+            var sdx = pos.X - cx;
+            var sdy = pos.Y - cy;
+            _alignDragStartRadius = Math.Max(0.01, Math.Sqrt(sdx * sdx + sdy * sdy));
         }
         TakeSnapshot();
     }
 
-    private async Task StartAlignRotate(MouseEventArgs e)
+    private void ApplyAlignDrag(double posX, double posY)
     {
-        if (!CanEdit || _mode != EditMode.AlignLive || !IsStaging) return;
-        var pos = await JS.InvokeAsync<RelativePos>("wallEditor.getRelativePosition", _containerRef, e.ClientX, e.ClientY);
-        _alignRotating = true;
-        _alignCentroidCache = LiveCentroid();
-        _alignLastX = pos.X;
-        _alignLastY = pos.Y;
-        TakeSnapshot();
-    }
-
-    private void ApplyAlignTranslate(double dx, double dy)
-    {
-        foreach (var h in Holds.Where(IsLiveHold))
+        if (_alignSnapshot == null || _alignDragHandle == null) return;
+        var (px, py) = _alignSnapshotPivot;
+        double dxOff = 0, dyOff = 0, angleX = 0, angleY = 0, angleZ = 0, scale = 1.0;
+        switch (_alignDragHandle.Value)
         {
-            h.X = Math.Clamp(h.X + dx, 0, 1);
-            h.Y = Math.Clamp(h.Y + dy, 0, 1);
-            _updatedHoldIds.Add(h.Id);
+            case AlignHandle.Translate:
+                dxOff = posX - _alignDragStartX;
+                dyOff = posY - _alignDragStartY;
+                break;
+            case AlignHandle.TiltX:
+                angleX = -(posY - _alignDragStartY) * AlignTiltGain;
+                break;
+            case AlignHandle.TiltY:
+                angleY = (posX - _alignDragStartX) * AlignTiltGain;
+                break;
+            case AlignHandle.RotateZ:
+                angleZ = Math.Atan2(posY - py, posX - px) - _alignDragStartAngleZ;
+                break;
+            case AlignHandle.Scale:
+                var sdx = posX - px;
+                var sdy = posY - py;
+                var r = Math.Sqrt(sdx * sdx + sdy * sdy);
+                scale = Math.Clamp(r / _alignDragStartRadius, 0.2, 5.0);
+                break;
         }
-        _alignCentroidCache = null;
-    }
 
-    private void ApplyAlignRotateScale(double angleDelta, double scale)
-    {
-        var c = _alignCentroidCache ?? LiveCentroid();
-        var cos = Math.Cos(angleDelta);
-        var sin = Math.Sin(angleDelta);
-        foreach (var h in Holds.Where(IsLiveHold))
+        var cax = Math.Cos(angleX); var sax = Math.Sin(angleX);
+        var cay = Math.Cos(angleY); var say = Math.Sin(angleY);
+        var caz = Math.Cos(angleZ); var saz = Math.Sin(angleZ);
+
+        foreach (var snap in _alignSnapshot)
         {
-            var rx = (h.X - c.X) * scale;
-            var ry = (h.Y - c.Y) * scale;
-            h.X = Math.Clamp(c.X + rx * cos - ry * sin, 0, 1);
-            h.Y = Math.Clamp(c.Y + rx * sin + ry * cos, 0, 1);
-            h.Radius = Math.Clamp(h.Radius * scale, 0.003, 0.2);
-            if (h.ShapePoints != null)
+            var hold = Holds.FirstOrDefault(h => h.Id == snap.Id);
+            if (hold == null) continue;
+            var sx = px + (snap.X - px) * scale;
+            var sy = py + (snap.Y - py) * scale;
+            var (nx, ny, projScale) = ApplyXyz(sx, sy, px, py, cax, sax, cay, say, caz, saz);
+            hold.X = Math.Clamp(nx + dxOff, 0, 1);
+            hold.Y = Math.Clamp(ny + dyOff, 0, 1);
+            hold.Radius = Math.Clamp(snap.Radius * scale * projScale, 0.003, 0.2);
+            if (snap.Shape != null && hold.ShapePoints != null && hold.ShapePoints.Count == snap.Shape.Count)
             {
-                foreach (var sp in h.ShapePoints)
+                for (var i = 0; i < snap.Shape.Count; i++)
                 {
-                    var px = sp.Dx * scale;
-                    var py = sp.Dy * scale;
-                    sp.Dx = px * cos - py * sin;
-                    sp.Dy = px * sin + py * cos;
+                    var sp = snap.Shape[i];
+                    var sspx = px + (snap.X + sp.Dx - px) * scale;
+                    var sspy = py + (snap.Y + sp.Dy - py) * scale;
+                    var (spx, spy, _) = ApplyXyz(sspx, sspy, px, py, cax, sax, cay, say, caz, saz);
+                    hold.ShapePoints[i].Dx = (spx + dxOff) - hold.X;
+                    hold.ShapePoints[i].Dy = (spy + dyOff) - hold.Y;
                 }
             }
-            _updatedHoldIds.Add(h.Id);
+            _alignmentChangedIds.Add(snap.Id);
         }
     }
+
+    private static (double X, double Y, double Scale) ApplyXyz(
+        double x, double y, double px, double py,
+        double cax, double sax, double cay, double say, double caz, double saz)
+    {
+        var dx = x - px;
+        var dy = y - py;
+        var dz = 0.0;
+        var y1 = dy * cax - dz * sax;
+        var z1 = dy * sax + dz * cax;
+        var x2 = dx * cay + z1 * say;
+        var z2 = -dx * say + z1 * cay;
+        var x3 = x2 * caz - y1 * saz;
+        var y3 = x2 * saz + y1 * caz;
+        var scale = 1.0 / (1.0 + z2 * AlignPerspective);
+        return (px + x3 * scale, py + y3 * scale, scale);
+    }
+
+    // ---- per-hold ShapeTilt -----------------------------------------------
+    private Guid? _shapeTiltHoldId;
+    private List<ShapePoint>? _shapeTiltSnapshot;
+    private double _shapeTiltAngleX, _shapeTiltAngleY;
+    private double _shapeTiltDragStartX, _shapeTiltDragStartY;
+    private bool _shapeTiltDragging;
+    private const double ShapeTiltGain = 16.0;
+    private const double ShapeTiltPerspective = 0.8;
+
+    private void CaptureShapeTiltSnapshot(Hold hold)
+    {
+        if (hold.ShapePoints == null)
+        {
+            hold.ShapePoints = ShapePoint.DefaultOctagon(hold.Radius);
+        }
+        _shapeTiltSnapshot = hold.ShapePoints.Select(sp => new ShapePoint { Dx = sp.Dx, Dy = sp.Dy }).ToList();
+    }
+
+    private void ClearShapeTiltSnapshot() { _shapeTiltSnapshot = null; }
+
+    private async Task StartShapeTiltDrag(MouseEventArgs e, Hold hold)
+    {
+        if (!CanEdit || _mode != EditMode.ShapeTilt) return;
+        if (_shapeTiltSnapshot == null) CaptureShapeTiltSnapshot(hold);
+        var pos = await JS.InvokeAsync<RelativePos>("wallEditor.getRelativePosition", _containerRef, e.ClientX, e.ClientY);
+        _shapeTiltDragging = true;
+        _shapeTiltDragStartX = pos.X;
+        _shapeTiltDragStartY = pos.Y;
+        TakeSnapshot();
+    }
+
+    private void ApplyShapeTilt()
+    {
+        var hold = Holds.FirstOrDefault(h => h.Id == _shapeTiltHoldId);
+        if (hold == null || _shapeTiltSnapshot == null || hold.ShapePoints == null) return;
+        var cax = Math.Cos(_shapeTiltAngleX); var sax = Math.Sin(_shapeTiltAngleX);
+        var cay = Math.Cos(_shapeTiltAngleY); var say = Math.Sin(_shapeTiltAngleY);
+        var count = Math.Min(_shapeTiltSnapshot.Count, hold.ShapePoints.Count);
+        for (var i = 0; i < count; i++)
+        {
+            var sp = _shapeTiltSnapshot[i];
+            var dx = sp.Dx;
+            var dy = sp.Dy;
+            var dz = 0.0;
+            var y1 = dy * cax - dz * sax;
+            var z1 = dy * sax + dz * cax;
+            var x2 = dx * cay + z1 * say;
+            var z2 = -dx * say + z1 * cay;
+            var scale = 1.0 / (1.0 + z2 * ShapeTiltPerspective);
+            hold.ShapePoints[i].Dx = x2 * scale;
+            hold.ShapePoints[i].Dy = y1 * scale;
+        }
+        _updatedHoldIds.Add(hold.Id);
+    }
+
+    private void ResetShapeTilt()
+    {
+        var hold = Holds.FirstOrDefault(h => h.Id == _shapeTiltHoldId);
+        if (hold == null || _shapeTiltSnapshot == null || hold.ShapePoints == null) return;
+        for (var i = 0; i < _shapeTiltSnapshot.Count && i < hold.ShapePoints.Count; i++)
+        {
+            hold.ShapePoints[i].Dx = _shapeTiltSnapshot[i].Dx;
+            hold.ShapePoints[i].Dy = _shapeTiltSnapshot[i].Dy;
+        }
+        _shapeTiltAngleX = _shapeTiltAngleY = 0;
+        _updatedHoldIds.Add(hold.Id);
+        StateHasChanged();
+    }
+
+    private static double RadDeg(double r) => r * 180.0 / Math.PI;
+    private static string F2(double v) => v.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
 
     private void ApplyName()
     {
@@ -674,28 +879,16 @@
     {
         var pos = await JS.InvokeAsync<RelativePos>("wallEditor.getRelativePosition", _containerRef, e.ClientX, e.ClientY);
 
-        if (_alignTranslating)
+        if (_alignDragHandle.HasValue)
         {
-            ApplyAlignTranslate(pos.X - _alignLastX, pos.Y - _alignLastY);
-            _alignLastX = pos.X;
-            _alignLastY = pos.Y;
+            ApplyAlignDrag(pos.X, pos.Y);
             StateHasChanged(); return;
         }
-        if (_alignRotating)
+        if (_shapeTiltDragging && _shapeTiltSnapshot != null)
         {
-            var c = _alignCentroidCache ?? LiveCentroid();
-            var prevDx = _alignLastX - c.X;
-            var prevDy = _alignLastY - c.Y;
-            var currDx = pos.X - c.X;
-            var currDy = pos.Y - c.Y;
-            var prevR = Math.Sqrt(prevDx * prevDx + prevDy * prevDy);
-            var currR = Math.Sqrt(currDx * currDx + currDy * currDy);
-            var prevA = Math.Atan2(prevDy, prevDx);
-            var currA = Math.Atan2(currDy, currDx);
-            var scale = prevR > 0.001 ? Math.Clamp(currR / prevR, 0.5, 2.0) : 1.0;
-            ApplyAlignRotateScale(currA - prevA, scale);
-            _alignLastX = pos.X;
-            _alignLastY = pos.Y;
+            _shapeTiltAngleY = (pos.X - _shapeTiltDragStartX) * ShapeTiltGain;
+            _shapeTiltAngleX = -(pos.Y - _shapeTiltDragStartY) * ShapeTiltGain;
+            ApplyShapeTilt();
             StateHasChanged(); return;
         }
 
@@ -721,8 +914,8 @@
 
     private async Task OnSvgMouseUp(EventArgs e)
     {
-        if (_alignTranslating) { _alignTranslating = false; _alignCentroidCache = null; return; }
-        if (_alignRotating) { _alignRotating = false; _alignCentroidCache = null; return; }
+        if (_alignDragHandle.HasValue) { _alignDragHandle = null; _alignSnapshot = null; return; }
+        if (_shapeTiltDragging) { _shapeTiltDragging = false; return; }
         if (_draggingBorderIdx.HasValue) { _draggingBorderIdx = null; await OnBorderChanged.InvokeAsync(BorderPoints); return; }
         if (_draggingShapePointIdx.HasValue && _draggingShapeHold != null)
         {
@@ -790,7 +983,9 @@
     private async Task SaveChanges()
     {
         var added = _addedHolds.ToList();
-        var updated = Holds.Where(h => _updatedHoldIds.Contains(h.Id) && !_addedHolds.Any(a => a.Id == h.Id)).ToList();
+        var manuallyTouchedIds = new HashSet<Guid>(_updatedHoldIds);
+        manuallyTouchedIds.UnionWith(_alignmentChangedIds);
+        var updated = Holds.Where(h => manuallyTouchedIds.Contains(h.Id) && !_addedHolds.Any(a => a.Id == h.Id)).ToList();
         var deleted = _deletedHoldIds.ToList();
 
         if (OnBatchSave.HasDelegate)
@@ -807,6 +1002,7 @@
         _addedHolds.Clear();
         _updatedHoldIds.Clear();
         _deletedHoldIds.Clear();
+        _alignmentChangedIds.Clear();
         _snapshotHolds = null;
     }
 
@@ -821,6 +1017,7 @@
         _addedHolds.Clear();
         _updatedHoldIds.Clear();
         _deletedHoldIds.Clear();
+        _alignmentChangedIds.Clear();
         _snapshotHolds = null;
         _selectedHoldId = null;
     }

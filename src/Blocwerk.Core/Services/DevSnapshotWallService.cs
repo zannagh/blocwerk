@@ -478,7 +478,24 @@ public class DevSnapshotWallService : IWallService
     public async Task<List<WallMember>> GetMembersAsync(Guid wallId)
     {
         await EnsureLoadedAsync();
-        return Wall.Members.OrderBy(m => m.JoinedAt).ToList();
+        var members = Wall.Members.OrderBy(m => m.JoinedAt).ToList();
+
+        var missing = members.Where(m => m.User == null).Select(m => m.UserId).ToList();
+        if (missing.Count > 0)
+        {
+            await using var db = await dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = Guid.Empty;
+            var users = await db.Users.Where(u => missing.Contains(u.Id)).ToListAsync();
+            foreach (var m in members)
+            {
+                if (m.User == null)
+                {
+                    m.User = users.FirstOrDefault(u => u.Id == m.UserId)!;
+                }
+            }
+        }
+
+        return members;
     }
 
     public async Task SetMemberRoleAsync(Guid wallId, Guid userId, WallRole role)

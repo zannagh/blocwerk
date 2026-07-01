@@ -118,16 +118,32 @@ html, body {
 }
 
 .top-bar {
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    padding: 12px 16px;
+    padding: 10px 16px;
     background: var(--topbar-bg);
     color: var(--topbar-text);
     position: sticky;
     top: 0;
     z-index: 50;
+    gap: 12px;
 }
+
+.top-bar > .app-title { justify-self: start; }
+.top-bar > .header-actions { justify-self: end; }
+.top-bar-title {
+    justify-self: center;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--topbar-text);
+    max-width: 60vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: center;
+}
+.top-bar-title:empty { display: none; }
 
 .app-title {
     font-size: 1.2rem;
@@ -248,6 +264,22 @@ html, body {
 .nav-item svg {
     width: 22px;
     height: 22px;
+}
+
+/* When the wall is in edit mode, the docked editor toolbar replaces the bottom nav. */
+.app-shell:has(.editor-toolbar.docked-bottom) .bottom-nav { display: none; }
+.app-shell:has(.editor-toolbar.docked-bottom) .content { padding-bottom: 0; }
+
+.editor-toolbar.docked-bottom {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    border-radius: 0;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+    z-index: 60;
+    background: var(--topbar-bg);
+    border-top: 1px solid var(--nav-border);
 }
 
 .loading { text-align: center; color: var(--text-secondary); padding: 48px; }

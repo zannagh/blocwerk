@@ -60,7 +60,7 @@ public static class Program
                 "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
                 "style-src 'self' 'unsafe-inline'; " +
                 "img-src 'self' data: blob:; " +
-                "connect-src 'self' wss:; " +
+                "connect-src 'self' ws: wss:; " +
                 "font-src 'self'; " +
                 "frame-ancestors 'none'";
             await next();

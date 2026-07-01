@@ -17,207 +17,11 @@
 }
 else
 {
-    <div class="wall-detail">
-        <div class="wall-fold">
-        <div class="wall-detail-card">
-        <div class="detail-header">
-            <h1>@_wall.Name</h1>
-            <div class="header-actions">
-                @if (!_isAnonymous)
-                {
-                    <button class="btn-icon" @onclick="ToggleActivity" title="Activity log">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
-                            <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
-                        </svg>
-                    </button>
-                }
-                @if (_isAdmin)
-                {
-                    <button class="btn-icon @(_isEditing ? "editing" : "")" @onclick="ToggleEditing" title="@(_isEditing ? "Exit edit mode" : "Edit wall")">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
-                            <circle cx="12" cy="12" r="3" />
-                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                        </svg>
-                    </button>
-                }
-            </div>
-        </div>
+    <SectionContent SectionName="TopBarTitle">@_wall.Name</SectionContent>
 
-        @if (_isAnonymous)
-        {
-            <div class="anon-banner">
-                <span>Viewing as guest.</span>
-                <a href="/account/login">Log in</a> to create boulders and log attempts.
-            </div>
-        }
-
-        @if (!string.IsNullOrEmpty(_wall.Description))
-        {
-            <p class="description">@_wall.Description</p>
-        }
-
-        @if (_wall.PhotoContentType != null)
-        {
-            <div class="view-toggle">
-                <button class="toggle-btn @(_viewMode == ViewMode.Photo ? "active" : "")" @onclick="() => _viewMode = ViewMode.Photo">Photo</button>
-                <button class="toggle-btn @(_viewMode == ViewMode.Schematic ? "active" : "")" @onclick="() => _viewMode = ViewMode.Schematic">Schematic</button>
-            </div>
-        }
-
-        <div class="wall-photo-container">
-            @if (_wall.PhotoContentType != null && _viewMode == ViewMode.Photo)
-            {
-                <WallPhotoEditor WallId="_wall.Id"
-                                 Holds="_holds"
-                                 BorderPoints="_borderPoints"
-                                 CanEdit="_isAdmin && _isEditing"
-                                 ShareToken="@ShareToken"
-                                 IsStaging="@_wall.StagedAt.HasValue"
-                                 LiveGeneration="_wall.CurrentGeneration"
-                                 OnBatchSave="OnBatchSave"
-                                 OnRedetectRequested="OnRedetect"
-                                 OnBorderChanged="OnBorderChanged"
-                                 OnCleanArtifactsRequested="OnCleanArtifacts"
-                                 OnMarkHoldModified="OnMarkHoldModified"
-                                 OnMergeHolds="OnMergeHolds" />
-            }
-            else if (_wall.PhotoContentType != null && _viewMode == ViewMode.Schematic)
-            {
-                <WallSchematicView Holds="_holds" Angle="_wall.Angle" />
-            }
-            else if (_isAdmin && _isEditing)
-            {
-                <div class="upload-prompt">
-                    <p>Upload a frontal photo of your wall to get started.</p>
-                    <InputFile OnChange="OnPhotoSelected" accept="image/*" class="form-input" />
-                </div>
-            }
-        </div>
-        </div>
-
-        <div class="stats-bar">
-            <div class="stat">
-                <span class="stat-value">@_holds.Count</span>
-                <span class="stat-label">Holds</span>
-            </div>
-            <div class="stat">
-                <span class="stat-value">@_wall.Boulders.Count</span>
-                <span class="stat-label">Boulders</span>
-            </div>
-            <div class="stat clickable" @onclick="ToggleMembers">
-                <span class="stat-value">@_wall.Members.Count</span>
-                <span class="stat-label">Members</span>
-            </div>
-        </div>
-        </div>
-
-        <div class="boulder-section">
-            <div class="section-header">
-                <h2>Boulders</h2>
-                @if (_holds.Count > 0 && !_isAnonymous)
-                {
-                    <a href="/walls/@WallId/boulders/create" class="btn-add-boulder">+ New</a>
-                }
-            </div>
-
-            @if (_boulders.Count > 0)
-            {
-                <div class="filter-bar">
-                    <input @bind="_searchText" @bind:event="oninput" placeholder="Search..." class="filter-input" />
-                    <select @bind="_gradeFilter" class="filter-select">
-                        <option value="">All grades</option>
-                        @foreach (var g in _availableGrades)
-                        {
-                            <option value="@g">@g</option>
-                        }
-                    </select>
-                </div>
-            }
-
-            @if (_boulders.Count == 0)
-            {
-                <div class="empty-boulders">
-                    <p>No boulders yet. @(_holds.Count > 0 ? "Create your first boulder!" : "Add holds to the wall first.")</p>
-                </div>
-            }
-            else
-            {
-                @foreach (var boulder in FilteredBoulders)
-                {
-                    var summary = _boulderSummaries.GetValueOrDefault(boulder.Id);
-                    var boulderUrl = !string.IsNullOrEmpty(ShareToken)
-                        ? $"/walls/{WallId}/boulders/{boulder.Id}/shared/{ShareToken}"
-                        : $"/walls/{WallId}/boulders/{boulder.Id}";
-                    <a href="@boulderUrl" class="boulder-card">
-                        <div class="boulder-card-left">
-                            <span class="boulder-name">
-                                @boulder.Name
-                                @if (boulder.IsHistoric) { <span class="historic-badge" title="Wall changed since creation">historic</span> }
-                                @if (boulder.NeedsReview) { <span class="review-badge" title="A hold on this boulder changed — review needed">review</span> }
-                            </span>
-                            <span class="boulder-meta">
-                                @boulder.BoulderHolds.Count holds &middot; by @boulder.CreatedBy.DisplayName
-                            </span>
-                        </div>
-                        <div class="boulder-card-right">
-                            @if (!_isAnonymous)
-                            {
-                                @if (summary is { HasFlashed: true })
-                                {
-                                    <span class="status-icon flash-icon" title="Flashed">&#9889;</span>
-                                }
-                                else if (summary is { HasSent: true })
-                                {
-                                    <span class="status-icon send-icon" title="Sent">&#10003;</span>
-                                }
-                                else if (summary is { TotalAttempts: > 0 })
-                                {
-                                    <span class="status-icon try-icon" title="@summary.TotalAttempts attempts">@summary.TotalAttempts</span>
-                                }
-                            }
-                            @if (!string.IsNullOrEmpty(boulder.Grade))
-                            {
-                                <span class="boulder-grade">@boulder.Grade</span>
-                            }
-                        </div>
-                    </a>
-                }
-            }
-        </div>
-
-        @if (_showMembers && _isAdmin)
-        {
-            <div class="settings-panel">
-                <h2>Members</h2>
-                @if (_members == null)
-                {
-                    <p class="loading-small">Loading...</p>
-                }
-                else
-                {
-                    @foreach (var member in _members)
-                    {
-                        <div class="member-row">
-                            <span class="member-name">@member.User.DisplayName</span>
-                            @if (member.UserId == _wall.OwnerId)
-                            {
-                                <span class="member-role owner">Owner</span>
-                            }
-                            else
-                            {
-                                <button class="role-toggle @(member.Role == WallRole.Admin ? "admin" : "member")"
-                                        @onclick="() => ToggleMemberRole(member)">
-                                    @(member.Role == WallRole.Admin ? "Admin" : "Member")
-                                </button>
-                            }
-                        </div>
-                    }
-                }
-            </div>
-        }
-
-        @if (_showActivity)
-        {
+    <WallCarousel @ref="_carousel" InitialPage="2" Locked="_isEditing">
+        <Page1>
+            @* Activity *@
             <div class="settings-panel">
                 <h2>Activity</h2>
                 @if (_activityItems == null)
@@ -250,41 +54,259 @@ else
                     }
                 }
             </div>
-        }
+        </Page1>
 
-        @if (_showSettings && _isAdmin)
-        {
-            <div class="settings-panel">
-                <h2>Wall Settings</h2>
+        <Page2>
+            @* Settings + Members *@
+            @if (_isAdmin)
+            {
+                <div class="settings-panel">
+                    <h2>Wall Settings</h2>
 
-                <div class="form-group">
-                    <label>@(_wall.StagedAt.HasValue ? "Replace Staged Photo" : "Upload New Photo")</label>
-                    <InputFile OnChange="OnPhotoSelected" accept="image/*" class="form-input" />
-                    @if (_wall.StagedAt.HasValue)
+                    <div class="form-group">
+                        <label>@(_wall.StagedAt.HasValue ? "Replace Staged Photo" : "Upload New Photo")</label>
+                        <InputFile OnChange="OnPhotoSelected" accept="image/*" class="form-input" />
+                        @if (_wall.StagedAt.HasValue)
+                        {
+                            <p class="staged-hint">A new photo is staged. Adjust holds in the editor, then confirm or discard.</p>
+                            <div class="staged-actions">
+                                <button class="btn-secondary" @onclick="StartAlignmentFlow">Align</button>
+                                <button class="btn-primary" @onclick="ConfirmStagedPhoto">Confirm new photo</button>
+                                <button class="btn-secondary" @onclick="DiscardStagedPhoto">Discard</button>
+                            </div>
+                        }
+                    </div>
+
+                    @if (string.IsNullOrEmpty(_shareLink))
                     {
-                        <p class="staged-hint">A new photo is staged. Adjust holds in the editor, then confirm or discard.</p>
-                        <div class="staged-actions">
-                            <button class="btn-primary" @onclick="ConfirmStagedPhoto">Confirm new photo</button>
-                            <button class="btn-secondary" @onclick="DiscardStagedPhoto">Discard</button>
+                        <button class="btn-secondary" @onclick="GenerateShareLink">Generate Share Link</button>
+                    }
+                    else
+                    {
+                        <div class="share-link">
+                            <input value="@_shareLink" readonly class="form-input" />
                         </div>
+                    }
+
+                    <button class="btn-danger" @onclick="DeleteWall">Delete Wall</button>
+                </div>
+
+                <div class="settings-panel">
+                    <h2>Members</h2>
+                    @if (_members == null)
+                    {
+                        <p class="loading-small">Loading...</p>
+                    }
+                    else
+                    {
+                        @foreach (var member in _members)
+                        {
+                            <div class="member-row">
+                                <span class="member-name">@(member.User?.DisplayName ?? "Unknown")</span>
+                                @if (member.UserId == _wall.OwnerId)
+                                {
+                                    <span class="member-role owner">Owner</span>
+                                }
+                                else
+                                {
+                                    <button class="role-toggle @(member.Role == WallRole.Admin ? "admin" : "member")"
+                                            @onclick="() => ToggleMemberRole(member)">
+                                        @(member.Role == WallRole.Admin ? "Admin" : "Member")
+                                    </button>
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="settings-panel">
+                    <h2>Settings</h2>
+                    <p class="empty-msg">Only wall admins can change settings.</p>
+                </div>
+            }
+        </Page2>
+
+        <Page3>
+            @* Main *@
+            <div class="wall-main">
+                <div class="wall-detail-card">
+                    @if (_isAnonymous)
+                    {
+                        <div class="anon-banner">
+                            <span>Viewing as guest.</span>
+                            <a href="/account/login">Log in</a> to create boulders and log attempts.
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(_wall.Description) && !_isEditing)
+                    {
+                        <p class="description">@_wall.Description</p>
+                    }
+
+                    <div class="wall-top-row">
+                        @if (_wall.PhotoContentType != null)
+                        {
+                            <div class="view-toggle">
+                                <button class="toggle-btn @(_viewMode == ViewMode.Photo ? "active" : "")" @onclick="() => _viewMode = ViewMode.Photo">Photo</button>
+                                <button class="toggle-btn @(_viewMode == ViewMode.Schematic ? "active" : "")" @onclick="() => _viewMode = ViewMode.Schematic">Schematic</button>
+                            </div>
+                        }
+                        else
+                        {
+                            <div></div>
+                        }
+                        @if (_isAdmin)
+                        {
+                            <button class="btn-icon @(_isEditing ? "editing" : "")" @onclick="ToggleEditing" title="@(_isEditing ? "Exit edit mode" : "Edit wall")">
+                                @if (_isEditing)
+                                {
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" width="22" height="22" stroke-linecap="round">
+                                        <line x1="6" y1="6" x2="18" y2="18" />
+                                        <line x1="18" y1="6" x2="6" y2="18" />
+                                    </svg>
+                                }
+                                else
+                                {
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
+                                        <path d="M12 20h9" />
+                                        <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                                    </svg>
+                                }
+                            </button>
+                        }
+                    </div>
+
+                    <div class="wall-photo-container">
+                        @if (_wall.PhotoContentType != null && _viewMode == ViewMode.Photo)
+                        {
+                            <WallPhotoEditor WallId="_wall.Id"
+                                             Holds="_holds"
+                                             BorderPoints="_borderPoints"
+                                             CanEdit="_isAdmin && _isEditing"
+                                             BottomToolbar="_isEditing"
+                                             ShareToken="@ShareToken"
+                                             IsStaging="@_wall.StagedAt.HasValue"
+                                             LiveGeneration="_wall.CurrentGeneration"
+                                             OnBatchSave="OnBatchSave"
+                                             OnRedetectRequested="OnRedetect"
+                                             OnBorderChanged="OnBorderChanged"
+                                             OnCleanArtifactsRequested="OnCleanArtifacts"
+                                             OnMarkHoldModified="OnMarkHoldModified"
+                                             OnMergeHolds="OnMergeHolds" />
+                        }
+                        else if (_wall.PhotoContentType != null && _viewMode == ViewMode.Schematic)
+                        {
+                            <WallSchematicView Holds="_holds" Angle="_wall.Angle" />
+                        }
+                        else if (_isAdmin && _isEditing)
+                        {
+                            <div class="upload-prompt">
+                                <p>Upload a frontal photo of your wall to get started.</p>
+                                <InputFile OnChange="OnPhotoSelected" accept="image/*" class="form-input" />
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                @if (!_isEditing)
+                {
+                    <div class="stats-bar">
+                        <div class="stat">
+                            <span class="stat-value">@_holds.Count</span>
+                            <span class="stat-label">Holds</span>
+                        </div>
+                        <div class="stat clickable" @onclick="GoToBoulders">
+                            <span class="stat-value">@_wall.Boulders.Count</span>
+                            <span class="stat-label">Boulders</span>
+                        </div>
+                        <div class="stat clickable" @onclick="GoToSettings">
+                            <span class="stat-value">@_wall.Members.Count</span>
+                            <span class="stat-label">Members</span>
+                        </div>
+                    </div>
+                }
+            </div>
+        </Page3>
+
+        <Page4>
+            @* Boulders *@
+            <div class="boulder-section">
+                <div class="section-header">
+                    <h2>Boulders</h2>
+                    @if (_holds.Count > 0 && !_isAnonymous)
+                    {
+                        <a href="/walls/@WallId/boulders/create" class="btn-add-boulder">+ New</a>
                     }
                 </div>
 
-                @if (string.IsNullOrEmpty(_shareLink))
+                @if (_boulders.Count > 0)
                 {
-                    <button class="btn-secondary" @onclick="GenerateShareLink">Generate Share Link</button>
-                }
-                else
-                {
-                    <div class="share-link">
-                        <input value="@_shareLink" readonly class="form-input" />
+                    <div class="filter-bar">
+                        <input @bind="_searchText" @bind:event="oninput" placeholder="Search..." class="filter-input" />
+                        <select @bind="_gradeFilter" class="filter-select">
+                            <option value="">All grades</option>
+                            @foreach (var g in _availableGrades)
+                            {
+                                <option value="@g">@g</option>
+                            }
+                        </select>
                     </div>
                 }
 
-                <button class="btn-danger" @onclick="DeleteWall">Delete Wall</button>
+                @if (_boulders.Count == 0)
+                {
+                    <div class="empty-boulders">
+                        <p>No boulders yet. @(_holds.Count > 0 ? "Create your first boulder!" : "Add holds to the wall first.")</p>
+                    </div>
+                }
+                else
+                {
+                    @foreach (var boulder in FilteredBoulders)
+                    {
+                        var summary = _boulderSummaries.GetValueOrDefault(boulder.Id);
+                        var boulderUrl = !string.IsNullOrEmpty(ShareToken)
+                            ? $"/walls/{WallId}/boulders/{boulder.Id}/shared/{ShareToken}"
+                            : $"/walls/{WallId}/boulders/{boulder.Id}";
+                        <a href="@boulderUrl" class="boulder-card">
+                            <div class="boulder-card-left">
+                                <span class="boulder-name">
+                                    @boulder.Name
+                                    @if (boulder.IsHistoric) { <span class="historic-badge" title="Wall changed since creation">historic</span> }
+                                    @if (boulder.NeedsReview) { <span class="review-badge" title="A hold on this boulder changed — review needed">review</span> }
+                                </span>
+                                <span class="boulder-meta">
+                                    @boulder.BoulderHolds.Count holds &middot; by @boulder.CreatedBy.DisplayName
+                                </span>
+                            </div>
+                            <div class="boulder-card-right">
+                                @if (!_isAnonymous)
+                                {
+                                    @if (summary is { HasFlashed: true })
+                                    {
+                                        <span class="status-icon flash-icon" title="Flashed">&#9889;</span>
+                                    }
+                                    else if (summary is { HasSent: true })
+                                    {
+                                        <span class="status-icon send-icon" title="Sent">&#10003;</span>
+                                    }
+                                    else if (summary is { TotalAttempts: > 0 })
+                                    {
+                                        <span class="status-icon try-icon" title="@summary.TotalAttempts attempts">@summary.TotalAttempts</span>
+                                    }
+                                }
+                                @if (!string.IsNullOrEmpty(boulder.Grade))
+                                {
+                                    <span class="boulder-grade">@boulder.Grade</span>
+                                }
+                            </div>
+                        </a>
+                    }
+                }
             </div>
-        }
-    </div>
+        </Page4>
+    </WallCarousel>
 }
 
 @if (!string.IsNullOrEmpty(_toast))
@@ -296,6 +318,7 @@ else
     [Parameter] public Guid WallId { get; set; }
     [Parameter] public string? ShareToken { get; set; }
 
+    private WallCarousel? _carousel;
     private Wall? _wall;
     private List<Hold> _holds = [];
     private List<ShapePoint> _borderPoints = [];
@@ -304,9 +327,6 @@ else
     private bool _isAdmin;
     private bool _isAnonymous;
     private bool _isEditing;
-    private bool _showSettings;
-    private bool _showActivity;
-    private bool _showMembers;
     private string? _shareLink;
     private string? _toast;
     private string _searchText = string.Empty;
@@ -343,6 +363,14 @@ else
     protected override async Task OnInitializedAsync()
     {
         await LoadWall();
+        if (_wall != null && !_isAnonymous)
+        {
+            await LoadActivity(0);
+            if (_isAdmin)
+            {
+                _members = await WallService.GetMembersAsync(WallId);
+            }
+        }
     }
 
     private async Task LoadWall()
@@ -455,28 +483,15 @@ else
     private void ToggleEditing()
     {
         _isEditing = !_isEditing;
-        _showSettings = _isEditing;
     }
 
-    private async Task ToggleActivity()
-    {
-        _showActivity = !_showActivity;
-        _showMembers = false;
-        if (_showActivity && _activityItems == null)
-        {
-            await LoadActivity(0);
-        }
-    }
+    private Task GoToBoulders() => _carousel?.GoToPageAsync(3) ?? Task.CompletedTask;
+    private Task GoToSettings() => _carousel?.GoToPageAsync(1) ?? Task.CompletedTask;
 
-    private async Task ToggleMembers()
+    private async Task StartAlignmentFlow()
     {
-        if (!_isAdmin) return;
-        _showMembers = !_showMembers;
-        _showActivity = false;
-        if (_showMembers && _members == null)
-        {
-            _members = await WallService.GetMembersAsync(WallId);
-        }
+        if (_carousel != null) await _carousel.GoToPageAsync(2, smooth: false);
+        _isEditing = true;
     }
 
     private async Task LoadActivity(int page)
@@ -589,6 +604,7 @@ else
         {
             await WallService.DiscardStagedPhotoAsync(WallId);
             await LoadWall();
+            _isEditing = false;
             await ShowToast("Staged photo discarded");
         }
         catch (Exception ex)
@@ -664,4 +680,3 @@ else
         StateHasChanged();
     }
 }
-
