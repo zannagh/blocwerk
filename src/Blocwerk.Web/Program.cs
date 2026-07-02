@@ -39,7 +39,15 @@ public static class Program
             .AddApplicationPart(typeof(AccountController).Assembly);
 
         builder.Services.AddRazorComponents()
-            .AddInteractiveServerComponents();
+            .AddInteractiveServerComponents()
+            .AddHubOptions(o =>
+            {
+                // Blazor Server pushes JS interop return values through the SignalR
+                // hub; the 32 KB default trips as soon as JS returns a stitched PNG
+                // or any other >32 KB payload. 64 MB is well above anything the
+                // stitcher or a wall photo would produce.
+                o.MaximumReceiveMessageSize = 64 * 1024 * 1024;
+            });
 
         builder.Services.AddRazorPages();
         builder.Services.AddServerSideBlazor();
@@ -58,10 +66,10 @@ public static class Program
             headers["Content-Security-Policy"] =
                 "default-src 'self'; " +
                 "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
-                "style-src 'self' 'unsafe-inline'; " +
+                "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
                 "img-src 'self' data: blob:; " +
                 "connect-src 'self' ws: wss:; " +
-                "font-src 'self'; " +
+                "font-src 'self' https://fonts.gstatic.com; " +
                 "frame-ancestors 'none'";
             await next();
         });

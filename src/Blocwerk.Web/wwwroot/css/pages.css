@@ -140,6 +140,7 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
 .stitcher-canvas-wrap {
     flex: 1 1 0;
     min-height: 0;
+    position: relative;
     background: var(--bg-surface-alt);
     border: 1px solid var(--border);
     border-radius: 12px;
@@ -151,7 +152,65 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     user-select: none;
 }
 .stitcher-canvas { width: 100%; height: 100%; display: block; touch-action: none; }
-.stitcher-layer-controls { display: flex; gap: 6px; }
+
+.stitcher-zoom {
+    position: absolute;
+    right: 10px;
+    bottom: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    z-index: 5;
+}
+.stitcher-zoom .fab-btn {
+    width: 36px;
+    height: 36px;
+    background: rgba(22, 22, 42, 0.85);
+    color: white;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 50%;
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.stitcher-zoom .fab-btn:hover { background: rgba(22, 22, 42, 1); }
+
+.stitcher-layer-controls {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.stitcher-layer-controls .stitcher-spacer { flex: 1; }
+
+.opacity-slider {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: var(--bg-surface-alt);
+    border-radius: var(--r-pill);
+    border: 1px solid var(--border);
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+.opacity-slider input[type="range"] {
+    width: 120px;
+    accent-color: var(--accent);
+}
+.opacity-value {
+    font-variant-numeric: tabular-nums;
+    color: var(--text-heading);
+    min-width: 3em;
+    text-align: right;
+}
 
 /* ========== Wall Detail ========== */
 
