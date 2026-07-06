@@ -13,6 +13,7 @@ public static class HoldDetectionServices
         var modelPath = ResolveModelPath(settings.HoldDetection.ModelPath);
 
         builder.Services.AddSingleton<IHoldDetectionService>(_ => new YoloHoldDetectionService(modelPath));
+        builder.Services.AddSingleton<IImageAlignmentService, SkiaImageAlignmentService>();
 
         return builder;
     }

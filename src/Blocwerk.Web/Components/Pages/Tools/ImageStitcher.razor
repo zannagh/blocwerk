@@ -3,6 +3,7 @@
 @attribute [Authorize]
 @inject IJSRuntime JS
 @inject IWallService WallService
+@inject IImageAlignmentService ImageAlignment
 @inject ICurrentUserService CurrentUserService
 @inject NavigationManager Navigation
 
@@ -33,98 +34,56 @@
         }
     </div>
 
-    <div class="stitcher-canvas-wrap">
-        <svg viewBox="@ViewBoxString" class="stitcher-canvas" preserveAspectRatio="xMidYMid meet"
-             @ref="_svgRef"
-             @onmousemove="OnCanvasMouseMove"
-             @onmouseup="OnCanvasMouseUp"
-             @onmouseleave="OnCanvasMouseUp"
-             @ontouchend="OnCanvasMouseUp">
-            <rect x="0" y="0" width="1000" height="1000" fill="var(--bg-surface-alt)" />
+    <div class="stitcher-viewport" @ref="_viewportRef"
+         @onmousedown="StartPan"
+         @onmousemove="OnPointerMove"
+         @onmouseup="OnPointerUp"
+         @onmouseleave="OnPointerUp"
+         @onwheel="OnWheel" @onwheel:preventDefault="true">
+
+        <div class="stitcher-world" style="transform: translate(@Px(_panX) @Px(_panY)) scale(@N(_zoom)); transform-origin: 0 0;">
             @foreach (var layer in _layers)
             {
-                var t = TransformString(layer);
-                var opacity = layer.Opacity.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
-                <g transform="@t" opacity="@opacity" style="cursor: pointer" @onclick="() => SelectLayer(layer.Id)" @onclick:stopPropagation="true">
-                    <image href="@layer.DataUrl"
-                           x="@F(-layer.Width / 2.0)" y="@F(-layer.Height / 2.0)"
-                           width="@F(layer.Width)" height="@F(layer.Height)" />
-                    @if (layer.Id == _selectedId)
-                    {
-                        <rect x="@F(-layer.Width / 2.0)" y="@F(-layer.Height / 2.0)"
-                              width="@F(layer.Width)" height="@F(layer.Height)"
-                              fill="none" stroke="#4aa8ff" stroke-width="@F(3 / layer.Scale)" stroke-dasharray="@F(6 / layer.Scale) @F(4 / layer.Scale)" />
-                    }
-                </g>
+                <img class="stitcher-layer @(layer.Id == _selectedId ? "selected" : "")" src="@layer.DataUrl"
+                     draggable="false"
+                     style="position:absolute; left:0; top:0; width:@Px(layer.Width); height:@Px(layer.Height); transform-origin:0 0; opacity:@N(layer.Opacity); transform:@StitcherMath.Matrix3d(layer.Width, layer.Height, layer.Corners);"
+                     @onmousedown="(e) => StartLayerMove(e, layer)" @onmousedown:stopPropagation="true"
+                     @onmousedown:preventDefault="true" />
             }
-            @if (_selectedId != null)
+        </div>
+
+        @if (_selectedId != null)
+        {
+            var sel = _layers.FirstOrDefault(l => l.Id == _selectedId);
+            if (sel != null)
             {
-                var sel = _layers.FirstOrDefault(l => l.Id == _selectedId);
-                if (sel != null)
-                {
-                    var (cx, cy) = (sel.X, sel.Y);
-                    var halfW = sel.Width * sel.Scale / 2;
-                    var halfH = sel.Height * sel.Scale / 2;
-                    var rad = sel.Rotation * Math.PI / 180.0;
-                    var cos = Math.Cos(rad);
-                    var sin = Math.Sin(rad);
-                    // Handle positions in the image's local frame, then rotated into world space.
-                    // Local frame: +x right, +y down (SVG). Rotate: (lx, ly) -> (lx*cos - ly*sin, lx*sin + ly*cos)
-                    double LX(double lx, double ly) => cx + lx * cos - ly * sin;
-                    double LY(double lx, double ly) => cy + lx * sin + ly * cos;
-
-                    var rotZHx = LX(0, -halfH - 40);
-                    var rotZHy = LY(0, -halfH - 40);
-                    var rotXHx = LX(halfW + 40, 0);   // right — vertical drag → X-axis rotation (pitch)
-                    var rotXHy = LY(halfW + 40, 0);
-                    var rotYHx = LX(-halfW - 40, 0);  // left  — horizontal drag → Y-axis rotation (yaw)
-                    var rotYHy = LY(-halfW - 40, 0);
-                    var scaleHx = LX(halfW, halfH);   // bottom-right corner
-                    var scaleHy = LY(halfW, halfH);
-
-                    <line x1="@F(cx)" y1="@F(cy)" x2="@F(rotZHx)" y2="@F(rotZHy)" stroke="#4aa8ff" stroke-width="1.5" opacity="0.7" />
-                    <line x1="@F(cx)" y1="@F(cy)" x2="@F(rotXHx)" y2="@F(rotXHy)" stroke="#ff4d4d" stroke-width="1.5" opacity="0.6" />
-                    <line x1="@F(cx)" y1="@F(cy)" x2="@F(rotYHx)" y2="@F(rotYHy)" stroke="#3ddc84" stroke-width="1.5" opacity="0.6" />
-
-                    <circle cx="@F(cx)" cy="@F(cy)" r="10" fill="rgba(255,215,0,0.9)" stroke="#000" stroke-width="1.5"
-                            style="cursor: move"
-                            @onmousedown="(e) => StartHandle(e, GizmoHandle.Translate)" @onmousedown:stopPropagation="true"
-                            @onclick:stopPropagation="true">
+                var s = sel.Corners.Select(ToScreen).ToArray();
+                var (mcx, mcy) = ToScreen((sel.Corners.Average(c => c.X), sel.Corners.Average(c => c.Y)));
+                <svg class="stitcher-overlay" width="100%" height="100%">
+                    <polygon points="@string.Join(" ", s.Select(p => $"{N(p.X)},{N(p.Y)}"))"
+                             fill="none" stroke="#4aa8ff" stroke-width="1.5" stroke-dasharray="5 4" style="pointer-events:none" />
+                    @for (var i = 0; i < 4; i++)
+                    {
+                        var idx = i;
+                        <circle cx="@N(s[idx].X)" cy="@N(s[idx].Y)" r="8" fill="#f5a623" stroke="#fff" stroke-width="2"
+                                style="cursor:crosshair; pointer-events:all"
+                                @onmousedown="(e) => StartCorner(e, idx)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true">
+                            <title>Drag to warp corner</title>
+                        </circle>
+                    }
+                    <circle cx="@N(mcx)" cy="@N(mcy)" r="9" fill="rgba(255,215,0,0.9)" stroke="#000" stroke-width="2"
+                            style="cursor:move; pointer-events:all"
+                            @onmousedown="(e) => StartLayerMove(e, sel)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true">
                         <title>Move</title>
                     </circle>
-                    <rect x="@F(scaleHx - 8)" y="@F(scaleHy - 8)" width="16" height="16"
-                          fill="#f5a623" stroke="#fff" stroke-width="1.5"
-                          style="cursor: nwse-resize"
-                          @onmousedown="(e) => StartHandle(e, GizmoHandle.Scale)" @onmousedown:stopPropagation="true"
-                          @onclick:stopPropagation="true">
-                        <title>Scale</title>
-                    </rect>
-                    <circle cx="@F(rotZHx)" cy="@F(rotZHy)" r="8" fill="#4aa8ff" stroke="#fff" stroke-width="1.5"
-                            style="cursor: grab"
-                            @onmousedown="(e) => StartHandle(e, GizmoHandle.RotateZ)" @onmousedown:stopPropagation="true"
-                            @onclick:stopPropagation="true">
-                        <title>Rotate (Z axis)</title>
-                    </circle>
-                    <circle cx="@F(rotXHx)" cy="@F(rotXHy)" r="8" fill="#ff4d4d" stroke="#fff" stroke-width="1.5"
-                            style="cursor: ns-resize"
-                            @onmousedown="(e) => StartHandle(e, GizmoHandle.RotateX)" @onmousedown:stopPropagation="true"
-                            @onclick:stopPropagation="true">
-                        <title>Tilt vertically (X axis)</title>
-                    </circle>
-                    <circle cx="@F(rotYHx)" cy="@F(rotYHy)" r="8" fill="#3ddc84" stroke="#fff" stroke-width="1.5"
-                            style="cursor: ew-resize"
-                            @onmousedown="(e) => StartHandle(e, GizmoHandle.RotateY)" @onmousedown:stopPropagation="true"
-                            @onclick:stopPropagation="true">
-                        <title>Tilt horizontally (Y axis)</title>
-                    </circle>
-                }
+                </svg>
             }
-        </svg>
+        }
 
-        <div class="stitcher-zoom">
+        <div class="stitcher-zoom" @onmousedown:stopPropagation="true">
             <button class="fab-btn" @onclick="ZoomIn" title="Zoom in">+</button>
             <button class="fab-btn" @onclick="ZoomOut" title="Zoom out">−</button>
-            <button class="fab-btn" @onclick="ZoomReset" title="Reset zoom">⤢</button>
+            <button class="fab-btn" @onclick="FitToContent" title="Fit to content">⤢</button>
         </div>
     </div>
 
@@ -142,7 +101,14 @@
                     <span class="opacity-value">@((int)(sel.Opacity * 100))%</span>
                     <button class="opt-btn" @onclick="ResetOpacity" title="Reset to 100%">↻</button>
                 </label>
+                <button class="opt-btn" @onclick="() => ResetCorners(sel)" title="Reset perspective to a plain rectangle">Reset shape</button>
                 <div class="stitcher-spacer"></div>
+                @if (_layers.Count > 1)
+                {
+                    <button class="opt-btn" @onclick="AutoAlign" disabled="@_aligning" title="Auto-align this image to the one beneath it">
+                        @(_aligning ? "Aligning…" : "Auto-align")
+                    </button>
+                }
                 <button class="opt-btn" @onclick="BringForward" title="Bring forward">▲</button>
                 <button class="opt-btn" @onclick="SendBackward" title="Send backward">▼</button>
                 <button class="opt-btn danger" @onclick="DeleteSelected">Delete</button>
@@ -155,299 +121,3 @@
         <div class="toast-msg">@_toast</div>
     }
 </div>
-
-@code {
-    private class StitcherLayer
-    {
-        public Guid Id { get; init; } = Guid.NewGuid();
-        public string DataUrl { get; init; } = "";
-        public double Width { get; init; }
-        public double Height { get; init; }
-        public double X { get; set; } = 500;
-        public double Y { get; set; } = 500;
-        public double Scale { get; set; } = 1.0;
-        public double Rotation { get; set; }
-        public double SkewX { get; set; }
-        public double SkewY { get; set; }
-        public double Opacity { get; set; } = 1.0;
-    }
-
-    private enum GizmoHandle { Translate, Scale, RotateZ, RotateX, RotateY }
-
-    private List<StitcherLayer> _layers = [];
-    private Guid? _selectedId;
-    private ElementReference _svgRef;
-    private List<Wall>? _myWalls;
-    private Guid _targetWallId;
-    private string? _toast;
-    private bool _exporting;
-
-    // Canvas viewBox — starts at 0-1000; zoom shrinks the visible span around center.
-    private double _viewCenterX = 500;
-    private double _viewCenterY = 500;
-    private double _viewSize = 1000;
-
-    private string ViewBoxString =>
-        $"{F(_viewCenterX - _viewSize / 2)} {F(_viewCenterY - _viewSize / 2)} {F(_viewSize)} {F(_viewSize)}";
-
-    private GizmoHandle? _dragHandle;
-    private double _dragStartX, _dragStartY;
-    private double _dragStartLayerX, _dragStartLayerY;
-    private double _dragStartLayerScale;
-    private double _dragStartLayerRotation;
-    private double _dragStartLayerSkewX, _dragStartLayerSkewY;
-    private double _dragStartAngle;
-    private double _dragStartRadius;
-
-    protected override async Task OnInitializedAsync()
-    {
-        try
-        {
-            var me = await CurrentUserService.GetCurrentUserAsync();
-            var walls = await WallService.GetMyWallsAsync();
-            _myWalls = walls
-                .Where(w => w.Members.Any(m => m.UserId == me.Id && m.Role == WallRole.Admin))
-                .OrderBy(w => w.Name)
-                .ToList();
-        }
-        catch { _myWalls = []; }
-    }
-
-    private async Task OnUpload(InputFileChangeEventArgs e)
-    {
-        foreach (var file in e.GetMultipleFiles(20))
-        {
-            if (file.Size > 20 * 1024 * 1024)
-            {
-                await ShowToast($"{file.Name} exceeds 20 MB — skipped");
-                continue;
-            }
-            try
-            {
-                using var stream = file.OpenReadStream(20 * 1024 * 1024);
-                using var ms = new MemoryStream();
-                await stream.CopyToAsync(ms);
-                var bytes = ms.ToArray();
-                var base64 = Convert.ToBase64String(bytes);
-                var dataUrl = $"data:{file.ContentType};base64,{base64}";
-                var probed = await JS.InvokeAsync<ProbedImage>("imageStitcher.probeDimensions", dataUrl);
-                _layers.Add(new StitcherLayer
-                {
-                    DataUrl = dataUrl,
-                    Width = probed.Width,
-                    Height = probed.Height,
-                });
-            }
-            catch (Exception ex)
-            {
-                await ShowToast($"Failed to add {file.Name}: {ex.Message}");
-            }
-        }
-        _selectedId = _layers.LastOrDefault()?.Id;
-        StateHasChanged();
-    }
-
-    private record ProbedImage(double Width, double Height);
-
-    private void SelectLayer(Guid id) => _selectedId = id;
-
-    private void BringForward()
-    {
-        var idx = _layers.FindIndex(l => l.Id == _selectedId);
-        if (idx < 0 || idx == _layers.Count - 1) return;
-        (_layers[idx], _layers[idx + 1]) = (_layers[idx + 1], _layers[idx]);
-    }
-
-    private void SendBackward()
-    {
-        var idx = _layers.FindIndex(l => l.Id == _selectedId);
-        if (idx <= 0) return;
-        (_layers[idx], _layers[idx - 1]) = (_layers[idx - 1], _layers[idx]);
-    }
-
-    private void DeleteSelected()
-    {
-        _layers.RemoveAll(l => l.Id == _selectedId);
-        _selectedId = _layers.LastOrDefault()?.Id;
-    }
-
-    private void ZoomIn() => SetViewSize(_viewSize / 1.25);
-    private void ZoomOut() => SetViewSize(_viewSize * 1.25);
-    private void ZoomReset() { _viewCenterX = 500; _viewCenterY = 500; _viewSize = 1000; }
-
-    private void SetViewSize(double s)
-    {
-        _viewSize = Math.Clamp(s, 100, 5000);
-    }
-
-    private void OnOpacityChanged(ChangeEventArgs e)
-    {
-        var sel = _layers.FirstOrDefault(l => l.Id == _selectedId);
-        if (sel == null) return;
-        if (int.TryParse(e.Value?.ToString(), out var pct))
-        {
-            sel.Opacity = Math.Clamp(pct / 100.0, 0.05, 1.0);
-        }
-    }
-
-    private void ResetOpacity()
-    {
-        var sel = _layers.FirstOrDefault(l => l.Id == _selectedId);
-        if (sel != null) sel.Opacity = 1.0;
-    }
-
-    private async Task StartHandle(MouseEventArgs e, GizmoHandle handle)
-    {
-        var sel = _layers.FirstOrDefault(l => l.Id == _selectedId);
-        if (sel == null) return;
-        var pos = await ToCanvasCoords(e.ClientX, e.ClientY);
-        _dragHandle = handle;
-        _dragStartX = pos.X;
-        _dragStartY = pos.Y;
-        _dragStartLayerX = sel.X;
-        _dragStartLayerY = sel.Y;
-        _dragStartLayerScale = sel.Scale;
-        _dragStartLayerRotation = sel.Rotation;
-        _dragStartLayerSkewX = sel.SkewX;
-        _dragStartLayerSkewY = sel.SkewY;
-        var dx = pos.X - sel.X;
-        var dy = pos.Y - sel.Y;
-        _dragStartAngle = Math.Atan2(dy, dx);
-        _dragStartRadius = Math.Max(1.0, Math.Sqrt(dx * dx + dy * dy));
-    }
-
-    private async Task OnCanvasMouseMove(MouseEventArgs e)
-    {
-        // Capture handle up front — releasing the mouse can null _dragHandle during the await below.
-        var handle = _dragHandle;
-        if (handle == null) return;
-        var sel = _layers.FirstOrDefault(l => l.Id == _selectedId);
-        if (sel == null) return;
-        var pos = await ToCanvasCoords(e.ClientX, e.ClientY);
-        if (_dragHandle == null) return; // mouse-up landed during the interop hop
-        switch (handle.Value)
-        {
-            case GizmoHandle.Translate:
-                sel.X = _dragStartLayerX + (pos.X - _dragStartX);
-                sel.Y = _dragStartLayerY + (pos.Y - _dragStartY);
-                break;
-            case GizmoHandle.Scale:
-                var dx = pos.X - sel.X;
-                var dy = pos.Y - sel.Y;
-                var r = Math.Sqrt(dx * dx + dy * dy);
-                sel.Scale = Math.Clamp(_dragStartLayerScale * r / _dragStartRadius, 0.05, 20.0);
-                break;
-            case GizmoHandle.RotateZ:
-                var ang = Math.Atan2(pos.Y - sel.Y, pos.X - sel.X);
-                sel.Rotation = _dragStartLayerRotation + (ang - _dragStartAngle) * 180.0 / Math.PI;
-                break;
-            case GizmoHandle.RotateX:
-                // Drag vertically on the right-arm handle → skewY (image tips forward/back around X)
-                sel.SkewY = Math.Clamp(_dragStartLayerSkewY + (pos.Y - _dragStartY) * 0.15, -60, 60);
-                break;
-            case GizmoHandle.RotateY:
-                // Drag horizontally on the left-arm handle → skewX (image tips left/right around Y)
-                sel.SkewX = Math.Clamp(_dragStartLayerSkewX + (pos.X - _dragStartX) * 0.15, -60, 60);
-                break;
-        }
-        StateHasChanged();
-    }
-
-    private void OnCanvasMouseUp() => _dragHandle = null;
-
-    private async Task<(double X, double Y)> ToCanvasCoords(double clientX, double clientY)
-    {
-        // Use the SVG element's own CTM — the only reliable way to map screen
-        // coords to viewBox coords when preserveAspectRatio is in play.
-        var p = await JS.InvokeAsync<RelativePos>("imageStitcher.clientToSvgCoords", _svgRef, clientX, clientY);
-        return (p.X, p.Y);
-    }
-
-    private record RelativePos(double X, double Y);
-
-    private string TransformString(StitcherLayer layer)
-    {
-        // SVG transforms compose right-to-left applied to point.
-        // Order we want: translate → rotate → skew(both) → scale.
-        return $"translate({F(layer.X)} {F(layer.Y)}) rotate({F(layer.Rotation)}) skewX({F(layer.SkewX)}) skewY({F(layer.SkewY)}) scale({F(layer.Scale)})";
-    }
-
-    private static string F(double v) => v.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
-
-    private object LayerForJs(StitcherLayer l) => new
-    {
-        dataUrl = l.DataUrl,
-        width = l.Width,
-        height = l.Height,
-        x = l.X,
-        y = l.Y,
-        scale = l.Scale,
-        rotation = l.Rotation,
-        skewX = l.SkewX,
-        skewY = l.SkewY,
-    };
-
-    private async Task ExportDownload()
-    {
-        if (_layers.Count == 0) { await ShowToast("Nothing to export"); return; }
-        _exporting = true; StateHasChanged();
-        try
-        {
-            var jsLayers = _layers.Select(LayerForJs).ToArray();
-            var filename = $"blocwerk-stitched-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}.png";
-            // Do the whole rasterize + download in JS — no giant string returns to C#.
-            var ok = await JS.InvokeAsync<bool>("imageStitcher.downloadPng", (object)jsLayers, filename);
-            if (!ok) await ShowToast("Export failed");
-        }
-        catch (Exception ex)
-        {
-            await ShowToast($"Export failed: {ex.Message}");
-        }
-        finally { _exporting = false; StateHasChanged(); }
-    }
-
-    private async Task ExportToWall()
-    {
-        if (_targetWallId == Guid.Empty || _layers.Count == 0) return;
-        _exporting = true; StateHasChanged();
-        try
-        {
-            var jsLayers = _layers.Select(LayerForJs).ToArray();
-            // JS returns a Blob → Blazor wraps it as IJSStreamReference for streaming.
-            var streamRef = await JS.InvokeAsync<IJSStreamReference>("imageStitcher.exportPngBlob", (object)jsLayers);
-            if (streamRef == null) { await ShowToast("Nothing to export"); return; }
-            await using var stream = await streamRef.OpenReadStreamAsync(maxAllowedSize: 64 * 1024 * 1024);
-            using var ms = new MemoryStream();
-            await stream.CopyToAsync(ms);
-            var bytes = ms.ToArray();
-
-            var wall = _myWalls?.FirstOrDefault(w => w.Id == _targetWallId);
-            if (wall == null) { await ShowToast("Wall not found"); return; }
-            if (wall.PhotoContentType != null)
-            {
-                await WallService.StagePhotoAsync(_targetWallId, bytes, "image/png");
-                await ShowToast("Photo staged — go to the wall to align holds");
-            }
-            else
-            {
-                await WallService.UploadPhotoAsync(_targetWallId, bytes, "image/png");
-                await ShowToast("Photo uploaded");
-            }
-            Navigation.NavigateTo($"/walls/{_targetWallId}");
-        }
-        catch (Exception ex)
-        {
-            await ShowToast($"Stage failed: {ex.Message}");
-        }
-        finally { _exporting = false; StateHasChanged(); }
-    }
-
-    private async Task ShowToast(string message)
-    {
-        _toast = message;
-        StateHasChanged();
-        await Task.Delay(2500);
-        _toast = null;
-        StateHasChanged();
-    }
-}

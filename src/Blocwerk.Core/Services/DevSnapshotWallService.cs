@@ -20,6 +20,7 @@ namespace Blocwerk.Core.Services;
 public class DevSnapshotWallService : IWallService
 {
     private readonly IDbContextFactory<BlocwerkDbContext> dbContextFactory;
+    private readonly IImageAlignmentService imageAlignmentService;
     private readonly ILogger<DevSnapshotWallService> logger;
     private readonly string snapshotDir;
     private readonly string snapshotJsonPath;
@@ -42,10 +43,12 @@ public class DevSnapshotWallService : IWallService
 
     public DevSnapshotWallService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
+        IImageAlignmentService imageAlignmentService,
         IHostEnvironment env,
         ILogger<DevSnapshotWallService> logger)
     {
         this.dbContextFactory = dbContextFactory;
+        this.imageAlignmentService = imageAlignmentService;
         this.logger = logger;
         snapshotDir = Path.Combine(env.ContentRootPath, "dev-wall-snapshot");
         snapshotJsonPath = Path.Combine(snapshotDir, "wall.json");
@@ -421,6 +424,17 @@ public class DevSnapshotWallService : IWallService
 
         await PersistAsync();
         return ProjectForRead();
+    }
+
+    public async Task<Homography?> EstimateStagingAlignmentAsync(Guid wallId)
+    {
+        await EnsureLoadedAsync();
+        if (photoBytes == null || stagedPhotoBytes == null)
+        {
+            throw new InvalidOperationException("No staged photo to align.");
+        }
+
+        return await imageAlignmentService.AlignNormalizedAsync(stagedPhotoBytes, photoBytes);
     }
 
     public async Task DiscardStagedPhotoAsync(Guid wallId)

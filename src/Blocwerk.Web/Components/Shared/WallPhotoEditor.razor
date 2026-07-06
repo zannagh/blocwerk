@@ -62,6 +62,16 @@
                     <ellipse cx="12" cy="12" rx="4" ry="9" />
                 </svg>
             </button>
+            @if (IsStaging)
+            {
+                <span class="toolbar-sep"></span>
+                <button class="tool-btn" @onclick="OnAutoAlignClick" disabled="@_autoAligning"
+                        title="Auto-align the overlay holds to the new photo, then fine-tune">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                        <path d="M3 12h4M17 12h4M12 3v4M12 17v4" /><circle cx="12" cy="12" r="3" />
+                    </svg>
+                </button>
+            }
             @if (IsStaging && !ManualAlignment)
             {
                 <span class="toolbar-sep"></span>
@@ -263,6 +273,12 @@
 @* Mode-specific contextual controls — kept BELOW the viewport so the image
    never shifts under the cursor when a tool's options appear or change. *@
 <div class="editor-bottom">
+    @if (CanEdit && IsStaging && !string.IsNullOrEmpty(_autoAlignMsg))
+    {
+        <div class="option-bar">
+            <span class="option-hint">@_autoAlignMsg</span>
+        </div>
+    }
     @if (CanEdit && _mode == EditMode.Add)
     {
         <div class="option-bar">
@@ -442,6 +458,67 @@
     [Parameter] public bool ManualAlignment { get; set; }
     [Parameter] public EventCallback<ManualAlignmentResult> OnConfirmManualAlignment { get; set; }
     [Parameter] public EventCallback OnDiscardManualAlignment { get; set; }
+    [Parameter] public Func<Task<Homography?>>? OnRequestAutoAlign { get; set; }
+
+    private bool _autoAligning;
+    private string? _autoAlignMsg;
+
+    private async Task OnAutoAlignClick()
+    {
+        if (_autoAligning || OnRequestAutoAlign == null)
+        {
+            return;
+        }
+
+        _autoAligning = true;
+        _autoAlignMsg = null;
+        StateHasChanged();
+        try
+        {
+            var h = await OnRequestAutoAlign();
+            if (h == null)
+            {
+                _autoAlignMsg = "No reliable match found — align by hand.";
+            }
+            else
+            {
+                ApplyAutoAlign(h);
+                _autoAlignMsg = $"Auto-aligned (confidence {h.Confidence:0.00}) — fine-tune, then Save.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _autoAlignMsg = $"Auto-align failed: {ex.Message}";
+        }
+        finally
+        {
+            _autoAligning = false;
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    /// Applies the estimated old->new homography to the overlay holds in-memory,
+    /// hooking into the editor's change tracking so the user reviews then Saves
+    /// (auto-detect mode) or Confirms (manual mode), and can Discard to revert.
+    /// </summary>
+    private void ApplyAutoAlign(Homography h)
+    {
+        TakeSnapshot();
+        var targets = (ManualAlignment ? Holds.Where(IsStagedHold) : Holds.Where(IsLiveHold)).ToList();
+        foreach (var hold in targets)
+        {
+            HoldAlignment.Apply(hold, h);
+            if (ManualAlignment)
+            {
+                _alignedHoldIds.Add(hold.Id);
+            }
+            else
+            {
+                _alignmentChangedIds.Add(hold.Id);
+            }
+        }
+    }
 
     public record ManualAlignmentResult(
         List<Hold> Holds,

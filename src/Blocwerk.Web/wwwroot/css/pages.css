@@ -137,7 +137,7 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     gap: 6px;
 }
 .stitcher-upload input[type="file"] { display: none; }
-.stitcher-canvas-wrap {
+.stitcher-viewport {
     flex: 1 1 0;
     min-height: 0;
     position: relative;
@@ -145,13 +145,30 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     border: 1px solid var(--border);
     border-radius: 12px;
     overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     touch-action: none;
     user-select: none;
+    cursor: grab;
 }
-.stitcher-canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+.stitcher-viewport:active { cursor: grabbing; }
+.stitcher-world {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 0;
+    height: 0;
+}
+.stitcher-layer {
+    pointer-events: auto;
+    -webkit-user-drag: none;
+    user-select: none;
+}
+.stitcher-layer.selected { outline: none; }
+.stitcher-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: visible;
+}
 
 .stitcher-zoom {
     position: absolute;

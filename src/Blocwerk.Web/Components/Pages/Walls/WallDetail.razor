@@ -212,7 +212,8 @@ else
                                              OnMarkHoldModified="OnMarkHoldModified"
                                              OnMergeHolds="OnMergeHolds"
                                              OnConfirmManualAlignment="OnConfirmManualAlignment"
-                                             OnDiscardManualAlignment="DiscardStagedPhoto" />
+                                             OnDiscardManualAlignment="DiscardStagedPhoto"
+                                             OnRequestAutoAlign="EstimateStagingAlignment" />
                         }
                         else if (_wall.PhotoContentType != null && _viewMode == ViewMode.Schematic)
                         {
@@ -617,6 +618,11 @@ else
         {
             await ShowToast($"Update failed: {ex.Message}");
         }
+    }
+
+    private async Task<Homography?> EstimateStagingAlignment()
+    {
+        return await WallService.EstimateStagingAlignmentAsync(WallId);
     }
 
     private async Task ConfirmStagedPhoto()

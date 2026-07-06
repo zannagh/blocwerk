@@ -43,6 +43,14 @@ public interface IWallService
 
     Task<Wall> ConfirmManualAlignmentAsync(Guid wallId, List<ManualAlignHold> holds, List<Guid> deletedStagedIds);
 
+    /// <summary>
+    /// Estimates the old-photo -> staged-photo transform locally (normalized 0-1
+    /// coordinates). Returns null when no reliable alignment could be found.
+    /// Callers apply it to the overlay holds in-memory so it flows through the
+    /// editor's normal Save/Discard.
+    /// </summary>
+    Task<Homography?> EstimateStagingAlignmentAsync(Guid wallId);
+
     Task DiscardStagedPhotoAsync(Guid wallId);
 
     Task<byte[]?> GetStagedPhotoAsync(Guid wallId);
@@ -83,17 +91,20 @@ public class WallService : IWallService
     private readonly IDbContextFactory<BlocwerkDbContext> _dbContextFactory;
     private readonly ICurrentUserService _currentUserService;
     private readonly IHoldDetectionService _holdDetectionService;
+    private readonly IImageAlignmentService _imageAlignmentService;
     private readonly IActivityLogService _activityLogService;
 
     public WallService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         ICurrentUserService currentUserService,
         IHoldDetectionService holdDetectionService,
+        IImageAlignmentService imageAlignmentService,
         IActivityLogService activityLogService)
     {
         _dbContextFactory = dbContextFactory;
         _currentUserService = currentUserService;
         _holdDetectionService = holdDetectionService;
+        _imageAlignmentService = imageAlignmentService;
         _activityLogService = activityLogService;
     }
 
@@ -560,6 +571,26 @@ public class WallService : IWallService
         await _activityLogService.LogAsync(wallId, null, ActivityType.WallPhotoConfirmed,
             $"manual alignment, {reviewCount} boulder(s) flagged for review");
         return wall;
+    }
+
+    public async Task<Homography?> EstimateStagingAlignmentAsync(Guid wallId)
+    {
+        var user = await _currentUserService.GetCurrentUserAsync();
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = user.Id;
+
+        var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId)
+                   ?? throw new InvalidOperationException("Wall not found");
+
+        if (wall.Photo == null || wall.StagedPhoto == null)
+        {
+            throw new InvalidOperationException("No staged photo to align.");
+        }
+
+        // Homography mapping OLD photo (normalized) -> STAGED photo (normalized).
+        // Callers apply this to the overlay holds in-memory so it flows through
+        // the editor's normal Save/Discard, never mutating live holds directly.
+        return await _imageAlignmentService.AlignNormalizedAsync(wall.StagedPhoto, wall.Photo);
     }
 
     public async Task DiscardStagedPhotoAsync(Guid wallId)
