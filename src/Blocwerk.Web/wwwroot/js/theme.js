@@ -34,3 +34,27 @@
         }
     };
 })();
+
+(function () {
+    const key = 'blocwerk-fullscreen';
+
+    function isOn() {
+        return localStorage.getItem(key) === '1';
+    }
+
+    function apply(on) {
+        document.documentElement.classList.toggle('bw-fullscreen', on);
+    }
+
+    apply(isOn());
+
+    window.blocwerkLayout = {
+        toggle: function () {
+            const next = !isOn();
+            localStorage.setItem(key, next ? '1' : '0');
+            apply(next);
+            return next;
+        },
+        isFullscreen: isOn
+    };
+})();

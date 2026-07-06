@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using Blocwerk.Core.Enums;
 
 namespace Blocwerk.Core.Entities;
 
@@ -28,6 +29,8 @@ public class Wall
     public DateTimeOffset? StagedAt { get; set; }
 
     public Guid? StagedByUserId { get; set; }
+
+    public WallStagingMode StagingMode { get; set; }
 
     public Guid OwnerId { get; set; }
 

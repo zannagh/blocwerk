@@ -832,3 +832,18 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
 .legal-page p { color: var(--text); font-size: 0.95rem; line-height: 1.6; margin-bottom: 12px; }
 .legal-page ul { padding-left: 20px; margin-bottom: 12px; }
 .legal-page li { color: var(--text); font-size: 0.95rem; line-height: 1.6; margin-bottom: 4px; }
+
+/* ========== Fullscreen mode (app-wide full-width toggle) ========== */
+
+html.bw-fullscreen .wall-carousel-root,
+html.bw-fullscreen .wall-detail,
+html.bw-fullscreen .wall-list,
+html.bw-fullscreen .boulder-detail,
+html.bw-fullscreen .boulder-create,
+html.bw-fullscreen .create-wall,
+html.bw-fullscreen .activity-page,
+html.bw-fullscreen .profile-page,
+html.bw-fullscreen .legal-page,
+html.bw-fullscreen .wall-main {
+    max-width: none;
+}

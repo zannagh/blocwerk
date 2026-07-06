@@ -18,6 +18,11 @@
         </svg>
     }
 </button>
+<button class="header-icon-btn @(_isFullscreen ? "active" : "")" @onclick="ToggleFullscreen" title="Toggle fullscreen (use full browser width)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+        <rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" />
+    </svg>
+</button>
 <div style="position: relative;">
     <button class="header-icon-btn" @onclick="() => _showInfoPopover = !_showInfoPopover" title="Info">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
@@ -35,6 +40,7 @@
 
 @code {
     private bool _isDark;
+    private bool _isFullscreen;
     private bool _showInfoPopover;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -42,6 +48,7 @@
         if (firstRender)
         {
             _isDark = await JS.InvokeAsync<bool>("blocwerkTheme.isDark");
+            _isFullscreen = await JS.InvokeAsync<bool>("blocwerkLayout.isFullscreen");
             StateHasChanged();
         }
     }
@@ -50,5 +57,10 @@
     {
         var result = await JS.InvokeAsync<string>("blocwerkTheme.toggle");
         _isDark = result == "dark";
+    }
+
+    private async Task ToggleFullscreen()
+    {
+        _isFullscreen = await JS.InvokeAsync<bool>("blocwerkLayout.toggle");
     }
 }

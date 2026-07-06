@@ -167,6 +167,7 @@ public class DevSnapshotWallService : IWallService
             CurrentGeneration = w.CurrentGeneration,
             StagedAt = w.StagedAt,
             StagedByUserId = w.StagedByUserId,
+            StagingMode = w.StagingMode,
             PhotoContentType = w.PhotoContentType,
             StagedPhotoContentType = w.StagedPhotoContentType,
             Members = w.Members,
@@ -247,6 +248,49 @@ public class DevSnapshotWallService : IWallService
         Wall.StagedPhotoContentType = contentType;
         Wall.StagedAt = DateTimeOffset.UtcNow;
         Wall.StagedByUserId = Guid.Empty;
+        Wall.StagingMode = WallStagingMode.Detected;
+
+        await PersistAsync();
+        return ProjectForRead();
+    }
+
+    public async Task<Wall> StageManualAlignmentAsync(Guid wallId, byte[] photo, string contentType)
+    {
+        await EnsureLoadedAsync();
+        if (photoBytes == null)
+        {
+            throw new InvalidOperationException("No live photo yet; use UploadPhotoAsync first.");
+        }
+
+        var liveGen = Wall.CurrentGeneration;
+        var stagedGen = liveGen + 1;
+        Wall.Holds = Wall.Holds.Where(h => h.Generation != stagedGen).ToList();
+
+        stagedPhotoBytes = photo;
+        Wall.StagedPhotoContentType = contentType;
+        Wall.StagedAt = DateTimeOffset.UtcNow;
+        Wall.StagedByUserId = Guid.Empty;
+        Wall.StagingMode = WallStagingMode.Manual;
+
+        foreach (var source in Wall.Holds.Where(h => h.Generation == liveGen).ToList())
+        {
+            Wall.Holds.Add(new Hold
+            {
+                WallId = Wall.Id,
+                X = source.X,
+                Y = source.Y,
+                Radius = source.Radius,
+                ShapePoints = source.ShapePoints?.Select(sp => new ShapePoint { Dx = sp.Dx, Dy = sp.Dy }).ToList(),
+                Color = source.Color,
+                Category = source.Category,
+                IsOnKickboard = source.IsOnKickboard,
+                Name = source.Name,
+                IsAutoDetected = false,
+                NeedsReview = false,
+                Generation = stagedGen,
+                AlignmentSourceHoldId = source.Id,
+            });
+        }
 
         await PersistAsync();
         return ProjectForRead();
@@ -273,6 +317,106 @@ public class DevSnapshotWallService : IWallService
         Wall.StagedPhotoContentType = null;
         Wall.StagedAt = null;
         Wall.StagedByUserId = null;
+        Wall.StagingMode = WallStagingMode.None;
+        Wall.CurrentGeneration = stagedGen;
+
+        await PersistAsync();
+        return ProjectForRead();
+    }
+
+    public async Task<Wall> ConfirmManualAlignmentAsync(Guid wallId, List<ManualAlignHold> holds, List<Guid> deletedStagedIds)
+    {
+        await EnsureLoadedAsync();
+        if (stagedPhotoBytes == null || Wall.StagingMode != WallStagingMode.Manual)
+        {
+            throw new InvalidOperationException("Wall is not in manual alignment mode.");
+        }
+
+        var liveGen = Wall.CurrentGeneration;
+        var stagedGen = liveGen + 1;
+        var liveById = Wall.Holds.Where(h => h.Generation == liveGen).ToDictionary(h => h.Id);
+        var stagedById = Wall.Holds.Where(h => h.Generation == stagedGen).ToDictionary(h => h.Id);
+        var toRemove = new List<Hold>();
+
+        foreach (var deletedId in deletedStagedIds)
+        {
+            if (!stagedById.TryGetValue(deletedId, out var deletedClone))
+            {
+                continue;
+            }
+
+            if (deletedClone.AlignmentSourceHoldId is { } srcId && liveById.TryGetValue(srcId, out var source))
+            {
+                toRemove.Add(source);
+                liveById.Remove(srcId);
+            }
+
+            toRemove.Add(deletedClone);
+            stagedById.Remove(deletedId);
+        }
+
+        foreach (var input in holds)
+        {
+            if (input.IsNew)
+            {
+                Wall.Holds.Add(new Hold
+                {
+                    WallId = Wall.Id,
+                    X = input.X,
+                    Y = input.Y,
+                    Radius = input.Radius,
+                    ShapePoints = input.ShapePoints,
+                    Color = input.Color,
+                    Category = input.Category,
+                    IsOnKickboard = input.IsOnKickboard,
+                    IsAutoDetected = false,
+                    Generation = stagedGen,
+                });
+                continue;
+            }
+
+            if (!stagedById.TryGetValue(input.StagedHoldId, out var clone))
+            {
+                continue;
+            }
+
+            if (clone.AlignmentSourceHoldId is { } srcId && liveById.TryGetValue(srcId, out var source))
+            {
+                source.X = input.X;
+                source.Y = input.Y;
+                source.Radius = input.Radius;
+                source.ShapePoints = input.ShapePoints;
+                source.Color = input.Color;
+                source.Category = input.Category;
+                source.IsOnKickboard = input.IsOnKickboard;
+                if (input.DidChange)
+                {
+                    source.NeedsReview = true;
+                }
+
+                toRemove.Add(clone);
+            }
+            else
+            {
+                clone.AlignmentSourceHoldId = null;
+            }
+        }
+
+        foreach (var source in liveById.Values)
+        {
+            source.Generation = stagedGen;
+        }
+
+        toRemove.AddRange(Wall.Holds.Where(h => h.Generation == stagedGen && h.AlignmentSourceHoldId != null));
+        Wall.Holds = Wall.Holds.Except(toRemove).ToList();
+
+        photoBytes = stagedPhotoBytes;
+        Wall.PhotoContentType = Wall.StagedPhotoContentType;
+        stagedPhotoBytes = null;
+        Wall.StagedPhotoContentType = null;
+        Wall.StagedAt = null;
+        Wall.StagedByUserId = null;
+        Wall.StagingMode = WallStagingMode.None;
         Wall.CurrentGeneration = stagedGen;
 
         await PersistAsync();
@@ -294,6 +438,7 @@ public class DevSnapshotWallService : IWallService
         Wall.StagedPhotoContentType = null;
         Wall.StagedAt = null;
         Wall.StagedByUserId = null;
+        Wall.StagingMode = WallStagingMode.None;
 
         await PersistAsync();
     }

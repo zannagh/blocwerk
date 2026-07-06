@@ -7,6 +7,18 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Services;
 
+public record ManualAlignHold(
+    Guid StagedHoldId,
+    double X,
+    double Y,
+    double Radius,
+    List<ShapePoint>? ShapePoints,
+    string? Color,
+    HoldCategory Category,
+    bool IsOnKickboard,
+    bool DidChange,
+    bool IsNew);
+
 public interface IWallService
 {
     Task<Wall> CreateWallAsync(string name, string? description, int angle = 0);
@@ -25,7 +37,11 @@ public interface IWallService
 
     Task<Wall> StagePhotoAsync(Guid wallId, byte[] photo, string contentType);
 
+    Task<Wall> StageManualAlignmentAsync(Guid wallId, byte[] photo, string contentType);
+
     Task<Wall> ConfirmStagedPhotoAsync(Guid wallId);
+
+    Task<Wall> ConfirmManualAlignmentAsync(Guid wallId, List<ManualAlignHold> holds, List<Guid> deletedStagedIds);
 
     Task DiscardStagedPhotoAsync(Guid wallId);
 
@@ -269,6 +285,7 @@ public class WallService : IWallService
         wall.StagedPhotoContentType = contentType;
         wall.StagedAt = DateTimeOffset.UtcNow;
         wall.StagedByUserId = user.Id;
+        wall.StagingMode = WallStagingMode.Detected;
 
         var detectedHolds = await _holdDetectionService.DetectHoldsAsync(photo);
         foreach (var detected in detectedHolds)
@@ -288,6 +305,60 @@ public class WallService : IWallService
 
         await db.SaveChangesAsync();
         await _activityLogService.LogAsync(wallId, null, ActivityType.WallPhotoStaged, $"{detectedHolds.Count} holds detected");
+        return wall;
+    }
+
+    public async Task<Wall> StageManualAlignmentAsync(Guid wallId, byte[] photo, string contentType)
+    {
+        var user = await _currentUserService.GetCurrentUserAsync();
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = user.Id;
+
+        var wall = await db.Walls
+                       .Include(w => w.Holds)
+                       .FirstOrDefaultAsync(w => w.Id == wallId)
+                   ?? throw new InvalidOperationException("Wall not found");
+
+        if (wall.Photo == null)
+        {
+            throw new InvalidOperationException("No live photo yet; use UploadPhotoAsync for the first photo.");
+        }
+
+        var liveGen = wall.CurrentGeneration;
+        var stagedGen = liveGen + 1;
+
+        var oldStagedHolds = wall.Holds.Where(h => h.Generation == stagedGen).ToList();
+        db.Holds.RemoveRange(oldStagedHolds);
+
+        wall.StagedPhoto = photo;
+        wall.StagedPhotoContentType = contentType;
+        wall.StagedAt = DateTimeOffset.UtcNow;
+        wall.StagedByUserId = user.Id;
+        wall.StagingMode = WallStagingMode.Manual;
+
+        var liveHolds = wall.Holds.Where(h => h.Generation == liveGen).ToList();
+        foreach (var source in liveHolds)
+        {
+            db.Holds.Add(new Hold
+            {
+                WallId = wallId,
+                X = source.X,
+                Y = source.Y,
+                Radius = source.Radius,
+                ShapePoints = source.ShapePoints?.Select(sp => new ShapePoint { Dx = sp.Dx, Dy = sp.Dy }).ToList(),
+                Color = source.Color,
+                Category = source.Category,
+                IsOnKickboard = source.IsOnKickboard,
+                Name = source.Name,
+                IsAutoDetected = false,
+                NeedsReview = false,
+                Generation = stagedGen,
+                AlignmentSourceHoldId = source.Id,
+            });
+        }
+
+        await db.SaveChangesAsync();
+        await _activityLogService.LogAsync(wallId, null, ActivityType.WallPhotoStaged, $"{liveHolds.Count} holds staged for manual alignment");
         return wall;
     }
 
@@ -325,11 +396,169 @@ public class WallService : IWallService
         wall.StagedPhotoContentType = null;
         wall.StagedAt = null;
         wall.StagedByUserId = null;
+        wall.StagingMode = WallStagingMode.None;
         wall.CurrentGeneration = stagedGen;
 
         await db.SaveChangesAsync();
         await _activityLogService.LogAsync(wallId, null, ActivityType.WallPhotoConfirmed,
             $"{carried} carried, {stagedCount} new");
+        return wall;
+    }
+
+    public async Task<Wall> ConfirmManualAlignmentAsync(Guid wallId, List<ManualAlignHold> holds, List<Guid> deletedStagedIds)
+    {
+        var user = await _currentUserService.GetCurrentUserAsync();
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = user.Id;
+
+        var wall = await db.Walls
+                       .Include(w => w.Holds)
+                       .FirstOrDefaultAsync(w => w.Id == wallId)
+                   ?? throw new InvalidOperationException("Wall not found");
+
+        if (wall.StagedPhoto == null || wall.StagingMode != WallStagingMode.Manual)
+        {
+            throw new InvalidOperationException("Wall is not in manual alignment mode.");
+        }
+
+        var liveGen = wall.CurrentGeneration;
+        var stagedGen = liveGen + 1;
+
+        var liveHolds = wall.Holds.Where(h => h.Generation == liveGen).ToList();
+        var stagedHolds = wall.Holds.Where(h => h.Generation == stagedGen).ToList();
+        var liveById = liveHolds.ToDictionary(h => h.Id);
+        var stagedById = stagedHolds.ToDictionary(h => h.Id);
+
+        // Boulder links are resolved once for all affected source holds.
+        var reviewCount = 0;
+
+        // Holds the admin removed during alignment: drop the matching source hold and
+        // flag its boulders as historic (physical hold no longer exists).
+        foreach (var deletedId in deletedStagedIds)
+        {
+            if (!stagedById.TryGetValue(deletedId, out var deletedClone))
+            {
+                continue;
+            }
+
+            if (deletedClone.AlignmentSourceHoldId is { } srcId && liveById.TryGetValue(srcId, out var source))
+            {
+                // BoulderHold -> Hold is Restrict, so the links must be removed before
+                // the source hold can be deleted. Boulders that used it become historic.
+                var links = await db.BoulderHolds
+                    .Where(bh => bh.HoldId == source.Id)
+                    .Include(bh => bh.Boulder)
+                    .ToListAsync();
+                foreach (var link in links)
+                {
+                    if (link.Boulder is { IsArchived: false, IsHistoric: false })
+                    {
+                        link.Boulder.IsHistoric = true;
+                    }
+                }
+
+                db.BoulderHolds.RemoveRange(links);
+                db.Holds.Remove(source);
+                liveById.Remove(srcId);
+            }
+
+            db.Holds.Remove(deletedClone);
+            stagedById.Remove(deletedId);
+        }
+
+        // Surviving staged holds: apply their geometry, then promote.
+        foreach (var input in holds)
+        {
+            if (input.IsNew)
+            {
+                // Hold added during alignment: create it as a brand-new live hold.
+                db.Holds.Add(new Hold
+                {
+                    WallId = wallId,
+                    X = input.X,
+                    Y = input.Y,
+                    Radius = input.Radius,
+                    ShapePoints = input.ShapePoints,
+                    Color = input.Color,
+                    Category = input.Category,
+                    IsOnKickboard = input.IsOnKickboard,
+                    IsAutoDetected = false,
+                    Generation = stagedGen,
+                });
+                continue;
+            }
+
+            if (!stagedById.TryGetValue(input.StagedHoldId, out var clone))
+            {
+                continue;
+            }
+
+            if (clone.AlignmentSourceHoldId is { } srcId && liveById.TryGetValue(srcId, out var source))
+            {
+                source.X = input.X;
+                source.Y = input.Y;
+                source.Radius = input.Radius;
+                source.ShapePoints = input.ShapePoints;
+                source.Color = input.Color;
+                source.Category = input.Category;
+                source.IsOnKickboard = input.IsOnKickboard;
+
+                if (input.DidChange)
+                {
+                    source.NeedsReview = true;
+                    var boulders = await db.BoulderHolds
+                        .Where(bh => bh.HoldId == source.Id)
+                        .Select(bh => bh.Boulder)
+                        .Where(b => !b.IsArchived)
+                        .ToListAsync();
+                    foreach (var b in boulders)
+                    {
+                        b.NeedsReview = true;
+                        reviewCount++;
+                    }
+                }
+
+                db.Holds.Remove(clone);
+            }
+            else
+            {
+                // Hold added during alignment: keep it as a brand-new live hold.
+                clone.X = input.X;
+                clone.Y = input.Y;
+                clone.Radius = input.Radius;
+                clone.ShapePoints = input.ShapePoints;
+                clone.Color = input.Color;
+                clone.Category = input.Category;
+                clone.IsOnKickboard = input.IsOnKickboard;
+                clone.AlignmentSourceHoldId = null;
+            }
+        }
+
+        // Carry remaining live sources up to the staged generation.
+        foreach (var source in liveById.Values)
+        {
+            source.Generation = stagedGen;
+        }
+
+        // Safety net: any staged clone not accounted for above would otherwise
+        // survive alongside its carried source and duplicate it. Drop leftovers.
+        foreach (var leftover in wall.Holds.Where(h => h.Generation == stagedGen && h.AlignmentSourceHoldId != null).ToList())
+        {
+            db.Holds.Remove(leftover);
+        }
+
+        wall.Photo = wall.StagedPhoto;
+        wall.PhotoContentType = wall.StagedPhotoContentType;
+        wall.StagedPhoto = null;
+        wall.StagedPhotoContentType = null;
+        wall.StagedAt = null;
+        wall.StagedByUserId = null;
+        wall.StagingMode = WallStagingMode.None;
+        wall.CurrentGeneration = stagedGen;
+
+        await db.SaveChangesAsync();
+        await _activityLogService.LogAsync(wallId, null, ActivityType.WallPhotoConfirmed,
+            $"manual alignment, {reviewCount} boulder(s) flagged for review");
         return wall;
     }
 
@@ -357,6 +586,7 @@ public class WallService : IWallService
         wall.StagedPhotoContentType = null;
         wall.StagedAt = null;
         wall.StagedByUserId = null;
+        wall.StagingMode = WallStagingMode.None;
 
         await db.SaveChangesAsync();
         await _activityLogService.LogAsync(wallId, null, ActivityType.WallPhotoDiscarded);

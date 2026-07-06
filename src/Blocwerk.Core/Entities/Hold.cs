@@ -48,5 +48,12 @@ public class Hold
     /// </summary>
     public bool IsVirtual { get; set; }
 
+    /// <summary>
+    /// On a manual-alignment staged clone (generation N+1), the id of the live
+    /// hold it was copied from. Null for normal holds and holds added during
+    /// alignment. Preserves boulder-hold continuity when the staged set is promoted.
+    /// </summary>
+    public Guid? AlignmentSourceHoldId { get; set; }
+
     public ICollection<BoulderHold> BoulderHolds { get; set; } = [];
 }

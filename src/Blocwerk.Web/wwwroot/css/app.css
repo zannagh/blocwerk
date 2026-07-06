@@ -235,6 +235,10 @@ h2 { font-size: 1.15rem; }
     color: white;
 }
 
+.header-icon-btn.active {
+    color: var(--accent, #4aa8ff);
+}
+
 .theme-toggle {
     background: none;
     border: none;

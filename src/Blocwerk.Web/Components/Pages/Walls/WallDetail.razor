@@ -64,10 +64,25 @@ else
                     <h2>Wall Settings</h2>
 
                     <div class="form-group">
-                        <label>@(_wall.StagedAt.HasValue ? "Replace Staged Photo" : "Upload New Photo")</label>
-                        <InputFile OnChange="OnPhotoSelected" accept="image/*" class="form-input" />
-                        @if (_wall.StagedAt.HasValue)
+                        @if (!_wall.StagedAt.HasValue)
                         {
+                            <label>Upload New Photo (auto-detect holds)</label>
+                            <InputFile OnChange="OnPhotoSelected" accept="image/*" class="form-input" />
+                            <label>Upload for Manual Alignment (no detection)</label>
+                            <InputFile OnChange="OnManualPhotoSelected" accept="image/*" class="form-input" />
+                        }
+                        else if (_wall.StagingMode == WallStagingMode.Manual)
+                        {
+                            <p class="staged-hint">A new photo is staged for manual alignment. Drag each hold to its new position and confirm inside the editor.</p>
+                            <div class="staged-actions">
+                                <button class="btn-secondary" @onclick="StartAlignmentFlow">Align Holds Manually</button>
+                                <button class="btn-secondary" @onclick="DiscardStagedPhoto">Discard</button>
+                            </div>
+                        }
+                        else
+                        {
+                            <label>Replace Staged Photo</label>
+                            <InputFile OnChange="OnPhotoSelected" accept="image/*" class="form-input" />
                             <p class="staged-hint">A new photo is staged. Adjust holds in the editor, then confirm or discard.</p>
                             <div class="staged-actions">
                                 <button class="btn-secondary" @onclick="StartAlignmentFlow">Align</button>
@@ -189,12 +204,15 @@ else
                                              ShareToken="@ShareToken"
                                              IsStaging="@_wall.StagedAt.HasValue"
                                              LiveGeneration="_wall.CurrentGeneration"
+                                             ManualAlignment="@(_wall.StagingMode == WallStagingMode.Manual)"
                                              OnBatchSave="OnBatchSave"
                                              OnRedetectRequested="OnRedetect"
                                              OnBorderChanged="OnBorderChanged"
                                              OnCleanArtifactsRequested="OnCleanArtifacts"
                                              OnMarkHoldModified="OnMarkHoldModified"
-                                             OnMergeHolds="OnMergeHolds" />
+                                             OnMergeHolds="OnMergeHolds"
+                                             OnConfirmManualAlignment="OnConfirmManualAlignment"
+                                             OnDiscardManualAlignment="DiscardStagedPhoto" />
                         }
                         else if (_wall.PhotoContentType != null && _viewMode == ViewMode.Schematic)
                         {
@@ -416,7 +434,9 @@ else
 
         if (_wall != null)
         {
-            _holds = _wall.Holds.ToList();
+            _holds = _wall.StagingMode == WallStagingMode.Manual
+                ? _wall.Holds.Where(h => h.Generation == _wall.CurrentGeneration + 1).ToList()
+                : _wall.Holds.ToList();
             _borderPoints = _wall.BorderPoints ?? [];
             _boulders = !_isAnonymous
                 ? await BoulderService.GetBouldersForWallAsync(WallId)
@@ -553,6 +573,49 @@ else
         catch (Exception ex)
         {
             await ShowToast($"Upload failed: {ex.Message}");
+        }
+    }
+
+    private async Task OnManualPhotoSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file.Size > 10 * 1024 * 1024)
+        {
+            await ShowToast("Photo too large (max 10 MB)");
+            return;
+        }
+
+        try
+        {
+            using var stream = file.OpenReadStream(10 * 1024 * 1024);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+
+            await WallService.StageManualAlignmentAsync(WallId, ms.ToArray(), file.ContentType);
+            await LoadWall();
+            await ShowToast("Photo staged for manual alignment");
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"Upload failed: {ex.Message}");
+        }
+    }
+
+    private async Task OnConfirmManualAlignment(WallPhotoEditor.ManualAlignmentResult r)
+    {
+        try
+        {
+            var holds = r.Holds.Select(h => new ManualAlignHold(
+                h.Id, h.X, h.Y, h.Radius, h.ShapePoints, h.Color, h.Category, h.IsOnKickboard,
+                r.ChangedHoldIds.Contains(h.Id), r.AddedHoldIds.Contains(h.Id))).ToList();
+            await WallService.ConfirmManualAlignmentAsync(WallId, holds, r.DeletedHoldIds);
+            await LoadWall();
+            _isEditing = false;
+            await ShowToast("Wall updated");
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"Update failed: {ex.Message}");
         }
     }
 

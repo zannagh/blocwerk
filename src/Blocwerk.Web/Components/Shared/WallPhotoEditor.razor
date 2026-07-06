@@ -62,7 +62,7 @@
                     <ellipse cx="12" cy="12" rx="4" ry="9" />
                 </svg>
             </button>
-            @if (IsStaging)
+            @if (IsStaging && !ManualAlignment)
             {
                 <span class="toolbar-sep"></span>
                 <button class="tool-btn @A(EditMode.Merge)" @onclick="() => SetMode(EditMode.Merge)" title="Merge: click a new hold then the matching old hold">
@@ -117,7 +117,11 @@
             var isFoot = hold.Category == HoldCategory.Foot;
             var fillColor = GetHoldFillColor(hold, isSelected || isShapeEditing || isNaming);
             var strokeColor = (isSelected || isShapeEditing || isNaming) ? "#ffffff" : GetHoldStrokeColor(hold);
-            if (IsStaging && !(isSelected || isShapeEditing || isNaming))
+            if (ManualAlignment && !(isSelected || isShapeEditing || isNaming))
+            {
+                strokeColor = ManualStroke(hold);
+            }
+            else if (IsStaging && !(isSelected || isShapeEditing || isNaming))
             {
                 strokeColor = IsStagedHold(hold) ? "#33dd66" : "#ff9933";
             }
@@ -129,9 +133,15 @@
                 strokeColor = "#ffd700";
             }
             var sw = (isSelected || isShapeEditing || isNaming) ? "0.4" : (IsStaging ? "0.45" : "0.25");
-            var dash = IsStaging && !(isSelected || isShapeEditing || isNaming)
-                ? (IsStagedHold(hold) ? "0.6 0.3" : "0.3 0.3")
-                : "";
+            var dash = "";
+            if (ManualAlignment && !(isSelected || isShapeEditing || isNaming))
+            {
+                dash = _alignedHoldIds.Contains(hold.Id) ? "" : "0.5 0.35";
+            }
+            else if (IsStaging && !(isSelected || isShapeEditing || isNaming))
+            {
+                dash = IsStagedHold(hold) ? "0.6 0.3" : "0.3 0.3";
+            }
             if (hold.IsVirtual && !(isSelected || isShapeEditing || isNaming))
             {
                 strokeColor = "#c86dff";
@@ -196,7 +206,7 @@
             }
         }
 
-        @if (CanEdit && IsStaging && Holds.Any(IsLiveHold))
+        @if (CanEdit && IsStaging && !ManualAlignment && Holds.Any(IsLiveHold))
         {
             var (cx, cy) = LiveCentroid();
             var arm = 0.12;
@@ -323,7 +333,14 @@
                 </div>
                 <div class="option-group"><label>Size:</label><input type="range" min="3" max="40" value="@((int)(_selectedRadius * 1000))" @oninput="OnRadiusChange" /></div>
                 <button class="opt-btn danger" @onclick="DeleteSelected">Del</button>
-                @if (!IsStaging && _pendingChanges == 0)
+                @if (ManualAlignment)
+                {
+                    <label class="cb-label" title="Leave checked if this physical hold did not change. Uncheck if it moved/changed so boulders using it get flagged for review.">
+                        <input type="checkbox" checked="@(!_changedHoldIds.Contains(sel.Id))" @onchange="() => ToggleHoldChanged(sel.Id)" /> Hold did not change
+                    </label>
+                    <button class="opt-btn active" @onclick="() => ConfirmHoldAligned(sel.Id)">@(_alignedHoldIds.Contains(sel.Id) ? "Confirmed ✓" : "Confirm hold")</button>
+                }
+                else if (!IsStaging && _pendingChanges == 0)
                 {
                     <button class="opt-btn" title="Mark this hold as slightly modified; boulders using it will be flagged for review."
                             @onclick="() => MarkSelectedModified(sel.Id)">Mark modified@(sel.NeedsReview ? " ✓" : "")</button>
@@ -331,7 +348,17 @@
             </div>
         }
     }
-    @if (CanEdit && IsStaging && Holds.Any(IsLiveHold))
+    @if (CanEdit && ManualAlignment)
+    {
+        <div class="option-bar">
+            <span class="option-hint">Drag each hold onto its new position, then <strong>Confirm hold</strong>. @_alignedHoldIds.Count/@Holds.Count confirmed.</span>
+            <div class="option-group">
+                <button class="opt-btn" title="Mark every hold as changed — all boulders will be flagged for review." @onclick="MarkAllChanged">Wall completely reset</button>
+                <button class="opt-btn" title="Mark every hold as unchanged (default)." @onclick="MarkAllUnchanged">Mark all unchanged</button>
+            </div>
+        </div>
+    }
+    @if (CanEdit && IsStaging && !ManualAlignment && Holds.Any(IsLiveHold))
     {
         <div class="option-bar">
             <span class="option-hint">Align the <strong>old</strong> overlay: <strong style="color:#ffd700">yellow</strong> = move, <strong style="color:#ff4d4d">red</strong> = X tilt, <strong style="color:#3ddc84">green</strong> = Y tilt, <strong style="color:#4aa8ff">blue</strong> = spin (Z), <strong style="color:#f5a623">orange</strong> = scale.</span>
@@ -369,7 +396,14 @@
             }
         </div>
     }
-    @if (CanEdit && (_pendingChanges > 0 || _alignmentChangedIds.Count > 0))
+    @if (CanEdit && ManualAlignment)
+    {
+        <div class="batch-bar">
+            <button class="batch-save" @onclick="ConfirmManualAlignment">Confirm &amp; Update Wall</button>
+            <button class="batch-discard" @onclick="DiscardManualAlignment">Discard</button>
+        </div>
+    }
+    else if (CanEdit && (_pendingChanges > 0 || _alignmentChangedIds.Count > 0))
     {
         <div class="batch-bar">
             <button class="batch-save" @onclick="SaveChanges">
@@ -405,6 +439,19 @@
     [Parameter] public bool IsStaging { get; set; }
     [Parameter] public int LiveGeneration { get; set; }
     [Parameter] public bool BottomToolbar { get; set; }
+    [Parameter] public bool ManualAlignment { get; set; }
+    [Parameter] public EventCallback<ManualAlignmentResult> OnConfirmManualAlignment { get; set; }
+    [Parameter] public EventCallback OnDiscardManualAlignment { get; set; }
+
+    public record ManualAlignmentResult(
+        List<Hold> Holds,
+        HashSet<Guid> ChangedHoldIds,
+        HashSet<Guid> AddedHoldIds,
+        List<Guid> DeletedHoldIds);
+
+    private readonly HashSet<Guid> _alignedHoldIds = [];
+    private readonly HashSet<Guid> _changedHoldIds = [];
+    private bool _lastManualAlignment;
 
     private ElementReference _containerRef;
     private ElementReference _viewportRef;
@@ -455,6 +502,29 @@
         {
             _dotnetRef = DotNetObjectReference.Create(this);
             await JS.InvokeVoidAsync("wallEditor.setupViewport", _viewportRef, _dotnetRef);
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        // Reset all editing state whenever we enter or leave manual alignment so
+        // stale hold ids from a prior staging session never bleed into the next one.
+        if (ManualAlignment != _lastManualAlignment)
+        {
+            _alignedHoldIds.Clear();
+            _changedHoldIds.Clear();
+            _addedHolds.Clear();
+            _updatedHoldIds.Clear();
+            _deletedHoldIds.Clear();
+            _alignmentChangedIds.Clear();
+            _snapshotHolds = null;
+            _selectedHoldId = null;
+            if (ManualAlignment)
+            {
+                _mode = EditMode.Move;
+            }
+
+            _lastManualAlignment = ManualAlignment;
         }
     }
 
@@ -945,6 +1015,59 @@
     private async Task MarkSelectedModified(Guid holdId)
     {
         await OnMarkHoldModified.InvokeAsync(holdId);
+    }
+
+    // ---- Manual alignment --------------------------------------------------
+    private string ManualStroke(Hold hold)
+    {
+        if (!_alignedHoldIds.Contains(hold.Id))
+        {
+            return "#ff9933"; // not yet aligned
+        }
+
+        return _changedHoldIds.Contains(hold.Id) ? "#ff5555" : "#33dd66"; // changed vs unchanged
+    }
+
+    private void ToggleHoldChanged(Guid holdId)
+    {
+        if (!_changedHoldIds.Remove(holdId))
+        {
+            _changedHoldIds.Add(holdId);
+        }
+    }
+
+    private void ConfirmHoldAligned(Guid holdId)
+    {
+        _alignedHoldIds.Add(holdId);
+    }
+
+    private void MarkAllChanged()
+    {
+        foreach (var h in Holds)
+        {
+            _changedHoldIds.Add(h.Id);
+        }
+    }
+
+    private void MarkAllUnchanged()
+    {
+        _changedHoldIds.Clear();
+    }
+
+    private async Task ConfirmManualAlignment()
+    {
+        var addedIds = _addedHolds.Select(h => h.Id).ToHashSet();
+        var result = new ManualAlignmentResult(
+            Holds.ToList(),
+            new HashSet<Guid>(_changedHoldIds),
+            addedIds,
+            _deletedHoldIds.ToList());
+        await OnConfirmManualAlignment.InvokeAsync(result);
+    }
+
+    private async Task DiscardManualAlignment()
+    {
+        await OnDiscardManualAlignment.InvokeAsync();
     }
 
     private void OnRadiusChange(ChangeEventArgs e)
