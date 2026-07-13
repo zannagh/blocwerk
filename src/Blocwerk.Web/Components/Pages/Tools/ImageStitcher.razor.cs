@@ -41,6 +41,11 @@ public partial class ImageStitcher
     private double _panX;
     private double _panY;
 
+    // Newly added images are normalized so their longest side maps to this many
+    // world units, regardless of native resolution. Keeps large phone photos
+    // manageable and consistently sized while FitToContent frames them in view.
+    private const double InitialLongSide = 1400.0;
+
     private DragKind _dragKind = DragKind.None;
     private int _dragCorner;
     private double _panStartClientX, _panStartClientY, _panOrigX, _panOrigY;
@@ -81,13 +86,21 @@ public partial class ImageStitcher
                 await stream.CopyToAsync(ms);
                 var dataUrl = $"data:{file.ContentType};base64,{Convert.ToBase64String(ms.ToArray())}";
                 var probed = await JS.InvokeAsync<ProbedImage>("imageStitcher.probeDimensions", dataUrl);
-                var offset = _layers.Count * 60.0;
+
+                // Scale the initial quad down to a consistent world size so full-res
+                // phone photos don't land far outside the canvas. Width/Height stay
+                // native (the export warp and Matrix3d sample the source at full res).
+                var longest = Math.Max(probed.Width, probed.Height);
+                var scale = longest > InitialLongSide ? InitialLongSide / longest : 1.0;
+                var w = probed.Width * scale;
+                var h = probed.Height * scale;
+                var offset = _layers.Count * (InitialLongSide * 0.08);
                 _layers.Add(new StitcherLayer
                 {
                     DataUrl = dataUrl,
                     Width = probed.Width,
                     Height = probed.Height,
-                    Corners = RectCorners(offset, offset, probed.Width, probed.Height),
+                    Corners = RectCorners(offset, offset, w, h),
                 });
             }
             catch (Exception ex)
@@ -109,8 +122,19 @@ public partial class ImageStitcher
     {
         var minX = layer.Corners.Min(c => c.X);
         var minY = layer.Corners.Min(c => c.Y);
-        layer.Corners = RectCorners(minX, minY, layer.Width, layer.Height);
+
+        // Reset to a plain rectangle at the layer's *current* scale (from the top
+        // and bottom edge lengths) rather than snapping back to native pixels.
+        var curW = Math.Max(
+            Distance(layer.Corners[0], layer.Corners[1]),
+            Distance(layer.Corners[3], layer.Corners[2]));
+        var w = curW > 1 ? curW : layer.Width;
+        var h = w * (layer.Height / layer.Width);
+        layer.Corners = RectCorners(minX, minY, w, h);
     }
+
+    private static double Distance((double X, double Y) a, (double X, double Y) b) =>
+        Math.Sqrt(((a.X - b.X) * (a.X - b.X)) + ((a.Y - b.Y) * (a.Y - b.Y)));
 
     // ---- viewport / pan / zoom --------------------------------------------
     private (double X, double Y) ToScreen((double X, double Y) world) =>
@@ -349,6 +373,7 @@ public partial class ImageStitcher
             }
 
             target.Corners = world;
+            await FitToContent();
             await ShowToast($"Aligned (confidence {h.Confidence:0.00})");
         }
         catch (Exception ex)
