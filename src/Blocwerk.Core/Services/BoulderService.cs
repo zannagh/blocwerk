@@ -21,6 +21,13 @@ public interface IBoulderService
 
     Task<List<Boulder>> GetBouldersForWallAsync(Guid wallId, bool includeArchived = false);
 
+    /// <summary>
+    /// Which boulders currently use each hold on the wall, keyed by hold id. Holds that
+    /// no boulder uses are absent from the map. Respects draft visibility: another
+    /// member's unpublished draft never shows up.
+    /// </summary>
+    Task<Dictionary<Guid, List<HoldUsageRef>>> GetHoldUsageAsync(Guid wallId);
+
     Task<Boulder> UpdateBoulderAsync(Guid boulderId, string name, string? grade, List<BoulderHoldInput>? holds = null, bool? kickboardFootholdsOn = null);
 
     /// <summary>
@@ -41,6 +48,18 @@ public interface IBoulderService
 }
 
 public record BoulderHoldInput(Guid HoldId, HoldType Type = HoldType.Normal, HoldUsage Usage = HoldUsage.HandAndFoot);
+
+/// <summary>
+/// One boulder's use of a hold, for the wall's "is this hold in use?" tool.
+/// </summary>
+public record HoldUsageRef(
+    Guid BoulderId,
+    string Name,
+    string? Grade,
+    HoldType Type,
+    HoldUsage Usage,
+    bool IsDraft,
+    bool IsHistoric);
 
 public class BoulderService : IBoulderService
 {
@@ -201,6 +220,35 @@ public class BoulderService : IBoulderService
         }
 
         return await query.OrderByDescending(b => b.CreatedAt).ToListAsync();
+    }
+
+    public async Task<Dictionary<Guid, List<HoldUsageRef>>> GetHoldUsageAsync(Guid wallId)
+    {
+        var user = await _currentUserService.GetCurrentUserAsync();
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = user.Id;
+
+        var links = await db.BoulderHolds
+            .AsNoTracking()
+            .Where(bh => bh.Boulder.WallId == wallId && !bh.Boulder.IsArchived)
+            .Where(bh => !bh.Boulder.IsDraft || bh.Boulder.CreatedByUserId == user.Id)
+            .Select(bh => new
+            {
+                bh.HoldId,
+                Ref = new HoldUsageRef(
+                    bh.BoulderId,
+                    bh.Boulder.Name,
+                    bh.Boulder.Grade,
+                    bh.Type,
+                    bh.Usage,
+                    bh.Boulder.IsDraft,
+                    bh.Boulder.IsHistoric),
+            })
+            .ToListAsync();
+
+        return links
+            .GroupBy(x => x.HoldId)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.Ref).OrderBy(r => r.Name).ToList());
     }
 
     public async Task<Boulder> UpdateBoulderAsync(Guid boulderId, string name, string? grade, List<BoulderHoldInput>? holds = null, bool? kickboardFootholdsOn = null)

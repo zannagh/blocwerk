@@ -21,6 +21,17 @@
 .option-hint { color: rgba(255,255,255,0.4); font-size: 0.7rem; font-style: italic; }
 .opt-btn { padding: 3px 10px; border: 1px solid rgba(255,255,255,0.3); background: none; color: white; border-radius: 4px; font-size: 0.75rem; cursor: pointer; }
 .opt-btn.active { background: #2196F3; border-color: #2196F3; }
+
+/* Hold usage tool */
+.usage-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.usage-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border: 1px solid rgba(255,255,255,0.25); border-radius: 999px; background: rgba(255,255,255,0.06); color: #fff; font-size: 0.75rem; text-decoration: none; }
+.usage-chip:hover { background: rgba(255,255,255,0.14); }
+.usage-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.usage-dot.start { background: #4CAF50; }
+.usage-dot.normal { background: #2196F3; }
+.usage-dot.top { background: #F44336; }
+.usage-grade { color: rgba(255,255,255,0.6); font-size: 0.7rem; }
+.usage-flag { color: rgba(255,255,255,0.55); font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em; border: 1px solid rgba(255,255,255,0.25); border-radius: 4px; padding: 0 4px; }
 .opt-btn.foot.active { background: #8D6E63; border-color: #8D6E63; }
 .opt-btn.danger { border-color: var(--accent); color: var(--accent); }
 .opt-btn.danger:hover { background: var(--accent); color: white; }

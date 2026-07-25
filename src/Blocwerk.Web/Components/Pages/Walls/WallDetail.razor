@@ -243,7 +243,8 @@ else
                                              OnMergeHolds="OnMergeHolds"
                                              OnConfirmManualAlignment="OnConfirmManualAlignment"
                                              OnDiscardManualAlignment="DiscardStagedPhoto"
-                                             OnRequestAutoAlign="EstimateStagingAlignment" />
+                                             OnRequestAutoAlign="EstimateStagingAlignment"
+                                             OnRequestHoldUsage="@(_isAnonymous ? null : LoadHoldUsage)" />
                         }
                         else if (_wall.PhotoContentType != null && _viewMode == ViewMode.Schematic)
                         {
@@ -621,6 +622,9 @@ else
             await ShowToast($"Upload failed: {ex.Message}");
         }
     }
+
+    private Task<Dictionary<Guid, List<HoldUsageRef>>> LoadHoldUsage() =>
+        BoulderService.GetHoldUsageAsync(WallId);
 
     private async Task PublishBoulder(Boulder boulder)
     {

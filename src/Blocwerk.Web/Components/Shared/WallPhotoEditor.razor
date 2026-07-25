@@ -5,6 +5,20 @@
         <span class="hold-count">@Holds.Count(h => h.Category == HoldCategory.Hand)H / @Holds.Count(h => h.Category == HoldCategory.Foot)F</span>
     </div>
     <div class="toolbar-right">
+        @if (OnRequestHoldUsage != null)
+        {
+            <button class="tool-btn @A(EditMode.Usage)" @onclick="ToggleUsageMode"
+                    title="Show which holds are used by a boulder">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                    <circle cx="11" cy="11" r="7" /><line x1="16.5" y1="16.5" x2="21" y2="21" />
+                    <path d="M8 11h6M11 8v6" />
+                </svg>
+            </button>
+            @if (CanEdit)
+            {
+                <span class="toolbar-sep"></span>
+            }
+        }
         @if (CanEdit)
         {
             <button class="tool-btn @A(EditMode.Add)" @onclick="() => SetMode(EditMode.Add)" title="Add hold">
@@ -157,6 +171,20 @@
                 strokeColor = "#c86dff";
                 dash = "0.6 0.4";
             }
+
+            // The usage tool overrides every other styling: used holds light up, unused
+            // ones recede, so "is this hold free?" is answerable at a glance.
+            var usageRefs = _mode == EditMode.Usage ? UsageFor(hold.Id) : [];
+            if (_mode == EditMode.Usage)
+            {
+                var isUsagePick = _usageHoldId == hold.Id;
+                var used = usageRefs.Count > 0;
+                fillColor = used ? "rgba(76,175,80,0.55)" : "rgba(120,120,120,0.15)";
+                strokeColor = isUsagePick ? "#ffffff" : used ? "#4CAF50" : "rgba(255,255,255,0.35)";
+                sw = isUsagePick ? "0.6" : used ? "0.4" : "0.2";
+                dash = string.Empty;
+            }
+
             var r = (isFoot ? hold.Radius * 0.7 : hold.Radius) * 100;
 
             @if (hold.ShapePoints is { Count: >= 3 })
@@ -183,6 +211,17 @@
                         style="cursor: pointer"
                         @onclick="() => OnHoldClick(hold)" @onclick:stopPropagation="true"
                         @onmousedown="() => StartDrag(hold)" @onmousedown:stopPropagation="true" />
+            }
+
+            @if (_mode == EditMode.Usage && usageRefs.Count > 0)
+            {
+                <g pointer-events="none">
+                    <circle cx="@F(hold.X * 100 + r * 0.85)" cy="@F(hold.Y * 100 - r * 0.85)" r="1.4"
+                            fill="#4CAF50" stroke="white" stroke-width="0.25" />
+                    <text x="@F(hold.X * 100 + r * 0.85)" y="@F(hold.Y * 100 - r * 0.85)"
+                          text-anchor="middle" dominant-baseline="central"
+                          font-size="1.7" font-weight="700" fill="white">@usageRefs.Count</text>
+                </g>
             }
 
             @if (isShapeEditing && hold.ShapePoints is { Count: >= 3 })
@@ -273,6 +312,52 @@
 @* Mode-specific contextual controls — kept BELOW the viewport so the image
    never shifts under the cursor when a tool's options appear or change. *@
 <div class="editor-bottom">
+    @if (_mode == EditMode.Usage)
+    {
+        <div class="option-bar">
+            @if (_holdUsage == null)
+            {
+                <span class="option-hint">Loading hold usage…</span>
+            }
+            else if (_usageHoldId is { } pickedId)
+            {
+                var picked = Holds.FirstOrDefault(h => h.Id == pickedId);
+                var refs = UsageFor(pickedId);
+                @if (refs.Count == 0)
+                {
+                    <span class="option-hint">
+                        <strong>@(picked?.Name ?? "This hold")</strong> is not used by any boulder — safe to change or remove.
+                    </span>
+                }
+                else
+                {
+                    <span class="option-hint">
+                        <strong>@(picked?.Name ?? "This hold")</strong> is used by @refs.Count boulder@(refs.Count == 1 ? "" : "s"):
+                    </span>
+                    <div class="usage-list">
+                        @foreach (var r in refs)
+                        {
+                            <a class="usage-chip" href="/walls/@WallId/boulders/@r.BoulderId">
+                                <span class="usage-dot @UsageDotClass(r.Type)"></span>
+                                @r.Name
+                                @if (!string.IsNullOrEmpty(r.Grade)) { <span class="usage-grade">@r.Grade</span> }
+                                @if (r.IsDraft) { <span class="usage-flag">draft</span> }
+                                @if (r.IsHistoric) { <span class="usage-flag">historic</span> }
+                            </a>
+                        }
+                    </div>
+                }
+            }
+            else
+            {
+                <span class="option-hint">
+                    Tap a hold to see which boulders use it.
+                    <strong>@(Holds.Count - UnusedHoldCount)</strong> of @Holds.Count holds in use,
+                    <strong>@UnusedHoldCount</strong> free.
+                </span>
+            }
+        </div>
+    }
     @if (CanEdit && IsStaging && !string.IsNullOrEmpty(_autoAlignMsg))
     {
         <div class="option-bar">
@@ -460,6 +545,12 @@
     [Parameter] public EventCallback OnDiscardManualAlignment { get; set; }
     [Parameter] public Func<Task<Homography?>>? OnRequestAutoAlign { get; set; }
 
+    /// <summary>
+    /// Supplies the hold-to-boulders map for the usage tool. The tool button is hidden
+    /// when this is not wired up.
+    /// </summary>
+    [Parameter] public Func<Task<Dictionary<Guid, List<HoldUsageRef>>>>? OnRequestHoldUsage { get; set; }
+
     private bool _autoAligning;
     private string? _autoAlignMsg;
 
@@ -551,6 +642,10 @@
 
     private Guid? _namingHoldId;
     private string _nameInput = string.Empty;
+
+    private Dictionary<Guid, List<HoldUsageRef>>? _holdUsage;
+    private Guid? _usageHoldId;
+    private EditMode _modeBeforeUsage = EditMode.Add;
     private double _shapePointRadius = 0.8;
 
     private List<Hold> _addedHolds = [];
@@ -569,7 +664,7 @@
     private bool IsLiveHold(Hold h) => IsStaging && h.Generation <= LiveGeneration;
 
     private static readonly string[] _colors = ["none", "yellow", "red", "pink", "blue", "green", "orange", "purple", "white", "black"];
-    private enum EditMode { Add, Move, Shape, Paint, Delete, Border, Name, Merge, ShapeTilt }
+    private enum EditMode { Add, Move, Shape, Paint, Delete, Border, Name, Merge, ShapeTilt, Usage }
 
     public record BatchChanges(List<Hold> Added, List<Hold> Updated, List<Guid> Deleted);
 
@@ -613,6 +708,7 @@
         EditMode.Add => "crosshair", EditMode.Name => "help",
         EditMode.ShapeTilt => "pointer",
         EditMode.Merge => "pointer",
+        EditMode.Usage => "pointer",
         _ => "default"
     };
 
@@ -627,6 +723,7 @@
         if (mode != EditMode.Move) _selectedHoldId = null;
         if (mode != EditMode.Shape) _shapeEditHoldId = null;
         if (mode != EditMode.Name) _namingHoldId = null;
+        if (mode != EditMode.Usage) _usageHoldId = null;
     }
 
     private void TakeSnapshot()
@@ -649,10 +746,49 @@
             _updatedHoldIds.Add(hold.Id);
     }
 
+    /// <summary>
+    /// Enters the read-only usage tool, loading the map on first use. Leaving restores
+    /// whichever editing tool was active before, so it doubles as a quick peek.
+    /// </summary>
+    private async Task ToggleUsageMode()
+    {
+        if (_mode == EditMode.Usage)
+        {
+            SetMode(_modeBeforeUsage);
+            return;
+        }
+
+        _modeBeforeUsage = _mode;
+        SetMode(EditMode.Usage);
+
+        // Always refetch: boulders may have changed since the tool was last opened.
+        _holdUsage = null;
+
+        if (OnRequestHoldUsage != null)
+        {
+            _holdUsage = await OnRequestHoldUsage();
+        }
+    }
+
+    private static string UsageDotClass(HoldType type) => type switch
+    {
+        HoldType.Start => "start",
+        HoldType.Top => "top",
+        _ => "normal",
+    };
+
+    private List<HoldUsageRef> UsageFor(Guid holdId) =>
+        _holdUsage != null && _holdUsage.TryGetValue(holdId, out var refs) ? refs : [];
+
+    private int UnusedHoldCount => Holds.Count(h => UsageFor(h.Id).Count == 0);
+
     private async Task OnHoldClick(Hold hold)
     {
         switch (_mode)
         {
+            case EditMode.Usage:
+                _usageHoldId = _usageHoldId == hold.Id ? null : hold.Id;
+                return;
             case EditMode.Paint:
                 TakeSnapshot();
                 hold.Color = _paintColor;
