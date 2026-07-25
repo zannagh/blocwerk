@@ -30,6 +30,10 @@ else
                 {
                     <span class="grade-badge">@_boulder.Grade</span>
                 }
+                @if (_boulder.IsDraft)
+                {
+                    <span class="draft-badge">draft</span>
+                }
                 @if (_boulder.IsHistoric)
                 {
                     <span class="historic-badge">historic</span>
@@ -38,10 +42,32 @@ else
             <p class="meta">by @_boulder.CreatedBy.DisplayName &middot; @_boulder.CreatedAt.ToString("MMM d, yyyy")</p>
         </div>
 
+        @if (_boulder.IsDraft && _isCreator)
+        {
+            <div class="bw-draft-notice">
+                <p>This is a draft. Only you can see it until you publish it.</p>
+                <div class="draft-actions">
+                    <a href="/walls/@WallId/boulders/@BoulderId/revise" class="btn-revise">Edit</a>
+                    <button class="btn-publish" @onclick="PublishDraft"
+                            disabled="@(_boulder.BoulderHolds.Count == 0)">
+                        Publish
+                    </button>
+                </div>
+            </div>
+            @if (!string.IsNullOrEmpty(_publishError))
+            {
+                <div class="error-msg">@_publishError</div>
+            }
+        }
+
         @if (_boulder.IsHistoric && _isCreator)
         {
             <div class="bw-revision-notice">
-                <p>The wall has changed since this boulder was created. Some holds may no longer exist.</p>
+                <p>
+                    @(CanViewHistoric
+                        ? "The wall was rebuilt since this boulder was set. Use \"Then\" to see it on the old wall, then remap it onto the new holds."
+                        : "The wall has changed since this boulder was created. Some holds may no longer exist.")
+                </p>
                 <a href="/walls/@WallId/boulders/@BoulderId/revise" class="btn-revise">Revise Boulder</a>
             </div>
         }
@@ -66,6 +92,14 @@ else
         <div class="view-toggle">
             <button class="toggle-btn @(_viewMode == ViewMode.Photo ? "active" : "")" @onclick="() => _viewMode = ViewMode.Photo">Photo</button>
             <button class="toggle-btn @(_viewMode == ViewMode.Schematic ? "active" : "")" @onclick="() => _viewMode = ViewMode.Schematic">Schematic</button>
+            @if (CanViewHistoric)
+            {
+                <span class="toggle-sep"></span>
+                <button class="toggle-btn @(_showHistoric ? "active" : "")" @onclick="ToggleHistoric"
+                        title="@(_showHistoric ? "Showing the wall as it was when this boulder was set" : "Showing the current wall")">
+                    @(_showHistoric ? "Then" : "Now")
+                </button>
+            }
         </div>
 
         @if (_viewMode == ViewMode.Photo)
@@ -106,10 +140,22 @@ else
         <div class="legend-bar">
             @{ var starts = _boulder.BoulderHolds.Count(h => h.Type == HoldType.Start); }
             @{ var tops = _boulder.BoulderHolds.Count(h => h.Type == HoldType.Top); }
+            @{ var handOnly = _boulder.BoulderHolds.Count(h => h.Usage == HoldUsage.HandOnly); }
+            @{ var footOnly = _boulder.BoulderHolds.Count(h => h.Usage == HoldUsage.FootOnly); }
             <span class="legend-chip start">@starts start</span>
             <span class="legend-chip normal">@(_boulder.BoulderHolds.Count - starts - tops) moves</span>
             <span class="legend-chip top">@tops top</span>
+            @if (handOnly > 0) { <span class="legend-chip usage">@handOnly hand only</span> }
+            @if (footOnly > 0) { <span class="legend-chip usage">@footOnly foot only</span> }
         </div>
+
+        <p class="rules-line">
+            @(_boulder.KickboardFootholdsOn ? "All kickboard footholds are on." : "Kickboard footholds are off.")
+            @if (_boulder.FootholdMode == FootholdMode.DefinedOnly)
+            {
+                <text>Footholds are defined per hold.</text>
+            }
+        </p>
 
         @if (!_isAnonymous)
         {
@@ -281,6 +327,8 @@ else
     private bool _isLogging;
     private bool _isAnonymous;
     private bool _isCreator;
+    private bool _showHistoric;
+    private string? _publishError;
     private string? _toast;
 
     private List<ActivityLogEntry>? _activityItems;
@@ -330,9 +378,47 @@ else
         await ValueTask.CompletedTask;
     }
 
-    private string PhotoUrl => !string.IsNullOrEmpty(ShareToken)
-        ? $"/api/walls/{WallId}/photo?token={ShareToken}"
-        : $"/api/walls/{WallId}/photo";
+    /// <summary>
+    /// The generation the boulder's own holds live at. Gating on this rather than
+    /// Boulder.Generation is exact: the latter is only stamped on create/revise, so a
+    /// boulder carried through an alignment would otherwise look stale when it isn't.
+    /// </summary>
+    private int? BoulderHoldGeneration => _boulder is { BoulderHolds.Count: > 0 }
+        ? _boulder.BoulderHolds.Max(bh => bh.Hold.Generation)
+        : null;
+
+    private bool CanViewHistoric =>
+        _boulder != null && BoulderHoldGeneration is { } g && g < _boulder.Wall.CurrentGeneration;
+
+    private string PhotoUrl
+    {
+        get
+        {
+            var gen = _showHistoric && BoulderHoldGeneration is { } g ? $"/{g}" : string.Empty;
+            return !string.IsNullOrEmpty(ShareToken)
+                ? $"/api/walls/{WallId}/photo{gen}?token={ShareToken}"
+                : $"/api/walls/{WallId}/photo{gen}";
+        }
+    }
+
+    private async Task ToggleHistoric()
+    {
+        _showHistoric = !_showHistoric;
+        await LoadWallHolds();
+    }
+
+    private async Task PublishDraft()
+    {
+        try
+        {
+            await BoulderService.PublishBoulderAsync(BoulderId);
+            await LoadBoulder();
+        }
+        catch (Exception ex)
+        {
+            _publishError = ex.Message;
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -364,10 +450,19 @@ else
             }
         }
 
+        if (_boulder is { IsDraft: true } && _boulder.CreatedByUserId != _currentUserId)
+        {
+            Navigation.NavigateTo($"/walls/{WallId}", replace: true);
+            return;
+        }
+
         if (_boulder != null)
         {
             _isCreator = _boulder.CreatedByUserId == _currentUserId;
             _boulderHoldIds = _boulder.BoulderHolds.Select(bh => bh.HoldId).ToHashSet();
+
+            // A stale boulder only makes sense against the wall it was set on.
+            _showHistoric = CanViewHistoric;
             await LoadWallHolds();
             _activeProposal = await BoulderService.GetActiveProposalAsync(BoulderId);
         }
@@ -378,6 +473,22 @@ else
 
     private async Task LoadWallHolds()
     {
+        // In the historic view the schematic must draw the generation the boulder's
+        // holds belong to, or none of the highlighted ids would be in the list.
+        if (_showHistoric && BoulderHoldGeneration is { } gen && string.IsNullOrEmpty(ShareToken))
+        {
+            _wallHolds = await WallService.GetHoldsForGenerationAsync(WallId, gen);
+            return;
+        }
+
+        if (_showHistoric && BoulderHoldGeneration.HasValue && _boulder != null)
+        {
+            // Anonymous share viewers can't query generations; the boulder's own
+            // holds are enough to render its schematic.
+            _wallHolds = _boulder.BoulderHolds.Select(bh => bh.Hold).ToList();
+            return;
+        }
+
         Wall? wall;
         if (!string.IsNullOrEmpty(ShareToken))
             wall = await WallService.GetWallByShareTokenAsync(ShareToken);

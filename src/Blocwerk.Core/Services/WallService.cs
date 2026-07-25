@@ -19,6 +19,16 @@ public record ManualAlignHold(
     bool DidChange,
     bool IsNew);
 
+/// <summary>
+/// A wall photo together with its content type, for a specific generation.
+/// </summary>
+public record WallPhoto(byte[] Photo, string? ContentType);
+
+/// <summary>
+/// Outcome of a confirmed wall recreation.
+/// </summary>
+public record WallRecreateResult(Wall Wall, int BouldersMadeHistoric, int HoldsPruned);
+
 public interface IWallService
 {
     Task<Wall> CreateWallAsync(string name, string? description, int angle = 0);
@@ -39,7 +49,21 @@ public interface IWallService
 
     Task<Wall> StageManualAlignmentAsync(Guid wallId, byte[] photo, string contentType);
 
+    /// <summary>
+    /// Stages a full wall recreation: new photo plus fresh detection at the staged
+    /// generation. Unlike the other staging modes the live holds are neither cloned
+    /// nor aligned - on confirm they stay behind at the current generation.
+    /// </summary>
+    Task<Wall> StageRecreateAsync(Guid wallId, byte[] photo, string contentType);
+
     Task<Wall> ConfirmStagedPhotoAsync(Guid wallId);
+
+    /// <summary>
+    /// Promotes a staged recreation: bumps the generation, leaves the previous holds
+    /// behind for historic boulders, archives the retired photo and marks every live
+    /// boulder historic. Ascents, comments and grade proposals are untouched.
+    /// </summary>
+    Task<WallRecreateResult> ConfirmRecreateAsync(Guid wallId);
 
     Task<Wall> ConfirmManualAlignmentAsync(Guid wallId, List<ManualAlignHold> holds, List<Guid> deletedStagedIds);
 
@@ -66,6 +90,20 @@ public interface IWallService
     Task<byte[]?> GetPhotoAsync(Guid wallId);
 
     Task<byte[]?> GetPhotoByShareTokenAsync(Guid wallId, string shareToken);
+
+    /// <summary>
+    /// The holds captured at a specific, possibly retired, generation. Used to render
+    /// a historic boulder against the wall as it looked when it was set.
+    /// </summary>
+    Task<List<Hold>> GetHoldsForGenerationAsync(Guid wallId, int generation);
+
+    /// <summary>
+    /// The wall photo as it looked at the given generation. Falls back to the live
+    /// photo for the current generation; null when that generation was never archived.
+    /// </summary>
+    Task<WallPhoto?> GetPhotoForGenerationAsync(Guid wallId, int generation);
+
+    Task<WallPhoto?> GetPhotoForGenerationByShareTokenAsync(Guid wallId, string shareToken, int generation);
 
     Task<Hold> AddHoldAsync(Guid wallId, double x, double y, double radius, string? color, HoldCategory category = HoldCategory.Hand, List<ShapePoint>? shapePoints = null, bool isVirtual = false);
 
@@ -272,7 +310,17 @@ public class WallService : IWallService
         return wall;
     }
 
-    public async Task<Wall> StagePhotoAsync(Guid wallId, byte[] photo, string contentType)
+    public Task<Wall> StagePhotoAsync(Guid wallId, byte[] photo, string contentType) =>
+        StageDetectedAsync(wallId, photo, contentType, WallStagingMode.Detected);
+
+    public Task<Wall> StageRecreateAsync(Guid wallId, byte[] photo, string contentType) =>
+        StageDetectedAsync(wallId, photo, contentType, WallStagingMode.Recreate);
+
+    /// <summary>
+    /// Shared body of the two detection-based staging modes. They differ only in the
+    /// staging mode recorded, which decides what confirm does with the live holds.
+    /// </summary>
+    private async Task<Wall> StageDetectedAsync(Guid wallId, byte[] photo, string contentType, WallStagingMode mode)
     {
         var user = await _currentUserService.GetCurrentUserAsync();
         await using var db = await _dbContextFactory.CreateDbContextAsync();
@@ -296,7 +344,7 @@ public class WallService : IWallService
         wall.StagedPhotoContentType = contentType;
         wall.StagedAt = DateTimeOffset.UtcNow;
         wall.StagedByUserId = user.Id;
-        wall.StagingMode = WallStagingMode.Detected;
+        wall.StagingMode = mode;
 
         var detectedHolds = await _holdDetectionService.DetectHoldsAsync(photo);
         foreach (var detected in detectedHolds)
@@ -400,6 +448,8 @@ public class WallService : IWallService
         }
 
         var stagedCount = wall.Holds.Count(h => h.Generation == stagedGen) - carried;
+
+        ArchiveRetiredPhoto(db, wall, user.Id);
 
         wall.Photo = wall.StagedPhoto;
         wall.PhotoContentType = wall.StagedPhotoContentType;
@@ -558,6 +608,8 @@ public class WallService : IWallService
             db.Holds.Remove(leftover);
         }
 
+        ArchiveRetiredPhoto(db, wall, user.Id);
+
         wall.Photo = wall.StagedPhoto;
         wall.PhotoContentType = wall.StagedPhotoContentType;
         wall.StagedPhoto = null;
@@ -571,6 +623,84 @@ public class WallService : IWallService
         await _activityLogService.LogAsync(wallId, null, ActivityType.WallPhotoConfirmed,
             $"manual alignment, {reviewCount} boulder(s) flagged for review");
         return wall;
+    }
+
+    public async Task<WallRecreateResult> ConfirmRecreateAsync(Guid wallId)
+    {
+        var user = await _currentUserService.GetCurrentUserAsync();
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = user.Id;
+
+        var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId)
+                   ?? throw new InvalidOperationException("Wall not found");
+
+        if (wall.StagedPhoto == null || wall.StagingMode != WallStagingMode.Recreate)
+        {
+            throw new InvalidOperationException("No staged wall recreation to confirm.");
+        }
+
+        var oldGen = wall.CurrentGeneration;
+        var newGen = oldGen + 1;
+
+        // Must run before the staged photo is promoted over the live one.
+        ArchiveRetiredPhoto(db, wall, user.Id);
+
+        // Holds from retired generations survive only while a boulder still points at
+        // them; without this sweep every recreation would leave a full detection behind.
+        var prunable = await db.Holds
+            .Where(h => h.WallId == wallId && h.Generation <= oldGen && !h.BoulderHolds.Any())
+            .ToListAsync();
+        db.Holds.RemoveRange(prunable);
+
+        // The hold model is entirely new, so every live boulder needs remapping.
+        var staled = await db.Boulders
+            .Where(b => b.WallId == wallId && !b.IsArchived && !b.IsHistoric)
+            .ToListAsync();
+        foreach (var boulder in staled)
+        {
+            boulder.IsHistoric = true;
+            boulder.NeedsReview = false;
+        }
+
+        wall.Photo = wall.StagedPhoto;
+        wall.PhotoContentType = wall.StagedPhotoContentType;
+        wall.StagedPhoto = null;
+        wall.StagedPhotoContentType = null;
+        wall.StagedAt = null;
+        wall.StagedByUserId = null;
+        wall.StagingMode = WallStagingMode.None;
+        wall.CurrentGeneration = newGen;
+        wall.LastResetAt = DateTimeOffset.UtcNow;
+
+        // Border points are normalized against the retired photo's framing.
+        wall.BorderPoints = null;
+
+        await db.SaveChangesAsync();
+        await _activityLogService.LogAsync(wallId, null, ActivityType.WallRecreated,
+            $"{staled.Count} boulder(s) marked historic, {prunable.Count} unused hold(s) pruned");
+
+        return new WallRecreateResult(wall, staled.Count, prunable.Count);
+    }
+
+    /// <summary>
+    /// Keeps the outgoing photo so historic boulders can still be rendered against the
+    /// wall as it looked when they were set. One row per retired generation.
+    /// </summary>
+    private static void ArchiveRetiredPhoto(BlocwerkDbContext db, Wall wall, Guid userId)
+    {
+        if (wall.Photo == null)
+        {
+            return;
+        }
+
+        db.WallResets.Add(new WallReset
+        {
+            WallId = wall.Id,
+            Generation = wall.CurrentGeneration,
+            PreviousPhoto = wall.Photo,
+            PreviousPhotoContentType = wall.PhotoContentType,
+            ResetByUserId = userId,
+        });
     }
 
     public async Task<Homography?> EstimateStagingAlignmentAsync(Guid wallId)
@@ -610,8 +740,24 @@ public class WallService : IWallService
         var stagedGen = wall.CurrentGeneration + 1;
         var stagedHolds = await db.Holds
             .Where(h => h.WallId == wallId && h.Generation == stagedGen)
+            .Include(h => h.BoulderHolds)
             .ToListAsync();
-        db.Holds.RemoveRange(stagedHolds);
+
+        foreach (var hold in stagedHolds)
+        {
+            // A virtual hold placed from the boulder picker while a photo was staged
+            // lands in the staged generation and may already be linked to a boulder.
+            // Deleting it would trip the restricted FK and wedge discard for good, so
+            // rescue it into the live generation instead.
+            if (hold.BoulderHolds.Count > 0)
+            {
+                hold.Generation = wall.CurrentGeneration;
+            }
+            else
+            {
+                db.Holds.Remove(hold);
+            }
+        }
 
         wall.StagedPhoto = null;
         wall.StagedPhotoContentType = null;
@@ -807,6 +953,82 @@ public class WallService : IWallService
             .FirstOrDefaultAsync();
 
         return wall?.Photo;
+    }
+
+    public async Task<List<Hold>> GetHoldsForGenerationAsync(Guid wallId, int generation)
+    {
+        var user = await _currentUserService.GetCurrentUserAsync();
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = user.Id;
+
+        // Holds carry no query filter of their own, so the membership-filtered wall
+        // lookup is what enforces access here.
+        if (!await db.Walls.AnyAsync(w => w.Id == wallId))
+        {
+            throw new InvalidOperationException("Wall not found");
+        }
+
+        return await db.Holds
+            .AsNoTracking()
+            .Where(h => h.WallId == wallId && h.Generation == generation)
+            .ToListAsync();
+    }
+
+    public async Task<WallPhoto?> GetPhotoForGenerationAsync(Guid wallId, int generation)
+    {
+        var user = await _currentUserService.GetCurrentUserAsync();
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = user.Id;
+
+        return await ResolveGenerationPhotoAsync(db, db.Walls.Where(w => w.Id == wallId), wallId, generation);
+    }
+
+    public async Task<WallPhoto?> GetPhotoForGenerationByShareTokenAsync(Guid wallId, string shareToken, int generation)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = Guid.Empty;
+
+        return await ResolveGenerationPhotoAsync(
+            db,
+            db.Walls.Where(w => w.Id == wallId && w.ShareToken == shareToken),
+            wallId,
+            generation);
+    }
+
+    /// <summary>
+    /// Resolves a generation to a photo: the live photo for the current generation and
+    /// beyond, otherwise the archived photo of the reset that retired it.
+    /// </summary>
+    private static async Task<WallPhoto?> ResolveGenerationPhotoAsync(
+        BlocwerkDbContext db,
+        IQueryable<Wall> accessibleWall,
+        Guid wallId,
+        int generation)
+    {
+        var wall = await accessibleWall
+            .AsNoTracking()
+            .Select(w => new { w.Photo, w.PhotoContentType, w.CurrentGeneration })
+            .FirstOrDefaultAsync();
+
+        if (wall == null)
+        {
+            return null;
+        }
+
+        if (generation >= wall.CurrentGeneration)
+        {
+            return wall.Photo == null ? null : new WallPhoto(wall.Photo, wall.PhotoContentType);
+        }
+
+        var reset = await db.WallResets
+            .AsNoTracking()
+            .Where(r => r.WallId == wallId && r.Generation == generation)
+            .Select(r => new { r.PreviousPhoto, r.PreviousPhotoContentType })
+            .FirstOrDefaultAsync();
+
+        return reset?.PreviousPhoto == null
+            ? null
+            : new WallPhoto(reset.PreviousPhoto, reset.PreviousPhotoContentType);
     }
 
     public async Task<Hold> AddHoldAsync(Guid wallId, double x, double y, double radius, string? color, HoldCategory category = HoldCategory.Hand, List<ShapePoint>? shapePoints = null, bool isVirtual = false)

@@ -131,6 +131,8 @@ public class BlocwerkDbContext : DbContext
                 .HasForeignKey(h => h.WallId)
                 .OnDelete(DeleteBehavior.Cascade);
 
+            entity.HasIndex(h => new { h.WallId, h.Generation });
+
             entity.Property(h => h.ShapePoints)
                 .HasConversion(
                     v => v == null ? null : JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
@@ -192,6 +194,8 @@ public class BlocwerkDbContext : DbContext
     {
         modelBuilder.Entity<WallReset>(entity =>
         {
+            entity.HasIndex(wr => new { wr.WallId, wr.Generation }).IsUnique();
+
             entity.HasOne(wr => wr.Wall)
                 .WithMany(w => w.Resets)
                 .HasForeignKey(wr => wr.WallId)

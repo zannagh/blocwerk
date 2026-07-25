@@ -8,7 +8,12 @@ namespace Blocwerk.Core.Services;
 
 public interface IBoulderService
 {
-    Task<Boulder> CreateBoulderAsync(Guid wallId, string name, string? grade, List<BoulderHoldInput> holds, FootholdMode footholdMode = FootholdMode.AllKickboard);
+    Task<Boulder> CreateBoulderAsync(Guid wallId, string name, string? grade, List<BoulderHoldInput> holds, bool isDraft = false, bool kickboardFootholdsOn = true);
+
+    /// <summary>
+    /// Makes a draft visible to everyone on the wall.
+    /// </summary>
+    Task<Boulder> PublishBoulderAsync(Guid boulderId);
 
     Task<Boulder?> GetBoulderAsync(Guid boulderId);
 
@@ -16,9 +21,13 @@ public interface IBoulderService
 
     Task<List<Boulder>> GetBouldersForWallAsync(Guid wallId, bool includeArchived = false);
 
-    Task<Boulder> UpdateBoulderAsync(Guid boulderId, string name, string? grade, List<BoulderHoldInput>? holds = null);
+    Task<Boulder> UpdateBoulderAsync(Guid boulderId, string name, string? grade, List<BoulderHoldInput>? holds = null, bool? kickboardFootholdsOn = null);
 
-    Task<Boulder> ReviseBoulderAsync(Guid boulderId, List<BoulderHoldInput> updatedHolds);
+    /// <summary>
+    /// Remaps a historic or draft boulder onto the current hold model, optionally renaming
+    /// and regrading it. Attempts, comments and grade proposals are preserved.
+    /// </summary>
+    Task<Boulder> ReviseBoulderAsync(Guid boulderId, List<BoulderHoldInput> updatedHolds, string? name = null, string? grade = null, bool? kickboardFootholdsOn = null);
 
     Task DeleteBoulderAsync(Guid boulderId);
 
@@ -31,7 +40,7 @@ public interface IBoulderService
     Task RejectGradeProposalAsync(Guid proposalId);
 }
 
-public record BoulderHoldInput(Guid HoldId, HoldType Type = HoldType.Normal);
+public record BoulderHoldInput(Guid HoldId, HoldType Type = HoldType.Normal, HoldUsage Usage = HoldUsage.HandAndFoot);
 
 public class BoulderService : IBoulderService
 {
@@ -49,7 +58,7 @@ public class BoulderService : IBoulderService
         _activityLogService = activityLogService;
     }
 
-    public async Task<Boulder> CreateBoulderAsync(Guid wallId, string name, string? grade, List<BoulderHoldInput> holds, FootholdMode footholdMode = FootholdMode.AllKickboard)
+    public async Task<Boulder> CreateBoulderAsync(Guid wallId, string name, string? grade, List<BoulderHoldInput> holds, bool isDraft = false, bool kickboardFootholdsOn = true)
     {
         var user = await _currentUserService.GetCurrentUserAsync();
         await using var db = await _dbContextFactory.CreateDbContextAsync();
@@ -65,7 +74,10 @@ public class BoulderService : IBoulderService
             Grade = grade,
             CreatedByUserId = user.Id,
             Generation = wall.CurrentGeneration,
-            FootholdMode = footholdMode,
+            FootholdMode = DeriveFootholdMode(holds),
+            KickboardFootholdsOn = kickboardFootholdsOn,
+            IsDraft = isDraft,
+            PublishedAt = isDraft ? null : DateTimeOffset.UtcNow,
         };
 
         db.Boulders.Add(boulder);
@@ -77,14 +89,70 @@ public class BoulderService : IBoulderService
                 BoulderId = boulder.Id,
                 HoldId = h.HoldId,
                 Type = h.Type,
+                Usage = h.Usage,
             });
         }
 
         await db.SaveChangesAsync();
 
-        await _activityLogService.LogAsync(wallId, boulder.Id, ActivityType.BoulderCreated, name);
+        // Drafts stay out of the activity feed until they are published.
+        if (!isDraft)
+        {
+            await _activityLogService.LogAsync(wallId, boulder.Id, ActivityType.BoulderCreated, name);
+        }
+
         return boulder;
     }
+
+    public async Task<Boulder> PublishBoulderAsync(Guid boulderId)
+    {
+        var user = await _currentUserService.GetCurrentUserAsync();
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = user.Id;
+
+        var boulder = await db.Boulders
+                          .Include(b => b.BoulderHolds)
+                          .FirstOrDefaultAsync(b => b.Id == boulderId)
+                      ?? throw new InvalidOperationException("Boulder not found");
+
+        if (boulder.CreatedByUserId != user.Id)
+        {
+            throw new InvalidOperationException("Only the creator can publish a boulder");
+        }
+
+        if (!boulder.IsDraft)
+        {
+            return boulder;
+        }
+
+        if (boulder.BoulderHolds.Count == 0)
+        {
+            throw new InvalidOperationException("Select at least one hold before publishing");
+        }
+
+        boulder.IsDraft = false;
+        boulder.PublishedAt = DateTimeOffset.UtcNow;
+
+        var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == boulder.WallId);
+        if (wall != null)
+        {
+            boulder.Generation = wall.CurrentGeneration;
+        }
+
+        await db.SaveChangesAsync();
+
+        await _activityLogService.LogAsync(boulder.WallId, boulderId, ActivityType.BoulderCreated, boulder.Name);
+        return boulder;
+    }
+
+    /// <summary>
+    /// A boulder defines its footholds explicitly as soon as any hold carries a
+    /// non-default usage mark, so the setter never picks the mode by hand.
+    /// </summary>
+    private static FootholdMode DeriveFootholdMode(IEnumerable<BoulderHoldInput> holds) =>
+        holds.Any(h => h.Usage != HoldUsage.HandAndFoot)
+            ? FootholdMode.DefinedOnly
+            : FootholdMode.AllKickboard;
 
     public async Task<Boulder?> GetBoulderAsync(Guid boulderId)
     {
@@ -110,7 +178,7 @@ public class BoulderService : IBoulderService
             .Include(b => b.Attempts.OrderByDescending(a => a.Timestamp)).ThenInclude(a => a.User)
             .Include(b => b.CreatedBy)
             .Include(b => b.Wall)
-            .Where(b => b.Id == boulderId && b.Wall.ShareToken == shareToken)
+            .Where(b => b.Id == boulderId && b.Wall.ShareToken == shareToken && !b.IsDraft)
             .FirstOrDefaultAsync();
     }
 
@@ -124,7 +192,8 @@ public class BoulderService : IBoulderService
             .Include(b => b.BoulderHolds)
             .Include(b => b.Attempts)
             .Include(b => b.CreatedBy)
-            .Where(b => b.WallId == wallId);
+            .Where(b => b.WallId == wallId)
+            .Where(b => !b.IsDraft || b.CreatedByUserId == user.Id);
 
         if (!includeArchived)
         {
@@ -134,7 +203,7 @@ public class BoulderService : IBoulderService
         return await query.OrderByDescending(b => b.CreatedAt).ToListAsync();
     }
 
-    public async Task<Boulder> UpdateBoulderAsync(Guid boulderId, string name, string? grade, List<BoulderHoldInput>? holds = null)
+    public async Task<Boulder> UpdateBoulderAsync(Guid boulderId, string name, string? grade, List<BoulderHoldInput>? holds = null, bool? kickboardFootholdsOn = null)
     {
         var user = await _currentUserService.GetCurrentUserAsync();
         await using var db = await _dbContextFactory.CreateDbContextAsync();
@@ -148,6 +217,11 @@ public class BoulderService : IBoulderService
         boulder.Name = name;
         boulder.Grade = grade;
 
+        if (kickboardFootholdsOn.HasValue)
+        {
+            boulder.KickboardFootholdsOn = kickboardFootholdsOn.Value;
+        }
+
         if (holds != null)
         {
             db.BoulderHolds.RemoveRange(boulder.BoulderHolds);
@@ -158,15 +232,18 @@ public class BoulderService : IBoulderService
                     BoulderId = boulderId,
                     HoldId = h.HoldId,
                     Type = h.Type,
+                    Usage = h.Usage,
                 });
             }
+
+            boulder.FootholdMode = DeriveFootholdMode(holds);
         }
 
         await db.SaveChangesAsync();
         return boulder;
     }
 
-    public async Task<Boulder> ReviseBoulderAsync(Guid boulderId, List<BoulderHoldInput> updatedHolds)
+    public async Task<Boulder> ReviseBoulderAsync(Guid boulderId, List<BoulderHoldInput> updatedHolds, string? name = null, string? grade = null, bool? kickboardFootholdsOn = null)
     {
         var user = await _currentUserService.GetCurrentUserAsync();
         await using var db = await _dbContextFactory.CreateDbContextAsync();
@@ -182,9 +259,14 @@ public class BoulderService : IBoulderService
             throw new InvalidOperationException("Only the creator can revise a boulder");
         }
 
-        if (!boulder.IsHistoric)
+        if (!boulder.IsHistoric && !boulder.IsDraft)
         {
             throw new InvalidOperationException("Boulder is not historic");
+        }
+
+        if (updatedHolds.Count == 0 && !boulder.IsDraft)
+        {
+            throw new InvalidOperationException("Select at least one hold");
         }
 
         db.BoulderHolds.RemoveRange(boulder.BoulderHolds);
@@ -195,10 +277,30 @@ public class BoulderService : IBoulderService
                 BoulderId = boulderId,
                 HoldId = h.HoldId,
                 Type = h.Type,
+                Usage = h.Usage,
             });
         }
 
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            boulder.Name = name;
+        }
+
+        if (grade != null)
+        {
+            boulder.Grade = grade;
+        }
+
+        if (kickboardFootholdsOn.HasValue)
+        {
+            boulder.KickboardFootholdsOn = kickboardFootholdsOn.Value;
+        }
+
+        boulder.FootholdMode = DeriveFootholdMode(updatedHolds);
+
+        // Remapping onto the current hold model resolves both staleness flags.
         boulder.IsHistoric = false;
+        boulder.NeedsReview = false;
 
         var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == boulder.WallId);
         if (wall != null)

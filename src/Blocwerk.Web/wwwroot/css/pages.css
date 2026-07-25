@@ -571,13 +571,16 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
 .photo-section .wall-photo { width: 100%; display: block; }
 .photo-section .hold-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
 
-.legend-bar { display: flex; gap: 8px; margin-bottom: 16px; }
+.legend-bar { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
 .legend-chip {
     padding: 4px 10px; border-radius: 6px; font-size: 0.8rem; font-weight: 600;
 }
 .legend-chip.start { background: var(--success-bg); color: var(--success-text); }
 .legend-chip.normal { background: var(--info-bg); color: var(--info-text); }
 .legend-chip.top { background: var(--danger-bg); color: var(--danger-text); }
+.legend-chip.usage { background: var(--bg-surface); color: var(--text-muted); border: 1px solid var(--border); }
+.rules-line { font-size: 0.82rem; color: var(--text-muted); margin-bottom: 16px; }
+.view-toggle .toggle-sep { width: 1px; align-self: stretch; background: var(--border); margin: 0 4px; }
 
 .attempt-section { margin-bottom: 16px; }
 .attempt-section h2 { font-size: 1.1rem; font-weight: 600; color: var(--text-heading); margin-bottom: 10px; }
@@ -691,9 +694,29 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
 }
 .checkbox-label input, .toggle-label input { accent-color: var(--accent); }
 
+.submit-row { display: flex; gap: 8px; margin-top: 12px; }
+.submit-row > .btn-secondary { flex: 0 0 auto; }
+.submit-row > .btn-submit { flex: 1; margin-top: 0; }
+.boulder-create .hint { color: var(--text-muted); font-size: 0.8rem; margin-top: 6px; text-align: center; }
+
 /* ========== Boulder Revise ========== */
 
 .revision-hint { color: var(--warning-text); font-size: 0.9rem; background: var(--warning-bg); padding: 10px 14px; border-radius: 8px; margin-bottom: 12px; }
+.reference-panel { margin-bottom: 12px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--bg-surface); }
+.reference-panel > summary { padding: 10px 14px; cursor: pointer; font-size: 0.85rem; font-weight: 600; color: var(--text-heading); }
+.reference-photo { position: relative; }
+.reference-photo img { width: 100%; display: block; }
+.reference-photo .hold-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+.reference-panel .hint { padding: 8px 14px; font-size: 0.78rem; color: var(--text-muted); margin: 0; }
+
+/* ========== Draft & staleness badges ========== */
+
+.draft-badge { background: var(--warning-bg); color: var(--warning-text); font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 2px 7px; border-radius: 5px; }
+.bw-draft-notice { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; background: var(--warning-bg); color: var(--warning-text); padding: 12px 14px; border-radius: 10px; margin-bottom: 12px; font-size: 0.88rem; }
+.bw-draft-notice .draft-actions { display: flex; gap: 8px; }
+.btn-publish { background: var(--accent); color: #fff; border: none; border-radius: 7px; padding: 7px 14px; font-size: 0.82rem; font-weight: 600; cursor: pointer; }
+.btn-publish:disabled { opacity: 0.5; cursor: not-allowed; }
+.card-publish { background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 4px 10px; font-size: 0.72rem; font-weight: 600; cursor: pointer; }
 
 /* ========== Join ========== */
 

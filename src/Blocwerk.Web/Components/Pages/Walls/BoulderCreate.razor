@@ -37,28 +37,24 @@
                     All kickboard footholds are on
                 </label>
             </div>
-
-            <div class="form-group">
-                <label class="toggle-label">
-                    <input type="checkbox" @bind="_defineFootholds" @bind:after="UpdateDisplayHolds" />
-                    Define footholds separately
-                </label>
-                @if (_defineFootholds)
-                {
-                    <p class="hint">Footholds are now shown in the picker. Select both hand and foot holds for this boulder.</p>
-                }
-            </div>
         </div>
 
         <HoldPicker WallId="WallId"
-                    AllHolds="_displayHolds"
+                    AllHolds="_holds"
                     WallAngle="_wall.Angle"
                     @bind-SelectedHolds="_selectedHolds" />
 
-        <button class="btn-submit" @onclick="Submit"
-                disabled="@(string.IsNullOrWhiteSpace(_name) || _selectedHolds.Count == 0 || _isSubmitting)">
-            @(_isSubmitting ? "Creating..." : $"Create Boulder ({_selectedHolds.Count} holds selected)")
-        </button>
+        <div class="submit-row">
+            <button class="btn-secondary" @onclick="SaveDraft"
+                    disabled="@(string.IsNullOrWhiteSpace(_name) || _isSubmitting)">
+                @(_isSubmitting ? "Saving..." : "Save as Draft")
+            </button>
+            <button class="btn-submit" @onclick="Publish"
+                    disabled="@(string.IsNullOrWhiteSpace(_name) || _selectedHolds.Count == 0 || _isSubmitting)">
+                @(_isSubmitting ? "Publishing..." : $"Publish ({_selectedHolds.Count} holds)")
+            </button>
+        </div>
+        <p class="hint">A draft is only visible to you until you publish it.</p>
 
         @if (!string.IsNullOrEmpty(_error))
         {
@@ -72,12 +68,10 @@
 
     private Wall? _wall;
     private List<Hold> _holds = [];
-    private List<Hold> _displayHolds = [];
     private List<BoulderHoldInput> _selectedHolds = [];
     private string _name = string.Empty;
     private string? _grade;
     private bool _allKickboardOn = true;
-    private bool _defineFootholds;
     private bool _isSubmitting;
     private string? _error;
 
@@ -86,27 +80,25 @@
         _wall = await WallService.GetWallAsync(WallId);
         if (_wall != null)
         {
+            // Foot holds are always selectable; whether a hold is hand, foot or both
+            // is now marked per hold from the picker's usage toolbar.
             _holds = _wall.Holds.ToList();
-            UpdateDisplayHolds();
         }
     }
 
-    private void UpdateDisplayHolds()
-    {
-        _displayHolds = _defineFootholds
-            ? _holds
-            : _holds.Where(h => h.Category == HoldCategory.Hand).ToList();
-    }
+    private Task SaveDraft() => Submit(isDraft: true);
 
-    private async Task Submit()
+    private Task Publish() => Submit(isDraft: false);
+
+    private async Task Submit(bool isDraft)
     {
         _isSubmitting = true;
         _error = null;
 
         try
         {
-            var mode = _defineFootholds ? FootholdMode.DefinedOnly : FootholdMode.AllKickboard;
-            var boulder = await BoulderService.CreateBoulderAsync(WallId, _name, _grade, _selectedHolds, mode);
+            var boulder = await BoulderService.CreateBoulderAsync(
+                WallId, _name, _grade, _selectedHolds, isDraft, _allKickboardOn);
             Navigation.NavigateTo($"/walls/{WallId}/boulders/{boulder.Id}");
         }
         catch (Exception ex)

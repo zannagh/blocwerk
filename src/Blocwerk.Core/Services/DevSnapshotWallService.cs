@@ -31,6 +31,7 @@ public class DevSnapshotWallService : IWallService
     private Wall? wall;
     private byte[]? photoBytes;
     private byte[]? stagedPhotoBytes;
+    private readonly Dictionary<int, byte[]> generationPhotos = [];
     private bool loaded;
 
     private static readonly JsonSerializerOptions JsonOpts = new()
@@ -87,6 +88,15 @@ public class DevSnapshotWallService : IWallService
                 if (File.Exists(stagedPhotoPath))
                 {
                     stagedPhotoBytes = await File.ReadAllBytesAsync(stagedPhotoPath);
+                }
+
+                foreach (var file in Directory.GetFiles(snapshotDir, "photo-gen-*.bin"))
+                {
+                    var stem = Path.GetFileNameWithoutExtension(file)["photo-gen-".Length..];
+                    if (int.TryParse(stem, out var gen))
+                    {
+                        generationPhotos[gen] = await File.ReadAllBytesAsync(file);
+                    }
                 }
             }
             else
@@ -148,7 +158,15 @@ public class DevSnapshotWallService : IWallService
         {
             File.Delete(stagedPhotoPath);
         }
+
+        foreach (var (gen, bytes) in generationPhotos)
+        {
+            await File.WriteAllBytesAsync(GenerationPhotoPath(gen), bytes);
+        }
     }
+
+    private string GenerationPhotoPath(int generation) =>
+        Path.Combine(snapshotDir, $"photo-gen-{generation}.bin");
 
     private Wall Wall => wall ?? throw new InvalidOperationException("DevSnapshot: not loaded yet.");
 
@@ -257,6 +275,30 @@ public class DevSnapshotWallService : IWallService
         return ProjectForRead();
     }
 
+    public async Task<Wall> StageRecreateAsync(Guid wallId, byte[] photo, string contentType)
+    {
+        await EnsureLoadedAsync();
+        if (photoBytes == null)
+        {
+            throw new InvalidOperationException("No live photo yet; use UploadPhotoAsync first.");
+        }
+
+        var stagedGen = Wall.CurrentGeneration + 1;
+        Wall.Holds = Wall.Holds.Where(h => h.Generation != stagedGen).ToList();
+
+        stagedPhotoBytes = photo;
+        Wall.StagedPhotoContentType = contentType;
+        Wall.StagedAt = DateTimeOffset.UtcNow;
+        Wall.StagedByUserId = Guid.Empty;
+        Wall.StagingMode = WallStagingMode.Recreate;
+
+        logger.LogWarning(
+            "DevSnapshot: hold detection is unavailable in snapshot mode, so the recreated wall starts with no holds. Place them manually.");
+
+        await PersistAsync();
+        return ProjectForRead();
+    }
+
     public async Task<Wall> StageManualAlignmentAsync(Guid wallId, byte[] photo, string contentType)
     {
         await EnsureLoadedAsync();
@@ -325,6 +367,79 @@ public class DevSnapshotWallService : IWallService
 
         await PersistAsync();
         return ProjectForRead();
+    }
+
+    public async Task<WallRecreateResult> ConfirmRecreateAsync(Guid wallId)
+    {
+        await EnsureLoadedAsync();
+        if (stagedPhotoBytes == null || Wall.StagingMode != WallStagingMode.Recreate)
+        {
+            throw new InvalidOperationException("No staged wall recreation to confirm.");
+        }
+
+        var oldGen = Wall.CurrentGeneration;
+
+        if (photoBytes != null)
+        {
+            generationPhotos[oldGen] = photoBytes;
+        }
+
+        var referenced = Wall.Boulders
+            .SelectMany(b => b.BoulderHolds)
+            .Select(bh => bh.HoldId)
+            .ToHashSet();
+
+        var pruned = Wall.Holds.Count(h => h.Generation <= oldGen && !referenced.Contains(h.Id));
+        Wall.Holds = Wall.Holds
+            .Where(h => h.Generation > oldGen || referenced.Contains(h.Id))
+            .ToList();
+
+        var staled = Wall.Boulders.Where(b => !b.IsArchived && !b.IsHistoric).ToList();
+        foreach (var boulder in staled)
+        {
+            boulder.IsHistoric = true;
+            boulder.NeedsReview = false;
+        }
+
+        photoBytes = stagedPhotoBytes;
+        Wall.PhotoContentType = Wall.StagedPhotoContentType;
+        stagedPhotoBytes = null;
+        Wall.StagedPhotoContentType = null;
+        Wall.StagedAt = null;
+        Wall.StagedByUserId = null;
+        Wall.StagingMode = WallStagingMode.None;
+        Wall.CurrentGeneration = oldGen + 1;
+        Wall.LastResetAt = DateTimeOffset.UtcNow;
+        Wall.BorderPoints = null;
+
+        await PersistAsync();
+        return new WallRecreateResult(ProjectForRead(), staled.Count, pruned);
+    }
+
+    public async Task<List<Hold>> GetHoldsForGenerationAsync(Guid wallId, int generation)
+    {
+        await EnsureLoadedAsync();
+        return Wall.Holds.Where(h => h.Generation == generation).ToList();
+    }
+
+    public async Task<WallPhoto?> GetPhotoForGenerationAsync(Guid wallId, int generation)
+    {
+        await EnsureLoadedAsync();
+
+        if (generation >= Wall.CurrentGeneration)
+        {
+            return photoBytes == null ? null : new WallPhoto(photoBytes, Wall.PhotoContentType);
+        }
+
+        return generationPhotos.TryGetValue(generation, out var archived)
+            ? new WallPhoto(archived, Wall.PhotoContentType)
+            : null;
+    }
+
+    public async Task<WallPhoto?> GetPhotoForGenerationByShareTokenAsync(Guid wallId, string shareToken, int generation)
+    {
+        await EnsureLoadedAsync();
+        return Wall.ShareToken != shareToken ? null : await GetPhotoForGenerationAsync(wallId, generation);
     }
 
     public async Task<Wall> ConfirmManualAlignmentAsync(Guid wallId, List<ManualAlignHold> holds, List<Guid> deletedStagedIds)
@@ -446,6 +561,19 @@ public class DevSnapshotWallService : IWallService
         }
 
         var stagedGen = Wall.CurrentGeneration + 1;
+
+        // Mirrors WallService: a staged hold a boulder already points at is rescued
+        // into the live generation rather than dropped, which would dangle the link.
+        var referenced = Wall.Boulders
+            .SelectMany(b => b.BoulderHolds)
+            .Select(bh => bh.HoldId)
+            .ToHashSet();
+
+        foreach (var rescued in Wall.Holds.Where(h => h.Generation == stagedGen && referenced.Contains(h.Id)))
+        {
+            rescued.Generation = Wall.CurrentGeneration;
+        }
+
         Wall.Holds = Wall.Holds.Where(h => h.Generation != stagedGen).ToList();
 
         stagedPhotoBytes = null;

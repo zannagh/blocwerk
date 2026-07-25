@@ -111,7 +111,14 @@
 .mode-btn.top-active { background: #F44336; border-color: #F44336; }
 .mode-btn.view-active { background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.5); }
 
-.picker-viewport { max-height: 70vh; overflow: auto; -webkit-overflow-scrolling: touch; border-radius: 0 0 12px 12px; }
+.usage-toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; padding: 8px 12px; background: var(--topbar-bg); border-radius: 0 0 10px 10px; }
+.usage-hint { color: rgba(255,255,255,0.55); font-size: 0.75rem; }
+.usage-controls { display: flex; gap: 4px; align-items: center; }
+.usage-btn { padding: 5px 10px; border: 1px solid rgba(255,255,255,0.3); background: none; color: white; border-radius: 4px; font-size: 0.75rem; cursor: pointer; display: flex; align-items: center; gap: 5px; }
+.usage-btn.active { background: var(--accent); border-color: var(--accent); }
+@media (max-width: 480px) { .usage-btn span { display: none; } .usage-btn { padding: 6px 10px; } }
+
+.picker-viewport { max-height: 70vh; overflow: auto; -webkit-overflow-scrolling: touch; border-radius: 0; }
 .photo-picker { position: relative; overflow: hidden; }
 .photo-picker .wall-photo { width: 100%; display: block; }
 .photo-picker .hold-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }

@@ -100,6 +100,23 @@ public static class Program
             return photo == null ? Results.NotFound() : Results.File(photo, "image/jpeg");
         });
 
+        // The wall photo as it looked at a given generation, so historic boulders can
+        // be rendered against the wall they were actually set on.
+        app.MapGet("/api/walls/{wallId:guid}/photo/{generation:int}", async (
+            Guid wallId,
+            int generation,
+            [FromQuery] string? token,
+            [FromServices] IWallService wallService) =>
+        {
+            var photo = string.IsNullOrEmpty(token)
+                ? await wallService.GetPhotoForGenerationAsync(wallId, generation)
+                : await wallService.GetPhotoForGenerationByShareTokenAsync(wallId, token, generation);
+
+            return photo == null
+                ? Results.NotFound()
+                : Results.File(photo.Photo, photo.ContentType ?? "image/jpeg");
+        });
+
         app.MapGet("/api/walls/{wallId:guid}/staged-photo", async (
             Guid wallId,
             [FromServices] IWallService wallService) =>

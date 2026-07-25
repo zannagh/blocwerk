@@ -453,7 +453,9 @@ h2 { font-size: 1.15rem; }
 .btn-danger:hover { background: var(--accent); color: white; }
 
 .staged-hint { margin: 8px 0; color: var(--text-muted, rgba(255,255,255,0.7)); font-size: 0.9rem; }
+.staged-hint.danger { color: var(--warning-text, #b3541e); }
 .staged-actions { display: flex; gap: 8px; margin-top: 8px; }
+.staged-actions > .btn-danger,
 .staged-actions > .btn-primary,
 .staged-actions > .btn-secondary {
     flex: 1;

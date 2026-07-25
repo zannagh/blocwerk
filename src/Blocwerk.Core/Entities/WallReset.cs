@@ -13,9 +13,16 @@ public class WallReset
     [ForeignKey(nameof(WallId))]
     public Wall Wall { get; set; } = null!;
 
+    /// <summary>
+    /// The generation being retired by this reset. <see cref="PreviousPhoto"/> is the
+    /// wall photo that was live while holds carried this generation.
+    /// </summary>
     public int Generation { get; set; }
 
     public byte[]? PreviousPhoto { get; set; }
+
+    [MaxLength(64)]
+    public string? PreviousPhotoContentType { get; set; }
 
     public DateTimeOffset ResetAt { get; set; } = DateTimeOffset.UtcNow;
 

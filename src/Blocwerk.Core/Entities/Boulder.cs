@@ -28,7 +28,22 @@ public class Boulder
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
+    /// <summary>
+    /// Derived from the boulder's hold usage marks; never set directly by the user.
+    /// </summary>
     public FootholdMode FootholdMode { get; set; } = FootholdMode.AllKickboard;
+
+    /// <summary>
+    /// Whether every kickboard foothold counts as on for this boulder.
+    /// </summary>
+    public bool KickboardFootholdsOn { get; set; } = true;
+
+    /// <summary>
+    /// A draft is only visible to its creator until it is published.
+    /// </summary>
+    public bool IsDraft { get; set; }
+
+    public DateTimeOffset? PublishedAt { get; set; }
 
     public bool IsArchived { get; set; }
 

@@ -3,15 +3,16 @@
 @attribute [Authorize]
 @inject IWallService WallService
 @inject IBoulderService BoulderService
+@inject ICurrentUserService CurrentUserService
 @inject NavigationManager Navigation
 @using Blocwerk.Web.Components.Shared
 
-<PageTitle>Revise Boulder - Blocwerk</PageTitle>
+<PageTitle>@(_isDraft ? "Edit Draft" : "Revise Boulder") - Blocwerk</PageTitle>
 
 <div class="boulder-create">
     <div class="page-header">
         <a href="/walls/@WallId/boulders/@BoulderId" class="back-link">&larr; Back</a>
-        <h1>Revise Boulder</h1>
+        <h1>@(_isDraft ? "Edit Draft" : "Revise Boulder")</h1>
     </div>
 
     @if (_boulder == null || _wall == null)
@@ -20,12 +21,54 @@
     }
     else if (!_isCreator)
     {
-        <p class="error-msg">Only the creator can revise this boulder.</p>
+        <p class="error-msg">Only the creator can edit this boulder.</p>
     }
     else
     {
-        <p class="revision-hint">Some holds from the original boulder may no longer exist on the wall.
-            Adjust the selected holds to match the current wall setup.</p>
+        @if (!_isDraft)
+        {
+            <p class="revision-hint">Some holds from the original boulder may no longer exist on the wall.
+                Adjust the selected holds to match the current wall setup.</p>
+        }
+
+        @if (_referenceGeneration.HasValue)
+        {
+            <details class="reference-panel" open>
+                <summary>Original holds on the previous wall</summary>
+                <div class="reference-photo">
+                    <img src="/api/walls/@WallId/photo/@_referenceGeneration" alt="Previous wall" />
+                    <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
+                        @foreach (var bh in _boulder.BoulderHolds)
+                        {
+                            <circle cx="@F(bh.Hold.X * 100)" cy="@F(bh.Hold.Y * 100)"
+                                    r="@F(bh.Hold.Radius * 100)"
+                                    fill="@SelectionFill(bh.Type)" stroke="@SelectionStroke(bh.Type)"
+                                    stroke-width="0.5" />
+                        }
+                    </svg>
+                </div>
+                <p class="hint">Use this as a reference while picking the matching holds below.</p>
+            </details>
+        }
+
+        <div class="form-section">
+            <div class="form-group">
+                <label>Name</label>
+                <input @bind="_name" class="form-input" placeholder="e.g. Crimpy Traverse" />
+            </div>
+
+            <div class="form-group">
+                <label>Grade</label>
+                <GradePicker @bind-Value="_grade" />
+            </div>
+
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" @bind="_allKickboardOn" />
+                    All kickboard footholds are on
+                </label>
+            </div>
+        </div>
 
         <HoldPicker WallId="WallId"
                     AllHolds="_displayHolds"
@@ -33,8 +76,12 @@
                     @bind-SelectedHolds="_selectedHolds" />
 
         <button class="btn-submit" @onclick="Submit"
-                disabled="@(_selectedHolds.Count == 0 || _isSubmitting)">
-            @(_isSubmitting ? "Saving..." : $"Save Revision ({_selectedHolds.Count} holds)")
+                disabled="@(string.IsNullOrWhiteSpace(_name) || _selectedHolds.Count == 0 || _isSubmitting)">
+            @(_isSubmitting
+                ? "Saving..."
+                : _isDraft
+                    ? $"Save Draft ({_selectedHolds.Count} holds)"
+                    : $"Save Revision ({_selectedHolds.Count} holds)")
         </button>
 
         @if (!string.IsNullOrEmpty(_error))
@@ -52,7 +99,12 @@
     private Boulder? _boulder;
     private List<Hold> _displayHolds = [];
     private List<BoulderHoldInput> _selectedHolds = [];
+    private string _name = string.Empty;
+    private string? _grade;
+    private bool _allKickboardOn = true;
     private bool _isCreator;
+    private bool _isDraft;
+    private int? _referenceGeneration;
     private bool _isSubmitting;
     private string? _error;
 
@@ -61,17 +113,40 @@
         _wall = await WallService.GetWallAsync(WallId);
         _boulder = await BoulderService.GetBoulderAsync(BoulderId);
 
-        if (_wall != null && _boulder != null)
+        if (_wall == null || _boulder == null)
         {
-            _displayHolds = _wall.Holds.ToList();
-            _isCreator = true;
-
-            var currentHoldIds = _wall.Holds.Select(h => h.Id).ToHashSet();
-            _selectedHolds = _boulder.BoulderHolds
-                .Where(bh => currentHoldIds.Contains(bh.HoldId))
-                .Select(bh => new BoulderHoldInput(bh.HoldId, bh.Type))
-                .ToList();
+            return;
         }
+
+        var user = await CurrentUserService.GetCurrentUserAsync();
+        _isCreator = _boulder.CreatedByUserId == user.Id;
+        if (!_isCreator)
+        {
+            return;
+        }
+
+        _isDraft = _boulder.IsDraft;
+        _name = _boulder.Name;
+        _grade = _boulder.Grade;
+        _allKickboardOn = _boulder.KickboardFootholdsOn;
+        _displayHolds = _wall.Holds.ToList();
+
+        // Holds from a retired generation can no longer be selected, but the wall they
+        // were set on is still available as a visual reference for remapping.
+        if (_boulder.BoulderHolds.Count > 0)
+        {
+            var holdGen = _boulder.BoulderHolds.Max(bh => bh.Hold.Generation);
+            if (holdGen < _wall.CurrentGeneration)
+            {
+                _referenceGeneration = holdGen;
+            }
+        }
+
+        var currentHoldIds = _wall.Holds.Select(h => h.Id).ToHashSet();
+        _selectedHolds = _boulder.BoulderHolds
+            .Where(bh => currentHoldIds.Contains(bh.HoldId))
+            .Select(bh => new BoulderHoldInput(bh.HoldId, bh.Type, bh.Usage))
+            .ToList();
     }
 
     private async Task Submit()
@@ -81,7 +156,7 @@
 
         try
         {
-            await BoulderService.ReviseBoulderAsync(BoulderId, _selectedHolds);
+            await BoulderService.ReviseBoulderAsync(BoulderId, _selectedHolds, _name, _grade, _allKickboardOn);
             Navigation.NavigateTo($"/walls/{WallId}/boulders/{BoulderId}");
         }
         catch (Exception ex)
@@ -90,5 +165,20 @@
             _isSubmitting = false;
         }
     }
-}
 
+    private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string SelectionFill(HoldType t) => t switch
+    {
+        HoldType.Start => "rgba(76,175,80,0.55)",
+        HoldType.Top => "rgba(244,67,54,0.55)",
+        _ => "rgba(33,150,243,0.55)",
+    };
+
+    private static string SelectionStroke(HoldType t) => t switch
+    {
+        HoldType.Start => "#4CAF50",
+        HoldType.Top => "#F44336",
+        _ => "#2196F3",
+    };
+}

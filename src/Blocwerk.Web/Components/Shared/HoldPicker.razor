@@ -84,6 +84,17 @@
                             style="cursor: pointer"
                             @onclick="() => ToggleHold(hold)" @onclick:stopPropagation="true" />
                 }
+
+                @if (isSelected && UsageBadge(selection!.Usage) is { } badge)
+                {
+                    <g pointer-events="none">
+                        <circle cx="@F(hold.X * 100 + r * 0.8)" cy="@F(hold.Y * 100 - r * 0.8)" r="1.3"
+                                fill="@strokeColor" stroke="white" stroke-width="0.25" />
+                        <text x="@F(hold.X * 100 + r * 0.8)" y="@F(hold.Y * 100 - r * 0.8)"
+                              text-anchor="middle" dominant-baseline="central"
+                              font-size="1.6" font-weight="700" fill="white">@badge</text>
+                    </g>
+                }
             }
         </svg>
     </div>
@@ -120,10 +131,51 @@ else
                             fill="@fillColor" stroke="@strokeColor" stroke-width="@sw" stroke-dasharray="@dash"
                             style="cursor: pointer" @onclick="() => ToggleHold(hold)" />
                 }
+
+                @if (isSelected && UsageBadge(selection!.Usage) is { } badge)
+                {
+                    <g pointer-events="none">
+                        <circle cx="@F(hold.X * 100 + r * 0.8)" cy="@F(cy - r * 0.8)" r="1.5"
+                                fill="@strokeColor" stroke="white" stroke-width="0.3" />
+                        <text x="@F(hold.X * 100 + r * 0.8)" y="@F(cy - r * 0.8)"
+                              text-anchor="middle" dominant-baseline="central"
+                              font-size="1.8" font-weight="700" fill="white">@badge</text>
+                    </g>
+                }
             }
         </svg>
     </div>
 }
+</div>
+
+<div class="usage-toolbar">
+    <span class="usage-hint">Tap a hold to mark it</span>
+    <div class="usage-controls">
+        <button class="usage-btn @(_placeUsage == HoldUsage.HandAndFoot ? "active" : "")"
+                @onclick="() => _placeUsage = HoldUsage.HandAndFoot"
+                title="Hand and foot (default)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18">
+                <path d="M9 10V5a1.5 1.5 0 0 1 3 0v4M12 9V4.5a1.5 1.5 0 0 1 3 0V9M15 9.5V6a1.5 1.5 0 0 1 3 0v7a7 7 0 0 1-7 7H10c-2 0-3-1-4.2-2.8L4 14a1.5 1.5 0 0 1 2.5-1.6L8 14V7a1.5 1.5 0 0 1 3 0" />
+            </svg>
+            <span>Hand + Foot</span>
+        </button>
+        <button class="usage-btn @(_placeUsage == HoldUsage.HandOnly ? "active" : "")"
+                @onclick="() => _placeUsage = HoldUsage.HandOnly"
+                title="Hands only">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18">
+                <path d="M9 11V6a1.5 1.5 0 0 1 3 0v5M12 10V5a1.5 1.5 0 0 1 3 0v6M15 11V7a1.5 1.5 0 0 1 3 0v6a7 7 0 0 1-7 7h-1c-2 0-3.2-1-4.4-2.8L4 15a1.5 1.5 0 0 1 2.5-1.6L8 15V8a1.5 1.5 0 0 1 3 0" />
+            </svg>
+            <span>Hand only</span>
+        </button>
+        <button class="usage-btn @(_placeUsage == HoldUsage.FootOnly ? "active" : "")"
+                @onclick="() => _placeUsage = HoldUsage.FootOnly"
+                title="Feet only">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18">
+                <path d="M8 20c-1.5 0-2.5-1-2.5-2.6 0-2 1.5-3.4 1.5-5.9C7 8 8.7 5 12 5s5 2.6 5 6.5c0 2.6-1.2 3.9-1.2 6C15.8 19 14.6 20 13 20z" />
+            </svg>
+            <span>Foot only</span>
+        </button>
+    </div>
 </div>
 
 @code {
@@ -137,6 +189,7 @@ else
     private ElementReference _photoPickerRef;
     private DotNetObjectReference<HoldPicker>? _dotnetRef;
     private HoldType _placeType = HoldType.Normal;
+    private HoldUsage _placeUsage = HoldUsage.HandAndFoot;
     private ViewMode _viewMode = ViewMode.Photo;
     private double _zoom = 1.0;
     private bool _isPanning;
@@ -164,7 +217,7 @@ else
     {
         if (!_placingVirtual || _isPanning) return;
         var pos = await JS.InvokeAsync<RelativePos>("wallEditor.getRelativePosition", _photoPickerRef, e.ClientX, e.ClientY);
-        var cat = _defineFootholdsCategory();
+        var cat = _placeUsage == HoldUsage.FootOnly ? HoldCategory.Foot : HoldCategory.Hand;
         var hold = await WallService.AddHoldAsync(
             WallId,
             Math.Clamp(pos.X, 0, 1),
@@ -175,12 +228,10 @@ else
             shapePoints: null,
             isVirtual: true);
         AllHolds.Add(hold);
-        SelectedHolds.Add(new BoulderHoldInput(hold.Id, _placeType));
+        SelectedHolds.Add(new BoulderHoldInput(hold.Id, _placeType, _placeUsage));
         await SelectedHoldsChanged.InvokeAsync(SelectedHolds);
         StateHasChanged();
     }
-
-    private HoldCategory _defineFootholdsCategory() => HoldCategory.Hand;
 
     private record RelativePos(double X, double Y);
 
@@ -190,12 +241,24 @@ else
         var existing = SelectedHolds.FirstOrDefault(s => s.HoldId == hold.Id);
         if (existing != null)
         {
-            if (existing.Type == _placeType) SelectedHolds.Remove(existing);
-            else { SelectedHolds.Remove(existing); SelectedHolds.Add(new BoulderHoldInput(hold.Id, _placeType)); }
+            // Re-tapping with the same tools deselects; with different tools it
+            // reclassifies, so switching tool and tapping again changes the mark.
+            SelectedHolds.Remove(existing);
+            if (existing.Type != _placeType || existing.Usage != _placeUsage)
+            {
+                SelectedHolds.Add(new BoulderHoldInput(hold.Id, _placeType, _placeUsage));
+            }
         }
-        else { SelectedHolds.Add(new BoulderHoldInput(hold.Id, _placeType)); }
+        else { SelectedHolds.Add(new BoulderHoldInput(hold.Id, _placeType, _placeUsage)); }
         SelectedHoldsChanged.InvokeAsync(SelectedHolds);
     }
+
+    private static string? UsageBadge(HoldUsage usage) => usage switch
+    {
+        HoldUsage.HandOnly => "H",
+        HoldUsage.FootOnly => "F",
+        _ => null,
+    };
 
     private double CorrectY(double y)
     {
