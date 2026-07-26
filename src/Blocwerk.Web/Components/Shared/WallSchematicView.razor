@@ -90,20 +90,8 @@
     private static string Pts(IEnumerable<(double X, double Y)> pts) =>
         string.Join(" ", pts.Select(p => $"{F(p.X * 100)},{F(p.Y * 100)}"));
 
-    private static string GetFillColor(Hold hold) => hold.Color switch
-    {
-        "yellow" => "#FFD600", "red" => "#E53935", "pink" => "#EC407A",
-        "blue" => "#1E88E5", "green" => "#43A047", "orange" => "#FB8C00",
-        "purple" => "#8E24AA", "white" => "#FAFAFA", "black" => "#424242",
-        _ => "#E94560",
-    };
+    private static string GetFillColor(Hold hold) => HoldPalette.Hex(hold.Color);
 
-    private static string GetStrokeColor(Hold hold) => hold.Color switch
-    {
-        "yellow" => "#C6A700", "red" => "#B71C1C", "pink" => "#AD1457",
-        "blue" => "#0D47A1", "green" => "#1B5E20", "orange" => "#E65100",
-        "purple" => "#4A148C", "white" => "#BDBDBD", "black" => "#212121",
-        _ => "#C62828",
-    };
+    private static string GetStrokeColor(Hold hold) => HoldPalette.StrokeHex(hold.Color);
 }
 

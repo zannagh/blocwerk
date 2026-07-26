@@ -5,6 +5,13 @@
         <span class="hold-count">@Holds.Count(h => h.Category == HoldCategory.Hand)H / @Holds.Count(h => h.Category == HoldCategory.Foot)F</span>
     </div>
     <div class="toolbar-right">
+        <button class="tool-btn @(_showNames ? "active" : "")" @onclick="() => _showNames = !_showNames"
+                title="@(_showNames ? "Hide hold names" : "Show hold names")">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20" opacity="@(_showNames ? "1" : "0.5")">
+                <path d="M4 7V4h16v3M9 20h6M12 4v16" />
+            </svg>
+        </button>
+        <span class="toolbar-sep"></span>
         @if (OnRequestHoldUsage != null)
         {
             <button class="tool-btn @A(EditMode.Usage)" @onclick="ToggleUsageMode"
@@ -123,8 +130,8 @@
                 {
                     var idx = i;
                     var bp = BorderPoints[idx];
-                    <circle cx="@F(bp.Dx * 100)" cy="@F(bp.Dy * 100)" r="1.2"
-                            fill="#FF9800" stroke="white" stroke-width="0.3"
+                    <circle cx="@F(bp.Dx * 100)" cy="@F(bp.Dy * 100)" r="@F(1.2 * HandleScale)"
+                            fill="#FF9800" stroke="white" stroke-width="@F(0.3 * HandleScale)"
                             style="cursor: grab"
                             @onmousedown="() => StartBorderDrag(idx)"
                             @onmousedown:stopPropagation="true" />
@@ -231,7 +238,7 @@
                     var cpIdx = i;
                     var sp = hold.ShapePoints[cpIdx];
                     <circle cx="@F((hold.X + sp.Dx) * 100)" cy="@F((hold.Y + sp.Dy) * 100)"
-                            r="@F(_shapePointRadius)" fill="white" stroke="#e94560" stroke-width="0.25"
+                            r="@F(_shapePointRadius * HandleScale)" fill="white" stroke="#e94560" stroke-width="@F(0.25 * HandleScale)"
                             style="cursor: grab"
                             @onmousedown="() => StartShapePointDrag(hold, cpIdx)" @onmousedown:stopPropagation="true" />
                 }
@@ -244,7 +251,7 @@
                         stroke-dasharray="0.5 0.3" style="pointer-events: none" />
             }
 
-            @if (!string.IsNullOrEmpty(hold.Name))
+            @if (!string.IsNullOrEmpty(hold.Name) && (_showNames || _revealNameHoldId == hold.Id || isNaming))
             {
                 <foreignObject x="@F((hold.X - 0.08) * 100)" y="@F((hold.Y - hold.Radius - 0.025) * 100)"
                                width="16" height="3" style="pointer-events: none; overflow: visible;">
@@ -261,28 +268,29 @@
             var arm = 0.12;
             var hxR = cx + arm;
             var hyT = cy - arm;
-            <circle cx="@F(cx * 100)" cy="@F(cy * 100)" r="3.0" fill="none" stroke="#4aa8ff" stroke-width="0.3" stroke-dasharray="0.8 0.4" style="pointer-events: none" opacity="0.7" />
-            <line x1="@F(cx * 100)" y1="@F(cy * 100)" x2="@F(hxR * 100)" y2="@F(cy * 100)" stroke="#ff4d4d" stroke-width="0.35" style="pointer-events: none" opacity="0.8" />
-            <line x1="@F(cx * 100)" y1="@F(cy * 100)" x2="@F(cx * 100)" y2="@F(hyT * 100)" stroke="#3ddc84" stroke-width="0.35" style="pointer-events: none" opacity="0.8" />
-            <circle cx="@F(hxR * 100)" cy="@F(cy * 100)" r="1.6" fill="#ff4d4d" stroke="#fff" stroke-width="0.3"
+            <circle cx="@F(cx * 100)" cy="@F(cy * 100)" r="3.0" fill="none" stroke="#4aa8ff" stroke-width="@F(0.3 * HandleScale)" stroke-dasharray="0.8 0.4" style="pointer-events: none" opacity="0.7" />
+            <line x1="@F(cx * 100)" y1="@F(cy * 100)" x2="@F(hxR * 100)" y2="@F(cy * 100)" stroke="#ff4d4d" stroke-width="@F(0.35 * HandleScale)" style="pointer-events: none" opacity="0.8" />
+            <line x1="@F(cx * 100)" y1="@F(cy * 100)" x2="@F(cx * 100)" y2="@F(hyT * 100)" stroke="#3ddc84" stroke-width="@F(0.35 * HandleScale)" style="pointer-events: none" opacity="0.8" />
+            <circle cx="@F(hxR * 100)" cy="@F(cy * 100)" r="@F(1.6 * HandleScale)" fill="#ff4d4d" stroke="#fff" stroke-width="@F(0.3 * HandleScale)"
                     style="cursor: ns-resize"
                     @onmousedown="(e) => StartAlignDrag(e, AlignHandle.TiltX)" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" />
-            <circle cx="@F(cx * 100)" cy="@F(hyT * 100)" r="1.6" fill="#3ddc84" stroke="#fff" stroke-width="0.3"
+            <circle cx="@F(cx * 100)" cy="@F(hyT * 100)" r="@F(1.6 * HandleScale)" fill="#3ddc84" stroke="#fff" stroke-width="@F(0.3 * HandleScale)"
                     style="cursor: ew-resize"
                     @onmousedown="(e) => StartAlignDrag(e, AlignHandle.TiltY)" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" />
             var zr = 3.0 / 100.0;
             var zhx = cx + zr * 0.7071;
             var zhy = cy - zr * 0.7071;
-            <circle cx="@F(zhx * 100)" cy="@F(zhy * 100)" r="1.3" fill="#4aa8ff" stroke="#fff" stroke-width="0.3"
+            <circle cx="@F(zhx * 100)" cy="@F(zhy * 100)" r="@F(1.3 * HandleScale)" fill="#4aa8ff" stroke="#fff" stroke-width="@F(0.3 * HandleScale)"
                     style="cursor: grab"
                     @onmousedown="(e) => StartAlignDrag(e, AlignHandle.RotateZ)" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" />
             var shx = cx + zr * 0.7071;
             var shy = cy + zr * 0.7071;
-            <rect x="@F((shx - 0.012) * 100)" y="@F((shy - 0.012) * 100)" width="2.4" height="2.4"
-                  fill="#f5a623" stroke="#fff" stroke-width="0.3"
+            var sHalf = 0.012 * HandleScale;
+            <rect x="@F((shx - sHalf) * 100)" y="@F((shy - sHalf) * 100)" width="@F(2.4 * HandleScale)" height="@F(2.4 * HandleScale)"
+                  fill="#f5a623" stroke="#fff" stroke-width="@F(0.3 * HandleScale)"
                   style="cursor: nwse-resize"
                   @onmousedown="(e) => StartAlignDrag(e, AlignHandle.Scale)" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" />
-            <circle cx="@F(cx * 100)" cy="@F(cy * 100)" r="2.2" fill="rgba(255,215,0,0.85)" stroke="#000" stroke-width="0.3"
+            <circle cx="@F(cx * 100)" cy="@F(cy * 100)" r="@F(2.2 * HandleScale)" fill="rgba(255,215,0,0.85)" stroke="#000" stroke-width="@F(0.3 * HandleScale)"
                     style="cursor: move"
                     @onmousedown="(e) => StartAlignDrag(e, AlignHandle.Translate)" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" />
         }
@@ -294,8 +302,8 @@
             {
                 var hcx = th.X + th.Radius + 0.015;
                 var hcy = th.Y - th.Radius - 0.015;
-                <line x1="@F(th.X * 100)" y1="@F(th.Y * 100)" x2="@F(hcx * 100)" y2="@F(hcy * 100)" stroke="#9b59ff" stroke-width="0.25" stroke-dasharray="0.4 0.3" style="pointer-events: none" />
-                <circle cx="@F(hcx * 100)" cy="@F(hcy * 100)" r="1.4" fill="#9b59ff" stroke="#fff" stroke-width="0.3"
+                <line x1="@F(th.X * 100)" y1="@F(th.Y * 100)" x2="@F(hcx * 100)" y2="@F(hcy * 100)" stroke="#9b59ff" stroke-width="@F(0.25 * HandleScale)" stroke-dasharray="0.4 0.3" style="pointer-events: none" />
+                <circle cx="@F(hcx * 100)" cy="@F(hcy * 100)" r="@F(1.4 * HandleScale)" fill="#9b59ff" stroke="#fff" stroke-width="@F(0.3 * HandleScale)"
                         style="cursor: grab" title="Drag to tilt polygon"
                         @onmousedown="(e) => StartShapeTiltDrag(e, th)" @onmousedown:stopPropagation="true" />
             }
@@ -371,9 +379,17 @@
                 <button class="opt-btn @(_addCategory == HoldCategory.Hand ? "active" : "")" @onclick="() => _addCategory = HoldCategory.Hand">Hand</button>
                 <button class="opt-btn foot @(_addCategory == HoldCategory.Foot ? "active" : "")" @onclick="() => _addCategory = HoldCategory.Foot">Foot</button>
             </div>
+            <div class="option-group"><label>Material:</label>
+                <select class="color-select" value="@_addMaterial" @onchange="OnAddMaterialChange">
+                    @foreach (var m in _materials) { <option value="@m">@MaterialLabel(m)</option> }
+                </select>
+            </div>
             <div class="option-group"><label>Color:</label>
-                <select class="color-select" @bind="_addColor">@foreach (var c in _colors) { <option value="@c">@c</option> }</select>
-                <span class="color-dot" style="background: @GetCssColor(_addColor);"></span>
+                <select class="color-select" value="@_addColor" @onchange="OnAddColorChange">
+                    <option value="none">No color</option>
+                    @foreach (var c in HoldPalette.ColorsFor(_addMaterial)) { <option value="@c.Key">@c.DisplayName</option> }
+                </select>
+                <span class="color-dot" style="background: @GetCssColor(_addColor == "none" ? null : _addColor);"></span>
             </div>
             <div class="option-group"><label class="cb-label"><input type="checkbox" @bind="_addOnKickboard" /> Kickboard</label></div>
         </div>
@@ -381,9 +397,9 @@
     @if (CanEdit && _mode == EditMode.Paint)
     {
         <div class="option-bar">
-            <div class="option-group"><label>Paint:</label>
-                @foreach (var c in _colors.Where(c => c != "none"))
-                { <button class="color-swatch @(_paintColor == c ? "active" : "")" style="background: @GetCssColor(c);" @onclick="() => _paintColor = c" title="@c"></button> }
+            <div class="option-group swatches"><label>Paint:</label>
+                @foreach (var c in HoldPalette.All)
+                { <button class="color-swatch @(_paintColor == c.Key ? "active" : "")" style="background: @c.Hex;" @onclick="() => _paintColor = c.Key" title="@c.DisplayName"></button> }
             </div>
         </div>
     }
@@ -402,6 +418,17 @@
         <div class="option-bar">
             <span class="option-hint">Click a hold to edit its shape. Drag the control points.</span>
             <div class="option-group"><label>Point size:</label><input type="range" min="2" max="20" value="@((int)(_shapePointRadius * 10))" @oninput="OnShapePointSizeChange" /></div>
+            @{
+                var shapeHold = Holds.FirstOrDefault(h => h.Id == _shapeEditHoldId);
+                var shapePointCount = shapeHold?.ShapePoints?.Count ?? 0;
+            }
+            @if (shapeHold != null && shapePointCount >= 3)
+            {
+                <div class="option-group"><label>Points: @shapePointCount</label>
+                    <button class="opt-btn" @onclick="RemoveShapePoint" disabled="@(shapePointCount <= 3)" title="Remove a point">−</button>
+                    <button class="opt-btn" @onclick="AddShapePoint" title="Add a point on the longest edge">+</button>
+                </div>
+            }
         </div>
     }
     @if (CanEdit && _mode == EditMode.Name)
@@ -429,8 +456,18 @@
                     <button class="opt-btn foot @(sel.Category == HoldCategory.Foot ? "active" : "")" @onclick="() => SetSelectedCategory(HoldCategory.Foot)">Foot</button>
                 </div>
                 <div class="option-group"><label class="cb-label"><input type="checkbox" checked="@sel.IsOnKickboard" @onchange="() => ToggleKickboard(sel)" /> KB</label></div>
+                <div class="option-group"><label>Material:</label>
+                    <select class="color-select" value="@(sel.Material?.ToString() ?? "none")" @onchange="e => OnSelectedMaterialChange(sel, e)">
+                        <option value="none">—</option>
+                        @foreach (var m in _materials) { <option value="@m">@MaterialLabel(m)</option> }
+                    </select>
+                </div>
                 <div class="option-group"><label>Color:</label>
-                    <select class="color-select" value="@(sel.Color ?? "none")" @onchange="OnSelectedColorChange">@foreach (var c in _colors) { <option value="@c">@c</option> }</select>
+                    <select class="color-select" value="@(sel.Color ?? "none")" @onchange="OnSelectedColorChange">
+                        <option value="none">No color</option>
+                        @foreach (var c in HoldPalette.ColorsFor(sel.Material)) { <option value="@c.Key">@c.DisplayName</option> }
+                    </select>
+                    <span class="color-dot" style="background: @GetCssColor(sel.Color);"></span>
                 </div>
                 <div class="option-group"><label>Size:</label><input type="range" min="3" max="40" value="@((int)(_selectedRadius * 1000))" @oninput="OnRadiusChange" /></div>
                 <button class="opt-btn danger" @onclick="DeleteSelected">Del</button>
@@ -635,10 +672,13 @@
     private bool _isDetecting;
     private HoldCategory _addCategory = HoldCategory.Hand;
     private string _addColor = "none";
+    private HoldMaterial _addMaterial = HoldMaterial.PU;
     private bool _addOnKickboard;
     private string _paintColor = "yellow";
     private double _zoom = 1.0;
     private bool _showBorder = true;
+    private bool _showNames;
+    private Guid? _revealNameHoldId;
 
     private Guid? _namingHoldId;
     private string _nameInput = string.Empty;
@@ -663,7 +703,14 @@
     private bool IsStagedHold(Hold h) => IsStaging && h.Generation > LiveGeneration;
     private bool IsLiveHold(Hold h) => IsStaging && h.Generation <= LiveGeneration;
 
-    private static readonly string[] _colors = ["none", "yellow", "red", "pink", "blue", "green", "orange", "purple", "white", "black"];
+    private static readonly HoldMaterial[] _materials = [HoldMaterial.PU, HoldMaterial.PE, HoldMaterial.DualTex, HoldMaterial.Wood];
+    private static string MaterialLabel(HoldMaterial m) => m == HoldMaterial.DualTex ? "DualTex" : m.ToString();
+
+    // Handles are drawn in SVG user units, which the zoom scales up with the photo.
+    // Divide their size by the zoom so they stay a constant on-screen size instead of
+    // ballooning when zoomed in.
+    private double HandleScale => 1.0 / Math.Clamp(_zoom, 0.5, 6.0);
+
     private enum EditMode { Add, Move, Shape, Paint, Delete, Border, Name, Merge, ShapeTilt, Usage }
 
     public record BatchChanges(List<Hold> Added, List<Hold> Updated, List<Guid> Deleted);
@@ -732,7 +779,7 @@
         _snapshotHolds = Holds.Select(h => new Hold
         {
             Id = h.Id, WallId = h.WallId, X = h.X, Y = h.Y, Radius = h.Radius,
-            Color = h.Color, Category = h.Category, IsOnKickboard = h.IsOnKickboard,
+            Color = h.Color, Material = h.Material, Category = h.Category, IsOnKickboard = h.IsOnKickboard,
             IsAutoDetected = h.IsAutoDetected, Confidence = h.Confidence, Generation = h.Generation,
             Name = h.Name,
             ShapePoints = h.ShapePoints?.Select(sp => new ShapePoint { Dx = sp.Dx, Dy = sp.Dy }).ToList(),
@@ -784,6 +831,9 @@
 
     private async Task OnHoldClick(Hold hold)
     {
+        // Tapping a hold reveals its name even when the labels are hidden.
+        _revealNameHoldId = _revealNameHoldId == hold.Id ? null : hold.Id;
+
         switch (_mode)
         {
             case EditMode.Usage:
@@ -792,6 +842,7 @@
             case EditMode.Paint:
                 TakeSnapshot();
                 hold.Color = _paintColor;
+                SyncMaterialToColor(hold);
                 _updatedHoldIds.Add(hold.Id);
                 return;
             case EditMode.Delete:
@@ -1157,6 +1208,7 @@
             X = Math.Clamp(pos.X, 0, 1), Y = Math.Clamp(pos.Y, 0, 1),
             Radius = radius, Category = _addCategory,
             Color = _addColor == "none" ? null : _addColor,
+            Material = _addMaterial,
             IsOnKickboard = _addOnKickboard, IsAutoDetected = false,
         };
         _addedHolds.Add(hold);
@@ -1321,6 +1373,45 @@
         _updatedHoldIds.Add(h.Id);
     }
 
+    private void OnAddMaterialChange(ChangeEventArgs e)
+    {
+        if (!Enum.TryParse<HoldMaterial>(e.Value?.ToString(), out var m)) return;
+        _addMaterial = m;
+        // Keep the pending color legal for the new material (e.g. drop blue when
+        // switching to wood, defaulting wood to its medium tone).
+        _addColor = HoldPalette.CoerceTo(_addColor == "none" ? null : _addColor, m)
+            ?? (m == HoldMaterial.Wood ? "wood-medium" : "none");
+    }
+
+    private void OnAddColorChange(ChangeEventArgs e)
+    {
+        _addColor = e.Value?.ToString() ?? "none";
+    }
+
+    private void OnSelectedMaterialChange(Hold h, ChangeEventArgs e)
+    {
+        TakeSnapshot();
+        h.Material = Enum.TryParse<HoldMaterial>(e.Value?.ToString(), out var m) ? m : null;
+        // A blue hold turned wooden can't stay blue; snap it to a valid tone.
+        h.Color = HoldPalette.CoerceTo(h.Color, h.Material)
+            ?? (h.Material == HoldMaterial.Wood ? "wood-medium" : null);
+        _updatedHoldIds.Add(h.Id);
+    }
+
+    // Painting a wood tone implies the hold is wooden, and vice versa — keep the
+    // material in step so its color stays selectable in the dropdown.
+    private static void SyncMaterialToColor(Hold hold)
+    {
+        if (HoldPalette.WoodColors.Any(c => c.Key == hold.Color))
+        {
+            hold.Material = HoldMaterial.Wood;
+        }
+        else if (hold.Material == HoldMaterial.Wood)
+        {
+            hold.Material = null;
+        }
+    }
+
     private async Task SaveChanges()
     {
         var added = _addedHolds.ToList();
@@ -1369,6 +1460,37 @@
             _shapePointRadius = val / 10.0;
     }
 
+    private void AddShapePoint()
+    {
+        var h = Holds.FirstOrDefault(x => x.Id == _shapeEditHoldId);
+        if (h?.ShapePoints is not { Count: >= 3 } pts) return;
+        TakeSnapshot();
+        // Split the longest edge so the polygon gains detail where it's coarsest.
+        var edgeIdx = 0;
+        var longest = -1.0;
+        for (var i = 0; i < pts.Count; i++)
+        {
+            var a = pts[i];
+            var b = pts[(i + 1) % pts.Count];
+            var lenSq = (b.Dx - a.Dx) * (b.Dx - a.Dx) + (b.Dy - a.Dy) * (b.Dy - a.Dy);
+            if (lenSq > longest) { longest = lenSq; edgeIdx = i; }
+        }
+
+        var p1 = pts[edgeIdx];
+        var p2 = pts[(edgeIdx + 1) % pts.Count];
+        pts.Insert(edgeIdx + 1, new ShapePoint { Dx = (p1.Dx + p2.Dx) / 2, Dy = (p1.Dy + p2.Dy) / 2 });
+        _updatedHoldIds.Add(h.Id);
+    }
+
+    private void RemoveShapePoint()
+    {
+        var h = Holds.FirstOrDefault(x => x.Id == _shapeEditHoldId);
+        if (h?.ShapePoints is not { Count: > 3 } pts) return;
+        TakeSnapshot();
+        pts.RemoveAt(pts.Count - 1);
+        _updatedHoldIds.Add(h.Id);
+    }
+
     private async Task OnRedetect() { _isDetecting = true; StateHasChanged(); await OnRedetectRequested.InvokeAsync(); _isDetecting = false; }
 
     private async Task InitBorder()
@@ -1398,21 +1520,12 @@
     private static string Pts(IEnumerable<(double X, double Y)> pts) =>
         string.Join(" ", pts.Select(p => $"{F(p.X * 100)},{F(p.Y * 100)}"));
 
-    private static string GetCssColor(string? c) => c switch {
-        "yellow" => "#e6c800", "red" => "#cc3333", "pink" => "#e05590", "blue" => "#3366dd",
-        "green" => "#33aa44", "orange" => "#dd8800", "purple" => "#8833bb", "white" => "#eee",
-        "black" => "#444", _ => "#e94560" };
+    private static string GetCssColor(string? c) => HoldPalette.Hex(c);
 
-    private static string GetHoldFillColor(Hold h, bool sel) {
-        if (sel) return "rgba(255,255,255,0.4)";
-        return h.Color switch {
-            "yellow" => "rgba(255,220,0,0.45)", "red" => "rgba(220,50,50,0.45)",
-            "pink" => "rgba(255,100,160,0.45)", "blue" => "rgba(60,120,230,0.45)",
-            "green" => "rgba(60,200,90,0.45)", "orange" => "rgba(255,150,30,0.45)",
-            "purple" => "rgba(160,60,210,0.45)", "white" => "rgba(255,255,255,0.45)",
-            "black" => "rgba(60,60,60,0.45)", _ => "rgba(229,69,96,0.35)" }; }
+    private static string GetHoldFillColor(Hold h, bool sel) =>
+        sel ? "rgba(255,255,255,0.4)" : HoldPalette.Fill(h.Color);
 
-    private static string GetHoldStrokeColor(Hold h) => GetCssColor(h.Color);
+    private static string GetHoldStrokeColor(Hold h) => HoldPalette.Hex(h.Color);
     private record RelativePos(double X, double Y);
 }
 

@@ -28,6 +28,12 @@ public class Hold
     [MaxLength(32)]
     public string? Color { get; set; }
 
+    /// <summary>
+    /// What the hold is made of. Restricts the selectable colors (wooden holds only
+    /// come in brown tones). Null on holds created before materials were introduced.
+    /// </summary>
+    public HoldMaterial? Material { get; set; }
+
     public HoldCategory Category { get; set; } = HoldCategory.Hand;
 
     public bool IsOnKickboard { get; set; }

@@ -485,6 +485,7 @@ public class DevSnapshotWallService : IWallService
                     Radius = input.Radius,
                     ShapePoints = input.ShapePoints,
                     Color = input.Color,
+                    Material = input.Material,
                     Category = input.Category,
                     IsOnKickboard = input.IsOnKickboard,
                     IsAutoDetected = false,
@@ -505,6 +506,7 @@ public class DevSnapshotWallService : IWallService
                 source.Radius = input.Radius;
                 source.ShapePoints = input.ShapePoints;
                 source.Color = input.Color;
+                source.Material = input.Material;
                 source.Category = input.Category;
                 source.IsOnKickboard = input.IsOnKickboard;
                 if (input.DidChange)
@@ -658,7 +660,7 @@ public class DevSnapshotWallService : IWallService
         return photoBytes;
     }
 
-    public async Task<Hold> AddHoldAsync(Guid wallId, double x, double y, double radius, string? color, HoldCategory category = HoldCategory.Hand, List<ShapePoint>? shapePoints = null, bool isVirtual = false)
+    public async Task<Hold> AddHoldAsync(Guid wallId, double x, double y, double radius, string? color, HoldCategory category = HoldCategory.Hand, List<ShapePoint>? shapePoints = null, bool isVirtual = false, HoldMaterial? material = null)
     {
         await EnsureLoadedAsync();
         var targetGen = Wall.StagedAt != null ? Wall.CurrentGeneration + 1 : Wall.CurrentGeneration;
@@ -669,6 +671,7 @@ public class DevSnapshotWallService : IWallService
             Y = y,
             Radius = radius,
             Color = color,
+            Material = material,
             Category = category,
             ShapePoints = shapePoints,
             IsAutoDetected = false,
@@ -680,7 +683,7 @@ public class DevSnapshotWallService : IWallService
         return hold;
     }
 
-    public async Task<Hold> UpdateHoldAsync(Guid holdId, double x, double y, double radius, string? color = null, HoldCategory? category = null, bool? isOnKickboard = null, List<ShapePoint>? shapePoints = null, string? name = null)
+    public async Task<Hold> UpdateHoldAsync(Guid holdId, double x, double y, double radius, string? color = null, HoldCategory? category = null, bool? isOnKickboard = null, List<ShapePoint>? shapePoints = null, string? name = null, HoldMaterial? material = null)
     {
         await EnsureLoadedAsync();
         var hold = Wall.Holds.FirstOrDefault(h => h.Id == holdId)
@@ -689,10 +692,8 @@ public class DevSnapshotWallService : IWallService
         hold.X = x;
         hold.Y = y;
         hold.Radius = radius;
-        if (color != null)
-        {
-            hold.Color = color;
-        }
+        hold.Color = color;
+        hold.Material = material;
 
         if (category.HasValue)
         {

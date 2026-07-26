@@ -14,6 +14,7 @@ public record ManualAlignHold(
     double Radius,
     List<ShapePoint>? ShapePoints,
     string? Color,
+    HoldMaterial? Material,
     HoldCategory Category,
     bool IsOnKickboard,
     bool DidChange,
@@ -105,9 +106,9 @@ public interface IWallService
 
     Task<WallPhoto?> GetPhotoForGenerationByShareTokenAsync(Guid wallId, string shareToken, int generation);
 
-    Task<Hold> AddHoldAsync(Guid wallId, double x, double y, double radius, string? color, HoldCategory category = HoldCategory.Hand, List<ShapePoint>? shapePoints = null, bool isVirtual = false);
+    Task<Hold> AddHoldAsync(Guid wallId, double x, double y, double radius, string? color, HoldCategory category = HoldCategory.Hand, List<ShapePoint>? shapePoints = null, bool isVirtual = false, HoldMaterial? material = null);
 
-    Task<Hold> UpdateHoldAsync(Guid holdId, double x, double y, double radius, string? color = null, HoldCategory? category = null, bool? isOnKickboard = null, List<ShapePoint>? shapePoints = null, string? name = null);
+    Task<Hold> UpdateHoldAsync(Guid holdId, double x, double y, double radius, string? color = null, HoldCategory? category = null, bool? isOnKickboard = null, List<ShapePoint>? shapePoints = null, string? name = null, HoldMaterial? material = null);
 
     Task DeleteHoldAsync(Guid holdId);
 
@@ -541,6 +542,7 @@ public class WallService : IWallService
                     Radius = input.Radius,
                     ShapePoints = input.ShapePoints,
                     Color = input.Color,
+                    Material = input.Material,
                     Category = input.Category,
                     IsOnKickboard = input.IsOnKickboard,
                     IsAutoDetected = false,
@@ -561,6 +563,7 @@ public class WallService : IWallService
                 source.Radius = input.Radius;
                 source.ShapePoints = input.ShapePoints;
                 source.Color = input.Color;
+                source.Material = input.Material;
                 source.Category = input.Category;
                 source.IsOnKickboard = input.IsOnKickboard;
 
@@ -589,6 +592,7 @@ public class WallService : IWallService
                 clone.Radius = input.Radius;
                 clone.ShapePoints = input.ShapePoints;
                 clone.Color = input.Color;
+                clone.Material = input.Material;
                 clone.Category = input.Category;
                 clone.IsOnKickboard = input.IsOnKickboard;
                 clone.AlignmentSourceHoldId = null;
@@ -1031,7 +1035,7 @@ public class WallService : IWallService
             : new WallPhoto(reset.PreviousPhoto, reset.PreviousPhotoContentType);
     }
 
-    public async Task<Hold> AddHoldAsync(Guid wallId, double x, double y, double radius, string? color, HoldCategory category = HoldCategory.Hand, List<ShapePoint>? shapePoints = null, bool isVirtual = false)
+    public async Task<Hold> AddHoldAsync(Guid wallId, double x, double y, double radius, string? color, HoldCategory category = HoldCategory.Hand, List<ShapePoint>? shapePoints = null, bool isVirtual = false, HoldMaterial? material = null)
     {
         var user = await _currentUserService.GetCurrentUserAsync();
         await using var db = await _dbContextFactory.CreateDbContextAsync();
@@ -1048,6 +1052,7 @@ public class WallService : IWallService
             Y = y,
             Radius = radius,
             Color = color,
+            Material = material,
             Category = category,
             ShapePoints = shapePoints,
             IsAutoDetected = false,
@@ -1062,7 +1067,7 @@ public class WallService : IWallService
         return hold;
     }
 
-    public async Task<Hold> UpdateHoldAsync(Guid holdId, double x, double y, double radius, string? color = null, HoldCategory? category = null, bool? isOnKickboard = null, List<ShapePoint>? shapePoints = null, string? name = null)
+    public async Task<Hold> UpdateHoldAsync(Guid holdId, double x, double y, double radius, string? color = null, HoldCategory? category = null, bool? isOnKickboard = null, List<ShapePoint>? shapePoints = null, string? name = null, HoldMaterial? material = null)
     {
         var user = await _currentUserService.GetCurrentUserAsync();
         await using var db = await _dbContextFactory.CreateDbContextAsync();
@@ -1075,17 +1080,17 @@ public class WallService : IWallService
         bool isStaging = wallStagedAt != null;
 
         bool positionChanged = Math.Abs(hold.X - x) > 0.0001 || Math.Abs(hold.Y - y) > 0.0001;
-        bool colorChanged = color != null && hold.Color != color;
+        // Callers send the full intended state, so color/material are assigned
+        // unconditionally — allowing them to be cleared, not only set.
+        bool colorChanged = hold.Color != color;
         bool shapeChanged = shapePoints != null;
         bool nameChanged = name != null && hold.Name != name;
 
         hold.X = x;
         hold.Y = y;
         hold.Radius = radius;
-        if (color != null)
-        {
-            hold.Color = color;
-        }
+        hold.Color = color;
+        hold.Material = material;
 
         if (category.HasValue)
         {

@@ -273,14 +273,7 @@ else
 
     private static string GetSelectionFill(HoldType t) => t switch { HoldType.Start => "rgba(76,175,80,0.5)", HoldType.Top => "rgba(244,67,54,0.5)", _ => "rgba(33,150,243,0.5)" };
     private static string GetSelectionStroke(HoldType t) => t switch { HoldType.Start => "#4CAF50", HoldType.Top => "#F44336", _ => "#2196F3" };
-    private static string GetDefaultFill(Hold h) => h.Color switch {
-        "yellow" => "rgba(255,220,0,0.4)", "red" => "rgba(220,50,50,0.4)", "blue" => "rgba(60,120,230,0.4)",
-        "green" => "rgba(60,200,90,0.4)", "orange" => "rgba(255,150,30,0.4)", "pink" => "rgba(255,100,160,0.4)",
-        "purple" => "rgba(160,60,210,0.4)", "white" => "rgba(250,250,250,0.4)", "black" => "rgba(60,60,60,0.4)",
-        _ => "rgba(200,200,200,0.25)" };
-    private static string GetDefaultStroke(Hold h) => h.Color switch {
-        "yellow" => "#C6A700", "red" => "#B71C1C", "blue" => "#0D47A1", "green" => "#1B5E20",
-        "orange" => "#E65100", "pink" => "#AD1457", "purple" => "#4A148C", "white" => "#BDBDBD",
-        "black" => "#212121", _ => "#999" };
+    private static string GetDefaultFill(Hold h) => HoldPalette.Fill(h.Color, 0.4);
+    private static string GetDefaultStroke(Hold h) => HoldPalette.StrokeHex(h.Color);
 }
 

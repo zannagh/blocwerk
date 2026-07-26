@@ -16,6 +16,7 @@
 
 .option-bar { display: flex; align-items: center; gap: 10px; padding: 6px 12px; background: #22223a; flex-wrap: wrap; }
 .option-group { display: flex; align-items: center; gap: 4px; }
+.option-group.swatches { flex-wrap: wrap; max-width: 100%; }
 .option-group label { color: rgba(255,255,255,0.6); font-size: 0.75rem; }
 .option-group input[type=range] { width: 60px; accent-color: var(--accent); }
 .option-hint { color: rgba(255,255,255,0.4); font-size: 0.7rem; font-style: italic; }

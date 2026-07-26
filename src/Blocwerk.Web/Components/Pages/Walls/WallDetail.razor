@@ -509,14 +509,14 @@ else
     {
         foreach (var hold in changes.Added)
         {
-            var saved = await WallService.AddHoldAsync(WallId, hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.ShapePoints);
+            var saved = await WallService.AddHoldAsync(WallId, hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.ShapePoints, material: hold.Material);
             var local = _holds.FirstOrDefault(h => h.Id == hold.Id);
             if (local != null) local.Id = saved.Id;
         }
 
         foreach (var hold in changes.Updated)
         {
-            await WallService.UpdateHoldAsync(hold.Id, hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.IsOnKickboard, hold.ShapePoints, hold.Name);
+            await WallService.UpdateHoldAsync(hold.Id, hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.IsOnKickboard, hold.ShapePoints, hold.Name, hold.Material);
         }
 
         foreach (var holdId in changes.Deleted)
@@ -710,7 +710,7 @@ else
         try
         {
             var holds = r.Holds.Select(h => new ManualAlignHold(
-                h.Id, h.X, h.Y, h.Radius, h.ShapePoints, h.Color, h.Category, h.IsOnKickboard,
+                h.Id, h.X, h.Y, h.Radius, h.ShapePoints, h.Color, h.Material, h.Category, h.IsOnKickboard,
                 r.ChangedHoldIds.Contains(h.Id), r.AddedHoldIds.Contains(h.Id))).ToList();
             await WallService.ConfirmManualAlignmentAsync(WallId, holds, r.DeletedHoldIds);
             await LoadWall();
