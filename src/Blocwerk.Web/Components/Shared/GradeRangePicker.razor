@@ -1,0 +1,76 @@
+@using Blocwerk.Core.Helpers
+
+<div class="grade-range-picker">
+    <div class="scale-toggle">
+        <button class="scale-btn @(_useFont ? "" : "active")" @onclick="() => SetScale(false)">V</button>
+        <button class="scale-btn @(_useFont ? "active" : "")" @onclick="() => SetScale(true)">Font</button>
+    </div>
+    <select class="grade-select" value="@Min" @onchange="OnMinChanged">
+        <option value="">Min</option>
+        @foreach (var grade in Scale)
+        {
+            <option value="@grade">@grade</option>
+        }
+    </select>
+    <span class="range-dash">&ndash;</span>
+    <select class="grade-select" value="@Max" @onchange="OnMaxChanged">
+        <option value="">Max</option>
+        @foreach (var grade in Scale)
+        {
+            <option value="@grade">@grade</option>
+        }
+    </select>
+</div>
+
+@code {
+    [Parameter] public string? Min { get; set; }
+    [Parameter] public EventCallback<string?> MinChanged { get; set; }
+
+    [Parameter] public string? Max { get; set; }
+    [Parameter] public EventCallback<string?> MaxChanged { get; set; }
+
+    private bool _useFont;
+
+    private string[] Scale => _useFont ? GradeScale.FontGrades : GradeScale.VGrades;
+
+    private async Task SetScale(bool font)
+    {
+        if (_useFont == font)
+        {
+            return;
+        }
+
+        _useFont = font;
+
+        // Keep the selected bounds meaningful by converting them to the new scale.
+        Min = Convert(Min, font);
+        Max = Convert(Max, font);
+        await MinChanged.InvokeAsync(Min);
+        await MaxChanged.InvokeAsync(Max);
+    }
+
+    private static string? Convert(string? grade, bool toFont)
+    {
+        if (string.IsNullOrEmpty(grade))
+        {
+            return grade;
+        }
+
+        var converted = toFont ? GradeScale.ToFont(grade) : GradeScale.ToV(grade);
+        return converted ?? grade;
+    }
+
+    private async Task OnMinChanged(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString();
+        Min = string.IsNullOrEmpty(val) ? null : val;
+        await MinChanged.InvokeAsync(Min);
+    }
+
+    private async Task OnMaxChanged(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString();
+        Max = string.IsNullOrEmpty(val) ? null : val;
+        await MaxChanged.InvokeAsync(Max);
+    }
+}

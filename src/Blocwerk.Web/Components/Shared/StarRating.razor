@@ -1,0 +1,36 @@
+@if (ReadOnly)
+{
+    <span class="star-rating readonly @(Small ? "small" : "")" title="@Title">
+        <span class="star-track">
+            <span class="star-back">★★★★★</span>
+            <span class="star-fill" style="width: @(FillPercent)%">★★★★★</span>
+        </span>
+    </span>
+}
+else
+{
+    <span class="star-rating interactive @(Small ? "small" : "")">
+        @for (var i = 1; i <= 5; i++)
+        {
+            var star = i;
+            <button type="button"
+                    class="star-btn @(star <= (int)Math.Round(Value) ? "on" : "")"
+                    title="@star star@(star != 1 ? "s" : "")"
+                    @onclick="() => OnRate.InvokeAsync(star)">★</button>
+        }
+    </span>
+}
+
+@code {
+    [Parameter] public double Value { get; set; }
+
+    [Parameter] public bool ReadOnly { get; set; }
+
+    [Parameter] public bool Small { get; set; }
+
+    [Parameter] public string? Title { get; set; }
+
+    [Parameter] public EventCallback<int> OnRate { get; set; }
+
+    private double FillPercent => Math.Clamp(Value, 0, 5) / 5.0 * 100.0;
+}

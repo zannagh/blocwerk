@@ -36,6 +36,7 @@ public static class CoreServices
 
         builder.Services.AddScoped<IActivityLogService, ActivityLogService>();
         builder.Services.AddScoped<IBoulderService, BoulderService>();
+        builder.Services.AddScoped<IBoulderFeedbackService, BoulderFeedbackService>();
         builder.Services.AddScoped<IAttemptService, AttemptService>();
         builder.Services.AddScoped<ICommentService, CommentService>();
         builder.Services.AddScoped<IProgressionService, ProgressionService>();

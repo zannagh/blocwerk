@@ -60,4 +60,8 @@ public class Boulder
     public ICollection<BoulderComment> Comments { get; set; } = [];
 
     public ICollection<GradeProposal> GradeProposals { get; set; } = [];
+
+    public ICollection<BoulderRating> Ratings { get; set; } = [];
+
+    public ICollection<BoulderFavorite> Favorites { get; set; } = [];
 }

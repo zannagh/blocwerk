@@ -3,11 +3,12 @@
 @rendermode InteractiveServer
 @inject IWallService WallService
 @inject IBoulderService BoulderService
-@inject IAttemptService AttemptService
+@inject IBoulderFeedbackService FeedbackService
 @inject IActivityLogService ActivityLogService
 @inject ICurrentUserService CurrentUserService
 @inject NavigationManager Navigation
 @using Blocwerk.Web.Components.Shared
+@using Blocwerk.Core.Helpers
 
 <PageTitle>@(_wall?.Name ?? "Wall") - Blocwerk</PageTitle>
 
@@ -291,77 +292,73 @@ else
                     }
                 </div>
 
-                @if (_boulders.Count > 0)
+                @if (_items.Count > 0)
                 {
                     <div class="filter-bar">
                         <input @bind="_searchText" @bind:event="oninput" placeholder="Search..." class="filter-input" />
-                        <select @bind="_gradeFilter" class="filter-select">
-                            <option value="">All grades</option>
-                            @foreach (var g in _availableGrades)
-                            {
-                                <option value="@g">@g</option>
-                            }
-                        </select>
+                        <div class="sort-row">
+                            <label class="sort-label">Sort</label>
+                            <select @bind="_sort" class="filter-select">
+                                <option value="@SortMode.Newest">Newest</option>
+                                <option value="@SortMode.Oldest">Oldest</option>
+                                <option value="@SortMode.GradeAsc">Grade ↑ (easy first)</option>
+                                <option value="@SortMode.GradeDesc">Grade ↓ (hard first)</option>
+                                <option value="@SortMode.Rating">Rating</option>
+                                @if (!_isAnonymous)
+                                {
+                                    <option value="@SortMode.MyAttempts">Most attempts by me</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="grade-range-row">
+                            <label class="sort-label">Grade</label>
+                            <GradeRangePicker @bind-Min="_gradeMin" @bind-Max="_gradeMax" />
+                        </div>
+                        @if (!_isAnonymous)
+                        {
+                            <div class="filter-checks">
+                                <label class="filter-check"><input type="checkbox" @bind="_fAttempted" /> Attempted by me</label>
+                                <label class="filter-check"><input type="checkbox" @bind="_fDone" /> Done by me</label>
+                                <label class="filter-check"><input type="checkbox" @bind="_fFavorites" /> My favourites</label>
+                                <label class="filter-check"><input type="checkbox" @bind="_fCreated" /> Created by me</label>
+                            </div>
+                        }
                     </div>
                 }
 
-                @if (_boulders.Count == 0)
+                @if (_items.Count == 0)
                 {
                     <div class="empty-boulders">
                         <p>No boulders yet. @(_holds.Count > 0 ? "Create your first boulder!" : "Add holds to the wall first.")</p>
                     </div>
                 }
+                else if (ActiveBoulders.Count == 0 && ArchivedBoulders.Count == 0)
+                {
+                    <div class="empty-boulders">
+                        <p>No boulders match your filters.</p>
+                    </div>
+                }
                 else
                 {
-                    @foreach (var boulder in FilteredBoulders)
+                    @foreach (var item in ActiveBoulders)
                     {
-                        var summary = _boulderSummaries.GetValueOrDefault(boulder.Id);
-                        var boulderUrl = !string.IsNullOrEmpty(ShareToken)
-                            ? $"/walls/{WallId}/boulders/{boulder.Id}/shared/{ShareToken}"
-                            : $"/walls/{WallId}/boulders/{boulder.Id}";
-                        <a href="@boulderUrl" class="boulder-card">
-                            <div class="boulder-card-left">
-                                <span class="boulder-name">
-                                    @boulder.Name
-                                    @if (boulder.IsDraft) { <span class="draft-badge" title="Only visible to you until published">draft</span> }
-                                    @if (boulder.IsHistoric) { <span class="historic-badge" title="Wall changed since creation">historic</span> }
-                                    @if (boulder.NeedsReview) { <span class="review-badge" title="A hold on this boulder changed — review needed">review</span> }
-                                </span>
-                                <span class="boulder-meta">
-                                    @boulder.BoulderHolds.Count holds &middot; by @boulder.CreatedBy.DisplayName
-                                </span>
-                            </div>
-                            <div class="boulder-card-right">
-                                @if (boulder.IsDraft && boulder.CreatedByUserId == _currentUserId)
-                                {
-                                    <button class="card-publish" title="Publish this draft"
-                                            disabled="@(boulder.BoulderHolds.Count == 0)"
-                                            @onclick="() => PublishBoulder(boulder)"
-                                            @onclick:preventDefault="true" @onclick:stopPropagation="true">
-                                        Publish
-                                    </button>
-                                }
-                                @if (!_isAnonymous)
-                                {
-                                    @if (summary is { HasFlashed: true })
-                                    {
-                                        <span class="status-icon flash-icon" title="Flashed">&#9889;</span>
-                                    }
-                                    else if (summary is { HasSent: true })
-                                    {
-                                        <span class="status-icon send-icon" title="Sent">&#10003;</span>
-                                    }
-                                    else if (summary is { TotalAttempts: > 0 })
-                                    {
-                                        <span class="status-icon try-icon" title="@summary.TotalAttempts attempts">@summary.TotalAttempts</span>
-                                    }
-                                }
-                                @if (!string.IsNullOrEmpty(boulder.Grade))
-                                {
-                                    <span class="boulder-grade">@boulder.Grade</span>
-                                }
-                            </div>
-                        </a>
+                        <BoulderCard Item="item" WallId="WallId" ShareToken="@ShareToken"
+                                     CurrentUserId="_currentUserId" IsAnonymous="_isAnonymous"
+                                     ShowArchiveAction="true"
+                                     OnPublish="PublishBoulder" OnArchive="ArchiveBoulder" OnUnarchive="UnarchiveBoulder" />
+                    }
+
+                    @if (ArchivedBoulders.Count > 0)
+                    {
+                        <details class="archive-section">
+                            <summary class="archive-summary">Archive (@ArchivedBoulders.Count)</summary>
+                            @foreach (var item in ArchivedBoulders)
+                            {
+                                <BoulderCard Item="item" WallId="WallId" ShareToken="@ShareToken"
+                                             CurrentUserId="_currentUserId" IsAnonymous="_isAnonymous"
+                                             OnPublish="PublishBoulder" OnArchive="ArchiveBoulder" OnUnarchive="UnarchiveBoulder" />
+                            }
+                        </details>
                     }
                 }
             </div>
@@ -383,7 +380,7 @@ else
     private List<Hold> _holds = [];
     private List<ShapePoint> _borderPoints = [];
     private List<Boulder> _boulders = [];
-    private Dictionary<Guid, AttemptSummary> _boulderSummaries = [];
+    private List<BoulderListItem> _items = [];
     private bool _isAdmin;
     private bool _isAnonymous;
     private Guid _currentUserId;
@@ -392,8 +389,16 @@ else
     private string? _shareLink;
     private string? _toast;
     private string _searchText = string.Empty;
-    private string _gradeFilter = string.Empty;
+    private string? _gradeMin;
+    private string? _gradeMax;
+    private bool _fAttempted;
+    private bool _fDone;
+    private bool _fFavorites;
+    private bool _fCreated;
+    private SortMode _sort = SortMode.Newest;
     private ViewMode _viewMode = ViewMode.Photo;
+
+    private enum SortMode { Newest, Oldest, GradeAsc, GradeDesc, Rating, MyAttempts }
 
     private List<WallMember>? _members;
     private List<ActivityLogEntry>? _activityItems;
@@ -402,25 +407,92 @@ else
 
     private enum ViewMode { Photo, Schematic }
 
-    private List<string> _availableGrades => _boulders
-        .Where(b => !string.IsNullOrEmpty(b.Grade))
-        .Select(b => b.Grade!)
-        .Distinct()
-        .OrderBy(g => g)
-        .ToList();
+    // Historic boulders always sink to the bottom of the active list; OrderBy is a stable
+    // sort in LINQ-to-objects, so the chosen sort order is preserved within each group.
+    private List<BoulderListItem> ActiveBoulders =>
+        ApplySort(ApplyFilters(_items.Where(i => !i.Boulder.IsArchived)))
+            .OrderBy(i => i.Boulder.IsHistoric)
+            .ToList();
 
-    private IEnumerable<Boulder> FilteredBoulders
+    private List<BoulderListItem> ArchivedBoulders =>
+        ApplySort(ApplyFilters(_items.Where(i => i.Boulder.IsArchived))).ToList();
+
+    private IEnumerable<BoulderListItem> ApplyFilters(IEnumerable<BoulderListItem> src)
     {
-        get
+        if (!string.IsNullOrWhiteSpace(_searchText))
         {
-            var q = _boulders.AsEnumerable();
-            if (!string.IsNullOrWhiteSpace(_searchText))
-                q = q.Where(b => b.Name.Contains(_searchText, StringComparison.OrdinalIgnoreCase));
-            if (!string.IsNullOrEmpty(_gradeFilter))
-                q = q.Where(b => b.Grade == _gradeFilter);
-            return q;
+            src = src.Where(i => i.Boulder.Name.Contains(_searchText, StringComparison.OrdinalIgnoreCase));
         }
+
+        if (_fAttempted)
+        {
+            src = src.Where(i => i.AttemptedByMe);
+        }
+
+        if (_fDone)
+        {
+            src = src.Where(i => i.DoneByMe);
+        }
+
+        if (_fFavorites)
+        {
+            src = src.Where(i => i.IsFavorite);
+        }
+
+        if (_fCreated)
+        {
+            src = src.Where(i => i.Boulder.CreatedByUserId == _currentUserId);
+        }
+
+        var minScore = ScoreOf(_gradeMin);
+        var maxScore = ScoreOf(_gradeMax);
+        if (minScore.HasValue || maxScore.HasValue)
+        {
+            src = src.Where(i => MatchesGradeRange(i.Boulder.Grade, minScore, maxScore));
+        }
+
+        return src;
     }
+
+    // Ungraded (or unrecognised) boulders always stay visible when a grade range is set.
+    private static bool MatchesGradeRange(string? grade, int? minScore, int? maxScore)
+    {
+        var score = GradeScoring.GetScore(grade, false);
+        if (score == 0)
+        {
+            return true;
+        }
+
+        if (minScore.HasValue && score < minScore.Value)
+        {
+            return false;
+        }
+
+        return !maxScore.HasValue || score <= maxScore.Value;
+    }
+
+    private static int? ScoreOf(string? grade)
+    {
+        if (string.IsNullOrEmpty(grade))
+        {
+            return null;
+        }
+
+        var score = GradeScoring.GetScore(grade, false);
+        return score == 0 ? null : score;
+    }
+
+    private IEnumerable<BoulderListItem> ApplySort(IEnumerable<BoulderListItem> src) => _sort switch
+    {
+        SortMode.Newest => src.OrderByDescending(i => i.Boulder.CreatedAt),
+        SortMode.Oldest => src.OrderBy(i => i.Boulder.CreatedAt),
+        // Ungraded (score 0) sinks to the bottom of the easy-first order.
+        SortMode.GradeAsc => src.OrderBy(i => GradeScoring.GetScore(i.Boulder.Grade, false) is 0 ? int.MaxValue : GradeScoring.GetScore(i.Boulder.Grade, false)),
+        SortMode.GradeDesc => src.OrderByDescending(i => GradeScoring.GetScore(i.Boulder.Grade, false)),
+        SortMode.Rating => src.OrderByDescending(i => i.AverageRating ?? -1),
+        SortMode.MyAttempts => src.OrderByDescending(i => i.MyAttemptCount),
+        _ => src,
+    };
 
     protected override async Task OnInitializedAsync()
     {
@@ -485,18 +557,19 @@ else
                 ? _wall.Holds.Where(h => h.Generation == _wall.CurrentGeneration + 1).ToList()
                 : _wall.Holds.ToList();
             _borderPoints = _wall.BorderPoints ?? [];
-            _boulders = !_isAnonymous
-                ? await BoulderService.GetBouldersForWallAsync(WallId)
-                : _wall.Boulders.Where(b => !b.IsDraft && !b.IsArchived).ToList();
-
             if (!_isAnonymous)
             {
-                _boulderSummaries = [];
-                foreach (var b in _boulders)
-                {
-                    _boulderSummaries[b.Id] = await AttemptService.GetBoulderSummaryForUserAsync(b.Id);
-                }
+                _items = await FeedbackService.GetBoulderListAsync(WallId);
             }
+            else
+            {
+                _items = _wall.Boulders
+                    .Where(b => !b.IsDraft && !b.IsArchived)
+                    .Select(b => new BoulderListItem(b, 0, false, false, false, null, 0, null))
+                    .ToList();
+            }
+
+            _boulders = _items.Select(i => i.Boulder).ToList();
 
             if (!string.IsNullOrEmpty(_wall.ShareToken))
             {
@@ -637,6 +710,34 @@ else
         catch (Exception ex)
         {
             await ShowToast($"Publish failed: {ex.Message}");
+        }
+    }
+
+    private async Task ArchiveBoulder(Boulder boulder)
+    {
+        try
+        {
+            await BoulderService.ArchiveBoulderAsync(boulder.Id);
+            await LoadWall();
+            await ShowToast($"\"{boulder.Name}\" archived");
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"Archive failed: {ex.Message}");
+        }
+    }
+
+    private async Task UnarchiveBoulder(Boulder boulder)
+    {
+        try
+        {
+            await BoulderService.UnarchiveBoulderAsync(boulder.Id);
+            await LoadWall();
+            await ShowToast($"\"{boulder.Name}\" restored");
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"Restore failed: {ex.Message}");
         }
     }
 

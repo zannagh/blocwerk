@@ -1,0 +1,99 @@
+@using Blocwerk.Core.Services
+
+<a href="@BoulderUrl" class="boulder-card">
+    <div class="boulder-card-left">
+        <span class="boulder-name">
+            @Boulder.Name
+            @if (Boulder.IsDraft) { <span class="draft-badge" title="Only visible to you until published">draft</span> }
+            @if (Boulder.IsHistoric) { <span class="historic-badge" title="Wall changed since creation">historic</span> }
+            @if (Boulder.NeedsReview) { <span class="review-badge" title="A hold on this boulder changed — review needed">review</span> }
+        </span>
+        <span class="boulder-meta">
+            @Boulder.BoulderHolds.Count holds &middot; by @Boulder.CreatedBy.DisplayName
+        </span>
+        @if (Item.RatingCount > 0)
+        {
+            <span class="boulder-rating">
+                <StarRating Value="@(Item.AverageRating ?? 0)" ReadOnly="true" Small="true"
+                            Title="@($"{Item.AverageRating:0.0} from {Item.RatingCount} rating{(Item.RatingCount != 1 ? "s" : "")}")" />
+                <span class="rating-count">@Item.RatingCount</span>
+            </span>
+        }
+    </div>
+    <div class="boulder-card-right">
+        @if (Boulder.IsDraft && Boulder.CreatedByUserId == CurrentUserId)
+        {
+            <button class="card-publish" title="Publish this draft"
+                    disabled="@(Boulder.BoulderHolds.Count == 0)"
+                    @onclick="() => OnPublish.InvokeAsync(Boulder)"
+                    @onclick:preventDefault="true" @onclick:stopPropagation="true">
+                Publish
+            </button>
+        }
+        @if (ShowArchiveAction && Boulder.IsHistoric && Boulder.CreatedByUserId == CurrentUserId && !Boulder.IsArchived)
+        {
+            <button class="card-archive" title="Move to archive"
+                    @onclick="() => OnArchive.InvokeAsync(Boulder)"
+                    @onclick:preventDefault="true" @onclick:stopPropagation="true">
+                Archive
+            </button>
+        }
+        @if (Boulder.IsArchived && Boulder.CreatedByUserId == CurrentUserId)
+        {
+            <button class="card-archive" title="Restore from archive"
+                    @onclick="() => OnUnarchive.InvokeAsync(Boulder)"
+                    @onclick:preventDefault="true" @onclick:stopPropagation="true">
+                Restore
+            </button>
+        }
+        @if (Item.IsFavorite)
+        {
+            <span class="status-icon fav-icon" title="Favorite">&#9733;</span>
+        }
+        @if (!IsAnonymous)
+        {
+            @if (Item.HasFlashed)
+            {
+                <span class="status-icon flash-icon" title="Flashed">&#9889;</span>
+            }
+            else if (Item.HasSent)
+            {
+                <span class="status-icon send-icon" title="Sent">&#10003;</span>
+            }
+            else if (Item.MyAttemptCount > 0)
+            {
+                <span class="status-icon try-icon" title="@Item.MyAttemptCount attempts">@Item.MyAttemptCount</span>
+            }
+        }
+        @if (!string.IsNullOrEmpty(Boulder.Grade))
+        {
+            <span class="boulder-grade">@Boulder.Grade</span>
+        }
+    </div>
+</a>
+
+@code {
+    [Parameter] public required BoulderListItem Item { get; set; }
+
+    [Parameter] public Guid WallId { get; set; }
+
+    [Parameter] public string? ShareToken { get; set; }
+
+    [Parameter] public Guid CurrentUserId { get; set; }
+
+    [Parameter] public bool IsAnonymous { get; set; }
+
+    [Parameter] public bool ShowArchiveAction { get; set; }
+
+    [Parameter] public EventCallback<Boulder> OnPublish { get; set; }
+
+    [Parameter] public EventCallback<Boulder> OnArchive { get; set; }
+
+    [Parameter] public EventCallback<Boulder> OnUnarchive { get; set; }
+
+    private Boulder Boulder => Item.Boulder;
+
+    private string BoulderUrl => !string.IsNullOrEmpty(ShareToken)
+        ? $"/walls/{WallId}/boulders/{Boulder.Id}/shared/{ShareToken}"
+        : $"/walls/{WallId}/boulders/{Boulder.Id}";
+}

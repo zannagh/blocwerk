@@ -31,6 +31,10 @@ public class BlocwerkDbContext : DbContext
 
     public DbSet<GradeProposal> GradeProposals => Set<GradeProposal>();
 
+    public DbSet<BoulderRating> BoulderRatings => Set<BoulderRating>();
+
+    public DbSet<BoulderFavorite> BoulderFavorites => Set<BoulderFavorite>();
+
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     public DbSet<HangboardSession> HangboardSessions => Set<HangboardSession>();
@@ -70,6 +74,8 @@ public class BlocwerkDbContext : DbContext
         ConfigureActivityLog(modelBuilder);
         ConfigureBoulderComment(modelBuilder);
         ConfigureGradeProposal(modelBuilder);
+        ConfigureBoulderRating(modelBuilder);
+        ConfigureBoulderFavorite(modelBuilder);
     }
 
     private static void ConfigureUser(ModelBuilder modelBuilder)
@@ -244,6 +250,42 @@ public class BlocwerkDbContext : DbContext
             entity.HasOne(gp => gp.ProposedBy)
                 .WithMany()
                 .HasForeignKey(gp => gp.ProposedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+    }
+
+    private static void ConfigureBoulderRating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<BoulderRating>(entity =>
+        {
+            entity.HasKey(r => new { r.BoulderId, r.UserId });
+
+            entity.HasOne(r => r.Boulder)
+                .WithMany(b => b.Ratings)
+                .HasForeignKey(r => r.BoulderId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(r => r.User)
+                .WithMany()
+                .HasForeignKey(r => r.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+    }
+
+    private static void ConfigureBoulderFavorite(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<BoulderFavorite>(entity =>
+        {
+            entity.HasKey(f => new { f.BoulderId, f.UserId });
+
+            entity.HasOne(f => f.Boulder)
+                .WithMany(b => b.Favorites)
+                .HasForeignKey(f => f.BoulderId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(f => f.User)
+                .WithMany()
+                .HasForeignKey(f => f.UserId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
     }

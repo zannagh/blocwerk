@@ -38,6 +38,14 @@ public interface IBoulderService
 
     Task DeleteBoulderAsync(Guid boulderId);
 
+    /// <summary>
+    /// Moves one of the creator's own historic boulders into the archive. Only the
+    /// creator may archive, and only a historic boulder can be archived.
+    /// </summary>
+    Task ArchiveBoulderAsync(Guid boulderId);
+
+    Task UnarchiveBoulderAsync(Guid boulderId);
+
     Task<GradeProposal> ProposeGradeAsync(Guid boulderId, string proposedGrade);
 
     Task<GradeProposal?> GetActiveProposalAsync(Guid boulderId);
@@ -372,6 +380,39 @@ public class BoulderService : IBoulderService
                       ?? throw new InvalidOperationException("Boulder not found");
 
         db.Boulders.Remove(boulder);
+        await db.SaveChangesAsync();
+    }
+
+    public async Task ArchiveBoulderAsync(Guid boulderId)
+    {
+        await SetArchivedAsync(boulderId, true);
+    }
+
+    public async Task UnarchiveBoulderAsync(Guid boulderId)
+    {
+        await SetArchivedAsync(boulderId, false);
+    }
+
+    private async Task SetArchivedAsync(Guid boulderId, bool archived)
+    {
+        var user = await _currentUserService.GetCurrentUserAsync();
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = user.Id;
+
+        var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId)
+                      ?? throw new InvalidOperationException("Boulder not found");
+
+        if (boulder.CreatedByUserId != user.Id)
+        {
+            throw new InvalidOperationException("Only the creator can archive a boulder");
+        }
+
+        if (archived && !boulder.IsHistoric)
+        {
+            throw new InvalidOperationException("Only historic boulders can be archived");
+        }
+
+        boulder.IsArchived = archived;
         await db.SaveChangesAsync();
     }
 

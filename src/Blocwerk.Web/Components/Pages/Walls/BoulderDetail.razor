@@ -2,6 +2,7 @@
 @page "/walls/{WallId:guid}/boulders/{BoulderId:guid}/shared/{ShareToken}"
 @rendermode InteractiveServer
 @inject IBoulderService BoulderService
+@inject IBoulderFeedbackService FeedbackService
 @inject IAttemptService AttemptService
 @inject IActivityLogService ActivityLogService
 @inject ICommentService CommentService
@@ -38,6 +39,17 @@ else
                 {
                     <span class="historic-badge">historic</span>
                 }
+                @if (_boulder.IsArchived)
+                {
+                    <span class="archived-badge">archived</span>
+                }
+                @if (!_isAnonymous)
+                {
+                    <button class="fav-toggle @(_isFavorite ? "on" : "")" @onclick="ToggleFavorite"
+                            title="@(_isFavorite ? "Remove from favourites" : "Add to favourites")">
+                        @(_isFavorite ? "★" : "☆")
+                    </button>
+                }
             </div>
             <p class="meta">by @_boulder.CreatedBy.DisplayName &middot; @_boulder.CreatedAt.ToString("MMM d, yyyy")</p>
         </div>
@@ -68,7 +80,17 @@ else
                         ? "The wall was rebuilt since this boulder was set. Use \"Then\" to see it on the old wall, then remap it onto the new holds."
                         : "The wall has changed since this boulder was created. Some holds may no longer exist.")
                 </p>
-                <a href="/walls/@WallId/boulders/@BoulderId/revise" class="btn-revise">Revise Boulder</a>
+                <div class="revision-actions">
+                    <a href="/walls/@WallId/boulders/@BoulderId/revise" class="btn-revise">Revise Boulder</a>
+                    @if (_boulder.IsArchived)
+                    {
+                        <button class="btn-archive" @onclick="UnarchiveBoulder">Restore from archive</button>
+                    }
+                    else
+                    {
+                        <button class="btn-archive" @onclick="ArchiveBoulder">Archive</button>
+                    }
+                </div>
             </div>
         }
 
@@ -193,6 +215,29 @@ else
                     else if (_summary.HasSent) { <span class="chip send-chip">Sent</span> }
                 </div>
             }
+
+            <div class="rating-section">
+                <div class="rating-summary">
+                    @if (_rating.Count > 0)
+                    {
+                        <StarRating Value="@(_rating.Average ?? 0)" ReadOnly="true" />
+                        <span class="rating-avg">@_rating.Average?.ToString("0.0")</span>
+                        <span class="rating-count">(@_rating.Count rating@(_rating.Count != 1 ? "s" : ""))</span>
+                    }
+                    else
+                    {
+                        <span class="rating-empty">No ratings yet</span>
+                    }
+                </div>
+                <div class="rating-mine">
+                    <span class="rating-mine-label">Your rating</span>
+                    <StarRating Value="@(_rating.MyRating ?? 0)" OnRate="Rate" />
+                    @if (_rating.MyRating.HasValue)
+                    {
+                        <button class="rating-clear" @onclick="ClearRating" title="Clear your rating">clear</button>
+                    }
+                </div>
+            </div>
 
             @if (!_isCreator)
             {
@@ -346,6 +391,8 @@ else
     private GradeProposal? _activeProposal;
     private bool _showGradeForm;
     private string? _proposedGrade;
+    private bool _isFavorite;
+    private RatingInfo _rating = new(null, 0, null);
 
     private ElementReference _photoViewportRef;
     private DotNetObjectReference<BoulderDetail>? _photoDotNetRef;
@@ -465,6 +512,12 @@ else
             _showHistoric = CanViewHistoric;
             await LoadWallHolds();
             _activeProposal = await BoulderService.GetActiveProposalAsync(BoulderId);
+
+            if (!_isAnonymous)
+            {
+                _isFavorite = await FeedbackService.IsFavoritedAsync(BoulderId);
+                _rating = await FeedbackService.GetRatingAsync(BoulderId);
+            }
         }
 
         await LoadActivity(0);
@@ -560,6 +613,53 @@ else
         await CommentService.DeleteCommentAsync(commentId);
         _comments?.RemoveAll(c => c.Id == commentId);
         _commentsTotal--;
+    }
+
+    private async Task ToggleFavorite()
+    {
+        _isFavorite = await FeedbackService.ToggleFavoriteAsync(BoulderId);
+        await ShowToast(_isFavorite ? "Added to favourites" : "Removed from favourites");
+    }
+
+    private async Task Rate(int stars)
+    {
+        await FeedbackService.SetRatingAsync(BoulderId, stars);
+        _rating = await FeedbackService.GetRatingAsync(BoulderId);
+        await ShowToast($"Rated {stars} star{(stars != 1 ? "s" : "")}");
+    }
+
+    private async Task ClearRating()
+    {
+        await FeedbackService.RemoveRatingAsync(BoulderId);
+        _rating = await FeedbackService.GetRatingAsync(BoulderId);
+    }
+
+    private async Task ArchiveBoulder()
+    {
+        try
+        {
+            await BoulderService.ArchiveBoulderAsync(BoulderId);
+            await LoadBoulder();
+            await ShowToast("Boulder archived");
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"Archive failed: {ex.Message}");
+        }
+    }
+
+    private async Task UnarchiveBoulder()
+    {
+        try
+        {
+            await BoulderService.UnarchiveBoulderAsync(BoulderId);
+            await LoadBoulder();
+            await ShowToast("Boulder restored");
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"Restore failed: {ex.Message}");
+        }
     }
 
     private async Task SubmitGradeProposal()
