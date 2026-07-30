@@ -29,14 +29,34 @@ public class Boulder
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
     /// <summary>
-    /// Derived from the boulder's hold usage marks; never set directly by the user.
-    /// </summary>
-    public FootholdMode FootholdMode { get; set; } = FootholdMode.AllKickboard;
-
-    /// <summary>
     /// Whether every kickboard foothold counts as on for this boulder.
     /// </summary>
     public bool KickboardFootholdsOn { get; set; } = true;
+
+    /// <summary>
+    /// When true the boulder has no dedicated footholds: every hand hold doubles as a
+    /// foot hold, and marking a hold <see cref="HoldUsage.FootOnly"/> is invalid.
+    /// </summary>
+    public bool HandsFollowFeet { get; set; } = true;
+
+    /// <summary>
+    /// A hold color key from <c>HoldPalette</c>. When set, every hold on the wall of that
+    /// color counts as a foothold for this boulder, on top of the boulder's own holds.
+    /// </summary>
+    [MaxLength(32)]
+    public string? FootColorOnly { get; set; }
+
+    /// <summary>
+    /// Derived from the boulder's foothold rules; kept so read-sites can keep asking the
+    /// single "does this boulder define its own footholds?" question. A boulder that
+    /// neither marks dedicated footholds nor names a foot color leaves the kickboard rule
+    /// in charge.
+    /// </summary>
+    [NotMapped]
+    public FootholdMode FootholdMode =>
+        HandsFollowFeet && string.IsNullOrEmpty(FootColorOnly)
+            ? FootholdMode.AllKickboard
+            : FootholdMode.DefinedOnly;
 
     /// <summary>
     /// A draft is only visible to its creator until it is published.

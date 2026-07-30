@@ -1,0 +1,30 @@
+@*
+    Circuit-independent comment box.
+
+    The input is intentionally UNBOUND. A `@bind` would make Blazor the owner of the
+    element's value, and offline-actions.js clears the field itself after enqueuing — with
+    the circuit down the server copy would drift, and on the next re-render Blazor would
+    push the stale text back into a field the user has already seen emptied. Leaving it
+    uncontrolled means the DOM is the single owner of the draft text.
+
+    The submit button carries no @onclick for the same single-writer reason as the attempt
+    buttons, and is never `disabled`: a disabled button is skipped by the delegated
+    handler, and the flag driving it could not be updated offline anyway. Empty input is
+    rejected by the handler itself (it enqueues nothing), and the greyed-out look comes
+    from a pure-CSS `:placeholder-shown` sibling rule that needs no circuit.
+*@
+
+<div class="comment-form">
+    <input id="@InputId" placeholder="Write a comment..." class="comment-input" maxlength="1024" />
+    <button type="button" class="comment-submit"
+            data-bw-action="comment" data-bw-boulder="@BoulderId" data-bw-text="#@InputId">
+        Post
+    </button>
+</div>
+
+@code {
+    [Parameter] public Guid BoulderId { get; set; }
+
+    /// <summary>The id <c>data-bw-text</c> resolves the draft text from.</summary>
+    [Parameter] public string InputId { get; set; } = "bw-comment-input";
+}

@@ -1,0 +1,105 @@
+@inject ICommentService CommentService
+
+@*
+    The comment list plus its (circuit-independent) compose box. Owns its own paging and its own
+    delete, so the boulder page keeps none of that state. Posting is NOT handled here: the submit
+    button in BoulderCommentForm goes through the offline queue, and BoulderDetail calls
+    ReloadAsync() through an @ref once the queue confirms the comment landed.
+*@
+
+<div class="comments-section">
+    <h2>Comments</h2>
+    @if (!IsAnonymous)
+    {
+        <BoulderCommentForm BoulderId="BoulderId" />
+    }
+
+    @if (_comments != null)
+    {
+        @foreach (var comment in _comments)
+        {
+            <div class="comment-row">
+                <div class="comment-header">
+                    <span class="comment-author">@comment.User.DisplayName</span>
+                    <span class="comment-time">@TimeText.Relative(comment.CreatedAt)</span>
+                    @if (comment.UserId == CurrentUserId)
+                    {
+                        <button class="delete-btn" @onclick="() => DeleteAsync(comment.Id)">x</button>
+                    }
+                </div>
+                <p class="comment-text">@comment.Text</p>
+            </div>
+        }
+        @if (_comments.Count == 0)
+        {
+            <p class="empty-msg">No comments yet.</p>
+        }
+        @if (_total > (_page + 1) * 10)
+        {
+            <button class="pager-btn" @onclick="() => LoadAsync(_page + 1)">Load more</button>
+        }
+    }
+
+    @if (_error != null)
+    {
+        <div class="error-msg">@_error</div>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid BoulderId { get; set; }
+
+    [Parameter] public Guid CurrentUserId { get; set; }
+
+    [Parameter] public bool IsAnonymous { get; set; }
+
+    private List<BoulderComment>? _comments;
+    private int _total;
+    private int _page;
+    private string? _error;
+
+    protected override Task OnInitializedAsync() => LoadAsync(0);
+
+    /// <summary>Re-reads from the first page, dropping any accumulated "load more" pages.</summary>
+    public Task ReloadAsync() => LoadAsync(0);
+
+    private async Task LoadAsync(int page)
+    {
+        try
+        {
+            var (items, total) = await CommentService.GetCommentsAsync(BoulderId, page);
+            _page = page;
+            if (page == 0)
+            {
+                _comments = items;
+            }
+            else
+            {
+                _comments?.AddRange(items);
+            }
+
+            _total = total;
+            _error = null;
+        }
+        catch (Exception ex)
+        {
+            _error = $"Comments could not be loaded: {ex.Message}";
+            _comments ??= [];
+        }
+    }
+
+    private async Task DeleteAsync(Guid commentId)
+    {
+        try
+        {
+            await CommentService.DeleteCommentAsync(commentId);
+            _comments?.RemoveAll(c => c.Id == commentId);
+            _total--;
+            _error = null;
+        }
+        catch (Exception ex)
+        {
+            _error = $"That comment could not be deleted: {ex.Message}";
+        }
+    }
+}

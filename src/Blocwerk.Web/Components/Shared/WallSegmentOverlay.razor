@@ -1,0 +1,104 @@
+@using Blocwerk.Core.Geometry
+@*
+    Draws the wall's segments into an already-open <svg viewBox="0 0 100 100">.
+
+    Shared by the segment editor, the photo editor (read-only) and the schematic, so the
+    colour, the ordering badge and the angle label look the same everywhere. Segments may
+    overlap and the lowest sort order wins the projection, hence the explicit "1, 2, 3"
+    badges: the number *is* the precedence.
+*@
+
+@foreach (var (draft, index) in Segments.Select((s, i) => (s, i)))
+{
+    var idx = index;
+    if (draft.Points.Count < 3)
+    {
+        continue;
+    }
+
+    var isActive = ActiveIndex == idx;
+    var stroke = WallSegmentPalette.Stroke(idx);
+    var fill = WallSegmentPalette.Fill(idx, isActive ? 0.3 : 0.16);
+    var (cx, cy) = Centroid(draft, idx);
+
+    <polygon points="@Pts(draft, idx)"
+             fill="@fill" stroke="@stroke"
+             stroke-width="@F(isActive ? 0.55 * HandleScale : 0.35 * HandleScale)"
+             stroke-dasharray="@(isActive ? "" : "1.2 0.6")"
+             style="@(Editable ? "cursor: move" : "pointer-events: none")"
+             @onclick="() => OnSegmentClick.InvokeAsync(idx)" @onclick:stopPropagation="true"
+             @onmousedown="() => OnBodyDown.InvokeAsync(idx)" @onmousedown:stopPropagation="true" />
+
+    <g pointer-events="none">
+        <circle cx="@F(cx * 100)" cy="@F(cy * 100)" r="@F(2.0 * HandleScale)"
+                fill="@stroke" stroke="white" stroke-width="@F(0.25 * HandleScale)" />
+        <text x="@F(cx * 100)" y="@F(cy * 100)" text-anchor="middle" dominant-baseline="central"
+              font-size="@F(2.2 * HandleScale)" font-weight="700" fill="white">@(idx + 1)</text>
+        <text x="@F(cx * 100)" y="@F((cy * 100) + (4.2 * HandleScale))" text-anchor="middle"
+              font-size="@F(2.6 * HandleScale)" font-weight="700" fill="@stroke"
+              stroke="white" stroke-width="@F(0.5 * HandleScale)" paint-order="stroke">
+            @draft.Name &middot; @draft.Angle&deg;
+        </text>
+    </g>
+
+    @if (Editable && isActive)
+    {
+        @for (var i = 0; i < draft.Points.Count; i++)
+        {
+            var ptIdx = i;
+            var p = draft.Points[ptIdx];
+            <circle cx="@F(p.Dx * 100)" cy="@F(p.Dy * 100)" r="@F(1.2 * HandleScale)"
+                    fill="@stroke" stroke="white" stroke-width="@F(0.3 * HandleScale)"
+                    style="cursor: grab"
+                    @onmousedown="() => OnHandleDown.InvokeAsync((idx, ptIdx))"
+                    @onmousedown:stopPropagation="true"
+                    @onclick:stopPropagation="true" />
+        }
+    }
+}
+
+@code {
+    [Parameter] public List<WallSegmentDraft> Segments { get; set; } = [];
+
+    /// <summary>The segment whose vertices are draggable; null draws all of them idle.</summary>
+    [Parameter] public int? ActiveIndex { get; set; }
+
+    [Parameter] public bool Editable { get; set; }
+
+    /// <summary>Keeps handles and labels a constant on-screen size while the viewport zooms.</summary>
+    [Parameter] public double HandleScale { get; set; } = 1.0;
+
+    [Parameter] public EventCallback<int> OnSegmentClick { get; set; }
+
+    /// <summary>Pressed on a segment's body — the owner turns this into a move drag.</summary>
+    [Parameter] public EventCallback<int> OnBodyDown { get; set; }
+
+    [Parameter] public EventCallback<(int SegmentIndex, int PointIndex)> OnHandleDown { get; set; }
+
+    /// <summary>
+    /// Optional 2D remap of (segment index, x, y) into schematic space, so the schematic can
+    /// fold each polygon by its own plane (inclination + yaw) while the photo editor draws
+    /// them raw. It is indexed rather than positional because a polygon's own vertices sit
+    /// exactly on its boundary, where a point-in-polygon test is not reliable — the caller
+    /// wires this to <c>WallSchematicLayout.ProjectForSegment</c>.
+    /// </summary>
+    [Parameter] public Func<int, double, double, SchematicPoint>? ProjectPoint { get; set; }
+
+    private SchematicPoint MapPoint(int index, double x, double y) =>
+        ProjectPoint?.Invoke(index, x, y) ?? new SchematicPoint(x, y);
+
+    private string Pts(WallSegmentDraft draft, int index) =>
+        string.Join(" ", draft.Points.Select(p =>
+        {
+            var sp = MapPoint(index, p.Dx, p.Dy);
+            return $"{F(sp.X * 100)},{F(sp.Y * 100)}";
+        }));
+
+    private (double X, double Y) Centroid(WallSegmentDraft draft, int index)
+    {
+        var mapped = draft.Points.Select(p => MapPoint(index, p.Dx, p.Dy)).ToList();
+        return (mapped.Average(p => p.X), mapped.Average(p => p.Y));
+    }
+
+    private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+}

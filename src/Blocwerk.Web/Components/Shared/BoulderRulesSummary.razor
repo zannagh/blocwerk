@@ -1,0 +1,65 @@
+@* The hold breakdown and the rule chips shown under a boulder's photo/schematic. *@
+
+<div class="legend-bar">
+    <span class="legend-chip start">@_starts start</span>
+    <span class="legend-chip normal">@(Boulder.BoulderHolds.Count - _starts - _tops) moves</span>
+    <span class="legend-chip top">@_tops top</span>
+    @if (_handOnly > 0)
+    {
+        <span class="legend-chip usage">@_handOnly hand only</span>
+    }
+    @if (_footOnly > 0)
+    {
+        <span class="legend-chip foot">@_footOnly foot only</span>
+    }
+</div>
+
+<div class="rules-bar">
+    <span class="rule-chip @(Boulder.KickboardFootholdsOn ? "on" : "off")">
+        @(Boulder.KickboardFootholdsOn ? "All kickboard holds are on" : "Kickboard holds are off")
+    </span>
+
+    @if (Boulder.HandsFollowFeet)
+    {
+        <span class="rule-chip on">Hands follow feet</span>
+    }
+    else
+    {
+        <span class="rule-chip off">Dedicated footholds</span>
+    }
+
+    @if (!string.IsNullOrEmpty(Boulder.FootColorOnly))
+    {
+        <span class="rule-chip foot">
+            <span class="color-dot" style="background: @HoldPalette.Hex(Boulder.FootColorOnly);"></span>
+            Feet on @HoldPalette.DisplayName(Boulder.FootColorOnly).ToLowerInvariant() only
+            @if (FootColorHoldCount == 0)
+            {
+                <span class="rule-warn">— no such hold on this wall</span>
+            }
+        </span>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Boulder Boulder { get; set; } = null!;
+
+    /// <summary>
+    /// How many holds on the wall actually carry the boulder's foot colour, so a rule
+    /// that matches nothing can say so instead of looking like a silent no-op.
+    /// </summary>
+    [Parameter] public int FootColorHoldCount { get; set; }
+
+    private int _starts;
+    private int _tops;
+    private int _handOnly;
+    private int _footOnly;
+
+    protected override void OnParametersSet()
+    {
+        _starts = Boulder.BoulderHolds.Count(h => h.Type == HoldType.Start);
+        _tops = Boulder.BoulderHolds.Count(h => h.Type == HoldType.Top);
+        _handOnly = Boulder.BoulderHolds.Count(h => h.Usage == HoldUsage.HandOnly);
+        _footOnly = Boulder.BoulderHolds.Count(h => h.Usage == HoldUsage.FootOnly);
+    }
+}

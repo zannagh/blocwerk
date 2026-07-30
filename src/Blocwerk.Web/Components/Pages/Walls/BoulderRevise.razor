@@ -42,7 +42,8 @@
                         {
                             <circle cx="@F(bh.Hold.X * 100)" cy="@F(bh.Hold.Y * 100)"
                                     r="@F(bh.Hold.Radius * 100)"
-                                    fill="@SelectionFill(bh.Type)" stroke="@SelectionStroke(bh.Type)"
+                                    fill="@BoulderHoldColors.FillFor(bh.Type, bh.Usage)"
+                                    stroke="@BoulderHoldColors.Stroke(bh.Type)"
                                     stroke-width="0.5" />
                         }
                     </svg>
@@ -62,20 +63,26 @@
                 <GradePicker @bind-Value="_grade" />
             </div>
 
-            <div class="form-group">
-                <label class="checkbox-label">
-                    <input type="checkbox" @bind="_allKickboardOn" />
-                    All kickboard footholds are on
-                </label>
-            </div>
+            <BoulderRulesEditor @bind-KickboardFootholdsOn="_allKickboardOn"
+                                @bind-HandsFollowFeet="_handsFollowFeet"
+                                @bind-FootColorOnly="_footColorOnly"
+                                WallHolds="_displayHolds"
+                                @bind-SelectedHolds="_selectedHolds" />
         </div>
 
         <HoldPicker WallId="WallId"
                     AllHolds="_displayHolds"
                     WallAngle="_wall.Angle"
+                    HandsFollowFeet="_handsFollowFeet"
+                    FootColorOnly="_footColorOnly"
                     @bind-SelectedHolds="_selectedHolds" />
 
+        @* Live form snapshot for the offline submit path (offline-boulder.js). *@
+        <div id="bw-boulder-form" hidden aria-hidden="true" data-bw-boulder-snapshot="@SnapshotJson"></div>
+
         <button class="btn-submit" @onclick="Submit"
+                data-bw-boulder-action="revise" data-bw-boulder-form="#bw-boulder-form"
+                data-bw-boulder-nav="@DetailUrl" data-bw-mode="offline-only"
                 disabled="@(string.IsNullOrWhiteSpace(_name) || _selectedHolds.Count == 0 || _isSubmitting)">
             @(_isSubmitting
                 ? "Saving..."
@@ -102,11 +109,28 @@
     private string _name = string.Empty;
     private string? _grade;
     private bool _allKickboardOn = true;
+    private bool _handsFollowFeet = true;
+    private string? _footColorOnly;
     private bool _isCreator;
     private bool _isDraft;
     private int? _referenceGeneration;
     private bool _isSubmitting;
     private string? _error;
+
+    private string DetailUrl => $"/walls/{WallId}/boulders/{BoulderId}";
+
+    /// <summary>The whole revise form as the JSON the offline queue replays. See offline-boulder.js.</summary>
+    private string SnapshotJson => System.Text.Json.JsonSerializer.Serialize(new
+    {
+        id = BoulderId,
+        name = _name,
+        grade = _grade,
+        kickboardFootholdsOn = _allKickboardOn,
+        handsFollowFeet = _handsFollowFeet,
+        // "" clears the foot colour server-side; the revise endpoint maps a missing value the same way.
+        footColorOnly = _footColorOnly ?? string.Empty,
+        holds = _selectedHolds.Select(h => new { holdId = h.HoldId, type = (int)h.Type, usage = (int)h.Usage }),
+    });
 
     protected override async Task OnInitializedAsync()
     {
@@ -129,6 +153,8 @@
         _name = _boulder.Name;
         _grade = _boulder.Grade;
         _allKickboardOn = _boulder.KickboardFootholdsOn;
+        _handsFollowFeet = _boulder.HandsFollowFeet;
+        _footColorOnly = _boulder.FootColorOnly;
         _displayHolds = _wall.Holds.ToList();
 
         // Holds from a retired generation can no longer be selected, but the wall they
@@ -156,7 +182,15 @@
 
         try
         {
-            await BoulderService.ReviseBoulderAsync(BoulderId, _selectedHolds, _name, _grade, _allKickboardOn);
+            // "" clears the foot colour server-side; null there would mean "leave unchanged".
+            await BoulderService.ReviseBoulderAsync(
+                BoulderId,
+                _selectedHolds,
+                _name,
+                _grade,
+                _allKickboardOn,
+                _handsFollowFeet,
+                _footColorOnly ?? string.Empty);
             Navigation.NavigateTo($"/walls/{WallId}/boulders/{BoulderId}");
         }
         catch (Exception ex)
@@ -167,18 +201,4 @@
     }
 
     private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
-
-    private static string SelectionFill(HoldType t) => t switch
-    {
-        HoldType.Start => "rgba(76,175,80,0.55)",
-        HoldType.Top => "rgba(244,67,54,0.55)",
-        _ => "rgba(33,150,243,0.55)",
-    };
-
-    private static string SelectionStroke(HoldType t) => t switch
-    {
-        HoldType.Start => "#4CAF50",
-        HoldType.Top => "#F44336",
-        _ => "#2196F3",
-    };
 }

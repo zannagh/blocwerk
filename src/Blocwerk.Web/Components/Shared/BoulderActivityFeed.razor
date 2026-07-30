@@ -1,0 +1,82 @@
+@inject IActivityLogService ActivityLogService
+
+@*
+    Self-contained activity feed: it owns its own paging so the boulder page does not have to
+    carry three more fields for it. BoulderDetail calls ReloadAsync() through an @ref after the
+    offline queue flushes, since a replayed attempt or comment shows up here.
+*@
+
+<div class="activity-feed">
+    <h2>Activity</h2>
+    @if (_items != null)
+    {
+        @foreach (var item in _items)
+        {
+            <div class="activity-row">
+                <span class="activity-text">@Describe(item)</span>
+                <span class="activity-time">@TimeText.Relative(item.Timestamp)</span>
+            </div>
+        }
+        @if (_items.Count == 0)
+        {
+            <p class="empty-msg">No activity yet.</p>
+        }
+        @if (_total > (_page + 1) * 5)
+        {
+            <div class="activity-pager">
+                @if (_page > 0)
+                {
+                    <button class="pager-btn" @onclick="() => LoadAsync(_page - 1)">&larr; Newer</button>
+                }
+                <button class="pager-btn" @onclick="() => LoadAsync(_page + 1)">Older &rarr;</button>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public Guid BoulderId { get; set; }
+
+    private List<ActivityLogEntry>? _items;
+    private int _total;
+    private int _page;
+
+    protected override Task OnInitializedAsync() => LoadAsync(0);
+
+    /// <summary>Re-reads the newest page. Called after the offline queue delivered something.</summary>
+    public Task ReloadAsync() => LoadAsync(0);
+
+    private async Task LoadAsync(int page)
+    {
+        try
+        {
+            var (items, total) = await ActivityLogService.GetBoulderActivityAsync(BoulderId, page);
+            _page = page;
+            _items = items;
+            _total = total;
+        }
+        catch (Exception)
+        {
+            // A feed that cannot load must not take the page down with it; the ascent buttons
+            // above it are the point of this screen and keep working regardless.
+            _items ??= [];
+        }
+    }
+
+    private static string Describe(ActivityLogEntry item) => item.Type switch
+    {
+        ActivityType.AttemptLogged => $"{item.User.DisplayName} {AttemptVerb(item.Details)} this",
+        ActivityType.CommentAdded => $"{item.User.DisplayName} commented",
+        ActivityType.BoulderCreated => $"{item.User.DisplayName} created this",
+        ActivityType.BoulderRevised => $"{item.User.DisplayName} revised this",
+        _ => $"{item.User.DisplayName} made a change",
+    };
+
+    private static string AttemptVerb(string? details) => details switch
+    {
+        "Flash" => "flashed",
+        "Send" => "sent",
+        "Attempt" => "attempted",
+        _ => "tried",
+    };
+}

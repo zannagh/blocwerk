@@ -67,6 +67,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<Guid>("BoulderId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("ClientRequestId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Notes")
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
@@ -83,6 +86,10 @@ namespace Blocwerk.Core.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("BoulderId");
+
+                    b.HasIndex("ClientRequestId")
+                        .IsUnique()
+                        .HasFilter("\"ClientRequestId\" IS NOT NULL");
 
                     b.HasIndex("UserId");
 
@@ -101,8 +108,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<Guid>("CreatedByUserId")
                         .HasColumnType("uuid");
 
-                    b.Property<int>("FootholdMode")
-                        .HasColumnType("integer");
+                    b.Property<string>("FootColorOnly")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<int>("Generation")
                         .HasColumnType("integer");
@@ -110,6 +118,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<string>("Grade")
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)");
+
+                    b.Property<bool>("HandsFollowFeet")
+                        .HasColumnType("boolean");
 
                     b.Property<bool>("IsArchived")
                         .HasColumnType("boolean");
@@ -155,6 +166,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<Guid>("BoulderId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("ClientRequestId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -169,6 +183,10 @@ namespace Blocwerk.Core.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("BoulderId");
+
+                    b.HasIndex("ClientRequestId")
+                        .IsUnique()
+                        .HasFilter("\"ClientRequestId\" IS NOT NULL");
 
                     b.HasIndex("UserId");
 
@@ -593,6 +611,40 @@ namespace Blocwerk.Core.Migrations
                     b.ToTable("WallResets");
                 });
 
+            modelBuilder.Entity("Blocwerk.Core.Entities.WallSegment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Angle")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Points")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("WallId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Yaw")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WallId", "SortOrder");
+
+                    b.ToTable("WallSegments");
+                });
+
             modelBuilder.Entity("Blocwerk.Core.Entities.ActivityLogEntry", b =>
                 {
                     b.HasOne("Blocwerk.Core.Entities.Boulder", "Boulder")
@@ -834,6 +886,17 @@ namespace Blocwerk.Core.Migrations
                     b.Navigation("Wall");
                 });
 
+            modelBuilder.Entity("Blocwerk.Core.Entities.WallSegment", b =>
+                {
+                    b.HasOne("Blocwerk.Core.Entities.Wall", "Wall")
+                        .WithMany("Segments")
+                        .HasForeignKey("WallId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Wall");
+                });
+
             modelBuilder.Entity("Blocwerk.Core.Entities.Boulder", b =>
                 {
                     b.Navigation("Attempts");
@@ -874,6 +937,8 @@ namespace Blocwerk.Core.Migrations
                     b.Navigation("Members");
 
                     b.Navigation("Resets");
+
+                    b.Navigation("Segments");
                 });
 #pragma warning restore 612, 618
         }

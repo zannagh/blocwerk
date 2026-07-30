@@ -4,6 +4,8 @@ using Blocwerk.Core;
 using Blocwerk.Core.Services;
 using Blocwerk.HoldDetection;
 using Blocwerk.Web.Components;
+using Blocwerk.Web.Controllers;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using Serilog;
@@ -52,6 +54,8 @@ public static class Program
         builder.Services.AddRazorPages();
         builder.Services.AddServerSideBlazor();
 
+        ConfigureApiCookieBehaviour(builder);
+
         var app = builder.Build();
 
         app.UseForwardedHeaders();
@@ -71,6 +75,15 @@ public static class Program
                 "connect-src 'self' ws: wss:; " +
                 "font-src 'self' https://fonts.gstatic.com; " +
                 "frame-ancestors 'none'";
+
+            // The service worker is served from /js/ but must control the whole origin. A worker
+            // may only claim a scope broader than its own path when the server opts in with this
+            // header (see wwwroot/js/pwa.js).
+            if (context.Request.Path.Equals("/js/service-worker.js", StringComparison.OrdinalIgnoreCase))
+            {
+                headers["Service-Worker-Allowed"] = "/";
+            }
+
             await next();
         });
 
@@ -126,5 +139,57 @@ public static class Program
         });
 
         app.Run();
+    }
+
+    /// <summary>
+    /// Two adjustments the offline queue depends on, applied after
+    /// <c>ConfigureAuthenticationAndAuthorization</c> has registered the cookie handler.
+    /// <list type="number">
+    /// <item>Pin the auth cookie to <c>SameSite=Lax</c>. This is already the framework default,
+    /// but the offline endpoints lean on it as half of their CSRF defence (see
+    /// <see cref="RequireClientHeaderAttribute"/>), so it is stated rather than inherited.</item>
+    /// <item>Answer <c>401</c> instead of redirecting to the login page for <c>/api</c> requests.
+    /// Without this a queued replay made after the session expired would follow the 302, receive
+    /// the login page with status 200, and the queue would wrongly treat the action as applied
+    /// and drop it.</item>
+    /// </list>
+    /// </summary>
+    private static void ConfigureApiCookieBehaviour(WebApplicationBuilder builder)
+    {
+        builder.Services.PostConfigure<CookieAuthenticationOptions>(
+            CookieAuthenticationDefaults.AuthenticationScheme,
+            options =>
+            {
+                options.Cookie.SameSite = SameSiteMode.Lax;
+
+                var redirectToLogin = options.Events.OnRedirectToLogin;
+                options.Events.OnRedirectToLogin = context =>
+                {
+                    if (IsApiRequest(context.Request))
+                    {
+                        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                        return Task.CompletedTask;
+                    }
+
+                    return redirectToLogin(context);
+                };
+
+                var redirectToAccessDenied = options.Events.OnRedirectToAccessDenied;
+                options.Events.OnRedirectToAccessDenied = context =>
+                {
+                    if (IsApiRequest(context.Request))
+                    {
+                        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                        return Task.CompletedTask;
+                    }
+
+                    return redirectToAccessDenied(context);
+                };
+            });
+    }
+
+    private static bool IsApiRequest(HttpRequest request)
+    {
+        return request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase);
     }
 }

@@ -1,0 +1,298 @@
+@inject IJSRuntime JS
+@inject IWallSegmentService SegmentService
+@implements IDisposable
+@using Blocwerk.Core.Helpers
+
+@*
+    Wall segments: one polygon per plane of the wall, each with its own inclination.
+
+    Extracted out of WallPhotoEditor on purpose — it is a wall-admin tool that belongs
+    next to the other wall settings, and the hold editor is already far past the file
+    size this repo wants.
+*@
+
+<div class="segment-editor">
+    <div class="segment-editor-bar">
+        <button class="btn-secondary" @onclick="AddSegment">+ Segment</button>
+        <button class="btn-primary" @onclick="SaveAsync" disabled="@(!_dirty || _saving)">
+            @(_saving ? "Saving…" : _dirty ? "Save segments" : "Saved")
+        </button>
+        <button class="btn-secondary" @onclick="ReloadAsync" disabled="@_saving">Revert</button>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <p class="staged-hint danger">@_error</p>
+    }
+
+    <div class="photo-viewport segment-viewport" @ref="_viewportRef">
+        <div class="photo-editor" @ref="_containerRef">
+            <img src="/api/walls/@WallId/photo" alt="Wall" class="wall-photo" />
+            <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none"
+                 @onmousemove="OnMouseMove" @onmouseup="OnMouseUp" @ontouchend="OnMouseUp">
+
+                @if (BorderPoints.Count >= 3)
+                {
+                    <polygon points="@BorderPts()" fill="none" stroke="#FF9800"
+                             stroke-width="0.25" stroke-dasharray="1 0.5" style="pointer-events: none" />
+                }
+
+                @* Holds are context only: they show whether a segment actually covers them. *@
+                @{
+                    var entities = Entities();
+                }
+                @foreach (var hold in Holds)
+                {
+                    <circle cx="@F(hold.X * 100)" cy="@F(hold.Y * 100)" r="@F(hold.Radius * 100)"
+                            fill="@(WallProjection.IsInsideAnySegment(hold.X, hold.Y, entities) ? "rgba(255,255,255,0.30)" : "rgba(255,255,255,0.08)")"
+                            stroke="rgba(255,255,255,0.45)" stroke-width="0.15"
+                            style="pointer-events: none" />
+                }
+
+                <WallSegmentOverlay Segments="_drafts" ActiveIndex="_activeIndex" Editable="true"
+                                    HandleScale="HandleScale"
+                                    OnSegmentClick="Select"
+                                    OnBodyDown="StartBodyDrag"
+                                    OnHandleDown="StartHandleDrag" />
+            </svg>
+        </div>
+    </div>
+
+    <WallDimControl />
+
+    <p class="segment-hint">
+        Drag a segment's body to move it, drag its dots to reshape it. Holds that no
+        segment covers are drawn faint — those keep the wall's fallback angle
+        (@FallbackAngle&deg;) and are the ones "clean holds outside" would remove.
+    </p>
+
+    @* Live folded preview: the very same schematic the wall detail shows, fed the unsaved
+       drafts, so changing a segment's angle or facing re-folds the map immediately. *@
+    <div class="segment-preview">
+        <span class="segment-preview-label">Folded preview — how the schematic reads</span>
+        <WallSchematicView Holds="Holds" Angle="FallbackAngle" Segments="Entities()" />
+    </div>
+
+    <WallSegmentList Segments="_drafts" ActiveIndex="_activeIndex" FallbackAngle="FallbackAngle"
+                     OnSelect="Select" OnMoveUp="MoveUp" OnMoveDown="MoveDown" OnDelete="DeleteSegment"
+                     OnAddVertex="AddVertex" OnRemoveVertex="RemoveVertex" OnChanged="MarkDirty" />
+</div>
+
+@code {
+    [Parameter] public Guid WallId { get; set; }
+
+    /// <summary>The wall's own angle, used wherever no segment covers a point.</summary>
+    [Parameter] public int FallbackAngle { get; set; }
+
+    [Parameter] public List<Hold> Holds { get; set; } = [];
+
+    [Parameter] public List<ShapePoint> BorderPoints { get; set; } = [];
+
+    /// <summary>Raised with the persisted set so the page can refresh its renderers.</summary>
+    [Parameter] public EventCallback<List<WallSegment>> OnSegmentsSaved { get; set; }
+
+    private ElementReference _viewportRef;
+    private ElementReference _containerRef;
+    private readonly ViewportZoomState _zoomState;
+    private List<WallSegmentDraft> _drafts = [];
+    private int? _activeIndex;
+    private int? _dragSegment;
+    private int? _dragPoint;
+    private (double X, double Y)? _lastPos;
+    private bool _dirty;
+    private bool _saving;
+    private string? _error;
+
+    public WallSegmentEditor()
+    {
+        _zoomState = new ViewportZoomState(() => InvokeAsync(StateHasChanged));
+    }
+
+    private double HandleScale => 1.0 / Math.Clamp(_zoomState.Zoom, 0.5, 6.0);
+
+    /// <summary>The drafts as entities, so the preview uses the shared projection maths.</summary>
+    private List<WallSegment> Entities() =>
+        _drafts.Where(d => d.Points.Count >= 3).Select((d, i) => d.ToEntity(i)).ToList();
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JS.InvokeVoidAsync("bwViewport.setupScroll", _viewportRef, _zoomState.Reference);
+        }
+    }
+
+    public void Dispose() => _zoomState.Dispose();
+
+    private async Task ReloadAsync()
+    {
+        try
+        {
+            var segments = await SegmentService.GetSegmentsAsync(WallId);
+            _drafts = segments.Select(WallSegmentDraft.FromEntity).ToList();
+            _activeIndex = _drafts.Count > 0 ? 0 : null;
+            _dirty = false;
+            _error = null;
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not load segments: {ex.Message}";
+        }
+    }
+
+    private void MarkDirty() => _dirty = true;
+
+    private void Select(int index) => _activeIndex = index;
+
+    private void AddSegment()
+    {
+        // Stagger new segments so two in a row don't land exactly on top of each other.
+        var offset = 0.06 * (_drafts.Count % 4);
+        _drafts.Add(new WallSegmentDraft
+        {
+            Name = $"Segment {_drafts.Count + 1}",
+            Angle = FallbackAngle,
+            Points = WallSegmentDraft.Polygon(0.35 + offset, 0.35 + offset, 0.18, 0.18),
+        });
+        _activeIndex = _drafts.Count - 1;
+        MarkDirty();
+    }
+
+    private void DeleteSegment(int index)
+    {
+        if (index < 0 || index >= _drafts.Count)
+        {
+            return;
+        }
+
+        _drafts.RemoveAt(index);
+        _activeIndex = _drafts.Count == 0 ? null : Math.Clamp(index, 0, _drafts.Count - 1);
+        MarkDirty();
+    }
+
+    private void MoveUp(int index) => Swap(index, index - 1);
+
+    private void MoveDown(int index) => Swap(index, index + 1);
+
+    private void Swap(int a, int b)
+    {
+        if (a < 0 || b < 0 || a >= _drafts.Count || b >= _drafts.Count)
+        {
+            return;
+        }
+
+        (_drafts[a], _drafts[b]) = (_drafts[b], _drafts[a]);
+        _activeIndex = b;
+        MarkDirty();
+    }
+
+    private void AddVertex(int index)
+    {
+        if (index < 0 || index >= _drafts.Count)
+        {
+            return;
+        }
+
+        _drafts[index].AddVertexOnLongestEdge();
+        _activeIndex = index;
+        MarkDirty();
+    }
+
+    private void RemoveVertex(int index)
+    {
+        if (index < 0 || index >= _drafts.Count || _drafts[index].Points.Count <= 3)
+        {
+            return;
+        }
+
+        _drafts[index].Points.RemoveAt(_drafts[index].Points.Count - 1);
+        _activeIndex = index;
+        MarkDirty();
+    }
+
+    private void StartBodyDrag(int index)
+    {
+        _activeIndex = index;
+        _dragSegment = index;
+        _dragPoint = null;
+        _lastPos = null;
+    }
+
+    private void StartHandleDrag((int SegmentIndex, int PointIndex) handle)
+    {
+        _activeIndex = handle.SegmentIndex;
+        _dragSegment = handle.SegmentIndex;
+        _dragPoint = handle.PointIndex;
+        _lastPos = null;
+    }
+
+    private async Task OnMouseMove(MouseEventArgs e)
+    {
+        if (_dragSegment is not { } segIdx || segIdx >= _drafts.Count)
+        {
+            return;
+        }
+
+        var pos = await JS.InvokeAsync<RelativePos>("wallEditor.getRelativePosition", _containerRef, e.ClientX, e.ClientY);
+        var draft = _drafts[segIdx];
+        if (_dragPoint is { } ptIdx && ptIdx < draft.Points.Count)
+        {
+            draft.Points[ptIdx].Dx = Math.Clamp(pos.X, 0, 1);
+            draft.Points[ptIdx].Dy = Math.Clamp(pos.Y, 0, 1);
+        }
+        else
+        {
+            // Whole-segment drag: the first move only anchors, so the polygon does not
+            // jump to the cursor when the user grabs it away from its centre.
+            if (_lastPos is { } last)
+            {
+                draft.Translate(pos.X - last.X, pos.Y - last.Y);
+            }
+
+            _lastPos = (pos.X, pos.Y);
+        }
+
+        MarkDirty();
+        StateHasChanged();
+    }
+
+    private void OnMouseUp(EventArgs e)
+    {
+        _dragSegment = null;
+        _dragPoint = null;
+        _lastPos = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        _error = null;
+        try
+        {
+            var inputs = _drafts.Where(d => d.Points.Count >= 3)
+                .Select((d, i) => d.ToInput(i))
+                .ToList();
+            var saved = await SegmentService.ReplaceSegmentsAsync(WallId, inputs);
+            _drafts = saved.Select(WallSegmentDraft.FromEntity).ToList();
+            _dirty = false;
+            await OnSegmentsSaved.InvokeAsync(saved);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Save failed: {ex.Message}";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private string BorderPts() =>
+        string.Join(" ", BorderPoints.Select(p => $"{F(p.Dx * 100)},{F(p.Dy * 100)}"));
+
+    private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+
+    private record RelativePos(double X, double Y);
+}

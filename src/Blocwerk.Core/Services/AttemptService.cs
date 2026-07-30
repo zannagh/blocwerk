@@ -8,7 +8,12 @@ namespace Blocwerk.Core.Services;
 
 public interface IAttemptService
 {
-    Task<Attempt> LogAttemptAsync(Guid boulderId, AttemptType type, string? notes = null);
+    /// <summary>
+    /// Logs an attempt. Pass a stable <paramref name="clientRequestId"/> when the call may
+    /// be replayed from an offline queue: a second call with the same id returns the row
+    /// already stored instead of logging the attempt twice.
+    /// </summary>
+    Task<Attempt> LogAttemptAsync(Guid boulderId, AttemptType type, string? notes = null, Guid? clientRequestId = null);
 
     Task<List<Attempt>> GetAttemptsForBoulderAsync(Guid boulderId);
 
@@ -37,7 +42,7 @@ public class AttemptService : IAttemptService
         _activityLogService = activityLogService;
     }
 
-    public async Task<Attempt> LogAttemptAsync(Guid boulderId, AttemptType type, string? notes = null)
+    public async Task<Attempt> LogAttemptAsync(Guid boulderId, AttemptType type, string? notes = null, Guid? clientRequestId = null)
     {
         var user = await _currentUserService.GetCurrentUserAsync();
         await using var db = await _dbContextFactory.CreateDbContextAsync();
@@ -46,12 +51,24 @@ public class AttemptService : IAttemptService
         var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId)
                       ?? throw new InvalidOperationException("Boulder not found");
 
+        if (clientRequestId.HasValue)
+        {
+            var replayed = await db.Attempts
+                .FirstOrDefaultAsync(a => a.ClientRequestId == clientRequestId.Value);
+
+            if (replayed != null)
+            {
+                return replayed;
+            }
+        }
+
         var attempt = new Attempt
         {
             BoulderId = boulderId,
             UserId = user.Id,
             Type = type,
             Notes = notes,
+            ClientRequestId = clientRequestId,
         };
 
         db.Attempts.Add(attempt);

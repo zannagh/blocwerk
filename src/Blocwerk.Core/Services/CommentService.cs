@@ -8,7 +8,12 @@ namespace Blocwerk.Core.Services;
 
 public interface ICommentService
 {
-    Task<BoulderComment> AddCommentAsync(Guid boulderId, string text);
+    /// <summary>
+    /// Adds a comment. Pass a stable <paramref name="clientRequestId"/> when the call may
+    /// be replayed from an offline queue: a second call with the same id returns the
+    /// comment already stored instead of posting it twice.
+    /// </summary>
+    Task<BoulderComment> AddCommentAsync(Guid boulderId, string text, Guid? clientRequestId = null);
 
     Task<(List<BoulderComment> Items, int TotalCount)> GetCommentsAsync(Guid boulderId, int page = 0, int pageSize = 10);
 
@@ -31,7 +36,7 @@ public class CommentService : ICommentService
         _activityLogService = activityLogService;
     }
 
-    public async Task<BoulderComment> AddCommentAsync(Guid boulderId, string text)
+    public async Task<BoulderComment> AddCommentAsync(Guid boulderId, string text, Guid? clientRequestId = null)
     {
         var user = await _currentUserService.GetCurrentUserAsync();
         await using var db = await _dbContextFactory.CreateDbContextAsync();
@@ -40,11 +45,24 @@ public class CommentService : ICommentService
         var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId)
                       ?? throw new InvalidOperationException("Boulder not found");
 
+        if (clientRequestId.HasValue)
+        {
+            var replayed = await db.BoulderComments
+                .Include(c => c.User)
+                .FirstOrDefaultAsync(c => c.ClientRequestId == clientRequestId.Value);
+
+            if (replayed != null)
+            {
+                return replayed;
+            }
+        }
+
         var comment = new BoulderComment
         {
             BoulderId = boulderId,
             UserId = user.Id,
             Text = text,
+            ClientRequestId = clientRequestId,
         };
 
         db.BoulderComments.Add(comment);

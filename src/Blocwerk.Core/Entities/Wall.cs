@@ -59,4 +59,10 @@ public class Wall
     public ICollection<Boulder> Boulders { get; set; } = [];
 
     public ICollection<WallReset> Resets { get; set; } = [];
+
+    /// <summary>
+    /// Sub-areas of the wall with their own inclination. Empty means the wall is a single
+    /// plane and <see cref="Angle"/> plus <see cref="BorderPoints"/> describe it.
+    /// </summary>
+    public ICollection<WallSegment> Segments { get; set; } = [];
 }

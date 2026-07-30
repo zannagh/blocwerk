@@ -34,21 +34,26 @@
         }
     </div>
 
+    @* Background pan/pinch/wheel are handled entirely in JS (wwwroot/js/viewport.js,
+       transform model) so they never round-trip per pixel and work on touch. Blazor
+       only handles the layer/corner drags, which need the C# geometry. *@
     <div class="stitcher-viewport" @ref="_viewportRef"
-         @onmousedown="StartPan"
          @onmousemove="OnPointerMove"
          @onmouseup="OnPointerUp"
          @onmouseleave="OnPointerUp"
-         @onwheel="OnWheel" @onwheel:preventDefault="true">
+         @ontouchmove="OnTouchMove"
+         @ontouchend="OnPointerUp"
+         @ontouchcancel="OnPointerUp">
 
-        <div class="stitcher-world" style="transform: translate(@Px(_panX) @Px(_panY)) scale(@N(_zoom)); transform-origin: 0 0;">
+        <div class="stitcher-world" @ref="_worldRef">
             @foreach (var layer in _layers)
             {
                 <img class="stitcher-layer @(layer.Id == _selectedId ? "selected" : "")" src="@layer.DataUrl"
                      draggable="false"
                      style="position:absolute; left:0; top:0; width:@Px(layer.Width); height:@Px(layer.Height); transform-origin:0 0; opacity:@N(layer.Opacity); transform:@StitcherMath.Matrix3d(layer.Width, layer.Height, layer.Corners);"
                      @onmousedown="(e) => StartLayerMove(e, layer)" @onmousedown:stopPropagation="true"
-                     @onmousedown:preventDefault="true" />
+                     @onmousedown:preventDefault="true"
+                     @ontouchstart="(e) => StartLayerMoveTouch(e, layer)" @ontouchstart:stopPropagation="true" />
             }
         </div>
 
@@ -65,15 +70,17 @@
                     @for (var i = 0; i < 4; i++)
                     {
                         var idx = i;
-                        <circle cx="@N(s[idx].X)" cy="@N(s[idx].Y)" r="8" fill="#f5a623" stroke="#fff" stroke-width="2"
+                        <circle cx="@N(s[idx].X)" cy="@N(s[idx].Y)" r="12" fill="#f5a623" stroke="#fff" stroke-width="2"
                                 style="cursor:crosshair; pointer-events:all"
-                                @onmousedown="(e) => StartCorner(e, idx)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true">
+                                @onmousedown="(e) => StartCorner(e, idx)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true"
+                                @ontouchstart="(e) => StartCornerTouch(e, idx)" @ontouchstart:stopPropagation="true">
                             <title>Drag to warp corner</title>
                         </circle>
                     }
-                    <circle cx="@N(mcx)" cy="@N(mcy)" r="9" fill="rgba(255,215,0,0.9)" stroke="#000" stroke-width="2"
+                    <circle cx="@N(mcx)" cy="@N(mcy)" r="14" fill="rgba(255,215,0,0.9)" stroke="#000" stroke-width="2"
                             style="cursor:move; pointer-events:all"
-                            @onmousedown="(e) => StartLayerMove(e, sel)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true">
+                            @onmousedown="(e) => StartLayerMove(e, sel)" @onmousedown:stopPropagation="true" @onmousedown:preventDefault="true"
+                            @ontouchstart="(e) => StartLayerMoveTouch(e, sel)" @ontouchstart:stopPropagation="true">
                         <title>Move</title>
                     </circle>
                 </svg>

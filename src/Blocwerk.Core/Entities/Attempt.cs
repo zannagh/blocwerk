@@ -25,4 +25,10 @@ public class Attempt
 
     [MaxLength(512)]
     public string? Notes { get; set; }
+
+    /// <summary>
+    /// Client-generated de-duplication key for offline replay. Unique across all attempts
+    /// when set, so replaying a queued log after a reconnect cannot create a second row.
+    /// </summary>
+    public Guid? ClientRequestId { get; set; }
 }

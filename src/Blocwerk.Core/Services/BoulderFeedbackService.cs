@@ -25,6 +25,13 @@ public interface IBoulderFeedbackService
     /// </summary>
     Task<bool> ToggleFavoriteAsync(Guid boulderId);
 
+    /// <summary>
+    /// Sets the current user's favorite mark to an absolute value and returns it. Unlike
+    /// <see cref="ToggleFavoriteAsync"/> this is idempotent, so it is the call an offline
+    /// queue replays: applying the same desired state twice is a no-op.
+    /// </summary>
+    Task<bool> SetFavoriteAsync(Guid boulderId, bool favorite);
+
     Task<bool> IsFavoritedAsync(Guid boulderId);
 
     /// <summary>
@@ -139,23 +146,39 @@ public class BoulderFeedbackService : IBoulderFeedbackService
 
         await EnsureMemberAsync(db, boulderId, user.Id);
 
+        var isFavorite = await db.BoulderFavorites
+            .AnyAsync(f => f.BoulderId == boulderId && f.UserId == user.Id);
+
+        return await SetFavoriteAsync(boulderId, !isFavorite);
+    }
+
+    public async Task<bool> SetFavoriteAsync(Guid boulderId, bool favorite)
+    {
+        var user = await _currentUserService.GetCurrentUserAsync();
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = user.Id;
+
+        await EnsureMemberAsync(db, boulderId, user.Id);
+
         var existing = await db.BoulderFavorites
             .FirstOrDefaultAsync(f => f.BoulderId == boulderId && f.UserId == user.Id);
 
-        if (existing != null)
+        if (favorite && existing == null)
+        {
+            db.BoulderFavorites.Add(new BoulderFavorite
+            {
+                BoulderId = boulderId,
+                UserId = user.Id,
+            });
+            await db.SaveChangesAsync();
+        }
+        else if (!favorite && existing != null)
         {
             db.BoulderFavorites.Remove(existing);
             await db.SaveChangesAsync();
-            return false;
         }
 
-        db.BoulderFavorites.Add(new BoulderFavorite
-        {
-            BoulderId = boulderId,
-            UserId = user.Id,
-        });
-        await db.SaveChangesAsync();
-        return true;
+        return favorite;
     }
 
     public async Task<bool> IsFavoritedAsync(Guid boulderId)

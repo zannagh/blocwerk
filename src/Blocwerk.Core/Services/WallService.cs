@@ -3,6 +3,7 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Helpers;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Services;
@@ -1256,17 +1257,31 @@ public class WallService : IWallService
 
         var wall = await db.Walls
                        .Include(w => w.Holds)
+                       .Include(w => w.Segments)
                        .FirstOrDefaultAsync(w => w.Id == wallId)
                    ?? throw new InvalidOperationException("Wall not found");
 
-        if (wall.BorderPoints == null || wall.BorderPoints.Count < 3)
+        // Segments describe the wall in full when there are any, so a hold survives if it
+        // sits in any one of them. Only a segment-less wall falls back to the border.
+        var segments = wall.Segments.ToList();
+        Func<Hold, bool> isInside;
+        if (segments.Count > 0)
         {
-            return 0;
+            isInside = h => WallProjection.IsInsideAnySegment(h.X, h.Y, segments);
+        }
+        else
+        {
+            if (wall.BorderPoints == null || wall.BorderPoints.Count < 3)
+            {
+                return 0;
+            }
+
+            var borderPolygon = wall.BorderPoints.Select(p => (p.Dx, p.Dy)).ToList();
+            isInside = h => IsPointInPolygon(h.X, h.Y, borderPolygon);
         }
 
-        var borderPolygon = wall.BorderPoints.Select(p => (p.Dx, p.Dy)).ToList();
         var toRemove = wall.Holds
-            .Where(h => h.Generation == wall.CurrentGeneration && !IsPointInPolygon(h.X, h.Y, borderPolygon))
+            .Where(h => h.Generation == wall.CurrentGeneration && !isInside(h))
             .ToList();
 
         db.Holds.RemoveRange(toRemove);
@@ -1314,21 +1329,6 @@ public class WallService : IWallService
         await _activityLogService.LogAsync(wallId, null, ActivityType.MemberRoleChanged, $"Role changed to {role}");
     }
 
-    private static bool IsPointInPolygon(double px, double py, List<(double X, double Y)> polygon)
-    {
-        bool inside = false;
-        int j = polygon.Count - 1;
-        for (int i = 0; i < polygon.Count; i++)
-        {
-            if ((polygon[i].Y > py) != (polygon[j].Y > py) &&
-                px < ((polygon[j].X - polygon[i].X) * (py - polygon[i].Y) / (polygon[j].Y - polygon[i].Y)) + polygon[i].X)
-            {
-                inside = !inside;
-            }
-
-            j = i;
-        }
-
-        return inside;
-    }
+    private static bool IsPointInPolygon(double px, double py, List<(double X, double Y)> polygon) =>
+        WallProjection.IsPointInPolygon(px, py, polygon);
 }

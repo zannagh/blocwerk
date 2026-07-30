@@ -1,0 +1,42 @@
+@*
+    Circuit-independent favourite toggle.
+
+    Two buttons rather than one, because the offline contract is deliberately ABSOLUTE:
+    a button carries the state it wants (`data-bw-favorite`), never "flip it". With the
+    circuit down Blazor cannot re-render the button to invert that attribute, so a single
+    button could only ever be pushed one way — and tapping it twice would have to either
+    do nothing or (with a toggle) end up inverted.
+
+    Instead both directions are always in the DOM and CSS picks which one is visible from
+    the `bw-opt-on` class on the wrapper. offline-actions.js adds that class (data-bw-on)
+    for the "add" button and removes it (data-bw-off) for the "remove" button, so the pair
+    toggles correctly offline while every queued entry stays an absolute value. Blazor
+    rewrites the wrapper's class from server truth on the next render, so a replay that
+    lands differently than expected self-corrects.
+
+    No pip: the button that was clicked hides itself immediately, so the pip would vanish
+    with it. The global sync pill reports the pending count instead.
+*@
+
+<span id="@WrapId" class="fav-wrap @(IsFavorite ? "bw-opt-on" : "")">
+    <button type="button" class="fav-toggle fav-add" title="Add to favourites"
+            aria-label="Add to favourites"
+            data-bw-action="favorite" data-bw-boulder="@BoulderId" data-bw-favorite="true"
+            data-bw-on="#@WrapId" data-bw-pip="none">&#9734;</button>
+    <button type="button" class="fav-toggle fav-remove on" title="Remove from favourites"
+            aria-label="Remove from favourites"
+            data-bw-action="favorite" data-bw-boulder="@BoulderId" data-bw-favorite="false"
+            data-bw-off="#@WrapId" data-bw-pip="none">&#9733;</button>
+</span>
+
+@code {
+    [Parameter] public Guid BoulderId { get; set; }
+
+    [Parameter] public bool IsFavorite { get; set; }
+
+    /// <summary>
+    /// The id the optimistic selectors point at. Defaulted so the component works
+    /// standalone; override it if two toggles ever share a page.
+    /// </summary>
+    [Parameter] public string WrapId { get; set; } = "bw-fav";
+}

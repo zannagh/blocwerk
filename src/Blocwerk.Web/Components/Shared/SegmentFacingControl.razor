@@ -1,0 +1,73 @@
+@*
+    Per-segment facing control. Hides the raw "yaw degrees" behind a plain-language 3-way
+    toggle (faces the camera / a side wall on the left / a side wall on the right), which is
+    all most walls need. The exact yaw is still reachable under "Fine-tune" for the rare panel
+    that faces a partial angle. All three map to WallSegment.Yaw, clamped -90..90 server-side.
+*@
+
+<div class="segment-facing" @onclick:stopPropagation="true">
+    <span class="segment-facing-label">Facing</span>
+    <div class="facing-toggle" role="group" aria-label="Segment facing">
+        <button type="button" class="facing-btn @(Facing == 0 ? "active" : "")"
+                title="Faces the camera, like the main wall" @onclick="() => SetFacing(0)">
+            Faces you
+        </button>
+        <button type="button" class="facing-btn @(Facing < 0 ? "active" : "")"
+                title="A side wall on the left, turned towards the right" @onclick="() => SetFacing(-1)">
+            Side (left)
+        </button>
+        <button type="button" class="facing-btn @(Facing > 0 ? "active" : "")"
+                title="A side wall on the right, turned towards the left" @onclick="() => SetFacing(1)">
+            Side (right)
+        </button>
+    </div>
+
+    <button type="button" class="facing-advanced-toggle" @onclick="() => _advanced = !_advanced">
+        @(_advanced ? "Hide fine-tune" : "Fine-tune")
+    </button>
+
+    @if (_advanced)
+    {
+        <div class="facing-fine">
+            <label class="facing-fine-label">Yaw @Draft.Yaw&deg;</label>
+            <input type="range" min="@MinYaw" max="@MaxYaw" value="@Draft.Yaw"
+                   @oninput="SetYaw" class="angle-slider" />
+        </div>
+    }
+</div>
+
+@code {
+    private const int MinYaw = -90;
+    private const int MaxYaw = 90;
+
+    /// <summary>The magnitude a "side wall" preset applies; a distinct fold that still reads
+    /// as a side panel without being fully edge-on (which a 90° yaw would be).</summary>
+    private const int SidePreset = 70;
+
+    [Parameter] public WallSegmentDraft Draft { get; set; } = new();
+
+    /// <summary>Raised after any facing change so the owner marks itself dirty and re-folds.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private bool _advanced;
+
+    /// <summary>Which preset the current yaw reads as: 0 faces the camera, &lt;0 left, &gt;0 right.</summary>
+    private int Facing => Math.Sign(Draft.Yaw);
+
+    private async Task SetFacing(int direction)
+    {
+        Draft.Yaw = direction * SidePreset;
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task SetYaw(ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out var yaw))
+        {
+            return;
+        }
+
+        Draft.Yaw = Math.Clamp(yaw, MinYaw, MaxYaw);
+        await OnChanged.InvokeAsync();
+    }
+}

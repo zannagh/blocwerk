@@ -1,4 +1,5 @@
 @inject IJSRuntime JS
+@implements IDisposable
 
 <div class="editor-toolbar @(BottomToolbar ? "docked-bottom" : "")">
     <div class="toolbar-left">
@@ -67,7 +68,7 @@
                     <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2" />
                 </svg>
             </button>
-            <button class="tool-btn" @onclick="() => _showBorder = !_showBorder" title="@(_showBorder ? "Hide" : "Show") border">
+            <button class="tool-btn" @onclick="() => _showBorder = !_showBorder" title="@(_showBorder ? "Hide" : "Show") border &amp; segments">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="@(_showBorder ? "2" : "1")" width="20" height="20" opacity="@(_showBorder ? "1" : "0.4")">
                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
                 </svg>
@@ -106,10 +107,11 @@
     </div>
 </div>
 
+@* Zoom geometry is owned by JS via the `--zoom` custom property (viewport.js); the
+   markup must not emit a width or a late re-render would stomp the live transform. *@
 <div class="photo-viewport" @ref="_viewportRef"
-     data-current-zoom="@F(_zoom)"
      style="cursor: @CursorForMode();">
-<div class="photo-editor" @ref="_containerRef" style="width: @F(_zoom * 100)%; min-width: 100%;">
+<div class="photo-editor" @ref="_containerRef">
     <img src="@PhotoUrl" alt="Wall" class="wall-photo" />
     <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none"
          @onclick="OnSvgClick"
@@ -137,6 +139,12 @@
                             @onmousedown:stopPropagation="true" />
                 }
             }
+        }
+
+        @* Wall segments — read-only here, they are edited in the wall settings. *@
+        @if (_showBorder && _segmentDrafts.Count > 0)
+        {
+            <WallSegmentOverlay Segments="_segmentDrafts" HandleScale="HandleScale" />
         }
 
         @* Holds *@
@@ -317,6 +325,8 @@
 </div>
 </div>
 
+<WallDimControl />
+
 @* Mode-specific contextual controls — kept BELOW the viewport so the image
    never shifts under the cursor when a tool's options appear or change. *@
 <div class="editor-bottom">
@@ -410,7 +420,20 @@
                 @if (BorderPoints.Count == 0) { <button class="opt-btn" @onclick="InitBorder">Create</button> }
                 else { <button class="opt-btn" @onclick="CleanArtifacts">Clean outside</button> <button class="opt-btn danger" @onclick="ClearBorder">Remove</button> }
             </div>
-            <span class="option-hint">Drag points to define wall area</span>
+            <span class="option-hint">
+                Drag points to define wall area.
+                @if (_segmentDrafts.Count > 0)
+                {
+                    <text>
+                        This wall has @_segmentDrafts.Count segments, so <strong>Clean outside</strong>
+                        keeps every hold inside <em>any</em> segment and ignores this border.
+                    </text>
+                }
+                else
+                {
+                    <text><strong>Clean outside</strong> removes holds outside this border.</text>
+                }
+            </span>
         </div>
     }
     @if (CanEdit && _mode == EditMode.Shape)
@@ -563,6 +586,12 @@
     [Parameter] public Guid WallId { get; set; }
     [Parameter] public List<Hold> Holds { get; set; } = [];
     [Parameter] public List<ShapePoint> BorderPoints { get; set; } = [];
+
+    /// <summary>
+    /// The wall's segments, shown read-only alongside the border. They are created and
+    /// reshaped in the wall settings (<c>WallSegmentEditor</c>), not here.
+    /// </summary>
+    [Parameter] public List<WallSegment>? Segments { get; set; }
     [Parameter] public bool CanEdit { get; set; }
     [Parameter] public string? ShareToken { get; set; }
     [Parameter] public EventCallback<Hold> OnHoldAdded { get; set; }
@@ -660,7 +689,7 @@
 
     private ElementReference _containerRef;
     private ElementReference _viewportRef;
-    private DotNetObjectReference<WallPhotoEditor>? _dotnetRef;
+    private readonly ViewportZoomState _zoomState;
     private Guid? _selectedHoldId;
     private Guid? _shapeEditHoldId;
     private double _selectedRadius = 0.015;
@@ -675,7 +704,7 @@
     private HoldMaterial _addMaterial = HoldMaterial.PU;
     private bool _addOnKickboard;
     private string _paintColor = "yellow";
-    private double _zoom = 1.0;
+    private double _zoom => _zoomState.Zoom;
     private bool _showBorder = true;
     private bool _showNames;
     private Guid? _revealNameHoldId;
@@ -715,17 +744,31 @@
 
     public record BatchChanges(List<Hold> Added, List<Hold> Updated, List<Guid> Deleted);
 
+    public WallPhotoEditor()
+    {
+        _zoomState = new ViewportZoomState(() => InvokeAsync(StateHasChanged));
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
-            _dotnetRef = DotNetObjectReference.Create(this);
-            await JS.InvokeVoidAsync("wallEditor.setupViewport", _viewportRef, _dotnetRef);
+            await JS.InvokeVoidAsync("bwViewport.setupScroll", _viewportRef, _zoomState.Reference);
         }
     }
 
+    public void Dispose() => _zoomState.Dispose();
+
+    private List<WallSegmentDraft> _segmentDrafts = [];
+
     protected override void OnParametersSet()
     {
+        _segmentDrafts = (Segments ?? [])
+            .Where(s => s.Points.Count >= 3)
+            .OrderBy(s => s.SortOrder)
+            .Select(WallSegmentDraft.FromEntity)
+            .ToList();
+
         // Reset all editing state whenever we enter or leave manual alignment so
         // stale hold ids from a prior staging session never bleed into the next one.
         if (ManualAlignment != _lastManualAlignment)
@@ -1508,13 +1551,6 @@
 
     private async Task ClearBorder() { BorderPoints.Clear(); await OnBorderChanged.InvokeAsync(BorderPoints); }
     private async Task CleanArtifacts() { await OnCleanArtifactsRequested.InvokeAsync(); }
-
-    [JSInvokable]
-    public void SetZoomFromJs(double zoom)
-    {
-        _zoom = zoom;
-        StateHasChanged();
-    }
 
     private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
     private static string Pts(IEnumerable<(double X, double Y)> pts) =>

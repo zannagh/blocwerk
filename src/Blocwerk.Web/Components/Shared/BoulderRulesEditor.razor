@@ -1,0 +1,196 @@
+@* The three general rules a boulder can carry. Shared by BoulderCreate and
+   BoulderRevise so the interaction model only has to be built once. *@
+
+<div class="rules-block">
+    <span class="rules-title">Rules</span>
+
+    <label class="checkbox-label">
+        <input type="checkbox" checked="@KickboardFootholdsOn" @onchange="OnKickboardChanged" />
+        All kickboard holds are on
+    </label>
+
+    <div class="rule-group">
+        <span class="rule-group-label">Footholds</span>
+
+        <label class="radio-label">
+            <input type="radio" name="@_radioName" checked="@HandsFollowFeet"
+                   @onchange="() => SetHandsFollowFeetAsync(true)" />
+            <span class="radio-text">
+                <strong>Hands follow feet</strong>
+                <small>Feet may only use the boulder's own holds &mdash; there are no dedicated footholds.</small>
+            </span>
+        </label>
+
+        <label class="radio-label">
+            <input type="radio" name="@_radioName" checked="@(!HandsFollowFeet)"
+                   @onchange="() => SetHandsFollowFeetAsync(false)" />
+            <span class="radio-text">
+                <strong>Dedicated footholds</strong>
+                <small>Mark single holds as foot only below, and/or declare a whole colour as feet.</small>
+            </span>
+        </label>
+
+        @if (!HandsFollowFeet)
+        {
+            <div class="rule-sub">
+                <label class="checkbox-label">
+                    <input type="checkbox" checked="@_colorRuleOn" @onchange="OnColorRuleToggledAsync" />
+                    Feet of one colour only
+                </label>
+
+                @if (_colorRuleOn)
+                {
+                    <div class="foot-color-swatches">
+                        @foreach (var color in HoldPalette.All)
+                        {
+                            var count = CountOnWall(color.Key);
+                            <button type="button"
+                                    class="color-swatch foot-swatch @(FootColorOnly == color.Key ? "active" : "") @(count == 0 ? "absent" : "")"
+                                    style="background: @color.Hex;"
+                                    title="@color.DisplayName &mdash; @count hold@(count == 1 ? "" : "s") on this wall"
+                                    @onclick="() => SetFootColorAsync(color.Key)"></button>
+                        }
+                    </div>
+                    <p class="rule-hint">
+                        Every <strong>@HoldPalette.DisplayName(FootColorOnly)</strong> hold on the wall counts as a
+                        foothold and is drawn purple.
+                        @if (CountOnWall(FootColorOnly) == 0)
+                        {
+                            <span class="rule-warn">No hold of that colour exists on this wall yet.</span>
+                        }
+                    </p>
+                }
+            </div>
+        }
+    </div>
+
+    @if (_clearedFootOnly > 0)
+    {
+        <p class="rule-notice">
+            @_clearedFootOnly foot-only mark@(_clearedFootOnly == 1 ? " was" : "s were") turned back into
+            hand + foot &mdash; "hands follow feet" leaves no room for dedicated footholds.
+        </p>
+    }
+</div>
+
+@code {
+    [Parameter] public bool KickboardFootholdsOn { get; set; } = true;
+    [Parameter] public EventCallback<bool> KickboardFootholdsOnChanged { get; set; }
+
+    [Parameter] public bool HandsFollowFeet { get; set; } = true;
+    [Parameter] public EventCallback<bool> HandsFollowFeetChanged { get; set; }
+
+    [Parameter] public string? FootColorOnly { get; set; }
+    [Parameter] public EventCallback<string?> FootColorOnlyChanged { get; set; }
+
+    /// <summary>The wall's holds, used to show how many holds a colour actually covers.</summary>
+    [Parameter] public List<Hold> WallHolds { get; set; } = [];
+
+    /// <summary>
+    /// The boulder's current marks. Switching "hands follow feet" on rewrites the
+    /// foot-only ones in place rather than letting the server silently drop them.
+    /// </summary>
+    [Parameter] public List<BoulderHoldInput> SelectedHolds { get; set; } = [];
+    [Parameter] public EventCallback<List<BoulderHoldInput>> SelectedHoldsChanged { get; set; }
+
+    private readonly string _radioName = $"footrule-{Guid.NewGuid():N}";
+    private bool _colorRuleOn;
+    private int _clearedFootOnly;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _colorRuleOn = !string.IsNullOrEmpty(FootColorOnly);
+
+        // Legacy boulders can still carry foot-only marks alongside "hands follow feet";
+        // reconcile them up front so the picker never shows a mark that cannot survive.
+        if (HandsFollowFeet)
+        {
+            await ClearFootOnlyMarksAsync();
+        }
+    }
+
+    private int CountOnWall(string? colorKey) =>
+        string.IsNullOrEmpty(colorKey) ? 0 : WallHolds.Count(h => h.Color == colorKey);
+
+    private Task OnKickboardChanged(ChangeEventArgs e) =>
+        KickboardFootholdsOnChanged.InvokeAsync(e.Value is true);
+
+    private async Task SetHandsFollowFeetAsync(bool value)
+    {
+        if (HandsFollowFeet == value)
+        {
+            return;
+        }
+
+        HandsFollowFeet = value;
+        await HandsFollowFeetChanged.InvokeAsync(value);
+
+        if (!value)
+        {
+            _clearedFootOnly = 0;
+            return;
+        }
+
+        // The rule and dedicated footholds are mutually exclusive, so clear both the
+        // colour rule and the per-hold marks and say so instead of losing them on save.
+        _colorRuleOn = false;
+        if (!string.IsNullOrEmpty(FootColorOnly))
+        {
+            FootColorOnly = null;
+            await FootColorOnlyChanged.InvokeAsync(null);
+        }
+
+        await ClearFootOnlyMarksAsync();
+    }
+
+    private async Task ClearFootOnlyMarksAsync()
+    {
+        _clearedFootOnly = 0;
+        for (var i = 0; i < SelectedHolds.Count; i++)
+        {
+            if (SelectedHolds[i].Usage != HoldUsage.FootOnly)
+            {
+                continue;
+            }
+
+            SelectedHolds[i] = SelectedHolds[i] with { Usage = HoldUsage.HandAndFoot };
+            _clearedFootOnly++;
+        }
+
+        if (_clearedFootOnly > 0)
+        {
+            await SelectedHoldsChanged.InvokeAsync(SelectedHolds);
+        }
+    }
+
+    private async Task OnColorRuleToggledAsync(ChangeEventArgs e)
+    {
+        _colorRuleOn = e.Value is true;
+        if (!_colorRuleOn)
+        {
+            await SetFootColorAsync(null);
+            return;
+        }
+
+        if (string.IsNullOrEmpty(FootColorOnly))
+        {
+            await SetFootColorAsync(DefaultFootColor());
+        }
+    }
+
+    /// <summary>The wall's most common hold colour, so the picker opens on something useful.</summary>
+    private string DefaultFootColor() =>
+        WallHolds.Where(h => !string.IsNullOrEmpty(h.Color))
+            .GroupBy(h => h.Color!)
+            .OrderByDescending(g => g.Count())
+            .Select(g => g.Key)
+            .FirstOrDefault() ?? HoldPalette.PlasticColors[0].Key;
+
+    private Task SetFootColorAsync(string? colorKey)
+    {
+        FootColorOnly = colorKey;
+
+        // "" clears the colour server-side; null there means "leave unchanged".
+        return FootColorOnlyChanged.InvokeAsync(colorKey);
+    }
+}

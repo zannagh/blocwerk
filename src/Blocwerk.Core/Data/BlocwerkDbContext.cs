@@ -15,6 +15,8 @@ public class BlocwerkDbContext : DbContext
 
     public DbSet<WallMember> WallMembers => Set<WallMember>();
 
+    public DbSet<WallSegment> WallSegments => Set<WallSegment>();
+
     public DbSet<Hold> Holds => Set<Hold>();
 
     public DbSet<Boulder> Boulders => Set<Boulder>();
@@ -66,6 +68,7 @@ public class BlocwerkDbContext : DbContext
         ConfigureUser(modelBuilder);
         ConfigureWall(modelBuilder);
         ConfigureWallMember(modelBuilder);
+        ConfigureWallSegment(modelBuilder);
         ConfigureHold(modelBuilder);
         ConfigureBoulder(modelBuilder);
         ConfigureBoulderHold(modelBuilder);
@@ -125,6 +128,24 @@ public class BlocwerkDbContext : DbContext
                 .WithMany(w => w.Members)
                 .HasForeignKey(wm => wm.WallId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+    }
+
+    private static void ConfigureWallSegment(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<WallSegment>(entity =>
+        {
+            entity.HasOne(s => s.Wall)
+                .WithMany(w => w.Segments)
+                .HasForeignKey(s => s.WallId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(s => new { s.WallId, s.SortOrder });
+
+            entity.Property(s => s.Points)
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+                    v => JsonSerializer.Deserialize<List<ShapePoint>>(v, (JsonSerializerOptions?)null) ?? new List<ShapePoint>());
         });
     }
 
@@ -193,6 +214,11 @@ public class BlocwerkDbContext : DbContext
                 .WithMany(u => u.Attempts)
                 .HasForeignKey(a => a.UserId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            // Offline replay: the same queued attempt may arrive twice.
+            entity.HasIndex(a => a.ClientRequestId)
+                .IsUnique()
+                .HasFilter("\"ClientRequestId\" IS NOT NULL");
         });
     }
 
@@ -303,6 +329,11 @@ public class BlocwerkDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(c => c.UserId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            // Offline replay: a comment has no natural dedupe key.
+            entity.HasIndex(c => c.ClientRequestId)
+                .IsUnique()
+                .HasFilter("\"ClientRequestId\" IS NOT NULL");
         });
     }
 }

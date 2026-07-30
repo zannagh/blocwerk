@@ -23,4 +23,10 @@ public class BoulderComment
     public required string Text { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    /// <summary>
+    /// Client-generated de-duplication key for offline replay. A comment has no natural
+    /// dedupe key, so a replayed queue entry is matched on this instead.
+    /// </summary>
+    public Guid? ClientRequestId { get; set; }
 }

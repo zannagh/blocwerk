@@ -1,42 +1,55 @@
 @inject IJSRuntime JS
+@using Blocwerk.Core.Helpers
+@using Blocwerk.Core.Geometry
 
 <div class="schematic-container">
+    @* Zoom geometry is owned by JS via the `--zoom` custom property (viewport.js). *@
     <div class="schematic-viewport photo-viewport" @ref="_viewportRef"
-         data-current-zoom="@F(_zoom)"
          style="overflow: auto; cursor: default;">
         <svg viewBox="0 0 100 100" class="schematic-svg"
-             style="width: @F(_zoom * 100)%; min-width: 100%;"
              xmlns="http://www.w3.org/2000/svg">
             <rect x="0" y="0" width="100" height="100" fill="#f5f0eb" rx="1" />
 
             <line x1="0" y1="100" x2="100" y2="100"
                   stroke="#8D6E63" stroke-width="0.5" />
 
+            @* The wall's planes, foreshortened by their own angle, so the schematic shows
+               the shape of the wall instead of one flat plane. *@
+            @if (_drafts.Count > 0)
+            {
+                <WallSegmentOverlay Segments="_drafts" ProjectPoint="ProjectSegmentPoint" HandleScale="1.0" />
+            }
+
             @foreach (var hold in Holds)
             {
-                var correctedY = hold.IsOnKickboard ? hold.Y : CorrectY(hold.Y);
-                var isFoot = hold.Category == HoldCategory.Foot;
+                var p = hold.IsOnKickboard ? new SchematicPoint(hold.X, hold.Y) : _layout.Project(hold.X, hold.Y);
+                var isFoot = hold.Category == HoldCategory.Foot || FootHoldIds?.Contains(hold.Id) == true;
                 var r = (isFoot ? hold.Radius * 0.7 : hold.Radius) * 100;
                 var isHighlighted = HighlightedHoldIds == null || HighlightedHoldIds.Contains(hold.Id);
                 var opacity = isHighlighted ? "1" : "0.15";
                 var fill = GetFillColor(hold);
                 var stroke = GetStrokeColor(hold);
+                if (FootHoldIds?.Contains(hold.Id) == true)
+                {
+                    fill = BoulderHoldColors.ColorRuleFill(0.55);
+                    stroke = BoulderHoldColors.Foot;
+                }
 
                 @if (hold.ShapePoints is { Count: >= 3 })
                 {
-                    <polygon points="@Pts(hold.ShapePoints.Select(sp => (hold.X + sp.Dx, correctedY + sp.Dy)))"
+                    <polygon points="@Pts(hold.ShapePoints.Select(sp => (p.X + sp.Dx, p.Y + sp.Dy)))"
                              fill="@fill" stroke="@stroke" stroke-width="0.3" opacity="@opacity" />
                 }
                 else if (isFoot)
                 {
-                    <rect x="@F(hold.X * 100 - r)" y="@F(correctedY * 100 - r)"
+                    <rect x="@F(p.X * 100 - r)" y="@F(p.Y * 100 - r)"
                           width="@F(r * 2)" height="@F(r * 2)"
                           rx="0.3" ry="0.3"
                           fill="@fill" stroke="@stroke" stroke-width="0.3" opacity="@opacity" />
                 }
                 else
                 {
-                    <circle cx="@F(hold.X * 100)" cy="@F(correctedY * 100)"
+                    <circle cx="@F(p.X * 100)" cy="@F(p.Y * 100)"
                             r="@F(r)"
                             fill="@fill" stroke="@stroke" stroke-width="0.3" opacity="@opacity" />
                 }
@@ -45,45 +58,70 @@
     </div>
 
     <div class="schematic-info">
-        <span>Wall angle: @Angle&deg;</span>
-        @if (Angle > 0)
+        @if (_drafts.Count > 0)
         {
-            <span>&middot; Corrected to straight-on view</span>
+            <span>@_drafts.Count segments: @string.Join(", ", _drafts.Select(d => $"{d.Name} {d.Angle}°"))</span>
+            <span>&middot; elsewhere @Angle&deg;</span>
+        }
+        else
+        {
+            <span>Wall angle: @Angle&deg;</span>
+            @if (Angle > 0)
+            {
+                <span>&middot; Corrected to straight-on view</span>
+            }
         }
     </div>
 </div>
 
 @code {
     [Parameter] public List<Hold> Holds { get; set; } = [];
+
+    /// <summary>The wall's own angle, applied wherever no segment covers a hold.</summary>
     [Parameter] public int Angle { get; set; }
+
     [Parameter] public HashSet<Guid>? HighlightedHoldIds { get; set; }
 
-    private double _zoom = 1.0;
+    /// <summary>Holds a boulder marks as footholds; drawn in the foot purple.</summary>
+    [Parameter] public HashSet<Guid>? FootHoldIds { get; set; }
+
+    /// <summary>
+    /// The wall's segments. Empty (or unset) keeps the original single-plane behaviour.
+    /// </summary>
+    [Parameter] public List<WallSegment>? Segments { get; set; }
+
     private ElementReference _viewportRef;
-    private DotNetObjectReference<WallSchematicView>? _dotnetRef;
+    private List<WallSegmentDraft> _drafts = [];
+
+    /// <summary>The folding layout, rebuilt whenever the segments or wall angle change.</summary>
+    private WallSchematicLayout _layout = WallProjection.BuildLayout(null, 0);
+
+    protected override void OnParametersSet()
+    {
+        _drafts = (Segments ?? [])
+            .Where(s => s.Points.Count >= 3)
+            .OrderBy(s => s.SortOrder)
+            .Select(WallSegmentDraft.FromEntity)
+            .ToList();
+
+        // Build the fold once per parameter change; the render loop then queries it per hold.
+        // Sourcing from the drafts keeps the layout's segment indices aligned with the overlay,
+        // which draws those same drafts in order (see ProjectSegmentPoint).
+        _layout = WallProjection.BuildLayout(_drafts.Select((d, i) => d.ToEntity(i)).ToList(), Angle);
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
-            _dotnetRef = DotNetObjectReference.Create(this);
-            await JS.InvokeVoidAsync("wallEditor.setupViewport", _viewportRef, _dotnetRef);
+            // No .NET callback: nothing here displays the zoom level, so there is
+            // no reason to pay for a round-trip on every gesture.
+            await JS.InvokeVoidAsync("bwViewport.setupScroll", _viewportRef, null);
         }
     }
 
-    [JSInvokable]
-    public void SetZoomFromJs(double zoom)
-    {
-        _zoom = zoom;
-        StateHasChanged();
-    }
-
-    private double CorrectY(double y)
-    {
-        if (Angle <= 0) return y;
-        var cosA = Math.Cos(Angle * Math.PI / 180.0);
-        return y * cosA + (1 - cosA) * 0.5;
-    }
+    private SchematicPoint ProjectSegmentPoint(int index, double x, double y) =>
+        _layout.ProjectForSegment(index, x, y);
 
     private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
 
@@ -94,4 +132,3 @@
 
     private static string GetStrokeColor(Hold hold) => HoldPalette.StrokeHex(hold.Color);
 }
-

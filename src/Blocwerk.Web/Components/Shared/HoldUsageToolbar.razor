@@ -1,0 +1,49 @@
+@* The "what does a tap mark" tool row under the hold picker. Split out of HoldPicker
+   so that file stays inside the repo's file-size budget. *@
+
+<div class="usage-toolbar">
+    <span class="usage-hint">
+        @(HandsFollowFeet
+            ? "Tap a hold to mark it — hands follow feet, so there are no foot-only holds"
+            : "Tap a hold to mark it")
+    </span>
+    <div class="usage-controls">
+        <button class="usage-btn @(Value == HoldUsage.HandAndFoot ? "active" : "")"
+                @onclick="() => ValueChanged.InvokeAsync(HoldUsage.HandAndFoot)"
+                title="Hand and foot (default)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18">
+                <path d="M9 10V5a1.5 1.5 0 0 1 3 0v4M12 9V4.5a1.5 1.5 0 0 1 3 0V9M15 9.5V6a1.5 1.5 0 0 1 3 0v7a7 7 0 0 1-7 7H10c-2 0-3-1-4.2-2.8L4 14a1.5 1.5 0 0 1 2.5-1.6L8 14V7a1.5 1.5 0 0 1 3 0" />
+            </svg>
+            <span>Hand + Foot</span>
+        </button>
+        <button class="usage-btn @(Value == HoldUsage.HandOnly ? "active" : "")"
+                @onclick="() => ValueChanged.InvokeAsync(HoldUsage.HandOnly)"
+                title="Hands only">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18">
+                <path d="M9 11V6a1.5 1.5 0 0 1 3 0v5M12 10V5a1.5 1.5 0 0 1 3 0v6M15 11V7a1.5 1.5 0 0 1 3 0v6a7 7 0 0 1-7 7h-1c-2 0-3.2-1-4.4-2.8L4 15a1.5 1.5 0 0 1 2.5-1.6L8 15V8a1.5 1.5 0 0 1 3 0" />
+            </svg>
+            <span>Hand only</span>
+        </button>
+        @* Hidden while "hands follow feet" is on: the server coerces any foot-only mark
+           straight back to hand + foot, so offering the tool would lose the user's work. *@
+        @if (!HandsFollowFeet)
+        {
+            <button class="usage-btn foot @(Value == HoldUsage.FootOnly ? "active" : "")"
+                    @onclick="() => ValueChanged.InvokeAsync(HoldUsage.FootOnly)"
+                    title="Feet only">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18">
+                    <path d="M8 20c-1.5 0-2.5-1-2.5-2.6 0-2 1.5-3.4 1.5-5.9C7 8 8.7 5 12 5s5 2.6 5 6.5c0 2.6-1.2 3.9-1.2 6C15.8 19 14.6 20 13 20z" />
+                </svg>
+                <span>Foot only</span>
+            </button>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public HoldUsage Value { get; set; } = HoldUsage.HandAndFoot;
+    [Parameter] public EventCallback<HoldUsage> ValueChanged { get; set; }
+
+    /// <summary>Hides the foot-only tool while the boulder's rule forbids dedicated feet.</summary>
+    [Parameter] public bool HandsFollowFeet { get; set; } = true;
+}

@@ -42,6 +42,7 @@ public sealed class WallTestHarness : IDisposable
         BoulderService = new BoulderService(DbContextFactory, CurrentUser, ActivityLog);
         AttemptService = new AttemptService(DbContextFactory, CurrentUser, ActivityLog);
         FeedbackService = new BoulderFeedbackService(DbContextFactory, CurrentUser);
+        SegmentService = new WallSegmentService(DbContextFactory, CurrentUser);
     }
 
     public User Owner { get; }
@@ -65,6 +66,8 @@ public sealed class WallTestHarness : IDisposable
     public IAttemptService AttemptService { get; }
 
     public IBoulderFeedbackService FeedbackService { get; }
+
+    public IWallSegmentService SegmentService { get; }
 
     /// <summary>
     /// Seeds a wall owned by <see cref="Owner"/> with a live photo and the given number

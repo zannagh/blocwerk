@@ -17,15 +17,18 @@ window.imageStitcher = {
     },
 
     /**
-     * Convert a clientX/clientY into world coordinates given the current
-     * pan (screen px) and zoom of the world container inside the viewport.
+     * Convert a clientX/clientY into world coordinates. The pan/zoom is read straight
+     * from the shared viewport engine (viewport.js), which owns it, so a drag started
+     * mid-gesture never uses a stale server-side copy.
      */
-    clientToWorld(viewportEl, clientX, clientY, panX, panY, zoom) {
-        if (!viewportEl || zoom === 0) return { x: 0, y: 0 };
+    clientToWorld(viewportEl, clientX, clientY) {
+        if (!viewportEl) return { x: 0, y: 0 };
+        const t = window.bwViewport.transformGet(viewportEl);
+        if (!t.zoom) return { x: 0, y: 0 };
         const r = viewportEl.getBoundingClientRect();
         return {
-            x: (clientX - r.left - panX) / zoom,
-            y: (clientY - r.top - panY) / zoom,
+            x: (clientX - r.left - t.panX) / t.zoom,
+            y: (clientY - r.top - t.panY) / t.zoom,
         };
     },
 

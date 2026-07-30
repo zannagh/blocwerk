@@ -8,6 +8,13 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <base href="/" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="theme-color" content="#16162a" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Blocwerk" />
+    <link rel="apple-touch-icon" href="icons/icon-192.png" />
+    <link rel="icon" type="image/png" href="icons/icon-192.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&family=Manrope:wght@400;500;600;700&display=swap" />
@@ -17,16 +24,52 @@
     <link rel="stylesheet" href="css/training.css" />
     <link rel="stylesheet" href="css/guides.css" />
     <script src="js/theme.js"></script>
+    <script src="js/wall-dim.js"></script>
     <HeadOutlet />
     <title>Blocwerk</title>
 </head>
 <body>
     <Routes />
-    <script src="_framework/blazor.web.js"></script>
+
+    @* Blazor sets components-reconnect-* classes and raises components-reconnect-state-changed on
+       this element. It lives outside <Routes /> so it exists before the circuit starts and is
+       never touched by a re-render. wwwroot/js/blazor-boot.js listens on it; the branded UI is the
+       status pill, so this element itself stays invisible. *@
+    <div id="components-reconnect-modal" class="bw-reconnect-sentinel" aria-hidden="true"></div>
+
+    @* Blazor unhides this on an unhandled exception on the circuit. Without it a failed
+       server-side call is silent, which is how a button ends up stuck in its "busy" state
+       with nothing shown to the user. *@
+    <div id="blazor-error-ui">
+        <div class="bw-error-ui-inner">
+            <span class="bw-error-ui-text">Something went wrong. Anything you queued is still saved on this device.</span>
+            <a class="bw-error-ui-action" href="javascript:location.reload()">Reload</a>
+            <a class="bw-error-ui-dismiss"
+               href="javascript:void(0)"
+               title="Dismiss"
+               onclick="document.getElementById('blazor-error-ui').style.display='none'">&times;</a>
+        </div>
+    </div>
+
+    <script src="_framework/blazor.web.js" autostart="false"></script>
+    <script src="js/viewport-gestures.js"></script>
+    <script src="js/viewport.js"></script>
     <script src="js/wall-editor.js"></script>
     <script src="js/wall-carousel.js"></script>
     <script src="js/image-stitcher.js"></script>
-    <script>window.wallEditor && window.wallEditor.blockPageZoom && window.wallEditor.blockPageZoom();</script>
+    <script>window.bwViewport && window.bwViewport.blockPageZoom();</script>
     <script src="js/cookie-consent.js"></script>
+
+    @* Order matters: the queue needs its store, the delegated click handler needs the queue, and
+       blazor-boot.js starts the circuit last so the offline path is live even if the circuit
+       never comes up. *@
+    <script src="js/offline-db.js"></script>
+    <script src="js/offline-transport.js"></script>
+    <script src="js/offline-queue.js"></script>
+    <script src="js/offline-actions.js"></script>
+    <script src="js/offline-boulder.js"></script>
+    <script src="js/blazor-boot.js"></script>
+    <script src="js/offline-status.js"></script>
+    <script src="js/pwa.js"></script>
 </body>
 </html>

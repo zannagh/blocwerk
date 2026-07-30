@@ -1,0 +1,97 @@
+@*
+    The segment roster: name, angle, precedence and vertex count for every segment.
+
+    The list order IS the SortOrder that gets persisted, and the first segment containing
+    a point wins the projection — so the arrows are not cosmetic and the header says so.
+*@
+
+<div class="segment-list">
+    @if (Segments.Count == 0)
+    {
+        <p class="segment-empty">
+            No segments yet. The whole wall is projected with its fallback angle of
+            <strong>@FallbackAngle&deg;</strong>. Add a segment for each plane that differs.
+        </p>
+    }
+    else
+    {
+        <p class="segment-hint">
+            Overlapping segments are resolved <strong>top-down</strong>: a hold takes the
+            angle of the first segment in this list that contains it. Anything covered by
+            no segment falls back to the wall angle (@FallbackAngle&deg;).
+        </p>
+    }
+
+    @foreach (var (draft, index) in Segments.Select((s, i) => (s, i)))
+    {
+        var idx = index;
+        var isActive = ActiveIndex == idx;
+        <div class="segment-row @(isActive ? "active" : "")" @key="draft.Key" @onclick="() => OnSelect.InvokeAsync(idx)">
+            <div class="segment-row-head">
+                <span class="segment-badge" style="background: @WallSegmentPalette.Stroke(idx);">@(idx + 1)</span>
+                <input class="segment-name" maxlength="64" value="@draft.Name"
+                       @onchange="e => Rename(draft, e)" @onclick:stopPropagation="true" />
+                <div class="segment-order">
+                    <button class="opt-btn" title="Higher precedence" disabled="@(idx == 0)"
+                            @onclick="() => OnMoveUp.InvokeAsync(idx)" @onclick:stopPropagation="true">&uarr;</button>
+                    <button class="opt-btn" title="Lower precedence" disabled="@(idx == Segments.Count - 1)"
+                            @onclick="() => OnMoveDown.InvokeAsync(idx)" @onclick:stopPropagation="true">&darr;</button>
+                    <button class="opt-btn danger" title="Delete segment"
+                            @onclick="() => OnDelete.InvokeAsync(idx)" @onclick:stopPropagation="true">&times;</button>
+                </div>
+            </div>
+            <div class="segment-row-body" @onclick:stopPropagation="true">
+                <label class="segment-angle-label">
+                    Angle @draft.Angle&deg; <span class="segment-angle-word">@WallAngleRange.Label(draft.Angle)</span>
+                </label>
+                <input type="range" min="@WallAngleRange.Min" max="@WallAngleRange.Max" value="@draft.Angle"
+                       @oninput="e => SetAngle(draft, e)" class="angle-slider" />
+                @if (draft.Angle >= WallAngleRange.SteepWarning)
+                {
+                    <span class="segment-warn">Nearly a roof — this segment collapses onto its top edge in the schematic.</span>
+                }
+                <SegmentFacingControl Draft="draft" OnChanged="OnChanged" />
+                <div class="segment-vertices">
+                    <span>@draft.Points.Count points</span>
+                    <button class="opt-btn" title="Remove a vertex" disabled="@(draft.Points.Count <= 3)"
+                            @onclick="() => OnRemoveVertex.InvokeAsync(idx)">&minus;</button>
+                    <button class="opt-btn" title="Add a vertex on the longest edge"
+                            @onclick="() => OnAddVertex.InvokeAsync(idx)">+</button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public List<WallSegmentDraft> Segments { get; set; } = [];
+    [Parameter] public int? ActiveIndex { get; set; }
+    [Parameter] public int FallbackAngle { get; set; }
+    [Parameter] public EventCallback<int> OnSelect { get; set; }
+    [Parameter] public EventCallback<int> OnMoveUp { get; set; }
+    [Parameter] public EventCallback<int> OnMoveDown { get; set; }
+    [Parameter] public EventCallback<int> OnDelete { get; set; }
+    [Parameter] public EventCallback<int> OnAddVertex { get; set; }
+    [Parameter] public EventCallback<int> OnRemoveVertex { get; set; }
+
+    /// <summary>Raised after an in-place edit so the owner can mark itself dirty.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private async Task Rename(WallSegmentDraft draft, ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString();
+        draft.Name = string.IsNullOrWhiteSpace(value) ? "Segment" : value.Trim();
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task SetAngle(WallSegmentDraft draft, ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out var angle))
+        {
+            return;
+        }
+
+        draft.Angle = Math.Clamp(angle, WallAngleRange.Min, WallAngleRange.Max);
+        await OnChanged.InvokeAsync();
+    }
+}

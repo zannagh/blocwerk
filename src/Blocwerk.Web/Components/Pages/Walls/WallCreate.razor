@@ -3,6 +3,7 @@
 @attribute [Authorize]
 @inject IWallService WallService
 @inject NavigationManager Navigation
+@using Blocwerk.Web.Components.Shared
 
 <PageTitle>Create Wall - Blocwerk</PageTitle>
 
@@ -21,13 +22,19 @@
         </div>
 
         <div class="form-group">
-            <label>Wall Angle: @(_model.Angle)&deg;</label>
-            <input type="range" min="0" max="70" @bind="_model.Angle" @bind:event="oninput" class="angle-slider" />
+            <label>Wall Angle: @(_model.Angle)&deg; <span class="segment-angle-word">@WallAngleRange.Label(_model.Angle)</span></label>
+            <input type="range" min="@WallAngleRange.Min" max="@WallAngleRange.Max" @bind="_model.Angle" @bind:event="oninput" class="angle-slider" />
             <div class="angle-labels">
                 <span>0&deg; Vertical</span>
                 <span>45&deg; Overhang</span>
-                <span>70&deg; Roof</span>
+                <span>90&deg; Roof</span>
             </div>
+            <p class="hint">
+                The angle of the wall as a whole. If your wall is built from planes at
+                different angles &mdash; a slab beside an overhang, a vertical side panel
+                &mdash; draw a <strong>segment</strong> per plane later, in the wall's
+                settings. This value then only applies where no segment covers the wall.
+            </p>
         </div>
 
         <div class="form-group">

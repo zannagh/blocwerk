@@ -1,5 +1,9 @@
 @inject IJSRuntime JS
 @inject IWallService WallService
+@inject IWallSegmentService WallSegmentService
+@implements IDisposable
+@using Blocwerk.Core.Helpers
+@using Blocwerk.Core.Geometry
 
 <div class="picker-toolbar">
     <span class="pick-count">@SelectedHolds.Count selected</span>
@@ -7,6 +11,10 @@
         <span class="legend-item"><span class="dot start"></span> Start</span>
         <span class="legend-item"><span class="dot normal"></span> Normal</span>
         <span class="legend-item"><span class="dot top"></span> Top</span>
+        @if (!HandsFollowFeet)
+        {
+            <span class="legend-item"><span class="dot foot"></span> Foot</span>
+        }
     </div>
     <div class="pick-controls">
         <button class="mode-btn @(_placeType == HoldType.Start ? "active start-active" : "")" @onclick="() => _placeType = HoldType.Start">Start</button>
@@ -25,12 +33,17 @@
 </div>
 
 <div class="zoom-bar">
-    <button class="zoom-btn" @onclick="() => _zoom = Math.Min(_zoom + 0.25, 4.0)">+</button>
-    <button class="zoom-btn" @onclick="() => _zoom = Math.Max(_zoom - 0.25, 0.5)">&minus;</button>
-    <button class="zoom-btn" @onclick="() => _zoom = 1.0">Reset</button>
+    @* All zoom entry points go through the JS engine so every one of them is
+       anchored on the viewport centre instead of the top-left corner. *@
+    <button class="zoom-btn" @onclick="() => ZoomByAsync(1.25)">+</button>
+    <button class="zoom-btn" @onclick="() => ZoomByAsync(0.8)">&minus;</button>
+    <button class="zoom-btn" @onclick="ResetZoomAsync">Reset</button>
     @if (_zoom != 1.0) { <span class="zoom-label">@F(_zoom * 100)%</span> }
     <span class="zoom-sep"></span>
-    <button class="zoom-btn @(_isPanning ? "pan-active" : "")" @onclick="() => _isPanning = !_isPanning" title="@(_isPanning ? "Disable pan" : "Enable pan")">
+    @* Pan mode is honoured by the JS engine through data-pan-mode below: while it is
+       on you can drag from anywhere, holds included, and taps never select. *@
+    <button class="zoom-btn @(_isPanning ? "pan-active" : "")" @onclick="() => _isPanning = !_isPanning"
+            title="@(_isPanning ? "Pan mode on — drag anywhere, taps ignored" : "Pan mode off — tap holds to select")">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
             <path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 9.5V5a2 2 0 0 0-4 0v9" />
             <path d="M18 11a2 2 0 0 1 4 0v6a8 8 0 0 1-8 8h-2c-2.5 0-4-1-6-4l-3.3-5.1a2 2 0 0 1 3.3-2.3L6 14" />
@@ -38,14 +51,18 @@
     </button>
 </div>
 
+<WallDimControl />
+
+@* The viewport carries no zoom geometry: JS owns `--zoom` on the content element
+   (see wwwroot/js/viewport.js and the `calc(var(--zoom, 1) * 100%)` CSS rules), so a
+   server re-render can never stomp the transform mid-gesture. *@
 <div class="picker-viewport" @ref="_viewportRef"
-     data-pan-mode="@(_isPanning ? "true" : "")"
-     data-current-zoom="@F(_zoom)"
+     data-pan-mode="@(_isPanning ? "true" : "false")"
      style="cursor: @(_isPanning ? "grab" : "default");">
 
 @if (_viewMode == ViewMode.Photo)
 {
-    <div class="photo-picker" @ref="_photoPickerRef" style="width: @F(_zoom * 100)%; min-width: 100%;">
+    <div class="photo-picker" @ref="_photoPickerRef">
         <img src="/api/walls/@WallId/photo" alt="Wall" class="wall-photo" />
         <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none"
              @onclick="OnSvgClick"
@@ -54,11 +71,16 @@
             {
                 var selection = SelectedHolds.FirstOrDefault(s => s.HoldId == hold.Id);
                 var isSelected = selection != null;
-                var fillColor = isSelected ? GetSelectionFill(selection!.Type) : "rgba(255,255,255,0.15)";
-                var strokeColor = isSelected ? GetSelectionStroke(selection!.Type) : "rgba(255,255,255,0.4)";
-                var sw = isSelected ? "0.4" : "0.2";
+                var isColorFoot = IsColorRuleFoot(hold);
+                var fillColor = isSelected
+                    ? BoulderHoldColors.FillFor(selection!.Type, selection.Usage)
+                    : isColorFoot ? BoulderHoldColors.ColorRuleFill(0.45) : "rgba(255,255,255,0.15)";
+                var strokeColor = isSelected
+                    ? BoulderHoldColors.Stroke(selection!.Type)
+                    : isColorFoot ? BoulderHoldColors.Foot : "rgba(255,255,255,0.4)";
+                var sw = isSelected || isColorFoot ? "0.4" : "0.2";
                 var dash = hold.IsVirtual ? "0.6 0.4" : "";
-                if (hold.IsVirtual) { strokeColor = isSelected ? strokeColor : "#c86dff"; }
+                if (hold.IsVirtual && !isSelected && !isColorFoot) { strokeColor = "#c86dff"; }
                 var isFoot = hold.Category == HoldCategory.Foot;
                 var r = (isFoot ? hold.Radius * 0.7 : hold.Radius) * 100;
 
@@ -84,24 +106,13 @@
                             style="cursor: pointer"
                             @onclick="() => ToggleHold(hold)" @onclick:stopPropagation="true" />
                 }
-
-                @if (isSelected && UsageBadge(selection!.Usage) is { } badge)
-                {
-                    <g pointer-events="none">
-                        <circle cx="@F(hold.X * 100 + r * 0.8)" cy="@F(hold.Y * 100 - r * 0.8)" r="1.3"
-                                fill="@strokeColor" stroke="white" stroke-width="0.25" />
-                        <text x="@F(hold.X * 100 + r * 0.8)" y="@F(hold.Y * 100 - r * 0.8)"
-                              text-anchor="middle" dominant-baseline="central"
-                              font-size="1.6" font-weight="700" fill="white">@badge</text>
-                    </g>
-                }
             }
         </svg>
     </div>
 }
 else
 {
-    <div class="schematic-picker" style="width: @F(_zoom * 100)%; min-width: 100%;">
+    <div class="schematic-picker">
         <svg viewBox="0 0 100 100" class="schematic-svg" xmlns="http://www.w3.org/2000/svg">
             <rect x="0" y="0" width="100" height="100" fill="#f5f0eb" rx="1" />
             <line x1="0" y1="100" x2="100" y2="100" stroke="#8D6E63" stroke-width="0.5" />
@@ -110,37 +121,31 @@ else
             {
                 var selection = SelectedHolds.FirstOrDefault(s => s.HoldId == hold.Id);
                 var isSelected = selection != null;
-                var fillColor = isSelected ? GetSelectionFill(selection!.Type) : GetDefaultFill(hold);
-                var strokeColor = isSelected ? GetSelectionStroke(selection!.Type) : GetDefaultStroke(hold);
-                var sw = isSelected ? "0.6" : "0.3";
+                var isColorFoot = IsColorRuleFoot(hold);
+                var fillColor = isSelected
+                    ? BoulderHoldColors.FillFor(selection!.Type, selection.Usage)
+                    : isColorFoot ? BoulderHoldColors.ColorRuleFill(0.5) : HoldPalette.Fill(hold.Color, 0.4);
+                var strokeColor = isSelected
+                    ? BoulderHoldColors.Stroke(selection!.Type)
+                    : isColorFoot ? BoulderHoldColors.Foot : HoldPalette.StrokeHex(hold.Color);
+                var sw = isSelected || isColorFoot ? "0.6" : "0.3";
                 var dash = hold.IsVirtual ? "0.8 0.5" : "";
-                if (hold.IsVirtual && !isSelected) { strokeColor = "#c86dff"; }
+                if (hold.IsVirtual && !isSelected && !isColorFoot) { strokeColor = "#c86dff"; }
                 var isFoot = hold.Category == HoldCategory.Foot;
                 var r = (isFoot ? hold.Radius * 0.7 : hold.Radius) * 100;
-                var cy = (hold.IsOnKickboard ? hold.Y : CorrectY(hold.Y)) * 100;
+                var p = hold.IsOnKickboard ? new SchematicPoint(hold.X, hold.Y) : _layout.Project(hold.X, hold.Y);
 
                 @if (isFoot)
                 {
-                    <rect x="@F(hold.X * 100 - r)" y="@F(cy - r)" width="@F(r * 2)" height="@F(r * 2)"
+                    <rect x="@F(p.X * 100 - r)" y="@F(p.Y * 100 - r)" width="@F(r * 2)" height="@F(r * 2)"
                           rx="0.3" fill="@fillColor" stroke="@strokeColor" stroke-width="@sw" stroke-dasharray="@dash"
                           style="cursor: pointer" @onclick="() => ToggleHold(hold)" />
                 }
                 else
                 {
-                    <circle cx="@F(hold.X * 100)" cy="@F(cy)" r="@F(r)"
+                    <circle cx="@F(p.X * 100)" cy="@F(p.Y * 100)" r="@F(r)"
                             fill="@fillColor" stroke="@strokeColor" stroke-width="@sw" stroke-dasharray="@dash"
                             style="cursor: pointer" @onclick="() => ToggleHold(hold)" />
-                }
-
-                @if (isSelected && UsageBadge(selection!.Usage) is { } badge)
-                {
-                    <g pointer-events="none">
-                        <circle cx="@F(hold.X * 100 + r * 0.8)" cy="@F(cy - r * 0.8)" r="1.5"
-                                fill="@strokeColor" stroke="white" stroke-width="0.3" />
-                        <text x="@F(hold.X * 100 + r * 0.8)" y="@F(cy - r * 0.8)"
-                              text-anchor="middle" dominant-baseline="central"
-                              font-size="1.8" font-weight="700" fill="white">@badge</text>
-                    </g>
                 }
             }
         </svg>
@@ -148,35 +153,7 @@ else
 }
 </div>
 
-<div class="usage-toolbar">
-    <span class="usage-hint">Tap a hold to mark it</span>
-    <div class="usage-controls">
-        <button class="usage-btn @(_placeUsage == HoldUsage.HandAndFoot ? "active" : "")"
-                @onclick="() => _placeUsage = HoldUsage.HandAndFoot"
-                title="Hand and foot (default)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18">
-                <path d="M9 10V5a1.5 1.5 0 0 1 3 0v4M12 9V4.5a1.5 1.5 0 0 1 3 0V9M15 9.5V6a1.5 1.5 0 0 1 3 0v7a7 7 0 0 1-7 7H10c-2 0-3-1-4.2-2.8L4 14a1.5 1.5 0 0 1 2.5-1.6L8 14V7a1.5 1.5 0 0 1 3 0" />
-            </svg>
-            <span>Hand + Foot</span>
-        </button>
-        <button class="usage-btn @(_placeUsage == HoldUsage.HandOnly ? "active" : "")"
-                @onclick="() => _placeUsage = HoldUsage.HandOnly"
-                title="Hands only">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18">
-                <path d="M9 11V6a1.5 1.5 0 0 1 3 0v5M12 10V5a1.5 1.5 0 0 1 3 0v6M15 11V7a1.5 1.5 0 0 1 3 0v6a7 7 0 0 1-7 7h-1c-2 0-3.2-1-4.4-2.8L4 15a1.5 1.5 0 0 1 2.5-1.6L8 15V8a1.5 1.5 0 0 1 3 0" />
-            </svg>
-            <span>Hand only</span>
-        </button>
-        <button class="usage-btn @(_placeUsage == HoldUsage.FootOnly ? "active" : "")"
-                @onclick="() => _placeUsage = HoldUsage.FootOnly"
-                title="Feet only">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18">
-                <path d="M8 20c-1.5 0-2.5-1-2.5-2.6 0-2 1.5-3.4 1.5-5.9C7 8 8.7 5 12 5s5 2.6 5 6.5c0 2.6-1.2 3.9-1.2 6C15.8 19 14.6 20 13 20z" />
-            </svg>
-            <span>Foot only</span>
-        </button>
-    </div>
-</div>
+<HoldUsageToolbar @bind-Value="_placeUsage" HandsFollowFeet="HandsFollowFeet" />
 
 @code {
     [Parameter] public Guid WallId { get; set; }
@@ -185,39 +162,100 @@ else
     [Parameter] public EventCallback<List<BoulderHoldInput>> SelectedHoldsChanged { get; set; }
     [Parameter] public int WallAngle { get; set; }
 
+    /// <summary>
+    /// The boulder's "hands follow feet" rule. While it is on the picker offers no
+    /// foot-only tool, because the server coerces such marks away.
+    /// </summary>
+    [Parameter] public bool HandsFollowFeet { get; set; } = true;
+
+    /// <summary>
+    /// The boulder's "feet of one colour only" rule; every wall hold of that colour is
+    /// drawn as a foothold even when it is not one of the boulder's own holds.
+    /// </summary>
+    [Parameter] public string? FootColorOnly { get; set; }
+
+    /// <summary>The wall's segments; loaded from the id when the caller doesn't supply them.</summary>
+    [Parameter] public List<WallSegment>? Segments { get; set; }
+
+    private List<WallSegment>? _loaded;
+    private List<WallSegment> _segments = [];
+    private WallSchematicLayout _layout = WallProjection.BuildLayout(null, 0);
+
     private ElementReference _viewportRef;
     private ElementReference _photoPickerRef;
-    private DotNetObjectReference<HoldPicker>? _dotnetRef;
+    private readonly ViewportZoomState _zoomState;
     private HoldType _placeType = HoldType.Normal;
     private HoldUsage _placeUsage = HoldUsage.HandAndFoot;
     private ViewMode _viewMode = ViewMode.Photo;
-    private double _zoom = 1.0;
+    private double _zoom => _zoomState.Zoom;
     private bool _isPanning;
     private bool _placingVirtual;
 
     private enum ViewMode { Photo, Schematic }
 
+    public HoldPicker()
+    {
+        _zoomState = new ViewportZoomState(() => InvokeAsync(StateHasChanged));
+    }
+
+    protected override void OnParametersSet()
+    {
+        // The rules block can flip the rule while "Foot only" is the active tool.
+        if (HandsFollowFeet && _placeUsage == HoldUsage.FootOnly)
+        {
+            _placeUsage = HoldUsage.HandAndFoot;
+        }
+
+        // _segments is the usable set for projection: caller-supplied, else self-loaded.
+        _segments = (Segments ?? _loaded ?? [])
+            .Where(s => s.Points.Count >= 3).OrderBy(s => s.SortOrder).ToList();
+
+        // Build the fold once here; the map render loop then projects each hold through it.
+        _layout = WallProjection.BuildLayout(_segments, WallAngle);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Failure to load segments must not break hold picking; the map then just falls
+        // back to the single wall angle.
+        if (Segments != null) { return; }
+        try { _loaded = await WallSegmentService.GetSegmentsAsync(WallId); }
+        catch (Exception) { _loaded = []; }
+    }
+
+    /// <summary>The usage a tap may actually produce under the current rules.</summary>
+    private HoldUsage EffectiveUsage =>
+        HandsFollowFeet && _placeUsage == HoldUsage.FootOnly ? HoldUsage.HandAndFoot : _placeUsage;
+
+    private bool IsColorRuleFoot(Hold hold) =>
+        !string.IsNullOrEmpty(FootColorOnly) && hold.Color == FootColorOnly;
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
-            _dotnetRef = DotNetObjectReference.Create(this);
-            await JS.InvokeVoidAsync("wallEditor.setupViewport", _viewportRef, _dotnetRef);
+            await JS.InvokeVoidAsync("bwViewport.setupScroll", _viewportRef, _zoomState.Reference);
         }
     }
 
-    [JSInvokable]
-    public void SetZoomFromJs(double zoom)
+    private async Task ZoomByAsync(double factor)
     {
-        _zoom = zoom;
-        StateHasChanged();
+        await JS.InvokeVoidAsync("bwViewport.zoomBy", _viewportRef, factor);
     }
+
+    private async Task ResetZoomAsync()
+    {
+        await JS.InvokeVoidAsync("bwViewport.zoomTo", _viewportRef, 1.0);
+    }
+
+    public void Dispose() => _zoomState.Dispose();
 
     private async Task OnSvgClick(MouseEventArgs e)
     {
         if (!_placingVirtual || _isPanning) return;
         var pos = await JS.InvokeAsync<RelativePos>("wallEditor.getRelativePosition", _photoPickerRef, e.ClientX, e.ClientY);
-        var cat = _placeUsage == HoldUsage.FootOnly ? HoldCategory.Foot : HoldCategory.Hand;
+        var usage = EffectiveUsage;
+        var cat = usage == HoldUsage.FootOnly ? HoldCategory.Foot : HoldCategory.Hand;
         var hold = await WallService.AddHoldAsync(
             WallId,
             Math.Clamp(pos.X, 0, 1),
@@ -228,7 +266,7 @@ else
             shapePoints: null,
             isVirtual: true);
         AllHolds.Add(hold);
-        SelectedHolds.Add(new BoulderHoldInput(hold.Id, _placeType, _placeUsage));
+        SelectedHolds.Add(new BoulderHoldInput(hold.Id, _placeType, usage));
         await SelectedHoldsChanged.InvokeAsync(SelectedHolds);
         StateHasChanged();
     }
@@ -238,42 +276,24 @@ else
     private void ToggleHold(Hold hold)
     {
         if (_isPanning) return;
+        var usage = EffectiveUsage;
         var existing = SelectedHolds.FirstOrDefault(s => s.HoldId == hold.Id);
         if (existing != null)
         {
             // Re-tapping with the same tools deselects; with different tools it
             // reclassifies, so switching tool and tapping again changes the mark.
             SelectedHolds.Remove(existing);
-            if (existing.Type != _placeType || existing.Usage != _placeUsage)
+            if (existing.Type != _placeType || existing.Usage != usage)
             {
-                SelectedHolds.Add(new BoulderHoldInput(hold.Id, _placeType, _placeUsage));
+                SelectedHolds.Add(new BoulderHoldInput(hold.Id, _placeType, usage));
             }
         }
-        else { SelectedHolds.Add(new BoulderHoldInput(hold.Id, _placeType, _placeUsage)); }
+        else { SelectedHolds.Add(new BoulderHoldInput(hold.Id, _placeType, usage)); }
         SelectedHoldsChanged.InvokeAsync(SelectedHolds);
-    }
-
-    private static string? UsageBadge(HoldUsage usage) => usage switch
-    {
-        HoldUsage.HandOnly => "H",
-        HoldUsage.FootOnly => "F",
-        _ => null,
-    };
-
-    private double CorrectY(double y)
-    {
-        if (WallAngle <= 0) return y;
-        var cosA = Math.Cos(WallAngle * Math.PI / 180.0);
-        return y * cosA + (1 - cosA) * 0.5;
     }
 
     private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
     private static string Pts(IEnumerable<(double X, double Y)> pts) =>
         string.Join(" ", pts.Select(p => $"{F(p.X * 100)},{F(p.Y * 100)}"));
-
-    private static string GetSelectionFill(HoldType t) => t switch { HoldType.Start => "rgba(76,175,80,0.5)", HoldType.Top => "rgba(244,67,54,0.5)", _ => "rgba(33,150,243,0.5)" };
-    private static string GetSelectionStroke(HoldType t) => t switch { HoldType.Start => "#4CAF50", HoldType.Top => "#F44336", _ => "#2196F3" };
-    private static string GetDefaultFill(Hold h) => HoldPalette.Fill(h.Color, 0.4);
-    private static string GetDefaultStroke(Hold h) => HoldPalette.StrokeHex(h.Color);
 }
 

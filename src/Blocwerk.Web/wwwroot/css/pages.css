@@ -150,12 +150,15 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     cursor: grab;
 }
 .stitcher-viewport:active { cursor: grabbing; }
+/* The transform itself is written by wwwroot/js/viewport.js (transform model) and
+   deliberately not rendered by Blazor, so a late re-render can't stomp a gesture. */
 .stitcher-world {
     position: absolute;
     left: 0;
     top: 0;
     width: 0;
     height: 0;
+    transform-origin: 0 0;
 }
 .stitcher-layer {
     pointer-events: auto;
@@ -435,12 +438,31 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
 }
 .star-rating.small .star-btn { font-size: 1.05rem; }
 .star-btn.on, .star-btn:hover { color: #f5b301; }
+/* Offline-wired stars render their lit state AS `bw-opt-on` (see StarRating.razor), so the
+   delegated DOM handler can lower a rating as well as raise it with the circuit down. This
+   has to beat the generic `.bw-opt-on { color: var(--accent) }` rule in app.css, hence the
+   container qualifier. Gold reads correctly against both themes' surfaces. */
+.star-rating .star-btn.bw-opt-on { color: #f5b301; opacity: 1; }
+/* Thumb-friendly hit area without inflating the glyph. */
+.star-rating.interactive .star-btn { min-width: 34px; min-height: 40px; }
 
 .fav-toggle {
     background: none; border: none; cursor: pointer; font-size: 1.5rem;
     line-height: 1; color: var(--text-secondary); padding: 0 4px;
+    min-width: 40px; min-height: 40px;
 }
 .fav-toggle.on { color: #f5b301; }
+
+/* Both directions of the favourite are always in the DOM; CSS picks the visible one from
+   `bw-opt-on`, which offline-actions.js can add and remove without a circuit. See
+   Components/Shared/BoulderFavoriteToggle.razor for why one button cannot work offline. */
+.fav-wrap { display: inline-flex; align-items: center; color: inherit; opacity: 1; }
+.fav-wrap .fav-add { display: inline-flex; align-items: center; justify-content: center; }
+.fav-wrap .fav-remove { display: none; }
+.fav-wrap.bw-opt-on .fav-add { display: none; }
+.fav-wrap.bw-opt-on .fav-remove {
+    display: inline-flex; align-items: center; justify-content: center;
+}
 .archived-badge {
     font-size: 0.65rem; padding: 1px 6px; background: var(--border-light); color: var(--text-secondary);
     border-radius: 4px; font-weight: 600;
@@ -657,7 +679,19 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
 .legend-chip.normal { background: var(--info-bg); color: var(--info-text); }
 .legend-chip.top { background: var(--danger-bg); color: var(--danger-text); }
 .legend-chip.usage { background: var(--bg-surface); color: var(--text-muted); border: 1px solid var(--border); }
-.rules-line { font-size: 0.82rem; color: var(--text-muted); margin-bottom: 16px; }
+.legend-chip.foot { background: var(--foot-hold-soft); color: var(--foot-hold-text); }
+
+/* Rule chips under the boulder view. */
+.rules-bar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.rule-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: var(--r-pill); font-size: 0.78rem;
+    background: var(--bg-surface); color: var(--text-secondary); border: 1px solid var(--border);
+}
+.rule-chip.on { color: var(--text); border-color: var(--border); }
+.rule-chip.off { opacity: 0.85; }
+.rule-chip.foot { background: var(--foot-hold-soft); color: var(--foot-hold-text); border-color: transparent; }
+.rule-chip .rule-warn { color: var(--warning-text); }
 .view-toggle .toggle-sep { width: 1px; align-self: stretch; background: var(--border); margin: 0 4px; }
 
 .attempt-section { margin-bottom: 16px; }
@@ -704,6 +738,13 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     border-radius: 8px; font-weight: 600; font-size: 0.85rem; cursor: pointer;
 }
 .comment-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+/* The Post button is never `disabled` — a disabled element is skipped by the delegated
+   offline handler, and the flag driving it could not be updated with the circuit down.
+   `:placeholder-shown` is true exactly while the (unbound) input is empty, so the
+   greyed-out affordance is pure CSS and needs no round-trip. Clicking it while empty is
+   already a no-op in offline-actions.js. */
+.comment-input:placeholder-shown + .comment-submit { opacity: 0.5; }
+.comment-submit { min-height: 40px; }
 .comment-row {
     padding: 10px 12px; background: var(--bg-surface); border-radius: 8px; margin-bottom: 6px;
     box-shadow: 0 1px 3px var(--shadow-sm);

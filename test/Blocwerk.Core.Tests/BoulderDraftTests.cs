@@ -97,11 +97,14 @@ public class BoulderDraftTests
             () => h.BoulderService.PublishBoulderAsync(draft.Id));
     }
 
+    /// <summary>
+    /// Usage marks no longer drive the mode: the boulder's explicit rules do. A hand-only
+    /// mark still leaves the kickboard in charge as long as hands follow feet.
+    /// </summary>
     [Theory]
-    [InlineData(HoldUsage.HandAndFoot, FootholdMode.AllKickboard)]
-    [InlineData(HoldUsage.HandOnly, FootholdMode.DefinedOnly)]
-    [InlineData(HoldUsage.FootOnly, FootholdMode.DefinedOnly)]
-    public async Task FootholdMode_IsDerivedFromHoldUsage(HoldUsage usage, FootholdMode expected)
+    [InlineData(HoldUsage.HandAndFoot)]
+    [InlineData(HoldUsage.HandOnly)]
+    public async Task FootholdMode_StaysAllKickboard_WhileHandsFollowFeet(HoldUsage usage)
     {
         using var h = new WallTestHarness();
         var holds = await h.SeedWallAsync(holdCount: 2);
@@ -117,7 +120,7 @@ public class BoulderDraftTests
             .Include(b => b.BoulderHolds)
             .FirstAsync(b => b.Id == boulder.Id);
 
-        Assert.Equal(expected, saved.FootholdMode);
+        Assert.Equal(FootholdMode.AllKickboard, saved.FootholdMode);
         Assert.Contains(saved.BoulderHolds, bh => bh.HoldId == holds[1].Id && bh.Usage == usage);
     }
 
@@ -142,7 +145,8 @@ public class BoulderDraftTests
             boulder.Id,
             [new BoulderHoldInput(holds[2].Id, HoldType.Start, HoldUsage.FootOnly)],
             name: "New name",
-            grade: "6B");
+            grade: "6B",
+            handsFollowFeet: false);
 
         await using var check = h.CreateContext();
         var revised = await check.Boulders

@@ -23,8 +23,13 @@ public class HoldUsageTests
             "6A",
             [new BoulderHoldInput(holds[0].Id, HoldType.Start), new BoulderHoldInput(holds[1].Id, HoldType.Top)]);
 
+        // A dedicated foothold only survives on a boulder whose hands do not follow feet.
         await h.BoulderService.CreateBoulderAsync(
-            h.WallId, "Beta", "7A", [new BoulderHoldInput(holds[1].Id, HoldType.Normal, HoldUsage.FootOnly)]);
+            h.WallId,
+            "Beta",
+            "7A",
+            [new BoulderHoldInput(holds[1].Id, HoldType.Normal, HoldUsage.FootOnly)],
+            handsFollowFeet: false);
 
         var usage = await h.BoulderService.GetHoldUsageAsync(h.WallId);
 

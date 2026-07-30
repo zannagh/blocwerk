@@ -2,6 +2,7 @@
 @page "/walls/{WallId:guid}/shared/{ShareToken}"
 @rendermode InteractiveServer
 @inject IWallService WallService
+@inject IWallSegmentService WallSegmentService
 @inject IBoulderService BoulderService
 @inject IBoulderFeedbackService FeedbackService
 @inject IActivityLogService ActivityLogService
@@ -138,6 +139,31 @@ else
                 </div>
 
                 <div class="settings-panel">
+                    <h2>Wall Shape</h2>
+                    <div class="form-group">
+                        <label>Fallback angle: @_wall.Angle&deg; <span class="segment-angle-word">@WallAngleRange.Label(_wall.Angle)</span></label>
+                        <input type="range" min="@WallAngleRange.Min" max="@WallAngleRange.Max" value="@_wall.Angle"
+                               @oninput="OnWallAngleInput" @onchange="SaveWallAngle" class="angle-slider" />
+                        <p class="hint">
+                            Used for every part of the wall that no segment covers. If the whole
+                            wall is one plane you only need this; add segments when the photo
+                            captures planes at different angles.
+                        </p>
+                    </div>
+
+                    @if (_wall.PhotoContentType != null)
+                    {
+                        <WallSegmentEditor WallId="_wall.Id" FallbackAngle="_wall.Angle"
+                                           Holds="_holds" BorderPoints="_borderPoints"
+                                           OnSegmentsSaved="OnSegmentsSaved" />
+                    }
+                    else
+                    {
+                        <p class="empty-msg">Upload a wall photo to draw segments on it.</p>
+                    }
+                </div>
+
+                <div class="settings-panel">
                     <h2>Members</h2>
                     @if (_members == null)
                     {
@@ -230,6 +256,7 @@ else
                             <WallPhotoEditor WallId="_wall.Id"
                                              Holds="_holds"
                                              BorderPoints="_borderPoints"
+                                             Segments="_segments"
                                              CanEdit="_isAdmin && _isEditing"
                                              BottomToolbar="_isEditing"
                                              ShareToken="@ShareToken"
@@ -249,7 +276,7 @@ else
                         }
                         else if (_wall.PhotoContentType != null && _viewMode == ViewMode.Schematic)
                         {
-                            <WallSchematicView Holds="_holds" Angle="_wall.Angle" />
+                            <WallSchematicView Holds="_holds" Angle="_wall.Angle" Segments="_segments" />
                         }
                         else if (_isAdmin && _isEditing)
                         {
@@ -379,6 +406,7 @@ else
     private Wall? _wall;
     private List<Hold> _holds = [];
     private List<ShapePoint> _borderPoints = [];
+    private List<WallSegment> _segments = [];
     private List<Boulder> _boulders = [];
     private List<BoulderListItem> _items = [];
     private bool _isAdmin;
@@ -557,6 +585,7 @@ else
                 ? _wall.Holds.Where(h => h.Generation == _wall.CurrentGeneration + 1).ToList()
                 : _wall.Holds.ToList();
             _borderPoints = _wall.BorderPoints ?? [];
+            await LoadSegments();
             if (!_isAnonymous)
             {
                 _items = await FeedbackService.GetBoulderListAsync(WallId);
@@ -601,6 +630,50 @@ else
         await ShowToast($"Saved {changes.Added.Count + changes.Updated.Count + changes.Deleted.Count} changes");
     }
 
+    /// <summary>
+    /// Loads the wall's segments. <c>GetWallAsync</c> does not include them, and a guest
+    /// viewing through a share link has no identity to query them with — in that case the
+    /// renderers simply fall back to the wall's single angle.
+    /// </summary>
+    private async Task LoadSegments()
+    {
+        try
+        {
+            _segments = await WallSegmentService.GetSegmentsAsync(WallId);
+        }
+        catch (Exception)
+        {
+            _segments = [];
+        }
+    }
+
+    private void OnWallAngleInput(ChangeEventArgs e)
+    {
+        if (_wall != null && int.TryParse(e.Value?.ToString(), out var angle))
+        {
+            _wall.Angle = Math.Clamp(angle, WallAngleRange.Min, WallAngleRange.Max);
+        }
+    }
+
+    private async Task SaveWallAngle()
+    {
+        if (_wall == null)
+        {
+            return;
+        }
+
+        await WallService.UpdateWallAsync(_wall.Id, _wall.Name, _wall.Description, _wall.Angle);
+        await ShowToast($"Fallback angle set to {_wall.Angle}°");
+    }
+
+    private async Task OnSegmentsSaved(List<WallSegment> segments)
+    {
+        _segments = segments;
+        await ShowToast(segments.Count == 0
+            ? "Segments cleared — the wall uses its single angle again"
+            : $"Saved {segments.Count} segment(s)");
+    }
+
     private async Task OnBorderChanged(List<ShapePoint> points)
     {
         await WallService.SetBorderPointsAsync(WallId, points);
@@ -608,9 +681,12 @@ else
 
     private async Task OnCleanArtifacts()
     {
+        var usedSegments = _segments.Count > 0;
         var count = await WallService.CleanOutsideBorderAsync(WallId);
         await LoadWall();
-        await ShowToast($"Removed {count} holds outside border");
+        await ShowToast(usedSegments
+            ? $"Removed {count} holds outside all {_segments.Count} segments"
+            : $"Removed {count} holds outside border");
     }
 
     private async Task OnRedetect()

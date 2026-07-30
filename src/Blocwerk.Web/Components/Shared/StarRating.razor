@@ -7,6 +7,32 @@
         </span>
     </span>
 }
+else if (ActionBoulderId is { } boulderId)
+{
+    @* Circuit-independent mode: the delegated handler in offline-actions.js is the single
+       writer, so there is no @onclick here and a click can never be applied twice.
+
+       The lit state is rendered as `bw-opt-on` rather than `on` on purpose. The offline
+       handler can only add that class (data-bw-on) or remove it (data-bw-off), so making
+       it the *only* thing the CSS lights means a tap can lower a rating as well as raise
+       it while the circuit is down. Blazor still rewrites the whole class attribute from
+       server truth on the next render, so the server always gets the last word. *@
+    <span id="@ContainerId" class="star-rating interactive @(Small ? "small" : "")">
+        @for (var i = 1; i <= 5; i++)
+        {
+            var star = i;
+            <button type="button"
+                    class="star-btn @(star <= Lit ? "bw-opt-on" : "")"
+                    title="@star star@(star != 1 ? "s" : "")"
+                    aria-label="Rate @star star@(star != 1 ? "s" : "")"
+                    data-bw-action="rating"
+                    data-bw-boulder="@boulderId"
+                    data-bw-stars="@star"
+                    data-bw-on="@UpTo(star)"
+                    data-bw-off="@Above(star)">★</button>
+        }
+    </span>
+}
 else
 {
     <span class="star-rating interactive @(Small ? "small" : "")">
@@ -14,7 +40,7 @@ else
         {
             var star = i;
             <button type="button"
-                    class="star-btn @(star <= (int)Math.Round(Value) ? "on" : "")"
+                    class="star-btn @(star <= Lit ? "on" : "")"
                     title="@star star@(star != 1 ? "s" : "")"
                     @onclick="() => OnRate.InvokeAsync(star)">★</button>
         }
@@ -32,5 +58,24 @@ else
 
     [Parameter] public EventCallback<int> OnRate { get; set; }
 
+    /// <summary>
+    /// When set, the stars are wired to the offline action queue instead of to
+    /// <see cref="OnRate"/> and keep working with the SignalR circuit down.
+    /// </summary>
+    [Parameter] public Guid? ActionBoulderId { get; set; }
+
+    /// <summary>
+    /// The element id the optimistic selectors are anchored to. Only used in the
+    /// <see cref="ActionBoulderId"/> mode, where it must be unique on the page.
+    /// </summary>
+    [Parameter] public string ContainerId { get; set; } = "bw-stars";
+
     private double FillPercent => Math.Clamp(Value, 0, 5) / 5.0 * 100.0;
+
+    private int Lit => (int)Math.Round(Math.Clamp(Value, 0, 5));
+
+    private string UpTo(int star) => $"#{ContainerId} .star-btn:nth-child(-n+{star})";
+
+    private string? Above(int star) =>
+        star < 5 ? $"#{ContainerId} .star-btn:nth-child(n+{star + 1})" : null;
 }

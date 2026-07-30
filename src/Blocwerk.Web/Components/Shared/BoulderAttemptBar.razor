@@ -1,0 +1,64 @@
+@*
+    The three ascent buttons plus the "my stats" chip.
+
+    These carry NO @onclick on purpose. The delegated DOM handler in
+    wwwroot/js/offline-actions.js is the single writer for the attempt action, which is
+    what makes a double-log structurally impossible: there is no second path that could
+    also apply the click. It works with the SignalR circuit down, and the page reconciles
+    with server truth via BoulderDetail's OnOfflineQueueFlushed callback.
+
+    There is also deliberately no `disabled` spinner state here. A server-side "in flight"
+    flag is exactly what used to strand the buttons when the circuit dropped mid-await;
+    the queue's own 1.2s double-tap guard covers the fat-finger case instead.
+*@
+
+<div class="attempt-section">
+    <h2>Log Attempt</h2>
+    <div class="attempt-buttons">
+        <button type="button" class="attempt-btn try"
+                data-bw-action="attempt" data-bw-boulder="@BoulderId" data-bw-type="Attempt">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
+                <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
+                <path d="M8 12h8" />
+            </svg>
+            <span>Attempt</span>
+        </button>
+        <button type="button" class="attempt-btn send"
+                data-bw-action="attempt" data-bw-boulder="@BoulderId" data-bw-type="Send">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                <polyline points="22 4 12 14.01 9 11.01" />
+            </svg>
+            <span>Send</span>
+        </button>
+        <button type="button" class="attempt-btn flash"
+                data-bw-action="attempt" data-bw-boulder="@BoulderId" data-bw-type="Flash">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+            </svg>
+            <span>Flash</span>
+        </button>
+    </div>
+</div>
+
+@if (Summary.TotalAttempts > 0)
+{
+    <div class="my-stats">
+        <span>My stats: @Summary.TotalAttempts attempt@(Summary.TotalAttempts != 1 ? "s" : "")</span>
+        @if (Summary.HasFlashed)
+        {
+            <span class="chip flash-chip">Flashed!</span>
+        }
+        else if (Summary.HasSent)
+        {
+            <span class="chip send-chip">Sent</span>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public Guid BoulderId { get; set; }
+
+    /// <summary>The current user's tally, re-read from the server after every queue flush.</summary>
+    [Parameter] public AttemptSummary Summary { get; set; } = new(0, false, false);
+}

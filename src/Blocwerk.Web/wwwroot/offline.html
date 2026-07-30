@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Offline - Blocwerk</title>
+    <style>
+        :root {
+            --bg: #f5f4f1;
+            --surface: #ffffff;
+            --text: #2b2b33;
+            --muted: #8a8a95;
+            --accent: #e94560;
+            --border: #e3e0d9;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #16162a;
+                --surface: #1e1e34;
+                --text: #ecebf4;
+                --muted: #9a9ab0;
+                --border: #2c2c48;
+            }
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Manrope', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+        }
+        .card {
+            max-width: 420px;
+            width: 100%;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 32px 28px;
+            text-align: center;
+        }
+        .mark {
+            width: 64px; height: 64px; border-radius: 16px;
+            margin: 0 auto 20px;
+            display: block;
+        }
+        h1 { font-size: 1.35rem; margin: 0 0 10px; }
+        p { color: var(--muted); line-height: 1.5; margin: 0 0 20px; }
+        button {
+            appearance: none; border: 0; cursor: pointer;
+            background: var(--accent); color: #fff;
+            font-size: 1rem; font-weight: 600;
+            padding: 12px 20px; border-radius: 999px;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <img class="mark" src="/icons/icon-192.png" alt="Blocwerk" />
+        <h1>You're offline</h1>
+        <p>This page needs a connection to load. Anything you saved on the wall &mdash; ascents,
+           ratings, comments and boulders you created or edited &mdash; is stored on this device and
+           will sync automatically as soon as you're back online.</p>
+        <button type="button" onclick="location.reload()">Try again</button>
+    </div>
+</body>
+</html>

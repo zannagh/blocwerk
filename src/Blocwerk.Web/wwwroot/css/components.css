@@ -58,7 +58,12 @@
 .zoom-btn.pan-active { background: var(--accent); }
 .zoom-btn svg { display: block; }
 
-.photo-viewport { height: 70vh; overflow: auto; -webkit-overflow-scrolling: touch; touch-action: none; overscroll-behavior: contain; }
+/* Every viewport driven by wwwroot/js/viewport.js must opt out of native gestures,
+   otherwise browser scrolling/zooming competes with our handlers. */
+.photo-viewport,
+.picker-viewport,
+.schematic-viewport { touch-action: none; overscroll-behavior: contain; }
+.photo-viewport { height: 70vh; overflow: auto; -webkit-overflow-scrolling: touch; }
 
 
 /* "First-fold" layout: the wall editor + stats panels size to fit in the visible
@@ -89,7 +94,10 @@
 .wall-fold .schematic-viewport { flex: 1 1 0; height: auto; min-height: 0; }
 .wall-fold .editor-toolbar { border-radius: 0; }
 .wall-fold .editor-bottom > :last-child { border-radius: 0; }
-.photo-editor { position: relative; overflow: hidden; touch-action: none; user-select: none; }
+/* --zoom is written by JS (viewport.js) and by nothing else. Razor only ever renders
+   the element without a width so a late server re-render cannot stomp the transform. */
+.photo-editor { position: relative; overflow: hidden; touch-action: none; user-select: none;
+    width: calc(var(--zoom, 1) * 100%); min-width: 100%; }
 .photo-editor .wall-photo { width: 100%; display: block; }
 .photo-editor .hold-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
 .detecting-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--overlay-bg); display: flex; align-items: center; justify-content: center; color: white; font-size: 1.1rem; font-weight: 600; }
@@ -103,7 +111,62 @@
 .zoom-controls { display: flex; gap: 4px; padding: 8px 12px; background: var(--topbar-bg); }
 .schematic-viewport { height: 70vh; overflow: auto; -webkit-overflow-scrolling: touch; }
 .schematic-svg { display: block; }
+.schematic-viewport > .schematic-svg { width: calc(var(--zoom, 1) * 100%); min-width: 100%; }
 .schematic-info { text-align: center; padding: 8px; font-size: 0.8rem; color: var(--text-secondary); }
+
+/* ========== Foothold colour ==========
+   The one purple every foot-related surface uses. Kept in sync with
+   BoulderHoldColors.Foot (Components/Shared/BoulderHoldColors.cs), which is what the
+   SVG overlays paint with. Deliberately far from the light lavender #c86dff the wall
+   editor uses for *virtual* holds, which is only ever a dashed outline. */
+:root {
+    --foot-hold: #7c3aed;
+    --foot-hold-soft: rgba(124, 58, 237, 0.14);
+    --foot-hold-text: #6d28d9;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --foot-hold: #a78bfa;
+        --foot-hold-soft: rgba(167, 139, 250, 0.18);
+        --foot-hold-text: #c4b5fd;
+    }
+}
+
+[data-theme="dark"] {
+    --foot-hold: #a78bfa;
+    --foot-hold-soft: rgba(167, 139, 250, 0.18);
+    --foot-hold-text: #c4b5fd;
+}
+
+/* ========== BoulderRulesEditor ========== */
+
+.rules-block { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.rules-title { font-size: 0.85rem; font-weight: 700; color: var(--text-heading); }
+.rule-group {
+    display: flex; flex-direction: column; gap: 6px;
+    padding: 10px; border: 1px solid var(--border); border-radius: var(--r-md);
+    background: var(--bg-surface-alt);
+}
+.rule-group-label { font-size: 0.78rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; }
+.rules-block .radio-label { align-items: flex-start; }
+/* The shared .radio-label / .checkbox-label checked state hardcodes a light pink; use
+   the themed token here so the block stays readable in dark mode. */
+.rules-block .radio-label:has(input:checked),
+.rules-block .checkbox-label:has(input:checked) { background: var(--accent-soft); }
+.radio-text { display: flex; flex-direction: column; gap: 2px; }
+.radio-text small { font-weight: 400; font-size: 0.75rem; color: var(--text-secondary); }
+.rule-sub { display: flex; flex-direction: column; gap: 6px; margin-left: 14px; padding-left: 10px; border-left: 2px solid var(--border); }
+.foot-color-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.color-swatch.foot-swatch { border-color: var(--border); }
+.color-swatch.foot-swatch.active { border-color: var(--foot-hold); box-shadow: 0 0 0 2px var(--foot-hold-soft); }
+.color-swatch.foot-swatch.absent { opacity: 0.35; }
+.rule-hint { font-size: 0.75rem; color: var(--text-secondary); }
+.rule-hint .rule-warn { color: var(--warning-text); display: block; }
+.rule-notice {
+    font-size: 0.78rem; padding: 8px 10px; border-radius: var(--r-sm);
+    background: var(--warning-bg); color: var(--warning-text);
+}
 
 /* ========== HoldPicker ========== */
 
@@ -115,6 +178,9 @@
 .pick-legend .dot.start { background: #4CAF50; }
 .pick-legend .dot.normal { background: #2196F3; }
 .pick-legend .dot.top { background: #F44336; }
+/* The picker toolbar sits on a dark bar in both themes, so the lighter violet is used
+   here rather than the theme-aware --foot-hold. */
+.pick-legend .dot.foot { background: #a78bfa; }
 .pick-controls { display: flex; gap: 4px; align-items: center; }
 .pick-controls .separator { width: 1px; height: 20px; background: rgba(255,255,255,0.2); margin: 0 2px; }
 .mode-btn { padding: 4px 10px; border: 1px solid rgba(255,255,255,0.3); background: none; color: white; border-radius: 4px; font-size: 0.8rem; cursor: pointer; display: flex; align-items: center; gap: 4px; }
@@ -128,14 +194,62 @@
 .usage-controls { display: flex; gap: 4px; align-items: center; }
 .usage-btn { padding: 5px 10px; border: 1px solid rgba(255,255,255,0.3); background: none; color: white; border-radius: 4px; font-size: 0.75rem; cursor: pointer; display: flex; align-items: center; gap: 5px; }
 .usage-btn.active { background: var(--accent); border-color: var(--accent); }
+.usage-btn.foot.active { background: #7c3aed; border-color: #7c3aed; }
 @media (max-width: 480px) { .usage-btn span { display: none; } .usage-btn { padding: 6px 10px; } }
 
 .picker-viewport { max-height: 70vh; overflow: auto; -webkit-overflow-scrolling: touch; border-radius: 0; }
-.photo-picker { position: relative; overflow: hidden; }
+.photo-picker { position: relative; overflow: hidden; user-select: none;
+    width: calc(var(--zoom, 1) * 100%); min-width: 100%; }
 .photo-picker .wall-photo { width: 100%; display: block; }
 .photo-picker .hold-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
-.schematic-picker { overflow: hidden; background: #f5f0eb; }
+.schematic-picker { overflow: hidden; background: #f5f0eb; user-select: none;
+    width: calc(var(--zoom, 1) * 100%); min-width: 100%; }
 .schematic-picker .schematic-svg { width: 100%; display: block; }
+
+/* ========== Background (wall photo) visibility ==========
+   --wall-dim (0..1) and .bw-wall-focus are set on <html> by wwwroot/js/wall-dim.js
+   from localStorage, so the setting costs no server round-trips, survives every
+   Blazor re-render, and applies to every surface at once. Only the <img> is filtered
+   — the hold SVG overlay is a sibling and stays at full contrast. */
+img.wall-photo {
+    filter: brightness(calc(1 - (var(--wall-dim, 0) * 0.8)))
+            saturate(calc(1 - (var(--wall-dim, 0) * 0.7)));
+    transition: filter 120ms linear;
+}
+.bw-wall-focus img.wall-photo { filter: brightness(0.3) saturate(0.12) contrast(1.15); }
+
+/* Focus mode also thickens hold outlines on the read-only/picking surfaces. The
+   editor is left alone so its drag handles keep their calibrated hit sizes. */
+.bw-wall-focus .photo-section .hold-overlay :is(circle, rect, polygon),
+.bw-wall-focus .photo-picker .hold-overlay :is(circle, rect, polygon) {
+    stroke-width: 0.75;
+    paint-order: stroke fill;
+}
+
+.wall-dim-bar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 2px 12px; min-height: 34px; box-sizing: border-box;
+    background: var(--bg-surface-alt); color: var(--text-secondary);
+    border-bottom: 1px solid var(--border);
+}
+.wall-dim-bar > svg { flex: 0 0 auto; opacity: 0.7; }
+.wall-dim-bar input[type="range"] { flex: 1 1 auto; min-width: 0; height: 28px; accent-color: var(--accent); }
+.wall-dim-focus {
+    flex: 0 0 auto; padding: 6px 14px; min-height: 30px;
+    border: 1px solid var(--border); background: var(--bg-surface); color: var(--text);
+    border-radius: var(--r-pill); font-size: 0.75rem; font-weight: 600; cursor: pointer;
+}
+:root.bw-wall-focus .wall-dim-focus { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* Inside the dark editor/picker chrome the bar adopts the surrounding toolbar look. */
+.zoom-bar + .wall-dim-bar,
+.photo-viewport + .wall-dim-bar {
+    background: #22223a; color: rgba(255,255,255,0.6); border-bottom: none;
+}
+.zoom-bar + .wall-dim-bar .wall-dim-focus,
+.photo-viewport + .wall-dim-bar .wall-dim-focus {
+    background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.25); color: #fff;
+}
 
 /* ========== GradePicker ========== */
 
@@ -151,3 +265,61 @@
     font-size: 1rem; font-weight: 700; background: var(--input-bg); min-width: 80px;
     color: var(--text);
 }
+
+/* ========== Wall segments ==========
+   Segment editor + roster. Colours are design tokens so the panel matches both themes;
+   the SVG overlays stay fixed hues from WallSegmentPalette. */
+.segment-editor { display: flex; flex-direction: column; gap: 10px; }
+.segment-editor-bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.segment-editor .segment-viewport { height: 46vh; min-height: 240px; border-radius: var(--r-md); overflow: auto; }
+.segment-hint { font-size: 0.78rem; color: var(--text-secondary); margin: 0; }
+.segment-empty { font-size: 0.82rem; color: var(--text-secondary); margin: 0; }
+
+.segment-list { display: flex; flex-direction: column; gap: 8px; }
+.segment-row {
+    display: flex; flex-direction: column; gap: 8px; padding: 10px;
+    border: 1px solid var(--border); border-left-width: 4px; border-radius: var(--r-md);
+    background: var(--bg-surface-alt); cursor: pointer;
+}
+.segment-row.active { border-color: var(--accent); background: var(--accent-soft); }
+.segment-row-head { display: flex; align-items: center; gap: 8px; }
+.segment-badge {
+    flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%; color: #fff;
+    font-size: 0.75rem; font-weight: 700; display: flex; align-items: center; justify-content: center;
+}
+.segment-name {
+    flex: 1 1 auto; min-width: 0; padding: 5px 8px; font-size: 0.9rem; font-weight: 600;
+    border: 1px solid var(--border); border-radius: var(--r-sm);
+    background: var(--input-bg); color: var(--text);
+}
+.segment-order { display: flex; gap: 4px; flex: 0 0 auto; }
+.segment-row-body { display: flex; flex-direction: column; gap: 6px; }
+.segment-angle-label { font-size: 0.8rem; font-weight: 600; color: var(--text-heading); }
+.segment-angle-word { font-weight: 400; color: var(--text-secondary); }
+.segment-warn { font-size: 0.72rem; color: var(--warning-text); }
+.segment-vertices { display: flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--text-secondary); }
+
+/* Facing (yaw) control: a plain-language 3-way toggle over WallSegment.Yaw, with the raw
+   degrees tucked behind "Fine-tune". Tokenised so it matches both themes. */
+.segment-facing { display: flex; flex-direction: column; gap: 6px; }
+.segment-facing-label { font-size: 0.8rem; font-weight: 600; color: var(--text-heading); }
+.facing-toggle { display: flex; gap: 4px; flex-wrap: wrap; }
+.facing-btn {
+    flex: 1 1 0; min-width: 84px; padding: 5px 8px; font-size: 0.78rem; font-weight: 600;
+    border: 1px solid var(--border); border-radius: var(--r-sm);
+    background: var(--input-bg); color: var(--text-secondary); cursor: pointer;
+}
+.facing-btn:hover { border-color: var(--accent); color: var(--text); }
+.facing-btn.active { border-color: var(--accent); background: var(--accent-soft); color: var(--text-heading); }
+.facing-advanced-toggle {
+    align-self: flex-start; padding: 0; font-size: 0.74rem; font-weight: 600;
+    background: none; border: none; color: var(--accent); cursor: pointer; text-decoration: underline;
+}
+.facing-fine { display: flex; flex-direction: column; gap: 4px; }
+.facing-fine-label { font-size: 0.76rem; color: var(--text-secondary); }
+
+/* Live folded preview inside the segment editor: the shared schematic, size-capped so it
+   sits under the drawing surface without dominating the settings panel. */
+.segment-preview { display: flex; flex-direction: column; gap: 4px; }
+.segment-preview-label { font-size: 0.76rem; font-weight: 600; color: var(--text-secondary); }
+.segment-preview .schematic-viewport { height: 34vh; min-height: 200px; }

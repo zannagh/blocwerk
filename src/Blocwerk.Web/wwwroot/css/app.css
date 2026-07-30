@@ -41,6 +41,12 @@
     --r-lg: 14px;
     --r-pill: 999px;
 
+    /* Wall photo dim level, 0 = untouched .. 1 = strongly dimmed. Owned by
+       wwwroot/js/wall-dim.js (localStorage key `blocwerk-wall-dim`); this is only
+       the fallback for a first visit / disabled storage. Theme-independent: it is a
+       relative filter, so it reads correctly in both light and dark. */
+    --wall-dim: 0;
+
     color-scheme: light dark;
 }
 
@@ -550,3 +556,177 @@ h2 { font-size: 1.15rem; }
     white-space: nowrap;
 }
 .bw-consent-accept:hover { background: var(--accent-hover); }
+
+/* ---------------------------------------------------------------------------
+   Offline queue + connection status
+   All colours come from the token set above, so light/dark and the
+   [data-theme] override both work with no extra rules.
+   --------------------------------------------------------------------------- */
+
+/* Blazor's own reconnect element. We only use it as an event source; the visible
+   affordance is the status pill, so it must never paint or catch a tap. */
+.bw-reconnect-sentinel {
+    position: fixed;
+    width: 0; height: 0;
+    overflow: hidden;
+    pointer-events: none;
+    opacity: 0;
+}
+
+/* The slot is only an anchor; the pill positions itself, so a Blazor re-render
+   rewriting the slot's class attribute cannot disturb the layout. */
+.bw-conn-slot { display: contents; }
+
+.bw-conn-fallback { display: contents; }
+
+.bw-conn-pill {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    /* Clears the bottom tab bar (and its safe-area padding) so it never covers navigation. */
+    bottom: calc(74px + env(safe-area-inset-bottom));
+    z-index: 90;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    max-width: min(92vw, 560px);
+    padding: 6px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-pill);
+    background: var(--bg-surface);
+    color: var(--text);
+    font-family: var(--font-body);
+    font-size: 0.78rem;
+    font-weight: 600;
+    line-height: 1.2;
+    cursor: pointer;
+    box-shadow: 0 2px 10px var(--shadow-md);
+}
+
+.bw-conn-pill.bw-conn-warn {
+    background: var(--warning-bg);
+    color: var(--warning-text);
+    border-color: color-mix(in srgb, var(--warning-text) 30%, transparent);
+}
+
+.bw-conn-pill.bw-conn-info {
+    background: var(--info-bg);
+    color: var(--info-text);
+    border-color: color-mix(in srgb, var(--info-text) 30%, transparent);
+}
+
+.bw-conn-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    flex: 0 0 auto;
+    animation: bw-conn-pulse 1.6s ease-in-out infinite;
+}
+
+.bw-conn-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+@keyframes bw-conn-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .bw-conn-dot { animation: none; }
+}
+
+.bw-conn-panel {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(112px + env(safe-area-inset-bottom));
+    z-index: 91;
+    width: min(92vw, 420px);
+    max-height: 45vh;
+    overflow-y: auto;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    background: var(--bg-surface);
+    color: var(--text);
+    font-family: var(--font-body);
+    font-size: 0.82rem;
+    box-shadow: 0 6px 24px var(--shadow-lg);
+}
+
+.bw-conn-panel-text { margin: 0 0 8px; }
+
+.bw-conn-panel-error {
+    margin: 0 0 6px;
+    padding: 6px 8px;
+    border-radius: var(--r-sm);
+    background: var(--danger-bg);
+    color: var(--danger-text);
+    font-size: 0.78rem;
+}
+
+.bw-conn-panel-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+
+.bw-conn-btn {
+    padding: 6px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-pill);
+    background: var(--bg-surface-alt);
+    color: var(--text-heading);
+    font-family: var(--font-body);
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.bw-conn-btn:hover { background: var(--accent-soft); border-color: var(--accent); }
+
+/* Marks a queued, not-yet-synced action. Created by offline-actions.js, so it is outside
+   Blazor's render tree and survives a re-render until the queue confirms the action landed. */
+.bw-queued-pip {
+    position: absolute;
+    top: 3px; right: 3px;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--warning-text);
+    box-shadow: 0 0 0 2px var(--bg-surface);
+    pointer-events: none;
+}
+
+/* Any element carrying a pip needs to be a positioning context. */
+[data-bw-action] { position: relative; }
+
+/* Optimistic pre-echo of server state. Blazor rewrites `class` on re-render, so this
+   disappears by itself once the server's version of the truth arrives. */
+.bw-opt-on { color: var(--accent); opacity: 1; }
+
+/* Blazor toggles this element with an inline `display: block`, so the flex layout has to
+   live on an inner wrapper rather than on #blazor-error-ui itself. */
+#blazor-error-ui {
+    display: none;
+    position: fixed;
+    left: 0; right: 0;
+    bottom: 0;
+    z-index: 300;
+    padding: 12px 16px;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+    background: var(--danger-bg);
+    color: var(--danger-text);
+    font-family: var(--font-body);
+    font-size: 0.85rem;
+    box-shadow: 0 -2px 12px var(--shadow-lg);
+}
+
+.bw-error-ui-inner { display: flex; align-items: center; gap: 12px; }
+
+.bw-error-ui-text { flex: 1; }
+
+.bw-error-ui-action,
+.bw-error-ui-dismiss {
+    color: inherit;
+    font-weight: 700;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.bw-error-ui-dismiss { text-decoration: none; font-size: 1.3rem; line-height: 1; }

@@ -1,0 +1,12 @@
+@*
+    Anchor for the connection / sync status pill.
+
+    Intentionally empty and stateless. Everything inside is created by wwwroot/js/offline-status.js,
+    because the pill has to keep updating while the SignalR circuit is down — which is exactly when
+    a Blazor-rendered component cannot update at all.
+
+    Blazor's diff emits no edits for an element whose render-tree children are unchanged, so the
+    nodes the script appends here survive layout re-renders. Do not give this component any child
+    content or dynamic attributes, or Blazor will start rewriting the subtree and wipe the pill.
+*@
+<div id="bw-conn-slot" class="bw-conn-slot"></div>

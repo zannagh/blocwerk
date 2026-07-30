@@ -31,25 +31,34 @@
                 <GradePicker @bind-Value="_grade" />
             </div>
 
-            <div class="form-group">
-                <label class="checkbox-label">
-                    <input type="checkbox" @bind="_allKickboardOn" />
-                    All kickboard footholds are on
-                </label>
-            </div>
+            <BoulderRulesEditor @bind-KickboardFootholdsOn="_allKickboardOn"
+                                @bind-HandsFollowFeet="_handsFollowFeet"
+                                @bind-FootColorOnly="_footColorOnly"
+                                WallHolds="_holds"
+                                @bind-SelectedHolds="_selectedHolds" />
         </div>
 
         <HoldPicker WallId="WallId"
                     AllHolds="_holds"
                     WallAngle="_wall.Angle"
+                    HandsFollowFeet="_handsFollowFeet"
+                    FootColorOnly="_footColorOnly"
                     @bind-SelectedHolds="_selectedHolds" />
+
+        @* Live form snapshot, recomputed every render so the offline submit path (offline-boulder.js)
+           always reads the last state that reached the browser. Hidden from view and a11y. *@
+        <div id="bw-boulder-form" hidden aria-hidden="true" data-bw-boulder-snapshot="@SnapshotJson"></div>
 
         <div class="submit-row">
             <button class="btn-secondary" @onclick="SaveDraft"
+                    data-bw-boulder-action="create" data-bw-boulder-form="#bw-boulder-form"
+                    data-bw-boulder-draft="true" data-bw-boulder-nav="@DetailUrl" data-bw-mode="offline-only"
                     disabled="@(string.IsNullOrWhiteSpace(_name) || _isSubmitting)">
                 @(_isSubmitting ? "Saving..." : "Save as Draft")
             </button>
             <button class="btn-submit" @onclick="Publish"
+                    data-bw-boulder-action="create" data-bw-boulder-form="#bw-boulder-form"
+                    data-bw-boulder-draft="false" data-bw-boulder-nav="@DetailUrl" data-bw-mode="offline-only"
                     disabled="@(string.IsNullOrWhiteSpace(_name) || _selectedHolds.Count == 0 || _isSubmitting)">
                 @(_isSubmitting ? "Publishing..." : $"Publish ({_selectedHolds.Count} holds)")
             </button>
@@ -69,11 +78,32 @@
     private Wall? _wall;
     private List<Hold> _holds = [];
     private List<BoulderHoldInput> _selectedHolds = [];
+
+    // Minted once, offline-safe. Both the online (CreateBoulderAsync) and the queued offline path
+    // key on this id, so a create is an idempotent upsert no matter which path (or a replay) runs.
+    private Guid _clientId = Guid.NewGuid();
     private string _name = string.Empty;
     private string? _grade;
     private bool _allKickboardOn = true;
+    private bool _handsFollowFeet = true;
+    private string? _footColorOnly;
     private bool _isSubmitting;
     private string? _error;
+
+    private string DetailUrl => $"/walls/{WallId}/boulders/{_clientId}";
+
+    /// <summary>The whole boulder form as the JSON the offline queue replays. See offline-boulder.js.</summary>
+    private string SnapshotJson => System.Text.Json.JsonSerializer.Serialize(new
+    {
+        id = _clientId,
+        wallId = WallId,
+        name = _name,
+        grade = _grade,
+        kickboardFootholdsOn = _allKickboardOn,
+        handsFollowFeet = _handsFollowFeet,
+        footColorOnly = _footColorOnly,
+        holds = _selectedHolds.Select(h => new { holdId = h.HoldId, type = (int)h.Type, usage = (int)h.Usage }),
+    });
 
     protected override async Task OnInitializedAsync()
     {
@@ -98,11 +128,14 @@
         try
         {
             var boulder = await BoulderService.CreateBoulderAsync(
-                WallId, _name, _grade, _selectedHolds, isDraft, _allKickboardOn);
+                WallId, _name, _grade, _selectedHolds, isDraft,
+                _allKickboardOn, _handsFollowFeet, _footColorOnly, _clientId);
             Navigation.NavigateTo($"/walls/{WallId}/boulders/{boulder.Id}");
         }
         catch (Exception ex)
         {
+            // A stuck _isSubmitting was the BoulderDetail bug: only reset on the paths that stay on
+            // the page. On success we navigate away, so the flag is torn down with the component.
             _error = ex.Message;
             _isSubmitting = false;
         }

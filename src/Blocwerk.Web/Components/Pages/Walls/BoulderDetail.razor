@@ -4,8 +4,6 @@
 @inject IBoulderService BoulderService
 @inject IBoulderFeedbackService FeedbackService
 @inject IAttemptService AttemptService
-@inject IActivityLogService ActivityLogService
-@inject ICommentService CommentService
 @inject IWallService WallService
 @inject ICurrentUserService CurrentUserService
 @inject NavigationManager Navigation
@@ -45,10 +43,7 @@ else
                 }
                 @if (!_isAnonymous)
                 {
-                    <button class="fav-toggle @(_isFavorite ? "on" : "")" @onclick="ToggleFavorite"
-                            title="@(_isFavorite ? "Remove from favourites" : "Add to favourites")">
-                        @(_isFavorite ? "★" : "☆")
-                    </button>
+                    <BoulderFavoriteToggle BoulderId="_boulder.Id" IsFavorite="_isFavorite" />
                 }
             </div>
             <p class="meta">by @_boulder.CreatedBy.DisplayName &middot; @_boulder.CreatedAt.ToString("MMM d, yyyy")</p>
@@ -126,28 +121,27 @@ else
 
         @if (_viewMode == ViewMode.Photo)
         {
-            <div class="photo-viewport photo-section" @ref="_photoViewportRef" data-current-zoom="@F(_photoZoom)">
-                <div class="photo-editor" style="width: @F(_photoZoom * 100)%; min-width: 100%;">
+            <WallDimControl />
+            @* Zoom geometry is owned by JS via `--zoom` (wwwroot/js/viewport.js). *@
+            <div class="photo-viewport photo-section" @ref="_photoViewportRef">
+                <div class="photo-editor">
                     <img src="@PhotoUrl" alt="Wall" class="wall-photo" />
                     <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
+                        @* Holds that are footholds purely by the "feet of one colour only"
+                           rule are not part of the boulder, so they are drawn underneath. *@
+                        @foreach (var hold in ColorRuleHolds)
+                        {
+                            <circle cx="@F(hold.X * 100)" cy="@F(hold.Y * 100)"
+                                    r="@F(hold.Radius * 100)"
+                                    fill="@BoulderHoldColors.ColorRuleFill()"
+                                    stroke="@BoulderHoldColors.Foot" stroke-width="0.4" />
+                        }
                         @foreach (var bh in _boulder.BoulderHolds)
                         {
-                            var fill = bh.Type switch
-                            {
-                                HoldType.Start => "rgba(76, 175, 80, 0.55)",
-                                HoldType.Top => "rgba(244, 67, 54, 0.55)",
-                                _ => "rgba(33, 150, 243, 0.55)",
-                            };
-                            var stroke = bh.Type switch
-                            {
-                                HoldType.Start => "#4CAF50",
-                                HoldType.Top => "#F44336",
-                                _ => "#2196F3",
-                            };
-
                             <circle cx="@F(bh.Hold.X * 100)" cy="@F(bh.Hold.Y * 100)"
                                     r="@F(bh.Hold.Radius * 100)"
-                                    fill="@fill" stroke="@stroke" stroke-width="0.5" />
+                                    fill="@BoulderHoldColors.FillFor(bh.Type, bh.Usage)"
+                                    stroke="@BoulderHoldColors.Stroke(bh.Type)" stroke-width="0.5" />
                         }
                     </svg>
                 </div>
@@ -156,65 +150,14 @@ else
         else if (_wallHolds != null)
         {
             <WallSchematicView Holds="_wallHolds" Angle="_boulder.Wall.Angle"
-                               HighlightedHoldIds="_boulderHoldIds" />
+                               HighlightedHoldIds="_boulderHoldIds" FootHoldIds="FootHoldIds" />
         }
 
-        <div class="legend-bar">
-            @{ var starts = _boulder.BoulderHolds.Count(h => h.Type == HoldType.Start); }
-            @{ var tops = _boulder.BoulderHolds.Count(h => h.Type == HoldType.Top); }
-            @{ var handOnly = _boulder.BoulderHolds.Count(h => h.Usage == HoldUsage.HandOnly); }
-            @{ var footOnly = _boulder.BoulderHolds.Count(h => h.Usage == HoldUsage.FootOnly); }
-            <span class="legend-chip start">@starts start</span>
-            <span class="legend-chip normal">@(_boulder.BoulderHolds.Count - starts - tops) moves</span>
-            <span class="legend-chip top">@tops top</span>
-            @if (handOnly > 0) { <span class="legend-chip usage">@handOnly hand only</span> }
-            @if (footOnly > 0) { <span class="legend-chip usage">@footOnly foot only</span> }
-        </div>
-
-        <p class="rules-line">
-            @(_boulder.KickboardFootholdsOn ? "All kickboard footholds are on." : "Kickboard footholds are off.")
-            @if (_boulder.FootholdMode == FootholdMode.DefinedOnly)
-            {
-                <text>Footholds are defined per hold.</text>
-            }
-        </p>
+        <BoulderRulesSummary Boulder="_boulder" FootColorHoldCount="ColorRuleHolds.Count" />
 
         @if (!_isAnonymous)
         {
-            <div class="attempt-section">
-                <h2>Log Attempt</h2>
-                <div class="attempt-buttons">
-                    <button class="attempt-btn try" @onclick="() => LogAttempt(AttemptType.Attempt)" disabled="@_isLogging">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
-                            <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
-                            <path d="M8 12h8" />
-                        </svg>
-                        <span>Attempt</span>
-                    </button>
-                    <button class="attempt-btn send" @onclick="() => LogAttempt(AttemptType.Send)" disabled="@_isLogging">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
-                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                            <polyline points="22 4 12 14.01 9 11.01" />
-                        </svg>
-                        <span>Send</span>
-                    </button>
-                    <button class="attempt-btn flash" @onclick="() => LogAttempt(AttemptType.Flash)" disabled="@_isLogging">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
-                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                        </svg>
-                        <span>Flash</span>
-                    </button>
-                </div>
-            </div>
-
-            @if (_summary.TotalAttempts > 0)
-            {
-                <div class="my-stats">
-                    <span>My stats: @_summary.TotalAttempts attempt@(_summary.TotalAttempts != 1 ? "s" : "")</span>
-                    @if (_summary.HasFlashed) { <span class="chip flash-chip">Flashed!</span> }
-                    else if (_summary.HasSent) { <span class="chip send-chip">Sent</span> }
-                </div>
-            }
+            <BoulderAttemptBar BoulderId="_boulder.Id" Summary="_summary" />
 
             <div class="rating-section">
                 <div class="rating-summary">
@@ -231,9 +174,12 @@ else
                 </div>
                 <div class="rating-mine">
                     <span class="rating-mine-label">Your rating</span>
-                    <StarRating Value="@(_rating.MyRating ?? 0)" OnRate="Rate" />
+                    <StarRating Value="@(_rating.MyRating ?? 0)" ActionBoulderId="_boulder.Id"
+                                ContainerId="bw-my-rating" />
                     @if (_rating.MyRating.HasValue)
                     {
+                        @* Server-only: there is no "remove rating" action in the offline
+                           queue, so this needs a live circuit. Re-rating works offline. *@
                         <button class="rating-clear" @onclick="ClearRating" title="Clear your rating">clear</button>
                     }
                 </div>
@@ -265,72 +211,10 @@ else
             </div>
         }
 
-        <div class="activity-feed">
-            <h2>Activity</h2>
-            @if (_activityItems != null)
-            {
-                @foreach (var item in _activityItems)
-                {
-                    <div class="activity-row">
-                        <span class="activity-text">@FormatActivity(item)</span>
-                        <span class="activity-time">@RelativeTime(item.Timestamp)</span>
-                    </div>
-                }
-                @if (_activityItems.Count == 0)
-                {
-                    <p class="empty-msg">No activity yet.</p>
-                }
-                @if (_activityTotal > (_activityPage + 1) * 5)
-                {
-                    <div class="activity-pager">
-                        @if (_activityPage > 0)
-                        {
-                            <button class="pager-btn" @onclick="() => LoadActivity(_activityPage - 1)">&larr; Newer</button>
-                        }
-                        <button class="pager-btn" @onclick="() => LoadActivity(_activityPage + 1)">Older &rarr;</button>
-                    </div>
-                }
-            }
-        </div>
+        <BoulderActivityFeed @ref="_activityFeed" BoulderId="BoulderId" />
 
-        <div class="comments-section">
-            <h2>Comments</h2>
-            @if (!_isAnonymous)
-            {
-                <div class="comment-form">
-                    <input @bind="_commentText" @bind:event="oninput" placeholder="Write a comment..."
-                           class="comment-input" maxlength="1024" />
-                    <button class="comment-submit" @onclick="PostComment"
-                            disabled="@(string.IsNullOrWhiteSpace(_commentText) || _isPostingComment)">Post</button>
-                </div>
-            }
-
-            @if (_comments != null)
-            {
-                @foreach (var comment in _comments)
-                {
-                    <div class="comment-row">
-                        <div class="comment-header">
-                            <span class="comment-author">@comment.User.DisplayName</span>
-                            <span class="comment-time">@RelativeTime(comment.CreatedAt)</span>
-                            @if (comment.UserId == _currentUserId)
-                            {
-                                <button class="delete-btn" @onclick="() => DeleteComment(comment.Id)">x</button>
-                            }
-                        </div>
-                        <p class="comment-text">@comment.Text</p>
-                    </div>
-                }
-                @if (_comments.Count == 0)
-                {
-                    <p class="empty-msg">No comments yet.</p>
-                }
-                @if (_commentsTotal > (_commentsPage + 1) * 10)
-                {
-                    <button class="pager-btn" @onclick="() => LoadComments(_commentsPage + 1)">Load more</button>
-                }
-            }
-        </div>
+        <BoulderComments @ref="_commentList" BoulderId="BoulderId"
+                         CurrentUserId="_currentUserId" IsAnonymous="_isAnonymous" />
 
         @if (!_isAnonymous && _attempts.Count > 0)
         {
@@ -369,24 +253,17 @@ else
     private List<Attempt> _attempts = [];
     private AttemptSummary _summary = new(0, false, false);
     private Guid _currentUserId;
-    private bool _isLogging;
     private bool _isAnonymous;
     private bool _isCreator;
     private bool _showHistoric;
     private string? _publishError;
     private string? _toast;
 
-    private List<ActivityLogEntry>? _activityItems;
-    private int _activityTotal;
-    private int _activityPage;
-
-    private List<BoulderComment>? _comments;
-    private int _commentsTotal;
-    private int _commentsPage;
-    private string _commentText = string.Empty;
-    private bool _isPostingComment;
+    private BoulderActivityFeed? _activityFeed;
+    private BoulderComments? _commentList;
     private ViewMode _viewMode = ViewMode.Photo;
     private List<Hold>? _wallHolds;
+    private List<Hold> _colorRuleHolds = [];
     private HashSet<Guid> _boulderHoldIds = [];
     private GradeProposal? _activeProposal;
     private bool _showGradeForm;
@@ -395,34 +272,110 @@ else
     private RatingInfo _rating = new(null, 0, null);
 
     private ElementReference _photoViewportRef;
-    private DotNetObjectReference<BoulderDetail>? _photoDotNetRef;
-    private bool _photoViewportInitialized;
-    private double _photoZoom = 1.0;
+    private ViewMode? _viewportSetupFor;
+    private DotNetObjectReference<BoulderDetail>? _selfRef;
 
     private enum ViewMode { Photo, Schematic }
 
-    [JSInvokable]
-    public void SetZoomFromJs(double zoom)
-    {
-        _photoZoom = zoom;
-        StateHasChanged();
-    }
-
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (_viewMode == ViewMode.Photo && _boulder != null && !_photoViewportInitialized)
+        if (firstRender)
         {
-            _photoViewportInitialized = true;
-            _photoDotNetRef ??= DotNetObjectReference.Create(this);
-            await JS.InvokeVoidAsync("wallEditor.setupViewport", _photoViewportRef, _photoDotNetRef);
+            // Attempts, ratings, favourites and comments are written by the DOM handler in
+            // offline-actions.js, never by this component. This is how the page learns that
+            // the queue reached the server and pulls the real state back down.
+            _selfRef = DotNetObjectReference.Create(this);
+            try
+            {
+                await JS.InvokeVoidAsync("blocwerkOfflineActions.registerRefresh", _selfRef);
+            }
+            catch (Exception)
+            {
+                // Never let a missing/failed interop take the page down: without the callback
+                // the queue still delivers, the page just needs a manual reload to catch up.
+            }
+        }
+
+        // Switching to the schematic destroys the photo viewport element, so the
+        // engine has to be re-attached when we come back. setupScroll is idempotent.
+        if (_viewMode == ViewMode.Photo && _boulder != null && _viewportSetupFor != ViewMode.Photo)
+        {
+            _viewportSetupFor = ViewMode.Photo;
+
+            // No .NET callback: this page shows no zoom read-out, so JS never needs
+            // to round-trip to the server for a gesture.
+            await JS.InvokeVoidAsync("bwViewport.setupScroll", _photoViewportRef, null);
+        }
+        else if (_viewMode != ViewMode.Photo)
+        {
+            _viewportSetupFor = null;
         }
     }
 
     public async ValueTask DisposeAsync()
     {
-        _photoDotNetRef?.Dispose();
-        _photoDotNetRef = null;
-        await ValueTask.CompletedTask;
+        if (_selfRef != null)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("blocwerkOfflineActions.unregisterRefresh", _selfRef);
+            }
+            catch (Exception)
+            {
+                // The circuit is usually already gone by the time a component is disposed —
+                // precisely the case this whole feature exists for — and JS.InvokeVoidAsync
+                // then throws JSDisconnected/ObjectDisposed/TaskCanceled depending on how it
+                // died. A dispose path must swallow all of them; the JS side drops the stale
+                // reference on its own when invoking it fails.
+            }
+
+            _selfRef.Dispose();
+            _selfRef = null;
+        }
+    }
+
+    /// <summary>
+    /// Called by offline-actions.js after the queue actually delivered something (and after a
+    /// circuit reconnect). Everything the four queued actions can touch is re-read here, so the
+    /// optimistic <c>bw-opt-*</c> classes are replaced by a normal server render.
+    /// </summary>
+    [JSInvokable]
+    public async Task OnOfflineQueueFlushed()
+    {
+        try
+        {
+            await LoadBoulder();
+            if (!_isAnonymous)
+            {
+                _isFavorite = await FeedbackService.IsFavoritedAsync(BoulderId);
+                _rating = await FeedbackService.GetRatingAsync(BoulderId);
+            }
+
+            if (_activityFeed != null)
+            {
+                await _activityFeed.ReloadAsync();
+            }
+
+            if (_commentList != null)
+            {
+                await _commentList.ReloadAsync();
+            }
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Session expired while the queue was draining. The queue pauses itself and the
+            // status pill prompts a re-login; there is nothing useful to render here.
+            return;
+        }
+        catch (Exception ex)
+        {
+            // The action itself is already saved server-side; only the read-back failed.
+            // Say so instead of leaving a stale page that looks like nothing happened.
+            await InvokeAsync(() => ShowToast($"Synced, but the page could not refresh: {ex.Message}"));
+            return;
+        }
+
+        await InvokeAsync(StateHasChanged);
     }
 
     /// <summary>
@@ -520,35 +473,62 @@ else
             }
         }
 
-        await LoadActivity(0);
-        await LoadComments(0);
     }
 
+    /// <summary>
+    /// Wall holds that count as footholds only because of the boulder's
+    /// "feet of one colour only" rule, i.e. excluding the boulder's own holds.
+    /// </summary>
+    private List<Hold> ColorRuleHolds => _colorRuleHolds;
+
+    /// <summary>
+    /// Every hold the climber may only stand on: the boulder's own <see cref="HoldUsage.FootOnly"/>
+    /// holds plus, when the boulder has a "feet of one colour only" rule, the wall holds of that
+    /// colour. Handed to the schematic so it can draw them in the foot purple.
+    /// </summary>
+    private HashSet<Guid> FootHoldIds => _boulder == null
+        ? []
+        : _boulder.BoulderHolds
+            .Where(bh => bh.Usage == HoldUsage.FootOnly)
+            .Select(bh => bh.HoldId)
+            .Concat(_colorRuleHolds.Select(h => h.Id))
+            .ToHashSet();
+
     private async Task LoadWallHolds()
+    {
+        _wallHolds = await FetchWallHoldsAsync();
+        _colorRuleHolds = _boulder is { FootColorOnly: { Length: > 0 } color } && _wallHolds != null
+            ? _wallHolds.Where(h => h.Color == color && !_boulderHoldIds.Contains(h.Id)).ToList()
+            : [];
+    }
+
+    private async Task<List<Hold>> FetchWallHoldsAsync()
     {
         // In the historic view the schematic must draw the generation the boulder's
         // holds belong to, or none of the highlighted ids would be in the list.
         if (_showHistoric && BoulderHoldGeneration is { } gen && string.IsNullOrEmpty(ShareToken))
         {
-            _wallHolds = await WallService.GetHoldsForGenerationAsync(WallId, gen);
-            return;
+            return await WallService.GetHoldsForGenerationAsync(WallId, gen);
         }
 
         if (_showHistoric && BoulderHoldGeneration.HasValue && _boulder != null)
         {
             // Anonymous share viewers can't query generations; the boulder's own
             // holds are enough to render its schematic.
-            _wallHolds = _boulder.BoulderHolds.Select(bh => bh.Hold).ToList();
-            return;
+            return _boulder.BoulderHolds.Select(bh => bh.Hold).ToList();
         }
 
         Wall? wall;
         if (!string.IsNullOrEmpty(ShareToken))
+        {
             wall = await WallService.GetWallByShareTokenAsync(ShareToken);
+        }
         else
+        {
             wall = await WallService.GetWallAsync(WallId);
+        }
 
-        _wallHolds = wall?.Holds.ToList() ?? [];
+        return wall?.Holds.ToList() ?? [];
     }
 
     private async Task LoadBoulder()
@@ -561,159 +541,103 @@ else
         }
     }
 
-    private async Task LoadActivity(int page)
+    // Logging an attempt, rating, favouriting and commenting are NOT handled here any more.
+    // They are written by the delegated DOM handler in wwwroot/js/offline-actions.js, which
+    // keeps them working with the circuit down and — being the only writer — makes a
+    // double-application impossible. The page catches up via OnOfflineQueueFlushed.
+    //
+    // Everything below still needs a live circuit (delete, archive, grade proposals). Each
+    // runs through Guard so a throw can never strand a flag or vanish silently.
+
+    /// <summary>
+    /// Runs a server round-trip, always re-rendering afterwards and always telling the user when
+    /// it failed. The pattern this replaces set an "in flight" flag, awaited, then cleared the
+    /// flag on the happy path only: a throw (or a circuit dropping mid-await) left the buttons
+    /// disabled forever with no message, which is exactly the "cannot log ascents" symptom.
+    /// Any busy flag added later belongs in the <c>finally</c>, never after the <c>await</c>.
+    /// </summary>
+    private async Task Guard(Func<Task> action, string failureLabel)
     {
-        _activityPage = page;
-        var (items, total) = await ActivityLogService.GetBoulderActivityAsync(BoulderId, page);
-        _activityItems = items;
-        _activityTotal = total;
+        try
+        {
+            await action();
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"{failureLabel}: {ex.Message}");
+        }
+        finally
+        {
+            StateHasChanged();
+        }
     }
 
-    private async Task LoadComments(int page)
-    {
-        _commentsPage = page;
-        var (items, total) = await CommentService.GetCommentsAsync(BoulderId, page);
-        if (page == 0)
-            _comments = items;
-        else
-            _comments?.AddRange(items);
-        _commentsTotal = total;
-    }
-
-    private async Task LogAttempt(AttemptType type)
-    {
-        _isLogging = true;
-        await AttemptService.LogAttemptAsync(BoulderId, type);
-        await LoadBoulder();
-        await LoadActivity(0);
-        _isLogging = false;
-        await ShowToast($"{type} logged!");
-    }
-
-    private async Task DeleteAttempt(Guid attemptId)
+    private Task DeleteAttempt(Guid attemptId) => Guard(async () =>
     {
         await AttemptService.DeleteAttemptAsync(attemptId);
         await LoadBoulder();
-    }
+    }, "Could not delete that attempt");
 
-    private async Task PostComment()
-    {
-        if (string.IsNullOrWhiteSpace(_commentText)) return;
-        _isPostingComment = true;
-        var comment = await CommentService.AddCommentAsync(BoulderId, _commentText.Trim());
-        _comments?.Insert(0, comment);
-        _commentsTotal++;
-        _commentText = string.Empty;
-        _isPostingComment = false;
-        await LoadActivity(0);
-    }
-
-    private async Task DeleteComment(Guid commentId)
-    {
-        await CommentService.DeleteCommentAsync(commentId);
-        _comments?.RemoveAll(c => c.Id == commentId);
-        _commentsTotal--;
-    }
-
-    private async Task ToggleFavorite()
-    {
-        _isFavorite = await FeedbackService.ToggleFavoriteAsync(BoulderId);
-        await ShowToast(_isFavorite ? "Added to favourites" : "Removed from favourites");
-    }
-
-    private async Task Rate(int stars)
-    {
-        await FeedbackService.SetRatingAsync(BoulderId, stars);
-        _rating = await FeedbackService.GetRatingAsync(BoulderId);
-        await ShowToast($"Rated {stars} star{(stars != 1 ? "s" : "")}");
-    }
-
-    private async Task ClearRating()
+    private Task ClearRating() => Guard(async () =>
     {
         await FeedbackService.RemoveRatingAsync(BoulderId);
         _rating = await FeedbackService.GetRatingAsync(BoulderId);
-    }
+    }, "Could not clear your rating");
 
-    private async Task ArchiveBoulder()
+    private Task ArchiveBoulder() => Guard(async () =>
     {
-        try
-        {
-            await BoulderService.ArchiveBoulderAsync(BoulderId);
-            await LoadBoulder();
-            await ShowToast("Boulder archived");
-        }
-        catch (Exception ex)
-        {
-            await ShowToast($"Archive failed: {ex.Message}");
-        }
-    }
+        await BoulderService.ArchiveBoulderAsync(BoulderId);
+        await LoadBoulder();
+        await ShowToast("Boulder archived");
+    }, "Archive failed");
 
-    private async Task UnarchiveBoulder()
+    private Task UnarchiveBoulder() => Guard(async () =>
     {
-        try
-        {
-            await BoulderService.UnarchiveBoulderAsync(BoulderId);
-            await LoadBoulder();
-            await ShowToast("Boulder restored");
-        }
-        catch (Exception ex)
-        {
-            await ShowToast($"Restore failed: {ex.Message}");
-        }
-    }
+        await BoulderService.UnarchiveBoulderAsync(BoulderId);
+        await LoadBoulder();
+        await ShowToast("Boulder restored");
+    }, "Restore failed");
 
-    private async Task SubmitGradeProposal()
+    private Task SubmitGradeProposal() => Guard(async () =>
     {
-        if (string.IsNullOrEmpty(_proposedGrade)) return;
+        if (string.IsNullOrEmpty(_proposedGrade))
+        {
+            return;
+        }
+
         _activeProposal = await BoulderService.ProposeGradeAsync(BoulderId, _proposedGrade);
         _showGradeForm = false;
         await ShowToast("Grade proposal submitted");
-    }
+    }, "Could not submit that proposal");
 
-    private async Task AcceptProposal()
+    private Task AcceptProposal() => Guard(async () =>
     {
-        if (_activeProposal == null) return;
+        if (_activeProposal == null)
+        {
+            return;
+        }
+
         await BoulderService.AcceptGradeProposalAsync(_activeProposal.Id);
-        if (_boulder != null) _boulder.Grade = _activeProposal.ProposedGrade;
+        if (_boulder != null)
+        {
+            _boulder.Grade = _activeProposal.ProposedGrade;
+        }
+
         _activeProposal = null;
         await ShowToast("Grade updated");
-    }
+    }, "Could not accept that proposal");
 
-    private async Task RejectProposal()
+    private Task RejectProposal() => Guard(async () =>
     {
-        if (_activeProposal == null) return;
+        if (_activeProposal == null)
+        {
+            return;
+        }
+
         await BoulderService.RejectGradeProposalAsync(_activeProposal.Id);
         _activeProposal = null;
         await ShowToast("Proposal rejected");
-    }
-
-    private string FormatActivity(ActivityLogEntry item) => item.Type switch
-    {
-        ActivityType.AttemptLogged => $"{item.User.DisplayName} {FormatAttemptType(item.Details)} this",
-        ActivityType.CommentAdded => $"{item.User.DisplayName} commented",
-        ActivityType.BoulderCreated => $"{item.User.DisplayName} created this",
-        ActivityType.BoulderRevised => $"{item.User.DisplayName} revised this",
-        _ => $"{item.User.DisplayName} made a change",
-    };
-
-    private static string FormatAttemptType(string? details) => details switch
-    {
-        "Flash" => "flashed",
-        "Send" => "sent",
-        "Attempt" => "attempted",
-        _ => "tried",
-    };
-
-    private static string RelativeTime(DateTimeOffset timestamp)
-    {
-        var diff = DateTimeOffset.UtcNow - timestamp;
-        if (diff.TotalMinutes < 1) return "just now";
-        if (diff.TotalHours < 1) return $"{(int)diff.TotalMinutes}m ago";
-        if (diff.TotalDays < 1) return $"{(int)diff.TotalHours}h ago";
-        if (diff.TotalDays < 1.5) return "yesterday";
-        if (diff.TotalDays < 7) return $"{(int)diff.TotalDays}d ago";
-        return timestamp.ToString("MMM d");
-    }
+    }, "Could not reject that proposal");
 
     private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
 

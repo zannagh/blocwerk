@@ -8,7 +8,7 @@ using Microsoft.JSInterop;
 
 namespace Blocwerk.Web.Components.Pages.Tools;
 
-public partial class ImageStitcher
+public partial class ImageStitcher : IDisposable
 {
     private sealed class StitcherLayer
     {
@@ -25,11 +25,14 @@ public partial class ImageStitcher
         public double Opacity { get; set; } = 1.0;
     }
 
-    private enum DragKind { None, Pan, Move, Corner }
+    private enum DragKind { None, Move, Corner }
 
     private readonly List<StitcherLayer> _layers = [];
     private Guid? _selectedId;
     private ElementReference _viewportRef;
+    private ElementReference _worldRef;
+    private DotNetObjectReference<ImageStitcher>? _selfRef;
+    private bool _viewportReady;
     private List<Wall>? _myWalls;
     private Guid _targetWallId;
     private string? _toast;
@@ -37,6 +40,9 @@ public partial class ImageStitcher
     private bool _aligning;
 
     // Viewport transform: world -> screen is (pan + world * zoom).
+    // JS (wwwroot/js/viewport.js, transform model) is the authority and applies it to
+    // the world layer synchronously; these fields are a debounced mirror used only to
+    // place the selection gizmo, so panning never costs a round-trip per pixel.
     private double _zoom = 1.0;
     private double _panX;
     private double _panY;
@@ -48,9 +54,41 @@ public partial class ImageStitcher
 
     private DragKind _dragKind = DragKind.None;
     private int _dragCorner;
-    private double _panStartClientX, _panStartClientY, _panOrigX, _panOrigY;
     private double _dragStartWorldX, _dragStartWorldY;
     private (double X, double Y)[] _dragStartCorners = [];
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        _viewportReady = true;
+        _selfRef ??= DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("bwViewport.setupTransform", _viewportRef, _worldRef, _selfRef);
+    }
+
+    /// <summary>
+    /// Trailing-debounced notification from the JS viewport engine. Display only —
+    /// it must never write back to JS, or a gesture would fight its own echo.
+    /// </summary>
+    [JSInvokable]
+    public Task SetTransformFromJs(double panX, double panY, double zoom)
+    {
+        _panX = panX;
+        _panY = panY;
+        _zoom = zoom;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task PushTransformAsync()
+    {
+        if (_viewportReady)
+        {
+            await JS.InvokeVoidAsync("bwViewport.transformSet", _viewportRef, _panX, _panY, _zoom);
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -140,45 +178,23 @@ public partial class ImageStitcher
     private (double X, double Y) ToScreen((double X, double Y) world) =>
         (_panX + (world.X * _zoom), _panY + (world.Y * _zoom));
 
+    /// <summary>
+    /// Converts a client point to world space using the transform JS currently has
+    /// applied — never the debounced mirror, which may lag mid-gesture.
+    /// </summary>
     private async Task<(double X, double Y)> ToWorld(double clientX, double clientY)
     {
-        var p = await JS.InvokeAsync<Point>(
-            "imageStitcher.clientToWorld", _viewportRef, clientX, clientY, _panX, _panY, _zoom);
+        var p = await JS.InvokeAsync<Point>("imageStitcher.clientToWorld", _viewportRef, clientX, clientY);
         return (p.X, p.Y);
     }
 
     private record Point(double X, double Y);
 
-    private Task ZoomIn() => ZoomAboutCenter(1.25);
+    // Zoom buttons go through the same JS engine as wheel/pinch/double-tap, anchored
+    // on the viewport centre.
+    private async Task ZoomIn() => await JS.InvokeVoidAsync("bwViewport.zoomBy", _viewportRef, 1.25);
 
-    private Task ZoomOut() => ZoomAboutCenter(1 / 1.25);
-
-    private async Task ZoomAboutCenter(double factor)
-    {
-        var vp = await JS.InvokeAsync<ViewportRect>("imageStitcher.getViewportSize", _viewportRef);
-        ZoomAbout(vp.Width / 2, vp.Height / 2, factor);
-        StateHasChanged();
-    }
-
-    private void ZoomAbout(double screenX, double screenY, double factor)
-    {
-        var newZoom = Math.Clamp(_zoom * factor, 0.02, 20.0);
-        var worldX = (screenX - _panX) / _zoom;
-        var worldY = (screenY - _panY) / _zoom;
-        _zoom = newZoom;
-        _panX = screenX - (worldX * _zoom);
-        _panY = screenY - (worldY * _zoom);
-    }
-
-    private async Task OnWheel(WheelEventArgs e)
-    {
-        // Anchor the zoom on the cursor's viewport-relative position (not OffsetX,
-        // which is relative to whatever child element the pointer is over).
-        var vp = await JS.InvokeAsync<ViewportRect>("imageStitcher.getViewportSize", _viewportRef);
-        var factor = e.DeltaY < 0 ? 1.1 : 1 / 1.1;
-        ZoomAbout(e.ClientX - vp.Left, e.ClientY - vp.Top, factor);
-        StateHasChanged();
-    }
+    private async Task ZoomOut() => await JS.InvokeVoidAsync("bwViewport.zoomBy", _viewportRef, 1 / 1.25);
 
     private async Task FitToContent()
     {
@@ -204,32 +220,41 @@ public partial class ImageStitcher
         _zoom = Math.Clamp(Math.Min(vp.Width / bw, vp.Height / bh) * 0.9, 0.02, 20.0);
         _panX = (vp.Width / 2) - ((minX + maxX) / 2 * _zoom);
         _panY = (vp.Height / 2) - ((minY + maxY) / 2 * _zoom);
+        await PushTransformAsync();
         StateHasChanged();
     }
 
     private record ViewportRect(double Width, double Height, double Left, double Top);
 
     // ---- dragging ----------------------------------------------------------
-    private void StartPan(MouseEventArgs e)
-    {
-        _dragKind = DragKind.Pan;
-        _panStartClientX = e.ClientX;
-        _panStartClientY = e.ClientY;
-        _panOrigX = _panX;
-        _panOrigY = _panY;
-    }
+    // Background pan/pinch belongs to JS; only layer and corner drags come through
+    // Blazor, because they need the C# corner geometry.
+    private Task StartLayerMove(MouseEventArgs e, StitcherLayer layer) =>
+        BeginLayerMove(layer, e.ClientX, e.ClientY);
 
-    private async Task StartLayerMove(MouseEventArgs e, StitcherLayer layer)
+    private Task StartLayerMoveTouch(TouchEventArgs e, StitcherLayer layer) =>
+        e.Touches.Length > 0
+            ? BeginLayerMove(layer, e.Touches[0].ClientX, e.Touches[0].ClientY)
+            : Task.CompletedTask;
+
+    private async Task BeginLayerMove(StitcherLayer layer, double clientX, double clientY)
     {
         _selectedId = layer.Id;
         _dragKind = DragKind.Move;
-        _dragStartCorners = (( double X, double Y)[])layer.Corners.Clone();
-        var w = await ToWorld(e.ClientX, e.ClientY);
+        _dragStartCorners = ((double X, double Y)[])layer.Corners.Clone();
+        var w = await ToWorld(clientX, clientY);
         _dragStartWorldX = w.X;
         _dragStartWorldY = w.Y;
     }
 
-    private async Task StartCorner(MouseEventArgs e, int idx)
+    private Task StartCorner(MouseEventArgs e, int idx) => BeginCorner(idx, e.ClientX, e.ClientY);
+
+    private Task StartCornerTouch(TouchEventArgs e, int idx) =>
+        e.Touches.Length > 0
+            ? BeginCorner(idx, e.Touches[0].ClientX, e.Touches[0].ClientY)
+            : Task.CompletedTask;
+
+    private async Task BeginCorner(int idx, double clientX, double clientY)
     {
         var sel = _layers.FirstOrDefault(l => l.Id == _selectedId);
         if (sel == null)
@@ -240,21 +265,18 @@ public partial class ImageStitcher
         _dragKind = DragKind.Corner;
         _dragCorner = idx;
         _dragStartCorners = ((double X, double Y)[])sel.Corners.Clone();
-        var w = await ToWorld(e.ClientX, e.ClientY);
+        var w = await ToWorld(clientX, clientY);
         _dragStartWorldX = w.X;
         _dragStartWorldY = w.Y;
     }
 
-    private async Task OnPointerMove(MouseEventArgs e)
-    {
-        if (_dragKind == DragKind.Pan)
-        {
-            _panX = _panOrigX + (e.ClientX - _panStartClientX);
-            _panY = _panOrigY + (e.ClientY - _panStartClientY);
-            StateHasChanged();
-            return;
-        }
+    private Task OnPointerMove(MouseEventArgs e) => DragTo(e.ClientX, e.ClientY);
 
+    private Task OnTouchMove(TouchEventArgs e) =>
+        e.Touches.Length == 1 ? DragTo(e.Touches[0].ClientX, e.Touches[0].ClientY) : Task.CompletedTask;
+
+    private async Task DragTo(double clientX, double clientY)
+    {
         if (_dragKind is not (DragKind.Move or DragKind.Corner))
         {
             return;
@@ -266,7 +288,7 @@ public partial class ImageStitcher
             return;
         }
 
-        var w = await ToWorld(e.ClientX, e.ClientY);
+        var w = await ToWorld(clientX, clientY);
         if (_dragKind == DragKind.None)
         {
             return; // released during the interop hop
@@ -500,4 +522,10 @@ public partial class ImageStitcher
     private static string N(double v) => v.ToString("0.###", CultureInfo.InvariantCulture);
 
     private static string Px(double v) => v.ToString("0.###", CultureInfo.InvariantCulture) + "px";
+
+    public void Dispose()
+    {
+        _selfRef?.Dispose();
+        _selfRef = null;
+    }
 }
