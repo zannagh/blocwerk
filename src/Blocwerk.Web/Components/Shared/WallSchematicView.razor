@@ -15,7 +15,7 @@
 
             @* The wall's planes, foreshortened by their own angle, so the schematic shows
                the shape of the wall instead of one flat plane. *@
-            @if (_drafts.Count > 0)
+            @if (ShowSegments && _drafts.Count > 0)
             {
                 <WallSegmentOverlay Segments="_drafts" ProjectPoint="ProjectSegmentPoint" HandleScale="1.0" />
             }
@@ -58,7 +58,7 @@
     </div>
 
     <div class="schematic-info">
-        @if (_drafts.Count > 0)
+        @if (ShowSegments && _drafts.Count > 0)
         {
             <span>@_drafts.Count segments: @string.Join(", ", _drafts.Select(d => $"{d.Name} {d.Angle}°"))</span>
             <span>&middot; elsewhere @Angle&deg;</span>
@@ -89,6 +89,12 @@
     /// The wall's segments. Empty (or unset) keeps the original single-plane behaviour.
     /// </summary>
     [Parameter] public List<WallSegment>? Segments { get; set; }
+
+    /// <summary>
+    /// Whether the segment polygons are drawn as an overlay. Holds are always projected
+    /// through the segments regardless; this only toggles the coloured plane outlines.
+    /// </summary>
+    [Parameter] public bool ShowSegments { get; set; } = true;
 
     private ElementReference _viewportRef;
     private List<WallSegmentDraft> _drafts = [];

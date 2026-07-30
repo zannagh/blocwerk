@@ -60,10 +60,15 @@
 
 /* Every viewport driven by wwwroot/js/viewport.js must opt out of native gestures,
    otherwise browser scrolling/zooming competes with our handlers. */
+/* Default to pan-y so a not-zoomed viewport lets the finger scroll the PAGE; viewport.js
+   flips this to `none` (inline) the moment the content is zoomed in and it owns the gesture. */
 .photo-viewport,
 .picker-viewport,
-.schematic-viewport { touch-action: none; overscroll-behavior: contain; }
+.schematic-viewport { touch-action: pan-y; overscroll-behavior: contain; }
 .photo-viewport { height: 70vh; overflow: auto; -webkit-overflow-scrolling: touch; }
+/* Boulder detail: fit the card to the image so a short photo leaves no dead band
+   (which also used to swallow page scrolling); it still scrolls once zoomed in. */
+.photo-viewport.photo-section { height: auto; max-height: 80vh; }
 
 
 /* "First-fold" layout: the wall editor + stats panels size to fit in the visible
@@ -96,7 +101,9 @@
 .wall-fold .editor-bottom > :last-child { border-radius: 0; }
 /* --zoom is written by JS (viewport.js) and by nothing else. Razor only ever renders
    the element without a width so a late server re-render cannot stomp the transform. */
-.photo-editor { position: relative; overflow: hidden; touch-action: none; user-select: none;
+/* No touch-action here: the parent .photo-viewport owns it (viewport.js). A `none` on
+   this content child would override the viewport's pan-y and re-block page scrolling. */
+.photo-editor { position: relative; overflow: hidden; user-select: none;
     width: calc(var(--zoom, 1) * 100%); min-width: 100%; }
 .photo-editor .wall-photo { width: 100%; display: block; }
 .photo-editor .hold-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }

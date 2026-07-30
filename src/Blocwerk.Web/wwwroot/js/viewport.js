@@ -54,6 +54,18 @@ window.bwViewport = (function () {
             return el;
         }
 
+        // At fit (zoom 1) the viewport must NOT trap a drag/wheel — it has nothing to
+        // scroll, so the gesture belongs to the page. Only once zoomed in does it own
+        // the gesture. `touch-action: pan-y` lets a one-finger drag scroll the page
+        // through the viewport; `none` hands every touch to our pan/zoom code.
+        function isZoomed() {
+            return zoom > SCROLL_ZOOM_MIN + 0.01;
+        }
+
+        function refreshTouchAction() {
+            viewport.style.touchAction = isZoomed() ? 'none' : 'pan-y';
+        }
+
         function applyZoom(z) {
             zoom = z;
             const el = viewport.firstElementChild;
@@ -62,14 +74,21 @@ window.bwViewport = (function () {
                 el.style.setProperty('--zoom', z);
             }
 
+            refreshTouchAction();
+
             // Force a layout flush so the browser knows the NEW content width before
             // we write scrollLeft/scrollTop. Without this it clamps the scroll offset
             // against the old width and the zoom anchor is destroyed.
             void viewport.scrollWidth;
         }
 
+        refreshTouchAction();
+
         return {
             getZoom: function () { return zoom; },
+            // Whether the viewport consumes pan/scroll gestures. At fit it does not, so
+            // the page scrolls normally instead of the drag being swallowed.
+            capturesPan: function () { return isZoomed(); },
             canPanFrom: function (target) {
                 // `data-pan-mode="true"` = explicit pan mode: drag from anywhere,
                 // including on top of holds (their taps are ignored while it is on).
@@ -125,6 +144,8 @@ window.bwViewport = (function () {
                 notify();
             },
             getZoom: function () { return zoom; },
+            // The stitcher is a dedicated full-surface tool: it always owns the gesture.
+            capturesPan: function () { return true; },
             canPanFrom: function (target) {
                 // Layers and gizmo handles are dragged by Blazor; everything else pans.
                 return !(target && target.closest &&

@@ -223,6 +223,11 @@ else
                             <div class="view-toggle">
                                 <button class="toggle-btn @(_viewMode == ViewMode.Photo ? "active" : "")" @onclick="() => _viewMode = ViewMode.Photo">Photo</button>
                                 <button class="toggle-btn @(_viewMode == ViewMode.Schematic ? "active" : "")" @onclick="() => _viewMode = ViewMode.Schematic">Schematic</button>
+                                @if (_viewMode == ViewMode.Schematic && _segments.Count > 0)
+                                {
+                                    <button class="toggle-btn @(_showWallSegments ? "active" : "")"
+                                            @onclick="() => _showWallSegments = !_showWallSegments">Segments</button>
+                                }
                             </div>
                         }
                         else
@@ -276,7 +281,8 @@ else
                         }
                         else if (_wall.PhotoContentType != null && _viewMode == ViewMode.Schematic)
                         {
-                            <WallSchematicView Holds="_holds" Angle="_wall.Angle" Segments="_segments" />
+                            <WallSchematicView Holds="_holds" Angle="_wall.Angle" Segments="_segments"
+                                               ShowSegments="_showWallSegments" />
                         }
                         else if (_isAdmin && _isEditing)
                         {
@@ -425,6 +431,10 @@ else
     private bool _fCreated;
     private SortMode _sort = SortMode.Newest;
     private ViewMode _viewMode = ViewMode.Photo;
+
+    // Segment plane outlines are clutter on the everyday wall view, so they start hidden;
+    // the "Segments" toggle in the schematic view reveals them on demand.
+    private bool _showWallSegments;
 
     private enum SortMode { Newest, Oldest, GradeAsc, GradeDesc, Rating, MyAttempts }
 

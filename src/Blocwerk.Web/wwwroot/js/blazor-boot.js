@@ -121,6 +121,16 @@
 
     attach();
 
+    // Enhanced navigation morphs the server DOM over ours and strips the client-only <html>
+    // chrome (dark theme, desktop/fullscreen layout). Restore it after every enhanced load.
+    if (window.Blazor && window.Blazor.addEventListener) {
+        window.Blazor.addEventListener('enhancedload', function () {
+            if (window.blocwerkChrome) {
+                window.blocwerkChrome.reapply();
+            }
+        });
+    }
+
     window.Blazor.start({
         circuit: {
             reconnectionOptions: {

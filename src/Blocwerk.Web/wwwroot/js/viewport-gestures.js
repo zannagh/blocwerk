@@ -88,12 +88,14 @@ window.bwGestures = (function () {
         // ---- wheel: ctrl/cmd (and trackpad pinch, which browsers synthesise as
         // ctrl+wheel) zooms; plain wheel pans.
         el.addEventListener('wheel', function (e) {
-            e.preventDefault();
             if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
                 model.zoomBy(Math.exp(-e.deltaY * 0.01), e.clientX, e.clientY, 0, 0);
-            } else {
+            } else if (!model.capturesPan || model.capturesPan()) {
+                e.preventDefault();
                 model.panBy(-e.deltaX, -e.deltaY);
             }
+            // Otherwise the viewport is at fit: let the wheel scroll the page.
         }, { passive: false });
 
         // ---- Safari macOS/iOS pinch. blockPageZoom() preventDefaults these on
@@ -146,6 +148,10 @@ window.bwGestures = (function () {
             const dy = e.clientY - mouseY;
             mouseMoved += Math.abs(dx) + Math.abs(dy);
             if (mouseMoved > 3) {
+                if (model.capturesPan && !model.capturesPan()) {
+                    return; // at fit: nothing to pan
+                }
+
                 mouseX = e.clientX;
                 mouseY = e.clientY;
                 model.panBy(dx, dy);
@@ -218,6 +224,12 @@ window.bwGestures = (function () {
                 const dy = e.touches[0].clientY - lastY;
                 touchMoved += Math.abs(dx) + Math.abs(dy);
                 if (touchMoved > 4) {
+                    if (model.capturesPan && !model.capturesPan()) {
+                        // At fit: don't preventDefault, so the browser scrolls the page
+                        // (touch-action: pan-y). A tap still registers for double-tap zoom.
+                        return;
+                    }
+
                     e.preventDefault();
                     lastX = e.touches[0].clientX;
                     lastY = e.touches[0].clientY;
