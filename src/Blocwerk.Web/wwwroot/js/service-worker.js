@@ -20,7 +20,7 @@
  * offline-queue.js / blazor-boot.js, which covers the tab-open case; Background Sync would only add
  * closed-tab flushing and needs its own IndexedDB replay in the SW, so it is deferred.
  */
-const CACHE = 'blocwerk-shell-v1';
+const CACHE = 'blocwerk-shell-v2';
 
 // Own static assets only. Fingerprinted framework files are handled at runtime (cache-first),
 // never precached by exact name, because their hashes change on every build.
@@ -66,12 +66,24 @@ function isBypassed(url, request) {
     return url.pathname.startsWith('/api/') || url.pathname.startsWith('/_blazor');
 }
 
-function isStaticAsset(url) {
+// Our own CSS/JS/icons change on every deploy but keep a stable path (no fingerprint). These MUST
+// be network-first, or a stale cache silently masks a fresh deploy — the exact trap that made a
+// re-composed image still serve the old front-end.
+function isOwnAsset(url) {
     return url.pathname.startsWith('/css/')
         || url.pathname.startsWith('/js/')
         || url.pathname.startsWith('/icons/')
-        || url.pathname.startsWith('/_framework/')
         || url.pathname === '/manifest.webmanifest';
+}
+
+function fetchAndCache(request) {
+    return fetch(request).then(response => {
+        if (response && response.ok && response.type === 'basic') {
+            const copy = response.clone();
+            caches.open(CACHE).then(cache => cache.put(request, copy));
+        }
+        return response;
+    });
 }
 
 self.addEventListener('fetch', event => {
@@ -90,21 +102,20 @@ self.addEventListener('fetch', event => {
         return;
     }
 
-    // Static shell: cache-first, then populate the cache in the background for next time.
-    if (isStaticAsset(url)) {
+    // Fingerprinted framework files never change under a given name: cache-first is safe and fast.
+    if (url.pathname.startsWith('/_framework/')) {
         event.respondWith(
-            caches.match(request).then(cached => {
-                if (cached) {
-                    return cached;
-                }
-                return fetch(request).then(response => {
-                    if (response && response.ok && response.type === 'basic') {
-                        const copy = response.clone();
-                        caches.open(CACHE).then(cache => cache.put(request, copy));
-                    }
-                    return response;
-                });
-            })
+            caches.match(request).then(cached => cached || fetchAndCache(request))
+        );
+        return;
+    }
+
+    // Own shell assets: network-first so a deploy takes effect immediately, cache is the offline
+    // fallback only. The app is online-first (Blazor Server needs the circuit anyway), so the
+    // extra round-trip costs nothing users notice while online.
+    if (isOwnAsset(url)) {
+        event.respondWith(
+            fetchAndCache(request).catch(() => caches.match(request))
         );
     }
 });

@@ -147,6 +147,50 @@ public class WallSchematicLayoutTests
     }
 
     [Fact]
+    public void AbuttingPanels_WithNonCoincidentVertices_StillFoldContinuously()
+    {
+        // The real-world case: a 0° kickboard facing the camera and a 45° main wall above it, drawn
+        // as independent polygons. Their shared boundary is the line y = 0.6, but the two panels put
+        // their vertices at different x along it, so no vertex coincides — the fold must still fire.
+        var kickboard = new WallSegment
+        {
+            Name = "Kickboard",
+            Angle = 0,
+            SortOrder = 0,
+            Points =
+            [
+                new ShapePoint { Dx = 0.05, Dy = 0.6 },
+                new ShapePoint { Dx = 0.55, Dy = 0.6 },
+                new ShapePoint { Dx = 0.95, Dy = 0.6 },
+                new ShapePoint { Dx = 0.95, Dy = 1.0 },
+                new ShapePoint { Dx = 0.05, Dy = 1.0 },
+            ],
+        };
+        var main = new WallSegment
+        {
+            Name = "Main",
+            Angle = 45,
+            SortOrder = 1,
+            Points =
+            [
+                new ShapePoint { Dx = 0.0, Dy = 0.1 },
+                new ShapePoint { Dx = 1.0, Dy = 0.1 },
+                new ShapePoint { Dx = 0.7, Dy = 0.6 },
+                new ShapePoint { Dx = 0.3, Dy = 0.6 },
+            ],
+        };
+
+        var layout = WallSchematicLayout.Build([kickboard, main], fallbackAngle: 0);
+
+        // A point on the shared line lands in the same schematic place whether the kickboard panel
+        // (index 0) or the folded main panel (index 1) draws it: the panels meet, they don't drift.
+        AssertClose(
+            layout.ProjectForSegment(0, 0.5, 0.6),
+            layout.ProjectForSegment(1, 0.5, 0.6),
+            0.02);
+    }
+
+    [Fact]
     public void OrphanPanel_WithNoSharedEdge_StillProjectsAtItsOwnLocation()
     {
         var mainLeft = Segment("Left", angle: 20, y0: 0.0, y1: 1.0, x0: 0.0, x1: 0.3, sortOrder: 0);
