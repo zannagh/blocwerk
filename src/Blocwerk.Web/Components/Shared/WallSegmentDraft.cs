@@ -25,6 +25,9 @@ public class WallSegmentDraft
     /// </summary>
     public int Yaw { get; set; }
 
+    /// <summary>Whether this is a climbable plane or the floor (trimmed from the schematic).</summary>
+    public WallSegmentKind Kind { get; set; } = WallSegmentKind.Wall;
+
     /// <summary>Absolute normalized (0..1) polygon vertices.</summary>
     public List<ShapePoint> Points { get; set; } = [];
 
@@ -34,11 +37,12 @@ public class WallSegmentDraft
         Name = segment.Name,
         Angle = segment.Angle,
         Yaw = segment.Yaw,
+        Kind = segment.Kind,
         Points = segment.Points.Select(p => new ShapePoint { Dx = p.Dx, Dy = p.Dy }).ToList(),
     };
 
     public WallSegmentInput ToInput(int sortOrder) =>
-        new(Name, Angle, Points.Select(p => new ShapePoint { Dx = p.Dx, Dy = p.Dy }).ToList(), sortOrder, Yaw);
+        new(Name, Angle, Points.Select(p => new ShapePoint { Dx = p.Dx, Dy = p.Dy }).ToList(), sortOrder, Yaw, Kind);
 
     /// <summary>
     /// A throwaway entity so the live preview can run the very same
@@ -50,6 +54,7 @@ public class WallSegmentDraft
         Name = Name,
         Angle = Angle,
         Yaw = Yaw,
+        Kind = Kind,
         Points = Points,
         SortOrder = sortOrder,
     };

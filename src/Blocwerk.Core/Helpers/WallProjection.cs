@@ -59,6 +59,37 @@ public static class WallProjection
     }
 
     /// <summary>
+    /// The segments that belong in the folded schematic, in <see cref="WallSegment.SortOrder"/>
+    /// order. Floor panels are dropped (they are the ground, not the climbable wall), and — when
+    /// <paramref name="holds"/> is non-empty — so is any wall panel that contains none of them, so
+    /// the schematic shows only the parts of the wall that actually carry holds. Passing no holds
+    /// keeps every non-floor segment, which is what a wall still being set up wants.
+    /// </summary>
+    public static List<WallSegment> SchematicSegments(
+        IReadOnlyList<WallSegment>? segments, IReadOnlyList<Hold>? holds)
+    {
+        if (segments == null || segments.Count == 0)
+        {
+            return [];
+        }
+
+        var trimEmpty = holds is { Count: > 0 };
+        return segments
+            .Where(s => s.Kind != WallSegmentKind.Floor && s.Points.Count >= 3)
+            .Where(s => !trimEmpty || holds!.Any(h => IsPointInPolygon(h.X, h.Y, s.Points)))
+            .OrderBy(s => s.SortOrder)
+            .ToList();
+    }
+
+    /// <summary>
+    /// True when the point falls inside a <see cref="WallSegmentKind.Floor"/> segment, i.e. off
+    /// the climbable wall. Such holds are not drawn in the schematic.
+    /// </summary>
+    public static bool IsOnFloor(double x, double y, IReadOnlyList<WallSegment>? segments) =>
+        segments != null && segments.Any(s =>
+            s.Kind == WallSegmentKind.Floor && IsPointInPolygon(x, y, s.Points));
+
+    /// <summary>
     /// The first segment (in <see cref="WallSegment.SortOrder"/> order) whose polygon
     /// contains the point, or null when the point lies outside all of them.
     /// </summary>

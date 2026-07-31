@@ -41,16 +41,34 @@
                 </div>
             </div>
             <div class="segment-row-body" @onclick:stopPropagation="true">
-                <label class="segment-angle-label">
-                    Angle @draft.Angle&deg; <span class="segment-angle-word">@WallAngleRange.Label(draft.Angle)</span>
-                </label>
-                <input type="range" min="@WallAngleRange.Min" max="@WallAngleRange.Max" value="@draft.Angle"
-                       @oninput="e => SetAngle(draft, e)" class="angle-slider" />
-                @if (draft.Angle >= WallAngleRange.SteepWarning)
+                <div class="segment-kind" role="group" aria-label="Segment type">
+                    <button type="button" class="kind-btn @(draft.Kind == WallSegmentKind.Wall ? "active" : "")"
+                            title="A climbable plane of the wall" @onclick="() => SetKind(draft, WallSegmentKind.Wall)">
+                        Wall
+                    </button>
+                    <button type="button" class="kind-btn @(draft.Kind == WallSegmentKind.Floor ? "active" : "")"
+                            title="The ground — trimmed out of the schematic" @onclick="() => SetKind(draft, WallSegmentKind.Floor)">
+                        Floor
+                    </button>
+                </div>
+
+                @if (draft.Kind == WallSegmentKind.Floor)
                 {
-                    <span class="segment-warn">Nearly a roof — this segment collapses onto its top edge in the schematic.</span>
+                    <span class="segment-hint">Floor — the ground, not on the wall. Cut from the schematic, and any holds inside it are hidden there.</span>
                 }
-                <SegmentFacingControl Draft="draft" OnChanged="OnChanged" />
+                else
+                {
+                    <label class="segment-angle-label">
+                        Angle @draft.Angle&deg; <span class="segment-angle-word">@WallAngleRange.Label(draft.Angle)</span>
+                    </label>
+                    <input type="range" min="@WallAngleRange.Min" max="@WallAngleRange.Max" value="@draft.Angle"
+                           @oninput="e => SetAngle(draft, e)" class="angle-slider" />
+                    @if (draft.Angle >= WallAngleRange.SteepWarning)
+                    {
+                        <span class="segment-warn">Nearly a roof — this segment collapses onto its top edge in the schematic.</span>
+                    }
+                    <SegmentFacingControl Draft="draft" OnChanged="OnChanged" />
+                }
                 <div class="segment-vertices">
                     <span>@draft.Points.Count points</span>
                     <button class="opt-btn" title="Remove a vertex" disabled="@(draft.Points.Count <= 3)"
@@ -92,6 +110,17 @@
         }
 
         draft.Angle = Math.Clamp(angle, WallAngleRange.Min, WallAngleRange.Max);
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task SetKind(WallSegmentDraft draft, WallSegmentKind kind)
+    {
+        if (draft.Kind == kind)
+        {
+            return;
+        }
+
+        draft.Kind = kind;
         await OnChanged.InvokeAsync();
     }
 }

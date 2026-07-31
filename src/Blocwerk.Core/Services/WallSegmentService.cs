@@ -23,7 +23,13 @@ public interface IWallSegmentService
 /// One segment as submitted by the editor. <paramref name="Points"/> are absolute
 /// normalized (0..1) polygon vertices.
 /// </summary>
-public record WallSegmentInput(string Name, int Angle, List<ShapePoint> Points, int SortOrder = 0, int Yaw = 0);
+public record WallSegmentInput(
+    string Name,
+    int Angle,
+    List<ShapePoint> Points,
+    int SortOrder = 0,
+    int Yaw = 0,
+    WallSegmentKind Kind = WallSegmentKind.Wall);
 
 public class WallSegmentService : IWallSegmentService
 {
@@ -82,6 +88,7 @@ public class WallSegmentService : IWallSegmentService
                 Name = input.Name,
                 Angle = Math.Clamp(input.Angle, MinAngle, MaxAngle),
                 Yaw = Math.Clamp(input.Yaw, MinYaw, MaxYaw),
+                Kind = input.Kind,
                 Points = input.Points,
                 SortOrder = input.SortOrder,
             };

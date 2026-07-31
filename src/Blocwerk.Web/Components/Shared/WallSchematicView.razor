@@ -22,6 +22,12 @@
 
             @foreach (var hold in Holds)
             {
+                // Holds on the floor are off the climbable wall: the schematic trims them out.
+                if (WallProjection.IsOnFloor(hold.X, hold.Y, Segments))
+                {
+                    continue;
+                }
+
                 var p = hold.IsOnKickboard ? new SchematicPoint(hold.X, hold.Y) : _layout.Project(hold.X, hold.Y);
                 var isFoot = hold.Category == HoldCategory.Foot || FootHoldIds?.Contains(hold.Id) == true;
                 var r = (isFoot ? hold.Radius * 0.7 : hold.Radius) * 100;
@@ -82,6 +88,13 @@
 
     [Parameter] public HashSet<Guid>? HighlightedHoldIds { get; set; }
 
+    /// <summary>
+    /// The wall's full hold set, used to decide which segments are "empty" and get trimmed. When
+    /// null the drawn <see cref="Holds"/> are used; passing the whole wall's holds here keeps the
+    /// trimmed shape identical across every boulder on the wall.
+    /// </summary>
+    [Parameter] public List<Hold>? WallHolds { get; set; }
+
     /// <summary>Holds a boulder marks as footholds; drawn in the foot purple.</summary>
     [Parameter] public HashSet<Guid>? FootHoldIds { get; set; }
 
@@ -104,16 +117,16 @@
 
     protected override void OnParametersSet()
     {
-        _drafts = (Segments ?? [])
-            .Where(s => s.Points.Count >= 3)
-            .OrderBy(s => s.SortOrder)
-            .Select(WallSegmentDraft.FromEntity)
-            .ToList();
+        // Floor panels, and wall panels no hold sits in, are trimmed out of the schematic. The
+        // trimming basis is the whole wall's holds when supplied, so the shape is stable across
+        // boulders; the drawn Holds are the fallback for the wall's own view.
+        var included = WallProjection.SchematicSegments(Segments, WallHolds ?? Holds);
+        _drafts = included.Select(WallSegmentDraft.FromEntity).ToList();
 
         // Build the fold once per parameter change; the render loop then queries it per hold.
-        // Sourcing from the drafts keeps the layout's segment indices aligned with the overlay,
-        // which draws those same drafts in order (see ProjectSegmentPoint).
-        _layout = WallProjection.BuildLayout(_drafts.Select((d, i) => d.ToEntity(i)).ToList(), Angle);
+        // `included` is already in sort order, so the layout's segment indices line up with the
+        // overlay, which draws these same segments in order (see ProjectSegmentPoint).
+        _layout = WallProjection.BuildLayout(included, Angle);
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)

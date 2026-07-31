@@ -92,6 +92,67 @@ public class WallProjectionTests
         Assert.False(WallProjection.IsInsideAnySegment(0.2, 0.5, []));
     }
 
+    [Fact]
+    public void SchematicSegments_DropsFloorPanels()
+    {
+        var wall = Segment("Wall", 30, 0.0, 0.7, sortOrder: 0);
+        var floor = Segment("Floor", 0, 0.7, 1.0, sortOrder: 1, kind: WallSegmentKind.Floor);
+
+        var included = WallProjection.SchematicSegments([wall, floor], holds: null);
+
+        Assert.Single(included);
+        Assert.Equal(wall.Id, included[0].Id);
+    }
+
+    [Fact]
+    public void SchematicSegments_DropsWallPanelsWithNoHold_WhenHoldsGiven()
+    {
+        var used = Segment("Used", 20, 0.0, 0.5, sortOrder: 0);
+        var empty = Segment("Empty", 40, 0.5, 1.0, sortOrder: 1);
+        var holds = new List<Hold> { HoldAt(0.5, 0.25) };
+
+        var included = WallProjection.SchematicSegments([used, empty], holds);
+
+        Assert.Single(included);
+        Assert.Equal(used.Id, included[0].Id);
+    }
+
+    [Fact]
+    public void SchematicSegments_KeepsEmptyPanels_WhenNoHoldsGiven()
+    {
+        // A wall still being set up has no holds yet: nothing should be trimmed for emptiness.
+        var a = Segment("A", 20, 0.0, 0.5, sortOrder: 0);
+        var b = Segment("B", 40, 0.5, 1.0, sortOrder: 1);
+
+        Assert.Equal(2, WallProjection.SchematicSegments([a, b], holds: []).Count);
+    }
+
+    [Fact]
+    public void SchematicSegments_ReturnsInSortOrder()
+    {
+        var low = Segment("Low", 10, 0.0, 1.0, sortOrder: 5);
+        var high = Segment("High", 10, 0.0, 1.0, sortOrder: 1);
+
+        var included = WallProjection.SchematicSegments([low, high], holds: null);
+
+        Assert.Equal(high.Id, included[0].Id);
+        Assert.Equal(low.Id, included[1].Id);
+    }
+
+    [Fact]
+    public void IsOnFloor_IsTrueOnlyInsideAFloorSegment()
+    {
+        var wall = Segment("Wall", 30, 0.0, 0.7, sortOrder: 0);
+        var floor = Segment("Floor", 0, 0.7, 1.0, sortOrder: 1, kind: WallSegmentKind.Floor);
+        var segments = new[] { wall, floor };
+
+        Assert.True(WallProjection.IsOnFloor(0.5, 0.85, segments));
+        Assert.False(WallProjection.IsOnFloor(0.5, 0.3, segments));
+        Assert.False(WallProjection.IsOnFloor(0.5, 0.85, [wall]));
+    }
+
+    private static Hold HoldAt(double x, double y) => new() { X = x, Y = y, Radius = 0.02 };
+
     private static WallSegment Segment(
         string name,
         int angle,
@@ -99,12 +160,14 @@ public class WallProjectionTests
         double y1,
         double x0 = 0.0,
         double x1 = 1.0,
-        int sortOrder = 0) =>
+        int sortOrder = 0,
+        WallSegmentKind kind = WallSegmentKind.Wall) =>
         new()
         {
             Name = name,
             Angle = angle,
             SortOrder = sortOrder,
+            Kind = kind,
             Points =
             [
                 new ShapePoint { Dx = x0, Dy = y0 },

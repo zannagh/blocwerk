@@ -38,6 +38,12 @@ public class WallSegment
     public int Yaw { get; set; }
 
     /// <summary>
+    /// Whether this segment is a climbable plane or the floor. A <see cref="WallSegmentKind.Floor"/>
+    /// segment is dropped from the folded schematic, marking the region that is not on the wall.
+    /// </summary>
+    public WallSegmentKind Kind { get; set; } = WallSegmentKind.Wall;
+
+    /// <summary>
     /// Absolute normalized (0..1) polygon vertices, same convention as
     /// <see cref="Wall.BorderPoints"/>.
     /// </summary>

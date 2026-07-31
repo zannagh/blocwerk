@@ -301,6 +301,26 @@ img.wall-photo {
 }
 .segment-order { display: flex; gap: 4px; flex: 0 0 auto; }
 .segment-row-body { display: flex; flex-direction: column; gap: 6px; }
+
+/* Segment type (Wall / Floor). Shares the facing-toggle look; a Floor is trimmed from the schematic. */
+.segment-kind { display: flex; gap: 4px; }
+.kind-btn {
+    flex: 1 1 0; padding: 5px 8px; font-size: 0.78rem; font-weight: 600;
+    border: 1px solid var(--border); border-radius: var(--r-sm);
+    background: var(--input-bg); color: var(--text-secondary); cursor: pointer;
+}
+.kind-btn:hover { border-color: var(--accent); color: var(--text); }
+.kind-btn.active { border-color: var(--accent); background: var(--accent-soft); color: var(--text-heading); }
+
+/* Collapsible wall-segment settings: clutter-free by default, open to adjust the projection. */
+.segment-settings > summary {
+    cursor: pointer; font-weight: 600; color: var(--text-heading);
+    padding: 8px 0; list-style: revert; display: flex; align-items: center; gap: 8px;
+}
+.segment-settings-count {
+    font-size: 0.72rem; font-weight: 600; color: var(--text-secondary);
+    background: var(--accent-soft); border-radius: 999px; padding: 1px 8px;
+}
 .segment-angle-label { font-size: 0.8rem; font-weight: 600; color: var(--text-heading); }
 .segment-angle-word { font-weight: 400; color: var(--text-secondary); }
 .segment-warn { font-size: 0.72rem; color: var(--warning-text); }
