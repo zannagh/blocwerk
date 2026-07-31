@@ -5,6 +5,7 @@ using Blocwerk.Core.Services;
 using Blocwerk.HoldDetection;
 using Blocwerk.Web.Components;
 using Blocwerk.Web.Controllers;
+using Blocwerk.Web.State;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
@@ -53,6 +54,10 @@ public static class Program
 
         builder.Services.AddRazorPages();
         builder.Services.AddServerSideBlazor();
+
+        // Per-circuit cache of the user's live session, so the tab bar and the activity page share
+        // one source of truth and the "Session" indicator lights up the moment a session starts.
+        builder.Services.AddScoped<SessionState>();
 
         ConfigureApiCookieBehaviour(builder);
 

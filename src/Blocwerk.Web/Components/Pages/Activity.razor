@@ -3,7 +3,10 @@
 @attribute [Authorize]
 @inject IProgressionService ProgressionService
 @inject ITrainingService TrainingService
+@inject IWallService WallService
+@inject SessionState SessionState
 @inject NavigationManager Navigation
+@using Blocwerk.Web.State
 
 <PageTitle>Activity - Blocwerk</PageTitle>
 
@@ -28,6 +31,15 @@
                         <div class="training-dropdown">
                             <a href="/training/hangboard" class="dropdown-item">Hangboard</a>
                             <a href="/training/pullups" class="dropdown-item">Pull-ups</a>
+                            @if (SessionState.HasActiveSession)
+                            {
+                                <button class="dropdown-item" @onclick="GoToSessionWall">Go to session</button>
+                                <button class="dropdown-item danger" @onclick="EndSession">End session</button>
+                            }
+                            else
+                            {
+                                <button class="dropdown-item" @onclick="OpenWallPicker">Start session</button>
+                            }
                         </div>
                     }
                 </div>
@@ -223,10 +235,39 @@
             }
         </div>
     }
+
+    @if (_showWallPicker)
+    {
+        <div class="bw-modal-backdrop" @onclick="() => _showWallPicker = false">
+            <div class="bw-modal" @onclick:stopPropagation="true">
+                <h3>Which wall are you on?</h3>
+                @if (_myWalls == null)
+                {
+                    <p class="loading">Loading walls…</p>
+                }
+                else if (_myWalls.Count == 0)
+                {
+                    <p class="empty-day">You're not a member of any wall yet.</p>
+                }
+                else
+                {
+                    <div class="wall-pick-list">
+                        @foreach (var wall in _myWalls)
+                        {
+                            <button class="wall-pick-item" @onclick="() => StartSession(wall.Id)">@wall.Name</button>
+                        }
+                    </div>
+                }
+                <button class="btn-secondary" @onclick="() => _showWallPicker = false">Cancel</button>
+            </div>
+        </div>
+    }
 </div>
 
 @code {
     private List<DayActivity>? _grid;
+    private bool _showWallPicker;
+    private List<Wall>? _myWalls;
     private int _weekCount;
     private UserProgression? _progression;
     private DaySummary? _selectedDay;
@@ -241,6 +282,36 @@
         _weekCount = (_grid.Count + 6) / 7;
         _progression = await ProgressionService.GetProgressionAsync();
         BuildMonthLabels();
+        await SessionState.EnsureLoadedAsync();
+    }
+
+    private async Task OpenWallPicker()
+    {
+        _showTrainingMenu = false;
+        _showWallPicker = true;
+        _myWalls ??= await WallService.GetMyWallsAsync();
+    }
+
+    private async Task StartSession(Guid wallId)
+    {
+        _showWallPicker = false;
+        await SessionState.StartAsync(wallId);
+        Navigation.NavigateTo($"/walls/{wallId}?view=boulders");
+    }
+
+    private async Task EndSession()
+    {
+        _showTrainingMenu = false;
+        await SessionState.EndAsync();
+    }
+
+    private void GoToSessionWall()
+    {
+        _showTrainingMenu = false;
+        if (SessionState.Current is { } s)
+        {
+            Navigation.NavigateTo($"/walls/{s.WallId}?view=boulders");
+        }
     }
 
     private void BuildMonthLabels()

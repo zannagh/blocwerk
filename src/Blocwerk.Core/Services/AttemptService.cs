@@ -11,9 +11,15 @@ public interface IAttemptService
     /// <summary>
     /// Logs an attempt. Pass a stable <paramref name="clientRequestId"/> when the call may
     /// be replayed from an offline queue: a second call with the same id returns the row
-    /// already stored instead of logging the attempt twice.
+    /// already stored instead of logging the attempt twice. Pass <paramref name="timestamp"/>
+    /// to backdate the attempt to a chosen time instead of "now".
     /// </summary>
-    Task<Attempt> LogAttemptAsync(Guid boulderId, AttemptType type, string? notes = null, Guid? clientRequestId = null);
+    Task<Attempt> LogAttemptAsync(
+        Guid boulderId,
+        AttemptType type,
+        string? notes = null,
+        Guid? clientRequestId = null,
+        DateTimeOffset? timestamp = null);
 
     Task<List<Attempt>> GetAttemptsForBoulderAsync(Guid boulderId);
 
@@ -42,7 +48,12 @@ public class AttemptService : IAttemptService
         _activityLogService = activityLogService;
     }
 
-    public async Task<Attempt> LogAttemptAsync(Guid boulderId, AttemptType type, string? notes = null, Guid? clientRequestId = null)
+    public async Task<Attempt> LogAttemptAsync(
+        Guid boulderId,
+        AttemptType type,
+        string? notes = null,
+        Guid? clientRequestId = null,
+        DateTimeOffset? timestamp = null)
     {
         var user = await _currentUserService.GetCurrentUserAsync();
         await using var db = await _dbContextFactory.CreateDbContextAsync();
@@ -70,6 +81,11 @@ public class AttemptService : IAttemptService
             Notes = notes,
             ClientRequestId = clientRequestId,
         };
+
+        if (timestamp.HasValue)
+        {
+            attempt.Timestamp = timestamp.Value;
+        }
 
         db.Attempts.Add(attempt);
         await db.SaveChangesAsync();

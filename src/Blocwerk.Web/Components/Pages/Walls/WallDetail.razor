@@ -21,7 +21,7 @@ else
 {
     <SectionContent SectionName="TopBarTitle">@_wall.Name</SectionContent>
 
-    <WallCarousel @ref="_carousel" InitialPage="2" Locked="_isEditing">
+    <WallCarousel @ref="_carousel" InitialPage="@InitialCarouselPage" Locked="_isEditing">
         <Page1>
             @* Activity *@
             <div class="settings-panel">
@@ -411,6 +411,14 @@ else
 @code {
     [Parameter] public Guid WallId { get; set; }
     [Parameter] public string? ShareToken { get; set; }
+
+    /// <summary>Deep-link target for the carousel: <c>?view=boulders</c> opens on the boulder list
+    /// (used by the live-session tab), otherwise the wall opens on its main view.</summary>
+    [SupplyParameterFromQuery(Name = "view")]
+    public string? View { get; set; }
+
+    private int InitialCarouselPage =>
+        string.Equals(View, "boulders", StringComparison.OrdinalIgnoreCase) ? 3 : 2;
 
     private WallCarousel? _carousel;
     private Wall? _wall;

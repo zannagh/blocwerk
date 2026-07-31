@@ -75,6 +75,13 @@ public interface IBoulderService
         bool? handsFollowFeet = null,
         string? footColorOnly = null);
 
+    /// <summary>
+    /// Renames and/or regrades a boulder in place, without touching its holds. Only the
+    /// creator may do this, and it works on a live boulder (unlike <see cref="ReviseBoulderAsync"/>,
+    /// which is for historic/draft remaps). Pass null or empty <paramref name="grade"/> to clear it.
+    /// </summary>
+    Task<Boulder> RenameBoulderAsync(Guid boulderId, string name, string? grade);
+
     Task DeleteBoulderAsync(Guid boulderId);
 
     /// <summary>
@@ -453,6 +460,31 @@ public class BoulderService : IBoulderService
             }
         }
 
+        await db.SaveChangesAsync();
+        return boulder;
+    }
+
+    public async Task<Boulder> RenameBoulderAsync(Guid boulderId, string name, string? grade)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new InvalidOperationException("A boulder needs a name");
+        }
+
+        var user = await _currentUserService.GetCurrentUserAsync();
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = user.Id;
+
+        var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId)
+                      ?? throw new InvalidOperationException("Boulder not found");
+
+        if (boulder.CreatedByUserId != user.Id)
+        {
+            throw new InvalidOperationException("Only the creator can edit this boulder");
+        }
+
+        boulder.Name = name.Trim();
+        boulder.Grade = string.IsNullOrWhiteSpace(grade) ? null : grade.Trim();
         await db.SaveChangesAsync();
         return boulder;
     }

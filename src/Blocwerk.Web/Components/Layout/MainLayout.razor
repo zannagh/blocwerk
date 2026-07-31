@@ -1,5 +1,8 @@
 @inherits LayoutComponentBase
+@implements IDisposable
 @using Blocwerk.Web.Components.Shared
+@using Blocwerk.Web.State
+@inject SessionState SessionState
 
 <div class="app-shell">
     <header class="bw-topbar">
@@ -34,12 +37,26 @@
                     </svg>
                     <span>Walls</span>
                 </a>
-                <a href="/activity" class="nav-item">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
-                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                    </svg>
-                    <span>Activity</span>
-                </a>
+                @if (SessionState.HasActiveSession)
+                {
+                    <a href="@SessionHref" class="nav-item session">
+                        <span class="session-icon">
+                            <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
+                                <circle cx="12" cy="12" r="7" />
+                            </svg>
+                        </span>
+                        <span>Session</span>
+                    </a>
+                }
+                else
+                {
+                    <a href="/activity" class="nav-item">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
+                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                        </svg>
+                        <span>Activity</span>
+                    </a>
+                }
             </Authorized>
         </AuthorizeView>
         <a href="/tools" class="nav-item">
@@ -65,3 +82,19 @@
     <CookieConsent />
     <ConnectionStatus />
 </div>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        SessionState.Changed += OnSessionChanged;
+        await SessionState.EnsureLoadedAsync();
+    }
+
+    private void OnSessionChanged() => InvokeAsync(StateHasChanged);
+
+    // Tapping the live-session tab jumps straight to that wall's boulder list (carousel page).
+    private string SessionHref =>
+        SessionState.Current is { } s ? $"/walls/{s.WallId}?view=boulders" : "/activity";
+
+    public void Dispose() => SessionState.Changed -= OnSessionChanged;
+}

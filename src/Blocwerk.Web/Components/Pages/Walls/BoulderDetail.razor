@@ -45,7 +45,31 @@ else
                 {
                     <BoulderFavoriteToggle BoulderId="_boulder.Id" IsFavorite="_isFavorite" />
                 }
+                @if (_isCreator && !_isAnonymous && !_editMeta)
+                {
+                    <button class="btn-icon boulder-edit-btn" @onclick="StartEditMeta" title="Rename or change grade">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                            <path d="M12 20h9" />
+                            <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                        </svg>
+                    </button>
+                }
             </div>
+
+            @if (_editMeta)
+            {
+                <div class="boulder-meta-edit">
+                    <input class="boulder-name-input" maxlength="128" placeholder="Boulder name"
+                           @bind="_editName" @bind:event="oninput" />
+                    <GradePicker @bind-Value="_editGrade" />
+                    <div class="meta-edit-actions">
+                        <button class="proposal-btn accept" @onclick="SaveMeta"
+                                disabled="@string.IsNullOrWhiteSpace(_editName)">Save</button>
+                        <button class="proposal-btn reject" @onclick="() => _editMeta = false">Cancel</button>
+                    </div>
+                </div>
+            }
+
             <p class="meta">by @_boulder.CreatedBy.DisplayName &middot; @_boulder.CreatedAt.ToString("MMM d, yyyy")</p>
         </div>
 
@@ -185,6 +209,19 @@ else
                 </div>
             </div>
 
+            <details class="backdate-card">
+                <summary>Log at a specific time</summary>
+                <div class="backdate-body">
+                    <label class="backdate-label" for="bw-backdate">When did you climb it?</label>
+                    <input id="bw-backdate" type="datetime-local" class="backdate-input" @bind="_backdateTime" />
+                    <div class="attempt-buttons">
+                        <button type="button" class="attempt-btn try" @onclick="() => LogBackdated(AttemptType.Attempt)">Attempt</button>
+                        <button type="button" class="attempt-btn send" @onclick="() => LogBackdated(AttemptType.Send)">Send</button>
+                        <button type="button" class="attempt-btn flash" @onclick="() => LogBackdated(AttemptType.Flash)">Flash</button>
+                    </div>
+                </div>
+            </details>
+
             @if (!_isCreator)
             {
                 @if (_showGradeForm)
@@ -270,6 +307,11 @@ else
     private string? _proposedGrade;
     private bool _isFavorite;
     private RatingInfo _rating = new(null, 0, null);
+
+    private bool _editMeta;
+    private string _editName = "";
+    private string? _editGrade;
+    private DateTime _backdateTime = DateTime.Now;
 
     private ElementReference _photoViewportRef;
     private ViewMode? _viewportSetupFor;
@@ -571,6 +613,43 @@ else
             StateHasChanged();
         }
     }
+
+    private void StartEditMeta()
+    {
+        _editName = _boulder?.Name ?? "";
+        _editGrade = _boulder?.Grade;
+        _editMeta = true;
+    }
+
+    private Task SaveMeta() => Guard(async () =>
+    {
+        if (_boulder == null || string.IsNullOrWhiteSpace(_editName))
+        {
+            return;
+        }
+
+        var updated = await BoulderService.RenameBoulderAsync(BoulderId, _editName, _editGrade);
+        _boulder.Name = updated.Name;
+        _boulder.Grade = updated.Grade;
+        _editMeta = false;
+        await ShowToast("Boulder updated");
+    }, "Could not update the boulder");
+
+    // A backdated log runs the server path directly (not the offline queue), so it needs a live
+    // circuit — acceptable for a deliberate "log an old ascent" action. The picked wall-clock time
+    // is stored verbatim (offset zero) so the history shows exactly what was chosen.
+    private Task LogBackdated(AttemptType type) => Guard(async () =>
+    {
+        var when = new DateTimeOffset(DateTime.SpecifyKind(_backdateTime, DateTimeKind.Unspecified), TimeSpan.Zero);
+        await AttemptService.LogAttemptAsync(BoulderId, type, timestamp: when);
+        await LoadBoulder();
+        if (_activityFeed != null)
+        {
+            await _activityFeed.ReloadAsync();
+        }
+
+        await ShowToast($"Logged {type} at {_backdateTime:MMM d, HH:mm}");
+    }, "Could not log that attempt");
 
     private Task DeleteAttempt(Guid attemptId) => Guard(async () =>
     {

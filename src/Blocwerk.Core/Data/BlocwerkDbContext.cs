@@ -43,6 +43,8 @@ public class BlocwerkDbContext : DbContext
 
     public DbSet<PullupSession> PullupSessions => Set<PullupSession>();
 
+    public DbSet<ClimbingSession> ClimbingSessions => Set<ClimbingSession>();
+
     public BlocwerkDbContext(DbContextOptions<BlocwerkDbContext> options)
         : base(options)
     {

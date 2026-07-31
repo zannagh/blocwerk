@@ -665,6 +665,35 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
 }
 .grade-propose-actions { display: flex; gap: 8px; margin-top: 10px; }
 
+/* Creator inline rename / regrade, shown from the pencil next to the title. */
+.boulder-edit-btn { color: var(--text-secondary); }
+.boulder-edit-btn:hover { color: var(--accent); }
+.boulder-meta-edit {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+    padding: 12px 14px; background: var(--bg-surface-alt); border-radius: 8px; margin: 8px 0 12px;
+}
+.boulder-name-input {
+    flex: 1 1 200px; min-width: 160px; padding: 8px 10px; font-size: 1rem;
+    border: 1px solid var(--border); border-radius: var(--r-sm);
+    background: var(--input-bg); color: var(--text);
+}
+.meta-edit-actions { display: flex; gap: 8px; }
+
+/* Backdated logging: a collapsed card with a time picker and the three ascent buttons. */
+.backdate-card {
+    margin-bottom: 16px; border: 1px solid var(--border); border-radius: 12px;
+    background: var(--bg-surface); overflow: hidden;
+}
+.backdate-card > summary {
+    cursor: pointer; padding: 12px 14px; font-weight: 600; color: var(--text-heading);
+}
+.backdate-body { display: flex; flex-direction: column; gap: 10px; padding: 0 14px 14px; }
+.backdate-label { font-size: 0.85rem; color: var(--text-secondary); }
+.backdate-input {
+    padding: 8px 10px; font-size: 0.95rem; border: 1px solid var(--border);
+    border-radius: var(--r-sm); background: var(--input-bg); color: var(--text);
+}
+
 .photo-section {
     position: relative; border-radius: 12px; overflow: hidden; margin-bottom: 12px;
 }
@@ -863,10 +892,29 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     box-shadow: 0 4px 16px var(--shadow-lg); overflow: hidden; z-index: 10; min-width: 140px;
 }
 .dropdown-item {
-    display: block; padding: 10px 16px; color: var(--text); text-decoration: none;
-    font-size: 0.9rem; font-weight: 500;
+    display: block; width: 100%; text-align: left; padding: 10px 16px; color: var(--text);
+    text-decoration: none; font-size: 0.9rem; font-weight: 500;
+    background: none; border: none; cursor: pointer;
 }
 .dropdown-item:hover { background: var(--bg-surface-alt); }
+.dropdown-item.danger { color: var(--danger-text); }
+
+/* Simple centred modal (session wall picker). */
+.bw-modal-backdrop {
+    position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center;
+    background: rgba(0, 0, 0, 0.45); padding: 20px;
+}
+.bw-modal {
+    width: 100%; max-width: 360px; background: var(--bg-surface); border-radius: 14px;
+    padding: 18px; box-shadow: 0 10px 40px var(--shadow-lg); display: flex; flex-direction: column; gap: 12px;
+}
+.bw-modal h3 { font-size: 1.05rem; font-weight: 600; color: var(--text-heading); }
+.wall-pick-list { display: flex; flex-direction: column; gap: 8px; max-height: 50vh; overflow-y: auto; }
+.wall-pick-item {
+    text-align: left; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px;
+    background: var(--bg-surface); color: var(--text); font-weight: 600; font-size: 0.95rem; cursor: pointer;
+}
+.wall-pick-item:hover { border-color: var(--accent); background: var(--accent-soft); }
 
 .contribution-grid { display: flex; gap: 2px; width: 100%; }
 .grid-column { display: flex; flex-direction: column; gap: 2px; flex: 1; }

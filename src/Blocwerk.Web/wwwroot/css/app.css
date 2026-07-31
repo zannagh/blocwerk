@@ -351,6 +351,25 @@ h2 { font-size: 1.15rem; }
     stroke-width: 1.9;
 }
 
+/* Live session: the Activity tab becomes "Session" with a slowly breathing dot, so a session in
+   progress is always visible from anywhere in the app. */
+.nav-item.session { color: var(--accent); }
+.nav-item.session .session-icon {
+    display: inline-flex; width: 22px; height: 22px;
+    animation: bw-session-breathe 2.6s ease-in-out infinite;
+    transform-origin: center;
+}
+.nav-item.session .session-icon svg { width: 22px; height: 22px; }
+
+@keyframes bw-session-breathe {
+    0%, 100% { transform: scale(0.72); opacity: 0.55; }
+    50% { transform: scale(1); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .nav-item.session .session-icon { animation: none; opacity: 1; }
+}
+
 /* When the wall is in edit mode, the docked editor toolbar replaces the bottom nav. */
 .app-shell:has(.editor-toolbar.docked-bottom) .bw-tabbar { display: none; }
 .app-shell:has(.editor-toolbar.docked-bottom) .content { padding-bottom: 0; }

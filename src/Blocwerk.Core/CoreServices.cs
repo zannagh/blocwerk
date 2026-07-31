@@ -42,6 +42,7 @@ public static class CoreServices
         builder.Services.AddScoped<IWallSegmentService, WallSegmentService>();
         builder.Services.AddScoped<IProgressionService, ProgressionService>();
         builder.Services.AddScoped<ITrainingService, TrainingService>();
+        builder.Services.AddScoped<ISessionService, SessionService>();
 
         if (IsDevWallSnapshotEnabled(builder))
         {
