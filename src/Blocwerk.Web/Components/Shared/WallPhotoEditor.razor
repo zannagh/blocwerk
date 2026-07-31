@@ -141,8 +141,9 @@
             }
         }
 
-        @* Wall segments — read-only here, they are edited in the wall settings. *@
-        @if (_showBorder && _segmentDrafts.Count > 0)
+        @* Wall segments are edited in the wall settings, so they are only drawn here as boundary
+           context while actively editing — never on the everyday photo view. *@
+        @if (CanEdit && _showBorder && _segmentDrafts.Count > 0)
         {
             <WallSegmentOverlay Segments="_segmentDrafts" HandleScale="HandleScale" />
         }
