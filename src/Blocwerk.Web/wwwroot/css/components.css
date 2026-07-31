@@ -66,8 +66,11 @@
 .picker-viewport,
 .schematic-viewport { touch-action: pan-y; overscroll-behavior: contain; }
 .photo-viewport { height: 70vh; overflow: auto; -webkit-overflow-scrolling: touch; }
-/* Boulder detail: fit the card to the image so a short photo leaves no dead band
-   (which also used to swallow page scrolling); it still scrolls once zoomed in. */
+/* Boulder detail: the box is sized to the image's aspect ratio (set inline by
+   bwViewport.fitBox once the photo loads), so a short photo leaves no dead band AND the
+   box height stays put while zooming — the zoomed content scrolls inside it rather than
+   growing the card. `height: auto` lets the aspect-ratio drive the height; it is only the
+   fallback (before load / on error) that would otherwise track the content. */
 .photo-viewport.photo-section { height: auto; max-height: 80vh; }
 
 

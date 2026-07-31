@@ -347,6 +347,10 @@ else
             // No .NET callback: this page shows no zoom read-out, so JS never needs
             // to round-trip to the server for a gesture.
             await JS.InvokeVoidAsync("bwViewport.setupScroll", _photoViewportRef, null);
+
+            // Pin the card to the photo's aspect ratio so zooming scrolls inside a fixed box
+            // instead of growing the card.
+            await JS.InvokeVoidAsync("bwViewport.fitBox", _photoViewportRef);
         }
         else if (_viewMode != ViewMode.Photo)
         {

@@ -191,6 +191,35 @@ window.bwViewport = (function () {
             bindGestures(viewport, model);
         },
 
+        /**
+         * Pins a scroll-model viewport's height to its image's aspect ratio, so the box is sized
+         * to the fit image (no dead band) and — crucially — stays that height while zooming, with
+         * the widened content scrolling inside it instead of growing the card. The `--zoom` width
+         * only ever changes the content, never this box, once the aspect ratio is fixed here.
+         */
+        fitBox: function (viewport) {
+            if (!viewport) {
+                return;
+            }
+
+            const img = viewport.querySelector('img');
+            if (!img) {
+                return;
+            }
+
+            const apply = function () {
+                if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+                    viewport.style.aspectRatio = img.naturalWidth + ' / ' + img.naturalHeight;
+                }
+            };
+
+            if (img.complete) {
+                apply();
+            } else {
+                img.addEventListener('load', apply, { once: true });
+            }
+        },
+
         /** Attaches the transform model over a world layer. */
         setupTransform: function (viewport, world, dotnetHelper) {
             if (!viewport || !world || viewport._bwModel) {
