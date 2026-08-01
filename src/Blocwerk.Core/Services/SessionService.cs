@@ -1,6 +1,7 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Telemetry;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Services;
@@ -38,69 +39,98 @@ public class SessionService : ISessionService
 
     public async Task<ClimbingSession> StartSessionAsync(Guid wallId)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
-
-        // The query filter on Wall only returns walls the user is a member of, so a wall the user
-        // cannot see comes back null and is rejected.
-        var wallExists = await db.Walls.AnyAsync(w => w.Id == wallId);
-        if (!wallExists)
+        using var op = BlocwerkMetrics.TimeOperation("Session.Start", wallId);
+        try
         {
-            throw new InvalidOperationException("Wall not found");
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
+
+            // The query filter on Wall only returns walls the user is a member of, so a wall the user
+            // cannot see comes back null and is rejected.
+            var wallExists = await db.Walls.AnyAsync(w => w.Id == wallId);
+            if (!wallExists)
+            {
+                throw new InvalidOperationException("Wall not found");
+            }
+
+            await CloseOpenSessions(db, user.Id);
+
+            var session = new ClimbingSession
+            {
+                UserId = user.Id,
+                WallId = wallId,
+            };
+
+            db.ClimbingSessions.Add(session);
+            await db.SaveChangesAsync();
+
+            BlocwerkMetrics.RecordSessionStarted(wallId);
+
+            session.Wall = await db.Walls.FirstAsync(w => w.Id == wallId);
+            return session;
         }
-
-        await CloseOpenSessions(db, user.Id);
-
-        var session = new ClimbingSession
+        catch (Exception ex)
         {
-            UserId = user.Id,
-            WallId = wallId,
-        };
-
-        db.ClimbingSessions.Add(session);
-        await db.SaveChangesAsync();
-
-        session.Wall = await db.Walls.FirstAsync(w => w.Id == wallId);
-        return session;
+            op.Fail(ex);
+            throw;
+        }
     }
 
     public async Task<ClimbingSession?> GetActiveSessionAsync()
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
-
-        var session = await db.ClimbingSessions
-            .Include(s => s.Wall)
-            .Where(s => s.UserId == user.Id && s.EndedAt == null)
-            .OrderByDescending(s => s.StartedAt)
-            .FirstOrDefaultAsync();
-
-        if (session == null)
+        using var op = BlocwerkMetrics.TimeOperation("Session.GetActive");
+        try
         {
-            return null;
-        }
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
 
-        // Auto-close once the day has passed: a session is only live on the calendar day it began.
-        if (session.StartedAt.UtcDateTime.Date != DateTimeOffset.UtcNow.UtcDateTime.Date)
+            var session = await db.ClimbingSessions
+                .Include(s => s.Wall)
+                .Where(s => s.UserId == user.Id && s.EndedAt == null)
+                .OrderByDescending(s => s.StartedAt)
+                .FirstOrDefaultAsync();
+
+            if (session == null)
+            {
+                return null;
+            }
+
+            // Auto-close once the day has passed: a session is only live on the calendar day it began.
+            if (session.StartedAt.UtcDateTime.Date != DateTimeOffset.UtcNow.UtcDateTime.Date)
+            {
+                session.EndedAt = DateTimeOffset.UtcNow;
+                await db.SaveChangesAsync();
+                return null;
+            }
+
+            return session;
+        }
+        catch (Exception ex)
         {
-            session.EndedAt = DateTimeOffset.UtcNow;
-            await db.SaveChangesAsync();
-            return null;
+            op.Fail(ex);
+            throw;
         }
-
-        return session;
     }
 
     public async Task EndSessionAsync()
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
+        using var op = BlocwerkMetrics.TimeOperation("Session.End");
+        try
+        {
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
 
-        await CloseOpenSessions(db, user.Id);
-        await db.SaveChangesAsync();
+            await CloseOpenSessions(db, user.Id);
+            await db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 
     private static async Task CloseOpenSessions(BlocwerkDbContext db, Guid userId)

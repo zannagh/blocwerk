@@ -1,6 +1,7 @@
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Services;
+using Blocwerk.Core.Telemetry;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -43,6 +44,9 @@ public static class CoreServices
         builder.Services.AddScoped<IProgressionService, ProgressionService>();
         builder.Services.AddScoped<ITrainingService, TrainingService>();
         builder.Services.AddScoped<ISessionService, SessionService>();
+
+        // Polls the DB for the "how many exist now" telemetry gauges (walls, boulders, users...).
+        builder.Services.AddHostedService<TelemetryStatsCollector>();
 
         if (IsDevWallSnapshotEnabled(builder))
         {

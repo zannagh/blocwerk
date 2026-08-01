@@ -2,6 +2,7 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Telemetry;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Services;
@@ -73,176 +74,239 @@ public class BoulderFeedbackService : IBoulderFeedbackService
 
     public async Task SetRatingAsync(Guid boulderId, int stars)
     {
-        if (stars is < 1 or > 5)
+        using var op = BlocwerkMetrics.TimeOperation("BoulderFeedback.SetRating");
+        try
         {
-            throw new ArgumentOutOfRangeException(nameof(stars), "Rating must be between 1 and 5 stars");
-        }
-
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
-
-        await EnsureMemberAsync(db, boulderId, user.Id);
-
-        var existing = await db.BoulderRatings
-            .FirstOrDefaultAsync(r => r.BoulderId == boulderId && r.UserId == user.Id);
-
-        if (existing == null)
-        {
-            db.BoulderRatings.Add(new BoulderRating
+            if (stars is < 1 or > 5)
             {
-                BoulderId = boulderId,
-                UserId = user.Id,
-                Stars = stars,
-            });
-        }
-        else
-        {
-            existing.Stars = stars;
-            existing.UpdatedAt = DateTimeOffset.UtcNow;
-        }
+                throw new ArgumentOutOfRangeException(nameof(stars), "Rating must be between 1 and 5 stars");
+            }
 
-        await db.SaveChangesAsync();
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
+
+            await EnsureMemberAsync(db, boulderId, user.Id);
+
+            var existing = await db.BoulderRatings
+                .FirstOrDefaultAsync(r => r.BoulderId == boulderId && r.UserId == user.Id);
+
+            if (existing == null)
+            {
+                db.BoulderRatings.Add(new BoulderRating
+                {
+                    BoulderId = boulderId,
+                    UserId = user.Id,
+                    Stars = stars,
+                });
+            }
+            else
+            {
+                existing.Stars = stars;
+                existing.UpdatedAt = DateTimeOffset.UtcNow;
+            }
+
+            await db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 
     public async Task RemoveRatingAsync(Guid boulderId)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
-
-        var existing = await db.BoulderRatings
-            .FirstOrDefaultAsync(r => r.BoulderId == boulderId && r.UserId == user.Id);
-
-        if (existing != null)
+        using var op = BlocwerkMetrics.TimeOperation("BoulderFeedback.RemoveRating");
+        try
         {
-            db.BoulderRatings.Remove(existing);
-            await db.SaveChangesAsync();
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
+
+            var existing = await db.BoulderRatings
+                .FirstOrDefaultAsync(r => r.BoulderId == boulderId && r.UserId == user.Id);
+
+            if (existing != null)
+            {
+                db.BoulderRatings.Remove(existing);
+                await db.SaveChangesAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
         }
     }
 
     public async Task<RatingInfo> GetRatingAsync(Guid boulderId)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
+        using var op = BlocwerkMetrics.TimeOperation("BoulderFeedback.GetRating");
+        try
+        {
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
 
-        var ratings = await db.BoulderRatings
-            .Where(r => r.BoulderId == boulderId)
-            .Select(r => new { r.UserId, r.Stars })
-            .ToListAsync();
+            var ratings = await db.BoulderRatings
+                .Where(r => r.BoulderId == boulderId)
+                .Select(r => new { r.UserId, r.Stars })
+                .ToListAsync();
 
-        var average = ratings.Count > 0 ? ratings.Average(r => (double)r.Stars) : (double?)null;
-        var mine = ratings.FirstOrDefault(r => r.UserId == user.Id)?.Stars;
+            var average = ratings.Count > 0 ? ratings.Average(r => (double)r.Stars) : (double?)null;
+            var mine = ratings.FirstOrDefault(r => r.UserId == user.Id)?.Stars;
 
-        return new RatingInfo(average, ratings.Count, mine);
+            return new RatingInfo(average, ratings.Count, mine);
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 
     public async Task<bool> ToggleFavoriteAsync(Guid boulderId)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
+        using var op = BlocwerkMetrics.TimeOperation("BoulderFeedback.ToggleFavorite");
+        try
+        {
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
 
-        await EnsureMemberAsync(db, boulderId, user.Id);
+            await EnsureMemberAsync(db, boulderId, user.Id);
 
-        var isFavorite = await db.BoulderFavorites
-            .AnyAsync(f => f.BoulderId == boulderId && f.UserId == user.Id);
+            var isFavorite = await db.BoulderFavorites
+                .AnyAsync(f => f.BoulderId == boulderId && f.UserId == user.Id);
 
-        return await SetFavoriteAsync(boulderId, !isFavorite);
+            return await SetFavoriteAsync(boulderId, !isFavorite);
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 
     public async Task<bool> SetFavoriteAsync(Guid boulderId, bool favorite)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
-
-        await EnsureMemberAsync(db, boulderId, user.Id);
-
-        var existing = await db.BoulderFavorites
-            .FirstOrDefaultAsync(f => f.BoulderId == boulderId && f.UserId == user.Id);
-
-        if (favorite && existing == null)
+        using var op = BlocwerkMetrics.TimeOperation("BoulderFeedback.SetFavorite");
+        try
         {
-            db.BoulderFavorites.Add(new BoulderFavorite
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
+
+            await EnsureMemberAsync(db, boulderId, user.Id);
+
+            var existing = await db.BoulderFavorites
+                .FirstOrDefaultAsync(f => f.BoulderId == boulderId && f.UserId == user.Id);
+
+            if (favorite && existing == null)
             {
-                BoulderId = boulderId,
-                UserId = user.Id,
-            });
-            await db.SaveChangesAsync();
-        }
-        else if (!favorite && existing != null)
-        {
-            db.BoulderFavorites.Remove(existing);
-            await db.SaveChangesAsync();
-        }
+                db.BoulderFavorites.Add(new BoulderFavorite
+                {
+                    BoulderId = boulderId,
+                    UserId = user.Id,
+                });
+                await db.SaveChangesAsync();
+            }
+            else if (!favorite && existing != null)
+            {
+                db.BoulderFavorites.Remove(existing);
+                await db.SaveChangesAsync();
+            }
 
-        return favorite;
+            return favorite;
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 
     public async Task<bool> IsFavoritedAsync(Guid boulderId)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
+        using var op = BlocwerkMetrics.TimeOperation("BoulderFeedback.IsFavorited");
+        try
+        {
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
 
-        return await db.BoulderFavorites
-            .AnyAsync(f => f.BoulderId == boulderId && f.UserId == user.Id);
+            return await db.BoulderFavorites
+                .AnyAsync(f => f.BoulderId == boulderId && f.UserId == user.Id);
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 
     public async Task<List<BoulderListItem>> GetBoulderListAsync(Guid wallId)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
-
-        var boulders = await db.Boulders
-            .Include(b => b.BoulderHolds)
-            .Include(b => b.CreatedBy)
-            .Where(b => b.WallId == wallId)
-            .Where(b => !b.IsDraft || b.CreatedByUserId == user.Id)
-            .ToListAsync();
-
-        var ids = boulders.Select(b => b.Id).ToList();
-
-        var myAttempts = await db.Attempts
-            .Where(a => ids.Contains(a.BoulderId) && a.UserId == user.Id)
-            .Select(a => new { a.BoulderId, a.Type })
-            .ToListAsync();
-
-        var myFavorites = (await db.BoulderFavorites
-                .Where(f => ids.Contains(f.BoulderId) && f.UserId == user.Id)
-                .Select(f => f.BoulderId)
-                .ToListAsync())
-            .ToHashSet();
-
-        var ratings = await db.BoulderRatings
-            .Where(r => ids.Contains(r.BoulderId))
-            .Select(r => new { r.BoulderId, r.UserId, r.Stars })
-            .ToListAsync();
-
-        var attemptsByBoulder = myAttempts
-            .GroupBy(a => a.BoulderId)
-            .ToDictionary(g => g.Key, g => g.ToList());
-        var ratingsByBoulder = ratings
-            .GroupBy(r => r.BoulderId)
-            .ToDictionary(g => g.Key, g => g.ToList());
-
-        return boulders.Select(b =>
+        using var op = BlocwerkMetrics.TimeOperation("BoulderFeedback.GetBoulderList", wallId);
+        try
         {
-            var att = attemptsByBoulder.GetValueOrDefault(b.Id);
-            var rs = ratingsByBoulder.GetValueOrDefault(b.Id);
-            return new BoulderListItem(
-                b,
-                MyAttemptCount: att?.Count ?? 0,
-                HasSent: att?.Any(a => a.Type == AttemptType.Send) ?? false,
-                HasFlashed: att?.Any(a => a.Type == AttemptType.Flash) ?? false,
-                IsFavorite: myFavorites.Contains(b.Id),
-                AverageRating: rs is { Count: > 0 } ? rs.Average(r => (double)r.Stars) : null,
-                RatingCount: rs?.Count ?? 0,
-                MyRating: rs?.FirstOrDefault(r => r.UserId == user.Id)?.Stars);
-        }).ToList();
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
+
+            var boulders = await db.Boulders
+                .Include(b => b.BoulderHolds)
+                .Include(b => b.CreatedBy)
+                .Where(b => b.WallId == wallId)
+                .Where(b => !b.IsDraft || b.CreatedByUserId == user.Id)
+                .ToListAsync();
+
+            var ids = boulders.Select(b => b.Id).ToList();
+
+            var myAttempts = await db.Attempts
+                .Where(a => ids.Contains(a.BoulderId) && a.UserId == user.Id)
+                .Select(a => new { a.BoulderId, a.Type })
+                .ToListAsync();
+
+            var myFavorites = (await db.BoulderFavorites
+                    .Where(f => ids.Contains(f.BoulderId) && f.UserId == user.Id)
+                    .Select(f => f.BoulderId)
+                    .ToListAsync())
+                .ToHashSet();
+
+            var ratings = await db.BoulderRatings
+                .Where(r => ids.Contains(r.BoulderId))
+                .Select(r => new { r.BoulderId, r.UserId, r.Stars })
+                .ToListAsync();
+
+            var attemptsByBoulder = myAttempts
+                .GroupBy(a => a.BoulderId)
+                .ToDictionary(g => g.Key, g => g.ToList());
+            var ratingsByBoulder = ratings
+                .GroupBy(r => r.BoulderId)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            return boulders.Select(b =>
+            {
+                var att = attemptsByBoulder.GetValueOrDefault(b.Id);
+                var rs = ratingsByBoulder.GetValueOrDefault(b.Id);
+                return new BoulderListItem(
+                    b,
+                    MyAttemptCount: att?.Count ?? 0,
+                    HasSent: att?.Any(a => a.Type == AttemptType.Send) ?? false,
+                    HasFlashed: att?.Any(a => a.Type == AttemptType.Flash) ?? false,
+                    IsFavorite: myFavorites.Contains(b.Id),
+                    AverageRating: rs is { Count: > 0 } ? rs.Average(r => (double)r.Stars) : null,
+                    RatingCount: rs?.Count ?? 0,
+                    MyRating: rs?.FirstOrDefault(r => r.UserId == user.Id)?.Stars);
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 
     /// <summary>

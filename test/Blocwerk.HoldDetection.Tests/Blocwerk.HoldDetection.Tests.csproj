@@ -13,8 +13,4 @@
     <Content Include="walls\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
-  <ItemGroup>
-    <PackageReference Include="SkiaSharp" />
-  </ItemGroup>
-
 </Project>

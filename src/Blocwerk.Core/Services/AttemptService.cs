@@ -2,6 +2,7 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Telemetry;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Services;
@@ -55,102 +56,149 @@ public class AttemptService : IAttemptService
         Guid? clientRequestId = null,
         DateTimeOffset? timestamp = null)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
-
-        var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId)
-                      ?? throw new InvalidOperationException("Boulder not found");
-
-        if (clientRequestId.HasValue)
+        using var op = BlocwerkMetrics.TimeOperation("Attempt.Log");
+        try
         {
-            var replayed = await db.Attempts
-                .FirstOrDefaultAsync(a => a.ClientRequestId == clientRequestId.Value);
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
 
-            if (replayed != null)
+            var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId)
+                          ?? throw new InvalidOperationException("Boulder not found");
+
+            if (clientRequestId.HasValue)
             {
-                return replayed;
+                var replayed = await db.Attempts
+                    .FirstOrDefaultAsync(a => a.ClientRequestId == clientRequestId.Value);
+
+                if (replayed != null)
+                {
+                    return replayed;
+                }
             }
+
+            var attempt = new Attempt
+            {
+                BoulderId = boulderId,
+                UserId = user.Id,
+                Type = type,
+                Notes = notes,
+                ClientRequestId = clientRequestId,
+            };
+
+            if (timestamp.HasValue)
+            {
+                attempt.Timestamp = timestamp.Value;
+            }
+
+            db.Attempts.Add(attempt);
+            await db.SaveChangesAsync();
+
+            BlocwerkMetrics.RecordAttemptLogged(boulder.WallId);
+
+            await _activityLogService.LogAsync(boulder.WallId, boulderId, ActivityType.AttemptLogged, type.ToString());
+            return attempt;
         }
-
-        var attempt = new Attempt
+        catch (Exception ex)
         {
-            BoulderId = boulderId,
-            UserId = user.Id,
-            Type = type,
-            Notes = notes,
-            ClientRequestId = clientRequestId,
-        };
-
-        if (timestamp.HasValue)
-        {
-            attempt.Timestamp = timestamp.Value;
+            op.Fail(ex);
+            throw;
         }
-
-        db.Attempts.Add(attempt);
-        await db.SaveChangesAsync();
-
-        await _activityLogService.LogAsync(boulder.WallId, boulderId, ActivityType.AttemptLogged, type.ToString());
-        return attempt;
     }
 
     public async Task<List<Attempt>> GetAttemptsForBoulderAsync(Guid boulderId)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
+        using var op = BlocwerkMetrics.TimeOperation("Attempt.GetForBoulder");
+        try
+        {
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
 
-        return await db.Attempts
-            .Include(a => a.User)
-            .Where(a => a.BoulderId == boulderId)
-            .OrderByDescending(a => a.Timestamp)
-            .ToListAsync();
+            return await db.Attempts
+                .Include(a => a.User)
+                .Where(a => a.BoulderId == boulderId)
+                .OrderByDescending(a => a.Timestamp)
+                .ToListAsync();
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 
     public async Task<List<Attempt>> GetMyAttemptsAsync(Guid? wallId = null)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
-
-        var query = db.Attempts
-            .Include(a => a.Boulder)
-            .Where(a => a.UserId == user.Id);
-
-        if (wallId.HasValue)
+        using var op = BlocwerkMetrics.TimeOperation("Attempt.GetMine", wallId);
+        try
         {
-            query = query.Where(a => a.Boulder.WallId == wallId.Value);
-        }
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
 
-        return await query.OrderByDescending(a => a.Timestamp).ToListAsync();
+            var query = db.Attempts
+                .Include(a => a.Boulder)
+                .Where(a => a.UserId == user.Id);
+
+            if (wallId.HasValue)
+            {
+                query = query.Where(a => a.Boulder.WallId == wallId.Value);
+            }
+
+            return await query.OrderByDescending(a => a.Timestamp).ToListAsync();
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 
     public async Task DeleteAttemptAsync(Guid attemptId)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
+        using var op = BlocwerkMetrics.TimeOperation("Attempt.Delete");
+        try
+        {
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
 
-        var attempt = await db.Attempts.FirstOrDefaultAsync(a => a.Id == attemptId && a.UserId == user.Id)
-                      ?? throw new InvalidOperationException("Attempt not found");
+            var attempt = await db.Attempts.FirstOrDefaultAsync(a => a.Id == attemptId && a.UserId == user.Id)
+                          ?? throw new InvalidOperationException("Attempt not found");
 
-        db.Attempts.Remove(attempt);
-        await db.SaveChangesAsync();
+            db.Attempts.Remove(attempt);
+            await db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 
     public async Task<AttemptSummary> GetBoulderSummaryForUserAsync(Guid boulderId)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
+        using var op = BlocwerkMetrics.TimeOperation("Attempt.GetBoulderSummary");
+        try
+        {
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
 
-        var attempts = await db.Attempts
-            .Where(a => a.BoulderId == boulderId && a.UserId == user.Id)
-            .ToListAsync();
+            var attempts = await db.Attempts
+                .Where(a => a.BoulderId == boulderId && a.UserId == user.Id)
+                .ToListAsync();
 
-        return new AttemptSummary(
-            TotalAttempts: attempts.Count,
-            HasSent: attempts.Any(a => a.Type == AttemptType.Send),
-            HasFlashed: attempts.Any(a => a.Type == AttemptType.Flash));
+            return new AttemptSummary(
+                TotalAttempts: attempts.Count,
+                HasSent: attempts.Any(a => a.Type == AttemptType.Send),
+                HasFlashed: attempts.Any(a => a.Type == AttemptType.Flash));
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 }

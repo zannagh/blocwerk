@@ -1,6 +1,7 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Telemetry;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Services;
@@ -29,66 +30,102 @@ public class TrainingService : ITrainingService
 
     public async Task<HangboardSession> SaveHangboardSessionAsync(int edgeSizeMm, double additionalWeightKg, TimeSpan duration, int sets, string? notes = null)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-
-        var session = new HangboardSession
+        using var op = BlocwerkMetrics.TimeOperation("Training.SaveHangboard");
+        try
         {
-            UserId = user.Id,
-            EdgeSizeMm = edgeSizeMm,
-            AdditionalWeightKg = additionalWeightKg,
-            Duration = duration,
-            Sets = sets,
-            Notes = notes,
-        };
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
 
-        db.HangboardSessions.Add(session);
-        await db.SaveChangesAsync();
-        return session;
+            var session = new HangboardSession
+            {
+                UserId = user.Id,
+                EdgeSizeMm = edgeSizeMm,
+                AdditionalWeightKg = additionalWeightKg,
+                Duration = duration,
+                Sets = sets,
+                Notes = notes,
+            };
+
+            db.HangboardSessions.Add(session);
+            await db.SaveChangesAsync();
+            return session;
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 
     public async Task<PullupSession> SavePullupSessionAsync(int repetitions, double additionalWeightKg, int sets, string? notes = null)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-
-        var session = new PullupSession
+        using var op = BlocwerkMetrics.TimeOperation("Training.SavePullup");
+        try
         {
-            UserId = user.Id,
-            Repetitions = repetitions,
-            AdditionalWeightKg = additionalWeightKg,
-            Sets = sets,
-            Notes = notes,
-        };
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
 
-        db.PullupSessions.Add(session);
-        await db.SaveChangesAsync();
-        return session;
+            var session = new PullupSession
+            {
+                UserId = user.Id,
+                Repetitions = repetitions,
+                AdditionalWeightKg = additionalWeightKg,
+                Sets = sets,
+                Notes = notes,
+            };
+
+            db.PullupSessions.Add(session);
+            await db.SaveChangesAsync();
+            return session;
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 
     public async Task DeleteHangboardSessionAsync(Guid sessionId)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        using var op = BlocwerkMetrics.TimeOperation("Training.DeleteHangboard");
+        try
+        {
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
 
-        var session = await db.HangboardSessions
-            .FirstOrDefaultAsync(h => h.Id == sessionId && h.UserId == user.Id)
-            ?? throw new InvalidOperationException("Session not found");
+            var session = await db.HangboardSessions
+                .FirstOrDefaultAsync(h => h.Id == sessionId && h.UserId == user.Id)
+                ?? throw new InvalidOperationException("Session not found");
 
-        db.HangboardSessions.Remove(session);
-        await db.SaveChangesAsync();
+            db.HangboardSessions.Remove(session);
+            await db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 
     public async Task DeletePullupSessionAsync(Guid sessionId)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        using var op = BlocwerkMetrics.TimeOperation("Training.DeletePullup");
+        try
+        {
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
 
-        var session = await db.PullupSessions
-            .FirstOrDefaultAsync(p => p.Id == sessionId && p.UserId == user.Id)
-            ?? throw new InvalidOperationException("Session not found");
+            var session = await db.PullupSessions
+                .FirstOrDefaultAsync(p => p.Id == sessionId && p.UserId == user.Id)
+                ?? throw new InvalidOperationException("Session not found");
 
-        db.PullupSessions.Remove(session);
-        await db.SaveChangesAsync();
+            db.PullupSessions.Remove(session);
+            await db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 }

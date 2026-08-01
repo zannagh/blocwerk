@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Telemetry;
 using Blocwerk.HoldDetection.Alignment;
 using Serilog;
 
@@ -16,12 +18,18 @@ public sealed class SkiaImageAlignmentService : IImageAlignmentService
     {
         return Task.Run(() =>
         {
+            var start = Stopwatch.GetTimestamp();
+            using var activity = Otel.ActivitySource.StartActivity("ImageAlignment.Run");
+
             try
             {
                 var result = estimate();
                 if (result == null)
                 {
                     Log.Information("[Image Alignment] No reliable alignment found");
+                    var noneMs = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+                    activity?.SetTag("outcome", "none");
+                    BlocwerkMetrics.RecordImageAlignment("none", noneMs);
                 }
                 else
                 {
@@ -29,6 +37,9 @@ public sealed class SkiaImageAlignmentService : IImageAlignmentService
                         "[Image Alignment] Aligned with {Inliers} inliers (confidence {Confidence})",
                         result.Inliers,
                         result.Confidence);
+                    var alignedMs = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+                    activity?.SetTag("outcome", "aligned");
+                    BlocwerkMetrics.RecordImageAlignment("aligned", alignedMs);
                 }
 
                 return result;
@@ -36,6 +47,9 @@ public sealed class SkiaImageAlignmentService : IImageAlignmentService
             catch (Exception ex)
             {
                 Log.Warning("[Image Alignment] Failed ({Type}: {Message})", ex.GetType().Name, ex.Message);
+                var failedMs = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+                activity?.SetTag("outcome", "failed");
+                BlocwerkMetrics.RecordImageAlignment("failed", failedMs);
                 return null;
             }
         });

@@ -3,6 +3,7 @@ using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Helpers;
+using Blocwerk.Core.Telemetry;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Services;
@@ -52,153 +53,189 @@ public class ProgressionService : IProgressionService
 
     public async Task<UserProgression> GetProgressionAsync()
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        using var op = BlocwerkMetrics.TimeOperation("Progression.Get");
+        try
+        {
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
 
-        var windowDays = user.ProgressionWindowDays;
-        var cutoff = DateTimeOffset.UtcNow.AddDays(-windowDays);
+            var windowDays = user.ProgressionWindowDays;
+            var cutoff = DateTimeOffset.UtcNow.AddDays(-windowDays);
 
-        var attempts = await db.Attempts
-            .Include(a => a.Boulder)
-            .Where(a => a.UserId == user.Id && a.Timestamp >= cutoff)
-            .ToListAsync();
+            var attempts = await db.Attempts
+                .Include(a => a.Boulder)
+                .Where(a => a.UserId == user.Id && a.Timestamp >= cutoff)
+                .ToListAsync();
 
-        var boulderScore = CalculateBoulderScore(attempts);
-        var boulderGrade = GradeScoring.ScoreToGrade(boulderScore);
+            var boulderScore = CalculateBoulderScore(attempts);
+            var boulderGrade = GradeScoring.ScoreToGrade(boulderScore);
 
-        var hangboard = await db.HangboardSessions
-            .Where(h => h.UserId == user.Id && h.Timestamp >= cutoff)
-            .ToListAsync();
-        var pullups = await db.PullupSessions
-            .Where(p => p.UserId == user.Id && p.Timestamp >= cutoff)
-            .ToListAsync();
-        var trainingScore = CalculateTrainingScore(hangboard, pullups);
+            var hangboard = await db.HangboardSessions
+                .Where(h => h.UserId == user.Id && h.Timestamp >= cutoff)
+                .ToListAsync();
+            var pullups = await db.PullupSessions
+                .Where(p => p.UserId == user.Id && p.Timestamp >= cutoff)
+                .ToListAsync();
+            var trainingScore = CalculateTrainingScore(hangboard, pullups);
 
-        var boulderCurve = await BuildBoulderCurveAsync(db, user.Id, windowDays);
-        var trainingCurve = await BuildTrainingCurveAsync(db, user.Id, windowDays);
+            var boulderCurve = await BuildBoulderCurveAsync(db, user.Id, windowDays);
+            var trainingCurve = await BuildTrainingCurveAsync(db, user.Id, windowDays);
 
-        return new UserProgression(boulderScore, boulderGrade, trainingScore, boulderCurve, trainingCurve, windowDays);
+            return new UserProgression(boulderScore, boulderGrade, trainingScore, boulderCurve, trainingCurve, windowDays);
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 
     public async Task<List<DayActivity>> GetActivityGridAsync(int weeks = 20)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-
-        var days = weeks * 7;
-        var since = DateTimeOffset.UtcNow.AddDays(-days);
-
-        var attempts = await db.Attempts
-            .Where(a => a.UserId == user.Id && a.Timestamp >= since)
-            .Select(a => a.Timestamp)
-            .ToListAsync();
-
-        var hangboard = await db.HangboardSessions
-            .Where(h => h.UserId == user.Id && h.Timestamp >= since)
-            .Select(h => h.Timestamp)
-            .ToListAsync();
-
-        var pullups = await db.PullupSessions
-            .Where(p => p.UserId == user.Id && p.Timestamp >= since)
-            .Select(p => p.Timestamp)
-            .ToListAsync();
-
-        var allTimestamps = attempts.Concat(hangboard).Concat(pullups).ToList();
-
-        var result = new List<DayActivity>();
-        var startDate = DateOnly.FromDateTime(DateTimeOffset.UtcNow.AddDays(-days).Date);
-
-        for (int i = 0; i <= days; i++)
+        using var op = BlocwerkMetrics.TimeOperation("Progression.GetActivityGrid");
+        try
         {
-            var date = startDate.AddDays(i);
-            var dayStart = new DateTimeOffset(date.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
-            var dayEnd = dayStart.AddDays(1);
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
 
-            var dayStamps = allTimestamps.Where(t => t >= dayStart && t < dayEnd).ToList();
-            int intensity = 0;
+            var days = weeks * 7;
+            var since = DateTimeOffset.UtcNow.AddDays(-days);
 
-            if (dayStamps.Count > 0)
+            var attempts = await db.Attempts
+                .Where(a => a.UserId == user.Id && a.Timestamp >= since)
+                .Select(a => a.Timestamp)
+                .ToListAsync();
+
+            var hangboard = await db.HangboardSessions
+                .Where(h => h.UserId == user.Id && h.Timestamp >= since)
+                .Select(h => h.Timestamp)
+                .ToListAsync();
+
+            var pullups = await db.PullupSessions
+                .Where(p => p.UserId == user.Id && p.Timestamp >= since)
+                .Select(p => p.Timestamp)
+                .ToListAsync();
+
+            var allTimestamps = attempts.Concat(hangboard).Concat(pullups).ToList();
+
+            var result = new List<DayActivity>();
+            var startDate = DateOnly.FromDateTime(DateTimeOffset.UtcNow.AddDays(-days).Date);
+
+            for (int i = 0; i <= days; i++)
             {
-                var span = dayStamps.Max() - dayStamps.Min();
-                var count = dayStamps.Count;
+                var date = startDate.AddDays(i);
+                var dayStart = new DateTimeOffset(date.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+                var dayEnd = dayStart.AddDays(1);
 
-                if (span.TotalMinutes >= 90 || count >= 15)
+                var dayStamps = allTimestamps.Where(t => t >= dayStart && t < dayEnd).ToList();
+                int intensity = 0;
+
+                if (dayStamps.Count > 0)
                 {
-                    intensity = 4;
+                    var span = dayStamps.Max() - dayStamps.Min();
+                    var count = dayStamps.Count;
+
+                    if (span.TotalMinutes >= 90 || count >= 15)
+                    {
+                        intensity = 4;
+                    }
+                    else if (span.TotalMinutes >= 60 || count >= 10)
+                    {
+                        intensity = 3;
+                    }
+                    else if (span.TotalMinutes >= 30 || count >= 5)
+                    {
+                        intensity = 2;
+                    }
+                    else
+                    {
+                        intensity = 1;
+                    }
                 }
-                else if (span.TotalMinutes >= 60 || count >= 10)
-                {
-                    intensity = 3;
-                }
-                else if (span.TotalMinutes >= 30 || count >= 5)
-                {
-                    intensity = 2;
-                }
-                else
-                {
-                    intensity = 1;
-                }
+
+                result.Add(new DayActivity(date, intensity));
             }
 
-            result.Add(new DayActivity(date, intensity));
+            return result;
         }
-
-        return result;
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 
     public async Task<DaySummary> GetDaySummaryAsync(DateOnly date)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-
-        var dayStart = new DateTimeOffset(date.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
-        var dayEnd = dayStart.AddDays(1);
-
-        var attempts = await db.Attempts
-            .Include(a => a.Boulder)
-            .Where(a => a.UserId == user.Id && a.Timestamp >= dayStart && a.Timestamp < dayEnd)
-            .ToListAsync();
-
-        var boulders = attempts
-            .GroupBy(a => a.BoulderId)
-            .Select(g =>
-            {
-                var first = g.First();
-                var best = g.Max(a => a.Type);
-                return new BoulderAttemptSummary(first.Boulder.Name, first.Boulder.Grade, best, g.Count());
-            })
-            .ToList();
-
-        var hangboard = await db.HangboardSessions
-            .Where(h => h.UserId == user.Id && h.Timestamp >= dayStart && h.Timestamp < dayEnd)
-            .ToListAsync();
-
-        var pullups = await db.PullupSessions
-            .Where(p => p.UserId == user.Id && p.Timestamp >= dayStart && p.Timestamp < dayEnd)
-            .ToListAsync();
-
-        TimeSpan? sessionDuration = null;
-        var allTimestamps = attempts.Select(a => a.Timestamp)
-            .Concat(hangboard.Select(h => h.Timestamp))
-            .Concat(pullups.Select(p => p.Timestamp))
-            .ToList();
-
-        if (allTimestamps.Count >= 2)
+        using var op = BlocwerkMetrics.TimeOperation("Progression.GetDaySummary");
+        try
         {
-            sessionDuration = allTimestamps.Max() - allTimestamps.Min();
-        }
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
 
-        return new DaySummary(date, boulders, hangboard, pullups, sessionDuration);
+            var dayStart = new DateTimeOffset(date.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+            var dayEnd = dayStart.AddDays(1);
+
+            var attempts = await db.Attempts
+                .Include(a => a.Boulder)
+                .Where(a => a.UserId == user.Id && a.Timestamp >= dayStart && a.Timestamp < dayEnd)
+                .ToListAsync();
+
+            var boulders = attempts
+                .GroupBy(a => a.BoulderId)
+                .Select(g =>
+                {
+                    var first = g.First();
+                    var best = g.Max(a => a.Type);
+                    return new BoulderAttemptSummary(first.Boulder.Name, first.Boulder.Grade, best, g.Count());
+                })
+                .ToList();
+
+            var hangboard = await db.HangboardSessions
+                .Where(h => h.UserId == user.Id && h.Timestamp >= dayStart && h.Timestamp < dayEnd)
+                .ToListAsync();
+
+            var pullups = await db.PullupSessions
+                .Where(p => p.UserId == user.Id && p.Timestamp >= dayStart && p.Timestamp < dayEnd)
+                .ToListAsync();
+
+            TimeSpan? sessionDuration = null;
+            var allTimestamps = attempts.Select(a => a.Timestamp)
+                .Concat(hangboard.Select(h => h.Timestamp))
+                .Concat(pullups.Select(p => p.Timestamp))
+                .ToList();
+
+            if (allTimestamps.Count >= 2)
+            {
+                sessionDuration = allTimestamps.Max() - allTimestamps.Min();
+            }
+
+            return new DaySummary(date, boulders, hangboard, pullups, sessionDuration);
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 
     public async Task UpdateProgressionWindowAsync(int days)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        using var op = BlocwerkMetrics.TimeOperation("Progression.UpdateWindow");
+        try
+        {
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
 
-        var dbUser = await db.Users.FirstAsync(u => u.Id == user.Id);
-        dbUser.ProgressionWindowDays = Math.Clamp(days, 7, 365);
-        await db.SaveChangesAsync();
+            var dbUser = await db.Users.FirstAsync(u => u.Id == user.Id);
+            dbUser.ProgressionWindowDays = Math.Clamp(days, 7, 365);
+            await db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 
     private static double CalculateBoulderScore(List<Attempt> attempts)

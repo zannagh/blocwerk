@@ -1,6 +1,7 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Telemetry;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Services;
@@ -51,66 +52,93 @@ public class WallSegmentService : IWallSegmentService
 
     public async Task<List<WallSegment>> GetSegmentsAsync(Guid wallId)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
+        using var op = BlocwerkMetrics.TimeOperation("WallSegment.Get", wallId);
+        try
+        {
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
 
-        return await db.WallSegments
-            .Where(s => s.WallId == wallId)
-            .OrderBy(s => s.SortOrder)
-            .ToListAsync();
+            return await db.WallSegments
+                .Where(s => s.WallId == wallId)
+                .OrderBy(s => s.SortOrder)
+                .ToListAsync();
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 
     public async Task<List<WallSegment>> ReplaceSegmentsAsync(Guid wallId, IEnumerable<WallSegmentInput> segments)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
-
-        var wall = await db.Walls
-                       .Include(w => w.Segments)
-                       .FirstOrDefaultAsync(w => w.Id == wallId)
-                   ?? throw new InvalidOperationException("Wall not found");
-
-        db.WallSegments.RemoveRange(wall.Segments);
-
-        var created = new List<WallSegment>();
-        foreach (var input in segments)
+        using var op = BlocwerkMetrics.TimeOperation("WallSegment.Save", wallId);
+        try
         {
-            if (input.Points.Count < 3)
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
+
+            var wall = await db.Walls
+                           .Include(w => w.Segments)
+                           .FirstOrDefaultAsync(w => w.Id == wallId)
+                       ?? throw new InvalidOperationException("Wall not found");
+
+            db.WallSegments.RemoveRange(wall.Segments);
+
+            var created = new List<WallSegment>();
+            foreach (var input in segments)
             {
-                throw new InvalidOperationException("A segment needs at least three points");
+                if (input.Points.Count < 3)
+                {
+                    throw new InvalidOperationException("A segment needs at least three points");
+                }
+
+                var segment = new WallSegment
+                {
+                    WallId = wallId,
+                    Name = input.Name,
+                    Angle = Math.Clamp(input.Angle, MinAngle, MaxAngle),
+                    Yaw = Math.Clamp(input.Yaw, MinYaw, MaxYaw),
+                    Kind = input.Kind,
+                    Points = input.Points,
+                    SortOrder = input.SortOrder,
+                };
+
+                created.Add(segment);
+                db.WallSegments.Add(segment);
             }
 
-            var segment = new WallSegment
-            {
-                WallId = wallId,
-                Name = input.Name,
-                Angle = Math.Clamp(input.Angle, MinAngle, MaxAngle),
-                Yaw = Math.Clamp(input.Yaw, MinYaw, MaxYaw),
-                Kind = input.Kind,
-                Points = input.Points,
-                SortOrder = input.SortOrder,
-            };
-
-            created.Add(segment);
-            db.WallSegments.Add(segment);
+            await db.SaveChangesAsync();
+            return created.OrderBy(s => s.SortOrder).ToList();
         }
-
-        await db.SaveChangesAsync();
-        return created.OrderBy(s => s.SortOrder).ToList();
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 
     public async Task DeleteSegmentAsync(Guid segmentId)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
+        using var op = BlocwerkMetrics.TimeOperation("WallSegment.Delete");
+        try
+        {
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
 
-        var segment = await db.WallSegments.FirstOrDefaultAsync(s => s.Id == segmentId)
-                      ?? throw new InvalidOperationException("Segment not found");
+            var segment = await db.WallSegments.FirstOrDefaultAsync(s => s.Id == segmentId)
+                          ?? throw new InvalidOperationException("Segment not found");
 
-        db.WallSegments.Remove(segment);
-        await db.SaveChangesAsync();
+            db.WallSegments.Remove(segment);
+            await db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 }

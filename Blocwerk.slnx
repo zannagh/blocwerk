@@ -1,4 +1,9 @@
 <Solution>
+  <Folder Name="/Solution Items/">
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="global.json" />
+  </Folder>
   <Folder Name="/test/">
     <Project Path="test/Blocwerk.Core.Tests/Blocwerk.Core.Tests.csproj" />
     <Project Path="test/Blocwerk.HoldDetection.Tests/Blocwerk.HoldDetection.Tests.csproj" />

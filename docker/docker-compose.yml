@@ -11,12 +11,26 @@ services:
       - ./pgdata:/var/lib/postgresql/data
     restart: unless-stopped
 
+  # Not for a public endpoint: DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS drops the
+  # login token and OTLP auth so it "just works" on the internal network. Data is kept
+  # in-memory (a rolling window), so it survives for ad-hoc debugging but not restarts.
+  otel-dashboard:
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:9.0
+    environment:
+      DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
+    ports:
+      - "18888:18888"   # web UI — open http://localhost:18888
+      - "18889:18889"   # OTLP/gRPC ingest
+    restart: unless-stopped
+
   blocwerk:
     image: ghcr.io/zannagh/blocwerk:latest
     ports:
       - "5050:5050"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-dashboard:18889"
+      OTEL_SERVICE_NAME: Blocwerk
       POSTGRES__HOST: postgres
       POSTGRES__PORT: "5432"
       POSTGRES__DATABASE: blocwerk
@@ -26,4 +40,5 @@ services:
       - ./appsettings.json:/app/appsettings.json:ro
     depends_on:
       - postgres
+      - otel-dashboard
     restart: unless-stopped

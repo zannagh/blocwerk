@@ -1,20 +1,31 @@
+using System.Diagnostics;
+using System.Diagnostics.Metrics;
+using System.Reflection;
 using Blocwerk.Authentication;
 using Blocwerk.Authentication.Controllers;
 using Blocwerk.Core;
 using Blocwerk.Core.Services;
+using Blocwerk.Core.Telemetry;
 using Blocwerk.HoldDetection;
 using Blocwerk.Web.Components;
 using Blocwerk.Web.Controllers;
 using Blocwerk.Web.State;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
+using OpenTelemetry.Logs;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using Serilog;
 
 namespace Blocwerk.Web;
 
 public static class Program
 {
+
+
     public static void Main(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
@@ -25,7 +36,73 @@ public static class Program
             .WriteTo.File("logs/blocwerk.log", rollingInterval: RollingInterval.Day)
             .CreateLogger();
 
+        builder.Logging.AddSimpleConsole(options =>
+        {
+            options.IncludeScopes = false;
+            options.TimestampFormat = "[dd/MM/yyyy - HH:mm:ss.FFFF] ";
+        });
+
         builder.Host.UseSerilog();
+
+        var serviceName = "Blocwerk";
+        var serviceVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "0.1.0";
+
+        // Register the custom instruments (incl. observable gauges) before the meter is exported.
+        BlocwerkMetrics.Initialize();
+
+        builder.Services.AddOpenTelemetry()
+            .ConfigureResource(resource => resource.AddService(serviceName: serviceName, serviceVersion: serviceVersion))
+            .WithTracing(tracing =>
+            {
+                tracing
+                    .AddSource(Otel.ActivitySource.Name)
+                    .AddAspNetCoreInstrumentation(options =>
+                    {
+                        options.RecordException = true;
+                        options.EnrichWithHttpRequest = (activity, httpRequest) =>
+                        {
+                            activity.SetTag("http.request.path", httpRequest.Path);
+                        };
+                        options.EnrichWithHttpResponse = (activity, httpResponse) =>
+                        {
+                            activity.SetTag("http.response.status_code", httpResponse.StatusCode);
+                        };
+                    })
+                    .AddHttpClientInstrumentation(options => { options.RecordException = true; });
+
+                var otlpEndpoint = builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"];
+                if (!string.IsNullOrEmpty(otlpEndpoint))
+                {
+                    tracing.AddOtlpExporter();
+                }
+            })
+            .WithMetrics(metrics =>
+            {
+                metrics
+                    .AddMeter(Otel.Meter.Name)
+                    .AddAspNetCoreInstrumentation()
+                    .AddHttpClientInstrumentation()
+                    .AddRuntimeInstrumentation();
+
+                var otlpEndpoint = builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"];
+                if (!string.IsNullOrEmpty(otlpEndpoint))
+                {
+                    metrics.AddOtlpExporter();
+                }
+            });
+
+        // Add OpenTelemetry Logging
+        builder.Logging.AddOpenTelemetry(logging =>
+        {
+            logging.IncludeFormattedMessage = true;
+            logging.IncludeScopes = true;
+
+            var otlpEndpoint = builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"];
+            if (!string.IsNullOrEmpty(otlpEndpoint))
+            {
+                logging.AddOtlpExporter();
+            }
+        });
 
         builder.Services.Configure<ForwardedHeadersOptions>(options =>
         {
@@ -58,6 +135,9 @@ public static class Program
         // Per-circuit cache of the user's live session, so the tab bar and the activity page share
         // one source of truth and the "Session" indicator lights up the moment a session starts.
         builder.Services.AddScoped<SessionState>();
+
+        // Counts live circuits into the "connected users" gauge.
+        builder.Services.AddScoped<CircuitHandler, TelemetryCircuitHandler>();
 
         ConfigureApiCookieBehaviour(builder);
 

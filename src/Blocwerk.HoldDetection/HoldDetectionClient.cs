@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Telemetry;
 using Serilog;
 using SkiaSharp;
 using YoloDotNet;
@@ -19,6 +21,9 @@ public sealed class YoloHoldDetectionService : IHoldDetectionService, IDisposabl
 
     public Task<List<DetectedHold>> DetectHoldsAsync(byte[] imageData, HoldDetectionParameters? parameters = null)
     {
+        var start = Stopwatch.GetTimestamp();
+        using var activity = Otel.ActivitySource.StartActivity("HoldDetection.Detect");
+
         try
         {
             EnsureModelLoaded();
@@ -27,6 +32,10 @@ public sealed class YoloHoldDetectionService : IHoldDetectionService, IDisposabl
             if (skImage == null)
             {
                 Log.Warning("[Hold Detection] Could not decode image");
+                var noneMs = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+                activity?.SetTag("detector", "none");
+                activity?.SetTag("holds", 0);
+                BlocwerkMetrics.RecordImageRecognition(null, "detect", "none", 0, noneMs);
                 return Task.FromResult(new List<DetectedHold>());
             }
 
@@ -52,17 +61,31 @@ public sealed class YoloHoldDetectionService : IHoldDetectionService, IDisposabl
                 holds.Count,
                 results.Count - holds.Count);
 
+            var successMs = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+            activity?.SetTag("detector", "yolo");
+            activity?.SetTag("holds", holds.Count);
+            BlocwerkMetrics.RecordImageRecognition(null, "detect", "yolo", holds.Count, successMs);
             return Task.FromResult(holds);
         }
         catch (FileNotFoundException)
         {
             Log.Warning("[Hold Detection] Model not found at {Path}, using color-based detection", _modelPath);
-            return Task.FromResult(ColorBasedDetection.Detect(imageData, parameters));
+            var holds = ColorBasedDetection.Detect(imageData, parameters);
+            var ms = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+            activity?.SetTag("detector", "color");
+            activity?.SetTag("holds", holds.Count);
+            BlocwerkMetrics.RecordImageRecognition(null, "detect", "color", holds.Count, ms);
+            return Task.FromResult(holds);
         }
         catch (Exception ex)
         {
             Log.Warning("[Hold Detection] YOLO failed ({Type}: {Message}), falling back to color-based detection", ex.GetType().Name, ex.Message);
-            return Task.FromResult(ColorBasedDetection.Detect(imageData, parameters));
+            var holds = ColorBasedDetection.Detect(imageData, parameters);
+            var ms = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+            activity?.SetTag("detector", "color");
+            activity?.SetTag("holds", holds.Count);
+            BlocwerkMetrics.RecordImageRecognition(null, "detect", "color", holds.Count, ms);
+            return Task.FromResult(holds);
         }
     }
 

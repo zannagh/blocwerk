@@ -2,6 +2,7 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Telemetry;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Services;
@@ -38,67 +39,96 @@ public class CommentService : ICommentService
 
     public async Task<BoulderComment> AddCommentAsync(Guid boulderId, string text, Guid? clientRequestId = null)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
-
-        var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId)
-                      ?? throw new InvalidOperationException("Boulder not found");
-
-        if (clientRequestId.HasValue)
+        using var op = BlocwerkMetrics.TimeOperation("Comment.Add");
+        try
         {
-            var replayed = await db.BoulderComments
-                .Include(c => c.User)
-                .FirstOrDefaultAsync(c => c.ClientRequestId == clientRequestId.Value);
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
 
-            if (replayed != null)
+            var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId)
+                          ?? throw new InvalidOperationException("Boulder not found");
+
+            if (clientRequestId.HasValue)
             {
-                return replayed;
+                var replayed = await db.BoulderComments
+                    .Include(c => c.User)
+                    .FirstOrDefaultAsync(c => c.ClientRequestId == clientRequestId.Value);
+
+                if (replayed != null)
+                {
+                    return replayed;
+                }
             }
+
+            var comment = new BoulderComment
+            {
+                BoulderId = boulderId,
+                UserId = user.Id,
+                Text = text,
+                ClientRequestId = clientRequestId,
+            };
+
+            db.BoulderComments.Add(comment);
+            await db.SaveChangesAsync();
+
+            BlocwerkMetrics.RecordCommentAdded(boulder.WallId);
+
+            await _activityLogService.LogAsync(boulder.WallId, boulderId, ActivityType.CommentAdded);
+
+            comment.User = user;
+            return comment;
         }
-
-        var comment = new BoulderComment
+        catch (Exception ex)
         {
-            BoulderId = boulderId,
-            UserId = user.Id,
-            Text = text,
-            ClientRequestId = clientRequestId,
-        };
-
-        db.BoulderComments.Add(comment);
-        await db.SaveChangesAsync();
-
-        await _activityLogService.LogAsync(boulder.WallId, boulderId, ActivityType.CommentAdded);
-
-        comment.User = user;
-        return comment;
+            op.Fail(ex);
+            throw;
+        }
     }
 
     public async Task<(List<BoulderComment> Items, int TotalCount)> GetCommentsAsync(Guid boulderId, int page = 0, int pageSize = 10)
     {
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = Guid.Empty;
+        using var op = BlocwerkMetrics.TimeOperation("Comment.Get");
+        try
+        {
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = Guid.Empty;
 
-        var query = db.BoulderComments
-            .Include(c => c.User)
-            .Where(c => c.BoulderId == boulderId)
-            .OrderByDescending(c => c.CreatedAt);
+            var query = db.BoulderComments
+                .Include(c => c.User)
+                .Where(c => c.BoulderId == boulderId)
+                .OrderByDescending(c => c.CreatedAt);
 
-        var total = await query.CountAsync();
-        var items = await query.Skip(page * pageSize).Take(pageSize).ToListAsync();
+            var total = await query.CountAsync();
+            var items = await query.Skip(page * pageSize).Take(pageSize).ToListAsync();
 
-        return (items, total);
+            return (items, total);
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 
     public async Task DeleteCommentAsync(Guid commentId)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        using var op = BlocwerkMetrics.TimeOperation("Comment.Delete");
+        try
+        {
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
 
-        var comment = await db.BoulderComments.FirstOrDefaultAsync(c => c.Id == commentId && c.UserId == user.Id)
-                      ?? throw new InvalidOperationException("Comment not found");
+            var comment = await db.BoulderComments.FirstOrDefaultAsync(c => c.Id == commentId && c.UserId == user.Id)
+                          ?? throw new InvalidOperationException("Comment not found");
 
-        db.BoulderComments.Remove(comment);
-        await db.SaveChangesAsync();
+            db.BoulderComments.Remove(comment);
+            await db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 }

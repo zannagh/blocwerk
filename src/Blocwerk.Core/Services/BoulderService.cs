@@ -2,6 +2,7 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Telemetry;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Services;
@@ -142,115 +143,134 @@ public class BoulderService : IBoulderService
         string? footColorOnly = null,
         Guid? id = null)
     {
-        holds = EnforceHandsFollowFeet(holds, handsFollowFeet);
-
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
-
-        // Idempotent replay: a queued offline create that reaches the server twice must not
-        // insert a second boulder. The client mints the id, so an existing row under that id is
-        // the earlier apply of this very create; return it unchanged rather than re-inserting.
-        if (id.HasValue)
+        using var op = BlocwerkMetrics.TimeOperation("Boulder.Create", wallId);
+        try
         {
-            var existing = await db.Boulders
-                .Include(b => b.BoulderHolds)
-                .FirstOrDefaultAsync(b => b.Id == id.Value);
+            holds = EnforceHandsFollowFeet(holds, handsFollowFeet);
 
-            if (existing != null)
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
+
+            // Idempotent replay: a queued offline create that reaches the server twice must not
+            // insert a second boulder. The client mints the id, so an existing row under that id is
+            // the earlier apply of this very create; return it unchanged rather than re-inserting.
+            if (id.HasValue)
             {
-                if (existing.CreatedByUserId != user.Id)
+                var existing = await db.Boulders
+                    .Include(b => b.BoulderHolds)
+                    .FirstOrDefaultAsync(b => b.Id == id.Value);
+
+                if (existing != null)
                 {
-                    // A client id colliding with another user's boulder is astronomically
-                    // unlikely; surface it as not-found so the queue drops it permanently.
-                    throw new InvalidOperationException("Boulder not found");
+                    if (existing.CreatedByUserId != user.Id)
+                    {
+                        // A client id colliding with another user's boulder is astronomically
+                        // unlikely; surface it as not-found so the queue drops it permanently.
+                        throw new InvalidOperationException("Boulder not found");
+                    }
+
+                    return existing;
                 }
-
-                return existing;
             }
-        }
 
-        var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId)
-                   ?? throw new InvalidOperationException("Wall not found");
+            var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId)
+                       ?? throw new InvalidOperationException("Wall not found");
 
-        var boulder = new Boulder
-        {
-            Id = id ?? Guid.NewGuid(),
-            WallId = wallId,
-            Name = name,
-            Grade = grade,
-            CreatedByUserId = user.Id,
-            Generation = wall.CurrentGeneration,
-            KickboardFootholdsOn = kickboardFootholdsOn,
-            HandsFollowFeet = handsFollowFeet,
-            FootColorOnly = NormalizeFootColor(footColorOnly),
-            IsDraft = isDraft,
-            PublishedAt = isDraft ? null : DateTimeOffset.UtcNow,
-        };
-
-        db.Boulders.Add(boulder);
-
-        foreach (var h in holds)
-        {
-            db.BoulderHolds.Add(new BoulderHold
+            var boulder = new Boulder
             {
-                BoulderId = boulder.Id,
-                HoldId = h.HoldId,
-                Type = h.Type,
-                Usage = h.Usage,
-            });
+                Id = id ?? Guid.NewGuid(),
+                WallId = wallId,
+                Name = name,
+                Grade = grade,
+                CreatedByUserId = user.Id,
+                Generation = wall.CurrentGeneration,
+                KickboardFootholdsOn = kickboardFootholdsOn,
+                HandsFollowFeet = handsFollowFeet,
+                FootColorOnly = NormalizeFootColor(footColorOnly),
+                IsDraft = isDraft,
+                PublishedAt = isDraft ? null : DateTimeOffset.UtcNow,
+            };
+
+            db.Boulders.Add(boulder);
+
+            foreach (var h in holds)
+            {
+                db.BoulderHolds.Add(new BoulderHold
+                {
+                    BoulderId = boulder.Id,
+                    HoldId = h.HoldId,
+                    Type = h.Type,
+                    Usage = h.Usage,
+                });
+            }
+
+            await db.SaveChangesAsync();
+            BlocwerkMetrics.RecordBoulderCreated(wallId, isDraft);
+
+            // Drafts stay out of the activity feed until they are published.
+            if (!isDraft)
+            {
+                await _activityLogService.LogAsync(wallId, boulder.Id, ActivityType.BoulderCreated, name);
+            }
+
+            return boulder;
         }
-
-        await db.SaveChangesAsync();
-
-        // Drafts stay out of the activity feed until they are published.
-        if (!isDraft)
+        catch (Exception ex)
         {
-            await _activityLogService.LogAsync(wallId, boulder.Id, ActivityType.BoulderCreated, name);
+            op.Fail(ex);
+            throw;
         }
-
-        return boulder;
     }
 
     public async Task<Boulder> PublishBoulderAsync(Guid boulderId)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
-
-        var boulder = await db.Boulders
-                          .Include(b => b.BoulderHolds)
-                          .FirstOrDefaultAsync(b => b.Id == boulderId)
-                      ?? throw new InvalidOperationException("Boulder not found");
-
-        if (boulder.CreatedByUserId != user.Id)
+        using var op = BlocwerkMetrics.TimeOperation("Boulder.Publish");
+        try
         {
-            throw new InvalidOperationException("Only the creator can publish a boulder");
-        }
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
 
-        if (!boulder.IsDraft)
-        {
+            var boulder = await db.Boulders
+                              .Include(b => b.BoulderHolds)
+                              .FirstOrDefaultAsync(b => b.Id == boulderId)
+                          ?? throw new InvalidOperationException("Boulder not found");
+
+            if (boulder.CreatedByUserId != user.Id)
+            {
+                throw new InvalidOperationException("Only the creator can publish a boulder");
+            }
+
+            if (!boulder.IsDraft)
+            {
+                return boulder;
+            }
+
+            if (boulder.BoulderHolds.Count == 0)
+            {
+                throw new InvalidOperationException("Select at least one hold before publishing");
+            }
+
+            boulder.IsDraft = false;
+            boulder.PublishedAt = DateTimeOffset.UtcNow;
+
+            var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == boulder.WallId);
+            if (wall != null)
+            {
+                boulder.Generation = wall.CurrentGeneration;
+            }
+
+            await db.SaveChangesAsync();
+
+            await _activityLogService.LogAsync(boulder.WallId, boulderId, ActivityType.BoulderCreated, boulder.Name);
             return boulder;
         }
-
-        if (boulder.BoulderHolds.Count == 0)
+        catch (Exception ex)
         {
-            throw new InvalidOperationException("Select at least one hold before publishing");
+            op.Fail(ex);
+            throw;
         }
-
-        boulder.IsDraft = false;
-        boulder.PublishedAt = DateTimeOffset.UtcNow;
-
-        var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == boulder.WallId);
-        if (wall != null)
-        {
-            boulder.Generation = wall.CurrentGeneration;
-        }
-
-        await db.SaveChangesAsync();
-
-        await _activityLogService.LogAsync(boulder.WallId, boulderId, ActivityType.BoulderCreated, boulder.Name);
-        return boulder;
     }
 
     /// <summary>
@@ -333,80 +353,116 @@ public class BoulderService : IBoulderService
 
     public async Task<Boulder?> GetBoulderAsync(Guid boulderId)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
+        using var op = BlocwerkMetrics.TimeOperation("Boulder.Get");
+        try
+        {
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
 
-        return await db.Boulders
-            .Include(b => b.BoulderHolds).ThenInclude(bh => bh.Hold)
-            .Include(b => b.Attempts.OrderByDescending(a => a.Timestamp))
-            .Include(b => b.CreatedBy)
-            .Include(b => b.Wall)
-            .FirstOrDefaultAsync(b => b.Id == boulderId);
+            return await db.Boulders
+                .Include(b => b.BoulderHolds).ThenInclude(bh => bh.Hold)
+                .Include(b => b.Attempts.OrderByDescending(a => a.Timestamp))
+                .Include(b => b.CreatedBy)
+                .Include(b => b.Wall)
+                .FirstOrDefaultAsync(b => b.Id == boulderId);
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 
     public async Task<Boulder?> GetBoulderByShareTokenAsync(Guid boulderId, string shareToken)
     {
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = Guid.Empty;
+        using var op = BlocwerkMetrics.TimeOperation("Boulder.GetByShareToken");
+        try
+        {
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = Guid.Empty;
 
-        return await db.Boulders
-            .Include(b => b.BoulderHolds).ThenInclude(bh => bh.Hold)
-            .Include(b => b.Attempts.OrderByDescending(a => a.Timestamp)).ThenInclude(a => a.User)
-            .Include(b => b.CreatedBy)
-            .Include(b => b.Wall)
-            .Where(b => b.Id == boulderId && b.Wall.ShareToken == shareToken && !b.IsDraft)
-            .FirstOrDefaultAsync();
+            return await db.Boulders
+                .Include(b => b.BoulderHolds).ThenInclude(bh => bh.Hold)
+                .Include(b => b.Attempts.OrderByDescending(a => a.Timestamp)).ThenInclude(a => a.User)
+                .Include(b => b.CreatedBy)
+                .Include(b => b.Wall)
+                .Where(b => b.Id == boulderId && b.Wall.ShareToken == shareToken && !b.IsDraft)
+                .FirstOrDefaultAsync();
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 
     public async Task<List<Boulder>> GetBouldersForWallAsync(Guid wallId, bool includeArchived = false)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
-
-        var query = db.Boulders
-            .Include(b => b.BoulderHolds)
-            .Include(b => b.Attempts)
-            .Include(b => b.CreatedBy)
-            .Where(b => b.WallId == wallId)
-            .Where(b => !b.IsDraft || b.CreatedByUserId == user.Id);
-
-        if (!includeArchived)
+        using var op = BlocwerkMetrics.TimeOperation("Boulder.GetForWall", wallId);
+        try
         {
-            query = query.Where(b => !b.IsArchived);
-        }
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
 
-        return await query.OrderByDescending(b => b.CreatedAt).ToListAsync();
+            var query = db.Boulders
+                .Include(b => b.BoulderHolds)
+                .Include(b => b.Attempts)
+                .Include(b => b.CreatedBy)
+                .Where(b => b.WallId == wallId)
+                .Where(b => !b.IsDraft || b.CreatedByUserId == user.Id);
+
+            if (!includeArchived)
+            {
+                query = query.Where(b => !b.IsArchived);
+            }
+
+            return await query.OrderByDescending(b => b.CreatedAt).ToListAsync();
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 
     public async Task<Dictionary<Guid, List<HoldUsageRef>>> GetHoldUsageAsync(Guid wallId)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
+        using var op = BlocwerkMetrics.TimeOperation("Boulder.GetHoldUsage", wallId);
+        try
+        {
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
 
-        var links = await db.BoulderHolds
-            .AsNoTracking()
-            .Where(bh => bh.Boulder.WallId == wallId && !bh.Boulder.IsArchived)
-            .Where(bh => !bh.Boulder.IsDraft || bh.Boulder.CreatedByUserId == user.Id)
-            .Select(bh => new
-            {
-                bh.HoldId,
-                Ref = new HoldUsageRef(
-                    bh.BoulderId,
-                    bh.Boulder.Name,
-                    bh.Boulder.Grade,
-                    bh.Type,
-                    bh.Usage,
-                    bh.Boulder.IsDraft,
-                    bh.Boulder.IsHistoric),
-            })
-            .ToListAsync();
+            var links = await db.BoulderHolds
+                .AsNoTracking()
+                .Where(bh => bh.Boulder.WallId == wallId && !bh.Boulder.IsArchived)
+                .Where(bh => !bh.Boulder.IsDraft || bh.Boulder.CreatedByUserId == user.Id)
+                .Select(bh => new
+                {
+                    bh.HoldId,
+                    Ref = new HoldUsageRef(
+                        bh.BoulderId,
+                        bh.Boulder.Name,
+                        bh.Boulder.Grade,
+                        bh.Type,
+                        bh.Usage,
+                        bh.Boulder.IsDraft,
+                        bh.Boulder.IsHistoric),
+                })
+                .ToListAsync();
 
-        return links
-            .GroupBy(x => x.HoldId)
-            .ToDictionary(g => g.Key, g => g.Select(x => x.Ref).OrderBy(r => r.Name).ToList());
+            return links
+                .GroupBy(x => x.HoldId)
+                .ToDictionary(g => g.Key, g => g.Select(x => x.Ref).OrderBy(r => r.Name).ToList());
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 
     public async Task<Boulder> UpdateBoulderAsync(
@@ -418,75 +474,93 @@ public class BoulderService : IBoulderService
         bool? handsFollowFeet = null,
         string? footColorOnly = null)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
-
-        var boulder = await db.Boulders
-                          .Include(b => b.BoulderHolds)
-                          .FirstOrDefaultAsync(b => b.Id == boulderId)
-                      ?? throw new InvalidOperationException("Boulder not found");
-
-        boulder.Name = name;
-        boulder.Grade = grade;
-
-        if (kickboardFootholdsOn.HasValue)
+        using var op = BlocwerkMetrics.TimeOperation("Boulder.Update");
+        try
         {
-            boulder.KickboardFootholdsOn = kickboardFootholdsOn.Value;
-        }
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
 
-        if (handsFollowFeet.HasValue)
-        {
-            boulder.HandsFollowFeet = handsFollowFeet.Value;
-        }
+            var boulder = await db.Boulders
+                              .Include(b => b.BoulderHolds)
+                              .FirstOrDefaultAsync(b => b.Id == boulderId)
+                          ?? throw new InvalidOperationException("Boulder not found");
 
-        if (footColorOnly != null)
-        {
-            boulder.FootColorOnly = NormalizeFootColor(footColorOnly);
-        }
+            boulder.Name = name;
+            boulder.Grade = grade;
 
-        if (holds != null)
-        {
-            db.BoulderHolds.RemoveRange(boulder.BoulderHolds);
-            foreach (var h in EnforceHandsFollowFeet(holds, boulder.HandsFollowFeet))
+            if (kickboardFootholdsOn.HasValue)
             {
-                db.BoulderHolds.Add(new BoulderHold
-                {
-                    BoulderId = boulderId,
-                    HoldId = h.HoldId,
-                    Type = h.Type,
-                    Usage = h.Usage,
-                });
+                boulder.KickboardFootholdsOn = kickboardFootholdsOn.Value;
             }
-        }
 
-        await db.SaveChangesAsync();
-        return boulder;
+            if (handsFollowFeet.HasValue)
+            {
+                boulder.HandsFollowFeet = handsFollowFeet.Value;
+            }
+
+            if (footColorOnly != null)
+            {
+                boulder.FootColorOnly = NormalizeFootColor(footColorOnly);
+            }
+
+            if (holds != null)
+            {
+                db.BoulderHolds.RemoveRange(boulder.BoulderHolds);
+                foreach (var h in EnforceHandsFollowFeet(holds, boulder.HandsFollowFeet))
+                {
+                    db.BoulderHolds.Add(new BoulderHold
+                    {
+                        BoulderId = boulderId,
+                        HoldId = h.HoldId,
+                        Type = h.Type,
+                        Usage = h.Usage,
+                    });
+                }
+            }
+
+            await db.SaveChangesAsync();
+            return boulder;
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 
     public async Task<Boulder> RenameBoulderAsync(Guid boulderId, string name, string? grade)
     {
-        if (string.IsNullOrWhiteSpace(name))
+        using var op = BlocwerkMetrics.TimeOperation("Boulder.Rename");
+        try
         {
-            throw new InvalidOperationException("A boulder needs a name");
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                throw new InvalidOperationException("A boulder needs a name");
+            }
+
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
+
+            var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId)
+                          ?? throw new InvalidOperationException("Boulder not found");
+
+            if (boulder.CreatedByUserId != user.Id)
+            {
+                throw new InvalidOperationException("Only the creator can edit this boulder");
+            }
+
+            boulder.Name = name.Trim();
+            boulder.Grade = string.IsNullOrWhiteSpace(grade) ? null : grade.Trim();
+            await db.SaveChangesAsync();
+            return boulder;
         }
-
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
-
-        var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId)
-                      ?? throw new InvalidOperationException("Boulder not found");
-
-        if (boulder.CreatedByUserId != user.Id)
+        catch (Exception ex)
         {
-            throw new InvalidOperationException("Only the creator can edit this boulder");
+            op.Fail(ex);
+            throw;
         }
-
-        boulder.Name = name.Trim();
-        boulder.Grade = string.IsNullOrWhiteSpace(grade) ? null : grade.Trim();
-        await db.SaveChangesAsync();
-        return boulder;
     }
 
     public async Task<Boulder> ReviseBoulderAsync(
@@ -498,114 +572,151 @@ public class BoulderService : IBoulderService
         bool? handsFollowFeet = null,
         string? footColorOnly = null)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
-
-        var boulder = await db.Boulders
-                          .Include(b => b.BoulderHolds)
-                          .FirstOrDefaultAsync(b => b.Id == boulderId)
-                      ?? throw new InvalidOperationException("Boulder not found");
-
-        if (boulder.CreatedByUserId != user.Id)
+        using var op = BlocwerkMetrics.TimeOperation("Boulder.Revise");
+        try
         {
-            throw new InvalidOperationException("Only the creator can revise a boulder");
-        }
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
 
-        if (!boulder.IsHistoric && !boulder.IsDraft)
-        {
-            // A revise only applies to a historic or draft boulder. But an offline replay of an
-            // already-applied revise arrives here after the first apply flipped IsHistoric off.
-            // If the requested state already matches what is stored, this is that replay: return
-            // the boulder unchanged so the queue records a success. A genuine attempt to revise a
-            // live boulder would change something and is still rejected.
-            if (RevisionIsNoOp(boulder, updatedHolds, name, grade, kickboardFootholdsOn, handsFollowFeet, footColorOnly))
+            var boulder = await db.Boulders
+                              .Include(b => b.BoulderHolds)
+                              .FirstOrDefaultAsync(b => b.Id == boulderId)
+                          ?? throw new InvalidOperationException("Boulder not found");
+
+            if (boulder.CreatedByUserId != user.Id)
             {
-                return boulder;
+                throw new InvalidOperationException("Only the creator can revise a boulder");
             }
 
-            throw new InvalidOperationException("Boulder is not historic");
-        }
-
-        if (updatedHolds.Count == 0 && !boulder.IsDraft)
-        {
-            throw new InvalidOperationException("Select at least one hold");
-        }
-
-        if (!string.IsNullOrWhiteSpace(name))
-        {
-            boulder.Name = name;
-        }
-
-        if (grade != null)
-        {
-            boulder.Grade = grade;
-        }
-
-        if (kickboardFootholdsOn.HasValue)
-        {
-            boulder.KickboardFootholdsOn = kickboardFootholdsOn.Value;
-        }
-
-        if (handsFollowFeet.HasValue)
-        {
-            boulder.HandsFollowFeet = handsFollowFeet.Value;
-        }
-
-        if (footColorOnly != null)
-        {
-            boulder.FootColorOnly = NormalizeFootColor(footColorOnly);
-        }
-
-        db.BoulderHolds.RemoveRange(boulder.BoulderHolds);
-        foreach (var h in EnforceHandsFollowFeet(updatedHolds, boulder.HandsFollowFeet))
-        {
-            db.BoulderHolds.Add(new BoulderHold
+            if (!boulder.IsHistoric && !boulder.IsDraft)
             {
-                BoulderId = boulderId,
-                HoldId = h.HoldId,
-                Type = h.Type,
-                Usage = h.Usage,
-            });
+                // A revise only applies to a historic or draft boulder. But an offline replay of an
+                // already-applied revise arrives here after the first apply flipped IsHistoric off.
+                // If the requested state already matches what is stored, this is that replay: return
+                // the boulder unchanged so the queue records a success. A genuine attempt to revise a
+                // live boulder would change something and is still rejected.
+                if (RevisionIsNoOp(boulder, updatedHolds, name, grade, kickboardFootholdsOn, handsFollowFeet, footColorOnly))
+                {
+                    return boulder;
+                }
+
+                throw new InvalidOperationException("Boulder is not historic");
+            }
+
+            if (updatedHolds.Count == 0 && !boulder.IsDraft)
+            {
+                throw new InvalidOperationException("Select at least one hold");
+            }
+
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                boulder.Name = name;
+            }
+
+            if (grade != null)
+            {
+                boulder.Grade = grade;
+            }
+
+            if (kickboardFootholdsOn.HasValue)
+            {
+                boulder.KickboardFootholdsOn = kickboardFootholdsOn.Value;
+            }
+
+            if (handsFollowFeet.HasValue)
+            {
+                boulder.HandsFollowFeet = handsFollowFeet.Value;
+            }
+
+            if (footColorOnly != null)
+            {
+                boulder.FootColorOnly = NormalizeFootColor(footColorOnly);
+            }
+
+            db.BoulderHolds.RemoveRange(boulder.BoulderHolds);
+            foreach (var h in EnforceHandsFollowFeet(updatedHolds, boulder.HandsFollowFeet))
+            {
+                db.BoulderHolds.Add(new BoulderHold
+                {
+                    BoulderId = boulderId,
+                    HoldId = h.HoldId,
+                    Type = h.Type,
+                    Usage = h.Usage,
+                });
+            }
+
+            // Remapping onto the current hold model resolves both staleness flags.
+            boulder.IsHistoric = false;
+            boulder.NeedsReview = false;
+
+            var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == boulder.WallId);
+            if (wall != null)
+            {
+                boulder.Generation = wall.CurrentGeneration;
+            }
+
+            await db.SaveChangesAsync();
+
+            await _activityLogService.LogAsync(boulder.WallId, boulderId, ActivityType.BoulderRevised);
+            return boulder;
         }
-
-        // Remapping onto the current hold model resolves both staleness flags.
-        boulder.IsHistoric = false;
-        boulder.NeedsReview = false;
-
-        var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == boulder.WallId);
-        if (wall != null)
+        catch (Exception ex)
         {
-            boulder.Generation = wall.CurrentGeneration;
+            op.Fail(ex);
+            throw;
         }
-
-        await db.SaveChangesAsync();
-
-        await _activityLogService.LogAsync(boulder.WallId, boulderId, ActivityType.BoulderRevised);
-        return boulder;
     }
 
     public async Task DeleteBoulderAsync(Guid boulderId)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
+        using var op = BlocwerkMetrics.TimeOperation("Boulder.Delete");
+        try
+        {
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
 
-        var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId)
-                      ?? throw new InvalidOperationException("Boulder not found");
+            var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId)
+                          ?? throw new InvalidOperationException("Boulder not found");
 
-        db.Boulders.Remove(boulder);
-        await db.SaveChangesAsync();
+            db.Boulders.Remove(boulder);
+            await db.SaveChangesAsync();
+            BlocwerkMetrics.RecordBoulderDeleted(boulder.WallId);
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 
     public async Task ArchiveBoulderAsync(Guid boulderId)
     {
-        await SetArchivedAsync(boulderId, true);
+        using var op = BlocwerkMetrics.TimeOperation("Boulder.Archive");
+        try
+        {
+            await SetArchivedAsync(boulderId, true);
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 
     public async Task UnarchiveBoulderAsync(Guid boulderId)
     {
-        await SetArchivedAsync(boulderId, false);
+        using var op = BlocwerkMetrics.TimeOperation("Boulder.Unarchive");
+        try
+        {
+            await SetArchivedAsync(boulderId, false);
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 
     private async Task SetArchivedAsync(Guid boulderId, bool archived)
@@ -633,93 +744,129 @@ public class BoulderService : IBoulderService
 
     public async Task<GradeProposal> ProposeGradeAsync(Guid boulderId, string proposedGrade)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
-
-        var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId)
-                      ?? throw new InvalidOperationException("Boulder not found");
-
-        if (boulder.CreatedByUserId == user.Id)
+        using var op = BlocwerkMetrics.TimeOperation("Boulder.ProposeGrade");
+        try
         {
-            throw new InvalidOperationException("Cannot propose a grade for your own boulder");
-        }
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
 
-        var existing = await db.GradeProposals
-            .FirstOrDefaultAsync(gp => gp.BoulderId == boulderId && !gp.IsResolved);
+            var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId)
+                          ?? throw new InvalidOperationException("Boulder not found");
 
-        if (existing != null)
-        {
-            existing.ProposedGrade = proposedGrade;
-            existing.ProposedByUserId = user.Id;
-            existing.CreatedAt = DateTimeOffset.UtcNow;
+            if (boulder.CreatedByUserId == user.Id)
+            {
+                throw new InvalidOperationException("Cannot propose a grade for your own boulder");
+            }
+
+            var existing = await db.GradeProposals
+                .FirstOrDefaultAsync(gp => gp.BoulderId == boulderId && !gp.IsResolved);
+
+            if (existing != null)
+            {
+                existing.ProposedGrade = proposedGrade;
+                existing.ProposedByUserId = user.Id;
+                existing.CreatedAt = DateTimeOffset.UtcNow;
+                await db.SaveChangesAsync();
+                existing.ProposedBy = user;
+                return existing;
+            }
+
+            var proposal = new GradeProposal
+            {
+                BoulderId = boulderId,
+                ProposedByUserId = user.Id,
+                ProposedGrade = proposedGrade,
+            };
+
+            db.GradeProposals.Add(proposal);
             await db.SaveChangesAsync();
-            existing.ProposedBy = user;
-            return existing;
+
+            proposal.ProposedBy = user;
+            return proposal;
         }
-
-        var proposal = new GradeProposal
+        catch (Exception ex)
         {
-            BoulderId = boulderId,
-            ProposedByUserId = user.Id,
-            ProposedGrade = proposedGrade,
-        };
-
-        db.GradeProposals.Add(proposal);
-        await db.SaveChangesAsync();
-
-        proposal.ProposedBy = user;
-        return proposal;
+            op.Fail(ex);
+            throw;
+        }
     }
 
     public async Task<GradeProposal?> GetActiveProposalAsync(Guid boulderId)
     {
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = Guid.Empty;
+        using var op = BlocwerkMetrics.TimeOperation("Boulder.GetActiveProposal");
+        try
+        {
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = Guid.Empty;
 
-        return await db.GradeProposals
-            .Include(gp => gp.ProposedBy)
-            .FirstOrDefaultAsync(gp => gp.BoulderId == boulderId && !gp.IsResolved);
+            return await db.GradeProposals
+                .Include(gp => gp.ProposedBy)
+                .FirstOrDefaultAsync(gp => gp.BoulderId == boulderId && !gp.IsResolved);
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 
     public async Task AcceptGradeProposalAsync(Guid proposalId)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
-
-        var proposal = await db.GradeProposals
-                           .Include(gp => gp.Boulder)
-                           .FirstOrDefaultAsync(gp => gp.Id == proposalId && !gp.IsResolved)
-                       ?? throw new InvalidOperationException("Proposal not found");
-
-        if (proposal.Boulder.CreatedByUserId != user.Id)
+        using var op = BlocwerkMetrics.TimeOperation("Boulder.AcceptGradeProposal");
+        try
         {
-            throw new InvalidOperationException("Only the creator can accept a grade proposal");
-        }
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
 
-        proposal.Boulder.Grade = proposal.ProposedGrade;
-        proposal.IsResolved = true;
-        await db.SaveChangesAsync();
+            var proposal = await db.GradeProposals
+                               .Include(gp => gp.Boulder)
+                               .FirstOrDefaultAsync(gp => gp.Id == proposalId && !gp.IsResolved)
+                           ?? throw new InvalidOperationException("Proposal not found");
+
+            if (proposal.Boulder.CreatedByUserId != user.Id)
+            {
+                throw new InvalidOperationException("Only the creator can accept a grade proposal");
+            }
+
+            proposal.Boulder.Grade = proposal.ProposedGrade;
+            proposal.IsResolved = true;
+            await db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 
     public async Task RejectGradeProposalAsync(Guid proposalId)
     {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
-
-        var proposal = await db.GradeProposals
-                           .Include(gp => gp.Boulder)
-                           .FirstOrDefaultAsync(gp => gp.Id == proposalId && !gp.IsResolved)
-                       ?? throw new InvalidOperationException("Proposal not found");
-
-        if (proposal.Boulder.CreatedByUserId != user.Id)
+        using var op = BlocwerkMetrics.TimeOperation("Boulder.RejectGradeProposal");
+        try
         {
-            throw new InvalidOperationException("Only the creator can reject a grade proposal");
-        }
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
 
-        proposal.IsResolved = true;
-        await db.SaveChangesAsync();
+            var proposal = await db.GradeProposals
+                               .Include(gp => gp.Boulder)
+                               .FirstOrDefaultAsync(gp => gp.Id == proposalId && !gp.IsResolved)
+                           ?? throw new InvalidOperationException("Proposal not found");
+
+            if (proposal.Boulder.CreatedByUserId != user.Id)
+            {
+                throw new InvalidOperationException("Only the creator can reject a grade proposal");
+            }
+
+            proposal.IsResolved = true;
+            await db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
     }
 }
