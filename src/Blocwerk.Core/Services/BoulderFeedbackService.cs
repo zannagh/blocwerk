@@ -4,6 +4,7 @@ using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Telemetry;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Services;
 
@@ -63,13 +64,16 @@ public class BoulderFeedbackService : IBoulderFeedbackService
 {
     private readonly IDbContextFactory<BlocwerkDbContext> _dbContextFactory;
     private readonly ICurrentUserService _currentUserService;
+    private readonly ILogger<BoulderFeedbackService> _logger;
 
     public BoulderFeedbackService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
-        ICurrentUserService currentUserService)
+        ICurrentUserService currentUserService,
+        ILogger<BoulderFeedbackService> logger)
     {
         _dbContextFactory = dbContextFactory;
         _currentUserService = currentUserService;
+        _logger = logger;
     }
 
     public async Task SetRatingAsync(Guid boulderId, int stars)
@@ -107,6 +111,7 @@ public class BoulderFeedbackService : IBoulderFeedbackService
             }
 
             await db.SaveChangesAsync();
+            _logger.LogInformation("Rating set to {Stars} on boulder {BoulderId} by {UserId}", stars, boulderId, user.Id);
         }
         catch (Exception ex)
         {
@@ -131,6 +136,7 @@ public class BoulderFeedbackService : IBoulderFeedbackService
             {
                 db.BoulderRatings.Remove(existing);
                 await db.SaveChangesAsync();
+                _logger.LogInformation("Rating removed on boulder {BoulderId} by {UserId}", boulderId, user.Id);
             }
         }
         catch (Exception ex)
@@ -180,7 +186,9 @@ public class BoulderFeedbackService : IBoulderFeedbackService
             var isFavorite = await db.BoulderFavorites
                 .AnyAsync(f => f.BoulderId == boulderId && f.UserId == user.Id);
 
-            return await SetFavoriteAsync(boulderId, !isFavorite);
+            var result = await SetFavoriteAsync(boulderId, !isFavorite);
+            _logger.LogInformation("Favorite toggled to {Favorite} on boulder {BoulderId} by {UserId}", result, boulderId, user.Id);
+            return result;
         }
         catch (Exception ex)
         {
@@ -211,11 +219,13 @@ public class BoulderFeedbackService : IBoulderFeedbackService
                     UserId = user.Id,
                 });
                 await db.SaveChangesAsync();
+                _logger.LogInformation("Favorite set to {Favorite} on boulder {BoulderId} by {UserId}", favorite, boulderId, user.Id);
             }
             else if (!favorite && existing != null)
             {
                 db.BoulderFavorites.Remove(existing);
                 await db.SaveChangesAsync();
+                _logger.LogInformation("Favorite set to {Favorite} on boulder {BoulderId} by {UserId}", favorite, boulderId, user.Id);
             }
 
             return favorite;

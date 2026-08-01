@@ -3,6 +3,7 @@ using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Telemetry;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Services;
 
@@ -21,11 +22,13 @@ public class TrainingService : ITrainingService
 {
     private readonly IDbContextFactory<BlocwerkDbContext> _dbContextFactory;
     private readonly ICurrentUserService _currentUserService;
+    private readonly ILogger<TrainingService> _logger;
 
-    public TrainingService(IDbContextFactory<BlocwerkDbContext> dbContextFactory, ICurrentUserService currentUserService)
+    public TrainingService(IDbContextFactory<BlocwerkDbContext> dbContextFactory, ICurrentUserService currentUserService, ILogger<TrainingService> logger)
     {
         _dbContextFactory = dbContextFactory;
         _currentUserService = currentUserService;
+        _logger = logger;
     }
 
     public async Task<HangboardSession> SaveHangboardSessionAsync(int edgeSizeMm, double additionalWeightKg, TimeSpan duration, int sets, string? notes = null)
@@ -48,6 +51,7 @@ public class TrainingService : ITrainingService
 
             db.HangboardSessions.Add(session);
             await db.SaveChangesAsync();
+            _logger.LogInformation("Hangboard session {SessionId} saved for {UserId}", session.Id, user.Id);
             return session;
         }
         catch (Exception ex)
@@ -76,6 +80,7 @@ public class TrainingService : ITrainingService
 
             db.PullupSessions.Add(session);
             await db.SaveChangesAsync();
+            _logger.LogInformation("Pullup session {SessionId} saved for {UserId}", session.Id, user.Id);
             return session;
         }
         catch (Exception ex)
@@ -94,11 +99,17 @@ public class TrainingService : ITrainingService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
 
             var session = await db.HangboardSessions
-                .FirstOrDefaultAsync(h => h.Id == sessionId && h.UserId == user.Id)
-                ?? throw new InvalidOperationException("Session not found");
+                .FirstOrDefaultAsync(h => h.Id == sessionId && h.UserId == user.Id);
+
+            if (session is null)
+            {
+                _logger.LogWarning("Hangboard session {SessionId} not found while deleting for {UserId}", sessionId, user.Id);
+                throw new InvalidOperationException("Session not found");
+            }
 
             db.HangboardSessions.Remove(session);
             await db.SaveChangesAsync();
+            _logger.LogInformation("Hangboard session {SessionId} deleted for {UserId}", sessionId, user.Id);
         }
         catch (Exception ex)
         {
@@ -116,11 +127,17 @@ public class TrainingService : ITrainingService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
 
             var session = await db.PullupSessions
-                .FirstOrDefaultAsync(p => p.Id == sessionId && p.UserId == user.Id)
-                ?? throw new InvalidOperationException("Session not found");
+                .FirstOrDefaultAsync(p => p.Id == sessionId && p.UserId == user.Id);
+
+            if (session is null)
+            {
+                _logger.LogWarning("Pullup session {SessionId} not found while deleting for {UserId}", sessionId, user.Id);
+                throw new InvalidOperationException("Session not found");
+            }
 
             db.PullupSessions.Remove(session);
             await db.SaveChangesAsync();
+            _logger.LogInformation("Pullup session {SessionId} deleted for {UserId}", sessionId, user.Id);
         }
         catch (Exception ex)
         {

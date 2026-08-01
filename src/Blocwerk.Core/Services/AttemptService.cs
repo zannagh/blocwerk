@@ -4,6 +4,7 @@ using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Telemetry;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Services;
 
@@ -38,15 +39,18 @@ public class AttemptService : IAttemptService
     private readonly IDbContextFactory<BlocwerkDbContext> _dbContextFactory;
     private readonly ICurrentUserService _currentUserService;
     private readonly IActivityLogService _activityLogService;
+    private readonly ILogger<AttemptService> _logger;
 
     public AttemptService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         ICurrentUserService currentUserService,
-        IActivityLogService activityLogService)
+        IActivityLogService activityLogService,
+        ILogger<AttemptService> logger)
     {
         _dbContextFactory = dbContextFactory;
         _currentUserService = currentUserService;
         _activityLogService = activityLogService;
+        _logger = logger;
     }
 
     public async Task<Attempt> LogAttemptAsync(
@@ -63,8 +67,12 @@ public class AttemptService : IAttemptService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
-            var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId)
-                          ?? throw new InvalidOperationException("Boulder not found");
+            var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId);
+            if (boulder is null)
+            {
+                _logger.LogWarning("Cannot log attempt: boulder {BoulderId} not found for {UserId}", boulderId, user.Id);
+                throw new InvalidOperationException("Boulder not found");
+            }
 
             if (clientRequestId.HasValue)
             {
@@ -95,6 +103,8 @@ public class AttemptService : IAttemptService
             await db.SaveChangesAsync();
 
             BlocwerkMetrics.RecordAttemptLogged(boulder.WallId);
+
+            _logger.LogInformation("Attempt logged on boulder {BoulderId} of type {AttemptType} by {UserId}", boulder.Id, type, user.Id);
 
             await _activityLogService.LogAsync(boulder.WallId, boulderId, ActivityType.AttemptLogged, type.ToString());
             return attempt;
@@ -164,11 +174,17 @@ public class AttemptService : IAttemptService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
-            var attempt = await db.Attempts.FirstOrDefaultAsync(a => a.Id == attemptId && a.UserId == user.Id)
-                          ?? throw new InvalidOperationException("Attempt not found");
+            var attempt = await db.Attempts.FirstOrDefaultAsync(a => a.Id == attemptId && a.UserId == user.Id);
+            if (attempt is null)
+            {
+                _logger.LogWarning("Cannot delete attempt {AttemptId}: not found for {UserId}", attemptId, user.Id);
+                throw new InvalidOperationException("Attempt not found");
+            }
 
             db.Attempts.Remove(attempt);
             await db.SaveChangesAsync();
+
+            _logger.LogInformation("Attempt {AttemptId} deleted by {UserId}", attemptId, user.Id);
         }
         catch (Exception ex)
         {

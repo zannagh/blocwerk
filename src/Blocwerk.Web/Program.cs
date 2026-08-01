@@ -14,11 +14,11 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
-using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Serilog;
+using Serilog.Sinks.OpenTelemetry;
 
 namespace Blocwerk.Web;
 
@@ -30,22 +30,36 @@ public static class Program
     {
         var builder = WebApplication.CreateBuilder(args);
 
-        Log.Logger = new LoggerConfiguration()
-            .MinimumLevel.Debug()
-            .WriteTo.Console(restrictedToMinimumLevel: Serilog.Events.LogEventLevel.Information)
-            .WriteTo.File("logs/blocwerk.log", rollingInterval: RollingInterval.Day)
-            .CreateLogger();
-
-        builder.Logging.AddSimpleConsole(options =>
-        {
-            options.IncludeScopes = false;
-            options.TimestampFormat = "[dd/MM/yyyy - HH:mm:ss.FFFF] ";
-        });
-
-        builder.Host.UseSerilog();
-
         var serviceName = "Blocwerk";
         var serviceVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "0.1.0";
+        var otlpEndpoint = builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"];
+
+        var loggerConfiguration = new LoggerConfiguration()
+            .MinimumLevel.Debug()
+            .Enrich.FromLogContext()
+            .WriteTo.Console(restrictedToMinimumLevel: Serilog.Events.LogEventLevel.Information)
+            .WriteTo.File("logs/blocwerk.log", rollingInterval: RollingInterval.Day);
+
+        // Ship logs to the OTLP collector so they land next to traces and metrics (e.g. the
+        // Aspire dashboard's Structured Logs view). Serilog is the one log pipeline here —
+        // UseSerilog() routes every ILogger<T> through it — so exporting from the sink captures
+        // both the framework/ILogger logs and the static Log.* calls in a single place. Without
+        // this the OTLP endpoint saw no logs at all, because UseSerilog(writeToProviders: false)
+        // detaches the Microsoft.Extensions.Logging providers.
+        if (!string.IsNullOrEmpty(otlpEndpoint))
+        {
+            loggerConfiguration.WriteTo.OpenTelemetry(options =>
+            {
+                options.Endpoint = otlpEndpoint;
+                options.Protocol = OtlpProtocol.Grpc;
+                options.ResourceAttributes.Add("service.name", serviceName);
+                options.ResourceAttributes.Add("service.version", serviceVersion);
+            });
+        }
+
+        Log.Logger = loggerConfiguration.CreateLogger();
+
+        builder.Host.UseSerilog();
 
         // Register the custom instruments (incl. observable gauges) before the meter is exported.
         BlocwerkMetrics.Initialize();
@@ -70,7 +84,6 @@ public static class Program
                     })
                     .AddHttpClientInstrumentation(options => { options.RecordException = true; });
 
-                var otlpEndpoint = builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"];
                 if (!string.IsNullOrEmpty(otlpEndpoint))
                 {
                     tracing.AddOtlpExporter();
@@ -82,27 +95,19 @@ public static class Program
                     .AddMeter(Otel.Meter.Name)
                     .AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
-                    .AddRuntimeInstrumentation();
+                    .AddRuntimeInstrumentation()
+                    // Keeps the latest values in memory and serves them at /metrics for scraping,
+                    // independent of whether an OTLP collector is configured (see MapPrometheusScrapingEndpoint).
+                    .AddPrometheusExporter();
 
-                var otlpEndpoint = builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"];
                 if (!string.IsNullOrEmpty(otlpEndpoint))
                 {
                     metrics.AddOtlpExporter();
                 }
             });
 
-        // Add OpenTelemetry Logging
-        builder.Logging.AddOpenTelemetry(logging =>
-        {
-            logging.IncludeFormattedMessage = true;
-            logging.IncludeScopes = true;
-
-            var otlpEndpoint = builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"];
-            if (!string.IsNullOrEmpty(otlpEndpoint))
-            {
-                logging.AddOtlpExporter();
-            }
-        });
+        // Logs are exported to OTLP by the Serilog OpenTelemetry sink configured above, so no
+        // separate Microsoft.Extensions.Logging OTLP provider is registered here.
 
         builder.Services.Configure<ForwardedHeadersOptions>(options =>
         {
@@ -176,6 +181,12 @@ public static class Program
         app.ConfigureCoreApplication();
         app.ConfigureAuthenticationMiddlewares();
         app.MapControllers();
+
+        // Prometheus/OpenMetrics scrape endpoint for the custom + runtime + ASP.NET metrics.
+        // Handy for a quick `curl http://<host>:5050/metrics` when the dashboard isn't in reach.
+        // It is unauthenticated and carries operational counts (no PII; wall ids are hashed), so
+        // keep it off any public reverse-proxy route or scrape it only from the internal network.
+        app.MapPrometheusScrapingEndpoint();
 
         app.MapRazorComponents<BlocwerkApp>()
             .AddInteractiveServerRenderMode();

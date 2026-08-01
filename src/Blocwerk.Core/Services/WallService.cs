@@ -6,6 +6,7 @@ using Blocwerk.Core.Enums;
 using Blocwerk.Core.Helpers;
 using Blocwerk.Core.Telemetry;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Services;
 
@@ -134,19 +135,22 @@ public class WallService : IWallService
     private readonly IHoldDetectionService _holdDetectionService;
     private readonly IImageAlignmentService _imageAlignmentService;
     private readonly IActivityLogService _activityLogService;
+    private readonly ILogger<WallService> _logger;
 
     public WallService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         ICurrentUserService currentUserService,
         IHoldDetectionService holdDetectionService,
         IImageAlignmentService imageAlignmentService,
-        IActivityLogService activityLogService)
+        IActivityLogService activityLogService,
+        ILogger<WallService> logger)
     {
         _dbContextFactory = dbContextFactory;
         _currentUserService = currentUserService;
         _holdDetectionService = holdDetectionService;
         _imageAlignmentService = imageAlignmentService;
         _activityLogService = activityLogService;
+        _logger = logger;
     }
 
     public async Task<Wall> CreateWallAsync(string name, string? description, int angle = 0)
@@ -177,6 +181,7 @@ public class WallService : IWallService
 
             await db.SaveChangesAsync();
             BlocwerkMetrics.RecordWallCreated(wall.Id);
+            _logger.LogInformation("Wall {WallId} created by {UserId}", wall.Id, user.Id);
             return wall;
         }
         catch (Exception ex)
@@ -286,8 +291,12 @@ public class WallService : IWallService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
-            var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId)
-                       ?? throw new InvalidOperationException("Wall not found");
+            var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId);
+            if (wall == null)
+            {
+                _logger.LogWarning("Wall {WallId} not found for update by {UserId}", wallId, user.Id);
+                throw new InvalidOperationException("Wall not found");
+            }
 
             wall.Name = name;
             wall.Description = description;
@@ -297,6 +306,7 @@ public class WallService : IWallService
             }
 
             await db.SaveChangesAsync();
+            _logger.LogInformation("Wall {WallId} updated by {UserId}", wall.Id, user.Id);
             return wall;
         }
         catch (Exception ex)
@@ -315,11 +325,16 @@ public class WallService : IWallService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
-            var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId && w.OwnerId == user.Id)
-                       ?? throw new InvalidOperationException("Wall not found or not owner");
+            var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId && w.OwnerId == user.Id);
+            if (wall == null)
+            {
+                _logger.LogWarning("Wall {WallId} not found or {UserId} is not owner for delete", wallId, user.Id);
+                throw new InvalidOperationException("Wall not found or not owner");
+            }
 
             db.Walls.Remove(wall);
             await db.SaveChangesAsync();
+            _logger.LogInformation("Wall {WallId} deleted by {UserId}", wallId, user.Id);
         }
         catch (Exception ex)
         {
@@ -337,8 +352,12 @@ public class WallService : IWallService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
-            var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId)
-                       ?? throw new InvalidOperationException("Wall not found");
+            var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId);
+            if (wall == null)
+            {
+                _logger.LogWarning("Wall {WallId} not found for photo upload by {UserId}", wallId, user.Id);
+                throw new InvalidOperationException("Wall not found");
+            }
 
             wall.Photo = photo;
             wall.PhotoContentType = contentType;
@@ -347,6 +366,7 @@ public class WallService : IWallService
             {
                 await db.SaveChangesAsync();
                 await _activityLogService.LogAsync(wallId, null, ActivityType.WallPhotoUploaded);
+                _logger.LogInformation("Photo uploaded to wall {WallId} by {UserId} without auto-detection", wallId, user.Id);
                 return wall;
             }
 
@@ -368,6 +388,7 @@ public class WallService : IWallService
 
             await db.SaveChangesAsync();
             await _activityLogService.LogAsync(wallId, null, ActivityType.WallPhotoUploaded, $"{detectedHolds.Count} holds detected");
+            _logger.LogInformation("Photo uploaded to wall {WallId} by {UserId} with {DetectedHoldCount} holds detected", wallId, user.Id, detectedHolds.Count);
             return wall;
         }
         catch (Exception ex)
@@ -396,11 +417,16 @@ public class WallService : IWallService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
-            var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId)
-                       ?? throw new InvalidOperationException("Wall not found");
+            var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId);
+            if (wall == null)
+            {
+                _logger.LogWarning("Wall {WallId} not found for staging by {UserId}", wallId, user.Id);
+                throw new InvalidOperationException("Wall not found");
+            }
 
             if (wall.Photo == null)
             {
+                _logger.LogWarning("Wall {WallId} has no live photo to stage against for {UserId}", wallId, user.Id);
                 throw new InvalidOperationException("No live photo yet; use UploadPhotoAsync for the first photo.");
             }
 
@@ -435,6 +461,7 @@ public class WallService : IWallService
             await db.SaveChangesAsync();
             BlocwerkMetrics.RecordWallPhotoStaged(wallId, mode.ToString());
             await _activityLogService.LogAsync(wallId, null, ActivityType.WallPhotoStaged, $"{detectedHolds.Count} holds detected");
+            _logger.LogInformation("Wall {WallId} staged in {StagingMode} mode by {UserId} with {DetectedHoldCount} holds detected", wallId, mode, user.Id, detectedHolds.Count);
             return wall;
         }
         catch (Exception ex)
@@ -455,11 +482,16 @@ public class WallService : IWallService
 
             var wall = await db.Walls
                            .Include(w => w.Holds)
-                           .FirstOrDefaultAsync(w => w.Id == wallId)
-                       ?? throw new InvalidOperationException("Wall not found");
+                           .FirstOrDefaultAsync(w => w.Id == wallId);
+            if (wall == null)
+            {
+                _logger.LogWarning("Wall {WallId} not found for manual alignment staging by {UserId}", wallId, user.Id);
+                throw new InvalidOperationException("Wall not found");
+            }
 
             if (wall.Photo == null)
             {
+                _logger.LogWarning("Wall {WallId} has no live photo to stage manual alignment against for {UserId}", wallId, user.Id);
                 throw new InvalidOperationException("No live photo yet; use UploadPhotoAsync for the first photo.");
             }
 
@@ -499,6 +531,7 @@ public class WallService : IWallService
             await db.SaveChangesAsync();
             BlocwerkMetrics.RecordWallPhotoStaged(wallId, "Manual");
             await _activityLogService.LogAsync(wallId, null, ActivityType.WallPhotoStaged, $"{liveHolds.Count} holds staged for manual alignment");
+            _logger.LogInformation("Wall {WallId} staged for manual alignment by {UserId} with {StagedHoldCount} holds carried", wallId, user.Id, liveHolds.Count);
             return wall;
         }
         catch (Exception ex)
@@ -519,11 +552,16 @@ public class WallService : IWallService
 
             var wall = await db.Walls
                            .Include(w => w.Holds)
-                           .FirstOrDefaultAsync(w => w.Id == wallId)
-                       ?? throw new InvalidOperationException("Wall not found");
+                           .FirstOrDefaultAsync(w => w.Id == wallId);
+            if (wall == null)
+            {
+                _logger.LogWarning("Wall {WallId} not found for staged photo confirmation by {UserId}", wallId, user.Id);
+                throw new InvalidOperationException("Wall not found");
+            }
 
             if (wall.StagedPhoto == null)
             {
+                _logger.LogWarning("Wall {WallId} has no staged photo to confirm for {UserId}", wallId, user.Id);
                 throw new InvalidOperationException("No staged photo to confirm.");
             }
 
@@ -554,6 +592,7 @@ public class WallService : IWallService
             BlocwerkMetrics.RecordWallPhotoConfirmed(wallId, "Staged");
             await _activityLogService.LogAsync(wallId, null, ActivityType.WallPhotoConfirmed,
                 $"{carried} carried, {stagedCount} new");
+            _logger.LogInformation("Wall {WallId} staged photo confirmed by {UserId}: {CarriedCount} carried, {NewCount} new", wallId, user.Id, carried, stagedCount);
             return wall;
         }
         catch (Exception ex)
@@ -574,11 +613,16 @@ public class WallService : IWallService
 
         var wall = await db.Walls
                        .Include(w => w.Holds)
-                       .FirstOrDefaultAsync(w => w.Id == wallId)
-                   ?? throw new InvalidOperationException("Wall not found");
+                       .FirstOrDefaultAsync(w => w.Id == wallId);
+        if (wall == null)
+        {
+            _logger.LogWarning("Wall {WallId} not found for manual alignment confirmation by {UserId}", wallId, user.Id);
+            throw new InvalidOperationException("Wall not found");
+        }
 
         if (wall.StagedPhoto == null || wall.StagingMode != WallStagingMode.Manual)
         {
+            _logger.LogWarning("Wall {WallId} is not in manual alignment mode for {UserId}", wallId, user.Id);
             throw new InvalidOperationException("Wall is not in manual alignment mode.");
         }
 
@@ -726,6 +770,7 @@ public class WallService : IWallService
         BlocwerkMetrics.RecordWallPhotoConfirmed(wallId, "Manual");
         await _activityLogService.LogAsync(wallId, null, ActivityType.WallPhotoConfirmed,
             $"manual alignment, {reviewCount} boulder(s) flagged for review");
+        _logger.LogInformation("Wall {WallId} manual alignment confirmed by {UserId} with {ReviewCount} boulder(s) flagged for review", wallId, user.Id, reviewCount);
         return wall;
         }
         catch (Exception ex)
@@ -744,11 +789,16 @@ public class WallService : IWallService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
-            var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId)
-                       ?? throw new InvalidOperationException("Wall not found");
+            var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId);
+            if (wall == null)
+            {
+                _logger.LogWarning("Wall {WallId} not found for recreation confirmation by {UserId}", wallId, user.Id);
+                throw new InvalidOperationException("Wall not found");
+            }
 
             if (wall.StagedPhoto == null || wall.StagingMode != WallStagingMode.Recreate)
             {
+                _logger.LogWarning("Wall {WallId} has no staged recreation to confirm for {UserId}", wallId, user.Id);
                 throw new InvalidOperationException("No staged wall recreation to confirm.");
             }
 
@@ -792,6 +842,7 @@ public class WallService : IWallService
             BlocwerkMetrics.RecordWallRecreated(wallId, staled.Count, prunable.Count);
             await _activityLogService.LogAsync(wallId, null, ActivityType.WallRecreated,
                 $"{staled.Count} boulder(s) marked historic, {prunable.Count} unused hold(s) pruned");
+            _logger.LogInformation("Wall {WallId} recreated by {UserId}: {BouldersMadeHistoric} boulder(s) made historic, {HoldsPruned} hold(s) pruned", wallId, user.Id, staled.Count, prunable.Count);
 
             return new WallRecreateResult(wall, staled.Count, prunable.Count);
         }
@@ -861,8 +912,12 @@ public class WallService : IWallService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
-            var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId)
-                       ?? throw new InvalidOperationException("Wall not found");
+            var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId);
+            if (wall == null)
+            {
+                _logger.LogWarning("Wall {WallId} not found for staged photo discard by {UserId}", wallId, user.Id);
+                throw new InvalidOperationException("Wall not found");
+            }
 
             if (wall.StagedPhoto == null)
             {
@@ -940,8 +995,12 @@ public class WallService : IWallService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
-            var hold = await db.Holds.FirstOrDefaultAsync(h => h.Id == holdId)
-                       ?? throw new InvalidOperationException("Hold not found");
+            var hold = await db.Holds.FirstOrDefaultAsync(h => h.Id == holdId);
+            if (hold == null)
+            {
+                _logger.LogWarning("Hold {HoldId} not found for mark-modified by {UserId}", holdId, user.Id);
+                throw new InvalidOperationException("Hold not found");
+            }
 
             hold.NeedsReview = true;
 
@@ -960,6 +1019,7 @@ public class WallService : IWallService
             BlocwerkMetrics.RecordHoldUpdated(hold.WallId, "modified");
             await _activityLogService.LogAsync(hold.WallId, null, ActivityType.HoldMarkedModified,
                 $"{affectedBoulders.Count} boulder(s) flagged for review");
+            _logger.LogInformation("Hold {HoldId} on wall {WallId} marked modified by {UserId}, {ReviewCount} boulder(s) flagged for review", holdId, hold.WallId, user.Id, affectedBoulders.Count);
             return hold;
         }
         catch (Exception ex)
@@ -978,21 +1038,36 @@ public class WallService : IWallService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
-            var staged = await db.Holds.FirstOrDefaultAsync(h => h.Id == stagedHoldId)
-                         ?? throw new InvalidOperationException("Staged hold not found");
-            var live = await db.Holds.FirstOrDefaultAsync(h => h.Id == liveHoldId)
-                       ?? throw new InvalidOperationException("Live hold not found");
+            var staged = await db.Holds.FirstOrDefaultAsync(h => h.Id == stagedHoldId);
+            if (staged == null)
+            {
+                _logger.LogWarning("Staged hold {StagedHoldId} not found for merge by {UserId}", stagedHoldId, user.Id);
+                throw new InvalidOperationException("Staged hold not found");
+            }
+
+            var live = await db.Holds.FirstOrDefaultAsync(h => h.Id == liveHoldId);
+            if (live == null)
+            {
+                _logger.LogWarning("Live hold {LiveHoldId} not found for merge by {UserId}", liveHoldId, user.Id);
+                throw new InvalidOperationException("Live hold not found");
+            }
 
             if (staged.WallId != live.WallId)
             {
+                _logger.LogWarning("Merge holds {StagedHoldId} and {LiveHoldId} belong to different walls for {UserId}", stagedHoldId, liveHoldId, user.Id);
                 throw new InvalidOperationException("Holds belong to different walls");
             }
 
-            var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == staged.WallId)
-                       ?? throw new InvalidOperationException("Wall not found");
+            var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == staged.WallId);
+            if (wall == null)
+            {
+                _logger.LogWarning("Wall {WallId} not found for hold merge by {UserId}", staged.WallId, user.Id);
+                throw new InvalidOperationException("Wall not found");
+            }
 
             if (wall.StagedAt == null)
             {
+                _logger.LogWarning("Wall {WallId} is not in staging mode for hold merge by {UserId}", wall.Id, user.Id);
                 throw new InvalidOperationException("Wall is not in staging mode");
             }
 
@@ -1001,6 +1076,7 @@ public class WallService : IWallService
 
             if (staged.Generation != stagedGen || live.Generation > liveGen)
             {
+                _logger.LogWarning("Holds {StagedHoldId} and {LiveHoldId} are not on opposite generations on wall {WallId} for {UserId}", stagedHoldId, liveHoldId, wall.Id, user.Id);
                 throw new InvalidOperationException("Holds are not on opposite generations");
             }
 
@@ -1035,6 +1111,7 @@ public class WallService : IWallService
             BlocwerkMetrics.RecordHoldUpdated(live.WallId, "merged");
             await _activityLogService.LogAsync(wall.Id, null, ActivityType.HoldMerged,
                 $"{affectedBoulders.Count} boulder(s) flagged for review");
+            _logger.LogInformation("Staged hold {StagedHoldId} merged into live hold {LiveHoldId} on wall {WallId} by {UserId}, {ReviewCount} boulder(s) flagged for review", stagedHoldId, liveHoldId, wall.Id, user.Id, affectedBoulders.Count);
             return live;
         }
         catch (Exception ex)
@@ -1055,17 +1132,23 @@ public class WallService : IWallService
 
             var wall = await db.Walls
                            .Include(w => w.Members)
-                           .FirstOrDefaultAsync(w => w.Id == wallId)
-                       ?? throw new InvalidOperationException("Wall not found");
+                           .FirstOrDefaultAsync(w => w.Id == wallId);
+            if (wall == null)
+            {
+                _logger.LogWarning("Wall {WallId} not found for share token generation by {UserId}", wallId, user.Id);
+                throw new InvalidOperationException("Wall not found");
+            }
 
             var membership = wall.Members.FirstOrDefault(m => m.UserId == user.Id);
             if (membership?.Role != WallRole.Admin)
             {
+                _logger.LogWarning("User {UserId} not authorized to generate share token for wall {WallId}", user.Id, wallId);
                 throw new InvalidOperationException("Not authorized");
             }
 
             wall.ShareToken = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
             await db.SaveChangesAsync();
+            _logger.LogInformation("Share token generated for wall {WallId} by {UserId}", wallId, user.Id);
             return wall.ShareToken;
         }
         catch (Exception ex)
@@ -1084,8 +1167,12 @@ public class WallService : IWallService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = Guid.Empty;
 
-            var wall = await db.Walls.FirstOrDefaultAsync(w => w.ShareToken == shareToken)
-                       ?? throw new InvalidOperationException("Invalid share token");
+            var wall = await db.Walls.FirstOrDefaultAsync(w => w.ShareToken == shareToken);
+            if (wall == null)
+            {
+                _logger.LogWarning("Invalid share token used to join by {UserId}", user.Id);
+                throw new InvalidOperationException("Invalid share token");
+            }
 
             var existingMembership = await db.WallMembers
                 .FirstOrDefaultAsync(wm => wm.WallId == wall.Id && wm.UserId == user.Id);
@@ -1101,6 +1188,7 @@ public class WallService : IWallService
                 await db.SaveChangesAsync();
                 BlocwerkMetrics.RecordMemberJoined(wall.Id);
                 await _activityLogService.LogAsync(wall.Id, null, ActivityType.MemberJoined);
+                _logger.LogInformation("User {UserId} joined wall {WallId}", user.Id, wall.Id);
             }
 
             return wall;
@@ -1271,8 +1359,12 @@ public class WallService : IWallService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
-            var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId)
-                       ?? throw new InvalidOperationException("Wall not found");
+            var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId);
+            if (wall == null)
+            {
+                _logger.LogWarning("Wall {WallId} not found for add hold by {UserId}", wallId, user.Id);
+                throw new InvalidOperationException("Wall not found");
+            }
 
             var targetGen = wall.StagedAt != null ? wall.CurrentGeneration + 1 : wall.CurrentGeneration;
             var hold = new Hold
@@ -1295,6 +1387,7 @@ public class WallService : IWallService
 
             BlocwerkMetrics.RecordHoldAdded(wallId);
             await _activityLogService.LogAsync(wallId, null, ActivityType.HoldAdded);
+            _logger.LogInformation("Hold {HoldId} added to wall {WallId} at generation {Generation} by {UserId}", hold.Id, wallId, targetGen, user.Id);
             return hold;
         }
         catch (Exception ex)
@@ -1313,8 +1406,12 @@ public class WallService : IWallService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
-            var hold = await db.Holds.FirstOrDefaultAsync(h => h.Id == holdId)
-                       ?? throw new InvalidOperationException("Hold not found");
+            var hold = await db.Holds.FirstOrDefaultAsync(h => h.Id == holdId);
+            if (hold == null)
+            {
+                _logger.LogWarning("Hold {HoldId} not found for update by {UserId}", holdId, user.Id);
+                throw new InvalidOperationException("Hold not found");
+            }
 
             var wallStagedAt = await db.Walls.Where(w => w.Id == hold.WallId).Select(w => w.StagedAt).FirstOrDefaultAsync();
             bool isStaging = wallStagedAt != null;
@@ -1392,6 +1489,7 @@ public class WallService : IWallService
             }
 
             await db.SaveChangesAsync();
+            _logger.LogInformation("Hold {HoldId} on wall {WallId} updated by {UserId} (moved: {Moved}, renamed: {Renamed}, recolored: {Recolored}, reshaped: {Reshaped})", holdId, hold.WallId, user.Id, positionChanged, nameChanged, colorChanged, shapeChanged);
             return hold;
         }
         catch (Exception ex)
@@ -1410,8 +1508,12 @@ public class WallService : IWallService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
-            var hold = await db.Holds.FirstOrDefaultAsync(h => h.Id == holdId)
-                       ?? throw new InvalidOperationException("Hold not found");
+            var hold = await db.Holds.FirstOrDefaultAsync(h => h.Id == holdId);
+            if (hold == null)
+            {
+                _logger.LogWarning("Hold {HoldId} not found for delete by {UserId}", holdId, user.Id);
+                throw new InvalidOperationException("Hold not found");
+            }
 
             var affectedBoulders = await db.BoulderHolds
                 .Where(bh => bh.HoldId == holdId)
@@ -1429,6 +1531,7 @@ public class WallService : IWallService
 
             BlocwerkMetrics.RecordHoldDeleted(hold.WallId);
             await _activityLogService.LogAsync(hold.WallId, null, ActivityType.HoldDeleted);
+            _logger.LogInformation("Hold {HoldId} on wall {WallId} deleted by {UserId}, {HistoricCount} boulder(s) made historic", holdId, hold.WallId, user.Id, affectedBoulders.Count);
         }
         catch (Exception ex)
         {
@@ -1448,8 +1551,12 @@ public class WallService : IWallService
 
             var wall = await db.Walls
                            .Include(w => w.Holds)
-                           .FirstOrDefaultAsync(w => w.Id == wallId)
-                       ?? throw new InvalidOperationException("Wall not found");
+                           .FirstOrDefaultAsync(w => w.Id == wallId);
+            if (wall == null)
+            {
+                _logger.LogWarning("Wall {WallId} not found for hold redetection by {UserId}", wallId, user.Id);
+                throw new InvalidOperationException("Wall not found");
+            }
 
             if (wall.Photo == null)
             {
@@ -1478,6 +1585,7 @@ public class WallService : IWallService
             }
 
             await db.SaveChangesAsync();
+            _logger.LogInformation("Wall {WallId} holds redetected by {UserId}: {DetectedHoldCount} holds detected", wallId, user.Id, detected.Count);
             return detected.Count;
         }
         catch (Exception ex)
@@ -1496,8 +1604,12 @@ public class WallService : IWallService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
-            var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId)
-                       ?? throw new InvalidOperationException("Wall not found");
+            var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId);
+            if (wall == null)
+            {
+                _logger.LogWarning("Wall {WallId} not found for clearing auto-detected holds by {UserId}", wallId, user.Id);
+                throw new InvalidOperationException("Wall not found");
+            }
 
             var autoHolds = await db.Holds
                 .Where(h => h.WallId == wallId && h.IsAutoDetected && h.Generation == wall.CurrentGeneration)
@@ -1505,6 +1617,7 @@ public class WallService : IWallService
 
             db.Holds.RemoveRange(autoHolds);
             await db.SaveChangesAsync();
+            _logger.LogInformation("Wall {WallId} auto-detected holds cleared by {UserId}: {RemovedCount} removed", wallId, user.Id, autoHolds.Count);
         }
         catch (Exception ex)
         {
@@ -1522,11 +1635,16 @@ public class WallService : IWallService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
-            var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId)
-                       ?? throw new InvalidOperationException("Wall not found");
+            var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId);
+            if (wall == null)
+            {
+                _logger.LogWarning("Wall {WallId} not found for setting border points by {UserId}", wallId, user.Id);
+                throw new InvalidOperationException("Wall not found");
+            }
 
             wall.BorderPoints = points;
             await db.SaveChangesAsync();
+            _logger.LogInformation("Wall {WallId} border points set by {UserId}: {PointCount} point(s)", wallId, user.Id, points.Count);
         }
         catch (Exception ex)
         {
@@ -1547,8 +1665,12 @@ public class WallService : IWallService
             var wall = await db.Walls
                            .Include(w => w.Holds)
                            .Include(w => w.Segments)
-                           .FirstOrDefaultAsync(w => w.Id == wallId)
-                       ?? throw new InvalidOperationException("Wall not found");
+                           .FirstOrDefaultAsync(w => w.Id == wallId);
+            if (wall == null)
+            {
+                _logger.LogWarning("Wall {WallId} not found for clean outside border by {UserId}", wallId, user.Id);
+                throw new InvalidOperationException("Wall not found");
+            }
 
             // Segments describe the wall in full when there are any, so a hold survives if it
             // sits in any one of them. Only a segment-less wall falls back to the border.
@@ -1575,6 +1697,7 @@ public class WallService : IWallService
 
             db.Holds.RemoveRange(toRemove);
             await db.SaveChangesAsync();
+            _logger.LogInformation("Wall {WallId} cleaned outside border by {UserId}: {RemovedCount} hold(s) removed", wallId, user.Id, toRemove.Count);
             return toRemove.Count;
         }
         catch (Exception ex)
@@ -1617,23 +1740,33 @@ public class WallService : IWallService
 
             var wall = await db.Walls
                            .Include(w => w.Members)
-                           .FirstOrDefaultAsync(w => w.Id == wallId)
-                       ?? throw new InvalidOperationException("Wall not found");
+                           .FirstOrDefaultAsync(w => w.Id == wallId);
+            if (wall == null)
+            {
+                _logger.LogWarning("Wall {WallId} not found for member role change by {UserId}", wallId, user.Id);
+                throw new InvalidOperationException("Wall not found");
+            }
 
             var callerMembership = wall.Members.FirstOrDefault(m => m.UserId == user.Id);
             if (callerMembership?.Role != WallRole.Admin)
             {
+                _logger.LogWarning("User {UserId} not authorized to change member roles on wall {WallId}", user.Id, wallId);
                 throw new InvalidOperationException("Not authorized");
             }
 
             var membership = await db.WallMembers
-                .FirstOrDefaultAsync(wm => wm.WallId == wallId && wm.UserId == userId)
-                ?? throw new InvalidOperationException("Member not found");
+                .FirstOrDefaultAsync(wm => wm.WallId == wallId && wm.UserId == userId);
+            if (membership == null)
+            {
+                _logger.LogWarning("Member {TargetUserId} not found on wall {WallId} for role change by {UserId}", userId, wallId, user.Id);
+                throw new InvalidOperationException("Member not found");
+            }
 
             membership.Role = role;
             await db.SaveChangesAsync();
 
             await _activityLogService.LogAsync(wallId, null, ActivityType.MemberRoleChanged, $"Role changed to {role}");
+            _logger.LogInformation("Member {TargetUserId} on wall {WallId} role changed to {Role} by {UserId}", userId, wallId, role, user.Id);
         }
         catch (Exception ex)
         {

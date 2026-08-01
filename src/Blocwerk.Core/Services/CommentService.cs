@@ -4,6 +4,7 @@ using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Telemetry;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Services;
 
@@ -26,15 +27,18 @@ public class CommentService : ICommentService
     private readonly IDbContextFactory<BlocwerkDbContext> _dbContextFactory;
     private readonly ICurrentUserService _currentUserService;
     private readonly IActivityLogService _activityLogService;
+    private readonly ILogger<CommentService> _logger;
 
     public CommentService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         ICurrentUserService currentUserService,
-        IActivityLogService activityLogService)
+        IActivityLogService activityLogService,
+        ILogger<CommentService> logger)
     {
         _dbContextFactory = dbContextFactory;
         _currentUserService = currentUserService;
         _activityLogService = activityLogService;
+        _logger = logger;
     }
 
     public async Task<BoulderComment> AddCommentAsync(Guid boulderId, string text, Guid? clientRequestId = null)
@@ -46,8 +50,12 @@ public class CommentService : ICommentService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
-            var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId)
-                          ?? throw new InvalidOperationException("Boulder not found");
+            var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId);
+            if (boulder is null)
+            {
+                _logger.LogWarning("Cannot add comment: boulder {BoulderId} not found for {UserId}", boulderId, user.Id);
+                throw new InvalidOperationException("Boulder not found");
+            }
 
             if (clientRequestId.HasValue)
             {
@@ -73,6 +81,8 @@ public class CommentService : ICommentService
             await db.SaveChangesAsync();
 
             BlocwerkMetrics.RecordCommentAdded(boulder.WallId);
+
+            _logger.LogInformation("Comment {CommentId} added on boulder {BoulderId} by {UserId}", comment.Id, boulderId, user.Id);
 
             await _activityLogService.LogAsync(boulder.WallId, boulderId, ActivityType.CommentAdded);
 
@@ -119,11 +129,17 @@ public class CommentService : ICommentService
             var user = await _currentUserService.GetCurrentUserAsync();
             await using var db = await _dbContextFactory.CreateDbContextAsync();
 
-            var comment = await db.BoulderComments.FirstOrDefaultAsync(c => c.Id == commentId && c.UserId == user.Id)
-                          ?? throw new InvalidOperationException("Comment not found");
+            var comment = await db.BoulderComments.FirstOrDefaultAsync(c => c.Id == commentId && c.UserId == user.Id);
+            if (comment is null)
+            {
+                _logger.LogWarning("Cannot delete comment {CommentId}: not found for {UserId}", commentId, user.Id);
+                throw new InvalidOperationException("Comment not found");
+            }
 
             db.BoulderComments.Remove(comment);
             await db.SaveChangesAsync();
+
+            _logger.LogInformation("Comment {CommentId} deleted by {UserId}", commentId, user.Id);
         }
         catch (Exception ex)
         {

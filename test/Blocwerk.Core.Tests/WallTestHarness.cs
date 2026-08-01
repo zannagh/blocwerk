@@ -6,6 +6,7 @@ using Blocwerk.Core.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace Blocwerk.Core.Tests;
@@ -38,12 +39,12 @@ public sealed class WallTestHarness : IDisposable
         HoldDetection = Substitute.For<IHoldDetectionService>();
         ImageAlignment = Substitute.For<IImageAlignmentService>();
 
-        WallService = new WallService(DbContextFactory, CurrentUser, HoldDetection, ImageAlignment, ActivityLog);
-        BoulderService = new BoulderService(DbContextFactory, CurrentUser, ActivityLog);
-        AttemptService = new AttemptService(DbContextFactory, CurrentUser, ActivityLog);
-        FeedbackService = new BoulderFeedbackService(DbContextFactory, CurrentUser);
-        SegmentService = new WallSegmentService(DbContextFactory, CurrentUser);
-        SessionService = new Blocwerk.Core.Services.SessionService(DbContextFactory, CurrentUser);
+        WallService = new WallService(DbContextFactory, CurrentUser, HoldDetection, ImageAlignment, ActivityLog, NullLogger<WallService>.Instance);
+        BoulderService = new BoulderService(DbContextFactory, CurrentUser, ActivityLog, NullLogger<BoulderService>.Instance);
+        AttemptService = new AttemptService(DbContextFactory, CurrentUser, ActivityLog, NullLogger<AttemptService>.Instance);
+        FeedbackService = new BoulderFeedbackService(DbContextFactory, CurrentUser, NullLogger<BoulderFeedbackService>.Instance);
+        SegmentService = new WallSegmentService(DbContextFactory, CurrentUser, NullLogger<WallSegmentService>.Instance);
+        SessionService = new Blocwerk.Core.Services.SessionService(DbContextFactory, CurrentUser, NullLogger<Blocwerk.Core.Services.SessionService>.Instance);
     }
 
     public User Owner { get; }

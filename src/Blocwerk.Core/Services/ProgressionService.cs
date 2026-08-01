@@ -5,6 +5,7 @@ using Blocwerk.Core.Enums;
 using Blocwerk.Core.Helpers;
 using Blocwerk.Core.Telemetry;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Services;
 
@@ -44,11 +45,13 @@ public class ProgressionService : IProgressionService
 {
     private readonly IDbContextFactory<BlocwerkDbContext> _dbContextFactory;
     private readonly ICurrentUserService _currentUserService;
+    private readonly ILogger<ProgressionService> _logger;
 
-    public ProgressionService(IDbContextFactory<BlocwerkDbContext> dbContextFactory, ICurrentUserService currentUserService)
+    public ProgressionService(IDbContextFactory<BlocwerkDbContext> dbContextFactory, ICurrentUserService currentUserService, ILogger<ProgressionService> logger)
     {
         _dbContextFactory = dbContextFactory;
         _currentUserService = currentUserService;
+        _logger = logger;
     }
 
     public async Task<UserProgression> GetProgressionAsync()
@@ -230,6 +233,7 @@ public class ProgressionService : IProgressionService
             var dbUser = await db.Users.FirstAsync(u => u.Id == user.Id);
             dbUser.ProgressionWindowDays = Math.Clamp(days, 7, 365);
             await db.SaveChangesAsync();
+            _logger.LogInformation("Progression window updated to {WindowDays} days for {UserId}", dbUser.ProgressionWindowDays, user.Id);
         }
         catch (Exception ex)
         {

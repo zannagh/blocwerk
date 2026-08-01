@@ -4,6 +4,7 @@ using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Telemetry;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Services;
 
@@ -121,15 +122,18 @@ public class BoulderService : IBoulderService
     private readonly IDbContextFactory<BlocwerkDbContext> _dbContextFactory;
     private readonly ICurrentUserService _currentUserService;
     private readonly IActivityLogService _activityLogService;
+    private readonly ILogger<BoulderService> _logger;
 
     public BoulderService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         ICurrentUserService currentUserService,
-        IActivityLogService activityLogService)
+        IActivityLogService activityLogService,
+        ILogger<BoulderService> logger)
     {
         _dbContextFactory = dbContextFactory;
         _currentUserService = currentUserService;
         _activityLogService = activityLogService;
+        _logger = logger;
     }
 
     public async Task<Boulder> CreateBoulderAsync(
@@ -167,6 +171,9 @@ public class BoulderService : IBoulderService
                     {
                         // A client id colliding with another user's boulder is astronomically
                         // unlikely; surface it as not-found so the queue drops it permanently.
+                        _logger.LogWarning(
+                            "Create replay rejected: boulder {BoulderId} belongs to {OwnerUserId}, not caller {UserId}",
+                            id.Value, existing.CreatedByUserId, user.Id);
                         throw new InvalidOperationException("Boulder not found");
                     }
 
@@ -174,8 +181,12 @@ public class BoulderService : IBoulderService
                 }
             }
 
-            var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId)
-                       ?? throw new InvalidOperationException("Wall not found");
+            var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId);
+            if (wall == null)
+            {
+                _logger.LogWarning("Create boulder failed: wall {WallId} not found for user {UserId}", wallId, user.Id);
+                throw new InvalidOperationException("Wall not found");
+            }
 
             var boulder = new Boulder
             {
@@ -207,6 +218,9 @@ public class BoulderService : IBoulderService
 
             await db.SaveChangesAsync();
             BlocwerkMetrics.RecordBoulderCreated(wallId, isDraft);
+            _logger.LogInformation(
+                "Boulder {BoulderId} created on wall {WallId} by {UserId} (isDraft={IsDraft}, holds={HoldCount})",
+                boulder.Id, wallId, user.Id, isDraft, holds.Count);
 
             // Drafts stay out of the activity feed until they are published.
             if (!isDraft)
@@ -233,12 +247,19 @@ public class BoulderService : IBoulderService
             db.CurrentUserId = user.Id;
 
             var boulder = await db.Boulders
-                              .Include(b => b.BoulderHolds)
-                              .FirstOrDefaultAsync(b => b.Id == boulderId)
-                          ?? throw new InvalidOperationException("Boulder not found");
+                .Include(b => b.BoulderHolds)
+                .FirstOrDefaultAsync(b => b.Id == boulderId);
+            if (boulder == null)
+            {
+                _logger.LogWarning("Publish failed: boulder {BoulderId} not found for user {UserId}", boulderId, user.Id);
+                throw new InvalidOperationException("Boulder not found");
+            }
 
             if (boulder.CreatedByUserId != user.Id)
             {
+                _logger.LogWarning(
+                    "Publish denied: user {UserId} is not creator {OwnerUserId} of boulder {BoulderId}",
+                    user.Id, boulder.CreatedByUserId, boulderId);
                 throw new InvalidOperationException("Only the creator can publish a boulder");
             }
 
@@ -249,6 +270,7 @@ public class BoulderService : IBoulderService
 
             if (boulder.BoulderHolds.Count == 0)
             {
+                _logger.LogWarning("Publish rejected: boulder {BoulderId} has no holds", boulderId);
                 throw new InvalidOperationException("Select at least one hold before publishing");
             }
 
@@ -262,6 +284,9 @@ public class BoulderService : IBoulderService
             }
 
             await db.SaveChangesAsync();
+            _logger.LogInformation(
+                "Boulder {BoulderId} published on wall {WallId} by {UserId}",
+                boulderId, boulder.WallId, user.Id);
 
             await _activityLogService.LogAsync(boulder.WallId, boulderId, ActivityType.BoulderCreated, boulder.Name);
             return boulder;
@@ -482,9 +507,13 @@ public class BoulderService : IBoulderService
             db.CurrentUserId = user.Id;
 
             var boulder = await db.Boulders
-                              .Include(b => b.BoulderHolds)
-                              .FirstOrDefaultAsync(b => b.Id == boulderId)
-                          ?? throw new InvalidOperationException("Boulder not found");
+                .Include(b => b.BoulderHolds)
+                .FirstOrDefaultAsync(b => b.Id == boulderId);
+            if (boulder == null)
+            {
+                _logger.LogWarning("Update failed: boulder {BoulderId} not found for user {UserId}", boulderId, user.Id);
+                throw new InvalidOperationException("Boulder not found");
+            }
 
             boulder.Name = name;
             boulder.Grade = grade;
@@ -520,6 +549,7 @@ public class BoulderService : IBoulderService
             }
 
             await db.SaveChangesAsync();
+            _logger.LogInformation("Boulder {BoulderId} updated by {UserId}", boulderId, user.Id);
             return boulder;
         }
         catch (Exception ex)
@@ -536,6 +566,7 @@ public class BoulderService : IBoulderService
         {
             if (string.IsNullOrWhiteSpace(name))
             {
+                _logger.LogWarning("Rename rejected: empty name for boulder {BoulderId}", boulderId);
                 throw new InvalidOperationException("A boulder needs a name");
             }
 
@@ -543,17 +574,25 @@ public class BoulderService : IBoulderService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
-            var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId)
-                          ?? throw new InvalidOperationException("Boulder not found");
+            var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId);
+            if (boulder == null)
+            {
+                _logger.LogWarning("Rename failed: boulder {BoulderId} not found for user {UserId}", boulderId, user.Id);
+                throw new InvalidOperationException("Boulder not found");
+            }
 
             if (boulder.CreatedByUserId != user.Id)
             {
+                _logger.LogWarning(
+                    "Rename denied: user {UserId} is not creator {OwnerUserId} of boulder {BoulderId}",
+                    user.Id, boulder.CreatedByUserId, boulderId);
                 throw new InvalidOperationException("Only the creator can edit this boulder");
             }
 
             boulder.Name = name.Trim();
             boulder.Grade = string.IsNullOrWhiteSpace(grade) ? null : grade.Trim();
             await db.SaveChangesAsync();
+            _logger.LogInformation("Boulder {BoulderId} renamed by {UserId}", boulderId, user.Id);
             return boulder;
         }
         catch (Exception ex)
@@ -580,12 +619,19 @@ public class BoulderService : IBoulderService
             db.CurrentUserId = user.Id;
 
             var boulder = await db.Boulders
-                              .Include(b => b.BoulderHolds)
-                              .FirstOrDefaultAsync(b => b.Id == boulderId)
-                          ?? throw new InvalidOperationException("Boulder not found");
+                .Include(b => b.BoulderHolds)
+                .FirstOrDefaultAsync(b => b.Id == boulderId);
+            if (boulder == null)
+            {
+                _logger.LogWarning("Revise failed: boulder {BoulderId} not found for user {UserId}", boulderId, user.Id);
+                throw new InvalidOperationException("Boulder not found");
+            }
 
             if (boulder.CreatedByUserId != user.Id)
             {
+                _logger.LogWarning(
+                    "Revise denied: user {UserId} is not creator {OwnerUserId} of boulder {BoulderId}",
+                    user.Id, boulder.CreatedByUserId, boulderId);
                 throw new InvalidOperationException("Only the creator can revise a boulder");
             }
 
@@ -601,11 +647,13 @@ public class BoulderService : IBoulderService
                     return boulder;
                 }
 
+                _logger.LogWarning("Revise rejected: boulder {BoulderId} is not historic", boulderId);
                 throw new InvalidOperationException("Boulder is not historic");
             }
 
             if (updatedHolds.Count == 0 && !boulder.IsDraft)
             {
+                _logger.LogWarning("Revise rejected: boulder {BoulderId} has no holds", boulderId);
                 throw new InvalidOperationException("Select at least one hold");
             }
 
@@ -657,6 +705,9 @@ public class BoulderService : IBoulderService
             }
 
             await db.SaveChangesAsync();
+            _logger.LogInformation(
+                "Boulder {BoulderId} revised on wall {WallId} by {UserId}",
+                boulderId, boulder.WallId, user.Id);
 
             await _activityLogService.LogAsync(boulder.WallId, boulderId, ActivityType.BoulderRevised);
             return boulder;
@@ -677,12 +728,19 @@ public class BoulderService : IBoulderService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
-            var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId)
-                          ?? throw new InvalidOperationException("Boulder not found");
+            var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId);
+            if (boulder == null)
+            {
+                _logger.LogWarning("Delete failed: boulder {BoulderId} not found for user {UserId}", boulderId, user.Id);
+                throw new InvalidOperationException("Boulder not found");
+            }
 
             db.Boulders.Remove(boulder);
             await db.SaveChangesAsync();
             BlocwerkMetrics.RecordBoulderDeleted(boulder.WallId);
+            _logger.LogInformation(
+                "Boulder {BoulderId} deleted from wall {WallId} by {UserId}",
+                boulderId, boulder.WallId, user.Id);
         }
         catch (Exception ex)
         {
@@ -697,6 +755,7 @@ public class BoulderService : IBoulderService
         try
         {
             await SetArchivedAsync(boulderId, true);
+            _logger.LogInformation("Boulder {BoulderId} archived", boulderId);
         }
         catch (Exception ex)
         {
@@ -711,6 +770,7 @@ public class BoulderService : IBoulderService
         try
         {
             await SetArchivedAsync(boulderId, false);
+            _logger.LogInformation("Boulder {BoulderId} unarchived", boulderId);
         }
         catch (Exception ex)
         {
@@ -751,11 +811,18 @@ public class BoulderService : IBoulderService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
-            var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId)
-                          ?? throw new InvalidOperationException("Boulder not found");
+            var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId);
+            if (boulder == null)
+            {
+                _logger.LogWarning("Propose grade failed: boulder {BoulderId} not found for user {UserId}", boulderId, user.Id);
+                throw new InvalidOperationException("Boulder not found");
+            }
 
             if (boulder.CreatedByUserId == user.Id)
             {
+                _logger.LogWarning(
+                    "Propose grade denied: user {UserId} is the creator of boulder {BoulderId}",
+                    user.Id, boulderId);
                 throw new InvalidOperationException("Cannot propose a grade for your own boulder");
             }
 
@@ -768,6 +835,9 @@ public class BoulderService : IBoulderService
                 existing.ProposedByUserId = user.Id;
                 existing.CreatedAt = DateTimeOffset.UtcNow;
                 await db.SaveChangesAsync();
+                _logger.LogInformation(
+                    "Grade proposal {ProposalId} updated for boulder {BoulderId} by {UserId}",
+                    existing.Id, boulderId, user.Id);
                 existing.ProposedBy = user;
                 return existing;
             }
@@ -781,6 +851,9 @@ public class BoulderService : IBoulderService
 
             db.GradeProposals.Add(proposal);
             await db.SaveChangesAsync();
+            _logger.LogInformation(
+                "Grade proposal {ProposalId} created for boulder {BoulderId} by {UserId}",
+                proposal.Id, boulderId, user.Id);
 
             proposal.ProposedBy = user;
             return proposal;
@@ -821,18 +894,28 @@ public class BoulderService : IBoulderService
             db.CurrentUserId = user.Id;
 
             var proposal = await db.GradeProposals
-                               .Include(gp => gp.Boulder)
-                               .FirstOrDefaultAsync(gp => gp.Id == proposalId && !gp.IsResolved)
-                           ?? throw new InvalidOperationException("Proposal not found");
+                .Include(gp => gp.Boulder)
+                .FirstOrDefaultAsync(gp => gp.Id == proposalId && !gp.IsResolved);
+            if (proposal == null)
+            {
+                _logger.LogWarning("Accept grade failed: proposal {ProposalId} not found for user {UserId}", proposalId, user.Id);
+                throw new InvalidOperationException("Proposal not found");
+            }
 
             if (proposal.Boulder.CreatedByUserId != user.Id)
             {
+                _logger.LogWarning(
+                    "Accept grade denied: user {UserId} is not creator {OwnerUserId} of boulder {BoulderId} (proposal {ProposalId})",
+                    user.Id, proposal.Boulder.CreatedByUserId, proposal.BoulderId, proposalId);
                 throw new InvalidOperationException("Only the creator can accept a grade proposal");
             }
 
             proposal.Boulder.Grade = proposal.ProposedGrade;
             proposal.IsResolved = true;
             await db.SaveChangesAsync();
+            _logger.LogInformation(
+                "Grade proposal {ProposalId} accepted for boulder {BoulderId} by {UserId}",
+                proposalId, proposal.BoulderId, user.Id);
         }
         catch (Exception ex)
         {
@@ -851,17 +934,27 @@ public class BoulderService : IBoulderService
             db.CurrentUserId = user.Id;
 
             var proposal = await db.GradeProposals
-                               .Include(gp => gp.Boulder)
-                               .FirstOrDefaultAsync(gp => gp.Id == proposalId && !gp.IsResolved)
-                           ?? throw new InvalidOperationException("Proposal not found");
+                .Include(gp => gp.Boulder)
+                .FirstOrDefaultAsync(gp => gp.Id == proposalId && !gp.IsResolved);
+            if (proposal == null)
+            {
+                _logger.LogWarning("Reject grade failed: proposal {ProposalId} not found for user {UserId}", proposalId, user.Id);
+                throw new InvalidOperationException("Proposal not found");
+            }
 
             if (proposal.Boulder.CreatedByUserId != user.Id)
             {
+                _logger.LogWarning(
+                    "Reject grade denied: user {UserId} is not creator {OwnerUserId} of boulder {BoulderId} (proposal {ProposalId})",
+                    user.Id, proposal.Boulder.CreatedByUserId, proposal.BoulderId, proposalId);
                 throw new InvalidOperationException("Only the creator can reject a grade proposal");
             }
 
             proposal.IsResolved = true;
             await db.SaveChangesAsync();
+            _logger.LogInformation(
+                "Grade proposal {ProposalId} rejected for boulder {BoulderId} by {UserId}",
+                proposalId, proposal.BoulderId, user.Id);
         }
         catch (Exception ex)
         {

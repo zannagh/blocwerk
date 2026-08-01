@@ -7,6 +7,10 @@
 
   <ItemGroup>
     <PackageReference Include="Serilog.AspNetCore" />
+    <!-- Routes all Serilog output (incl. ILogger routed through Serilog) to the OTLP collector. -->
+    <PackageReference Include="Serilog.Sinks.OpenTelemetry" />
+    <!-- Serves a Prometheus /metrics scrape endpoint so metrics are readable over HTTP. -->
+    <PackageReference Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" />
   </ItemGroup>
 
   <ItemGroup>

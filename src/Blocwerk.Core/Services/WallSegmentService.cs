@@ -3,6 +3,7 @@ using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Telemetry;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Services;
 
@@ -41,13 +42,16 @@ public class WallSegmentService : IWallSegmentService
 
     private readonly IDbContextFactory<BlocwerkDbContext> _dbContextFactory;
     private readonly ICurrentUserService _currentUserService;
+    private readonly ILogger<WallSegmentService> _logger;
 
     public WallSegmentService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
-        ICurrentUserService currentUserService)
+        ICurrentUserService currentUserService,
+        ILogger<WallSegmentService> logger)
     {
         _dbContextFactory = dbContextFactory;
         _currentUserService = currentUserService;
+        _logger = logger;
     }
 
     public async Task<List<WallSegment>> GetSegmentsAsync(Guid wallId)
@@ -81,9 +85,14 @@ public class WallSegmentService : IWallSegmentService
             db.CurrentUserId = user.Id;
 
             var wall = await db.Walls
-                           .Include(w => w.Segments)
-                           .FirstOrDefaultAsync(w => w.Id == wallId)
-                       ?? throw new InvalidOperationException("Wall not found");
+                .Include(w => w.Segments)
+                .FirstOrDefaultAsync(w => w.Id == wallId);
+
+            if (wall is null)
+            {
+                _logger.LogWarning("Wall {WallId} not found while replacing segments for {UserId}", wallId, user.Id);
+                throw new InvalidOperationException("Wall not found");
+            }
 
             db.WallSegments.RemoveRange(wall.Segments);
 
@@ -92,6 +101,7 @@ public class WallSegmentService : IWallSegmentService
             {
                 if (input.Points.Count < 3)
                 {
+                    _logger.LogWarning("Rejected segment '{SegmentName}' on wall {WallId} with too few points ({PointCount})", input.Name, wallId, input.Points.Count);
                     throw new InvalidOperationException("A segment needs at least three points");
                 }
 
@@ -111,6 +121,7 @@ public class WallSegmentService : IWallSegmentService
             }
 
             await db.SaveChangesAsync();
+            _logger.LogInformation("Segments replaced on wall {WallId} ({Count}) by {UserId}", wallId, created.Count, user.Id);
             return created.OrderBy(s => s.SortOrder).ToList();
         }
         catch (Exception ex)
@@ -129,11 +140,17 @@ public class WallSegmentService : IWallSegmentService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
-            var segment = await db.WallSegments.FirstOrDefaultAsync(s => s.Id == segmentId)
-                          ?? throw new InvalidOperationException("Segment not found");
+            var segment = await db.WallSegments.FirstOrDefaultAsync(s => s.Id == segmentId);
+
+            if (segment is null)
+            {
+                _logger.LogWarning("Segment {SegmentId} not found while deleting for {UserId}", segmentId, user.Id);
+                throw new InvalidOperationException("Segment not found");
+            }
 
             db.WallSegments.Remove(segment);
             await db.SaveChangesAsync();
+            _logger.LogInformation("Segment {SegmentId} deleted from wall {WallId} by {UserId}", segmentId, segment.WallId, user.Id);
         }
         catch (Exception ex)
         {

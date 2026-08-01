@@ -1,6 +1,7 @@
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Blocwerk.Core.Tests;
 
@@ -54,7 +55,7 @@ public class OfflineReplayTests
         var boulder = await h.BoulderService.CreateBoulderAsync(
             h.WallId, "B", null, [new BoulderHoldInput(holds[0].Id)]);
 
-        var commentService = new CommentService(h.DbContextFactory, h.CurrentUser, h.ActivityLog);
+        var commentService = new CommentService(h.DbContextFactory, h.CurrentUser, h.ActivityLog, NullLogger<CommentService>.Instance);
         var requestId = Guid.NewGuid();
 
         var first = await commentService.AddCommentAsync(boulder.Id, "Nice", requestId);

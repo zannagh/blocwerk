@@ -3,6 +3,7 @@ using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Telemetry;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Services;
 
@@ -28,13 +29,16 @@ public class SessionService : ISessionService
 {
     private readonly IDbContextFactory<BlocwerkDbContext> _dbContextFactory;
     private readonly ICurrentUserService _currentUserService;
+    private readonly ILogger<SessionService> _logger;
 
     public SessionService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
-        ICurrentUserService currentUserService)
+        ICurrentUserService currentUserService,
+        ILogger<SessionService> logger)
     {
         _dbContextFactory = dbContextFactory;
         _currentUserService = currentUserService;
+        _logger = logger;
     }
 
     public async Task<ClimbingSession> StartSessionAsync(Guid wallId)
@@ -51,6 +55,7 @@ public class SessionService : ISessionService
             var wallExists = await db.Walls.AnyAsync(w => w.Id == wallId);
             if (!wallExists)
             {
+                _logger.LogWarning("Cannot start session: wall {WallId} not found for {UserId}", wallId, user.Id);
                 throw new InvalidOperationException("Wall not found");
             }
 
@@ -66,6 +71,8 @@ public class SessionService : ISessionService
             await db.SaveChangesAsync();
 
             BlocwerkMetrics.RecordSessionStarted(wallId);
+
+            _logger.LogInformation("Session {SessionId} started on wall {WallId} by {UserId}", session.Id, wallId, user.Id);
 
             session.Wall = await db.Walls.FirstAsync(w => w.Id == wallId);
             return session;
@@ -102,6 +109,7 @@ public class SessionService : ISessionService
             {
                 session.EndedAt = DateTimeOffset.UtcNow;
                 await db.SaveChangesAsync();
+                _logger.LogInformation("Auto-closed stale session {SessionId} for {UserId}", session.Id, user.Id);
                 return null;
             }
 
@@ -125,6 +133,8 @@ public class SessionService : ISessionService
 
             await CloseOpenSessions(db, user.Id);
             await db.SaveChangesAsync();
+
+            _logger.LogInformation("Session ended for {UserId}", user.Id);
         }
         catch (Exception ex)
         {
