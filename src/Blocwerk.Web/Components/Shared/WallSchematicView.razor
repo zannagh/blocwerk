@@ -43,19 +43,19 @@
 
                 @if (hold.ShapePoints is { Count: >= 3 })
                 {
-                    <polygon points="@Pts(hold.ShapePoints.Select(sp => (p.X + sp.Dx, p.Y + sp.Dy)))"
+                    <polygon @key="hold.Id" points="@Pts(hold.ShapePoints.Select(sp => (p.X + sp.Dx, p.Y + sp.Dy)))"
                              fill="@fill" stroke="@stroke" stroke-width="0.3" opacity="@opacity" />
                 }
                 else if (isFoot)
                 {
-                    <rect x="@F(p.X * 100 - r)" y="@F(p.Y * 100 - r)"
+                    <rect @key="hold.Id" x="@F(p.X * 100 - r)" y="@F(p.Y * 100 - r)"
                           width="@F(r * 2)" height="@F(r * 2)"
                           rx="0.3" ry="0.3"
                           fill="@fill" stroke="@stroke" stroke-width="0.3" opacity="@opacity" />
                 }
                 else
                 {
-                    <circle cx="@F(p.X * 100)" cy="@F(p.Y * 100)"
+                    <circle @key="hold.Id" cx="@F(p.X * 100)" cy="@F(p.Y * 100)"
                             r="@F(r)"
                             fill="@fill" stroke="@stroke" stroke-width="0.3" opacity="@opacity" />
                 }
@@ -115,8 +115,34 @@
     /// <summary>The folding layout, rebuilt whenever the segments or wall angle change.</summary>
     private WallSchematicLayout _layout = WallProjection.BuildLayout(null, 0);
 
+    // OnParametersSet fires on every parent re-render, not only when inputs change. Building the
+    // fold (SchematicSegments + BuildLayout) is not free, so skip it when the inputs that actually
+    // feed it are the same references/values as last time. In the wall's own Schematic view these
+    // are stable fields, so this removes the rebuild on every unrelated re-render; the segment
+    // editor preview passes a fresh Entities() list each render and so still rebuilds live.
+    private List<WallSegment>? _lastSegments;
+    private List<Hold>? _lastHolds;
+    private List<Hold>? _lastWallHolds;
+    private int _lastAngle = int.MinValue;
+    private bool _layoutBuilt;
+
     protected override void OnParametersSet()
     {
+        if (_layoutBuilt
+            && ReferenceEquals(_lastSegments, Segments)
+            && ReferenceEquals(_lastHolds, Holds)
+            && ReferenceEquals(_lastWallHolds, WallHolds)
+            && _lastAngle == Angle)
+        {
+            return;
+        }
+
+        _lastSegments = Segments;
+        _lastHolds = Holds;
+        _lastWallHolds = WallHolds;
+        _lastAngle = Angle;
+        _layoutBuilt = true;
+
         // Floor panels, and wall panels no hold sits in, are trimmed out of the schematic. The
         // trimming basis is the whole wall's holds when supplied, so the shape is stable across
         // boulders; the drawn Holds are the fallback for the wall's own view.

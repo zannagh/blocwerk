@@ -49,6 +49,7 @@ public class ActivityLogService : IActivityLogService
         db.CurrentUserId = Guid.Empty;
 
         var query = db.ActivityLog
+            .AsNoTracking()
             .Include(a => a.User)
             .Where(a => a.WallId == wallId)
             .OrderByDescending(a => a.Timestamp);
@@ -65,6 +66,7 @@ public class ActivityLogService : IActivityLogService
         db.CurrentUserId = Guid.Empty;
 
         var query = db.ActivityLog
+            .AsNoTracking()
             .Include(a => a.User)
             .Where(a => a.BoulderId == boulderId)
             .OrderByDescending(a => a.Timestamp);

@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text.Json;
 using Blocwerk.Authentication.Providers;
+using Blocwerk.Authentication.Resources;
 using Blocwerk.Core.Configuration;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -30,23 +31,74 @@ public class AccountController : Controller
 
     [HttpGet("/account/login")]
     [AllowAnonymous]
-    public IActionResult Login(string? returnUrl = null)
+    public IActionResult Login(string? returnUrl = null, string? error = null)
     {
         if (!string.IsNullOrEmpty(returnUrl))
         {
             TempData["ReturnUrl"] = returnUrl;
         }
 
-        var queryParams = new Dictionary<string, string>
+        return Redirect(string.IsNullOrEmpty(error)
+            ? "/oauth-select"
+            : $"/oauth-select?error={Uri.EscapeDataString(error)}");
+    }
+
+    // The provider-selection page (/oauth-select) links straight here as a plain GET, so choosing a
+    // provider is a single server round-trip that 302s to the provider — no Blazor circuit, no
+    // double-click race. Mirrors what the old interactive OAuthSelect.RedirectToProvider did.
+    [HttpGet("/account/external")]
+    [AllowAnonymous]
+    public IActionResult ExternalLogin([FromQuery] string provider, [FromQuery] string? returnUrl = null)
+    {
+        var config = GetProviderAuthConfig(provider);
+        if (config is null)
         {
-            ["redirect_uri"] = $"{BaseUrl}/account/callback",
+            return Redirect("/oauth-select");
+        }
+
+        if (!string.IsNullOrEmpty(returnUrl))
+        {
+            TempData["ReturnUrl"] = returnUrl;
+        }
+
+        var state = Guid.NewGuid().ToString();
+        _redirectUriProvider.AddRedirectUri(state, new RedirectSettings
+        {
+            Uri = $"{BaseUrl}/account/callback",
+            Provider = provider,
+        });
+
+        var parameters = new Dictionary<string, string>
+        {
+            ["client_id"] = config.Value.ClientId,
+            ["state"] = state,
+            ["redirect_uri"] = $"{BaseUrl}/oauth-callback",
         };
 
-        var queryString = string.Join("&", queryParams.Select(kvp =>
+        if (provider == "google")
+        {
+            parameters["response_type"] = "code";
+            parameters["scope"] = "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile";
+        }
+        else if (provider == "microsoft")
+        {
+            parameters["response_type"] = "code";
+            parameters["scope"] = "User.Read";
+        }
+
+        var queryString = string.Join("&", parameters.Select(kvp =>
             $"{Uri.EscapeDataString(kvp.Key)}={Uri.EscapeDataString(kvp.Value)}"));
 
-        return Redirect($"/oauth-select?{queryString}");
+        return Redirect($"{config.Value.AuthUrl}?{queryString}");
     }
+
+    private (string AuthUrl, string ClientId)? GetProviderAuthConfig(string provider) => provider switch
+    {
+        "github" when _configuration.GitHubOAuth.Enabled => (_configuration.GitHubOAuth.OAuthUrl, _configuration.GitHubOAuth.ClientId),
+        "microsoft" when _configuration.MicrosoftOAuth.Enabled => (_configuration.MicrosoftOAuth.OAuthUrl, _configuration.MicrosoftOAuth.ClientId),
+        "google" when _configuration.GoogleOAuth.Enabled => (_configuration.GoogleOAuth.OAuthUrl, _configuration.GoogleOAuth.ClientId),
+        _ => null,
+    };
 
     [HttpGet("/account/callback")]
     [AllowAnonymous]

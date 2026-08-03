@@ -285,6 +285,15 @@ h2 { font-size: 1.15rem; }
     background: var(--bg-surface-alt);
 }
 
+.info-version {
+    display: block;
+    padding: 8px 16px;
+    border-top: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-variant-numeric: tabular-nums;
+}
+
 .content {
     flex: 1;
     padding-bottom: 72px;

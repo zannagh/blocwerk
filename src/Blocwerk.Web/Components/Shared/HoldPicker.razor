@@ -86,14 +86,14 @@
 
                 @if (hold.ShapePoints is { Count: >= 3 })
                 {
-                    <polygon points="@Pts(hold.ShapePoints.Select(sp => (hold.X + sp.Dx, hold.Y + sp.Dy)))"
+                    <polygon @key="hold.Id" points="@Pts(hold.ShapePoints.Select(sp => (hold.X + sp.Dx, hold.Y + sp.Dy)))"
                              fill="@fillColor" stroke="@strokeColor" stroke-width="@sw" stroke-dasharray="@dash"
                              style="cursor: pointer"
                              @onclick="() => ToggleHold(hold)" @onclick:stopPropagation="true" />
                 }
                 else if (isFoot)
                 {
-                    <rect x="@F((hold.X - r/100)*100)" y="@F((hold.Y - r/100)*100)"
+                    <rect @key="hold.Id" x="@F((hold.X - r/100)*100)" y="@F((hold.Y - r/100)*100)"
                           width="@F(r*2/100*100)" height="@F(r*2/100*100)" rx="0.3"
                           fill="@fillColor" stroke="@strokeColor" stroke-width="@sw" stroke-dasharray="@dash"
                           style="cursor: pointer"
@@ -101,7 +101,7 @@
                 }
                 else
                 {
-                    <circle cx="@F(hold.X * 100)" cy="@F(hold.Y * 100)" r="@F(r)"
+                    <circle @key="hold.Id" cx="@F(hold.X * 100)" cy="@F(hold.Y * 100)" r="@F(r)"
                             fill="@fillColor" stroke="@strokeColor" stroke-width="@sw" stroke-dasharray="@dash"
                             style="cursor: pointer"
                             @onclick="() => ToggleHold(hold)" @onclick:stopPropagation="true" />
@@ -137,13 +137,13 @@ else
 
                 @if (isFoot)
                 {
-                    <rect x="@F(p.X * 100 - r)" y="@F(p.Y * 100 - r)" width="@F(r * 2)" height="@F(r * 2)"
+                    <rect @key="hold.Id" x="@F(p.X * 100 - r)" y="@F(p.Y * 100 - r)" width="@F(r * 2)" height="@F(r * 2)"
                           rx="0.3" fill="@fillColor" stroke="@strokeColor" stroke-width="@sw" stroke-dasharray="@dash"
                           style="cursor: pointer" @onclick="() => ToggleHold(hold)" />
                 }
                 else
                 {
-                    <circle cx="@F(p.X * 100)" cy="@F(p.Y * 100)" r="@F(r)"
+                    <circle @key="hold.Id" cx="@F(p.X * 100)" cy="@F(p.Y * 100)" r="@F(r)"
                             fill="@fillColor" stroke="@strokeColor" stroke-width="@sw" stroke-dasharray="@dash"
                             style="cursor: pointer" @onclick="() => ToggleHold(hold)" />
                 }
@@ -206,13 +206,33 @@ else
             _placeUsage = HoldUsage.HandAndFoot;
         }
 
-        // _segments is the usable set for projection: caller-supplied, else self-loaded.
-        _segments = (Segments ?? _loaded ?? [])
-            .Where(s => s.Points.Count >= 3).OrderBy(s => s.SortOrder).ToList();
+        // The parent re-renders on every hold toggle (SelectedHolds is two-way bound), so this runs
+        // constantly during picking. The projection only depends on the segments and wall angle, so
+        // rebuild it only when those actually change (self-loaded _loaded flips from null once the
+        // async segment load completes, which this picks up via the reference check).
+        if (!_projectionBuilt
+            || !ReferenceEquals(_lastSegments, Segments)
+            || !ReferenceEquals(_lastLoaded, _loaded)
+            || _lastWallAngle != WallAngle)
+        {
+            _lastSegments = Segments;
+            _lastLoaded = _loaded;
+            _lastWallAngle = WallAngle;
+            _projectionBuilt = true;
 
-        // Build the fold once here; the map render loop then projects each hold through it.
-        _layout = WallProjection.BuildLayout(_segments, WallAngle);
+            // _segments is the usable set for projection: caller-supplied, else self-loaded.
+            _segments = (Segments ?? _loaded ?? [])
+                .Where(s => s.Points.Count >= 3).OrderBy(s => s.SortOrder).ToList();
+
+            // Build the fold once here; the map render loop then projects each hold through it.
+            _layout = WallProjection.BuildLayout(_segments, WallAngle);
+        }
     }
+
+    private List<WallSegment>? _lastSegments;
+    private List<WallSegment>? _lastLoaded;
+    private int _lastWallAngle = int.MinValue;
+    private bool _projectionBuilt;
 
     protected override async Task OnInitializedAsync()
     {

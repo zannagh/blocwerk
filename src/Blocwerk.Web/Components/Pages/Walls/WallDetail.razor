@@ -453,15 +453,45 @@ else
 
     private enum ViewMode { Photo, Schematic }
 
-    // Historic boulders always sink to the bottom of the active list; OrderBy is a stable
-    // sort in LINQ-to-objects, so the chosen sort order is preserved within each group.
-    private List<BoulderListItem> ActiveBoulders =>
-        ApplySort(ApplyFilters(_items.Where(i => !i.Boulder.IsArchived)))
+    // ActiveBoulders/ArchivedBoulders are read several times per render (empty-check, count,
+    // foreach), and the page re-renders on every unrelated state change (toasts, activity). The
+    // filter+sort chain parses grades per item, so recomputing it 6x/render was pure waste. Cache
+    // the results and only recompute when the underlying data (_items is always *reassigned*, never
+    // mutated in place) or a filter/sort field actually changes.
+    private List<BoulderListItem>? _activeCache;
+    private List<BoulderListItem>? _archivedCache;
+    private object? _boulderCacheItemsRef;
+    private (string?, bool, bool, bool, bool, string?, string?, SortMode, Guid?) _boulderCacheKey;
+
+    private void EnsureBoulderLists()
+    {
+        var key = (_searchText, _fAttempted, _fDone, _fFavorites, _fCreated, _gradeMin, _gradeMax, _sort, _currentUserId);
+        if (_activeCache is not null && _archivedCache is not null
+            && ReferenceEquals(_boulderCacheItemsRef, _items) && key.Equals(_boulderCacheKey))
+        {
+            return;
+        }
+
+        _boulderCacheItemsRef = _items;
+        _boulderCacheKey = key;
+
+        // Historic boulders always sink to the bottom of the active list; OrderBy is a stable
+        // sort in LINQ-to-objects, so the chosen sort order is preserved within each group.
+        _activeCache = ApplySort(ApplyFilters(_items.Where(i => !i.Boulder.IsArchived)))
             .OrderBy(i => i.Boulder.IsHistoric)
             .ToList();
+        _archivedCache = ApplySort(ApplyFilters(_items.Where(i => i.Boulder.IsArchived))).ToList();
+    }
 
-    private List<BoulderListItem> ArchivedBoulders =>
-        ApplySort(ApplyFilters(_items.Where(i => i.Boulder.IsArchived))).ToList();
+    private List<BoulderListItem> ActiveBoulders
+    {
+        get { EnsureBoulderLists(); return _activeCache!; }
+    }
+
+    private List<BoulderListItem> ArchivedBoulders
+    {
+        get { EnsureBoulderLists(); return _archivedCache!; }
+    }
 
     private IEnumerable<BoulderListItem> ApplyFilters(IEnumerable<BoulderListItem> src)
     {

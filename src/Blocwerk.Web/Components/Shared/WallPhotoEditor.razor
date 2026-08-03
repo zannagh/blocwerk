@@ -1273,6 +1273,18 @@
 
     private async Task OnSvgMouseMove(MouseEventArgs e)
     {
+        // Nothing is being dragged: don't pay a SignalR interop round-trip just to follow a hovering
+        // cursor. Only once a drag is active do we resolve the pointer's wall-relative position.
+        var dragging = _alignDragHandle.HasValue
+            || _shapeTiltDragging
+            || _draggingBorderIdx.HasValue
+            || _draggingShapePointIdx.HasValue
+            || _draggingHoldId != null;
+        if (!dragging)
+        {
+            return;
+        }
+
         var pos = await JS.InvokeAsync<RelativePos>("wallEditor.getRelativePosition", _containerRef, e.ClientX, e.ClientY);
 
         if (_alignDragHandle.HasValue)

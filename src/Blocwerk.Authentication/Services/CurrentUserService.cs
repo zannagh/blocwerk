@@ -18,6 +18,12 @@ public class CurrentUserService : ICurrentUserService
     private readonly IDbContextFactory<BlocwerkDbContext> _dbContextFactory;
     private readonly BlocwerkSettings _settings;
 
+    // Scoped service = one instance per circuit / HTTP request. The signed-in identity is stable for
+    // that lifetime (sign-in/out does a full reload that starts a fresh scope), so resolve the User
+    // once and reuse it. Without this a single page render fanned out to 5-6 identical Users lookups
+    // (GetWall + GetSegments + GetBoulderList + GetActivity + GetHoldUsage each re-queried the user).
+    private User? _cachedUser;
+
     public CurrentUserService(
         BlocwerkSettings settings,
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
@@ -30,8 +36,15 @@ public class CurrentUserService : ICurrentUserService
         _settings = settings;
     }
 
+    public void InvalidateCache() => _cachedUser = null;
+
     public async Task<User> GetCurrentUserAsync()
     {
+        if (_cachedUser is not null)
+        {
+            return _cachedUser;
+        }
+
         var claimsIdentity = await TryGetClaimsIdentityFromCookie()
                              ?? TryGetClaimsIdentityFromHttpContext();
 
@@ -68,6 +81,7 @@ public class CurrentUserService : ICurrentUserService
             await dbContext.SaveChangesAsync();
         }
 
+        _cachedUser = user;
         return user;
     }
 

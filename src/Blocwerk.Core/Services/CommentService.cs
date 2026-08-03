@@ -105,6 +105,7 @@ public class CommentService : ICommentService
             db.CurrentUserId = Guid.Empty;
 
             var query = db.BoulderComments
+                .AsNoTracking()
                 .Include(c => c.User)
                 .Where(c => c.BoulderId == boulderId)
                 .OrderByDescending(c => c.CreatedAt);

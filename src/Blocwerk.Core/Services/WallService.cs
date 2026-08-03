@@ -264,7 +264,10 @@ public class WallService : IWallService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
+            // Single collection include (Members) so AsNoTracking is safe here — no reliance on
+            // identity resolution the way GetWallAsync has (it includes Boulders twice).
             var walls = await db.Walls
+                .AsNoTracking()
                 .Include(w => w.Members)
                 .ToListAsync();
 
@@ -1717,6 +1720,7 @@ public class WallService : IWallService
             db.CurrentUserId = user.Id;
 
             return await db.WallMembers
+                .AsNoTracking()
                 .Include(wm => wm.User)
                 .Where(wm => wm.WallId == wallId)
                 .OrderBy(wm => wm.JoinedAt)

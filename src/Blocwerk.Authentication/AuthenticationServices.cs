@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -24,7 +25,16 @@ public static class AuthenticationServices
         app.Services.AddHttpContextAccessor();
         app.Services.AddAuthenticationCore();
         app.Services.AddCascadingAuthenticationState();
-        app.Services.AddDataProtection();
+        var dataProtection = app.Services.AddDataProtection().SetApplicationName("Blocwerk");
+        if (!app.Environment.IsDevelopment())
+        {
+            // Persist the key ring to a mounted volume (docker-compose maps ./dpkeys -> /app/keys).
+            // Without this the keys live in the container's ephemeral filesystem and are regenerated
+            // on every redeploy, which invalidates every auth cookie AND the OAuth state/correlation
+            // cookie: everyone is logged out on each deploy, and anyone mid-login when a deploy lands
+            // hits "auth_failed". In Development we keep the default local key store.
+            dataProtection.PersistKeysToFileSystem(new System.IO.DirectoryInfo("/app/keys"));
+        }
 
         app.Services.AddSingleton<RedirectUriProvider>();
         app.Services.AddSingleton<CodeBasedAuthProvider>();

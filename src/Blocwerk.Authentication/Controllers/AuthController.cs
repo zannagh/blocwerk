@@ -77,7 +77,12 @@ public class AuthController : ControllerBase
 
         _codeBasedAuthProvider.AddCodeIdentityProvider(code, redirectUri.Provider);
 
-        return Redirect($"{redirectUri.Uri}?state={state}&code={code}");
+        // Route through the static /signing-in spinner page rather than jumping straight to
+        // /account/callback: the callback's token exchange takes ~1-2s, and the browser keeps the
+        // spinner visible for that whole wait instead of showing a blank/tempting page. The page
+        // forwards to /account/callback (a fixed local path — not taken from state, to avoid an
+        // open redirect).
+        return Redirect($"/signing-in?state={Uri.EscapeDataString(state)}&code={Uri.EscapeDataString(code)}");
     }
 
     [HttpPost("token")]

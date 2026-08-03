@@ -81,8 +81,10 @@ public class ProgressionService : IProgressionService
                 .ToListAsync();
             var trainingScore = CalculateTrainingScore(hangboard, pullups);
 
-            var boulderCurve = await BuildBoulderCurveAsync(db, user.Id, windowDays);
-            var trainingCurve = await BuildTrainingCurveAsync(db, user.Id, windowDays);
+            // The curve builders window the very same rows already loaded above, so reuse those
+            // lists instead of issuing three more identical queries per request.
+            var boulderCurve = BuildBoulderCurve(attempts, windowDays);
+            var trainingCurve = BuildTrainingCurve(hangboard, pullups, windowDays);
 
             return new UserProgression(boulderScore, boulderGrade, trainingScore, boulderCurve, trainingCurve, windowDays);
         }
@@ -233,6 +235,10 @@ public class ProgressionService : IProgressionService
             var dbUser = await db.Users.FirstAsync(u => u.Id == user.Id);
             dbUser.ProgressionWindowDays = Math.Clamp(days, 7, 365);
             await db.SaveChangesAsync();
+
+            // The current-user service caches the User for the scope; drop it so the re-render that
+            // recomputes progression reads the new window rather than the stale cached one.
+            _currentUserService.InvalidateCache();
             _logger.LogInformation("Progression window updated to {WindowDays} days for {UserId}", dbUser.ProgressionWindowDays, user.Id);
         }
         catch (Exception ex)
@@ -286,14 +292,9 @@ public class ProgressionService : IProgressionService
         return score;
     }
 
-    private async Task<List<ProgressionPoint>> BuildBoulderCurveAsync(BlocwerkDbContext db, Guid userId, int windowDays)
+    private static List<ProgressionPoint> BuildBoulderCurve(List<Attempt> attempts, int windowDays)
     {
         var since = DateTimeOffset.UtcNow.AddDays(-windowDays);
-        var attempts = await db.Attempts
-            .Include(a => a.Boulder)
-            .Where(a => a.UserId == userId && a.Timestamp >= since)
-            .OrderBy(a => a.Timestamp)
-            .ToListAsync();
 
         var curve = new List<ProgressionPoint>();
         var startDate = DateOnly.FromDateTime(since.Date);
@@ -311,16 +312,9 @@ public class ProgressionService : IProgressionService
         return curve;
     }
 
-    private async Task<List<ProgressionPoint>> BuildTrainingCurveAsync(BlocwerkDbContext db, Guid userId, int windowDays)
+    private static List<ProgressionPoint> BuildTrainingCurve(List<HangboardSession> hangboard, List<PullupSession> pullups, int windowDays)
     {
         var since = DateTimeOffset.UtcNow.AddDays(-windowDays);
-
-        var hangboard = await db.HangboardSessions
-            .Where(h => h.UserId == userId && h.Timestamp >= since)
-            .ToListAsync();
-        var pullups = await db.PullupSessions
-            .Where(p => p.UserId == userId && p.Timestamp >= since)
-            .ToListAsync();
 
         var curve = new List<ProgressionPoint>();
         var startDate = DateOnly.FromDateTime(since.Date);

@@ -127,7 +127,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            type=raw,value=${{ steps.version.outputs.semVer }},enable=${{ needs.determine-jobs.outputs.is_release == 'true' }}
+            type=raw,value=${{ steps.version.outputs.semVer }}
 
       - name: Build and push Docker image
         if: needs.determine-jobs.outputs.should_push_image == 'true'

@@ -38,7 +38,39 @@ services:
       POSTGRES__PASSWORD: blocwerk_dev
     volumes:
       - ./appsettings.json:/app/appsettings.json:ro
+      # Persist the DataProtection key ring across redeploys (see AuthenticationServices.cs) so a
+      # deploy no longer logs everyone out / breaks in-flight logins.
+      - ./dpkeys:/app/keys
     depends_on:
       - postgres
       - otel-dashboard
+    restart: unless-stopped
+
+  # Receives the GitHub releases/packages webhook and, on a new published image, pulls and
+  # recreates the blocwerk service. See docker/deploy-hook/ (and .env.example for required vars).
+  # SECURITY: this drives the host docker daemon via the mounted socket, so it is effectively
+  # root on the host. It only acts on webhooks whose HMAC matches WEBHOOK_SECRET — keep that secret
+  # strong and never expose /hooks/deploy publicly without it.
+  deploy-hook:
+    build:
+      context: ./deploy-hook
+    image: blocwerk-deploy-hook:local
+    ports:
+      - "${DEPLOY_HOOK_PORT:-9000}:9000"
+    environment:
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:?set WEBHOOK_SECRET in docker/.env and in the GitHub webhook}
+      COMPOSE_DIR: ${COMPOSE_DIR:?set COMPOSE_DIR in docker/.env to this dir's absolute host path}
+      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-blocwerk}
+      DEPLOY_SERVICE: blocwerk
+      # GHCR login for the (private) package. The host's own login lives in the macOS keychain and
+      # can't be reused inside this Linux container, so give it a read:packages token. Leave empty
+      # if you make the package public.
+      GHCR_USER: ${GHCR_USER:-zannagh}
+      GHCR_TOKEN: ${GHCR_TOKEN:-}
+    volumes:
+      # Drive the host docker daemon.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Same-path mount so `docker compose` inside resolves the stack's relative bind mounts to the
+      # identical host paths the daemon expects.
+      - ${COMPOSE_DIR}:${COMPOSE_DIR}
     restart: unless-stopped

@@ -155,14 +155,14 @@ else
                            rule are not part of the boulder, so they are drawn underneath. *@
                         @foreach (var hold in ColorRuleHolds)
                         {
-                            <circle cx="@F(hold.X * 100)" cy="@F(hold.Y * 100)"
+                            <circle @key="hold.Id" cx="@F(hold.X * 100)" cy="@F(hold.Y * 100)"
                                     r="@F(hold.Radius * 100)"
                                     fill="@BoulderHoldColors.ColorRuleFill()"
                                     stroke="@BoulderHoldColors.Foot" stroke-width="0.4" />
                         }
                         @foreach (var bh in _boulder.BoulderHolds)
                         {
-                            <circle cx="@F(bh.Hold.X * 100)" cy="@F(bh.Hold.Y * 100)"
+                            <circle @key="bh.HoldId" cx="@F(bh.Hold.X * 100)" cy="@F(bh.Hold.Y * 100)"
                                     r="@F(bh.Hold.Radius * 100)"
                                     fill="@BoulderHoldColors.FillFor(bh.Type, bh.Usage)"
                                     stroke="@BoulderHoldColors.Stroke(bh.Type)" stroke-width="0.5" />

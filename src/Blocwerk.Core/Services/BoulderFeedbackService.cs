@@ -265,7 +265,9 @@ public class BoulderFeedbackService : IBoulderFeedbackService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
+            // Read-only list for the wall overview; single collection include so AsNoTracking is safe.
             var boulders = await db.Boulders
+                .AsNoTracking()
                 .Include(b => b.BoulderHolds)
                 .Include(b => b.CreatedBy)
                 .Where(b => b.WallId == wallId)

@@ -89,14 +89,27 @@
         StateHasChanged();
     }
 
+    private bool _scrollQuerying;
+
     private async Task OnScroll()
     {
-        if (!_initialized) return;
-        var frag = await JS.InvokeAsync<int>("wallCarousel.currentPage", _ref);
-        if (frag != _currentPage)
+        // Scroll events fire dozens of times a second during a swipe, and each one here is a SignalR
+        // interop round-trip. Coalesce them: while one currentPage query is in flight, drop further
+        // scroll events instead of queuing a round-trip (and a re-render) per frame.
+        if (!_initialized || _scrollQuerying) return;
+        _scrollQuerying = true;
+        try
         {
-            _currentPage = frag;
-            StateHasChanged();
+            var frag = await JS.InvokeAsync<int>("wallCarousel.currentPage", _ref);
+            if (frag != _currentPage)
+            {
+                _currentPage = frag;
+                StateHasChanged();
+            }
+        }
+        finally
+        {
+            _scrollQuerying = false;
         }
     }
 

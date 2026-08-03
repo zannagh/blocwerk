@@ -31,6 +31,17 @@
 .oauth-container .header p { color: var(--text-secondary); font-size: 1rem; }
 .oauth-container .providers { display: flex; flex-direction: column; gap: 12px; }
 
+.oauth-error {
+    background: var(--danger-bg, rgba(198, 40, 40, 0.12));
+    color: var(--danger, #c62828);
+    border: 1px solid var(--danger, #c62828);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 20px;
+    font-size: 0.9rem;
+    text-align: center;
+}
+
 .provider-button {
     display: flex; align-items: center; padding: 14px 16px;
     border: 2px solid var(--border); border-radius: 10px;

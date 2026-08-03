@@ -126,6 +126,7 @@ public class AttemptService : IAttemptService
             db.CurrentUserId = user.Id;
 
             return await db.Attempts
+                .AsNoTracking()
                 .Include(a => a.User)
                 .Where(a => a.BoulderId == boulderId)
                 .OrderByDescending(a => a.Timestamp)
@@ -148,6 +149,7 @@ public class AttemptService : IAttemptService
             db.CurrentUserId = user.Id;
 
             var query = db.Attempts
+                .AsNoTracking()
                 .Include(a => a.Boulder)
                 .Where(a => a.UserId == user.Id);
 
@@ -202,14 +204,18 @@ public class AttemptService : IAttemptService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
-            var attempts = await db.Attempts
+            // Only the attempt Type is needed to compute the summary — pull that single column
+            // rather than materialising whole Attempt rows (notes, timestamps, fks) just to count.
+            var types = await db.Attempts
+                .AsNoTracking()
                 .Where(a => a.BoulderId == boulderId && a.UserId == user.Id)
+                .Select(a => a.Type)
                 .ToListAsync();
 
             return new AttemptSummary(
-                TotalAttempts: attempts.Count,
-                HasSent: attempts.Any(a => a.Type == AttemptType.Send),
-                HasFlashed: attempts.Any(a => a.Type == AttemptType.Flash));
+                TotalAttempts: types.Count,
+                HasSent: types.Contains(AttemptType.Send),
+                HasFlashed: types.Contains(AttemptType.Flash));
         }
         catch (Exception ex)
         {

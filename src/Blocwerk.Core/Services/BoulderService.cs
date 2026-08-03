@@ -386,15 +386,12 @@ public class BoulderService : IBoulderService
             db.CurrentUserId = user.Id;
 
             return await db.Boulders
-                // Two collection includes (holds + attempts) in one SQL statement is a cartesian
-                // product: rows = holds x attempts, and it grows as attempts accumulate. Split it
-                // into one query per collection instead (EF logs a MultipleCollectionInclude
-                // warning otherwise). AsNoTracking: the context is disposed on return, so this is
-                // a read-only projection for display and never needs change tracking.
-                .AsSplitQuery()
+                // Attempts are unbounded and nobody reads boulder.Attempts off this call — the
+                // detail page loads them separately (with the User) only when shown — so don't drag
+                // them in here. That leaves a single collection include (BoulderHolds), so a single
+                // query is optimal (no cartesian, one round-trip). AsNoTracking: read-only display.
                 .AsNoTracking()
                 .Include(b => b.BoulderHolds).ThenInclude(bh => bh.Hold)
-                .Include(b => b.Attempts.OrderByDescending(a => a.Timestamp))
                 .Include(b => b.CreatedBy)
                 .Include(b => b.Wall)
                 .FirstOrDefaultAsync(b => b.Id == boulderId);
