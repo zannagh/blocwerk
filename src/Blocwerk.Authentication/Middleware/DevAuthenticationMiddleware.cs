@@ -8,10 +8,28 @@ namespace Blocwerk.Authentication.Middleware;
 public class DevAuthenticationMiddleware
 {
     private readonly RequestDelegate _next;
+    private readonly string _name;
+    private readonly string _id;
 
     public DevAuthenticationMiddleware(RequestDelegate next)
     {
         _next = next;
+
+        // BLOCWERK_DEV_USER is the full User.Identifier to act as, which is "{name}__{id}" (see
+        // ClaimsHelper.ToUserIdentifier). Split on the FIRST "__" so the reconstructed claims yield
+        // exactly that identifier — set it to your real value and you own your cloned wall.
+        var identifier = Environment.GetEnvironmentVariable("BLOCWERK_DEV_USER") ?? "Dev Admin__dev-admin";
+        var sep = identifier.IndexOf("__", StringComparison.Ordinal);
+        if (sep > 0)
+        {
+            _name = identifier[..sep];
+            _id = identifier[(sep + 2)..];
+        }
+        else
+        {
+            _name = identifier;
+            _id = identifier;
+        }
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -24,9 +42,9 @@ public class DevAuthenticationMiddleware
         {
             var claims = new List<Claim>
             {
-                new(ClaimTypes.NameIdentifier, "dev-admin__000000000"),
-                new(ClaimTypes.Name, "Dev Admin"),
-                new("Name", "Dev Admin"),
+                new(ClaimTypes.NameIdentifier, _id),
+                new(ClaimTypes.Name, _name),
+                new("Name", _name),
             };
 
             var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);

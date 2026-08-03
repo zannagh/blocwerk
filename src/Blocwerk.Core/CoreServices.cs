@@ -48,15 +48,7 @@ public static class CoreServices
         // Polls the DB for the "how many exist now" telemetry gauges (walls, boulders, users...).
         builder.Services.AddHostedService<TelemetryStatsCollector>();
 
-        if (IsDevWallSnapshotEnabled(builder))
-        {
-            // Singleton: shared in-memory wall state across all circuits / requests in dev.
-            builder.Services.AddSingleton<IWallService, DevSnapshotWallService>();
-        }
-        else
-        {
-            builder.Services.AddScoped<IWallService, WallService>();
-        }
+        builder.Services.AddScoped<IWallService, WallService>();
 
         return builder;
     }
@@ -74,24 +66,25 @@ public static class CoreServices
         }
         catch (Exception ex) when (env.IsDevelopment())
         {
-            // In dev (snapshot mode) PG may be unreachable after the first seed —
-            // keep the app starting so hot reload still works.
-            logger.LogWarning(ex, "Skipping EF migrations in Development (PG unreachable?). Snapshot mode will continue if a local snapshot exists.");
+            // Keep the app starting under hot reload even if the dev Postgres is momentarily down.
+            logger.LogWarning(ex, "Skipping EF migrations in Development (is the dev Postgres running?).");
+        }
+
+        if (env.IsDevelopment())
+        {
+            // One-time clone of a configured source (e.g. production) into the isolated dev DB.
+            try
+            {
+                var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<BlocwerkDbContext>>();
+                var settings = scope.ServiceProvider.GetRequiredService<BlocwerkSettings>();
+                DevDataImporter.ImportIfNeededAsync(factory, settings, logger).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Dev data import failed; continuing with the current dev database contents.");
+            }
         }
 
         return app;
-    }
-
-    private static bool IsDevWallSnapshotEnabled(IHostApplicationBuilder builder)
-    {
-        if (!builder.Environment.IsDevelopment())
-        {
-            return false;
-        }
-
-        var flag = Environment.GetEnvironmentVariable("BLOCWERK_DEV_WALL_SNAPSHOT")
-                   ?? builder.Configuration["BLOCWERK_DEV_WALL_SNAPSHOT"];
-        return string.Equals(flag, "true", StringComparison.OrdinalIgnoreCase)
-               || string.Equals(flag, "1", StringComparison.Ordinal);
     }
 }

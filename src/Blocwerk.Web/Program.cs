@@ -148,6 +148,13 @@ public static class Program
                 // or any other >32 KB payload. 64 MB is well above anything the
                 // stitcher or a wall photo would produce.
                 o.MaximumReceiveMessageSize = 64 * 1024 * 1024;
+
+                // Tolerate briefly-quiet clients (backgrounded mobile tab, a network blip) before
+                // tearing the circuit down: a dropped circuit is what flashes the "something went
+                // wrong" UI. Server pings every 15s; a client has 60s (up from the 30s default) of
+                // silence before it's considered gone.
+                o.KeepAliveInterval = TimeSpan.FromSeconds(15);
+                o.ClientTimeoutInterval = TimeSpan.FromSeconds(60);
             });
 
         builder.Services.AddRazorPages();

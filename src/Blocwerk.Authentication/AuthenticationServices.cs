@@ -99,7 +99,11 @@ public static class AuthenticationServices
     {
         app.UseAuthentication();
 
-        if (app.Environment.IsDevelopment())
+        // Development uses the REAL OAuth flow by default (the GitHub app allows
+        // http://localhost:5050/oauth-callback). The dev auto-login bypass only kicks in when you
+        // opt into it by setting BLOCWERK_DEV_USER to the identifier you want to act as.
+        if (app.Environment.IsDevelopment()
+            && !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("BLOCWERK_DEV_USER")))
         {
             app.UseMiddleware<DevAuthenticationMiddleware>();
         }

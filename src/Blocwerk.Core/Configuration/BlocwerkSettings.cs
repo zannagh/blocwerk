@@ -20,6 +20,12 @@ public class BlocwerkSettings
 
     public PostgresSettings Postgres { get; private set; } = new();
 
+    /// <summary>
+    /// Optional read-only source Postgres (e.g. production) used ONCE in Development by
+    /// <c>DevDataImporter</c> to clone data into the isolated dev database. Null when unset.
+    /// </summary>
+    public PostgresSettings? DevImport { get; private set; }
+
     public HoldDetectionSettings HoldDetection { get; private set; } = new();
 
     public List<string> AdminIdentifiers { get; private set; } = [];
@@ -76,6 +82,24 @@ public class BlocwerkSettings
             Username = section["Postgres:Username"] ?? Environment.GetEnvironmentVariable("POSTGRES__USERNAME") ?? "postgres",
             Password = section["Postgres:Password"] ?? Environment.GetEnvironmentVariable("POSTGRES__PASSWORD") ?? string.Empty,
         };
+
+        var importHost = section["DevImport:Postgres:Host"]
+                         ?? Environment.GetEnvironmentVariable("BLOCWERK_DEV_IMPORT__HOST");
+        if (!string.IsNullOrWhiteSpace(importHost))
+        {
+            DevImport = new PostgresSettings
+            {
+                Host = importHost,
+                Port = int.TryParse(
+                    section["DevImport:Postgres:Port"] ?? Environment.GetEnvironmentVariable("BLOCWERK_DEV_IMPORT__PORT"),
+                    out var importPort)
+                    ? importPort
+                    : 5432,
+                Database = section["DevImport:Postgres:Database"] ?? Environment.GetEnvironmentVariable("BLOCWERK_DEV_IMPORT__DATABASE") ?? "blocwerk",
+                Username = section["DevImport:Postgres:Username"] ?? Environment.GetEnvironmentVariable("BLOCWERK_DEV_IMPORT__USERNAME") ?? "postgres",
+                Password = section["DevImport:Postgres:Password"] ?? Environment.GetEnvironmentVariable("BLOCWERK_DEV_IMPORT__PASSWORD") ?? string.Empty,
+            };
+        }
 
         HoldDetection = new HoldDetectionSettings
         {

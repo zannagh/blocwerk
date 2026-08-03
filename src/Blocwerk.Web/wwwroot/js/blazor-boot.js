@@ -72,6 +72,14 @@
         if (next === 'hide') {
             publish('connected');
 
+            // Clear Blazor's #blazor-error-ui if a transient blip left it stuck. Safe: a real
+            // unhandled exception kills the circuit, so no successful 'hide' follows it — this only
+            // fires when the circuit actually recovered, where the scary banner is a false alarm.
+            const errUi = document.getElementById('blazor-error-ui');
+            if (errUi) {
+                errUi.style.display = 'none';
+            }
+
             // The circuit is back: drain anything the user did while it was down, then let the
             // components reload from server truth (offline-actions.js listens for the flush).
             if (window.blocwerkOfflineQueue) {
