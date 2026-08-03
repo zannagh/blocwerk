@@ -22,14 +22,35 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  # determine-runner is a *composite action*, so it runs as a step inside a normal (GitHub-hosted)
+  # job and exposes the chosen runner labels as an output. It picks the online self-hosted runner
+  # matching required-labels, or falls back to ubuntu-latest when none is online / the token is
+  # absent — so every downstream job runs wherever this resolves to.
+  determine-runner:
+    name: Determine Runner
+    runs-on: ubuntu-latest
+    outputs:
+      runner: ${{ steps.pick.outputs.runner }}
+    steps:
+      - name: Pick a runner
+        id: pick
+        uses: zannagh/versionizer/determine-runner@v1
+        with:
+          # Fine-grained PAT with Administration:read on this repo (lists runners). Missing/invalid
+          # token degrades gracefully to default-runs-on.
+          runner-token: ${{ secrets.RUNNER_TOKEN }}
+          required-labels: 'Linux,X64'
+          default-runs-on: 'ubuntu-latest'
+
   determine-jobs:
     name: Determine Jobs
+    needs: [determine-runner]
     outputs:
       has_code_changes: ${{ steps.check_changes.outputs.has_code_changes }}
       should_push_image: ${{ github.event_name != 'pull_request' && (github.event_name == 'release' || github.event_name == 'workflow_dispatch' || steps.check_changes.outputs.has_code_changes == 'true') }}
       should_create_prerelease: ${{ github.event_name == 'push' && steps.check_changes.outputs.has_code_changes == 'true' }}
       is_release: ${{ github.event_name == 'release' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(needs.determine-runner.outputs.runner) }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -61,8 +82,8 @@ jobs:
 
   build:
     name: Build & Package
-    runs-on: ubuntu-latest
-    needs: [determine-jobs]
+    needs: [determine-runner, determine-jobs]
+    runs-on: ${{ fromJSON(needs.determine-runner.outputs.runner) }}
     outputs:
       semVer: ${{ steps.version.outputs.semVer }}
       tag: ${{ steps.extract_tag.outputs.tag }}
@@ -156,9 +177,9 @@ jobs:
 
   upload-to-release:
     name: Upload to GitHub Release
-    needs: [build, determine-jobs]
+    needs: [determine-runner, build, determine-jobs]
     if: needs.determine-jobs.outputs.is_release == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(needs.determine-runner.outputs.runner) }}
     permissions:
       contents: write
     steps:
@@ -173,8 +194,8 @@ jobs:
 
   create-prerelease:
     name: Create GitHub Prerelease
-    runs-on: ubuntu-latest
-    needs: [determine-jobs, build]
+    needs: [determine-runner, determine-jobs, build]
+    runs-on: ${{ fromJSON(needs.determine-runner.outputs.runner) }}
     if: needs.determine-jobs.outputs.should_create_prerelease == 'true'
     permissions:
       contents: write
