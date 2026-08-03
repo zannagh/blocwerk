@@ -386,6 +386,13 @@ public class BoulderService : IBoulderService
             db.CurrentUserId = user.Id;
 
             return await db.Boulders
+                // Two collection includes (holds + attempts) in one SQL statement is a cartesian
+                // product: rows = holds x attempts, and it grows as attempts accumulate. Split it
+                // into one query per collection instead (EF logs a MultipleCollectionInclude
+                // warning otherwise). AsNoTracking: the context is disposed on return, so this is
+                // a read-only projection for display and never needs change tracking.
+                .AsSplitQuery()
+                .AsNoTracking()
                 .Include(b => b.BoulderHolds).ThenInclude(bh => bh.Hold)
                 .Include(b => b.Attempts.OrderByDescending(a => a.Timestamp))
                 .Include(b => b.CreatedBy)
@@ -408,6 +415,9 @@ public class BoulderService : IBoulderService
             db.CurrentUserId = Guid.Empty;
 
             return await db.Boulders
+                // See GetBoulderAsync: split the two collection includes to avoid a cartesian blow-up.
+                .AsSplitQuery()
+                .AsNoTracking()
                 .Include(b => b.BoulderHolds).ThenInclude(bh => bh.Hold)
                 .Include(b => b.Attempts.OrderByDescending(a => a.Timestamp)).ThenInclude(a => a.User)
                 .Include(b => b.CreatedBy)
@@ -432,6 +442,9 @@ public class BoulderService : IBoulderService
             db.CurrentUserId = user.Id;
 
             var query = db.Boulders
+                // Split the two collection includes (holds + attempts) to avoid a cartesian blow-up.
+                .AsSplitQuery()
+                .AsNoTracking()
                 .Include(b => b.BoulderHolds)
                 .Include(b => b.Attempts)
                 .Include(b => b.CreatedBy)

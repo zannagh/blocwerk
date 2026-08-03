@@ -133,9 +133,21 @@
     {
         if (firstRender)
         {
-            // No .NET callback: nothing here displays the zoom level, so there is
-            // no reason to pay for a round-trip on every gesture.
-            await JS.InvokeVoidAsync("bwViewport.setupScroll", _viewportRef, null);
+            try
+            {
+                // No .NET callback: nothing here displays the zoom level, so there is
+                // no reason to pay for a round-trip on every gesture.
+                await JS.InvokeVoidAsync("bwViewport.setupScroll", _viewportRef, null);
+            }
+            catch (JSException)
+            {
+                // Stale element reference after a re-render/reconnect: the view still works,
+                // it just isn't zoom-enabled. Never let it become an unhandled circuit error.
+            }
+            catch (JSDisconnectedException)
+            {
+                // Circuit went away mid-call; nothing to attach to.
+            }
         }
     }
 

@@ -35,7 +35,15 @@ public static class Program
         var otlpEndpoint = builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"];
 
         var loggerConfiguration = new LoggerConfiguration()
-            .MinimumLevel.Debug()
+            // Information by default. Debug produced ~200k rows/day here — almost entirely EF Core
+            // connection/reader chatter and Kestrel keep-alive noise — which drowned the handful of
+            // real warnings/errors in the log and in the OTLP export. Framework categories are
+            // pinned to Warning so only genuine problems (and our own Information logs) ship.
+            .MinimumLevel.Information()
+            .MinimumLevel.Override("Microsoft.EntityFrameworkCore", Serilog.Events.LogEventLevel.Warning)
+            .MinimumLevel.Override("Microsoft.AspNetCore", Serilog.Events.LogEventLevel.Warning)
+            .MinimumLevel.Override("Microsoft.AspNetCore.Hosting.Diagnostics", Serilog.Events.LogEventLevel.Information)
+            .MinimumLevel.Override("Microsoft.Hosting.Lifetime", Serilog.Events.LogEventLevel.Information)
             .Enrich.FromLogContext()
             .WriteTo.Console(restrictedToMinimumLevel: Serilog.Events.LogEventLevel.Information)
             .WriteTo.File("logs/blocwerk.log", rollingInterval: RollingInterval.Day);
@@ -124,7 +132,16 @@ public static class Program
             .AddApplicationPart(typeof(AccountController).Assembly);
 
         builder.Services.AddRazorComponents()
-            .AddInteractiveServerComponents()
+            .AddInteractiveServerComponents(options =>
+            {
+                // Phones on gym wifi drop the websocket constantly. If the server discards the
+                // circuit before the client reconnects, the reconnect is rejected and the user is
+                // forced to reload (losing in-page state). The client retries for minutes
+                // (see blazor-boot.js), so hold the disconnected circuit's state longer to match —
+                // a walk-out-of-signal-and-back-in recovers in place instead of hitting "Reload".
+                options.DisconnectedCircuitRetentionPeriod = TimeSpan.FromMinutes(5);
+                options.DisconnectedCircuitMaxRetained = 200;
+            })
             .AddHubOptions(o =>
             {
                 // Blazor Server pushes JS interop return values through the SignalR

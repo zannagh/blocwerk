@@ -181,6 +181,11 @@ window.bwGestures = (function () {
         let lastCx = 0;
         let lastCy = 0;
         let touchMoved = 0;
+        // The one-finger gesture began on a hold / interactive shape. We still track
+        // it as a *potential* pan (drag-beats-tap): only a stationary touch is handed
+        // back to the shape as a tap; the moment the finger travels past the slop it
+        // becomes a pan of the viewport instead.
+        let startInteractive = false;
         let lastTapAt = 0;
         let lastTapX = 0;
         let lastTapY = 0;
@@ -194,12 +199,12 @@ window.bwGestures = (function () {
                 lastCx = c.x;
                 lastCy = c.y;
             } else if (e.touches.length === 1) {
-                if (!model.canPanFrom(e.target)) {
-                    mode = null;
-                    return;
-                }
-
+                // Always arm a pan, even when the touch lands on a hold. We defer the
+                // pan/tap decision to how far the finger travels (see touchmove/touchend)
+                // rather than refusing to pan up-front — otherwise grabbing a hold would
+                // freeze the whole viewport for the gesture.
                 mode = 'pan';
+                startInteractive = !model.canPanFrom(e.target);
                 lastX = e.touches[0].clientX;
                 lastY = e.touches[0].clientY;
                 touchMoved = 0;
@@ -253,7 +258,11 @@ window.bwGestures = (function () {
                 return;
             }
 
-            const wasTap = mode === 'pan' && touchMoved <= 4;
+            // A tap that began on a hold belongs to the hold: leave it to that element's
+            // own click handling and don't hijack it for double-tap zoom. A drag (moved
+            // past the slop) never reaches here as a tap, and because the finger moved
+            // the browser won't synthesise a click, so the hold is not toggled either.
+            const wasTap = mode === 'pan' && touchMoved <= 4 && !startInteractive;
             mode = null;
             setTimeout(function () { delete el.dataset.panActive; }, 0);
 

@@ -182,7 +182,13 @@ window.bwViewport = (function () {
     return {
         /** Attaches the scroll model. Safe to call repeatedly. */
         setupScroll: function (viewport, dotnetHelper) {
-            if (!viewport || viewport._bwModel) {
+            // A stale ElementReference — the element was replaced by a re-render or a reconnect
+            // before this interop call ran — marshals to JS as an object with no live `.style`.
+            // Reading `.style` on it (see refreshTouchAction) throws a JSException that Blazor
+            // reports as an *unhandled circuit error* and tears the whole circuit down, which the
+            // user sees as "something went wrong — Reload". If it is not a live element there is
+            // nothing to attach to, so bail quietly.
+            if (!viewport || !viewport.style || viewport._bwModel) {
                 return;
             }
 
@@ -198,7 +204,8 @@ window.bwViewport = (function () {
          * only ever changes the content, never this box, once the aspect ratio is fixed here.
          */
         fitBox: function (viewport) {
-            if (!viewport) {
+            // Guard a stale/non-element reference the same way setupScroll does.
+            if (!viewport || typeof viewport.querySelector !== 'function') {
                 return;
             }
 
@@ -222,7 +229,8 @@ window.bwViewport = (function () {
 
         /** Attaches the transform model over a world layer. */
         setupTransform: function (viewport, world, dotnetHelper) {
-            if (!viewport || !world || viewport._bwModel) {
+            // See setupScroll: guard against a stale ElementReference that is not a live element.
+            if (!viewport || !viewport.style || !world || viewport._bwModel) {
                 return;
             }
 
