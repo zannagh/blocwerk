@@ -8,30 +8,41 @@ new image is published to GHCR. It verifies GitHub's HMAC signature, then runs
 
 ```
 GitHub release/package published
-  └─ POST  https://<public-host>/hooks/deploy   (X-Hub-Signature-256, JSON body)
-       └─ deploy-hook container (this service)
-            ├─ verify HMAC against $WEBHOOK_SECRET   → reject if it doesn't match
-            ├─ require payload.action == "published" → ignore pings / edits
-            └─ docker compose pull blocwerk && up -d blocwerk   (host daemon via socket)
+  └─ POST  https://blocwerk.zannagh.me/ci/released   (X-Hub-Signature-256, JSON body)
+       └─ Caddy routes /ci/released → <host>:9000
+            └─ deploy-hook container (this service, serving /ci/{id} via -urlprefix ci)
+                 ├─ verify HMAC against $WEBHOOK_SECRET   → reject if it doesn't match
+                 ├─ require payload.action == "published" → ignore pings / edits
+                 └─ docker compose pull blocwerk && up -d blocwerk   (host daemon via socket)
 ```
 
-The receiver serves each hook at `/hooks/<id>`; this one's id is `deploy`, so the path is
-`/hooks/deploy`.
+The receiver serves hooks at `/ci/<id>` (`-urlprefix ci`); this hook's id is `released`, so the
+path is **`/ci/released`** — matching the configured GitHub Payload URL.
 
 ## Setup (4 things only you can do)
 
 1. **Secret.** `openssl rand -hex 32`, put it in `.env` as `WEBHOOK_SECRET=…`, and paste the
    **same** value into the webhook's *Secret* field on GitHub (repo → Settings → Webhooks).
 2. **GHCR token.** The image is private and the host's login lives in the macOS keychain (unusable
-   in a Linux container), so create a token with `read:packages`
-   (github.com/settings/tokens) and set `GHCR_TOKEN=` in `.env`. *(Or make the package public and
-   leave it empty.)*
+   in a Linux container), so create a token with `read:packages` (github.com/settings/tokens) and
+   set `GHCR_TOKEN=` in `.env`. *(Or make the package public and leave it empty.)*
 3. **Host path.** Set `COMPOSE_DIR` in `.env` to the absolute host path of the stack
    (here: `/Volumes/RaidSSD/Services/blocwerk`).
-4. **Public URL.** GitHub is on the internet and the host is on a LAN, so route a public URL to this
-   container's port `9000` (via the same reverse proxy that fronts `blocwerk.zannagh.me`), and set
-   the webhook's *Payload URL* to `https://<that-host>/hooks/deploy`, content type
-   `application/json`.
+4. **Route the path.** Caddy blanket-forwards `blocwerk.zannagh.me` to the app (`:5050`), so add a
+   rule that sends the webhook path to this receiver (`:9000`) instead:
+
+   ```caddy
+   blocwerk.zannagh.me {
+       handle /ci/released {
+           reverse_proxy <host>:9000
+       }
+       handle {
+           reverse_proxy <host>:5050
+       }
+   }
+   ```
+   Then `caddy reload`. The GitHub Payload URL stays `https://blocwerk.zannagh.me/ci/released`
+   (content type `application/json`).
 
 Then: `docker compose up -d --build deploy-hook`
 
@@ -39,17 +50,17 @@ Then: `docker compose up -d --build deploy-hook`
 
 - `docker logs -f blocwerk-deploy-hook-1` — receiver + deploy output.
 - GitHub → the webhook → **Recent Deliveries**: a green ✓ with body `deploy queued`. Use
-  **Redeliver** to test.
+  **Redeliver** to test a past event without a new push.
 
 ## Security
 
 This container mounts `/var/run/docker.sock`, i.e. it is effectively root on the host. Its only
 trigger is a request whose HMAC matches `WEBHOOK_SECRET`, so keep that secret strong and never
-expose `/hooks/deploy` without it. Prefer terminating TLS at your reverse proxy.
+expose `/ci/released` without it. TLS terminates at Caddy.
 
 ## Notes
 
-- The GHCR image is pulled with the host's docker login (mounted `~/.docker`). If the package is
-  public you can drop that volume from `docker-compose.yml`.
+- The GHCR package is private, so the receiver runs `docker login ghcr.io` with `GHCR_TOKEN` before
+  pulling (the host's keychain login can't be reused inside a Linux container).
 - A release fires both a `release` and a `package` delivery; `run-deploy.sh` takes a `flock` so the
   two don't race. Pulling `:latest` when nothing changed is a no-op and won't recreate the container.

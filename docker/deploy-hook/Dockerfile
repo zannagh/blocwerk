@@ -15,5 +15,6 @@ RUN chmod +x /usr/local/bin/deploy.sh /usr/local/bin/run-deploy.sh
 EXPOSE 9000
 
 # -template renders hooks.json as a Go template first, so the secret comes from $WEBHOOK_SECRET
-# at runtime instead of being baked into the image.
-ENTRYPOINT ["webhook", "-template", "-hooks", "/config/hooks.json", "-ip", "0.0.0.0", "-port", "9000", "-verbose"]
+# at runtime instead of being baked into the image. -urlprefix ci + hook id "released" means the
+# endpoint is /ci/released, matching the GitHub webhook's Payload URL (…/ci/released).
+ENTRYPOINT ["webhook", "-template", "-urlprefix", "ci", "-hooks", "/config/hooks.json", "-ip", "0.0.0.0", "-port", "9000", "-verbose"]

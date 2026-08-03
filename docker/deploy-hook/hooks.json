@@ -1,6 +1,6 @@
 [
   {
-    "id": "deploy",
+    "id": "released",
     "execute-command": "/usr/local/bin/deploy.sh",
     "command-working-directory": "/",
     "include-command-output-in-response": true,
