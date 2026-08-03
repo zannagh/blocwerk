@@ -45,9 +45,9 @@
                         {
                             var count = CountOnWall(color.Key);
                             <button type="button"
-                                    class="color-swatch foot-swatch @(FootColorOnly == color.Key ? "active" : "") @(count == 0 ? "absent" : "")"
+                                    class="color-swatch foot-swatch @(FootColorOnly == color.Key ? "active" : string.Empty) @(count == 0 ? "absent" : string.Empty)"
                                     style="background: @color.Hex;"
-                                    title="@color.DisplayName &mdash; @count hold@(count == 1 ? "" : "s") on this wall"
+                                    title="@color.DisplayName &mdash; @count hold@(count == 1 ? string.Empty : "s") on this wall"
                                     @onclick="() => SetFootColorAsync(color.Key)"></button>
                         }
                     </div>

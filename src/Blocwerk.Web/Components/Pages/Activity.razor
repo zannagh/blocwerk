@@ -379,7 +379,10 @@
 
     private static string ChartPoints(List<ProgressionPoint> curve, double max)
     {
-        if (max <= 0) return "";
+        if (max <= 0)
+        {
+            return string.Empty;
+        }
         return string.Join(" ", curve.Select((p, i) =>
             $"{i},{(100 - p.Score / max * 100):F1}"));
     }

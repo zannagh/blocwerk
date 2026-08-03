@@ -1,7 +1,7 @@
 @inject IJSRuntime JS
 @implements IDisposable
 
-<div class="editor-toolbar @(BottomToolbar ? "docked-bottom" : "")">
+<div class="editor-toolbar @(BottomToolbar ? "docked-bottom" : string.Empty)">
     <div class="toolbar-left">
         <span class="hold-count">@Holds.Count(h => h.Category == HoldCategory.Hand)H / @Holds.Count(h => h.Category == HoldCategory.Foot)F</span>
     </div>

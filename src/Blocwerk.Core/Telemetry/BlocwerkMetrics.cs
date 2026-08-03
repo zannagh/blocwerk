@@ -16,7 +16,6 @@ namespace Blocwerk.Core.Telemetry;
 public static partial class BlocwerkMetrics
 {
     // --- Event counters ---------------------------------------------------
-
     public static readonly Counter<long> WallsCreated = Otel.Meter.CreateCounter<long>(
         "blocwerk.walls.created", unit: "{wall}", description: "Walls created.");
 
@@ -57,7 +56,6 @@ public static partial class BlocwerkMetrics
         "blocwerk.members.joined", unit: "{member}", description: "Members that joined a wall via share link.");
 
     // --- Image recognition ------------------------------------------------
-
     public static readonly Counter<long> ImageRecognitionRuns = Otel.Meter.CreateCounter<long>(
         "blocwerk.image_recognition.runs", unit: "{run}", description: "Hold-detection runs (tagged by source and detector).");
 
@@ -68,7 +66,6 @@ public static partial class BlocwerkMetrics
         "blocwerk.image_alignment.runs", unit: "{run}", description: "Image alignment runs (tagged by outcome: aligned/none/failed).");
 
     // --- Histograms (response / processing times) -------------------------
-
     public static readonly Histogram<double> OperationDuration = Otel.Meter.CreateHistogram<double>(
         "blocwerk.operation.duration", unit: "ms", description: "Duration of instrumented service operations, tagged by operation name.");
 
@@ -81,7 +78,6 @@ public static partial class BlocwerkMetrics
     // --- Observable gauges (live snapshots) -------------------------------
     // Backed by fields updated elsewhere: connected circuits by the Blazor circuit handler,
     // the DB totals by TelemetryStatsCollector. Interlocked keeps the cross-thread reads clean.
-
     private static long connectedCircuits;
     private static long totalWalls;
     private static long totalBoulders;
@@ -138,7 +134,6 @@ public static partial class BlocwerkMetrics
     }
 
     // --- Live-value updates (called by the circuit handler / stats collector) ---
-
     public static void CircuitOpened() => Interlocked.Increment(ref connectedCircuits);
 
     public static void CircuitClosed() => Interlocked.Decrement(ref connectedCircuits);

@@ -7,7 +7,7 @@ namespace Blocwerk.Core.Geometry;
 /// (tilt away from vertical about a horizontal axis) and a yaw (rotation about the vertical
 /// axis, i.e. how far it is turned to face sideways). With the camera looking straight at the
 /// wall (orthographic, dropping depth), the panel's own horizontal axis u and vertical axis v
-/// project onto the image as
+/// project onto the image as:
 /// </para>
 /// <code>
 ///   u -> (cos yaw,               0     )

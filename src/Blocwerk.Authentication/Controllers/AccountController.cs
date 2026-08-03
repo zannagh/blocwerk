@@ -92,14 +92,6 @@ public class AccountController : Controller
         return Redirect($"{config.Value.AuthUrl}?{queryString}");
     }
 
-    private (string AuthUrl, string ClientId)? GetProviderAuthConfig(string provider) => provider switch
-    {
-        "github" when _configuration.GitHubOAuth.Enabled => (_configuration.GitHubOAuth.OAuthUrl, _configuration.GitHubOAuth.ClientId),
-        "microsoft" when _configuration.MicrosoftOAuth.Enabled => (_configuration.MicrosoftOAuth.OAuthUrl, _configuration.MicrosoftOAuth.ClientId),
-        "google" when _configuration.GoogleOAuth.Enabled => (_configuration.GoogleOAuth.OAuthUrl, _configuration.GoogleOAuth.ClientId),
-        _ => null,
-    };
-
     [HttpGet("/account/callback")]
     [AllowAnonymous]
     public async Task<IActionResult> Callback([FromQuery] string code, [FromQuery] string state)
@@ -208,4 +200,12 @@ public class AccountController : Controller
             _ => _configuration.GitHubOAuth.ClientSecret,
         };
     }
+
+    private (string AuthUrl, string ClientId)? GetProviderAuthConfig(string provider) => provider switch
+    {
+        "github" when _configuration.GitHubOAuth.Enabled => (_configuration.GitHubOAuth.OAuthUrl, _configuration.GitHubOAuth.ClientId),
+        "microsoft" when _configuration.MicrosoftOAuth.Enabled => (_configuration.MicrosoftOAuth.OAuthUrl, _configuration.MicrosoftOAuth.ClientId),
+        "google" when _configuration.GoogleOAuth.Enabled => (_configuration.GoogleOAuth.OAuthUrl, _configuration.GoogleOAuth.ClientId),
+        _ => null,
+    };
 }

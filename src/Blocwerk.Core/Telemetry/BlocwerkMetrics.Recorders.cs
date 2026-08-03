@@ -8,9 +8,6 @@ namespace Blocwerk.Core.Telemetry;
 /// </summary>
 public static partial class BlocwerkMetrics
 {
-    private static KeyValuePair<string, object?> WallTag(Guid wallId) =>
-        new("wall", AnonymizeWallId(wallId));
-
     public static void RecordWallCreated(Guid wallId) =>
         WallsCreated.Add(1, WallTag(wallId));
 
@@ -64,8 +61,11 @@ public static partial class BlocwerkMetrics
     /// <summary>
     /// Records one hold-detection run: its count, its duration, and how it was produced.
     /// </summary>
+    /// <param name="wallId">The wall that was processed.</param>
     /// <param name="source">What triggered it: upload/stage/recreate/redetect.</param>
     /// <param name="detector">Which path produced the holds: yolo/color/none.</param>
+    /// <param name="holdsDetected">How many holds were detected.</param>
+    /// <param name="durationMs">How long it took to run.</param>
     public static void RecordImageRecognition(Guid? wallId, string source, string detector, int holdsDetected, double durationMs)
     {
         var tags = new TagList
@@ -98,6 +98,12 @@ public static partial class BlocwerkMetrics
     /// as a trace with timing in Jaeger) and records <see cref="OperationDuration"/> on dispose.
     /// Wrap a method body in <c>using var _ = BlocwerkMetrics.TimeOperation("Wall.Create");</c>.
     /// </summary>
+    /// <param name="operation">The operation name.</param>
+    /// <param name="wallId">The wall ID.</param>
+    /// <returns>An instance of <see cref="OperationTimer"/> for the operation and wall.</returns>
     public static OperationTimer TimeOperation(string operation, Guid? wallId = null) =>
         new(operation, wallId);
+
+    private static KeyValuePair<string, object?> WallTag(Guid wallId) =>
+        new("wall", AnonymizeWallId(wallId));
 }

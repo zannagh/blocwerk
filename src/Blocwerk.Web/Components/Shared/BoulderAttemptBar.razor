@@ -44,7 +44,7 @@
 @if (Summary.TotalAttempts > 0)
 {
     <div class="my-stats">
-        <span>My stats: @Summary.TotalAttempts attempt@(Summary.TotalAttempts != 1 ? "s" : "")</span>
+        <span>My stats: @Summary.TotalAttempts attempt@(Summary.TotalAttempts != 1 ? "s" : string.Empty)</span>
         @if (Summary.HasFlashed)
         {
             <span class="chip flash-chip">Flashed!</span>

@@ -14,7 +14,7 @@ public partial class ImageStitcher : IDisposable
     {
         public Guid Id { get; init; } = Guid.NewGuid();
 
-        public string DataUrl { get; init; } = "";
+        public string DataUrl { get; init; } = string.Empty;
 
         public double Width { get; init; }
 
@@ -25,7 +25,12 @@ public partial class ImageStitcher : IDisposable
         public double Opacity { get; set; } = 1.0;
     }
 
-    private enum DragKind { None, Move, Corner }
+    private enum DragKind
+    {
+        None,
+        Move,
+        Corner
+    }
 
     private readonly List<StitcherLayer> _layers = [];
     private Guid? _selectedId;

@@ -57,6 +57,7 @@ internal sealed class GrayImage
         for (var i = 0; i < gray.Length; i++)
         {
             var c = pixels[i];
+
             // Integer luma (Rec. 601-ish) matching common ORB grayscale.
             gray[i] = (byte)(((19595 * c.Red) + (38470 * c.Green) + (7471 * c.Blue)) >> 16);
         }

@@ -1,7 +1,7 @@
 @inject IJSRuntime JS
 @implements IAsyncDisposable
 
-<div class="wall-carousel-root @(Locked ? "editing" : "")">
+<div class="wall-carousel-root @(Locked ? "editing" : string.Empty)">
     <div class="wall-carousel" @ref="_ref" @onscroll="OnScroll">
         @foreach (var (frag, idx) in Pages())
         {
@@ -15,7 +15,7 @@
         {
             var idx = i;
             <button type="button"
-                    class="dot @(idx == _currentPage ? "active" : "")"
+                    class="dot @(idx == _currentPage ? "active" : string.Empty)"
                     aria-label="@($"Page {idx + 1}")"
                     @onclick="() => GoTo(idx)"></button>
         }

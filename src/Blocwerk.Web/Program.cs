@@ -24,8 +24,6 @@ namespace Blocwerk.Web;
 
 public static class Program
 {
-
-
     public static void Main(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
@@ -35,6 +33,7 @@ public static class Program
         var otlpEndpoint = builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"];
 
         var loggerConfiguration = new LoggerConfiguration()
+
             // Information by default. Debug produced ~200k rows/day here — almost entirely EF Core
             // connection/reader chatter and Kestrel keep-alive noise — which drowned the handful of
             // real warnings/errors in the log and in the OTLP export. Framework categories are
@@ -104,6 +103,7 @@ public static class Program
                     .AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
                     .AddRuntimeInstrumentation()
+
                     // Keeps the latest values in memory and serves them at /metrics for scraping,
                     // independent of whether an OTLP collector is configured (see MapPrometheusScrapingEndpoint).
                     .AddPrometheusExporter();
@@ -116,7 +116,6 @@ public static class Program
 
         // Logs are exported to OTLP by the Serilog OpenTelemetry sink configured above, so no
         // separate Microsoft.Extensions.Logging OTLP provider is registered here.
-
         builder.Services.Configure<ForwardedHeadersOptions>(options =>
         {
             options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost;

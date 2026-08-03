@@ -36,9 +36,6 @@ public static class HoldPalette
     /// <summary>Every known color, plastic and wood.</summary>
     public static readonly IReadOnlyList<HoldColor> All = [.. PlasticColors, .. WoodColors];
 
-    private static readonly Dictionary<string, HoldColor> ByKey =
-        All.ToDictionary(c => c.Key, StringComparer.OrdinalIgnoreCase);
-
     /// <summary>Fallback rendering for a hold with no color, or an unrecognised one.</summary>
     public static readonly HoldColor Unknown = new("none", "No color", "#e94560", "#C62828");
 
@@ -107,4 +104,7 @@ public static class HoldPalette
             Convert.ToInt32(h.Substring(2, 2), 16),
             Convert.ToInt32(h.Substring(4, 2), 16));
     }
+
+    private static readonly Dictionary<string, HoldColor> ByKey =
+        All.ToDictionary(c => c.Key, StringComparer.OrdinalIgnoreCase);
 }

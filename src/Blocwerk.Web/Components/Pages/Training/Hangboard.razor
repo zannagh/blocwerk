@@ -26,7 +26,7 @@
                     <span class="finish-label">Total Time</span>
                 </div>
             </div>
-            <p class="finish-detail">@_edgeSize mm edge @(_weight > 0 ? $"+ {_weight} kg" : "")</p>
+            <p class="finish-detail">@_edgeSize mm edge @(_weight > 0 ? $"+ {_weight} kg" : string.Empty)</p>
             <a href="/activity" class="btn-done">Back to Activity</a>
         </div>
     }
@@ -92,7 +92,7 @@
         @if (_sets.Count > 0 && !_isRunning)
         {
             <button class="btn-finish" @onclick="FinishSession" disabled="@_isSaving">
-                @(_isSaving ? "Saving..." : $"Finish ({_sets.Count} set{(_sets.Count != 1 ? "s" : "")})")
+                @(_isSaving ? "Saving..." : $"Finish ({_sets.Count} set{(_sets.Count != 1 ? "s" : string.Empty)})")
             </button>
             <button class="btn-discard" @onclick="DiscardSession">Discard</button>
         }

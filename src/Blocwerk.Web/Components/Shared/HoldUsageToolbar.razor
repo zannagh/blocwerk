@@ -8,7 +8,7 @@
             : "Tap a hold to mark it")
     </span>
     <div class="usage-controls">
-        <button class="usage-btn @(Value == HoldUsage.HandAndFoot ? "active" : "")"
+        <button class="usage-btn @(Value == HoldUsage.HandAndFoot ? "active" : string.Empty)"
                 @onclick="() => ValueChanged.InvokeAsync(HoldUsage.HandAndFoot)"
                 title="Hand and foot (default)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18">
@@ -16,7 +16,7 @@
             </svg>
             <span>Hand + Foot</span>
         </button>
-        <button class="usage-btn @(Value == HoldUsage.HandOnly ? "active" : "")"
+        <button class="usage-btn @(Value == HoldUsage.HandOnly ? "active" : string.Empty)"
                 @onclick="() => ValueChanged.InvokeAsync(HoldUsage.HandOnly)"
                 title="Hands only">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18">
@@ -28,7 +28,7 @@
            straight back to hand + foot, so offering the tool would lose the user's work. *@
         @if (!HandsFollowFeet)
         {
-            <button class="usage-btn foot @(Value == HoldUsage.FootOnly ? "active" : "")"
+            <button class="usage-btn foot @(Value == HoldUsage.FootOnly ? "active" : string.Empty)"
                     @onclick="() => ValueChanged.InvokeAsync(HoldUsage.FootOnly)"
                     title="Feet only">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18">

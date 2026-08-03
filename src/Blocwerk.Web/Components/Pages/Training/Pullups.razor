@@ -70,7 +70,7 @@
             {
                 <div class="set-actions">
                     <button class="btn-next-set" @onclick="FinishSet">
-                        Finish Set (@_currentReps rep@(_currentReps != 1 ? "s" : ""))
+                        Finish Set (@_currentReps rep@(_currentReps != 1 ? "s" : string.Empty))
                     </button>
                     <button class="btn-undo" @onclick="UndoRep">Undo</button>
                 </div>
@@ -80,7 +80,7 @@
         @if (_sets.Count > 0 && _currentReps == 0)
         {
             <button class="btn-finish" @onclick="FinishSession" disabled="@_isSaving">
-                @(_isSaving ? "Saving..." : $"Finish ({_sets.Count} set{(_sets.Count != 1 ? "s" : "")}, {_sets.Sum()} reps)")
+                @(_isSaving ? "Saving..." : $"Finish ({_sets.Count} set{(_sets.Count != 1 ? "s" : string.Empty)}, {_sets.Sum()} reps)")
             </button>
             <button class="btn-discard" @onclick="DiscardSession">Discard</button>
         }

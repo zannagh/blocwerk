@@ -230,8 +230,8 @@ else
                         @if (_wall.PhotoContentType != null)
                         {
                             <div class="view-toggle">
-                                <button class="toggle-btn @(_viewMode == ViewMode.Photo ? "active" : "")" @onclick="() => _viewMode = ViewMode.Photo">Photo</button>
-                                <button class="toggle-btn @(_viewMode == ViewMode.Schematic ? "active" : "")" @onclick="() => _viewMode = ViewMode.Schematic">Schematic</button>
+                                <button class="toggle-btn @(_viewMode == ViewMode.Photo ? "active" : string.Empty)" @onclick="() => _viewMode = ViewMode.Photo">Photo</button>
+                                <button class="toggle-btn @(_viewMode == ViewMode.Schematic ? "active" : string.Empty)" @onclick="() => _viewMode = ViewMode.Schematic">Schematic</button>
                             </div>
                         }
                         else

@@ -8,15 +8,15 @@ internal readonly record struct Keypoint(int X, int Y, double Angle, int Score);
 /// </summary>
 internal static class FastDetector
 {
+    private const int Border = 18;
+    private const int OrientationRadius = 15;
+
     // Bresenham circle of radius 3 (16 pixels), clockwise from top.
     private static readonly (int Dx, int Dy)[] Ring =
     [
         (0, -3), (1, -3), (2, -2), (3, -1), (3, 0), (3, 1), (2, 2), (1, 3),
         (0, 3), (-1, 3), (-2, 2), (-3, 1), (-3, 0), (-3, -1), (-2, -2), (-1, -3),
     ];
-
-    private const int Border = 18;
-    private const int OrientationRadius = 15;
 
     public static List<Keypoint> Detect(GrayImage img, int threshold = 20, int maxKeypoints = 1500)
     {
@@ -120,6 +120,8 @@ internal static class FastDetector
 
     private static bool HasArc(byte[] px, int w, int x, int y, int hi, int lo, out int sad)
     {
+        // Method-scoped (not in a loop) and 64 bytes, so stackalloc is safe and avoids a heap
+        // allocation on the FAST detector's per-pixel hot path.
         Span<int> vals = stackalloc int[16];
         sad = 0;
         for (var k = 0; k < 16; k++)
@@ -130,6 +132,7 @@ internal static class FastDetector
 
         var runBright = 0;
         var runDark = 0;
+
         // Iterate 16 + 8 to allow the arc to wrap around the ring.
         for (var k = 0; k < 24; k++)
         {

@@ -1,6 +1,6 @@
 @if (ReadOnly)
 {
-    <span class="star-rating readonly @(Small ? "small" : "")" title="@Title">
+    <span class="star-rating readonly @(Small ? "small" : string.Empty)" title="@Title">
         <span class="star-track">
             <span class="star-back">★★★★★</span>
             <span class="star-fill" style="width: @(FillPercent)%">★★★★★</span>
@@ -17,14 +17,14 @@ else if (ActionBoulderId is { } boulderId)
        it the *only* thing the CSS lights means a tap can lower a rating as well as raise
        it while the circuit is down. Blazor still rewrites the whole class attribute from
        server truth on the next render, so the server always gets the last word. *@
-    <span id="@ContainerId" class="star-rating interactive @(Small ? "small" : "")">
+    <span id="@ContainerId" class="star-rating interactive @(Small ? "small" : string.Empty)">
         @for (var i = 1; i <= 5; i++)
         {
             var star = i;
             <button type="button"
-                    class="star-btn @(star <= Lit ? "bw-opt-on" : "")"
-                    title="@star star@(star != 1 ? "s" : "")"
-                    aria-label="Rate @star star@(star != 1 ? "s" : "")"
+                    class="star-btn @(star <= Lit ? "bw-opt-on" : string.Empty)"
+                    title="@star star@(star != 1 ? "s" : string.Empty)"
+                    aria-label="Rate @star star@(star != 1 ? "s" : string.Empty)"
                     data-bw-action="rating"
                     data-bw-boulder="@boulderId"
                     data-bw-stars="@star"
@@ -35,13 +35,13 @@ else if (ActionBoulderId is { } boulderId)
 }
 else
 {
-    <span class="star-rating interactive @(Small ? "small" : "")">
+    <span class="star-rating interactive @(Small ? "small" : string.Empty)">
         @for (var i = 1; i <= 5; i++)
         {
             var star = i;
             <button type="button"
-                    class="star-btn @(star <= Lit ? "on" : "")"
-                    title="@star star@(star != 1 ? "s" : "")"
+                    class="star-btn @(star <= Lit ? "on" : string.Empty)"
+                    title="@star star@(star != 1 ? "s" : string.Empty)"
                     @onclick="() => OnRate.InvokeAsync(star)">★</button>
         }
     </span>

@@ -2,8 +2,8 @@
 
 <div class="grade-range-picker">
     <div class="scale-toggle">
-        <button class="scale-btn @(_useFont ? "" : "active")" @onclick="() => SetScale(false)">V</button>
-        <button class="scale-btn @(_useFont ? "active" : "")" @onclick="() => SetScale(true)">Font</button>
+        <button class="scale-btn @(_useFont ? string.Empty : "active")" @onclick="() => SetScale(false)">V</button>
+        <button class="scale-btn @(_useFont ? "active" : string.Empty)" @onclick="() => SetScale(true)">Font</button>
     </div>
     <select class="grade-select" value="@Min" @onchange="OnMinChanged">
         <option value="">Min</option>

@@ -298,84 +298,6 @@ public class BoulderService : IBoulderService
         }
     }
 
-    /// <summary>
-    /// While hands follow feet the boulder has no dedicated footholds, so a
-    /// <see cref="HoldUsage.FootOnly"/> mark is contradictory. It is coerced rather than
-    /// rejected, so no client can push the boulder into an inconsistent state.
-    /// </summary>
-    private static List<BoulderHoldInput> EnforceHandsFollowFeet(List<BoulderHoldInput> holds, bool handsFollowFeet)
-    {
-        if (!handsFollowFeet)
-        {
-            return holds;
-        }
-
-        return holds
-            .Select(h => h.Usage == HoldUsage.FootOnly ? h with { Usage = HoldUsage.HandAndFoot } : h)
-            .ToList();
-    }
-
-    /// <summary>
-    /// An empty foot color means "no foot color rule"; anything else is stored as given.
-    /// </summary>
-    private static string? NormalizeFootColor(string? footColorOnly) =>
-        string.IsNullOrWhiteSpace(footColorOnly) ? null : footColorOnly;
-
-    /// <summary>
-    /// True when applying this revise would leave the boulder exactly as it already is, so the
-    /// call is a no-op replay of an earlier apply. Only fields the caller actually supplied are
-    /// compared, mirroring the "null argument leaves the stored value untouched" contract.
-    /// </summary>
-    private static bool RevisionIsNoOp(
-        Boulder boulder,
-        List<BoulderHoldInput> updatedHolds,
-        string? name,
-        string? grade,
-        bool? kickboardFootholdsOn,
-        bool? handsFollowFeet,
-        string? footColorOnly)
-    {
-        var effectiveHandsFollowFeet = handsFollowFeet ?? boulder.HandsFollowFeet;
-        var target = EnforceHandsFollowFeet(updatedHolds, effectiveHandsFollowFeet)
-            .Select(h => (h.HoldId, h.Type, h.Usage))
-            .ToHashSet();
-        var current = boulder.BoulderHolds
-            .Select(h => (h.HoldId, h.Type, h.Usage))
-            .ToHashSet();
-
-        if (!current.SetEquals(target))
-        {
-            return false;
-        }
-
-        if (!string.IsNullOrWhiteSpace(name) && boulder.Name != name)
-        {
-            return false;
-        }
-
-        if (grade != null && boulder.Grade != grade)
-        {
-            return false;
-        }
-
-        if (kickboardFootholdsOn.HasValue && boulder.KickboardFootholdsOn != kickboardFootholdsOn.Value)
-        {
-            return false;
-        }
-
-        if (handsFollowFeet.HasValue && boulder.HandsFollowFeet != handsFollowFeet.Value)
-        {
-            return false;
-        }
-
-        if (footColorOnly != null && boulder.FootColorOnly != NormalizeFootColor(footColorOnly))
-        {
-            return false;
-        }
-
-        return true;
-    }
-
     public async Task<Boulder?> GetBoulderAsync(Guid boulderId)
     {
         using var op = BlocwerkMetrics.TimeOperation("Boulder.Get");
@@ -386,6 +308,7 @@ public class BoulderService : IBoulderService
             db.CurrentUserId = user.Id;
 
             return await db.Boulders
+
                 // Attempts are unbounded and nobody reads boulder.Attempts off this call — the
                 // detail page loads them separately (with the User) only when shown — so don't drag
                 // them in here. That leaves a single collection include (BoulderHolds), so a single
@@ -412,6 +335,7 @@ public class BoulderService : IBoulderService
             db.CurrentUserId = Guid.Empty;
 
             return await db.Boulders
+
                 // See GetBoulderAsync: split the two collection includes to avoid a cartesian blow-up.
                 .AsSplitQuery()
                 .AsNoTracking()
@@ -439,6 +363,7 @@ public class BoulderService : IBoulderService
             db.CurrentUserId = user.Id;
 
             var query = db.Boulders
+
                 // Split the two collection includes (holds + attempts) to avoid a cartesian blow-up.
                 .AsSplitQuery()
                 .AsNoTracking()
@@ -789,29 +714,6 @@ public class BoulderService : IBoulderService
         }
     }
 
-    private async Task SetArchivedAsync(Guid boulderId, bool archived)
-    {
-        var user = await _currentUserService.GetCurrentUserAsync();
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
-
-        var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId)
-                      ?? throw new InvalidOperationException("Boulder not found");
-
-        if (boulder.CreatedByUserId != user.Id)
-        {
-            throw new InvalidOperationException("Only the creator can archive a boulder");
-        }
-
-        if (archived && !boulder.IsHistoric)
-        {
-            throw new InvalidOperationException("Only historic boulders can be archived");
-        }
-
-        boulder.IsArchived = archived;
-        await db.SaveChangesAsync();
-    }
-
     public async Task<GradeProposal> ProposeGradeAsync(Guid boulderId, string proposedGrade)
     {
         using var op = BlocwerkMetrics.TimeOperation("Boulder.ProposeGrade");
@@ -971,5 +873,106 @@ public class BoulderService : IBoulderService
             op.Fail(ex);
             throw;
         }
+    }
+
+    /// <summary>
+    /// While hands follow feet the boulder has no dedicated footholds, so a
+    /// <see cref="HoldUsage.FootOnly"/> mark is contradictory. It is coerced rather than
+    /// rejected, so no client can push the boulder into an inconsistent state.
+    /// </summary>
+    private static List<BoulderHoldInput> EnforceHandsFollowFeet(List<BoulderHoldInput> holds, bool handsFollowFeet)
+    {
+        if (!handsFollowFeet)
+        {
+            return holds;
+        }
+
+        return holds
+            .Select(h => h.Usage == HoldUsage.FootOnly ? h with { Usage = HoldUsage.HandAndFoot } : h)
+            .ToList();
+    }
+
+    /// <summary>
+    /// An empty foot color means "no foot color rule"; anything else is stored as given.
+    /// </summary>
+    private static string? NormalizeFootColor(string? footColorOnly) =>
+        string.IsNullOrWhiteSpace(footColorOnly) ? null : footColorOnly;
+
+    /// <summary>
+    /// True when applying this revise would leave the boulder exactly as it already is, so the
+    /// call is a no-op replay of an earlier apply. Only fields the caller actually supplied are
+    /// compared, mirroring the "null argument leaves the stored value untouched" contract.
+    /// </summary>
+    private static bool RevisionIsNoOp(
+        Boulder boulder,
+        List<BoulderHoldInput> updatedHolds,
+        string? name,
+        string? grade,
+        bool? kickboardFootholdsOn,
+        bool? handsFollowFeet,
+        string? footColorOnly)
+    {
+        var effectiveHandsFollowFeet = handsFollowFeet ?? boulder.HandsFollowFeet;
+        var target = EnforceHandsFollowFeet(updatedHolds, effectiveHandsFollowFeet)
+            .Select(h => (h.HoldId, h.Type, h.Usage))
+            .ToHashSet();
+        var current = boulder.BoulderHolds
+            .Select(h => (h.HoldId, h.Type, h.Usage))
+            .ToHashSet();
+
+        if (!current.SetEquals(target))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(name) && boulder.Name != name)
+        {
+            return false;
+        }
+
+        if (grade != null && boulder.Grade != grade)
+        {
+            return false;
+        }
+
+        if (kickboardFootholdsOn.HasValue && boulder.KickboardFootholdsOn != kickboardFootholdsOn.Value)
+        {
+            return false;
+        }
+
+        if (handsFollowFeet.HasValue && boulder.HandsFollowFeet != handsFollowFeet.Value)
+        {
+            return false;
+        }
+
+        if (footColorOnly != null && boulder.FootColorOnly != NormalizeFootColor(footColorOnly))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private async Task SetArchivedAsync(Guid boulderId, bool archived)
+    {
+        var user = await _currentUserService.GetCurrentUserAsync();
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = user.Id;
+
+        var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId)
+                      ?? throw new InvalidOperationException("Boulder not found");
+
+        if (boulder.CreatedByUserId != user.Id)
+        {
+            throw new InvalidOperationException("Only the creator can archive a boulder");
+        }
+
+        if (archived && !boulder.IsHistoric)
+        {
+            throw new InvalidOperationException("Only historic boulders can be archived");
+        }
+
+        boulder.IsArchived = archived;
+        await db.SaveChangesAsync();
     }
 }

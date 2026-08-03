@@ -18,6 +18,7 @@ public sealed class ViewportZoomState : IDisposable
     private DotNetObjectReference<ViewportZoomState>? selfRef;
 
     /// <summary>
+    /// Initializes a new instance of the <see cref="ViewportZoomState"/> class.
     /// Creates the state. <paramref name="onChanged"/> is normally
     /// <c>() =&gt; InvokeAsync(StateHasChanged)</c> so the update is marshalled onto
     /// the renderer's synchronisation context.

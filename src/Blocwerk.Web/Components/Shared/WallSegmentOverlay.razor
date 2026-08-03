@@ -24,7 +24,7 @@
     <polygon points="@Pts(draft, idx)"
              fill="@fill" stroke="@stroke"
              stroke-width="@F(isActive ? 0.55 * HandleScale : 0.35 * HandleScale)"
-             stroke-dasharray="@(isActive ? "" : "1.2 0.6")"
+             stroke-dasharray="@(isActive ? string.Empty : "1.2 0.6")"
              style="@(Editable ? "cursor: move" : "pointer-events: none")"
              @onclick="() => OnSegmentClick.InvokeAsync(idx)" @onclick:stopPropagation="true"
              @onmousedown="() => OnBodyDown.InvokeAsync(idx)" @onmousedown:stopPropagation="true" />

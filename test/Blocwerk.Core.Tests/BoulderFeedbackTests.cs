@@ -21,6 +21,7 @@ public class BoulderFeedbackTests
             h.WallId, "B", null, [new BoulderHoldInput(holds[0].Id)]);
 
         await h.FeedbackService.SetRatingAsync(boulder.Id, 2);
+
         // Re-rating overwrites rather than adding a second row.
         await h.FeedbackService.SetRatingAsync(boulder.Id, 4);
 

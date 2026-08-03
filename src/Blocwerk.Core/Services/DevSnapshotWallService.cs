@@ -19,22 +19,16 @@ namespace Blocwerk.Core.Services;
 /// </summary>
 public class DevSnapshotWallService : IWallService
 {
-    private readonly IDbContextFactory<BlocwerkDbContext> dbContextFactory;
-    private readonly IImageAlignmentService imageAlignmentService;
-    private readonly ILogger<DevSnapshotWallService> logger;
-    private readonly string snapshotDir;
-    private readonly string snapshotJsonPath;
-    private readonly string photoPath;
-    private readonly string stagedPhotoPath;
-    private readonly SemaphoreSlim gate = new(1, 1);
-
-    private Wall? wall;
-    private byte[]? photoBytes;
-    private byte[]? stagedPhotoBytes;
-    private readonly Dictionary<int, byte[]> generationPhotos = [];
-    private bool loaded;
-
-    private static readonly JsonSerializerOptions JsonOpts = new()
+    private readonly IDbContextFactory<BlocwerkDbContext> _dbContextFactory;
+    private readonly IImageAlignmentService _imageAlignmentService;
+    private readonly ILogger<DevSnapshotWallService> _logger;
+    private readonly string _snapshotDir;
+    private readonly string _snapshotJsonPath;
+    private readonly string _photoPath;
+    private readonly string _stagedPhotoPath;
+    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly Dictionary<int, byte[]> _generationPhotos = [];
+    private static readonly JsonSerializerOptions S_jsonOpts = new()
     {
         WriteIndented = true,
         ReferenceHandler = ReferenceHandler.IgnoreCycles,
@@ -42,161 +36,24 @@ public class DevSnapshotWallService : IWallService
         PropertyNameCaseInsensitive = true,
     };
 
+    private Wall? _wall;
+    private byte[]? _photoBytes;
+    private byte[]? _stagedPhotoBytes;
+    private bool _loaded;
+
     public DevSnapshotWallService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         IImageAlignmentService imageAlignmentService,
         IHostEnvironment env,
         ILogger<DevSnapshotWallService> logger)
     {
-        this.dbContextFactory = dbContextFactory;
-        this.imageAlignmentService = imageAlignmentService;
-        this.logger = logger;
-        snapshotDir = Path.Combine(env.ContentRootPath, "dev-wall-snapshot");
-        snapshotJsonPath = Path.Combine(snapshotDir, "wall.json");
-        photoPath = Path.Combine(snapshotDir, "photo.bin");
-        stagedPhotoPath = Path.Combine(snapshotDir, "staged-photo.bin");
-    }
-
-    private async Task EnsureLoadedAsync()
-    {
-        if (loaded)
-        {
-            return;
-        }
-
-        await gate.WaitAsync();
-        try
-        {
-            if (loaded)
-            {
-                return;
-            }
-
-            Directory.CreateDirectory(snapshotDir);
-
-            if (File.Exists(snapshotJsonPath))
-            {
-                logger.LogInformation("DevSnapshot: loading wall from {Path}", snapshotJsonPath);
-                var json = await File.ReadAllTextAsync(snapshotJsonPath);
-                wall = JsonSerializer.Deserialize<Wall>(json, JsonOpts)
-                       ?? throw new InvalidOperationException("Snapshot JSON is empty or malformed.");
-                if (File.Exists(photoPath))
-                {
-                    photoBytes = await File.ReadAllBytesAsync(photoPath);
-                }
-
-                if (File.Exists(stagedPhotoPath))
-                {
-                    stagedPhotoBytes = await File.ReadAllBytesAsync(stagedPhotoPath);
-                }
-
-                foreach (var file in Directory.GetFiles(snapshotDir, "photo-gen-*.bin"))
-                {
-                    var stem = Path.GetFileNameWithoutExtension(file)["photo-gen-".Length..];
-                    if (int.TryParse(stem, out var gen))
-                    {
-                        generationPhotos[gen] = await File.ReadAllBytesAsync(file);
-                    }
-                }
-            }
-            else
-            {
-                logger.LogInformation("DevSnapshot: no local snapshot, seeding from PG…");
-                await using var db = await dbContextFactory.CreateDbContextAsync();
-                db.CurrentUserId = Guid.Empty;
-
-                var seeded = await db.Walls
-                    .AsSplitQuery()
-                    .Include(w => w.Members)
-                    .Include(w => w.Holds)
-                    .Include(w => w.Boulders).ThenInclude(b => b.BoulderHolds)
-                    .OrderBy(w => w.CreatedAt)
-                    .FirstOrDefaultAsync()
-                    ?? throw new InvalidOperationException(
-                        "DevSnapshot: no walls in PG to seed from. Create one first or disable BLOCWERK_DEV_WALL_SNAPSHOT.");
-
-                photoBytes = seeded.Photo;
-                stagedPhotoBytes = seeded.StagedPhoto;
-                seeded.Photo = null;
-                seeded.StagedPhoto = null;
-                wall = seeded;
-
-                await PersistAsync();
-                logger.LogInformation(
-                    "DevSnapshot: seeded wall {Id} ({Name}) with {HoldCount} holds to {Path}",
-                    seeded.Id, seeded.Name, seeded.Holds.Count, snapshotDir);
-            }
-
-            loaded = true;
-        }
-        finally
-        {
-            gate.Release();
-        }
-    }
-
-    private async Task PersistAsync()
-    {
-        Directory.CreateDirectory(snapshotDir);
-        var json = JsonSerializer.Serialize(wall, JsonOpts);
-        await File.WriteAllTextAsync(snapshotJsonPath, json);
-
-        if (photoBytes != null)
-        {
-            await File.WriteAllBytesAsync(photoPath, photoBytes);
-        }
-        else if (File.Exists(photoPath))
-        {
-            File.Delete(photoPath);
-        }
-
-        if (stagedPhotoBytes != null)
-        {
-            await File.WriteAllBytesAsync(stagedPhotoPath, stagedPhotoBytes);
-        }
-        else if (File.Exists(stagedPhotoPath))
-        {
-            File.Delete(stagedPhotoPath);
-        }
-
-        foreach (var (gen, bytes) in generationPhotos)
-        {
-            await File.WriteAllBytesAsync(GenerationPhotoPath(gen), bytes);
-        }
-    }
-
-    private string GenerationPhotoPath(int generation) =>
-        Path.Combine(snapshotDir, $"photo-gen-{generation}.bin");
-
-    private Wall Wall => wall ?? throw new InvalidOperationException("DevSnapshot: not loaded yet.");
-
-    private Wall ProjectForRead()
-    {
-        var w = Wall;
-        return new Wall
-        {
-            Id = w.Id,
-            Name = w.Name,
-            Description = w.Description,
-            OwnerId = w.OwnerId,
-            ShareToken = w.ShareToken,
-            Angle = w.Angle,
-            BorderPoints = w.BorderPoints,
-            IsActive = w.IsActive,
-            CreatedAt = w.CreatedAt,
-            LastResetAt = w.LastResetAt,
-            CurrentGeneration = w.CurrentGeneration,
-            StagedAt = w.StagedAt,
-            StagedByUserId = w.StagedByUserId,
-            StagingMode = w.StagingMode,
-            PhotoContentType = w.PhotoContentType,
-            StagedPhotoContentType = w.StagedPhotoContentType,
-            Members = w.Members,
-            Boulders = w.Boulders,
-            Holds = w.Holds
-                .Where(h => h.Generation >= w.CurrentGeneration && h.Generation <= w.CurrentGeneration + 1)
-                .ToList(),
-        };
+        this._dbContextFactory = dbContextFactory;
+        this._imageAlignmentService = imageAlignmentService;
+        this._logger = logger;
+        _snapshotDir = Path.Combine(env.ContentRootPath, "dev-wall-snapshot");
+        _snapshotJsonPath = Path.Combine(_snapshotDir, "wall.json");
+        _photoPath = Path.Combine(_snapshotDir, "photo.bin");
+        _stagedPhotoPath = Path.Combine(_snapshotDir, "staged-photo.bin");
     }
 
     public Task<Wall> CreateWallAsync(string name, string? description, int angle = 0)
@@ -247,17 +104,17 @@ public class DevSnapshotWallService : IWallService
     public async Task<Wall> UploadPhotoAsync(Guid wallId, byte[] photo, string contentType, bool autoDetect = true)
     {
         await EnsureLoadedAsync();
-        photoBytes = photo;
+        _photoBytes = photo;
         Wall.PhotoContentType = contentType;
         await PersistAsync();
-        logger.LogInformation("DevSnapshot: UploadPhoto ({Bytes} bytes, autoDetect={AutoDetect} ignored in dev)", photo.Length, autoDetect);
+        _logger.LogInformation("DevSnapshot: UploadPhoto ({Bytes} bytes, autoDetect={AutoDetect} ignored in dev)", photo.Length, autoDetect);
         return ProjectForRead();
     }
 
     public async Task<Wall> StagePhotoAsync(Guid wallId, byte[] photo, string contentType)
     {
         await EnsureLoadedAsync();
-        if (photoBytes == null)
+        if (_photoBytes == null)
         {
             throw new InvalidOperationException("No live photo yet; use UploadPhotoAsync first.");
         }
@@ -265,7 +122,7 @@ public class DevSnapshotWallService : IWallService
         var stagedGen = Wall.CurrentGeneration + 1;
         Wall.Holds = Wall.Holds.Where(h => h.Generation != stagedGen).ToList();
 
-        stagedPhotoBytes = photo;
+        _stagedPhotoBytes = photo;
         Wall.StagedPhotoContentType = contentType;
         Wall.StagedAt = DateTimeOffset.UtcNow;
         Wall.StagedByUserId = Guid.Empty;
@@ -278,7 +135,7 @@ public class DevSnapshotWallService : IWallService
     public async Task<Wall> StageRecreateAsync(Guid wallId, byte[] photo, string contentType)
     {
         await EnsureLoadedAsync();
-        if (photoBytes == null)
+        if (_photoBytes == null)
         {
             throw new InvalidOperationException("No live photo yet; use UploadPhotoAsync first.");
         }
@@ -286,14 +143,14 @@ public class DevSnapshotWallService : IWallService
         var stagedGen = Wall.CurrentGeneration + 1;
         Wall.Holds = Wall.Holds.Where(h => h.Generation != stagedGen).ToList();
 
-        stagedPhotoBytes = photo;
+        _stagedPhotoBytes = photo;
         Wall.StagedPhotoContentType = contentType;
         Wall.StagedAt = DateTimeOffset.UtcNow;
         Wall.StagedByUserId = Guid.Empty;
         Wall.StagingMode = WallStagingMode.Recreate;
 
-        logger.LogWarning(
-            "DevSnapshot: hold detection is unavailable in snapshot mode, so the recreated wall starts with no holds. Place them manually.");
+        _logger.LogWarning(
+            "DevSnapshot: hold detection is unavailable in snapshot mode, so the recreated wall starts with no holds. Place them manually");
 
         await PersistAsync();
         return ProjectForRead();
@@ -302,7 +159,7 @@ public class DevSnapshotWallService : IWallService
     public async Task<Wall> StageManualAlignmentAsync(Guid wallId, byte[] photo, string contentType)
     {
         await EnsureLoadedAsync();
-        if (photoBytes == null)
+        if (_photoBytes == null)
         {
             throw new InvalidOperationException("No live photo yet; use UploadPhotoAsync first.");
         }
@@ -311,7 +168,7 @@ public class DevSnapshotWallService : IWallService
         var stagedGen = liveGen + 1;
         Wall.Holds = Wall.Holds.Where(h => h.Generation != stagedGen).ToList();
 
-        stagedPhotoBytes = photo;
+        _stagedPhotoBytes = photo;
         Wall.StagedPhotoContentType = contentType;
         Wall.StagedAt = DateTimeOffset.UtcNow;
         Wall.StagedByUserId = Guid.Empty;
@@ -344,7 +201,7 @@ public class DevSnapshotWallService : IWallService
     public async Task<Wall> ConfirmStagedPhotoAsync(Guid wallId)
     {
         await EnsureLoadedAsync();
-        if (stagedPhotoBytes == null)
+        if (_stagedPhotoBytes == null)
         {
             throw new InvalidOperationException("No staged photo to confirm.");
         }
@@ -356,9 +213,9 @@ public class DevSnapshotWallService : IWallService
             hold.Generation = stagedGen;
         }
 
-        photoBytes = stagedPhotoBytes;
+        _photoBytes = _stagedPhotoBytes;
         Wall.PhotoContentType = Wall.StagedPhotoContentType;
-        stagedPhotoBytes = null;
+        _stagedPhotoBytes = null;
         Wall.StagedPhotoContentType = null;
         Wall.StagedAt = null;
         Wall.StagedByUserId = null;
@@ -372,16 +229,16 @@ public class DevSnapshotWallService : IWallService
     public async Task<WallRecreateResult> ConfirmRecreateAsync(Guid wallId)
     {
         await EnsureLoadedAsync();
-        if (stagedPhotoBytes == null || Wall.StagingMode != WallStagingMode.Recreate)
+        if (_stagedPhotoBytes == null || Wall.StagingMode != WallStagingMode.Recreate)
         {
             throw new InvalidOperationException("No staged wall recreation to confirm.");
         }
 
         var oldGen = Wall.CurrentGeneration;
 
-        if (photoBytes != null)
+        if (_photoBytes != null)
         {
-            generationPhotos[oldGen] = photoBytes;
+            _generationPhotos[oldGen] = _photoBytes;
         }
 
         var referenced = Wall.Boulders
@@ -401,9 +258,9 @@ public class DevSnapshotWallService : IWallService
             boulder.NeedsReview = false;
         }
 
-        photoBytes = stagedPhotoBytes;
+        _photoBytes = _stagedPhotoBytes;
         Wall.PhotoContentType = Wall.StagedPhotoContentType;
-        stagedPhotoBytes = null;
+        _stagedPhotoBytes = null;
         Wall.StagedPhotoContentType = null;
         Wall.StagedAt = null;
         Wall.StagedByUserId = null;
@@ -428,10 +285,10 @@ public class DevSnapshotWallService : IWallService
 
         if (generation >= Wall.CurrentGeneration)
         {
-            return photoBytes == null ? null : new WallPhoto(photoBytes, Wall.PhotoContentType);
+            return _photoBytes == null ? null : new WallPhoto(_photoBytes, Wall.PhotoContentType);
         }
 
-        return generationPhotos.TryGetValue(generation, out var archived)
+        return _generationPhotos.TryGetValue(generation, out var archived)
             ? new WallPhoto(archived, Wall.PhotoContentType)
             : null;
     }
@@ -445,7 +302,7 @@ public class DevSnapshotWallService : IWallService
     public async Task<Wall> ConfirmManualAlignmentAsync(Guid wallId, List<ManualAlignHold> holds, List<Guid> deletedStagedIds)
     {
         await EnsureLoadedAsync();
-        if (stagedPhotoBytes == null || Wall.StagingMode != WallStagingMode.Manual)
+        if (_stagedPhotoBytes == null || Wall.StagingMode != WallStagingMode.Manual)
         {
             throw new InvalidOperationException("Wall is not in manual alignment mode.");
         }
@@ -530,9 +387,9 @@ public class DevSnapshotWallService : IWallService
         toRemove.AddRange(Wall.Holds.Where(h => h.Generation == stagedGen && h.AlignmentSourceHoldId != null));
         Wall.Holds = Wall.Holds.Except(toRemove).ToList();
 
-        photoBytes = stagedPhotoBytes;
+        _photoBytes = _stagedPhotoBytes;
         Wall.PhotoContentType = Wall.StagedPhotoContentType;
-        stagedPhotoBytes = null;
+        _stagedPhotoBytes = null;
         Wall.StagedPhotoContentType = null;
         Wall.StagedAt = null;
         Wall.StagedByUserId = null;
@@ -546,18 +403,18 @@ public class DevSnapshotWallService : IWallService
     public async Task<Homography?> EstimateStagingAlignmentAsync(Guid wallId)
     {
         await EnsureLoadedAsync();
-        if (photoBytes == null || stagedPhotoBytes == null)
+        if (_photoBytes == null || _stagedPhotoBytes == null)
         {
             throw new InvalidOperationException("No staged photo to align.");
         }
 
-        return await imageAlignmentService.AlignNormalizedAsync(stagedPhotoBytes, photoBytes);
+        return await _imageAlignmentService.AlignNormalizedAsync(_stagedPhotoBytes, _photoBytes);
     }
 
     public async Task DiscardStagedPhotoAsync(Guid wallId)
     {
         await EnsureLoadedAsync();
-        if (stagedPhotoBytes == null)
+        if (_stagedPhotoBytes == null)
         {
             return;
         }
@@ -578,7 +435,7 @@ public class DevSnapshotWallService : IWallService
 
         Wall.Holds = Wall.Holds.Where(h => h.Generation != stagedGen).ToList();
 
-        stagedPhotoBytes = null;
+        _stagedPhotoBytes = null;
         Wall.StagedPhotoContentType = null;
         Wall.StagedAt = null;
         Wall.StagedByUserId = null;
@@ -590,7 +447,7 @@ public class DevSnapshotWallService : IWallService
     public async Task<byte[]?> GetStagedPhotoAsync(Guid wallId)
     {
         await EnsureLoadedAsync();
-        return stagedPhotoBytes;
+        return _stagedPhotoBytes;
     }
 
     public async Task<Hold> MarkHoldModifiedAsync(Guid holdId)
@@ -646,7 +503,7 @@ public class DevSnapshotWallService : IWallService
     public async Task<byte[]?> GetPhotoAsync(Guid wallId)
     {
         await EnsureLoadedAsync();
-        return photoBytes;
+        return _photoBytes;
     }
 
     public async Task<byte[]?> GetPhotoByShareTokenAsync(Guid wallId, string shareToken)
@@ -657,7 +514,7 @@ public class DevSnapshotWallService : IWallService
             return null;
         }
 
-        return photoBytes;
+        return _photoBytes;
     }
 
     public async Task<Hold> AddHoldAsync(Guid wallId, double x, double y, double radius, string? color, HoldCategory category = HoldCategory.Hand, List<ShapePoint>? shapePoints = null, bool isVirtual = false, HoldMaterial? material = null)
@@ -773,15 +630,14 @@ public class DevSnapshotWallService : IWallService
         var missing = members.Where(m => m.User == null).Select(m => m.UserId).ToList();
         if (missing.Count > 0)
         {
-            await using var db = await dbContextFactory.CreateDbContextAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = Guid.Empty;
-            var users = await db.Users.Where(u => missing.Contains(u.Id)).ToListAsync();
+            var users = await db.Users
+                .Where(u => missing.Contains(u.Id))
+                .ToListAsync();
             foreach (var m in members)
             {
-                if (m.User == null)
-                {
-                    m.User = users.FirstOrDefault(u => u.Id == m.UserId)!;
-                }
+                m.User = users.FirstOrDefault(u => u.Id == m.UserId)!;
             }
         }
 
@@ -813,5 +669,147 @@ public class DevSnapshotWallService : IWallService
         }
 
         return inside;
+    }
+
+    private async Task EnsureLoadedAsync()
+    {
+        if (_loaded)
+        {
+            return;
+        }
+
+        await _gate.WaitAsync();
+        try
+        {
+            if (_loaded)
+            {
+                return;
+            }
+
+            Directory.CreateDirectory(_snapshotDir);
+
+            if (File.Exists(_snapshotJsonPath))
+            {
+                _logger.LogInformation("DevSnapshot: loading wall from {Path}", _snapshotJsonPath);
+                var json = await File.ReadAllTextAsync(_snapshotJsonPath);
+                _wall = JsonSerializer.Deserialize<Wall>(json, S_jsonOpts)
+                       ?? throw new InvalidOperationException("Snapshot JSON is empty or malformed.");
+                if (File.Exists(_photoPath))
+                {
+                    _photoBytes = await File.ReadAllBytesAsync(_photoPath);
+                }
+
+                if (File.Exists(_stagedPhotoPath))
+                {
+                    _stagedPhotoBytes = await File.ReadAllBytesAsync(_stagedPhotoPath);
+                }
+
+                foreach (var file in Directory.GetFiles(_snapshotDir, "photo-gen-*.bin"))
+                {
+                    var stem = Path.GetFileNameWithoutExtension(file)["photo-gen-".Length..];
+                    if (int.TryParse(stem, out var gen))
+                    {
+                        _generationPhotos[gen] = await File.ReadAllBytesAsync(file);
+                    }
+                }
+            }
+            else
+            {
+                _logger.LogInformation("DevSnapshot: no local snapshot, seeding from PG…");
+                await using var db = await _dbContextFactory.CreateDbContextAsync();
+                db.CurrentUserId = Guid.Empty;
+
+                var seeded = await db.Walls
+                    .AsSplitQuery()
+                    .Include(w => w.Members)
+                    .Include(w => w.Holds)
+                    .Include(w => w.Boulders).ThenInclude(b => b.BoulderHolds)
+                    .OrderBy(w => w.CreatedAt)
+                    .FirstOrDefaultAsync()
+                    ?? throw new InvalidOperationException(
+                        "DevSnapshot: no walls in PG to seed from. Create one first or disable BLOCWERK_DEV_WALL_SNAPSHOT.");
+
+                _photoBytes = seeded.Photo;
+                _stagedPhotoBytes = seeded.StagedPhoto;
+                seeded.Photo = null;
+                seeded.StagedPhoto = null;
+                _wall = seeded;
+
+                await PersistAsync();
+                _logger.LogInformation(
+                    "DevSnapshot: seeded wall {Id} ({Name}) with {HoldCount} holds to {Path}",
+                    seeded.Id, seeded.Name, seeded.Holds.Count, _snapshotDir);
+            }
+
+            _loaded = true;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    private async Task PersistAsync()
+    {
+        Directory.CreateDirectory(_snapshotDir);
+        var json = JsonSerializer.Serialize(_wall, S_jsonOpts);
+        await File.WriteAllTextAsync(_snapshotJsonPath, json);
+
+        if (_photoBytes != null)
+        {
+            await File.WriteAllBytesAsync(_photoPath, _photoBytes);
+        }
+        else if (File.Exists(_photoPath))
+        {
+            File.Delete(_photoPath);
+        }
+
+        if (_stagedPhotoBytes != null)
+        {
+            await File.WriteAllBytesAsync(_stagedPhotoPath, _stagedPhotoBytes);
+        }
+        else if (File.Exists(_stagedPhotoPath))
+        {
+            File.Delete(_stagedPhotoPath);
+        }
+
+        foreach (var (gen, bytes) in _generationPhotos)
+        {
+            await File.WriteAllBytesAsync(GenerationPhotoPath(gen), bytes);
+        }
+    }
+
+    private string GenerationPhotoPath(int generation) =>
+        Path.Combine(_snapshotDir, $"photo-gen-{generation}.bin");
+
+    private Wall Wall => _wall ?? throw new InvalidOperationException("DevSnapshot: not loaded yet.");
+
+    private Wall ProjectForRead()
+    {
+        var w = Wall;
+        return new Wall
+        {
+            Id = w.Id,
+            Name = w.Name,
+            Description = w.Description,
+            OwnerId = w.OwnerId,
+            ShareToken = w.ShareToken,
+            Angle = w.Angle,
+            BorderPoints = w.BorderPoints,
+            IsActive = w.IsActive,
+            CreatedAt = w.CreatedAt,
+            LastResetAt = w.LastResetAt,
+            CurrentGeneration = w.CurrentGeneration,
+            StagedAt = w.StagedAt,
+            StagedByUserId = w.StagedByUserId,
+            StagingMode = w.StagingMode,
+            PhotoContentType = w.PhotoContentType,
+            StagedPhotoContentType = w.StagedPhotoContentType,
+            Members = w.Members,
+            Boulders = w.Boulders,
+            Holds = w.Holds
+                .Where(h => h.Generation >= w.CurrentGeneration && h.Generation <= w.CurrentGeneration + 1)
+                .ToList(),
+        };
     }
 }

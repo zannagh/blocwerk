@@ -16,11 +16,11 @@
 
     <div class="volume-input">
         <div class="view-toggle">
-            <button class="toggle-btn @(_mode == VolumeMode.PyramidByDimensions ? "active" : "")"
+            <button class="toggle-btn @(_mode == VolumeMode.PyramidByDimensions ? "active" : string.Empty)"
                     @onclick="() => SetMode(VolumeMode.PyramidByDimensions)">Pyramid</button>
-            <button class="toggle-btn @(_mode == VolumeMode.PyramidByAngle ? "active" : "")"
+            <button class="toggle-btn @(_mode == VolumeMode.PyramidByAngle ? "active" : string.Empty)"
                     @onclick="() => SetMode(VolumeMode.PyramidByAngle)">By Angle</button>
-            <button class="toggle-btn @(_mode == VolumeMode.Diamond ? "active" : "")"
+            <button class="toggle-btn @(_mode == VolumeMode.Diamond ? "active" : string.Empty)"
                     @onclick="() => SetMode(VolumeMode.Diamond)">Diamond</button>
         </div>
 
@@ -154,7 +154,7 @@
                     @if (isFirst)
                     {
                         <div class="piece-card">
-                            <h3>@piece.Name @(duplicates > 1 ? $"(x{duplicates})" : "")</h3>
+                            <h3>@piece.Name @(duplicates > 1 ? $"(x{duplicates})" : string.Empty)</h3>
                             <div class="piece-details">
                                 @for (var i = 0; i < piece.EdgeLengths.Length; i++)
                                 {

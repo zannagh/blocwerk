@@ -99,8 +99,7 @@ public sealed class OfflineBouldersController : ControllerBase
                 request.Grade,
                 request.KickboardFootholdsOn,
                 request.HandsFollowFeet,
-                // "" clears the foot colour server-side; null would mean "leave unchanged".
-                request.FootColorOnly ?? string.Empty);
+                request.FootColorOnly ?? string.Empty); // "" clears the foot colour server-side; null would mean "leave unchanged".
 
             return Canonical(boulder);
         });

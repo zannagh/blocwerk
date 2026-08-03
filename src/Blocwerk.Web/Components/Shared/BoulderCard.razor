@@ -15,7 +15,7 @@
         {
             <span class="boulder-rating">
                 <StarRating Value="@(Item.AverageRating ?? 0)" ReadOnly="true" Small="true"
-                            Title="@($"{Item.AverageRating:0.0} from {Item.RatingCount} rating{(Item.RatingCount != 1 ? "s" : "")}")" />
+                            Title="@($"{Item.AverageRating:0.0} from {Item.RatingCount} rating{(Item.RatingCount != 1 ? "s" : string.Empty)}")" />
                 <span class="rating-count">@Item.RatingCount</span>
             </span>
         }

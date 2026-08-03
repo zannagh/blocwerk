@@ -8,15 +8,15 @@
 <div class="segment-facing" @onclick:stopPropagation="true">
     <span class="segment-facing-label">Facing</span>
     <div class="facing-toggle" role="group" aria-label="Segment facing">
-        <button type="button" class="facing-btn @(Facing == 0 ? "active" : "")"
+        <button type="button" class="facing-btn @(Facing == 0 ? "active" : string.Empty)"
                 title="Faces the camera, like the main wall" @onclick="() => SetFacing(0)">
             Faces you
         </button>
-        <button type="button" class="facing-btn @(Facing < 0 ? "active" : "")"
+        <button type="button" class="facing-btn @(Facing < 0 ? "active" : string.Empty)"
                 title="A side wall on the left, turned towards the right" @onclick="() => SetFacing(-1)">
             Side (left)
         </button>
-        <button type="button" class="facing-btn @(Facing > 0 ? "active" : "")"
+        <button type="button" class="facing-btn @(Facing > 0 ? "active" : string.Empty)"
                 title="A side wall on the right, turned towards the left" @onclick="() => SetFacing(1)">
             Side (right)
         </button>

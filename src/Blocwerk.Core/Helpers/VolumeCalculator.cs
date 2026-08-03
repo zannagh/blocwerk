@@ -7,9 +7,14 @@ public static class VolumeCalculator
     public static VolumeResult CalculatePyramid(int sideCount, double baseEdge, double height, double thickness)
     {
         if (sideCount < 3 || sideCount > 8)
+        {
             throw new ArgumentOutOfRangeException(nameof(sideCount), "Side count must be between 3 and 8.");
+        }
+
         if (baseEdge <= 0 || height <= 0 || thickness <= 0)
+        {
             throw new ArgumentException("All dimensions must be positive.");
+        }
 
         var n = sideCount;
         var a = baseEdge;
@@ -17,7 +22,7 @@ public static class VolumeCalculator
         var t = thickness;
 
         var apothem = a / (2.0 * Math.Tan(Math.PI / n));
-        var slantHeight = Math.Sqrt(h * h + apothem * apothem);
+        var slantHeight = Math.Sqrt((h * h) + (apothem * apothem));
         var baseBevelRad = Math.Atan2(h, apothem);
         var baseBevelDeg = Rad2Deg(baseBevelRad);
         var lateralDihedralRad = 2.0 * Math.Atan(Math.Tan(baseBevelRad) * Math.Cos(Math.PI / n));
@@ -44,8 +49,8 @@ public static class VolumeCalculator
         var faceEdgeLengths = new[]
         {
             effectiveBase,
-            Math.Sqrt(effectiveBase / 2.0 * (effectiveBase / 2.0) + effectiveSlant * effectiveSlant),
-            Math.Sqrt(effectiveBase / 2.0 * (effectiveBase / 2.0) + effectiveSlant * effectiveSlant),
+            Math.Sqrt((effectiveBase / 2.0 * (effectiveBase / 2.0)) + (effectiveSlant * effectiveSlant)),
+            Math.Sqrt((effectiveBase / 2.0 * (effectiveBase / 2.0)) + (effectiveSlant * effectiveSlant)),
         };
 
         var faceBevels = new[]
@@ -85,9 +90,14 @@ public static class VolumeCalculator
     public static VolumeResult CalculatePyramidByAngle(int sideCount, double faceAngleDeg, double edgeLength, double thickness)
     {
         if (sideCount < 3 || sideCount > 8)
+        {
             throw new ArgumentOutOfRangeException(nameof(sideCount), "Side count must be between 3 and 8.");
+        }
+
         if (faceAngleDeg <= 0 || faceAngleDeg >= 90 || edgeLength <= 0 || thickness <= 0)
+        {
             throw new ArgumentException("Invalid dimensions.");
+        }
 
         var faceAngleRad = Deg2Rad(faceAngleDeg);
         var height = edgeLength * Math.Sin(faceAngleRad);
@@ -100,7 +110,9 @@ public static class VolumeCalculator
     public static VolumeResult CalculateDiamond(double width, double length, double tipHeight, double thickness)
     {
         if (width <= 0 || length <= 0 || tipHeight <= 0 || thickness <= 0)
+        {
             throw new ArgumentException("All dimensions must be positive.");
+        }
 
         var w = width;
         var l = length;
@@ -218,7 +230,7 @@ public static class VolumeCalculator
         var sin30 = Math.Sin(Math.PI / 6.0);
         return new Point2D(
             (p.X - p.Z) * cos30,
-            -(p.Y - (p.X + p.Z) * sin30));
+            -(p.Y - ((p.X + p.Z) * sin30)));
     }
 
     public static string F(double v) => v.ToString("F1", CultureInfo.InvariantCulture);

@@ -17,18 +17,18 @@
         }
     </div>
     <div class="pick-controls">
-        <button class="mode-btn @(_placeType == HoldType.Start ? "active start-active" : "")" @onclick="() => _placeType = HoldType.Start">Start</button>
-        <button class="mode-btn @(_placeType == HoldType.Normal ? "active" : "")" @onclick="() => _placeType = HoldType.Normal">Normal</button>
-        <button class="mode-btn @(_placeType == HoldType.Top ? "active top-active" : "")" @onclick="() => _placeType = HoldType.Top">Top</button>
+        <button class="mode-btn @(_placeType == HoldType.Start ? "active start-active" : string.Empty)" @onclick="() => _placeType = HoldType.Start">Start</button>
+        <button class="mode-btn @(_placeType == HoldType.Normal ? "active" : string.Empty)" @onclick="() => _placeType = HoldType.Normal">Normal</button>
+        <button class="mode-btn @(_placeType == HoldType.Top ? "active top-active" : string.Empty)" @onclick="() => _placeType = HoldType.Top">Top</button>
         <span class="separator"></span>
-        <button class="mode-btn @(_placingVirtual ? "active" : "")"
+        <button class="mode-btn @(_placingVirtual ? "active" : string.Empty)"
                 @onclick="() => _placingVirtual = !_placingVirtual"
                 title="Add a virtual hold at a spot that isn't in the wall photo yet. It'll be a dotted placeholder, mergeable with a real hold on the next wall update.">
             + Virtual
         </button>
         <span class="separator"></span>
-        <button class="mode-btn @(_viewMode == ViewMode.Photo ? "view-active" : "")" @onclick="() => _viewMode = ViewMode.Photo">Photo</button>
-        <button class="mode-btn @(_viewMode == ViewMode.Schematic ? "view-active" : "")" @onclick="() => _viewMode = ViewMode.Schematic">Map</button>
+        <button class="mode-btn @(_viewMode == ViewMode.Photo ? "view-active" : string.Empty)" @onclick="() => _viewMode = ViewMode.Photo">Photo</button>
+        <button class="mode-btn @(_viewMode == ViewMode.Schematic ? "view-active" : string.Empty)" @onclick="() => _viewMode = ViewMode.Schematic">Map</button>
     </div>
 </div>
 
@@ -42,7 +42,7 @@
     <span class="zoom-sep"></span>
     @* Pan mode is honoured by the JS engine through data-pan-mode below: while it is
        on you can drag from anywhere, holds included, and taps never select. *@
-    <button class="zoom-btn @(_isPanning ? "pan-active" : "")" @onclick="() => _isPanning = !_isPanning"
+    <button class="zoom-btn @(_isPanning ? "pan-active" : string.Empty)" @onclick="() => _isPanning = !_isPanning"
             title="@(_isPanning ? "Pan mode on — drag anywhere, taps ignored" : "Pan mode off — tap holds to select")">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
             <path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 9.5V5a2 2 0 0 0-4 0v9" />
@@ -79,7 +79,7 @@
                     ? BoulderHoldColors.Stroke(selection!.Type)
                     : isColorFoot ? BoulderHoldColors.Foot : "rgba(255,255,255,0.4)";
                 var sw = isSelected || isColorFoot ? "0.4" : "0.2";
-                var dash = hold.IsVirtual ? "0.6 0.4" : "";
+                var dash = hold.IsVirtual ? "0.6 0.4" : string.Empty;
                 if (hold.IsVirtual && !isSelected && !isColorFoot) { strokeColor = "#c86dff"; }
                 var isFoot = hold.Category == HoldCategory.Foot;
                 var r = (isFoot ? hold.Radius * 0.7 : hold.Radius) * 100;
@@ -129,7 +129,7 @@ else
                     ? BoulderHoldColors.Stroke(selection!.Type)
                     : isColorFoot ? BoulderHoldColors.Foot : HoldPalette.StrokeHex(hold.Color);
                 var sw = isSelected || isColorFoot ? "0.6" : "0.3";
-                var dash = hold.IsVirtual ? "0.8 0.5" : "";
+                var dash = hold.IsVirtual ? "0.8 0.5" : string.Empty;
                 if (hold.IsVirtual && !isSelected && !isColorFoot) { strokeColor = "#c86dff"; }
                 var isFoot = hold.Category == HoldCategory.Foot;
                 var r = (isFoot ? hold.Radius * 0.7 : hold.Radius) * 100;

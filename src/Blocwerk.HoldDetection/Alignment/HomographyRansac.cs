@@ -25,9 +25,11 @@ internal static class HomographyRansac
         int[]? bestInliers = null;
         var bestCount = 0;
 
+        // Reused across iterations: PickFour overwrites it each pass. Hoisted out of the loop so
+        // it's neither a per-iteration heap allocation nor a per-iteration stackalloc (CA2014).
+        Span<int> pick = stackalloc int[4];
         for (var iter = 0; iter < iterations; iter++)
         {
-            Span<int> pick = stackalloc int[4];
             if (!PickFour(rng, matches.Count, pick))
             {
                 continue;

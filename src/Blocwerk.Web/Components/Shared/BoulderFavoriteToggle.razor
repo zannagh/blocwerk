@@ -18,7 +18,7 @@
     with it. The global sync pill reports the pending count instead.
 *@
 
-<span id="@WrapId" class="fav-wrap @(IsFavorite ? "bw-opt-on" : "")">
+<span id="@WrapId" class="fav-wrap @(IsFavorite ? "bw-opt-on" : string.Empty)">
     <button type="button" class="fav-toggle fav-add" title="Add to favourites"
             aria-label="Add to favourites"
             data-bw-action="favorite" data-bw-boulder="@BoulderId" data-bw-favorite="true"
