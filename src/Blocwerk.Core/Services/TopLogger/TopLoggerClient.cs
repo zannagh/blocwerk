@@ -142,7 +142,9 @@ public sealed class TopLoggerClient : ITopLoggerClient
         {
             if (!loggedFirst)
             {
-                logger.LogDebug("TopLogger first ascent payload (for field mapping): {Payload}", element.GetRawText());
+                // Logged at Information (one line per sync) while we validate the field/grade mapping
+                // against live data. Lower to Debug once the mapping is confirmed.
+                logger.LogInformation("TopLogger first ascent payload (for field mapping): {Payload}", element.GetRawText());
                 loggedFirst = true;
             }
 
