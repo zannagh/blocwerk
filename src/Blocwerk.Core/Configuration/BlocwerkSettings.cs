@@ -10,6 +10,12 @@ public class BlocwerkSettings
 
     public TimeSpan JwtTokenLifetime { get; private set; } = TimeSpan.FromHours(1);
 
+    /// <summary>
+    /// Secret used to encrypt stored third-party tokens (e.g. the TopLogger API token). When empty,
+    /// features that persist external credentials are disabled — there is no plaintext fallback.
+    /// </summary>
+    public string EncryptionKey { get; private set; } = string.Empty;
+
     public OAuthProviderSettings GitHubOAuth { get; private set; } = new();
 
     public OAuthProviderSettings GoogleOAuth { get; private set; } = new();
@@ -50,6 +56,10 @@ public class BlocwerkSettings
         }
 
         JwtKey = string.IsNullOrEmpty(jwtKey) ? GenerateRandomKey() : jwtKey;
+
+        EncryptionKey = section["EncryptionKey"]
+                        ?? Environment.GetEnvironmentVariable("BLOCWERK__ENCRYPTIONKEY")
+                        ?? string.Empty;
 
         if (TimeSpan.TryParse(
                 section["JwtTokenLifetime"] ?? Environment.GetEnvironmentVariable("SECURITY__TOKENLIFETIME"),

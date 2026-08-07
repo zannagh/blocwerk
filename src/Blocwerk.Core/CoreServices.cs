@@ -1,6 +1,7 @@
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Services;
+using Blocwerk.Core.Services.TopLogger;
 using Blocwerk.Core.Telemetry;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -56,6 +57,12 @@ public static class CoreServices
         builder.Services.AddHostedService<TelemetryStatsCollector>();
 
         builder.Services.AddScoped<IWallService, WallService>();
+
+        // TopLogger import: token encryption + the (unofficial) API client + the import service.
+        builder.Services.AddHttpClient();
+        builder.Services.AddSingleton<ITokenProtector, TokenProtector>();
+        builder.Services.AddScoped<ITopLoggerClient, TopLoggerClient>();
+        builder.Services.AddScoped<ITopLoggerService, TopLoggerService>();
 
         return builder;
     }

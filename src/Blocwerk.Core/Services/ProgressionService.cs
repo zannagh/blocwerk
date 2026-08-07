@@ -83,6 +83,9 @@ public record ActivityDetail(
 
 public class ProgressionService : IProgressionService
 {
+    /// <summary>Days a send counts toward the boulder rating before it decays out (TopLogger-style).</summary>
+    private const int RatingWindowDays = 60;
+
     private readonly IDbContextFactory<BlocwerkDbContext> _dbContextFactory;
     private readonly ICurrentUserService _currentUserService;
     private readonly ILogger<ProgressionService> _logger;
@@ -93,9 +96,6 @@ public class ProgressionService : IProgressionService
         _currentUserService = currentUserService;
         _logger = logger;
     }
-
-    /// <summary>Days a send counts toward the boulder rating before it decays out (TopLogger-style).</summary>
-    private const int RatingWindowDays = 60;
 
     public async Task<UserProgression> GetProgressionAsync()
     {
