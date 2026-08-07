@@ -94,6 +94,9 @@ public class ProgressionService : IProgressionService
         _logger = logger;
     }
 
+    /// <summary>Days a send counts toward the boulder rating before it decays out (TopLogger-style).</summary>
+    private const int RatingWindowDays = 60;
+
     public async Task<UserProgression> GetProgressionAsync()
     {
         using var op = BlocwerkMetrics.TimeOperation("Progression.Get");
@@ -104,14 +107,20 @@ public class ProgressionService : IProgressionService
 
             var windowDays = user.ProgressionWindowDays;
             var groupBy = user.ProgressionGroupBy;
-            var cutoff = DateTimeOffset.UtcNow.AddDays(-windowDays);
+            var now = DateTimeOffset.UtcNow;
+            var cutoff = now.AddDays(-windowDays);
 
+            // Boulder rating is a rolling window: a send counts for RatingWindowDays, then decays out
+            // (TopLogger-style). So the curve needs attempts from one rating-window BEFORE the view
+            // starts, for the earliest bucket's trailing window.
             var attempts = await db.Attempts
                 .Include(a => a.Boulder)
-                .Where(a => a.UserId == user.Id && a.Timestamp >= cutoff)
+                .Where(a => a.UserId == user.Id && a.Timestamp >= cutoff.AddDays(-RatingWindowDays))
                 .ToListAsync();
 
-            var boulderScore = CalculateBoulderScore(attempts);
+            // Current rating = the rolling score as of now, independent of the view window.
+            var ratingAttempts = attempts.Where(a => a.Timestamp >= now.AddDays(-RatingWindowDays)).ToList();
+            var boulderScore = CalculateBoulderScore(ratingAttempts);
             var boulderGrade = GradeScoring.ScoreToGrade(boulderScore);
 
             var hangboard = await db.HangboardSessions
@@ -126,8 +135,8 @@ public class ProgressionService : IProgressionService
                 .Where(a => a.UserId == user.Id && a.StartedAt >= cutoff)
                 .ToListAsync();
 
-            // Per-bucket (not rolling): each bucket scores only its own period's climbs/training and
-            // sums the minutes of activities that started in it. Reuses the rows already loaded above.
+            // Boulder is a rolling rating per bucket (smooth, continuous); training and volume are
+            // per-period sums. Reuses the rows already loaded above.
             var buckets = BuildBuckets(groupBy, cutoff, attempts, hangboard, pullups, activities);
 
             return new UserProgression(boulderScore, boulderGrade, trainingScore, windowDays, groupBy, buckets);
@@ -514,12 +523,15 @@ public class ProgressionService : IProgressionService
             var from = new DateTimeOffset(bucketStart.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
             var to = new DateTimeOffset(bucketEnd.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
 
-            var bucketAttempts = attempts.Where(a => a.Timestamp >= from && a.Timestamp < to).ToList();
+            // Boulder: rolling rating as of the end of the bucket — every send in the trailing
+            // rating window counts, so the curve is continuous and smooth rather than spiky.
+            var ratingAttempts = attempts.Where(a => a.Timestamp >= to.AddDays(-RatingWindowDays) && a.Timestamp < to).ToList();
+            // Training/volume: only this period's own items.
             var bucketHang = hangboard.Where(h => h.Timestamp >= from && h.Timestamp < to).ToList();
             var bucketPull = pullups.Where(p => p.Timestamp >= from && p.Timestamp < to).ToList();
             var bucketVolume = activities.Where(a => a.StartedAt >= from && a.StartedAt < to).Sum(ActivityMinutes);
 
-            var bScore = CalculateBoulderScore(bucketAttempts);
+            var bScore = CalculateBoulderScore(ratingAttempts);
             var tScore = CalculateTrainingScore(bucketHang, bucketPull);
 
             buckets.Add(new ProgressionBucket(
