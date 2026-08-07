@@ -31,4 +31,10 @@ public class Attempt
     /// when set, so replaying a queued log after a reconnect cannot create a second row.
     /// </summary>
     public Guid? ClientRequestId { get; set; }
+
+    /// <summary>The training activity this attempt was grouped into (see <see cref="Activity"/>).</summary>
+    public Guid? ActivityId { get; set; }
+
+    [ForeignKey(nameof(ActivityId))]
+    public Activity? Activity { get; set; }
 }

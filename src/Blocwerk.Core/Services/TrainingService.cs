@@ -1,6 +1,7 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Helpers;
 using Blocwerk.Core.Telemetry;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -49,6 +50,8 @@ public class TrainingService : ITrainingService
                 Notes = notes,
             };
 
+            session.ActivityId = await ActivityGrouping.ResolveActivityIdAsync(db, user.Id, session.Timestamp, null);
+
             db.HangboardSessions.Add(session);
             await db.SaveChangesAsync();
             _logger.LogInformation("Hangboard session {SessionId} saved for {UserId}", session.Id, user.Id);
@@ -77,6 +80,8 @@ public class TrainingService : ITrainingService
                 Sets = sets,
                 Notes = notes,
             };
+
+            session.ActivityId = await ActivityGrouping.ResolveActivityIdAsync(db, user.Id, session.Timestamp, null);
 
             db.PullupSessions.Add(session);
             await db.SaveChangesAsync();

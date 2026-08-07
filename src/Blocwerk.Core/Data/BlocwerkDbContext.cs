@@ -45,6 +45,8 @@ public class BlocwerkDbContext : DbContext
 
     public DbSet<ClimbingSession> ClimbingSessions => Set<ClimbingSession>();
 
+    public DbSet<Activity> Activities => Set<Activity>();
+
     public BlocwerkDbContext(DbContextOptions<BlocwerkDbContext> options)
         : base(options)
     {
@@ -81,6 +83,55 @@ public class BlocwerkDbContext : DbContext
         ConfigureGradeProposal(modelBuilder);
         ConfigureBoulderRating(modelBuilder);
         ConfigureBoulderFavorite(modelBuilder);
+        ConfigureActivity(modelBuilder);
+    }
+
+    private static void ConfigureActivity(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Activity>(entity =>
+        {
+            entity.HasIndex(a => new { a.UserId, a.StartedAt });
+
+            entity.HasOne(a => a.User)
+                .WithMany()
+                .HasForeignKey(a => a.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // A wall can be deleted while its activities remain (training-only after that).
+            entity.HasOne(a => a.Wall)
+                .WithMany()
+                .HasForeignKey(a => a.WallId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // The event → activity links are all optional; deleting an activity detaches its events
+        // (SetNull) rather than deleting the logged history. Indexed for the per-activity lookups.
+        modelBuilder.Entity<Attempt>(entity =>
+        {
+            entity.HasOne(a => a.Activity)
+                .WithMany()
+                .HasForeignKey(a => a.ActivityId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(a => a.ActivityId);
+        });
+
+        modelBuilder.Entity<HangboardSession>(entity =>
+        {
+            entity.HasOne(h => h.Activity)
+                .WithMany()
+                .HasForeignKey(h => h.ActivityId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(h => h.ActivityId);
+        });
+
+        modelBuilder.Entity<PullupSession>(entity =>
+        {
+            entity.HasOne(p => p.Activity)
+                .WithMany()
+                .HasForeignKey(p => p.ActivityId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(p => p.ActivityId);
+        });
     }
 
     private static void ConfigureUser(ModelBuilder modelBuilder)

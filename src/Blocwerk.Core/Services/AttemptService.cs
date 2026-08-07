@@ -1,6 +1,7 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Helpers;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Telemetry;
 using Microsoft.EntityFrameworkCore;
@@ -98,6 +99,10 @@ public class AttemptService : IAttemptService
             {
                 attempt.Timestamp = timestamp.Value;
             }
+
+            // Group the attempt into a training activity (created/extended in this same context, so
+            // it commits atomically with the attempt). The boulder's wall becomes the activity's wall.
+            attempt.ActivityId = await ActivityGrouping.ResolveActivityIdAsync(db, user.Id, attempt.Timestamp, boulder.WallId);
 
             db.Attempts.Add(attempt);
             await db.SaveChangesAsync();

@@ -18,17 +18,37 @@ public interface IProgressionService
     Task<DaySummary> GetDaySummaryAsync(DateOnly date);
 
     Task UpdateProgressionWindowAsync(int days);
+
+    Task UpdateProgressionGroupingAsync(ProgressionGroupBy groupBy);
+
+    /// <summary>Activities (gap-clustered sessions) within the user's progression window, newest first.</summary>
+    Task<List<ActivitySummary>> GetActivitiesAsync();
+
+    Task<ActivityDetail?> GetActivityAsync(Guid activityId);
+
+    Task UpdateActivityDurationAsync(Guid activityId, int minutes);
 }
 
 public record UserProgression(
     double BoulderScore,
     string? BoulderGrade,
     double TrainingScore,
-    List<ProgressionPoint> BoulderCurve,
-    List<ProgressionPoint> TrainingCurve,
-    int WindowDays);
+    int WindowDays,
+    ProgressionGroupBy GroupBy,
+    List<ProgressionBucket> Buckets);
 
-public record ProgressionPoint(DateOnly Date, double Score);
+/// <summary>
+/// One group-by bucket (a day, ISO week, or calendar month). Boulder/Training scores are null when
+/// the bucket has no qualifying activity (rendered as a gap); Volume is always present (0 = no activity).
+/// </summary>
+public record ProgressionBucket(
+    DateOnly Start,
+    DateOnly End,
+    string Label,
+    double? BoulderScore,
+    string? BoulderGrade,
+    double? TrainingScore,
+    double VolumeMinutes);
 
 public record DayActivity(DateOnly Date, int Intensity);
 
@@ -40,6 +60,26 @@ public record DaySummary(
     TimeSpan? SessionDuration);
 
 public record BoulderAttemptSummary(string BoulderName, string? Grade, AttemptType BestResult, int AttemptCount);
+
+public record ActivitySummary(
+    Guid Id,
+    DateOnly Date,
+    DateTimeOffset StartedAt,
+    int DurationMinutes,
+    int BoulderCount,
+    int HangboardCount,
+    int PullupCount,
+    string? WallName);
+
+public record ActivityDetail(
+    Guid Id,
+    DateTimeOffset StartedAt,
+    int DurationMinutes,
+    bool DurationIsManual,
+    List<BoulderAttemptSummary> Boulders,
+    List<HangboardSession> Hangboard,
+    List<PullupSession> Pullups,
+    string? WallName);
 
 public class ProgressionService : IProgressionService
 {
@@ -63,6 +103,7 @@ public class ProgressionService : IProgressionService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
 
             var windowDays = user.ProgressionWindowDays;
+            var groupBy = user.ProgressionGroupBy;
             var cutoff = DateTimeOffset.UtcNow.AddDays(-windowDays);
 
             var attempts = await db.Attempts
@@ -81,12 +122,15 @@ public class ProgressionService : IProgressionService
                 .ToListAsync();
             var trainingScore = CalculateTrainingScore(hangboard, pullups);
 
-            // The curve builders window the very same rows already loaded above, so reuse those
-            // lists instead of issuing three more identical queries per request.
-            var boulderCurve = BuildBoulderCurve(attempts, windowDays);
-            var trainingCurve = BuildTrainingCurve(hangboard, pullups, windowDays);
+            var activities = await db.Activities
+                .Where(a => a.UserId == user.Id && a.StartedAt >= cutoff)
+                .ToListAsync();
 
-            return new UserProgression(boulderScore, boulderGrade, trainingScore, boulderCurve, trainingCurve, windowDays);
+            // Per-bucket (not rolling): each bucket scores only its own period's climbs/training and
+            // sums the minutes of activities that started in it. Reuses the rows already loaded above.
+            var buckets = BuildBuckets(groupBy, cutoff, attempts, hangboard, pullups, activities);
+
+            return new UserProgression(boulderScore, boulderGrade, trainingScore, windowDays, groupBy, buckets);
         }
         catch (Exception ex)
         {
@@ -248,6 +292,163 @@ public class ProgressionService : IProgressionService
         }
     }
 
+    public async Task UpdateProgressionGroupingAsync(ProgressionGroupBy groupBy)
+    {
+        using var op = BlocwerkMetrics.TimeOperation("Progression.UpdateGrouping");
+        try
+        {
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+
+            var dbUser = await db.Users.FirstAsync(u => u.Id == user.Id);
+            dbUser.ProgressionGroupBy = groupBy;
+            await db.SaveChangesAsync();
+
+            _currentUserService.InvalidateCache();
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
+    }
+
+    public async Task<List<ActivitySummary>> GetActivitiesAsync()
+    {
+        using var op = BlocwerkMetrics.TimeOperation("Activity.List");
+        try
+        {
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
+
+            var cutoff = DateTimeOffset.UtcNow.AddDays(-user.ProgressionWindowDays);
+
+            var activities = await db.Activities
+                .Include(a => a.Wall)
+                .Where(a => a.UserId == user.Id && a.StartedAt >= cutoff)
+                .OrderByDescending(a => a.StartedAt)
+                .ToListAsync();
+
+            if (activities.Count == 0)
+            {
+                return [];
+            }
+
+            var ids = activities.Select(a => a.Id).ToList();
+
+            var boulderCounts = await db.Attempts
+                .Where(a => a.ActivityId != null && ids.Contains(a.ActivityId.Value))
+                .GroupBy(a => a.ActivityId!.Value)
+                .Select(g => new { Id = g.Key, Count = g.Select(x => x.BoulderId).Distinct().Count() })
+                .ToDictionaryAsync(x => x.Id, x => x.Count);
+
+            var hangboardCounts = await db.HangboardSessions
+                .Where(h => h.ActivityId != null && ids.Contains(h.ActivityId.Value))
+                .GroupBy(h => h.ActivityId!.Value)
+                .Select(g => new { Id = g.Key, Count = g.Count() })
+                .ToDictionaryAsync(x => x.Id, x => x.Count);
+
+            var pullupCounts = await db.PullupSessions
+                .Where(p => p.ActivityId != null && ids.Contains(p.ActivityId.Value))
+                .GroupBy(p => p.ActivityId!.Value)
+                .Select(g => new { Id = g.Key, Count = g.Count() })
+                .ToDictionaryAsync(x => x.Id, x => x.Count);
+
+            return activities.Select(a => new ActivitySummary(
+                a.Id,
+                DateOnly.FromDateTime(a.StartedAt.UtcDateTime.Date),
+                a.StartedAt,
+                ActivityMinutes(a),
+                boulderCounts.GetValueOrDefault(a.Id),
+                hangboardCounts.GetValueOrDefault(a.Id),
+                pullupCounts.GetValueOrDefault(a.Id),
+                a.Wall?.Name)).ToList();
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
+    }
+
+    public async Task<ActivityDetail?> GetActivityAsync(Guid activityId)
+    {
+        using var op = BlocwerkMetrics.TimeOperation("Activity.Get");
+        try
+        {
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
+
+            var activity = await db.Activities
+                .Include(a => a.Wall)
+                .FirstOrDefaultAsync(a => a.Id == activityId && a.UserId == user.Id);
+
+            if (activity == null)
+            {
+                return null;
+            }
+
+            var attempts = await db.Attempts
+                .Include(a => a.Boulder)
+                .Where(a => a.ActivityId == activityId)
+                .ToListAsync();
+
+            var boulders = attempts
+                .GroupBy(a => a.BoulderId)
+                .Select(g =>
+                {
+                    var first = g.First();
+                    return new BoulderAttemptSummary(first.Boulder.Name, first.Boulder.Grade, g.Max(a => a.Type), g.Count());
+                })
+                .ToList();
+
+            var hangboard = await db.HangboardSessions.Where(h => h.ActivityId == activityId).ToListAsync();
+            var pullups = await db.PullupSessions.Where(p => p.ActivityId == activityId).ToListAsync();
+
+            return new ActivityDetail(
+                activity.Id,
+                activity.StartedAt,
+                ActivityMinutes(activity),
+                activity.DurationMinutes.HasValue,
+                boulders,
+                hangboard,
+                pullups,
+                activity.Wall?.Name);
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
+    }
+
+    public async Task UpdateActivityDurationAsync(Guid activityId, int minutes)
+    {
+        using var op = BlocwerkMetrics.TimeOperation("Activity.UpdateDuration");
+        try
+        {
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
+
+            var activity = await db.Activities.FirstOrDefaultAsync(a => a.Id == activityId && a.UserId == user.Id);
+            if (activity == null)
+            {
+                throw new InvalidOperationException("Activity not found");
+            }
+
+            activity.DurationMinutes = Math.Clamp(minutes, 0, 24 * 60);
+            await db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
+    }
+
     private static double CalculateBoulderScore(List<Attempt> attempts)
     {
         var bestPerBoulder = attempts
@@ -292,43 +493,80 @@ public class ProgressionService : IProgressionService
         return score;
     }
 
-    private static List<ProgressionPoint> BuildBoulderCurve(List<Attempt> attempts, int windowDays)
+    /// <summary>Effective duration in minutes: the user's override, else the event span.</summary>
+    private static int ActivityMinutes(Activity a) =>
+        a.DurationMinutes ?? Math.Max(0, (int)Math.Round((a.LastEventAt - a.StartedAt).TotalMinutes));
+
+    private static List<ProgressionBucket> BuildBuckets(
+        ProgressionGroupBy groupBy,
+        DateTimeOffset cutoff,
+        List<Attempt> attempts,
+        List<HangboardSession> hangboard,
+        List<PullupSession> pullups,
+        List<Activity> activities)
     {
-        var since = DateTimeOffset.UtcNow.AddDays(-windowDays);
+        var start = DateOnly.FromDateTime(cutoff.UtcDateTime.Date);
+        var end = DateOnly.FromDateTime(DateTimeOffset.UtcNow.UtcDateTime.Date);
 
-        var curve = new List<ProgressionPoint>();
-        var startDate = DateOnly.FromDateTime(since.Date);
-        var endDate = DateOnly.FromDateTime(DateTimeOffset.UtcNow.Date);
-
-        for (var date = startDate; date <= endDate; date = date.AddDays(7))
+        var buckets = new List<ProgressionBucket>();
+        foreach (var (bucketStart, bucketEnd, label) in EnumerateBuckets(groupBy, start, end))
         {
-            var windowEnd = new DateTimeOffset(date.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
-            var windowStart = windowEnd.AddDays(-windowDays);
-            var windowAttempts = attempts.Where(a => a.Timestamp >= windowStart && a.Timestamp < windowEnd).ToList();
-            var score = CalculateBoulderScore(windowAttempts);
-            curve.Add(new ProgressionPoint(date, score));
+            var from = new DateTimeOffset(bucketStart.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+            var to = new DateTimeOffset(bucketEnd.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+
+            var bucketAttempts = attempts.Where(a => a.Timestamp >= from && a.Timestamp < to).ToList();
+            var bucketHang = hangboard.Where(h => h.Timestamp >= from && h.Timestamp < to).ToList();
+            var bucketPull = pullups.Where(p => p.Timestamp >= from && p.Timestamp < to).ToList();
+            var bucketVolume = activities.Where(a => a.StartedAt >= from && a.StartedAt < to).Sum(ActivityMinutes);
+
+            var bScore = CalculateBoulderScore(bucketAttempts);
+            var tScore = CalculateTrainingScore(bucketHang, bucketPull);
+
+            buckets.Add(new ProgressionBucket(
+                bucketStart,
+                bucketEnd,
+                label,
+                bScore > 0 ? bScore : null,
+                GradeScoring.ScoreToGrade(bScore),
+                bucketHang.Count + bucketPull.Count > 0 ? tScore : null,
+                bucketVolume));
         }
 
-        return curve;
+        return buckets;
     }
 
-    private static List<ProgressionPoint> BuildTrainingCurve(List<HangboardSession> hangboard, List<PullupSession> pullups, int windowDays)
+    private static IEnumerable<(DateOnly Start, DateOnly End, string Label)> EnumerateBuckets(
+        ProgressionGroupBy groupBy, DateOnly start, DateOnly end)
     {
-        var since = DateTimeOffset.UtcNow.AddDays(-windowDays);
-
-        var curve = new List<ProgressionPoint>();
-        var startDate = DateOnly.FromDateTime(since.Date);
-        var endDate = DateOnly.FromDateTime(DateTimeOffset.UtcNow.Date);
-
-        for (var date = startDate; date <= endDate; date = date.AddDays(7))
+        switch (groupBy)
         {
-            var windowEnd = new DateTimeOffset(date.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
-            var windowStart = windowEnd.AddDays(-windowDays);
-            var h = hangboard.Where(x => x.Timestamp >= windowStart && x.Timestamp < windowEnd).ToList();
-            var p = pullups.Where(x => x.Timestamp >= windowStart && x.Timestamp < windowEnd).ToList();
-            curve.Add(new ProgressionPoint(date, CalculateTrainingScore(h, p)));
-        }
+            case ProgressionGroupBy.Day:
+                for (var d = start; d <= end; d = d.AddDays(1))
+                {
+                    yield return (d, d, d.ToString("dd.MM"));
+                }
 
-        return curve;
+                break;
+
+            case ProgressionGroupBy.Month:
+                var month = new DateOnly(start.Year, start.Month, 1);
+                var lastMonth = new DateOnly(end.Year, end.Month, 1);
+                while (month <= lastMonth)
+                {
+                    yield return (month, month.AddMonths(1).AddDays(-1), month.ToString("MMM yy"));
+                    month = month.AddMonths(1);
+                }
+
+                break;
+
+            default: // Week: ISO weeks anchored on Monday.
+                var weekStart = start.AddDays(-((7 + (int)start.DayOfWeek - (int)DayOfWeek.Monday) % 7));
+                for (var w = weekStart; w <= end; w = w.AddDays(7))
+                {
+                    yield return (w, w.AddDays(6), w.ToString("dd.MM"));
+                }
+
+                break;
+        }
     }
 }

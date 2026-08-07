@@ -1,0 +1,223 @@
+@using System.Globalization
+@using System.Text.Json
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<div class="prog-chart">
+    <div class="prog-chart-head">
+        <h4 class="prog-chart-title">@Title</h4>
+        @if (!string.IsNullOrEmpty(Caption))
+        {
+            <span class="prog-chart-caption">@Caption</span>
+        }
+    </div>
+
+    @if (_plottable < 2)
+    {
+        <p class="prog-chart-empty">@EmptyText</p>
+    }
+    else
+    {
+        <div class="prog-chart-body" @ref="_container">
+            <div class="prog-chart-yaxis">
+                @foreach (var tick in YTicks)
+                {
+                    <span class="prog-ytick" style="top:@Pct(YFrac(tick.Value));">@tick.Label</span>
+                }
+            </div>
+            <svg class="prog-chart-svg" viewBox="0 0 @MaxX 100" preserveAspectRatio="none">
+                @foreach (var tick in YTicks)
+                {
+                    var gy = F(YFrac(tick.Value) * 100);
+                    <line class="prog-grid" x1="0" y1="@gy" x2="@MaxX" y2="@gy" vector-effect="non-scaling-stroke" />
+                }
+                @foreach (var seg in Segments())
+                {
+                    <polyline points="@seg" fill="none" stroke="@Stroke" stroke-width="2"
+                              vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round" />
+                }
+                @if (ShowTrendline && _trend is { } tr)
+                {
+                    <line class="prog-trend" x1="0" y1="@tr.Y0" x2="@MaxX" y2="@tr.Y1"
+                          stroke="@Stroke" vector-effect="non-scaling-stroke" />
+                }
+            </svg>
+            <div class="prog-chart-guide"></div>
+            <div class="prog-chart-dot" style="background:@Stroke;"></div>
+            <div class="prog-chart-tip"></div>
+        </div>
+        <div class="prog-chart-xaxis">
+            @foreach (var (label, frac) in XAxisTicks())
+            {
+                <span class="prog-xtick" style="left:@Pct(frac);">@label</span>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string? Caption { get; set; }
+    [Parameter, EditorRequired] public IReadOnlyList<ChartSeriesPoint> Points { get; set; } = [];
+    [Parameter] public IReadOnlyList<(double Value, string Label)> YTicks { get; set; } = [];
+    [Parameter] public string Stroke { get; set; } = "#e94560";
+    [Parameter] public bool ShowTrendline { get; set; }
+    [Parameter] public string EmptyText { get; set; } = "Not enough data yet.";
+
+    private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
+    private ElementReference _container;
+    private double _min;
+    private double _max = 1;
+    private int _plottable;
+    private (string Y0, string Y1)? _trend;
+    private string? _boundPayload;
+
+    protected override void OnParametersSet()
+    {
+        var values = Points.Where(p => p.Value.HasValue).Select(p => p.Value!.Value).ToList();
+        _plottable = values.Count;
+
+        var scale = values.Concat(YTicks.Select(t => t.Value)).ToList();
+        _min = scale.Count > 0 ? scale.Min() : 0;
+        _max = scale.Count > 0 ? scale.Max() : 1;
+        if (_max <= _min)
+        {
+            _max = _min + 1;
+        }
+
+        ComputeTrend();
+    }
+
+    private int MaxX => Math.Max(1, Points.Count - 1);
+
+    private double XFrac(int i) => Points.Count <= 1 ? 0.5 : (double)i / (Points.Count - 1);
+
+    // 0 = top of the plot, 1 = bottom.
+    private double YFrac(double v) => 1 - ((v - _min) / (_max - _min));
+
+    private static string F(double v) => v.ToString("F2", Inv);
+
+    private static string Pct(double frac) => (frac * 100).ToString("F1", Inv) + "%";
+
+    // Break the line into runs of consecutive non-null points (gaps split the polyline). A lone
+    // point becomes a degenerate two-point segment so a round linecap renders it as a dot.
+    private IEnumerable<string> Segments()
+    {
+        var run = new List<string>();
+        for (var i = 0; i < Points.Count; i++)
+        {
+            if (Points[i].Value is { } v)
+            {
+                run.Add($"{i.ToString(Inv)},{F(YFrac(v) * 100)}");
+            }
+            else if (run.Count > 0)
+            {
+                yield return run.Count == 1 ? $"{run[0]} {run[0]}" : string.Join(" ", run);
+                run = new List<string>();
+            }
+        }
+
+        if (run.Count > 0)
+        {
+            yield return run.Count == 1 ? $"{run[0]} {run[0]}" : string.Join(" ", run);
+        }
+    }
+
+    private void ComputeTrend()
+    {
+        _trend = null;
+        if (!ShowTrendline)
+        {
+            return;
+        }
+
+        var pts = new List<(double X, double Y)>();
+        for (var i = 0; i < Points.Count; i++)
+        {
+            if (Points[i].Value is { } v)
+            {
+                pts.Add((i, v));
+            }
+        }
+
+        if (pts.Count < 2)
+        {
+            return;
+        }
+
+        double n = pts.Count;
+        double sx = pts.Sum(p => p.X), sy = pts.Sum(p => p.Y);
+        double sxy = pts.Sum(p => p.X * p.Y), sxx = pts.Sum(p => p.X * p.X);
+        var denom = (n * sxx) - (sx * sx);
+        if (Math.Abs(denom) < 1e-9)
+        {
+            return;
+        }
+
+        var slope = ((n * sxy) - (sx * sy)) / denom;
+        var intercept = (sy - (slope * sx)) / n;
+        _trend = (F(YFrac(intercept) * 100), F(YFrac(intercept + (slope * MaxX)) * 100));
+    }
+
+    private IEnumerable<(string Label, double Frac)> XAxisTicks()
+    {
+        if (Points.Count == 0)
+        {
+            yield break;
+        }
+
+        var step = Math.Max(1, (int)Math.Ceiling(Points.Count / 4.0));
+        for (var i = 0; i < Points.Count; i += step)
+        {
+            yield return (Points[i].AxisLabel, XFrac(i));
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_plottable < 2)
+        {
+            _boundPayload = null;
+            return;
+        }
+
+        // Serialise the points (x/y fractions + tooltip) and let the JS module own the pointer-drag
+        // read-out — a Blazor Server pointermove round-trip per move would lag badly.
+        var payload = JsonSerializer.Serialize(Points.Select((p, i) => new
+        {
+            x = XFrac(i),
+            y = p.Value.HasValue ? YFrac(p.Value.Value) : (double?)null,
+            label = p.TooltipLabel,
+        }));
+
+        if (payload == _boundPayload)
+        {
+            return;
+        }
+
+        _boundPayload = payload;
+        try
+        {
+            await JS.InvokeVoidAsync("blocwerkChart.bind", _container, payload);
+        }
+        catch (JSException)
+        {
+            _boundPayload = null;
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("blocwerkChart.unbind", _container);
+        }
+        catch (Exception)
+        {
+            // Circuit already gone during teardown; nothing to clean up.
+        }
+    }
+}

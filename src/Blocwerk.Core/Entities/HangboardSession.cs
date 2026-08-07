@@ -25,4 +25,10 @@ public class HangboardSession
 
     [MaxLength(512)]
     public string? Notes { get; set; }
+
+    /// <summary>The training activity this session was grouped into (see <see cref="Activity"/>).</summary>
+    public Guid? ActivityId { get; set; }
+
+    [ForeignKey(nameof(ActivityId))]
+    public Activity? Activity { get; set; }
 }

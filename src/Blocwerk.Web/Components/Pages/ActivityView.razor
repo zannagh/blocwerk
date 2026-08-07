@@ -1,0 +1,135 @@
+@page "/activity/{ActivityId:guid}"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject IProgressionService ProgressionService
+
+<PageTitle>Activity - Blocwerk</PageTitle>
+
+<div class="activity-detail">
+    <a href="/activity?view=list" class="back-link">&larr; Back to activities</a>
+
+    @if (_loading)
+    {
+        <p class="loading">Loading…</p>
+    }
+    else if (_activity == null)
+    {
+        <p class="empty-day">Activity not found.</p>
+    }
+    else
+    {
+        <div class="page-header">
+            <h1>@_activity.StartedAt.ToString("dddd, dd MMM yyyy")</h1>
+            <span class="detail-sub">
+                Started @_activity.StartedAt.ToString("HH:mm")@(_activity.WallName != null ? $" · {_activity.WallName}" : "")
+            </span>
+        </div>
+
+        <div class="duration-editor">
+            <label class="duration-label">Duration</label>
+            <div class="duration-row">
+                <input type="number" min="0" max="1440" step="5" @bind="_minutes" class="duration-input" />
+                <span class="duration-unit">min</span>
+                <button class="btn-primary" @onclick="SaveDuration" disabled="@_saving">Save</button>
+                @if (_saved)
+                {
+                    <span class="duration-saved">Saved ✓</span>
+                }
+            </div>
+            @if (!_activity.DurationIsManual)
+            {
+                <span class="duration-hint">auto-estimated from the span of logged items — set it to override</span>
+            }
+        </div>
+
+        @if (_activity.Boulders.Count > 0)
+        {
+            <div class="section">
+                <h2>Boulders</h2>
+                @foreach (var b in _activity.Boulders)
+                {
+                    <div class="summary-row">
+                        <span class="summary-name">@b.BoulderName</span>
+                        <span class="summary-meta">
+                            @if (!string.IsNullOrEmpty(b.Grade)) { <span class="mini-grade">@b.Grade</span> }
+                            <span class="result-badge @b.BestResult.ToString().ToLower()">@b.BestResult</span>
+                            @if (b.AttemptCount > 1) { <span class="attempt-count">@b.AttemptCount tries</span> }
+                        </span>
+                    </div>
+                }
+            </div>
+        }
+
+        @if (_activity.Hangboard.Count > 0)
+        {
+            <div class="section">
+                <h2>Hangboard</h2>
+                @foreach (var h in _activity.Hangboard)
+                {
+                    <div class="summary-row">
+                        <span class="summary-name">@h.EdgeSizeMm mm edge</span>
+                        <span class="summary-meta">
+                            @h.Sets x @h.Duration.TotalSeconds.ToString("F0")s
+                            @if (h.AdditionalWeightKg > 0) { <text>+@h.AdditionalWeightKg kg</text> }
+                        </span>
+                    </div>
+                }
+            </div>
+        }
+
+        @if (_activity.Pullups.Count > 0)
+        {
+            <div class="section">
+                <h2>Pull-ups</h2>
+                @foreach (var p in _activity.Pullups)
+                {
+                    <div class="summary-row">
+                        <span class="summary-name">@p.Sets x @p.Repetitions reps</span>
+                        <span class="summary-meta">
+                            @if (p.AdditionalWeightKg > 0) { <text>+@p.AdditionalWeightKg kg</text> }
+                        </span>
+                    </div>
+                }
+            </div>
+        }
+
+        @if (_activity.Boulders.Count == 0 && _activity.Hangboard.Count == 0 && _activity.Pullups.Count == 0)
+        {
+            <p class="empty-day">No items recorded for this activity.</p>
+        }
+    }
+</div>
+
+@code {
+    [Parameter]
+    public Guid ActivityId { get; set; }
+
+    private ActivityDetail? _activity;
+    private bool _loading = true;
+    private int _minutes;
+    private bool _saving;
+    private bool _saved;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _activity = await ProgressionService.GetActivityAsync(ActivityId);
+        _minutes = _activity?.DurationMinutes ?? 0;
+        _loading = false;
+    }
+
+    private async Task SaveDuration()
+    {
+        _saving = true;
+        _saved = false;
+        try
+        {
+            await ProgressionService.UpdateActivityDurationAsync(ActivityId, _minutes);
+            _activity = await ProgressionService.GetActivityAsync(ActivityId);
+            _saved = true;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

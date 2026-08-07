@@ -21,6 +21,8 @@ public class User : IEquatable<User>
 
     public int ProgressionWindowDays { get; set; } = 60;
 
+    public ProgressionGroupBy ProgressionGroupBy { get; set; } = ProgressionGroupBy.Week;
+
     public ICollection<WallMember> WallMemberships { get; set; } = [];
 
     public ICollection<Attempt> Attempts { get; set; } = [];

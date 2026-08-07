@@ -92,6 +92,18 @@ public static class CoreServices
             }
         }
 
+        // Reconstruct Activity rows for any events that predate the activity model. Idempotent, so it
+        // is safe to run on every start; it no-ops once all events are grouped.
+        try
+        {
+            var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<BlocwerkDbContext>>();
+            ActivityBackfill.RunIfNeededAsync(factory, logger).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Activity backfill failed; existing events remain ungrouped until the next start.");
+        }
+
         return app;
     }
 }

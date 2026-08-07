@@ -6,7 +6,7 @@
 @inject IWallService WallService
 @inject SessionState SessionState
 @inject NavigationManager Navigation
-@using Blocwerk.Web.State
+@using Blocwerk.Core.Helpers
 
 <PageTitle>Activity - Blocwerk</PageTitle>
 
@@ -17,223 +17,234 @@
     }
     else
     {
-        <div class="section">
-            <div class="section-header">
-                <h2>Activity</h2>
-                <div class="training-menu">
-                    <button class="btn-add-training" @onclick="() => _showTrainingMenu = !_showTrainingMenu">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22">
-                            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                        </svg>
-                    </button>
-                    @if (_showTrainingMenu)
-                    {
-                        <div class="training-dropdown">
-                            <a href="/training/hangboard" class="dropdown-item">Hangboard</a>
-                            <a href="/training/pullups" class="dropdown-item">Pull-ups</a>
-                            @if (SessionState.HasActiveSession)
-                            {
-                                <button class="dropdown-item" @onclick="GoToSessionWall">Go to session</button>
-                                <button class="dropdown-item danger" @onclick="EndSession">End session</button>
-                            }
-                            else
-                            {
-                                <button class="dropdown-item" @onclick="OpenWallPicker">Start session</button>
-                            }
-                        </div>
-                    }
-                </div>
-            </div>
-
-            <div class="contribution-grid">
-                @for (int week = 0; week < _weekCount; week++)
-                {
-                    var w = week;
-                    <div class="grid-column">
-                        @for (int day = 0; day < 7; day++)
-                        {
-                            var idx = w * 7 + day;
-                            if (idx < _grid.Count)
-                            {
-                                var item = _grid[idx];
-                                <div class="grid-cell intensity-@item.Intensity"
-                                     title="@item.Date.ToString("MMM d") — @IntensityLabel(item.Intensity)"
-                                     @onclick="() => SelectDay(item.Date)"></div>
-                            }
-                        }
-                    </div>
-                }
-            </div>
-            <div class="month-labels">
-                @foreach (var label in _monthLabels)
-                {
-                    <span class="month-label" style="left: @label.OffsetPercent%;">@label.Name</span>
-                }
-            </div>
-            <div class="grid-legend">
-                <span class="legend-text">Less</span>
-                <div class="grid-cell intensity-0 legend-cell"></div>
-                <div class="grid-cell intensity-1 legend-cell"></div>
-                <div class="grid-cell intensity-2 legend-cell"></div>
-                <div class="grid-cell intensity-3 legend-cell"></div>
-                <div class="grid-cell intensity-4 legend-cell"></div>
-                <span class="legend-text">More</span>
-            </div>
-        </div>
-
-        @if (_selectedDay != null)
-        {
-            <div class="day-summary">
-                <div class="summary-header">
-                    <h3>@_selectedDay.Date.ToString("dddd, MMM d")</h3>
-                    @if (_selectedDay.SessionDuration.HasValue)
-                    {
-                        <span class="duration-badge">@FormatDuration(_selectedDay.SessionDuration.Value)</span>
-                    }
-                    <button class="close-btn" @onclick="() => _selectedDay = null">x</button>
-                </div>
-
-                @if (_selectedDay.Boulders.Count > 0)
-                {
-                    <h4>Boulders</h4>
-                    @foreach (var b in _selectedDay.Boulders)
-                    {
-                        <div class="summary-row">
-                            <span class="summary-name">@b.BoulderName</span>
-                            <span class="summary-meta">
-                                @if (!string.IsNullOrEmpty(b.Grade)) { <span class="mini-grade">@b.Grade</span> }
-                                <span class="result-badge @b.BestResult.ToString().ToLower()">@b.BestResult</span>
-                                @if (b.AttemptCount > 1) { <span class="attempt-count">@b.AttemptCount tries</span> }
-                            </span>
-                        </div>
-                    }
-                }
-
-                @if (_selectedDay.Hangboard.Count > 0)
-                {
-                    <h4>Hangboard</h4>
-                    @foreach (var h in _selectedDay.Hangboard)
-                    {
-                        <div class="summary-row">
-                            <span class="summary-name">@h.EdgeSizeMm mm edge</span>
-                            <span class="summary-meta">
-                                @h.Sets x @h.Duration.TotalSeconds.ToString("F0")s
-                                @if (h.AdditionalWeightKg > 0) { <text>+@h.AdditionalWeightKg kg</text> }
-                                <button class="delete-btn" @onclick="() => DeleteHangboard(h.Id)">x</button>
-                            </span>
-                        </div>
-                    }
-                }
-
-                @if (_selectedDay.Pullups.Count > 0)
-                {
-                    <h4>Pull-ups</h4>
-                    @foreach (var p in _selectedDay.Pullups)
-                    {
-                        <div class="summary-row">
-                            <span class="summary-name">@p.Sets x @p.Repetitions reps</span>
-                            <span class="summary-meta">
-                                @if (p.AdditionalWeightKg > 0) { <text>+@p.AdditionalWeightKg kg</text> }
-                                <button class="delete-btn" @onclick="() => DeletePullup(p.Id)">x</button>
-                            </span>
-                        </div>
-                    }
-                }
-
-                @if (_selectedDay.Boulders.Count == 0 && _selectedDay.Hangboard.Count == 0 && _selectedDay.Pullups.Count == 0)
-                {
-                    <p class="empty-day">No activity on this day.</p>
-                }
-            </div>
-        }
-
-        @if (_progression != null)
-        {
-            <div class="section">
-                <div class="progression-header">
-                    <h2>Progression</h2>
-                    <div class="window-control">
-                        <select class="window-select" value="@_progression.WindowDays" @onchange="OnWindowChange">
-                            <option value="14">14 days</option>
-                            <option value="30">30 days</option>
-                            <option value="60">60 days</option>
-                            <option value="90">90 days</option>
-                            <option value="180">180 days</option>
-                            <option value="365">1 year</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="score-cards">
-                    <div class="score-card">
-                        <span class="score-label">Boulder</span>
-                        <span class="score-value">@_progression.BoulderScore.ToString("F0")</span>
-                        @if (_progression.BoulderGrade != null)
-                        {
-                            <span class="score-grade">~@_progression.BoulderGrade</span>
-                        }
-                    </div>
-                    <div class="score-card">
-                        <span class="score-label">Training</span>
-                        <span class="score-value">@_progression.TrainingScore.ToString("F0")</span>
-                    </div>
-                </div>
-
-                @if (_progression.BoulderCurve.Count > 1)
-                {
-                    <div class="chart-section">
-                        <h4>Boulder progression</h4>
-                        <div class="mini-chart">
-                            @{ var maxB = _progression.BoulderCurve.Max(p => p.Score); }
-                            @if (maxB > 0)
-                            {
-                                <svg viewBox="0 0 @_progression.BoulderCurve.Count 100" class="chart-svg" preserveAspectRatio="none">
-                                    <polyline points="@ChartPoints(_progression.BoulderCurve, maxB)"
-                                              fill="none" stroke="#e94560" stroke-width="1.5" />
+        <WallCarousel @ref="_carousel" InitialPage="_initialPage">
+            <Page1>
+                <div class="section">
+                    <div class="section-header">
+                        <h2>Activity</h2>
+                        <div class="training-menu">
+                            <button class="btn-add-training" @onclick="() => _showTrainingMenu = !_showTrainingMenu">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22">
+                                    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
                                 </svg>
-                            }
-                        </div>
-                    </div>
-                }
-
-                @if (_progression.TrainingCurve.Count > 1)
-                {
-                    <div class="chart-section">
-                        <h4>Training progression</h4>
-                        <div class="mini-chart">
-                            @{ var maxT = _progression.TrainingCurve.Max(p => p.Score); }
-                            @if (maxT > 0)
+                            </button>
+                            @if (_showTrainingMenu)
                             {
-                                <svg viewBox="0 0 @_progression.TrainingCurve.Count 100" class="chart-svg" preserveAspectRatio="none">
-                                    <polyline points="@ChartPoints(_progression.TrainingCurve, maxT)"
-                                              fill="none" stroke="#0f3460" stroke-width="1.5" />
-                                </svg>
+                                <div class="training-dropdown">
+                                    <a href="/training/hangboard" class="dropdown-item">Hangboard</a>
+                                    <a href="/training/pullups" class="dropdown-item">Pull-ups</a>
+                                    @if (SessionState.HasActiveSession)
+                                    {
+                                        <button class="dropdown-item" @onclick="GoToSessionWall">Go to session</button>
+                                        <button class="dropdown-item danger" @onclick="EndSession">End session</button>
+                                    }
+                                    else
+                                    {
+                                        <button class="dropdown-item" @onclick="OpenWallPicker">Start session</button>
+                                    }
+                                </div>
                             }
                         </div>
                     </div>
-                }
-            </div>
-        }
 
-        <div class="section">
-            <h2>Recent Days</h2>
-            @foreach (var day in _grid.Where(d => d.Intensity > 0).OrderByDescending(d => d.Date).Take(20))
-            {
-                <div class="day-row" @onclick="() => SelectDay(day.Date)">
-                    <span class="day-date">@day.Date.ToString("ddd, MMM d")</span>
-                    <div class="day-dots">
-                        @for (int i = 0; i < day.Intensity; i++)
+                    <div class="contribution-grid">
+                        @for (int week = 0; week < _weekCount; week++)
                         {
-                            <span class="dot intensity-@day.Intensity"></span>
+                            var w = week;
+                            <div class="grid-column">
+                                @for (int day = 0; day < 7; day++)
+                                {
+                                    var idx = w * 7 + day;
+                                    if (idx < _grid.Count)
+                                    {
+                                        var item = _grid[idx];
+                                        <div class="grid-cell intensity-@item.Intensity"
+                                             title="@item.Date.ToString("MMM d") — @IntensityLabel(item.Intensity)"
+                                             @onclick="() => SelectDay(item.Date)"></div>
+                                    }
+                                }
+                            </div>
                         }
                     </div>
+                    <div class="month-labels">
+                        @foreach (var label in _monthLabels)
+                        {
+                            <span class="month-label" style="left: @label.OffsetPercent%;">@label.Name</span>
+                        }
+                    </div>
+                    <div class="grid-legend">
+                        <span class="legend-text">Less</span>
+                        <div class="grid-cell intensity-0 legend-cell"></div>
+                        <div class="grid-cell intensity-1 legend-cell"></div>
+                        <div class="grid-cell intensity-2 legend-cell"></div>
+                        <div class="grid-cell intensity-3 legend-cell"></div>
+                        <div class="grid-cell intensity-4 legend-cell"></div>
+                        <span class="legend-text">More</span>
+                    </div>
                 </div>
-            }
-            @if (!_grid.Any(d => d.Intensity > 0))
-            {
-                <p class="empty-day">No activity yet. Start climbing!</p>
-            }
-        </div>
+
+                @if (_selectedDay != null)
+                {
+                    <div class="day-summary">
+                        <div class="summary-header">
+                            <h3>@_selectedDay.Date.ToString("dddd, MMM d")</h3>
+                            @if (_selectedDay.SessionDuration.HasValue)
+                            {
+                                <span class="duration-badge">@FormatDuration(_selectedDay.SessionDuration.Value)</span>
+                            }
+                            <button class="close-btn" @onclick="() => _selectedDay = null">x</button>
+                        </div>
+
+                        @if (_selectedDay.Boulders.Count > 0)
+                        {
+                            <h4>Boulders</h4>
+                            @foreach (var b in _selectedDay.Boulders)
+                            {
+                                <div class="summary-row">
+                                    <span class="summary-name">@b.BoulderName</span>
+                                    <span class="summary-meta">
+                                        @if (!string.IsNullOrEmpty(b.Grade)) { <span class="mini-grade">@b.Grade</span> }
+                                        <span class="result-badge @b.BestResult.ToString().ToLower()">@b.BestResult</span>
+                                        @if (b.AttemptCount > 1) { <span class="attempt-count">@b.AttemptCount tries</span> }
+                                    </span>
+                                </div>
+                            }
+                        }
+
+                        @if (_selectedDay.Hangboard.Count > 0)
+                        {
+                            <h4>Hangboard</h4>
+                            @foreach (var h in _selectedDay.Hangboard)
+                            {
+                                <div class="summary-row">
+                                    <span class="summary-name">@h.EdgeSizeMm mm edge</span>
+                                    <span class="summary-meta">
+                                        @h.Sets x @h.Duration.TotalSeconds.ToString("F0")s
+                                        @if (h.AdditionalWeightKg > 0) { <text>+@h.AdditionalWeightKg kg</text> }
+                                        <button class="delete-btn" @onclick="() => DeleteHangboard(h.Id)">x</button>
+                                    </span>
+                                </div>
+                            }
+                        }
+
+                        @if (_selectedDay.Pullups.Count > 0)
+                        {
+                            <h4>Pull-ups</h4>
+                            @foreach (var p in _selectedDay.Pullups)
+                            {
+                                <div class="summary-row">
+                                    <span class="summary-name">@p.Sets x @p.Repetitions reps</span>
+                                    <span class="summary-meta">
+                                        @if (p.AdditionalWeightKg > 0) { <text>+@p.AdditionalWeightKg kg</text> }
+                                        <button class="delete-btn" @onclick="() => DeletePullup(p.Id)">x</button>
+                                    </span>
+                                </div>
+                            }
+                        }
+
+                        @if (_selectedDay.Boulders.Count == 0 && _selectedDay.Hangboard.Count == 0 && _selectedDay.Pullups.Count == 0)
+                        {
+                            <p class="empty-day">No activity on this day.</p>
+                        }
+                    </div>
+                }
+
+                @if (_progression != null)
+                {
+                    <div class="section">
+                        <div class="progression-header">
+                            <h2>Progression</h2>
+                            <div class="window-control">
+                                <select class="window-select" value="@_progression.WindowDays" @onchange="OnWindowChange">
+                                    <option value="14">14 days</option>
+                                    <option value="30">30 days</option>
+                                    <option value="60">60 days</option>
+                                    <option value="90">90 days</option>
+                                    <option value="180">180 days</option>
+                                    <option value="365">1 year</option>
+                                </select>
+                                <select class="window-select" value="@((int)_progression.GroupBy)" @onchange="OnGroupByChange">
+                                    <option value="0">Day</option>
+                                    <option value="1">Week</option>
+                                    <option value="2">Month</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="score-cards">
+                            <div class="score-card">
+                                <span class="score-label">Boulder</span>
+                                <span class="score-value">@_progression.BoulderScore.ToString("F0")</span>
+                                @if (_progression.BoulderGrade != null)
+                                {
+                                    <span class="score-grade">~@_progression.BoulderGrade</span>
+                                }
+                            </div>
+                            <div class="score-card">
+                                <span class="score-label">Training</span>
+                                <span class="score-value">@_progression.TrainingScore.ToString("F0")</span>
+                            </div>
+                            <button class="score-card score-card-action" @onclick="GoToActivities">
+                                <span class="score-label">Activities</span>
+                                <span class="score-value">@_activities.Count</span>
+                                <span class="score-grade">view all &rarr;</span>
+                            </button>
+                        </div>
+
+                        <ProgressionChart Title="Boulder progression" Stroke="#e94560"
+                                          Points="BoulderPoints()" YTicks="BoulderYTicks()"
+                                          EmptyText="No sends in this window yet." />
+
+                        <ProgressionChart Title="Training progression" Stroke="#0f3460"
+                                          Points="TrainingPoints()" YTicks="TrainingYTicks()"
+                                          EmptyText="No training logged in this window yet." />
+
+                        <ProgressionChart Title="Volume" Caption="minutes trained" Stroke="#2e9e6b"
+                                          Points="VolumePoints()" YTicks="VolumeYTicks()"
+                                          ShowTrendline="true" EmptyText="No activity in this window yet." />
+                    </div>
+                }
+
+                <div class="section">
+                    <h2>Recent activities</h2>
+                    @foreach (var a in _activities.Take(6))
+                    {
+                        <a class="activity-row" href="/activity/@a.Id">
+                            <div class="activity-row-main">
+                                <span class="activity-date">@a.Date.ToString("ddd, dd MMM")</span>
+                                <span class="activity-meta">@ActivityMeta(a)</span>
+                            </div>
+                            <span class="activity-duration">@FormatMinutes(a.DurationMinutes)</span>
+                        </a>
+                    }
+                    @if (_activities.Count == 0)
+                    {
+                        <p class="empty-day">No activity yet. Start climbing!</p>
+                    }
+                </div>
+            </Page1>
+
+            <Page2>
+                <div class="section">
+                    <h2>All activities</h2>
+                    <p class="list-hint">@_activities.Count activities in the last @(_progression?.WindowDays ?? 0) days</p>
+                    @foreach (var a in _activities)
+                    {
+                        <a class="activity-row" href="/activity/@a.Id">
+                            <div class="activity-row-main">
+                                <span class="activity-date">@a.Date.ToString("ddd, dd MMM yyyy")</span>
+                                <span class="activity-meta">@ActivityMeta(a)</span>
+                            </div>
+                            <span class="activity-duration">@FormatMinutes(a.DurationMinutes)</span>
+                        </a>
+                    }
+                    @if (_activities.Count == 0)
+                    {
+                        <p class="empty-day">No activities in this window.</p>
+                    }
+                </div>
+            </Page2>
+        </WallCarousel>
     }
 
     @if (_showWallPicker)
@@ -265,25 +276,35 @@
 </div>
 
 @code {
+    [SupplyParameterFromQuery(Name = "view")]
+    public string? View { get; set; }
+
     private List<DayActivity>? _grid;
     private bool _showWallPicker;
     private List<Wall>? _myWalls;
     private int _weekCount;
     private UserProgression? _progression;
     private DaySummary? _selectedDay;
+    private List<ActivitySummary> _activities = [];
     private bool _showTrainingMenu;
     private List<MonthLabel> _monthLabels = [];
+    private WallCarousel? _carousel;
+    private int _initialPage;
 
     private record MonthLabel(string Name, double OffsetPercent);
 
     protected override async Task OnInitializedAsync()
     {
+        _initialPage = string.Equals(View, "list", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
         _grid = await ProgressionService.GetActivityGridAsync(20);
         _weekCount = (_grid.Count + 6) / 7;
         _progression = await ProgressionService.GetProgressionAsync();
+        _activities = await ProgressionService.GetActivitiesAsync();
         BuildMonthLabels();
         await SessionState.EnsureLoadedAsync();
     }
+
+    private Task GoToActivities() => _carousel?.GoToPageAsync(1) ?? Task.CompletedTask;
 
     private async Task OpenWallPicker()
     {
@@ -342,17 +363,21 @@
     private async Task DeleteHangboard(Guid id)
     {
         await TrainingService.DeleteHangboardSessionAsync(id);
-        if (_selectedDay != null) _selectedDay = await ProgressionService.GetDaySummaryAsync(_selectedDay.Date);
-        _grid = await ProgressionService.GetActivityGridAsync(20);
-        _progression = await ProgressionService.GetProgressionAsync();
+        await ReloadAsync();
     }
 
     private async Task DeletePullup(Guid id)
     {
         await TrainingService.DeletePullupSessionAsync(id);
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
         if (_selectedDay != null) _selectedDay = await ProgressionService.GetDaySummaryAsync(_selectedDay.Date);
         _grid = await ProgressionService.GetActivityGridAsync(20);
         _progression = await ProgressionService.GetProgressionAsync();
+        _activities = await ProgressionService.GetActivitiesAsync();
     }
 
     private async Task OnWindowChange(ChangeEventArgs e)
@@ -361,7 +386,77 @@
         {
             await ProgressionService.UpdateProgressionWindowAsync(days);
             _progression = await ProgressionService.GetProgressionAsync();
+            _activities = await ProgressionService.GetActivitiesAsync();
         }
+    }
+
+    private async Task OnGroupByChange(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var value) && Enum.IsDefined(typeof(ProgressionGroupBy), value))
+        {
+            await ProgressionService.UpdateProgressionGroupingAsync((ProgressionGroupBy)value);
+            _progression = await ProgressionService.GetProgressionAsync();
+        }
+    }
+
+    // ---- chart data builders ----
+
+    private List<ChartSeriesPoint> BoulderPoints() => _progression!.Buckets.Select(b =>
+        new ChartSeriesPoint(
+            b.BoulderScore,
+            b.BoulderScore.HasValue ? $"{Range(b)} — {b.BoulderScore.Value:F0} / {b.BoulderGrade}" : $"{Range(b)} — no sends",
+            b.Label)).ToList();
+
+    private List<ChartSeriesPoint> TrainingPoints() => _progression!.Buckets.Select(b =>
+        new ChartSeriesPoint(
+            b.TrainingScore,
+            b.TrainingScore.HasValue ? $"{Range(b)} — {b.TrainingScore.Value:F0}" : $"{Range(b)} — no training",
+            b.Label)).ToList();
+
+    private List<ChartSeriesPoint> VolumePoints() => _progression!.Buckets.Select(b =>
+        new ChartSeriesPoint(b.VolumeMinutes, $"{Range(b)} — {FormatMinutes((int)b.VolumeMinutes)}", b.Label)).ToList();
+
+    private List<(double, string)> BoulderYTicks()
+    {
+        var vals = _progression!.Buckets.Where(b => b.BoulderScore.HasValue).Select(b => b.BoulderScore!.Value).ToList();
+        if (vals.Count == 0) return [];
+        double lo = vals.Min(), hi = vals.Max();
+        return GradeScoring.AllScores
+            .Where(kv => kv.Value >= lo - 1 && kv.Value <= hi + 1)
+            .OrderBy(kv => kv.Value)
+            .Select(kv => ((double)kv.Value, kv.Key))
+            .ToList();
+    }
+
+    private List<(double, string)> TrainingYTicks() => NumericYTicks(TrainingPoints(), v => v.ToString("F0"));
+
+    private List<(double, string)> VolumeYTicks() => NumericYTicks(VolumePoints(), FormatMinutes);
+
+    private static List<(double, string)> NumericYTicks(List<ChartSeriesPoint> points, Func<double, string> format)
+    {
+        var vals = points.Where(p => p.Value.HasValue).Select(p => p.Value!.Value).ToList();
+        if (vals.Count == 0) return [];
+        double hi = vals.Max();
+        double lo = Math.Min(0, vals.Min());
+        if (hi <= lo) hi = lo + 1;
+        return [(lo, format(lo)), ((lo + hi) / 2, format((lo + hi) / 2)), (hi, format(hi))];
+    }
+
+    private string Range(ProgressionBucket b) => _progression!.GroupBy switch
+    {
+        ProgressionGroupBy.Day => b.Start.ToString("dd.MM.yyyy"),
+        ProgressionGroupBy.Month => b.Start.ToString("MMM yyyy"),
+        _ => $"{b.Start.ToString("dd.MM")}–{b.End.ToString("dd.MM.yyyy")}",
+    };
+
+    private static string ActivityMeta(ActivitySummary a)
+    {
+        var parts = new List<string>();
+        if (a.BoulderCount > 0) parts.Add($"{a.BoulderCount} boulder{(a.BoulderCount == 1 ? "" : "s")}");
+        if (a.HangboardCount > 0) parts.Add($"{a.HangboardCount} hangboard");
+        if (a.PullupCount > 0) parts.Add($"{a.PullupCount} pull-up{(a.PullupCount == 1 ? "" : "s")}");
+        var text = parts.Count > 0 ? string.Join(" · ", parts) : "no items";
+        return a.WallName != null ? $"{text} · {a.WallName}" : text;
     }
 
     private static string IntensityLabel(int intensity) => intensity switch
@@ -377,14 +472,9 @@
     private static string FormatDuration(TimeSpan ts) =>
         ts.TotalHours >= 1 ? $"{(int)ts.TotalHours}h {ts.Minutes}m" : $"{(int)ts.TotalMinutes}m";
 
-    private static string ChartPoints(List<ProgressionPoint> curve, double max)
+    private static string FormatMinutes(double minutes)
     {
-        if (max <= 0)
-        {
-            return string.Empty;
-        }
-        return string.Join(" ", curve.Select((p, i) =>
-            $"{i},{(100 - p.Score / max * 100):F1}"));
+        var m = (int)Math.Round(minutes);
+        return m >= 60 ? $"{m / 60}h {m % 60}m" : $"{m}m";
     }
 }
-
