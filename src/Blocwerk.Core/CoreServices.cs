@@ -24,9 +24,16 @@ public static class CoreServices
         var config = settings;
         builder.Services.AddSingleton(config);
 
-        builder.Services.AddDbContextFactory<BlocwerkDbContext>(options =>
+        // In-process pub/sub for wall/boulder changes + the EF interceptor that publishes them.
+        // Singletons so a mutation on any circuit invalidates every circuit's cache (see
+        // IDomainChangeNotifier / DomainChangeInterceptor).
+        builder.Services.AddSingleton<IDomainChangeNotifier, DomainChangeNotifier>();
+        builder.Services.AddSingleton<DomainChangeInterceptor>();
+
+        builder.Services.AddDbContextFactory<BlocwerkDbContext>((sp, options) =>
         {
             options.UseNpgsql(config.Postgres.ConnectionString);
+            options.AddInterceptors(sp.GetRequiredService<DomainChangeInterceptor>());
         });
 
         builder.Services.AddScoped(sp =>

@@ -81,6 +81,11 @@
     --topbar-h: 56px;       /* sticky .bw-topbar */
     --bottomnav-h: 72px;    /* fixed .bw-tabbar + safe-area */
     --fold-peek: 140px;     /* reserve below the fold for boulder peek */
+    /* Vertical space taken by the chrome ABOVE/around each photo box, subtracted from the window
+       so the fullscreen/desktop layout can size the photo to fit without scrolling. Deliberately
+       generous (slightly under-estimates available height) so the image is guaranteed contained. */
+    --boulder-photo-chrome: 96px;   /* back link + title + grade + wall-dim bar + margins */
+    --wall-photo-chrome: 168px;     /* carousel padding + toggle row + dim bar + dots + gaps */
 }
 .wall-fold {
     height: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - var(--fold-peek));
@@ -110,6 +115,11 @@
     width: calc(var(--zoom, 1) * 100%); min-width: 100%; }
 .photo-editor .wall-photo { width: 100%; display: block; }
 .photo-editor .hold-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+/* Boulder viewer only: the overlay holds are display-only (no tap/click handlers), so let
+   pointer/touch events fall through to the viewport. Otherwise a mouse drag or double-tap that
+   happens to start on a hold is treated as landing on an interactive shape and neither pans nor
+   zooms (viewport-gestures.js isInteractiveTarget). Editors, which DO drag holds, are unaffected. */
+.boulder-detail .hold-overlay { pointer-events: none; }
 .detecting-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--overlay-bg); display: flex; align-items: center; justify-content: center; color: white; font-size: 1.1rem; font-weight: 600; }
 
 /* ========== WallSchematicView ========== */

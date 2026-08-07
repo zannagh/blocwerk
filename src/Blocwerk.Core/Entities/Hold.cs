@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Linq;
 using Blocwerk.Core.Enums;
 
 namespace Blocwerk.Core.Entities;
@@ -62,4 +63,30 @@ public class Hold
     public Guid? AlignmentSourceHoldId { get; set; }
 
     public ICollection<BoulderHold> BoulderHolds { get; set; } = [];
+
+    /// <summary>
+    /// A detached deep copy of this hold's data (scalars + shape points, no navigation properties).
+    /// Used to hand editable working copies to the photo editor: the editor mutates hold
+    /// coordinates in place, so without a clone it would corrupt a shared/cached wall aggregate.
+    /// </summary>
+    public Hold Clone() => new()
+    {
+        Id = Id,
+        WallId = WallId,
+        X = X,
+        Y = Y,
+        Radius = Radius,
+        ShapePoints = ShapePoints?.Select(sp => new ShapePoint { Dx = sp.Dx, Dy = sp.Dy }).ToList(),
+        Name = Name,
+        Color = Color,
+        Material = Material,
+        Category = Category,
+        IsOnKickboard = IsOnKickboard,
+        IsAutoDetected = IsAutoDetected,
+        Confidence = Confidence,
+        Generation = Generation,
+        NeedsReview = NeedsReview,
+        IsVirtual = IsVirtual,
+        AlignmentSourceHoldId = AlignmentSourceHoldId,
+    };
 }

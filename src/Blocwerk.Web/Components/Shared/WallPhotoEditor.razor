@@ -752,21 +752,27 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
+        // Re-attach every render, unconditionally. setupScroll is idempotent in JS (a no-op once
+        // bound to this exact node), so the common case is cheap — but attaching on firstRender
+        // ONLY meant a stale ref at that moment (the reconnect / fast re-render race), or a node
+        // later replaced by a structural re-render, disabled zoom permanently for this editor.
+        try
         {
-            try
-            {
-                await JS.InvokeVoidAsync("bwViewport.setupScroll", _viewportRef, _zoomState.Reference);
-            }
-            catch (JSException)
-            {
-                // Stale element reference after a re-render/reconnect: the editor still works,
-                // it just isn't zoom-enabled. Never let it become an unhandled circuit error.
-            }
-            catch (JSDisconnectedException)
-            {
-                // Circuit went away mid-call; nothing to attach to.
-            }
+            await JS.InvokeVoidAsync("bwViewport.setupScroll", _viewportRef, _zoomState.Reference);
+
+            // Publish the photo aspect (as --fit-aspect only, not an inline aspect-ratio) so the
+            // fullscreen/desktop layout can contain the wall photo within the window. Mobile/narrow
+            // is untouched: the box keeps its flex-driven height until the .bw-fullscreen CSS opts in.
+            await JS.InvokeVoidAsync("bwViewport.fitBox", _viewportRef, false);
+        }
+        catch (JSException)
+        {
+            // Stale element reference after a re-render/reconnect: the next render retries.
+            // Never let it become an unhandled circuit error.
+        }
+        catch (JSDisconnectedException)
+        {
+            // Circuit went away mid-call; nothing to attach to.
         }
     }
 

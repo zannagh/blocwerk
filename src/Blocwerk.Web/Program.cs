@@ -164,6 +164,10 @@ public static class Program
         // one source of truth and the "Session" indicator lights up the moment a session starts.
         builder.Services.AddScoped<SessionState>();
 
+        // Per-circuit cache of wall/boulder aggregate reads, invalidated across circuits by the
+        // domain-change notifier so revisits are served from memory and edits live-refresh.
+        builder.Services.AddScoped<WallCacheState>();
+
         // Counts live circuits into the "connected users" gauge.
         builder.Services.AddScoped<CircuitHandler, TelemetryCircuitHandler>();
 

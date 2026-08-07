@@ -1065,3 +1065,31 @@ html.bw-fullscreen .legal-page,
 html.bw-fullscreen .wall-main {
     max-width: none;
 }
+
+/* Contain the photo/overlay views within the window on desktop/wide (fullscreen) mode.
+ *
+ * Fullscreen removes the 600px width cap above, so on a wide window the photo box would grow
+ * full-width and — because its height follows the image aspect ratio — become far taller than
+ * the window, forcing a scroll. We instead cap the box WIDTH at `availableHeight * aspect` (the
+ * image aspect published as `--fit-aspect` by bwViewport.fitBox). `width: auto` then settles at
+ * `min(container width, availableHeight * aspect)`, so the box uses as much width as it can while
+ * its height stays within the window. Purely CSS + `100dvh`, so it re-fits on resize on its own.
+ * Mobile/narrow (no .bw-fullscreen) is untouched. */
+html.bw-fullscreen .boulder-detail .photo-viewport.photo-section {
+    --avail-h: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - var(--boulder-photo-chrome));
+    width: auto;
+    max-height: var(--avail-h);
+    max-width: min(100%, calc(var(--avail-h) * var(--fit-aspect, 1)));
+    margin-inline: auto;
+}
+
+html.bw-fullscreen .wall-main .photo-viewport {
+    --avail-h: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - var(--wall-photo-chrome));
+    flex: 0 1 auto;                       /* size to the contained photo, don't stretch the column */
+    aspect-ratio: var(--fit-aspect, 1.4); /* opt the wall box into aspect sizing only here */
+    height: auto;
+    width: auto;
+    max-height: var(--avail-h);           /* hard safety cap: never exceed the card height */
+    max-width: min(100%, calc(var(--avail-h) * var(--fit-aspect, 1.4)));
+    margin-inline: auto;                  /* centre horizontally within the full-width card */
+}

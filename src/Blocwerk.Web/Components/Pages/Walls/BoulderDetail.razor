@@ -5,6 +5,7 @@
 @inject IBoulderFeedbackService FeedbackService
 @inject IAttemptService AttemptService
 @inject IWallService WallService
+@inject WallCacheState Cache
 @inject ICurrentUserService CurrentUserService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
@@ -21,8 +22,8 @@ else
 {
     <div class="boulder-detail">
         <div class="page-header">
-            @{ var backUrl = !string.IsNullOrEmpty(ShareToken) ? $"/walls/{WallId}/shared/{ShareToken}" : $"/walls/{WallId}"; }
-            <a href="@backUrl" class="back-link">&larr; Back to wall</a>
+            @{ var backUrl = !string.IsNullOrEmpty(ShareToken) ? $"/walls/{WallId}/shared/{ShareToken}?view=boulders" : $"/walls/{WallId}?view=boulders"; }
+            <a href="@backUrl" class="back-link">&larr; Back to boulder list</a>
             <div class="title-row">
                 <h1>@_boulder.Name</h1>
                 @if (!string.IsNullOrEmpty(_boulder.Grade))
@@ -314,7 +315,7 @@ else
     private DateTime _backdateTime = DateTime.Now;
 
     private ElementReference _photoViewportRef;
-    private ViewMode? _viewportSetupFor;
+    private string? _fitBoxForUrl;
     private DotNetObjectReference<BoulderDetail>? _selfRef;
 
     private enum ViewMode { Photo, Schematic }
@@ -338,41 +339,44 @@ else
             }
         }
 
-        // Switching to the schematic destroys the photo viewport element, so the
-        // engine has to be re-attached when we come back. setupScroll is idempotent.
-        if (_viewMode == ViewMode.Photo && _boulder != null && _viewportSetupFor != ViewMode.Photo)
+        if (_viewMode == ViewMode.Photo && _boulder != null)
         {
-            _viewportSetupFor = ViewMode.Photo;
-
             try
             {
-                // No .NET callback: this page shows no zoom read-out, so JS never needs
-                // to round-trip to the server for a gesture.
+                // Re-attach every render, unconditionally. setupScroll is idempotent in JS (it
+                // bails when the engine is already bound to this exact node), so the common case
+                // is a cheap no-op — but after a reconnect or a re-render that rebuilds the photo
+                // viewport, the fresh node has no engine and this is what re-binds it. A one-shot
+                // gate here would leave that fresh DOM with no gesture handlers and zoom silently
+                // dead. No .NET callback: this page shows no zoom read-out.
                 await JS.InvokeVoidAsync("bwViewport.setupScroll", _photoViewportRef, null);
 
-                // Pin the card to the photo's aspect ratio so zooming scrolls inside a fixed box
-                // instead of growing the card.
-                await JS.InvokeVoidAsync("bwViewport.fitBox", _photoViewportRef);
+                // Pin the box to the photo's aspect ratio so zooming scrolls inside a fixed box
+                // instead of growing the card. Re-run only when the image behind it changes — the
+                // Then/Now toggle swaps PhotoUrl, and the box must track the new image's ratio.
+                if (_fitBoxForUrl != PhotoUrl)
+                {
+                    _fitBoxForUrl = PhotoUrl;
+                    await JS.InvokeVoidAsync("bwViewport.fitBox", _photoViewportRef);
+                }
             }
             catch (JSException)
             {
                 // Stale element reference after a re-render/reconnect: allow a retry on the next
                 // render instead of taking the circuit down with an unhandled exception.
-                _viewportSetupFor = null;
+                _fitBoxForUrl = null;
             }
             catch (JSDisconnectedException)
             {
-                _viewportSetupFor = null;
+                _fitBoxForUrl = null;
             }
-        }
-        else if (_viewMode != ViewMode.Photo)
-        {
-            _viewportSetupFor = null;
         }
     }
 
     public async ValueTask DisposeAsync()
     {
+        Cache.Changed -= OnCacheChanged;
+
         if (_selfRef != null)
         {
             try
@@ -481,6 +485,8 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        Cache.Changed += OnCacheChanged;
+
         if (!string.IsNullOrEmpty(ShareToken))
         {
             _isAnonymous = true;
@@ -535,6 +541,44 @@ else
     }
 
     /// <summary>
+    /// Live-refresh when this boulder (or its wall) changes on any circuit — so a co-owner's revise
+    /// or grade change appears without a reload. Skipped for anonymous share viewers (their reads go
+    /// through the uncached share path) and while the name/grade form is open, so a background reload
+    /// never discards an in-progress edit.
+    /// </summary>
+    private void OnCacheChanged(DomainChange change)
+    {
+        if (change.Scope == DomainChangeScope.WallList || _isAnonymous || _editMeta)
+        {
+            return;
+        }
+
+        if (change.BoulderId != BoulderId && change.WallId != WallId)
+        {
+            return;
+        }
+
+        _ = InvokeAsync(async () =>
+        {
+            try
+            {
+                await LoadBoulder();
+                if (_boulder != null)
+                {
+                    _boulderHoldIds = _boulder.BoulderHolds.Select(bh => bh.HoldId).ToHashSet();
+                    await LoadWallHolds();
+                }
+
+                StateHasChanged();
+            }
+            catch (Exception)
+            {
+                // A transient reload failure should leave the current view in place, not crash it.
+            }
+        });
+    }
+
+    /// <summary>
     /// Wall holds that count as footholds only because of the boulder's
     /// "feet of one colour only" rule, i.e. excluding the boulder's own holds.
     /// </summary>
@@ -567,7 +611,7 @@ else
         // holds belong to, or none of the highlighted ids would be in the list.
         if (_showHistoric && BoulderHoldGeneration is { } gen && string.IsNullOrEmpty(ShareToken))
         {
-            return await WallService.GetHoldsForGenerationAsync(WallId, gen);
+            return await Cache.GetHoldsForGenerationAsync(WallId, gen);
         }
 
         if (_showHistoric && BoulderHoldGeneration.HasValue && _boulder != null)
@@ -584,7 +628,7 @@ else
         }
         else
         {
-            wall = await WallService.GetWallAsync(WallId);
+            wall = await Cache.GetWallAsync(WallId);
         }
 
         return wall?.Holds.ToList() ?? [];
@@ -592,7 +636,7 @@ else
 
     private async Task LoadBoulder()
     {
-        _boulder = await BoulderService.GetBoulderAsync(BoulderId);
+        _boulder = await Cache.GetBoulderAsync(BoulderId);
         if (!_isAnonymous)
         {
             _attempts = await AttemptService.GetAttemptsForBoulderAsync(BoulderId);

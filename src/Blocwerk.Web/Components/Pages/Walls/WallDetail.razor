@@ -2,12 +2,14 @@
 @page "/walls/{WallId:guid}/shared/{ShareToken}"
 @rendermode InteractiveServer
 @inject IWallService WallService
+@inject WallCacheState Cache
 @inject IWallSegmentService WallSegmentService
 @inject IBoulderService BoulderService
 @inject IBoulderFeedbackService FeedbackService
 @inject IActivityLogService ActivityLogService
 @inject ICurrentUserService CurrentUserService
 @inject NavigationManager Navigation
+@implements IDisposable
 @using Blocwerk.Web.Components.Shared
 @using Blocwerk.Core.Helpers
 
@@ -572,6 +574,7 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        Cache.Changed += OnCacheChanged;
         await LoadWall();
         if (_wall != null && !_isAnonymous)
         {
@@ -581,6 +584,30 @@ else
                 _members = await WallService.GetMembersAsync(WallId);
             }
         }
+    }
+
+    /// <summary>
+    /// Live-refresh when this wall (or one of its boulders) changes on any circuit — so a co-owner's
+    /// edit shows up without a reload. Skipped while this user is editing, so a background reload
+    /// never clobbers in-progress hold edits; their own post-save <see cref="LoadWall"/> covers that.
+    /// </summary>
+    private void OnCacheChanged(DomainChange change)
+    {
+        if (change.Scope == DomainChangeScope.WallList || change.WallId != WallId || _isEditing)
+        {
+            return;
+        }
+
+        _ = InvokeAsync(async () =>
+        {
+            await LoadWall();
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        Cache.Changed -= OnCacheChanged;
     }
 
     private async Task LoadWall()
@@ -610,7 +637,7 @@ else
         {
             try
             {
-                _wall = await WallService.GetWallAsync(WallId);
+                _wall = await Cache.GetWallAsync(WallId);
                 if (_wall != null)
                 {
                     var user = await CurrentUserService.GetCurrentUserAsync();
@@ -628,11 +655,16 @@ else
 
         if (_wall != null)
         {
+            // Clone the holds/border points: _wall now comes from the shared per-circuit cache and
+            // the photo editor mutates these in place while dragging. Editing the cached instances
+            // directly would leak uncommitted edits back into the cache on discard/navigate-away.
             // A recreation edits only the new hold model, like manual alignment does.
-            _holds = _wall.StagingMode is WallStagingMode.Manual or WallStagingMode.Recreate
-                ? _wall.Holds.Where(h => h.Generation == _wall.CurrentGeneration + 1).ToList()
-                : _wall.Holds.ToList();
-            _borderPoints = _wall.BorderPoints ?? [];
+            _holds = (_wall.StagingMode is WallStagingMode.Manual or WallStagingMode.Recreate
+                    ? _wall.Holds.Where(h => h.Generation == _wall.CurrentGeneration + 1)
+                    : _wall.Holds)
+                .Select(h => h.Clone())
+                .ToList();
+            _borderPoints = _wall.BorderPoints?.Select(p => new ShapePoint { Dx = p.Dx, Dy = p.Dy }).ToList() ?? [];
             await LoadSegments();
             if (!_isAnonymous)
             {

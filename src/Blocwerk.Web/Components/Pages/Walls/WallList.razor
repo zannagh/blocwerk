@@ -2,7 +2,9 @@
 @rendermode InteractiveServer
 @attribute [Authorize]
 @inject IWallService WallService
+@inject WallCacheState Cache
 @inject NavigationManager Navigation
+@implements IDisposable
 
 <PageTitle>My Walls - Blocwerk</PageTitle>
 
@@ -65,7 +67,28 @@
 
     protected override async Task OnInitializedAsync()
     {
-        _walls = await WallService.GetMyWallsAsync();
+        Cache.Changed += OnCacheChanged;
+        _walls = await Cache.GetMyWallsAsync();
+    }
+
+    // Live-refresh when the set of walls changes (created/deleted/joined) on any circuit.
+    private void OnCacheChanged(DomainChange change)
+    {
+        if (change.Scope != DomainChangeScope.WallList)
+        {
+            return;
+        }
+
+        _ = InvokeAsync(async () =>
+        {
+            _walls = await Cache.GetMyWallsAsync();
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        Cache.Changed -= OnCacheChanged;
     }
 
     private async Task JoinWall()

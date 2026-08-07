@@ -202,8 +202,16 @@ window.bwViewport = (function () {
          * to the fit image (no dead band) and — crucially — stays that height while zooming, with
          * the widened content scrolling inside it instead of growing the card. The `--zoom` width
          * only ever changes the content, never this box, once the aspect ratio is fixed here.
+         *
+         * Also publishes the aspect as a numeric `--fit-aspect` custom property on the box, which
+         * the fullscreen/desktop layout uses to contain the view within the window: CSS caps the
+         * width at `availableHeight * var(--fit-aspect)` so a tall image narrows instead of
+         * overflowing (see the `.bw-fullscreen` rules). `--fit-aspect` is enough on its own — pass
+         * `pinAspect === false` (the wall editor) to publish it WITHOUT also writing an inline
+         * `aspect-ratio`, so the box keeps its flex-driven height in mobile/narrow mode and only
+         * the fullscreen CSS opts it into aspect sizing.
          */
-        fitBox: function (viewport) {
+        fitBox: function (viewport, pinAspect) {
             // Guard a stale/non-element reference the same way setupScroll does.
             if (!viewport || typeof viewport.querySelector !== 'function') {
                 return;
@@ -214,9 +222,13 @@ window.bwViewport = (function () {
                 return;
             }
 
+            const pin = pinAspect !== false;
             const apply = function () {
                 if (img.naturalWidth > 0 && img.naturalHeight > 0) {
-                    viewport.style.aspectRatio = img.naturalWidth + ' / ' + img.naturalHeight;
+                    viewport.style.setProperty('--fit-aspect', img.naturalWidth / img.naturalHeight);
+                    if (pin) {
+                        viewport.style.aspectRatio = img.naturalWidth + ' / ' + img.naturalHeight;
+                    }
                 }
             };
 
