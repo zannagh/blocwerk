@@ -1,13 +1,16 @@
 /*
- * blocwerkChart — pointer-drag read-out for the progression line charts (ProgressionChart.razor).
+ * blocwerkChart — pointer-drag read-out + y-axis drag-to-rescale for the progression line charts
+ * (ProgressionChart.razor).
  *
- * The tooltip is driven entirely in JS: on a Blazor Server circuit a pointermove round-trip per
- * move would lag badly, so the component hands us the points once (x/y fractions + a preformatted
- * label) and this module maps the pointer to the nearest point and positions the tooltip, a vertical
- * guide and a dot — all synchronously. Mirrors the "JS owns synchronous interaction" rule in viewport.js.
+ * The tooltip is driven entirely in JS (a Blazor Server pointermove round-trip per move would lag):
+ * the component hands us the points once (x/y fractions + a preformatted label) and this module maps
+ * the pointer to the nearest point. The y-axis drag reports coarse steps back to .NET (throttled),
+ * which is fine because each step re-renders the chart at a new scale.
  */
 window.blocwerkChart = (function () {
     'use strict';
+
+    var Y_STEP_PX = 26;
 
     function nearestIndex(points, frac) {
         var best = 0;
@@ -22,18 +25,8 @@ window.blocwerkChart = (function () {
         return best;
     }
 
-    function bind(el, payload) {
-        if (!el || typeof el.querySelector !== 'function') {
-            return;
-        }
-
-        // Re-bind cleanly when the series changes.
-        unbind(el);
-
-        var data = typeof payload === 'string' ? JSON.parse(payload) : payload;
-        if (!data || !data.length) {
-            return;
-        }
+    function bindTooltip(el, data) {
+        removeTooltip(el);
 
         var guide = el.querySelector('.prog-chart-guide');
         var dot = el.querySelector('.prog-chart-dot');
@@ -45,8 +38,7 @@ window.blocwerkChart = (function () {
 
         function show(clientX) {
             // Map against the SVG's box, not the padded container's, so the guide/dot line up with
-            // the plotted line regardless of the y-axis gutter. Overlays are positioned relative to
-            // the container, hence the offset.
+            // the plotted line regardless of the y-axis gutter.
             var cRect = el.getBoundingClientRect();
             var sRect = svg.getBoundingClientRect();
             if (sRect.width <= 0) {
@@ -91,20 +83,109 @@ window.blocwerkChart = (function () {
         el.addEventListener('pointerdown', handlers.down);
         el.addEventListener('pointerleave', handlers.leave);
         el.addEventListener('pointercancel', handlers.cancel);
-        el._bwChart = handlers;
+        el._bwChartTip = handlers;
     }
 
-    function unbind(el) {
-        if (!el || !el._bwChart) {
+    function removeTooltip(el) {
+        var h = el._bwChartTip;
+        if (!h) {
             return;
         }
 
-        var h = el._bwChart;
         el.removeEventListener('pointermove', h.move);
         el.removeEventListener('pointerdown', h.down);
         el.removeEventListener('pointerleave', h.leave);
         el.removeEventListener('pointercancel', h.cancel);
-        delete el._bwChart;
+        delete el._bwChartTip;
+    }
+
+    // Wired ONCE and kept across tooltip rebinds, so an in-progress drag isn't torn down when the
+    // chart re-renders at the new scale.
+    function bindYDrag(el, dotnet) {
+        var yaxis = el.querySelector('.prog-chart-yaxis');
+        if (!yaxis || el._bwChartY) {
+            return;
+        }
+
+        yaxis.style.pointerEvents = 'auto';
+        yaxis.style.cursor = 'ns-resize';
+        yaxis.style.touchAction = 'none';
+
+        var dragging = false;
+        var baseY = 0;
+        var acc = 0;
+
+        var h = {
+            down: function (e) {
+                dragging = true;
+                baseY = e.clientY;
+                acc = 0;
+                if (yaxis.setPointerCapture) {
+                    yaxis.setPointerCapture(e.pointerId);
+                }
+                e.preventDefault();
+                e.stopPropagation();
+            },
+            move: function (e) {
+                if (!dragging) {
+                    return;
+                }
+
+                e.preventDefault();
+                e.stopPropagation();
+                var dy = e.clientY - baseY;
+                // Emit one step per Y_STEP_PX travelled. Down (dy > 0) widens the range (+1).
+                while (Math.abs(dy - acc) >= Y_STEP_PX) {
+                    var dir = (dy - acc) > 0 ? 1 : -1;
+                    acc += dir * Y_STEP_PX;
+                    try {
+                        dotnet.invokeMethodAsync('YScale', dir);
+                    } catch (_) { /* circuit gone */ }
+                }
+            },
+            up: function (e) {
+                dragging = false;
+                e.stopPropagation();
+            },
+        };
+
+        yaxis.addEventListener('pointerdown', h.down);
+        yaxis.addEventListener('pointermove', h.move);
+        yaxis.addEventListener('pointerup', h.up);
+        yaxis.addEventListener('pointercancel', h.up);
+        el._bwChartY = { yaxis: yaxis, h: h };
+    }
+
+    function bind(el, payload, dotnet) {
+        if (!el || typeof el.querySelector !== 'function') {
+            return;
+        }
+
+        var data = typeof payload === 'string' ? JSON.parse(payload) : payload;
+        if (!data || !data.length) {
+            return;
+        }
+
+        bindTooltip(el, data);
+        if (dotnet) {
+            bindYDrag(el, dotnet);
+        }
+    }
+
+    function unbind(el) {
+        if (!el) {
+            return;
+        }
+
+        removeTooltip(el);
+        if (el._bwChartY) {
+            var y = el._bwChartY;
+            y.yaxis.removeEventListener('pointerdown', y.h.down);
+            y.yaxis.removeEventListener('pointermove', y.h.move);
+            y.yaxis.removeEventListener('pointerup', y.h.up);
+            y.yaxis.removeEventListener('pointercancel', y.h.up);
+            delete el._bwChartY;
+        }
     }
 
     return { bind: bind, unbind: unbind };

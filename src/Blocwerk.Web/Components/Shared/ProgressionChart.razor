@@ -64,26 +64,49 @@
     [Parameter] public bool ShowTrendline { get; set; }
     [Parameter] public string EmptyText { get; set; } = "Not enough data yet.";
 
+    /// <summary>Explicit Y range. When both are set they override the auto data range (and enable
+    /// the y-axis drag-to-rescale gesture, which reports steps via <see cref="OnYScaleStep"/>).</summary>
+    [Parameter] public double? YMin { get; set; }
+    [Parameter] public double? YMax { get; set; }
+
+    /// <summary>Raised when the user drags the y-axis: +1 = drag down (show a wider range), -1 = up.</summary>
+    [Parameter] public EventCallback<int> OnYScaleStep { get; set; }
+
     private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
     private ElementReference _container;
     private double _min;
     private double _max = 1;
     private int _plottable;
     private string? _boundPayload;
+    private DotNetObjectReference<ProgressionChart>? _selfRef;
+
+    private bool YDraggable => YMin.HasValue && YMax.HasValue && OnYScaleStep.HasDelegate;
 
     protected override void OnParametersSet()
     {
         var values = Points.Where(p => p.Value.HasValue).Select(p => p.Value!.Value).ToList();
         _plottable = values.Count;
 
-        var scale = values.Concat(YTicks.Select(t => t.Value)).ToList();
-        _min = scale.Count > 0 ? scale.Min() : 0;
-        _max = scale.Count > 0 ? scale.Max() : 1;
+        if (YMin.HasValue && YMax.HasValue)
+        {
+            _min = YMin.Value;
+            _max = YMax.Value;
+        }
+        else
+        {
+            var scale = values.Concat(YTicks.Select(t => t.Value)).ToList();
+            _min = scale.Count > 0 ? scale.Min() : 0;
+            _max = scale.Count > 0 ? scale.Max() : 1;
+        }
+
         if (_max <= _min)
         {
             _max = _min + 1;
         }
     }
+
+    [JSInvokable]
+    public Task YScale(int direction) => OnYScaleStep.InvokeAsync(direction);
 
     private int MaxX => Math.Max(1, Points.Count - 1);
 
@@ -163,32 +186,71 @@
         return SmoothPath(pts);
     }
 
-    // Catmull-Rom spline → cubic-Bézier SVG path, giving a smooth curve through the points.
+    // Monotone cubic (Fritsch–Carlson) spline → cubic-Bézier SVG path. Unlike Catmull-Rom it never
+    // overshoots the data, so the curve can't bulge below the floor (e.g. into negative minutes) and
+    // vanish off the chart.
     private static string SmoothPath(IReadOnlyList<(double X, double Y)> p)
     {
-        if (p.Count == 0)
+        var n = p.Count;
+        if (n == 0)
         {
             return string.Empty;
         }
 
-        if (p.Count == 1)
+        if (n == 1)
         {
             return $"M {F(p[0].X)},{F(p[0].Y)} L {F(p[0].X)},{F(p[0].Y)}";
         }
 
+        if (n == 2)
+        {
+            return $"M {F(p[0].X)},{F(p[0].Y)} L {F(p[1].X)},{F(p[1].Y)}";
+        }
+
+        var secant = new double[n - 1];
+        for (var i = 0; i < n - 1; i++)
+        {
+            secant[i] = (p[i + 1].Y - p[i].Y) / (p[i + 1].X - p[i].X);
+        }
+
+        var tangent = new double[n];
+        tangent[0] = secant[0];
+        tangent[n - 1] = secant[n - 2];
+        for (var i = 1; i < n - 1; i++)
+        {
+            tangent[i] = secant[i - 1] * secant[i] <= 0 ? 0 : (secant[i - 1] + secant[i]) / 2;
+        }
+
+        for (var i = 0; i < n - 1; i++)
+        {
+            if (secant[i] == 0)
+            {
+                tangent[i] = 0;
+                tangent[i + 1] = 0;
+                continue;
+            }
+
+            var a = tangent[i] / secant[i];
+            var b = tangent[i + 1] / secant[i];
+            var s = (a * a) + (b * b);
+            if (s > 9)
+            {
+                var t = 3.0 / Math.Sqrt(s);
+                tangent[i] = t * a * secant[i];
+                tangent[i + 1] = t * b * secant[i];
+            }
+        }
+
         var sb = new StringBuilder();
         sb.Append($"M {F(p[0].X)},{F(p[0].Y)}");
-        for (var i = 0; i < p.Count - 1; i++)
+        for (var i = 0; i < n - 1; i++)
         {
-            var p0 = p[Math.Max(0, i - 1)];
-            var p1 = p[i];
-            var p2 = p[i + 1];
-            var p3 = p[Math.Min(p.Count - 1, i + 2)];
-            var c1x = p1.X + ((p2.X - p0.X) / 6.0);
-            var c1y = p1.Y + ((p2.Y - p0.Y) / 6.0);
-            var c2x = p2.X - ((p3.X - p1.X) / 6.0);
-            var c2y = p2.Y - ((p3.Y - p1.Y) / 6.0);
-            sb.Append($" C {F(c1x)},{F(c1y)} {F(c2x)},{F(c2y)} {F(p2.X)},{F(p2.Y)}");
+            var h = p[i + 1].X - p[i].X;
+            var c1x = p[i].X + (h / 3.0);
+            var c1y = p[i].Y + (tangent[i] * h / 3.0);
+            var c2x = p[i + 1].X - (h / 3.0);
+            var c2y = p[i + 1].Y - (tangent[i + 1] * h / 3.0);
+            sb.Append($" C {F(c1x)},{F(c1y)} {F(c2x)},{F(c2y)} {F(p[i + 1].X)},{F(p[i + 1].Y)}");
         }
 
         return sb.ToString();
@@ -231,9 +293,11 @@
         }
 
         _boundPayload = payload;
+        _selfRef ??= DotNetObjectReference.Create(this);
         try
         {
-            await JS.InvokeVoidAsync("blocwerkChart.bind", _container, payload);
+            // Pass the .NET ref only when the y-axis is drag-rescalable, so JS wires that gesture.
+            await JS.InvokeVoidAsync("blocwerkChart.bind", _container, payload, YDraggable ? _selfRef : null);
         }
         catch (JSException)
         {
@@ -254,5 +318,7 @@
         {
             // Circuit already gone during teardown; nothing to clean up.
         }
+
+        _selfRef?.Dispose();
     }
 }

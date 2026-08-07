@@ -191,8 +191,10 @@
                             </button>
                         </div>
 
-                        <ProgressionChart Title="Boulder progression" Caption="rolling 60-day rating" Stroke="#e94560"
-                                          Points="BoulderPoints()" YTicks="BoulderYTicks()" ShowTrendline="true"
+                        @{ var bScale = BoulderScale(); }
+                        <ProgressionChart Title="Boulder progression" Caption="rolling 60-day rating · drag axis to zoom" Stroke="#e94560"
+                                          Points="BoulderPoints()" YTicks="bScale.Ticks" YMin="bScale.Min" YMax="bScale.Max"
+                                          ShowTrendline="true" OnYScaleStep="OnBoulderYScale"
                                           EmptyText="No sends in this window yet." />
 
                         <ProgressionChart Title="Training progression" Stroke="#0f3460"
@@ -290,6 +292,7 @@
     private List<MonthLabel> _monthLabels = [];
     private WallCarousel? _carousel;
     private int _initialPage;
+    private int _boulderGradeSpan = 5;
 
     private record MonthLabel(string Name, double OffsetPercent);
 
@@ -416,16 +419,56 @@
     private List<ChartSeriesPoint> VolumePoints() => _progression!.Buckets.Select(b =>
         new ChartSeriesPoint(b.VolumeMinutes, $"{Range(b)} — {FormatMinutes((int)b.VolumeMinutes)}", b.Label)).ToList();
 
-    private List<(double, string)> BoulderYTicks()
+    // The boulder Y scale shows at least _boulderGradeSpan grades centred on the current rating (so
+    // "6C" sits amid 6B..7A rather than filling the axis), always keeping the data in view. Dragging
+    // the axis changes the span.
+    private (double Min, double Max, List<(double, string)> Ticks) BoulderScale()
     {
-        var vals = _progression!.Buckets.Where(b => b.BoulderScore.HasValue).Select(b => b.BoulderScore!.Value).ToList();
-        if (vals.Count == 0) return [];
-        double lo = vals.Min(), hi = vals.Max();
-        return GradeScoring.AllScores
-            .Where(kv => kv.Value >= lo - 1 && kv.Value <= hi + 1)
-            .OrderBy(kv => kv.Value)
-            .Select(kv => ((double)kv.Value, kv.Key))
-            .ToList();
+        var sorted = GradeScoring.AllScores.OrderBy(kv => kv.Value).ToList();
+        if (sorted.Count == 0 || _progression == null)
+        {
+            return (0, 1, []);
+        }
+
+        var vals = _progression.Buckets.Where(b => b.BoulderScore.HasValue).Select(b => b.BoulderScore!.Value).ToList();
+        var center = _progression.BoulderScore > 0
+            ? _progression.BoulderScore
+            : (vals.Count > 0 ? vals.Average() : sorted[sorted.Count / 2].Value);
+
+        var nearest = 0;
+        var best = double.MaxValue;
+        for (var i = 0; i < sorted.Count; i++)
+        {
+            var d = Math.Abs(sorted[i].Value - center);
+            if (d < best) { best = d; nearest = i; }
+        }
+
+        var span = Math.Clamp(_boulderGradeSpan, 3, sorted.Count);
+        var lo = Math.Clamp(nearest - (span / 2), 0, Math.Max(0, sorted.Count - span));
+        var hi = Math.Min(sorted.Count - 1, lo + span - 1);
+
+        double min = sorted[lo].Value;
+        double max = sorted[hi].Value;
+        if (vals.Count > 0)
+        {
+            min = Math.Min(min, vals.Min());
+            max = Math.Max(max, vals.Max());
+        }
+
+        var pad = (max - min) * 0.08;
+        if (pad <= 0) pad = 100;
+        min -= pad;
+        max += pad;
+
+        var ticks = sorted.Where(kv => kv.Value >= min && kv.Value <= max)
+            .Select(kv => ((double)kv.Value, kv.Key)).ToList();
+        return (min, max, ticks);
+    }
+
+    private void OnBoulderYScale(int direction)
+    {
+        // Drag down (+1) widens the range → more grades; drag up (-1) narrows it.
+        _boulderGradeSpan = Math.Clamp(_boulderGradeSpan + direction, 3, 12);
     }
 
     private List<(double, string)> TrainingYTicks() => NumericYTicks(TrainingPoints(), v => v.ToString("F0"));
