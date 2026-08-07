@@ -3,8 +3,6 @@
 @attribute [Authorize]
 @inject ICurrentUserService CurrentUserService
 @inject IProgressionService ProgressionService
-@inject ITopLoggerService TopLogger
-@using Blocwerk.Core.Services.TopLogger
 
 <PageTitle>Profile - Blocwerk</PageTitle>
 
@@ -69,50 +67,6 @@
                 <a href="/activity">Activity</a> has detailed progression with configurable time windows.
             </p>
         }
-
-        <div class="section tl-card">
-            <h2>TopLogger</h2>
-            @if (_tlStatus is null)
-            {
-                <p class="loading">Loading…</p>
-            }
-            else if (!_tlStatus.Enabled)
-            {
-                <p class="tl-hint">TopLogger import isn't enabled on this server.</p>
-            }
-            else if (_tlStatus.Connected)
-            {
-                <p class="tl-connected">Connected as <strong>@_tlStatus.Email</strong></p>
-                <p class="tl-meta">
-                    @_tlStatus.AscentCount ascents imported@(_tlStatus.LastSyncAt is { } ls ? $" · last sync {ls.LocalDateTime:dd MMM HH:mm}" : "")
-                </p>
-                @if (!string.IsNullOrEmpty(_tlStatus.LastError))
-                {
-                    <p class="tl-error">@_tlStatus.LastError</p>
-                }
-                <div class="tl-actions">
-                    <button class="btn-primary" @onclick="SyncNow" disabled="@_tlBusy">Sync now</button>
-                    <button class="btn-secondary" @onclick="Disconnect" disabled="@_tlBusy">Disconnect</button>
-                </div>
-            }
-            else
-            {
-                <p class="tl-hint">Import your TopLogger sessions & ascents into your activities and rating.</p>
-                <div class="tl-form">
-                    <input type="email" @bind="_tlEmail" placeholder="TopLogger email" class="tl-input" autocomplete="off" />
-                    <input type="password" @bind="_tlPassword" placeholder="TopLogger password" class="tl-input" autocomplete="off" />
-                    <button class="btn-primary" @onclick="Connect"
-                            disabled="@(_tlBusy || string.IsNullOrWhiteSpace(_tlEmail) || string.IsNullOrWhiteSpace(_tlPassword))">
-                        Connect
-                    </button>
-                </div>
-                <p class="tl-fineprint">We store only an encrypted access token — never your password.</p>
-            }
-            @if (!string.IsNullOrEmpty(_tlMessage))
-            {
-                <p class="tl-message">@_tlMessage</p>
-            }
-        </div>
     }
 </div>
 
@@ -120,68 +74,10 @@
     private User? _user;
     private UserProgression? _progression;
 
-    private TopLoggerStatus? _tlStatus;
-    private string _tlEmail = string.Empty;
-    private string _tlPassword = string.Empty;
-    private bool _tlBusy;
-    private string? _tlMessage;
-
     protected override async Task OnInitializedAsync()
     {
         _user = await CurrentUserService.GetCurrentUserAsync();
         _progression = await ProgressionService.GetProgressionAsync();
-        _tlStatus = await TopLogger.GetStatusAsync();
-    }
-
-    private async Task Connect()
-    {
-        _tlBusy = true;
-        _tlMessage = null;
-        try
-        {
-            var result = await TopLogger.ConnectAsync(_tlEmail.Trim(), _tlPassword);
-            _tlPassword = string.Empty;
-            _tlMessage = result.Success
-                ? (result.Error ?? $"Connected — imported {result.Imported} ascents.")
-                : result.Error;
-            _tlStatus = await TopLogger.GetStatusAsync();
-        }
-        finally
-        {
-            _tlBusy = false;
-        }
-    }
-
-    private async Task SyncNow()
-    {
-        _tlBusy = true;
-        _tlMessage = null;
-        try
-        {
-            var result = await TopLogger.SyncNowAsync();
-            _tlMessage = result.Success ? $"Imported {result.Imported} new ascents." : result.Error;
-            _tlStatus = await TopLogger.GetStatusAsync();
-        }
-        finally
-        {
-            _tlBusy = false;
-        }
-    }
-
-    private async Task Disconnect()
-    {
-        _tlBusy = true;
-        _tlMessage = null;
-        try
-        {
-            await TopLogger.DisconnectAsync(deleteImportedAscents: false);
-            _tlStatus = await TopLogger.GetStatusAsync();
-            _tlMessage = "Disconnected. Imported ascents were kept.";
-        }
-        finally
-        {
-            _tlBusy = false;
-        }
     }
 
     private List<double> BoulderScores() =>

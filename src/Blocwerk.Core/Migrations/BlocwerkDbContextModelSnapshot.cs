@@ -318,56 +318,6 @@ namespace Blocwerk.Core.Migrations
                     b.ToTable("ClimbingSessions");
                 });
 
-            modelBuilder.Entity("Blocwerk.Core.Entities.ExternalAscent", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("ActivityId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("ClimbName")
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
-
-                    b.Property<string>("ExternalId")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
-
-                    b.Property<string>("Grade")
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
-
-                    b.Property<string>("GymName")
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
-
-                    b.Property<DateTimeOffset>("LoggedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("Source")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("Type")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ActivityId");
-
-                    b.HasIndex("UserId", "LoggedAt");
-
-                    b.HasIndex("UserId", "Source", "ExternalId")
-                        .IsUnique();
-
-                    b.ToTable("ExternalAscents");
-                });
-
             modelBuilder.Entity("Blocwerk.Core.Entities.GradeProposal", b =>
                 {
                     b.Property<Guid>("Id")
@@ -568,49 +518,6 @@ namespace Blocwerk.Core.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("RefreshTokens");
-                });
-
-            modelBuilder.Entity("Blocwerk.Core.Entities.TopLoggerConnection", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Backend")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Email")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
-
-                    b.Property<string>("LastError")
-                        .HasMaxLength(1024)
-                        .HasColumnType("character varying(1024)");
-
-                    b.Property<DateTimeOffset?>("LastSyncAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("TokenEncrypted")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("UserUid")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId")
-                        .IsUnique();
-
-                    b.ToTable("TopLoggerConnections");
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.User", b =>
@@ -1000,24 +907,6 @@ namespace Blocwerk.Core.Migrations
                     b.Navigation("Wall");
                 });
 
-            modelBuilder.Entity("Blocwerk.Core.Entities.ExternalAscent", b =>
-                {
-                    b.HasOne("Blocwerk.Core.Entities.Activity", "Activity")
-                        .WithMany()
-                        .HasForeignKey("ActivityId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("Blocwerk.Core.Entities.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Activity");
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("Blocwerk.Core.Entities.GradeProposal", b =>
                 {
                     b.HasOne("Blocwerk.Core.Entities.Boulder", "Boulder")
@@ -1080,17 +969,6 @@ namespace Blocwerk.Core.Migrations
                         .IsRequired();
 
                     b.Navigation("Activity");
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("Blocwerk.Core.Entities.TopLoggerConnection", b =>
-                {
-                    b.HasOne("Blocwerk.Core.Entities.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
 
                     b.Navigation("User");
                 });

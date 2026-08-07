@@ -47,10 +47,6 @@ public class BlocwerkDbContext : DbContext
 
     public DbSet<Activity> Activities => Set<Activity>();
 
-    public DbSet<TopLoggerConnection> TopLoggerConnections => Set<TopLoggerConnection>();
-
-    public DbSet<ExternalAscent> ExternalAscents => Set<ExternalAscent>();
-
     public BlocwerkDbContext(DbContextOptions<BlocwerkDbContext> options)
         : base(options)
     {
@@ -88,37 +84,6 @@ public class BlocwerkDbContext : DbContext
         ConfigureBoulderRating(modelBuilder);
         ConfigureBoulderFavorite(modelBuilder);
         ConfigureActivity(modelBuilder);
-        ConfigureTopLogger(modelBuilder);
-    }
-
-    private static void ConfigureTopLogger(ModelBuilder modelBuilder)
-    {
-        modelBuilder.Entity<TopLoggerConnection>(entity =>
-        {
-            entity.HasIndex(c => c.UserId).IsUnique();
-
-            entity.HasOne(c => c.User)
-                .WithMany()
-                .HasForeignKey(c => c.UserId)
-                .OnDelete(DeleteBehavior.Cascade);
-        });
-
-        modelBuilder.Entity<ExternalAscent>(entity =>
-        {
-            // One row per (user, source, source-id): the upsert key across re-syncs.
-            entity.HasIndex(a => new { a.UserId, a.Source, a.ExternalId }).IsUnique();
-            entity.HasIndex(a => new { a.UserId, a.LoggedAt });
-
-            entity.HasOne(a => a.User)
-                .WithMany()
-                .HasForeignKey(a => a.UserId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasOne(a => a.Activity)
-                .WithMany()
-                .HasForeignKey(a => a.ActivityId)
-                .OnDelete(DeleteBehavior.SetNull);
-        });
     }
 
     private static void ConfigureActivity(ModelBuilder modelBuilder)

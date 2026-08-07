@@ -1084,19 +1084,6 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
 
 .profile-page { padding: 16px; max-width: 500px; margin: 0 auto; }
 
-/* ---- TopLogger connect card ---- */
-.tl-card { background: var(--bg-surface); border-radius: 12px; padding: 16px; box-shadow: 0 1px 4px var(--shadow-sm); }
-.tl-card h2 { font-size: 1rem; font-weight: 600; color: var(--text-heading); margin-bottom: 10px; }
-.tl-hint, .tl-fineprint { font-size: 0.82rem; color: var(--text-secondary); }
-.tl-fineprint { margin-top: 8px; }
-.tl-connected { font-size: 0.95rem; color: var(--text); }
-.tl-meta { font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px; }
-.tl-error { font-size: 0.82rem; color: var(--danger-text, #EF9A9A); margin-top: 6px; }
-.tl-message { font-size: 0.82rem; color: var(--accent); margin-top: 10px; }
-.tl-form { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
-.tl-input { padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px; background: var(--input-bg); color: var(--text); font-size: 0.95rem; }
-.tl-actions { display: flex; gap: 8px; margin-top: 12px; }
-
 .profile-card {
     text-align: center; padding: 32px 20px; background: var(--bg-surface);
     border-radius: 16px; box-shadow: 0 2px 12px var(--shadow-md);
