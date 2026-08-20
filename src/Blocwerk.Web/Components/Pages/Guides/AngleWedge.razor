@@ -53,11 +53,8 @@
             <div class="input-row">
                 <div class="form-group">
                     <label>Lower Portion Angle (&deg;)</label>
-                    <input type="number" class="form-input" @bind="_lowerAngle" min="1" max="179" step="1" />
-                </div>
-                <div class="form-group">
-                    <label>Lower Portion Length (mm)</label>
-                    <input type="number" class="form-input" @bind="_lowerLength" min="1" step="1" />
+                    <input type="number" class="form-input" @bind="_lowerAngle" min="1" step="1" />
+                    <span class="field-hint">Must be shallower than the wall angle. Its length is worked out for you.</span>
                 </div>
             </div>
         }
@@ -78,10 +75,6 @@
                     <span class="label">Angle Change</span>
                     <span class="value">@F(_result.AngleChangeDeg)<span class="unit">&deg;</span></span>
                 </div>
-                <div class="summary-item">
-                    <span class="label">Face &rarr; Wall Fold</span>
-                    <span class="value">@F(_result.FaceToWallFoldDeg)<span class="unit">&deg;</span></span>
-                </div>
                 @if (_result.FaceToLowerFoldDeg != null)
                 {
                     <div class="summary-item">
@@ -91,6 +84,17 @@
                     <div class="summary-item">
                         <span class="label">Lower &rarr; Wall Fold</span>
                         <span class="value">@F(_result.LowerToWallFoldDeg!.Value)<span class="unit">&deg;</span></span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="label">Lower Portion Length</span>
+                        <span class="value">@F(_result.LowerPortionLengthMm)<span class="unit"> mm</span></span>
+                    </div>
+                }
+                else
+                {
+                    <div class="summary-item">
+                        <span class="label">Base Length</span>
+                        <span class="value">@F(_result.LowerPortionLengthMm)<span class="unit"> mm</span></span>
                     </div>
                 }
                 <div class="summary-item">
@@ -149,7 +153,6 @@
     private double _thickness = 18;
     private bool _useLowerPortion;
     private double _lowerAngle = 30;
-    private double _lowerLength = 150;
     private WedgeResult? _result;
     private string? _error;
 
@@ -165,8 +168,7 @@
                 _faceWidth,
                 _faceHeight,
                 _thickness,
-                _useLowerPortion ? _lowerAngle : null,
-                _useLowerPortion ? _lowerLength : 0);
+                _useLowerPortion ? _lowerAngle : null);
         }
         catch (Exception ex)
         {

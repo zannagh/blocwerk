@@ -3,16 +3,20 @@ using System.Globalization;
 namespace Blocwerk.Core.Helpers;
 
 /// <summary>
-/// Computes an "angle change wedge" — a triangular (or, with a lower portion,
-/// quadrilateral) prism that sits on a wall at <c>wallAngle</c> and presents a
-/// climbing face at a steeper <c>targetAngle</c>.
+/// Computes an "angle change wedge" — a triangular prism that sits on a wall at
+/// <c>wallAngle</c> and presents a climbing face at a steeper <c>targetAngle</c>.
 ///
 /// All angles are measured from horizontal, so 90° == vertical and a larger
-/// angle == steeper. Angles reported on the cut edges are the FOLD (included)
-/// angle between the two adjoining panels — i.e. the "angle change" at that
-/// edge. For a 45° wall stepped up to a 90° (vertical) face the face's lower
-/// edge folds by |90 - 45| = 45°; adding a 30° lower portion makes the face's
-/// lower edge fold by |90 - 30| = 60° onto the lower portion.
+/// angle == steeper. The cross-section is a single triangle: the face meets the
+/// wall along one edge, runs out to the furthest corner, and a return (the
+/// "lower portion") folds back to the wall. The return's length is implicit —
+/// the face length and the two angles fix it — so at a 0° (horizontal) return
+/// the piece comes out exactly face-sized.
+///
+/// Angles reported on the cut edges are the FOLD (included) angle between the
+/// two adjoining panels. A 45° wall stepped up to a 90° (vertical) face folds
+/// the face onto the wall by |90 - 45| = 45°; a 30° lower portion then folds the
+/// face's far edge by |90 - 30| = 60° and folds onto the wall by |45 - 30| = 15°.
 /// </summary>
 public static class WedgeCalculator
 {
@@ -22,8 +26,7 @@ public static class WedgeCalculator
         double faceWidth,
         double faceHeight,
         double thickness,
-        double? lowerPortionAngleDeg = null,
-        double lowerPortionLength = 0)
+        double? lowerPortionAngleDeg = null)
     {
         if (faceWidth <= 0 || faceHeight <= 0 || thickness <= 0)
         {
@@ -33,6 +36,11 @@ public static class WedgeCalculator
         if (wallAngleDeg <= 0 || wallAngleDeg >= 180)
         {
             throw new ArgumentOutOfRangeException(nameof(wallAngleDeg), "Wall angle must be between 0° and 180°.");
+        }
+
+        if (targetAngleDeg <= 0)
+        {
+            throw new ArgumentException("Target angle must be greater than 0°.");
         }
 
         if (targetAngleDeg <= wallAngleDeg)
@@ -45,110 +53,67 @@ public static class WedgeCalculator
             throw new ArgumentOutOfRangeException(nameof(targetAngleDeg), "Target angle must be below 180°.");
         }
 
+        var hasLower = lowerPortionAngleDeg.HasValue;
+        var p = lowerPortionAngleDeg ?? 0.0;
+
+        if (hasLower && p <= 0)
+        {
+            throw new ArgumentException("Lower portion angle must be greater than 0°.");
+        }
+
+        if (p >= wallAngleDeg)
+        {
+            throw new ArgumentException("Lower portion angle must be shallower than the wall angle so it can fold back to the wall.");
+        }
+
         var w = wallAngleDeg;
         var tgt = targetAngleDeg;
-        double? p = lowerPortionAngleDeg;
+        var fh = faceHeight;
 
-        if (p.HasValue)
+        // Interior angles of the cross-section triangle, in the wall's own frame
+        // (wall along the x-axis, the volume above it):
+        //   alpha = face rise above the wall      (T - W)
+        //   beta  = return rise above the wall     (W - P)
+        var alpha = Deg2Rad(tgt - w);
+        var beta = Deg2Rad(w - p);
+
+        // Triangle vertices in the wall frame. q & r sit on the wall; f is the
+        // furthest corner. The return length falls straight out of the geometry.
+        var q = new Point2D(0, 0);
+        var f = new Point2D(fh * Math.Cos(alpha), fh * Math.Sin(alpha));
+        var r = new Point2D(f.X + f.Y / Math.Tan(beta), 0);
+
+        var lowerLength = fh * Math.Sin(alpha) / Math.Sin(beta);
+        var wallFootprint = r.X;
+        var depth = f.Y;
+
+        var faceToWall = tgt - w;   // fold at q: face onto wall
+        var faceToLower = tgt - p;  // fold at f: face onto the return
+        var lowerToWall = w - p;    // fold at r: return onto wall
+
+        var cross = new[] { q, f, r };
+        var labels = new[] { "Face", hasLower ? "Lower" : "Base", "Wall" };
+        var edgeLengths = new[] { Dist(q, f), Dist(f, r), Dist(r, q) };
+        var edgeAngles = new[] { faceToWall, faceToLower, lowerToWall };
+
+        var pieces = new List<WedgePiece>
         {
-            if (p.Value <= 0 || p.Value >= tgt)
-            {
-                throw new ArgumentException("Lower portion angle must be greater than 0° and shallower than the target angle.");
-            }
-
-            if (lowerPortionLength <= 0)
-            {
-                throw new ArgumentException("Lower portion length must be positive.");
-            }
-        }
-
-        // Cross-section (side profile) in world coordinates: x = outward from the
-        // wall (toward the climber), y = up. Each surface at angle θ climbs along
-        // the unit vector (-cos θ, sin θ), so a vertical (90°) surface climbs (0, 1).
-        var cross = new List<Point2D>();
-        var labels = new List<string>();
-        var surfaceAngles = new List<double>();
-
-        var pieces = new List<WedgePiece>();
-
-        if (!p.HasValue)
-        {
-            // Triangular prism: wall -> face -> horizontal cap.
-            var a = new Point2D(0, 0);                          // face bottom, on wall
-            var b = Along(a, tgt, faceHeight);                  // face top
-            var c = CapToWall(b, w);                            // cap back to wall
-
-            cross.AddRange(new[] { a, b, c });
-            labels.AddRange(new[] { "Face", "Cap", "Wall" });
-            surfaceAngles.AddRange(new[] { tgt, 0.0, w });
-
-            var faceToWall = Math.Abs(tgt - w);
-            var faceToCap = tgt;
-            var capToWall = w;
-
-            pieces.Add(Panel("Face", faceHeight, faceWidth, faceToWall, faceToCap));
-            pieces.Add(Panel("Cap (top)", Dist(b, c), faceWidth, faceToCap, capToWall));
-            pieces.Add(EndPanel("Side (end)", cross));
-        }
-        else
-        {
-            // Quadrilateral prism (two wedges merged): wall -> lower portion -> face -> cap.
-            var lp = p.Value;
-            var a = new Point2D(0, 0);                          // lower portion bottom, on wall
-            var d = Along(a, lp, lowerPortionLength);           // bend: lower portion -> face
-            var b = Along(d, tgt, faceHeight);                  // face top
-            var c = CapToWall(b, w);                            // cap back to wall
-
-            cross.AddRange(new[] { a, d, b, c });
-            labels.AddRange(new[] { "Lower", "Face", "Cap", "Wall" });
-            surfaceAngles.AddRange(new[] { lp, tgt, 0.0, w });
-
-            var lowerToWall = Math.Abs(lp - w);
-            var faceToLower = Math.Abs(tgt - lp);
-            var faceToCap = tgt;
-            var capToWall = w;
-
-            pieces.Add(Panel("Face", faceHeight, faceWidth, faceToLower, faceToCap));
-            pieces.Add(Panel("Lower portion", lowerPortionLength, faceWidth, lowerToWall, faceToLower));
-            pieces.Add(Panel("Cap (top)", Dist(b, c), faceWidth, faceToCap, capToWall));
-            pieces.Add(EndPanel("Side (end)", cross));
-        }
-
-        var crossArr = cross.ToArray();
-        var edgeLengths = new double[crossArr.Length];
-        var edgeAngles = new double[crossArr.Length];
-        for (var i = 0; i < crossArr.Length; i++)
-        {
-            var next = crossArr[(i + 1) % crossArr.Length];
-            edgeLengths[i] = Dist(crossArr[i], next);
-        }
-
-        // Fold angle stored at each vertex = |surface_in - surface_out|, i.e. the
-        // included fold between the two panels meeting at that corner.
-        for (var i = 0; i < crossArr.Length; i++)
-        {
-            var prev = surfaceAngles[(i - 1 + surfaceAngles.Count) % surfaceAngles.Count];
-            var curr = surfaceAngles[i];
-            edgeAngles[i] = Math.Abs(curr - prev);
-        }
-
-        var wallDir = Along(new Point2D(0, 0), w, 1);
-        var normalX = Math.Sin(Deg2Rad(w));
-        var normalY = Math.Cos(Deg2Rad(w));
-        var depth = crossArr.Max(v => v.X * normalX + v.Y * normalY);
-        var wallFootprint = crossArr.Max(v => v.X * wallDir.X + v.Y * wallDir.Y)
-                          - crossArr.Min(v => v.X * wallDir.X + v.Y * wallDir.Y);
+            Panel("Face", fh, faceWidth, faceToWall, faceToLower),
+            Panel(hasLower ? "Lower portion" : "Base (return)", lowerLength, faceWidth, lowerToWall, faceToLower),
+            EndPanel("Side (end)", cross),
+        };
 
         return new WedgeResult(
             pieces,
-            crossArr,
-            labels.ToArray(),
+            cross,
+            labels,
             edgeLengths,
             edgeAngles,
-            Math.Abs(tgt - w),
-            Math.Abs(tgt - w),
-            p.HasValue ? Math.Abs(tgt - p.Value) : null,
-            p.HasValue ? Math.Abs(p.Value - w) : null,
+            tgt - w,
+            hasLower ? p : null,
+            lowerLength,
+            hasLower ? faceToLower : null,
+            hasLower ? lowerToWall : null,
             depth,
             wallFootprint,
             faceWidth + 2.0 * thickness);
@@ -160,9 +125,9 @@ public static class WedgeCalculator
 
     private static WedgePiece Panel(string name, double length, double width, double bottomFold, double topFold)
     {
-        // Rectangle laid out flat: x = board width, y = board length.
-        // Bottom & top edges are the cross-cuts that carry the fold bevels; the
-        // two long side edges are square (they meet the end panels at 90°).
+        // Rectangle laid out flat: x = board width, y = board length. The two
+        // cross-cut ends carry the fold bevels; the long side edges are square
+        // (they meet the end panels at 90°).
         var verts = new Point2D[]
         {
             new(0, 0),
@@ -176,7 +141,7 @@ public static class WedgeCalculator
         return new WedgePiece(name, 1, verts, bevels, lengths);
     }
 
-    private static WedgePiece EndPanel(string name, List<Point2D> cross)
+    private static WedgePiece EndPanel(string name, IReadOnlyList<Point2D> cross)
     {
         var verts = cross.ToArray();
         var n = verts.Length;
@@ -184,8 +149,7 @@ public static class WedgeCalculator
         var angles = new double[n];
         for (var i = 0; i < n; i++)
         {
-            var next = verts[(i + 1) % n];
-            lengths[i] = Dist(verts[i], next);
+            lengths[i] = Dist(verts[i], verts[(i + 1) % n]);
         }
 
         // Interior angle at each vertex, for marking out the profile on the sheet.
@@ -198,22 +162,6 @@ public static class WedgeCalculator
         }
 
         return new WedgePiece(name, 2, verts, angles, lengths);
-    }
-
-    private static Point2D Along(Point2D from, double angleDeg, double length)
-    {
-        var r = Deg2Rad(angleDeg);
-        return new Point2D(from.X - length * Math.Cos(r), from.Y + length * Math.Sin(r));
-    }
-
-    private static Point2D CapToWall(Point2D b, double wallAngleDeg)
-    {
-        // Horizontal cap from the face top back to the wall line (through origin,
-        // direction (-cos w, sin w)). Intersect y = b.Y with the wall.
-        var r = Deg2Rad(wallAngleDeg);
-        var s = b.Y / Math.Sin(r);
-        var x = -s * Math.Cos(r);
-        return new Point2D(x, b.Y);
     }
 
     private static double Dist(Point2D a, Point2D b) =>

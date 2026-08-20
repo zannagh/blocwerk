@@ -115,3 +115,4 @@
 
 .wedge-check { display: flex; align-items: center; gap: 8px; font-weight: 500; cursor: pointer; }
 .wedge-check input[type="checkbox"] { width: auto; margin: 0; }
+.field-hint { display: block; margin-top: 4px; font-size: 0.72rem; color: var(--text-secondary); }
