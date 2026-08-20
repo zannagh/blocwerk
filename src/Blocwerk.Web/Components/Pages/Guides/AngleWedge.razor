@@ -1,0 +1,340 @@
+@page "/guides/homewalls/angle-wedge"
+@rendermode InteractiveServer
+@attribute [AllowAnonymous]
+@using Blocwerk.Core.Helpers
+@using System.Globalization
+
+<PageTitle>Angle Change Wedge - Blocwerk</PageTitle>
+
+<div class="volume-calc">
+    <div class="page-header">
+        <a href="/guides" class="back-link">&larr; Guides</a>
+        <h1>Angle Change Wedge</h1>
+        <p class="description">Design a wedge that changes your wall angle to a steeper face. Set your wall and target angle, the face size and wood thickness, and optionally a shallower lower portion &mdash; get the cutting plan with fold angles for every piece.</p>
+        <div class="bw-anon-notice">This tool is in active development. Double-check all measurements and angles before cutting wood.</div>
+    </div>
+
+    <div class="volume-input">
+        <div class="input-row">
+            <div class="form-group">
+                <label>Wall Angle (&deg;)</label>
+                <input type="number" class="form-input" @bind="_wallAngle" min="1" max="179" step="1" />
+            </div>
+            <div class="form-group">
+                <label>Target Angle (&deg;)</label>
+                <input type="number" class="form-input" @bind="_targetAngle" min="1" max="179" step="1" />
+            </div>
+        </div>
+        <div class="input-row">
+            <div class="form-group">
+                <label>Face Width (mm)</label>
+                <input type="number" class="form-input" @bind="_faceWidth" min="1" step="1" />
+            </div>
+            <div class="form-group">
+                <label>Face Height (mm)</label>
+                <input type="number" class="form-input" @bind="_faceHeight" min="1" step="1" />
+            </div>
+        </div>
+        <div class="input-row">
+            <div class="form-group">
+                <label>Wood Thickness (mm)</label>
+                <input type="number" class="form-input" @bind="_thickness" min="1" step="1" />
+            </div>
+            <div class="form-group">
+                <label class="wedge-check">
+                    <input type="checkbox" @bind="_useLowerPortion" />
+                    Lower portion
+                </label>
+            </div>
+        </div>
+
+        @if (_useLowerPortion)
+        {
+            <div class="input-row">
+                <div class="form-group">
+                    <label>Lower Portion Angle (&deg;)</label>
+                    <input type="number" class="form-input" @bind="_lowerAngle" min="1" max="179" step="1" />
+                </div>
+                <div class="form-group">
+                    <label>Lower Portion Length (mm)</label>
+                    <input type="number" class="form-input" @bind="_lowerLength" min="1" step="1" />
+                </div>
+            </div>
+        }
+
+        <button class="btn-submit" @onclick="Calculate">Calculate</button>
+
+        @if (_error != null)
+        {
+            <div class="error-msg">@_error</div>
+        }
+    </div>
+
+    @if (_result != null)
+    {
+        <div class="volume-results">
+            <div class="summary-grid">
+                <div class="summary-item">
+                    <span class="label">Angle Change</span>
+                    <span class="value">@F(_result.AngleChangeDeg)<span class="unit">&deg;</span></span>
+                </div>
+                <div class="summary-item">
+                    <span class="label">Face &rarr; Wall Fold</span>
+                    <span class="value">@F(_result.FaceToWallFoldDeg)<span class="unit">&deg;</span></span>
+                </div>
+                @if (_result.FaceToLowerFoldDeg != null)
+                {
+                    <div class="summary-item">
+                        <span class="label">Face &rarr; Lower Fold</span>
+                        <span class="value">@F(_result.FaceToLowerFoldDeg.Value)<span class="unit">&deg;</span></span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="label">Lower &rarr; Wall Fold</span>
+                        <span class="value">@F(_result.LowerToWallFoldDeg!.Value)<span class="unit">&deg;</span></span>
+                    </div>
+                }
+                <div class="summary-item">
+                    <span class="label">Depth from Wall</span>
+                    <span class="value">@F(_result.DepthMm)<span class="unit"> mm</span></span>
+                </div>
+                <div class="summary-item">
+                    <span class="label">Wall Footprint</span>
+                    <span class="value">@F(_result.WallFootprintMm)<span class="unit"> mm</span></span>
+                </div>
+                <div class="summary-item">
+                    <span class="label">Overall Width</span>
+                    <span class="value">@F(_result.OverallWidthMm)<span class="unit"> mm</span></span>
+                </div>
+            </div>
+
+            <div class="isometric-section">
+                <h2>Cross Section (side view)</h2>
+                <div class="isometric-container">
+                    @RenderCrossSection()
+                </div>
+                <p class="description">Fold angles are the included angle between adjoining panels. For a panel seating flat against the wall, tilt your blade by the fold; for a joint between two boards, split it (fold &divide; 2 on each).</p>
+            </div>
+
+            <div class="piece-list">
+                <h2>Cutting Plan (@_result.Pieces.Sum(p => p.Quantity) pieces)</h2>
+
+                @foreach (var piece in _result.Pieces)
+                {
+                    <div class="piece-card">
+                        <h3>@piece.Name @(piece.Quantity > 1 ? $"(x{piece.Quantity})" : string.Empty)</h3>
+                        <div class="piece-details">
+                            @for (var i = 0; i < piece.EdgeLengths.Length; i++)
+                            {
+                                <span class="piece-detail-chip">
+                                    Edge @(i + 1): <strong>@F(piece.EdgeLengths[i]) mm</strong>
+                                    &middot; @F(piece.EdgeBevelAngles[i])&deg;
+                                </span>
+                            }
+                        </div>
+                        <div class="piece-svg-container">
+                            @RenderPieceSvg(piece)
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private double _wallAngle = 45;
+    private double _targetAngle = 90;
+    private double _faceWidth = 300;
+    private double _faceHeight = 400;
+    private double _thickness = 18;
+    private bool _useLowerPortion;
+    private double _lowerAngle = 30;
+    private double _lowerLength = 150;
+    private WedgeResult? _result;
+    private string? _error;
+
+    private void Calculate()
+    {
+        _error = null;
+        _result = null;
+        try
+        {
+            _result = WedgeCalculator.Calculate(
+                _wallAngle,
+                _targetAngle,
+                _faceWidth,
+                _faceHeight,
+                _thickness,
+                _useLowerPortion ? _lowerAngle : null,
+                _useLowerPortion ? _lowerLength : 0);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private RenderFragment RenderPieceSvg(WedgePiece piece) => builder =>
+    {
+        var verts = piece.FlatVertices;
+        if (verts.Length < 3) return;
+
+        var minX = verts.Min(v => v.X);
+        var maxX = verts.Max(v => v.X);
+        var minY = verts.Min(v => v.Y);
+        var maxY = verts.Max(v => v.Y);
+        var pad = Math.Max(maxX - minX, maxY - minY) * 0.18;
+
+        var vbX = minX - pad;
+        var vbY = -(maxY + pad);
+        var vbW = maxX - minX + 2 * pad;
+        var vbH = maxY - minY + 2 * pad;
+
+        var points = string.Join(" ", verts.Select(v => $"{F2(v.X)},{F2(-v.Y)}"));
+        var fontSize = Math.Max(vbW, vbH) * 0.045;
+
+        builder.OpenElement(0, "svg");
+        builder.AddAttribute(1, "viewBox", $"{F2(vbX)} {F2(vbY)} {F2(vbW)} {F2(vbH)}");
+        builder.AddAttribute(2, "width", "280");
+        builder.AddAttribute(3, "height", "280");
+        builder.AddAttribute(4, "xmlns", "http://www.w3.org/2000/svg");
+
+        builder.OpenElement(5, "polygon");
+        builder.AddAttribute(6, "points", points);
+        builder.AddAttribute(7, "fill", "var(--bg-surface-alt, #f0f0f0)");
+        builder.AddAttribute(8, "stroke", "var(--text-heading, #1a1a2e)");
+        builder.AddAttribute(9, "stroke-width", F2(Math.Max(vbW, vbH) * 0.005));
+        builder.CloseElement();
+
+        for (var i = 0; i < verts.Length; i++)
+        {
+            var a = verts[i];
+            var b = verts[(i + 1) % verts.Length];
+            var mx = (a.X + b.X) / 2.0;
+            var my = -(a.Y + b.Y) / 2.0;
+            var dx = b.X - a.X;
+            var dy = b.Y - a.Y;
+            var len = Math.Sqrt(dx * dx + dy * dy);
+            if (len == 0) continue;
+            var nx = -dy / len * pad * 0.4;
+            var ny = dx / len * pad * 0.4;
+
+            builder.OpenElement(10, "text");
+            builder.AddAttribute(11, "x", F2(mx + nx));
+            builder.AddAttribute(12, "y", F2(my - ny));
+            builder.AddAttribute(13, "text-anchor", "middle");
+            builder.AddAttribute(14, "dominant-baseline", "middle");
+            builder.AddAttribute(15, "font-size", F2(fontSize));
+            builder.AddAttribute(16, "fill", "var(--accent, #e94560)");
+            builder.AddAttribute(17, "font-weight", "600");
+            builder.AddAttribute(18, "font-family", "sans-serif");
+            builder.AddMarkupContent(19, $"{F(piece.EdgeLengths[i])}mm");
+            builder.CloseElement();
+
+            builder.OpenElement(20, "text");
+            builder.AddAttribute(21, "x", F2(mx - nx));
+            builder.AddAttribute(22, "y", F2(my + ny));
+            builder.AddAttribute(23, "text-anchor", "middle");
+            builder.AddAttribute(24, "dominant-baseline", "middle");
+            builder.AddAttribute(25, "font-size", F2(fontSize * 0.8));
+            builder.AddAttribute(26, "fill", "var(--text-secondary, #888)");
+            builder.AddAttribute(27, "font-family", "sans-serif");
+            builder.AddMarkupContent(28, $"{F(piece.EdgeBevelAngles[i])}&deg;");
+            builder.CloseElement();
+        }
+
+        builder.CloseElement();
+    };
+
+    private RenderFragment RenderCrossSection() => builder =>
+    {
+        if (_result == null) return;
+
+        var verts = _result.CrossSection;
+        if (verts.Length < 3) return;
+
+        var minX = verts.Min(v => v.X);
+        var maxX = verts.Max(v => v.X);
+        var minY = verts.Min(v => v.Y);
+        var maxY = verts.Max(v => v.Y);
+        var pad = Math.Max(maxX - minX, maxY - minY) * 0.2;
+
+        var vbX = minX - pad;
+        var vbY = -(maxY + pad);
+        var vbW = maxX - minX + 2 * pad;
+        var vbH = maxY - minY + 2 * pad;
+        var sw = F2(Math.Max(vbW, vbH) * 0.006);
+        var fontSize = Math.Max(vbW, vbH) * 0.05;
+
+        var points = string.Join(" ", verts.Select(v => $"{F2(v.X)},{F2(-v.Y)}"));
+
+        builder.OpenElement(0, "svg");
+        builder.AddAttribute(1, "viewBox", $"{F2(vbX)} {F2(vbY)} {F2(vbW)} {F2(vbH)}");
+        builder.AddAttribute(2, "width", "320");
+        builder.AddAttribute(3, "height", "320");
+        builder.AddAttribute(4, "xmlns", "http://www.w3.org/2000/svg");
+
+        // Filled cross-section.
+        builder.OpenElement(5, "polygon");
+        builder.AddAttribute(6, "points", points);
+        builder.AddAttribute(7, "fill", "rgba(233,69,96,0.12)");
+        builder.AddAttribute(8, "stroke", "var(--text-heading, #1a1a2e)");
+        builder.AddAttribute(9, "stroke-width", sw);
+        builder.CloseElement();
+
+        // Edge labels: name + length, plus the fold angle at the start vertex.
+        for (var i = 0; i < verts.Length; i++)
+        {
+            var a = verts[i];
+            var b = verts[(i + 1) % verts.Length];
+            var mx = (a.X + b.X) / 2.0;
+            var my = -(a.Y + b.Y) / 2.0;
+            var dx = b.X - a.X;
+            var dy = b.Y - a.Y;
+            var len = Math.Sqrt(dx * dx + dy * dy);
+            if (len == 0) continue;
+            var nx = -dy / len * pad * 0.5;
+            var ny = dx / len * pad * 0.5;
+
+            var label = i < _result.CrossSectionLabels.Length ? _result.CrossSectionLabels[i] : string.Empty;
+            var edgeLen = i < _result.CrossSectionEdgeLengths.Length ? _result.CrossSectionEdgeLengths[i] : 0;
+
+            builder.OpenElement(10, "text");
+            builder.AddAttribute(11, "x", F2(mx - nx));
+            builder.AddAttribute(12, "y", F2(my + ny));
+            builder.AddAttribute(13, "text-anchor", "middle");
+            builder.AddAttribute(14, "dominant-baseline", "middle");
+            builder.AddAttribute(15, "font-size", F2(fontSize));
+            builder.AddAttribute(16, "fill", "var(--text-heading, #1a1a2e)");
+            builder.AddAttribute(17, "font-weight", "600");
+            builder.AddAttribute(18, "font-family", "sans-serif");
+            builder.AddMarkupContent(19, $"{label} {F(edgeLen)}mm");
+            builder.CloseElement();
+        }
+
+        // Fold angle at each vertex.
+        for (var i = 0; i < verts.Length; i++)
+        {
+            var v = verts[i];
+            var angle = i < _result.CrossSectionEdgeAngles.Length ? _result.CrossSectionEdgeAngles[i] : 0;
+
+            builder.OpenElement(20, "text");
+            builder.AddAttribute(21, "x", F2(v.X));
+            builder.AddAttribute(22, "y", F2(-v.Y));
+            builder.AddAttribute(23, "text-anchor", "middle");
+            builder.AddAttribute(24, "dominant-baseline", "middle");
+            builder.AddAttribute(25, "font-size", F2(fontSize * 0.85));
+            builder.AddAttribute(26, "fill", "var(--accent, #e94560)");
+            builder.AddAttribute(27, "font-weight", "700");
+            builder.AddAttribute(28, "font-family", "sans-serif");
+            builder.AddMarkupContent(29, $"{F(angle)}&deg;");
+            builder.CloseElement();
+        }
+
+        builder.CloseElement();
+    };
+
+    private static string F(double v) => v.ToString("F1", CultureInfo.InvariantCulture);
+
+    private static string F2(double v) => v.ToString("F2", CultureInfo.InvariantCulture);
+}
