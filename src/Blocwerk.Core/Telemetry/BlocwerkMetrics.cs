@@ -49,6 +49,12 @@ public static partial class BlocwerkMetrics
     public static readonly Counter<long> CommentsAdded = Otel.Meter.CreateCounter<long>(
         "blocwerk.comments.added", unit: "{comment}", description: "Boulder comments added.");
 
+    public static readonly Counter<long> BetaVideosUploaded = Otel.Meter.CreateCounter<long>(
+        "blocwerk.beta_videos.uploaded", unit: "{video}", description: "Beta videos uploaded to a boulder.");
+
+    public static readonly Counter<long> BetaVideoBytesUploaded = Otel.Meter.CreateCounter<long>(
+        "blocwerk.beta_videos.bytes", unit: "By", description: "Bytes of beta video stored (the blobs live in Postgres, so this is the thing to watch).");
+
     public static readonly Counter<long> SessionsStarted = Otel.Meter.CreateCounter<long>(
         "blocwerk.sessions.started", unit: "{session}", description: "Climbing sessions started.");
 

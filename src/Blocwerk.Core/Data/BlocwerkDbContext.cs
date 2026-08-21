@@ -31,6 +31,8 @@ public class BlocwerkDbContext : DbContext
 
     public DbSet<BoulderComment> BoulderComments => Set<BoulderComment>();
 
+    public DbSet<BetaVideo> BetaVideos => Set<BetaVideo>();
+
     public DbSet<GradeProposal> GradeProposals => Set<GradeProposal>();
 
     public DbSet<BoulderRating> BoulderRatings => Set<BoulderRating>();
@@ -80,6 +82,7 @@ public class BlocwerkDbContext : DbContext
         ConfigureWallReset(modelBuilder);
         ConfigureActivityLog(modelBuilder);
         ConfigureBoulderComment(modelBuilder);
+        ConfigureBetaVideo(modelBuilder);
         ConfigureGradeProposal(modelBuilder);
         ConfigureBoulderRating(modelBuilder);
         ConfigureBoulderFavorite(modelBuilder);
@@ -387,6 +390,26 @@ public class BlocwerkDbContext : DbContext
             entity.HasIndex(c => c.ClientRequestId)
                 .IsUnique()
                 .HasFilter("\"ClientRequestId\" IS NOT NULL");
+        });
+    }
+
+    private static void ConfigureBetaVideo(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<BetaVideo>(entity =>
+        {
+            entity.HasOne(v => v.Boulder)
+                .WithMany(b => b.BetaVideos)
+                .HasForeignKey(v => v.BoulderId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Deleting a user must not silently take their beta with it — same stance as comments.
+            entity.HasOne(v => v.UploadedBy)
+                .WithMany()
+                .HasForeignKey(v => v.UploadedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // The carousel query is always "this boulder, newest first".
+            entity.HasIndex(v => new { v.BoulderId, v.CreatedAt });
         });
     }
 }

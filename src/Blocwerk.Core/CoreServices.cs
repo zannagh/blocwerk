@@ -47,6 +47,7 @@ public static class CoreServices
         builder.Services.AddScoped<IBoulderFeedbackService, BoulderFeedbackService>();
         builder.Services.AddScoped<IAttemptService, AttemptService>();
         builder.Services.AddScoped<ICommentService, CommentService>();
+        builder.Services.AddScoped<IBetaVideoService, BetaVideoService>();
         builder.Services.AddScoped<IWallSegmentService, WallSegmentService>();
         builder.Services.AddScoped<IProgressionService, ProgressionService>();
         builder.Services.AddScoped<ITrainingService, TrainingService>();
