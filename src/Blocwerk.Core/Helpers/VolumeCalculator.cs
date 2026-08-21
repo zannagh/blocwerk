@@ -2,7 +2,12 @@ using System.Globalization;
 
 namespace Blocwerk.Core.Helpers;
 
-public static class VolumeCalculator
+/// <summary>
+/// Computes cutting plans for climbing-wall volumes (pyramids, diamonds and hip
+/// roofs): the flat cut pieces with per-edge lengths and bevel angles, plus the
+/// assembly geometry used for the isometric preview.
+/// </summary>
+public static partial class VolumeCalculator
 {
     public static VolumeResult CalculatePyramid(int sideCount, double baseEdge, double height, double thickness)
     {

@@ -76,21 +76,47 @@ public class WedgeCalculatorTests
         Assert.Equal(336, result.OverallWidthMm, 3);
     }
 
-    [Theory]
-    [InlineData(90, 45)] // target shallower than wall
-    [InlineData(45, 45)] // target equal to wall
-    public void TargetMustBeSteeperThanWall(double wall, double target)
+    [Fact]
+    public void TargetEqualToWall_IsRejected()
     {
         Assert.Throws<ArgumentException>(() =>
-            WedgeCalculator.Calculate(wall, target, 300, 400, 18));
+            WedgeCalculator.Calculate(45, 45, 300, 400, 18));
+    }
+
+    [Theory]
+    [InlineData(45, 90, 60)] // face and lower both steeper than the wall
+    [InlineData(45, 90, 50)] // the user's example: both steeper => never returns
+    [InlineData(45, 30, 20)] // face and lower both shallower than the wall
+    public void FaceAndLowerOnSameSideOfWall_AreRejected(double wall, double face, double lower)
+    {
+        // If the face and the lower portion sit on the same side of the wall angle
+        // the panels diverge and the lower portion never returns to the wall.
+        Assert.Throws<ArgumentException>(() =>
+            WedgeCalculator.Calculate(wall, face, 300, 400, 18, lowerPortionAngleDeg: lower));
     }
 
     [Fact]
-    public void LowerPortionAngle_MustBeShallowerThanWall()
+    public void ShallowFace_WithSteeperLower_IsAllowed()
     {
-        // 60° lower portion on a 45° wall cannot fold back to the wall.
-        Assert.Throws<ArgumentException>(() =>
-            WedgeCalculator.Calculate(45, 90, 300, 400, 18, lowerPortionAngleDeg: 60));
+        // Wall 45°, resulting face 30° (shallower), lower portion 50° (steeper):
+        // the two straddle the wall, so the triangle closes.
+        var result = WedgeCalculator.Calculate(45, 30, 300, 400, 18, lowerPortionAngleDeg: 50);
+
+        Assert.Equal(15, result.Pieces.Single(p => p.Name == "Face").EdgeBevelAngles[0], 3); // |30 - 45|
+        Assert.Equal(5, result.LowerToWallFoldDeg!.Value, 3);   // |50 - 45|
+        Assert.Equal(20, result.FaceToLowerFoldDeg!.Value, 3);  // |50 - 30|
+    }
+
+    [Fact]
+    public void HorizontalLowerPortion_IsAllowed_ForSteeperFace()
+    {
+        // 0° (horizontal) lower portion is now selectable when the face is steeper
+        // than the wall; it matches the implicit no-lower base.
+        var withZero = WedgeCalculator.Calculate(45, 90, 300, 400, 18, lowerPortionAngleDeg: 0);
+        var noLower = WedgeCalculator.Calculate(45, 90, 300, 400, 18);
+
+        Assert.Equal(noLower.LowerPortionLengthMm, withZero.LowerPortionLengthMm, 3);
+        Assert.Equal(400, withZero.LowerPortionLengthMm, 2);
     }
 
     private static double Deg2Rad(double deg) => deg * Math.PI / 180.0;
