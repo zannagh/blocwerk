@@ -52,6 +52,16 @@ public static partial class BlocwerkMetrics
     public static void RecordCommentAdded(Guid wallId) =>
         CommentsAdded.Add(1, WallTag(wallId));
 
+    /// <summary>
+    /// One stored beta clip. The byte count rides along because these blobs sit in the same
+    /// database as everything else and are the one thing here that can grow it quickly.
+    /// </summary>
+    public static void RecordBetaVideoUploaded(Guid wallId, long sizeBytes)
+    {
+        BetaVideosUploaded.Add(1, WallTag(wallId));
+        BetaVideoBytesUploaded.Add(sizeBytes, WallTag(wallId));
+    }
+
     public static void RecordSessionStarted(Guid wallId) =>
         SessionsStarted.Add(1, WallTag(wallId));
 

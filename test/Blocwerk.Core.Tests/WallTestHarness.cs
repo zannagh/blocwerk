@@ -45,6 +45,7 @@ public sealed class WallTestHarness : IDisposable
         FeedbackService = new BoulderFeedbackService(DbContextFactory, CurrentUser, NullLogger<BoulderFeedbackService>.Instance);
         SegmentService = new WallSegmentService(DbContextFactory, CurrentUser, NullLogger<WallSegmentService>.Instance);
         SessionService = new Blocwerk.Core.Services.SessionService(DbContextFactory, CurrentUser, NullLogger<Blocwerk.Core.Services.SessionService>.Instance);
+        BetaVideoService = new BetaVideoService(DbContextFactory, CurrentUser, ActivityLog, NullLogger<BetaVideoService>.Instance);
     }
 
     public User Owner { get; }
@@ -72,6 +73,8 @@ public sealed class WallTestHarness : IDisposable
     public IWallSegmentService SegmentService { get; }
 
     public ISessionService SessionService { get; }
+
+    public IBetaVideoService BetaVideoService { get; }
 
     /// <summary>
     /// Seeds a wall owned by <see cref="Owner"/> with a live photo and the given number

@@ -24,4 +24,5 @@ public enum ActivityType
     MemberRoleChanged = 31,
     AttemptLogged = 40,
     CommentAdded = 50,
+    BetaVideoUploaded = 60,
 }

@@ -261,6 +261,46 @@ public static class Program
             return photo == null ? Results.NotFound() : Results.File(photo, "image/jpeg");
         });
 
+        // Beta clips and their poster frames. Access mirrors the wall photo routes above: a share
+        // token takes the anonymous path, otherwise the caller must be signed in.
+        // enableRangeProcessing matters here — without it <video> cannot seek, and Safari refuses
+        // to play at all because it opens every media element with a Range request.
+        app.MapGet("/api/beta-videos/{videoId:guid}", async (
+            Guid videoId,
+            [FromQuery] string? token,
+            [FromServices] IBetaVideoService betaVideoService) =>
+        {
+            try
+            {
+                var video = await betaVideoService.GetVideoContentAsync(videoId, token);
+                return video == null
+                    ? Results.NotFound()
+                    : Results.File(video.Data, video.ContentType, enableRangeProcessing: true);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Results.Unauthorized();
+            }
+        });
+
+        app.MapGet("/api/beta-videos/{videoId:guid}/thumbnail", async (
+            Guid videoId,
+            [FromQuery] string? token,
+            [FromServices] IBetaVideoService betaVideoService) =>
+        {
+            try
+            {
+                var thumbnail = await betaVideoService.GetThumbnailAsync(videoId, token);
+                return thumbnail == null
+                    ? Results.NotFound()
+                    : Results.File(thumbnail.Data, thumbnail.ContentType);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Results.Unauthorized();
+            }
+        });
+
         app.Run();
     }
 

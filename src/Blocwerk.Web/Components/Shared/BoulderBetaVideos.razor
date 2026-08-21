@@ -1,0 +1,259 @@
+@* Injected as VideoService, not BetaVideoService: the latter would shadow the class name and
+   hide its MaxVideoBytes constant, which this component needs for the client-side size check. *@
+@inject IBetaVideoService VideoService
+@inject IJSRuntime JS
+
+@*
+    The "Beta Videos" strip on the boulder page: a horizontally scrolling row of poster frames with
+    the uploader's name under each, opening a full-screen player on tap. The first tile is the
+    upload button, so the empty state is already the call to action and needs no separate copy.
+
+    Uploads run on the circuit (not through the offline queue): a 48 MB clip has no business sitting
+    in IndexedDB waiting for a network, and the queue's replay is built around tiny idempotent
+    actions. Offline, the section simply cannot accept an upload — the rest of the page still works.
+*@
+
+<details class="beta-section" open="@StartExpanded">
+    <summary class="beta-summary">
+        <span class="beta-title">Beta Videos</span>
+        @if (_videos is { Count: > 0 })
+        {
+            <span class="beta-count">@_videos.Count</span>
+        }
+    </summary>
+
+    <div class="beta-body">
+        <div class="beta-strip">
+            @if (!IsAnonymous)
+            {
+                @* The input is nested rather than wired up with `for`: both together makes some
+                   browsers open the file picker twice. The id is still needed — beta-video.js
+                   looks the element up to read the selected file for the poster frame. *@
+                <label class="beta-tile beta-add @(_uploading ? "busy" : string.Empty)">
+                    <span class="beta-add-mark">@(_uploading ? "…" : "+")</span>
+                    <InputFile id="@_inputId" OnChange="OnVideoSelected" accept="video/*"
+                               disabled="@_uploading" class="beta-file-input" />
+                    <span class="beta-uploader">@(_uploading ? "Uploading…" : "Add beta")</span>
+                </label>
+            }
+
+            @foreach (var video in _videos ?? [])
+            {
+                <button type="button" class="beta-tile" @onclick="() => OpenVideo(video)"
+                        title="@($"Beta by {video.UploaderName}")">
+                    <span class="beta-thumb">
+                        @if (video.HasThumbnail)
+                        {
+                            <img src="@ThumbnailUrl(video)" alt="" loading="lazy" />
+                        }
+                        else
+                        {
+                            <span class="beta-thumb-fallback" aria-hidden="true"></span>
+                        }
+                        <span class="beta-play" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                                <path d="M8 5v14l11-7z" />
+                            </svg>
+                        </span>
+                    </span>
+                    <span class="beta-uploader">@video.UploaderName</span>
+                </button>
+            }
+
+            @if (_videos is { Count: 0 } && IsAnonymous)
+            {
+                <p class="empty-msg">No beta videos yet.</p>
+            }
+        </div>
+
+        @if (_error != null)
+        {
+            <div class="error-msg">@_error</div>
+        }
+    </div>
+</details>
+
+@if (_playing != null)
+{
+    <div class="beta-lightbox" @onclick="Close">
+        @* stopPropagation so a tap on the player itself does not count as "tap the backdrop to close" *@
+        <div class="beta-lightbox-inner" @onclick:stopPropagation="true">
+            <div class="beta-lightbox-bar">
+                <span class="beta-lightbox-title">Beta by @_playing.UploaderName</span>
+                @if (!IsAnonymous && _playing.UploadedByUserId == CurrentUserId)
+                {
+                    <button type="button" class="beta-lightbox-delete" @onclick="DeleteCurrentAsync">Delete</button>
+                }
+                <button type="button" class="beta-lightbox-close" @onclick="Close" aria-label="Close">&times;</button>
+            </div>
+            <video @ref="_playerRef" class="beta-player" src="@VideoUrl(_playing)" controls playsinline
+                   preload="metadata"></video>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid BoulderId { get; set; }
+
+    [Parameter] public Guid CurrentUserId { get; set; }
+
+    [Parameter] public bool IsAnonymous { get; set; }
+
+    /// <summary>The wall share token when this page is being viewed through a share link.</summary>
+    [Parameter] public string? ShareToken { get; set; }
+
+    /// <summary>Whether the section starts expanded. Collapsed by default: beta is a spoiler.</summary>
+    [Parameter] public bool StartExpanded { get; set; }
+
+    /// <summary>Raised after a successful upload so the page can refresh its activity feed.</summary>
+    [Parameter] public EventCallback Uploaded { get; set; }
+
+    private readonly string _inputId = $"bw-beta-file-{Guid.NewGuid():N}";
+
+    private List<BetaVideoInfo>? _videos;
+    private BetaVideoInfo? _playing;
+    private ElementReference _playerRef;
+    private bool _autoplayPending;
+    private bool _uploading;
+    private string? _error;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    /// <summary>Re-reads the list. Called by the boulder page after the offline queue flushed.</summary>
+    public Task ReloadAsync() => LoadAsync();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_autoplayPending)
+        {
+            return;
+        }
+
+        // Only once the <video> is actually in the DOM, i.e. the render after OpenVideo() ran.
+        _autoplayPending = false;
+        try
+        {
+            await JS.InvokeVoidAsync("blocwerkBetaVideo.play", _playerRef);
+        }
+        catch (JSException)
+        {
+            // The controls are right there; a refused autoplay is not worth a message.
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _videos = string.IsNullOrEmpty(ShareToken)
+                ? await VideoService.GetVideosAsync(BoulderId)
+                : await VideoService.GetVideosByShareTokenAsync(BoulderId, ShareToken);
+            _error = null;
+        }
+        catch (Exception ex)
+        {
+            // Same stance as the activity feed: a section that cannot load must not take the
+            // ascent buttons above it down with it.
+            _error = $"Beta videos could not be loaded: {ex.Message}";
+            _videos ??= [];
+        }
+    }
+
+    private async Task OnVideoSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        _error = null;
+
+        if (file.Size > BetaVideoService.MaxVideoBytes)
+        {
+            _error = $"That clip is too large (max {BetaVideoService.MaxVideoBytes / (1024 * 1024)} MB).";
+            return;
+        }
+
+        _uploading = true;
+
+        // An event handler only re-renders once it returns, and reading a phone clip off the
+        // circuit takes seconds — without this the "+" tile never shows that anything is happening.
+        StateHasChanged();
+
+        try
+        {
+            // Grab the poster frame first, while the file is still the one selected in the input —
+            // the JS side reads it straight off the element rather than being handed the bytes back.
+            var thumbnail = await CaptureThumbnailAsync();
+
+            await using var stream = file.OpenReadStream(BetaVideoService.MaxVideoBytes);
+            using var buffer = new MemoryStream();
+            await stream.CopyToAsync(buffer);
+
+            var contentType = string.IsNullOrWhiteSpace(file.ContentType) ? "video/mp4" : file.ContentType;
+            await VideoService.AddVideoAsync(BoulderId, buffer.ToArray(), contentType, thumbnail, file.Name);
+            await LoadAsync();
+            await Uploaded.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Upload failed: {ex.Message}";
+        }
+        finally
+        {
+            _uploading = false;
+        }
+    }
+
+    private async Task<byte[]?> CaptureThumbnailAsync()
+    {
+        try
+        {
+            var base64 = await JS.InvokeAsync<string?>("blocwerkBetaVideo.captureThumbnail", _inputId, 480);
+            return string.IsNullOrEmpty(base64) ? null : Convert.FromBase64String(base64);
+        }
+        catch (Exception)
+        {
+            // No thumbnail is a cosmetic loss; never let it fail the upload.
+            return null;
+        }
+    }
+
+    private void OpenVideo(BetaVideoInfo video)
+    {
+        _playing = video;
+        _autoplayPending = true;
+    }
+
+    private void Close()
+    {
+        _playing = null;
+        _autoplayPending = false;
+    }
+
+    private async Task DeleteCurrentAsync()
+    {
+        if (_playing is not { } video)
+        {
+            return;
+        }
+
+        try
+        {
+            await VideoService.DeleteVideoAsync(video.Id);
+            _videos?.RemoveAll(v => v.Id == video.Id);
+            Close();
+            _error = null;
+        }
+        catch (Exception ex)
+        {
+            _error = $"That beta video could not be deleted: {ex.Message}";
+        }
+    }
+
+    private string VideoUrl(BetaVideoInfo video) => WithToken($"/api/beta-videos/{video.Id}");
+
+    private string ThumbnailUrl(BetaVideoInfo video) => WithToken($"/api/beta-videos/{video.Id}/thumbnail");
+
+    private string WithToken(string url) =>
+        string.IsNullOrEmpty(ShareToken) ? url : $"{url}?token={Uri.EscapeDataString(ShareToken)}";
+}
