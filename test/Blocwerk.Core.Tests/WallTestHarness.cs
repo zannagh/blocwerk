@@ -1,4 +1,5 @@
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
@@ -18,11 +19,14 @@ namespace Blocwerk.Core.Tests;
 public sealed class WallTestHarness : IDisposable
 {
     private readonly SqliteConnection connection;
+    private readonly string betaVideoDir;
 
     public WallTestHarness()
     {
         connection = new SqliteConnection("DataSource=:memory:");
         connection.Open();
+
+        betaVideoDir = Path.Combine(Path.GetTempPath(), "blocwerk-beta-tests", Guid.NewGuid().ToString("N"));
 
         Owner = new User { Identifier = "owner@test", DisplayName = "Owner" };
         DbContextFactory = new TestDbContextFactory(connection);
@@ -45,7 +49,10 @@ public sealed class WallTestHarness : IDisposable
         FeedbackService = new BoulderFeedbackService(DbContextFactory, CurrentUser, NullLogger<BoulderFeedbackService>.Instance);
         SegmentService = new WallSegmentService(DbContextFactory, CurrentUser, NullLogger<WallSegmentService>.Instance);
         SessionService = new Blocwerk.Core.Services.SessionService(DbContextFactory, CurrentUser, NullLogger<Blocwerk.Core.Services.SessionService>.Instance);
-        BetaVideoService = new BetaVideoService(DbContextFactory, CurrentUser, ActivityLog, NullLogger<BetaVideoService>.Instance);
+        var betaSettings = new BlocwerkSettings();
+        betaSettings.BetaVideo.StoragePath = betaVideoDir;
+        var betaStorage = new FileSystemBetaVideoStorage(betaSettings);
+        BetaVideoService = new BetaVideoService(DbContextFactory, CurrentUser, ActivityLog, betaStorage, NullLogger<BetaVideoService>.Instance);
     }
 
     public User Owner { get; }
@@ -128,6 +135,10 @@ public sealed class WallTestHarness : IDisposable
     public void Dispose()
     {
         connection.Dispose();
+        if (Directory.Exists(betaVideoDir))
+        {
+            Directory.Delete(betaVideoDir, recursive: true);
+        }
     }
 }
 

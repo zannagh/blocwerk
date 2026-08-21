@@ -9,6 +9,7 @@ using Blocwerk.Core.Telemetry;
 using Blocwerk.HoldDetection;
 using Blocwerk.Web.Components;
 using Blocwerk.Web.Controllers;
+using Blocwerk.Web.Endpoints;
 using Blocwerk.Web.State;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Components.Server.Circuits;
@@ -272,16 +273,25 @@ public static class Program
         {
             try
             {
-                var video = await betaVideoService.GetVideoContentAsync(videoId, token);
-                return video == null
-                    ? Results.NotFound()
-                    : Results.File(video.Data, video.ContentType, enableRangeProcessing: true);
+                var video = await betaVideoService.GetVideoFileAsync(videoId, token);
+                if (video is null)
+                {
+                    return Results.NotFound();
+                }
+
+                // Stream disk-backed clips straight from the file (never load them whole into memory);
+                // fall back to the legacy in-database bytes. Range processing lets <video> seek.
+                return video.PhysicalPath is not null
+                    ? Results.File(video.PhysicalPath, video.ContentType, enableRangeProcessing: true)
+                    : Results.File(video.Bytes!, video.ContentType, enableRangeProcessing: true);
             }
             catch (UnauthorizedAccessException)
             {
                 return Results.Unauthorized();
             }
         });
+
+        app.MapBetaVideoUpload();
 
         app.MapGet("/api/beta-videos/{videoId:guid}/thumbnail", async (
             Guid videoId,

@@ -32,6 +32,54 @@ window.blocwerkBetaVideo = {
         }
     },
 
+    /**
+     * Streams the selected clip to the upload endpoint via XHR (so large files never travel over
+     * the SignalR circuit), attaching a poster frame. Reports progress back to .NET and resolves
+     * to { ok, error }. Once the bytes are sent the request stays open while the server transcodes,
+     * which is surfaced as the "processing" phase.
+     */
+    async upload(inputId, url, dotNetRef, maxEdge) {
+        const input = document.getElementById(inputId);
+        const file = input && input.files && input.files[0];
+        if (!file) {
+            return { ok: false, error: 'No file selected.' };
+        }
+
+        const form = new FormData();
+        form.append('file', file, file.name);
+        form.append('fileName', file.name);
+
+        try {
+            const objUrl = URL.createObjectURL(file);
+            const thumb = await grabFrame(objUrl, maxEdge || 480);
+            URL.revokeObjectURL(objUrl);
+            if (thumb) {
+                form.append('thumbnail', base64ToBlob(thumb, 'image/jpeg'), 'thumb.jpg');
+            }
+        } catch (e) {
+            // A missing poster frame never blocks the upload.
+        }
+
+        return await new Promise((resolve) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', url, true);
+
+            xhr.upload.onprogress = (e) => {
+                if (e.lengthComputable && dotNetRef) {
+                    const pct = Math.round((e.loaded / e.total) * 100);
+                    dotNetRef.invokeMethodAsync('OnUploadProgress', pct, pct >= 100 ? 'processing' : 'uploading');
+                }
+            };
+
+            xhr.onload = () => {
+                const ok = xhr.status >= 200 && xhr.status < 300;
+                resolve({ ok, error: ok ? null : (xhr.responseText || ('Upload failed (HTTP ' + xhr.status + ').')) });
+            };
+            xhr.onerror = () => resolve({ ok: false, error: 'Network error during upload.' });
+            xhr.send(form);
+        });
+    },
+
     /** Plays a clip from the start. Called when the lightbox opens so a tap goes straight to video. */
     play(element) {
         if (!element) {
@@ -51,6 +99,15 @@ window.blocwerkBetaVideo = {
         }
     }
 };
+
+function base64ToBlob(base64, contentType) {
+    const bytes = atob(base64);
+    const buffer = new Uint8Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) {
+        buffer[i] = bytes.charCodeAt(i);
+    }
+    return new Blob([buffer], { type: contentType });
+}
 
 function grabFrame(url, maxEdge) {
     return new Promise((resolve, reject) => {

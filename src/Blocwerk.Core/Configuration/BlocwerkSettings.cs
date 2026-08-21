@@ -28,6 +28,8 @@ public class BlocwerkSettings
 
     public HoldDetectionSettings HoldDetection { get; private set; } = new();
 
+    public BetaVideoSettings BetaVideo { get; private set; } = new();
+
     public List<string> AdminIdentifiers { get; private set; } = [];
 
     /// <summary>
@@ -108,6 +110,18 @@ public class BlocwerkSettings
                         ?? "models/climbingcrux.onnx",
         };
 
+        BetaVideo = new BetaVideoSettings
+        {
+            StoragePath = section["BetaVideo:StoragePath"]
+                          ?? Environment.GetEnvironmentVariable("BETAVIDEO__STORAGEPATH")
+                          ?? "beta-videos",
+            StoreAsIsMaxBytes = ParseBytes(section["BetaVideo:StoreAsIsMaxBytes"], "BETAVIDEO__STOREASISMAXBYTES", 800L * 1024 * 1024),
+            TargetBytes = ParseBytes(section["BetaVideo:TargetBytes"], "BETAVIDEO__TARGETBYTES", 500L * 1024 * 1024),
+            MaxUploadBytes = ParseBytes(section["BetaVideo:MaxUploadBytes"], "BETAVIDEO__MAXUPLOADBYTES", 4L * 1024 * 1024 * 1024),
+            FfmpegPath = section["BetaVideo:FfmpegPath"] ?? Environment.GetEnvironmentVariable("BETAVIDEO__FFMPEGPATH") ?? "ffmpeg",
+            FfprobePath = section["BetaVideo:FfprobePath"] ?? Environment.GetEnvironmentVariable("BETAVIDEO__FFPROBEPATH") ?? "ffprobe",
+        };
+
         GitHubOAuth = BindOAuthProvider(section, "GitHub", "https://github.com/login/oauth/authorize");
         GoogleOAuth = BindOAuthProvider(section, "Google", "https://accounts.google.com/o/oauth2/v2/auth");
         MicrosoftOAuth = BindOAuthProvider(section, "Microsoft", "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize");
@@ -147,6 +161,11 @@ public class BlocwerkSettings
         RandomNumberGenerator.Fill(bytes);
         return Convert.ToHexStringLower(bytes);
     }
+
+    private static long ParseBytes(string? sectionValue, string envName, long fallback) =>
+        long.TryParse(sectionValue ?? Environment.GetEnvironmentVariable(envName), out var value) && value > 0
+            ? value
+            : fallback;
 }
 
 public class OAuthProviderSettings
@@ -188,4 +207,24 @@ public class PostgresSettings
 public class HoldDetectionSettings
 {
     public string ModelPath { get; set; } = "models/climbingcrux.onnx";
+}
+
+/// <summary>
+/// Beta clip storage. Clips are stored on disk (not the database) so large uploads are possible.
+/// Anything up to <see cref="StoreAsIsMaxBytes"/> is stored verbatim; larger clips are re-encoded
+/// with ffmpeg down toward <see cref="TargetBytes"/>. <see cref="MaxUploadBytes"/> is a hard ceiling.
+/// </summary>
+public class BetaVideoSettings
+{
+    public string StoragePath { get; set; } = "beta-videos";
+
+    public long StoreAsIsMaxBytes { get; set; } = 800L * 1024 * 1024;
+
+    public long TargetBytes { get; set; } = 500L * 1024 * 1024;
+
+    public long MaxUploadBytes { get; set; } = 4L * 1024 * 1024 * 1024;
+
+    public string FfmpegPath { get; set; } = "ffmpeg";
+
+    public string FfprobePath { get; set; } = "ffprobe";
 }
