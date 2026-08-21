@@ -11,4 +11,10 @@
     <ProjectReference Include="..\..\src\Blocwerk.Core\Blocwerk.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The cutting-plan PDF tests render with SkiaSharp; the base package ships native
+         assets for Windows/macOS but not Linux, so the CI (Linux) test run needs this. -->
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" />
+  </ItemGroup>
+
 </Project>
