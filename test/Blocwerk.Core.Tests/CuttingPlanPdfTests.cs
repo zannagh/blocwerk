@@ -95,7 +95,7 @@ public class CuttingPlanPdfTests
         canvas.Clear(SKColors.White);
         var sheet = new PdfSheet(canvas);
 
-        var rad = (wallAngle - 90.0) * Math.PI / 180.0;
+        var rad = (wallAngle - 180.0) * Math.PI / 180.0;
         double cos = Math.Cos(rad), sin = Math.Sin(rad);
         Point2D Rot(Point2D p) => new((p.X * cos) - (p.Y * sin), (p.X * sin) + (p.Y * cos));
 

@@ -281,8 +281,9 @@
         var cross = _result.CrossSection;
         if (cross.Length < 3) return;
 
-        // Rotate the whole picture 90° left so the wall reads as an overhang.
-        var wallRad = (_wallAngle - 90.0) * Math.PI / 180.0;
+        // Rotate the whole picture so the wall rises from bottom-left to top-right and reads as an
+        // overhang (the wedge hangs on its underside), not a slab.
+        var wallRad = (_wallAngle - 180.0) * Math.PI / 180.0;
         var cos = Math.Cos(wallRad);
         var sin = Math.Sin(wallRad);
         Point2D Rot(Point2D p) => new(p.X * cos - p.Y * sin, p.X * sin + p.Y * cos);
