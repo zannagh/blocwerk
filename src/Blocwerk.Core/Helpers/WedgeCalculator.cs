@@ -4,19 +4,23 @@ namespace Blocwerk.Core.Helpers;
 
 /// <summary>
 /// Computes an "angle change wedge" — a triangular prism that sits on a wall at
-/// <c>wallAngle</c> and presents a climbing face at a steeper <c>targetAngle</c>.
+/// <c>wallAngle</c> and presents a climbing face at a different <c>targetAngle</c>.
 ///
-/// All angles are measured from horizontal, so 90° == vertical and a larger
-/// angle == steeper. The cross-section is a single triangle: the face meets the
-/// wall along one edge, runs out to the furthest corner, and a return (the
-/// "lower portion") folds back to the wall. The return's length is implicit —
-/// the face length and the two angles fix it — so at a 0° (horizontal) return
-/// the piece comes out exactly face-sized.
+/// All three angles (wall, face/target and the lower portion) are absolute, measured
+/// from horizontal: 0° == horizontal, 90° == vertical, larger == steeper/more
+/// overhung. The cross-section is a single triangle whose base sits on the wall; the
+/// face runs from one wall attachment out to the tip, and the lower portion returns
+/// from the tip back to the wall.
 ///
-/// Angles reported on the cut edges are the FOLD (included) angle between the
-/// two adjoining panels. A 45° wall stepped up to a 90° (vertical) face folds
-/// the face onto the wall by |90 - 45| = 45°; a 30° lower portion then folds the
-/// face's far edge by |90 - 30| = 60° and folds onto the wall by |45 - 30| = 15°.
+/// For the triangle to close (the lower portion actually returns to the wall) the
+/// face and the lower portion must sit on OPPOSITE sides of the wall angle — one
+/// steeper than the wall, the other shallower. If both are steeper (or both
+/// shallower) the panels diverge and never meet the wall again, which is rejected.
+///
+/// Fold angles reported on the cut edges are the included angle between the two
+/// adjoining panels, i.e. the absolute difference of the two surface angles: the
+/// face folds onto the wall by |target − wall|, onto the lower portion (at the tip)
+/// by |target − lower|, and the lower portion folds onto the wall by |lower − wall|.
 /// </summary>
 public static class WedgeCalculator
 {
@@ -38,62 +42,66 @@ public static class WedgeCalculator
             throw new ArgumentOutOfRangeException(nameof(wallAngleDeg), "Wall angle must be between 0° and 180°.");
         }
 
-        if (targetAngleDeg <= 0)
+        if (targetAngleDeg <= 0 || targetAngleDeg >= 180)
         {
-            throw new ArgumentException("Target angle must be greater than 0°.");
+            throw new ArgumentOutOfRangeException(nameof(targetAngleDeg), "Resulting face angle must be between 0° and 180°.");
         }
 
-        if (targetAngleDeg <= wallAngleDeg)
+        if (Math.Abs(targetAngleDeg - wallAngleDeg) < 1e-6)
         {
-            throw new ArgumentException("Target angle must be steeper than the wall angle.");
-        }
-
-        if (targetAngleDeg >= 180)
-        {
-            throw new ArgumentOutOfRangeException(nameof(targetAngleDeg), "Target angle must be below 180°.");
+            throw new ArgumentException("Resulting face angle must differ from the wall angle.");
         }
 
         var hasLower = lowerPortionAngleDeg.HasValue;
-        var p = lowerPortionAngleDeg ?? 0.0;
+        var lower = lowerPortionAngleDeg ?? 0.0;
 
-        if (hasLower && p <= 0)
+        if (lower < 0 || lower >= 180)
         {
-            throw new ArgumentException("Lower portion angle must be greater than 0°.");
+            throw new ArgumentException("Lower portion angle must be between 0° and 180°.");
         }
 
-        if (p >= wallAngleDeg)
+        if (Math.Abs(lower - wallAngleDeg) < 1e-6)
         {
-            throw new ArgumentException("Lower portion angle must be shallower than the wall angle so it can fold back to the wall.");
+            throw new ArgumentException("Lower portion angle must differ from the wall angle so it can fold back to it.");
         }
 
         var w = wallAngleDeg;
         var tgt = targetAngleDeg;
         var fh = faceHeight;
 
-        // Interior angles of the cross-section triangle, in the wall's own frame
-        // (wall along the x-axis, the volume above it):
-        //   alpha = face rise above the wall      (T - W)
-        //   beta  = return rise above the wall     (W - P)
-        var alpha = Deg2Rad(tgt - w);
-        var beta = Deg2Rad(w - p);
+        // Face and lower portion, measured relative to the wall (positive == steeper
+        // than the wall, negative == shallower). They must straddle the wall for the
+        // triangle to close.
+        var phiFace = Deg2Rad(tgt - w);
+        var phiLower = Deg2Rad(lower - w);
 
-        // Triangle vertices in the wall frame. q & r sit on the wall; f is the
-        // furthest corner. The return length falls straight out of the geometry.
-        var q = new Point2D(0, 0);
-        var f = new Point2D(fh * Math.Cos(alpha), fh * Math.Sin(alpha));
-        var r = new Point2D(f.X + f.Y / Math.Tan(beta), 0);
+        if (Math.Sign(tgt - w) == Math.Sign(lower - w))
+        {
+            throw new ArgumentException(
+                "The resulting face and the lower portion must be on opposite sides of the wall angle " +
+                "(one steeper, one shallower); otherwise the lower portion never returns to the wall.");
+        }
 
-        var lowerLength = fh * Math.Sin(alpha) / Math.Sin(beta);
-        var wallFootprint = r.X;
-        var depth = f.Y;
+        // Cross-section in the wall's own frame: the wall is the x-axis, +y points
+        // out into the room. The tip sits at perpendicular distance `depth` from the
+        // wall; the face and lower panels drop from the tip to the wall (y = 0).
+        var depth = fh * Math.Abs(Math.Sin(phiFace));
+        var sgn = Math.Sin(phiFace) >= 0 ? 1.0 : -1.0;
 
-        var faceToWall = tgt - w;   // fold at q: face onto wall
-        var faceToLower = tgt - p;  // fold at f: face onto the return
-        var lowerToWall = w - p;    // fold at r: return onto wall
+        var a = new Point2D(0, 0);                                                // face meets wall
+        var b = new Point2D(sgn * fh * Math.Cos(phiFace), depth);                 // tip
+        var c = new Point2D(b.X - depth / Math.Tan(phiLower), 0);                 // lower meets wall
 
-        var cross = new[] { q, f, r };
+        var lowerLength = depth / Math.Abs(Math.Sin(phiLower));
+        var wallFootprint = Math.Abs(c.X - a.X);
+
+        var faceToWall = Math.Abs(tgt - w);    // fold at a: face onto wall
+        var faceToLower = Math.Abs(tgt - lower); // fold at b: face onto the return
+        var lowerToWall = Math.Abs(lower - w);  // fold at c: return onto wall
+
+        var cross = new[] { a, b, c };
         var labels = new[] { "Face", hasLower ? "Lower" : "Base", "Wall" };
-        var edgeLengths = new[] { Dist(q, f), Dist(f, r), Dist(r, q) };
+        var edgeLengths = new[] { Dist(a, b), Dist(b, c), Dist(c, a) };
         var edgeAngles = new[] { faceToWall, faceToLower, lowerToWall };
 
         var pieces = new List<WedgePiece>
@@ -110,7 +118,7 @@ public static class WedgeCalculator
             edgeLengths,
             edgeAngles,
             tgt - w,
-            hasLower ? p : null,
+            hasLower ? lower : null,
             lowerLength,
             hasLower ? faceToLower : null,
             hasLower ? lowerToWall : null,

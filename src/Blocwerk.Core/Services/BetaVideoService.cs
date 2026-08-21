@@ -11,8 +11,20 @@ namespace Blocwerk.Core.Services;
 public interface IBetaVideoService
 {
     /// <summary>
-    /// Stores a clip for a boulder. <paramref name="thumbnail"/> is the poster frame the browser
-    /// grabbed; pass null when it could not produce one.
+    /// Records a clip that has already been written to the beta-video store. The upload endpoint
+    /// streams and (if needed) transcodes the file, then calls this to create the row.
+    /// </summary>
+    Task<BetaVideoInfo> AddVideoFromFileAsync(
+        Guid boulderId,
+        string storedName,
+        long sizeBytes,
+        string contentType,
+        byte[]? thumbnail,
+        string? fileName);
+
+    /// <summary>
+    /// Convenience path for in-memory bytes (tests, tiny clips): writes them to the store and
+    /// records the row. <paramref name="thumbnail"/> is the poster frame, or null.
     /// </summary>
     Task<BetaVideoInfo> AddVideoAsync(
         Guid boulderId,
@@ -21,57 +33,57 @@ public interface IBetaVideoService
         byte[]? thumbnail,
         string? fileName);
 
-    /// <summary>Newest first. Metadata only — the clips stay in the database.</summary>
+    /// <summary>Newest first. Metadata only — never the clip bytes.</summary>
     Task<List<BetaVideoInfo>> GetVideosAsync(Guid boulderId);
 
     /// <summary>The same list for an anonymous share-link viewer.</summary>
     Task<List<BetaVideoInfo>> GetVideosByShareTokenAsync(Guid boulderId, string shareToken);
 
     /// <summary>
-    /// The clip bytes. <paramref name="shareToken"/> takes the anonymous path when set; without it
-    /// the caller must be signed in.
+    /// How to serve the clip (a disk path to stream, or legacy bytes). <paramref name="shareToken"/>
+    /// takes the anonymous path when set; without it the caller must be signed in.
     /// </summary>
+    Task<BetaVideoFile?> GetVideoFileAsync(Guid videoId, string? shareToken = null);
+
+    /// <summary>The clip bytes (reads a disk-backed clip fully into memory — for small clips/tests only).</summary>
     Task<BetaVideoContent?> GetVideoContentAsync(Guid videoId, string? shareToken = null);
 
     /// <summary>The poster frame, or null when this clip has none.</summary>
     Task<BetaVideoContent?> GetThumbnailAsync(Guid videoId, string? shareToken = null);
 
-    /// <summary>Deletes a clip. Only its uploader may.</summary>
+    /// <summary>Deletes a clip (row and stored file). Only its uploader may.</summary>
     Task DeleteVideoAsync(Guid videoId);
 }
 
 public class BetaVideoService : IBetaVideoService
 {
-    /// <summary>
-    /// Upload cap. The clip travels over the SignalR circuit, whose MaximumReceiveMessageSize is
-    /// 64 MB (see Program.cs) — staying well under that leaves room for the poster frame and the
-    /// message framing, and keeps a single bytea row a sane size.
-    /// </summary>
-    public const long MaxVideoBytes = 48L * 1024 * 1024;
-
     /// <summary>The browser-produced poster frame is a small JPEG; anything larger is not one.</summary>
     private const int MaxThumbnailBytes = 512 * 1024;
 
     private readonly IDbContextFactory<BlocwerkDbContext> dbContextFactory;
     private readonly ICurrentUserService currentUserService;
     private readonly IActivityLogService activityLogService;
+    private readonly IBetaVideoStorage storage;
     private readonly ILogger<BetaVideoService> logger;
 
     public BetaVideoService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         ICurrentUserService currentUserService,
         IActivityLogService activityLogService,
+        IBetaVideoStorage storage,
         ILogger<BetaVideoService> logger)
     {
         this.dbContextFactory = dbContextFactory;
         this.currentUserService = currentUserService;
         this.activityLogService = activityLogService;
+        this.storage = storage;
         this.logger = logger;
     }
 
-    public async Task<BetaVideoInfo> AddVideoAsync(
+    public async Task<BetaVideoInfo> AddVideoFromFileAsync(
         Guid boulderId,
-        byte[] data,
+        string storedName,
+        long sizeBytes,
         string contentType,
         byte[]? thumbnail,
         string? fileName)
@@ -79,14 +91,9 @@ public class BetaVideoService : IBetaVideoService
         using var op = BlocwerkMetrics.TimeOperation("BetaVideo.Add");
         try
         {
-            if (data.Length == 0)
+            if (sizeBytes <= 0)
             {
                 throw new InvalidOperationException("The video file is empty.");
-            }
-
-            if (data.Length > MaxVideoBytes)
-            {
-                throw new InvalidOperationException($"Video too large (max {MaxVideoBytes / (1024 * 1024)} MB).");
             }
 
             if (string.IsNullOrWhiteSpace(contentType)
@@ -119,19 +126,19 @@ public class BetaVideoService : IBetaVideoService
                 UploadedByUserId = user.Id,
                 ContentType = contentType,
                 FileName = Truncate(fileName, 256),
-                SizeBytes = data.Length,
-                Data = data,
+                SizeBytes = sizeBytes,
+                StoragePath = storedName,
                 Thumbnail = thumbnail,
             };
 
             db.BetaVideos.Add(video);
             await db.SaveChangesAsync();
 
-            BlocwerkMetrics.RecordBetaVideoUploaded(boulder.WallId, data.Length);
+            BlocwerkMetrics.RecordBetaVideoUploaded(boulder.WallId, sizeBytes);
 
             logger.LogInformation(
                 "Beta video {VideoId} ({Bytes} bytes) added on boulder {BoulderId} by {UserId}",
-                video.Id, data.Length, boulderId, user.Id);
+                video.Id, sizeBytes, boulderId, user.Id);
 
             await activityLogService.LogAsync(boulder.WallId, boulderId, ActivityType.BetaVideoUploaded);
 
@@ -148,6 +155,47 @@ public class BetaVideoService : IBetaVideoService
         catch (Exception ex)
         {
             op.Fail(ex);
+            throw;
+        }
+    }
+
+    public async Task<BetaVideoInfo> AddVideoAsync(
+        Guid boulderId,
+        byte[] data,
+        string contentType,
+        byte[]? thumbnail,
+        string? fileName)
+    {
+        if (data.Length == 0)
+        {
+            throw new InvalidOperationException("The video file is empty.");
+        }
+
+        var extension = Path.GetExtension(fileName ?? string.Empty);
+        var temp = storage.CreateTempPath(extension);
+        string storedName;
+        try
+        {
+            await File.WriteAllBytesAsync(temp, data);
+            storedName = storage.Commit(temp, extension);
+        }
+        catch
+        {
+            if (File.Exists(temp))
+            {
+                File.Delete(temp);
+            }
+
+            throw;
+        }
+
+        try
+        {
+            return await AddVideoFromFileAsync(boulderId, storedName, data.Length, contentType, thumbnail, fileName);
+        }
+        catch
+        {
+            storage.Delete(storedName);
             throw;
         }
     }
@@ -189,8 +237,57 @@ public class BetaVideoService : IBetaVideoService
         }
     }
 
-    public Task<BetaVideoContent?> GetVideoContentAsync(Guid videoId, string? shareToken = null) =>
-        LoadContentAsync(videoId, shareToken, thumbnail: false);
+    public async Task<BetaVideoFile?> GetVideoFileAsync(Guid videoId, string? shareToken = null)
+    {
+        using var op = BlocwerkMetrics.TimeOperation("BetaVideo.GetContent");
+        try
+        {
+            await using var db = await OpenReadableAsync(shareToken);
+            var meta = await AccessibleVideos(db, videoId, shareToken)
+                .Select(v => new { v.StoragePath, v.ContentType, v.FileName, HasData = v.Data != null })
+                .FirstOrDefaultAsync();
+
+            if (meta is null)
+            {
+                return null;
+            }
+
+            if (!string.IsNullOrEmpty(meta.StoragePath))
+            {
+                var path = storage.ResolvePhysicalPath(meta.StoragePath);
+                return path is not null && File.Exists(path)
+                    ? new BetaVideoFile(path, null, meta.ContentType, meta.FileName)
+                    : null;
+            }
+
+            if (!meta.HasData)
+            {
+                return null;
+            }
+
+            var bytes = await AccessibleVideos(db, videoId, shareToken).Select(v => v.Data).FirstOrDefaultAsync();
+            return bytes is { Length: > 0 }
+                ? new BetaVideoFile(null, bytes, meta.ContentType, meta.FileName)
+                : null;
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
+    }
+
+    public async Task<BetaVideoContent?> GetVideoContentAsync(Guid videoId, string? shareToken = null)
+    {
+        var file = await GetVideoFileAsync(videoId, shareToken);
+        if (file is null)
+        {
+            return null;
+        }
+
+        var bytes = file.Bytes ?? await File.ReadAllBytesAsync(file.PhysicalPath!);
+        return new BetaVideoContent(bytes, file.ContentType);
+    }
 
     public Task<BetaVideoContent?> GetThumbnailAsync(Guid videoId, string? shareToken = null) =>
         LoadContentAsync(videoId, shareToken, thumbnail: true);
@@ -204,6 +301,13 @@ public class BetaVideoService : IBetaVideoService
             await using var db = await dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
+            // Grab just the stored file name (not the blob) before deleting the row, so the file
+            // on disk can be removed too.
+            var storedName = await db.BetaVideos
+                .Where(v => v.Id == videoId && v.UploadedByUserId == user.Id)
+                .Select(v => v.StoragePath)
+                .FirstOrDefaultAsync();
+
             // ExecuteDelete rather than load-then-Remove: loading the entity would pull the whole
             // clip into memory just to throw it away.
             var deleted = await db.BetaVideos
@@ -216,6 +320,7 @@ public class BetaVideoService : IBetaVideoService
                 throw new InvalidOperationException("Beta video not found");
             }
 
+            storage.Delete(storedName);
             logger.LogInformation("Beta video {VideoId} deleted by {UserId}", videoId, user.Id);
         }
         catch (Exception ex)
@@ -252,26 +357,10 @@ public class BetaVideoService : IBetaVideoService
         using var op = BlocwerkMetrics.TimeOperation(thumbnail ? "BetaVideo.GetThumbnail" : "BetaVideo.GetContent");
         try
         {
-            if (string.IsNullOrEmpty(shareToken))
-            {
-                await currentUserService.GetCurrentUserAsync();
-            }
-
-            await using var db = await dbContextFactory.CreateDbContextAsync();
-            db.CurrentUserId = Guid.Empty;
-
-            var query = db.BetaVideos.AsNoTracking().Where(v => v.Id == videoId);
-            if (!string.IsNullOrEmpty(shareToken))
-            {
-                query = query.Where(v => v.Boulder.Wall.ShareToken == shareToken && !v.Boulder.IsDraft);
-            }
-
-            var row = thumbnail
-                ? await query.Select(v => new { Data = v.Thumbnail, ContentType = "image/jpeg" }).FirstOrDefaultAsync()
-                : await query.Select(v => new { Data = (byte[]?)v.Data, v.ContentType }).FirstOrDefaultAsync();
-
-            return row?.Data is { Length: > 0 } bytes
-                ? new BetaVideoContent(bytes, row.ContentType)
+            await using var db = await OpenReadableAsync(shareToken);
+            var bytes = await AccessibleVideos(db, videoId, shareToken).Select(v => v.Thumbnail).FirstOrDefaultAsync();
+            return bytes is { Length: > 0 }
+                ? new BetaVideoContent(bytes, "image/jpeg")
                 : null;
         }
         catch (Exception ex)
@@ -279,6 +368,30 @@ public class BetaVideoService : IBetaVideoService
             op.Fail(ex);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Access mirrors the wall photo endpoints: a share token must match the boulder's wall, and
+    /// without one the caller has to be signed in.
+    /// </summary>
+    private async Task<BlocwerkDbContext> OpenReadableAsync(string? shareToken)
+    {
+        if (string.IsNullOrEmpty(shareToken))
+        {
+            await currentUserService.GetCurrentUserAsync();
+        }
+
+        var db = await dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = Guid.Empty;
+        return db;
+    }
+
+    private static IQueryable<BetaVideo> AccessibleVideos(BlocwerkDbContext db, Guid videoId, string? shareToken)
+    {
+        var query = db.BetaVideos.AsNoTracking().Where(v => v.Id == videoId);
+        return string.IsNullOrEmpty(shareToken)
+            ? query
+            : query.Where(v => v.Boulder.Wall.ShareToken == shareToken && !v.Boulder.IsDraft);
     }
 
     private static string? Truncate(string? value, int max) =>

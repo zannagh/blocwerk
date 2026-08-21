@@ -5,6 +5,7 @@ public enum VolumeMode
     PyramidByDimensions,
     PyramidByAngle,
     Diamond,
+    Roof,
 }
 
 public record Point2D(double X, double Y);
@@ -26,4 +27,5 @@ public record VolumeResult(
     double Apothem,
     Point3D[] BaseVertices,
     Point3D Apex,
-    Point3D? BottomApex);
+    Point3D? BottomApex,
+    Point3D[]? RidgeVertices = null);

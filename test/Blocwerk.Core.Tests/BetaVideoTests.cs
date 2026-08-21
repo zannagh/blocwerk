@@ -38,6 +38,14 @@ public class BetaVideoTests
         Assert.Equal(Clip, content.Data);
         Assert.Equal("video/mp4", content.ContentType);
 
+        // New clips live on disk, not in a bytea column.
+        await using (var db = h.CreateContext())
+        {
+            var row = await db.BetaVideos.AsNoTracking().FirstAsync(v => v.Id == first.Id);
+            Assert.NotNull(row.StoragePath);
+            Assert.Null(row.Data);
+        }
+
         var thumbnail = await h.BetaVideoService.GetThumbnailAsync(first.Id);
         Assert.NotNull(thumbnail);
         Assert.Equal(Poster, thumbnail.Data);
@@ -50,20 +58,17 @@ public class BetaVideoTests
     }
 
     [Fact]
-    public async Task AddVideo_Rejects_EmptyOversizedAndNonVideoUploads()
+    public async Task AddVideo_Rejects_EmptyAndNonVideoUploads()
     {
         using var h = new WallTestHarness();
         var boulder = await SeedBoulderAsync(h);
 
+        // The size cap is gone — only empty and non-video uploads are rejected now.
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => h.BetaVideoService.AddVideoAsync(boulder.Id, [], "video/mp4", null, "empty.mp4"));
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => h.BetaVideoService.AddVideoAsync(boulder.Id, Clip, "image/jpeg", null, "photo.jpg"));
-
-        var oversized = new byte[BetaVideoService.MaxVideoBytes + 1];
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            () => h.BetaVideoService.AddVideoAsync(boulder.Id, oversized, "video/mp4", null, "huge.mp4"));
 
         Assert.Empty(await h.BetaVideoService.GetVideosAsync(boulder.Id));
     }

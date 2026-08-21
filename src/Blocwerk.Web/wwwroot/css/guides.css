@@ -85,6 +85,17 @@
 
 .piece-list { margin-bottom: 24px; }
 .piece-list h2 { font-size: 1.1rem; font-weight: 600; color: var(--text-heading); margin-bottom: 10px; }
+.piece-list-header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; margin-bottom: 10px; flex-wrap: wrap;
+}
+.piece-list-header h2 { margin-bottom: 0; }
+.btn-pdf {
+    padding: 7px 14px; border: 1px solid var(--accent); border-radius: 8px;
+    background: transparent; color: var(--accent); font-size: 0.82rem; font-weight: 600;
+    cursor: pointer; white-space: nowrap;
+}
+.btn-pdf:hover { background: var(--accent); color: #fff; }
 
 .piece-card {
     padding: 14px; background: var(--bg-surface); border-radius: 10px;

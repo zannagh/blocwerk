@@ -3,6 +3,7 @@
 @attribute [AllowAnonymous]
 @using Blocwerk.Core.Helpers
 @using System.Globalization
+@inject IJSRuntime JS
 
 <PageTitle>Volume Calculator - Blocwerk</PageTitle>
 
@@ -22,6 +23,8 @@
                     @onclick="() => SetMode(VolumeMode.PyramidByAngle)">By Angle</button>
             <button class="toggle-btn @(_mode == VolumeMode.Diamond ? "active" : string.Empty)"
                     @onclick="() => SetMode(VolumeMode.Diamond)">Diamond</button>
+            <button class="toggle-btn @(_mode == VolumeMode.Roof ? "active" : string.Empty)"
+                    @onclick="() => SetMode(VolumeMode.Roof)">Roof</button>
         </div>
 
         @if (_mode == VolumeMode.PyramidByDimensions)
@@ -80,7 +83,7 @@
                 </div>
             </div>
         }
-        else
+        else if (_mode == VolumeMode.Diamond)
         {
             <div class="input-row">
                 <div class="form-group">
@@ -97,6 +100,36 @@
                     <label>Tip Height (mm)</label>
                     <input type="number" class="form-input" @bind="_diamondHeight" min="1" step="1" />
                 </div>
+                <div class="form-group">
+                    <label>Wood Thickness (mm)</label>
+                    <input type="number" class="form-input" @bind="_thickness" min="1" step="1" />
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="input-row">
+                <div class="form-group">
+                    <label>Base Length (mm)</label>
+                    <input type="number" class="form-input" @bind="_roofLength" min="1" step="1" />
+                </div>
+                <div class="form-group">
+                    <label>Base Width (mm)</label>
+                    <input type="number" class="form-input" @bind="_roofWidth" min="1" step="1" />
+                </div>
+            </div>
+            <div class="input-row">
+                <div class="form-group">
+                    <label>Ridge Length (mm)</label>
+                    <input type="number" class="form-input" @bind="_roofRidge" min="1" step="1" />
+                    <span class="field-hint">The horizontal top edge. Shorter than the base length; equal to it gives vertical ends.</span>
+                </div>
+                <div class="form-group">
+                    <label>Height (mm)</label>
+                    <input type="number" class="form-input" @bind="_roofHeight" min="1" step="1" />
+                </div>
+            </div>
+            <div class="input-row">
                 <div class="form-group">
                     <label>Wood Thickness (mm)</label>
                     <input type="number" class="form-input" @bind="_thickness" min="1" step="1" />
@@ -142,7 +175,10 @@
             </div>
 
             <div class="piece-list">
-                <h2>Cutting Plan (@_result.Pieces.Count pieces)</h2>
+                <div class="piece-list-header">
+                    <h2>Cutting Plan (@_result.Pieces.Count pieces)</h2>
+                    <button class="btn-pdf" @onclick="DownloadPdf">&darr; Cutting plan PDF</button>
+                </div>
 
                 @{ var shown = new HashSet<string>(); }
                 @foreach (var piece in _result.Pieces)
@@ -186,6 +222,10 @@
     private double _diamondWidth = 300;
     private double _diamondLength = 400;
     private double _diamondHeight = 100;
+    private double _roofLength = 1000;
+    private double _roofWidth = 600;
+    private double _roofRidge = 400;
+    private double _roofHeight = 300;
     private VolumeResult? _result;
     private string? _error;
 
@@ -207,6 +247,7 @@
                 VolumeMode.PyramidByDimensions => VolumeCalculator.CalculatePyramid(_sideCount, _baseEdge, _height, _thickness),
                 VolumeMode.PyramidByAngle => VolumeCalculator.CalculatePyramidByAngle(_sideCount, _faceAngle, _edgeLength, _thickness),
                 VolumeMode.Diamond => VolumeCalculator.CalculateDiamond(_diamondWidth, _diamondLength, _diamondHeight, _thickness),
+                VolumeMode.Roof => VolumeCalculator.CalculateRoof(_roofLength, _roofWidth, _roofRidge, _roofHeight, _thickness),
                 _ => null,
             };
         }
@@ -214,6 +255,30 @@
         {
             _error = ex.Message;
         }
+    }
+
+    private async Task DownloadPdf()
+    {
+        if (_result == null)
+        {
+            return;
+        }
+
+        var title = _mode switch
+        {
+            VolumeMode.Diamond => "Diamond Volume",
+            VolumeMode.Roof => "Hip Roof Volume",
+            _ => "Pyramid Volume",
+        };
+
+        var pieces = CuttingPlan.FromVolume(_result, _thickness);
+        var assembly = AssemblyModels.FromVolume(title, _result);
+        var bytes = CuttingPlanPdf.Build(title, assembly, pieces);
+
+        using var stream = new MemoryStream(bytes);
+        using var streamRef = new DotNetStreamReference(stream);
+        var fileName = title.Replace(' ', '-').ToLowerInvariant() + "-cutting-plan.pdf";
+        await JS.InvokeVoidAsync("blocwerkDownloadStream", fileName, "application/pdf", streamRef);
     }
 
     private RenderFragment RenderPieceSvg(VolumePiece piece) => builder =>
@@ -308,6 +373,12 @@
             allPts.Add(bottomApexPt);
         }
 
+        Point2D[]? ridgePts = _result.RidgeVertices?.Select(VolumeCalculator.ProjectIsometric).ToArray();
+        if (ridgePts != null)
+        {
+            allPts.AddRange(ridgePts);
+        }
+
         var minX = allPts.Min(p => p.X);
         var maxX = allPts.Max(p => p.X);
         var minY = allPts.Min(p => p.Y);
@@ -334,6 +405,37 @@
             var a = baseProjPts[i];
             var b = baseProjPts[(i + 1) % baseProjPts.Length];
             DrawLine(builder, a, b, "var(--text-secondary, #888)", sw, null);
+        }
+
+        if (ridgePts is { Length: 2 })
+        {
+            // Roof: two trapezoid long faces + two triangular hip ends to the ridge edge.
+            for (var i = 0; i < baseProjPts.Length; i++)
+            {
+                var a = baseProjPts[i];
+                var b = baseProjPts[(i + 1) % baseProjPts.Length];
+                var ra = Nearest(a, ridgePts);
+                var rb = Nearest(b, ridgePts);
+                var facePoints = ReferenceEquals(ra, rb)
+                    ? $"{F2(a.X)},{F2(a.Y)} {F2(b.X)},{F2(b.Y)} {F2(ra.X)},{F2(ra.Y)}"
+                    : $"{F2(a.X)},{F2(a.Y)} {F2(b.X)},{F2(b.Y)} {F2(rb.X)},{F2(rb.Y)} {F2(ra.X)},{F2(ra.Y)}";
+
+                builder.OpenElement(10, "polygon");
+                builder.AddAttribute(11, "points", facePoints);
+                builder.AddAttribute(12, "fill", i % 2 == 0 ? "rgba(233,69,96,0.15)" : "rgba(15,52,96,0.15)");
+                builder.AddAttribute(13, "stroke", "var(--text-heading, #1a1a2e)");
+                builder.AddAttribute(14, "stroke-width", sw);
+                builder.CloseElement();
+            }
+
+            DrawLine(builder, ridgePts[0], ridgePts[1], "var(--text-heading, #1a1a2e)", sw, null);
+            foreach (var bp in baseProjPts)
+            {
+                DrawLine(builder, bp, Nearest(bp, ridgePts), "var(--text-heading, #1a1a2e)", sw, null);
+            }
+
+            builder.CloseElement();
+            return;
         }
 
         // Faces to apex (semi-transparent fill)
@@ -383,6 +485,23 @@
 
         builder.CloseElement();
     };
+
+    private static Point2D Nearest(Point2D p, Point2D[] candidates)
+    {
+        var best = candidates[0];
+        var bestDist = double.MaxValue;
+        foreach (var c in candidates)
+        {
+            var d = ((c.X - p.X) * (c.X - p.X)) + ((c.Y - p.Y) * (c.Y - p.Y));
+            if (d < bestDist)
+            {
+                bestDist = d;
+                best = c;
+            }
+        }
+
+        return best;
+    }
 
     private static void DrawLine(Microsoft.AspNetCore.Components.Rendering.RenderTreeBuilder builder, Point2D a, Point2D b, string stroke, string sw, string? dashArray)
     {

@@ -1,16 +1,17 @@
-@* Injected as VideoService, not BetaVideoService: the latter would shadow the class name and
-   hide its MaxVideoBytes constant, which this component needs for the client-side size check. *@
 @inject IBetaVideoService VideoService
+@inject Blocwerk.Core.Configuration.BlocwerkSettings Settings
 @inject IJSRuntime JS
+@implements IDisposable
 
 @*
     The "Beta Videos" strip on the boulder page: a horizontally scrolling row of poster frames with
     the uploader's name under each, opening a full-screen player on tap. The first tile is the
     upload button, so the empty state is already the call to action and needs no separate copy.
 
-    Uploads run on the circuit (not through the offline queue): a 48 MB clip has no business sitting
-    in IndexedDB waiting for a network, and the queue's replay is built around tiny idempotent
-    actions. Offline, the section simply cannot accept an upload — the rest of the page still works.
+    Uploads stream straight to the /api/beta-videos HTTP endpoint (not the SignalR circuit and not
+    the offline queue): a clip has no business sitting in IndexedDB waiting for a network, and the
+    circuit's message cap cannot carry a large file. Offline, the section simply cannot accept an
+    upload — the rest of the page still works.
 *@
 
 <details class="beta-section" open="@StartExpanded">
@@ -33,7 +34,7 @@
                     <span class="beta-add-mark">@(_uploading ? "…" : "+")</span>
                     <InputFile id="@_inputId" OnChange="OnVideoSelected" accept="video/*"
                                disabled="@_uploading" class="beta-file-input" />
-                    <span class="beta-uploader">@(_uploading ? "Uploading…" : "Add beta")</span>
+                    <span class="beta-uploader">@UploadLabel</span>
                 </label>
             }
 
@@ -113,9 +114,18 @@
     private List<BetaVideoInfo>? _videos;
     private BetaVideoInfo? _playing;
     private ElementReference _playerRef;
+    private DotNetObjectReference<BoulderBetaVideos>? _selfRef;
     private bool _autoplayPending;
     private bool _uploading;
+    private int _uploadPercent;
+    private bool _processing;
     private string? _error;
+
+    private string UploadLabel =>
+        !_uploading ? "Add beta"
+        : _processing ? "Optimising…"
+        : _uploadPercent > 0 ? $"Uploading {_uploadPercent}%"
+        : "Uploading…";
 
     protected override Task OnInitializedAsync() => LoadAsync();
 
@@ -167,32 +177,35 @@
         var file = e.File;
         _error = null;
 
-        if (file.Size > BetaVideoService.MaxVideoBytes)
+        var opts = Settings.BetaVideo;
+        if (file.Size > opts.MaxUploadBytes)
         {
-            _error = $"That clip is too large (max {BetaVideoService.MaxVideoBytes / (1024 * 1024)} MB).";
+            _error = $"That clip is too large (max {opts.MaxUploadBytes / (1024L * 1024 * 1024)} GB).";
             return;
         }
 
         _uploading = true;
-
-        // An event handler only re-renders once it returns, and reading a phone clip off the
-        // circuit takes seconds — without this the "+" tile never shows that anything is happening.
+        _processing = false;
+        _uploadPercent = 0;
         StateHasChanged();
 
         try
         {
-            // Grab the poster frame first, while the file is still the one selected in the input —
-            // the JS side reads it straight off the element rather than being handed the bytes back.
-            var thumbnail = await CaptureThumbnailAsync();
+            // Stream the file straight to the upload endpoint over HTTP (not the circuit): the JS
+            // side reads it off the input, attaches a poster frame, and re-encodes happen server-side.
+            _selfRef ??= DotNetObjectReference.Create(this);
+            var url = $"/api/beta-videos/{BoulderId}";
+            var result = await JS.InvokeAsync<UploadResult>("blocwerkBetaVideo.upload", _inputId, url, _selfRef, 480);
 
-            await using var stream = file.OpenReadStream(BetaVideoService.MaxVideoBytes);
-            using var buffer = new MemoryStream();
-            await stream.CopyToAsync(buffer);
-
-            var contentType = string.IsNullOrWhiteSpace(file.ContentType) ? "video/mp4" : file.ContentType;
-            await VideoService.AddVideoAsync(BoulderId, buffer.ToArray(), contentType, thumbnail, file.Name);
-            await LoadAsync();
-            await Uploaded.InvokeAsync();
+            if (result.Ok)
+            {
+                await LoadAsync();
+                await Uploaded.InvokeAsync();
+            }
+            else
+            {
+                _error = $"Upload failed: {result.Error}";
+            }
         }
         catch (Exception ex)
         {
@@ -201,22 +214,23 @@
         finally
         {
             _uploading = false;
+            _processing = false;
         }
     }
 
-    private async Task<byte[]?> CaptureThumbnailAsync()
+    /// <summary>Called from beta-video.js as the file streams up, then once more when the server starts transcoding.</summary>
+    [JSInvokable]
+    public Task OnUploadProgress(int percent, string phase)
     {
-        try
-        {
-            var base64 = await JS.InvokeAsync<string?>("blocwerkBetaVideo.captureThumbnail", _inputId, 480);
-            return string.IsNullOrEmpty(base64) ? null : Convert.FromBase64String(base64);
-        }
-        catch (Exception)
-        {
-            // No thumbnail is a cosmetic loss; never let it fail the upload.
-            return null;
-        }
+        _uploadPercent = percent;
+        _processing = phase == "processing";
+        StateHasChanged();
+        return Task.CompletedTask;
     }
+
+    public void Dispose() => _selfRef?.Dispose();
+
+    private record UploadResult(bool Ok, string? Error);
 
     private void OpenVideo(BetaVideoInfo video)
     {

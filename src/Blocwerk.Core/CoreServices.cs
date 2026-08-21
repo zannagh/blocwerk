@@ -1,3 +1,4 @@
+using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Services;
@@ -47,6 +48,8 @@ public static class CoreServices
         builder.Services.AddScoped<IBoulderFeedbackService, BoulderFeedbackService>();
         builder.Services.AddScoped<IAttemptService, AttemptService>();
         builder.Services.AddScoped<ICommentService, CommentService>();
+        builder.Services.AddSingleton<IBetaVideoStorage, FileSystemBetaVideoStorage>();
+        builder.Services.AddSingleton<IVideoTranscoder, FfmpegVideoTranscoder>();
         builder.Services.AddScoped<IBetaVideoService, BetaVideoService>();
         builder.Services.AddScoped<IWallSegmentService, WallSegmentService>();
         builder.Services.AddScoped<IProgressionService, ProgressionService>();

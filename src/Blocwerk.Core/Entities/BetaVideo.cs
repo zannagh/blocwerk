@@ -7,11 +7,11 @@ namespace Blocwerk.Core.Entities;
 /// A short "this is how it goes" clip somebody uploaded for a boulder.
 /// </summary>
 /// <remarks>
-/// The clip itself lives in <see cref="Data"/> (Postgres <c>bytea</c>), matching how wall photos
-/// are stored — one database, one backup, no second storage system to operate. That only holds
-/// because uploads are capped (see <c>BetaVideoService.MaxVideoBytes</c>); read sites must
-/// project the columns they need rather than materialising this entity, or every list query would
-/// drag every clip into memory.
+/// New clips live on disk (see <c>IBetaVideoStorage</c>); <see cref="StoragePath"/> holds the file
+/// name and the clip is streamed from there, so large uploads never sit whole in memory. Legacy
+/// rows created before that change still carry their bytes in <see cref="Data"/> (Postgres
+/// <c>bytea</c>) — read sites must project the columns they need rather than materialising this
+/// entity, or a list query would drag every legacy clip into memory.
 /// </remarks>
 public class BetaVideo
 {
@@ -38,8 +38,12 @@ public class BetaVideo
 
     public long SizeBytes { get; set; }
 
-    [Required]
-    public required byte[] Data { get; set; }
+    /// <summary>File name of the clip in the beta-video store. Null only for legacy in-database clips.</summary>
+    [MaxLength(512)]
+    public string? StoragePath { get; set; }
+
+    /// <summary>Legacy in-database clip bytes. Null for clips stored on disk (the current path).</summary>
+    public byte[]? Data { get; set; }
 
     /// <summary>
     /// A JPEG poster frame grabbed in the browser before upload (see wwwroot/js/beta-video.js).

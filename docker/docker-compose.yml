@@ -36,11 +36,15 @@ services:
       POSTGRES__DATABASE: blocwerk
       POSTGRES__USERNAME: postgres
       POSTGRES__PASSWORD: blocwerk_dev
+      # Beta clips live on disk (not the database); this is where they land inside the container.
+      BETAVIDEO__STORAGEPATH: /data/beta-videos
     volumes:
       - ./appsettings.json:/app/appsettings.json:ro
       # Persist the DataProtection key ring across redeploys (see AuthenticationServices.cs) so a
       # deploy no longer logs everyone out / breaks in-flight logins.
       - ./dpkeys:/app/keys
+      # Beta video clips, kept out of the image so they survive redeploys.
+      - ./beta-videos:/data/beta-videos
     depends_on:
       - postgres
       - otel-dashboard
