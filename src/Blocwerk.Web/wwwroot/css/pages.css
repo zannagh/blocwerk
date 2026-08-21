@@ -761,6 +761,100 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
 .flash-chip { background: #FBE9E7; color: #D84315; }
 .send-chip { background: var(--success-bg); color: var(--success-text); }
 
+/* ========== Beta videos ========== */
+/* Collapsed by default (see BoulderBetaVideos.razor): beta is a spoiler, so the section has to
+   be opened deliberately. The strip scrolls horizontally rather than wrapping — one row keeps
+   the "+" tile permanently in reach on a phone, however many clips a boulder collects. */
+.beta-section {
+    margin-bottom: 20px; border: 1px solid var(--border); border-radius: 12px;
+    background: var(--bg-surface); overflow: hidden;
+}
+.beta-summary {
+    cursor: pointer; padding: 12px 14px; display: flex; align-items: center; gap: 8px;
+    list-style: none;
+}
+.beta-summary::-webkit-details-marker { display: none; }
+
+/* Own disclosure triangle: the native marker cannot be positioned and disappears under
+   `display: flex` in some engines. */
+.beta-summary::before {
+    content: ''; width: 0; height: 0; flex: none;
+    border-left: 5px solid currentColor;
+    border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+    color: var(--text-secondary); transition: transform 0.15s ease;
+}
+.beta-section[open] > .beta-summary::before { transform: rotate(90deg); }
+.beta-title { font-weight: 600; color: var(--text-heading); font-size: 1.1rem; }
+.beta-count {
+    font-size: 0.75rem; font-weight: 600; padding: 1px 7px; border-radius: var(--r-pill);
+    background: var(--accent-soft); color: var(--accent);
+}
+.beta-body { padding: 0 14px 14px; }
+.beta-strip {
+    display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px;
+    scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch;
+}
+.beta-strip::-webkit-scrollbar { display: none; }
+.beta-strip { scrollbar-width: none; }
+
+.beta-tile {
+    position: relative; flex: none; width: 108px; display: flex; flex-direction: column; gap: 6px;
+    padding: 0; border: none; background: none; cursor: pointer; scroll-snap-align: start;
+    font: inherit; color: inherit; text-align: center;
+}
+.beta-thumb {
+    position: relative; display: block; width: 108px; height: 144px;
+    border-radius: var(--r-md); overflow: hidden; background: var(--bg-surface-alt);
+    border: 1px solid var(--border);
+}
+.beta-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.beta-thumb-fallback {
+    display: block; width: 100%; height: 100%;
+    background: linear-gradient(150deg, var(--bg-surface-alt), var(--border-light));
+}
+.beta-play {
+    position: absolute; right: 6px; bottom: 6px; display: grid; place-items: center;
+    width: 28px; height: 28px; border-radius: 50%;
+    background: rgba(0, 0, 0, 0.55); color: #fff;
+}
+.beta-uploader {
+    font-size: 0.78rem; color: var(--text-secondary); line-height: 1.2;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.beta-add .beta-add-mark {
+    display: grid; place-items: center; width: 108px; height: 144px;
+    border: 2px dashed var(--border); border-radius: var(--r-md);
+    background: var(--bg-surface-alt); color: var(--accent);
+    font-size: 2rem; font-weight: 300; line-height: 1;
+}
+.beta-add:hover .beta-add-mark { border-color: var(--accent); }
+.beta-add.busy { pointer-events: none; opacity: 0.6; }
+
+/* The file input is driven by the tile it sits in; only the label is ever visible. */
+.beta-file-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+.beta-lightbox {
+    position: fixed; inset: 0; z-index: 1000; background: var(--overlay-bg);
+    display: grid; place-items: center; padding: 16px;
+}
+.beta-lightbox-inner {
+    width: min(720px, 100%); max-height: 100%; display: flex; flex-direction: column; gap: 8px;
+}
+.beta-lightbox-bar { display: flex; align-items: center; gap: 10px; color: #fff; }
+.beta-lightbox-title { flex: 1; font-weight: 600; font-size: 0.9rem; }
+.beta-lightbox-delete {
+    background: none; border: none; color: #fff; opacity: 0.8; font-size: 0.85rem;
+    cursor: pointer; padding: 4px 6px;
+}
+.beta-lightbox-close {
+    background: none; border: none; color: #fff; font-size: 1.6rem; line-height: 1;
+    cursor: pointer; padding: 0 6px;
+}
+.beta-player {
+    width: 100%; max-height: 78vh; border-radius: var(--r-md); background: #000; display: block;
+}
+
 .activity-feed { margin-bottom: 20px; }
 .activity-feed h2 { font-size: 1.1rem; font-weight: 600; color: var(--text-heading); margin-bottom: 8px; }
 

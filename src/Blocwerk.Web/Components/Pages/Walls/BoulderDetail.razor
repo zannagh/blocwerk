@@ -249,6 +249,10 @@ else
             </div>
         }
 
+        <BoulderBetaVideos @ref="_betaVideos" BoulderId="BoulderId" CurrentUserId="_currentUserId"
+                           IsAnonymous="_isAnonymous" ShareToken="ShareToken"
+                           Uploaded="OnBetaVideoUploaded" />
+
         <BoulderActivityFeed @ref="_activityFeed" BoulderId="BoulderId" />
 
         <BoulderComments @ref="_commentList" BoulderId="BoulderId"
@@ -299,6 +303,7 @@ else
 
     private BoulderActivityFeed? _activityFeed;
     private BoulderComments? _commentList;
+    private BoulderBetaVideos? _betaVideos;
     private ViewMode _viewMode = ViewMode.Photo;
     private List<Hold>? _wallHolds;
     private List<Hold> _colorRuleHolds = [];
@@ -422,6 +427,11 @@ else
             if (_commentList != null)
             {
                 await _commentList.ReloadAsync();
+            }
+
+            if (_betaVideos != null)
+            {
+                await _betaVideos.ReloadAsync();
             }
         }
         catch (UnauthorizedAccessException)
@@ -780,6 +790,18 @@ else
     }, "Could not reject that proposal");
 
     private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// An upload writes an activity entry, so the feed below the strip is stale until it re-reads.
+    /// The strip refreshes itself.
+    /// </summary>
+    private async Task OnBetaVideoUploaded()
+    {
+        if (_activityFeed != null)
+        {
+            await _activityFeed.ReloadAsync();
+        }
+    }
 
     private async Task ShowToast(string message)
     {
