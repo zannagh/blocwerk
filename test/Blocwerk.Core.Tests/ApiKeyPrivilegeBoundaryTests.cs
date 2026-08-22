@@ -47,7 +47,7 @@ public class ApiKeyPrivilegeBoundaryTests
     [InlineData("/settings/api-keys")]
     [InlineData("/api/offline/attempts")]
     [InlineData("/api/offline/boulders")]
-    [InlineData("/walls/8f1c2f6e-0000-0000-0000-000000000000/gallery/uploaded/8f1c2f6e-0000-0000-0000-000000000001")]
+    [InlineData("/media/walls/8f1c2f6e-0000-0000-0000-000000000000/gallery/uploaded/8f1c2f6e-0000-0000-0000-000000000001")]
     [InlineData("/")]
     [InlineData("/api/wallsomething")]
     public void SelectScheme_NeverForwardsAWallKeyToTheApiKeyScheme_OffTheApiSurface(string path)

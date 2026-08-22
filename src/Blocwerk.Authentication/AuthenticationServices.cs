@@ -84,10 +84,11 @@ public static class AuthenticationServices
 
         app.Services.AddAuthorization(options =>
         {
-            // A bare [Authorize] must never be satisfiable by an API-key principal: it names the
-            // human schemes explicitly, so the policy evaluator re-authenticates with those two
-            // and an API-key identity simply is not part of the principal it judges. Cookie and
-            // JWT callers are unaffected — they were already being authenticated by these schemes.
+            // A bare [Authorize] must never be satisfiable by an API-key principal. That is done
+            // by the assertion inside BuildHumanPolicy, NOT by naming schemes on the policy: a
+            // policy that names schemes also challenges every one of them, so a signed-out human
+            // got the JWT handler's bare 401 instead of the cookie handler's redirect to the
+            // login page. See BuildHumanPolicy for the full reasoning.
             options.DefaultPolicy = BuildHumanPolicy(new AuthorizationPolicyBuilder());
 
             // No FallbackPolicy on purpose: it would apply to every endpoint without authorization
@@ -129,18 +130,24 @@ public static class AuthenticationServices
     }
 
     /// <summary>
-    /// A signed-in human: cookie for the Blazor app, JWT for the token callers. Naming the schemes
-    /// is what excludes the API key, because the evaluator only merges the identities it names.
-    /// The assertion is belt and braces, for the case where the policy is evaluated against a
-    /// principal handed in directly — Blazor's AuthorizeRouteView does exactly that, and no
-    /// scheme re-authentication happens there.
+    /// A signed-in human: cookie for the Blazor app, JWT for the token callers. The API key is
+    /// excluded by the assertion, not by a scheme list.
     /// </summary>
+    /// <remarks>
+    /// Deliberately names NO authentication schemes. A policy that names schemes challenges all of
+    /// them on failure, so a signed-out visitor to an [Authorize] Blazor page got the JWT handler's
+    /// bare 401 rather than the cookie handler's 302 to /account/login. With no schemes named,
+    /// both authentication and challenge run through the app's default "BlocwerkPolicy" forwarder,
+    /// which redirects — and nothing is lost on the security side: <see cref="ApiKeySurface"/>
+    /// only forwards a <c>bwk_</c> bearer to the API-key scheme under /api/walls and /api/v1, so
+    /// on any other path an API-key principal never exists in the first place, and where one does
+    /// exist the assertion below rejects it. The assertion also covers the case where the policy
+    /// is evaluated against a principal handed in directly — Blazor's AuthorizeRouteView does
+    /// exactly that, and no scheme re-authentication happens there.
+    /// </remarks>
     public static AuthorizationPolicy BuildHumanPolicy(AuthorizationPolicyBuilder policy)
     {
         return policy
-            .AddAuthenticationSchemes(
-                CookieAuthenticationDefaults.AuthenticationScheme,
-                JwtBearerDefaults.AuthenticationScheme)
             .RequireAuthenticatedUser()
             .RequireAssertion(context => !context.User.IsApiKeyPrincipal())
             .Build();
@@ -152,12 +159,15 @@ public static class AuthenticationServices
     /// own guarded route under /api and is rejected here, so a leaked wall key cannot walk the
     /// galleries of every other wall its owner belongs to.
     /// </summary>
+    /// <remarks>
+    /// Names no schemes, for the same reason as <see cref="BuildHumanPolicy"/>: an anonymous
+    /// viewer arriving without a share token must be redirected to the login page, and a policy
+    /// that names schemes would challenge the JWT handler too and answer with a bare 401. The
+    /// API-key rejection lives in <see cref="WallGalleryImageHandler"/>, not in a scheme list.
+    /// </remarks>
     public static AuthorizationPolicy BuildGalleryImagePolicy(AuthorizationPolicyBuilder policy)
     {
         return policy
-            .AddAuthenticationSchemes(
-                CookieAuthenticationDefaults.AuthenticationScheme,
-                JwtBearerDefaults.AuthenticationScheme)
             .AddRequirements(new WallGalleryImageRequirement())
             .Build();
     }

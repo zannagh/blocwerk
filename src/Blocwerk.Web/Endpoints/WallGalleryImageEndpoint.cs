@@ -14,16 +14,22 @@ namespace Blocwerk.Web.Endpoints;
 /// viewer), mirroring the wall-photo routes: the three gallery sources live in different stores,
 /// so uploads stream from the file store and the legacy photos come from their rows.
 /// This is the cookie-authenticated UI route; machine callers use the API-key routes under /api.
+/// It lives under /media so that HTTP routes stay out of the Blazor page route space (/walls,
+/// /walls/{WallId}, /walls/{WallId}/shared/{ShareToken}) — and /media is not an
+/// <see cref="ApiKeySurface"/> prefix, so an API key is never even forwarded here.
 /// </summary>
 public static class WallGalleryImageEndpoint
 {
+    /// <summary>The non-Blazor prefix the gallery byte routes are mounted under.</summary>
+    public const string RoutePrefix = "/media/walls";
+
     public static void MapWallGalleryImages(this WebApplication app)
     {
         // The policy admits a signed-in human or an anonymous share-token viewer, and rejects an
         // API-key principal outright: machine callers read gallery bytes through
         // /api/walls/{wallId}/images/{source}/{id}/content, which checks the wall against the
         // key's own wall claim instead of against everything the key's owner may see.
-        app.MapGet("/walls/{wallId:guid}/gallery/{source}/{id:guid}", HandleAsync)
+        app.MapGet(RoutePrefix + "/{wallId:guid}/gallery/{source}/{id:guid}", HandleAsync)
             .RequireAuthorization(BlocwerkPolicies.WallGalleryImage);
     }
 

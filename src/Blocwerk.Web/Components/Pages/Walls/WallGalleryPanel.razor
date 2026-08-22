@@ -244,7 +244,7 @@
 
     private string ImageUrl(WallGalleryItem item)
     {
-        var url = $"/walls/{WallId}/gallery/{item.Source.ToString().ToLowerInvariant()}/{item.Id}";
+        var url = $"/media/walls/{WallId}/gallery/{item.Source.ToString().ToLowerInvariant()}/{item.Id}";
         return string.IsNullOrEmpty(ShareToken) ? url : $"{url}?token={Uri.EscapeDataString(ShareToken)}";
     }
 

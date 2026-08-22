@@ -102,19 +102,49 @@ public class ApiSurfaceAuthorizationTests
         Assert.Contains("/api/walls/{wallId:guid}/temperature", routes);
         Assert.Contains("/api/v1/me/sessions", routes);
 
-        // The browser gallery route lives at /walls/…, outside the prefixes, so it must NOT show
+        // The browser gallery route lives under /media, outside the prefixes, so it must NOT show
         // up here — if it ever moved under /api/walls this assertion would say so.
         Assert.DoesNotContain(routes, r => r.Contains("/gallery/", StringComparison.Ordinal));
     }
 
-    /// <summary>Every registered endpoint whose route falls under an API-key prefix.</summary>
-    private static IReadOnlyList<RouteEndpoint> CoveredEndpoints()
+    /// <summary>
+    /// HTTP routes are kept out of the Blazor page route space, and the gallery byte route was the
+    /// one offender: it used to sit at /walls/{wallId}/gallery/… next to the @page "/walls" pages.
+    /// The DoesNotContain assertion above would keep passing if the route simply vanished, so this
+    /// pins where it actually is — under /media, which is neither a Blazor page prefix nor an
+    /// <see cref="ApiKeySurface"/> prefix.
+    /// </summary>
+    [Fact]
+    public void TheGalleryRoute_LivesUnderMedia_AndOutsideTheBlazorAndApiKeyPrefixes()
+    {
+        var gallery = AllEndpoints()
+            .Select(e => ToPath(e.RoutePattern.RawText))
+            .Where(p => (p.Value ?? string.Empty).Contains("/gallery/", StringComparison.Ordinal))
+            .ToList();
+
+        var route = Assert.Single(gallery);
+
+        Assert.Equal("/media/walls/{wallId:guid}/gallery/{source}/{id:guid}", route.Value);
+        Assert.True(route.StartsWithSegments("/media", StringComparison.Ordinal));
+        Assert.False(route.StartsWithSegments("/walls", StringComparison.OrdinalIgnoreCase));
+        Assert.False(ApiKeySurface.Covers(route));
+    }
+
+    /// <summary>Every endpoint the registration calls under test produce.</summary>
+    private static IReadOnlyList<RouteEndpoint> AllEndpoints()
     {
         IEndpointRouteBuilder routes = BuildRouteTable();
 
         return routes.DataSources
             .SelectMany(source => source.Endpoints)
             .OfType<RouteEndpoint>()
+            .ToList();
+    }
+
+    /// <summary>Every registered endpoint whose route falls under an API-key prefix.</summary>
+    private static IReadOnlyList<RouteEndpoint> CoveredEndpoints()
+    {
+        return AllEndpoints()
             .Where(endpoint => ApiKeySurface.Covers(ToPath(endpoint.RoutePattern.RawText)))
             .ToList();
     }
