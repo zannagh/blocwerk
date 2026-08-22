@@ -20,6 +20,7 @@ public sealed class WallTestHarness : IDisposable
 {
     private readonly SqliteConnection connection;
     private readonly string betaVideoDir;
+    private readonly string wallImageDir;
 
     public WallTestHarness()
     {
@@ -27,6 +28,7 @@ public sealed class WallTestHarness : IDisposable
         connection.Open();
 
         betaVideoDir = Path.Combine(Path.GetTempPath(), "blocwerk-beta-tests", Guid.NewGuid().ToString("N"));
+        wallImageDir = Path.Combine(Path.GetTempPath(), "blocwerk-wall-image-tests", Guid.NewGuid().ToString("N"));
 
         Owner = new User { Identifier = "owner@test", DisplayName = "Owner" };
         DbContextFactory = new TestDbContextFactory(connection);
@@ -53,6 +55,13 @@ public sealed class WallTestHarness : IDisposable
         betaSettings.BetaVideo.StoragePath = betaVideoDir;
         var betaStorage = new FileSystemBetaVideoStorage(betaSettings);
         BetaVideoService = new BetaVideoService(DbContextFactory, CurrentUser, ActivityLog, betaStorage, NullLogger<BetaVideoService>.Instance);
+
+        var imageSettings = new BlocwerkSettings();
+        imageSettings.WallImage.StoragePath = wallImageDir;
+        WallImageStorage = new FileSystemWallImageStorage(imageSettings);
+        WallImageService = new WallImageService(DbContextFactory, WallImageStorage, NullLogger<WallImageService>.Instance);
+        WallTemperatureService = new WallTemperatureService(DbContextFactory, NullLogger<WallTemperatureService>.Instance);
+        ApiKeyService = new ApiKeyService(DbContextFactory, NullLogger<ApiKeyService>.Instance);
     }
 
     public User Owner { get; }
@@ -82,6 +91,14 @@ public sealed class WallTestHarness : IDisposable
     public ISessionService SessionService { get; }
 
     public IBetaVideoService BetaVideoService { get; }
+
+    public IWallImageStorage WallImageStorage { get; }
+
+    public IWallImageService WallImageService { get; }
+
+    public IWallTemperatureService WallTemperatureService { get; }
+
+    public IApiKeyService ApiKeyService { get; }
 
     /// <summary>
     /// Seeds a wall owned by <see cref="Owner"/> with a live photo and the given number
@@ -125,6 +142,18 @@ public sealed class WallTestHarness : IDisposable
         return holds;
     }
 
+    /// <summary>Adds a second user to the seeded wall with the given role and returns them.</summary>
+    public async Task<User> AddMemberAsync(string identifier, WallRole role)
+    {
+        await using var db = CreateContext();
+
+        var user = new User { Identifier = identifier, DisplayName = identifier };
+        db.Users.Add(user);
+        db.WallMembers.Add(new WallMember { WallId = WallId, UserId = user.Id, Role = role });
+        await db.SaveChangesAsync();
+        return user;
+    }
+
     public BlocwerkDbContext CreateContext()
     {
         var db = DbContextFactory.CreateDbContext();
@@ -138,6 +167,11 @@ public sealed class WallTestHarness : IDisposable
         if (Directory.Exists(betaVideoDir))
         {
             Directory.Delete(betaVideoDir, recursive: true);
+        }
+
+        if (Directory.Exists(wallImageDir))
+        {
+            Directory.Delete(wallImageDir, recursive: true);
         }
     }
 }

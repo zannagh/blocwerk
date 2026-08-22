@@ -27,6 +27,7 @@
     [Parameter] public RenderFragment? Page2 { get; set; }
     [Parameter] public RenderFragment? Page3 { get; set; }
     [Parameter] public RenderFragment? Page4 { get; set; }
+    [Parameter] public RenderFragment? Page5 { get; set; }
     [Parameter] public int InitialPage { get; set; } = 2;
     [Parameter] public bool Locked { get; set; }
     [Parameter] public string? PageClasses { get; set; }
@@ -38,7 +39,7 @@
 
     private IEnumerable<(RenderFragment Fragment, int Index)> Pages()
     {
-        var list = new List<RenderFragment?> { Page1, Page2, Page3, Page4 };
+        var list = new List<RenderFragment?> { Page1, Page2, Page3, Page4, Page5 };
         var i = 0;
         foreach (var p in list)
         {

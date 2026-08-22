@@ -1,0 +1,209 @@
+@page "/settings/api-keys"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject IApiKeyService ApiKeyService
+@inject ICurrentUserService CurrentUserService
+@inject IJSRuntime JS
+
+<PageTitle>API Keys - Blocwerk</PageTitle>
+
+<div class="apikey-page">
+    <h1>Personal API Keys</h1>
+
+    <p class="apikey-blurb">
+        A personal API key lets a script, tool or device act as <strong>you</strong> against the
+        Blocwerk API &mdash; logging sessions and attempts, reading your training and progression.
+        Send it as <code>Authorization: Bearer &lt;token&gt;</code> to the endpoints under
+        <code>/api/v1/me/</code>. A key carries your own permissions, so treat it like a password
+        and revoke it as soon as you no longer need it.
+    </p>
+
+    @if (newToken != null)
+    {
+        <div class="apikey-reveal">
+            <h2>Copy your new token now</h2>
+            <p class="apikey-reveal-warning">
+                This is the only time the full token is shown. It cannot be retrieved later &mdash;
+                if you lose it, revoke the key and create a new one.
+            </p>
+            <code class="apikey-token">@newToken</code>
+            <div class="apikey-reveal-actions">
+                <button type="button" class="apikey-btn primary" @onclick="CopyToken">@copyLabel</button>
+                <button type="button" class="apikey-btn" @onclick="DismissToken">I have stored it</button>
+            </div>
+        </div>
+    }
+
+    @if (error != null)
+    {
+        <div class="error-msg">@error</div>
+    }
+
+    <section class="apikey-create">
+        <h2>Create a key</h2>
+        <div class="form-group">
+            <label for="apikey-name">Name</label>
+            <input id="apikey-name" class="form-input" maxlength="100" placeholder="e.g. Home sensor script"
+                   @bind="name" @bind:event="oninput" />
+        </div>
+        <div class="form-group">
+            <label for="apikey-expiry">Expires (optional)</label>
+            <input id="apikey-expiry" type="date" class="form-input" @bind="expiresOn" />
+            <p class="hint">Leave empty for a key that never expires.</p>
+        </div>
+        <button type="button" class="btn-submit" disabled="@(busy || string.IsNullOrWhiteSpace(name))" @onclick="Create">
+            @(busy ? "Working..." : "Create key")
+        </button>
+    </section>
+
+    <section class="apikey-list">
+        <h2>Your keys</h2>
+        @if (keys == null)
+        {
+            <p class="loading">Loading...</p>
+        }
+        else if (keys.Count == 0)
+        {
+            <p class="apikey-empty">You have no personal API keys yet.</p>
+        }
+        else
+        {
+            @foreach (var key in keys)
+            {
+                <ApiKeyRow @key="key.Id" Key="key" Busy="busy" OnRevoke="Revoke" />
+            }
+        }
+    </section>
+</div>
+
+@code {
+    private IReadOnlyList<ApiKey>? keys;
+    private Guid userId;
+    private string name = string.Empty;
+    private DateTime? expiresOn;
+    private string? newToken;
+    private string? error;
+    private string copyLabel = "Copy to clipboard";
+    private bool busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var user = await CurrentUserService.GetCurrentUserAsync();
+            userId = user.Id;
+            keys = await ApiKeyService.GetUserKeysAsync(userId);
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "Loading the personal API keys failed");
+            error = "Your API keys could not be loaded. Please try again.";
+            keys = Array.Empty<ApiKey>();
+        }
+    }
+
+    private async Task Create()
+    {
+        if (busy || string.IsNullOrWhiteSpace(name))
+        {
+            return;
+        }
+
+        error = null;
+        var expiresAt = ResolveExpiry();
+        if (expiresAt is { } value && value <= DateTimeOffset.UtcNow)
+        {
+            error = "The expiry date must be in the future.";
+            return;
+        }
+
+        busy = true;
+        try
+        {
+            var (_, token) = await ApiKeyService.CreateUserKeyAsync(userId, name.Trim(), expiresAt);
+            newToken = token;
+            copyLabel = "Copy to clipboard";
+            name = string.Empty;
+            expiresOn = null;
+            keys = await ApiKeyService.GetUserKeysAsync(userId);
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "Creating a personal API key for user {UserId} failed", userId);
+            error = "The key could not be created. Please try again.";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task Revoke(Guid keyId)
+    {
+        if (busy)
+        {
+            return;
+        }
+
+        error = null;
+        busy = true;
+        try
+        {
+            await ApiKeyService.RevokeAsync(keyId, userId);
+            keys = await ApiKeyService.GetUserKeysAsync(userId);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            error = "That key does not belong to you.";
+        }
+        catch (InvalidOperationException)
+        {
+            error = "That key no longer exists.";
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "Revoking personal API key {ApiKeyId} failed", keyId);
+            error = "The key could not be revoked. Please try again.";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task CopyToken()
+    {
+        if (newToken == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", newToken);
+            copyLabel = "Copied";
+        }
+        catch (Exception)
+        {
+            copyLabel = "Copy failed - select the token and copy it manually";
+        }
+    }
+
+    private void DismissToken()
+    {
+        newToken = null;
+        copyLabel = "Copy to clipboard";
+    }
+
+    /// <summary>Turns the picked day into the instant that day ends, so the key lives all of it.</summary>
+    private DateTimeOffset? ResolveExpiry()
+    {
+        if (expiresOn is not { } day)
+        {
+            return null;
+        }
+
+        var endOfDay = day.Date.AddDays(1);
+        return new DateTimeOffset(endOfDay, TimeZoneInfo.Local.GetUtcOffset(endOfDay));
+    }
+}

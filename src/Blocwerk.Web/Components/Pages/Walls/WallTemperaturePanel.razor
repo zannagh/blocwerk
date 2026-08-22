@@ -1,0 +1,280 @@
+@* Wall temperature series: latest reading plus a bucketed chart over a selectable window. *@
+@inject IWallTemperatureService TemperatureService
+@implements IDisposable
+
+<div class="settings-panel wall-temp-panel">
+    <div class="wall-panel-head">
+        <h2>Temperature</h2>
+        <div class="wall-range-row">
+            @foreach (var option in RangeOptions)
+            {
+                <button type="button"
+                        class="wall-range-btn @(option.Range == range ? "active" : string.Empty)"
+                        disabled="@loading"
+                        @onclick="() => SelectRange(option.Range)">@option.Label</button>
+            }
+        </div>
+    </div>
+
+    @if (latest == null && !loading)
+    {
+        <p class="wall-temp-empty">
+            No sensor has posted a reading for this wall yet. Create a wall API key below and let the
+            sensor POST its samples with <code>Authorization: Bearer &lt;token&gt;</code>.
+        </p>
+    }
+    else
+    {
+        <div class="wall-temp-latest">
+            <span class="wall-temp-value">@(latest is { } l ? l.TemperatureCelsius.ToString("0.0") : "--")&thinsp;&deg;C</span>
+            <span class="wall-temp-when">@(latest is { } r ? $"latest · {RelativeTime(r.RecordedAt)}" : "loading...")</span>
+        </div>
+
+        @if (loading)
+        {
+            <p class="loading-small">Loading readings...</p>
+        }
+        else
+        {
+            var scale = Scale();
+            <ProgressionChart Title="@ChartTitle" Caption="@ChartCaption" Stroke="#2e9e6b"
+                              Points="points" YTicks="scale.Ticks" YMin="scale.Min" YMax="scale.Max"
+                              OnYScaleStep="OnYScaleStep"
+                              EmptyText="No readings in this window." />
+        }
+    }
+</div>
+
+@code {
+    /// <summary>Windows offered to the user; "All" reaches back to the oldest reading of the wall.</summary>
+    private enum TempRange { Day, Week, Month, Year, All }
+
+    private static readonly (TempRange Range, string Label)[] RangeOptions =
+    [
+        (TempRange.Day, "24h"),
+        (TempRange.Week, "7d"),
+        (TempRange.Month, "30d"),
+        (TempRange.Year, "1y"),
+        (TempRange.All, "All"),
+    ];
+
+    // The sensor posts about once a second, so a window is never read row by row: the database
+    // aggregates it into these many buckets and returns one row per bucket that has data.
+    private const int DayBuckets = 120;
+    private const int WideBuckets = 96;
+    private static readonly TimeSpan MinBucketWidth = TimeSpan.FromSeconds(1);
+
+    [Parameter]
+    [EditorRequired]
+    public Guid WallId { get; set; }
+
+    private WallTemperatureReading? latest;
+    private IReadOnlyList<ChartSeriesPoint> points = [];
+    private TempRange range = TempRange.Day;
+    private TimeSpan bucketWidth = TimeSpan.FromMinutes(12);
+    private bool loading = true;
+    private int yZoom;
+    private CancellationTokenSource? loadCts;
+
+    private string ChartTitle => $"Wall temperature · {RangeOptions.First(o => o.Range == range).Label}";
+
+    private string ChartCaption => $"{FormatBucket(bucketWidth)} averages · drag axis to zoom";
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    public void Dispose()
+    {
+        loadCts?.Cancel();
+        loadCts?.Dispose();
+    }
+
+    private async Task SelectRange(TempRange next)
+    {
+        if (next == range)
+        {
+            return;
+        }
+
+        range = next;
+        yZoom = 0;
+        await LoadAsync();
+    }
+
+    private void OnYScaleStep(int direction)
+    {
+        yZoom = Math.Clamp(yZoom + direction, -4, 8);
+    }
+
+    private async Task LoadAsync()
+    {
+        // Cancel but do not dispose the previous source: its token may still be registered inside
+        // an in-flight query, and disposing it underneath that would throw ObjectDisposedException.
+        loadCts?.Cancel();
+        loadCts = new CancellationTokenSource();
+        var ct = loadCts.Token;
+
+        loading = true;
+        points = [];
+        try
+        {
+            latest = await TemperatureService.GetLatestReadingAsync(WallId, ct);
+            if (latest != null)
+            {
+                await BuildSeriesAsync(ct);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        finally
+        {
+            if (!ct.IsCancellationRequested)
+            {
+                loading = false;
+            }
+        }
+    }
+
+    /// <summary>
+    /// One aggregate query per range. The database returns a row per non-empty bucket, so the
+    /// series is rebuilt here against the bucket grid and the missing ones become gaps.
+    /// </summary>
+    private async Task BuildSeriesAsync(CancellationToken ct)
+    {
+        var to = DateTimeOffset.UtcNow;
+        var from = await RangeStartAsync(to, ct);
+        if (from is null)
+        {
+            // "All time" on a wall whose readings vanished between the two queries.
+            points = [];
+            return;
+        }
+
+        var buckets = range == TempRange.Day ? DayBuckets : WideBuckets;
+        var span = to - from.Value;
+        var width = TimeSpan.FromTicks(Math.Max(MinBucketWidth.Ticks, span.Ticks / buckets));
+        var slots = Math.Max(1, (int)Math.Ceiling(span.Ticks / (double)width.Ticks));
+
+        var aggregated = await TemperatureService.GetBucketedReadingsAsync(WallId, from.Value, to, width, ct);
+
+        bucketWidth = width;
+        points = ToPoints(aggregated, from.Value, width, slots);
+    }
+
+    /// <summary>Start of the selected window, or null when "All time" finds no readings at all.</summary>
+    private async Task<DateTimeOffset?> RangeStartAsync(DateTimeOffset to, CancellationToken ct)
+    {
+        if (range != TempRange.All)
+        {
+            return to - RangeSpan(range);
+        }
+
+        var earliest = await TemperatureService.GetEarliestReadingAtAsync(WallId, ct);
+        if (earliest is null)
+        {
+            return null;
+        }
+
+        // A wall that started reporting minutes ago still needs a window wide enough to draw.
+        return earliest.Value < to - MinBucketWidth ? earliest : to - RangeSpan(TempRange.Day);
+    }
+
+    private static TimeSpan RangeSpan(TempRange r) => r switch
+    {
+        TempRange.Day => TimeSpan.FromHours(24),
+        TempRange.Week => TimeSpan.FromDays(7),
+        TempRange.Month => TimeSpan.FromDays(30),
+        _ => TimeSpan.FromDays(365),
+    };
+
+    /// <summary>Buckets the database did not return are null points, which the chart draws as a gap.</summary>
+    private List<ChartSeriesPoint> ToPoints(
+        IReadOnlyList<WallTemperatureBucket> aggregated,
+        DateTimeOffset from,
+        TimeSpan width,
+        int slots)
+    {
+        var byIndex = new Dictionary<int, WallTemperatureBucket>(aggregated.Count);
+        foreach (var bucket in aggregated)
+        {
+            var index = (int)((bucket.BucketStart - from).Ticks / width.Ticks);
+            if (index >= 0 && index < slots)
+            {
+                byIndex[index] = bucket;
+            }
+        }
+
+        var result = new List<ChartSeriesPoint>(slots);
+        for (var i = 0; i < slots; i++)
+        {
+            var at = (from + TimeSpan.FromTicks(width.Ticks * i)).ToLocalTime();
+            var axis = range == TempRange.Day ? at.ToString("HH:mm") : at.ToString("d MMM");
+            if (!byIndex.TryGetValue(i, out var bucket))
+            {
+                result.Add(new ChartSeriesPoint(null, $"no data · {at:d MMM HH:mm}", axis));
+                continue;
+            }
+
+            var label = $"{bucket.AverageCelsius:0.0} °C (min {bucket.MinCelsius:0.0} · max {bucket.MaxCelsius:0.0}) · {at:d MMM HH:mm}";
+            result.Add(new ChartSeriesPoint(bucket.AverageCelsius, label, axis));
+        }
+
+        return result;
+    }
+
+    private (double Min, double Max, IReadOnlyList<(double Value, string Label)> Ticks) Scale()
+    {
+        var values = points.Where(p => p.Value.HasValue).Select(p => p.Value!.Value).ToList();
+        var dataMin = values.Count > 0 ? values.Min() : 0;
+        var dataMax = values.Count > 0 ? values.Max() : 30;
+        var center = (dataMin + dataMax) / 2;
+        var half = Math.Max((dataMax - dataMin) / 2, 1) * Math.Pow(1.3, yZoom);
+        var min = Math.Floor(center - half);
+        var max = Math.Ceiling(center + half);
+        if (max - min < 1)
+        {
+            max = min + 1;
+        }
+
+        var ticks = new List<(double Value, string Label)>();
+        for (var i = 0; i <= 4; i++)
+        {
+            var value = min + ((max - min) * i / 4);
+            ticks.Add((value, $"{value:0.#}°"));
+        }
+
+        return (min, max, ticks);
+    }
+
+    private static string FormatBucket(TimeSpan width)
+    {
+        if (width.TotalHours >= 1)
+        {
+            return $"{width.TotalHours:0.#}h";
+        }
+
+        return width.TotalMinutes >= 1 ? $"{width.TotalMinutes:0}min" : $"{width.TotalSeconds:0}s";
+    }
+
+    private static string RelativeTime(DateTimeOffset timestamp)
+    {
+        var diff = DateTimeOffset.UtcNow - timestamp;
+        if (diff.TotalMinutes < 1)
+        {
+            return "just now";
+        }
+
+        if (diff.TotalHours < 1)
+        {
+            return $"{(int)diff.TotalMinutes}m ago";
+        }
+
+        if (diff.TotalDays < 1)
+        {
+            return $"{(int)diff.TotalHours}h ago";
+        }
+
+        return diff.TotalDays < 7 ? $"{(int)diff.TotalDays}d ago" : timestamp.ToLocalTime().ToString("d MMM yyyy");
+    }
+}

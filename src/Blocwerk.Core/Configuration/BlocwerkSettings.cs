@@ -30,6 +30,8 @@ public class BlocwerkSettings
 
     public BetaVideoSettings BetaVideo { get; private set; } = new();
 
+    public WallImageSettings WallImage { get; private set; } = new();
+
     public List<string> AdminIdentifiers { get; private set; } = [];
 
     /// <summary>
@@ -120,6 +122,13 @@ public class BlocwerkSettings
             MaxUploadBytes = ParseBytes(section["BetaVideo:MaxUploadBytes"], "BETAVIDEO__MAXUPLOADBYTES", 4L * 1024 * 1024 * 1024),
             FfmpegPath = section["BetaVideo:FfmpegPath"] ?? Environment.GetEnvironmentVariable("BETAVIDEO__FFMPEGPATH") ?? "ffmpeg",
             FfprobePath = section["BetaVideo:FfprobePath"] ?? Environment.GetEnvironmentVariable("BETAVIDEO__FFPROBEPATH") ?? "ffprobe",
+        };
+
+        WallImage = new WallImageSettings
+        {
+            StoragePath = section["WallImage:StoragePath"]
+                          ?? Environment.GetEnvironmentVariable("WALLIMAGE__STORAGEPATH")
+                          ?? "wall-images",
         };
 
         GitHubOAuth = BindOAuthProvider(section, "GitHub", "https://github.com/login/oauth/authorize");
@@ -227,4 +236,13 @@ public class BetaVideoSettings
     public string FfmpegPath { get; set; } = "ffmpeg";
 
     public string FfprobePath { get; set; } = "ffprobe";
+}
+
+/// <summary>
+/// Wall image storage. Images pushed in by cameras or clients are stored on disk rather than the
+/// database, the same way beta clips are (see <see cref="BetaVideoSettings"/>).
+/// </summary>
+public class WallImageSettings
+{
+    public string StoragePath { get; set; } = "wall-images";
 }

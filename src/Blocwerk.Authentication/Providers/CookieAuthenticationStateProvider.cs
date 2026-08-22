@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Text;
+using Blocwerk.Authentication.Authorization;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Components.Authorization;
@@ -31,7 +32,10 @@ public class CookieAuthenticationStateProvider : AuthenticationStateProvider
 
         var httpContext = _httpContextAccessor.HttpContext;
 
-        if (httpContext?.User.Identity?.IsAuthenticated == true)
+        // An API key is a machine credential that lives on a device bolted to a wall. It may never
+        // establish a Blazor circuit: doing so would render every [Authorize] page as its owner.
+        // The scheme selection already keeps API keys off page paths; this is the second lock.
+        if (httpContext?.User.Identity?.IsAuthenticated == true && !httpContext.User.IsApiKeyPrincipal())
         {
             _cachedState = new AuthenticationState(httpContext.User);
             _isInitialized = true;

@@ -1,0 +1,105 @@
+@* One personal API key in the listing, including its two-step revoke confirmation. *@
+
+<div class="apikey-row @StateClass">
+    <div class="apikey-row-main">
+        <span class="apikey-name">@Key.Name</span>
+        <code class="apikey-prefix">@Key.Prefix&hellip;</code>
+        <span class="apikey-meta">
+            Created @Key.CreatedAt.ToLocalTime().ToString("d MMM yyyy")
+            &middot; Last used @(Key.LastUsedAt is { } used ? used.ToLocalTime().ToString("d MMM yyyy") : "never")
+            &middot; @ExpiryText
+        </span>
+    </div>
+
+    <div class="apikey-row-actions">
+        @if (StateLabel != null)
+        {
+            <span class="apikey-state">@StateLabel</span>
+        }
+        else if (confirming)
+        {
+            <span class="apikey-confirm-text">Revoke for good?</span>
+            <button type="button" class="apikey-btn danger" disabled="@Busy" @onclick="Confirm">Yes, revoke</button>
+            <button type="button" class="apikey-btn" disabled="@Busy" @onclick="() => confirming = false">Cancel</button>
+        }
+        else
+        {
+            <button type="button" class="apikey-btn" disabled="@Busy" @onclick="() => confirming = true">Revoke</button>
+        }
+    </div>
+</div>
+
+@code {
+    private bool confirming;
+
+    [Parameter]
+    [EditorRequired]
+    public required ApiKey Key { get; set; }
+
+    /// <summary>Blocks the buttons while the page is talking to the service.</summary>
+    [Parameter]
+    public bool Busy { get; set; }
+
+    [Parameter]
+    public EventCallback<Guid> OnRevoke { get; set; }
+
+    private bool IsRevoked => Key.RevokedAt.HasValue;
+
+    private bool IsExpired => !IsRevoked && Key.ExpiresAt is { } e && e <= DateTimeOffset.UtcNow;
+
+    private string? StateLabel
+    {
+        get
+        {
+            if (IsRevoked)
+            {
+                return "Revoked";
+            }
+
+            if (IsExpired)
+            {
+                return "Expired";
+            }
+
+            return null;
+        }
+    }
+
+    private string StateClass
+    {
+        get
+        {
+            if (IsRevoked)
+            {
+                return "revoked";
+            }
+
+            if (IsExpired)
+            {
+                return "expired";
+            }
+
+            return "active";
+        }
+    }
+
+    private string ExpiryText
+    {
+        get
+        {
+            if (Key.ExpiresAt is not { } expires)
+            {
+                return "no expiry";
+            }
+
+            var prefix = expires <= DateTimeOffset.UtcNow ? "Expired" : "Expires";
+            return $"{prefix} {expires.ToLocalTime():d MMM yyyy}";
+        }
+    }
+
+    private async Task Confirm()
+    {
+        confirming = false;
+        await OnRevoke.InvokeAsync(Key.Id);
+    }
+}

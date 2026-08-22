@@ -49,6 +49,12 @@ public class BlocwerkDbContext : DbContext
 
     public DbSet<Activity> Activities => Set<Activity>();
 
+    public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
+
+    public DbSet<WallTemperatureReading> WallTemperatureReadings => Set<WallTemperatureReading>();
+
+    public DbSet<WallImage> WallImages => Set<WallImage>();
+
     public BlocwerkDbContext(DbContextOptions<BlocwerkDbContext> options)
         : base(options)
     {
@@ -87,6 +93,57 @@ public class BlocwerkDbContext : DbContext
         ConfigureBoulderRating(modelBuilder);
         ConfigureBoulderFavorite(modelBuilder);
         ConfigureActivity(modelBuilder);
+        ConfigureApiKey(modelBuilder);
+        ConfigureWallTemperatureReading(modelBuilder);
+        ConfigureWallImage(modelBuilder);
+    }
+
+    private static void ConfigureApiKey(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<ApiKey>(entity =>
+        {
+            // Validation is a hash lookup on every machine request, so it has to be an index hit.
+            entity.HasIndex(k => k.KeyHash).IsUnique();
+
+            entity.HasOne(k => k.User)
+                .WithMany()
+                .HasForeignKey(k => k.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // A deleted wall takes its wall-scoped keys with it; they can address nothing else.
+            entity.HasOne(k => k.Wall)
+                .WithMany()
+                .HasForeignKey(k => k.WallId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+    }
+
+    private static void ConfigureWallTemperatureReading(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<WallTemperatureReading>(entity =>
+        {
+            entity.HasOne(r => r.Wall)
+                .WithMany()
+                .HasForeignKey(r => r.WallId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Every read is "this wall, this time range".
+            entity.HasIndex(r => new { r.WallId, r.RecordedAt });
+        });
+    }
+
+    private static void ConfigureWallImage(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<WallImage>(entity =>
+        {
+            entity.HasOne(i => i.Wall)
+                .WithMany()
+                .HasForeignKey(i => i.WallId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // The gallery query is always "this wall, newest capture first".
+            entity.HasIndex(i => new { i.WallId, i.CapturedAt });
+        });
     }
 
     private static void ConfigureActivity(ModelBuilder modelBuilder)

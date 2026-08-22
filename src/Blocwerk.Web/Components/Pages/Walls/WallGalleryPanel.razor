@@ -1,0 +1,299 @@
+@* Browsable image gallery of a wall: uploads, the current wall photo and retired generation photos. *@
+@inject IWallImageService ImageService
+
+<div class="settings-panel wall-gallery-panel">
+    <div class="wall-panel-head">
+        <h2>Gallery</h2>
+        <span class="wall-panel-hint">@items.Count image@(items.Count == 1 ? string.Empty : "s")</span>
+    </div>
+
+    @if (items.Count == 0 && !loading)
+    {
+        <p class="wall-gallery-empty">No images yet. Snapshots pushed in by a camera show up here.</p>
+    }
+    else
+    {
+        <div class="wall-gallery-grid">
+            @for (var i = 0; i < items.Count; i++)
+            {
+                var index = i;
+                var item = items[i];
+                <button type="button" class="wall-gallery-thumb" @key="ItemKey(item)" @onclick="() => Open(index)">
+                    <img src="@ImageUrl(item)" alt="@(item.Caption ?? "Wall image")" loading="lazy" />
+                    <span class="wall-gallery-badge @SourceClass(item.Source)">@SourceLabel(item.Source)</span>
+                    <span class="wall-gallery-when">@RelativeTime(item.CapturedAt)</span>
+                </button>
+            }
+        </div>
+    }
+
+    @if (loading)
+    {
+        <p class="loading-small">Loading images...</p>
+    }
+    else if (hasMore)
+    {
+        <button type="button" class="pager-btn wall-gallery-more" @onclick="LoadMore">Load more</button>
+    }
+
+    @if (error != null)
+    {
+        <div class="error-msg">@error</div>
+    }
+</div>
+
+@if (Selected is { } selected)
+{
+    <div class="wall-lightbox" tabindex="0" @ref="lightbox" @onkeydown="OnKeyDown">
+        <div class="wall-lightbox-bar">
+            <span class="wall-lightbox-title">@(selected.Caption ?? SourceLabel(selected.Source))</span>
+            <button type="button" class="wall-lightbox-close" @onclick="Close" aria-label="Close">&times;</button>
+        </div>
+
+        <div class="wall-lightbox-stage">
+            <button type="button" class="wall-lightbox-nav prev" disabled="@(selectedIndex <= 0)"
+                    @onclick="Previous" aria-label="Previous image">&lsaquo;</button>
+            <img class="wall-lightbox-img" src="@ImageUrl(selected)" alt="@(selected.Caption ?? "Wall image")" />
+            <button type="button" class="wall-lightbox-nav next" disabled="@(selectedIndex >= items.Count - 1)"
+                    @onclick="Next" aria-label="Next image">&rsaquo;</button>
+        </div>
+
+        <div class="wall-lightbox-foot">
+            <span class="wall-lightbox-meta">
+                <span class="wall-gallery-badge @SourceClass(selected.Source)">@SourceLabel(selected.Source)</span>
+                @selected.CapturedAt.ToLocalTime().ToString("dddd, d MMM yyyy HH:mm")
+                &middot; @RelativeTime(selected.CapturedAt)
+                &middot; @FormatSize(selected.SizeBytes)
+            </span>
+
+            @if (CanDelete(selected))
+            {
+                @if (confirmingDelete)
+                {
+                    <span class="wall-lightbox-actions">
+                        <span class="apikey-confirm-text">Delete this image?</span>
+                        <button type="button" class="apikey-btn danger" disabled="@busy" @onclick="Delete">Yes, delete</button>
+                        <button type="button" class="apikey-btn" disabled="@busy" @onclick="() => confirmingDelete = false">Cancel</button>
+                    </span>
+                }
+                else
+                {
+                    <button type="button" class="apikey-btn" disabled="@busy" @onclick="() => confirmingDelete = true">Delete</button>
+                }
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private const int PageSize = 24;
+
+    [Parameter]
+    [EditorRequired]
+    public Guid WallId { get; set; }
+
+    /// <summary>Share-token viewers need it on the image URL, exactly like the wall photo.</summary>
+    [Parameter]
+    public string? ShareToken { get; set; }
+
+    /// <summary>Only wall admins may delete, and only uploaded snapshots can be deleted at all.</summary>
+    [Parameter]
+    public bool IsAdmin { get; set; }
+
+    [Parameter]
+    public Guid CurrentUserId { get; set; }
+
+    private readonly List<WallGalleryItem> items = [];
+    private bool loading = true;
+    private bool hasMore;
+    private bool busy;
+    private bool confirmingDelete;
+    private string? error;
+    private int selectedIndex = -1;
+    private bool focusPending;
+    private ElementReference lightbox;
+
+    private WallGalleryItem? Selected =>
+        selectedIndex >= 0 && selectedIndex < items.Count ? items[selectedIndex] : null;
+
+    protected override async Task OnInitializedAsync() => await LoadMore();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (focusPending && Selected != null)
+        {
+            focusPending = false;
+            try
+            {
+                await lightbox.FocusAsync();
+            }
+            catch (Exception)
+            {
+                // The overlay went away before the focus call landed; nothing to do.
+            }
+        }
+    }
+
+    private async Task LoadMore()
+    {
+        loading = true;
+        error = null;
+        try
+        {
+            var batch = await ImageService.GetGalleryAsync(WallId, items.Count, PageSize);
+            items.AddRange(batch);
+            hasMore = batch.Count == PageSize;
+        }
+        catch (Exception ex)
+        {
+            error = $"Could not load the gallery: {ex.Message}";
+            hasMore = false;
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private void Open(int index)
+    {
+        selectedIndex = index;
+        confirmingDelete = false;
+        focusPending = true;
+    }
+
+    private void Close()
+    {
+        selectedIndex = -1;
+        confirmingDelete = false;
+    }
+
+    private void Previous()
+    {
+        if (selectedIndex > 0)
+        {
+            selectedIndex--;
+            confirmingDelete = false;
+        }
+    }
+
+    private void Next()
+    {
+        if (selectedIndex < items.Count - 1)
+        {
+            selectedIndex++;
+            confirmingDelete = false;
+        }
+    }
+
+    private void OnKeyDown(KeyboardEventArgs args)
+    {
+        switch (args.Key)
+        {
+            case "ArrowLeft":
+                Previous();
+                break;
+            case "ArrowRight":
+                Next();
+                break;
+            case "Escape":
+                Close();
+                break;
+        }
+    }
+
+    private bool CanDelete(WallGalleryItem item) =>
+        IsAdmin && CurrentUserId != Guid.Empty && item.Source == WallGallerySource.Uploaded;
+
+    private async Task Delete()
+    {
+        if (Selected is not { } target || busy)
+        {
+            return;
+        }
+
+        busy = true;
+        error = null;
+        try
+        {
+            await ImageService.DeleteImageAsync(target.Id, CurrentUserId);
+            items.RemoveAt(selectedIndex);
+            if (items.Count == 0)
+            {
+                selectedIndex = -1;
+            }
+            else if (selectedIndex >= items.Count)
+            {
+                selectedIndex = items.Count - 1;
+            }
+        }
+        catch (UnauthorizedAccessException)
+        {
+            error = "Only wall admins can delete images.";
+        }
+        catch (Exception ex)
+        {
+            error = $"Could not delete the image: {ex.Message}";
+        }
+        finally
+        {
+            busy = false;
+            confirmingDelete = false;
+        }
+    }
+
+    private string ImageUrl(WallGalleryItem item)
+    {
+        var url = $"/walls/{WallId}/gallery/{item.Source.ToString().ToLowerInvariant()}/{item.Id}";
+        return string.IsNullOrEmpty(ShareToken) ? url : $"{url}?token={Uri.EscapeDataString(ShareToken)}";
+    }
+
+    private static string ItemKey(WallGalleryItem item) => $"{item.Source}:{item.Id}";
+
+    private static string SourceLabel(WallGallerySource source) => source switch
+    {
+        WallGallerySource.Uploaded => "Snapshot",
+        WallGallerySource.WallPhoto => "Current photo",
+        _ => "Generation",
+    };
+
+    private static string SourceClass(WallGallerySource source) => source switch
+    {
+        WallGallerySource.Uploaded => "uploaded",
+        WallGallerySource.WallPhoto => "current",
+        _ => "historic",
+    };
+
+    private static string FormatSize(long bytes)
+    {
+        if (bytes <= 0)
+        {
+            return "unknown size";
+        }
+
+        return bytes >= 1024 * 1024
+            ? $"{bytes / (1024.0 * 1024.0):0.#} MB"
+            : $"{bytes / 1024.0:0} kB";
+    }
+
+    private static string RelativeTime(DateTimeOffset timestamp)
+    {
+        var diff = DateTimeOffset.UtcNow - timestamp;
+        if (diff.TotalMinutes < 1)
+        {
+            return "just now";
+        }
+
+        if (diff.TotalHours < 1)
+        {
+            return $"{(int)diff.TotalMinutes}m ago";
+        }
+
+        if (diff.TotalDays < 1)
+        {
+            return $"{(int)diff.TotalHours}h ago";
+        }
+
+        return diff.TotalDays < 7 ? $"{(int)diff.TotalDays}d ago" : timestamp.ToLocalTime().ToString("d MMM yyyy");
+    }
+}

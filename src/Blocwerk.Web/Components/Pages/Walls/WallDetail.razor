@@ -402,6 +402,19 @@ else
                 }
             </div>
         </Page4>
+
+        <Page5>
+            @* Wall details: temperature, gallery, and (for admins) the wall's API keys *@
+            <WallTemperaturePanel WallId="WallId" />
+
+            <WallGalleryPanel WallId="WallId" ShareToken="@ShareToken"
+                              IsAdmin="_isAdmin" CurrentUserId="_currentUserId" />
+
+            @if (_isAdmin && _currentUserId != Guid.Empty)
+            {
+                <WallApiKeyPanel WallId="WallId" CurrentUserId="_currentUserId" />
+            }
+        </Page5>
     </WallCarousel>
 }
 

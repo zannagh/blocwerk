@@ -9,6 +9,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Blocwerk.Core\Blocwerk.Core.csproj" />
+    <ProjectReference Include="..\..\src\Blocwerk.Authentication\Blocwerk.Authentication.csproj" />
+    <!-- The API-key REST controllers are unit-tested directly, with substituted services. -->
+    <ProjectReference Include="..\..\src\Blocwerk.Web\Blocwerk.Web.csproj" />
   </ItemGroup>
 
   <ItemGroup>

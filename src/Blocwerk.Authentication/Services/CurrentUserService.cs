@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Blocwerk.Authentication.Authorization;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
@@ -110,6 +111,17 @@ public class CurrentUserService : ICurrentUserService
     private ClaimsIdentity? TryGetClaimsIdentityFromHttpContext()
     {
         if (_accessor?.HttpContext is not { } httpContext)
+        {
+            return null;
+        }
+
+        // An API key resolves to its OWNER, which then opens every wall that owner belongs to via
+        // the membership query filter. That is only ever acceptable on an endpoint that explicitly
+        // opted into authorization — those compare the route's wall against the key's own wall
+        // claim (WallScopedApiController.GuardWall) or are scoped to the owner by definition
+        // (/api/v1/me/*). An unguarded endpoint that merely happens to sit under /api/walls did no
+        // such check, so the key must not resolve a user there at all.
+        if (httpContext.User.IsApiKeyPrincipal() && !ApiKeySurface.HasExplicitAuthorization(httpContext))
         {
             return null;
         }

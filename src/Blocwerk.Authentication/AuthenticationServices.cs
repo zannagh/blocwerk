@@ -1,12 +1,15 @@
 using System.Text;
+using Blocwerk.Authentication.Authorization;
 using Blocwerk.Authentication.Handlers;
 using Blocwerk.Authentication.Middleware;
 using Blocwerk.Authentication.Providers;
 using Blocwerk.Authentication.Services;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Configuration;
+using Blocwerk.Core.Enums;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.DataProtection;
@@ -43,22 +46,17 @@ public static class AuthenticationServices
 
         app.Services.AddScoped<AuthenticationStateProvider, CookieAuthenticationStateProvider>();
         app.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+        app.Services.AddSingleton<IAuthorizationHandler, WallGalleryImageHandler>();
 
         var policyScheme = "BlocwerkPolicy";
 
         app.Services.AddAuthentication(policyScheme)
             .AddPolicyScheme(policyScheme, policyScheme, options =>
             {
-                options.ForwardDefaultSelector = context =>
-                {
-                    var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
-                    if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-                    {
-                        return JwtBearerDefaults.AuthenticationScheme;
-                    }
-
-                    return CookieAuthenticationDefaults.AuthenticationScheme;
-                };
+                // This policy scheme is the app's DEFAULT scheme, so whatever it forwards to
+                // populates HttpContext.User on EVERY request. The selection — including the path
+                // gate that keeps an API key off the browser's surface — lives in ApiKeySurface.
+                options.ForwardDefaultSelector = ApiKeySurface.SelectScheme;
             })
             .AddJwtBearer(options =>
             {
@@ -79,9 +77,26 @@ public static class AuthenticationServices
                 options.LogoutPath = "/account/logout";
                 options.SlidingExpiration = true;
                 options.ExpireTimeSpan = TimeSpan.FromHours(8);
-            });
+            })
+            .AddScheme<ApiKeyAuthenticationOptions, ApiKeyAuthenticationHandler>(
+                ApiKeyAuthenticationHandler.SchemeName,
+                _ => { });
 
-        app.Services.AddAuthorization();
+        app.Services.AddAuthorization(options =>
+        {
+            // A bare [Authorize] must never be satisfiable by an API-key principal: it names the
+            // human schemes explicitly, so the policy evaluator re-authenticates with those two
+            // and an API-key identity simply is not part of the principal it judges. Cookie and
+            // JWT callers are unaffected — they were already being authenticated by these schemes.
+            options.DefaultPolicy = BuildHumanPolicy(new AuthorizationPolicyBuilder());
+
+            // No FallbackPolicy on purpose: it would apply to every endpoint without authorization
+            // metadata, which includes the login routes and the anonymous share-token routes.
+            options.AddPolicy(BlocwerkPolicies.WallApiKey, policy => BuildApiKeyPolicy(policy, ApiKeyScope.Wall));
+            options.AddPolicy(BlocwerkPolicies.UserApiKey, policy => BuildApiKeyPolicy(policy, ApiKeyScope.User));
+            options.AddPolicy(BlocwerkPolicies.AnyApiKey, policy => BuildApiKeyPolicy(policy, null));
+            options.AddPolicy(BlocwerkPolicies.WallGalleryImage, BuildGalleryImagePolicy(new AuthorizationPolicyBuilder()));
+        });
 
         app.Services.AddAntiforgery(options =>
         {
@@ -111,5 +126,49 @@ public static class AuthenticationServices
         app.UseAuthorization();
         app.UseAntiforgery();
         return app;
+    }
+
+    /// <summary>
+    /// A signed-in human: cookie for the Blazor app, JWT for the token callers. Naming the schemes
+    /// is what excludes the API key, because the evaluator only merges the identities it names.
+    /// The assertion is belt and braces, for the case where the policy is evaluated against a
+    /// principal handed in directly — Blazor's AuthorizeRouteView does exactly that, and no
+    /// scheme re-authentication happens there.
+    /// </summary>
+    public static AuthorizationPolicy BuildHumanPolicy(AuthorizationPolicyBuilder policy)
+    {
+        return policy
+            .AddAuthenticationSchemes(
+                CookieAuthenticationDefaults.AuthenticationScheme,
+                JwtBearerDefaults.AuthenticationScheme)
+            .RequireAuthenticatedUser()
+            .RequireAssertion(context => !context.User.IsApiKeyPrincipal())
+            .Build();
+    }
+
+    /// <summary>
+    /// The gallery byte route is reachable two ways: a signed-in human, or an anonymous viewer
+    /// holding a wall's share token (validated by the endpoint itself). A machine caller has its
+    /// own guarded route under /api and is rejected here, so a leaked wall key cannot walk the
+    /// galleries of every other wall its owner belongs to.
+    /// </summary>
+    public static AuthorizationPolicy BuildGalleryImagePolicy(AuthorizationPolicyBuilder policy)
+    {
+        return policy
+            .AddAuthenticationSchemes(
+                CookieAuthenticationDefaults.AuthenticationScheme,
+                JwtBearerDefaults.AuthenticationScheme)
+            .AddRequirements(new WallGalleryImageRequirement())
+            .Build();
+    }
+
+    private static void BuildApiKeyPolicy(AuthorizationPolicyBuilder policy, ApiKeyScope? scope)
+    {
+        policy.AddAuthenticationSchemes(ApiKeyAuthenticationHandler.SchemeName);
+        policy.RequireAuthenticatedUser();
+        string[] allowedScopes = scope is null
+            ? [ApiKeyScope.Wall.ToString(), ApiKeyScope.User.ToString()]
+            : [scope.Value.ToString()];
+        policy.RequireClaim(ApiKeyClaimTypes.Scope, allowedScopes);
     }
 }

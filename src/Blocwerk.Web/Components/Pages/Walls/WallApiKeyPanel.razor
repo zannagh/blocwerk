@@ -1,0 +1,215 @@
+@* Wall-scoped API keys: what a sensor or camera authenticates with. Wall admins only. *@
+@inject IApiKeyService ApiKeyService
+@inject IJSRuntime JS
+
+<div class="settings-panel wall-apikey-panel">
+    <h2>Wall API Keys</h2>
+
+    <p class="apikey-blurb">
+        A wall key lets a sensor or camera post to <strong>this wall</strong> &mdash; temperature
+        samples and gallery snapshots. Send it as
+        <code>Authorization: Bearer &lt;token&gt;</code>. It grants nothing else, but treat it like
+        a password and revoke it as soon as the device is gone.
+    </p>
+
+    @if (newToken != null)
+    {
+        <div class="apikey-reveal">
+            <h2>Copy your new token now</h2>
+            <p class="apikey-reveal-warning">
+                This is the only time the full token is shown. It cannot be retrieved later &mdash;
+                if you lose it, revoke the key and create a new one.
+            </p>
+            <code class="apikey-token">@newToken</code>
+            <div class="apikey-reveal-actions">
+                <button type="button" class="apikey-btn primary" @onclick="CopyToken">@copyLabel</button>
+                <button type="button" class="apikey-btn" @onclick="DismissToken">I have stored it</button>
+            </div>
+        </div>
+    }
+
+    @if (error != null)
+    {
+        <div class="error-msg">@error</div>
+    }
+
+    <div class="form-group">
+        <label for="wall-apikey-name">Name</label>
+        <input id="wall-apikey-name" class="form-input" maxlength="100" placeholder="e.g. Cellar temperature sensor"
+               @bind="name" @bind:event="oninput" />
+    </div>
+    <div class="form-group">
+        <label for="wall-apikey-expiry">Expires (optional)</label>
+        <input id="wall-apikey-expiry" type="date" class="form-input" @bind="expiresOn" />
+        <p class="hint">Leave empty for a key that never expires.</p>
+    </div>
+    <button type="button" class="btn-submit" disabled="@(busy || string.IsNullOrWhiteSpace(name))" @onclick="Create">
+        @(busy ? "Working..." : "Create key")
+    </button>
+
+    <div class="wall-apikey-list">
+        @if (keys == null)
+        {
+            <p class="loading-small">Loading...</p>
+        }
+        else if (keys.Count == 0)
+        {
+            <p class="apikey-empty">This wall has no API keys yet.</p>
+        }
+        else
+        {
+            @foreach (var key in keys)
+            {
+                <ApiKeyRow @key="key.Id" Key="key" Busy="busy" OnRevoke="Revoke" />
+            }
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    [EditorRequired]
+    public Guid WallId { get; set; }
+
+    [Parameter]
+    [EditorRequired]
+    public Guid CurrentUserId { get; set; }
+
+    private IReadOnlyList<ApiKey>? keys;
+    private string name = string.Empty;
+    private DateTime? expiresOn;
+    private string? newToken;
+    private string? error;
+    private string copyLabel = "Copy to clipboard";
+    private bool busy;
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        try
+        {
+            keys = await ApiKeyService.GetWallKeysAsync(WallId, CurrentUserId);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            error = "Only wall admins can manage this wall's API keys.";
+            keys = [];
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "Loading the API keys of wall {WallId} failed", WallId);
+            error = "The wall's API keys could not be loaded. Please try again.";
+            keys = [];
+        }
+    }
+
+    private async Task Create()
+    {
+        if (busy || string.IsNullOrWhiteSpace(name))
+        {
+            return;
+        }
+
+        error = null;
+        var expiresAt = ResolveExpiry();
+        if (expiresAt is { } value && value <= DateTimeOffset.UtcNow)
+        {
+            error = "The expiry date must be in the future.";
+            return;
+        }
+
+        busy = true;
+        try
+        {
+            var (_, token) = await ApiKeyService.CreateWallKeyAsync(WallId, CurrentUserId, name.Trim(), expiresAt);
+            newToken = token;
+            copyLabel = "Copy to clipboard";
+            name = string.Empty;
+            expiresOn = null;
+            await ReloadAsync();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            error = "Only wall admins can create keys for this wall.";
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "Creating an API key for wall {WallId} failed", WallId);
+            error = "The key could not be created. Please try again.";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task Revoke(Guid keyId)
+    {
+        if (busy)
+        {
+            return;
+        }
+
+        error = null;
+        busy = true;
+        try
+        {
+            await ApiKeyService.RevokeAsync(keyId, CurrentUserId);
+            await ReloadAsync();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            error = "Only wall admins can revoke this wall's keys.";
+        }
+        catch (InvalidOperationException)
+        {
+            error = "That key no longer exists.";
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "Revoking API key {ApiKeyId} of wall {WallId} failed", keyId, WallId);
+            error = "The key could not be revoked. Please try again.";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task CopyToken()
+    {
+        if (newToken == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", newToken);
+            copyLabel = "Copied";
+        }
+        catch (Exception)
+        {
+            copyLabel = "Copy failed - select the token and copy it manually";
+        }
+    }
+
+    private void DismissToken()
+    {
+        newToken = null;
+        copyLabel = "Copy to clipboard";
+    }
+
+    /// <summary>Turns the picked day into the instant that day ends, so the key lives all of it.</summary>
+    private DateTimeOffset? ResolveExpiry()
+    {
+        if (expiresOn is not { } day)
+        {
+            return null;
+        }
+
+        var endOfDay = day.Date.AddDays(1);
+        return new DateTimeOffset(endOfDay, TimeZoneInfo.Local.GetUtcOffset(endOfDay));
+    }
+}

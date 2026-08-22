@@ -51,6 +51,10 @@ public static class CoreServices
         builder.Services.AddSingleton<IBetaVideoStorage, FileSystemBetaVideoStorage>();
         builder.Services.AddSingleton<IVideoTranscoder, FfmpegVideoTranscoder>();
         builder.Services.AddScoped<IBetaVideoService, BetaVideoService>();
+        builder.Services.AddSingleton<IWallImageStorage, FileSystemWallImageStorage>();
+        builder.Services.AddScoped<IWallImageService, WallImageService>();
+        builder.Services.AddScoped<IWallTemperatureService, WallTemperatureService>();
+        builder.Services.AddScoped<IApiKeyService, ApiKeyService>();
         builder.Services.AddScoped<IWallSegmentService, WallSegmentService>();
         builder.Services.AddScoped<IProgressionService, ProgressionService>();
         builder.Services.AddScoped<ITrainingService, TrainingService>();

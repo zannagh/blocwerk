@@ -219,48 +219,9 @@ public static class Program
         app.MapRazorComponents<BlocwerkApp>()
             .AddInteractiveServerRenderMode();
 
-        app.MapGet("/api/walls/{wallId:guid}/photo", async (
-            Guid wallId,
-            [FromQuery] string? token,
-            [FromServices] IWallService wallService) =>
-        {
-            byte[]? photo;
-            if (!string.IsNullOrEmpty(token))
-            {
-                photo = await wallService.GetPhotoByShareTokenAsync(wallId, token);
-            }
-            else
-            {
-                photo = await wallService.GetPhotoAsync(wallId);
-            }
-
-            return photo == null ? Results.NotFound() : Results.File(photo, "image/jpeg");
-        });
-
-        // The wall photo as it looked at a given generation, so historic boulders can
-        // be rendered against the wall they were actually set on.
-        app.MapGet("/api/walls/{wallId:guid}/photo/{generation:int}", async (
-            Guid wallId,
-            int generation,
-            [FromQuery] string? token,
-            [FromServices] IWallService wallService) =>
-        {
-            var photo = string.IsNullOrEmpty(token)
-                ? await wallService.GetPhotoForGenerationAsync(wallId, generation)
-                : await wallService.GetPhotoForGenerationByShareTokenAsync(wallId, token, generation);
-
-            return photo == null
-                ? Results.NotFound()
-                : Results.File(photo.Photo, photo.ContentType ?? "image/jpeg");
-        });
-
-        app.MapGet("/api/walls/{wallId:guid}/staged-photo", async (
-            Guid wallId,
-            [FromServices] IWallService wallService) =>
-        {
-            var photo = await wallService.GetStagedPhotoAsync(wallId);
-            return photo == null ? Results.NotFound() : Results.File(photo, "image/jpeg");
-        });
+        // The wall photo routes (current, per generation, staged). They sit under /api/walls, so
+        // they are covered by WallPhotoEndpointAuthorizationTests.
+        app.MapWallPhotos();
 
         // Beta clips and their poster frames. Access mirrors the wall photo routes above: a share
         // token takes the anonymous path, otherwise the caller must be signed in.
@@ -292,6 +253,10 @@ public static class Program
         });
 
         app.MapBetaVideoUpload();
+
+        // Gallery item bytes for the signed-in browser (uploads, the wall photo, retired
+        // generation photos). Lives outside /api because /api is the API-key surface.
+        app.MapWallGalleryImages();
 
         app.MapGet("/api/beta-videos/{videoId:guid}/thumbnail", async (
             Guid videoId,
