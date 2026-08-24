@@ -1,0 +1,82 @@
+@using Blocwerk.Core.Entities
+@using Blocwerk.Core.Stitching
+@inject IWallStitchService StitchService
+@inject IWallStitchClient StitchClient
+@implements IAsyncDisposable
+
+@*
+    Multi-photo wall update: several handheld shots go to the stitch sidecar, which registers them
+    into one undistorted wall image and carries the existing holds across. The finished result is
+    written to the wall's staged slot, so it lands in the same confirm/discard flow as a
+    single-photo update rather than in a parallel one.
+*@
+<div class="settings-panel">
+    <h2>Rebuild Photo From Several Shots</h2>
+
+    @if (!StitchClient.IsConfigured)
+    {
+        <p class="empty-msg">
+            Multi-photo stitching is switched off because no stitching service is configured for
+            this installation. The single-photo upload above works as usual.
+        </p>
+    }
+    else
+    {
+        @if (_job is not null)
+        {
+            <WallStitchJobProgress Job="_job" />
+        }
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <p class="stitch-error">@_error</p>
+        }
+
+        @if (_job is not null && _job.Status == WallStitchJobStatus.Succeeded)
+        {
+            <WallStitchDiagnostics Result="_result" />
+            <div class="staged-actions">
+                <button class="btn-primary" @onclick="ApplyToStaging" disabled="@(_busy || HasStagedPhoto)">Stage this photo</button>
+                <button class="btn-secondary" @onclick="Reset" disabled="@_busy">Discard result</button>
+            </div>
+            @if (HasStagedPhoto)
+            {
+                <p class="staged-hint danger">
+                    Another photo is already staged. Confirm or discard that one first, then stage this result.
+                </p>
+            }
+            else
+            {
+                <p class="staged-hint">
+                    Staging puts the new photo into the usual review step — adjust holds in the editor,
+                    then confirm or discard it there.
+                </p>
+            }
+        }
+        else if (_job is not null && !IsTerminal(_job.Status))
+        {
+            <div class="staged-actions">
+                <button class="btn-secondary" @onclick="CancelJob" disabled="@_busy">Cancel stitch</button>
+            </div>
+        }
+        else if (HasStagedPhoto)
+        {
+            <p class="staged-hint">
+                Confirm or discard the photo that is already staged before starting a new stitch.
+            </p>
+        }
+        else
+        {
+            @if (_job is not null)
+            {
+                <div class="staged-actions">
+                    <button class="btn-secondary" @onclick="Reset" disabled="@_busy">Start over</button>
+                </div>
+            }
+            else
+            {
+                <WallStitchUploadForm WallAngleDegrees="WallAngleDegrees" Busy="_busy" OnStart="StartJob" />
+            }
+        }
+    }
+</div>

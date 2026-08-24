@@ -32,6 +32,10 @@ public class BlocwerkSettings
 
     public WallImageSettings WallImage { get; private set; } = new();
 
+    public WallPhotoMasterSettings WallPhotoMaster { get; private set; } = new();
+
+    public WallStitchSettings WallStitch { get; private set; } = new();
+
     public List<string> AdminIdentifiers { get; private set; } = [];
 
     /// <summary>
@@ -129,6 +133,41 @@ public class BlocwerkSettings
             StoragePath = section["WallImage:StoragePath"]
                           ?? Environment.GetEnvironmentVariable("WALLIMAGE__STORAGEPATH")
                           ?? "wall-images",
+        };
+
+        WallPhotoMaster = new WallPhotoMasterSettings
+        {
+            StoragePath = section["WallPhotoMaster:StoragePath"]
+                          ?? Environment.GetEnvironmentVariable("WALLPHOTOMASTER__STORAGEPATH")
+                          ?? "wall-photo-masters",
+        };
+
+        WallStitch = new WallStitchSettings
+        {
+            BaseUrl = section["WallStitch:BaseUrl"]
+                      ?? Environment.GetEnvironmentVariable("WALLSTITCH__BASEURL")
+                      ?? string.Empty,
+
+            // Never hardcoded and never committed: the shared secret comes from the environment
+            // (or a mounted secret bound into configuration) or the client stays unauthenticated.
+            AuthToken = section["WallStitch:AuthToken"]
+                        ?? Environment.GetEnvironmentVariable("WALLSTITCH__AUTHTOKEN")
+                        ?? string.Empty,
+            RequestTimeout = TimeSpan.TryParse(
+                section["WallStitch:RequestTimeout"] ?? Environment.GetEnvironmentVariable("WALLSTITCH__REQUESTTIMEOUT"),
+                out var stitchTimeout)
+                ? stitchTimeout
+                : TimeSpan.FromMinutes(5),
+            MaxRetries = int.TryParse(
+                section["WallStitch:MaxRetries"] ?? Environment.GetEnvironmentVariable("WALLSTITCH__MAXRETRIES"),
+                out var stitchRetries) && stitchRetries >= 0
+                ? stitchRetries
+                : 3,
+            RetryBaseDelay = TimeSpan.TryParse(
+                section["WallStitch:RetryBaseDelay"] ?? Environment.GetEnvironmentVariable("WALLSTITCH__RETRYBASEDELAY"),
+                out var stitchDelay)
+                ? stitchDelay
+                : TimeSpan.FromSeconds(2),
         };
 
         GitHubOAuth = BindOAuthProvider(section, "GitHub", "https://github.com/login/oauth/authorize");
@@ -245,4 +284,36 @@ public class BetaVideoSettings
 public class WallImageSettings
 {
     public string StoragePath { get; set; } = "wall-images";
+}
+
+/// <summary>
+/// Full-resolution stitched wall masters. A single ortho master is ~41 MB as PNG, and there are
+/// several per generation, so masters live on disk while only the display-resolution copies go
+/// into the database (mirrors <see cref="WallImageSettings"/>).
+/// </summary>
+public class WallPhotoMasterSettings
+{
+    public string StoragePath { get; set; } = "wall-photo-masters";
+}
+
+/// <summary>
+/// The external Python stitching sidecar. <see cref="AuthToken"/> is a shared secret and must come
+/// from the environment (<c>WALLSTITCH__AUTHTOKEN</c>) — never from a committed appsettings file.
+/// </summary>
+public class WallStitchSettings
+{
+    /// <summary>Sidecar base URL, e.g. <c>http://wall-stitch:8000/</c>. Empty disables the client.</summary>
+    public string BaseUrl { get; set; } = string.Empty;
+
+    /// <summary>Bearer token sent on every sidecar request.</summary>
+    public string AuthToken { get; set; } = string.Empty;
+
+    /// <summary>Per-request timeout. Jobs are polled, so no request ever waits for completion.</summary>
+    public TimeSpan RequestTimeout { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>How many times a transient (5xx/timeout/socket) failure is retried.</summary>
+    public int MaxRetries { get; set; } = 3;
+
+    /// <summary>First backoff delay; doubled per attempt.</summary>
+    public TimeSpan RetryBaseDelay { get; set; } = TimeSpan.FromSeconds(2);
 }

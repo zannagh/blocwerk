@@ -7,6 +7,10 @@
     custom property on <html>, so dragging the slider costs zero server round-trips
     and survives Blazor re-renders. The handlers are plain HTML attributes on purpose
     — they must not become Blazor event callbacks.
+
+    The optional projection button sits next to Focus and is the exception: it swaps the
+    photo the host component renders, so it is a real Blazor callback and only appears
+    where the host opts in (a wall that stores both projections).
 *@
 <div class="wall-dim-bar" title="Dim the wall photo so the boulder stands out">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" aria-hidden="true">
@@ -19,9 +23,26 @@
     <button type="button" class="wall-dim-focus"
             title="Focus mode: strongly dim and desaturate the photo, thicken hold outlines"
             onclick="window.blocwerkWallDim.toggleFocus()">Focus</button>
+    @if (ShowProjectionToggle)
+    {
+        <button type="button" class="wall-dim-projection" title="@ProjectionTitle" @onclick="OnToggleProjection">
+            @ProjectionLabel
+        </button>
+    }
 </div>
 
 @code {
+    /// <summary>Shows the projection button. Off unless the host has a second projection to show.</summary>
+    [Parameter] public bool ShowProjectionToggle { get; set; }
+
+    /// <summary>What the user gets by pressing the button, e.g. "Straight on".</summary>
+    [Parameter] public string ProjectionLabel { get; set; } = string.Empty;
+
+    /// <summary>Tooltip for the projection button.</summary>
+    [Parameter] public string? ProjectionTitle { get; set; }
+
+    [Parameter] public EventCallback OnToggleProjection { get; set; }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)

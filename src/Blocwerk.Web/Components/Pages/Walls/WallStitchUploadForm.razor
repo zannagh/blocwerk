@@ -1,0 +1,201 @@
+@using Blocwerk.Core.Stitching
+
+@*
+    Picks the photos for a stitch run and turns them into upload payloads. Everything that touches
+    the browser file handles lives here; the panel above only ever sees finished bytes.
+*@
+<div class="form-group">
+    <label>Upload @MinPhotos–@MaxPhotos overlapping photos of the wall</label>
+    <InputFile OnChange="OnPhotosSelected" accept="image/*" multiple class="form-input" />
+    <p class="hint">
+        Walk along the wall and shoot overlapping frames. They are combined into one undistorted
+        image and your existing holds are carried over automatically.
+    </p>
+
+    <label class="filter-check">
+        <input type="checkbox" @bind="_keepAngle" />
+        Keep the wall's @WallAngleDegrees&deg; angle
+    </label>
+    <p class="hint">
+        Checked, the photo keeps the wall's physical steepness. Unchecked, you get a straight-on
+        view of the wall plane with no foreshortening.
+    </p>
+
+    @if (_photos.Count > 0)
+    {
+        <div class="stitch-thumbs">
+            @foreach (var photo in _photos)
+            {
+                <div class="stitch-thumb" @key="photo.Id">
+                    @if (photo.Thumbnail is not null)
+                    {
+                        <img src="@photo.Thumbnail" alt="@photo.Name" />
+                    }
+                    else
+                    {
+                        <div class="stitch-thumb-placeholder">IMG</div>
+                    }
+                    <span class="stitch-thumb-name" title="@photo.Name">@photo.Name</span>
+                    <button type="button" class="stitch-thumb-remove" title="Remove this photo"
+                            @onclick="() => RemovePhoto(photo.Id)">&times;</button>
+                </div>
+            }
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <p class="stitch-error">@_error</p>
+    }
+
+    <div class="staged-actions">
+        <button class="btn-primary" @onclick="Submit" disabled="@(Busy || _reading || !CanStart)">
+            @(_reading ? "Uploading…" : $"Stitch {_photos.Count} photo(s)")
+        </button>
+        @if (_photos.Count > 0)
+        {
+            <button class="btn-secondary" @onclick="ClearPhotos" disabled="@(Busy || _reading)">Clear</button>
+        }
+    </div>
+</div>
+
+@code {
+    /// <summary>The wall's inclination, shown on the keep-angle checkbox.</summary>
+    [Parameter] public int WallAngleDegrees { get; set; }
+
+    /// <summary>Disables the controls while the panel is doing something else.</summary>
+    [Parameter] public bool Busy { get; set; }
+
+    /// <summary>Receives the read photos plus the projection the user asked for.</summary>
+    [Parameter] public EventCallback<StitchStartRequest> OnStart { get; set; }
+
+    /// <summary>What the panel needs to start a run: the photo bytes and the wanted projection.</summary>
+    public sealed record StitchStartRequest(
+        IReadOnlyList<StitchPhotoUpload> Photos,
+        WallPhotoProjection Projection);
+
+    private const int MinPhotos = 2;
+    private const int MaxPhotos = 12;
+    private const long MaxPhotoBytes = 30L * 1024 * 1024;
+
+    private sealed record SelectedPhoto(Guid Id, IBrowserFile File, string Name, string? Thumbnail);
+
+    private readonly List<SelectedPhoto> _photos = [];
+    private bool _keepAngle = true;
+    private bool _reading;
+    private string? _error;
+
+    private bool CanStart => _photos.Count >= MinPhotos && _photos.Count <= MaxPhotos;
+
+    private async Task OnPhotosSelected(InputFileChangeEventArgs e)
+    {
+        _error = null;
+        _photos.Clear();
+
+        IReadOnlyList<IBrowserFile> files;
+        try
+        {
+            // Read past the limit on purpose so an over-selection produces our own message
+            // instead of the framework's exception.
+            files = e.GetMultipleFiles(MaxPhotos * 4);
+        }
+        catch (InvalidOperationException)
+        {
+            _error = $"Select at most {MaxPhotos} photos.";
+            return;
+        }
+
+        if (files.Count < MinPhotos || files.Count > MaxPhotos)
+        {
+            _error = $"Select between {MinPhotos} and {MaxPhotos} photos — you picked {files.Count}.";
+            return;
+        }
+
+        foreach (var file in files)
+        {
+            if (!file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+            {
+                _error = $"\"{file.Name}\" is not an image.";
+                _photos.Clear();
+                return;
+            }
+
+            if (file.Size > MaxPhotoBytes)
+            {
+                _error = $"\"{file.Name}\" is larger than {MaxPhotoBytes / (1024 * 1024)} MB.";
+                _photos.Clear();
+                return;
+            }
+
+            _photos.Add(new SelectedPhoto(Guid.NewGuid(), file, file.Name, await ThumbnailOf(file)));
+        }
+    }
+
+    /// <summary>
+    /// Downscales in the browser before the bytes cross the circuit, so twelve phone photos cost a
+    /// few kilobytes of preview rather than a few hundred megabytes. A format the browser cannot
+    /// decode (HEIC on some devices) simply gets no preview.
+    /// </summary>
+    private static async Task<string?> ThumbnailOf(IBrowserFile file)
+    {
+        try
+        {
+            var resized = await file.RequestImageFileAsync("image/jpeg", 160, 160);
+            await using var stream = resized.OpenReadStream(1024 * 1024);
+            using var buffer = new MemoryStream();
+            await stream.CopyToAsync(buffer);
+            return $"data:image/jpeg;base64,{Convert.ToBase64String(buffer.ToArray())}";
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private void RemovePhoto(Guid id)
+    {
+        _photos.RemoveAll(p => p.Id == id);
+        _error = null;
+    }
+
+    private void ClearPhotos()
+    {
+        _photos.Clear();
+        _error = null;
+    }
+
+    private async Task Submit()
+    {
+        if (_reading || Busy || !CanStart)
+        {
+            return;
+        }
+
+        _reading = true;
+        _error = null;
+        StateHasChanged();
+        try
+        {
+            var uploads = new List<StitchPhotoUpload>(_photos.Count);
+            foreach (var photo in _photos)
+            {
+                await using var stream = photo.File.OpenReadStream(MaxPhotoBytes);
+                using var buffer = new MemoryStream();
+                await stream.CopyToAsync(buffer);
+                uploads.Add(new StitchPhotoUpload(photo.Name, photo.File.ContentType, buffer.ToArray()));
+            }
+
+            var projection = _keepAngle ? WallPhotoProjection.Angled : WallPhotoProjection.Ortho;
+            _photos.Clear();
+            await OnStart.InvokeAsync(new StitchStartRequest(uploads, projection));
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not read the photos: {ex.Message}";
+        }
+        finally
+        {
+            _reading = false;
+        }
+    }
+}

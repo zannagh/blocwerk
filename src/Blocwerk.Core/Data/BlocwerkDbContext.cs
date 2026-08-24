@@ -55,6 +55,8 @@ public class BlocwerkDbContext : DbContext
 
     public DbSet<WallImage> WallImages => Set<WallImage>();
 
+    public DbSet<WallStitchJob> WallStitchJobs => Set<WallStitchJob>();
+
     public BlocwerkDbContext(DbContextOptions<BlocwerkDbContext> options)
         : base(options)
     {
@@ -96,6 +98,22 @@ public class BlocwerkDbContext : DbContext
         ConfigureApiKey(modelBuilder);
         ConfigureWallTemperatureReading(modelBuilder);
         ConfigureWallImage(modelBuilder);
+        ConfigureWallStitchJob(modelBuilder);
+    }
+
+    private static void ConfigureWallStitchJob(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<WallStitchJob>(entity =>
+        {
+            // A deleted wall takes its stitch history with it; the jobs address nothing else.
+            entity.HasOne(j => j.Wall)
+                .WithMany()
+                .HasForeignKey(j => j.WallId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // The listing is always "this wall, newest run first".
+            entity.HasIndex(j => new { j.WallId, j.CreatedAt });
+        });
     }
 
     private static void ConfigureApiKey(ModelBuilder modelBuilder)

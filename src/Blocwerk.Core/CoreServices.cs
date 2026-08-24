@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
@@ -53,6 +54,27 @@ public static class CoreServices
         builder.Services.AddScoped<IBetaVideoService, BetaVideoService>();
         builder.Services.AddSingleton<IWallImageStorage, FileSystemWallImageStorage>();
         builder.Services.AddScoped<IWallImageService, WallImageService>();
+        builder.Services.AddSingleton<IWallPhotoMasterStorage, FileSystemWallPhotoMasterStorage>();
+
+        // The stitch sidecar is an out-of-process HTTP dependency; the typed client owns the base
+        // address and the bearer token, both of which come from configuration/environment.
+        builder.Services.AddHttpClient<IWallStitchClient, WallStitchClient>(http =>
+        {
+            if (!string.IsNullOrWhiteSpace(config.WallStitch.BaseUrl))
+            {
+                http.BaseAddress = new Uri(config.WallStitch.BaseUrl.TrimEnd('/') + "/");
+            }
+
+            if (!string.IsNullOrWhiteSpace(config.WallStitch.AuthToken))
+            {
+                http.DefaultRequestHeaders.Authorization =
+                    new AuthenticationHeaderValue("Bearer", config.WallStitch.AuthToken);
+            }
+
+            http.Timeout = config.WallStitch.RequestTimeout;
+        });
+
+        builder.Services.AddScoped<IWallStitchService, WallStitchService>();
         builder.Services.AddScoped<IWallTemperatureService, WallTemperatureService>();
         builder.Services.AddScoped<IApiKeyService, ApiKeyService>();
         builder.Services.AddScoped<IWallSegmentService, WallSegmentService>();

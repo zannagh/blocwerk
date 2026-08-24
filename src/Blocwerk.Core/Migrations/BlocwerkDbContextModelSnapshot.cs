@@ -665,6 +665,10 @@ namespace Blocwerk.Core.Migrations
                     b.Property<int>("Angle")
                         .HasColumnType("integer");
 
+                    b.Property<string>("AngledMasterPath")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
                     b.Property<string>("BorderPoints")
                         .HasColumnType("text");
 
@@ -689,19 +693,43 @@ namespace Blocwerk.Core.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
 
+                    b.Property<string>("OrthoMasterPath")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
                     b.Property<Guid>("OwnerId")
                         .HasColumnType("uuid");
 
                     b.Property<byte[]>("Photo")
                         .HasColumnType("bytea");
 
+                    b.Property<byte[]>("PhotoAlternate")
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("PhotoAlternateContentType")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<string>("PhotoContentType")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<int>("PhotoProjection")
+                        .HasColumnType("integer");
+
+                    b.Property<double?>("PhotoVerticalScale")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("PhotoWallAngleDegrees")
+                        .HasColumnType("double precision");
+
                     b.Property<string>("ShareToken")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
+
+                    b.Property<string>("StagedAngledMasterPath")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
 
                     b.Property<DateTimeOffset?>("StagedAt")
                         .HasColumnType("timestamp with time zone");
@@ -709,12 +737,32 @@ namespace Blocwerk.Core.Migrations
                     b.Property<Guid?>("StagedByUserId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("StagedOrthoMasterPath")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
                     b.Property<byte[]>("StagedPhoto")
                         .HasColumnType("bytea");
+
+                    b.Property<byte[]>("StagedPhotoAlternate")
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("StagedPhotoAlternateContentType")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
 
                     b.Property<string>("StagedPhotoContentType")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
+
+                    b.Property<int>("StagedPhotoProjection")
+                        .HasColumnType("integer");
+
+                    b.Property<double?>("StagedPhotoVerticalScale")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("StagedPhotoWallAngleDegrees")
+                        .HasColumnType("double precision");
 
                     b.Property<int>("StagingMode")
                         .HasColumnType("integer");
@@ -860,6 +908,71 @@ namespace Blocwerk.Core.Migrations
                     b.HasIndex("WallId", "SortOrder");
 
                     b.ToTable("WallSegments");
+                });
+
+            modelBuilder.Entity("Blocwerk.Core.Entities.WallStitchJob", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DiagnosticsJson")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ErrorCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
+
+                    b.Property<int>("PhotoCount")
+                        .HasColumnType("integer");
+
+                    b.Property<double>("Progress")
+                        .HasColumnType("double precision");
+
+                    b.Property<Guid>("RequestedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("RequestedProjection")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SidecarJobId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Stage")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTimeOffset?>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("TransferHolds")
+                        .HasColumnType("boolean");
+
+                    b.Property<double>("WallAngleDegrees")
+                        .HasColumnType("double precision");
+
+                    b.Property<Guid>("WallId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WallId", "CreatedAt");
+
+                    b.ToTable("WallStitchJobs");
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.WallTemperatureReading", b =>
@@ -1235,6 +1348,17 @@ namespace Blocwerk.Core.Migrations
                 {
                     b.HasOne("Blocwerk.Core.Entities.Wall", "Wall")
                         .WithMany("Segments")
+                        .HasForeignKey("WallId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Wall");
+                });
+
+            modelBuilder.Entity("Blocwerk.Core.Entities.WallStitchJob", b =>
+                {
+                    b.HasOne("Blocwerk.Core.Entities.Wall", "Wall")
+                        .WithMany()
                         .HasForeignKey("WallId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();

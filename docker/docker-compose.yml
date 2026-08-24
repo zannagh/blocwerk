@@ -38,6 +38,10 @@ services:
       POSTGRES__PASSWORD: blocwerk_dev
       # Beta clips live on disk (not the database); this is where they land inside the container.
       BETAVIDEO__STORAGEPATH: /data/beta-videos
+      # The stitching sidecar (see the wall-stitch service below). The token is the same
+      # shared secret the sidecar is started with.
+      WALLSTITCH__BASEURL: "http://wall-stitch:8080/"
+      WALLSTITCH__AUTHTOKEN: ${WALLSTITCH_AUTH_TOKEN:?set WALLSTITCH_AUTH_TOKEN in docker/.env}
     volumes:
       - ./appsettings.json:/app/appsettings.json:ro
       # Persist the DataProtection key ring across redeploys (see AuthenticationServices.cs) so a
@@ -48,6 +52,32 @@ services:
     depends_on:
       - postgres
       - otel-dashboard
+      - wall-stitch
+    restart: unless-stopped
+
+  # Wraps the Python wall-stitching pipeline (docker/wall-stitch/) behind a small HTTP
+  # API. Stitches take minutes and are CPU- and memory-heavy, so jobs are asynchronous
+  # and the internal worker pool is deliberately tiny. Never expose this port publicly:
+  # the only thing in front of it is the shared bearer token.
+  wall-stitch:
+    build:
+      context: ./wall-stitch
+    image: blocwerk-wall-stitch:local
+    environment:
+      # Shared secret with the app (Blocwerk:WallStitch:AuthToken). Generate with
+      # `openssl rand -hex 32` and put it in docker/.env - never in this file.
+      WALLSTITCH_AUTH_TOKEN: ${WALLSTITCH_AUTH_TOKEN:?set WALLSTITCH_AUTH_TOKEN in docker/.env}
+      WALLSTITCH_WORKERS: ${WALLSTITCH_WORKERS:-1}
+      WALLSTITCH_JOB_TIMEOUT_SECONDS: ${WALLSTITCH_JOB_TIMEOUT_SECONDS:-1800}
+      WALLSTITCH_JOB_TTL_SECONDS: ${WALLSTITCH_JOB_TTL_SECONDS:-86400}
+      WALLSTITCH_MAX_PHOTOS: ${WALLSTITCH_MAX_PHOTOS:-12}
+      WALLSTITCH_MAX_PHOTO_BYTES: ${WALLSTITCH_MAX_PHOTO_BYTES:-67108864}
+      WALLSTITCH_MAX_REQUEST_BYTES: ${WALLSTITCH_MAX_REQUEST_BYTES:-805306368}
+    volumes:
+      - wall-stitch-jobs:/data/jobs
+      # The hold detector's ONNX weights (~100 MB) are gitignored, so they are mounted
+      # rather than baked in. Only needed when the app asks for hold transfer.
+      - ../src/Blocwerk.HoldDetection/models:/opt/models:ro
     restart: unless-stopped
 
   # Receives the GitHub releases/packages webhook and, on a new published image, pulls and
@@ -78,3 +108,8 @@ services:
       # identical host paths the daemon expects.
       - ${COMPOSE_DIR}:${COMPOSE_DIR}
     restart: unless-stopped
+
+volumes:
+  # Job scratch space and finished artifacts for the stitching sidecar. Contents are
+  # temporary: the sidecar reaps job directories older than WALLSTITCH_JOB_TTL_SECONDS.
+  wall-stitch-jobs:

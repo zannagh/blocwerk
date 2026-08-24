@@ -1,0 +1,71 @@
+@using Blocwerk.Core.Entities
+
+@*
+    Read-only view of one stitch run: where it is, how far along, and what went wrong.
+    All state comes from the parent's polling — this component never talks to a service.
+*@
+@if (Job is not null)
+{
+    <div class="stitch-job">
+        <div class="stitch-job-head">
+            <span class="stitch-status @StatusClass">@StatusLabel</span>
+            @if (!string.IsNullOrWhiteSpace(Job.Stage) && !IsTerminal)
+            {
+                <span class="stitch-stage">@Job.Stage</span>
+            }
+            <span class="stitch-photo-count">@Job.PhotoCount photo(s)</span>
+        </div>
+
+        @if (!IsTerminal)
+        {
+            <div class="stitch-progress-track" role="progressbar"
+                 aria-valuemin="0" aria-valuemax="100" aria-valuenow="@Percent">
+                <div class="stitch-progress-fill" style="width: @Percent%"></div>
+            </div>
+            <p class="stitch-hint">@Percent% — stitching runs on the server, you can leave this page and come back.</p>
+        }
+
+        @if (Job.Status == WallStitchJobStatus.Failed)
+        {
+            <p class="stitch-error">
+                @(string.IsNullOrWhiteSpace(Job.ErrorMessage) ? "The stitch failed." : Job.ErrorMessage)
+                @if (!string.IsNullOrWhiteSpace(Job.ErrorCode))
+                {
+                    <span class="stitch-error-code">(@Job.ErrorCode)</span>
+                }
+            </p>
+        }
+        else if (Job.Status == WallStitchJobStatus.Cancelled)
+        {
+            <p class="stitch-hint">Cancelled. Nothing was changed on the wall.</p>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public WallStitchJob? Job { get; set; }
+
+    private bool IsTerminal =>
+        Job is not null && Job.Status is WallStitchJobStatus.Succeeded
+            or WallStitchJobStatus.Failed or WallStitchJobStatus.Cancelled;
+
+    private int Percent => Job is null ? 0 : (int)Math.Round(Math.Clamp(Job.Progress, 0, 1) * 100);
+
+    private string StatusLabel => Job?.Status switch
+    {
+        WallStitchJobStatus.Queued => "Waiting to start",
+        WallStitchJobStatus.Running => "Stitching",
+        WallStitchJobStatus.Succeeded => "Ready to review",
+        WallStitchJobStatus.Failed => "Failed",
+        WallStitchJobStatus.Cancelled => "Cancelled",
+        _ => "Unknown",
+    };
+
+    private string StatusClass => Job?.Status switch
+    {
+        WallStitchJobStatus.Succeeded => "ok",
+        WallStitchJobStatus.Failed => "bad",
+        WallStitchJobStatus.Cancelled => "muted",
+        _ => "busy",
+    };
+}

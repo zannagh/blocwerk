@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Blocwerk.Authentication.Authorization;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Services;
+using Blocwerk.Web.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Blocwerk.Web.Endpoints;
@@ -80,6 +81,57 @@ public static class WallPhotoEndpoints
 
             var photo = await wallService.GetStagedPhotoAsync(wallId);
             return photo == null ? Results.NotFound() : Results.File(photo, "image/jpeg");
+        }).DenyApiKeyPrincipals();
+
+        // The wall's other projection (ortho when the default is angled, and the other way round).
+        // Same gating as the routes above: no API-key principals, share token honoured, 404 when
+        // the wall has only one projection.
+        app.MapGet("/api/walls/{wallId:guid}/photo-alternate", async (
+            Guid wallId,
+            [FromQuery] string? token,
+            ClaimsPrincipal user,
+            [FromServices] WallAlternatePhotoReader reader,
+            CancellationToken ct) =>
+        {
+            if (user.IsApiKeyPrincipal())
+            {
+                return Results.NotFound();
+            }
+
+            try
+            {
+                var photo = string.IsNullOrEmpty(token)
+                    ? await reader.GetAlternateAsync(wallId, ct)
+                    : await reader.GetAlternateByShareTokenAsync(wallId, token, ct);
+
+                return photo == null ? Results.NotFound() : Results.File(photo.Content, photo.ContentType);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Results.NotFound();
+            }
+        }).DenyApiKeyPrincipals();
+
+        app.MapGet("/api/walls/{wallId:guid}/staged-photo-alternate", async (
+            Guid wallId,
+            ClaimsPrincipal user,
+            [FromServices] WallAlternatePhotoReader reader,
+            CancellationToken ct) =>
+        {
+            if (user.IsApiKeyPrincipal())
+            {
+                return Results.NotFound();
+            }
+
+            try
+            {
+                var photo = await reader.GetStagedAlternateAsync(wallId, ct);
+                return photo == null ? Results.NotFound() : Results.File(photo.Content, photo.ContentType);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Results.NotFound();
+            }
         }).DenyApiKeyPrincipals();
     }
 }

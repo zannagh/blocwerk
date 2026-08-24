@@ -1,0 +1,84 @@
+@using Blocwerk.Core.Stitching
+
+@*
+    Why the stitched image looks the way it does: which photos made it in, which the sidecar
+    dropped and for what reason, where coverage is thin, and how many holds it managed to carry
+    over. Shown after a successful run, before anything is applied to the wall.
+*@
+@if (Result is not null)
+{
+    <div class="stitch-diagnostics">
+        <div class="stitch-diag-row">
+            <span class="stitch-diag-key">Photos used</span>
+            <span class="stitch-diag-val">@UsedCount of @(UsedCount + RejectedCount)</span>
+        </div>
+        <div class="stitch-diag-row">
+            <span class="stitch-diag-key">Holds transferred</span>
+            <span class="stitch-diag-val">
+                @TransferredCount
+                @if (TransferredCount > 0 && ReviewCount > 0)
+                {
+                    <span class="stitch-diag-warn">@ReviewCount flagged for review</span>
+                }
+            </span>
+        </div>
+        @if (TransferredCount == 0)
+        {
+            <p class="stitch-hint">
+                No holds could be carried over — you will have to place them on the new photo yourself.
+            </p>
+        }
+
+        @if (Rejected.Count > 0)
+        {
+            <div class="stitch-diag-block">
+                <span class="stitch-diag-key">Photos ignored</span>
+                <ul class="stitch-diag-list">
+                    @foreach (var (rejected, index) in Rejected.Select((r, i) => (r, i)))
+                    {
+                        <li @key="index"><strong>@rejected.Name</strong> — @rejected.Reason</li>
+                    }
+                </ul>
+            </div>
+        }
+
+        @if (Warnings.Count > 0)
+        {
+            <div class="stitch-diag-block">
+                <span class="stitch-diag-key">Coverage warnings</span>
+                <ul class="stitch-diag-list">
+                    @foreach (var (warning, index) in Warnings.Select((w, i) => (w, i)))
+                    {
+                        <li @key="index">@warning</li>
+                    }
+                </ul>
+            </div>
+        }
+
+        @if (Result.Diagnostics is not null)
+        {
+            <p class="stitch-hint">
+                Seam angle RMS @Result.Diagnostics.SeamAngleRmsDeg.ToString("0.00")&deg;,
+                median bow @Result.Diagnostics.BowMedianPx.ToString("0.0") px.
+            </p>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public StitchJobResult? Result { get; set; }
+
+    private int UsedCount => Result?.Diagnostics?.ImagesUsed?.Count ?? 0;
+
+    private IReadOnlyList<StitchRejectedImage> Rejected =>
+        Result?.Diagnostics?.ImagesRejected ?? [];
+
+    private int RejectedCount => Rejected.Count;
+
+    private IReadOnlyList<string> Warnings => Result?.Diagnostics?.CoverageWarnings ?? [];
+
+    private int TransferredCount => Result?.Holds?.Count ?? 0;
+
+    private int ReviewCount => Result?.Holds?
+        .Count(h => !string.Equals(h.Classification, "matched", StringComparison.OrdinalIgnoreCase)) ?? 0;
+}

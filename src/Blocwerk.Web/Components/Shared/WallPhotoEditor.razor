@@ -326,7 +326,10 @@
 </div>
 </div>
 
-<WallDimControl />
+<WallDimControl ShowProjectionToggle="HasAlternateProjection"
+                ProjectionLabel="@ProjectionButtonLabel"
+                ProjectionTitle="@ProjectionButtonTitle"
+                OnToggleProjection="ToggleProjection" />
 
 @* Mode-specific contextual controls — kept BELOW the viewport so the image
    never shifts under the cursor when a tool's options appear or change. *@
@@ -613,6 +616,18 @@
     [Parameter] public Func<Task<Homography?>>? OnRequestAutoAlign { get; set; }
 
     /// <summary>
+    /// True when the wall stores a second projection of the same photo. Drives the projection
+    /// button next to Focus; hidden otherwise.
+    /// </summary>
+    [Parameter] public bool HasAlternateProjection { get; set; }
+
+    /// <summary>Which projection the wall's default photo is; the alternate is the other one.</summary>
+    [Parameter] public WallPhotoProjection PhotoProjection { get; set; } = WallPhotoProjection.Angled;
+
+    /// <summary>True while the alternate projection is on screen instead of the default one.</summary>
+    private bool _showAlternate;
+
+    /// <summary>
     /// Supplies the hold-to-boulders map for the usage tool. The tool button is hidden
     /// when this is not wired up.
     /// </summary>
@@ -724,11 +739,50 @@
     private List<Hold>? _snapshotHolds;
     private int _pendingChanges => _addedHolds.Count + _updatedHoldIds.Count + _deletedHoldIds.Count;
 
-    private string PhotoUrl => IsStaging
-        ? $"/api/walls/{WallId}/staged-photo"
-        : !string.IsNullOrEmpty(ShareToken)
-            ? $"/api/walls/{WallId}/photo?token={ShareToken}"
-            : $"/api/walls/{WallId}/photo";
+    // The alternate routes serve the wall's other projection. Hold coordinates are normalised per
+    // axis and the two projections differ only by a vertical scale, so the overlay is identical in
+    // both — swapping the image is the whole feature, no remapping anywhere.
+    private string PhotoUrl
+    {
+        get
+        {
+            var suffix = _showAlternate ? "-alternate" : string.Empty;
+            if (IsStaging)
+            {
+                return $"/api/walls/{WallId}/staged-photo{suffix}";
+            }
+
+            return string.IsNullOrEmpty(ShareToken)
+                ? $"/api/walls/{WallId}/photo{suffix}"
+                : $"/api/walls/{WallId}/photo{suffix}?token={ShareToken}";
+        }
+    }
+
+    /// <summary>Which projection is on screen right now.</summary>
+    private WallPhotoProjection DisplayedProjection =>
+        _showAlternate ? OtherProjection(PhotoProjection) : PhotoProjection;
+
+    /// <summary>The button names what you get, not what you are looking at.</summary>
+    private string ProjectionButtonLabel =>
+        DisplayedProjection == WallPhotoProjection.Ortho ? "Wall angle" : "Straight on";
+
+    private string ProjectionButtonTitle =>
+        DisplayedProjection == WallPhotoProjection.Ortho
+            ? "Show the photo with the wall's real steepness"
+            : "Show the wall straight on, without its lean";
+
+    private static WallPhotoProjection OtherProjection(WallPhotoProjection projection) =>
+        projection == WallPhotoProjection.Ortho ? WallPhotoProjection.Angled : WallPhotoProjection.Ortho;
+
+    private void ToggleProjection()
+    {
+        if (!HasAlternateProjection)
+        {
+            return;
+        }
+
+        _showAlternate = !_showAlternate;
+    }
 
     private bool IsStagedHold(Hold h) => IsStaging && h.Generation > LiveGeneration;
     private bool IsLiveHold(Hold h) => IsStaging && h.Generation <= LiveGeneration;
@@ -782,6 +836,13 @@
 
     protected override void OnParametersSet()
     {
+        // A wall that lost its second projection (or a staged update that has none) must not keep
+        // pointing the <img> at a route that now 404s.
+        if (!HasAlternateProjection)
+        {
+            _showAlternate = false;
+        }
+
         _segmentDrafts = (Segments ?? [])
             .Where(s => s.Points.Count >= 3)
             .OrderBy(s => s.SortOrder)

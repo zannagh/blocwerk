@@ -254,11 +254,14 @@ img.wall-photo {
 }
 .wall-dim-bar > svg { flex: 0 0 auto; opacity: 0.7; }
 .wall-dim-bar input[type="range"] { flex: 1 1 auto; min-width: 0; height: 28px; accent-color: var(--accent); }
-.wall-dim-focus {
+.wall-dim-focus,
+.wall-dim-projection {
     flex: 0 0 auto; padding: 6px 14px; min-height: 30px;
     border: 1px solid var(--border); background: var(--bg-surface); color: var(--text);
     border-radius: var(--r-pill); font-size: 0.75rem; font-weight: 600; cursor: pointer;
 }
+/* The projection button names the view you get, so it never latches "active". */
+.wall-dim-projection { white-space: nowrap; }
 :root.bw-wall-focus .wall-dim-focus { background: var(--accent); border-color: var(--accent); color: #fff; }
 
 /* Inside the dark editor/picker chrome the bar adopts the surrounding toolbar look. */
@@ -267,7 +270,9 @@ img.wall-photo {
     background: #22223a; color: rgba(255,255,255,0.6); border-bottom: none;
 }
 .zoom-bar + .wall-dim-bar .wall-dim-focus,
-.photo-viewport + .wall-dim-bar .wall-dim-focus {
+.photo-viewport + .wall-dim-bar .wall-dim-focus,
+.zoom-bar + .wall-dim-bar .wall-dim-projection,
+.photo-viewport + .wall-dim-bar .wall-dim-projection {
     background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.25); color: #fff;
 }
 

@@ -10,6 +10,7 @@ using Blocwerk.HoldDetection;
 using Blocwerk.Web.Components;
 using Blocwerk.Web.Controllers;
 using Blocwerk.Web.Endpoints;
+using Blocwerk.Web.Services;
 using Blocwerk.Web.State;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Components.Server.Circuits;
@@ -168,6 +169,9 @@ public static class Program
         // Per-circuit cache of wall/boulder aggregate reads, invalidated across circuits by the
         // domain-change notifier so revisits are served from memory and edits live-refresh.
         builder.Services.AddScoped<WallCacheState>();
+
+        // Reads the second projection of a wall photo for /api/walls/{id}/photo-alternate.
+        builder.Services.AddScoped<WallAlternatePhotoReader>();
 
         // Counts live circuits into the "connected users" gauge.
         builder.Services.AddScoped<CircuitHandler, TelemetryCircuitHandler>();

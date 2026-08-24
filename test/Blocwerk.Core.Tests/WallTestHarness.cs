@@ -21,6 +21,7 @@ public sealed class WallTestHarness : IDisposable
     private readonly SqliteConnection connection;
     private readonly string betaVideoDir;
     private readonly string wallImageDir;
+    private readonly string wallMasterDir;
 
     public WallTestHarness()
     {
@@ -29,6 +30,7 @@ public sealed class WallTestHarness : IDisposable
 
         betaVideoDir = Path.Combine(Path.GetTempPath(), "blocwerk-beta-tests", Guid.NewGuid().ToString("N"));
         wallImageDir = Path.Combine(Path.GetTempPath(), "blocwerk-wall-image-tests", Guid.NewGuid().ToString("N"));
+        wallMasterDir = Path.Combine(Path.GetTempPath(), "blocwerk-wall-master-tests", Guid.NewGuid().ToString("N"));
 
         Owner = new User { Identifier = "owner@test", DisplayName = "Owner" };
         DbContextFactory = new TestDbContextFactory(connection);
@@ -45,7 +47,11 @@ public sealed class WallTestHarness : IDisposable
         HoldDetection = Substitute.For<IHoldDetectionService>();
         ImageAlignment = Substitute.For<IImageAlignmentService>();
 
-        WallService = new WallService(DbContextFactory, CurrentUser, HoldDetection, ImageAlignment, ActivityLog, NullLogger<WallService>.Instance);
+        var masterSettings = new BlocwerkSettings();
+        masterSettings.WallPhotoMaster.StoragePath = wallMasterDir;
+        WallPhotoMasterStorage = new FileSystemWallPhotoMasterStorage(masterSettings);
+
+        WallService = new WallService(DbContextFactory, CurrentUser, HoldDetection, ImageAlignment, ActivityLog, NullLogger<WallService>.Instance, WallPhotoMasterStorage);
         BoulderService = new BoulderService(DbContextFactory, CurrentUser, ActivityLog, NullLogger<BoulderService>.Instance);
         AttemptService = new AttemptService(DbContextFactory, CurrentUser, ActivityLog, NullLogger<AttemptService>.Instance);
         FeedbackService = new BoulderFeedbackService(DbContextFactory, CurrentUser, NullLogger<BoulderFeedbackService>.Instance);
@@ -62,6 +68,14 @@ public sealed class WallTestHarness : IDisposable
         WallImageService = new WallImageService(DbContextFactory, WallImageStorage, NullLogger<WallImageService>.Instance);
         WallTemperatureService = new WallTemperatureService(DbContextFactory, NullLogger<WallTemperatureService>.Instance);
         ApiKeyService = new ApiKeyService(DbContextFactory, NullLogger<ApiKeyService>.Instance);
+
+        StitchClient = Substitute.For<IWallStitchClient>();
+        StitchClient.IsConfigured.Returns(true);
+        WallStitchService = new WallStitchService(
+            DbContextFactory,
+            StitchClient,
+            WallPhotoMasterStorage,
+            NullLogger<WallStitchService>.Instance);
     }
 
     public User Owner { get; }
@@ -99,6 +113,12 @@ public sealed class WallTestHarness : IDisposable
     public IWallTemperatureService WallTemperatureService { get; }
 
     public IApiKeyService ApiKeyService { get; }
+
+    public IWallPhotoMasterStorage WallPhotoMasterStorage { get; }
+
+    public IWallStitchClient StitchClient { get; }
+
+    public IWallStitchService WallStitchService { get; }
 
     /// <summary>
     /// Seeds a wall owned by <see cref="Owner"/> with a live photo and the given number
@@ -172,6 +192,11 @@ public sealed class WallTestHarness : IDisposable
         if (Directory.Exists(wallImageDir))
         {
             Directory.Delete(wallImageDir, recursive: true);
+        }
+
+        if (Directory.Exists(wallMasterDir))
+        {
+            Directory.Delete(wallMasterDir, recursive: true);
         }
     }
 }

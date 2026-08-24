@@ -140,6 +140,11 @@ else
                     <button class="btn-danger" @onclick="DeleteWall">Delete Wall</button>
                 </div>
 
+                <WallStitchPanel WallId="WallId" CurrentUserId="_currentUserId"
+                                 WallAngleDegrees="_wall.Angle"
+                                 HasStagedPhoto="_wall.StagedAt.HasValue"
+                                 OnStagingApplied="OnStitchStaged" />
+
                 <div class="settings-panel">
                     <h2>Wall Shape</h2>
                     <div class="form-group">
@@ -274,6 +279,8 @@ else
                                              IsStaging="@_wall.StagedAt.HasValue"
                                              LiveGeneration="_wall.CurrentGeneration"
                                              ManualAlignment="@(_wall.StagingMode == WallStagingMode.Manual)"
+                                             HasAlternateProjection="HasAlternateProjection"
+                                             PhotoProjection="@CurrentPhotoProjection"
                                              OnBatchSave="OnBatchSave"
                                              OnRedetectRequested="OnRedetect"
                                              OnBorderChanged="OnBorderChanged"
@@ -996,6 +1003,29 @@ else
     private async Task<Homography?> EstimateStagingAlignment()
     {
         return await WallService.EstimateStagingAlignmentAsync(WallId);
+    }
+
+    /// <summary>
+    /// True when the photo currently on screen (staged one while staging, otherwise the live one)
+    /// has a second projection stored. Drives the projection button next to Focus.
+    /// </summary>
+    private bool HasAlternateProjection => _wall != null
+        && (_wall.StagedAt.HasValue
+            ? _wall.StagedPhotoAlternateContentType != null
+            : _wall.PhotoAlternateContentType != null);
+
+    private WallPhotoProjection CurrentPhotoProjection => _wall == null
+        ? WallPhotoProjection.Angled
+        : _wall.StagedAt.HasValue ? _wall.StagedPhotoProjection : _wall.PhotoProjection;
+
+    /// <summary>
+    /// A finished stitch has been written to the staged slot; reload so the existing staged-photo
+    /// review UI (confirm/discard, hold editor) takes over from here.
+    /// </summary>
+    private async Task OnStitchStaged()
+    {
+        await LoadWall();
+        await ShowToast("Stitched photo staged — review the holds, then confirm or discard");
     }
 
     private async Task ConfirmStagedPhoto()

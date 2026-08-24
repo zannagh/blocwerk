@@ -1,0 +1,14 @@
+# Pipeline dependencies - pinned; the vendored pipeline was developed against exactly these.
+opencv-contrib-python-headless==5.0.0.93
+numpy==2.5.2
+pillow==12.3.0
+scipy==1.18.1
+
+# Sidecar
+fastapi==0.121.2
+uvicorn[standard]==0.41.0
+python-multipart==0.0.20
+pydantic==2.13.1
+
+# iPhone-native uploads; the pipeline itself reads images through OpenCV, which has no HEIC decoder.
+pillow-heif==1.2.0

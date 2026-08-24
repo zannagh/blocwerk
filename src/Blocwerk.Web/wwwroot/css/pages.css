@@ -1433,3 +1433,68 @@ html.bw-fullscreen .wall-main .photo-viewport {
 
 .wall-apikey-panel .apikey-blurb { margin-bottom: 14px; }
 .wall-apikey-list { margin-top: 16px; }
+
+/* ========== Wall stitch panel (multi-photo wall update) ========== */
+
+.stitch-thumbs {
+    display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 4px;
+}
+.stitch-thumb {
+    position: relative; width: 92px; display: flex; flex-direction: column; gap: 4px;
+    padding: 6px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg-surface); box-sizing: border-box;
+}
+.stitch-thumb img,
+.stitch-thumb-placeholder {
+    width: 100%; height: 68px; object-fit: cover; border-radius: 5px; display: block;
+}
+.stitch-thumb-placeholder {
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bg-surface-alt); color: var(--text-muted);
+    font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em;
+}
+.stitch-thumb-name {
+    font-size: 0.68rem; color: var(--text-secondary);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.stitch-thumb-remove {
+    position: absolute; top: -6px; right: -6px; width: 22px; height: 22px;
+    border: 1px solid var(--border); border-radius: 50%;
+    background: var(--bg-surface); color: var(--text); font-size: 0.9rem;
+    line-height: 1; cursor: pointer; padding: 0;
+}
+
+.stitch-job { margin: 10px 0 4px; }
+.stitch-job-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.stitch-status {
+    padding: 3px 10px; border-radius: var(--r-pill);
+    font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.stitch-status.busy { background: var(--bg-surface-alt); color: var(--text-secondary); }
+.stitch-status.ok { background: var(--accent); color: #fff; }
+.stitch-status.bad { background: var(--warning-text, #b3541e); color: #fff; }
+.stitch-status.muted { background: var(--bg-surface-alt); color: var(--text-muted); }
+.stitch-stage,
+.stitch-photo-count { font-size: 0.78rem; color: var(--text-secondary); }
+
+.stitch-progress-track {
+    height: 6px; margin-top: 8px; border-radius: 3px;
+    background: var(--bg-surface-alt); overflow: hidden;
+}
+.stitch-progress-fill { height: 100%; background: var(--accent); transition: width 300ms linear; }
+
+.stitch-hint { font-size: 0.8rem; color: var(--text-secondary); margin: 6px 0 0; }
+.stitch-error { font-size: 0.85rem; color: var(--warning-text, #b3541e); margin: 8px 0 0; }
+.stitch-error-code { opacity: 0.75; margin-left: 4px; }
+
+.stitch-diagnostics {
+    margin: 12px 0 4px; padding: 10px 12px;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface-alt);
+}
+.stitch-diag-row { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; }
+.stitch-diag-block { margin-top: 8px; }
+.stitch-diag-key { font-size: 0.78rem; color: var(--text-secondary); }
+.stitch-diag-val { font-size: 0.85rem; font-weight: 600; }
+.stitch-diag-warn { margin-left: 8px; font-weight: 500; color: var(--warning-text, #b3541e); }
+.stitch-diag-list { margin: 4px 0 0; padding-left: 18px; font-size: 0.8rem; color: var(--text-secondary); }
+.stitch-diag-list li { margin: 2px 0; }

@@ -19,13 +19,20 @@ public class WallService : IWallService
     private readonly IActivityLogService _activityLogService;
     private readonly ILogger<WallService> _logger;
 
+    /// <summary>
+    /// Only the stitched staging mode owns files on disk; optional so every existing caller
+    /// (and the DI container, which fills it in from the registered store) keeps working.
+    /// </summary>
+    private readonly IWallPhotoMasterStorage? _masterStorage;
+
     public WallService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         ICurrentUserService currentUserService,
         IHoldDetectionService holdDetectionService,
         IImageAlignmentService imageAlignmentService,
         IActivityLogService activityLogService,
-        ILogger<WallService> logger)
+        ILogger<WallService> logger,
+        IWallPhotoMasterStorage? masterStorage = null)
     {
         _dbContextFactory = dbContextFactory;
         _currentUserService = currentUserService;
@@ -33,6 +40,7 @@ public class WallService : IWallService
         _imageAlignmentService = imageAlignmentService;
         _activityLogService = activityLogService;
         _logger = logger;
+        _masterStorage = masterStorage;
     }
 
     public async Task<Wall> CreateWallAsync(string name, string? description, int angle = 0)
@@ -389,6 +397,11 @@ public class WallService : IWallService
             {
                 _logger.LogWarning("Wall {WallId} has no staged photo to confirm for {UserId}", wallId, user.Id);
                 throw new InvalidOperationException("No staged photo to confirm.");
+            }
+
+            if (wall.StagingMode == WallStagingMode.Stitched)
+            {
+                return await ConfirmStitchedAsync(db, wall, user.Id);
             }
 
             var liveGen = wall.CurrentGeneration;
@@ -751,6 +764,9 @@ public class WallService : IWallService
                 }
             }
 
+            // Clears the stitch-only staged columns too and hands back the staged master
+            // paths; a no-op for the older modes, which never populate them.
+            var abandonedMasters = WallStitchStagingPromotion.ClearStagedStitchColumns(wall);
             wall.StagedPhoto = null;
             wall.StagedPhotoContentType = null;
             wall.StagedAt = null;
@@ -758,6 +774,7 @@ public class WallService : IWallService
             wall.StagingMode = WallStagingMode.None;
 
             await db.SaveChangesAsync();
+            await WallPhotoMasterCleanup.DeleteUnreferencedAsync(db, _masterStorage, abandonedMasters);
             await _activityLogService.LogAsync(wallId, null, ActivityType.WallPhotoDiscarded);
         }
         catch (Exception ex)
@@ -1550,6 +1567,36 @@ public class WallService : IWallService
 
     private static bool IsPointInPolygon(double px, double py, List<(double X, double Y)> polygon) =>
         WallProjection.IsPointInPolygon(px, py, polygon);
+
+    /// <summary>
+    /// Confirm for <see cref="WallStagingMode.Stitched"/>: promotes generation N+1 by writing the
+    /// staged clones back onto their source holds, so hold ids — and therefore every
+    /// <c>BoulderHold</c> link — survive. Boulders are deliberately NOT marked historic; only
+    /// <see cref="ConfirmRecreateAsync"/> does that.
+    /// </summary>
+    private async Task<Wall> ConfirmStitchedAsync(BlocwerkDbContext db, Wall wall, Guid userId)
+    {
+        var stagedGen = wall.CurrentGeneration + 1;
+        var (promoted, added, flagged) = await WallStitchStagingPromotion.PromoteHoldsAsync(db, wall);
+
+        ArchiveRetiredPhoto(db, wall, userId);
+        var retiredMasters = WallStitchStagingPromotion.PromotePhoto(wall);
+        wall.StagedAt = null;
+        wall.StagedByUserId = null;
+        wall.StagingMode = WallStagingMode.None;
+        wall.CurrentGeneration = stagedGen;
+
+        await db.SaveChangesAsync();
+        await WallPhotoMasterCleanup.DeleteUnreferencedAsync(db, _masterStorage, retiredMasters);
+
+        BlocwerkMetrics.RecordWallPhotoConfirmed(wall.Id, "Stitched");
+        await _activityLogService.LogAsync(wall.Id, null, ActivityType.WallPhotoConfirmed,
+            $"stitched update: {promoted} carried, {added} new, {flagged} flagged for review");
+        _logger.LogInformation(
+            "Wall {WallId} stitched photo confirmed by {UserId}: {Promoted} carried, {Added} new, {Flagged} flagged",
+            wall.Id, userId, promoted, added, flagged);
+        return wall;
+    }
 
     /// <summary>
     /// Keeps the outgoing photo so historic boulders can still be rendered against the
