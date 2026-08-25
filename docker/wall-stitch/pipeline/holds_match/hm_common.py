@@ -7,6 +7,10 @@ import numpy as np
 
 SEED = 20260822
 
+# Recognition target is the NATURAL master (06-final/wall-orthophoto-angled.png, the app's
+# `angled` slot): a real photographic stitch of the undistorted frames that shows the WHOLE
+# wall in one perspective. Registering the old photo onto it is a natural->natural match, and
+# because nothing is cropped off-frame far fewer holds fall off the edge than on the ortho.
 # VENDORED-COPY PATCH (docker/wall-stitch): the upstream copy hardcodes a developer's
 # Desktop.  The sidecar runs one job per directory, so the root and the model path come
 # from the environment; the upstream defaults are kept so the file still behaves
@@ -15,7 +19,7 @@ SEED = 20260822
 WALL_ROOT = os.environ.get(
     "WALLSTITCH_WORK_ROOT", "/Users/patrickweindl/Desktop/wall-photos/work")
 OLD_IMG = os.environ.get("WALLSTITCH_OLD_IMG") or os.path.join(WALL_ROOT, "holds", "wall-photo.jpg")
-NEW_IMG = os.environ.get("WALLSTITCH_NEW_IMG") or os.path.join(WALL_ROOT, "06-final", "wall-orthophoto.png")
+NEW_IMG = os.environ.get("WALLSTITCH_NEW_IMG") or os.path.join(WALL_ROOT, "06-final", "wall-orthophoto-angled.png")
 HOLDS_JSON = os.environ.get("WALLSTITCH_HOLDS_JSON") or os.path.join(WALL_ROOT, "holds", "holds.json")
 WALL_JSON = os.environ.get("WALLSTITCH_WALL_JSON") or os.path.join(WALL_ROOT, "holds", "wall.json")
 ONNX = os.environ.get(

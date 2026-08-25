@@ -37,7 +37,9 @@ def _first(flags: frozenset, *candidates: str) -> str:
 
 def stitch_command(python_executable: str, stitch_dir: str, script: str,
                    src_dir: str, work_dir: str, cache_dir: str,
-                   wall_angle_degrees: float, images: Sequence[str]) -> List[str]:
+                   wall_angle_degrees: float, images: Sequence[str],
+                   max_canvas_mpx: float = 0.0, png_compression: int = -1,
+                   emit_facets: bool = False) -> List[str]:
     """`stitch_wall.py --src <input> --work <output> [--images ...] --wall-angle <deg>`."""
     flags = supported_flags(python_executable, script, stitch_dir)
     argv = [python_executable, script]
@@ -49,6 +51,18 @@ def stitch_command(python_executable: str, stitch_dir: str, script: str,
         argv += ["--cache", cache_dir]
     if not flags or "--wall-angle" in flags:
         argv += ["--wall-angle", f"{wall_angle_degrees:g}"]
+    # Memory controls, passed only where the pipeline advertises them, so an older
+    # vendored snapshot keeps working unchanged.
+    if max_canvas_mpx > 0 and "--max-canvas-mpx" in flags:
+        argv += ["--max-canvas-mpx", f"{max_canvas_mpx:g}"]
+    if png_compression >= 0 and "--png-compression" in flags:
+        argv += ["--png-compression", str(png_compression)]
+    # The shipping default: emit the multi-facet flat composite (ortho slot) and the
+    # cylindrical natural photographic master (angled slot). Passed only where the
+    # vendored pipeline advertises the flag, so an older snapshot silently keeps its
+    # single-plane behaviour rather than erroring on an unknown argument.
+    if emit_facets and "--emit-facets" in flags:
+        argv += ["--emit-facets"]
 
     # The generalised CLI takes the images explicitly; the current one derives them
     # from --src, so passing nothing there is correct rather than a fallback hack.
@@ -74,6 +88,22 @@ def holds_command(python_executable: str, holds_dir: str, script: str,
     ):
         if flag:
             argv += [flag, value]
+    return argv
+
+
+def crop_command(python_executable: str, holds_dir: str, script: str,
+                 png_compression: int = -1) -> List[str]:
+    """`crop_natural.py [--png-compression N]`.
+
+    The hold-aware crop reads every path (work root, natural master, holds-remapped.json,
+    report.json) from the same environment the matcher uses - see holds_environment - so
+    there are no path arguments here. It runs AFTER remap_holds has transferred the live
+    holds onto the uncropped cylindrical natural master.
+    """
+    flags = supported_flags(python_executable, script, holds_dir)
+    argv = [python_executable, script]
+    if png_compression >= 0 and (not flags or "--png-compression" in flags):
+        argv += ["--png-compression", str(png_compression)]
     return argv
 
 

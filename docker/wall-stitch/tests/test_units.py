@@ -37,6 +37,73 @@ def test_pipeline_output_is_classified(line, code):
     assert classify(line) == code
 
 
+@pytest.mark.parametrize("line,code", [
+    # The pipeline's own structured refusals, printed as `FAILED [code] message`.
+    ("[13:44:02] FAILED [too_few_images] only one file could be read", "too_few_usable_images"),
+    ("[13:44:02] FAILED [registration_failed] frames do not chain", "insufficient_overlap"),
+    ("[13:44:02] FAILED [no_legacy_polygons] not the reference set", "no_dominant_plane"),
+    ("FAILED [no_dominant_plane] nothing is flat here", "no_dominant_plane"),
+])
+def test_structured_pipeline_refusals_are_mapped(line, code):
+    assert classify(line) == code
+
+
+def test_an_unknown_pipeline_code_falls_through_rather_than_being_trusted():
+    assert classify("FAILED [some_future_code] who knows") == "pipeline_failed"
+
+
+def test_a_structured_refusal_beats_the_surrounding_log():
+    # The log also contains a line the regexes would read as insufficient_overlap; the
+    # pipeline's own verdict is the one that stopped the run, so it wins.
+    log = "  pair 3-4: FAILED\n[13:44:02] FAILED [no_dominant_plane] nothing is flat\n"
+    assert classify(log) == "no_dominant_plane"
+
+
+def test_a_silent_failure_can_be_given_an_explicit_fallback():
+    # What a cgroup OOM kill looks like: the kernel leaves no explanation behind.
+    assert classify("", "out_of_memory") == "out_of_memory"
+    # ...but real output still wins over the fallback.
+    assert classify("cv2.error: could not read input images", "out_of_memory") == "unreadable_image"
+
+
+def test_memory_settings_come_from_the_environment(monkeypatch):
+    monkeypatch.setenv("WALLSTITCH_AUTH_TOKEN", "x" * 20)
+    monkeypatch.setenv("WALLSTITCH_MAX_CANVAS_MPX", "42.5")
+    monkeypatch.setenv("WALLSTITCH_PNG_COMPRESSION", "1")
+    monkeypatch.setenv("WALLSTITCH_PIPELINE_THREADS", "2")
+    s = load_settings()
+    assert s.max_canvas_mpx == 42.5
+    assert s.png_compression == 1
+    assert s.pipeline_threads == 2
+
+
+def test_a_non_numeric_canvas_cap_is_refused_rather_than_ignored(monkeypatch):
+    monkeypatch.setenv("WALLSTITCH_AUTH_TOKEN", "x" * 20)
+    monkeypatch.setenv("WALLSTITCH_MAX_CANVAS_MPX", "big")
+    with pytest.raises(RuntimeError, match="WALLSTITCH_MAX_CANVAS_MPX"):
+        load_settings()
+
+
+def test_memory_flags_are_only_passed_where_the_pipeline_advertises_them(monkeypatch):
+    from app import invocation
+    invocation.supported_flags.cache_clear()
+    monkeypatch.setattr(invocation, "supported_flags",
+                        lambda *a, **k: frozenset({"--src", "--work", "--wall-angle"}))
+    argv = invocation.stitch_command("python", "/p", "stitch_wall.py", "/in", "/work",
+                                     "/cache", 45.0, ["1.jpeg"],
+                                     max_canvas_mpx=80.0, png_compression=3)
+    assert "--max-canvas-mpx" not in argv and "--png-compression" not in argv
+
+    monkeypatch.setattr(invocation, "supported_flags",
+                        lambda *a, **k: frozenset({"--src", "--work", "--wall-angle",
+                                                   "--max-canvas-mpx", "--png-compression"}))
+    argv = invocation.stitch_command("python", "/p", "stitch_wall.py", "/in", "/work",
+                                     "/cache", 45.0, ["1.jpeg"],
+                                     max_canvas_mpx=80.0, png_compression=3)
+    assert argv[argv.index("--max-canvas-mpx") + 1] == "80"
+    assert argv[argv.index("--png-compression") + 1] == "3"
+
+
 def test_every_error_code_has_an_actionable_message():
     for code, message in MESSAGES.items():
         assert len(message) > 15, code

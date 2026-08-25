@@ -266,19 +266,26 @@ def render_extra_planes(work, images, records, boxes, main_panel, log=print):
     import hm_planes
 
     kick, left = hm_planes.KICK, hm_planes.LEFT
-    render_plane(work, hm_planes.BY_KEY[kick], images[kick], records[kick],
-                 boxes[kick], crops={"left": (150, 0, 1000, 113),
-                                     "middle": (1450, 0, 1000, 113),
-                                     "right": (2150, 0, 1000, 113)},
-                 wide=2500, rows=3, log=log)
-    render_plane(work, hm_planes.BY_KEY[left], images[left], records[left],
-                 boxes[left], crops={"upper": (60, 300, 1300, 1000),
-                                     "lower": (0, 1500, 1300, 1000)},
-                 wide=900, log=log)
-    stack_review(work, [
-        main_panel,
-        review_panel(images[kick], records[kick], 2500, rows=3,
-                     title="kickboard plane (3190x113)"),
-        review_panel(images[left], records[left], 2500, rotate=True,
-                     title="left return panel (1433x3176), rotated 90 deg CCW"),
-    ], log=log)
+    # `images` only carries the planes the stitcher actually delivered; automatic plane
+    # discovery does not claim the single-view left return panel, so it is usually
+    # absent. Its overlays are simply not drawn, and the review sheet is the panels
+    # that exist.
+    if kick in images:
+        render_plane(work, hm_planes.BY_KEY[kick], images[kick], records[kick],
+                     boxes[kick], crops={"left": (150, 0, 1000, 113),
+                                         "middle": (1450, 0, 1000, 113),
+                                         "right": (2150, 0, 1000, 113)},
+                     wide=2500, rows=3, log=log)
+    if left in images:
+        render_plane(work, hm_planes.BY_KEY[left], images[left], records[left],
+                     boxes[left], crops={"upper": (60, 300, 1300, 1000),
+                                         "lower": (0, 1500, 1300, 1000)},
+                     wide=900, log=log)
+    panels = [main_panel]
+    if kick in images:
+        panels.append(review_panel(images[kick], records[kick], 2500, rows=3,
+                                   title="kickboard plane"))
+    if left in images:
+        panels.append(review_panel(images[left], records[left], 2500, rotate=True,
+                                   title="left return panel, rotated 90 deg CCW"))
+    stack_review(work, panels, log=log)

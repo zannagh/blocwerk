@@ -28,10 +28,13 @@ NCC_WIN = 21             # NCC window at the coarse (half-resolution) scale
 NCC_VAR_MIN = 25.0       # local intensity variance below which NCC means nothing
 NCC_PIXEL = 0.60         # a pixel agrees with the plane above this NCC
 NCC_AGREE = 0.50         # a cell agrees when this fraction of its opinionated px do
-NCC_DENY = 0.20          # ... and is denied below this fraction
+NEIGH = 3                # neighbourhood radius, in cells, for the verdict below
+NEIGH_OPINION = 0.15     # a neighbourhood counts when this fraction of it has an opinion
+NEIGH_AGREE = 0.20       # ... and it is on the plane when this fraction of that agrees
 MIN_CELL_CONF = 0.15     # a cell has an opinion when this fraction of it does
-CLOSE_CELLS = 4          # morphological close radius, in cells
+CLOSE_CELLS = 6          # morphological close radius, in cells
 MIN_COMPONENT = 20       # cells; smaller connected pieces are dropped
+HULL_MAX_GROWTH = 1.6    # convex closing may tidy a boundary, not invent a region
 
 
 def grid_shape(full_shape):
@@ -99,18 +102,6 @@ def agreement(gray_src, gray_dst, H_src_to_dst, gshape, coarse):
     return score.astype(np.float32), reach
 
 
-def _flood(seed, passable):
-    """8-connected region grown from `seed` through `passable` cells."""
-    p = (passable | seed).astype(np.uint8)
-    nlab, lab = cv2.connectedComponents(p, 8)
-    keep = np.zeros_like(p, bool)
-    for i in range(1, nlab):
-        comp = lab == i
-        if (comp & seed).any():
-            keep |= comp
-    return keep
-
-
 def _fill_holes(g):
     h, w = g.shape
     canvas = np.zeros((h + 2, w + 2), np.uint8)
@@ -121,11 +112,40 @@ def _fill_holes(g):
     return out
 
 
-def build_mask(sup, scores, reaches):
+def _span_fill(g, opinion):
+    """Claim cells nobody could verify that lie *between* claimed cells on a row.
+
+    A frame's own top corner is often outside every partner view, so the mask
+    would otherwise be notched wherever the partners' coverage parts around it.
+    Only cells with no opinion at all are filled, so this never overrides
+    evidence, and the span is bounded by the mask itself, so it never reaches
+    past the surface.
+    """
+    out = g.copy()
+    for i in range(g.shape[0]):
+        on = np.flatnonzero(g[i])
+        if len(on) < 2:
+            continue
+        lo, hi = on[0], on[-1]
+        out[i, lo:hi + 1] |= ~opinion[i, lo:hi + 1]
+    return out
+
+
+def build_mask(sup, scores, reaches, blocked=None):
     """Grid mask for one frame.
 
     `sup` counts the plane's inliers per cell; `scores` / `reaches` are one
-    `agreement()` result per partner view of the plane.
+    `agreement()` result per partner view of the plane; `blocked` marks cells a
+    different plane's own inliers claim.
+
+    The verdict is taken over a small neighbourhood rather than per cell.  Cell
+    by cell the evidence is salt and pepper - a 1 px misregistration destroys the
+    correlation on a hold's edge while leaving its neighbour intact - but over a
+    5x5 window the surfaces separate cleanly: on the wall a quarter to a half of
+    the opinionated cells agree, on the ceiling beam essentially none do, and a
+    crash mat is a wide expanse of grey that holds no opinion at all and so is
+    never claimed.  The result is closed, largest-component filtered and
+    hole-filled, which is what carries the mask across bare plywood.
     """
     gshape = sup.shape
     seed = sup > 0
@@ -136,18 +156,50 @@ def build_mask(sup, scores, reaches):
     for s, r in zip(scores, reaches):
         reach |= r
         best = np.maximum(best, s)
-    denied = reach & (best >= 0.0) & (best < NCC_DENY)
-    region = _flood(seed, reach & ~denied)
+    opinion = reach & (best >= 0.0)
+    box = (2 * NEIGH + 1, 2 * NEIGH + 1)
+    den = cv2.boxFilter(opinion.astype(np.float32), -1, box)
+    num = cv2.boxFilter((opinion & (best >= NCC_AGREE)).astype(np.float32), -1, box)
+    verdict = (den >= NEIGH_OPINION) & (num / np.maximum(den, 1e-6) >= NEIGH_AGREE)
+    core = seed | verdict
+    if blocked is not None:
+        core &= ~blocked
     k = np.ones((2 * CLOSE_CELLS + 1, 2 * CLOSE_CELLS + 1), np.uint8)
-    region = cv2.morphologyEx(region.astype(np.uint8), cv2.MORPH_CLOSE, k) > 0
-    region &= reach | seed                      # closing must not invent unseen area
+    region = cv2.morphologyEx(core.astype(np.uint8), cv2.MORPH_CLOSE, k) > 0
+    region &= ~(opinion & ~verdict) | seed
+    if blocked is not None:
+        region &= ~blocked | seed
     nlab, lab, stats, _ = cv2.connectedComponentsWithStats(region.astype(np.uint8), 8)
     keep = np.zeros(gshape, bool)
     for i in range(1, nlab):
         comp = lab == i
         if (comp & seed).any() and stats[i, cv2.CC_STAT_AREA] >= MIN_COMPONENT:
             keep |= comp
-    return _fill_holes(keep)
+    if not keep.any():
+        return keep
+    keep = _fill_holes(keep)
+    # A plane's visible region is convex in the image unless something occludes
+    # it, and the occluders are precisely what the evidence already marks: cells
+    # a partner view contradicts, and cells another plane's own inliers claim.
+    # Taking the convex hull and cutting those back out squares up the boundary
+    # that the cell grid and the salt-and-pepper correlation leave ragged, which
+    # is what the downstream largest-filled-rectangle crop is sensitive to.
+    pts = np.column_stack(np.nonzero(keep))[:, ::-1].astype(np.int32)
+    hull = np.zeros(gshape, np.uint8)
+    cv2.fillConvexPoly(hull, cv2.convexHull(pts), 1)
+    grown = (hull > 0) & ~(opinion & ~verdict)
+    if blocked is not None:
+        grown &= ~blocked
+    nlab, lab, _st, _c = cv2.connectedComponentsWithStats(grown.astype(np.uint8), 8)
+    out = np.zeros(gshape, bool)
+    for i in range(1, nlab):
+        comp = lab == i
+        if (comp & keep).sum() >= 0.25 * keep.sum():
+            out |= comp
+    out |= keep
+    if out.sum() > HULL_MAX_GROWTH * keep.sum():
+        out = keep          # tidy-up only: a hull that big is a different shape
+    return _span_fill(_fill_holes(out), opinion)
 
 
 def resolve_overlaps(masks_by_plane, sup_by_plane):

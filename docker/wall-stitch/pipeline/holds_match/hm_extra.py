@@ -148,6 +148,19 @@ def run_planes(old, live, plane_of, cache, log=print):
         plane = _pl.BY_KEY[key]
         subset = [h for h, k in zip(live, plane_of) if k == key]
         log(f"  --- {key}: {len(subset)} holds, {os.path.basename(plane.image)}")
+        # A plane the stitcher did not deliver.  Automatic plane discovery only claims
+        # a surface two or more photos agree on, so the single-view left return panel
+        # is legitimately absent from most runs; the hand-traced --legacy-masks path
+        # emits it and this loop then runs normally.  Its holds are reported missing,
+        # with the reason, rather than aborting the whole transfer.
+        if not os.path.exists(plane.image):
+            log(f"    not delivered by the stitcher - {len(subset)} hold(s) reported missing")
+            records[key] = _absent_records(subset, plane)
+            diags[key] = dict(holds=len(subset), skipped=True,
+                              image=dict(path=plane.image),
+                              reason="the stitcher produced no image for this plane")
+            boxes_by[key] = []
+            continue
         img = plane.read()
         images[key] = img
         seed = cache(f"seedmap-{key}.pkl",
@@ -166,6 +179,28 @@ def run_planes(old, live, plane_of, cache, log=print):
             c[r["classification"]] = c.get(r["classification"], 0) + 1
         log(f"    {c}")
     return records, diags, images, boxes_by
+
+
+def _absent_records(holds, plane):
+    """`missing` records for a plane the stitcher never produced.
+
+    Same shape as a transferred record so the caller can merge them without a special
+    case, but with no `new` geometry: there is no image to place these holds on, and
+    inventing a coordinate would be worse than saying so.
+    """
+    return [{
+        "Id": h["Id"], "Category": h["Category"], "Color": h.get("Color"),
+        "BoulderLinkCount": h.get("BoulderLinkCount", 0),
+        "plane": plane.key,
+        "old": {"X": h["X"], "Y": h["Y"], "Radius": h.get("Radius")},
+        "new": None,
+        "classification": "missing",
+        "reason": "the stitch produced no image for this surface",
+        "confidence": 0.0, "ncc": 0.0,
+        "snap_distance_px": None, "field_residual_px": None,
+        "region": "kickboard" if plane.key == KICK else "left-return",
+        "new_in_frame": False,
+    } for h in holds]
 
 
 def _anisotropy(seed, holds, shape):

@@ -23,7 +23,12 @@ def _rootsift(gray, mask=None, nfeatures=40000):
     return kp, np.sqrt(des).astype(np.float32)
 
 
-def main_span_mask(shape, exclude=("Segment 2",)):
+def main_span_mask(shape, exclude=()):
+    # WHOLE-WALL registration: the recognition target is now the natural master, which shows
+    # every wall surface (main span + left return + kickboard) in one perspective, so the old
+    # photo is matched against all of them - Segment 2 (the left return) included. It used to
+    # be excluded because the ortho unfolded the planes into separate images; the natural
+    # master keeps them together, so a single old->natural map covers the whole wall.
     h, w = shape[:2]
     with open(WALL_JSON) as fh:
         wall = json.load(fh)

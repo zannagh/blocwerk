@@ -77,7 +77,10 @@ class SubprocessPipelineRunner:
         argv = invocation.stitch_command(
             self.settings.python_executable, self.settings.stitch_dir, "stitch_wall.py",
             job.input_dir, job.work_dir, cache_dir,
-            job.options.wall_angle_degrees, [os.path.basename(p) for p in job.photos])
+            job.options.wall_angle_degrees, [os.path.basename(p) for p in job.photos],
+            max_canvas_mpx=self.settings.max_canvas_mpx,
+            png_compression=self.settings.png_compression,
+            emit_facets=self.settings.emit_facets)
         tracker = ProgressTracker(STITCH_MARKERS, stitch_span[0], stitch_span[1], "registering")
         self._execute(job, argv, self.settings.stitch_dir, {}, tracker, on_progress)
 
@@ -89,13 +92,20 @@ class SubprocessPipelineRunner:
 
         holds = None
         if job.options.transfer_holds and holds_span is not None:
-            holds = self._transfer_holds(job, ortho, holds_span, on_progress)
+            holds = self._transfer_holds(job, angled, holds_span, on_progress)
 
         return self._assemble(job, ortho, angled, holds, on_progress)
 
     # ---- phases ----------------------------------------------------------------
 
-    def _transfer_holds(self, job: JobContext, ortho: str, span, on_progress) -> List[Dict]:
+    def _transfer_holds(self, job: JobContext, new_master: str, span, on_progress) -> List[Dict]:
+        # Recognition retargeted to the NATURAL master (the `angled` slot): the old photo is
+        # registered onto it and holds are emitted in ONE whole-wall coordinate space
+        # normalised against that single image (matches the DB: whole-wall, SegmentId NULL).
+        # The natural master shows the whole wall in one perspective, so far fewer holds fall
+        # off-frame than on the facet-composited ortho. (Full whole-wall benefit needs the
+        # stitch run with --emit-facets so the angled slot is the natural photographic stitch
+        # rather than a vertically-squashed ortho.)
         match_dir = os.path.join(job.work_dir, "holds-match")
         os.makedirs(match_dir, exist_ok=True)
         paths = holdsio.write_inputs(os.path.join(job.work_dir, "holds"),
@@ -105,18 +115,43 @@ class SubprocessPipelineRunner:
 
         argv = invocation.holds_command(
             self.settings.python_executable, self.settings.holds_match_dir, "remap_holds.py",
-            match_dir, job.old_photo, ortho, paths["holds"], paths["wall"])
+            match_dir, job.old_photo, new_master, paths["holds"], paths["wall"])
         env = invocation.holds_environment(
-            job.work_dir, job.old_photo, ortho, paths["holds"], paths["wall"],
+            job.work_dir, job.old_photo, new_master, paths["holds"], paths["wall"],
             self.settings.onnx_model)
         tracker = HoldsProgressTracker(span[0], span[1])
         try:
             self._execute(job, argv, self.settings.holds_match_dir, env, tracker, on_progress)
+            # Hold-aware crop of the cylindrical natural master: now that the live holds
+            # sit on the (uncropped) natural master, crop_natural trims it to the wall,
+            # overwrites the angled-slot PNG/JPG in place, and re-normalises the holds in
+            # holds-remapped.json to the crop. Only meaningful under --emit-facets, whose
+            # angled slot IS the cylindrical natural master; skipped on the legacy path
+            # (there the angled slot is a squashed ortho, not a photographic stitch).
+            if self.settings.emit_facets:
+                self._crop_natural(job, env, on_progress)
             return holdsio.read_results(os.path.join(match_dir, REMAP_RESULT))
         except JobFailure:
             raise
         except Exception as exc:  # noqa: BLE001 - any matcher problem is one failure to the user
             raise JobFailure("hold_transfer_failed", type(exc).__name__) from exc
+
+    def _crop_natural(self, job: JobContext, env: Dict[str, str], on_progress) -> None:
+        # Degrade gracefully: a crop failure (e.g. no placed holds to crop against) must
+        # NOT sink the job. The uncropped cylindrical natural master and the whole-wall
+        # holds already normalised against it stay valid - the wall just keeps the extra
+        # attic margin the crop would have trimmed.
+        on_progress(0.965, "cropping")
+        argv = invocation.crop_command(
+            self.settings.python_executable, self.settings.holds_match_dir, "crop_natural.py",
+            png_compression=self.settings.png_compression)
+        tracker = HoldsProgressTracker(0.965, 0.97)
+        try:
+            self._execute(job, argv, self.settings.holds_match_dir, env, tracker, on_progress)
+        except Exception as exc:  # noqa: BLE001 - keep the uncropped master rather than failing
+            with open(job.log_path, "a", encoding="utf-8") as handle:
+                handle.write(f"\ncrop_natural skipped ({type(exc).__name__}); "
+                             "keeping the uncropped natural master\n")
 
     def _assemble(self, job: JobContext, ortho: str, angled: str,
                   holds: Optional[List[Dict]], on_progress) -> Dict[str, object]:
@@ -151,6 +186,16 @@ class SubprocessPipelineRunner:
         env.update(extra_env)
         env.setdefault("PYTHONUNBUFFERED", "1")
         env.setdefault("OPENCV_IO_MAX_IMAGE_PIXELS", str(2 ** 40))
+        env.setdefault("WALLSTITCH_STRIP_BUDGET_MB", str(self.settings.strip_budget_mb))
+        # Left alone, OpenCV and the BLAS underneath NumPy each open a thread pool the
+        # size of the host's core count, and every one of those threads keeps its own
+        # scratch arena. On a small box that multiplies the pipeline's transient
+        # footprint and starves the app container of CPU for no throughput gain: the
+        # heavy stages are memory-bandwidth bound well before they are core bound.
+        if self.settings.pipeline_threads:
+            for var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+                        "NUMEXPR_NUM_THREADS", "OPENCV_FOR_THREADS_NUM"):
+                env.setdefault(var, str(self.settings.pipeline_threads))
 
         with open(job.log_path, "a", encoding="utf-8") as log:
             log.write("\n$ " + " ".join(str(a) for a in argv) + "\n")
@@ -180,7 +225,15 @@ class SubprocessPipelineRunner:
         if job.cancelled.is_set():
             raise JobFailure("cancelled")
         if code != 0:
-            raise JobFailure("timeout" if fired else classify(self._tail(job)), f"exit {code}")
+            if fired:
+                raise JobFailure("timeout", f"exit {code}")
+            # SIGKILL with nothing on stdout is what a cgroup OOM kill looks like from
+            # in here: the kernel does not let the victim explain itself, so there is no
+            # MemoryError for classify() to find. Under a container memory limit this is
+            # the ordinary way a too-large job fails, so it must not read as "unexpected".
+            if code in (-9, 137):
+                raise JobFailure(classify(self._tail(job), "out_of_memory"), f"exit {code}")
+            raise JobFailure(classify(self._tail(job)), f"exit {code}")
 
     def _diagnostics(self, job: JobContext) -> Dict[str, object]:
         used = [os.path.basename(p) for p in job.photos]

@@ -95,12 +95,23 @@ def squash(img, c):
 # --------------------------------------------------------------------------
 # hold overlay (the invariance demonstration)
 # --------------------------------------------------------------------------
-def _holds(work, plane):
+def _holds(work):
+    """Transferred holds in the SINGLE whole-wall coordinate space.
+
+    Recognition now emits every hold normalised 0..1 against the ONE natural master
+    (top-left origin), with no per-plane split - `new.X`/`new.Y` land directly on the
+    natural/angled master. The old per-plane filter (`plane == "main-span"`) is gone:
+    all records share one surface. Returns (records, is_whole_wall); the whole-wall flag
+    lets the caller avoid drawing these natural-master coordinates onto the fronto-parallel
+    ortho, where they would not line up.
+    """
     p = os.path.join(work, "holds-match", "holds-remapped.json")
     if not os.path.exists(p):
-        return []
-    recs = json.load(open(p))["holds"]
-    return [r for r in recs if r.get("plane") == plane and r.get("new")]
+        return [], False
+    doc = json.load(open(p))
+    whole_wall = "_surface" in doc  # new single-surface format carries `_surface`
+    recs = [r for r in doc.get("holds", []) if r.get("new")]
+    return recs, whole_wall
 
 
 def draw_holds(img, holds, c=1.0, col=(60, 235, 60)):
@@ -172,20 +183,43 @@ def invariance(ortho, angled, holds, c, half=70):
 # --------------------------------------------------------------------------
 # figures
 # --------------------------------------------------------------------------
+def _fit(img, width):
+    """Downscale to `width`, never up.  INTER_AREA: the correct shrink filter."""
+    if img.shape[1] <= width:
+        return img
+    return cv2.resize(img, (width, max(1, int(round(img.shape[0] * width / img.shape[1])))),
+                      interpolation=cv2.INTER_AREA)
+
+
 def _panel(img, title, sub, col, width):
-    im = cv2.resize(img, (width, max(1, int(round(img.shape[0] * width / img.shape[1])))),
-                    interpolation=cv2.INTER_AREA)
-    bar = np.zeros((54, width, 3), np.uint8); bar[:] = col
+    # The bar takes the panel's ACTUAL width, not the requested one: `_fit` never
+    # upscales, so a master narrower than `width` keeps its own size and a bar built at
+    # `width` would not stack with it.
+    im = _fit(img, width)
+    w = im.shape[1]
+    bar = np.zeros((54, w, 3), np.uint8); bar[:] = col
     cv2.putText(bar, title, (16, 37), FONT, 1.0, (255, 255, 255), 2, cv2.LINE_AA)
-    cv2.putText(bar, sub, (16 + 380, 36), FONT, 0.6, (235, 235, 235), 1, cv2.LINE_AA)
+    cv2.putText(bar, sub, (16 + min(380, max(0, w - 340)), 36), FONT, 0.6,
+                (235, 235, 235), 1, cv2.LINE_AA)
     return np.vstack([bar, im])
 
 
+def _pad_to(img, width):
+    """Left-align onto a `width`-wide canvas.  Panels can differ in width once `_fit`
+    declines to upscale, and vstack needs them identical."""
+    if img.shape[1] >= width:
+        return img[:, :width]
+    out = np.zeros((img.shape[0], width, 3), np.uint8)
+    out[:, :img.shape[1]] = img
+    return out
+
+
 def _stack(parts, width):
-    gap = np.zeros((12, width, 3), np.uint8)
+    w = max([p.shape[1] for p in parts] + [1])
+    gap = np.zeros((12, w, 3), np.uint8)
     out = []
     for p in parts:
-        out += [p, gap]
+        out += [_pad_to(p, w), gap]
     return np.vstack(out[:-1])
 
 
@@ -216,13 +250,20 @@ def _details(ortho, angled, holds, c, box=430):
 
 
 def angle_check(work, ortho, angled, holds, c, theta, width=2200):
-    o = draw_holds(ortho, holds, 1.0)
-    a = draw_holds(angled, holds, c)
+    # Draw on the DOWNSCALED panels, not on full-resolution copies of both masters.
+    # `_panel` shrinks to `width` regardless, so drawing first only bought a pair of
+    # ~110 MB and ~80 MB copies and then threw the pixels away.  Hold markers come
+    # from normalised coordinates, so they land identically at either size; they are
+    # relatively thicker on the panel, which is what a review figure wants anyway.
+    o = draw_holds(_fit(ortho, width), holds, 1.0)
+    a = draw_holds(_fit(angled, width), holds, c)
     parts = [_panel(o, "ORTHO", "fronto-parallel %dx%d - holds drawn from normalised X,Y"
                     % (ortho.shape[1], ortho.shape[0]), (32, 110, 32), width),
              _panel(a, "ANGLED", "vertical x cos(%.2f deg)=%.4f -> %dx%d - SAME normalised X,Y"
                     % (theta, c, angled.shape[1], angled.shape[0]), (130, 70, 24), width)]
-    det = _details(o, a, holds, c)
+    # The detail tiles are native-resolution crops by definition, so they are taken
+    # from the masters rather than from the panels.
+    det = _details(ortho, angled, holds, c)
     if det is not None:
         parts.append(_panel(det, "DETAIL", "same holds, native resolution, both projections",
                             (60, 40, 110), width))
@@ -243,7 +284,8 @@ def side_by_side(work, ortho, angled, c, theta, width=2200):
 
 
 # --------------------------------------------------------------------------
-def emit(work, spec, report, jpeg_quality=95, log=print):
+def emit(work, spec, report, jpeg_quality=95, log=print, ortho=None,
+         png_compression=3):
     theta, source = resolve_theta(spec, work)
     meas = _measured(work)
     fin = os.path.join(work, "06-final")
@@ -258,7 +300,9 @@ def emit(work, spec, report, jpeg_quality=95, log=print):
         p = os.path.join(fin, src)
         if not os.path.exists(p):
             continue
-        img = cv2.imread(p)
+        # The caller already has the main-span master in memory; re-reading it
+        # decodes a second ~110 MB copy alongside the one that is still live.
+        img = ortho if (plane == "main-span" and ortho is not None) else cv2.imread(p)
         if plane == "main-span":
             th, sr = theta, source
         else:
@@ -268,7 +312,7 @@ def emit(work, spec, report, jpeg_quality=95, log=print):
         c = float(np.cos(np.radians(th)))
         out, hn = squash(img, c)
         png, jpg = os.path.join(fin, stem + ".png"), os.path.join(fin, stem + ".jpg")
-        cv2.imwrite(png, out, [cv2.IMWRITE_PNG_COMPRESSION, 9])
+        cv2.imwrite(png, out, [cv2.IMWRITE_PNG_COMPRESSION, png_compression])
         cv2.imwrite(jpg, out, [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
         info["planes"][plane] = dict(
             angle_deg=th, angle_source=sr, scale_factor=c,
@@ -286,10 +330,20 @@ def emit(work, spec, report, jpeg_quality=95, log=print):
                                          measured_yaw_deg=89.7)
     if main:
         img, out, c = main
-        holds = _holds(work, "main-span")
-        info["hold_invariance"] = invariance(img, out, holds, c)
-        info["figures"] = dict(angle_check=os.path.basename(angle_check(work, img, out, holds, c, theta)),
+        holds, whole_wall = _holds(work)
+        # The transferred holds now live in the natural master's whole-wall coordinate
+        # space, not the fronto-parallel ortho's. Drawing them on the ortho / squashed-ortho
+        # panels would place them on the wrong features, so the ortho-vs-squash figures are
+        # rendered WITHOUT the hold overlay in that case; the authoritative hold overlay on
+        # the natural master is holds-match/overlay-new.jpg from the recognition step.
+        fig_holds = [] if whole_wall else holds
+        info["hold_invariance"] = invariance(img, out, fig_holds, c)
+        info["figures"] = dict(angle_check=os.path.basename(angle_check(work, img, out, fig_holds, c, theta)),
                                angled_vs_ortho=os.path.basename(side_by_side(work, img, out, c, theta)))
+        if whole_wall:
+            info["holds_overlay"] = ("holds are whole-wall natural-master coords; see"
+                                     " holds-match/overlay-new.jpg for the overlay on the"
+                                     " natural master")
         hi = info["hold_invariance"]
         if hi:
             log("hold invariance: %d holds, patch NCC median %.4f min %.4f, %.1f%% > 0.90"

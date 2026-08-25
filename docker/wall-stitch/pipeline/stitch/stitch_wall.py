@@ -8,13 +8,18 @@ resolution-matched canvas -> gain compensation -> graph-cut seams -> multiband b
 
 Deterministic: fixed RNG seeds everywhere, no interactive steps.
 """
-import argparse, json, os, time
+import argparse, gc, hashlib, json, os, time
 import cv2
 import numpy as np
 from scipy.optimize import least_squares
 
 import angled_view
+import auto_planes
+import facets as facets_mod
+import natural_stitch                  # natural photographic master for the angled slot (--emit-facets)
+import plane_support
 import stitch_planes
+import wall_layout
 
 SEED = 20260822
 W0, H0 = 3024, 4032
@@ -63,13 +68,122 @@ LEFT_POLY_UNDIST = [(150, 1150), (985, 2755), (915, 2830), (690, 3120),
 # seed, the line is refit robustly at run time.
 LEFT_CREASE_SEED = ((172.0, 989.0), (704.0, 2077.0))
 
+# The legacy set, used only with --legacy-masks.  In the default, automatic
+# path these three are filled in from what plane discovery actually found: which
+# frames carry the dominant plane, which of their pairs register on it, and
+# which frame sits in the middle of that graph.
 IMAGES = ["1", "2", "3", "4"]      # "5" is rejected: see README / report
 REF = "2"
 PAIRS = [("1", "2"), ("2", "3"), ("3", "4")]   # 1-3 and 2-4 have no usable overlap
 
 
+class PipelineError(Exception):
+    """A structured, user-facing refusal: the upload cannot produce an orthophoto."""
+
+    def __init__(self, code, message, **detail):
+        super().__init__(message)
+        self.code, self.message, self.detail = code, message, detail
+
+    def as_dict(self):
+        return dict(ok=False, error=self.code, message=self.message, **self.detail)
+
+
+def spanning_pairs(pairs, images):
+    """A connected registration graph over `images`, preferring strong pairs.
+
+    Every pair that links two frames already in the tree is kept - the global
+    refinement is happy to use redundant constraints - but a frame that no pair
+    reaches is not registrable and is reported instead of silently dropped.
+    """
+    keep, seen = [], set()
+    order = sorted(pairs, key=lambda k: -pairs[k])
+    for a, b in order:
+        if not seen:
+            seen |= {a, b}
+            keep.append((a, b))
+        elif a in seen or b in seen:
+            seen |= {a, b}
+            keep.append((a, b))
+    for a, b in order:                       # a second sweep picks up late links
+        if (a, b) not in keep and a in seen and b in seen:
+            keep.append((a, b))
+    return keep, [n for n in images if n not in seen]
+
+
+def pick_reference(pairs, images):
+    """The frame that most pairs touch: the shortest chains to everything else."""
+    deg = {n: 0 for n in images}
+    for a, b in pairs:
+        deg[a] += 1
+        deg[b] += 1
+    return max(images, key=lambda n: (deg[n], -images.index(n)))
+
+
+def chain_to_ref(Hpair, ref, images):
+    """Breadth-first chain of pairwise homographies into the reference frame."""
+    Hs, todo = {ref: np.eye(3)}, [ref]
+    while todo:
+        cur = todo.pop(0)
+        for (a, b), H in Hpair.items():
+            if a == cur and b not in Hs:
+                Hs[b] = Hs[cur] @ np.linalg.inv(H)
+            elif b == cur and a not in Hs:
+                Hs[a] = Hs[cur] @ H
+            else:
+                continue
+            todo.append(b if a == cur else a)
+    return {n: Hs[n] for n in images if n in Hs}
+
+
+def mask_digest(masks, masks_kick, images):
+    """Short digest of the masks a cached intermediate was computed under."""
+    h = hashlib.md5()
+    for n in images:
+        h.update(n.encode())
+        h.update(np.ascontiguousarray(masks[n] > 0).tobytes())
+        h.update(np.ascontiguousarray(masks_kick[n] > 0).tobytes())
+    return h.hexdigest()[:10]
+
+
+def mask_outline(mask):
+    """Corner samples of a mask, for canvas-extent computation."""
+    c = plane_support.outline(mask)
+    return c if len(c) else np.zeros((0, 2))
+
+
 def log(*a):
     print(f"[{time.strftime('%H:%M:%S')}]", *a, flush=True)
+
+
+def rss_mb():
+    """Current resident set size of this process in MB, 0.0 where it cannot be read.
+
+    Deliberately the *current* RSS and not `ru_maxrss`: a checkpoint that reported the
+    high-water mark would carry every earlier stage's peak forward and make whichever
+    stage happened to run first look responsible for all of it.
+    """
+    try:                                        # Linux (the container)
+        with open("/proc/self/statm") as fh:
+            return int(fh.read().split()[1]) * os.sysconf("SC_PAGE_SIZE") / 1e6
+    except OSError:
+        pass
+    try:                                        # macOS (development): no statm, ask ps
+        import subprocess
+        out = subprocess.run(["ps", "-o", "rss=", "-p", str(os.getpid())],
+                             capture_output=True, text=True, timeout=5).stdout.strip()
+        return int(out) / 1024.0                # ps reports KiB
+    except Exception:                           # noqa: BLE001
+        return 0.0
+
+
+MEMLOG = os.environ.get("WALLSTITCH_MEMLOG", "") not in ("", "0", "false")
+
+
+def memlog(where):
+    """Checkpoint the RSS.  Off unless WALLSTITCH_MEMLOG is set, so it costs nothing
+    in a normal run but makes an out-of-memory report actionable when it is."""
+    if MEMLOG:
+        log("  [mem] %-28s %7.0f MB" % (where, rss_mb()))
 
 
 def intrinsics(w, h, f35=F35_EQ):
@@ -169,16 +283,36 @@ def rootsift(des):
     return np.sqrt(des).astype(np.float32)
 
 
+EMPTY_PTS = np.zeros((0, 2), np.float64)
+EMPTY_DES = np.zeros((0, 128), np.float32)
+
+
 def detect(img, mask):
+    """RootSIFT keypoints inside `mask`.  Empty arrays when the mask holds nothing.
+
+    `detectAndCompute` returns `des = None` - not an empty array - when it finds no
+    keypoint at all, which happens whenever the mask it is given is empty or covers
+    only flat material.  A derived mask can be empty for a frame that simply does not
+    see that surface, so this is ordinary input, not a failure; returning empty arrays
+    lets the caller's own "too few matches" test reject the pair the usual way.
+    """
     sift = cv2.SIFT_create(contrastThreshold=0.02, edgeThreshold=12)
     kp, des = sift.detectAndCompute(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), mask)
+    if des is None or len(kp) == 0:
+        return EMPTY_PTS.copy(), EMPTY_DES.copy()
     return np.array([k.pt for k in kp], np.float64), rootsift(des)
 
 
 def match(d1, d2, ratio=0.85):
+    # knnMatch needs at least k=2 candidates on the train side to ratio-test against.
+    if len(d1) == 0 or len(d2) < 2:
+        return np.zeros((0, 2), int)
     bf = cv2.BFMatcher(cv2.NORM_L2)
     m = bf.knnMatch(d1, d2, k=2)
-    return np.array([[a.queryIdx, a.trainIdx] for a, b in m if a.distance < ratio * b.distance], int)
+    # reshape so an empty result is still (0, 2) and column indexing stays legal,
+    # matching auto_mask.bf_ratio_match.
+    return np.array([[a.queryIdx, a.trainIdx] for a, b in m
+                     if a.distance < ratio * b.distance], int).reshape(-1, 2)
 
 
 def match_pair(ia, ma, ib, mb, coarse=0.5, prox=60.0):
@@ -343,7 +477,9 @@ def detail_check(res, imgs, Htot, masks, med, offset, work, patch=760):
     tex = cv2.blur(lap, (patch // 32 | 1, patch // 32 | 1))
     tex = tex / (tex.max() + 1e-6)
     best = None
-    for n in imgs:
+    # Htot, not imgs: `imgs` now also carries the frames the other discovered facets
+    # need, and those have no main-span transform or mask.
+    for n in Htot:
         d = density_map(Htot[n], masks[n], (H0, W0),
                         (Wr + ox, Hr + oy), stride=16)
         d = d[oy // 16:, ox // 16:]
@@ -431,14 +567,21 @@ def trace_seams(img):
     k = np.array([-1, -1, -1, -1, 0, 2, 4, 2, 0, -1, -1, -1, -1], np.float32)
     k -= k.mean(); k /= np.abs(k).sum()
     resp = -cv2.filter2D(b, cv2.CV_32F, k.reshape(-1, 1))           # bright on dark horizontal lines
-    R = np.where(wood, resp, np.nan)
-    prof = np.nan_to_num(np.nanmean(np.where(wood, resp, np.nan), axis=1))
+    del b
+    # np.nan is a Python float, so `np.where(wood, resp, np.nan)` silently promoted
+    # this to float64 - three full-canvas float64 arrays (~300 MB each at 7648x4864)
+    # where one float32 will do.  The row profile is taken from the same array
+    # instead of building a second copy of it.
+    R = np.where(wood, resp, np.float32("nan"))
+    del resp
+    prof = np.nan_to_num(np.nanmean(R, axis=1))
     prof = cv2.GaussianBlur(prof.reshape(-1, 1), (0, 0), 3).ravel()
     thr = np.percentile(prof, 70)
     peaks = [y for y in range(20, Hc - 20)
              if prof[y] > thr and prof[y] == prof[max(0, y - 30):y + 31].max()]
     peaks = [q for i, q in enumerate(peaks) if i == 0 or q - peaks[i - 1] > 50]
     Rf = np.nan_to_num(R, nan=-1e6)
+    del R
 
     def sample(y_at, halfwin):
         xs, ys = [], []
@@ -611,7 +754,16 @@ def verify(img, report, work, pano_path, jpeg_quality):
 
 
 def density_map(Hcanvas, mask_src, shape_src, canvas_wh, stride=8, e=8.0):
-    """sqrt(|det J|) of canvas->source, i.e. source pixels sampled per canvas pixel."""
+    """sqrt(|det J|) of canvas->source, i.e. source pixels sampled per canvas pixel.
+
+    Deliberately float64.  It reads like a quantity float32 would carry fine - it ends
+    up in percentile thresholds and a 0.85 ratio test - but that ratio test builds the
+    graph cut's preference masks, so cells sitting near the threshold decide which
+    source owns a region and therefore where the seam runs.  Narrowing the type moved
+    the seam on the reference wall and changed 2.5% of the delivered pixels by up to
+    39 levels: not worse, but not the same picture.  The memory this was meant to save
+    is saved by streaming instead - see best_density.
+    """
     Wc, Hc = canvas_wh
     gx, gy = np.meshgrid(np.arange(0, Wc, stride, dtype=np.float64),
                          np.arange(0, Hc, stride, dtype=np.float64))
@@ -619,30 +771,92 @@ def density_map(Hcanvas, mask_src, shape_src, canvas_wh, stride=8, e=8.0):
     Hi = np.linalg.inv(Hcanvas)
     f = lambda P: cv2.perspectiveTransform(P.reshape(-1, 1, 2), Hi).reshape(-1, 2)
     p0, px, py = f(gp), f(gp + [e, 0]), f(gp + [0, e])
+    del gp
     det = np.abs(((px[:, 0] - p0[:, 0]) * (py[:, 1] - p0[:, 1]) -
                   (py[:, 0] - p0[:, 0]) * (px[:, 1] - p0[:, 1]))) / (e * e)
+    del px, py
     hs, ws = shape_src
     ok = (p0[:, 0] >= 0) & (p0[:, 0] < ws - 1) & (p0[:, 1] >= 0) & (p0[:, 1] < hs - 1)
-    d = np.zeros(len(gp))
+    d = np.zeros(len(p0))
     ii = np.flatnonzero(ok)
     d[ii] = np.sqrt(det[ii])
     d[ii] *= (mask_src[p0[ii, 1].astype(int), p0[ii, 0].astype(int)] > 0)
     return d.reshape(gx.shape)
 
 
+def best_density(Htot, masks, names, shape_src, canvas_wh, stride=8):
+    """Per-canvas-cell maximum of every frame's density map.
+
+    Accumulated with np.maximum rather than np.stack([...]).max(0): the stack held
+    one grid per frame plus a copy of all of them, which on a twelve-photo wall is
+    the difference between two grids live and twenty-five.  Bit-identical to the
+    stacked form - np.maximum is associative over the same values.
+    """
+    best = None
+    for n in names:
+        d = density_map(Htot[n], masks[n], shape_src, canvas_wh, stride=stride)
+        best = d if best is None else np.maximum(best, d, out=best)
+    return best
+
+
+def best_density_argmax(Htot, masks, names, shape_src, canvas_wh, stride=8):
+    """Which frame samples each canvas cell best.  Same streaming trick."""
+    best, who = None, None
+    for i, n in enumerate(names):
+        d = density_map(Htot[n], masks[n], shape_src, canvas_wh, stride=stride)
+        if best is None:
+            best, who = d, np.zeros(d.shape, np.int16)
+        else:
+            take = d > best
+            best[take] = d[take]
+            who[take] = i
+    return who
+
+
+def cap_canvas_scale(med, extent, max_mpx, report):
+    """Lower the output scale if the canvas would exceed `max_mpx` megapixels.
+
+    Every whole-canvas buffer in this pipeline is linear in the canvas area, so
+    without a ceiling the memory a job needs is set by how big the photographed wall
+    happens to be.  The cap is a safety net, not a resolution policy: it does nothing
+    at all until the canvas passes the limit, and when it does bite it says so, with
+    the factor, so a soft-looking result is never a silent one.
+    """
+    if not max_mpx or max_mpx <= 0:
+        return med
+    mpx = (extent[0] * med) * (extent[1] * med) / 1e6
+    if mpx <= max_mpx:
+        return med
+    factor = float(np.sqrt(max_mpx / mpx))
+    log("WARNING: canvas would be %.1f Mpx, over the %.0f Mpx cap; scaling output "
+        "down by %.3f.  Detail IS lost - raise --max-canvas-mpx (and the container's "
+        "memory) if this wall deserves the pixels." % (mpx, max_mpx, factor))
+    report["canvas_cap"] = dict(uncapped_mpx=float(mpx), max_mpx=float(max_mpx),
+                                scale_factor=factor, applied=True)
+    return med * factor
+
+
 # --------------------------------------------------------------------------
 # main
 # --------------------------------------------------------------------------
+_WORK = []
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--src", default="/Users/patrickweindl/Desktop/wall-photos")
     ap.add_argument("--work", default="/Users/patrickweindl/Desktop/wall-photos/work")
     ap.add_argument("--cache", default=None)
     ap.add_argument("--jpeg-quality", type=int, default=95)
-    ap.add_argument("--density-percentile", type=float, default=90.0,
+    ap.add_argument("--density-percentile", type=float, default=75.0,
                     help="output scale = this percentile of the best-source sampling density "
-                         "over the main span (90 = only the best-sampled 10%% of the wall is "
-                         "resampled below its native rate; lower values trade detail for size)")
+                         "over the main span.  A wall shot from the mat is sampled ~3x more "
+                         "densely at the top than at the bottom, so no single scale suits all "
+                         "of it; this picks which part is served exactly.  At 90 the canvas is "
+                         "sized for the best-sampled tenth and everything else is enlarged to "
+                         "match - on the reference wall that upsampled the bottom 3.7x, storing "
+                         "pixels without storing detail.  75 leaves the top all but "
+                         "indistinguishable and the bottom identical, and halves the canvas")
     ap.add_argument("--wall-angle", default=None, metavar="DEG",
                     help="tilt past vertical of the main span, used for the extra "
                          "'keep the wall angle' projection (angled view = ortho with "
@@ -652,15 +866,90 @@ def main():
     ap.add_argument("--focal-scale", type=float, default=1.0,
                     help="scale the EXIF focal length; used to probe how well the "
                          "rectification is constrained (1.0 = nominal)")
+    ap.add_argument("--images", nargs="*", default=None, metavar="IMG",
+                    help="the upload: two or more image paths, or bare names resolved "
+                         "against --src.  Default: 1..5.jpeg under --src")
+    ap.add_argument("--max-canvas-mpx", type=float, default=80.0, metavar="MPX",
+                    help="ceiling on the orthophoto canvas, in megapixels.  Every "
+                         "whole-canvas buffer scales with this, so it bounds the job's "
+                         "memory.  0 disables the cap.  It is a safety net: it does "
+                         "nothing until the canvas exceeds it, and warns loudly when "
+                         "it bites, because past that point detail is being dropped")
+    ap.add_argument("--png-compression", type=int, default=3, metavar="N",
+                    help="zlib level for the PNG masters, 0-9.  PNG is lossless at "
+                         "every level, so this trades time for bytes only: on a "
+                         "7648x4864 master, level 3 is 44.5 MB in 5 s where level 9 is "
+                         "41.2 MB in 75 s")
+    ap.add_argument("--emit-facets", action="store_true",
+                    help="rectify and write every OTHER surface discovery accepted, "
+                         "beyond the span and the kickboard.  Off by default and not yet "
+                         "fit to ship: on the reference wall the third plane mixes the "
+                         "steeper right panel with attic floor and roof, so its fitted "
+                         "normal lands 4 deg from the span's and the panel rectifies "
+                         "keystoned.  The machinery is correct; the segmentation feeding "
+                         "it is not clean enough yet.  See README -> Facets")
+    ap.add_argument("--emit-full-png", action="store_true",
+                    help="also write the uncropped canvas as wall-orthophoto-full.png.  "
+                         "A diagnostic: it costs a second full-canvas copy and a PNG "
+                         "compression pass, and nothing downstream reads it")
+    ap.add_argument("--legacy-masks", action="store_true",
+                    help="use the hand-traced reference polygons instead of deriving the "
+                         "masks from the geometry.  Only valid for the original five "
+                         "photos; kept as the baseline the automatic path is measured against")
     args = ap.parse_args()
     cv2.setRNGSeed(SEED)
     np.random.seed(SEED)
+    # OpenCV opens one worker per core by default, and the heavy stages here (SIFT's
+    # scale-space pyramid, brute-force descriptor matching, the full-resolution warps)
+    # give every one of those workers its own scratch buffer.  On a container with a
+    # memory limit that multiplies the peak for no throughput: these stages saturate
+    # memory bandwidth long before they saturate cores.  0 leaves OpenCV alone.
+    threads = int(os.environ.get("WALLSTITCH_PIPELINE_THREADS", "0") or 0)
+    if threads > 0:
+        cv2.setNumThreads(threads)
+        got = cv2.getNumThreads()
+        backend = "unknown"
+        for ln in cv2.getBuildInformation().splitlines():
+            if "Parallel framework" in ln:
+                backend = ln.split(":", 1)[1].strip()
+                break
+        # setNumThreads is advisory, not binding: with the GCD backend (the macOS
+        # wheels) it is a no-op and OpenCV keeps using every core.  Say which happened,
+        # so a run that ignored the cap is visible in the log instead of being a
+        # surprise in a CPU graph later.
+        if got == threads:
+            log("opencv threads capped at %d (parallel framework: %s)" % (got, backend))
+        else:
+            log("WARNING: asked opencv for %d threads, it reports %d - the %s backend "
+                "ignores setNumThreads, so this run is NOT thread-capped"
+                % (threads, got, backend))
+        thread_report = dict(requested=threads, effective=int(got),
+                             parallel_framework=backend)
+    else:
+        thread_report = dict(requested=0, effective=int(cv2.getNumThreads()),
+                             parallel_framework=None)
     src, work = args.src, args.work
+    _WORK.append(work)
     cache = args.cache or os.path.join(work, ".cache")
     for d in ["01-undistorted", "02-matches", "03-masks", "04-registered", "05-seams", "06-final"]:
         os.makedirs(os.path.join(work, d), exist_ok=True)
     os.makedirs(cache, exist_ok=True)
     report = {}
+    report["opencv_threads"] = thread_report
+    discovered_planes = []
+
+    inputs = args.images or [f"{n}.jpeg" for n in ["1", "2", "3", "4", "5"]]
+    paths = {}
+    for spec in inputs:
+        pth = spec if os.path.isabs(spec) or os.path.exists(spec) else os.path.join(src, spec)
+        name = os.path.splitext(os.path.basename(pth))[0]
+        paths[name] = pth
+    names = list(paths)
+    if len(names) < 2:
+        raise PipelineError("too_few_images",
+                            "An orthophoto needs at least two overlapping photos; %d given."
+                            % len(names), images_given=len(names))
+
 
     K = intrinsics(W0, H0, F35_EQ * args.focal_scale)
     report["focal_px"] = float(K[0, 0])
@@ -671,7 +960,7 @@ def main():
         dist = json.load(open(cpath))
     else:
         log("plumb-line distortion calibration")
-        k, st = calibrate_distortion([f"{src}/{n}.jpeg" for n in IMAGES + ["5"]], K)
+        k, st = calibrate_distortion(list(paths.values()), K)
         dist = dict(k1=float(k[0]), k2=float(k[1]), **st)
         json.dump(dist, open(cpath, "w"), indent=1)
     report["distortion"] = dist
@@ -687,30 +976,136 @@ def main():
         cv2.fillPoly(m0, [np.array(poly, np.int32)], 255)
         return (cv2.remap(m0, mapx, mapy, cv2.INTER_NEAREST) > 127).astype(np.uint8) * 255
 
-    for n in IMAGES:
+    unreadable = []
+    for n in names:
         up = os.path.join(cache, f"u{n}.png")
         if os.path.exists(up):
             u = cv2.imread(up)
         else:
-            u = cv2.remap(cv2.imread(f"{src}/{n}.jpeg"), mapx, mapy, cv2.INTER_LANCZOS4)
+            raw = cv2.imread(paths[n])
+            if raw is None:
+                unreadable.append(dict(image=n, path=paths[n], reason="not a readable image"))
+                continue
+            if raw.shape[:2] != (H0, W0):
+                raw = cv2.resize(raw, (W0, H0), interpolation=cv2.INTER_AREA)
+            u = cv2.remap(raw, mapx, mapy, cv2.INTER_LANCZOS4)
             cv2.imwrite(up, u)
         imgs[n] = u
-        masks[n] = warp_mask(WALL_POLY[n])
-        masks_kick[n] = warp_mask(KICK_POLY[n])
         cv2.imwrite(os.path.join(work, "01-undistorted", f"{n}.jpg"),
                     cv2.resize(u, (1500, 2000)), [cv2.IMWRITE_JPEG_QUALITY, 88])
-        ov = u.copy()
+    names = [n for n in names if n in imgs]
+    report["input"] = dict(given=list(paths), usable=names, unreadable=unreadable)
+    if len(names) < 2:
+        raise PipelineError("too_few_images",
+                            "Only %d of the %d uploaded files could be read as images."
+                            % (len(names), len(paths)), rejected=unreadable)
+
+    rejected = list(unreadable)
+    if args.legacy_masks:
+        missing = [n for n in names if n not in WALL_POLY]
+        globals()["IMAGES"] = [n for n in names if n in WALL_POLY]
+        for n in missing:
+            rejected.append(dict(image=n, reason="no hand-traced polygon (--legacy-masks)"))
+        if len(IMAGES) < 2:
+            raise PipelineError("no_legacy_polygons",
+                                "--legacy-masks only applies to the original reference set.",
+                                rejected=rejected)
+        for n in IMAGES:
+            masks[n] = warp_mask(WALL_POLY[n])
+            masks_kick[n] = warp_mask(KICK_POLY[n])
+        globals()["PAIRS"] = [(a, b) for a, b in PAIRS if a in IMAGES and b in IMAGES]
+        report["masks"] = dict(source="hand-traced polygons (--legacy-masks)")
+    else:
+        memlog("before plane discovery")
+        planes, auto_diag = auto_planes.discover(imgs, names, cache, log, (H0, W0), K)
+        discovered_planes = planes
+        memlog("after plane discovery")
+        gc.collect()
+        report["auto_masks"] = auto_diag
+        if not planes:
+            raise PipelineError("no_dominant_plane",
+                                "No surface in this photo set is seen as one plane by two or "
+                                "more of the photos.  The photos may not overlap, or may not "
+                                "show a flat wall.", diagnostics=auto_diag)
+        span = planes[0]
+        for n in names:
+            if n not in span.masks:
+                rejected.append(dict(
+                    image=n, reason="carries no usable view of the dominant plane",
+                    inliers_on_dominant_plane=int(
+                        len(span.points(n)) if n in span.images else 0)))
+        globals()["IMAGES"] = [n for n in names if n in span.masks]
+        if len(IMAGES) < 2:
+            raise PipelineError("insufficient_overlap",
+                                "Only %d photo shows the dominant plane; at least two "
+                                "overlapping views are needed." % len(IMAGES),
+                                rejected=rejected, diagnostics=auto_diag)
+        strength = {k: len(v[0]) for k, v in span.corr.items()
+                    if k[0] in IMAGES and k[1] in IMAGES}
+        pairs, orphan = spanning_pairs(strength, IMAGES)
+        for n in orphan:
+            rejected.append(dict(image=n, reason="no pair registers it to the rest"))
+        globals()["IMAGES"] = [n for n in IMAGES if n not in orphan]
+        globals()["PAIRS"] = [(a, b) for a, b in pairs
+                              if a in IMAGES and b in IMAGES]
+        globals()["REF"] = pick_reference(PAIRS, IMAGES)
+        if len(IMAGES) < 2 or not PAIRS:
+            raise PipelineError("insufficient_overlap",
+                                "The photos that see the dominant plane do not overlap each "
+                                "other enough to be registered.",
+                                rejected=rejected, diagnostics=auto_diag)
+        kick = planes[1] if len(planes) > 1 else None
+        for n in IMAGES:
+            masks[n] = span.masks[n]
+            masks_kick[n] = (kick.masks.get(n) if kick else None)
+            if masks_kick[n] is None:
+                masks_kick[n] = np.zeros((H0, W0), np.uint8)
+        report["masks"] = dict(
+            source="derived from plane geometry",
+            planes_accepted=len(planes),
+            main_plane=dict(images=sorted(span.masks), support=span.support,
+                            pairs=["%s-%s" % k for k in sorted(span.H)],
+                            area_pct={n: round(100 * float((span.masks[n] > 0).mean()), 1)
+                                      for n in sorted(span.masks)}),
+            second_plane=None if kick is None else dict(
+                images=sorted(kick.masks), support=kick.support,
+                area_pct={n: round(100 * float((kick.masks[n] > 0).mean()), 1)
+                          for n in sorted(kick.masks)}),
+            reference=REF, pairs=["%s-%s" % k for k in PAIRS])
+    # Keep every frame any accepted plane still needs, not just the span's.  This used
+    # to drop everything outside IMAGES on the grounds that "everything downstream works
+    # on the span only" - which stopped being true once the other discovered facets are
+    # rectified too, and those are precisely the surfaces the span's frames do not see.
+    needed = set(IMAGES)
+    for p_ in planes:
+        needed |= set(p_.masks)
+    for n in [k for k in imgs if k not in needed]:
+        del imgs[n]
+    report["rejected_images"] = rejected
+    for r in rejected:
+        log("auto: rejected %s -- %s" % (r.get("image"), r["reason"]))
+    for n in IMAGES:
+        ov = imgs[n].copy()
         dim = (masks[n] == 0) & (masks_kick[n] == 0)
         ov[dim] = (ov[dim] * 0.25).astype(np.uint8)
         ov[masks_kick[n] > 0, 2] = 255                          # kickboard: its own plane
         cv2.imwrite(os.path.join(work, "03-masks", f"{n}.jpg"),
                     cv2.resize(ov, (1500, 2000)), [cv2.IMWRITE_JPEG_QUALITY, 82])
+    del mapx, mapy                      # ~50 MB of lookup tables, done with
+    gc.collect()
     log("undistorted + masked")
+    memlog("after undistort")
 
     # ---- stage 2: features & pairwise homographies ---------------------------
+    # Cache keys carry a digest of the masks they were computed under: a derived
+    # mask changes whenever the discovery does, and silently reusing matches
+    # taken through an older mask is how a "deterministic" pipeline stops being
+    # reproducible.  Legacy runs keep the original, unsuffixed names.
+    mtag = "" if args.legacy_masks else "_" + mask_digest(masks, masks_kick, IMAGES)
+    ctx_tag = mtag
     Hpair, corr = {}, {}
     for a, b in PAIRS:
-        cp = os.path.join(cache, f"m{a}{b}.npz")
+        cp = os.path.join(cache, f"m{a}{b}{mtag}.npz")
         if os.path.exists(cp):
             z = np.load(cp); r = dict(H=z["H"], pa=z["pa"], pb=z["pb"], n_coarse=int(z["nc"]),
                                       n_stageb=int(z["ns"]), n_inl=int(z["ni"]), rms=float(z["rms"]),
@@ -743,10 +1138,16 @@ def main():
                     cv2.resize(vis, None, fx=f, fy=f), [cv2.IMWRITE_JPEG_QUALITY, 80])
 
     # chain to reference
-    Hs = {REF: np.eye(3)}
-    Hs["1"] = Hpair[("1", "2")]
-    Hs["3"] = np.linalg.inv(Hpair[("2", "3")])
-    Hs["4"] = Hs["3"] @ np.linalg.inv(Hpair[("3", "4")])
+    if len(Hpair) < len(PAIRS):
+        raise PipelineError("registration_failed",
+                            "%d of the %d overlapping pairs could not be registered."
+                            % (len(PAIRS) - len(Hpair), len(PAIRS)),
+                            registered=["%s-%s" % k for k in Hpair])
+    Hs = chain_to_ref(Hpair, REF, IMAGES)
+    if len(Hs) < len(IMAGES):
+        raise PipelineError("registration_failed",
+                            "The registration graph is disconnected: %s could not be chained "
+                            "to the reference frame." % [n for n in IMAGES if n not in Hs])
     Hs, rst = refine(Hs, corr, REF, IMAGES)
     log("global refinement: symmetric transfer rms %.2f -> %.2f px" % (rst["rms_before"], rst["rms_after"]))
     report["registration"] = rst
@@ -764,7 +1165,7 @@ def main():
     # ---- stage 3: metric rectification --------------------------------------
     # normal of the wall plane in the REF camera frame, from ref<->neighbour homographies
     cand_sets = []
-    for other in ["1", "3", "4"]:
+    for other in [n for n in IMAGES if n != REF]:
         H_ref_to_other = np.linalg.inv(Hs[other])   # Hs[x] maps image x -> ref frame
         n_sol, Rs, Ts, Ns = cv2.decomposeHomographyMat(H_ref_to_other, K)
         cands = []
@@ -795,14 +1196,24 @@ def main():
     # ---- in-plane orientation from the plank seams --------------------------
     # Long straight edges on the wall, chained across the holds that occlude them,
     # collected from every image and mapped into the REF frame.
+    # A traced polygon has a smooth boundary and a chain either lies inside it or
+    # does not.  A derived mask is quantised to `plane_support.CELL`, so a chain
+    # that is entirely on the wall can still poke out of a boundary cell; the
+    # test is therefore run against the mask closed by one cell, and asks for
+    # nearly all of the chain rather than all of it.
     segs_ref, wts_ref = [], []
+    cell = plane_support.CELL
+    chain_mask = masks if args.legacy_masks else {
+        n: cv2.dilate(masks[n], np.ones((2 * cell + 1, 2 * cell + 1), np.uint8))
+        for n in IMAGES}
+    chain_min = 250.0 if args.legacy_masks else 0.80 * 255.0
     for n in IMAGES:
         g = cv2.cvtColor(imgs[n], cv2.COLOR_BGR2GRAY)
         for pts in line_chains(g, min_seg=35, max_gap=350, ang_tol_deg=6.0, perp_tol=10.0,
                                min_span=320, max_parab_rms=2.5, min_pts=6):
             ii = np.clip(pts[:, 1].astype(int), 0, H0 - 1)
             jj = np.clip(pts[:, 0].astype(int), 0, W0 - 1)
-            if masks[n][ii, jj].mean() < 250:          # must lie entirely on the wall
+            if chain_mask[n][ii, jj].mean() < chain_min:      # must lie on the wall
                 continue
             c = pts.mean(0)
             _, _, V = np.linalg.svd(pts - c, full_matrices=False)
@@ -827,7 +1238,11 @@ def main():
     # ---- canvas extent ------------------------------------------------------
     Hrect0 = K @ R.T @ np.linalg.inv(K)
     Htot = {n: Hrect0 @ Hs[n] for n in IMAGES}
-    corners = [cv2.perspectiveTransform(np.array(WALL_POLY[n], np.float64).reshape(-1, 1, 2),
+    # The canvas extent follows the masks.  Under --legacy-masks the traced
+    # polygon itself is used instead, so the reference output stays bit-exact.
+    extent = {n: (np.array(WALL_POLY[n], np.float64) if args.legacy_masks
+                  else mask_outline(masks[n])) for n in IMAGES}
+    corners = [cv2.perspectiveTransform(extent[n].reshape(-1, 1, 2),
                                         Htot[n]).reshape(-1, 2) for n in IMAGES]
     allc = np.concatenate(corners)
     lo, hi = allc.min(0), allc.max(0)
@@ -835,10 +1250,8 @@ def main():
     # ---- resolution policy: never upsample past the true source sampling rate ----
     prov_w = int(np.ceil(hi[0] - lo[0])); prov_h = int(np.ceil(hi[1] - lo[1]))
     T0 = np.array([[1, 0, -lo[0]], [0, 1, -lo[1]], [0, 0, 1.0]])
-    dmaps = [density_map(T0 @ Htot[n], masks[n], (H0, W0), (prov_w, prov_h), stride=8)
-             for n in IMAGES]
-    stack = np.stack(dmaps)
-    best_dens = stack.max(0)
+    best_dens = best_density({n: T0 @ Htot[n] for n in IMAGES}, masks, IMAGES,
+                             (H0, W0), (prov_w, prov_h), stride=8)
     cov = best_dens > 0
     med = float(np.percentile(best_dens[cov], args.density_percentile))
     q = np.percentile(best_dens[cov], [5, 25, 50, 75, 95])
@@ -853,32 +1266,54 @@ def main():
         frac_of_span_downsampled=float((ratio > 1.0).mean()),
         worst_downsampling_factor=float(ratio.max()))
 
+    # ---- canvas ceiling: the last thing between a big wall and the OOM killer ----
+    med = cap_canvas_scale(med, hi - lo, args.max_canvas_mpx, report)
+
     S = np.array([[med, 0, -med * lo[0]], [0, med, -med * lo[1]], [0, 0, 1.0]])
     Htot = {n: S @ Htot[n] for n in IMAGES}
     Wc = int(np.ceil((hi[0] - lo[0]) * med)); Hc = int(np.ceil((hi[1] - lo[1]) * med))
-    log("canvas %dx%d" % (Wc, Hc))
+    log("canvas %dx%d (%.1f Mpx)" % (Wc, Hc, Wc * Hc / 1e6))
+    memlog("before composite")
 
     res, res_mask = composite(imgs, masks, IMAGES, Htot, Wc, Hc, work, report, "")
     Hc0, Wc0 = res.shape[:2]
+    memlog("after composite")
 
-    full = res.copy()
+    # The uncropped canvas is a diagnostic, not a deliverable: the sidecar serves
+    # wall-orthophoto.png and the angled view, never this.  Writing it used to cost a
+    # full second copy of the canvas plus a minute of PNG compression, so it is now
+    # opt-in.  Its dimensions are still reported, because those come from the mask.
     ys, xs = np.nonzero(res_mask)
-    full = full[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+    uy0, uy1, ux0, ux1 = int(ys.min()), int(ys.max()), int(xs.min()), int(xs.max())
+    uncropped_wh = (ux1 - ux0 + 1, uy1 - uy0 + 1)
+    del ys, xs
+
+    png = os.path.join(work, "06-final", "wall-orthophoto.png")
+    jpg = os.path.join(work, "06-final", "wall-orthophoto.jpg")
+    fullpng = os.path.join(work, "06-final", "wall-orthophoto-full.png")
+    if args.emit_full_png:
+        cv2.imwrite(fullpng, res[uy0:uy1 + 1, ux0:ux1 + 1],
+                    [cv2.IMWRITE_PNG_COMPRESSION, args.png_compression])
 
     res, crop_box = crop_usable(res, res_mask, masks, Htot, IMAGES, work, report)
     x0, y0 = crop_box[0], crop_box[1]
     Hc, Wc = res.shape[:2]
 
-    png = os.path.join(work, "06-final", "wall-orthophoto.png")
-    jpg = os.path.join(work, "06-final", "wall-orthophoto.jpg")
-    fullpng = os.path.join(work, "06-final", "wall-orthophoto-full.png")
-    cv2.imwrite(png, res, [cv2.IMWRITE_PNG_COMPRESSION, 9])
+    # crop_usable returns a view, so the whole canvas stayed reachable behind it for
+    # the rest of the run - and the rest of the run is where the peak is.  Compact to
+    # the crop and let the canvas go.
+    res = res.copy()                    # .copy(), not ascontiguousarray: a crop that
+    del res_mask                        # happens to span the full width is already
+    gc.collect()                        # contiguous, and would keep the canvas alive
+    memlog("after crop")
+
+    cv2.imwrite(png, res, [cv2.IMWRITE_PNG_COMPRESSION, args.png_compression])
     cv2.imwrite(jpg, res, [cv2.IMWRITE_JPEG_QUALITY, args.jpeg_quality])
-    cv2.imwrite(fullpng, full, [cv2.IMWRITE_PNG_COMPRESSION, 9])
     report["output"] = dict(width=Wc, height=Hc,
                             png_bytes=os.path.getsize(png), jpg_bytes=os.path.getsize(jpg),
-                            uncropped_width=int(full.shape[1]), uncropped_height=int(full.shape[0]),
-                            uncropped_png_bytes=os.path.getsize(fullpng))
+                            uncropped_width=uncropped_wh[0], uncropped_height=uncropped_wh[1],
+                            uncropped_png_bytes=(os.path.getsize(fullpng)
+                                                 if args.emit_full_png else None))
 
     # ---- detail check: native source crop vs. the same patch in the orthophoto
     detail_check(res, imgs, Htot, masks, med, (x0, y0), work)
@@ -891,15 +1326,128 @@ def main():
 
     # ---- the two off-plane surfaces the main span cannot carry --------------
     ctx = dict(imgs=imgs, K=K, cache=cache, work=work, args=args, report=report,
-               Hs=Hs, R=R, n_wall=n_wall, masks_kick=masks_kick, main_scale=med)
+               Hs=Hs, R=R, n_wall=n_wall, masks=masks, masks_kick=masks_kick,
+               main_scale=med, images=IMAGES, pairs=PAIRS, ref=REF, mtag=ctx_tag)
     stitch_planes.kickboard(ctx)
-    stitch_planes.left_return(ctx)
+
+    # ---- every other surface discovery accepted ----------------------------
+    # planes[0] is the span and planes[1] is the kickboard; before this, everything
+    # from planes[2] on was found, ranked and then dropped.
+    span_facet = facets_mod.Facet("main-span", 0, res, n_wall, R, med, IMAGES)
+    extra_facets = []
+    if args.emit_facets and not args.legacy_masks and discovered_planes:
+        extra_facets = facets_mod.rectify_all(
+            discovered_planes, ctx, span_facet, args.density_percentile, log,
+            skip_ranks={0, 1})
+        for f in extra_facets:
+            p = os.path.join(work, "06-final", "wall-orthophoto-%s.png" % f.key)
+            cv2.imwrite(p, f.image, [cv2.IMWRITE_PNG_COMPRESSION, args.png_compression])
+            report["facets"][f.key]["file"] = os.path.basename(p)
+        if not extra_facets:
+            log("no further surfaces beyond the span and the kickboard")
+        for n in [k for k in imgs if k not in IMAGES]:
+            del imgs[n]                   # facets are rectified; the span's frames suffice
+        gc.collect()
+
+    if args.legacy_masks:
+        stitch_planes.left_return(ctx)
+    elif "1" in Hs and "1" in imgs:
+        # The left return is single-view (photo 1 only), so discovery's >=2-view gate
+        # drops it.  Recover it the way the legacy path does - crease + board-joint fit -
+        # but with the crease seed and panel polygon derived from the discovered geometry
+        # instead of the hand-traced constants.  It stays a genuinely under-constrained
+        # single-view rectification (left_return reports how well its yaw is pinned); this
+        # only stops the panel from vanishing silently.  Guarded so a wall with no left
+        # return, or one whose crease cannot be found, falls back to the skip note.
+        geo = None
+        try:
+            geo = stitch_planes.auto_left_geometry(ctx)
+        except Exception as e:                       # never let a heuristic sink the job
+            log("left return panel: auto geometry failed (%r), skipped" % e)
+        if geo is not None:
+            globals()["LEFT_CREASE_SEED"], globals()["LEFT_POLY_UNDIST"] = geo
+            try:
+                stitch_planes.left_return(ctx)
+                report["left_return_panel"]["masks"] = "derived from span geometry"
+            except Exception as e:
+                log("left return panel: rectification failed (%r), skipped" % e)
+                report["left_return_panel"] = dict(skipped=True, reason=repr(e))
+        else:
+            report["left_return_panel"] = dict(
+                skipped=True,
+                reason="No left-return crease was found in photo 1; the wall may have no "
+                       "left return, or its corner is not visible as a distinct edge.")
+            log("left return panel: no crease found on the automatic path, skipped")
+    else:
+        report["left_return_panel"] = dict(
+            skipped=True,
+            reason="The left return panel is recovered from photo 1 only; this upload has no "
+                   "frame '1' registered to the span, so it cannot be attempted.")
+        log("left return panel: no frame '1' on the span, skipped")
 
     # ---- the same wall, kept at its angle instead of flattened --------------
-    angled_view.emit(work, args.wall_angle, report, args.jpeg_quality, log)
+    memlog("before angled view")
+    angled_view.emit(work, args.wall_angle, report, args.jpeg_quality, log,
+                     ortho=res, png_compression=args.png_compression)
+    memlog("done")
+
+    # ---- composite every surface into the two delivered masters -------------
+    # When facets are enabled, the span-only masters angled_view just wrote are
+    # replaced in place by composites that carry every recovered surface, so the
+    # facet-composited ortho/angled land in the app's SAME ortho/angled slots.
+    if args.emit_facets and not args.legacy_masks:
+        theta = np.radians(report.get("angled_view", {}).get("wall_angle_deg", 45.0))
+        span_R = np.asarray(R, float)
+        surfaces = [dict(name="main-span", image=res, scale=float(med),
+                         W=np.eye(3), attach="anchor")]
+        for f in extra_facets:
+            W = span_R.T @ np.asarray(f.R, float)
+            yaw = float(np.degrees(np.arctan2(W[0, 2], W[2, 2])))
+            surfaces.append(dict(name=f.key, image=f.image, scale=float(f.scale),
+                                 W=W, attach="right" if yaw >= 0 else "left"))
+        surfaces += ctx.get("layout_surfaces", [])
+        try:
+            wall_layout.build(surfaces, theta, report, work, args.png_compression, log)
+        except Exception as e:                       # a layout failure must not sink the job
+            log("layout: compositing failed (%r); span-only masters retained" % e)
+            report["layout"] = dict(skipped=True, reason=repr(e))
+
+        # The ortho slot keeps the flat facet composite wall_layout just wrote; the
+        # angled slot becomes a NATURAL photographic stitch of the undistorted frames
+        # (mats + ceiling + both end pieces + every hold, real perspective) instead of
+        # the collage-on-black.  It overwrites 06-final/wall-orthophoto-angled.png in
+        # place and records report["natural"] (per-frame source->master homographies
+        # for Phase 5 hold mapping).  A failure leaves the layout's angled master.
+        try:
+            usable = report.get("input", {}).get("usable", list(IMAGES))
+            natural_stitch.build(work, usable, report, log,
+                                 jpeg_quality=args.jpeg_quality,
+                                 png_compression=args.png_compression)
+        except Exception as e:                       # natural stitch must not sink the job
+            log("natural: stitch failed (%r); layout angled master retained" % e)
+            report["natural"] = dict(skipped=True, reason=repr(e))
 
     json.dump(report, open(os.path.join(work, "06-final", "report.json"), "w"), indent=1)
     log("report ->", os.path.join(work, "06-final", "report.json"))
+
+
+# Bytes of strip-local buffer per row of canvas, per frame composited: the float32
+# accumulator (12) and weight sum (4), plus the per-frame warp (3), weight (4),
+# mask (1) and float32 contribution (12) that are live inside the inner loop.
+STRIP_BYTES_PER_ROW_PX = 16 + 20
+
+
+def strip_rows(Wc, budget_mb=None):
+    """Rows per composite strip, sized so the strip-local buffers fit the budget.
+
+    A fixed 512 rows meant the strip cost scaled with canvas width, so a wide wall
+    silently allocated several hundred MB per strip.  Sizing from the width instead
+    makes the composite's peak flat in the canvas dimensions.
+    """
+    if budget_mb is None:
+        budget_mb = float(os.environ.get("WALLSTITCH_STRIP_BUDGET_MB", "96"))
+    rows = int(budget_mb * 1e6 / max(1, Wc * STRIP_BYTES_PER_ROW_PX))
+    return int(np.clip(rows, 64, 1024))
 
 
 def composite(imgs, masks, names, Htot, Wc, Hc, work, report, tag):
@@ -929,11 +1477,13 @@ def composite(imgs, masks, names, Htot, Wc, Hc, work, report, tag):
 
     # prefer, per canvas pixel, the source that samples the wall most densely;
     # the graph cut then routes the seam freely inside a 15% tolerance band.
-    dm = [density_map(Htot[n], masks[n], (H0, W0), (Wc, Hc), stride=8) for n in names]
-    dbest = np.stack(dm).max(0)
+    dbest = best_density(Htot, masks, names, (H0, W0), (Wc, Hc), stride=8)
     prefm = []
     for i, n in enumerate(names):
-        pref = ((dm[i] >= 0.85 * dbest) & (dm[i] > 0)).astype(np.uint8) * 255
+        # recomputed rather than kept: one grid at a time instead of one per frame
+        dmi = density_map(Htot[n], masks[n], (H0, W0), (Wc, Hc), stride=8)
+        pref = ((dmi >= 0.85 * dbest) & (dmi > 0)).astype(np.uint8) * 255
+        del dmi
         pref = cv2.resize(pref, (lw, lh), interpolation=cv2.INTER_NEAREST)
         cand = cv2.bitwise_and(lowmask[i], pref)
         prefm.append(cand if cand.sum() > 0.02 * max(lowmask[i].sum(), 1) else lowmask[i])
@@ -943,9 +1493,13 @@ def composite(imgs, masks, names, Htot, Wc, Hc, work, report, tag):
     seam = [(m.get() if isinstance(m, cv2.UMat) else np.asarray(m)) for m in seam]
 
     vis = np.zeros((lh, lw, 3), np.uint8)
-    cols = [(0, 0, 255), (0, 255, 0), (255, 0, 0), (0, 255, 255)]
+    # Seam-visualisation palette.  Cycle it with modulo: a facet can be composited from
+    # more source frames than there are colours (a real 5-photo job builds a facet from
+    # all five), and indexing cols[i] directly threw IndexError past the fourth frame.
+    cols = [(0, 0, 255), (0, 255, 0), (255, 0, 0), (0, 255, 255),
+            (255, 0, 255), (255, 255, 0), (128, 128, 255), (0, 128, 255)]
     for i, sm in enumerate(seam):
-        vis[sm > 0] = (0.5 * np.array(cols[i]) + 0.5 * lowim[i][sm > 0]).astype(np.uint8)
+        vis[sm > 0] = (0.5 * np.array(cols[i % len(cols)]) + 0.5 * lowim[i][sm > 0]).astype(np.uint8)
     cv2.imwrite(os.path.join(work, "05-seams", tag + "seams.jpg"), vis,
                 [cv2.IMWRITE_JPEG_QUALITY, 88])
     for i, n in enumerate(names):
@@ -965,14 +1519,21 @@ def composite(imgs, masks, names, Htot, Wc, Hc, work, report, tag):
         wlow.append((np.minimum(d, f_low) + 1e-3 * (sm > 0)).astype(np.float32))
 
     # ---- full-resolution strip composite ------------------------------------
-    del dm, dbest, prefm
+    del dbest, prefm
     res = np.zeros((Hc, Wc, 3), np.uint8)
     res_mask = np.zeros((Hc, Wc), np.uint8)
-    STRIP = 512
+    STRIP = strip_rows(Wc)
+    memlog(tag + "strip start")
+    # Buffers are allocated once and reused for every strip.  The last strip may be
+    # shorter, so each iteration works on a view of the full-height buffer.
+    accbuf = np.zeros((STRIP, Wc, 3), np.float32)
+    wbuf = np.zeros((STRIP, Wc), np.float32)
     for r0 in range(0, Hc, STRIP):
         r1 = min(r0 + STRIP, Hc)
-        acc = np.zeros((r1 - r0, Wc, 3), np.float32)
-        wsum = np.zeros((r1 - r0, Wc), np.float32)
+        acc = accbuf[:r1 - r0]
+        wsum = wbuf[:r1 - r0]
+        acc[...] = 0
+        wsum[...] = 0
         for i, n in enumerate(names):
             T = np.array([[1, 0, 0], [0, 1, -r0], [0, 0, 1.0]]) @ Htot[n]
             mk = cv2.warpPerspective(masks[n], T, (Wc, r1 - r0), flags=cv2.INTER_NEAREST)
@@ -982,13 +1543,22 @@ def composite(imgs, masks, names, Htot, Wc, Hc, work, report, tag):
             M = np.array([[1.0 / sc, 0, 0], [0, 1.0 / sc, -r0]], np.float32)
             w = cv2.warpAffine(wlow[i], M, (Wc, r1 - r0), flags=cv2.INTER_LINEAR)
             w[mk == 0] = 0
-            acc += w[:, :, None] * (im_.astype(np.float32) * gains[i])
+            contrib = im_.astype(np.float32)
+            contrib *= gains[i]
+            contrib *= w[:, :, None]
+            acc += contrib
             wsum += w
+            del contrib, im_, w, mk
         ok = wsum > 0
-        out = np.zeros_like(acc)
-        out[ok] = acc[ok] / wsum[ok][:, None]
-        res[r0:r1] = np.clip(out, 0, 255).astype(np.uint8)
+        # In place, and only where a source contributed.  The boolean-indexed form
+        # this replaces materialised acc[ok], wsum[ok] and their quotient - three
+        # temporaries the size of the strip, on top of a full zeroed copy of acc.
+        np.divide(acc, wsum[:, :, None], out=acc, where=ok[:, :, None])
+        np.clip(acc, 0, 255, out=acc)
+        res[r0:r1] = acc.astype(np.uint8)
         res_mask[r0:r1] = ok.astype(np.uint8) * 255
+    del accbuf, wbuf
+    memlog(tag + "strip done")
     log("composited %dx%d" % (Wc, Hc))
     return res, res_mask
 
@@ -1007,8 +1577,7 @@ def crop_usable(res, res_mask, masks, Htot, names, work, report, tag="",
     """
     Hc0, Wc0 = res.shape[:2]
     ST = 32
-    dg = np.stack([density_map(Htot[n], masks[n], (H0, W0), (Wc0, Hc0), stride=ST)
-                   for n in names]).max(0)
+    dg = best_density(Htot, masks, names, (H0, W0), (Wc0, Hc0), stride=ST)
     dg = dg / max(np.percentile(dg[dg > 0], 95), 1e-6)
     cg = res_mask[::ST, ::ST][:dg.shape[0], :dg.shape[1]] > 0
     usable = cg & (dg[:cg.shape[0], :cg.shape[1]] >= min_ratio)
@@ -1037,8 +1606,8 @@ def crop_usable(res, res_mask, masks, Htot, names, work, report, tag="",
         band = sub[i * rows // nb:(i + 1) * rows // nb]
         b = band[band > 0]
         prof.append(float(np.median(b)) if b.size else None)
-    who = np.stack([density_map(Htot[n], masks[n], (H0, W0), (Wc0, Hc0), stride=ST)
-                    for n in names]).argmax(0)[gy0:gy1 + 1, gx0:gx1 + 1]
+    who = best_density_argmax(Htot, masks, names, (H0, W0), (Wc0, Hc0),
+                              stride=ST)[gy0:gy1 + 1, gx0:gx1 + 1]
     report[tag + "coverage"] = dict(
         rel_to_best_percentiles=dict(zip(["p5", "p25", "p50", "p75", "p95"],
                                          [float(v) for v in np.percentile(sub[sm], [5, 25, 50, 75, 95])])),
@@ -1053,4 +1622,13 @@ def crop_usable(res, res_mask, masks, Htot, names, work, report, tag="",
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except PipelineError as e:            # a structured refusal, never a traceback
+        import sys
+        out = os.path.join(_WORK[0] if _WORK else ".", "06-final")
+        os.makedirs(out, exist_ok=True)
+        json.dump(e.as_dict(), open(os.path.join(out, "report.json"), "w"), indent=1)
+        log("FAILED [%s] %s" % (e.code, e.message))
+        log("report ->", os.path.join(out, "report.json"))
+        sys.exit(2)

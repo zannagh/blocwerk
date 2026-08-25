@@ -73,6 +73,20 @@ services:
       WALLSTITCH_MAX_PHOTOS: ${WALLSTITCH_MAX_PHOTOS:-12}
       WALLSTITCH_MAX_PHOTO_BYTES: ${WALLSTITCH_MAX_PHOTO_BYTES:-67108864}
       WALLSTITCH_MAX_REQUEST_BYTES: ${WALLSTITCH_MAX_REQUEST_BYTES:-805306368}
+      # Memory controls. The canvas cap is the one that actually bounds a job: every
+      # whole-canvas buffer in the pipeline scales with the orthophoto's area, so
+      # without a ceiling the memory a stitch needs is decided by how big the wall in
+      # the photos happens to be. See docker/wall-stitch/README.md -> Memory.
+      WALLSTITCH_MAX_CANVAS_MPX: ${WALLSTITCH_MAX_CANVAS_MPX:-80}
+      WALLSTITCH_STRIP_BUDGET_MB: ${WALLSTITCH_STRIP_BUDGET_MB:-96}
+      WALLSTITCH_PNG_COMPRESSION: ${WALLSTITCH_PNG_COMPRESSION:-3}
+      WALLSTITCH_PIPELINE_THREADS: ${WALLSTITCH_PIPELINE_THREADS:-4}
+    # A hard ceiling, so a runaway stitch takes this container down instead of the
+    # host. Without it the kernel OOM killer picks a victim across the whole machine,
+    # and the biggest process is not always the guilty one. The runner reports a
+    # SIGKILLed pipeline as `out_of_memory`, so the user gets a real message.
+    # Size it to the box: leave room for the app, postgres and the OS.
+    mem_limit: ${WALLSTITCH_MEM_LIMIT:-6g}
     volumes:
       - wall-stitch-jobs:/data/jobs
       # The hold detector's ONNX weights (~100 MB) are gitignored, so they are mounted

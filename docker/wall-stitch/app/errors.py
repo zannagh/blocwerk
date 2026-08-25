@@ -40,6 +40,22 @@ MESSAGES = {
         "The stitch was interrupted by a service restart and did not finish. Please start it again."),
 }
 
+# The pipeline's own structured refusals, printed as `FAILED [code] message` before it
+# exits 2. Its vocabulary is not identical to this module's, so it is mapped rather than
+# trusted: an unmapped code falls through to the regex patterns below.
+PIPELINE_CODES = {
+    "too_few_images": "too_few_usable_images",
+    "too_few_usable_images": "too_few_usable_images",
+    "insufficient_overlap": "insufficient_overlap",
+    "registration_failed": "insufficient_overlap",
+    "no_dominant_plane": "no_dominant_plane",
+    "no_legacy_polygons": "no_dominant_plane",
+    "unreadable_image": "unreadable_image",
+    "image_too_small": "image_too_small",
+}
+
+PIPELINE_FAILURE = re.compile(r"^\s*(?:\[[0-9:]+\]\s*)?FAILED \[([a-z_]+)\]", re.M)
+
 # Ordered: first pattern that matches the pipeline's own output wins.
 PATTERNS = [
     (re.compile(r"could not read (?:input )?image", re.I), "unreadable_image"),
@@ -74,6 +90,13 @@ class JobFailure(Exception):
 def classify(output: str, fallback: str = "pipeline_failed") -> str:
     """Maps captured pipeline output onto one of the codes above."""
     tail = (output or "")[-20000:]
+    # A structured refusal is the pipeline telling us exactly what went wrong; prefer it
+    # over guessing from the surrounding log. Last one wins: on a retry inside one job
+    # the final verdict is the one that stopped it.
+    found = PIPELINE_FAILURE.findall(tail)
+    for raw in reversed(found):
+        if raw in PIPELINE_CODES:
+            return PIPELINE_CODES[raw]
     for pattern, code in PATTERNS:
         if pattern.search(tail):
             return code

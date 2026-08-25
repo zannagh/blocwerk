@@ -16,6 +16,23 @@ def _int(name: str, default: int) -> int:
         raise RuntimeError(f"{name} must be an integer, got {raw!r}") from exc
 
 
+def _bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be a number, got {raw!r}") from exc
+
+
 @dataclass(frozen=True)
 class Settings:
     auth_token: str
@@ -34,6 +51,16 @@ class Settings:
     queue_limit: int
     display_max_edge: int
     display_jpeg_quality: int
+    # Defaulted so that adding a memory knob does not break every caller that builds a
+    # Settings by hand; load_settings() always passes them explicitly.
+    max_canvas_mpx: float = 80.0
+    png_compression: int = 3
+    strip_budget_mb: int = 96
+    pipeline_threads: int = 4
+    # Shipping default: run the stitch with --emit-facets so a real job gets the
+    # multi-facet flat composite (ortho slot) and the cylindrical natural photographic
+    # master (angled slot). Turn off to exercise the legacy single-plane path.
+    emit_facets: bool = True
 
     @property
     def stitch_dir(self) -> str:
@@ -70,4 +97,9 @@ def load_settings() -> Settings:
         queue_limit=_int("WALLSTITCH_QUEUE_LIMIT", 16),
         display_max_edge=_int("WALLSTITCH_DISPLAY_MAX_EDGE", 2000),
         display_jpeg_quality=_int("WALLSTITCH_DISPLAY_JPEG_QUALITY", 88),
+        max_canvas_mpx=_float("WALLSTITCH_MAX_CANVAS_MPX", 80.0),
+        png_compression=_int("WALLSTITCH_PNG_COMPRESSION", 3),
+        strip_budget_mb=_int("WALLSTITCH_STRIP_BUDGET_MB", 96),
+        pipeline_threads=max(0, _int("WALLSTITCH_PIPELINE_THREADS", 4)),
+        emit_facets=_bool("WALLSTITCH_EMIT_FACETS", True),
     )

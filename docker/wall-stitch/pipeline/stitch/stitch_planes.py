@@ -25,18 +25,38 @@ import stitch_wall as S
 # --------------------------------------------------------------------------
 # helpers
 # --------------------------------------------------------------------------
-def plane_normal_from_pairs(Hs, K, ref, others):
-    """Normal of a plane in the `ref` camera frame, consistent across neighbours."""
+def plane_normal_from_pairs(Hs, K, ref, others, ref_points=None):
+    """Normal of a plane in the `ref` camera frame, consistent across neighbours.
+
+    `decomposeHomographyMat` returns four solutions in two sign-related pairs.  Across
+    three or more neighbours the wrong branch is voted out by disagreement, but with a
+    single neighbour there is nothing to disagree with and the first candidate wins by
+    default - which on a facet seen by only two photos silently picked the mirrored
+    plane and rectified it to a canvas half a million pixels tall.  Passing the plane's
+    own correspondences in the reference image lets OpenCV discard the solutions that
+    put those points behind the camera, which resolves it without a third view.
+    """
     cand_sets = []
     for other in others:
         n_sol, Rs, Ts, Ns = cv2.decomposeHomographyMat(np.linalg.inv(Hs[other]), K)
+        idx = range(n_sol)
+        if ref_points is not None and len(ref_points) >= 4:
+            # OpenCV asserts CV_32FC2 here, not the float64 the rest of this file uses.
+            pts = np.asarray(ref_points, np.float32).reshape(-1, 1, 2)
+            keep = cv2.filterHomographyDecompByVisibleRefpoints(Rs, Ns, pts, pts)
+            if keep is not None and len(np.ravel(keep)):
+                idx = [int(i) for i in np.ravel(keep)]
         cands = []
-        for i in range(n_sol):
+        for i in idx:
             v = np.array(Ns[i]).ravel()
             v = v / np.linalg.norm(v)
             if v[2] < 0:
                 v = -v
             cands.append(v)
+        if not cands:                       # filtering removed everything; trust nothing
+            cands = [np.array(Ns[i]).ravel() / np.linalg.norm(np.array(Ns[i]).ravel())
+                     for i in range(n_sol)]
+            cands = [c if c[2] > 0 else -c for c in cands]
         cand_sets.append(cands)
     best, bestcost, bestpicks = None, 1e9, None
     for c in cand_sets[0]:
@@ -88,13 +108,17 @@ def scale_for(Htot, masks, names, corners, percentile):
 def kickboard(ctx):
     K, cache, work, report = ctx["K"], ctx["cache"], ctx["work"], ctx["report"]
     imgs, masks, args = ctx["imgs"], ctx["masks_kick"], ctx["args"]
+    # From the caller, not from S: stitch_wall runs as __main__, so `import
+    # stitch_wall` here loads a second copy of the module whose IMAGES/PAIRS/REF
+    # are still the defaults.  The frames actually in play come through ctx.
+    IMAGES, PAIRS, REF = ctx["images"], ctx["pairs"], ctx["ref"]
     rep = {}
     report["kickboard"] = rep
 
     # ---- its own pairwise plane homographies --------------------------------
     Hpair, corr = {}, {}
-    for a, b in S.PAIRS:
-        cp = os.path.join(cache, f"k{a}{b}.npz")
+    for a, b in PAIRS:
+        cp = os.path.join(cache, f"k{a}{b}{ctx.get('mtag', '')}.npz")
         if os.path.exists(cp):
             z = np.load(cp)
             r = dict(H=z["H"], pa=z["pa"], pb=z["pb"], n_inl=int(z["ni"]), rms=float(z["rms"]))
@@ -108,15 +132,16 @@ def kickboard(ctx):
         Hpair[(a, b)] = r["H"]
         corr[(a, b)] = (r["pa"], r["pb"])
         rep[f"pair_{a}-{b}"] = dict(inliers=r["n_inl"], reproj_rms_px=float(r["rms"]))
-    if len(Hpair) < len(S.PAIRS):
+    if len(Hpair) < len(PAIRS):
         S.log("kickboard: incomplete registration, skipped")
         return
 
-    Hk = {S.REF: np.eye(3)}
-    Hk["1"] = Hpair[("1", "2")]
-    Hk["3"] = np.linalg.inv(Hpair[("2", "3")])
-    Hk["4"] = Hk["3"] @ np.linalg.inv(Hpair[("3", "4")])
-    Hk, rst = S.refine(Hk, corr, S.REF, S.IMAGES)
+    Hk = S.chain_to_ref(Hpair, REF, IMAGES)
+    if len(Hk) < len(IMAGES):
+        S.log("kickboard: registration graph disconnected, skipped")
+        rep["skipped"] = "the kickboard does not register across every frame"
+        return
+    Hk, rst = S.refine(Hk, corr, REF, IMAGES)
     rep["registration"] = rst
 
     # ---- IS IT THE SAME PLANE?  measured, not assumed ----------------------
@@ -138,7 +163,8 @@ def kickboard(ctx):
     rep["transfer_residual_under_main_span_homography_px"] = same
     rep["transfer_residual_under_its_own_homography_px"] = own
 
-    n_kick, spread = plane_normal_from_pairs(Hk, K, S.REF, ["1", "3", "4"])
+    n_kick, spread = plane_normal_from_pairs(Hk, K, REF,
+                                             [n for n in IMAGES if n != REF])
     n_wall = np.array(ctx["n_wall"])
     dihedral = float(np.degrees(np.arccos(np.clip(abs(n_kick @ n_wall), -1, 1))))
     rep["plane_normal_ref_cam"] = [float(x) for x in n_kick]
@@ -168,14 +194,15 @@ def kickboard(ctx):
         np.degrees(np.arcsin(np.clip(abs(h_ref @ n_kick), -1, 1))))
     R2 = frame_from(n_kick, h_ref)
 
-    Htot = {n: K @ R2.T @ np.linalg.inv(K) @ Hk[n] for n in S.IMAGES}
+    Htot = {n: K @ R2.T @ np.linalg.inv(K) @ Hk[n] for n in IMAGES}
+    extent = {n: (np.array(S.KICK_POLY[n], np.float64) if args.legacy_masks
+                  else S.mask_outline(masks[n])) for n in IMAGES}
     corners = np.concatenate([cv2.perspectiveTransform(
-        np.array(S.KICK_POLY[n], np.float64).reshape(-1, 1, 2), Htot[n]).reshape(-1, 2)
-        for n in S.IMAGES])
-    med, lo, hi, rstats = scale_for(Htot, masks, S.IMAGES, corners, args.density_percentile)
+        extent[n].reshape(-1, 1, 2), Htot[n]).reshape(-1, 2) for n in IMAGES])
+    med, lo, hi, rstats = scale_for(Htot, masks, IMAGES, corners, args.density_percentile)
     rep["resolution"] = rstats
     Sm = np.array([[med, 0, -med * lo[0]], [0, med, -med * lo[1]], [0, 0, 1.0]])
-    Htot = {n: Sm @ Htot[n] for n in S.IMAGES}
+    Htot = {n: Sm @ Htot[n] for n in IMAGES}
     Wc = int(np.ceil((hi[0] - lo[0]) * med))
     Hc = int(np.ceil((hi[1] - lo[1]) * med))
     S.log("kickboard canvas %dx%d at scale %.3f" % (Wc, Hc, med))
@@ -187,15 +214,22 @@ def kickboard(ctx):
     # and the resolution policy all still use the tight strips.
     GROW = 25
     ker = np.ones((2 * GROW + 1, 1), np.uint8)
-    masks_grown = {n: cv2.dilate(masks[n], ker) for n in S.IMAGES}
-    res, res_mask = S.composite(imgs, masks_grown, S.IMAGES, Htot, Wc, Hc, work, rep, "kick-")
+    masks_grown = {n: cv2.dilate(masks[n], ker) for n in IMAGES}
+    res, res_mask = S.composite(imgs, masks_grown, IMAGES, Htot, Wc, Hc, work, rep, "kick-")
     rep["composite_mask_grown_px"] = GROW
-    res, _ = S.crop_usable(res, res_mask, masks_grown, Htot, S.IMAGES, work, rep, "kick-",
+    res, _ = S.crop_usable(res, res_mask, masks_grown, Htot, IMAGES, work, rep, "kick-",
                            min_ratio=0.12, min_fill=0.97)
     png = os.path.join(work, "06-final", "wall-orthophoto-kickboard.png")
     cv2.imwrite(png, res, [cv2.IMWRITE_PNG_COMPRESSION, 9])
     rep["output"] = dict(width=int(res.shape[1]), height=int(res.shape[0]),
                          png_bytes=os.path.getsize(png), file=os.path.basename(png))
+
+    # Hand the composited kickboard to the layout pass: it is the plank strip at the
+    # base, so it attaches along the span's bottom crease.  W is its rectifying frame
+    # expressed in the span's basis (span_R^T @ R2).
+    ctx.setdefault("layout_surfaces", []).append(dict(
+        name="kickboard", image=res, scale=float(med), attach="bottom",
+        W=np.asarray(ctx["R"], float).T @ R2))
 
     m, longs = S.measure_rectification(res, min_span_frac=0.40, min_pts=20)
     rep["rectification_check"] = m
@@ -266,6 +300,71 @@ def joint_spread(n2, P, W, K):
     mu = np.arctan2((W * np.sin(a)).sum(), (W * np.cos(a)).sum())
     r = np.degrees(np.abs((a - mu + np.pi) % (2 * np.pi) - np.pi)) / 2
     return float(np.sqrt((W * np.minimum(r, 3.0) ** 2).sum() / W.sum()))
+
+
+def auto_left_geometry(ctx, frame="1", left_margin=135):
+    """Derive the left-return crease seed and panel polygon from the geometry the
+    automatic path already has, so the single-view panel can be recovered without the
+    hand-traced LEFT_CREASE_SEED / LEFT_POLY_UNDIST.  Returns (seed, poly) or None.
+
+    The crease is the one long *diagonal* edge in the left third of the frame: the
+    return panel's free edge is near-vertical and the plank seams are near-horizontal,
+    so a robust line fit through the diagonal LSD segments there isolates the crease,
+    which `crease_line` then refines exactly the same way the hand seed is refined.  The
+    panel triangle is then bounded on the right by that crease, on the left by the image
+    margin, at the apex where the two meet, and at the bottom by the span's own mask -
+    i.e. the wall-to-floor line.  It is only a seed and an extent: the plane still comes
+    from `left_return`'s crease + board-joint fit, which reports how well it is pinned
+    down.  None when no diagonal crease is found (a wall with no left return)."""
+    if frame not in ctx.get("imgs", {}):
+        return None
+    im = ctx["imgs"][frame]
+    H0, W0 = im.shape[:2]
+    gray = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY)
+    det = cv2.createLineSegmentDetector().detect(gray)[0]
+    if det is None:
+        return None
+    segs = det.reshape(-1, 4)
+    L = np.hypot(segs[:, 2] - segs[:, 0], segs[:, 3] - segs[:, 1])
+    ang = np.degrees(np.arctan2(segs[:, 3] - segs[:, 1], segs[:, 2] - segs[:, 0])) % 180
+    midx = segs[:, [0, 2]].mean(1)
+    midy = segs[:, [1, 3]].mean(1)
+    sel = ((L > 120) & (midx < W0 * 0.30) & (midy > H0 * 0.15) & (midy < H0 * 0.68)
+           & (ang > 45) & (ang < 80))
+    if int(sel.sum()) < 1:
+        return None
+    P = np.concatenate([segs[sel][:, :2], segs[sel][:, 2:]], 0)
+    w = np.repeat(L[sel], 2)
+    c, V = (P * w[:, None]).sum(0) / w.sum(), None
+    for _ in range(8):                          # IRLS line fit, same scheme as crease_line
+        Q = (P - c) * np.sqrt(w)[:, None]
+        _, _, V = np.linalg.svd(Q, full_matrices=False)
+        nv = np.array([-V[0][1], V[0][0]])
+        r = (P - c) @ nv
+        sd = 1.4826 * np.median(np.abs(r)) + 1e-9
+        ww = w * (np.abs(r) < 2.5 * sd)
+        if ww.sum() < 1:
+            break
+        c, w = (P * ww[:, None]).sum(0) / ww.sum(), ww
+    d = V[0] / np.linalg.norm(V[0])
+    if d[1] < 0:
+        d = -d
+    if abs(d[1]) < 1e-3:                         # a vertical fit is the free edge, not the crease
+        return None
+
+    def crease_x(y):
+        return c[0] + (y - c[1]) / d[1] * d[0]
+
+    seed = ((float(crease_x(H0 * 0.25)), float(H0 * 0.25)),
+            (float(crease_x(H0 * 0.52)), float(H0 * 0.52)))
+    mask = ctx.get("masks", {}).get(frame)
+    rows = np.flatnonzero((mask > 0).any(1)) if mask is not None else []
+    y_bot = float(min(int(rows.max()), H0 - 2)) if len(rows) else H0 * 0.68
+    y_apex = c[1] + (left_margin - c[0]) / d[0] * d[1] if abs(d[0]) > 1e-6 else H0 * 0.25
+    y_apex = float(np.clip(y_apex, H0 * 0.18, y_bot - 200))
+    poly = [(left_margin, int(y_apex)), (int(crease_x(y_bot)), int(y_bot)),
+            (left_margin, int(y_bot))]
+    return seed, poly
 
 
 def left_return(ctx):
@@ -448,6 +547,16 @@ def left_return(ctx):
     cv2.imwrite(png, res, [cv2.IMWRITE_PNG_COMPRESSION, 9])
     rep["output"] = dict(width=int(res.shape[1]), height=int(res.shape[0]),
                          png_bytes=os.path.getsize(png), file=os.path.basename(png))
+
+    # Hand the panel to the layout pass.  Its rectifying frame R2 lives in camera 1;
+    # Rw1.T @ R2 re-expresses its axes in the span's basis (Rw1 = the span's rectified
+    # axes in camera 1).  It attaches on the LEFT of the span; its yaw is genuinely
+    # under-constrained (single view), so the flag rides along for honest reporting.
+    ctx.setdefault("layout_surfaces", []).append(dict(
+        name="left-return", image=res, scale=float(med), attach="left",
+        W=Rw1.T @ R2, well_constrained=bool(rep.get("well_constrained", False)),
+        note="single-view rectification; yaw under-constrained over ~%s" % (
+            rep.get("yaw_range_within_10pct_of_best_deg"))))
 
     # The panel's straight-line family runs vertically, so it is measured on the
     # transposed image with the same sub-pixel tracer the main span uses.

@@ -15,7 +15,7 @@ TARGET = HERE / "pipeline" / "holds_match" / "hm_common.py"
 
 ORIGINAL = '''WALL_ROOT = "/Users/patrickweindl/Desktop/wall-photos/work"
 OLD_IMG = os.path.join(WALL_ROOT, "holds", "wall-photo.jpg")
-NEW_IMG = os.path.join(WALL_ROOT, "06-final", "wall-orthophoto.png")
+NEW_IMG = os.path.join(WALL_ROOT, "06-final", "wall-orthophoto-angled.png")
 HOLDS_JSON = os.path.join(WALL_ROOT, "holds", "holds.json")
 WALL_JSON = os.path.join(WALL_ROOT, "holds", "wall.json")
 ONNX = "/Users/patrickweindl/Projects/blocwerk/src/Blocwerk.HoldDetection/models/climbingcrux.onnx"'''
@@ -28,7 +28,7 @@ PATCHED = '''# VENDORED-COPY PATCH (docker/wall-stitch): the upstream copy hardc
 WALL_ROOT = os.environ.get(
     "WALLSTITCH_WORK_ROOT", "/Users/patrickweindl/Desktop/wall-photos/work")
 OLD_IMG = os.environ.get("WALLSTITCH_OLD_IMG") or os.path.join(WALL_ROOT, "holds", "wall-photo.jpg")
-NEW_IMG = os.environ.get("WALLSTITCH_NEW_IMG") or os.path.join(WALL_ROOT, "06-final", "wall-orthophoto.png")
+NEW_IMG = os.environ.get("WALLSTITCH_NEW_IMG") or os.path.join(WALL_ROOT, "06-final", "wall-orthophoto-angled.png")
 HOLDS_JSON = os.environ.get("WALLSTITCH_HOLDS_JSON") or os.path.join(WALL_ROOT, "holds", "holds.json")
 WALL_JSON = os.environ.get("WALLSTITCH_WALL_JSON") or os.path.join(WALL_ROOT, "holds", "wall.json")
 ONNX = os.environ.get(

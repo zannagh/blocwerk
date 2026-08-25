@@ -3,14 +3,16 @@
 @*
     Background visibility control for surfaces that draw holds over the wall photo.
 
-    The state lives entirely in JS + localStorage (blocwerkWallDim), written to a CSS
-    custom property on <html>, so dragging the slider costs zero server round-trips
-    and survives Blazor re-renders. The handlers are plain HTML attributes on purpose
-    — they must not become Blazor event callbacks.
+    The dim state lives entirely in JS + localStorage (blocwerkWallDim), written to a CSS
+    custom property on <html>, so dragging the slider costs zero server round-trips and
+    survives Blazor re-renders. Those handlers are plain HTML attributes on purpose — they
+    must not become Blazor event callbacks.
 
-    The optional projection button sits next to Focus and is the exception: it swaps the
-    photo the host component renders, so it is a real Blazor callback and only appears
-    where the host opts in (a wall that stores both projections).
+    The view-mode segmented control and the curvature slider ARE real Blazor callbacks: they
+    change what the host renders (a plain image, the ortho image, or a cylinder-warped canvas
+    with a matching overlay), so the host owns the state. wall-view.js persists the choice so
+    the control can hydrate to it. The older single projection button is kept for callers that
+    still use it, but hosts should prefer the view-mode control.
 *@
 <div class="wall-dim-bar" title="Dim the wall photo so the boulder stands out">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" aria-hidden="true">
@@ -23,7 +25,32 @@
     <button type="button" class="wall-dim-focus"
             title="Focus mode: strongly dim and desaturate the photo, thicken hold outlines"
             onclick="window.blocwerkWallDim.toggleFocus()">Focus</button>
-    @if (ShowProjectionToggle)
+
+    @if (ShowViewModes && AvailableViewModes.Count > 1)
+    {
+        <div class="wall-view-modes" role="radiogroup" aria-label="Wall view mode" @onkeydown="OnViewKeyDown">
+            @foreach (var mode in AvailableViewModes)
+            {
+                var selected = mode == CurrentViewMode;
+                <button type="button" role="radio" class="wall-view-mode @(selected ? "active" : string.Empty)"
+                        aria-checked="@(selected ? "true" : "false")"
+                        aria-pressed="@(selected ? "true" : "false")"
+                        tabindex="@(selected ? "0" : "-1")"
+                        title="@ViewModeTitle(mode)"
+                        @onclick="() => SelectViewMode(mode)">
+                    @ViewModeLabel(mode)
+                </button>
+            }
+        </div>
+        @if (ShowCurvature && CurrentViewMode == WallViewMode.Cylindric)
+        {
+            <input type="range" class="wall-curve-slider" min="0" max="100" step="1"
+                   value="@Curvature" aria-label="Wall curve strength"
+                   title="How strongly the wall curves toward you"
+                   @oninput="OnCurveInput" />
+        }
+    }
+    else if (ShowProjectionToggle)
     {
         <button type="button" class="wall-dim-projection" title="@ProjectionTitle" @onclick="OnToggleProjection">
             @ProjectionLabel
@@ -42,6 +69,95 @@
     [Parameter] public string? ProjectionTitle { get; set; }
 
     [Parameter] public EventCallback OnToggleProjection { get; set; }
+
+    /// <summary>Shows the segmented Angle / Flat / Curve control instead of the single toggle.</summary>
+    [Parameter] public bool ShowViewModes { get; set; }
+
+    /// <summary>The view mode currently on screen; the host owns this state.</summary>
+    [Parameter] public WallViewMode CurrentViewMode { get; set; } = WallViewMode.Natural;
+
+    /// <summary>The modes offered, in display order. A single entry hides the control.</summary>
+    [Parameter] public IReadOnlyList<WallViewMode> AvailableViewModes { get; set; } = [WallViewMode.Natural];
+
+    [Parameter] public EventCallback<WallViewMode> OnViewModeChanged { get; set; }
+
+    /// <summary>Shows the curvature slider while the cylindric mode is active.</summary>
+    [Parameter] public bool ShowCurvature { get; set; }
+
+    /// <summary>Curve strength 0..100 (maps to the warp's beta 0..1).</summary>
+    [Parameter] public int Curvature { get; set; }
+
+    [Parameter] public EventCallback<int> OnCurvatureChanged { get; set; }
+
+    private static string ViewModeLabel(WallViewMode mode) => mode switch
+    {
+        WallViewMode.Natural => "Angle",
+        WallViewMode.Ortho => "Flat",
+        WallViewMode.Cylindric => "Curve",
+        _ => mode.ToString(),
+    };
+
+    private static string ViewModeTitle(WallViewMode mode) => mode switch
+    {
+        WallViewMode.Natural => "Show the wall at its real angle",
+        WallViewMode.Ortho => "Show the wall straight on, without its lean",
+        WallViewMode.Cylindric => "Curve a wide wall back toward you, panorama-style",
+        _ => string.Empty,
+    };
+
+    private async Task SelectViewMode(WallViewMode mode)
+    {
+        if (mode == CurrentViewMode)
+        {
+            return;
+        }
+
+        await OnViewModeChanged.InvokeAsync(mode);
+    }
+
+    // Left/Up and Right/Down step through the segmented control, standard radiogroup behaviour.
+    private async Task OnViewKeyDown(KeyboardEventArgs e)
+    {
+        if (AvailableViewModes.Count == 0)
+        {
+            return;
+        }
+
+        var idx = 0;
+        for (var i = 0; i < AvailableViewModes.Count; i++)
+        {
+            if (AvailableViewModes[i] == CurrentViewMode)
+            {
+                idx = i;
+                break;
+            }
+        }
+
+        var next = e.Key switch
+        {
+            "ArrowRight" or "ArrowDown" => idx + 1,
+            "ArrowLeft" or "ArrowUp" => idx - 1,
+            "Home" => 0,
+            "End" => AvailableViewModes.Count - 1,
+            _ => idx,
+        };
+
+        if (next == idx)
+        {
+            return;
+        }
+
+        next = Math.Clamp(next, 0, AvailableViewModes.Count - 1);
+        await SelectViewMode(AvailableViewModes[next]);
+    }
+
+    private async Task OnCurveInput(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var value))
+        {
+            await OnCurvatureChanged.InvokeAsync(Math.Clamp(value, 0, 100));
+        }
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {

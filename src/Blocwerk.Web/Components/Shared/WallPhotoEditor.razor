@@ -112,6 +112,55 @@
 <div class="photo-viewport" @ref="_viewportRef"
      style="cursor: @CursorForMode();">
 <div class="photo-editor" @ref="_containerRef">
+@if (_viewMode == WallViewMode.Cylindric)
+{
+    @* Read-only cylinder view: the warped canvas is the image (see wall-view.js) and the overlay
+       holds are mapped through the SAME map (CylindricMap) so they stay registered. Editing gizmos
+       assume linear space, so this branch is display-only; cylindric is not offered while staging. *@
+    var cyl = CurrentCylindricMap;
+    <img @ref="_cylImgRef" src="@PhotoUrl" alt="Wall" class="wall-photo cyl-source" />
+    <canvas @ref="_cylCanvasRef" class="wall-cyl-canvas"></canvas>
+    <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none" style="pointer-events: none">
+        @if (_showBorder && BorderPoints.Count >= 3)
+        {
+            <polygon points="@MapPts(BorderPoints.Select(p => (p.Dx, p.Dy)), cyl)"
+                     fill="none" stroke="#FF9800" stroke-width="0.3" stroke-dasharray="1 0.5" />
+        }
+        @foreach (var hold in Holds)
+        {
+            var isFootHold = hold.Category == HoldCategory.Foot;
+            var fill = GetHoldFillColor(hold, false);
+            var stroke = GetHoldStrokeColor(hold);
+            var cr = (isFootHold ? hold.Radius * 0.7 : hold.Radius);
+            @if (hold.ShapePoints is { Count: >= 3 })
+            {
+                <polygon points="@MapPts(hold.ShapePoints.Select(sp => (hold.X + sp.Dx, hold.Y + sp.Dy)), cyl)"
+                         fill="@fill" stroke="@stroke" stroke-width="0.25" />
+            }
+            else if (isFootHold)
+            {
+                <polygon points="@MapPts(RectCorners(hold.X, hold.Y, cr), cyl)"
+                         fill="@fill" stroke="@stroke" stroke-width="0.25" />
+            }
+            else
+            {
+                <polygon points="@FmtPts(cyl.MapCircle(hold.X, hold.Y, cr))"
+                         fill="@fill" stroke="@stroke" stroke-width="0.25" />
+            }
+            @if (!string.IsNullOrEmpty(hold.Name) && _showNames)
+            {
+                var (lx, ly) = cyl.MapPoint(hold.X - 0.08, hold.Y - hold.Radius - 0.025);
+                <foreignObject x="@F(lx * 100)" y="@F(ly * 100)" width="16" height="3" style="overflow: visible;">
+                    <span style="font-size: 1.8px; color: white; text-shadow: 0 0 1px #000, 0 0 1px #000;
+                                 font-family: sans-serif; font-weight: 600; white-space: nowrap;
+                                 display: block; text-align: center;">@hold.Name</span>
+                </foreignObject>
+            }
+        }
+    </svg>
+}
+else
+{
     <img src="@PhotoUrl" alt="Wall" class="wall-photo" />
     <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none"
          @onclick="OnSvgClick"
@@ -318,6 +367,7 @@
             }
         }
     </svg>
+}
 
     @if (_isDetecting)
     {
@@ -326,10 +376,13 @@
 </div>
 </div>
 
-<WallDimControl ShowProjectionToggle="HasAlternateProjection"
-                ProjectionLabel="@ProjectionButtonLabel"
-                ProjectionTitle="@ProjectionButtonTitle"
-                OnToggleProjection="ToggleProjection" />
+<WallDimControl ShowViewModes="true"
+                CurrentViewMode="_viewMode"
+                AvailableViewModes="AvailableViewModes"
+                OnViewModeChanged="OnViewModeChanged"
+                ShowCurvature="true"
+                Curvature="_curvature"
+                OnCurvatureChanged="OnCurvatureChanged" />
 
 @* Mode-specific contextual controls — kept BELOW the viewport so the image
    never shifts under the cursor when a tool's options appear or change. *@
@@ -624,8 +677,22 @@
     /// <summary>Which projection the wall's default photo is; the alternate is the other one.</summary>
     [Parameter] public WallPhotoProjection PhotoProjection { get; set; } = WallPhotoProjection.Angled;
 
-    /// <summary>True while the alternate projection is on screen instead of the default one.</summary>
-    private bool _showAlternate;
+    /// <summary>
+    /// Which of Natural / Ortho / Cylindric is on screen. Natural shows the default photo; Ortho and
+    /// Cylindric both use the stored alternate, with Cylindric additionally warping it client-side.
+    /// </summary>
+    private WallViewMode _viewMode = WallViewMode.Natural;
+
+    /// <summary>Curve strength 0..100 for the cylindric warp; persisted in localStorage.</summary>
+    private int _curvature;
+
+    /// <summary>Read localStorage for the persisted view/curve exactly once, after the first render.</summary>
+    private bool _viewHydrated;
+
+    private ElementReference _cylImgRef;
+    private ElementReference _cylCanvasRef;
+
+    private CylindricMap CurrentCylindricMap => CylindricMap.FromCurvature(_curvature);
 
     /// <summary>
     /// Supplies the hold-to-boulders map for the usage tool. The tool button is hidden
@@ -739,14 +806,15 @@
     private List<Hold>? _snapshotHolds;
     private int _pendingChanges => _addedHolds.Count + _updatedHoldIds.Count + _deletedHoldIds.Count;
 
-    // The alternate routes serve the wall's other projection. Hold coordinates are normalised per
-    // axis and the two projections differ only by a vertical scale, so the overlay is identical in
-    // both — swapping the image is the whole feature, no remapping anywhere.
+    // Natural shows the default photo; Ortho and Cylindric both pull the stored alternate (the
+    // fronto-parallel master). Hold coordinates are normalised per axis and the projections differ
+    // only by a vertical scale, so Natural<->Ortho is a pure image swap with no overlay remapping.
+    // Cylindric additionally warps BOTH the image and the overlay through CylindricMap.
     private string PhotoUrl
     {
         get
         {
-            var suffix = _showAlternate ? "-alternate" : string.Empty;
+            var suffix = _viewMode == WallViewMode.Natural ? string.Empty : "-alternate";
             if (IsStaging)
             {
                 return $"/api/walls/{WallId}/staged-photo{suffix}";
@@ -758,30 +826,62 @@
         }
     }
 
-    /// <summary>Which projection is on screen right now.</summary>
-    private WallPhotoProjection DisplayedProjection =>
-        _showAlternate ? OtherProjection(PhotoProjection) : PhotoProjection;
-
-    /// <summary>The button names what you get, not what you are looking at.</summary>
-    private string ProjectionButtonLabel =>
-        DisplayedProjection == WallPhotoProjection.Ortho ? "Wall angle" : "Straight on";
-
-    private string ProjectionButtonTitle =>
-        DisplayedProjection == WallPhotoProjection.Ortho
-            ? "Show the photo with the wall's real steepness"
-            : "Show the wall straight on, without its lean";
-
-    private static WallPhotoProjection OtherProjection(WallPhotoProjection projection) =>
-        projection == WallPhotoProjection.Ortho ? WallPhotoProjection.Angled : WallPhotoProjection.Ortho;
-
-    private void ToggleProjection()
+    /// <summary>
+    /// The modes offered here: Natural always; Ortho when a second projection exists; Cylindric
+    /// only when a second projection exists AND we are not staging/aligning (its warp assumes the
+    /// linear ortho space that the alignment gizmos also depend on).
+    /// </summary>
+    private IReadOnlyList<WallViewMode> AvailableViewModes
     {
-        if (!HasAlternateProjection)
+        get
+        {
+            var modes = new List<WallViewMode> { WallViewMode.Natural };
+            if (HasAlternateProjection)
+            {
+                modes.Add(WallViewMode.Ortho);
+                if (!IsStaging && !ManualAlignment)
+                {
+                    modes.Add(WallViewMode.Cylindric);
+                }
+            }
+
+            return modes;
+        }
+    }
+
+    private async Task OnViewModeChanged(WallViewMode mode)
+    {
+        if (!AvailableViewModes.Contains(mode))
         {
             return;
         }
 
-        _showAlternate = !_showAlternate;
+        _viewMode = mode;
+        try
+        {
+            await JS.InvokeVoidAsync("bwWallView.setMode", (int)mode);
+        }
+        catch (JSException)
+        {
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    private async Task OnCurvatureChanged(int value)
+    {
+        _curvature = Math.Clamp(value, 0, 100);
+        try
+        {
+            await JS.InvokeVoidAsync("bwWallView.setCurve", _curvature);
+        }
+        catch (JSException)
+        {
+        }
+        catch (JSDisconnectedException)
+        {
+        }
     }
 
     private bool IsStagedHold(Hold h) => IsStaging && h.Generation > LiveGeneration;
@@ -806,6 +906,11 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (firstRender)
+        {
+            await HydrateViewModeAsync();
+        }
+
         // Re-attach every render, unconditionally. setupScroll is idempotent in JS (a no-op once
         // bound to this exact node), so the common case is cheap — but attaching on firstRender
         // ONLY meant a stale ref at that moment (the reconnect / fast re-render race), or a node
@@ -818,6 +923,14 @@
             // fullscreen/desktop layout can contain the wall photo within the window. Mobile/narrow
             // is untouched: the box keeps its flex-driven height until the .bw-fullscreen CSS opts in.
             await JS.InvokeVoidAsync("bwViewport.fitBox", _viewportRef, false);
+
+            // In cylindric mode the visible layer is the strip-warped canvas; re-warp every render
+            // so a view/curve change (or a freshly loaded image) redraws it. The overlay is already
+            // mapped server-side through the identical CylindricMap.
+            if (_viewMode == WallViewMode.Cylindric)
+            {
+                await JS.InvokeVoidAsync("bwCylindric.render", _cylCanvasRef, _cylImgRef, new { beta = _curvature / 100.0 });
+            }
         }
         catch (JSException)
         {
@@ -830,17 +943,48 @@
         }
     }
 
+    /// <summary>Pull the persisted view mode and curve strength once, clamping to what is offered.</summary>
+    private async Task HydrateViewModeAsync()
+    {
+        if (_viewHydrated)
+        {
+            return;
+        }
+
+        _viewHydrated = true;
+        try
+        {
+            var storedMode = await JS.InvokeAsync<int>("bwWallView.getMode");
+            _curvature = Math.Clamp(await JS.InvokeAsync<int>("bwWallView.getCurve"), 0, 100);
+            var wanted = (WallViewMode)Math.Clamp(storedMode, 0, 2);
+            if (AvailableViewModes.Contains(wanted))
+            {
+                _viewMode = wanted;
+                StateHasChanged();
+            }
+        }
+        catch (JSException)
+        {
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
     public void Dispose() => _zoomState.Dispose();
 
     private List<WallSegmentDraft> _segmentDrafts = [];
 
     protected override void OnParametersSet()
     {
-        // A wall that lost its second projection (or a staged update that has none) must not keep
-        // pointing the <img> at a route that now 404s.
-        if (!HasAlternateProjection)
+        // A view mode that is no longer offered (no alternate, or cylindric while staging) must not
+        // keep pointing the <img> at a route that 404s or leave a warp with no gizmos. Fall back to
+        // the nearest still-available mode.
+        if (!AvailableViewModes.Contains(_viewMode))
         {
-            _showAlternate = false;
+            _viewMode = AvailableViewModes.Contains(WallViewMode.Ortho) && _viewMode == WallViewMode.Cylindric
+                ? WallViewMode.Ortho
+                : WallViewMode.Natural;
         }
 
         _segmentDrafts = (Segments ?? [])
@@ -1647,6 +1791,17 @@
     private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
     private static string Pts(IEnumerable<(double X, double Y)> pts) =>
         string.Join(" ", pts.Select(p => $"{F(p.X * 100)},{F(p.Y * 100)}"));
+
+    // Cylindric overlay helpers: MapPts warps raw normalised points through the same map the image
+    // uses; FmtPts formats already-warped points (e.g. from CylindricMap.MapCircle).
+    private static string MapPts(IEnumerable<(double X, double Y)> pts, CylindricMap map) =>
+        FmtPts(pts.Select(p => map.MapPoint(p.X, p.Y)));
+
+    private static string FmtPts(IEnumerable<(double X, double Y)> pts) =>
+        string.Join(" ", pts.Select(p => $"{F(p.X * 100)},{F(p.Y * 100)}"));
+
+    private static IEnumerable<(double X, double Y)> RectCorners(double cx, double cy, double r) =>
+        [(cx - r, cy - r), (cx + r, cy - r), (cx + r, cy + r), (cx - r, cy + r)];
 
     private static string GetCssColor(string? c) => HoldPalette.Hex(c);
 

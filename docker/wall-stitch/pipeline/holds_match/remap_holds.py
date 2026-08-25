@@ -22,7 +22,6 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import hm_detect
-import hm_extra
 import hm_planes
 import hm_render
 from hm_common import (NEW_IMG, OLD_IMG, cache_path, hold_px, load_holds, load_images,
@@ -99,15 +98,18 @@ def main():
     doc, live = load_holds(generation=1)
     oh, ow = old.shape[:2]
     nh, nw = new.shape[:2]
-    print(f"  old {ow}x{oh}  new {nw}x{nh}  live holds {len(live)}")
+    print(f"  old {ow}x{oh}  new(natural master) {nw}x{nh}  live holds {len(live)}")
 
+    # Plane assignment is kept for the per-REGION breakdown only. Every hold is now
+    # transferred and emitted in ONE whole-wall coordinate space (normalised against the
+    # single natural master), so there is no per-plane split of the coordinates or the run.
     plane_of = hm_planes.assign(live, old.shape)
     for key in (MAIN, KICK, LEFT):
-        print(f"  plane {key}: {sum(1 for k in plane_of if k == key)} holds")
+        print(f"  region {key}: {sum(1 for k in plane_of if k == key)} holds")
 
-    print("[2/7] coarse global initialisation")
+    print("[2/7] coarse global initialisation (old photo -> natural master, whole wall)")
     packed = _cached(args.work, "seedmap.pkl",
-                     lambda: build_global_map(old, new), args.force)  # main span
+                     lambda: build_global_map(old, new), args.force)
     seed, h_full, corr, gstats = packed
     for k, v in gstats.items():
         print(f"  {k}: {v}")
@@ -131,9 +133,14 @@ def main():
 
     final = np.where(good[:, None] & (resid[:, None] < 250), ref_pts, field_pts)
 
-    print("[5/7] detecting holds in the new orthophoto")
+    print("[5/7] detecting holds in the natural master")
+    # The natural master is far smaller than the ortho (holds ~20 px radius, not ~50), so
+    # the ortho-scale detector defaults (tile 1280, min_side 45) would reject most real
+    # holds. Tune the tile down for more zoom and lower the size floor to the natural
+    # master's scale; filter at full resolution since the image is small enough.
     det = _cached(args.work, "detections.pkl",
-                  lambda: hm_detect.detect(new, log=print), args.force)
+                  lambda: hm_detect.detect(new, log=print, tile=640, stride=480,
+                                           min_side=14.0, filter_scale=1.0), args.force)
     boxes, scores, classes = det
     print(f"  {len(boxes)} detections after NMS")
 
@@ -142,12 +149,13 @@ def main():
     r_new_pred = r_old * scale
     snapped, r_snap, snap_dist, snap_idx = hm_detect.snap(final, r_new_pred, boxes)
 
-    print("[6/7] classifying")
+    print("[6/7] classifying (single whole-wall surface)")
     panel = side_panel_mask(old.shape)
     records = []
-    counts = {}
-    linked_counts = {}
-    region_stats = {n: {} for n, _, _ in REGIONS}
+    # region breakdown: main-span / kickboard / left-return from plane_of, and a
+    # left/centre/right split of the main span so the right corner is visible on its own.
+    region_stats = {k: {} for k in (MAIN, KICK, LEFT)}
+    corner_stats = {"main-left": {}, "main-centre": {}, "main-right": {}}
     for i, h in enumerate(live):
         in_panel = bool(panel[int(min(oh - 1, h["Y"] * oh)), int(min(ow - 1, h["X"] * ow))])
         use_snap = np.isfinite(snap_dist[i])
@@ -161,10 +169,14 @@ def main():
             rad_px = r_new_pred[i]
         in_frame_pos = bool(0 <= pos[0] < nw and 0 <= pos[1] < nh)
         conf = float(np.clip(ncc[i], 0, 1))
+        rreg = plane_of[i]
         rec = {
             "Id": h["Id"],
             "Category": h["Category"],
-            "plane": MAIN,
+            # SINGLE whole-wall surface: `plane` is informational only ("wall"); the region
+            # tag records which wall surface the stored (X, Y) came from, for diagnostics.
+            "plane": "wall",
+            "region": rreg,
             "Color": h.get("Color"),
             "BoulderLinkCount": h.get("BoulderLinkCount", 0),
             "old": {"X": h["X"], "Y": h["Y"], "Radius": h.get("Radius")},
@@ -176,158 +188,124 @@ def main():
             "snap_distance_px": (None if not np.isfinite(snap_dist[i])
                                  else round(float(snap_dist[i]), 1)),
             "field_residual_px": round(float(resid[i]), 1),
-            "region": region_of(h["Y"]),
             "new_in_frame": in_frame_pos,
         }
-        if True:
-            jac = seed.jacobian((h["X"] * ow, h["Y"] * oh))
-            nx, ny = float(pos[0] / nw), float(pos[1] / nh)
-            rec["new"] = {
-                "X": round(nx, 6), "Y": round(ny, 6),
-                "Radius": round(float(rad_px) / max(nw, nh), 6),
-            }
-            if h.get("ShapePoints"):
-                pts = []
-                for p in h["ShapePoints"]:
-                    v = np.array([p["Dx"] * ow, p["Dy"] * oh])
-                    w = jac @ v
-                    pts.append({"Dx": round(float(w[0] / nw), 6),
-                                "Dy": round(float(w[1] / nh), 6)})
-                rec["new"]["ShapePoints"] = pts
+        # Whole-wall normalisation: X = px/W, Y = px/H against the single natural master,
+        # Radius against its longer side. This is exactly the app's DB convention
+        # (SegmentId NULL, no per-plane split).
+        jac = seed.jacobian((h["X"] * ow, h["Y"] * oh))
+        nx, ny = float(pos[0] / nw), float(pos[1] / nh)
+        rec["new"] = {
+            "X": round(nx, 6), "Y": round(ny, 6),
+            "Radius": round(float(rad_px) / max(nw, nh), 6),
+        }
+        if h.get("ShapePoints"):
+            pts = []
+            for p in h["ShapePoints"]:
+                v = np.array([p["Dx"] * ow, p["Dy"] * oh])
+                w = jac @ v
+                pts.append({"Dx": round(float(w[0] / nw), 6),
+                            "Dy": round(float(w[1] / nh), 6)})
+            rec["new"]["ShapePoints"] = pts
         records.append(rec)
-        if plane_of[i] != MAIN:
-            continue
-        counts[cls] = counts.get(cls, 0) + 1
-        if h.get("BoulderLinkCount", 0) > 0:
-            linked_counts[cls] = linked_counts.get(cls, 0) + 1
-        rs = region_stats[rec["region"]]
+        rs = region_stats.setdefault(rreg, {})
         rs[cls] = rs.get(cls, 0) + 1
+        if rreg == MAIN:
+            bucket = ("main-left" if h["X"] < 0.2 else
+                      "main-right" if h["X"] > 0.8 else "main-centre")
+            cs = corner_stats[bucket]
+            cs[cls] = cs.get(cls, 0) + 1
 
-    # how much of the "below the crop" loss is a crop choice rather than missing data:
-    # the uncropped mosaic 06-final/wall-orthophoto-full.png extends 195 px further down.
-    recoverable = sum(1 for i, r in enumerate(refs)
-                      if not r["in_frame"] and 0 <= r["seed"][0] < nw
-                      and nh <= r["seed"][1] < nh + 195)
+    counts_all = {}
+    counts_all_linked = {}
+    for r in records:
+        cls = r["classification"]
+        counts_all[cls] = counts_all.get(cls, 0) + 1
+        if r["BoulderLinkCount"] > 0:
+            counts_all_linked[cls] = counts_all_linked.get(cls, 0) + 1
 
+    # Holds whose transferred position lands off the natural master. On the whole-wall
+    # natural master (nothing cropped) this should be a small handful; on the old tight
+    # ortho crop it was ~55 on the main span alone.
+    off_frame = [live[i]["Id"] for i, r in enumerate(refs) if not r["in_frame"]]
+    by_id = {r["Id"]: r for r in records}
+    prev_lost = [by_id[i] for i in off_frame if by_id[i]["BoulderLinkCount"] > 0]
+    recovered = [r for r in prev_lost if r["classification"] != "missing"]
+    print(f"  off-frame holds: {len(off_frame)}, boulder-linked among them: "
+          f"{len(prev_lost)}, now placed: {len(recovered)}")
+
+    # New detections that no old hold claimed, inside the region the old photo covered.
+    # These are CANDIDATE new holds. They are reported and drawn, but emitted in a
+    # SEPARATE `new_candidates` list, never in `holds`: they carry no stored Id and the
+    # detector produces false positives on the natural master's non-wall content (mats,
+    # ceiling timbers, attic clutter), so injecting them as real hold records would risk
+    # polluting the DB clone. Counted-only keeps the transfer honest.
     claimed = set(int(j) for j in snap_idx if j >= 0)
     cover = hm_render.old_coverage_mask(old, new, seed)
     cen = hm_detect.blob_centres(boxes)
     new_blobs = []
+    new_candidates = []
     for j in range(len(boxes)):
         if j in claimed:
             continue
         cx, cy = cen[j]
         if 0 <= int(cy) < cover.shape[0] and 0 <= int(cx) < cover.shape[1] and cover[int(cy), int(cx)]:
             new_blobs.append(j)
-    print(f"  new blobs (detected, no old hold): {len(new_blobs)}")
-
-    main_records = records
-
-    print("[6b/7] the other two planes")
-    plane_records, plane_diags, plane_images, plane_boxes = hm_extra.run_planes(
-        old, live, plane_of, cache=lambda n, f: _cached(args.work, n, f, args.force))
-
-    merged = {r["Id"]: r for r in main_records if r["plane"] == MAIN}
-    for key in (KICK, LEFT):
-        for r in plane_records[key]:
-            merged[r["Id"]] = r
-    records = [merged[h["Id"]] for h in live]
-    main_only = [r for r in records if r["plane"] == MAIN]
-
-    counts_all = {}
-    counts_all_linked = {}
-    per_plane = {}
-    per_plane_linked = {}
-    for r in records:
-        cls, pk = r["classification"], r["plane"]
-        counts_all[cls] = counts_all.get(cls, 0) + 1
-        per_plane.setdefault(pk, {})[cls] = per_plane.setdefault(pk, {}).get(cls, 0) + 1
-        if r["BoulderLinkCount"] > 0:
-            counts_all_linked[cls] = counts_all_linked.get(cls, 0) + 1
-            d = per_plane_linked.setdefault(pk, {})
-            d[cls] = d.get(cls, 0) + 1
-
-    # Coverage failures: holds whose main-span position falls outside the main-span
-    # orthophoto entirely. Those are the 55 the old single-plane run lost for lack of
-    # pixels rather than for lack of a match, and 14 of them carry boulders.
-    off_main = [live[i]["Id"] for i, r in enumerate(refs) if not r["in_frame"]]
-    by_id = {r["Id"]: r for r in records}
-    prev_lost = [by_id[i] for i in off_main if by_id[i]["BoulderLinkCount"] > 0]
-    recovered = [r for r in prev_lost if r["classification"] != "missing"]
-    print(f"  coverage failures on the main span: {len(off_main)}, "
-          f"boulder-linked among them: {len(prev_lost)}, now placed: {len(recovered)}")
+            bw, bh = float(boxes[j][2]), float(boxes[j][3])
+            new_candidates.append({
+                "new": {"X": round(float(cx) / nw, 6), "Y": round(float(cy) / nh, 6),
+                        "Radius": round(max(bw, bh) / 2.0 / max(nw, nh), 6)},
+                "classification": "new", "confidence": round(float(scores[j]), 4),
+            })
+    print(f"  new candidate blobs (detected, no old hold): {len(new_blobs)}")
 
     out = {
         "_source_old": OLD_IMG, "_source_new": NEW_IMG,
         "_new_image": {"width": nw, "height": nh},
-        "_planes": {p.key: {"image": p.image,
-                            "width": (nw if p.key == MAIN else plane_images[p.key].shape[1]),
-                            "height": (nh if p.key == MAIN else plane_images[p.key].shape[0]),
-                            "segments": list(p.segments), "note": p.note}
-                    for p in hm_planes.PLANES},
         "_convention": doc["_coordinateConvention"],
-        "_plane_convention": ("Each hold carries `plane`. `new.X`/`new.Y` are normalised"
-                              " 0..1 per axis against THAT PLANE's own image, and"
-                              " `new.Radius` against that image's longer side."),
+        "_surface": ("SINGLE whole-wall surface. Every hold's `new.X`/`new.Y` is normalised"
+                     " 0..1 per axis against the ONE natural master (top-left origin), and"
+                     " `new.Radius` against its longer side. This matches the app DB, which"
+                     " stores holds whole-wall normalised with SegmentId NULL. `region` is"
+                     " informational only (which wall surface the stored hold came from)."),
         "_thresholds": {"ncc_good": NCC_GOOD, "ncc_ok": NCC_OK,
                         "field_tol_px": FIELD_TOL, "moved_px": MOVE_PX},
         "holds": records,
+        "new_candidates": new_candidates,
     }
     with open(os.path.join(args.work, "holds-remapped.json"), "w") as fh:
         json.dump(out, fh, indent=1)
 
     print("[7/7] overlays")
-    main_panel = hm_render.render_all(args.work, old, new, live, main_only,
-                                      boxes, new_blobs, seed)
-    hm_render.render_extra_planes(args.work, plane_images, plane_records,
-                                  plane_boxes, main_panel)
+    hm_render.render_all(args.work, old, new, live, records, boxes, new_blobs, seed)
 
     report = {
         "generated": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "runtime_seconds": round(time.time() - t0, 1),
+        "surface": "single whole-wall natural master",
         "old_image": {"path": OLD_IMG, "width": ow, "height": oh},
-        "planes": {p.key: {"image": p.image, "segments": list(p.segments),
-                           "holds": sum(1 for k in plane_of if k == p.key),
-                           "note": p.note}
-                   for p in hm_planes.PLANES},
-        "plane_assignment": ("stored (X, Y) is tested against each wall.json segment"
-                             " polygon; Segment 1 -> main-span, Segment 3 -> kickboard,"
-                             " Segment 2 -> left-return. Every live hold falls in"
-                             " exactly one."),
+        "new_image": {"path": NEW_IMG, "width": nw, "height": nh},
         "live_holds": len(live),
         "counts": counts_all,
         "counts_boulder_linked": counts_all_linked,
-        "counts_by_plane": per_plane,
-        "counts_by_plane_boulder_linked": per_plane_linked,
+        "counts_by_region": region_stats,
+        "counts_by_main_span_corner": corner_stats,
+        "region_holds": {k: sum(1 for x in plane_of if x == k) for k in (MAIN, KICK, LEFT)},
         "boulder_linked_total": sum(1 for h in live if h.get("BoulderLinkCount", 0) > 0),
-        "main_span_coverage_failures": len(off_main),
-        "main_span_coverage_failures_by_plane": {
-            k: sum(1 for i in off_main if by_id[i]["plane"] == k)
-            for k in (MAIN, KICK, LEFT)},
-        "boulder_linked_previously_unrecoverable": len(prev_lost),
-        "boulder_linked_recovered": len(recovered),
-        "boulder_linked_recovered_ids": [r["Id"] for r in recovered],
-        "boulder_linked_still_lost": [
-            {"Id": r["Id"], "plane": r["plane"], "reason": r["reason"]}
-            for r in prev_lost if r not in recovered],
-        "main_span": {
-            "new_image": {"path": NEW_IMG, "width": nw, "height": nh},
-            "global_stage": gstats,
-            "counts_by_region": region_stats,
-            "missing_recoverable_by_extending_crop_195px": int(recoverable),
-            "detections_in_new": int(len(boxes)),
-            "detections_unclaimed_inside_old_coverage": len(new_blobs),
-            "snap": {"snapped": int(np.isfinite(snap_dist).sum()),
-                     "median_snap_px": (float(np.median(snap_dist[np.isfinite(snap_dist)]))
-                                        if np.isfinite(snap_dist).any() else None)},
-            "field": {"control_points": int(good.sum()),
-                      "kept_after_rejection": int(kept.sum()),
-                      "median_control_residual_px": float(np.median(resid[good]))},
-        },
-        "extra_planes": plane_diags,
+        "off_frame_holds": len(off_frame),
+        "boulder_linked_off_frame": len(prev_lost),
+        "boulder_linked_off_frame_recovered": len(recovered),
+        "global_stage": gstats,
+        "detections_in_new": int(len(boxes)),
+        "new_candidates_unclaimed_inside_old_coverage": len(new_blobs),
+        "snap": {"snapped": int(np.isfinite(snap_dist).sum()),
+                 "median_snap_px": (float(np.median(snap_dist[np.isfinite(snap_dist)]))
+                                    if np.isfinite(snap_dist).any() else None)},
+        "field": {"control_points": int(good.sum()),
+                  "kept_after_rejection": int(kept.sum()),
+                  "median_control_residual_px": float(np.median(resid[good]))},
         "thresholds": {"ncc_good": NCC_GOOD, "ncc_ok": NCC_OK,
-                       "field_tol_px": FIELD_TOL, "moved_px": MOVE_PX,
-                       "moved_pct_of_width": round(100 * MOVE_PX / nw, 3)},
+                       "field_tol_px": FIELD_TOL, "moved_px": MOVE_PX},
         "missing_reasons": {r: sum(1 for x in records
                                    if x["classification"] == "missing" and x["reason"] == r)
                             for r in sorted({x["reason"] for x in records
@@ -335,7 +313,7 @@ def main():
     }
     with open(os.path.join(args.work, "report.json"), "w") as fh:
         json.dump(report, fh, indent=1)
-    print(json.dumps({"overall": counts_all, "by_plane": per_plane}, indent=1))
+    print(json.dumps({"overall": counts_all, "by_region": region_stats}, indent=1))
     print("done in %.1fs" % (time.time() - t0))
 
 

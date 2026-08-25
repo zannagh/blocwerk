@@ -78,53 +78,61 @@ def pairwise(imgs, names, cache, log, full_shape):
     return dict(grays=grays, cshape=cshape, matches=matches, obs=obs, stats=stats)
 
 
-LINK_MIN_INLIERS = 60          # composite-homography link: absolute support
-LINK_MIN_FRAC = 0.06           # ... and this fraction of the third pair's matches
+NORMAL_TOL_DEG = 8.0           # two views of one plane recover the same normal
+ADJACENT_CELLS = 10            # ... and their support in the shared camera touches
 
 
-def _composite(k1, H1, k2, H2):
-    """Chain two plane observations that share one camera into the homography
-    between the two cameras they do NOT share.  If both observations really are
-    the same physical plane, that composite is that plane's homography for the
-    third pair and the third pair's own matches will vote for it."""
-    (a, b), (c, d) = k1, k2
-    if b == c and a != d:
-        return H2 @ H1, (a, d)
-    if a == c and b != d:
-        return H2 @ np.linalg.inv(H1), (b, d)
-    if b == d and a != c:
-        return np.linalg.inv(H2) @ H1, (a, c)
-    if a == d and b != c:
-        return H1 @ H2, (c, b)
-    return None, None
+def plane_normals(H, K, pa):
+    """Unit normals of the plane in the FIRST camera of `H`, cheirality-filtered.
+
+    `decomposeHomographyMat` returns four solutions; the two that put the
+    matched points behind the plane cannot be what the camera saw.
+    """
+    n_sol, _Rs, _Ts, Ns = cv2.decomposeHomographyMat(H, K)
+    rays = np.hstack([pa, np.ones((len(pa), 1))]) @ np.linalg.inv(K).T
+    out = []
+    for i in range(n_sol):
+        v = np.array(Ns[i]).ravel()
+        v = v / np.linalg.norm(v)
+        if (rays @ v <= 0).mean() > 0.05:
+            continue
+        out.append(v)
+    return out
 
 
-def _votes(matches, pair, Hc):
-    """How many of a pair's raw coarse matches a candidate homography explains."""
-    if pair in matches:
-        pa, pb = matches[pair]
-    elif (pair[1], pair[0]) in matches:
-        pb, pa = matches[(pair[1], pair[0])]
-        Hc = np.linalg.inv(Hc)
-    else:
-        return 0, 0
-    return int((AM.transfer_err(pa, pb, Hc) < AM.COARSE_THRESH).sum()), len(pa)
+def _normal_gap(u_list, v_list):
+    if not u_list or not v_list:
+        return 180.0
+    return min(float(np.degrees(np.arccos(np.clip(abs(u @ v), -1, 1))))
+               for u in u_list for v in v_list)
 
 
-def cluster(obs, gshape, matches):
+def _adjacent(gi, gj, r=ADJACENT_CELLS):
+    k = np.ones((2 * r + 1, 2 * r + 1), np.uint8)
+    return bool((cv2.dilate(gi.astype(np.uint8), k) & gj.astype(np.uint8)).any())
+
+
+def cluster(obs, gshape, K):
     """Union-find over observations that are the same physical plane.
 
     Two criteria, both positive evidence:
       * they share a camera and their support covers the same part of it
         (opaque surfaces do not overlap, so co-located support means one plane);
-      * they share a camera and the homography chained through it is voted for
-        by the raw matches of the pair they do not share.
+      * they share a camera, the plane normal each recovers in that camera is
+        the same, and their support in it touches.
     The second is what links a plane across a strip panorama, where two views of
-    it meet the middle frame on opposite sides and never co-locate."""
-    sup = []
+    it meet the middle frame on opposite sides and barely co-locate.  On the
+    reference set the two views of the main span agree to 0.58 deg while every
+    main-span/kickboard pairing is 42-49 deg apart, so the two surfaces separate
+    with a wide margin.  The residual assumption is that two *parallel* planes at
+    different depths are not both visible in one camera; that case would need the
+    plane distance as well, and is reported rather than silently handled."""
+    sup, nrm = [], []
     for o in obs:
         sup.append({o["a"]: PS.support_counts(o["pa"], gshape) > 0,
                     o["b"]: PS.support_counts(o["pb"], gshape) > 0})
+        nrm.append({o["a"]: plane_normals(o["H"], K, o["pa"]),
+                    o["b"]: plane_normals(np.linalg.inv(o["H"]), K, o["pb"])})
     parent = list(range(len(obs)))
 
     def find(x):
@@ -143,17 +151,15 @@ def cluster(obs, gshape, matches):
                 v = float((gi & gj).sum()) / u if u else 0.0
                 if v > best:
                     best, where = v, cam
-            why, n, tot = None, 0, 0
+            why = None
             if best >= AM.IOU_SAME_PLANE:
                 why = "support IoU %.2f in camera %s" % (best, where)
             else:
-                Sc = np.diag([AM.COARSE, AM.COARSE, 1.0])
-                comp, pair = _composite((obs[i]["a"], obs[i]["b"]), obs[i]["H"],
-                                        (obs[j]["a"], obs[j]["b"]), obs[j]["H"])
-                if comp is not None:
-                    n, tot = _votes(matches, pair, Sc @ comp @ np.linalg.inv(Sc))
-                    if n >= LINK_MIN_INLIERS and n >= LINK_MIN_FRAC * max(tot, 1):
-                        why = "chained through %s-%s: %d/%d matches" % (*pair, n, tot)
+                for cam in set(sup[i]) & set(sup[j]):
+                    gap = _normal_gap(nrm[i][cam], nrm[j][cam])
+                    if gap < NORMAL_TOL_DEG and _adjacent(sup[i][cam], sup[j][cam]):
+                        why = "normals agree to %.2f deg in camera %s" % (gap, cam)
+                        break
             if why:
                 links.append(dict(i=i, j=j, why=why))
                 ri, rj = find(i), find(j)
@@ -193,8 +199,11 @@ class Plane:
         out = [self.corr[k][0 if k[0] == name else 1] for k in self.corr if name in k]
         return np.vstack(out) if out else np.zeros((0, 2))
 
-    def build_masks(self, grays, gshape, coarse):
-        self.grid, self.sup = {}, {}
+    def compute_support(self, gshape):
+        self.sup = {n: PS.support_counts(self.points(n), gshape) for n in self.images}
+
+    def build_masks(self, grays, gshape, coarse, blocked=None):
+        self.grid = {}
         for n in self.images:
             scores, reaches = [], []
             for (a, b), H in self.H.items():
@@ -207,13 +216,82 @@ class Plane:
                 s, r = PS.agreement(grays[src], grays[n], Hd, gshape, coarse)
                 scores.append(s)
                 reaches.append(r)
-            self.sup[n] = PS.support_counts(self.points(n), gshape)
-            self.grid[n] = PS.build_mask(self.sup[n], scores, reaches)
+            self.grid[n] = PS.build_mask(self.sup[n], scores, reaches,
+                                         None if blocked is None else blocked.get(n))
 
 
-def _inside(pts, grid):
-    ii, jj = PS.cell_index(pts, grid.shape)
+GROW_MIN_SEED = 20         # coarse inliers needed to try a restricted re-search
+GROW_CANDIDATES = 3        # ... and how many surfaces to peel out of the restriction
+GROW_MIN_COLOCATED = 0.3   # a grown fit must land where the plane already is
+
+
+def rebuild_all(planes, grays, gshape, coarse):
+    """Masks for every plane at once, so each can block on the others' inliers.
+
+    A plane may not close its mask across a cell that a different plane's own
+    correspondences occupy.  On the reference set that band of kickboard inliers
+    is what stops the main span's mask from closing over the crash mat below it.
+    """
+    for p in planes:
+        p.compute_support(gshape)
+    k = np.ones((5, 5), np.uint8)
+    for p in planes:
+        blocked = {}
+        for n in p.images:
+            other = [q.sup[n] > 0 for q in planes if q is not p and n in q.sup]
+            if other:
+                blocked[n] = cv2.dilate(np.any(other, 0).astype(np.uint8), k) > 0
+        p.build_masks(grays, gshape, coarse, blocked)
+
+
+def _inside(pts, grid, scale=1.0):
+    """Which of these points fall in a grid mask.  `scale` converts the points
+    to full resolution first (the discovery matches live at the coarse scale)."""
+    ii, jj = PS.cell_index(np.asarray(pts) / scale, grid.shape)
     return grid[ii, jj]
+
+
+def merge_planes(planes, log):
+    """Collapse planes that turn out to be the same surface.
+
+    Discovery can find one physical plane twice - once from each side of a
+    strip panorama - without any single pair witnessing both.  Growth then
+    pushes each copy into the other's pairs, and there the two finally meet:
+    if their homographies for a shared pair explain each other's
+    correspondences, they are one plane."""
+    out = list(planes)
+    changed = True
+    while changed and len(out) > 1:
+        changed = False
+        for i in range(len(out)):
+            for j in range(i + 1, len(out)):
+                p, q = out[i], out[j]
+                shared = set(p.H) & set(q.H)
+                if not shared:
+                    continue
+                ok = [k for k in shared
+                      if np.median(AM.transfer_err(*q.corr[k], p.H[k])) < AM.DUP_MEDIAN_PX
+                      and np.median(AM.transfer_err(*p.corr[k], q.H[k])) < AM.DUP_MEDIAN_PX]
+                if len(ok) < len(shared) or not ok:
+                    continue
+                for k in q.H:
+                    if k in p.corr:
+                        pa = np.vstack([p.corr[k][0], q.corr[k][0]])
+                        pb = np.vstack([p.corr[k][1], q.corr[k][1]])
+                        H, sel = AM._refit(pa, pb, p.H[k], AM.FULL_THRESH)
+                        if len(sel) >= AM.MIN_OBS_INLIERS:
+                            p.H[k], p.corr[k] = H, (pa[sel], pb[sel])
+                            continue
+                    if len(q.corr[k][0]) > len(p.corr.get(k, ([],))[0]):
+                        p.H[k], p.corr[k] = q.H[k], q.corr[k]
+                log("auto: merged plane %d into %d (agree on %s)"
+                    % (q.rank, p.rank, ["%s-%s" % k for k in ok]))
+                out.pop(j)
+                changed = True
+                break
+            if changed:
+                break
+    return out
 
 
 def grow(planes, disc, gshape, log):
@@ -227,46 +305,60 @@ def grow(planes, disc, gshape, log):
                 ga, gb = p.grid.get(a), p.grid.get(b)
                 if ga is None and gb is None:
                     continue
+                # Exclusion, not inclusion: the plane is looked for in whatever
+                # the *other* discovered surfaces do not already own.  Requiring
+                # the points to fall inside this plane's current mask would be
+                # circular - the mask is exactly what is missing in this pair.
                 sel = np.ones(len(pa), bool)
-                if ga is not None:
-                    sel &= _inside(pa, ga)
-                if gb is not None:
-                    sel &= _inside(pb, gb)
-                for q in planes:                       # not somebody else's surface
+                for q in planes:
                     if q is p:
                         continue
                     if q.grid.get(a) is not None:
-                        sel &= ~_inside(pa, q.grid[a])
+                        sel &= ~_inside(pa, q.grid[a], AM.COARSE)
                     if q.grid.get(b) is not None:
-                        sel &= ~_inside(pb, q.grid[b])
+                        sel &= ~_inside(pb, q.grid[b], AM.COARSE)
                 idx = np.flatnonzero(sel)
                 if len(idx) < 4 * AM.MIN_SEED_INLIERS:
                     continue
-                found = AM.sequential_ransac(pa, pb, subset=idx, max_planes=1)
-                if not found:
-                    continue
-                Hc = found[0][0]
+                # A restricted, targeted search, so the seed bar is lower than in
+                # the blind first pass: full-resolution promotion and the
+                # co-location check below are what actually validate the find.
+                found = AM.sequential_ransac(pa, pb, subset=idx, max_planes=GROW_CANDIDATES,
+                                             min_inliers=GROW_MIN_SEED)
                 Sc = np.diag([AM.COARSE, AM.COARSE, 1.0])
-                r = AM.promote(disc["imgs"][a], disc["imgs"][b], np.linalg.inv(Sc) @ Hc @ Sc,
-                               PS.to_full(ga, disc["full_shape"]) if ga is not None else None,
-                               PS.to_full(gb, disc["full_shape"]) if gb is not None else None)
+                shared = [c for c in (a, b) if c in p.grid]
+                r = None
+                for Hc, _sel in found:
+                    cand = AM.promote(disc["imgs"][a], disc["imgs"][b],
+                                      np.linalg.inv(Sc) @ Hc @ Sc)
+                    if cand is None:
+                        continue
+                    if shared and not any(
+                            _inside(cand["pa"] if c == a else cand["pb"],
+                                    p.grid[c]).mean() > GROW_MIN_COLOCATED
+                            for c in shared):
+                        continue              # landed on somebody else's surface
+                    if r is None or cand["n"] > r["n"]:
+                        r = cand
                 if r is None:
                     continue
                 if p.add((a, b), r["H"], r["pa"], r["pb"]):
                     added.append("%s-%s:%d(p%d)" % (a, b, r["n"], p.rank))
-        if not added:
+        merged = merge_planes(planes, log)
+        if not added and len(merged) == len(planes):
             break
-        log("auto: grew into %s" % added)
-        for p in planes:
-            p.build_masks(disc["grays"], gshape, AM.COARSE)
+        if added:
+            log("auto: grew into %s" % added)
+        planes[:] = merged
+        rebuild_all(planes, disc["grays"], gshape, AM.COARSE)
 
 
-def discover(imgs, names, cache, log, full_shape):
+def discover(imgs, names, cache, log, full_shape, K):
     """Full discovery.  Returns accepted planes (ranked) plus diagnostics."""
     gshape = PS.grid_shape(full_shape)
     disc = pairwise(imgs, names, cache, log, full_shape)
     disc["imgs"], disc["full_shape"] = imgs, full_shape
-    groups, links = cluster(disc["obs"], gshape, disc["matches"])
+    groups, links = cluster(disc["obs"], gshape, K)
 
     planes = []
     for gi, g in enumerate(groups):
@@ -274,8 +366,8 @@ def discover(imgs, names, cache, log, full_shape):
         for i in sorted(g, key=lambda i: -disc["obs"][i]["n"]):
             o = disc["obs"][i]
             p.add((o["a"], o["b"]), o["H"], o["pa"], o["pb"])
-        p.build_masks(disc["grays"], gshape, AM.COARSE)
         planes.append(p)
+    rebuild_all(planes, disc["grays"], gshape, AM.COARSE)
     grow(planes, disc, gshape, log)
 
     acc, rejected = [], []
