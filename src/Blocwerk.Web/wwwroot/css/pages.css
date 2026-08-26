@@ -57,6 +57,13 @@
 .provider-icon { width: 24px; height: 24px; margin-right: 12px; flex-shrink: 0; }
 .provider-text { flex: 1; text-align: left; }
 
+.remember-method {
+    display: flex; align-items: center; gap: 10px;
+    margin-top: 20px; cursor: pointer;
+    color: var(--text-secondary); font-size: 0.9rem;
+}
+.remember-method input { width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--accent); cursor: pointer; }
+
 .oauth-container .footer { text-align: center; margin-top: 24px; color: var(--text-secondary); font-size: 0.85rem; }
 
 /* OAuth page needs dark background even in light mode */
@@ -948,7 +955,7 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
 .checkbox-label input, .toggle-label input { accent-color: var(--accent); }
 
 .submit-row { display: flex; gap: 8px; margin-top: 12px; }
-.submit-row > .btn-secondary { flex: 0 0 auto; }
+.submit-row > .btn-secondary { flex: 0 1 auto; width: auto; margin-bottom: 0; }
 .submit-row > .btn-submit { flex: 1; margin-top: 0; }
 .boulder-create .hint { color: var(--text-muted); font-size: 0.8rem; margin-top: 6px; text-align: center; }
 

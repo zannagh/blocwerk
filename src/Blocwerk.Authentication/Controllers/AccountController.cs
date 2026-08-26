@@ -6,6 +6,7 @@ using Blocwerk.Core.Configuration;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Serilog;
 
@@ -13,6 +14,10 @@ namespace Blocwerk.Authentication.Controllers;
 
 public class AccountController : Controller
 {
+    // Records the provider a returning visitor asked us to remember, so /account/login can re-auth
+    // silently instead of showing the selection page again.
+    private const string RememberedMethodCookie = "bw_login_method";
+
     private readonly BlocwerkSettings _configuration;
     private readonly RedirectUriProvider _redirectUriProvider;
     private readonly IHttpClientFactory _httpClientFactory;
@@ -33,14 +38,44 @@ public class AccountController : Controller
     [AllowAnonymous]
     public IActionResult Login(string? returnUrl = null, string? error = null)
     {
+        // Only carry a local returnUrl. A crafted absolute/cross-site value can't cause an open
+        // redirect (LocalRedirect guards the return leg), but dropping it here fails fast and keeps a
+        // bad value from riding through the whole flow only to bounce to an error page at the end.
+        if (!string.IsNullOrEmpty(returnUrl) && !Url.IsLocalUrl(returnUrl))
+        {
+            returnUrl = null;
+        }
+
         if (!string.IsNullOrEmpty(returnUrl))
         {
             TempData["ReturnUrl"] = returnUrl;
         }
 
-        return Redirect(string.IsNullOrEmpty(error)
-            ? "/oauth-select"
-            : $"/oauth-select?error={Uri.EscapeDataString(error)}");
+        // A failed login returns here with ?error — always fall back to the selection page in that
+        // case so silent re-auth can never spin into a redirect loop.
+        if (!string.IsNullOrEmpty(error))
+        {
+            return Redirect(BuildOAuthSelectUrl(returnUrl, error));
+        }
+
+        // Silent re-auth: if the visitor previously chose "remember my sign-in method" and that
+        // provider is still enabled, challenge it straight away and skip the selection page.
+        if (Request.Cookies.TryGetValue(RememberedMethodCookie, out var remembered)
+            && !string.IsNullOrEmpty(remembered)
+            && GetProviderAuthConfig(remembered) is not null)
+        {
+            var target = $"/account/external?provider={Uri.EscapeDataString(remembered)}";
+            if (!string.IsNullOrEmpty(returnUrl))
+            {
+                target += $"&returnUrl={Uri.EscapeDataString(returnUrl)}";
+            }
+
+            return Redirect(target);
+        }
+
+        // Carry returnUrl to the selection page so the provider buttons preserve it too — the click
+        // path then matches the silent path instead of relying on TempData alone.
+        return Redirect(BuildOAuthSelectUrl(returnUrl, error: null));
     }
 
     // The provider-selection page (/oauth-select) links straight here as a plain GET, so choosing a
@@ -48,7 +83,7 @@ public class AccountController : Controller
     // double-click race. Mirrors what the old interactive OAuthSelect.RedirectToProvider did.
     [HttpGet("/account/external")]
     [AllowAnonymous]
-    public IActionResult ExternalLogin([FromQuery] string provider, [FromQuery] string? returnUrl = null)
+    public IActionResult ExternalLogin([FromQuery] string provider, [FromQuery] string? returnUrl = null, [FromQuery] string? remember = null)
     {
         var config = GetProviderAuthConfig(provider);
         if (config is null)
@@ -61,11 +96,21 @@ public class AccountController : Controller
             TempData["ReturnUrl"] = returnUrl;
         }
 
+        // Carry the checkbox choice through the OAuth round-trip; the cookie is only written back in
+        // Callback once sign-in actually succeeds, so a cancelled/failed attempt leaves no cookie.
+        var rememberChoice = remember switch
+        {
+            "1" or "true" => (bool?)true,
+            "0" or "false" => false,
+            _ => null,
+        };
+
         var state = Guid.NewGuid().ToString();
         _redirectUriProvider.AddRedirectUri(state, new RedirectSettings
         {
             Uri = $"{BaseUrl}/account/callback",
             Provider = provider,
+            Remember = rememberChoice,
         });
 
         var parameters = new Dictionary<string, string>
@@ -98,7 +143,17 @@ public class AccountController : Controller
     {
         if (string.IsNullOrEmpty(code))
         {
-            return BadRequest("Missing authorization code");
+            // The user cancelled or denied at the provider (no code returned) — route through the
+            // normal error path rather than dead-ending on a bare 400.
+            return Redirect("/account/login?error=cancelled");
+        }
+
+        // Read the state once. It is single-use (TryRemove), so client id, secret, provider and the
+        // remember choice must all come from this one lookup — reading it twice previously dropped the
+        // second lookup back to the GitHub fallback and broke Google/Microsoft token exchange.
+        if (string.IsNullOrEmpty(state) || !_redirectUriProvider.GetRedirectUri(state, out var redirectSettings))
+        {
+            return Redirect("/account/login?error=state_expired");
         }
 
         try
@@ -107,8 +162,8 @@ public class AccountController : Controller
             [
                 new KeyValuePair<string, string>("grant_type", "authorization_code"),
                 new KeyValuePair<string, string>("code", code),
-                new KeyValuePair<string, string>("client_id", GetClientIdFromState(state)),
-                new KeyValuePair<string, string>("client_secret", GetClientSecretFromState(state)),
+                new KeyValuePair<string, string>("client_id", GetClientId(redirectSettings.Provider)),
+                new KeyValuePair<string, string>("client_secret", GetClientSecret(redirectSettings.Provider)),
                 new KeyValuePair<string, string>("redirect_uri", $"{BaseUrl}/oauth-callback"),
             ]);
 
@@ -149,6 +204,9 @@ public class AccountController : Controller
             var principal = new ClaimsPrincipal(identity);
             await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal);
 
+            // Login succeeded — only now honour the "remember my sign-in method" choice.
+            ApplyRememberPreference(redirectSettings);
+
             var returnUrl = TempData["ReturnUrl"] as string ?? "/walls";
             return LocalRedirect(returnUrl);
         }
@@ -164,42 +222,63 @@ public class AccountController : Controller
     public async Task<IActionResult> Logout()
     {
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+
+        // Drop the remembered method so an explicit logout isn't immediately undone by silent re-auth.
+        Response.Cookies.Delete(RememberedMethodCookie);
         return LocalRedirect("/");
     }
 
-    private string GetClientIdFromState(string? state)
+    private static string BuildOAuthSelectUrl(string? returnUrl, string? error)
     {
-        if (string.IsNullOrEmpty(state) ||
-            !_redirectUriProvider.GetRedirectUri(state, out var redirectSettings))
+        var query = new List<string>();
+        if (!string.IsNullOrEmpty(error))
         {
-            return _configuration.GitHubOAuth.ClientId;
+            query.Add($"error={Uri.EscapeDataString(error)}");
         }
 
-        return redirectSettings.Provider switch
+        if (!string.IsNullOrEmpty(returnUrl))
         {
-            "github" => _configuration.GitHubOAuth.ClientId,
-            "google" => _configuration.GoogleOAuth.ClientId,
-            "microsoft" => _configuration.MicrosoftOAuth.ClientId,
-            _ => _configuration.GitHubOAuth.ClientId,
-        };
-    }
-
-    private string GetClientSecretFromState(string? state)
-    {
-        if (string.IsNullOrEmpty(state) ||
-            !_redirectUriProvider.GetRedirectUri(state, out var redirectSettings))
-        {
-            return _configuration.GitHubOAuth.ClientSecret;
+            query.Add($"returnUrl={Uri.EscapeDataString(returnUrl)}");
         }
 
-        return redirectSettings.Provider switch
-        {
-            "github" => _configuration.GitHubOAuth.ClientSecret,
-            "google" => _configuration.GoogleOAuth.ClientSecret,
-            "microsoft" => _configuration.MicrosoftOAuth.ClientSecret,
-            _ => _configuration.GitHubOAuth.ClientSecret,
-        };
+        return query.Count == 0 ? "/oauth-select" : $"/oauth-select?{string.Join("&", query)}";
     }
+
+    private string GetClientId(string? provider) => provider switch
+    {
+        "google" => _configuration.GoogleOAuth.ClientId,
+        "microsoft" => _configuration.MicrosoftOAuth.ClientId,
+        _ => _configuration.GitHubOAuth.ClientId,
+    };
+
+    private string GetClientSecret(string? provider) => provider switch
+    {
+        "google" => _configuration.GoogleOAuth.ClientSecret,
+        "microsoft" => _configuration.MicrosoftOAuth.ClientSecret,
+        _ => _configuration.GitHubOAuth.ClientSecret,
+    };
+
+    private void ApplyRememberPreference(RedirectSettings settings)
+    {
+        if (settings.Remember == true)
+        {
+            Response.Cookies.Append(RememberedMethodCookie, settings.Provider, RememberedMethodCookieOptions());
+        }
+        else if (settings.Remember == false)
+        {
+            Response.Cookies.Delete(RememberedMethodCookie);
+        }
+    }
+
+    private CookieOptions RememberedMethodCookieOptions() => new()
+    {
+        HttpOnly = true,
+        Secure = Request.IsHttps,
+        SameSite = SameSiteMode.Lax,
+        IsEssential = true,
+        MaxAge = TimeSpan.FromDays(365),
+        Path = "/",
+    };
 
     private (string AuthUrl, string ClientId)? GetProviderAuthConfig(string provider) => provider switch
     {
