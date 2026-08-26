@@ -6,20 +6,26 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace Blocwerk.Core.Migrations
 {
     /// <inheritdoc />
-    public partial class WallStitchJobsAndDualProjection : Migration
+    public partial class WallStitchDualProjectionAndCarryover : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AddColumn<string>(
-                name: "AngledMasterPath",
+                name: "CamerasJson",
+                table: "Walls",
+                type: "jsonb",
+                nullable: true);
+
+            migrationBuilder.AddColumn<string>(
+                name: "FlatMasterPath",
                 table: "Walls",
                 type: "character varying(512)",
                 maxLength: 512,
                 nullable: true);
 
             migrationBuilder.AddColumn<string>(
-                name: "OrthoMasterPath",
+                name: "NaturalMasterPath",
                 table: "Walls",
                 type: "character varying(512)",
                 maxLength: 512,
@@ -38,6 +44,12 @@ namespace Blocwerk.Core.Migrations
                 maxLength: 64,
                 nullable: true);
 
+            migrationBuilder.AddColumn<double>(
+                name: "PhotoCurvature",
+                table: "Walls",
+                type: "double precision",
+                nullable: true);
+
             migrationBuilder.AddColumn<int>(
                 name: "PhotoProjection",
                 table: "Walls",
@@ -46,26 +58,26 @@ namespace Blocwerk.Core.Migrations
                 defaultValue: 0);
 
             migrationBuilder.AddColumn<double>(
-                name: "PhotoVerticalScale",
-                table: "Walls",
-                type: "double precision",
-                nullable: true);
-
-            migrationBuilder.AddColumn<double>(
                 name: "PhotoWallAngleDegrees",
                 table: "Walls",
                 type: "double precision",
                 nullable: true);
 
             migrationBuilder.AddColumn<string>(
-                name: "StagedAngledMasterPath",
+                name: "StagedCamerasJson",
+                table: "Walls",
+                type: "jsonb",
+                nullable: true);
+
+            migrationBuilder.AddColumn<string>(
+                name: "StagedFlatMasterPath",
                 table: "Walls",
                 type: "character varying(512)",
                 maxLength: 512,
                 nullable: true);
 
             migrationBuilder.AddColumn<string>(
-                name: "StagedOrthoMasterPath",
+                name: "StagedNaturalMasterPath",
                 table: "Walls",
                 type: "character varying(512)",
                 maxLength: 512,
@@ -84,18 +96,18 @@ namespace Blocwerk.Core.Migrations
                 maxLength: 64,
                 nullable: true);
 
+            migrationBuilder.AddColumn<double>(
+                name: "StagedPhotoCurvature",
+                table: "Walls",
+                type: "double precision",
+                nullable: true);
+
             migrationBuilder.AddColumn<int>(
                 name: "StagedPhotoProjection",
                 table: "Walls",
                 type: "integer",
                 nullable: false,
                 defaultValue: 0);
-
-            migrationBuilder.AddColumn<double>(
-                name: "StagedPhotoVerticalScale",
-                table: "Walls",
-                type: "double precision",
-                nullable: true);
 
             migrationBuilder.AddColumn<double>(
                 name: "StagedPhotoWallAngleDegrees",
@@ -149,11 +161,15 @@ namespace Blocwerk.Core.Migrations
                 name: "WallStitchJobs");
 
             migrationBuilder.DropColumn(
-                name: "AngledMasterPath",
+                name: "CamerasJson",
                 table: "Walls");
 
             migrationBuilder.DropColumn(
-                name: "OrthoMasterPath",
+                name: "FlatMasterPath",
+                table: "Walls");
+
+            migrationBuilder.DropColumn(
+                name: "NaturalMasterPath",
                 table: "Walls");
 
             migrationBuilder.DropColumn(
@@ -165,11 +181,11 @@ namespace Blocwerk.Core.Migrations
                 table: "Walls");
 
             migrationBuilder.DropColumn(
-                name: "PhotoProjection",
+                name: "PhotoCurvature",
                 table: "Walls");
 
             migrationBuilder.DropColumn(
-                name: "PhotoVerticalScale",
+                name: "PhotoProjection",
                 table: "Walls");
 
             migrationBuilder.DropColumn(
@@ -177,11 +193,15 @@ namespace Blocwerk.Core.Migrations
                 table: "Walls");
 
             migrationBuilder.DropColumn(
-                name: "StagedAngledMasterPath",
+                name: "StagedCamerasJson",
                 table: "Walls");
 
             migrationBuilder.DropColumn(
-                name: "StagedOrthoMasterPath",
+                name: "StagedFlatMasterPath",
+                table: "Walls");
+
+            migrationBuilder.DropColumn(
+                name: "StagedNaturalMasterPath",
                 table: "Walls");
 
             migrationBuilder.DropColumn(
@@ -193,11 +213,11 @@ namespace Blocwerk.Core.Migrations
                 table: "Walls");
 
             migrationBuilder.DropColumn(
-                name: "StagedPhotoProjection",
+                name: "StagedPhotoCurvature",
                 table: "Walls");
 
             migrationBuilder.DropColumn(
-                name: "StagedPhotoVerticalScale",
+                name: "StagedPhotoProjection",
                 table: "Walls");
 
             migrationBuilder.DropColumn(

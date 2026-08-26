@@ -1,17 +1,18 @@
-"""Building the pipeline command lines.
+"""Building the pipeline command line.
 
-The stitcher is treated as a black box: the only thing this module knows is that it
-takes an input directory plus an output ("work") directory, and that it may or may
-not yet accept an explicit image list. The accepted flags are read from the script's
-own `--help` at startup, so the wrapper keeps working while the CLI is generalised
-from "1..5.jpeg in a fixed folder" to "arbitrary list of images".
+The pipeline is treated as a black box: the only thing this module knows is that it
+takes an input directory plus an output directory, and which optional flags it might
+accept. The accepted flags are read from the script's own `--help` at startup rather
+than assumed, so a vendored snapshot that predates a flag keeps working instead of
+dying on an unrecognised argument - which is also what lets the pipeline and the
+sidecar move independently.
 """
 from __future__ import annotations
 
 import functools
 import re
 import subprocess
-from typing import Dict, List, Sequence
+from typing import List, Optional, Sequence
 
 FLAG = re.compile(r"(--[a-z0-9][a-z0-9-]*)")
 
@@ -35,91 +36,67 @@ def _first(flags: frozenset, *candidates: str) -> str:
     return ""
 
 
-def stitch_command(python_executable: str, stitch_dir: str, script: str,
-                   src_dir: str, work_dir: str, cache_dir: str,
-                   wall_angle_degrees: float, images: Sequence[str],
-                   max_canvas_mpx: float = 0.0, png_compression: int = -1,
-                   emit_facets: bool = False) -> List[str]:
-    """`stitch_wall.py --src <input> --work <output> [--images ...] --wall-angle <deg>`."""
-    flags = supported_flags(python_executable, script, stitch_dir)
-    argv = [python_executable, script]
-    if not flags or "--src" in flags:
-        argv += ["--src", src_dir]
-    if not flags or "--work" in flags:
-        argv += ["--work", work_dir]
-    if not flags or "--cache" in flags:
-        argv += ["--cache", cache_dir]
-    if not flags or "--wall-angle" in flags:
-        argv += ["--wall-angle", f"{wall_angle_degrees:g}"]
-    # Memory controls, passed only where the pipeline advertises them, so an older
-    # vendored snapshot keeps working unchanged.
-    if max_canvas_mpx > 0 and "--max-canvas-mpx" in flags:
-        argv += ["--max-canvas-mpx", f"{max_canvas_mpx:g}"]
-    if png_compression >= 0 and "--png-compression" in flags:
-        argv += ["--png-compression", str(png_compression)]
-    # The shipping default: emit the multi-facet flat composite (ortho slot) and the
-    # cylindrical natural photographic master (angled slot). Passed only where the
-    # vendored pipeline advertises the flag, so an older snapshot silently keeps its
-    # single-plane behaviour rather than erroring on an unknown argument.
-    if emit_facets and "--emit-facets" in flags:
-        argv += ["--emit-facets"]
+class ArgvBuilder:
+    """Appends a flag only where the pipeline advertises it (or advertises nothing)."""
 
-    # The generalised CLI takes the images explicitly; the current one derives them
-    # from --src, so passing nothing there is correct rather than a fallback hack.
-    image_flag = _first(flags, "--images", "--inputs", "--photos")
+    def __init__(self, flags: frozenset, argv: List[str]):
+        self.flags = flags
+        self.argv = argv
+
+    def add(self, flag: str, *values: object) -> "ArgvBuilder":
+        if self.flags and flag not in self.flags:
+            return self
+        self.argv.append(flag)
+        self.argv.extend(str(v) for v in values)
+        return self
+
+    def maybe(self, flag: str, value: Optional[object]) -> "ArgvBuilder":
+        """Same, but skipped entirely when the value is absent."""
+        if value in (None, ""):
+            return self
+        return self.add(flag, value)
+
+
+def pipeline_command(python_executable: str, pipeline_dir: str, script: str,
+                     input_dir: str, output_dir: str, cache_dir: str,
+                     natural: str, curve: str, onnx_model: str,
+                     wall_width_m: float, wall_height_m: float,
+                     work_mp: float, compose_mp: float, max_canvas_mpx: float,
+                     nfeat: int = 0,
+                     prior_holds: str = "", prior_image: str = "",
+                     images: Sequence[str] = ()) -> List[str]:
+    """`wall_pipeline.py --input-dir <in> --output-dir <out> ...`.
+
+    Carryover is requested by supplying both `prior_holds` and `prior_image`; the
+    pipeline skips that stage on its own when either is missing, which is exactly the
+    fresh-wall case.
+    """
+    flags = supported_flags(python_executable, script, pipeline_dir)
+    argv = [python_executable, script]
+    build = ArgvBuilder(flags, argv)
+
+    # The generalised CLI takes the frames explicitly; otherwise it derives them from
+    # the input directory in filename order, which is the sweep order the uploads were
+    # numbered into.
+    image_flag = _first(flags, "--images")
     if image_flag and images:
-        argv += [image_flag, *images]
+        build.add(image_flag, *images)
+    else:
+        build.add("--input-dir", input_dir)
+
+    build.add("--output-dir", output_dir)
+    build.add("--cache-dir", cache_dir)
+    build.add("--natural", natural)
+    build.add("--curve", curve)
+    build.add("--wall-width-m", f"{wall_width_m:g}")
+    build.add("--wall-height-m", f"{wall_height_m:g}")
+    build.add("--work-mp", f"{work_mp:g}")
+    build.add("--compose-mp", f"{compose_mp:g}")
+    build.add("--max-canvas-mpx", f"{max_canvas_mpx:g}")
+    if nfeat > 0:
+        build.add("--nfeat", nfeat)
+    build.maybe("--onnx", onnx_model)
+    if prior_holds and prior_image:
+        build.add("--prior-holds", prior_holds)
+        build.add("--prior-image", prior_image)
     return argv
-
-
-def holds_command(python_executable: str, holds_dir: str, script: str,
-                  work_dir: str, old_image: str, new_image: str,
-                  holds_json: str, wall_json: str) -> List[str]:
-    """`remap_holds.py --work <output>` plus explicit inputs where the CLI takes them."""
-    flags = supported_flags(python_executable, script, holds_dir)
-    argv = [python_executable, script]
-    if not flags or "--work" in flags:
-        argv += ["--work", work_dir]
-    for flag, value in (
-        (_first(flags, "--old", "--old-image", "--old-photo"), old_image),
-        (_first(flags, "--new", "--new-image", "--orthophoto"), new_image),
-        (_first(flags, "--holds", "--holds-json"), holds_json),
-        (_first(flags, "--wall", "--wall-json"), wall_json),
-    ):
-        if flag:
-            argv += [flag, value]
-    return argv
-
-
-def crop_command(python_executable: str, holds_dir: str, script: str,
-                 png_compression: int = -1) -> List[str]:
-    """`crop_natural.py [--png-compression N]`.
-
-    The hold-aware crop reads every path (work root, natural master, holds-remapped.json,
-    report.json) from the same environment the matcher uses - see holds_environment - so
-    there are no path arguments here. It runs AFTER remap_holds has transferred the live
-    holds onto the uncropped cylindrical natural master.
-    """
-    flags = supported_flags(python_executable, script, holds_dir)
-    argv = [python_executable, script]
-    if png_compression >= 0 and (not flags or "--png-compression" in flags):
-        argv += ["--png-compression", str(png_compression)]
-    return argv
-
-
-def holds_environment(work_root: str, old_image: str, new_image: str,
-                      holds_json: str, wall_json: str, onnx_model: str) -> Dict[str, str]:
-    """Inputs for the vendored copy, which reads them from the environment.
-
-    See the VENDORED-COPY PATCH note in pipeline/holds_match/hm_common.py: the upstream
-    file hardcodes a developer's home directory. These variables are ignored by any
-    version that grows real CLI flags, so both paths can be passed at once.
-    """
-    return {
-        "WALLSTITCH_WORK_ROOT": work_root,
-        "WALLSTITCH_OLD_IMG": old_image,
-        "WALLSTITCH_NEW_IMG": new_image,
-        "WALLSTITCH_HOLDS_JSON": holds_json,
-        "WALLSTITCH_WALL_JSON": wall_json,
-        "WALLSTITCH_ONNX_MODEL": onnx_model,
-    }

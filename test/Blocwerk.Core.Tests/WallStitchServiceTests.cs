@@ -14,8 +14,11 @@ namespace Blocwerk.Core.Tests;
 /// </summary>
 public class WallStitchServiceTests
 {
+    private const double WallWidthM = 3.5;
+    private const double WallHeightM = 4.2;
+
     private static readonly WallStitchStartOptions Options =
-        new(WallAngleDegrees: 45.0, WallPhotoProjection.Angled, TransferHolds: true);
+        new(WallWidthM, WallHeightM, WallPhotoProjection.Natural, Natural: "natural", TransferHolds: true);
 
     [Fact]
     public async Task StartJob_PersistsAQueuedJob_ForAWallAdmin()
@@ -31,7 +34,8 @@ public class WallStitchServiceTests
         Assert.Equal(WallStitchJobStatus.Queued, job.Status);
         Assert.Equal("sidecar-1", job.SidecarJobId);
         Assert.Equal(3, job.PhotoCount);
-        Assert.Equal(45.0, job.WallAngleDegrees);
+        Assert.Equal(WallWidthM, job.WallWidthM);
+        Assert.Equal(WallHeightM, job.WallHeightM);
         Assert.True(job.TransferHolds);
 
         await using var db = harness.CreateContext();
@@ -55,7 +59,9 @@ public class WallStitchServiceTests
         await harness.WallStitchService.StartJobAsync(harness.WallId, harness.Owner.Id, Photos(2), Options);
 
         Assert.NotNull(sent);
-        Assert.Equal("angled", sent!.DefaultProjection);
+        Assert.Equal("natural", sent!.Natural);
+        Assert.Equal(WallWidthM, sent.WallWidthM);
+        Assert.Equal(WallHeightM, sent.WallHeightM);
         Assert.True(sent.TransferHolds);
         Assert.Equal(holds.Count, sent.Holds.Count);
         Assert.NotNull(oldPhoto);
@@ -121,7 +127,7 @@ public class WallStitchServiceTests
         Assert.Equal(WallStitchJobStatus.Succeeded, done!.Status);
         Assert.Equal(1.0, done.Progress);
         Assert.NotNull(done.CompletedAt);
-        Assert.Contains("seamAngleRmsDeg", done.DiagnosticsJson);
+        Assert.Contains("straightness", done.DiagnosticsJson);
 
         await using var db = harness.CreateContext();
         var stored = await db.WallStitchJobs.SingleAsync();
@@ -207,14 +213,28 @@ public class WallStitchServiceTests
     }
 
     private static StitchJobResult SucceededResult() => new(
-        new StitchArtifactRef("ortho.png", 7648, 4864),
-        new StitchArtifactRef("angled.png", 7648, 3439),
-        "display-ortho.jpg",
-        "display-angled.jpg",
-        45.0,
-        0.7071,
-        new StitchDiagnostics(["1.jpeg"], [], 0.062, 1.13, []),
-        [new StitchResultHold(Guid.NewGuid(), 0.5, 0.31, 0.011, null, "matched", 0.9)]);
+        new StitchArtifactRef("flat.png", 7648, 4864),
+        new StitchArtifactRef("natural.png", 7648, 4310),
+        "display-flat.jpg",
+        "display-natural.jpg",
+        "cameras.json",
+        CoordinateConvention: null,
+        WallWidthM,
+        WallHeightM,
+        Curvature: null,
+        Holds: null,
+        HoldsNatural: null,
+        Carryover: new StitchCarryover(
+            Generation: 1,
+            Counts: null,
+            CountsBoulderLinked: null,
+            EstimatedPrecision: 0.92,
+            Blocker: null,
+            Carried: [new StitchCarriedHold(
+                Guid.NewGuid(), 0.5, 0.31, 0.011, null, "carried_over", "det-1", 0.2, true, 0, true, null)],
+            Missing: [],
+            New: []),
+        Diagnostics: new StitchDiagnostics(["1.jpeg"], [], null, 0.98, 1200, 1.13, []));
 
     private static List<StitchPhotoUpload> Photos(int count) =>
         Enumerable.Range(0, count)

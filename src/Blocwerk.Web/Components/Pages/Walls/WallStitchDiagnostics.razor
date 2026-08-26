@@ -58,8 +58,8 @@
         @if (Result.Diagnostics is not null)
         {
             <p class="stitch-hint">
-                Seam angle RMS @Result.Diagnostics.SeamAngleRmsDeg.ToString("0.00")&deg;,
-                median bow @Result.Diagnostics.BowMedianPx.ToString("0.0") px.
+                Straightness @Result.Diagnostics.Straightness.ToString("0.00"),
+                @Result.Diagnostics.InpaintedPx px filled, @Result.Diagnostics.ElapsedSeconds.ToString("0") s.
             </p>
         }
     </div>
@@ -77,8 +77,9 @@
 
     private IReadOnlyList<string> Warnings => Result?.Diagnostics?.CoverageWarnings ?? [];
 
-    private int TransferredCount => Result?.Holds?.Count ?? 0;
+    // Identity/carryover lives on Carryover now (Holds/HoldsNatural are raw detections with no verdict).
+    private int TransferredCount => Result?.Carryover?.Carried?.Count ?? 0;
 
-    private int ReviewCount => Result?.Holds?
-        .Count(h => !string.Equals(h.Classification, "matched", StringComparison.OrdinalIgnoreCase)) ?? 0;
+    private int ReviewCount =>
+        (Result?.Carryover?.Missing?.Count ?? 0) + (Result?.Carryover?.New?.Count ?? 0);
 }

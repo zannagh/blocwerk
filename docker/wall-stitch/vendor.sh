@@ -2,25 +2,28 @@
 # Refresh the vendored pipeline copy under pipeline/ from the upstream working tree.
 #
 # The pipeline lives outside this repo while it is being developed. This script takes a
-# snapshot of it so the container image is self-contained; it copies every .py file, so
-# modules added upstream are picked up without editing this script.
+# snapshot of it so the container image is self-contained. It copies the entrypoint plus
+# every .py file of the `wallpipe` package, so modules added upstream are picked up
+# without editing this script.
 #
 #   ./vendor.sh [UPSTREAM_ROOT]        # default: ~/Desktop/wall-photos/work
 #
-# It then re-applies the one local change we carry: hm_common.py's hardcoded developer
-# paths become environment lookups. See README.md -> "Vendored pipeline".
+# vendor_patch.py then verifies the snapshot: the vendored copy must contain no
+# developer-home paths, because the container has no such home. See README.md ->
+# "Vendored pipeline".
 set -euo pipefail
 
 ROOT="${1:-$HOME/Desktop/wall-photos/work}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SRC="$ROOT/stitch"
+DST="$HERE/pipeline"
 
-for pair in "stitch:stitch" "holds-match:holds_match"; do
-    src="$ROOT/${pair%%:*}"
-    dst="$HERE/pipeline/${pair##*:}"
-    [ -d "$src" ] || { echo "missing upstream directory: $src" >&2; exit 1; }
-    rm -rf "$dst" && mkdir -p "$dst"
-    find "$src" -maxdepth 1 -name '*.py' -exec cp {} "$dst/" \;
-    echo "vendored $(find "$dst" -name '*.py' | wc -l | tr -d ' ') file(s) from $src"
-done
+[ -f "$SRC/wall_pipeline.py" ] || { echo "missing upstream entrypoint: $SRC/wall_pipeline.py" >&2; exit 1; }
+[ -d "$SRC/wallpipe" ] || { echo "missing upstream package: $SRC/wallpipe" >&2; exit 1; }
+
+rm -rf "$DST" && mkdir -p "$DST/wallpipe"
+cp "$SRC/wall_pipeline.py" "$DST/wall_pipeline.py"
+find "$SRC/wallpipe" -maxdepth 1 -name '*.py' -exec cp {} "$DST/wallpipe/" \;
+echo "vendored wall_pipeline.py + $(find "$DST/wallpipe" -name '*.py' | wc -l | tr -d ' ') module(s) from $SRC"
 
 python3 "$HERE/vendor_patch.py"

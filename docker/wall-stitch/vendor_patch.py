@@ -1,55 +1,56 @@
 #!/usr/bin/env python3
-"""Re-applies the one local change the vendored pipeline carries.
+"""Verifies the vendored pipeline snapshot is container-safe.
 
-Upstream `hm_common.py` hardcodes a developer's home directory for the work root, the
-input images and the ONNX model. The sidecar runs one job per directory, so those come
-from the environment instead - with the upstream values kept as defaults, so the file
-still behaves identically outside a container. Idempotent.
+The R&D tree the pipeline is developed in lives under a developer's home directory, and
+earlier generations of these scripts hardcoded that path for the work root, the input
+images and the ONNX model. The current entrypoint takes all of those as arguments, so
+the vendored copy should contain no absolute developer paths at all - and the sidecar
+would fail confusingly at runtime rather than at vendor time if one crept back in.
+
+This runs as the last step of vendor.sh and fails the vendor rather than shipping a
+snapshot that only works on one laptop. Run it standalone to re-check an existing
+snapshot. Idempotent; it never edits anything.
 """
-import os
 import pathlib
+import re
 import sys
 
 HERE = pathlib.Path(__file__).resolve().parent
-TARGET = HERE / "pipeline" / "holds_match" / "hm_common.py"
+PIPELINE = HERE / "pipeline"
+ENTRYPOINT = PIPELINE / "wall_pipeline.py"
 
-ORIGINAL = '''WALL_ROOT = "/Users/patrickweindl/Desktop/wall-photos/work"
-OLD_IMG = os.path.join(WALL_ROOT, "holds", "wall-photo.jpg")
-NEW_IMG = os.path.join(WALL_ROOT, "06-final", "wall-orthophoto-angled.png")
-HOLDS_JSON = os.path.join(WALL_ROOT, "holds", "holds.json")
-WALL_JSON = os.path.join(WALL_ROOT, "holds", "wall.json")
-ONNX = "/Users/patrickweindl/Projects/blocwerk/src/Blocwerk.HoldDetection/models/climbingcrux.onnx"'''
+# Absolute paths into somebody's home, and the expanduser() call that builds one.
+FORBIDDEN = re.compile(
+    r"/Users/[^\s'\"]+|/home/(?!runner\b)[^\s'\"]+|expanduser\s*\(|~/Desktop")
+# Doc comments legitimately name the R&D directories they were vendored from; only
+# executable lines are a problem, so blank out strings and comments before scanning.
+COMMENT = re.compile(r"#.*$", re.M)
+DOCSTRING = re.compile(r"('''|\"\"\")(?:.|\n)*?\1")
 
-PATCHED = '''# VENDORED-COPY PATCH (docker/wall-stitch): the upstream copy hardcodes a developer's
-# Desktop.  The sidecar runs one job per directory, so the root and the model path come
-# from the environment; the upstream defaults are kept so the file still behaves
-# identically when the variables are unset.  Remove this once the upstream CLI grows
-# --old/--new/--holds/--wall flags.
-WALL_ROOT = os.environ.get(
-    "WALLSTITCH_WORK_ROOT", "/Users/patrickweindl/Desktop/wall-photos/work")
-OLD_IMG = os.environ.get("WALLSTITCH_OLD_IMG") or os.path.join(WALL_ROOT, "holds", "wall-photo.jpg")
-NEW_IMG = os.environ.get("WALLSTITCH_NEW_IMG") or os.path.join(WALL_ROOT, "06-final", "wall-orthophoto-angled.png")
-HOLDS_JSON = os.environ.get("WALLSTITCH_HOLDS_JSON") or os.path.join(WALL_ROOT, "holds", "holds.json")
-WALL_JSON = os.environ.get("WALLSTITCH_WALL_JSON") or os.path.join(WALL_ROOT, "holds", "wall.json")
-ONNX = os.environ.get(
-    "WALLSTITCH_ONNX_MODEL",
-    "/Users/patrickweindl/Projects/blocwerk/src/Blocwerk.HoldDetection/models/climbingcrux.onnx")'''
+
+def offenders(text: str):
+    stripped = COMMENT.sub("", DOCSTRING.sub("", text))
+    return [m.group(0) for m in FORBIDDEN.finditer(stripped)]
 
 
 def main() -> int:
-    if not TARGET.exists():
-        print(f"nothing to patch: {TARGET} is missing", file=sys.stderr)
+    if not ENTRYPOINT.exists():
+        print(f"nothing to check: {ENTRYPOINT} is missing; run vendor.sh", file=sys.stderr)
         return 1
-    text = TARGET.read_text()
-    if PATCHED in text:
-        print("hm_common.py already patched")
-        return 0
-    if ORIGINAL not in text:
-        print("hm_common.py no longer matches the expected block - the upstream paths may "
-              "have been generalised. Check whether this patch is still needed.", file=sys.stderr)
+
+    bad = []
+    files = sorted(PIPELINE.rglob("*.py"))
+    for path in files:
+        for hit in offenders(path.read_text(encoding="utf-8")):
+            bad.append(f"{path.relative_to(HERE)}: {hit}")
+
+    if bad:
+        print("vendored pipeline still carries developer paths:", file=sys.stderr)
+        for line in bad:
+            print(f"  {line}", file=sys.stderr)
         return 2
-    TARGET.write_text(text.replace(ORIGINAL, PATCHED))
-    print("patched hm_common.py")
+
+    print(f"vendored pipeline checked: {len(files)} file(s), no developer paths")
     return 0
 
 

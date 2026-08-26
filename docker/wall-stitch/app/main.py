@@ -29,7 +29,12 @@ from .worker import JobQueueFull, JobWorkerPool, TtlReaper
 logging.basicConfig(level=os.environ.get("WALLSTITCH_LOG_LEVEL", "INFO"))
 log = logging.getLogger("wallstitch")
 
-ARTIFACTS = {"ortho.png", "angled.png", "display-ortho.jpg", "display-angled.jpg"}
+# Servable artifact names. The three curvatures are all published, because the app lets
+# the operator pick one after seeing them; `natural.jpg` is whichever the job asked for.
+ARTIFACTS = {"flat.jpg", "natural.jpg", "cameras.json",
+             "display-flat.jpg", "display-natural.jpg"}
+ARTIFACTS |= {f"natural-{name}.jpg" for name in ("gentle", "medium", "strong")}
+ARTIFACTS |= {f"display-natural-{name}.jpg" for name in ("gentle", "medium", "strong")}
 
 
 def create_app(settings: Optional[Settings] = None,

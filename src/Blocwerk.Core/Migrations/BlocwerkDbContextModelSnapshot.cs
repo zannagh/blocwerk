@@ -665,12 +665,11 @@ namespace Blocwerk.Core.Migrations
                     b.Property<int>("Angle")
                         .HasColumnType("integer");
 
-                    b.Property<string>("AngledMasterPath")
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
-
                     b.Property<string>("BorderPoints")
                         .HasColumnType("text");
+
+                    b.Property<string>("CamerasJson")
+                        .HasColumnType("jsonb");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -681,6 +680,10 @@ namespace Blocwerk.Core.Migrations
                     b.Property<string>("Description")
                         .HasMaxLength(1024)
                         .HasColumnType("character varying(1024)");
+
+                    b.Property<string>("FlatMasterPath")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
@@ -693,7 +696,7 @@ namespace Blocwerk.Core.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
 
-                    b.Property<string>("OrthoMasterPath")
+                    b.Property<string>("NaturalMasterPath")
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
 
@@ -714,11 +717,11 @@ namespace Blocwerk.Core.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<double?>("PhotoCurvature")
+                        .HasColumnType("double precision");
+
                     b.Property<int>("PhotoProjection")
                         .HasColumnType("integer");
-
-                    b.Property<double?>("PhotoVerticalScale")
-                        .HasColumnType("double precision");
 
                     b.Property<double?>("PhotoWallAngleDegrees")
                         .HasColumnType("double precision");
@@ -727,17 +730,20 @@ namespace Blocwerk.Core.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
-                    b.Property<string>("StagedAngledMasterPath")
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
-
                     b.Property<DateTimeOffset?>("StagedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid?>("StagedByUserId")
                         .HasColumnType("uuid");
 
-                    b.Property<string>("StagedOrthoMasterPath")
+                    b.Property<string>("StagedCamerasJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("StagedFlatMasterPath")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<string>("StagedNaturalMasterPath")
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
 
@@ -755,11 +761,11 @@ namespace Blocwerk.Core.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<double?>("StagedPhotoCurvature")
+                        .HasColumnType("double precision");
+
                     b.Property<int>("StagedPhotoProjection")
                         .HasColumnType("integer");
-
-                    b.Property<double?>("StagedPhotoVerticalScale")
-                        .HasColumnType("double precision");
 
                     b.Property<double?>("StagedPhotoWallAngleDegrees")
                         .HasColumnType("double precision");

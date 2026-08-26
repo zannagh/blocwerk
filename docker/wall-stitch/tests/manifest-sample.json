@@ -1,0 +1,144 @@
+{
+ "schema": "blocwerk.wall-pipeline/1",
+ "coordinate_convention": "Hold geometry is normalised against its own image, per axis and independently: X = px/imageWidth, Y = px/imageHeight, both 0..1, origin top-left. Radius is normalised against the LONGER side. ShapePoints are Dx/Dy offsets from (X, Y) in the same space. The aspect ratio is NOT preserved by this normalisation.",
+ "command": "wall_pipeline.py ...",
+ "inputs": {
+  "frames": [
+   "2526.jpg",
+   "2527.jpg",
+   "2528.jpg"
+  ],
+  "frame_count": 3,
+  "reference_frame": "2534.jpg",
+  "source_width": 4288,
+  "source_height": 5712
+ },
+ "registration": {
+  "frames_used": 3,
+  "frames_dropped": []
+ },
+ "plane": {
+  "rectification": "none",
+  "rect_matrix": [
+   [
+    1,
+    0,
+    0
+   ],
+   [
+    0,
+    1,
+    0
+   ],
+   [
+    0,
+    0,
+    1
+   ]
+  ],
+  "roi_rectified_work_px": [
+   0,
+   0,
+   100,
+   100
+  ],
+  "work_scale": 0.16913371552508683,
+  "work_size": [
+   725,
+   966
+  ],
+  "compose_scale": 0.2711376041603734,
+  "straightness": {
+   "n_horizontal": 42,
+   "n_vertical": 0,
+   "horizontal_mean_deg": -2.6582086086273193,
+   "horizontal_rms_deg": 5.3260908126831055,
+   "vertical_mean_deg": null,
+   "vertical_rms_deg": null
+  },
+  "finish": {
+   "crop_box": [
+    0,
+    136,
+    9716,
+    4116
+   ],
+   "polygon_vertices": 29,
+   "inpainted_px": 291697
+  }
+ },
+ "wall": {
+  "width_m": 5.5,
+  "height_m": 2.5,
+  "view_dist_m": 3.0,
+  "eye_frac": 0.34
+ },
+ "artifacts": {
+  "flat_base": "flat-base.jpg",
+  "flat_base_mask": "flat-base-mask.png",
+  "flat_base_preview": "flat-base-preview.jpg",
+  "cameras": "cameras.json",
+  "natural_default": "natural-gentle.jpg",
+  "naturals": [
+   "natural-gentle.jpg",
+   "natural-medium.jpg",
+   "natural-strong.jpg"
+  ],
+  "holds_flat": "holds-flat.json",
+  "holds_natural": "holds-natural.json",
+  "holds_flat_overlay": "holds-flat-overlay.jpg",
+  "holds_natural_overlay": "holds-natural-overlay.jpg",
+  "wall_polygon": "wall-polygon.json"
+ },
+ "flat_base": {
+  "width": 9716,
+  "height": 3980
+ },
+ "curvature": {
+  "requested_theta_max_deg": 30.0,
+  "default": "gentle",
+  "emitted": {
+   "gentle": {
+    "theta_max_deg": 30.0,
+    "k": 0.63646,
+    "radius_m": 5.252,
+    "image": "natural-gentle.jpg",
+    "preview": "natural-gentle-preview.jpg",
+    "width": 7515,
+    "height": 3980
+   },
+   "medium": {
+    "theta_max_deg": 42.5,
+    "k": 0.55273,
+    "radius_m": 3.707,
+    "image": "natural-medium.jpg",
+    "preview": "natural-medium-preview.jpg",
+    "width": 6680,
+    "height": 3980
+   },
+   "strong": {
+    "theta_max_deg": 55.0,
+    "k": 0.48847,
+    "radius_m": 2.865,
+    "image": "natural-strong.jpg",
+    "preview": "natural-strong-preview.jpg",
+    "width": 5892,
+    "height": 3980
+   }
+  }
+ },
+ "detection": {
+  "raw": 43962,
+  "after_nms": 2255,
+  "after_appearance_filter": 627,
+  "after_wall_polygon": 621,
+  "after_ring_contrast": 573,
+  "after_blob_fraction": 476,
+  "after_centre_merge": 450,
+  "final": 450,
+  "outside_natural_frame": 0,
+  "wall_polygon_vertices": 20,
+  "wall_polygon_source": "coverage-mask"
+ },
+ "elapsed_seconds": 97.9
+}

@@ -29,10 +29,10 @@ internal static class WallPhotoMasterCleanup
                 .IgnoreQueryFilters()
                 .AsNoTracking()
                 .AnyAsync(
-                    w => w.OrthoMasterPath == path
-                        || w.AngledMasterPath == path
-                        || w.StagedOrthoMasterPath == path
-                        || w.StagedAngledMasterPath == path,
+                    w => w.FlatMasterPath == path
+                        || w.NaturalMasterPath == path
+                        || w.StagedFlatMasterPath == path
+                        || w.StagedNaturalMasterPath == path,
                     ct);
 
             if (!stillReferenced)

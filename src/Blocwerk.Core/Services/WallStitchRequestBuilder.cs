@@ -20,8 +20,10 @@ internal static class WallStitchRequestBuilder
         if (!options.TransferHolds)
         {
             return new StitchJobOptions(
-                options.WallAngleDegrees,
-                options.DefaultProjection.ToWire(),
+                options.Natural,
+                options.Curve,
+                options.WallWidthM,
+                options.WallHeightM,
                 TransferHolds: false,
                 OldPhotoWidth: null,
                 OldPhotoHeight: null,
@@ -47,6 +49,7 @@ internal static class WallStitchRequestBuilder
                 h.ShapePoints,
                 h.Color,
                 h.Category,
+                h.Generation,
                 LinkCount = h.BoulderHolds.Count,
             })
             .ToListAsync(ct);
@@ -60,14 +63,17 @@ internal static class WallStitchRequestBuilder
                 h.ShapePoints?.Select(sp => new StitchShapePoint(sp.Dx, sp.Dy)).ToList(),
                 h.Color,
                 (int)h.Category,
-                h.LinkCount))
+                h.LinkCount,
+                h.Generation))
             .ToList();
 
         // The sidecar needs the OLD photo's pixel dimensions to de-normalise the hold coordinates;
         // it reads them off the uploaded oldPhoto part, so null here means "take them from the file".
         return new StitchJobOptions(
-            options.WallAngleDegrees,
-            options.DefaultProjection.ToWire(),
+            options.Natural,
+            options.Curve,
+            options.WallWidthM,
+            options.WallHeightM,
             TransferHolds: true,
             OldPhotoWidth: null,
             OldPhotoHeight: null,

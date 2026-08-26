@@ -40,8 +40,8 @@ public interface IWallStitchService
     Task<WallStitchJob?> RefreshJobAsync(Guid jobId, CancellationToken ct = default);
 
     /// <summary>
-    /// The sidecar result for a succeeded job (artifact names, dimensions, vertical scale,
-    /// diagnostics and transferred holds), or null when the job has not succeeded.
+    /// The sidecar result for a succeeded job (artifact names, dimensions, curvature, camera
+    /// parameters, diagnostics and carryover holds), or null when the job has not succeeded.
     /// </summary>
     Task<StitchJobResult?> GetResultAsync(Guid jobId, CancellationToken ct = default);
 
@@ -50,23 +50,25 @@ public interface IWallStitchService
 
     /// <summary>
     /// Downloads the two full-resolution masters into the master store and returns their stored
-    /// names as <c>(ortho, angled)</c>. Streams throughout; nothing is buffered in memory.
+    /// names as <c>(flat, natural)</c>. Streams throughout; nothing is buffered in memory.
     /// </summary>
-    Task<(string OrthoMasterPath, string AngledMasterPath)> DownloadMastersAsync(
+    Task<(string FlatMasterPath, string NaturalMasterPath)> DownloadMastersAsync(
         Guid jobId,
         CancellationToken ct = default);
 
     /// <summary>
     /// Applies a succeeded job to the wall's staged slot: the display pair goes onto
     /// <c>StagedPhoto</c>/<c>StagedPhotoAlternate</c> in the job's requested default projection,
-    /// the full-resolution masters onto the staged master paths, and the sidecar's transferred
-    /// holds into generation N+1 with their classifications mapped onto <c>Hold.NeedsReview</c>,
-    /// <c>Confidence</c> and <c>AlignmentSourceHoldId</c>. The staging mode becomes
-    /// <c>WallStagingMode.Stitched</c>; confirming or discarding it is <c>WallService</c>'s job.
+    /// the full-resolution masters and <c>cameras.json</c> onto the staged master/camera columns,
+    /// and the pipeline's carryover holds into generation N+1 with their classifications mapped onto
+    /// <c>Hold.NeedsReview</c>, <c>Confidence</c> and <c>AlignmentSourceHoldId</c>. The staging mode
+    /// becomes <c>WallStagingMode.Stitched</c>; confirming or discarding it is <c>WallService</c>'s
+    /// job.
     /// <para>
-    /// A hold the sidecar classified as <c>missing</c> is still created at its predicted position
-    /// and flagged for review — dropping it would orphan its <c>BoulderHold</c> links and silently
-    /// break the boulders using it. The same holds for a live hold the sidecar never reported.
+    /// A hold classified <c>missing</c> is still created at its predicted position and flagged for
+    /// review — dropping it would orphan its <c>BoulderHold</c> links and silently break the
+    /// boulders using it. The same holds for a live hold the carryover never reported. A <c>new</c>
+    /// hold is created auto-detected, with no source hold, and always flagged.
     /// </para>
     /// The acting user must be a wall admin, and the job must have succeeded.
     /// </summary>

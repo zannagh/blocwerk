@@ -4,6 +4,8 @@ namespace Blocwerk.Core.Stitching;
 public sealed record StitchDiagnostics(
     IReadOnlyList<string>? ImagesUsed,
     IReadOnlyList<StitchRejectedImage>? ImagesRejected,
-    double SeamAngleRmsDeg,
-    double BowMedianPx,
+    string? ReferenceFrame,
+    double Straightness,
+    int InpaintedPx,
+    double ElapsedSeconds,
     IReadOnlyList<string>? CoverageWarnings);

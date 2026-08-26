@@ -118,8 +118,6 @@
 /* Cylindric view: the ortho <img> stays in normal flow (kept invisible) so the box keeps the
    photo's aspect ratio; the warped <canvas> is laid over it as the visible layer, with the mapped
    SVG overlay above that. All three share the same box, so they stay registered. */
-.photo-editor .cyl-source { width: 100%; display: block; visibility: hidden; }
-.photo-editor .wall-cyl-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
 /* Boulder viewer only: the overlay holds are display-only (no tap/click handlers), so let
    pointer/touch events fall through to the viewport. Otherwise a mouse drag or double-tap that
    happens to start on a hold is treated as landing on an interactive shape and neither pans nor
@@ -280,7 +278,6 @@ img.wall-photo {
 }
 .wall-view-mode + .wall-view-mode { border-left: 1px solid var(--border); }
 .wall-view-mode.active { background: var(--accent); color: #fff; }
-.wall-curve-slider { flex: 1 1 120px; min-width: 90px; height: 28px; accent-color: var(--accent); }
 
 /* Inside the dark editor/picker chrome the view-mode control adopts the toolbar look. */
 .zoom-bar + .wall-dim-bar .wall-view-modes,

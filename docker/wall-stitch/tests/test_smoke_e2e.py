@@ -63,7 +63,7 @@ def sample_copies(tmp_path):
     return [staging / name for name in SAMPLES]
 
 
-def _run_sample_job(tmp_path, sample_copies, emit_facets: bool):
+def _run_sample_job(tmp_path, sample_copies):
     """Runs the real pipeline once over the samples and returns (client, job_id, result)."""
     from fastapi.testclient import TestClient
 
@@ -76,13 +76,13 @@ def _run_sample_job(tmp_path, sample_copies, emit_facets: bool):
         auth_token=TOKEN, data_dir=str(tmp_path / "jobs"),
         pipeline_dir=os.path.join(repo, "pipeline"), python_executable=sys.executable,
         onnx_model=os.environ.get("WALLSTITCH_ONNX_MODEL", ""),
-        min_photos=2, max_photos=12, max_photo_bytes=128 * 1024 * 1024,
+        min_photos=2, max_photos=48, max_photo_bytes=128 * 1024 * 1024,
         max_request_bytes=1024 * 1024 * 1024, job_timeout_seconds=TIMEOUT_SECONDS,
         job_ttl_seconds=86400, reaper_interval_seconds=3600, workers=1, queue_limit=2,
-        display_max_edge=2000, display_jpeg_quality=88, emit_facets=emit_facets)
+        display_max_edge=2000, display_jpeg_quality=88)
 
     app = create_app(settings=settings, runner=SubprocessPipelineRunner(settings))
-    options = {"wallAngleDegrees": 45.0, "defaultProjection": "angled",
+    options = {"curve": "gentle", "wallWidthM": 5.5, "wallHeightM": 2.5,
                "transferHolds": False, "holds": []}
 
     client = TestClient(app)
@@ -99,57 +99,53 @@ def _run_sample_job(tmp_path, sample_copies, emit_facets: bool):
 
 
 def _assert_common_artifacts(client, job_id, result):
-    """The four masters, the display shrink, and the diagnostics - true of both paths."""
-    for name, content_type in (("ortho.png", "image/png"), ("angled.png", "image/png"),
-                               ("display-ortho.jpg", "image/jpeg"),
-                               ("display-angled.jpg", "image/jpeg")):
+    """The masters, the display shrink, the camera solve, and the diagnostics."""
+    for name, content_type in (("flat.jpg", "image/jpeg"), ("natural.jpg", "image/jpeg"),
+                               ("display-flat.jpg", "image/jpeg"),
+                               ("display-natural.jpg", "image/jpeg")):
         response = client.get(f"/jobs/{job_id}/artifacts/{name}", headers=AUTH)
         assert response.status_code == 200, name
         assert response.headers["content-type"] == content_type
         assert len(response.content) > 10_000
 
-    display = client.get(f"/jobs/{job_id}/artifacts/display-ortho.jpg", headers=AUTH).content
+    display = client.get(f"/jobs/{job_id}/artifacts/display-flat.jpg", headers=AUTH).content
     assert len(display) < len(client.get(
-        f"/jobs/{job_id}/artifacts/ortho.png", headers=AUTH).content)
+        f"/jobs/{job_id}/artifacts/flat.jpg", headers=AUTH).content)
+
+    cameras = client.get(f"/jobs/{job_id}/artifacts/cameras.json", headers=AUTH)
+    assert cameras.status_code == 200
+    solved = json.loads(cameras.content)
+    assert solved["schema"] == "blocwerk.wall-cameras/1"
+    assert len(solved["frames"]) >= 2
+    assert len(solved["frames"][0]["matrix"]) == 3
 
     diagnostics = result["diagnostics"]
     assert diagnostics["imagesUsed"]
-    assert diagnostics["seamAngleRmsDeg"] < 1.0
-    assert diagnostics["bowMedianPx"] < 20.0
+    assert diagnostics["referenceFrame"]
+    assert diagnostics["elapsedSeconds"] > 0
     assert client.delete(f"/jobs/{job_id}", headers=AUTH).status_code == 204
 
 
-def test_the_legacy_single_plane_path_scales_the_angled_view_by_cos(tmp_path, sample_copies):
-    # emit_facets=False is the pre-facets path: the angled master is exactly the flat
-    # ortho with only its vertical axis scaled by cos(wall angle). This keeps that
-    # single-plane contract covered and meaningful even though real jobs now ship facets.
-    client, job_id, result = _run_sample_job(tmp_path, sample_copies, emit_facets=False)
+def test_a_real_run_produces_a_flat_master_and_a_narrower_natural(tmp_path, sample_copies):
+    client, job_id, result = _run_sample_job(tmp_path, sample_copies)
     try:
-        ortho, angled = result["ortho"], result["angled"]
-        assert ortho["width"] > 2000 and ortho["height"] > 1000
-        assert angled["width"] == ortho["width"]
-        assert angled["height"] == pytest.approx(ortho["height"] * result["verticalScale"], rel=0.02)
-        assert result["verticalScale"] == pytest.approx(0.7071, abs=1e-3)
-        _assert_common_artifacts(client, job_id, result)
-    finally:
-        client.__exit__(None, None, None)
+        flat, natural = result["flatMaster"], result["naturalMaster"]
+        assert flat["width"] > 1000 and flat["height"] > 500
+        # The cylinder normalises on the CENTRE derivative, so the ends foreshorten and
+        # the natural is always NARROWER than the flat base it was curved from. A
+        # natural at least as wide means the old edges-stay-at-the-edges normalisation
+        # (the anamorphic widening) has come back.
+        assert natural["width"] < flat["width"]
+        assert natural["height"] == flat["height"]
 
+        curvature = result["curvature"]
+        assert curvature["default"] == "gentle"
+        assert {c["name"] for c in curvature["curves"]} == {"gentle", "medium", "strong"}
+        # Stronger curvature means a tighter arc and a narrower picture.
+        by_name = {c["name"]: c for c in curvature["curves"]}
+        assert by_name["gentle"]["width"] > by_name["strong"]["width"]
+        assert by_name["gentle"]["radiusM"] > by_name["strong"]["radiusM"]
 
-def test_the_facet_path_ships_a_flat_composite_and_a_cylindrical_natural(tmp_path, sample_copies):
-    # emit_facets=True is the shipping default: the ortho slot is the flat multi-facet
-    # composite and the angled slot is the cylindrical NATURAL photographic stitch - two
-    # genuinely different projections, NOT the single-plane vertical squash above.
-    client, job_id, result = _run_sample_job(tmp_path, sample_copies, emit_facets=True)
-    try:
-        ortho, angled = result["ortho"], result["angled"]
-        assert ortho["width"] > 2000 and ortho["height"] > 1000
-        assert angled["width"] > 1500 and angled["height"] > 1000
-        # The natural master is a real perspective stitch, not the ortho squashed by cos:
-        # at least one of its dimensions must break that relationship.
-        squashed = (angled["width"] == ortho["width"]
-                    and abs(angled["height"] - ortho["height"] * result["verticalScale"]) <= 2)
-        assert not squashed, "angled slot is still the single-plane squash, not the natural stitch"
-        assert result["verticalScale"] == pytest.approx(0.7071, abs=1e-3)
         _assert_common_artifacts(client, job_id, result)
     finally:
         client.__exit__(None, None, None)

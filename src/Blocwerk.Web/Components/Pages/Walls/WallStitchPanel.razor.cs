@@ -14,8 +14,12 @@ public partial class WallStitchPanel
     [Parameter] public Guid WallId { get; set; }
     [Parameter] public Guid CurrentUserId { get; set; }
 
-    /// <summary>The wall's inclination in degrees; drives the angled projection.</summary>
-    [Parameter] public int WallAngleDegrees { get; set; }
+    /// <summary>Physical wall size in metres; the pipeline is metric, not angle-based. Falls back to
+    /// the sidecar's own defaults when the wall has no measured dimensions yet.</summary>
+    [Parameter] public double WallWidthM { get; set; } = 5.5;
+
+    /// <summary>Physical wall height in metres. See <see cref="WallWidthM"/>.</summary>
+    [Parameter] public double WallHeightM { get; set; } = 2.5;
 
     /// <summary>True while another wall update is already awaiting confirmation.</summary>
     [Parameter] public bool HasStagedPhoto { get; set; }
@@ -77,7 +81,7 @@ public partial class WallStitchPanel
         StateHasChanged();
         try
         {
-            var options = new WallStitchStartOptions(WallAngleDegrees, request.Projection);
+            var options = new WallStitchStartOptions(WallWidthM, WallHeightM, request.Projection);
             _job = await StitchService.StartJobAsync(WallId, CurrentUserId, request.Photos, options);
             _result = null;
             StartPolling();

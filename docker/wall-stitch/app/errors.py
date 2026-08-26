@@ -58,13 +58,21 @@ PIPELINE_FAILURE = re.compile(r"^\s*(?:\[[0-9:]+\]\s*)?FAILED \[([a-z_]+)\]", re
 
 # Ordered: first pattern that matches the pipeline's own output wins.
 PATTERNS = [
-    (re.compile(r"could not read (?:input )?image", re.I), "unreadable_image"),
+    (re.compile(r"could not read (?:input )?(?:image|frame)", re.I), "unreadable_image"),
     (re.compile(r"\bcannot identify image file\b", re.I), "unreadable_image"),
     # OpenCV's own way of saying "imread returned nothing for that path".
     (re.compile(r"!\w*image\.empty\(\)|!_src\.empty\(\)", re.I), "unreadable_image"),
     (re.compile(r"\btoo few usable images\b|\bneed at least (?:two|2)\b", re.I), "too_few_usable_images"),
     (re.compile(r"\binsufficient overlap\b|\bno usable overlap\b|pair \S+: FAILED", re.I), "insufficient_overlap"),
+    # How the pipeline says it: nothing chained, or frames chained but reached the
+    # reference so obliquely that the composite plane is empty.
+    (re.compile(r"\bno frame pair matched\b|\bnot overlapping enough\b", re.I), "insufficient_overlap"),
+    (re.compile(r"\bunreachable from the reference\b", re.I), "insufficient_overlap"),
     (re.compile(r"\bno dominant plane\b|\bplane normal\b.*\bfail", re.I), "no_dominant_plane"),
+    (re.compile(r"\bno frame lands on the canvas\b", re.I), "no_dominant_plane"),
+    # The carryover stage's own refusal: the prior photo could not be placed on the new
+    # composite at all, so there is nothing to carry over.
+    (re.compile(r"\bno coarse old->new homography candidate\b", re.I), "hold_transfer_failed"),
     (re.compile(r"\bdecomposeHomographyMat\b", re.I), "no_dominant_plane"),
     (re.compile(r"\bMemoryError\b|\bstd::bad_alloc\b|Insufficient memory", re.I), "out_of_memory"),
     (re.compile(r"\bimage too small\b", re.I), "image_too_small"),

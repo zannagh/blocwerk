@@ -149,57 +149,29 @@ else
             <WallDimControl ShowViewModes="true"
                             CurrentViewMode="_wallView"
                             AvailableViewModes="AvailableWallViews"
-                            OnViewModeChanged="OnWallViewChanged"
-                            ShowCurvature="true"
-                            Curvature="_curvature"
-                            OnCurvatureChanged="OnWallCurvatureChanged" />
+                            OnViewModeChanged="OnWallViewChanged" />
             @* Zoom geometry is owned by JS via `--zoom` (wwwroot/js/viewport.js). *@
             <div class="photo-viewport photo-section" @ref="_photoViewportRef">
                 <div class="photo-editor">
-                    @if (_wallView == WallViewMode.Cylindric)
-                    {
-                        @* Cylinder view: the warped canvas is the image (wall-view.js) and the holds
-                           are mapped through the identical CylindricMap so they stay registered. *@
-                        var cyl = CurrentCylindricMap;
-                        <img @ref="_cylImgRef" src="@PhotoUrl" alt="Wall" class="wall-photo cyl-source" />
-                        <canvas @ref="_cylCanvasRef" class="wall-cyl-canvas"></canvas>
-                        <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
-                            @foreach (var hold in ColorRuleHolds)
-                            {
-                                <polygon @key="hold.Id" points="@FmtPts(cyl.MapCircle(hold.X, hold.Y, hold.Radius))"
-                                         fill="@BoulderHoldColors.ColorRuleFill()"
-                                         stroke="@BoulderHoldColors.Foot" stroke-width="0.4" />
-                            }
-                            @foreach (var bh in _boulder.BoulderHolds)
-                            {
-                                <polygon @key="bh.HoldId" points="@FmtPts(cyl.MapCircle(bh.Hold.X, bh.Hold.Y, bh.Hold.Radius))"
-                                         fill="@BoulderHoldColors.FillFor(bh.Type, bh.Usage)"
-                                         stroke="@BoulderHoldColors.Stroke(bh.Type)" stroke-width="0.5" />
-                            }
-                        </svg>
-                    }
-                    else
-                    {
-                        <img src="@PhotoUrl" alt="Wall" class="wall-photo" />
-                        <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
-                            @* Holds that are footholds purely by the "feet of one colour only"
-                               rule are not part of the boulder, so they are drawn underneath. *@
-                            @foreach (var hold in ColorRuleHolds)
-                            {
-                                <circle @key="hold.Id" cx="@F(hold.X * 100)" cy="@F(hold.Y * 100)"
-                                        r="@F(hold.Radius * 100)"
-                                        fill="@BoulderHoldColors.ColorRuleFill()"
-                                        stroke="@BoulderHoldColors.Foot" stroke-width="0.4" />
-                            }
-                            @foreach (var bh in _boulder.BoulderHolds)
-                            {
-                                <circle @key="bh.HoldId" cx="@F(bh.Hold.X * 100)" cy="@F(bh.Hold.Y * 100)"
-                                        r="@F(bh.Hold.Radius * 100)"
-                                        fill="@BoulderHoldColors.FillFor(bh.Type, bh.Usage)"
-                                        stroke="@BoulderHoldColors.Stroke(bh.Type)" stroke-width="0.5" />
-                            }
-                        </svg>
-                    }
+                    <img src="@PhotoUrl" alt="Wall" class="wall-photo" />
+                    <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
+                        @* Holds that are footholds purely by the "feet of one colour only"
+                           rule are not part of the boulder, so they are drawn underneath. *@
+                        @foreach (var hold in ColorRuleHolds)
+                        {
+                            <circle @key="hold.Id" cx="@F(hold.X * 100)" cy="@F(hold.Y * 100)"
+                                    r="@F(hold.Radius * 100)"
+                                    fill="@BoulderHoldColors.ColorRuleFill()"
+                                    stroke="@BoulderHoldColors.Foot" stroke-width="0.4" />
+                        }
+                        @foreach (var bh in _boulder.BoulderHolds)
+                        {
+                            <circle @key="bh.HoldId" cx="@F(bh.Hold.X * 100)" cy="@F(bh.Hold.Y * 100)"
+                                    r="@F(bh.Hold.Radius * 100)"
+                                    fill="@BoulderHoldColors.FillFor(bh.Type, bh.Usage)"
+                                    stroke="@BoulderHoldColors.Stroke(bh.Type)" stroke-width="0.5" />
+                        }
+                    </svg>
                 </div>
             </div>
         }
@@ -354,25 +326,19 @@ else
     private string? _fitBoxForUrl;
     private DotNetObjectReference<BoulderDetail>? _selfRef;
 
-    // Wall view mode (Natural / Ortho / Cylindric) is separate from the page's Photo/Schematic
-    // toggle above. Named _wallView to avoid clashing with _viewMode.
+    // Wall view mode (Natural / Flat) is separate from the page's Photo/Schematic toggle above.
+    // Named _wallView to avoid clashing with _viewMode.
     private WallViewMode _wallView = WallViewMode.Natural;
-    private int _curvature;
-    private bool _wallViewHydrated;
-    private ElementReference _cylImgRef;
-    private ElementReference _cylCanvasRef;
-
-    private CylindricMap CurrentCylindricMap => CylindricMap.FromCurvature(_curvature);
 
     /// <summary>
-    /// True when the wall stores a second (ortho) projection AND we are showing the current wall.
-    /// The alternate image has no per-generation route, so the historic "Then" view offers Natural
+    /// True when the wall stores a second projection AND we are showing the current wall. The
+    /// alternate image has no per-generation route, so the historic "Then" view offers Natural
     /// only.
     /// </summary>
     private bool HasAlternateProjection =>
         _boulder?.Wall?.PhotoAlternateContentType != null && !_showHistoric;
 
-    /// <summary>Natural always; Ortho and Cylindric when a second projection is available.</summary>
+    /// <summary>Natural always; Flat when a second projection is available.</summary>
     private IReadOnlyList<WallViewMode> AvailableWallViews
     {
         get
@@ -380,8 +346,7 @@ else
             var modes = new List<WallViewMode> { WallViewMode.Natural };
             if (HasAlternateProjection)
             {
-                modes.Add(WallViewMode.Ortho);
-                modes.Add(WallViewMode.Cylindric);
+                modes.Add(WallViewMode.Flat);
             }
 
             return modes;
@@ -390,37 +355,17 @@ else
 
     private enum ViewMode { Photo, Schematic }
 
-    private async Task OnWallViewChanged(WallViewMode mode)
+    // The choice is in-memory only for now: the old localStorage persistence lived in
+    // wall-view.js, which went away with the cylindric client-side warp.
+    private void OnWallViewChanged(WallViewMode mode)
     {
-        if (!AvailableWallViews.Contains(mode))
+        if (AvailableWallViews.Contains(mode))
         {
-            return;
-        }
-
-        _wallView = mode;
-        try
-        {
-            await JS.InvokeVoidAsync("bwWallView.setMode", (int)mode);
-        }
-        catch (Exception)
-        {
-            // A failed persistence write must never take the page down; the choice still applies.
+            _wallView = mode;
         }
     }
 
-    private async Task OnWallCurvatureChanged(int value)
-    {
-        _curvature = Math.Clamp(value, 0, 100);
-        try
-        {
-            await JS.InvokeVoidAsync("bwWallView.setCurve", _curvature);
-        }
-        catch (Exception)
-        {
-        }
-    }
-
-    // Toggling the historic photo can pull the ortho alternate out from under the current mode.
+    // Toggling the historic photo can pull the flat alternate out from under the current mode.
     private void ClampWallView()
     {
         if (!AvailableWallViews.Contains(_wallView))
@@ -446,8 +391,6 @@ else
                 // Never let a missing/failed interop take the page down: without the callback
                 // the queue still delivers, the page just needs a manual reload to catch up.
             }
-
-            await HydrateWallViewAsync();
         }
 
         if (_viewMode == ViewMode.Photo && _boulder != null)
@@ -470,14 +413,6 @@ else
                     _fitBoxForUrl = PhotoUrl;
                     await JS.InvokeVoidAsync("bwViewport.fitBox", _photoViewportRef);
                 }
-
-                // Cylindric mode paints the warped canvas; re-warp every render so a view/curve
-                // change (or a freshly loaded image) redraws it. The overlay is mapped server-side
-                // through the identical CylindricMap, keeping holds registered.
-                if (_wallView == WallViewMode.Cylindric)
-                {
-                    await JS.InvokeVoidAsync("bwCylindric.render", _cylCanvasRef, _cylImgRef, new { beta = _curvature / 100.0 });
-                }
             }
             catch (JSException)
             {
@@ -489,32 +424,6 @@ else
             {
                 _fitBoxForUrl = null;
             }
-        }
-    }
-
-    /// <summary>Pull the persisted view mode and curve strength once, clamping to what is offered.</summary>
-    private async Task HydrateWallViewAsync()
-    {
-        if (_wallViewHydrated)
-        {
-            return;
-        }
-
-        _wallViewHydrated = true;
-        try
-        {
-            var storedMode = await JS.InvokeAsync<int>("bwWallView.getMode");
-            _curvature = Math.Clamp(await JS.InvokeAsync<int>("bwWallView.getCurve"), 0, 100);
-            var wanted = (WallViewMode)Math.Clamp(storedMode, 0, 2);
-            if (AvailableWallViews.Contains(wanted))
-            {
-                _wallView = wanted;
-                StateHasChanged();
-            }
-        }
-        catch (Exception)
-        {
-            // localStorage/interop unavailable: keep the Natural default.
         }
     }
 
@@ -607,8 +516,8 @@ else
     {
         get
         {
-            // Ortho/Cylindric read the stored alternate; it has no per-generation route, so it only
-            // applies to the current photo (HasAlternateProjection is false while showing historic).
+            // Flat reads the stored alternate; it has no per-generation route, so it only applies
+            // to the current photo (HasAlternateProjection is false while showing historic).
             var suffix = _wallView == WallViewMode.Natural ? string.Empty : "-alternate";
             var gen = suffix.Length == 0 && _showHistoric && BoulderHoldGeneration is { } g ? $"/{g}" : string.Empty;
             var path = $"/api/walls/{WallId}/photo{gen}{suffix}";
@@ -624,9 +533,6 @@ else
         ClampWallView();
         await LoadWallHolds();
     }
-
-    private static string FmtPts(IEnumerable<(double X, double Y)> pts) =>
-        string.Join(" ", pts.Select(p => $"{F(p.X * 100)},{F(p.Y * 100)}"));
 
     private async Task PublishDraft()
     {

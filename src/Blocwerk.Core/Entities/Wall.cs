@@ -28,8 +28,9 @@ public class Wall
 
     /// <summary>
     /// Display-resolution copy of the SAME wall in the other projection, or null when only one
-    /// projection exists. Swapping <see cref="Photo"/> and this is a pure image swap: hold
-    /// coordinates are normalised per axis, so the vertical scale between the two cancels out.
+    /// projection exists. NOT interchangeable with <see cref="Photo"/>: the two projections are
+    /// different geometries, so an overlay drawn for one has to be mapped for the other — see
+    /// <see cref="WallPhotoProjection"/>.
     /// </summary>
     public byte[]? PhotoAlternate { get; set; }
 
@@ -37,24 +38,38 @@ public class Wall
     public string? PhotoAlternateContentType { get; set; }
 
     /// <summary>Which projection <see cref="Photo"/> currently is; the alternate is the other one.</summary>
-    public WallPhotoProjection PhotoProjection { get; set; } = WallPhotoProjection.Angled;
+    public WallPhotoProjection PhotoProjection { get; set; } = WallPhotoProjection.Natural;
 
-    /// <summary>Stored file name of the full-resolution ortho master (see <c>IWallPhotoMasterStorage</c>).</summary>
+    /// <summary>Stored file name of the full-resolution flat master (see <c>IWallPhotoMasterStorage</c>).</summary>
     [MaxLength(512)]
-    public string? OrthoMasterPath { get; set; }
+    public string? FlatMasterPath { get; set; }
 
-    /// <summary>Stored file name of the full-resolution angled master (see <c>IWallPhotoMasterStorage</c>).</summary>
+    /// <summary>Stored file name of the full-resolution natural master (see <c>IWallPhotoMasterStorage</c>).</summary>
     [MaxLength(512)]
-    public string? AngledMasterPath { get; set; }
+    public string? NaturalMasterPath { get; set; }
 
-    /// <summary>Wall inclination the projection pair was rendered with, in degrees. Null pre-stitching.</summary>
-    public double? PhotoWallAngleDegrees { get; set; }
+    /// <summary>Physical wall width in metres the pipeline rendered against. Null pre-stitching.</summary>
+    public double? PhotoWallWidthM { get; set; }
+
+    /// <summary>Physical wall height in metres the pipeline rendered against. Null pre-stitching.</summary>
+    public double? PhotoWallHeightM { get; set; }
 
     /// <summary>
-    /// Vertical scale applied to get the angled projection from the ortho one, i.e.
-    /// <c>cos(PhotoWallAngleDegrees)</c>. Kept so the pair can be reproduced or verified.
+    /// The pipeline's <c>curvature</c> block verbatim: which projection made the natural master and
+    /// the per-variant <c>thetaMaxDeg</c>/<c>k</c>/<c>radiusM</c> behind it. Together with
+    /// <see cref="CamerasJson"/> this is what lets a flat-space hold be drawn on the natural view,
+    /// so it is stored whole rather than reduced to a single number. Null pre-stitching.
     /// </summary>
-    public double? PhotoVerticalScale { get; set; }
+    [Column(TypeName = "jsonb")]
+    public string? PhotoCurvatureJson { get; set; }
+
+    /// <summary>
+    /// The pipeline's <c>cameras.json</c>: per-frame registration plus the flat-to-natural map
+    /// parameters. Opaque to the domain — stored verbatim so renderers and a re-run of the
+    /// pipeline can reproduce the mapping. Null pre-stitching.
+    /// </summary>
+    [Column(TypeName = "jsonb")]
+    public string? CamerasJson { get; set; }
 
     /// <summary>Staged counterpart of <see cref="Photo"/>, pending confirmation.</summary>
     public byte[]? StagedPhoto { get; set; }
@@ -69,21 +84,37 @@ public class Wall
     public string? StagedPhotoAlternateContentType { get; set; }
 
     /// <summary>Which projection <see cref="StagedPhoto"/> is.</summary>
-    public WallPhotoProjection StagedPhotoProjection { get; set; } = WallPhotoProjection.Angled;
+    public WallPhotoProjection StagedPhotoProjection { get; set; } = WallPhotoProjection.Natural;
 
-    /// <summary>Staged counterpart of <see cref="OrthoMasterPath"/>.</summary>
+    /// <summary>Staged counterpart of <see cref="FlatMasterPath"/>.</summary>
     [MaxLength(512)]
-    public string? StagedOrthoMasterPath { get; set; }
+    public string? StagedFlatMasterPath { get; set; }
 
-    /// <summary>Staged counterpart of <see cref="AngledMasterPath"/>.</summary>
+    /// <summary>Staged counterpart of <see cref="NaturalMasterPath"/>.</summary>
     [MaxLength(512)]
-    public string? StagedAngledMasterPath { get; set; }
+    public string? StagedNaturalMasterPath { get; set; }
 
-    /// <summary>Staged counterpart of <see cref="PhotoWallAngleDegrees"/>.</summary>
-    public double? StagedPhotoWallAngleDegrees { get; set; }
+    /// <summary>Staged counterpart of <see cref="PhotoWallWidthM"/>.</summary>
+    public double? StagedPhotoWallWidthM { get; set; }
 
-    /// <summary>Staged counterpart of <see cref="PhotoVerticalScale"/>.</summary>
-    public double? StagedPhotoVerticalScale { get; set; }
+    /// <summary>Staged counterpart of <see cref="PhotoWallHeightM"/>.</summary>
+    public double? StagedPhotoWallHeightM { get; set; }
+
+    /// <summary>Staged counterpart of <see cref="PhotoCurvatureJson"/>.</summary>
+    [Column(TypeName = "jsonb")]
+    public string? StagedPhotoCurvatureJson { get; set; }
+
+    /// <summary>Staged counterpart of <see cref="CamerasJson"/>.</summary>
+    [Column(TypeName = "jsonb")]
+    public string? StagedCamerasJson { get; set; }
+
+    /// <summary>
+    /// The pipeline's standing caveat about the accuracy of the staged carryover, empty when it did
+    /// not run. While this is set the staged result must never be promoted to live unattended: a
+    /// human has to look at the overlay and confirm. See <c>WallService.ConfirmStagedPhotoAsync</c>.
+    /// </summary>
+    [MaxLength(1024)]
+    public string? StagedCarryoverBlocker { get; set; }
 
     public DateTimeOffset? StagedAt { get; set; }
 

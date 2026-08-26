@@ -12,4 +12,5 @@ public sealed record StitchHoldInput(
     IReadOnlyList<StitchShapePoint>? ShapePoints,
     string? Color,
     int Category,
-    int BoulderLinkCount);
+    int BoulderLinkCount,
+    int Generation);

@@ -14,7 +14,7 @@
 
     <label class="filter-check">
         <input type="checkbox" @bind="_keepAngle" />
-        Keep the wall's @WallAngleDegrees&deg; angle
+        Show the wall at its natural angle
     </label>
     <p class="hint">
         Checked, the photo keeps the wall's physical steepness. Unchecked, you get a straight-on
@@ -60,9 +60,6 @@
 </div>
 
 @code {
-    /// <summary>The wall's inclination, shown on the keep-angle checkbox.</summary>
-    [Parameter] public int WallAngleDegrees { get; set; }
-
     /// <summary>Disables the controls while the panel is doing something else.</summary>
     [Parameter] public bool Busy { get; set; }
 
@@ -185,7 +182,7 @@
                 uploads.Add(new StitchPhotoUpload(photo.Name, photo.File.ContentType, buffer.ToArray()));
             }
 
-            var projection = _keepAngle ? WallPhotoProjection.Angled : WallPhotoProjection.Ortho;
+            var projection = _keepAngle ? WallPhotoProjection.Natural : WallPhotoProjection.Flat;
             _photos.Clear();
             await OnStart.InvokeAsync(new StitchStartRequest(uploads, projection));
         }

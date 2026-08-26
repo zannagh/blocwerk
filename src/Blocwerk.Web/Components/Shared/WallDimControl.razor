@@ -8,11 +8,10 @@
     survives Blazor re-renders. Those handlers are plain HTML attributes on purpose — they
     must not become Blazor event callbacks.
 
-    The view-mode segmented control and the curvature slider ARE real Blazor callbacks: they
-    change what the host renders (a plain image, the ortho image, or a cylinder-warped canvas
-    with a matching overlay), so the host owns the state. wall-view.js persists the choice so
-    the control can hydrate to it. The older single projection button is kept for callers that
-    still use it, but hosts should prefer the view-mode control.
+    The view-mode segmented control IS a real Blazor callback: it changes which of the wall's two
+    stored images the host renders (and, once the natural overlay mapping lands, how the holds are
+    drawn over it), so the host owns the state. The older single projection button is kept for
+    callers that still use it, but hosts should prefer the view-mode control.
 *@
 <div class="wall-dim-bar" title="Dim the wall photo so the boulder stands out">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" aria-hidden="true">
@@ -42,13 +41,6 @@
                 </button>
             }
         </div>
-        @if (ShowCurvature && CurrentViewMode == WallViewMode.Cylindric)
-        {
-            <input type="range" class="wall-curve-slider" min="0" max="100" step="1"
-                   value="@Curvature" aria-label="Wall curve strength"
-                   title="How strongly the wall curves toward you"
-                   @oninput="OnCurveInput" />
-        }
     }
     else if (ShowProjectionToggle)
     {
@@ -70,7 +62,7 @@
 
     [Parameter] public EventCallback OnToggleProjection { get; set; }
 
-    /// <summary>Shows the segmented Angle / Flat / Curve control instead of the single toggle.</summary>
+    /// <summary>Shows the segmented Angle / Flat control instead of the single toggle.</summary>
     [Parameter] public bool ShowViewModes { get; set; }
 
     /// <summary>The view mode currently on screen; the host owns this state.</summary>
@@ -81,27 +73,17 @@
 
     [Parameter] public EventCallback<WallViewMode> OnViewModeChanged { get; set; }
 
-    /// <summary>Shows the curvature slider while the cylindric mode is active.</summary>
-    [Parameter] public bool ShowCurvature { get; set; }
-
-    /// <summary>Curve strength 0..100 (maps to the warp's beta 0..1).</summary>
-    [Parameter] public int Curvature { get; set; }
-
-    [Parameter] public EventCallback<int> OnCurvatureChanged { get; set; }
-
     private static string ViewModeLabel(WallViewMode mode) => mode switch
     {
         WallViewMode.Natural => "Angle",
-        WallViewMode.Ortho => "Flat",
-        WallViewMode.Cylindric => "Curve",
+        WallViewMode.Flat => "Flat",
         _ => mode.ToString(),
     };
 
     private static string ViewModeTitle(WallViewMode mode) => mode switch
     {
-        WallViewMode.Natural => "Show the wall at its real angle",
-        WallViewMode.Ortho => "Show the wall straight on, without its lean",
-        WallViewMode.Cylindric => "Curve a wide wall back toward you, panorama-style",
+        WallViewMode.Natural => "Show the wall the way it reads in person",
+        WallViewMode.Flat => "Show the flat, undistorted wall",
         _ => string.Empty,
     };
 
@@ -149,14 +131,6 @@
 
         next = Math.Clamp(next, 0, AvailableViewModes.Count - 1);
         await SelectViewMode(AvailableViewModes[next]);
-    }
-
-    private async Task OnCurveInput(ChangeEventArgs e)
-    {
-        if (int.TryParse(e.Value?.ToString(), out var value))
-        {
-            await OnCurvatureChanged.InvokeAsync(Math.Clamp(value, 0, 100));
-        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)

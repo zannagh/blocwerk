@@ -24,7 +24,7 @@ public class WallStitchClientTests
         var client = CreateClient(handler);
 
         await using var destination = new StreamingDestination();
-        await client.DownloadArtifactAsync("job-1", "ortho.png", destination);
+        await client.DownloadArtifactAsync("job-1", "flat.png", destination);
 
         Assert.Equal(payload, destination.ToArray());
 
@@ -32,7 +32,7 @@ public class WallStitchClientTests
         // ReadAsByteArrayAsync/LoadIntoBufferAsync would do. Reaching here proves the body was
         // copied straight into the caller's stream.
         Assert.False(content.WasBuffered);
-        Assert.Equal("jobs/job-1/artifacts/ortho.png", handler.LastPath);
+        Assert.Equal("jobs/job-1/artifacts/flat.png", handler.LastPath);
     }
 
     [Fact]
@@ -51,7 +51,7 @@ public class WallStitchClientTests
 
         var result = await client.CreateJobAsync(
             [new StitchPhotoUpload("1.jpeg", "image/jpeg", [1]), new StitchPhotoUpload("2.jpeg", "image/jpeg", [2])],
-            new StitchJobOptions(45.0, "angled", true, null, null, [new StitchHoldInput(Guid.NewGuid(), 0.5, 0.3, 0.01, null, "pink", 0, 3)]),
+            new StitchJobOptions("natural", "gentle", 3.5, 4.2, true, null, null, [new StitchHoldInput(Guid.NewGuid(), 0.5, 0.3, 0.01, null, "pink", 0, 3, 0)]),
             new StitchPhotoUpload("old.jpg", "image/jpeg", [9]));
 
         Assert.Equal("abc", result.JobId);
@@ -59,8 +59,8 @@ public class WallStitchClientTests
         Assert.Equal("jobs", handler.LastPath);
         Assert.Contains("name=photos", handler.LastBody, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("name=oldPhoto", handler.LastBody, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("\"wallAngleDegrees\":45", handler.LastBody);
-        Assert.Contains("\"defaultProjection\":\"angled\"", handler.LastBody);
+        Assert.Contains("\"wallWidthM\":3.5", handler.LastBody);
+        Assert.Contains("\"natural\":\"natural\"", handler.LastBody);
         Assert.Contains("\"boulderLinkCount\":3", handler.LastBody);
     }
 
@@ -69,14 +69,28 @@ public class WallStitchClientTests
     {
         const string body = """
         {"jobId":"abc","status":"succeeded","progress":1.0,"stage":"done","error":null,
-         "result":{"ortho":{"artifact":"ortho.png","width":7648,"height":4864},
-                   "angled":{"artifact":"angled.png","width":7648,"height":3439},
-                   "displayOrtho":"display-ortho.jpg","displayAngled":"display-angled.jpg",
-                   "wallAngleDegrees":45.0,"verticalScale":0.7071,
+         "result":{"flatMaster":{"artifact":"flat.png","width":7648,"height":4864},
+                   "naturalMaster":{"artifact":"natural.png","width":7648,"height":4310},
+                   "displayFlat":"display-flat.jpg","displayNatural":"display-natural.jpg",
+                   "camerasJson":"cameras.json","coordinateConvention":"top-left",
+                   "wallWidthM":3.5,"wallHeightM":4.2,
+                   "curvature":{"projection":"cylindrical","default":"gentle","requestedThetaMaxDeg":30.0,
+                                "viewDistM":3.0,"eyeFrac":0.5,
+                                "curves":[{"name":"gentle","artifact":"natural.png","display":"display-natural.jpg",
+                                           "width":7648,"height":4310,"thetaMaxDeg":12.0,"k":0.6,"radiusM":8.0}]},
+                   "holds":[{"id":"det-1","x":0.5,"y":0.31,"radius":0.011,"confidence":0.87}],
+                   "holdsNatural":[],
+                   "carryover":{"generation":1,"counts":{"carried_over":1},"countsBoulderLinked":{"carried_over":1},
+                                "estimatedPrecision":0.92,"blocker":"review the overlay",
+                                "carried":[{"id":"8f6b1f6c-1f2a-4c9d-9a11-2f0a1b2c3d4e","x":0.5,"y":0.31,"radius":0.011,
+                                            "shapePoints":[{"dx":0.01,"dy":-0.02}],"classification":"carried_over",
+                                            "matchedDetectionId":"det-1","matchDistancePx":4.0,"colourAgrees":true,
+                                            "boulderLinkCount":2,"inFrame":true,"reason":null}],
+                                "missing":[],
+                                "new":[{"detectionId":"det-9","x":0.7,"y":0.6,"radius":0.02,"confidence":0.7,"likelyDuplicate":false}]},
                    "diagnostics":{"imagesUsed":["1.jpeg"],"imagesRejected":[{"name":"5.jpeg","reason":"blurry"}],
-                                  "seamAngleRmsDeg":0.062,"bowMedianPx":1.13,"coverageWarnings":[]},
-                   "holds":[{"id":"8f6b1f6c-1f2a-4c9d-9a11-2f0a1b2c3d4e","x":0.5,"y":0.31,"radius":0.011,
-                             "shapePoints":[{"dx":0.01,"dy":-0.02}],"classification":"matched","confidence":0.87}]}}
+                                  "referenceFrame":"2.jpeg","straightness":0.98,"inpaintedPx":1200,
+                                  "elapsedSeconds":1.13,"coverageWarnings":[]}}}
         """;
         var client = CreateClient(new StubHandler(_ => Json(HttpStatusCode.OK, body)));
 
@@ -85,12 +99,21 @@ public class WallStitchClientTests
         Assert.Equal("succeeded", state.Status);
         Assert.Equal(1.0, state.Progress);
         Assert.NotNull(state.Result);
-        Assert.Equal("ortho.png", state.Result!.Ortho.Artifact);
-        Assert.Equal(3439, state.Result.Angled.Height);
-        Assert.Equal(0.7071, state.Result.VerticalScale, 4);
+        Assert.Equal("flat.png", state.Result!.FlatMaster.Artifact);
+        Assert.Equal(4310, state.Result.NaturalMaster.Height);
+        Assert.Equal("cameras.json", state.Result.CamerasJson);
+        Assert.Equal(3.5, state.Result.WallWidthM, 4);
+        Assert.Equal(4.2, state.Result.WallHeightM, 4);
+        Assert.Equal("gentle", state.Result.Curvature!.Default);
+        Assert.Equal(12.0, state.Result.Curvature.Curves![0].ThetaMaxDeg!.Value, 6);
         Assert.Equal("blurry", state.Result.Diagnostics!.ImagesRejected![0].Reason);
-        Assert.Equal("matched", state.Result.Holds![0].Classification);
-        Assert.Equal(-0.02, state.Result.Holds[0].ShapePoints![0].Dy, 6);
+        Assert.Equal(0.98, state.Result.Diagnostics.Straightness, 6);
+        Assert.Equal(0.87, state.Result.Holds![0].Confidence, 6);
+        Assert.Equal("carried_over", state.Result.Carryover!.Carried![0].Classification);
+        Assert.Equal(4.0, state.Result.Carryover.Carried[0].MatchDistancePx!.Value, 6);
+        Assert.Equal(-0.02, state.Result.Carryover.Carried[0].ShapePoints![0].Dy, 6);
+        Assert.Equal("det-9", state.Result.Carryover.New![0].DetectionId);
+        Assert.Equal("review the overlay", state.Result.Carryover.Blocker);
     }
 
     [Fact]

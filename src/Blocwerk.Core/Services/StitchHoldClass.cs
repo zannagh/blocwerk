@@ -1,14 +1,26 @@
 namespace Blocwerk.Core.Services;
 
-/// <summary>How confident the sidecar's matcher was about a transferred hold.</summary>
+/// <summary>
+/// The pipeline's carryover verdict for one hold: what happened to it between the old wall photo
+/// and the new one.
+/// </summary>
 internal enum StitchHoldClass
 {
-    /// <summary>Found on the new image; the clone is trusted and needs no review.</summary>
-    Matched,
+    /// <summary>
+    /// An existing hold that was found again on the new image. The clone keeps its source hold's
+    /// identity link; how far the match landed from the prediction decides whether it needs review.
+    /// </summary>
+    CarriedOver,
 
-    /// <summary>Found, but weakly; the clone is flagged for review.</summary>
-    Uncertain,
-
-    /// <summary>Not found; the clone is created at its predicted position and flagged for review.</summary>
+    /// <summary>
+    /// An existing hold that was NOT found on the new image. The clone is still created, at its
+    /// predicted position and flagged, so its boulder links survive.
+    /// </summary>
     Missing,
+
+    /// <summary>
+    /// A hold detected on the new image that matches nothing in the old set. Created fresh:
+    /// auto-detected, no source hold, always flagged for review.
+    /// </summary>
+    New,
 }

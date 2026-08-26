@@ -141,7 +141,8 @@ else
                 </div>
 
                 <WallStitchPanel WallId="WallId" CurrentUserId="_currentUserId"
-                                 WallAngleDegrees="_wall.Angle"
+                                 WallWidthM="_wall.PhotoWallWidthM ?? 5.5"
+                                 WallHeightM="_wall.PhotoWallHeightM ?? 2.5"
                                  HasStagedPhoto="_wall.StagedAt.HasValue"
                                  OnStagingApplied="OnStitchStaged" />
 
@@ -1015,7 +1016,7 @@ else
             : _wall.PhotoAlternateContentType != null);
 
     private WallPhotoProjection CurrentPhotoProjection => _wall == null
-        ? WallPhotoProjection.Angled
+        ? WallPhotoProjection.Natural
         : _wall.StagedAt.HasValue ? _wall.StagedPhotoProjection : _wall.PhotoProjection;
 
     /// <summary>

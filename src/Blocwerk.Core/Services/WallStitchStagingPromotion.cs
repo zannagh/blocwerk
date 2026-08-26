@@ -14,23 +14,25 @@ namespace Blocwerk.Core.Services;
 internal static class WallStitchStagingPromotion
 {
     /// <summary>
-    /// Moves the staged photo pair, projection, master paths, angle and vertical scale onto the
-    /// live columns and clears the staged ones. Returns the master paths of the photo just
-    /// retired, so the caller can delete those files once nothing references them.
+    /// Moves the staged photo pair, projection, master paths, wall dimensions, curvature block and
+    /// camera parameters onto the live columns and clears the staged ones. Returns the master paths
+    /// of the photo just retired, so the caller can delete those files once nothing references them.
     /// </summary>
     public static IReadOnlyList<string?> PromotePhoto(Wall wall)
     {
-        var retired = new List<string?> { wall.OrthoMasterPath, wall.AngledMasterPath };
+        var retired = new List<string?> { wall.FlatMasterPath, wall.NaturalMasterPath };
 
         wall.Photo = wall.StagedPhoto;
         wall.PhotoContentType = wall.StagedPhotoContentType;
         wall.PhotoAlternate = wall.StagedPhotoAlternate;
         wall.PhotoAlternateContentType = wall.StagedPhotoAlternateContentType;
         wall.PhotoProjection = wall.StagedPhotoProjection;
-        wall.OrthoMasterPath = wall.StagedOrthoMasterPath;
-        wall.AngledMasterPath = wall.StagedAngledMasterPath;
-        wall.PhotoWallAngleDegrees = wall.StagedPhotoWallAngleDegrees;
-        wall.PhotoVerticalScale = wall.StagedPhotoVerticalScale;
+        wall.FlatMasterPath = wall.StagedFlatMasterPath;
+        wall.NaturalMasterPath = wall.StagedNaturalMasterPath;
+        wall.PhotoWallWidthM = wall.StagedPhotoWallWidthM;
+        wall.PhotoWallHeightM = wall.StagedPhotoWallHeightM;
+        wall.PhotoCurvatureJson = wall.StagedPhotoCurvatureJson;
+        wall.CamerasJson = wall.StagedCamerasJson;
 
         ClearStagedPhotoColumns(wall);
         return retired;
@@ -43,7 +45,7 @@ internal static class WallStitchStagingPromotion
     /// </summary>
     public static IReadOnlyList<string?> ClearStagedStitchColumns(Wall wall)
     {
-        var staged = new List<string?> { wall.StagedOrthoMasterPath, wall.StagedAngledMasterPath };
+        var staged = new List<string?> { wall.StagedFlatMasterPath, wall.StagedNaturalMasterPath };
         ClearStagedPhotoColumns(wall);
         return staged;
     }
@@ -126,10 +128,13 @@ internal static class WallStitchStagingPromotion
         wall.StagedPhotoContentType = null;
         wall.StagedPhotoAlternate = null;
         wall.StagedPhotoAlternateContentType = null;
-        wall.StagedPhotoProjection = WallPhotoProjection.Angled;
-        wall.StagedOrthoMasterPath = null;
-        wall.StagedAngledMasterPath = null;
-        wall.StagedPhotoWallAngleDegrees = null;
-        wall.StagedPhotoVerticalScale = null;
+        wall.StagedPhotoProjection = WallPhotoProjection.Natural;
+        wall.StagedFlatMasterPath = null;
+        wall.StagedNaturalMasterPath = null;
+        wall.StagedPhotoWallWidthM = null;
+        wall.StagedPhotoWallHeightM = null;
+        wall.StagedPhotoCurvatureJson = null;
+        wall.StagedCamerasJson = null;
+        wall.StagedCarryoverBlocker = null;
     }
 }

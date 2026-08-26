@@ -50,25 +50,52 @@ class FakeRunner:
 
     # -- behaviours ---------------------------------------------------------
     def succeed(self, job: JobContext, on_progress) -> Dict[str, object]:
-        on_progress(0.30, "registering")
+        on_progress(0.30, "matching")
         on_progress(0.80, "blending")
         os.makedirs(job.artifact_dir, exist_ok=True)
-        for name, size in (("ortho.png", (400, 260)), ("angled.png", (400, 184)),
-                           ("display-ortho.jpg", (200, 130)), ("display-angled.jpg", (200, 92))):
+        for name, size in (("flat.jpg", (400, 260)), ("natural.jpg", (360, 260)),
+                           ("natural-gentle.jpg", (360, 260)),
+                           ("display-flat.jpg", (200, 130)),
+                           ("display-natural.jpg", (180, 130)),
+                           ("display-natural-gentle.jpg", (180, 130))):
             Image.new("RGB", size, (30, 60, 90)).save(os.path.join(job.artifact_dir, name))
+        with open(os.path.join(job.artifact_dir, "cameras.json"), "w") as handle:
+            handle.write('{"schema": "blocwerk.wall-cameras/1", "frames": []}')
         return {
-            "ortho": {"artifact": "ortho.png", "width": 400, "height": 260},
-            "angled": {"artifact": "angled.png", "width": 400, "height": 184},
-            "displayOrtho": "display-ortho.jpg",
-            "displayAngled": "display-angled.jpg",
-            "wallAngleDegrees": job.options.wall_angle_degrees,
-            "verticalScale": 0.7071,
+            "flatMaster": {"artifact": "flat.jpg", "width": 400, "height": 260},
+            "naturalMaster": {"artifact": "natural.jpg", "width": 360, "height": 260},
+            "displayFlat": "display-flat.jpg",
+            "displayNatural": "display-natural.jpg",
+            "camerasJson": "cameras.json",
+            "wallWidthM": job.options.wall_width_m,
+            "wallHeightM": job.options.wall_height_m,
+            "curvature": {
+                "default": job.options.curve, "requestedThetaMaxDeg": 30.0,
+                "viewDistM": 3.0, "eyeFrac": 0.34,
+                "curves": [{"name": "gentle", "artifact": "natural-gentle.jpg",
+                            "display": "display-natural-gentle.jpg", "width": 360,
+                            "height": 260, "thetaMaxDeg": 30.0, "k": 0.636,
+                            "radiusM": 5.25}],
+            },
             "diagnostics": {"imagesUsed": [os.path.basename(p) for p in job.photos],
-                            "imagesRejected": [], "seamAngleRmsDeg": 0.06,
-                            "bowMedianPx": 1.13, "coverageWarnings": []},
-            "holds": [{"id": h.id, "x": h.x, "y": h.y, "radius": h.radius,
-                       "shapePoints": None, "classification": "matched", "confidence": 0.9}
-                      for h in job.options.holds] or None,
+                            "imagesRejected": [], "referenceFrame": "2.jpeg",
+                            "straightness": 0.0, "inpaintedPx": 12,
+                            "elapsedSeconds": 187.5, "coverageWarnings": []},
+            "holds": [{"id": "0", "x": 0.5, "y": 0.5, "radius": 0.02,
+                       "confidence": 0.9}],
+            "carryover": {
+                "generation": 1,
+                "counts": {"CARRIED_OVER": len(job.options.holds), "MISSING": 0,
+                           "NEW": 0},
+                "countsBoulderLinked": {},
+                "estimatedPrecision": 0.86,
+                "blocker": "DO NOT APPLY UNATTENDED.",
+                "carried": [{"id": h.id, "x": h.x, "y": h.y, "radius": h.radius,
+                             "shapePoints": None, "classification": "CARRIED_OVER",
+                             "boulderLinkCount": h.boulder_link_count}
+                            for h in job.options.holds],
+                "missing": [], "new": [],
+            } if job.options.holds else None,
         }
 
     def fail(self, code: str):
@@ -87,7 +114,7 @@ def settings(tmp_path) -> Settings:
     return Settings(
         auth_token=TOKEN, data_dir=str(tmp_path / "jobs"), pipeline_dir=str(tmp_path / "pipeline"),
         python_executable=sys.executable, onnx_model=str(tmp_path / "model.onnx"),
-        min_photos=2, max_photos=12, max_photo_bytes=8192, max_request_bytes=65536,
+        min_photos=2, max_photos=48, max_photo_bytes=8192, max_request_bytes=65536,
         job_timeout_seconds=60, job_ttl_seconds=86400, reaper_interval_seconds=3600,
         workers=1, queue_limit=4, display_max_edge=2000, display_jpeg_quality=88)
 

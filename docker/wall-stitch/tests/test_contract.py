@@ -9,8 +9,8 @@ import pytest
 
 from conftest import AUTH, TOKEN, photo_bytes, photo_part, wait_for
 
-OPTIONS = {"wallAngleDegrees": 45.0, "defaultProjection": "angled", "transferHolds": False,
-           "holds": []}
+OPTIONS = {"curve": "gentle", "wallWidthM": 5.5, "wallHeightM": 2.5,
+           "transferHolds": False, "holds": []}
 
 
 def post_job(client, photos=2, options=None, old_photo=None, size=(64, 48)):
@@ -30,7 +30,7 @@ def post_job(client, photos=2, options=None, old_photo=None, size=(64, 48)):
 def test_every_job_endpoint_rejects_bad_credentials(client, headers):
     assert client.get("/jobs/anything", headers=headers).status_code == 401
     assert client.delete("/jobs/anything", headers=headers).status_code == 401
-    assert client.get("/jobs/x/artifacts/ortho.png", headers=headers).status_code == 401
+    assert client.get("/jobs/x/artifacts/flat.jpg", headers=headers).status_code == 401
     assert client.post("/jobs", files=[photo_part(), photo_part("2.jpeg")],
                        headers=headers).status_code == 401
 
@@ -51,10 +51,16 @@ def test_one_photo_is_rejected(client):
     assert response.json()["detail"]["code"] == "too_few_photos"
 
 
-def test_thirteen_photos_are_rejected(client):
-    response = post_job(client, photos=13)
+def test_more_photos_than_the_cap_are_rejected(client):
+    response = post_job(client, photos=client.settings.max_photos + 1)
     assert response.status_code == 400
     assert response.json()["detail"]["code"] == "too_many_photos"
+
+
+def test_a_full_46_frame_sweep_is_accepted(client):
+    # The pipeline was validated on a 46-frame sweep; the cap must not put that out of
+    # reach of the app.
+    assert post_job(client, photos=46).status_code == 202
 
 
 def test_oversized_photo_is_rejected(client):
@@ -123,14 +129,17 @@ def test_post_returns_202_queued_then_the_job_succeeds(client):
     assert done["progress"] == 1.0
     assert done["error"] is None
     result = done["result"]
-    assert result["ortho"] == {"artifact": "ortho.png", "width": 400, "height": 260}
-    assert result["angled"]["artifact"] == "angled.png"
-    assert result["displayOrtho"] == "display-ortho.jpg"
-    assert result["displayAngled"] == "display-angled.jpg"
-    assert result["wallAngleDegrees"] == 45.0
-    assert result["verticalScale"] == pytest.approx(0.7071)
-    assert result["diagnostics"]["seamAngleRmsDeg"] == pytest.approx(0.06)
-    assert result["holds"] is None
+    assert result["flatMaster"] == {"artifact": "flat.jpg", "width": 400, "height": 260}
+    assert result["naturalMaster"]["artifact"] == "natural.jpg"
+    assert result["displayFlat"] == "display-flat.jpg"
+    assert result["displayNatural"] == "display-natural.jpg"
+    assert result["camerasJson"] == "cameras.json"
+    assert result["wallWidthM"] == pytest.approx(5.5)
+    assert result["curvature"]["default"] == "gentle"
+    assert result["curvature"]["curves"][0]["artifact"] == "natural-gentle.jpg"
+    assert result["diagnostics"]["elapsedSeconds"] == pytest.approx(187.5)
+    # No prior holds were sent, so there is nothing to carry over.
+    assert result["carryover"] is None
 
 
 def test_progress_and_stage_are_reported_while_running(client):
@@ -149,7 +158,7 @@ def test_progress_and_stage_are_reported_while_running(client):
     wait_for(client, job_id, "succeeded")
 
 
-def test_holds_are_returned_when_transfer_was_requested(client):
+def test_carryover_is_returned_when_transfer_was_requested(client):
     hold_id = str(uuid.uuid4())
     options = dict(OPTIONS, transferHolds=True, oldPhotoWidth=3333, oldPhotoHeight=2198,
                    holds=[{"id": hold_id, "x": 0.51, "y": 0.33, "radius": 0.012,
@@ -157,8 +166,14 @@ def test_holds_are_returned_when_transfer_was_requested(client):
                            "category": 0, "boulderLinkCount": 3}])
     job_id = post_job(client, options=options, old_photo=photo_bytes()).json()["jobId"]
     result = wait_for(client, job_id, "succeeded")["result"]
-    assert [h["id"] for h in result["holds"]] == [hold_id]
-    assert result["holds"][0]["classification"] == "matched"
+    carryover = result["carryover"]
+    assert [h["id"] for h in carryover["carried"]] == [hold_id]
+    assert carryover["carried"][0]["classification"] == "CARRIED_OVER"
+    assert carryover["carried"][0]["boulderLinkCount"] == 3
+    assert carryover["counts"]["CARRIED_OVER"] == 1
+    # The pipeline's standing caveat must survive the whole round trip: the app decides
+    # whether to apply the match, and it cannot do that if the warning is dropped here.
+    assert carryover["blocker"]
 
 
 @pytest.mark.parametrize("code", ["insufficient_overlap", "no_dominant_plane",
@@ -185,8 +200,9 @@ def test_an_unexpected_crash_never_leaks_paths_or_tracebacks(client):
 # ---- artifacts and deletion --------------------------------------------------
 
 @pytest.mark.parametrize("name,content_type", [
-    ("ortho.png", "image/png"), ("angled.png", "image/png"),
-    ("display-ortho.jpg", "image/jpeg"), ("display-angled.jpg", "image/jpeg"),
+    ("flat.jpg", "image/jpeg"), ("natural.jpg", "image/jpeg"),
+    ("natural-gentle.jpg", "image/jpeg"),
+    ("display-flat.jpg", "image/jpeg"), ("display-natural.jpg", "image/jpeg"),
 ])
 def test_artifacts_are_served_with_the_right_content_type(client, name, content_type):
     job_id = post_job(client).json()["jobId"]
@@ -206,7 +222,7 @@ def test_unknown_and_traversing_artifact_names_are_404(client):
 
 def test_unknown_job_is_404_everywhere(client):
     assert client.get("/jobs/does-not-exist", headers=AUTH).status_code == 404
-    assert client.get("/jobs/does-not-exist/artifacts/ortho.png", headers=AUTH).status_code == 404
+    assert client.get("/jobs/does-not-exist/artifacts/flat.jpg", headers=AUTH).status_code == 404
     assert client.delete("/jobs/does-not-exist", headers=AUTH).status_code == 204
 
 

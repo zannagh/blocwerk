@@ -57,7 +57,10 @@ public class WallStitchService : IWallStitchService
             RequestedByUserId = actingUserId,
             Status = WallStitchJobStatus.Queued,
             RequestedProjection = options.DefaultProjection,
-            WallAngleDegrees = options.WallAngleDegrees,
+            WallWidthM = options.WallWidthM,
+            WallHeightM = options.WallHeightM,
+            NaturalProjection = options.Natural,
+            Curve = options.Curve,
             TransferHolds = options.TransferHolds,
             PhotoCount = photos.Count,
         };
@@ -150,7 +153,7 @@ public class WallStitchService : IWallStitchService
         await db.SaveChangesAsync(ct);
     }
 
-    public async Task<(string OrthoMasterPath, string AngledMasterPath)> DownloadMastersAsync(
+    public async Task<(string FlatMasterPath, string NaturalMasterPath)> DownloadMastersAsync(
         Guid jobId,
         CancellationToken ct = default)
     {
@@ -161,9 +164,9 @@ public class WallStitchService : IWallStitchService
             throw new InvalidOperationException($"Stitch job {jobId} has no downloadable result.");
         }
 
-        var ortho = await DownloadArtifactToStoreAsync(job.SidecarJobId, result.Ortho.Artifact, ct);
-        var angled = await DownloadArtifactToStoreAsync(job.SidecarJobId, result.Angled.Artifact, ct);
-        return (ortho, angled);
+        var flat = await DownloadArtifactToStoreAsync(job.SidecarJobId, result.FlatMaster.Artifact, ct);
+        var natural = await DownloadArtifactToStoreAsync(job.SidecarJobId, result.NaturalMaster.Artifact, ct);
+        return (flat, natural);
     }
 
     /// <inheritdoc/>
@@ -186,26 +189,57 @@ public class WallStitchService : IWallStitchService
         var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == job.WallId, ct)
                    ?? throw new InvalidOperationException($"Wall {job.WallId} not found.");
 
-        var isOrthoDefault = job.RequestedProjection == WallPhotoProjection.Ortho;
-        var defaultImage = await DownloadDisplayAsync(job.SidecarJobId!, isOrthoDefault ? result.DisplayOrtho : result.DisplayAngled, ct);
-        var alternateImage = await DownloadDisplayAsync(job.SidecarJobId!, isOrthoDefault ? result.DisplayAngled : result.DisplayOrtho, ct);
-        var (orthoMaster, angledMaster) = await DownloadMastersAsync(jobId, ct);
+        var isFlatDefault = job.RequestedProjection == WallPhotoProjection.Flat;
+        var defaultImage = await DownloadDisplayAsync(job.SidecarJobId!, isFlatDefault ? result.DisplayFlat : result.DisplayNatural, ct);
+        var alternateImage = await DownloadDisplayAsync(job.SidecarJobId!, isFlatDefault ? result.DisplayNatural : result.DisplayFlat, ct);
+        var (flatMaster, naturalMaster) = await DownloadMastersAsync(jobId, ct);
+        var camerasJson = await DownloadCamerasAsync(job.SidecarJobId!, result, ct);
+        var curvatureJson = result.Curvature is null
+            ? null
+            : JsonSerializer.Serialize(result.Curvature, WallStitchClient.Json);
 
         var summary = await WallStitchStagingApplier.CloneHoldsAsync(db, wall, result, ct);
-        var retired = WallStitchStagingApplier.ApplyPhoto(wall, job, result, defaultImage, alternateImage, orthoMaster, angledMaster);
+        var retired = WallStitchStagingApplier.ApplyPhoto(
+            wall,
+            job,
+            result,
+            defaultImage,
+            alternateImage,
+            flatMaster,
+            naturalMaster,
+            camerasJson,
+            curvatureJson);
 
         await db.SaveChangesAsync(ct);
         await WallPhotoMasterCleanup.DeleteUnreferencedAsync(db, masterStorage, retired, ct);
 
         logger.LogInformation(
-            "Stitch job {JobId} applied to wall {WallId} staging: {Total} staged hold(s) ({Matched} matched, {Uncertain} uncertain, {Missing} missing, {Unreported} unreported)",
+            "Stitch job {JobId} applied to wall {WallId} staging: {Total} staged hold(s) ({CarriedOver} carried over, {Missing} missing, {New} new, {Unreported} unreported), {NeedsReview} needing review; carryover blocker: {Blocker}",
             jobId,
             job.WallId,
             summary.Total,
-            summary.Matched,
-            summary.Uncertain,
+            summary.CarriedOver,
             summary.Missing,
-            summary.Unreported);
+            summary.New,
+            summary.Unreported,
+            summary.NeedsReview,
+            string.IsNullOrEmpty(summary.Blocker) ? "none" : summary.Blocker);
+    }
+
+    /// <summary>
+    /// Pulls the pipeline's <c>cameras.json</c> as text, or null when the job did not emit one.
+    /// Small enough to buffer, unlike the masters.
+    /// </summary>
+    private async Task<string?> DownloadCamerasAsync(string sidecarJobId, StitchJobResult result, CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(result.CamerasJson))
+        {
+            return null;
+        }
+
+        using var buffer = new MemoryStream();
+        await client.DownloadArtifactAsync(sidecarJobId, result.CamerasJson, buffer, ct);
+        return System.Text.Encoding.UTF8.GetString(buffer.ToArray());
     }
 
     private async Task<byte[]> DownloadDisplayAsync(string sidecarJobId, string artifact, CancellationToken ct)

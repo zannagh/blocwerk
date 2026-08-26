@@ -43,10 +43,21 @@ public class WallStitchJob
     public string? ErrorMessage { get; set; }
 
     /// <summary>Which projection the caller wants to become the wall's default photo.</summary>
-    public WallPhotoProjection RequestedProjection { get; set; } = WallPhotoProjection.Angled;
+    public WallPhotoProjection RequestedProjection { get; set; } = WallPhotoProjection.Natural;
 
-    /// <summary>Wall inclination used to build the angled projection, in degrees from vertical.</summary>
-    public double WallAngleDegrees { get; set; }
+    /// <summary>Physical wall width in metres the run was submitted with.</summary>
+    public double WallWidthM { get; set; }
+
+    /// <summary>Physical wall height in metres the run was submitted with.</summary>
+    public double WallHeightM { get; set; }
+
+    /// <summary>Name of the natural projection requested, empty for the sidecar's default.</summary>
+    [MaxLength(32)]
+    public string? NaturalProjection { get; set; }
+
+    /// <summary>Curve strength requested: <c>gentle</c>, <c>medium</c> or <c>strong</c>.</summary>
+    [MaxLength(16)]
+    public string? Curve { get; set; }
 
     /// <summary>Whether the sidecar was asked to carry the wall's existing holds onto the result.</summary>
     public bool TransferHolds { get; set; }

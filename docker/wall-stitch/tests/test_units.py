@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.config import load_settings  # noqa: E402
 from app.errors import MESSAGES, classify  # noqa: E402
-from app.stages import HoldsProgressTracker, ProgressTracker, STITCH_MARKERS  # noqa: E402
+from app.stages import PIPELINE_MARKERS, ProgressTracker  # noqa: E402
 from app.store import JobStore  # noqa: E402
 
 
@@ -32,6 +32,13 @@ def test_settings_refuse_a_trivially_short_token(monkeypatch):
     ("cv2.error: could not read input images", "unreadable_image"),
     ("MemoryError", "out_of_memory"),
     ("everything was fine actually", "pipeline_failed"),
+    # Verbatim SystemExit messages the current pipeline raises.
+    ("could not read frame: /work/input/3.jpeg", "unreadable_image"),
+    ("no frame pair matched: the sweep is not overlapping enough", "insufficient_overlap"),
+    ("WARNING 4 frames unreachable from the reference, dropped: 9.jpeg", "insufficient_overlap"),
+    ("need at least two frames to stitch", "too_few_usable_images"),
+    ("no frame lands on the canvas; check --roi", "no_dominant_plane"),
+    ("no coarse old->new homography candidate survived matching", "hold_transfer_failed"),
 ])
 def test_pipeline_output_is_classified(line, code):
     assert classify(line) == code
@@ -69,12 +76,21 @@ def test_a_silent_failure_can_be_given_an_explicit_fallback():
 def test_memory_settings_come_from_the_environment(monkeypatch):
     monkeypatch.setenv("WALLSTITCH_AUTH_TOKEN", "x" * 20)
     monkeypatch.setenv("WALLSTITCH_MAX_CANVAS_MPX", "42.5")
-    monkeypatch.setenv("WALLSTITCH_PNG_COMPRESSION", "1")
+    monkeypatch.setenv("WALLSTITCH_COMPOSE_MP", "1.5")
     monkeypatch.setenv("WALLSTITCH_PIPELINE_THREADS", "2")
     s = load_settings()
     assert s.max_canvas_mpx == 42.5
-    assert s.png_compression == 1
+    assert s.compose_mp == 1.5
     assert s.pipeline_threads == 2
+
+
+def test_the_photo_caps_admit_a_real_sweep(monkeypatch):
+    # A real sweep of a bouldering wall is 40-50 frames; the pipeline was validated on
+    # 46. A cap below that silently makes the good result unreachable from the app.
+    monkeypatch.setenv("WALLSTITCH_AUTH_TOKEN", "x" * 20)
+    s = load_settings()
+    assert s.max_photos >= 46
+    assert s.max_request_bytes >= 46 * 30 * 1024 * 1024
 
 
 def test_a_non_numeric_canvas_cap_is_refused_rather_than_ignored(monkeypatch):
@@ -84,24 +100,50 @@ def test_a_non_numeric_canvas_cap_is_refused_rather_than_ignored(monkeypatch):
         load_settings()
 
 
-def test_memory_flags_are_only_passed_where_the_pipeline_advertises_them(monkeypatch):
-    from app import invocation
-    invocation.supported_flags.cache_clear()
-    monkeypatch.setattr(invocation, "supported_flags",
-                        lambda *a, **k: frozenset({"--src", "--work", "--wall-angle"}))
-    argv = invocation.stitch_command("python", "/p", "stitch_wall.py", "/in", "/work",
-                                     "/cache", 45.0, ["1.jpeg"],
-                                     max_canvas_mpx=80.0, png_compression=3)
-    assert "--max-canvas-mpx" not in argv and "--png-compression" not in argv
+ALL_FLAGS = frozenset({"--input-dir", "--output-dir", "--cache-dir", "--curve",
+                       "--natural",
+                       "--wall-width-m", "--wall-height-m", "--work-mp", "--compose-mp",
+                       "--max-canvas-mpx", "--nfeat", "--onnx", "--prior-holds",
+                       "--prior-image"})
 
-    monkeypatch.setattr(invocation, "supported_flags",
-                        lambda *a, **k: frozenset({"--src", "--work", "--wall-angle",
-                                                   "--max-canvas-mpx", "--png-compression"}))
-    argv = invocation.stitch_command("python", "/p", "stitch_wall.py", "/in", "/work",
-                                     "/cache", 45.0, ["1.jpeg"],
-                                     max_canvas_mpx=80.0, png_compression=3)
-    assert argv[argv.index("--max-canvas-mpx") + 1] == "80"
-    assert argv[argv.index("--png-compression") + 1] == "3"
+
+def _argv(monkeypatch, flags, **kwargs):
+    from app import invocation
+    monkeypatch.setattr(invocation, "supported_flags", lambda *a, **k: flags)
+    defaults = dict(input_dir="/in", output_dir="/work", cache_dir="/cache",
+                    natural="flat", curve="gentle", onnx_model="/m.onnx",
+                    wall_width_m=5.5,
+                    wall_height_m=2.5, work_mp=0.7, compose_mp=2.5,
+                    max_canvas_mpx=40.0)
+    defaults.update(kwargs)
+    return invocation.pipeline_command("python", "/p", "wall_pipeline.py", **defaults)
+
+
+def test_the_pipeline_argv_carries_the_input_output_and_resolution_knobs(monkeypatch):
+    argv = _argv(monkeypatch, ALL_FLAGS)
+    assert argv[:2] == ["python", "wall_pipeline.py"]
+    assert argv[argv.index("--input-dir") + 1] == "/in"
+    assert argv[argv.index("--output-dir") + 1] == "/work"
+    assert argv[argv.index("--curve") + 1] == "gentle"
+    assert argv[argv.index("--natural") + 1] == "flat"
+    assert argv[argv.index("--max-canvas-mpx") + 1] == "40"
+    assert argv[argv.index("--compose-mp") + 1] == "2.5"
+    assert argv[argv.index("--onnx") + 1] == "/m.onnx"
+
+
+def test_flags_are_only_passed_where_the_pipeline_advertises_them(monkeypatch):
+    argv = _argv(monkeypatch, frozenset({"--input-dir", "--output-dir"}))
+    assert "--max-canvas-mpx" not in argv and "--curve" not in argv
+    assert "--natural" not in argv
+    assert argv[argv.index("--output-dir") + 1] == "/work"
+
+
+def test_carryover_is_requested_only_when_both_prior_inputs_are_present(monkeypatch):
+    assert "--prior-holds" not in _argv(monkeypatch, ALL_FLAGS, prior_holds="/h.json")
+    assert "--prior-image" not in _argv(monkeypatch, ALL_FLAGS, prior_image="/old.jpg")
+    argv = _argv(monkeypatch, ALL_FLAGS, prior_holds="/h.json", prior_image="/old.jpg")
+    assert argv[argv.index("--prior-holds") + 1] == "/h.json"
+    assert argv[argv.index("--prior-image") + 1] == "/old.jpg"
 
 
 def test_every_error_code_has_an_actionable_message():
@@ -110,37 +152,70 @@ def test_every_error_code_has_an_actionable_message():
         assert "Traceback" not in message and "/Users" not in message
 
 
-def test_stitch_progress_is_monotonic_and_named():
-    tracker = ProgressTracker(STITCH_MARKERS, 0.02, 0.72, "registering")
+# Verbatim lines from a real 46-frame run, elapsed-time prefixes and all.
+REAL_LOG = [
+    "[    0.0s] 46 frames, reference 2535.jpg",
+    "[    0.0s] features for 46 frames at 0.70 Mpx",
+    "[   12.0s]   pair 2535.jpg-2536.jpg: 209/269 inliers",
+    "[   82.1s] 153 connected pairs",
+    "[   82.1s] refining 360 params over 93500 residuals",
+    "[  149.9s] transfer rms 6.41 -> 4.94 px, median |e| 0.84 -> 0.84, nfev 400",
+    "[  151.0s] canvas 9884x3625 (35.8 Mpx) at out_scale 0.319, frames 1370x1825",
+    "[  158.4s] seam-scale warps: 46 frames",
+    "[  161.1s] exposure gains fed",
+    "[  163.8s] seams found, 1.6 Mpx claimed of 2.5",
+    "[  171.7s] composited 46 frames",
+    "[  178.0s] silhouette 28 verts, 277108 px inpainted, crop (0, 94, 9884, 3625)",
+    "[  178.1s] flat-base 9884x3531",
+    "[  181.8s] wall polygon: 20 vertices (from the coverage mask)",
+    "[  184.8s]   tile 1280 -> 8499 raw",
+    "[  187.4s] flat done: 81 holds",
+    "[  187.5s] manifest /work/manifest.json",
+]
+
+
+def test_pipeline_progress_is_monotonic_and_named():
+    tracker = ProgressTracker(PIPELINE_MARKERS, 0.02, 0.97, "reading")
     seen = []
-    for line in ["[00:00:01] plumb-line distortion calibration",
-                 "[00:00:09] undistorted + masked",
-                 "[00:00:20]   pair 1-2: coarse 900 inl -> guided 700/900 inl",
-                 "[00:01:00] plane normal [0 0 1]",
-                 "[00:02:00] canvas 9363x5188",
-                 "[00:03:00] composited 9363x5188",
-                 "[00:04:00] angled main-span 7648x4864 -> 7648x3439"]:
+    for line in REAL_LOG:
         if tracker.feed(line):
             seen.append((tracker.progress, tracker.stage))
-    assert [s for _, s in seen] == ["calibrating", "undistorting", "registering",
-                                    "rectifying", "blending", "blending", "projecting"]
     assert seen == sorted(seen)
-    assert 0.02 < seen[0][0] and seen[-1][0] <= 0.72
+    assert [s for _, s in seen][-1] == "packaging"
+    assert "blending" in [s for _, s in seen]
+    assert "detecting" in [s for _, s in seen]
+    assert 0.02 <= seen[0][0] and seen[-1][0] <= 0.97
+
+
+def test_every_marker_stage_is_reachable_from_a_real_log():
+    # A marker whose line the pipeline never prints is a silent progress stall, so the
+    # verbatim log above must exercise every stage name the tracker can report.
+    tracker = ProgressTracker(PIPELINE_MARKERS, 0.0, 1.0, "reading")
+    fed = {marker.stage for marker in PIPELINE_MARKERS
+           for line in REAL_LOG if marker.pattern.search(_strip(line))}
+    unreachable = {m.stage for m in PIPELINE_MARKERS} - fed - {"matching holds"}
+    assert not unreachable, unreachable
+    assert tracker.feed(REAL_LOG[0]) is True
+
+
+def _strip(line):
+    from app.stages import TIMESTAMP
+    return TIMESTAMP.sub("", line)
 
 
 def test_unrecognised_lines_do_not_invent_progress():
-    tracker = ProgressTracker(STITCH_MARKERS, 0.0, 1.0, "registering")
-    assert tracker.feed("some incidental chatter") is False
+    tracker = ProgressTracker(PIPELINE_MARKERS, 0.0, 1.0, "reading")
+    assert tracker.feed("[   1.0s] some incidental chatter") is False
     assert tracker.progress == 0.0
 
 
-def test_holds_progress_reads_the_matcher_step_numbers():
-    tracker = HoldsProgressTracker(0.72, 0.97)
-    assert tracker.feed("[1/7] loading") is True
-    first = tracker.progress
-    assert tracker.feed("[6b/7] the other two planes") is True
-    assert tracker.progress > first
-    assert tracker.feed("[1/7] loading") is False  # never goes backwards
+def test_the_carryover_steps_advance_progress_at_the_tail():
+    tracker = ProgressTracker(PIPELINE_MARKERS, 0.0, 1.0, "reading")
+    tracker.feed("[  187.4s] flat done: 81 holds")
+    before = tracker.progress
+    assert tracker.feed("[  190.0s] [3] TPS-ICP") is True
+    assert tracker.stage == "matching holds"
+    assert tracker.progress > before
 
 
 def test_orphaned_jobs_are_failed_after_a_restart(tmp_path):
