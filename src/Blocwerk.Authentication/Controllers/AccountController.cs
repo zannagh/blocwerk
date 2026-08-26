@@ -96,21 +96,24 @@ public class AccountController : Controller
             TempData["ReturnUrl"] = returnUrl;
         }
 
-        // Carry the checkbox choice through the OAuth round-trip; the cookie is only written back in
-        // Callback once sign-in actually succeeds, so a cancelled/failed attempt leaves no cookie.
-        var rememberChoice = remember switch
+        // Persist or clear the "remember my sign-in method" preference from the checkbox. This is the
+        // only point that reliably knows both the provider and the choice: the OAuth state is consumed
+        // upstream by /oauth-callback, so it is already gone by the time /account/callback runs. A
+        // missing flag (the silent re-auth path) leaves any existing preference untouched.
+        if (remember is "1" or "true")
         {
-            "1" or "true" => (bool?)true,
-            "0" or "false" => false,
-            _ => null,
-        };
+            Response.Cookies.Append(RememberedMethodCookie, provider, RememberedMethodCookieOptions());
+        }
+        else if (remember is "0" or "false")
+        {
+            Response.Cookies.Delete(RememberedMethodCookie);
+        }
 
         var state = Guid.NewGuid().ToString();
         _redirectUriProvider.AddRedirectUri(state, new RedirectSettings
         {
             Uri = $"{BaseUrl}/account/callback",
             Provider = provider,
-            Remember = rememberChoice,
         });
 
         var parameters = new Dictionary<string, string>
@@ -148,22 +151,17 @@ public class AccountController : Controller
             return Redirect("/account/login?error=cancelled");
         }
 
-        // Read the state once. It is single-use (TryRemove), so client id, secret, provider and the
-        // remember choice must all come from this one lookup — reading it twice previously dropped the
-        // second lookup back to the GitHub fallback and broke Google/Microsoft token exchange.
-        if (string.IsNullOrEmpty(state) || !_redirectUriProvider.GetRedirectUri(state, out var redirectSettings))
-        {
-            return Redirect("/account/login?error=state_expired");
-        }
-
         try
         {
+            // The OAuth state is already consumed upstream by /oauth-callback, so it is gone here. The
+            // client_id/client_secret below are only placeholders: /token re-derives the real provider
+            // from the code (via CodeBasedAuthProvider) and overrides these, so their value is moot.
             FormUrlEncodedContent tokenRequest = new(
             [
                 new KeyValuePair<string, string>("grant_type", "authorization_code"),
                 new KeyValuePair<string, string>("code", code),
-                new KeyValuePair<string, string>("client_id", GetClientId(redirectSettings.Provider)),
-                new KeyValuePair<string, string>("client_secret", GetClientSecret(redirectSettings.Provider)),
+                new KeyValuePair<string, string>("client_id", _configuration.GitHubOAuth.ClientId),
+                new KeyValuePair<string, string>("client_secret", _configuration.GitHubOAuth.ClientSecret),
                 new KeyValuePair<string, string>("redirect_uri", $"{BaseUrl}/oauth-callback"),
             ]);
 
@@ -204,9 +202,6 @@ public class AccountController : Controller
             var principal = new ClaimsPrincipal(identity);
             await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal);
 
-            // Login succeeded — only now honour the "remember my sign-in method" choice.
-            ApplyRememberPreference(redirectSettings);
-
             var returnUrl = TempData["ReturnUrl"] as string ?? "/walls";
             return LocalRedirect(returnUrl);
         }
@@ -242,32 +237,6 @@ public class AccountController : Controller
         }
 
         return query.Count == 0 ? "/oauth-select" : $"/oauth-select?{string.Join("&", query)}";
-    }
-
-    private string GetClientId(string? provider) => provider switch
-    {
-        "google" => _configuration.GoogleOAuth.ClientId,
-        "microsoft" => _configuration.MicrosoftOAuth.ClientId,
-        _ => _configuration.GitHubOAuth.ClientId,
-    };
-
-    private string GetClientSecret(string? provider) => provider switch
-    {
-        "google" => _configuration.GoogleOAuth.ClientSecret,
-        "microsoft" => _configuration.MicrosoftOAuth.ClientSecret,
-        _ => _configuration.GitHubOAuth.ClientSecret,
-    };
-
-    private void ApplyRememberPreference(RedirectSettings settings)
-    {
-        if (settings.Remember == true)
-        {
-            Response.Cookies.Append(RememberedMethodCookie, settings.Provider, RememberedMethodCookieOptions());
-        }
-        else if (settings.Remember == false)
-        {
-            Response.Cookies.Delete(RememberedMethodCookie);
-        }
     }
 
     private CookieOptions RememberedMethodCookieOptions() => new()
