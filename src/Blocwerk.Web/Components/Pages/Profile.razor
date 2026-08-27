@@ -35,6 +35,26 @@
             <div class="profile-links">
                 <a href="/settings/api-keys">API keys</a>
             </div>
+
+            <div class="section">
+                <div class="progression-header">
+                    <h2>Home wall</h2>
+                    <div class="window-control">
+                        <select class="window-select" value="@_viewer?.HomeWallId" @onchange="OnHomeWallChange">
+                            <option value="">None</option>
+                            @foreach (var wall in _myWalls)
+                            {
+                                <option value="@wall.Id">@wall.Name</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <p class="member-since">Adds a Home shortcut to the bottom bar that jumps to this wall.</p>
+                @if (_homeWallError != null)
+                {
+                    <p class="field-error">@_homeWallError</p>
+                }
+            </div>
         }
 
         @if (_progression != null)
@@ -100,6 +120,8 @@
     private bool _loading = true;
     private Guid? _loadedFor;
     private int _boulderGradeSpan = 5;
+    private List<Wall> _myWalls = [];
+    private string? _homeWallError;
 
     // Window/grouping for the other-user view is kept locally: it must not persist onto the viewer's
     // own settings, nor onto the target's. Self view reuses the persisted per-user settings.
@@ -133,6 +155,7 @@
             _isSelf = true;
             _target = _viewer;
             _progression = await ProgressionService.GetProgressionAsync();
+            _myWalls = await WallService.GetMyWallsAsync();
         }
         else
         {
@@ -187,6 +210,35 @@
         {
             _otherGroupBy = (ProgressionGroupBy)value;
             _progression = await ProgressionService.GetProgressionForUserAsync(_target.Id, _otherWindowDays, _otherGroupBy);
+        }
+    }
+
+    private async Task OnHomeWallChange(ChangeEventArgs e)
+    {
+        var raw = e.Value?.ToString();
+        Guid? selected = null;
+        if (!string.IsNullOrEmpty(raw))
+        {
+            if (!Guid.TryParse(raw, out var wallId))
+            {
+                return;
+            }
+
+            selected = wallId;
+        }
+
+        try
+        {
+            await CurrentUserService.SetHomeWallAsync(selected);
+            _homeWallError = null;
+            if (_viewer != null)
+            {
+                _viewer.HomeWallId = selected;
+            }
+        }
+        catch (Exception)
+        {
+            _homeWallError = "Couldn't update your main wall. Please try again.";
         }
     }
 

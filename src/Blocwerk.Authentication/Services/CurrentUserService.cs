@@ -39,6 +39,30 @@ public class CurrentUserService : ICurrentUserService
 
     public void InvalidateCache() => _cachedUser = null;
 
+    public async Task SetHomeWallAsync(Guid? wallId)
+    {
+        var user = await GetCurrentUserAsync();
+
+        await using var dbContext = await _dbContextFactory.CreateDbContextAsync();
+
+        if (wallId is { } targetWallId)
+        {
+            bool isMember = await dbContext.WallMembers
+                .AnyAsync(m => m.WallId == targetWallId && m.UserId == user.Id);
+            if (!isMember)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot set home wall {targetWallId}: user {user.Id} is not a member of that wall.");
+            }
+        }
+
+        var dbUser = await dbContext.Users.FirstAsync(u => u.Id == user.Id);
+        dbUser.HomeWallId = wallId;
+        await dbContext.SaveChangesAsync();
+
+        InvalidateCache();
+    }
+
     public async Task<User?> GetUserByIdAsync(Guid id)
     {
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync();

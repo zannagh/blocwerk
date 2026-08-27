@@ -14,6 +14,22 @@
 .landing-content h1 { font-size: 3rem; font-weight: 700; margin-bottom: 1rem; letter-spacing: -0.02em; }
 .landing-content p { font-size: 1.1rem; opacity: 0.8; margin-bottom: 2rem; line-height: 1.6; }
 
+/* Momentary /home redirect placeholder — theme-aware so a light-mode user never sees a dark flash. */
+.home-redirect {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    color: var(--text);
+    padding: 20px;
+}
+
+.home-redirect p { font-size: 1.1rem; color: var(--text-secondary); }
+
+/* Inline save/validation error — visually distinct from muted helper text. Theme-aware. */
+.field-error { color: var(--danger-text); font-size: 0.85rem; margin-top: 6px; }
+
 /* ========== OAuth Select ========== */
 
 .oauth-container {

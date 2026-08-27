@@ -38,9 +38,18 @@ window.bwPrefs = (function () {
     //   - "/" itself (that's where the redirect starts — recording it would loop),
     //   - "/account" (settings/profile), "/login", "/logout" (auth flow),
     //   - "/join/{token}" invite links,
+    //   - "/home" (the resume redirect itself — recording it would loop),
     //   - any path with a "/shared/" segment (e.g. "/walls/{id}/boulders/{bid}/shared/{token}")
     //     — don't resurrect a one-off share-token URL.
-    const NON_RECORDABLE = /^\/$|^\/account|^\/login|^\/logout|^\/join(\/|$)|\/shared\//;
+    const NON_RECORDABLE = /^\/$|^\/(account|login|logout)(\/|$)|^\/join(\/|$)|^\/home(\/|$)|\/shared\//;
+
+    // A single UUID path segment, and a full boulder-DETAIL path built from two of them:
+    //   "/walls/{wallId}/boulders/{boulderId}". We record such a detail as its boulder LIST
+    //   ("/walls/{wallId}?view=boulders") instead, so returning from a boulder lands on the list
+    //   rather than resuming an individual boulder. The trailing "$" means a "/shared/{token}"
+    //   variant never matches here (it carries extra segments and is excluded above anyway).
+    const UUID = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';
+    const BOULDER_DETAIL = new RegExp('^/walls/(' + UUID + ')/boulders/' + UUID + '$');
 
     function isRecordablePath(path) {
         if (!path) {
@@ -56,7 +65,14 @@ window.bwPrefs = (function () {
             if (!isRecordablePath(path)) {
                 return;
             }
-            writeCookie(LAST_PAGE_KEY, path + location.search);
+
+            // Collapse a boulder-detail view to its boulder list so returning lands on the list.
+            const detail = path.match(BOULDER_DETAIL);
+            const value = detail
+                ? '/walls/' + detail[1] + '?view=boulders'
+                : path + location.search;
+
+            writeCookie(LAST_PAGE_KEY, value);
         } catch (e) {
             /* storage blocked or unavailable — silently skip. */
         }

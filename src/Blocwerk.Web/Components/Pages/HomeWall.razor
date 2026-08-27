@@ -1,0 +1,98 @@
+@page "/home"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@layout EmptyLayout
+@inject NavigationManager Navigation
+@inject IHttpContextAccessor HttpContextAccessor
+@inject ICurrentUserService CurrentUserService
+@inject IWallService WallService
+
+<PageTitle>Blocwerk</PageTitle>
+
+<div class="home-redirect">
+    <p>Taking you home…</p>
+</div>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        // Resolve the current user's home wall. This page is [Authorize], but GetCurrentUserAsync
+        // can still throw for an edge-case unauthenticated call — fall back to /walls rather than crash.
+        Guid? homeWallId;
+        try
+        {
+            var user = await CurrentUserService.GetCurrentUserAsync();
+            homeWallId = user?.HomeWallId;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            homeWallId = null;
+        }
+
+        if (homeWallId is null)
+        {
+            Navigation.NavigateTo("/walls", replace: true);
+            return;
+        }
+
+        // The user's HomeWallId can point to a wall they can no longer access — they deleted it in this
+        // same session (FK SetNull clears the DB but the per-circuit current-user cache is stale) or it
+        // was otherwise removed. Resolve it the way WallDetail does; GetWallAsync returns null when the
+        // wall doesn't exist or isn't accessible to the current user. A null resolution — or a service
+        // failure — must not dead-end on WallDetail's endless "Loading…", so fall back to /walls.
+        Wall? homeWall;
+        try
+        {
+            homeWall = await WallService.GetWallAsync(homeWallId.Value);
+        }
+        catch (Exception)
+        {
+            homeWall = null;
+        }
+
+        if (homeWall is null)
+        {
+            Navigation.NavigateTo("/walls", replace: true);
+            return;
+        }
+
+        var wallBase = $"/walls/{homeWallId}";
+
+        // Reading the cookie server-side on the prerender/enhanced-nav pass — HttpContext is live
+        // there, mirroring Home.razor — gives a no-flash resume. On an interactive re-render
+        // HttpContext is null, so we simply land on the wall overview without crashing.
+        var httpContext = HttpContextAccessor.HttpContext;
+        if (httpContext is null)
+        {
+            Navigation.NavigateTo(wallBase, replace: true);
+            return;
+        }
+
+        var stored = httpContext.Request.Cookies["blocwerk-last-page"];
+        if (IsWithinHomeWall(stored, wallBase))
+        {
+            Navigation.NavigateTo(stored!, replace: true);
+            return;
+        }
+
+        Navigation.NavigateTo(wallBase, replace: true);
+    }
+
+    // True only when the recorded last page is a safe, local target that lives inside the home wall
+    // (the wall overview itself, a "?view=…" variant of it, or any deeper path under it) — so /home
+    // resumes where the user was and otherwise drops them on the wall overview.
+    private static bool IsWithinHomeWall(string? stored, string wallBase)
+    {
+        if (!LastPageRedirect.IsSafeTarget(stored))
+        {
+            return false;
+        }
+
+        var cut = stored!.IndexOfAny(new[] { '?', '#' });
+        var path = cut >= 0 ? stored.Substring(0, cut) : stored;
+
+        return path == wallBase
+            || stored.StartsWith(wallBase + "?", StringComparison.Ordinal)
+            || stored.StartsWith(wallBase + "/", StringComparison.Ordinal);
+    }
+}

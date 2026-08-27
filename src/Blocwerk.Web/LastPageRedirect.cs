@@ -55,6 +55,7 @@ public static class LastPageRedirect
             || IsPathSegment(path, "/login")
             || IsPathSegment(path, "/logout")
             || IsPathSegment(path, "/join")
+            || IsPathSegment(path, "/home")
             || ContainsSharedSegment(path))
         {
             return false;

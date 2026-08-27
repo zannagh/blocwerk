@@ -23,6 +23,12 @@ public class User : IEquatable<User>
 
     public ProgressionGroupBy ProgressionGroupBy { get; set; } = ProgressionGroupBy.Week;
 
+    /// <summary>
+    /// The wall this user considers their home wall, or null if none is set. Points at a wall the
+    /// user is a member of; cleared (set to null) if that wall is deleted.
+    /// </summary>
+    public Guid? HomeWallId { get; set; }
+
     public ICollection<WallMember> WallMemberships { get; set; } = [];
 
     public ICollection<Attempt> Attempts { get; set; } = [];

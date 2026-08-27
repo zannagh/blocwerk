@@ -19,4 +19,11 @@ public interface ICurrentUserService
     /// follow-up read in the same circuit sees the new values.
     /// </summary>
     void InvalidateCache();
+
+    /// <summary>
+    /// Sets (or clears, when <paramref name="wallId"/> is null) the current user's home wall and
+    /// invalidates the cached user. When a wall id is given, the current user must be a member of
+    /// that wall; otherwise an <see cref="InvalidOperationException"/> is thrown and nothing changes.
+    /// </summary>
+    Task SetHomeWallAsync(Guid? wallId);
 }

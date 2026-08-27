@@ -330,6 +330,12 @@ h2 { font-size: 1.15rem; }
     transition: color 0.18s ease;
 }
 
+/* Keep every tab label on a single line so a five-item bar never wraps or grows taller than its
+   72px content reservation on a narrow (~360px) phone. */
+.nav-item span {
+    white-space: nowrap;
+}
+
 /* Accent bar that slides in above the active tab */
 .nav-item::before {
     content: "";

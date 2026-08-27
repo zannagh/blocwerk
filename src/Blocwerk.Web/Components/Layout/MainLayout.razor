@@ -3,6 +3,7 @@
 @using Blocwerk.Web.Components.Shared
 @using Blocwerk.Web.State
 @inject SessionState SessionState
+@inject ICurrentUserService CurrentUserService
 
 <div class="app-shell">
     <header class="bw-topbar">
@@ -37,6 +38,16 @@
                     </svg>
                     <span>Walls</span>
                 </a>
+                @if (_homeWallId is not null)
+                {
+                    <a href="/home" class="nav-item">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
+                            <path d="M3 10 12 3l9 7" />
+                            <path d="M5 9v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9" />
+                        </svg>
+                        <span>Home</span>
+                    </a>
+                }
                 @if (SessionState.HasActiveSession)
                 {
                     <a href="@SessionHref" class="nav-item session">
@@ -64,7 +75,7 @@
                 <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
                 <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
             </svg>
-            <span>Tools &amp; Guides</span>
+            <span>Tools</span>
         </a>
         <AuthorizeView>
             <Authorized>
@@ -84,10 +95,38 @@
 </div>
 
 @code {
+    private Guid? _homeWallId;
+
     protected override async Task OnInitializedAsync()
     {
         SessionState.Changed += OnSessionChanged;
         await SessionState.EnsureLoadedAsync();
+        await RefreshHomeWallAsync();
+    }
+
+    // The layout instance persists across enhanced/interactive navigations, so re-read the home wall
+    // on every navigation — not just once at init — so setting or clearing it in Profile is reflected
+    // in the tab bar without a full reload. GetCurrentUserAsync is cached, so once SetHomeWallAsync
+    // invalidates that cache the next navigation re-reads and the Home tab appears or disappears.
+    protected override async Task OnParametersSetAsync()
+    {
+        await RefreshHomeWallAsync();
+    }
+
+    // Load the current user so the Home tab can appear when a home wall is set.
+    // GetCurrentUserAsync throws for anonymous/unauthenticated callers — swallow that so the layout
+    // never crashes; the tab simply stays hidden.
+    private async Task RefreshHomeWallAsync()
+    {
+        try
+        {
+            var user = await CurrentUserService.GetCurrentUserAsync();
+            _homeWallId = user?.HomeWallId;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            _homeWallId = null;
+        }
     }
 
     private void OnSessionChanged() => InvokeAsync(StateHasChanged);

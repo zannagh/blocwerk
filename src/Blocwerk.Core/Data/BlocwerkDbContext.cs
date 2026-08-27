@@ -199,6 +199,13 @@ public class BlocwerkDbContext : DbContext
         modelBuilder.Entity<User>(entity =>
         {
             entity.HasIndex(u => u.Identifier).IsUnique();
+
+            // Home wall is an optional scalar FK (no nav) so it never trips the Wall membership
+            // query filter. Deleting the wall nulls the field rather than blocking the delete.
+            entity.HasOne<Wall>()
+                .WithMany()
+                .HasForeignKey(u => u.HomeWallId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
     }
 
