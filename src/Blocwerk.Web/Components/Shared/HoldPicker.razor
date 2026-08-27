@@ -5,6 +5,8 @@
 @using Blocwerk.Core.Helpers
 @using Blocwerk.Core.Geometry
 
+@if (!RadialMode)
+{
 <div class="picker-toolbar">
     <span class="pick-count">@SelectedHolds.Count selected</span>
     <div class="pick-legend">
@@ -50,6 +52,7 @@
         </svg>
     </button>
 </div>
+}
 
 <WallDimControl />
 
@@ -89,7 +92,7 @@
                     <polygon @key="hold.Id" points="@Pts(hold.ShapePoints.Select(sp => (hold.X + sp.Dx, hold.Y + sp.Dy)))"
                              fill="@fillColor" stroke="@strokeColor" stroke-width="@sw" stroke-dasharray="@dash"
                              style="cursor: pointer"
-                             @onclick="() => ToggleHold(hold)" @onclick:stopPropagation="true" />
+                             @onclick="(e) => OnHoldClicked(hold, e)" @onclick:stopPropagation="true" />
                 }
                 else if (isFoot)
                 {
@@ -97,14 +100,14 @@
                           width="@F(r*2/100*100)" height="@F(r*2/100*100)" rx="0.3"
                           fill="@fillColor" stroke="@strokeColor" stroke-width="@sw" stroke-dasharray="@dash"
                           style="cursor: pointer"
-                          @onclick="() => ToggleHold(hold)" @onclick:stopPropagation="true" />
+                          @onclick="(e) => OnHoldClicked(hold, e)" @onclick:stopPropagation="true" />
                 }
                 else
                 {
                     <circle @key="hold.Id" cx="@F(hold.X * 100)" cy="@F(hold.Y * 100)" r="@F(r)"
                             fill="@fillColor" stroke="@strokeColor" stroke-width="@sw" stroke-dasharray="@dash"
                             style="cursor: pointer"
-                            @onclick="() => ToggleHold(hold)" @onclick:stopPropagation="true" />
+                            @onclick="(e) => OnHoldClicked(hold, e)" @onclick:stopPropagation="true" />
                 }
             }
         </svg>
@@ -114,8 +117,8 @@ else
 {
     <div class="schematic-picker">
         <svg viewBox="0 0 100 100" class="schematic-svg" xmlns="http://www.w3.org/2000/svg">
-            <rect x="0" y="0" width="100" height="100" fill="#f5f0eb" rx="1" />
-            <line x1="0" y1="100" x2="100" y2="100" stroke="#8D6E63" stroke-width="0.5" />
+            <rect x="0" y="0" width="100" height="100" style="fill: var(--wall-bg)" rx="1" />
+            <line x1="0" y1="100" x2="100" y2="100" style="stroke: var(--wall-floor)" stroke-width="0.5" />
 
             @foreach (var hold in AllHolds)
             {
@@ -153,7 +156,29 @@ else
 }
 </div>
 
-<HoldUsageToolbar @bind-Value="_placeUsage" HandsFollowFeet="HandsFollowFeet" />
+@if (RadialMode)
+{
+    @* The "+ Virtual" tool moves below the image in the radial experience. Everything else in the
+       classic toolbar (zoom, pan, mode/usage/view selectors) is gone — a tap opens the radial menu. *@
+    <div class="radial-controls">
+        <span class="pick-count">@SelectedHolds.Count selected</span>
+        <button class="mode-btn @(_placingVirtual ? "active" : string.Empty)"
+                @onclick="() => _placingVirtual = !_placingVirtual"
+                title="Add a virtual hold at a spot that isn't in the wall photo yet. Tap it afterwards to classify it.">
+            + Virtual
+        </button>
+    </div>
+
+    @if (_overlayHold != null)
+    {
+        <HoldClassifyOverlay Left="_overlayX" Top="_overlayY" Current="OverlayCurrent"
+                             Chosen="OnOverlayChosen" Remove="OnOverlayRemove" Cancel="CloseOverlay" />
+    }
+}
+else
+{
+    <HoldUsageToolbar @bind-Value="_placeUsage" HandsFollowFeet="HandsFollowFeet" />
+}
 
 @code {
     [Parameter] public Guid WallId { get; set; }
@@ -177,6 +202,13 @@ else
     /// <summary>The wall's segments; loaded from the id when the caller doesn't supply them.</summary>
     [Parameter] public List<WallSegment>? Segments { get; set; }
 
+    /// <summary>
+    /// The new boulder-setting experience. When on, all classic toolbars are hidden, pinch/tap zoom
+    /// stays live, the "+ Virtual" tool moves below the image, and tapping a hold opens the radial
+    /// classify overlay instead of toggling it with the active tool. Defaults off (classic path).
+    /// </summary>
+    [Parameter] public bool RadialMode { get; set; }
+
     private List<WallSegment>? _loaded;
     private List<WallSegment> _segments = [];
     private WallSchematicLayout _layout = WallProjection.BuildLayout(null, 0);
@@ -190,6 +222,13 @@ else
     private double _zoom => _zoomState.Zoom;
     private bool _isPanning;
     private bool _placingVirtual;
+
+    // Radial classify overlay state (RadialMode only). Positioned at the tapped hold's on-screen
+    // pixel via the click's client coordinates, so it lives outside the zoomed viewport and never
+    // scales with pinch zoom.
+    private Hold? _overlayHold;
+    private double _overlayX;
+    private double _overlayY;
 
     private enum ViewMode { Photo, Schematic }
 
@@ -304,6 +343,108 @@ else
     }
 
     private record RelativePos(double X, double Y);
+
+    /// <summary>A tap on a hold: classic mode toggles it with the active tool; radial mode opens
+    /// the classify overlay centred on the tap point.</summary>
+    private void OnHoldClicked(Hold hold, MouseEventArgs e)
+    {
+        if (RadialMode)
+        {
+            _overlayHold = hold;
+            _overlayX = e.ClientX;
+            _overlayY = e.ClientY;
+            return;
+        }
+
+        ToggleHold(hold);
+    }
+
+    /// <summary>The quadrant the overlay's hold currently sits in, or null when it isn't set.</summary>
+    private RadialQuadrant? OverlayCurrent
+    {
+        get
+        {
+            if (_overlayHold == null)
+            {
+                return null;
+            }
+
+            var sel = SelectedHolds.FirstOrDefault(s => s.HoldId == _overlayHold.Id);
+            if (sel == null)
+            {
+                return null;
+            }
+
+            if (sel.Usage == HoldUsage.FootOnly)
+            {
+                return RadialQuadrant.Foot;
+            }
+
+            return sel.Type switch
+            {
+                HoldType.Top => RadialQuadrant.Top,
+                HoldType.Start => RadialQuadrant.Start,
+                _ => RadialQuadrant.Middle,
+            };
+        }
+    }
+
+    private void CloseOverlay()
+    {
+        _overlayHold = null;
+    }
+
+    /// <summary>
+    /// Applies a radial choice: adds the hold with the chosen classification, or re-classifies it if
+    /// it is already in the boulder, then closes. Hand holds (Top/Start/Middle) carry HandAndFoot so
+    /// they implicitly serve as feet; Foot is a dedicated FootOnly foothold. Removal is a separate
+    /// action (the bin ring), so a quadrant tap never removes.
+    /// </summary>
+    private async Task OnOverlayChosen(RadialQuadrant quadrant)
+    {
+        var hold = _overlayHold;
+        _overlayHold = null;
+        if (hold == null)
+        {
+            return;
+        }
+
+        var existing = SelectedHolds.FirstOrDefault(s => s.HoldId == hold.Id);
+        if (existing != null)
+        {
+            SelectedHolds.Remove(existing);
+        }
+
+        var (type, usage) = MapQuadrant(quadrant);
+        SelectedHolds.Add(new BoulderHoldInput(hold.Id, type, usage));
+        await SelectedHoldsChanged.InvokeAsync(SelectedHolds);
+    }
+
+    /// <summary>Removes the overlay's hold from the boulder (the bin ring), then closes.</summary>
+    private async Task OnOverlayRemove()
+    {
+        var hold = _overlayHold;
+        _overlayHold = null;
+        if (hold == null)
+        {
+            return;
+        }
+
+        var existing = SelectedHolds.FirstOrDefault(s => s.HoldId == hold.Id);
+        if (existing != null)
+        {
+            SelectedHolds.Remove(existing);
+            await SelectedHoldsChanged.InvokeAsync(SelectedHolds);
+        }
+    }
+
+    private static (HoldType Type, HoldUsage Usage) MapQuadrant(RadialQuadrant quadrant) => quadrant switch
+    {
+        RadialQuadrant.Top => (HoldType.Top, HoldUsage.HandAndFoot),
+        RadialQuadrant.Start => (HoldType.Start, HoldUsage.HandAndFoot),
+        RadialQuadrant.Foot => (HoldType.Normal, HoldUsage.FootOnly),
+        _ => (HoldType.Normal, HoldUsage.HandAndFoot),
+    };
 
     private void ToggleHold(Hold hold)
     {

@@ -57,7 +57,8 @@ public sealed class OfflineActionsController : ControllerBase
                 request.BoulderId,
                 request.Type,
                 request.Notes,
-                request.ClientRequestId);
+                request.ClientRequestId,
+                request.Timestamp);
 
             return new { attemptId = attempt.Id, type = attempt.Type.ToString() };
         });

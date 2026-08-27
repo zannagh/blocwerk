@@ -15,18 +15,18 @@ public static class BoulderHoldColors
     public const string Start = "#4CAF50";
 
     /// <summary>Top holds.</summary>
-    public const string Top = "#F44336";
+    public const string Top = "#9C27B0";
 
     /// <summary>Every other hold of the boulder.</summary>
     public const string Normal = "#2196F3";
 
     /// <summary>
-    /// Dedicated footholds. A deep violet, deliberately far from the light lavender
+    /// Dedicated footholds. A warm orange, deliberately far from the light lavender
     /// <c>#c86dff</c> the wall editor uses for *virtual* holds (which is also only ever
     /// drawn as a dashed outline, never as a fill). Keep in sync with the
     /// <c>--foot-hold</c> custom property in <c>wwwroot/css/components.css</c>.
     /// </summary>
-    public const string Foot = "#7c3aed";
+    public const string Foot = "#FF9800";
 
     /// <summary>The stroke color for a hold of the given type.</summary>
     public static string Stroke(HoldType type) => type switch
@@ -42,7 +42,7 @@ public static class BoulderHoldColors
 
     /// <summary>
     /// The fill a selected hold gets. The fill carries the usage, the stroke carries the
-    /// type: a foot-only hold reads purple, a hand-only hold is left near-hollow (there is
+    /// type: a foot-only hold reads orange, a hand-only hold is left near-hollow (there is
     /// nothing to stand on), and both keep their start/normal/top ring. The hollow fill is
     /// faint rather than "none" so the shape still catches taps.
     /// </summary>
@@ -55,7 +55,7 @@ public static class BoulderHoldColors
 
     /// <summary>
     /// A hold that is a foothold purely because it matches the boulder's
-    /// "feet of one color only" rule: purple through and through, it has no type.
+    /// "feet of one color only" rule: orange through and through, it has no type.
     /// </summary>
     public static string ColorRuleFill(double alpha = 0.4) => HoldPalette.Rgba(Foot, alpha);
 }

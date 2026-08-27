@@ -48,6 +48,8 @@ public sealed class CreateBoulderRequest
 
     public string? FootColorOnly { get; set; }
 
+    public bool NoMatch { get; set; }
+
     public List<BoulderHoldDto> Holds { get; set; } = [];
 
     public List<BoulderHoldInput> ToInputs() => Holds.Select(h => h.ToInput()).ToList();
@@ -71,6 +73,8 @@ public sealed class ReviseBoulderRequest
     public bool HandsFollowFeet { get; set; } = true;
 
     public string? FootColorOnly { get; set; }
+
+    public bool NoMatch { get; set; }
 
     public List<BoulderHoldDto> Holds { get; set; } = [];
 

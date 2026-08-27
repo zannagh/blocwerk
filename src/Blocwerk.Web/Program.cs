@@ -161,6 +161,10 @@ public static class Program
         builder.Services.AddRazorPages();
         builder.Services.AddServerSideBlazor();
 
+        // The boulder create/revise pages read the experience cookie server-side on the initial
+        // (prerender) load so the right experience renders with no client-side flash.
+        builder.Services.AddHttpContextAccessor();
+
         // Per-circuit cache of the user's live session, so the tab bar and the activity page share
         // one source of truth and the "Session" indicator lights up the moment a session starts.
         builder.Services.AddScoped<SessionState>();

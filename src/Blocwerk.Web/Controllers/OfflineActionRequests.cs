@@ -26,6 +26,14 @@ public sealed class LogAttemptRequest : OfflineActionRequest
     public AttemptType Type { get; set; }
 
     public string? Notes { get; set; }
+
+    /// <summary>
+    /// The moment the user actually tapped, captured on the client at enqueue time. A queued
+    /// attempt can replay long after the tap; anchoring the stored timestamp and the server-side
+    /// debounce window on this real time (rather than replay time) is what keeps a batch of
+    /// genuinely distinct offline attempts from collapsing into one. Omitted means "now".
+    /// </summary>
+    public DateTimeOffset? Timestamp { get; set; }
 }
 
 public sealed class SetRatingRequest : OfflineActionRequest

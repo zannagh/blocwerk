@@ -140,7 +140,16 @@
         }
 
         if (kind === 'attempt') {
-            return { boulderId: boulderId, type: element.getAttribute('data-bw-type') || 'Attempt' };
+            // Capture the real moment of the tap. When the circuit/network is down this entry may
+            // not reach the server for minutes or hours, and the server-side 60s debounce anchors
+            // on this timestamp — without it, a whole offline batch would replay stamped at
+            // reconnect time, collapse inside one 60s window, and silently lose genuinely distinct
+            // attempts.
+            return {
+                boulderId: boulderId,
+                type: element.getAttribute('data-bw-type') || 'Attempt',
+                timestamp: new Date().toISOString()
+            };
         }
         if (kind === 'rating') {
             return { boulderId: boulderId, stars: parseInt(element.getAttribute('data-bw-stars'), 10) };

@@ -1,7 +1,11 @@
+using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
+using Blocwerk.Web.Controllers;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 
 namespace Blocwerk.Core.Tests;
 
@@ -33,15 +37,89 @@ public class OfflineReplayTests
     }
 
     [Fact]
-    public async Task LogAttempt_WithoutAClientRequestId_StillLogsEveryCall()
+    public async Task LogAttempt_SameActionTwiceWithinAMinute_IsDebouncedToOneRow()
     {
         using var h = new WallTestHarness();
         var holds = await h.SeedWallAsync(holdCount: 1);
         var boulder = await h.BoulderService.CreateBoulderAsync(
             h.WallId, "B", null, [new BoulderHoldInput(holds[0].Id)]);
 
+        // Nobody logs the same action on the same boulder twice within a minute, so the second
+        // call is treated as an accidental duplicate and silently returns the first row.
+        var first = await h.AttemptService.LogAttemptAsync(boulder.Id, AttemptType.Attempt);
+        var second = await h.AttemptService.LogAttemptAsync(boulder.Id, AttemptType.Attempt);
+
+        Assert.Equal(first.Id, second.Id);
+
+        await using var check = h.CreateContext();
+        Assert.Equal(1, await check.Attempts.CountAsync(a => a.BoulderId == boulder.Id));
+    }
+
+    [Fact]
+    public async Task LogAttempt_SameActionMoreThanAMinuteApart_LogsBoth()
+    {
+        using var h = new WallTestHarness();
+        var holds = await h.SeedWallAsync(holdCount: 1);
+        var boulder = await h.BoulderService.CreateBoulderAsync(
+            h.WallId, "B", null, [new BoulderHoldInput(holds[0].Id)]);
+
+        var t0 = DateTimeOffset.UtcNow;
+        await h.AttemptService.LogAttemptAsync(boulder.Id, AttemptType.Attempt, timestamp: t0);
+        await h.AttemptService.LogAttemptAsync(boulder.Id, AttemptType.Attempt, timestamp: t0.AddMinutes(2));
+
+        await using var check = h.CreateContext();
+        Assert.Equal(2, await check.Attempts.CountAsync(a => a.BoulderId == boulder.Id));
+    }
+
+    [Fact]
+    public async Task OfflineAttemptEndpoint_ForwardsTheClientCapturedTimestamp()
+    {
+        // The whole point of FIX: an offline batch replays at reconnect time, but each queued
+        // attempt carries the real moment of the tap. If the controller dropped that timestamp,
+        // the service would anchor its 60s debounce on "now" and a spaced-apart batch would
+        // collapse. This proves the offline endpoint threads the timestamp into the service.
+        var attemptService = Substitute.For<IAttemptService>();
+        var boulderId = Guid.NewGuid();
+        var tapTime = new DateTimeOffset(2026, 8, 27, 9, 15, 0, TimeSpan.Zero);
+        attemptService
+            .LogAttemptAsync(Arg.Any<Guid>(), Arg.Any<AttemptType>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<DateTimeOffset?>())
+            .Returns(new Attempt { Id = Guid.NewGuid(), BoulderId = boulderId, Type = AttemptType.Attempt });
+
+        var controller = new OfflineActionsController(
+            attemptService,
+            Substitute.For<IBoulderFeedbackService>(),
+            Substitute.For<ICommentService>());
+
+        var request = new LogAttemptRequest
+        {
+            BoulderId = boulderId,
+            Type = AttemptType.Attempt,
+            ClientRequestId = Guid.NewGuid(),
+            Timestamp = tapTime,
+        };
+
+        var result = await controller.LogAttempt(request);
+
+        Assert.IsType<OkObjectResult>(result);
+        await attemptService.Received(1).LogAttemptAsync(
+            boulderId,
+            AttemptType.Attempt,
+            Arg.Any<string?>(),
+            request.ClientRequestId,
+            tapTime);
+    }
+
+    [Fact]
+    public async Task LogAttempt_DifferentActionsWithinAMinute_BothLog()
+    {
+        using var h = new WallTestHarness();
+        var holds = await h.SeedWallAsync(holdCount: 1);
+        var boulder = await h.BoulderService.CreateBoulderAsync(
+            h.WallId, "B", null, [new BoulderHoldInput(holds[0].Id)]);
+
+        // The debounce is keyed on the action type, so an attempt and a send do not suppress each other.
         await h.AttemptService.LogAttemptAsync(boulder.Id, AttemptType.Attempt);
-        await h.AttemptService.LogAttemptAsync(boulder.Id, AttemptType.Attempt);
+        await h.AttemptService.LogAttemptAsync(boulder.Id, AttemptType.Send);
 
         await using var check = h.CreateContext();
         Assert.Equal(2, await check.Attempts.CountAsync(a => a.BoulderId == boulder.Id));

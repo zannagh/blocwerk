@@ -33,6 +33,7 @@ public sealed class OfflineBouldersController : ControllerBase
         ["Boulder not found"] = StatusCodes.Status404NotFound,
         ["Wall not found"] = StatusCodes.Status404NotFound,
         ["Only the creator can revise a boulder"] = StatusCodes.Status403Forbidden,
+        [BoulderService.SentByOthersRevisionMessage] = StatusCodes.Status403Forbidden,
         ["Boulder is not historic"] = StatusCodes.Status400BadRequest,
         ["Select at least one hold"] = StatusCodes.Status400BadRequest,
     };
@@ -72,7 +73,8 @@ public sealed class OfflineBouldersController : ControllerBase
                 request.KickboardFootholdsOn,
                 request.HandsFollowFeet,
                 request.FootColorOnly,
-                request.Id);
+                request.Id,
+                request.NoMatch);
 
             return Canonical(boulder);
         });
@@ -99,7 +101,8 @@ public sealed class OfflineBouldersController : ControllerBase
                 request.Grade,
                 request.KickboardFootholdsOn,
                 request.HandsFollowFeet,
-                request.FootColorOnly ?? string.Empty); // "" clears the foot colour server-side; null would mean "leave unchanged".
+                request.FootColorOnly ?? string.Empty, // "" clears the foot colour server-side; null would mean "leave unchanged".
+                request.NoMatch);
 
             return Canonical(boulder);
         });

@@ -19,6 +19,8 @@
         @(Boulder.KickboardFootholdsOn ? "All kickboard holds are on" : "Kickboard holds are off")
     </span>
 
+    @* NoMatch and FootColorOnly are deliberately NOT chips here: both are shown as informational
+       banners above the image (see BoulderDetail) so a viewer sees each rule once, not twice. *@
     @if (Boulder.HandsFollowFeet)
     {
         <span class="rule-chip on">Hands follow feet</span>
@@ -27,28 +29,10 @@
     {
         <span class="rule-chip off">Dedicated footholds</span>
     }
-
-    @if (!string.IsNullOrEmpty(Boulder.FootColorOnly))
-    {
-        <span class="rule-chip foot">
-            <span class="color-dot" style="background: @HoldPalette.Hex(Boulder.FootColorOnly);"></span>
-            Feet on @HoldPalette.DisplayName(Boulder.FootColorOnly).ToLowerInvariant() only
-            @if (FootColorHoldCount == 0)
-            {
-                <span class="rule-warn">— no such hold on this wall</span>
-            }
-        </span>
-    }
 </div>
 
 @code {
     [Parameter, EditorRequired] public Boulder Boulder { get; set; } = null!;
-
-    /// <summary>
-    /// How many holds on the wall actually carry the boulder's foot colour, so a rule
-    /// that matches nothing can say so instead of looking like a silent no-op.
-    /// </summary>
-    [Parameter] public int FootColorHoldCount { get; set; }
 
     private int _starts;
     private int _tops;

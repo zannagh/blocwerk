@@ -181,12 +181,44 @@ public class BoulderDraftTests
     }
 
     [Fact]
-    public async Task ReviseBoulder_Throws_ForBoulderThatIsNeitherHistoricNorDraft()
+    public async Task ReviseBoulder_AllowsFullEdit_ForLiveBoulderNotYetSentByOthers()
     {
         using var h = new WallTestHarness();
         var holds = await h.SeedWallAsync(holdCount: 2);
         var boulder = await h.BoulderService.CreateBoulderAsync(
             h.WallId, "Live", null, [new BoulderHoldInput(holds[0].Id)]);
+
+        // A live/published boulder no one else has sent can be fully re-edited (holds and rules).
+        await h.BoulderService.ReviseBoulderAsync(boulder.Id, [new BoulderHoldInput(holds[1].Id)]);
+
+        await using var check = h.CreateContext();
+        var saved = await check.Boulders
+            .Include(b => b.BoulderHolds)
+            .FirstAsync(b => b.Id == boulder.Id);
+        Assert.Single(saved.BoulderHolds);
+        Assert.Equal(holds[1].Id, saved.BoulderHolds.First().HoldId);
+    }
+
+    [Fact]
+    public async Task ReviseBoulder_Throws_ForLiveBoulderAlreadySentByOthers()
+    {
+        using var h = new WallTestHarness();
+        var holds = await h.SeedWallAsync(holdCount: 2);
+        var boulder = await h.BoulderService.CreateBoulderAsync(
+            h.WallId, "Live", null, [new BoulderHoldInput(holds[0].Id)]);
+
+        // Another climber sends the boulder: from now on only its name and grade may change.
+        var other = await h.AddMemberAsync("sender@test", WallRole.Member);
+        await using (var db = h.CreateContext())
+        {
+            db.Attempts.Add(new Attempt
+            {
+                BoulderId = boulder.Id,
+                UserId = other.Id,
+                Type = AttemptType.Send,
+            });
+            await db.SaveChangesAsync();
+        }
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => h.BoulderService.ReviseBoulderAsync(boulder.Id, [new BoulderHoldInput(holds[1].Id)]));

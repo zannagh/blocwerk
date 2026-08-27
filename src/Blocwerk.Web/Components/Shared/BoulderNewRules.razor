@@ -1,0 +1,94 @@
+@* The two rules shown BELOW the wall image in the new boulder-setting experience:
+   "all feet of a specific colour" and "no match". The kickboard rule lives at the top of the
+   page and "hands follow feet" is always on here, so neither appears. *@
+
+<div class="rules-block new-rules">
+    <div class="rule-sub">
+        <label class="checkbox-label">
+            <input type="checkbox" checked="@_colorRuleOn" @onchange="OnColorRuleToggledAsync" />
+            All feet of a specific colour
+        </label>
+
+        @if (_colorRuleOn)
+        {
+            <div class="foot-color-swatches">
+                @foreach (var color in HoldPalette.All)
+                {
+                    var count = CountOnWall(color.Key);
+                    <button type="button"
+                            class="color-swatch foot-swatch @(FootColorOnly == color.Key ? "active" : string.Empty) @(count == 0 ? "absent" : string.Empty)"
+                            style="background: @color.Hex;"
+                            title="@color.DisplayName &mdash; @count hold@(count == 1 ? string.Empty : "s") on this wall"
+                            @onclick="() => SetFootColorAsync(color.Key)"></button>
+                }
+            </div>
+            <p class="rule-hint">
+                Every <strong>@HoldPalette.DisplayName(FootColorOnly)</strong> hold on the wall counts as a
+                foothold. You can still add other individual footholds on top of this.
+                @if (CountOnWall(FootColorOnly) == 0)
+                {
+                    <span class="rule-warn">No hold of that colour exists on this wall yet.</span>
+                }
+            </p>
+        }
+    </div>
+
+    <label class="checkbox-label">
+        <input type="checkbox" checked="@NoMatch" @onchange="OnNoMatchChanged" />
+        No match
+    </label>
+    <p class="rule-hint">Matching a hold is not allowed &mdash; no two hands, and no hand plus foot, on the same hold.</p>
+</div>
+
+@code {
+    [Parameter] public string? FootColorOnly { get; set; }
+    [Parameter] public EventCallback<string?> FootColorOnlyChanged { get; set; }
+
+    [Parameter] public bool NoMatch { get; set; }
+    [Parameter] public EventCallback<bool> NoMatchChanged { get; set; }
+
+    /// <summary>The wall's holds, used to show how many holds a colour actually covers.</summary>
+    [Parameter] public List<Hold> WallHolds { get; set; } = [];
+
+    private bool _colorRuleOn;
+
+    protected override void OnInitialized()
+    {
+        _colorRuleOn = !string.IsNullOrEmpty(FootColorOnly);
+    }
+
+    private int CountOnWall(string? colorKey) =>
+        string.IsNullOrEmpty(colorKey) ? 0 : WallHolds.Count(h => h.Color == colorKey);
+
+    private Task OnNoMatchChanged(ChangeEventArgs e) => NoMatchChanged.InvokeAsync(e.Value is true);
+
+    private async Task OnColorRuleToggledAsync(ChangeEventArgs e)
+    {
+        _colorRuleOn = e.Value is true;
+        if (!_colorRuleOn)
+        {
+            await SetFootColorAsync(null);
+            return;
+        }
+
+        if (string.IsNullOrEmpty(FootColorOnly))
+        {
+            await SetFootColorAsync(DefaultFootColor());
+        }
+    }
+
+    /// <summary>The wall's most common hold colour, so the picker opens on something useful.</summary>
+    private string DefaultFootColor() =>
+        WallHolds.Where(h => !string.IsNullOrEmpty(h.Color))
+            .GroupBy(h => h.Color!)
+            .OrderByDescending(g => g.Count())
+            .Select(g => g.Key)
+            .FirstOrDefault() ?? HoldPalette.PlasticColors[0].Key;
+
+    // "" clears the colour server-side; null there means "leave unchanged".
+    private Task SetFootColorAsync(string? colorKey)
+    {
+        FootColorOnly = colorKey;
+        return FootColorOnlyChanged.InvokeAsync(colorKey);
+    }
+}

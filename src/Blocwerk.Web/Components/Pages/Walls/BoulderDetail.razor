@@ -72,6 +72,13 @@ else
             }
 
             <p class="meta">by @_boulder.CreatedBy.DisplayName &middot; @_boulder.CreatedAt.ToString("MMM d, yyyy")</p>
+
+            @if (CanFullRevise)
+            {
+                <div class="boulder-live-actions">
+                    <a href="/walls/@WallId/boulders/@BoulderId/revise" class="btn-revise">Revise boulder</a>
+                </div>
+            }
         </div>
 
         @if (_boulder.IsDraft && _isCreator)
@@ -144,6 +151,28 @@ else
             }
         </div>
 
+        @if (!string.IsNullOrEmpty(_boulder.FootColorOnly) || _boulder.NoMatch)
+        {
+            <div class="boulder-info-banners">
+                @if (!string.IsNullOrEmpty(_boulder.FootColorOnly))
+                {
+                    <div class="boulder-info-banner">
+                        All @HoldPalette.DisplayName(_boulder.FootColorOnly).ToLowerInvariant() holds may be used as footholds.
+                        @if (ColorRuleHolds.Count == 0)
+                        {
+                            <span class="rule-warn">— no such holds on this wall</span>
+                        }
+                    </div>
+                }
+                @if (_boulder.NoMatch)
+                {
+                    <div class="boulder-info-banner">
+                        No matching — you may not use two hands, or a hand and a foot, on the same hold.
+                    </div>
+                }
+            </div>
+        }
+
         @if (_viewMode == ViewMode.Photo)
         {
             <WallDimControl />
@@ -152,15 +181,9 @@ else
                 <div class="photo-editor">
                     <img src="@PhotoUrl" alt="Wall" class="wall-photo" />
                     <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
-                        @* Holds that are footholds purely by the "feet of one colour only"
-                           rule are not part of the boulder, so they are drawn underneath. *@
-                        @foreach (var hold in ColorRuleHolds)
-                        {
-                            <circle @key="hold.Id" cx="@F(hold.X * 100)" cy="@F(hold.Y * 100)"
-                                    r="@F(hold.Radius * 100)"
-                                    fill="@BoulderHoldColors.ColorRuleFill()"
-                                    stroke="@BoulderHoldColors.Foot" stroke-width="0.4" />
-                        }
+                        @* The "feet of one colour only" rule is shown as an info banner above the
+                           image, not by painting every wall hold of that colour. Only the boulder's
+                           own holds (including dedicated orange footholds) are drawn here. *@
                         @foreach (var bh in _boulder.BoulderHolds)
                         {
                             <circle @key="bh.HoldId" cx="@F(bh.Hold.X * 100)" cy="@F(bh.Hold.Y * 100)"
@@ -178,7 +201,7 @@ else
                                HighlightedHoldIds="_boulderHoldIds" FootHoldIds="FootHoldIds" />
         }
 
-        <BoulderRulesSummary Boulder="_boulder" FootColorHoldCount="ColorRuleHolds.Count" />
+        <BoulderRulesSummary Boulder="_boulder" />
 
         @if (!_isAnonymous)
         {
@@ -297,6 +320,7 @@ else
     private Guid _currentUserId;
     private bool _isAnonymous;
     private bool _isCreator;
+    private bool _sentByOther;
     private bool _showHistoric;
     private string? _publishError;
     private string? _toast;
@@ -463,6 +487,15 @@ else
     private bool CanViewHistoric =>
         _boulder != null && BoulderHoldGeneration is { } g && g < _boulder.Wall.CurrentGeneration;
 
+    /// <summary>
+    /// A live/published boulder the creator may still fully re-edit (holds and rules), because no
+    /// other climber has sent it yet. Once someone else has an ascent the pencil name+grade edit is
+    /// the only option. Drafts and historic boulders have their own revise links elsewhere.
+    /// </summary>
+    private bool CanFullRevise =>
+        _isCreator && !_isAnonymous && !_sentByOther
+        && _boulder is { IsDraft: false, IsHistoric: false };
+
     private string PhotoUrl
     {
         get
@@ -536,6 +569,13 @@ else
             _isCreator = _boulder.CreatedByUserId == _currentUserId;
             _boulderHoldIds = _boulder.BoulderHolds.Select(bh => bh.HoldId).ToHashSet();
 
+            // Whether a live boulder may still be fully re-edited: only its own creator, and only
+            // until another climber has sent it. Gate the read so a share viewer never triggers it.
+            if (!_isAnonymous && _isCreator && _boulder is { IsDraft: false, IsHistoric: false })
+            {
+                _sentByOther = await AttemptService.HasBeenSentByOthersAsync(BoulderId, _boulder.CreatedByUserId);
+            }
+
             // A stale boulder only makes sense against the wall it was set on.
             _showHistoric = CanViewHistoric;
             await LoadWallHolds();
@@ -595,16 +635,15 @@ else
     private List<Hold> ColorRuleHolds => _colorRuleHolds;
 
     /// <summary>
-    /// Every hold the climber may only stand on: the boulder's own <see cref="HoldUsage.FootOnly"/>
-    /// holds plus, when the boulder has a "feet of one colour only" rule, the wall holds of that
-    /// colour. Handed to the schematic so it can draw them in the foot purple.
+    /// The boulder's own dedicated footholds (<see cref="HoldUsage.FootOnly"/>), drawn orange in the
+    /// schematic. The "feet of one colour only" rule is no longer painted onto every matching wall
+    /// hold; it is communicated by the info banner above the image instead.
     /// </summary>
     private HashSet<Guid> FootHoldIds => _boulder == null
         ? []
         : _boulder.BoulderHolds
             .Where(bh => bh.Usage == HoldUsage.FootOnly)
             .Select(bh => bh.HoldId)
-            .Concat(_colorRuleHolds.Select(h => h.Id))
             .ToHashSet();
 
     private async Task LoadWallHolds()

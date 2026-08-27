@@ -47,6 +47,12 @@ public class Boulder
     public string? FootColorOnly { get; set; }
 
     /// <summary>
+    /// When true, matching a hold (using two hands / hand and foot on the same hold) is not
+    /// allowed for this boulder.
+    /// </summary>
+    public bool NoMatch { get; set; }
+
+    /// <summary>
     /// Derived from the boulder's foothold rules; kept so read-sites can keep asking the
     /// single "does this boulder define its own footholds?" question. A boulder that
     /// neither marks dedicated footholds nor names a foot color leaves the kickboard rule

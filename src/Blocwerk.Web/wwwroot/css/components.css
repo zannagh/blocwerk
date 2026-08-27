@@ -30,7 +30,7 @@
 .usage-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
 .usage-dot.start { background: #4CAF50; }
 .usage-dot.normal { background: #2196F3; }
-.usage-dot.top { background: #F44336; }
+.usage-dot.top { background: #9C27B0; }
 .usage-grade { color: rgba(255,255,255,0.6); font-size: 0.7rem; }
 .usage-flag { color: rgba(255,255,255,0.55); font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em; border: 1px solid rgba(255,255,255,0.25); border-radius: 4px; padding: 0 4px; }
 .opt-btn.foot.active { background: #8D6E63; border-color: #8D6E63; }
@@ -134,29 +134,44 @@
 .schematic-viewport > .schematic-svg { width: calc(var(--zoom, 1) * 100%); min-width: 100%; }
 .schematic-info { text-align: center; padding: 8px; font-size: 0.8rem; color: var(--text-secondary); }
 
-/* ========== Foothold colour ==========
-   The one purple every foot-related surface uses. Kept in sync with
-   BoulderHoldColors.Foot (Components/Shared/BoulderHoldColors.cs), which is what the
-   SVG overlays paint with. Deliberately far from the light lavender #c86dff the wall
-   editor uses for *virtual* holds, which is only ever a dashed outline. */
+/* ========== Hold + wall colours ==========
+   The foot (orange) and top (purple) tokens every hold-related surface uses. Kept in sync
+   with BoulderHoldColors.Foot / BoulderHoldColors.Top (Components/Shared/BoulderHoldColors.cs),
+   which is what the SVG overlays paint with. --wall-bg / --wall-floor drive the schematic
+   wall rectangle and floor line. */
 :root {
-    --foot-hold: #7c3aed;
-    --foot-hold-soft: rgba(124, 58, 237, 0.14);
-    --foot-hold-text: #6d28d9;
+    --foot-hold: #FF9800;
+    --foot-hold-soft: rgba(255, 152, 0, 0.18);
+    --foot-hold-text: #E65100;
+    --top-hold: #9C27B0;
+    --top-hold-soft: rgba(156, 39, 176, 0.18);
+    --top-hold-text: #7B1FA2;
+    --wall-bg: #f5f0eb;
+    --wall-floor: #8D6E63;
 }
 
 @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-        --foot-hold: #a78bfa;
-        --foot-hold-soft: rgba(167, 139, 250, 0.18);
-        --foot-hold-text: #c4b5fd;
+        --foot-hold: #FFB74D;
+        --foot-hold-soft: rgba(255, 183, 77, 0.18);
+        --foot-hold-text: #FFCC80;
+        --top-hold: #CE93D8;
+        --top-hold-soft: rgba(206, 147, 216, 0.18);
+        --top-hold-text: #E1BEE7;
+        --wall-bg: #1c1c28;
+        --wall-floor: #6b5a52;
     }
 }
 
 [data-theme="dark"] {
-    --foot-hold: #a78bfa;
-    --foot-hold-soft: rgba(167, 139, 250, 0.18);
-    --foot-hold-text: #c4b5fd;
+    --foot-hold: #FFB74D;
+    --foot-hold-soft: rgba(255, 183, 77, 0.18);
+    --foot-hold-text: #FFCC80;
+    --top-hold: #CE93D8;
+    --top-hold-soft: rgba(206, 147, 216, 0.18);
+    --top-hold-text: #E1BEE7;
+    --wall-bg: #1c1c28;
+    --wall-floor: #6b5a52;
 }
 
 /* ========== BoulderRulesEditor ========== */
@@ -197,16 +212,16 @@
 .pick-legend .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 .pick-legend .dot.start { background: #4CAF50; }
 .pick-legend .dot.normal { background: #2196F3; }
-.pick-legend .dot.top { background: #F44336; }
-/* The picker toolbar sits on a dark bar in both themes, so the lighter violet is used
+.pick-legend .dot.top { background: #9C27B0; }
+/* The picker toolbar sits on a dark bar in both themes, so a fixed orange is used
    here rather than the theme-aware --foot-hold. */
-.pick-legend .dot.foot { background: #a78bfa; }
+.pick-legend .dot.foot { background: #FF9800; }
 .pick-controls { display: flex; gap: 4px; align-items: center; }
 .pick-controls .separator { width: 1px; height: 20px; background: rgba(255,255,255,0.2); margin: 0 2px; }
 .mode-btn { padding: 4px 10px; border: 1px solid rgba(255,255,255,0.3); background: none; color: white; border-radius: 4px; font-size: 0.8rem; cursor: pointer; display: flex; align-items: center; gap: 4px; }
 .mode-btn.active { background: #2196F3; border-color: #2196F3; }
 .mode-btn.start-active { background: #4CAF50; border-color: #4CAF50; }
-.mode-btn.top-active { background: #F44336; border-color: #F44336; }
+.mode-btn.top-active { background: #9C27B0; border-color: #9C27B0; }
 .mode-btn.view-active { background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.5); }
 
 .usage-toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; padding: 8px 12px; background: var(--topbar-bg); border-radius: 0 0 10px 10px; }
@@ -214,7 +229,7 @@
 .usage-controls { display: flex; gap: 4px; align-items: center; }
 .usage-btn { padding: 5px 10px; border: 1px solid rgba(255,255,255,0.3); background: none; color: white; border-radius: 4px; font-size: 0.75rem; cursor: pointer; display: flex; align-items: center; gap: 5px; }
 .usage-btn.active { background: var(--accent); border-color: var(--accent); }
-.usage-btn.foot.active { background: #7c3aed; border-color: #7c3aed; }
+.usage-btn.foot.active { background: #FF9800; border-color: #FF9800; }
 @media (max-width: 480px) { .usage-btn span { display: none; } .usage-btn { padding: 6px 10px; } }
 
 .picker-viewport { max-height: 70vh; overflow: auto; -webkit-overflow-scrolling: touch; border-radius: 0; }
@@ -222,7 +237,7 @@
     width: calc(var(--zoom, 1) * 100%); min-width: 100%; }
 .photo-picker .wall-photo { width: 100%; display: block; }
 .photo-picker .hold-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
-.schematic-picker { overflow: hidden; background: #f5f0eb; user-select: none;
+.schematic-picker { overflow: hidden; background: var(--wall-bg); user-select: none;
     width: calc(var(--zoom, 1) * 100%); min-width: 100%; }
 .schematic-picker .schematic-svg { width: 100%; display: block; }
 
@@ -363,3 +378,114 @@ img.wall-photo {
 .segment-preview { display: flex; flex-direction: column; gap: 4px; }
 .segment-preview-label { font-size: 0.76rem; font-weight: 600; color: var(--text-secondary); }
 .segment-preview .schematic-viewport { height: 34vh; min-height: 200px; }
+
+/* ============================================================================
+   New boulder-setting experience: experience toggle, radial classify overlay.
+   All colours come from the theme tokens so both light and dark read correctly.
+   ============================================================================ */
+
+.experience-banner {
+    display: flex; flex-direction: column; gap: 2px; width: 100%;
+    text-align: left; padding: 12px 16px; margin-bottom: 14px;
+    border: 1px solid var(--border); border-left: 4px solid var(--top-hold);
+    border-radius: 12px; cursor: pointer; background: var(--bg-surface-alt);
+    color: var(--text); transition: border-color 0.12s ease, background 0.12s ease;
+}
+.experience-banner:hover { border-color: var(--top-hold); background: var(--bg-surface); }
+.experience-banner:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.experience-banner-title { font-weight: 600; color: var(--text-heading); }
+.experience-banner-sub { font-size: 0.8rem; color: var(--text-secondary); }
+
+.experience-footer { margin-top: 18px; text-align: center; }
+.btn-link {
+    background: none; border: none; color: var(--text-secondary);
+    text-decoration: underline; cursor: pointer; font-size: 0.85rem; padding: 8px;
+}
+.btn-link:hover { color: var(--text); }
+.btn-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.new-rules { margin-top: 12px; }
+
+/* The "+ Virtual" tool row below the image (radial mode). Unlike the dark picker toolbar,
+   this sits on the page surface, so the button uses theme tokens, not white-on-dark. */
+.radial-controls { display: flex; align-items: center; gap: 12px; padding: 10px 0; }
+.radial-controls .pick-count { color: var(--text-secondary); font-size: 0.85rem; }
+.radial-controls .mode-btn { color: var(--text); border-color: var(--border); min-height: 40px; }
+.radial-controls .mode-btn.active { color: #fff; }
+
+/* Radial classify overlay. Rendered as fixed-position HTML (never inside the zoomed SVG),
+   so it keeps a constant on-screen size regardless of pinch zoom. */
+.classify-backdrop { position: fixed; inset: 0; z-index: 1000; background: transparent; }
+
+/* The overlay is sized around a responsive dial. When the hold is already in the boulder the root
+   grows to make room for the outer bin ring; otherwise it is exactly the dial. */
+.classify-root {
+    /* --x/--y are the tapped hold's viewport coordinates, fed in from the picker. Clamp the centre
+       by a half-diameter so the full dial always stays on-screen — a hold near the top edge would
+       otherwise push the Top/finish wedge off the top of the viewport and out of reach. */
+    --half: calc(clamp(180px, 46vw, 260px) / 2);
+    position: fixed; z-index: 1001; transform: translate(-50%, -50%);
+    display: grid; place-items: center; touch-action: manipulation;
+    width: clamp(180px, 46vw, 260px); height: clamp(180px, 46vw, 260px);
+    left: clamp(var(--half), var(--x, 50vw), calc(100vw - var(--half)));
+    top: clamp(var(--half), var(--y, 50vh), calc(100vh - var(--half)));
+}
+.classify-root.has-ring {
+    /* The bin ring adds 76px to the diameter, so the safe half-diameter grows by 38px. */
+    --half: calc(clamp(180px, 46vw, 260px) / 2 + 38px);
+    width: calc(clamp(180px, 46vw, 260px) + 76px);
+    height: calc(clamp(180px, 46vw, 260px) + 76px);
+}
+.classify-ring {
+    position: absolute; inset: 0; grid-area: 1 / 1; border-radius: 50%;
+    border: 2px solid var(--border); background: var(--bg-surface-alt);
+    box-shadow: 0 10px 34px var(--shadow-lg);
+}
+.classify-dial {
+    position: relative; grid-area: 1 / 1;
+    width: clamp(180px, 46vw, 260px); height: clamp(180px, 46vw, 260px);
+    border-radius: 50%; overflow: hidden;
+    border: 2px solid var(--border); background: var(--bg-surface);
+    box-shadow: 0 10px 34px var(--shadow-lg);
+}
+.classify-bin {
+    position: absolute; left: 50%; bottom: 2px; transform: translateX(-50%); z-index: 3;
+    width: 52px; height: 52px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    border: 2px solid var(--border); background: var(--bg-surface); color: var(--danger-text);
+    cursor: pointer; box-shadow: 0 2px 12px var(--shadow-md);
+}
+.classify-bin:hover { border-color: var(--danger-text); }
+.classify-bin:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.classify-wedge {
+    position: absolute; inset: 0; padding: 0; border: none; cursor: pointer;
+    /* Solid fallback first so browsers without color-mix() still render distinguishable wedges. */
+    background: var(--bg-surface-alt);
+    background: color-mix(in srgb, var(--wedge-color) 22%, var(--bg-surface));
+    transition: background 0.12s ease;
+}
+.classify-wedge:hover,
+.classify-wedge:focus-visible {
+    background: var(--bg-surface-alt);
+    background: color-mix(in srgb, var(--wedge-color) 42%, var(--bg-surface));
+}
+.classify-wedge:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.classify-wedge.current {
+    background: var(--bg-surface-alt);
+    background: color-mix(in srgb, var(--wedge-color) 58%, var(--bg-surface));
+}
+.classify-label {
+    position: absolute; display: flex; flex-direction: column; align-items: center; gap: 4px;
+    pointer-events: none; font-size: 0.72rem; font-weight: 600;
+}
+.classify-dot { width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 0 0 2px var(--bg-surface); }
+.classify-text { color: var(--text-heading); }
+.classify-close {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 64px; height: 64px; border-radius: 50%; z-index: 2;
+    display: flex; align-items: center; justify-content: center;
+    border: 2px solid var(--border); background: var(--bg-surface); color: var(--text);
+    cursor: pointer; box-shadow: 0 2px 12px var(--shadow-md);
+}
+.classify-close:hover { color: var(--text-heading); border-color: var(--text-secondary); }
+.classify-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

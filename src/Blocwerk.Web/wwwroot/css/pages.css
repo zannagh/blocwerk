@@ -657,7 +657,7 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     padding: 12px 14px; border-radius: 8px; margin-bottom: 12px; font-size: 0.9rem;
 }
 .bw-grade-proposal-notice.creator { background: var(--info-bg); color: var(--info-text); }
-.bw-grade-proposal-notice.viewer { background: #FFF8E1; color: #F57F17; }
+.bw-grade-proposal-notice.viewer { background: var(--warning-bg); color: var(--warning-text); }
 .bw-grade-proposal-notice p { margin: 0 0 8px 0; }
 .proposal-actions { display: flex; gap: 8px; }
 .proposal-btn {
@@ -727,6 +727,16 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
 .legend-chip.top { background: var(--danger-bg); color: var(--danger-text); }
 .legend-chip.usage { background: var(--bg-surface); color: var(--text-muted); border: 1px solid var(--border); }
 .legend-chip.foot { background: var(--foot-hold-soft); color: var(--foot-hold-text); }
+
+.boulder-live-actions { margin-top: 10px; }
+
+/* Informational rule banners above the boulder image (feet-of-a-colour, no-match). */
+.boulder-info-banners { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.boulder-info-banner {
+    background: var(--info-bg); color: var(--info-text);
+    border: 1px solid var(--border-light);
+    padding: 10px 14px; border-radius: var(--r-md); font-size: 0.88rem; line-height: 1.35;
+}
 
 /* Rule chips under the boulder view. */
 .rules-bar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
@@ -909,7 +919,7 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
 }
 .attempt-type.attempt { background: var(--warning-bg); color: var(--warning-text); }
 .attempt-type.send { background: var(--success-bg); color: var(--success-text); }
-.attempt-type.flash { background: #FBE9E7; color: #D84315; }
+.attempt-type.flash { background: var(--danger-bg); color: var(--danger-text); }
 .attempt-user { font-size: 0.9rem; color: var(--text); }
 .attempt-time { font-size: 0.8rem; color: var(--text-secondary); }
 

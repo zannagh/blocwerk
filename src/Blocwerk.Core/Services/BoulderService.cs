@@ -29,7 +29,8 @@ public interface IBoulderService
         bool kickboardFootholdsOn = true,
         bool handsFollowFeet = true,
         string? footColorOnly = null,
-        Guid? id = null);
+        Guid? id = null,
+        bool noMatch = false);
 
     /// <summary>
     /// Makes a draft visible to everyone on the wall.
@@ -75,7 +76,8 @@ public interface IBoulderService
         string? grade = null,
         bool? kickboardFootholdsOn = null,
         bool? handsFollowFeet = null,
-        string? footColorOnly = null);
+        string? footColorOnly = null,
+        bool noMatch = false);
 
     /// <summary>
     /// Renames and/or regrades a boulder in place, without touching its holds. Only the
@@ -119,6 +121,14 @@ public record HoldUsageRef(
 
 public class BoulderService : IBoulderService
 {
+    /// <summary>
+    /// Thrown by <see cref="ReviseBoulderAsync"/> when another climber has already sent the boulder
+    /// so only its name and grade may change. Exposed as a const so the offline controller can list
+    /// it among its permanent (non-retryable) rejections without the two strings drifting apart.
+    /// </summary>
+    public const string SentByOthersRevisionMessage =
+        "This boulder has already been sent by others; only its name and grade can be changed";
+
     private readonly IDbContextFactory<BlocwerkDbContext> _dbContextFactory;
     private readonly ICurrentUserService _currentUserService;
     private readonly IActivityLogService _activityLogService;
@@ -145,7 +155,8 @@ public class BoulderService : IBoulderService
         bool kickboardFootholdsOn = true,
         bool handsFollowFeet = true,
         string? footColorOnly = null,
-        Guid? id = null)
+        Guid? id = null,
+        bool noMatch = false)
     {
         using var op = BlocwerkMetrics.TimeOperation("Boulder.Create", wallId);
         try
@@ -199,6 +210,7 @@ public class BoulderService : IBoulderService
                 KickboardFootholdsOn = kickboardFootholdsOn,
                 HandsFollowFeet = handsFollowFeet,
                 FootColorOnly = NormalizeFootColor(footColorOnly),
+                NoMatch = noMatch,
                 IsDraft = isDraft,
                 PublishedAt = isDraft ? null : DateTimeOffset.UtcNow,
             };
@@ -544,7 +556,8 @@ public class BoulderService : IBoulderService
         string? grade = null,
         bool? kickboardFootholdsOn = null,
         bool? handsFollowFeet = null,
-        string? footColorOnly = null)
+        string? footColorOnly = null,
+        bool noMatch = false)
     {
         using var op = BlocwerkMetrics.TimeOperation("Boulder.Revise");
         try
@@ -572,18 +585,27 @@ public class BoulderService : IBoulderService
 
             if (!boulder.IsHistoric && !boulder.IsDraft)
             {
-                // A revise only applies to a historic or draft boulder. But an offline replay of an
-                // already-applied revise arrives here after the first apply flipped IsHistoric off.
-                // If the requested state already matches what is stored, this is that replay: return
-                // the boulder unchanged so the queue records a success. A genuine attempt to revise a
-                // live boulder would change something and is still rejected.
-                if (RevisionIsNoOp(boulder, updatedHolds, name, grade, kickboardFootholdsOn, handsFollowFeet, footColorOnly))
+                // A live/published boulder. An offline replay of an already-applied revise arrives
+                // here after the first apply flipped IsHistoric off; if the requested state already
+                // matches what is stored, this is that replay: return the boulder unchanged so the
+                // queue records a success.
+                if (RevisionIsNoOp(boulder, updatedHolds, name, grade, kickboardFootholdsOn, handsFollowFeet, footColorOnly, noMatch))
                 {
                     return boulder;
                 }
 
-                _logger.LogWarning("Revise rejected: boulder {BoulderId} is not historic", boulderId);
-                throw new InvalidOperationException("Boulder is not historic");
+                // A live boulder may still be fully re-edited as long as no other climber has sent
+                // it yet — once someone else has an ascent on it, only the name and grade may change
+                // (through RenameBoulderAsync), so a revise cannot move the holds under their send.
+                var sentByOthers = await db.Attempts.AnyAsync(a =>
+                    a.BoulderId == boulderId
+                    && a.UserId != boulder.CreatedByUserId
+                    && (a.Type == AttemptType.Send || a.Type == AttemptType.Flash));
+                if (sentByOthers)
+                {
+                    _logger.LogWarning("Revise rejected: boulder {BoulderId} has already been sent by others", boulderId);
+                    throw new InvalidOperationException(SentByOthersRevisionMessage);
+                }
             }
 
             if (updatedHolds.Count == 0 && !boulder.IsDraft)
@@ -616,6 +638,8 @@ public class BoulderService : IBoulderService
             {
                 boulder.FootColorOnly = NormalizeFootColor(footColorOnly);
             }
+
+            boulder.NoMatch = noMatch;
 
             db.BoulderHolds.RemoveRange(boulder.BoulderHolds);
             foreach (var h in EnforceHandsFollowFeet(updatedHolds, boulder.HandsFollowFeet))
@@ -910,7 +934,8 @@ public class BoulderService : IBoulderService
         string? grade,
         bool? kickboardFootholdsOn,
         bool? handsFollowFeet,
-        string? footColorOnly)
+        string? footColorOnly,
+        bool noMatch)
     {
         var effectiveHandsFollowFeet = handsFollowFeet ?? boulder.HandsFollowFeet;
         var target = EnforceHandsFollowFeet(updatedHolds, effectiveHandsFollowFeet)
@@ -946,6 +971,13 @@ public class BoulderService : IBoulderService
         }
 
         if (footColorOnly != null && boulder.FootColorOnly != NormalizeFootColor(footColorOnly))
+        {
+            return false;
+        }
+
+        // noMatch is a plain bool the revise path always writes (see ReviseBoulderAsync), so a
+        // revision that only flips it must not be mistaken for a no-op replay.
+        if (boulder.NoMatch != noMatch)
         {
             return false;
         }

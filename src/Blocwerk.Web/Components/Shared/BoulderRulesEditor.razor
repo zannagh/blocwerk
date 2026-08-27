@@ -9,6 +9,12 @@
         All kickboard holds are on
     </label>
 
+    <label class="checkbox-label">
+        <input type="checkbox" checked="@NoMatch" @onchange="OnNoMatchChanged" />
+        No match
+    </label>
+    <p class="rule-hint">Matching a hold is not allowed.</p>
+
     <div class="rule-group">
         <span class="rule-group-label">Footholds</span>
 
@@ -77,6 +83,9 @@
     [Parameter] public bool KickboardFootholdsOn { get; set; } = true;
     [Parameter] public EventCallback<bool> KickboardFootholdsOnChanged { get; set; }
 
+    [Parameter] public bool NoMatch { get; set; }
+    [Parameter] public EventCallback<bool> NoMatchChanged { get; set; }
+
     [Parameter] public bool HandsFollowFeet { get; set; } = true;
     [Parameter] public EventCallback<bool> HandsFollowFeetChanged { get; set; }
 
@@ -114,6 +123,9 @@
 
     private Task OnKickboardChanged(ChangeEventArgs e) =>
         KickboardFootholdsOnChanged.InvokeAsync(e.Value is true);
+
+    private Task OnNoMatchChanged(ChangeEventArgs e) =>
+        NoMatchChanged.InvokeAsync(e.Value is true);
 
     private async Task SetHandsFollowFeetAsync(bool value)
     {

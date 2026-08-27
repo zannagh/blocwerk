@@ -1,0 +1,129 @@
+@* Radial classify menu for the new boulder-setting experience. Rendered as plain HTML (never inside
+   the zoomed SVG viewport) so it keeps a fixed on-screen size regardless of pinch zoom. Four quadrants
+   choose a classification; the inner X cancels. When the tapped hold is ALREADY in the boulder an outer
+   ring wraps the quadrants and carries a bin control that removes the hold. The picker positions this
+   via the fixed Left/Top of the tapped hold. *@
+
+<div class="classify-backdrop" @onclick="OnCancel"></div>
+
+<div class="classify-root @(ShowRing ? "has-ring" : string.Empty)"
+     style="--x: @F(Left)px; --y: @F(Top)px;"
+     tabindex="-1" @ref="rootElement" @onkeydown="OnKeyDown">
+    @if (ShowRing)
+    {
+        <div class="classify-ring" aria-hidden="true"></div>
+    }
+
+    <div class="classify-dial" role="menu" @onclick:stopPropagation="true">
+        @foreach (var q in Quadrants)
+        {
+            var meta = Meta(q);
+            <button class="classify-wedge @(meta.CssClass) @(Current == q ? "current" : string.Empty)"
+                    style="--wedge-color: @meta.Color; clip-path: @meta.Clip;"
+                    @onclick="() => OnQuadrant(q)" role="menuitem" title="@meta.Label">
+                <span class="classify-label" style="@meta.LabelPos">
+                    <span class="classify-dot" style="background: @meta.Color;"></span>
+                    <span class="classify-text">@meta.Label</span>
+                </span>
+            </button>
+        }
+
+        <button class="classify-close" @onclick="OnCancel" title="Cancel" aria-label="Cancel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" width="22" height="22">
+                <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+        </button>
+    </div>
+
+    @if (ShowRing)
+    {
+        <button class="classify-bin" @onclick="OnRemove" title="Remove from boulder" aria-label="Remove from boulder">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
+                <path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M10 11v6M14 11v6" />
+            </svg>
+        </button>
+    }
+</div>
+
+@code {
+    /// <summary>The fixed (viewport) pixel position the overlay centres on — the tapped hold.</summary>
+    [Parameter] public double Left { get; set; }
+    [Parameter] public double Top { get; set; }
+
+    /// <summary>The hold's current quadrant if it is already in the boulder; null otherwise.</summary>
+    [Parameter] public RadialQuadrant? Current { get; set; }
+
+    /// <summary>Raised when a quadrant is tapped — adds or re-classifies the hold, then closes.</summary>
+    [Parameter] public EventCallback<RadialQuadrant> Chosen { get; set; }
+
+    /// <summary>Raised by the outer bin control — removes the hold from the boulder, then closes.</summary>
+    [Parameter] public EventCallback Remove { get; set; }
+
+    /// <summary>Raised on the inner X or an outside tap — no change.</summary>
+    [Parameter] public EventCallback Cancel { get; set; }
+
+    /// <summary>The bin ring only appears once the hold is already part of the boulder.</summary>
+    private bool ShowRing => Current.HasValue;
+
+    private static readonly RadialQuadrant[] Quadrants =
+        [RadialQuadrant.Top, RadialQuadrant.Start, RadialQuadrant.Middle, RadialQuadrant.Foot];
+
+    private ElementReference rootElement;
+
+    private Task OnQuadrant(RadialQuadrant q) => Chosen.InvokeAsync(q);
+
+    private Task OnRemove() => Remove.InvokeAsync();
+
+    private Task OnCancel() => Cancel.InvokeAsync();
+
+    private Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            return OnCancel();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Move focus onto the dial on open so Escape reaches it and keyboard users land on the menu.
+        if (firstRender)
+        {
+            try
+            {
+                await rootElement.FocusAsync();
+            }
+            catch (Exception)
+            {
+                // Focus is a nicety; a detached element (rapid re-tap) must not throw here.
+            }
+        }
+    }
+
+    private record QuadrantMeta(string Label, string Color, string CssClass, string Clip, string LabelPos);
+
+    private static QuadrantMeta Meta(RadialQuadrant q) => q switch
+    {
+        // Colours are the global boulder colours; Top and Foot use the theme-aware tokens.
+        RadialQuadrant.Top => new(
+            "Top", "var(--top-hold)", "wedge-top",
+            "polygon(50% 50%, 0% 0%, 100% 0%)",
+            "top: 12%; left: 50%; transform: translateX(-50%);"),
+        RadialQuadrant.Start => new(
+            "Start", BoulderHoldColors.Start, "wedge-start",
+            "polygon(50% 50%, 100% 100%, 0% 100%)",
+            "bottom: 12%; left: 50%; transform: translateX(-50%);"),
+        RadialQuadrant.Middle => new(
+            "Middle", BoulderHoldColors.Normal, "wedge-middle",
+            "polygon(50% 50%, 100% 0%, 100% 100%)",
+            "right: 9%; top: 50%; transform: translateY(-50%);"),
+        _ => new(
+            "Foot", "var(--foot-hold)", "wedge-foot",
+            "polygon(50% 50%, 0% 100%, 0% 0%)",
+            "left: 9%; top: 50%; transform: translateY(-50%);"),
+    };
+
+    private static string F(double v) => v.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
+}

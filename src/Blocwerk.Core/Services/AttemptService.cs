@@ -31,6 +31,13 @@ public interface IAttemptService
     Task DeleteAttemptAsync(Guid attemptId);
 
     Task<AttemptSummary> GetBoulderSummaryForUserAsync(Guid boulderId);
+
+    /// <summary>
+    /// True when someone other than the boulder's owner has sent or flashed it. Used to gate
+    /// full edits: once another climber has completed a boulder, only its name and grade may
+    /// change, so a revise cannot pull the holds out from under an existing ascent.
+    /// </summary>
+    Task<bool> HasBeenSentByOthersAsync(Guid boulderId, Guid ownerId);
 }
 
 public record AttemptSummary(int TotalAttempts, bool HasSent, bool HasFlashed);
@@ -84,6 +91,28 @@ public class AttemptService : IAttemptService
                 {
                     return replayed;
                 }
+            }
+
+            // Debounce accidental double-logs: the same user logging the same action (Type) on the
+            // same boulder within a 60s window is treated as a duplicate and silently ignored. Keyed
+            // on user+boulder+type, so an Attempt followed by a Send is NOT debounced against each
+            // other. The window is measured in REAL time: it anchors on the caller-supplied
+            // timestamp (the moment of the tap, threaded through even from the offline queue) and
+            // only falls back to "now" when none is given. That is what lets an offline batch of
+            // same-type attempts logged minutes apart all persist on reconnect — each carries its
+            // own real tap time, so only taps genuinely within 60s of each other collapse.
+            var effectiveTimestamp = timestamp ?? DateTimeOffset.UtcNow;
+            var duplicate = await db.Attempts
+                .FirstOrDefaultAsync(a =>
+                    a.UserId == user.Id
+                    && a.BoulderId == boulderId
+                    && a.Type == type
+                    && a.Timestamp >= effectiveTimestamp.AddSeconds(-60)
+                    && a.Timestamp <= effectiveTimestamp.AddSeconds(60));
+
+            if (duplicate != null)
+            {
+                return duplicate;
             }
 
             var attempt = new Attempt
@@ -192,6 +221,25 @@ public class AttemptService : IAttemptService
             await db.SaveChangesAsync();
 
             _logger.LogInformation("Attempt {AttemptId} deleted by {UserId}", attemptId, user.Id);
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
+    }
+
+    public async Task<bool> HasBeenSentByOthersAsync(Guid boulderId, Guid ownerId)
+    {
+        using var op = BlocwerkMetrics.TimeOperation("Attempt.HasBeenSentByOthers");
+        try
+        {
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            return await db.Attempts
+                .AsNoTracking()
+                .AnyAsync(a => a.BoulderId == boulderId
+                    && a.UserId != ownerId
+                    && (a.Type == AttemptType.Send || a.Type == AttemptType.Flash));
         }
         catch (Exception ex)
         {
