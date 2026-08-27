@@ -13,6 +13,13 @@ public interface IProgressionService
 {
     Task<UserProgression> GetProgressionAsync();
 
+    /// <summary>
+    /// Progression for another member, using an explicit window and grouping. The current viewer must
+    /// share at least one wall with <paramref name="userId"/>; otherwise an empty progression is
+    /// returned (defence-in-depth — the page also gates this). Passing the viewer's own id is allowed.
+    /// </summary>
+    Task<UserProgression> GetProgressionForUserAsync(Guid userId, int windowDays, ProgressionGroupBy groupBy);
+
     Task<List<DayActivity>> GetActivityGridAsync(int weeks = 20);
 
     Task<DaySummary> GetDaySummaryAsync(DateOnly date);
@@ -85,12 +92,14 @@ public class ProgressionService : IProgressionService
 {
     private readonly IDbContextFactory<BlocwerkDbContext> _dbContextFactory;
     private readonly ICurrentUserService _currentUserService;
+    private readonly IWallService _wallService;
     private readonly ILogger<ProgressionService> _logger;
 
-    public ProgressionService(IDbContextFactory<BlocwerkDbContext> dbContextFactory, ICurrentUserService currentUserService, ILogger<ProgressionService> logger)
+    public ProgressionService(IDbContextFactory<BlocwerkDbContext> dbContextFactory, ICurrentUserService currentUserService, IWallService wallService, ILogger<ProgressionService> logger)
     {
         _dbContextFactory = dbContextFactory;
         _currentUserService = currentUserService;
+        _wallService = wallService;
         _logger = logger;
     }
 
@@ -99,14 +108,32 @@ public class ProgressionService : IProgressionService
 
     public async Task<UserProgression> GetProgressionAsync()
     {
+        var user = await _currentUserService.GetCurrentUserAsync();
+        return await ComputeProgressionAsync(user.Id, user.ProgressionWindowDays, user.ProgressionGroupBy);
+    }
+
+    public async Task<UserProgression> GetProgressionForUserAsync(Guid userId, int windowDays, ProgressionGroupBy groupBy)
+    {
+        var viewer = await _currentUserService.GetCurrentUserAsync();
+
+        // Defence-in-depth: only surface another member's progression when the viewer shares a wall
+        // with them. Viewing one's own progression is always allowed.
+        if (viewer.Id != userId && !await _wallService.UsersShareAWallAsync(viewer.Id, userId))
+        {
+            _logger.LogWarning("User {ViewerId} denied progression for {TargetId} (no shared wall)", viewer.Id, userId);
+            return new UserProgression(0, null, 0, windowDays, groupBy, []);
+        }
+
+        return await ComputeProgressionAsync(userId, Math.Clamp(windowDays, 7, 365), groupBy);
+    }
+
+    private async Task<UserProgression> ComputeProgressionAsync(Guid userId, int windowDays, ProgressionGroupBy groupBy)
+    {
         using var op = BlocwerkMetrics.TimeOperation("Progression.Get");
         try
         {
-            var user = await _currentUserService.GetCurrentUserAsync();
             await using var db = await _dbContextFactory.CreateDbContextAsync();
 
-            var windowDays = user.ProgressionWindowDays;
-            var groupBy = user.ProgressionGroupBy;
             var now = DateTimeOffset.UtcNow;
             var cutoff = now.AddDays(-windowDays);
 
@@ -115,7 +142,7 @@ public class ProgressionService : IProgressionService
             // starts, for the earliest bucket's trailing window.
             var attempts = await db.Attempts
                 .Include(a => a.Boulder)
-                .Where(a => a.UserId == user.Id && a.Timestamp >= cutoff.AddDays(-RatingWindowDays))
+                .Where(a => a.UserId == userId && a.Timestamp >= cutoff.AddDays(-RatingWindowDays))
                 .ToListAsync();
 
             // Current rating = the rolling score as of now, independent of the view window.
@@ -124,15 +151,15 @@ public class ProgressionService : IProgressionService
             var boulderGrade = GradeScoring.ScoreToGrade(boulderScore);
 
             var hangboard = await db.HangboardSessions
-                .Where(h => h.UserId == user.Id && h.Timestamp >= cutoff)
+                .Where(h => h.UserId == userId && h.Timestamp >= cutoff)
                 .ToListAsync();
             var pullups = await db.PullupSessions
-                .Where(p => p.UserId == user.Id && p.Timestamp >= cutoff)
+                .Where(p => p.UserId == userId && p.Timestamp >= cutoff)
                 .ToListAsync();
             var trainingScore = CalculateTrainingScore(hangboard, pullups);
 
             var activities = await db.Activities
-                .Where(a => a.UserId == user.Id && a.StartedAt >= cutoff)
+                .Where(a => a.UserId == userId && a.StartedAt >= cutoff)
                 .ToListAsync();
 
             // Boulder is a rolling rating per bucket (smooth, continuous); training and volume are

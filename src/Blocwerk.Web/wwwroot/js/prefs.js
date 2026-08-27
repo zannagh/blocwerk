@@ -10,6 +10,7 @@ window.bwPrefs = (function () {
     'use strict';
 
     const EXPERIENCE_KEY = 'blocwerk-boulder-experience';
+    const LAST_PAGE_KEY = 'blocwerk-last-page';
     const ONE_YEAR = 60 * 60 * 24 * 365;
 
     function readCookie(name) {
@@ -31,6 +32,68 @@ window.bwPrefs = (function () {
             ';path=/;max-age=' + ONE_YEAR + ';SameSite=Lax' + secure;
     }
 
+    // Paths we never remember as the "last page", so the homepage redirect can't loop or drop a
+    // returning user back into a flow that doesn't make sense to resume. This MUST stay consistent
+    // with the server-side LastPageRedirect.IsSafeTarget check:
+    //   - "/" itself (that's where the redirect starts — recording it would loop),
+    //   - "/account" (settings/profile), "/login", "/logout" (auth flow),
+    //   - "/join/{token}" invite links,
+    //   - any path with a "/shared/" segment (e.g. "/walls/{id}/boulders/{bid}/shared/{token}")
+    //     — don't resurrect a one-off share-token URL.
+    const NON_RECORDABLE = /^\/$|^\/account|^\/login|^\/logout|^\/join(\/|$)|\/shared\//;
+
+    function isRecordablePath(path) {
+        if (!path) {
+            return false;
+        }
+        return !NON_RECORDABLE.test(path);
+    }
+
+    function recordLastPage() {
+        // Defensive: never let a blocked cookie store or an odd location throw and break navigation.
+        try {
+            const path = location.pathname;
+            if (!isRecordablePath(path)) {
+                return;
+            }
+            writeCookie(LAST_PAGE_KEY, path + location.search);
+        } catch (e) {
+            /* storage blocked or unavailable — silently skip. */
+        }
+    }
+
+    // Record on the first load and on every SPA/enhanced navigation. Enhanced navigation morphs the
+    // server DOM over ours without a full page load, so `enhancedload` (mirroring theme.js) is the
+    // primary hook; popstate covers back/forward, and the initial call covers the first paint.
+    function install() {
+        try {
+            recordLastPage();
+
+            window.addEventListener('popstate', recordLastPage);
+
+            // Blazor.start() runs later (blazor-boot.js), so poll briefly for the API and attach the
+            // enhancedload listener once it exists rather than assuming it's ready at head-parse time.
+            let tries = 0;
+            const timer = setInterval(function () {
+                tries++;
+                if (window.Blazor && window.Blazor.addEventListener) {
+                    window.Blazor.addEventListener('enhancedload', recordLastPage);
+                    clearInterval(timer);
+                } else if (tries > 100) {
+                    clearInterval(timer);
+                }
+            }, 100);
+        } catch (e) {
+            /* never block page startup on recording. */
+        }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', install);
+    } else {
+        install();
+    }
+
     return {
         getExperience: function () {
             const v = readCookie(EXPERIENCE_KEY);
@@ -40,6 +103,7 @@ window.bwPrefs = (function () {
             const v = value === 'new' ? 'new' : 'old';
             writeCookie(EXPERIENCE_KEY, v);
             return v;
-        }
+        },
+        recordLastPage: recordLastPage
     };
 })();

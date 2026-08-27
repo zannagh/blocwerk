@@ -39,6 +39,12 @@ public class CurrentUserService : ICurrentUserService
 
     public void InvalidateCache() => _cachedUser = null;
 
+    public async Task<User?> GetUserByIdAsync(Guid id)
+    {
+        await using var dbContext = await _dbContextFactory.CreateDbContextAsync();
+        return await dbContext.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == id);
+    }
+
     public async Task<User> GetCurrentUserAsync()
     {
         if (_cachedUser is not null)

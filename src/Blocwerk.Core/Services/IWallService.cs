@@ -96,5 +96,11 @@ public interface IWallService
 
     Task<List<WallMember>> GetMembersAsync(Guid wallId);
 
+    /// <summary>
+    /// True when both users are members of at least one common wall. Used to gate whether a viewer
+    /// may see another member's profile. Independent of the current-user context.
+    /// </summary>
+    Task<bool> UsersShareAWallAsync(Guid userA, Guid userB);
+
     Task SetMemberRoleAsync(Guid wallId, Guid userId, WallRole role);
 }

@@ -61,7 +61,42 @@ else
         </Page1>
 
         <Page2>
-            @* Settings + Members *@
+            @* Members (visible to all wall members) + admin-only settings *@
+            @if (_isMember)
+            {
+                <div class="settings-panel">
+                    <h2>Members</h2>
+                    @if (_members == null)
+                    {
+                        <p class="loading-small">Loading...</p>
+                    }
+                    else
+                    {
+                        @foreach (var member in _members)
+                        {
+                            <div class="member-row">
+                                <a href="/profile/@member.UserId" class="member-name-link">@(member.User?.DisplayName ?? "Unknown")</a>
+                                @if (member.UserId == _wall.OwnerId)
+                                {
+                                    <span class="member-role owner">Owner</span>
+                                }
+                                else if (_isAdmin)
+                                {
+                                    <button class="role-toggle @(member.Role == WallRole.Admin ? "admin" : "member")"
+                                            @onclick="() => ToggleMemberRole(member)">
+                                        @(member.Role == WallRole.Admin ? "Admin" : "Member")
+                                    </button>
+                                }
+                                else
+                                {
+                                    <span class="member-role">@(member.Role == WallRole.Admin ? "Admin" : "Member")</span>
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+            }
+
             @if (_isAdmin)
             {
                 <div class="settings-panel">
@@ -173,40 +208,12 @@ else
                         <p class="empty-msg">Upload a wall photo to draw segments on it.</p>
                     }
                 </div>
-
-                <div class="settings-panel">
-                    <h2>Members</h2>
-                    @if (_members == null)
-                    {
-                        <p class="loading-small">Loading...</p>
-                    }
-                    else
-                    {
-                        @foreach (var member in _members)
-                        {
-                            <div class="member-row">
-                                <span class="member-name">@(member.User?.DisplayName ?? "Unknown")</span>
-                                @if (member.UserId == _wall.OwnerId)
-                                {
-                                    <span class="member-role owner">Owner</span>
-                                }
-                                else
-                                {
-                                    <button class="role-toggle @(member.Role == WallRole.Admin ? "admin" : "member")"
-                                            @onclick="() => ToggleMemberRole(member)">
-                                        @(member.Role == WallRole.Admin ? "Admin" : "Member")
-                                    </button>
-                                }
-                            </div>
-                        }
-                    }
-                </div>
             }
             else
             {
                 <div class="settings-panel">
-                    <h2>Settings</h2>
-                    <p class="empty-msg">Only wall admins can change settings.</p>
+                    <h2>Wall Settings</h2>
+                    <p class="empty-msg">Only wall admins can change wall settings.</p>
                 </div>
             }
         </Page2>
@@ -443,6 +450,7 @@ else
     private List<Boulder> _boulders = [];
     private List<BoulderListItem> _items = [];
     private bool _isAdmin;
+    private bool _isMember;
     private bool _isAnonymous;
     private Guid _currentUserId;
     private bool _isEditing;
@@ -592,7 +600,7 @@ else
         if (_wall != null && !_isAnonymous)
         {
             await LoadActivity(0);
-            if (_isAdmin)
+            if (_isMember)
             {
                 _members = await WallService.GetMembersAsync(WallId);
             }
@@ -630,6 +638,7 @@ else
             _wall = await WallService.GetWallByShareTokenAsync(ShareToken);
             _isAnonymous = true;
             _isAdmin = false;
+            _isMember = false;
 
             try
             {
@@ -638,6 +647,7 @@ else
                 if (membership != null)
                 {
                     _isAnonymous = false;
+                    _isMember = true;
                     _isAdmin = membership.Role == WallRole.Admin;
                     _currentUserId = user.Id;
                 }
@@ -655,6 +665,7 @@ else
                 {
                     var user = await CurrentUserService.GetCurrentUserAsync();
                     var membership = _wall.Members.FirstOrDefault(m => m.UserId == user.Id);
+                    _isMember = membership != null;
                     _isAdmin = membership?.Role == WallRole.Admin;
                     _currentUserId = user.Id;
                 }

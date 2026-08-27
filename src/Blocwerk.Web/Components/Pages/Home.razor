@@ -4,6 +4,7 @@
 @layout EmptyLayout
 @inject NavigationManager Navigation
 @inject AuthenticationStateProvider AuthStateProvider
+@inject IHttpContextAccessor HttpContextAccessor
 
 <PageTitle>Blocwerk</PageTitle>
 
@@ -27,7 +28,15 @@
         if (authState.User.Identity?.IsAuthenticated == true)
         {
             _redirecting = true;
-            Navigation.NavigateTo("/walls", replace: true);
+
+            // Prefer the last page the user was on (recorded client-side into blocwerk-last-page by
+            // prefs.js). Reading the cookie server-side on the prerender pass — HttpContext is live
+            // there, mirroring BoulderCreate — gives a no-flash redirect. On an interactive
+            // re-render HttpContext is null, so we simply fall back to /walls without crashing.
+            var stored = HttpContextAccessor.HttpContext?.Request.Cookies["blocwerk-last-page"];
+            var target = LastPageRedirect.Resolve(stored, "/walls");
+
+            Navigation.NavigateTo(target, replace: true);
         }
     }
 }
