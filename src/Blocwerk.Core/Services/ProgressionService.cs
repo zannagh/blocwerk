@@ -34,6 +34,13 @@ public interface IProgressionService
     Task<ActivityDetail?> GetActivityAsync(Guid activityId);
 
     Task UpdateActivityDurationAsync(Guid activityId, int minutes);
+
+    /// <summary>
+    /// Leaderboard for every member of <paramref name="wallId"/>: their hardest send (all-time, this
+    /// wall), their wall-scoped rolling boulder score, and their all-time training volume on the wall.
+    /// Members with no data appear with a null grade and zero score/volume. Ordered by score descending.
+    /// </summary>
+    Task<IReadOnlyList<WallLeaderboardEntry>> GetWallLeaderboardAsync(Guid wallId);
 }
 
 public record UserProgression(
@@ -483,6 +490,109 @@ public class ProgressionService : IProgressionService
             op.Fail(ex);
             throw;
         }
+    }
+
+    public async Task<IReadOnlyList<WallLeaderboardEntry>> GetWallLeaderboardAsync(Guid wallId)
+    {
+        using var op = BlocwerkMetrics.TimeOperation("Progression.GetWallLeaderboard", wallId);
+        try
+        {
+            var members = await _wallService.GetMembersAsync(wallId);
+            if (members.Count == 0)
+            {
+                return [];
+            }
+
+            // Defence-in-depth: the leaderboard is UI-gated to members, but the service must not
+            // hand a wall's board to a non-member. Reuse the members already loaded — no extra query.
+            var currentUser = await _currentUserService.GetCurrentUserAsync();
+            if (currentUser is null || !members.Any(m => m.UserId == currentUser.Id))
+            {
+                return [];
+            }
+
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+
+            var scoreCutoff = DateTimeOffset.UtcNow.AddDays(-RatingWindowDays);
+
+            // ONE query for the whole wall: every attempt on a boulder that belongs to this wall,
+            // materialised with its boulder so the scoring helpers can read the grade. Grouped per
+            // user in memory below — no per-member round-trips.
+            var wallAttempts = await db.Attempts
+                .Include(a => a.Boulder)
+                .Where(a => a.Boulder.WallId == wallId)
+                .ToListAsync();
+
+            // ONE query for the wall's activities; volume is summed per user in memory.
+            var wallActivities = await db.Activities
+                .Where(a => a.WallId == wallId)
+                .ToListAsync();
+
+            var attemptsByUser = wallAttempts
+                .GroupBy(a => a.UserId)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            var volumeByUser = wallActivities
+                .GroupBy(a => a.UserId)
+                .ToDictionary(g => g.Key, g => g.Sum(ActivityMinutes));
+
+            var entries = new List<WallLeaderboardEntry>(members.Count);
+            foreach (var member in members)
+            {
+                var attempts = attemptsByUser.GetValueOrDefault(member.UserId) ?? [];
+
+                var (hardestGrade, hardestScore) = HardestSend(attempts);
+                var score = (int)Math.Round(CalculateBoulderScore(
+                    attempts.Where(a => a.Timestamp >= scoreCutoff).ToList()));
+                var volume = volumeByUser.GetValueOrDefault(member.UserId);
+
+                entries.Add(new WallLeaderboardEntry(
+                    member.UserId,
+                    member.User?.DisplayName ?? "Unknown",
+                    hardestGrade,
+                    hardestScore,
+                    score,
+                    volume));
+            }
+
+            return entries
+                .OrderByDescending(e => e.Score)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// The member's hardest send over the given (already wall-scoped) attempts: the best type per
+    /// boulder decides whether it counts, and the flash bonus is folded into the numeric score used
+    /// for sorting. Returns (null, 0) when there is no send.
+    /// </summary>
+    private static (string? Grade, int Score) HardestSend(List<Attempt> attempts)
+    {
+        string? grade = null;
+        var score = 0;
+        foreach (var boulderGroup in attempts.GroupBy(a => a.BoulderId))
+        {
+            var bestType = boulderGroup.Max(a => a.Type);
+            if (bestType < AttemptType.Send)
+            {
+                continue;
+            }
+
+            var boulder = boulderGroup.First().Boulder;
+            var candidate = GradeScoring.GetScore(boulder.Grade, bestType == AttemptType.Flash);
+            if (candidate > score)
+            {
+                score = candidate;
+                grade = boulder.Grade;
+            }
+        }
+
+        return (grade, score);
     }
 
     private static double CalculateBoulderScore(List<Attempt> attempts)

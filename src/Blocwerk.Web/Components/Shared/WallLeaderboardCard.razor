@@ -1,0 +1,184 @@
+@inject IProgressionService ProgressionService
+
+@*
+    Member leaderboard for a wall: hardest send, wall-scoped rolling score and all-time training
+    volume, one row per member. Sortable by any numeric column. Mounted (members-only) by the wall
+    detail page, so this component does not gate its own visibility.
+*@
+
+<div class="settings-panel">
+    <h2>Leaderboard</h2>
+
+    @if (_entries == null)
+    {
+        <p class="leaderboard-empty">Loading…</p>
+    }
+    else if (_entries.Count == 0)
+    {
+        <p class="leaderboard-empty">No members yet.</p>
+    }
+    else
+    {
+        <div class="leaderboard-scroll">
+            <table class="leaderboard-table">
+                <thead>
+                    <tr>
+                        <th scope="col" class="sortable" aria-sort="@AriaSort(LeaderboardColumn.Name)">
+                            <button type="button" class="sort-btn @ActiveClass(LeaderboardColumn.Name)"
+                                    @onclick="() => SortBy(LeaderboardColumn.Name)">
+                                Name<span class="leaderboard-sort-ind">@SortIndicator(LeaderboardColumn.Name)</span>
+                            </button>
+                        </th>
+                        <th scope="col" class="sortable num" aria-sort="@AriaSort(LeaderboardColumn.HardestSend)">
+                            <button type="button" class="sort-btn @ActiveClass(LeaderboardColumn.HardestSend)"
+                                    @onclick="() => SortBy(LeaderboardColumn.HardestSend)">
+                                Hardest send<span class="leaderboard-sort-ind">@SortIndicator(LeaderboardColumn.HardestSend)</span>
+                            </button>
+                        </th>
+                        <th scope="col" class="sortable num" aria-sort="@AriaSort(LeaderboardColumn.Score)">
+                            <button type="button" class="sort-btn @ActiveClass(LeaderboardColumn.Score)"
+                                    @onclick="() => SortBy(LeaderboardColumn.Score)">
+                                Score<span class="leaderboard-sort-ind">@SortIndicator(LeaderboardColumn.Score)</span>
+                            </button>
+                        </th>
+                        <th scope="col" class="sortable num" aria-sort="@AriaSort(LeaderboardColumn.Volume)">
+                            <button type="button" class="sort-btn @ActiveClass(LeaderboardColumn.Volume)"
+                                    @onclick="() => SortBy(LeaderboardColumn.Volume)">
+                                Volume<span class="leaderboard-sort-ind">@SortIndicator(LeaderboardColumn.Volume)</span>
+                            </button>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var entry in _entries)
+                    {
+                        <tr>
+                            <td>
+                                <a href="/profile/@entry.UserId" class="member-name-link">@entry.DisplayName</a>
+                            </td>
+                            <td class="num">@(entry.HardestSendGrade ?? "—")</td>
+                            <td class="num">@entry.Score</td>
+                            <td class="num">@FormatVolume(entry.VolumeMinutes)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid WallId { get; set; }
+
+    private IReadOnlyList<WallLeaderboardEntry>? _entries;
+    private Guid _loadedWallId;
+    private bool _loading;
+    private LeaderboardColumn _sortColumn = LeaderboardColumn.Score;
+    private bool _sortDescending = true;
+
+    private enum LeaderboardColumn
+    {
+        Name,
+        HardestSend,
+        Score,
+        Volume,
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Reload only when the wall changes; re-renders from sorting must not refetch. WallDetail
+        // re-renders often, so guard against a re-render kicking off a second concurrent fetch while
+        // the first is still in flight.
+        if (_loading || (WallId == _loadedWallId && _entries != null))
+        {
+            return;
+        }
+
+        _loading = true;
+        _loadedWallId = WallId;
+        _entries = null;
+        try
+        {
+            _entries = Sorted(await ProgressionService.GetWallLeaderboardAsync(WallId));
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void SortBy(LeaderboardColumn column)
+    {
+        if (_sortColumn == column)
+        {
+            _sortDescending = !_sortDescending;
+        }
+        else
+        {
+            _sortColumn = column;
+            // Names read best A→Z; numbers read best high→low.
+            _sortDescending = column != LeaderboardColumn.Name;
+        }
+
+        if (_entries != null)
+        {
+            _entries = Sorted(_entries);
+        }
+
+        StateHasChanged();
+    }
+
+    private IReadOnlyList<WallLeaderboardEntry> Sorted(IReadOnlyList<WallLeaderboardEntry> source)
+    {
+        IEnumerable<WallLeaderboardEntry> ordered = _sortColumn switch
+        {
+            LeaderboardColumn.Name => source.OrderBy(e => e.DisplayName, StringComparer.OrdinalIgnoreCase),
+            LeaderboardColumn.HardestSend => source.OrderBy(e => e.HardestSendScore),
+            LeaderboardColumn.Volume => source.OrderBy(e => e.VolumeMinutes),
+            _ => source.OrderBy(e => e.Score),
+        };
+
+        return (_sortDescending ? ordered.Reverse() : ordered).ToList();
+    }
+
+    private string SortIndicator(LeaderboardColumn column)
+    {
+        if (_sortColumn != column)
+        {
+            return string.Empty;
+        }
+
+        return _sortDescending ? "▼" : "▲";
+    }
+
+    // aria-sort reflects the active sort so assistive tech announces the current column/direction.
+    private string AriaSort(LeaderboardColumn column)
+    {
+        if (_sortColumn != column)
+        {
+            return "none";
+        }
+
+        return _sortDescending ? "descending" : "ascending";
+    }
+
+    private string ActiveClass(LeaderboardColumn column)
+    {
+        return _sortColumn == column ? "active" : string.Empty;
+    }
+
+    private static string FormatVolume(int minutes)
+    {
+        if (minutes <= 0)
+        {
+            return "0 min";
+        }
+
+        if (minutes < 60)
+        {
+            return $"{minutes} min";
+        }
+
+        return $"{minutes / 60.0:0.#} h";
+    }
+}

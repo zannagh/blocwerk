@@ -25,78 +25,7 @@ else
 
     <WallCarousel @ref="_carousel" InitialPage="@InitialCarouselPage" Locked="_isEditing">
         <Page1>
-            @* Activity *@
-            <div class="settings-panel">
-                <h2>Activity</h2>
-                @if (_activityItems == null)
-                {
-                    <p class="loading-small">Loading...</p>
-                }
-                else
-                {
-                    @foreach (var item in _activityItems)
-                    {
-                        <div class="activity-row">
-                            <span class="activity-icon">@ActivityIcon(item.Type)</span>
-                            <span class="activity-text">@item.User.DisplayName @ActivityVerb(item.Type)</span>
-                            <span class="activity-time">@RelativeTime(item.Timestamp)</span>
-                        </div>
-                    }
-                    @if (_activityTotal > _activityItems.Count)
-                    {
-                        <div class="activity-pager">
-                            @if (_activityPage > 0)
-                            {
-                                <button class="pager-btn" @onclick="() => LoadActivity(_activityPage - 1)">&larr; Newer</button>
-                            }
-                            <button class="pager-btn" @onclick="() => LoadActivity(_activityPage + 1)">Older &rarr;</button>
-                        </div>
-                    }
-                    @if (_activityItems.Count == 0)
-                    {
-                        <p class="empty-activity">No activity yet.</p>
-                    }
-                }
-            </div>
-        </Page1>
-
-        <Page2>
-            @* Members (visible to all wall members) + admin-only settings *@
-            @if (_isMember)
-            {
-                <div class="settings-panel">
-                    <h2>Members</h2>
-                    @if (_members == null)
-                    {
-                        <p class="loading-small">Loading...</p>
-                    }
-                    else
-                    {
-                        @foreach (var member in _members)
-                        {
-                            <div class="member-row">
-                                <a href="/profile/@member.UserId" class="member-name-link">@(member.User?.DisplayName ?? "Unknown")</a>
-                                @if (member.UserId == _wall.OwnerId)
-                                {
-                                    <span class="member-role owner">Owner</span>
-                                }
-                                else if (_isAdmin)
-                                {
-                                    <button class="role-toggle @(member.Role == WallRole.Admin ? "admin" : "member")"
-                                            @onclick="() => ToggleMemberRole(member)">
-                                        @(member.Role == WallRole.Admin ? "Admin" : "Member")
-                                    </button>
-                                }
-                                else
-                                {
-                                    <span class="member-role">@(member.Role == WallRole.Admin ? "Admin" : "Member")</span>
-                                }
-                            </div>
-                        }
-                    }
-                </div>
-            }
-
+            @* Wall settings, shape, and API keys (admins only) *@
             @if (_isAdmin)
             {
                 <div class="settings-panel">
@@ -208,6 +137,11 @@ else
                         <p class="empty-msg">Upload a wall photo to draw segments on it.</p>
                     }
                 </div>
+
+                @if (_currentUserId != Guid.Empty)
+                {
+                    <WallApiKeyPanel WallId="WallId" CurrentUserId="_currentUserId" />
+                }
             }
             else
             {
@@ -216,10 +150,93 @@ else
                     <p class="empty-msg">Only wall admins can change wall settings.</p>
                 </div>
             }
+        </Page1>
+
+        <Page2>
+            @* Activity *@
+            <div class="settings-panel">
+                <h2>Activity</h2>
+                @if (_activityItems == null)
+                {
+                    <p class="loading-small">Loading...</p>
+                }
+                else
+                {
+                    @foreach (var item in _activityItems)
+                    {
+                        <div class="activity-row">
+                            <span class="activity-icon">@ActivityIcon(item.Type)</span>
+                            <span class="activity-text">@item.User.DisplayName @ActivityVerb(item.Type)</span>
+                            <span class="activity-time">@RelativeTime(item.Timestamp)</span>
+                        </div>
+                    }
+                    @if (_activityTotal > _activityItems.Count)
+                    {
+                        <div class="activity-pager">
+                            @if (_activityPage > 0)
+                            {
+                                <button class="pager-btn" @onclick="() => LoadActivity(_activityPage - 1)">&larr; Newer</button>
+                            }
+                            <button class="pager-btn" @onclick="() => LoadActivity(_activityPage + 1)">Older &rarr;</button>
+                        </div>
+                    }
+                    @if (_activityItems.Count == 0)
+                    {
+                        <p class="empty-activity">No activity yet.</p>
+                    }
+                }
+            </div>
         </Page2>
 
         <Page3>
-            @* Main *@
+            @* Members (visible to all wall members) + leaderboard *@
+            @if (_isMember)
+            {
+                <div class="settings-panel">
+                    <h2>Members</h2>
+                    @if (_members == null)
+                    {
+                        <p class="loading-small">Loading...</p>
+                    }
+                    else
+                    {
+                        @foreach (var member in _members)
+                        {
+                            <div class="member-row">
+                                <a href="/profile/@member.UserId" class="member-name-link">@(member.User?.DisplayName ?? "Unknown")</a>
+                                @if (member.UserId == _wall.OwnerId)
+                                {
+                                    <span class="member-role owner">Owner</span>
+                                }
+                                else if (_isAdmin)
+                                {
+                                    <button class="role-toggle @(member.Role == WallRole.Admin ? "admin" : "member")"
+                                            @onclick="() => ToggleMemberRole(member)">
+                                        @(member.Role == WallRole.Admin ? "Admin" : "Member")
+                                    </button>
+                                }
+                                else
+                                {
+                                    <span class="member-role">@(member.Role == WallRole.Admin ? "Admin" : "Member")</span>
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+
+                <WallLeaderboardCard WallId="WallId" />
+            }
+            else
+            {
+                <div class="settings-panel">
+                    <h2>Members</h2>
+                    <p class="leaderboard-empty">Members are visible to wall members.</p>
+                </div>
+            }
+        </Page3>
+
+        <Page4>
+            @* Overview *@
             <div class="wall-main">
                 <div class="wall-detail-card">
                     @if (_isAnonymous)
@@ -318,16 +335,16 @@ else
                             <span class="stat-value">@_wall.Boulders.Count</span>
                             <span class="stat-label">Boulders</span>
                         </div>
-                        <div class="stat clickable" @onclick="GoToSettings">
+                        <div class="stat clickable" @onclick="GoToMembers">
                             <span class="stat-value">@_wall.Members.Count</span>
                             <span class="stat-label">Members</span>
                         </div>
                     </div>
                 }
             </div>
-        </Page3>
+        </Page4>
 
-        <Page4>
+        <Page5>
             @* Boulders *@
             <div class="boulder-section">
                 <div class="section-header">
@@ -408,20 +425,15 @@ else
                     }
                 }
             </div>
-        </Page4>
+        </Page5>
 
-        <Page5>
-            @* Wall details: temperature, gallery, and (for admins) the wall's API keys *@
+        <Page6>
+            @* Wall details: temperature and gallery *@
             <WallTemperaturePanel WallId="WallId" />
 
             <WallGalleryPanel WallId="WallId" ShareToken="@ShareToken"
                               IsAdmin="_isAdmin" CurrentUserId="_currentUserId" />
-
-            @if (_isAdmin && _currentUserId != Guid.Empty)
-            {
-                <WallApiKeyPanel WallId="WallId" CurrentUserId="_currentUserId" />
-            }
-        </Page5>
+        </Page6>
     </WallCarousel>
 }
 
@@ -440,7 +452,7 @@ else
     public string? View { get; set; }
 
     private int InitialCarouselPage =>
-        string.Equals(View, "boulders", StringComparison.OrdinalIgnoreCase) ? 3 : 2;
+        string.Equals(View, "boulders", StringComparison.OrdinalIgnoreCase) ? 4 : 3;
 
     private WallCarousel? _carousel;
     private Wall? _wall;
@@ -805,12 +817,12 @@ else
         _isEditing = !_isEditing;
     }
 
-    private Task GoToBoulders() => _carousel?.GoToPageAsync(3) ?? Task.CompletedTask;
-    private Task GoToSettings() => _carousel?.GoToPageAsync(1) ?? Task.CompletedTask;
+    private Task GoToBoulders() => _carousel?.GoToPageAsync(4) ?? Task.CompletedTask;
+    private Task GoToMembers() => _carousel?.GoToPageAsync(2) ?? Task.CompletedTask;
 
     private async Task StartAlignmentFlow()
     {
-        if (_carousel != null) await _carousel.GoToPageAsync(2, smooth: false);
+        if (_carousel != null) await _carousel.GoToPageAsync(3, smooth: false);
         _isEditing = true;
     }
 
