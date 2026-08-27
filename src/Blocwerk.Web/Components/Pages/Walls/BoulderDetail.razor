@@ -71,7 +71,7 @@ else
                 </div>
             }
 
-            <p class="meta">by @_boulder.CreatedBy.DisplayName &middot; @_boulder.CreatedAt.ToString("MMM d, yyyy")</p>
+            <p class="meta">by @_boulder.CreatedBy.DisplayName &middot; <LocalTime Value="@_boulder.CreatedAt" Format="LocalTimeFormat.Date" /></p>
 
             @if (CanFullRevise)
             {
@@ -292,7 +292,7 @@ else
                             <span class="attempt-type @attempt.Type.ToString().ToLower()">@attempt.Type</span>
                             <span class="attempt-user">@attempt.User.DisplayName</span>
                         </div>
-                        <span class="attempt-time">@attempt.Timestamp.ToString("MMM d, HH:mm")</span>
+                        <span class="attempt-time"><LocalTime Value="@attempt.Timestamp" Format="LocalTimeFormat.DateTime" /></span>
                         @if (attempt.UserId == _currentUserId)
                         {
                             <button class="delete-btn" @onclick="() => DeleteAttempt(attempt.Id)">x</button>

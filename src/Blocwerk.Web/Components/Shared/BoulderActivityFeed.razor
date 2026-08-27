@@ -14,7 +14,7 @@
         {
             <div class="activity-row">
                 <span class="activity-text">@Describe(item)</span>
-                <span class="activity-time">@TimeText.Relative(item.Timestamp)</span>
+                <span class="activity-time"><LocalTime Value="@item.Timestamp" Format="LocalTimeFormat.Relative" /></span>
             </div>
         }
         @if (_items.Count == 0)

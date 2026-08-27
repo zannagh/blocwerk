@@ -27,7 +27,17 @@
     {
         <div class="wall-temp-latest">
             <span class="wall-temp-value">@(latest is { } l ? l.TemperatureCelsius.ToString("0.0") : "--")&thinsp;&deg;C</span>
-            <span class="wall-temp-when">@(latest is { } r ? $"latest · {RelativeTime(r.RecordedAt)}" : "loading...")</span>
+            <span class="wall-temp-when">
+                @if (latest is { } r)
+                {
+                    <text>latest · </text>
+                    <LocalTime Value="@r.RecordedAt" Format="LocalTimeFormat.Relative" />
+                }
+                else
+                {
+                    <text>loading...</text>
+                }
+            </span>
         </div>
 
         @if (loading)
@@ -40,6 +50,7 @@
             <ProgressionChart Title="@ChartTitle" Caption="@ChartCaption" Stroke="#2e9e6b"
                               Points="points" YTicks="scale.Ticks" YMin="scale.Min" YMax="scale.Max"
                               OnYScaleStep="OnYScaleStep"
+                              LocalTimeLabels="true" AxisTimeFormat="@AxisTimeKey" TooltipTimeFormat="datetime"
                               EmptyText="No readings in this window." />
         }
     }
@@ -79,6 +90,11 @@
     private string ChartTitle => $"Wall temperature · {RangeOptions.First(o => o.Range == range).Label}";
 
     private string ChartCaption => $"{FormatBucket(bucketWidth)} averages · drag axis to zoom";
+
+    // The chart localizes the x-axis ticks on the client; the 24h window shows times, wider windows
+    // dates. Wider windows use "day-month" (no year) so the tick matches the "d MMM" server fallback
+    // below and does not reflow or crowd the axis when JS localizes it.
+    private string AxisTimeKey => range == TempRange.Day ? "time" : "day-month";
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
@@ -208,16 +224,23 @@
         var result = new List<ChartSeriesPoint>(slots);
         for (var i = 0; i < slots; i++)
         {
-            var at = (from + TimeSpan.FromTicks(width.Ticks * i)).ToLocalTime();
-            var axis = range == TempRange.Day ? at.ToString("HH:mm") : at.ToString("d MMM");
+            // Keep the instant in UTC: the chart formats both the axis tick and the tooltip time on
+            // the client (viewer-local). The strings below are only the pre-JS/no-JS fallback, so they
+            // are formatted from UTC to stay unambiguous; the tooltip time itself is appended in JS.
+            var at = from + TimeSpan.FromTicks(width.Ticks * i);
+            var utcMs = at.ToUnixTimeMilliseconds();
+            var utc = at.UtcDateTime;
+            var axis = range == TempRange.Day ? utc.ToString("HH:mm") : utc.ToString("d MMM");
             if (!byIndex.TryGetValue(i, out var bucket))
             {
-                result.Add(new ChartSeriesPoint(null, $"no data · {at:d MMM HH:mm}", axis));
+                // No trailing separator: progression-chart.js prepends " · " only when it appends the
+                // viewer-local time, so the prefix stays clean when bwTime is unavailable.
+                result.Add(new ChartSeriesPoint(null, "no data", axis, utcMs));
                 continue;
             }
 
-            var label = $"{bucket.AverageCelsius:0.0} °C (min {bucket.MinCelsius:0.0} · max {bucket.MaxCelsius:0.0}) · {at:d MMM HH:mm}";
-            result.Add(new ChartSeriesPoint(bucket.AverageCelsius, label, axis));
+            var label = $"{bucket.AverageCelsius:0.0} °C (min {bucket.MinCelsius:0.0} · max {bucket.MaxCelsius:0.0})";
+            result.Add(new ChartSeriesPoint(bucket.AverageCelsius, label, axis, utcMs));
         }
 
         return result;
@@ -255,26 +278,5 @@
         }
 
         return width.TotalMinutes >= 1 ? $"{width.TotalMinutes:0}min" : $"{width.TotalSeconds:0}s";
-    }
-
-    private static string RelativeTime(DateTimeOffset timestamp)
-    {
-        var diff = DateTimeOffset.UtcNow - timestamp;
-        if (diff.TotalMinutes < 1)
-        {
-            return "just now";
-        }
-
-        if (diff.TotalHours < 1)
-        {
-            return $"{(int)diff.TotalMinutes}m ago";
-        }
-
-        if (diff.TotalDays < 1)
-        {
-            return $"{(int)diff.TotalHours}h ago";
-        }
-
-        return diff.TotalDays < 7 ? $"{(int)diff.TotalDays}d ago" : timestamp.ToLocalTime().ToString("d MMM yyyy");
     }
 }

@@ -47,9 +47,18 @@
             <div class="prog-chart-tip"></div>
         </div>
         <div class="prog-chart-xaxis">
-            @foreach (var (label, frac) in XAxisTicks())
+            @foreach (var tick in XAxisTicks())
             {
-                <span class="prog-xtick" style="left:@Pct(frac);">@label</span>
+                @if (LocalTimeLabels && tick.UtcMs is { } ms)
+                {
+                    @* localtime.js rewrites this to the viewer's local time; the text is the pre-JS fallback. *@
+                    <time class="prog-xtick" style="left:@Pct(tick.Frac);"
+                          datetime="@Iso(ms)" data-bw-fmt="@AxisTimeFormat">@tick.Label</time>
+                }
+                else
+                {
+                    <span class="prog-xtick" style="left:@Pct(tick.Frac);">@tick.Label</span>
+                }
             }
         </div>
     }
@@ -63,6 +72,17 @@
     [Parameter] public string Stroke { get; set; } = "#e94560";
     [Parameter] public bool ShowTrendline { get; set; }
     [Parameter] public string EmptyText { get; set; } = "Not enough data yet.";
+
+    /// <summary>Opt-in (temperature panel only): format the x-axis ticks and tooltip time on the
+    /// CLIENT in the viewer's local timezone. Requires each point to carry <see cref="ChartSeriesPoint.UtcMs"/>.
+    /// The date-based progression/training/volume charts leave this off and are unaffected.</summary>
+    [Parameter] public bool LocalTimeLabels { get; set; }
+
+    /// <summary>bwTime format key for the x-axis ticks when <see cref="LocalTimeLabels"/> is on (e.g. "time", "date-dmy").</summary>
+    [Parameter] public string AxisTimeFormat { get; set; } = "date-dmy";
+
+    /// <summary>bwTime format key for the tooltip time appended client-side when <see cref="LocalTimeLabels"/> is on.</summary>
+    [Parameter] public string TooltipTimeFormat { get; set; } = "datetime";
 
     /// <summary>Explicit Y range. When both are set they override the auto data range (and enable
     /// the y-axis drag-to-rescale gesture, which reports steps via <see cref="OnYScaleStep"/>).</summary>
@@ -256,7 +276,7 @@
         return sb.ToString();
     }
 
-    private IEnumerable<(string Label, double Frac)> XAxisTicks()
+    private IEnumerable<(string Label, long? UtcMs, double Frac)> XAxisTicks()
     {
         if (Points.Count == 0)
         {
@@ -266,9 +286,12 @@
         var step = Math.Max(1, (int)Math.Ceiling(Points.Count / 4.0));
         for (var i = 0; i < Points.Count; i += step)
         {
-            yield return (Points[i].AxisLabel, XFrac(i));
+            yield return (Points[i].AxisLabel, Points[i].UtcMs, XFrac(i));
         }
     }
+
+    // Unix epoch ms → ISO 8601 UTC ("o"), the shape wwwroot/js/localtime.js parses from the datetime attribute.
+    private static string Iso(long utcMs) => DateTimeOffset.FromUnixTimeMilliseconds(utcMs).UtcDateTime.ToString("o", Inv);
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -280,11 +303,15 @@
 
         // Serialise the points (x/y fractions + tooltip) and let the JS module own the pointer-drag
         // read-out — a Blazor Server pointermove round-trip per move would lag badly.
+        // In local-time mode each point also carries its UTC instant (utc, epoch ms) and the tooltip
+        // format key (tfmt); progression-chart.js appends the viewer-local time to the label on show().
         var payload = JsonSerializer.Serialize(Points.Select((p, i) => new
         {
             x = XFrac(i),
             y = p.Value.HasValue ? YFrac(p.Value.Value) : (double?)null,
             label = p.TooltipLabel,
+            utc = LocalTimeLabels ? p.UtcMs : null,
+            tfmt = LocalTimeLabels ? TooltipTimeFormat : null,
         }));
 
         if (payload == _boundPayload)

@@ -27,7 +27,7 @@
             <div class="avatar">@_target.DisplayName.FirstOrDefault()</div>
             <h1>@_target.DisplayName</h1>
             <span class="role-badge">@_target.Role</span>
-            <p class="member-since">Member since @_target.CreatedAt.ToString("MMMM yyyy")</p>
+            <p class="member-since">Member since <LocalTime Value="@_target.CreatedAt" Format="LocalTimeFormat.MonthYear" /></p>
         </div>
 
         @if (_isSelf)

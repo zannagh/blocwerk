@@ -21,7 +21,7 @@
                 <button type="button" class="wall-gallery-thumb" @key="ItemKey(item)" @onclick="() => Open(index)">
                     <img src="@ImageUrl(item)" alt="@(item.Caption ?? "Wall image")" loading="lazy" />
                     <span class="wall-gallery-badge @SourceClass(item.Source)">@SourceLabel(item.Source)</span>
-                    <span class="wall-gallery-when">@RelativeTime(item.CapturedAt)</span>
+                    <span class="wall-gallery-when"><LocalTime Value="@item.CapturedAt" Format="LocalTimeFormat.Relative" /></span>
                 </button>
             }
         </div>
@@ -61,8 +61,8 @@
         <div class="wall-lightbox-foot">
             <span class="wall-lightbox-meta">
                 <span class="wall-gallery-badge @SourceClass(selected.Source)">@SourceLabel(selected.Source)</span>
-                @selected.CapturedAt.ToLocalTime().ToString("dddd, d MMM yyyy HH:mm")
-                &middot; @RelativeTime(selected.CapturedAt)
+                <LocalTime Value="@selected.CapturedAt" Format="LocalTimeFormat.Full" />
+                &middot; <LocalTime Value="@selected.CapturedAt" Format="LocalTimeFormat.Relative" />
                 &middot; @FormatSize(selected.SizeBytes)
             </span>
 
@@ -274,26 +274,5 @@
         return bytes >= 1024 * 1024
             ? $"{bytes / (1024.0 * 1024.0):0.#} MB"
             : $"{bytes / 1024.0:0} kB";
-    }
-
-    private static string RelativeTime(DateTimeOffset timestamp)
-    {
-        var diff = DateTimeOffset.UtcNow - timestamp;
-        if (diff.TotalMinutes < 1)
-        {
-            return "just now";
-        }
-
-        if (diff.TotalHours < 1)
-        {
-            return $"{(int)diff.TotalMinutes}m ago";
-        }
-
-        if (diff.TotalDays < 1)
-        {
-            return $"{(int)diff.TotalHours}h ago";
-        }
-
-        return diff.TotalDays < 7 ? $"{(int)diff.TotalDays}d ago" : timestamp.ToLocalTime().ToString("d MMM yyyy");
     }
 }

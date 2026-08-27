@@ -1197,6 +1197,8 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     position: relative; height: 128px; background: var(--bg-surface); border-radius: 8px;
     box-shadow: 0 1px 4px var(--shadow-sm); padding: 10px 10px 10px 36px;
     touch-action: pan-y; cursor: crosshair;
+    user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
 }
 .prog-chart-svg { width: 100%; height: 100%; display: block; }
 .prog-grid { stroke: var(--border); opacity: 0.45; }

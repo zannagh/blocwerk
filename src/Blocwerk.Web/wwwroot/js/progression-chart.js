@@ -52,7 +52,20 @@ window.blocwerkChart = (function () {
             guide.style.left = px + 'px';
             guide.style.display = 'block';
 
-            tip.textContent = point.label;
+            // In local-time mode each point carries its UTC instant (point.utc, epoch ms) and a
+            // bwTime format key (point.tfmt); the label is the prefix and the viewer-local time is
+            // appended here, so the read-out is in the browser's timezone rather than the server's.
+            // The " · " separator lives here (not in the C# prefix) so an unavailable/empty bwTime
+            // leaves no dangling separator behind.
+            var text = point.label;
+            if (point.utc != null) {
+                var t = window.bwTime && typeof window.bwTime.formatUtc === 'function'
+                    ? window.bwTime.formatUtc(point.utc, point.tfmt)
+                    : '';
+                text += (t ? ' · ' + t : '');
+            }
+
+            tip.textContent = text;
             tip.style.display = 'block';
             var tx = Math.max(0, Math.min(cRect.width - tip.offsetWidth, px - (tip.offsetWidth / 2)));
             tip.style.left = tx + 'px';
@@ -167,6 +180,15 @@ window.blocwerkChart = (function () {
         }
 
         bindTooltip(el, data);
+
+        // Local-time charts render their x-axis ticks as <time> nodes for bwTime to localize. bind()
+        // runs on every re-render (OnAfterRenderAsync), so re-localize the axis here too — this covers
+        // interactive re-renders that update existing tick nodes in place, which the MutationObserver
+        // (added-nodes only) would miss.
+        if (window.bwTime && typeof window.bwTime.localizeAll === 'function') {
+            window.bwTime.localizeAll(el.parentNode || el);
+        }
+
         if (dotnet) {
             bindYDrag(el, dotnet);
         }

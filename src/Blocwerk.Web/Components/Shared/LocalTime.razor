@@ -1,0 +1,61 @@
+@* Renders a UTC timestamp as a <time> element that wwwroot/js/localtime.js rewrites to the
+   viewer's local time. This is Blazor Server, so the value is localized on the CLIENT: the
+   fallback text below is the server-formatted UTC value shown only pre-JS / no-JS. *@
+
+@if (Value is null)
+{
+    @NullText
+}
+else
+{
+    <time datetime="@Value.Value.UtcDateTime.ToString("o")" data-bw-fmt="@FmtKey(Format)">@Fallback(Value.Value, Format)</time>
+}
+
+@code {
+    /// <summary>The timestamp to display. Stored as UTC; localized on the client.</summary>
+    [Parameter, EditorRequired]
+    public DateTimeOffset? Value { get; set; }
+
+    /// <summary>The rendered shape of the timestamp.</summary>
+    [Parameter]
+    public LocalTimeFormat Format { get; set; } = LocalTimeFormat.Date;
+
+    /// <summary>Text rendered when <see cref="Value"/> is null. Defaults to empty.</summary>
+    [Parameter]
+    public string? NullText { get; set; }
+
+    private static string FmtKey(LocalTimeFormat format)
+    {
+        return format switch
+        {
+            LocalTimeFormat.Date => "date",
+            LocalTimeFormat.DateDmy => "date-dmy",
+            LocalTimeFormat.DateTime => "datetime",
+            LocalTimeFormat.Time => "time",
+            LocalTimeFormat.MonthYear => "month-year",
+            LocalTimeFormat.WeekdayDate => "weekday-date",
+            LocalTimeFormat.Full => "full",
+            LocalTimeFormat.Relative => "relative",
+            _ => "date",
+        };
+    }
+
+    private static string Fallback(DateTimeOffset value, LocalTimeFormat format)
+    {
+        // Formatted from the UTC instant so the pre-JS fallback is unambiguous; JS overwrites it
+        // with the viewer's local time on load.
+        var utc = value.UtcDateTime;
+        return format switch
+        {
+            LocalTimeFormat.Date => utc.ToString("MMM d, yyyy"),
+            LocalTimeFormat.DateDmy => utc.ToString("d MMM yyyy"),
+            LocalTimeFormat.DateTime => utc.ToString("MMM d, HH:mm"),
+            LocalTimeFormat.Time => utc.ToString("HH:mm"),
+            LocalTimeFormat.MonthYear => utc.ToString("MMMM yyyy"),
+            LocalTimeFormat.WeekdayDate => utc.ToString("dddd, dd MMM yyyy"),
+            LocalTimeFormat.Full => utc.ToString("dddd, d MMM yyyy HH:mm"),
+            LocalTimeFormat.Relative => TimeText.Relative(value),
+            _ => utc.ToString("MMM d, yyyy"),
+        };
+    }
+}

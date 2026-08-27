@@ -167,7 +167,7 @@ else
                         <div class="activity-row">
                             <span class="activity-icon">@ActivityIcon(item.Type)</span>
                             <span class="activity-text">@item.User.DisplayName @ActivityVerb(item.Type)</span>
-                            <span class="activity-time">@RelativeTime(item.Timestamp)</span>
+                            <span class="activity-time"><LocalTime Value="@item.Timestamp" Format="LocalTimeFormat.Relative" /></span>
                         </div>
                     }
                     @if (_activityTotal > _activityItems.Count)
@@ -1129,16 +1129,6 @@ else
         ActivityType.BetaVideoUploaded => "added a beta video",
         _ => "did something",
     };
-
-    private static string RelativeTime(DateTimeOffset timestamp)
-    {
-        var diff = DateTimeOffset.UtcNow - timestamp;
-        if (diff.TotalMinutes < 1) return "just now";
-        if (diff.TotalHours < 1) return $"{(int)diff.TotalMinutes}m ago";
-        if (diff.TotalDays < 1) return $"{(int)diff.TotalHours}h ago";
-        if (diff.TotalDays < 7) return $"{(int)diff.TotalDays}d ago";
-        return timestamp.ToString("MMM d");
-    }
 
     private async Task ShowToast(string message)
     {

@@ -19,9 +19,9 @@
     else
     {
         <div class="page-header">
-            <h1>@_activity.StartedAt.ToString("dddd, dd MMM yyyy")</h1>
+            <h1><LocalTime Value="@_activity.StartedAt" Format="LocalTimeFormat.WeekdayDate" /></h1>
             <span class="detail-sub">
-                Started @_activity.StartedAt.ToString("HH:mm")@(_activity.WallName != null ? $" · {_activity.WallName}" : "")
+                Started <LocalTime Value="@_activity.StartedAt" Format="LocalTimeFormat.Time" />@(_activity.WallName != null ? $" · {_activity.WallName}" : "")
             </span>
         </div>
 

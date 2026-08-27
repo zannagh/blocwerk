@@ -5,9 +5,18 @@
         <span class="apikey-name">@Key.Name</span>
         <code class="apikey-prefix">@Key.Prefix&hellip;</code>
         <span class="apikey-meta">
-            Created @Key.CreatedAt.ToLocalTime().ToString("d MMM yyyy")
-            &middot; Last used @(Key.LastUsedAt is { } used ? used.ToLocalTime().ToString("d MMM yyyy") : "never")
-            &middot; @ExpiryText
+            Created <LocalTime Value="@Key.CreatedAt" Format="LocalTimeFormat.DateDmy" />
+            &middot; Last used <LocalTime Value="@Key.LastUsedAt" Format="LocalTimeFormat.DateDmy" NullText="never" />
+            &middot;
+            @if (Key.ExpiresAt is { } expiresAt)
+            {
+                <text>@ExpiryWord </text>
+                <LocalTime Value="@expiresAt" Format="LocalTimeFormat.DateDmy" />
+            }
+            else
+            {
+                <text>no expiry</text>
+            }
         </span>
     </div>
 
@@ -83,19 +92,9 @@
         }
     }
 
-    private string ExpiryText
-    {
-        get
-        {
-            if (Key.ExpiresAt is not { } expires)
-            {
-                return "no expiry";
-            }
-
-            var prefix = expires <= DateTimeOffset.UtcNow ? "Expired" : "Expires";
-            return $"{prefix} {expires.ToLocalTime():d MMM yyyy}";
-        }
-    }
+    /// <summary>The word before the expiry date: past expiries read "Expired", future ones "Expires".
+    /// Only chooses the word; the date itself is localized client-side by the LocalTime component.</summary>
+    private string ExpiryWord => Key.ExpiresAt is { } expires && expires <= DateTimeOffset.UtcNow ? "Expired" : "Expires";
 
     private async Task Confirm()
     {

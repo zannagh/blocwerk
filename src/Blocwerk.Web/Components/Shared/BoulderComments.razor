@@ -21,7 +21,7 @@
             <div class="comment-row">
                 <div class="comment-header">
                     <span class="comment-author">@comment.User.DisplayName</span>
-                    <span class="comment-time">@TimeText.Relative(comment.CreatedAt)</span>
+                    <span class="comment-time"><LocalTime Value="@comment.CreatedAt" Format="LocalTimeFormat.Relative" /></span>
                     @if (comment.UserId == CurrentUserId)
                     {
                         <button class="delete-btn" @onclick="() => DeleteAsync(comment.Id)">x</button>
