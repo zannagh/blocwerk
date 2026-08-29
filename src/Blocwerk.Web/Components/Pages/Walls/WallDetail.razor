@@ -2,6 +2,7 @@
 @page "/walls/{WallId:guid}/shared/{ShareToken}"
 @rendermode InteractiveServer
 @inject IWallService WallService
+@inject IWallPanelService WallPanelService
 @inject WallCacheState Cache
 @inject IWallSegmentService WallSegmentService
 @inject IBoulderService BoulderService
@@ -32,6 +33,50 @@ else
                     <h2>Wall Settings</h2>
 
                     <div class="form-group">
+                        <label class="filter-check multi-image-toggle">
+                            <input type="checkbox" checked="@_wall.UsesMultipleImages" @onchange="OnToggleMultiImage" />
+                            Use multiple images for this wall
+                        </label>
+                        @if (_confirmingEnableMulti)
+                        {
+                            <p class="staged-hint">
+                                Big-wall mode lets you stitch several photos into one wall. Your current
+                                photo becomes the centre panel; you then add neighbouring images around it,
+                                confirming which holds overlap. You can turn this off again anytime.
+                            </p>
+                            <div class="staged-actions">
+                                <button class="btn-primary" @onclick="ConfirmEnableMultiImage">Enable multi-image</button>
+                                <button class="btn-secondary" @onclick="() => _confirmingEnableMulti = false">Cancel</button>
+                            </div>
+                        }
+                        else if (_confirmingDisableMulti)
+                        {
+                            <p class="staged-hint">
+                                Turn multi-image off? Your panels, holds and links are kept — the wall just
+                                stops showing the panel grid here.
+                            </p>
+                            <div class="staged-actions">
+                                <button class="btn-danger" @onclick="ConfirmDisableMultiImage">Turn off</button>
+                                <button class="btn-secondary" @onclick="() => _confirmingDisableMulti = false">Cancel</button>
+                            </div>
+                        }
+                    </div>
+
+                    @if (_showBigUpdate)
+                    {
+                        <BigWallUpdate WallId="WallId" CurrentGeneration="_wall.CurrentGeneration"
+                                       OnClose="CloseBigUpdate" OnPromoted="OnBigUpdatePromoted" />
+                    }
+                    else if (_wall.UsesMultipleImages)
+                    {
+                        <div class="form-group">
+                            <WallPanelGrid WallId="WallId" />
+                            <button class="btn-secondary bigupdate-entry" @onclick="OpenBigUpdate">Update wall with new photos</button>
+                        </div>
+                    }
+                    else
+                    {
+                    <div class="form-group">
                         @if (!_wall.StagedAt.HasValue)
                         {
                             <label>Upload New Photo (auto-detect holds)</label>
@@ -44,6 +89,14 @@ else
                                 After a full reset. Holds are detected fresh and every boulder is marked
                                 historic for remapping. Ascents, comments and grades are kept.
                             </p>
+                            @if (_wall.PhotoContentType != null)
+                            {
+                                <button class="btn-secondary bigupdate-entry" @onclick="OpenBigUpdate">Update wall with new photos</button>
+                                <p class="hint">
+                                    Replace the whole wall from a fresh multi-photo capture while keeping your
+                                    boulders — old holds are re-matched onto the new photos.
+                                </p>
+                            }
                         }
                         else if (_wall.StagingMode == WallStagingMode.Recreate)
                         {
@@ -89,6 +142,7 @@ else
                             </div>
                         }
                     </div>
+                    }
 
                     @if (string.IsNullOrEmpty(_shareLink))
                     {
@@ -286,7 +340,16 @@ else
                     </div>
 
                     <div class="wall-photo-container">
-                        @if (_wall.PhotoContentType != null && _viewMode == ViewMode.Photo)
+                        @if (_wall.UsesMultipleImages && _viewMode == ViewMode.Photo && _livePanels.Count > 0)
+                        {
+                            @* Big wall: step between the live panel images instead of one flat photo.
+                               Editing the panel grid lives in the wall settings, never here. *@
+                            <MultiPanelViewer WallId="_wall.Id" Panels="_livePanels"
+                                              StartCol="0" StartRow="0"
+                                              ArrowMode="MultiPanelViewer.ArrowDisplayMode.AllNeighbours"
+                                              HoldsProvider="LoadPanelHolds" />
+                        }
+                        else if (_wall.PhotoContentType != null && _viewMode == ViewMode.Photo)
                         {
                             <WallPhotoEditor WallId="_wall.Id"
                                              Holds="_holds"
@@ -459,6 +522,7 @@ else
     private List<Hold> _holds = [];
     private List<ShapePoint> _borderPoints = [];
     private List<WallSegment> _segments = [];
+    private List<WallPanelInfo> _livePanels = [];
     private List<Boulder> _boulders = [];
     private List<BoulderListItem> _items = [];
     private bool _isAdmin;
@@ -467,6 +531,9 @@ else
     private Guid _currentUserId;
     private bool _isEditing;
     private bool _confirmingRecreate;
+    private bool _confirmingEnableMulti;
+    private bool _confirmingDisableMulti;
+    private bool _showBigUpdate;
     private string? _shareLink;
     private string? _toast;
     private string _searchText = string.Empty;
@@ -702,6 +769,7 @@ else
                 .ToList();
             _borderPoints = _wall.BorderPoints?.Select(p => new ShapePoint { Dx = p.Dx, Dy = p.Dy }).ToList() ?? [];
             await LoadSegments();
+            await LoadPanels();
             if (!_isAnonymous)
             {
                 _items = await FeedbackService.GetBoulderListAsync(WallId);
@@ -762,6 +830,33 @@ else
             _segments = [];
         }
     }
+
+    /// <summary>
+    /// Loads the wall's live panels for the multi-image viewer. Only relevant to big walls; a
+    /// single-image wall keeps an empty list and renders exactly as before. A failed read (e.g. an
+    /// anonymous share viewer who can't enumerate panels) falls back to the single-photo view.
+    /// </summary>
+    private async Task LoadPanels()
+    {
+        if (_wall is not { UsesMultipleImages: true })
+        {
+            _livePanels = [];
+            return;
+        }
+
+        try
+        {
+            var panels = await WallPanelService.GetPanelsAsync(WallId);
+            _livePanels = panels.Where(p => p.IsLive).ToList();
+        }
+        catch (Exception)
+        {
+            _livePanels = [];
+        }
+    }
+
+    private async Task<IReadOnlyList<PanelHold>> LoadPanelHolds(Guid panelId) =>
+        await WallPanelService.GetPanelHoldsAsync(WallId, panelId, includeStaged: false);
 
     private void OnWallAngleInput(ChangeEventArgs e)
     {
@@ -955,6 +1050,67 @@ else
         catch (Exception ex)
         {
             await ShowToast($"Upload failed: {ex.Message}");
+        }
+    }
+
+    private void OpenBigUpdate()
+    {
+        _showBigUpdate = true;
+    }
+
+    private async Task CloseBigUpdate()
+    {
+        _showBigUpdate = false;
+        await LoadWall();
+    }
+
+    private async Task OnBigUpdatePromoted()
+    {
+        await LoadWall();
+        await ShowToast("Wall updated from new photos");
+    }
+
+    private void OnToggleMultiImage(ChangeEventArgs e)
+    {
+        // The checkbox reflects the wall flag; the actual switch is gated behind an inline confirm,
+        // so we only stage which confirm to show and let the flag change on confirm.
+        var wantsOn = e.Value is true;
+        if (_wall is null || wantsOn == _wall.UsesMultipleImages)
+        {
+            return;
+        }
+
+        _confirmingEnableMulti = wantsOn;
+        _confirmingDisableMulti = !wantsOn;
+    }
+
+    private async Task ConfirmEnableMultiImage()
+    {
+        _confirmingEnableMulti = false;
+        try
+        {
+            await WallPanelService.EnableMultiImageAsync(WallId);
+            await LoadWall();
+            await ShowToast("Multi-image enabled — add neighbouring photos around the centre panel");
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"Enable failed: {ex.Message}");
+        }
+    }
+
+    private async Task ConfirmDisableMultiImage()
+    {
+        _confirmingDisableMulti = false;
+        try
+        {
+            await WallPanelService.DisableMultiImageAsync(WallId);
+            await LoadWall();
+            await ShowToast("Multi-image turned off");
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"Disable failed: {ex.Message}");
         }
     }
 

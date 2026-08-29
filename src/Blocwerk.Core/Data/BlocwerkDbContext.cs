@@ -55,6 +55,10 @@ public class BlocwerkDbContext : DbContext
 
     public DbSet<WallImage> WallImages => Set<WallImage>();
 
+    public DbSet<WallPanel> WallPanels => Set<WallPanel>();
+
+    public DbSet<HoldLink> HoldLinks => Set<HoldLink>();
+
     public BlocwerkDbContext(DbContextOptions<BlocwerkDbContext> options)
         : base(options)
     {
@@ -96,6 +100,60 @@ public class BlocwerkDbContext : DbContext
         ConfigureApiKey(modelBuilder);
         ConfigureWallTemperatureReading(modelBuilder);
         ConfigureWallImage(modelBuilder);
+        ConfigureWallPanel(modelBuilder);
+        ConfigureHoldLink(modelBuilder);
+    }
+
+    private static void ConfigureWallPanel(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<WallPanel>(entity =>
+        {
+            // Panels are part of the wall aggregate; deleting the wall takes its panels with it.
+            entity.HasOne(p => p.Wall)
+                .WithMany(w => w.Panels)
+                .HasForeignKey(p => p.WallId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // At most one panel per grid slot per generation.
+            entity.HasIndex(p => new { p.WallId, p.Col, p.Row, p.Generation }).IsUnique();
+        });
+
+        // A hold points at its panel optionally; removing a panel detaches the holds
+        // (SetNull) rather than deleting them, so boulders survive a panel change.
+        modelBuilder.Entity<Hold>(entity =>
+        {
+            entity.HasOne(h => h.WallPanel)
+                .WithMany()
+                .HasForeignKey(h => h.WallPanelId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+    }
+
+    private static void ConfigureHoldLink(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<HoldLink>(entity =>
+        {
+            // Links belong to the wall aggregate; the wall delete cascades them away.
+            entity.HasOne(l => l.Wall)
+                .WithMany()
+                .HasForeignKey(l => l.WallId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Restrict + WithMany() on both hold ends: the wall cascade already covers cleanup,
+            // and two cascade paths from the same holds would be rejected on Postgres.
+            entity.HasOne(l => l.HoldA)
+                .WithMany()
+                .HasForeignKey(l => l.HoldAId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(l => l.HoldB)
+                .WithMany()
+                .HasForeignKey(l => l.HoldBId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(l => l.WallId);
+            entity.HasIndex(l => new { l.HoldAId, l.HoldBId }).IsUnique();
+        });
     }
 
     private static void ConfigureApiKey(ModelBuilder modelBuilder)

@@ -1,0 +1,64 @@
+@* Phase 1 of the big-wall update: carrying the old curated holds onto the new centre photo.
+   Colour-coded before/after overview, a live summary, and focused review steppers. Everything
+   defaults to KEEP; see CarryoverReview.razor.cs. *@
+
+@if (_loading)
+{
+    <p class="loading-small">Matching your old holds onto the new photo…</p>
+}
+else if (_reviewMode is { } mode)
+{
+    <CarryoverStepper WallId="WallId" CenterPanelId="CenterPanelId" Mode="mode"
+                      Items="ReviewItems" OldHolds="_oldHolds" NewHolds="_newHolds"
+                      OnCarryDecision="ApplyCarryDecision" OnNewDecision="ApplyNewDecision"
+                      OnClose="CloseReview" />
+}
+else
+{
+    <div class="bigupdate-phase">
+        <div class="bigupdate-summary">
+            <span class="bigupdate-chip carry">Carrying @CarryingCount</span>
+            <span class="bigupdate-chip moved">@MovedCount moved</span>
+            <span class="bigupdate-chip remove">@RemovingCount removing</span>
+            <span class="bigupdate-chip new">@NewCount new</span>
+        </div>
+
+        <div class="panel-stepper-pair">
+            <PanelImageView WallId="WallId" Caption="Old wall (before)"
+                            PhotoUrl="@($"/api/walls/{WallId}/photo")"
+                            Holds="_oldHolds" HoldColors="OldColors()" />
+            <PanelImageView WallId="WallId" Caption="New centre (after)"
+                            PhotoUrl="@($"/api/walls/{WallId}/panels/{CenterPanelId}/staged-photo")"
+                            Holds="_newHolds" HoldColors="NewColors()" />
+        </div>
+
+        <div class="bigupdate-legend">
+            <span><i class="bigupdate-dot" style="background:#33cc66"></i> carried</span>
+            <span><i class="bigupdate-dot" style="background:#ffb020"></i> moved</span>
+            <span><i class="bigupdate-dot" style="background:#ff5555"></i> couldn't re-find / removing</span>
+            <span><i class="bigupdate-dot" style="background:#4aa8ff"></i> new hold</span>
+        </div>
+
+        <p class="hint">
+            The clear carries and new holds are kept automatically. Review only what needs a decision — a
+            hold is never removed unless you say so.
+        </p>
+
+        <div class="bigupdate-review-actions">
+            <button class="btn-secondary" @onclick="() => OpenReview(CarryReviewMode.Moved)" disabled="@(MovedToReview == 0)">
+                Review moved (@MovedToReview)
+            </button>
+            <button class="btn-secondary" @onclick="() => OpenReview(CarryReviewMode.Removal)" disabled="@(RemovalToReview == 0)">
+                Review couldn't-re-find (@RemovalToReview)
+            </button>
+            <button class="btn-secondary" @onclick="() => OpenReview(CarryReviewMode.New)" disabled="@(NewToReview == 0)">
+                Spot-check new (@NewToReview)
+            </button>
+        </div>
+
+        <div class="staged-actions">
+            <button class="btn-primary" @onclick="Continue">Continue to overlaps →</button>
+            <button class="btn-danger-soft" @onclick="() => OnDiscard.InvokeAsync()">Discard update</button>
+        </div>
+    </div>
+}

@@ -1,0 +1,90 @@
+@* The big-wall update surface: upload → carryover → per-neighbour overlaps → apply. A dedicated flow
+   that replaces the normal settings body while it runs. See BigWallUpdate.razor.cs. *@
+
+<div class="bigupdate">
+    <div class="bigupdate-head">
+        <h2>Update wall with new photos</h2>
+        @if (_phase is not Phase.Done and not Phase.Working)
+        {
+            <button class="btn-link" @onclick="Discard">Discard update</button>
+        }
+    </div>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <p class="staged-hint danger">@_error</p>
+    }
+
+    @switch (_phase)
+    {
+        case Phase.Loading:
+        case Phase.Working:
+            <p class="loading-small">Working…</p>
+            break;
+
+        case Phase.ResumePrompt:
+            <p class="staged-hint">
+                An update to this wall is already in progress. You can pick up where you left off, or
+                discard it and start over. Discarding leaves the live wall untouched.
+            </p>
+            <div class="staged-actions">
+                <button class="btn-primary" @onclick="ResumeExisting">Resume update</button>
+                <button class="btn-secondary" @onclick="DiscardAndRestart">Discard &amp; start over</button>
+                <button class="btn-secondary" @onclick="Close">Not now</button>
+            </div>
+            break;
+
+        case Phase.Upload:
+            <BigWallUpdateUploader OnStart="OnUpload" OnCancel="Close" />
+            break;
+
+        case Phase.Carryover:
+            @if (_session is not null)
+            {
+                <CarryoverReview WallId="WallId" CurrentGeneration="CurrentGeneration" Session="_session"
+                                 OnContinue="OnCarryoverContinue" OnDiscard="Discard" />
+            }
+            break;
+
+        case Phase.Neighbours:
+            @if (CurrentNeighbour is { } n)
+            {
+                <div class="bigupdate-step-label">
+                    Overlaps — neighbour @(_neighbourIndex + 1) of @_session!.Neighbours.Count
+                </div>
+                <PanelOverlapStepper @key="n.PanelId" WallId="WallId" PanelId="n.PanelId"
+                                     Col="n.Col" Row="n.Row" Proposals="n.Proposals"
+                                     OnConfirm="OnNeighbourConfirm" OnDiscard="OnNeighbourSkip" />
+            }
+            break;
+
+        case Phase.Confirm:
+            <p class="hint">Ready to apply. Nothing changes on the live wall until you confirm.</p>
+            <div class="bigupdate-summary">
+                <span class="bigupdate-chip carry">Carrying @CarriedCount</span>
+                <span class="bigupdate-chip moved">@MovedCount moved</span>
+                <span class="bigupdate-chip remove">@RemovedCount removed</span>
+                <span class="bigupdate-chip new">@NewKeptCount new</span>
+                <span class="bigupdate-chip link">@LinkCount links</span>
+            </div>
+            <p class="staged-hint">
+                Removed holds retire their boulders to history; everything carried keeps its boulders.
+                This replaces the wall photo and cannot be undone.
+            </p>
+            <div class="staged-actions">
+                <button class="btn-primary" @onclick="Apply">Apply update</button>
+                <button class="btn-danger-soft" @onclick="Discard">Discard update</button>
+            </div>
+            break;
+
+        case Phase.Done:
+            <p class="staged-hint">
+                Update applied. Carried @CarriedCount · moved @MovedCount · removed @RemovedCount ·
+                new @NewKeptCount · @LinkCount overlap link(s).
+            </p>
+            <div class="staged-actions">
+                <button class="btn-primary" @onclick="Close">Done</button>
+            </div>
+            break;
+    }
+</div>

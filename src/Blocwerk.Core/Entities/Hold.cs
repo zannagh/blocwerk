@@ -15,6 +15,15 @@ public class Hold
     [ForeignKey(nameof(WallId))]
     public Wall Wall { get; set; } = null!;
 
+    /// <summary>
+    /// The big-wall panel this hold belongs to (see <see cref="WallPanel"/>). Null means the
+    /// hold sits on the legacy single/center wall photo, which is the case for every normal wall.
+    /// </summary>
+    public Guid? WallPanelId { get; set; }
+
+    [ForeignKey(nameof(WallPanelId))]
+    public WallPanel? WallPanel { get; set; }
+
     public double X { get; set; }
 
     public double Y { get; set; }
@@ -73,6 +82,7 @@ public class Hold
     {
         Id = Id,
         WallId = WallId,
+        WallPanelId = WallPanelId,
         X = X,
         Y = Y,
         Radius = Radius,

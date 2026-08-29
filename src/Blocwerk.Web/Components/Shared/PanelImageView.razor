@@ -1,0 +1,158 @@
+@inject IJSRuntime JS
+@implements IDisposable
+
+@* One zoomable/pannable panel image with its hold overlay, for the big-wall overlap stepper.
+   All holds are drawn faintly; the current pair's hold is highlighted with a coloured number
+   badge (HTML, positioned by normalized coords so preserveAspectRatio="none" never stretches it).
+   In interactive (moved) mode taps select a detected hold, or — in add mode — an empty spot. *@
+
+<figure class="panel-step-view">
+    <figcaption class="panel-step-cap">@Caption</figcaption>
+    <div class="panel-step-viewport" @ref="_viewportRef"
+         style="cursor: @(AddMode ? "crosshair" : "default");">
+        <div class="photo-editor" @ref="_editorRef">
+            <img src="@PhotoUrl" alt="@Caption" class="wall-photo" />
+            <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none"
+                 @onclick="OnSvgClick">
+                @foreach (var h in Holds)
+                {
+                    var isHighlight = HighlightHoldId == h.Id;
+                    var isSelected = SelectedHoldId == h.Id;
+                    var custom = !isSelected && !isHighlight && HoldColors is not null
+                        && HoldColors.TryGetValue(h.Id, out var cc) ? cc : null;
+                    var stroke = isSelected ? "#33dd66"
+                        : isHighlight ? BadgeColor : custom ?? "rgba(150,150,160,0.6)";
+                    var fill = isSelected ? "rgba(51,221,102,0.25)"
+                        : isHighlight ? BadgeFill : "transparent";
+                    var sw = isSelected || isHighlight ? "0.9" : custom is not null ? "0.6" : "0.35";
+                    <circle @key="h.Id" cx="@F(h.X * 100)" cy="@F(h.Y * 100)" r="@F(h.Radius * 100)"
+                            fill="@fill" stroke="@stroke" stroke-width="@sw"
+                            style="cursor: @(Interactive ? "pointer" : "inherit"); pointer-events: @(Interactive ? "auto" : "none");"
+                            @onclick="() => OnHoldTap.InvokeAsync(h.Id)" @onclick:stopPropagation="true" />
+                }
+
+                @if (HintPoint is { } hint)
+                {
+                    @* Moved-mode: the matcher's proposed position, as a hint to pick the real hold near it. *@
+                    <circle cx="@F(hint.X * 100)" cy="@F(hint.Y * 100)" r="2"
+                            fill="none" stroke="#ffb020" stroke-width="0.6" stroke-dasharray="1 0.7"
+                            style="pointer-events: none" />
+                }
+            </svg>
+
+            @* Number badge on the highlighted hold — HTML so it keeps a constant size. *@
+            @if (BadgeHold is { } bh)
+            {
+                <span class="panel-step-badge" style="left:@F(bh.X * 100)%;top:@F(bh.Y * 100)%;background:@BadgeColor">@BadgeNumber</span>
+            }
+        </div>
+    </div>
+</figure>
+
+@code {
+    [Parameter] public Guid WallId { get; set; }
+    [Parameter] public string PhotoUrl { get; set; } = string.Empty;
+    [Parameter] public string Caption { get; set; } = string.Empty;
+    [Parameter] public IReadOnlyList<PanelHold> Holds { get; set; } = [];
+
+    /// <summary>
+    /// Optional per-hold ring colour (hold id → CSS colour) used to colour-code an overview, e.g. the
+    /// big-wall carryover before/after. Holds not present fall back to the faint default; the
+    /// highlighted/selected hold always wins. Null (the default) leaves every hold faint, so the
+    /// overlap stepper is unaffected.
+    /// </summary>
+    [Parameter] public IReadOnlyDictionary<Guid, string>? HoldColors { get; set; }
+
+    /// <summary>The current pair's hold on this panel — drawn prominently with the number badge.</summary>
+    [Parameter] public Guid? HighlightHoldId { get; set; }
+    [Parameter] public int BadgeNumber { get; set; }
+    [Parameter] public string BadgeColor { get; set; } = "#4aa8ff";
+
+    /// <summary>Moved-mode hint (proposed position) drawn on this image, or null.</summary>
+    [Parameter] public (double X, double Y)? HintPoint { get; set; }
+
+    /// <summary>The user-chosen hold in moved-mode, highlighted green.</summary>
+    [Parameter] public Guid? SelectedHoldId { get; set; }
+
+    /// <summary>When true, taps on holds fire <see cref="OnHoldTap"/> (moved-mode selection).</summary>
+    [Parameter] public bool Interactive { get; set; }
+
+    /// <summary>When true, a tap on an empty spot fires <see cref="OnEmptyTap"/> to add a hold.</summary>
+    [Parameter] public bool AddMode { get; set; }
+
+    [Parameter] public EventCallback<Guid> OnHoldTap { get; set; }
+    [Parameter] public EventCallback<(double X, double Y)> OnEmptyTap { get; set; }
+
+    /// <summary>Bumped by the parent each step; a change re-centres the view on <see cref="FocusPoint"/>.</summary>
+    [Parameter] public int FocusKey { get; set; }
+    [Parameter] public (double X, double Y)? FocusPoint { get; set; }
+    [Parameter] public double FocusZoom { get; set; } = 2.5;
+
+    private ElementReference _viewportRef;
+    private ElementReference _editorRef;
+    private readonly ViewportZoomState _zoomState;
+    private int _lastFocusKey = int.MinValue;
+
+    public PanelImageView()
+    {
+        _zoomState = new ViewportZoomState(() => InvokeAsync(StateHasChanged));
+    }
+
+    private PanelHold? BadgeHold =>
+        HighlightHoldId is { } id ? Holds.FirstOrDefault(h => h.Id == id) : null;
+
+    private string BadgeFill => Blend(BadgeColor);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("bwViewport.setupScroll", _viewportRef, _zoomState.Reference);
+            await JS.InvokeVoidAsync("bwViewport.fitBox", _viewportRef, false);
+
+            if (FocusKey != _lastFocusKey)
+            {
+                _lastFocusKey = FocusKey;
+                if (FocusPoint is { } fp)
+                {
+                    await JS.InvokeVoidAsync("bwViewport.centerOn", _viewportRef, fp.X, fp.Y, FocusZoom);
+                }
+                else
+                {
+                    await JS.InvokeVoidAsync("bwViewport.zoomTo", _viewportRef, 1.0);
+                }
+            }
+        }
+        catch (JSException)
+        {
+            // Stale element reference after a re-render/reconnect: the next render retries.
+        }
+        catch (JSDisconnectedException)
+        {
+            // Circuit went away mid-call; nothing to attach to.
+        }
+    }
+
+    private async Task OnSvgClick(MouseEventArgs e)
+    {
+        if (!AddMode)
+        {
+            return;
+        }
+
+        var pos = await JS.InvokeAsync<RelativePos>("wallEditor.getRelativePosition", _editorRef, e.ClientX, e.ClientY);
+        await OnEmptyTap.InvokeAsync((Math.Clamp(pos.X, 0, 1), Math.Clamp(pos.Y, 0, 1)));
+    }
+
+    public void Dispose() => _zoomState.Dispose();
+
+    private record RelativePos(double X, double Y);
+
+    private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+
+    // A translucent fill for the highlighted hold, derived from the badge colour.
+    private static string Blend(string hslOrHex) =>
+        hslOrHex.StartsWith("hsl(", StringComparison.OrdinalIgnoreCase)
+            ? hslOrHex.Replace("hsl(", "hsla(").Replace(")", ", 0.28)")
+            : "rgba(74,168,255,0.28)";
+}

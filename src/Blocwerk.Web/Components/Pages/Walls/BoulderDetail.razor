@@ -5,6 +5,7 @@
 @inject IBoulderFeedbackService FeedbackService
 @inject IAttemptService AttemptService
 @inject IWallService WallService
+@inject IWallPanelService WallPanelService
 @inject WallCacheState Cache
 @inject ICurrentUserService CurrentUserService
 @inject NavigationManager Navigation
@@ -176,24 +177,41 @@ else
         @if (_viewMode == ViewMode.Photo)
         {
             <WallDimControl />
-            @* Zoom geometry is owned by JS via `--zoom` (wwwroot/js/viewport.js). *@
-            <div class="photo-viewport photo-section" @ref="_photoViewportRef">
-                <div class="photo-editor">
-                    <img src="@PhotoUrl" alt="Wall" class="wall-photo" />
-                    <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
-                        @* The "feet of one colour only" rule is shown as an info banner above the
-                           image, not by painting every wall hold of that colour. Only the boulder's
-                           own holds (including dedicated orange footholds) are drawn here. *@
-                        @foreach (var bh in _boulder.BoulderHolds)
-                        {
-                            <circle @key="bh.HoldId" cx="@F(bh.Hold.X * 100)" cy="@F(bh.Hold.Y * 100)"
-                                    r="@F(bh.Hold.Radius * 100)"
-                                    fill="@BoulderHoldColors.FillFor(bh.Type, bh.Usage)"
-                                    stroke="@BoulderHoldColors.Stroke(bh.Type)" stroke-width="0.5" />
-                        }
-                    </svg>
+            @if (UsingMultiPanel)
+            {
+                @* Big wall: show the panel holding most of the boulder's holds and let the user
+                   step to the neighbouring panels that carry its other holds. *@
+                <MultiPanelViewer WallId="WallId" Panels="_livePanels"
+                                  StartCol="_startPanelCol" StartRow="_startPanelRow"
+                                  ArrowMode="MultiPanelViewer.ArrowDisplayMode.HoldsOnly"
+                                  HoldsByPanel="_holdsByPanel"
+                                  HighlightedHoldIds="_highlightedHoldIds"
+                                  FootHoldIds="FootHoldIds"
+                                  HoldColor="BoulderHoldColorOf"
+                                  HighlightedPanelIds="_highlightedPanelIds"
+                                  EnableSwipe="true" />
+            }
+            else
+            {
+                @* Zoom geometry is owned by JS via `--zoom` (wwwroot/js/viewport.js). *@
+                <div class="photo-viewport photo-section" @ref="_photoViewportRef">
+                    <div class="photo-editor">
+                        <img src="@PhotoUrl" alt="Wall" class="wall-photo" />
+                        <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
+                            @* The "feet of one colour only" rule is shown as an info banner above the
+                               image, not by painting every wall hold of that colour. Only the boulder's
+                               own holds (including dedicated orange footholds) are drawn here. *@
+                            @foreach (var bh in _boulder.BoulderHolds)
+                            {
+                                <circle @key="bh.HoldId" cx="@F(bh.Hold.X * 100)" cy="@F(bh.Hold.Y * 100)"
+                                        r="@F(bh.Hold.Radius * 100)"
+                                        fill="@BoulderHoldColors.FillFor(bh.Type, bh.Usage)"
+                                        stroke="@BoulderHoldColors.Stroke(bh.Type)" stroke-width="0.5" />
+                            }
+                        </svg>
+                    </div>
                 </div>
-            </div>
+            }
         }
         else if (_wallHolds != null)
         {
@@ -332,6 +350,24 @@ else
     private List<Hold>? _wallHolds;
     private List<Hold> _colorRuleHolds = [];
     private HashSet<Guid> _boulderHoldIds = [];
+
+    // Big-wall multi-image viewing: the wall's live panels, the highlighted holds grouped per panel
+    // (drawn directly so they show even to viewers who can't enumerate panel holds), the panels that
+    // carry a highlighted hold (arrow targets), and the start panel (the one with the most holds).
+    // A hold linked across two overlapping panels is one physical hold: when a boulder uses it we
+    // also light its twin(s) on the other panel(s), so the highlighted set is EXPANDED over the
+    // boulder's own holds. _highlightedHoldTypes carries the boulder Type/Usage (colour) for every
+    // highlighted id — the boulder's own holds and their linked twins alike.
+    private List<WallPanelInfo> _livePanels = [];
+    private Dictionary<Guid, IReadOnlyList<PanelHold>> _holdsByPanel = new();
+    private HashSet<Guid> _highlightedPanelIds = [];
+    private HashSet<Guid> _highlightedHoldIds = [];
+    private Dictionary<Guid, (HoldType Type, HoldUsage Usage)> _highlightedHoldTypes = new();
+    private int _startPanelCol;
+    private int _startPanelRow;
+
+    private bool UsingMultiPanel => _boulder is { Wall.UsesMultipleImages: true } && _livePanels.Count > 0;
+
     private GradeProposal? _activeProposal;
     private bool _showGradeForm;
     private string? _proposedGrade;
@@ -368,7 +404,7 @@ else
             }
         }
 
-        if (_viewMode == ViewMode.Photo && _boulder != null)
+        if (_viewMode == ViewMode.Photo && _boulder != null && !UsingMultiPanel)
         {
             try
             {
@@ -579,6 +615,7 @@ else
             // A stale boulder only makes sense against the wall it was set on.
             _showHistoric = CanViewHistoric;
             await LoadWallHolds();
+            await LoadPanelData();
             _activeProposal = await BoulderService.GetActiveProposalAsync(BoulderId);
 
             if (!_isAnonymous)
@@ -617,6 +654,7 @@ else
                 {
                     _boulderHoldIds = _boulder.BoulderHolds.Select(bh => bh.HoldId).ToHashSet();
                     await LoadWallHolds();
+                    await LoadPanelData();
                 }
 
                 StateHasChanged();
@@ -653,6 +691,232 @@ else
             ? _wallHolds.Where(h => h.Color == color && !_boulderHoldIds.Contains(h.Id)).ToList()
             : [];
     }
+
+    /// <summary>
+    /// Builds the data the multi-image viewer needs: the wall's live panels, the boulder's holds
+    /// grouped per panel (so they render regardless of who can enumerate panel holds), the panels
+    /// that carry a boulder hold (the only ones an arrow points to), and the start panel — the one
+    /// holding the most of the boulder's holds. A single-image wall (or a failed panel read) leaves
+    /// everything empty, so <see cref="UsingMultiPanel"/> is false and nothing here is used.
+    /// </summary>
+    private async Task LoadPanelData()
+    {
+        _livePanels = [];
+        _holdsByPanel = new();
+        _highlightedPanelIds = [];
+        _highlightedHoldIds = [];
+        _highlightedHoldTypes = new();
+
+        if (_boulder is not { Wall.UsesMultipleImages: true })
+        {
+            return;
+        }
+
+        try
+        {
+            var panels = await WallPanelService.GetPanelsAsync(WallId);
+            _livePanels = panels.Where(p => p.IsLive).ToList();
+        }
+        catch (Exception)
+        {
+            _livePanels = [];
+            return;
+        }
+
+        var livePanelIds = _livePanels.Select(p => p.Id).ToHashSet();
+        var onPanels = _boulder.BoulderHolds
+            .Where(bh => bh.Hold.WallPanelId is { } pid && livePanelIds.Contains(pid))
+            .ToList();
+
+        // Start from the boulder's own holds on their home panels — the pre-expansion baseline that
+        // renders exactly as before. Twins linked across overlaps are added on top below.
+        var holdsByPanel = onPanels
+            .GroupBy(bh => bh.Hold.WallPanelId!.Value)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(bh => new PanelHold(bh.HoldId, bh.Hold.X, bh.Hold.Y, bh.Hold.Radius, bh.Hold.Color)).ToList());
+        foreach (var bh in onPanels)
+        {
+            _highlightedHoldIds.Add(bh.HoldId);
+            _highlightedHoldTypes[bh.HoldId] = (bh.Type, bh.Usage);
+        }
+
+        await ExpandLinkedTwinsAsync(onPanels, holdsByPanel);
+
+        // Every entry in holdsByPanel is a highlighted hold (the boulder's own or a linked twin), so
+        // the panels that carry one — the arrow targets — are exactly its keys, and the start panel
+        // is the one holding the most highlighted holds (twins counted).
+        _holdsByPanel = holdsByPanel.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<PanelHold>)kv.Value);
+        _highlightedPanelIds = holdsByPanel.Keys.ToHashSet();
+
+        var startPanelId = holdsByPanel
+            .OrderByDescending(kv => kv.Value.Count)
+            .Select(kv => (Guid?)kv.Key)
+            .FirstOrDefault();
+        if (startPanelId is { } spid && _livePanels.FirstOrDefault(p => p.Id == spid) is { } start)
+        {
+            _startPanelCol = start.Col;
+            _startPanelRow = start.Row;
+        }
+    }
+
+    /// <summary>
+    /// A hold linked across an overlap is one physical hold. For every boulder hold, light every
+    /// hold in its link component that sits on a LIVE panel, carrying the same boulder Type/Usage.
+    /// When two boulder holds land in the same component the type is resolved by prominence
+    /// Top &gt; Start &gt; Normal (the higher <see cref="HoldType"/> value wins). Mutates
+    /// <paramref name="holdsByPanel"/> plus <see cref="_highlightedHoldIds"/> and
+    /// <see cref="_highlightedHoldTypes"/>. A no-op when the wall has no links or the boulder uses
+    /// no linked hold, so single-panel boulders keep their exact former behaviour.
+    /// </summary>
+    private async Task ExpandLinkedTwinsAsync(
+        List<BoulderHold> onPanels,
+        Dictionary<Guid, List<PanelHold>> holdsByPanel)
+    {
+        List<HoldLinkPair> links;
+        try
+        {
+            links = [.. await WallPanelService.GetHoldLinksAsync(WallId)];
+        }
+        catch (Exception)
+        {
+            return;
+        }
+
+        if (links.Count == 0)
+        {
+            return;
+        }
+
+        var adjacency = new Dictionary<Guid, List<Guid>>();
+        void Link(Guid a, Guid b)
+        {
+            if (!adjacency.TryGetValue(a, out var list))
+            {
+                list = [];
+                adjacency[a] = list;
+            }
+
+            list.Add(b);
+        }
+
+        foreach (var pair in links)
+        {
+            Link(pair.HoldAId, pair.HoldBId);
+            Link(pair.HoldBId, pair.HoldAId);
+        }
+
+        // Resolve each twin (a component member that is not itself one of the boulder's own holds)
+        // to the boulder Type/Usage of the most prominent source hold reaching it.
+        var sourceIds = onPanels.Select(bh => bh.HoldId).ToHashSet();
+        var twinTypes = new Dictionary<Guid, (HoldType Type, HoldUsage Usage)>();
+        foreach (var bh in onPanels)
+        {
+            foreach (var member in ConnectedComponent(adjacency, bh.HoldId))
+            {
+                if (sourceIds.Contains(member))
+                {
+                    continue;
+                }
+
+                if (!twinTypes.TryGetValue(member, out var existing) || (int)bh.Type > (int)existing.Type)
+                {
+                    twinTypes[member] = (bh.Type, bh.Usage);
+                }
+            }
+        }
+
+        if (twinTypes.Count == 0)
+        {
+            return;
+        }
+
+        // Twins are separate Hold rows on other panels; read live-panel holds to find their
+        // positions. Stop once every twin is located so we never read more panels than needed.
+        var located = new Dictionary<Guid, (Guid PanelId, PanelHold Hold)>();
+        foreach (var panel in _livePanels)
+        {
+            IReadOnlyList<PanelHold> panelHolds;
+            try
+            {
+                panelHolds = await WallPanelService.GetPanelHoldsAsync(WallId, panel.Id, false);
+            }
+            catch (Exception)
+            {
+                continue;
+            }
+
+            foreach (var hold in panelHolds)
+            {
+                if (twinTypes.ContainsKey(hold.Id) && !located.ContainsKey(hold.Id))
+                {
+                    located[hold.Id] = (panel.Id, hold);
+                }
+            }
+
+            if (located.Count == twinTypes.Count)
+            {
+                break;
+            }
+        }
+
+        foreach (var (twinId, type) in twinTypes)
+        {
+            if (!located.TryGetValue(twinId, out var loc))
+            {
+                // Linked to a hold that no longer sits on a live panel (removed or off-generation).
+                continue;
+            }
+
+            if (!holdsByPanel.TryGetValue(loc.PanelId, out var list))
+            {
+                list = [];
+                holdsByPanel[loc.PanelId] = list;
+            }
+
+            if (list.All(h => h.Id != twinId))
+            {
+                list.Add(loc.Hold);
+            }
+
+            _highlightedHoldIds.Add(twinId);
+            _highlightedHoldTypes[twinId] = type;
+        }
+    }
+
+    /// <summary>All hold ids reachable from <paramref name="start"/> through the link graph
+    /// (including the start), so a hold and every twin across a chain of panels share a component.</summary>
+    private static IEnumerable<Guid> ConnectedComponent(Dictionary<Guid, List<Guid>> adjacency, Guid start)
+    {
+        var seen = new HashSet<Guid> { start };
+        var queue = new Queue<Guid>();
+        queue.Enqueue(start);
+        while (queue.Count > 0)
+        {
+            var current = queue.Dequeue();
+            if (!adjacency.TryGetValue(current, out var neighbours))
+            {
+                continue;
+            }
+
+            foreach (var neighbour in neighbours)
+            {
+                if (seen.Add(neighbour))
+                {
+                    queue.Enqueue(neighbour);
+                }
+            }
+        }
+
+        return seen;
+    }
+
+    /// <summary>The fill/stroke a highlighted hold is drawn in (a boulder hold or a linked twin),
+    /// matching the single-image photo view. Twin ids resolve to the source hold's boulder colour.</summary>
+    private (string Fill, string Stroke) BoulderHoldColorOf(Guid holdId) =>
+        _highlightedHoldTypes.TryGetValue(holdId, out var t)
+            ? (BoulderHoldColors.FillFor(t.Type, t.Usage), BoulderHoldColors.Stroke(t.Type))
+            : (BoulderHoldColors.Fill(HoldType.Normal), BoulderHoldColors.Normal);
 
     private async Task<List<Hold>> FetchWallHoldsAsync()
     {

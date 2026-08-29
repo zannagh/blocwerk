@@ -1,6 +1,7 @@
 using System.Reflection;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Configuration;
+using Blocwerk.HoldDetection.Matching;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -14,6 +15,9 @@ public static class HoldDetectionServices
 
         builder.Services.AddSingleton<IHoldDetectionService>(_ => new YoloHoldDetectionService(modelPath));
         builder.Services.AddSingleton<IImageAlignmentService, SkiaImageAlignmentService>();
+
+        // Cross-panel hold re-recognition for big walls. Stateless in-process OpenCV, so a singleton.
+        builder.Services.AddSingleton<IHoldOverlapMatcher, OpenCvHoldOverlapMatcher>();
 
         return builder;
     }

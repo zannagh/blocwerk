@@ -120,6 +120,22 @@ window.bwViewport = (function () {
             toggleDoubleTapZoom: function (cx, cy) {
                 this.zoomTo(zoom > SCROLL_ZOOM_MIN + 0.01 ? SCROLL_ZOOM_MIN : DOUBLE_TAP_ZOOM, cx, cy, 0, 0);
             },
+            // Pan/zoom so a normalized content point (xNorm, yNorm in 0..1) sits at the
+            // viewport centre. Used by the big-wall overlap stepper to auto-focus the current
+            // hold pair. scrollWidth/scrollHeight are read AFTER applyZoom flushes layout, so
+            // they reflect the widened content and the anchor lands correctly.
+            centerOn: function (xNorm, yNorm, targetZoom) {
+                syncContent();
+                if (targetZoom != null) {
+                    applyZoom(clamp(targetZoom, SCROLL_ZOOM_MIN, SCROLL_ZOOM_MAX));
+                }
+
+                const sw = viewport.scrollWidth;
+                const sh = viewport.scrollHeight;
+                viewport.scrollLeft = clamp(xNorm * sw - viewport.clientWidth / 2, 0, sw);
+                viewport.scrollTop = clamp(yNorm * sh - viewport.clientHeight / 2, 0, sh);
+                notify();
+            },
         };
     }
 
@@ -266,6 +282,21 @@ window.bwViewport = (function () {
                 m.zoomTo(zoom, null, null, 0, 0);
             }
         },
+        centerOn: function (viewport, xNorm, yNorm, zoom) {
+            const m = modelOf(viewport);
+            if (!m || !m.centerOn) {
+                return;
+            }
+
+            // scrollHeight is only meaningful once the image has laid out; if it hasn't
+            // loaded yet, re-run the centring on load so the anchor is correct either way.
+            const img = viewport.querySelector('img');
+            if (img && !img.complete) {
+                img.addEventListener('load', function () { m.centerOn(xNorm, yNorm, zoom); }, { once: true });
+            }
+
+            m.centerOn(xNorm, yNorm, zoom);
+        },
         transformGet: function (viewport) {
             const m = modelOf(viewport);
             return m && m.getState ? m.getState() : { panX: 0, panY: 0, zoom: 1 };
@@ -275,6 +306,123 @@ window.bwViewport = (function () {
             if (m && m.setState) {
                 m.setState(panX, panY, zoom);
             }
+        },
+
+        // ---- Big-wall overlap stepper: suppress the browser's own scrolling on the
+        // navigation keys the Blazor @onkeydown handler already drives (←/→ step, etc.)
+        // WITHOUT swallowing Cmd/Ctrl/Alt shortcuts or character keys. Two listeners live
+        // on the same root element: this one only preventDefaults the scroll, Blazor still
+        // runs the step logic. Attach in OnAfterRenderAsync, release on dispose.
+        trapStepperKeys: function (el) {
+            if (!el || !el.addEventListener || el._bwStepperTrap) {
+                return;
+            }
+
+            // Keys whose default action scrolls the page. Space is both ' ' and the legacy
+            // 'Spacebar'; nav/paging keys round it out.
+            const scrollKeys = new Set([
+                'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
+                'PageUp', 'PageDown', 'Home', 'End', ' ', 'Spacebar',
+            ]);
+            const handler = function (e) {
+                // Never touch modified chords (Cmd+F, Ctrl+Home, Alt+…) — those are the
+                // user's / browser's, not ours.
+                if (e.ctrlKey || e.metaKey || e.altKey) {
+                    return;
+                }
+
+                if (scrollKeys.has(e.key)) {
+                    e.preventDefault();
+                }
+            };
+            el._bwStepperTrap = handler;
+            el.addEventListener('keydown', handler);
+        },
+        releaseStepperKeys: function (el) {
+            if (!el || !el._bwStepperTrap) {
+                return;
+            }
+
+            el.removeEventListener('keydown', el._bwStepperTrap);
+            el._bwStepperTrap = null;
+        },
+
+        // ---- Multi-panel viewer swipe: a conservative enhancement over the arrows.
+        // Only a clear, decisive HORIZONTAL one-finger swipe on an UNZOOMED scroll-model
+        // viewport navigates to the adjacent panel. Horizontal is safe because the viewport
+        // has `touch-action: pan-y` at fit — a sideways drag scrolls nothing — whereas a
+        // vertical swipe would fight the page scroll, so up/down stays arrows-only. We never
+        // preventDefault (listeners are passive), so this can never break pan/zoom or scroll.
+        attachSwipe: function (viewport, dotnet) {
+            if (!viewport || !viewport.addEventListener || viewport._bwSwipe) {
+                return;
+            }
+
+            const THRESHOLD = 70;   // px of travel before a swipe counts
+            const DOMINANCE = 1.6;  // one axis must beat the other by this factor
+            let startX = 0;
+            let startY = 0;
+            let armed = false;
+
+            function notZoomed() {
+                const m = viewport._bwModel;
+                return !m || !m.getZoom || m.getZoom() <= 1.02;
+            }
+
+            function onStart(e) {
+                armed = e.touches && e.touches.length === 1 && notZoomed();
+                if (armed) {
+                    startX = e.touches[0].clientX;
+                    startY = e.touches[0].clientY;
+                }
+            }
+
+            function onEnd(e) {
+                if (!armed) {
+                    return;
+                }
+
+                armed = false;
+                if (!notZoomed()) {
+                    return;
+                }
+
+                const t = e.changedTouches && e.changedTouches[0];
+                if (!t) {
+                    return;
+                }
+
+                const dx = t.clientX - startX;
+                const dy = t.clientY - startY;
+                const adx = Math.abs(dx);
+                const ady = Math.abs(dy);
+                if (Math.max(adx, ady) < THRESHOLD) {
+                    return;
+                }
+
+                // Horizontal only, and only when clearly dominant over any vertical travel.
+                // Swipe left reveals the panel to the right, and so on: the direction sent is
+                // the panel to move TO.
+                if (adx > ady * DOMINANCE) {
+                    try {
+                        dotnet.invokeMethodAsync('OnSwipeNavigate', dx < 0 ? 'right' : 'left');
+                    } catch (_) { /* circuit gone */ }
+                }
+            }
+
+            viewport._bwSwipe = { onStart: onStart, onEnd: onEnd };
+            viewport.addEventListener('touchstart', onStart, { passive: true });
+            viewport.addEventListener('touchend', onEnd, { passive: true });
+        },
+        detachSwipe: function (viewport) {
+            const s = viewport && viewport._bwSwipe;
+            if (!s) {
+                return;
+            }
+
+            viewport.removeEventListener('touchstart', s.onStart);
+            viewport.removeEventListener('touchend', s.onEnd);
+            viewport._bwSwipe = null;
         },
 
         /** Page-wide: stop the browser's own zoom outside our viewports. */

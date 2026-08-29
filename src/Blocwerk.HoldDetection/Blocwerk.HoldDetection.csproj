@@ -11,6 +11,19 @@
     <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" />
   </ItemGroup>
 
+  <!-- OpenCvSharp: the osx_arm64 native runtime only ships at 4.8.1, so the mac build
+       pins the managed assembly to the matching 4.8.x. The Docker build runs inside a
+       linux container and picks the linux-arm64 runtime at the current 4.13 line.
+       Code only touches the 4.8.1 API surface so it runs on both. -->
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <PackageReference Include="OpenCvSharp4" VersionOverride="4.8.0.20230708" />
+    <PackageReference Include="OpenCvSharp4.runtime.osx_arm64" />
+  </ItemGroup>
+  <ItemGroup Condition="!$([MSBuild]::IsOSPlatform('OSX'))">
+    <PackageReference Include="OpenCvSharp4" />
+    <PackageReference Include="OpenCvSharp4.runtime.linux-arm64" />
+  </ItemGroup>
+
   <!-- Exclude GPU-only ONNX packages that YoloDotNet pulls in — they lack arm64 runtimes -->
   <ItemGroup>
     <PackageReference Include="Microsoft.ML.OnnxRuntime.Gpu" ExcludeAssets="all" PrivateAssets="all" />

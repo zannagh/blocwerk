@@ -52,6 +52,13 @@ public class Wall
 
     public int CurrentGeneration { get; set; }
 
+    /// <summary>
+    /// When true the wall is a "big wall" made of multiple images arranged on a grid (see
+    /// <see cref="Panels"/>). When false (the default) the wall is a single image held on
+    /// <see cref="Photo"/> and behaves exactly as before.
+    /// </summary>
+    public bool UsesMultipleImages { get; set; }
+
     public ICollection<WallMember> Members { get; set; } = [];
 
     public ICollection<Hold> Holds { get; set; } = [];
@@ -65,4 +72,10 @@ public class Wall
     /// plane and <see cref="Angle"/> plus <see cref="BorderPoints"/> describe it.
     /// </summary>
     public ICollection<WallSegment> Segments { get; set; } = [];
+
+    /// <summary>
+    /// The images making up a big wall (see <see cref="UsesMultipleImages"/>). Empty on a
+    /// normal single-image wall.
+    /// </summary>
+    public ICollection<WallPanel> Panels { get; set; } = [];
 }

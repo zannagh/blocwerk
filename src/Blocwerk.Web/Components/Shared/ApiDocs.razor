@@ -1,0 +1,79 @@
+@* Read-only reference of the public REST API, rendered from ApiDocsData. *@
+
+<div class="apidocs">
+    <p class="apikey-blurb">
+        Every route is authenticated with a <code>bwk_</code>-prefixed bearer key. Send it as an
+        <code>Authorization</code> header &mdash; a <strong>User</strong> key for the User API, a
+        <strong>Wall</strong> key for the Wall API:
+    </p>
+    <pre class="apidocs-pre">Authorization: Bearer bwk_xxxxxxxxxxxxxxxxxxxxxxxx</pre>
+
+    @foreach (var surface in ApiDocsData.Surfaces)
+    {
+        <section class="apidocs-surface">
+            <div class="apidocs-surface-head">
+                <h3 class="apidocs-surface-title">@surface.Title</h3>
+                <span class="apidocs-scope">@surface.KeyScope</span>
+            </div>
+            <p class="apidocs-surface-desc">@surface.Description</p>
+
+            @foreach (var endpoint in surface.Endpoints)
+            {
+                <div class="apidocs-endpoint">
+                    <div class="apidocs-endpoint-head">
+                        <span class="apidocs-method @endpoint.Method.ToLowerInvariant()">@endpoint.Method</span>
+                        <code class="apidocs-path">@endpoint.Path</code>
+                    </div>
+                    <p class="apidocs-summary">@endpoint.Summary</p>
+
+                    @if (endpoint.Parameters.Count > 0)
+                    {
+                        <ul class="apidocs-params">
+                            @foreach (var param in endpoint.Parameters)
+                            {
+                                <li>
+                                    <code>@param.Name</code>
+                                    <span class="apidocs-param-loc">@param.Location</span>
+                                    <span class="apidocs-param-desc">@param.Description</span>
+                                </li>
+                            }
+                        </ul>
+                    }
+
+                    @if (endpoint.RequestJson != null)
+                    {
+                        <div class="apidocs-block-label">Request</div>
+                        <pre class="apidocs-pre">@endpoint.RequestJson</pre>
+                    }
+
+                    @if (endpoint.ResponseJson != null)
+                    {
+                        <div class="apidocs-block-label">Response</div>
+                        <pre class="apidocs-pre">@endpoint.ResponseJson</pre>
+                    }
+
+                    @if (endpoint.ResponseNote != null)
+                    {
+                        <p class="apidocs-note">@endpoint.ResponseNote</p>
+                    }
+                </div>
+            }
+        </section>
+    }
+
+    <section class="apidocs-surface">
+        <div class="apidocs-surface-head">
+            <h3 class="apidocs-surface-title">Coming soon</h3>
+        </div>
+        <div class="apidocs-endpoint apidocs-endpoint-soon">
+            <div class="apidocs-endpoint-head">
+                <span class="apidocs-method soon">SOON</span>
+                <code class="apidocs-path">POST /api/walls/{wallId}/import</code>
+            </div>
+            <p class="apidocs-summary">
+                A wall export push endpoint to import a wall's layout and boulders from an external
+                source. The request and response contract is not finalized yet.
+            </p>
+        </div>
+    </section>
+</div>

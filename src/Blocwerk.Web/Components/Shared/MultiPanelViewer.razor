@@ -1,0 +1,299 @@
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+@* A read-only viewer for a big wall's multiple images: shows ONE live panel at a time and lets
+   the user step to an adjacent panel with the directional chevrons (or a swipe). It reuses the
+   single-photo zoom/pan engine (viewport.js) so each panel zooms and pans like every other photo
+   surface. Holds are drawn in the panel image's own normalized space, exactly as they are stored. *@
+
+@if (_panel is null)
+{
+    <p class="empty-msg">No panels to show.</p>
+}
+else
+{
+    <div class="panel-viewer">
+        @* Zoom geometry is owned by JS via `--zoom` (wwwroot/js/viewport.js). *@
+        <div class="photo-viewport photo-section" @ref="_viewportRef">
+            <div class="photo-editor">
+                <img src="@PhotoUrl(_panel.Id)" alt="Wall panel @_panel.Col,@_panel.Row" class="wall-photo" />
+                <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
+                    @foreach (var h in _holds)
+                    {
+                        var isHi = HighlightedHoldIds?.Contains(h.Id) == true;
+                        <circle @key="h.Id" cx="@F(h.X * 100)" cy="@F(h.Y * 100)" r="@F(h.Radius * 100)"
+                                fill="@FillOf(h, isHi)" stroke="@StrokeOf(h, isHi)"
+                                stroke-width="@(isHi ? "0.5" : "0.25")" />
+                    }
+                </svg>
+            </div>
+        </div>
+
+        @if (_showArrows)
+        {
+            @if (Neighbour(-1, 0) is { } left)
+            {
+                <button class="panel-arrow left" title="Panel to the left"
+                        @onclick="() => GoToAsync(left.Col, left.Row)">@Chevron("left")</button>
+            }
+            @if (Neighbour(1, 0) is { } right)
+            {
+                <button class="panel-arrow right" title="Panel to the right"
+                        @onclick="() => GoToAsync(right.Col, right.Row)">@Chevron("right")</button>
+            }
+            @if (Neighbour(0, -1) is { } up)
+            {
+                <button class="panel-arrow up" title="Panel above"
+                        @onclick="() => GoToAsync(up.Col, up.Row)">@Chevron("up")</button>
+            }
+            @if (Neighbour(0, 1) is { } down)
+            {
+                <button class="panel-arrow down" title="Panel below"
+                        @onclick="() => GoToAsync(down.Col, down.Row)">@Chevron("down")</button>
+            }
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public Guid WallId { get; set; }
+
+    /// <summary>The wall's panels; only live ones are ever shown or navigated to.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<WallPanelInfo> Panels { get; set; } = [];
+
+    /// <summary>The panel to open on (Col,Row). Falls back to the first live panel if absent.</summary>
+    [Parameter] public int StartCol { get; set; }
+    [Parameter] public int StartRow { get; set; }
+
+    /// <summary>
+    /// AllNeighbours (wall view): an arrow toward every adjacent live panel.
+    /// HoldsOnly (boulder view): an arrow only toward a neighbour in <see cref="HighlightedPanelIds"/>.
+    /// </summary>
+    [Parameter] public ArrowDisplayMode ArrowMode { get; set; } = ArrowDisplayMode.AllNeighbours;
+
+    /// <summary>Async source for a panel's holds (e.g. GetPanelHoldsAsync). Ignored when
+    /// <see cref="HoldsByPanel"/> is supplied.</summary>
+    [Parameter] public Func<Guid, Task<IReadOnlyList<PanelHold>>>? HoldsProvider { get; set; }
+
+    /// <summary>Preloaded holds per panel; takes precedence over <see cref="HoldsProvider"/> and
+    /// keeps the boulder's own holds visible even to viewers who can't query panel holds.</summary>
+    [Parameter] public IReadOnlyDictionary<Guid, IReadOnlyList<PanelHold>>? HoldsByPanel { get; set; }
+
+    /// <summary>Holds drawn prominently (a boulder's own holds). Everything else is context.</summary>
+    [Parameter] public HashSet<Guid>? HighlightedHoldIds { get; set; }
+
+    /// <summary>Highlighted holds that are footholds — used only for the default colour.</summary>
+    [Parameter] public HashSet<Guid>? FootHoldIds { get; set; }
+
+    /// <summary>Fill/stroke for a highlighted hold (matching BoulderDetail's colours).</summary>
+    [Parameter] public Func<Guid, (string Fill, string Stroke)>? HoldColor { get; set; }
+
+    /// <summary>In HoldsOnly mode, the panels an arrow may point to (those holding a boulder hold).</summary>
+    [Parameter] public HashSet<Guid>? HighlightedPanelIds { get; set; }
+
+    /// <summary>
+    /// Enable the horizontal swipe-to-navigate enhancement. Off by default and left off when the
+    /// viewer lives inside a horizontal scroll container (the wall carousel), where a sideways
+    /// swipe already pages the carousel; the arrows are always available regardless.
+    /// </summary>
+    [Parameter] public bool EnableSwipe { get; set; }
+
+    public enum ArrowDisplayMode { AllNeighbours, HoldsOnly }
+
+    private ElementReference _viewportRef;
+    private DotNetObjectReference<MultiPanelViewer>? _selfRef;
+    private WallPanelInfo? _panel;
+    private List<PanelHold> _holds = [];
+    private Guid? _fitBoxForPanelId;
+    private bool _recenterPending;
+
+    private List<WallPanelInfo> LivePanels => Panels.Where(p => p.IsLive).ToList();
+
+    private bool _showArrows => _panel is not null &&
+        (Neighbour(-1, 0) is not null || Neighbour(1, 0) is not null
+            || Neighbour(0, -1) is not null || Neighbour(0, 1) is not null);
+
+    private string PhotoUrl(Guid panelId) => $"/api/walls/{WallId}/panels/{panelId}/photo";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var live = LivePanels;
+        _panel = live.FirstOrDefault(p => p.Col == StartCol && p.Row == StartRow)
+                 ?? live.FirstOrDefault();
+        await LoadHoldsAsync();
+    }
+
+    private WallPanelInfo? Neighbour(int dCol, int dRow)
+    {
+        if (_panel is null)
+        {
+            return null;
+        }
+
+        var n = LivePanels.FirstOrDefault(p => p.Col == _panel.Col + dCol && p.Row == _panel.Row + dRow);
+        if (n is null)
+        {
+            return null;
+        }
+
+        // In HoldsOnly mode an arrow only points at a neighbour that carries one of the
+        // boulder's holds; in AllNeighbours mode every existing neighbour gets one.
+        return ArrowMode == ArrowDisplayMode.AllNeighbours || HighlightedPanelIds?.Contains(n.Id) == true
+            ? n
+            : null;
+    }
+
+    private async Task GoToAsync(int col, int row)
+    {
+        var target = LivePanels.FirstOrDefault(p => p.Col == col && p.Row == row);
+        if (target is null || target.Id == _panel?.Id)
+        {
+            return;
+        }
+
+        _panel = target;
+        await LoadHoldsAsync();
+        _recenterPending = true;
+        StateHasChanged();
+    }
+
+    private async Task LoadHoldsAsync()
+    {
+        if (_panel is null)
+        {
+            _holds = [];
+            return;
+        }
+
+        if (HoldsByPanel is not null)
+        {
+            _holds = HoldsByPanel.TryGetValue(_panel.Id, out var preset) ? [.. preset] : [];
+            return;
+        }
+
+        if (HoldsProvider is not null)
+        {
+            _holds = [.. await HoldsProvider(_panel.Id)];
+            return;
+        }
+
+        _holds = [];
+    }
+
+    [JSInvokable]
+    public Task OnSwipeNavigate(string direction)
+    {
+        var (dc, dr) = direction switch
+        {
+            "left" => (-1, 0),
+            "right" => (1, 0),
+            "up" => (0, -1),
+            "down" => (0, 1),
+            _ => (0, 0),
+        };
+
+        // Only navigate when that neighbour is actually eligible (exists, and in HoldsOnly mode
+        // carries a boulder hold). Swipes toward nothing are ignored.
+        return Neighbour(dc, dr) is { } n ? GoToAsync(n.Col, n.Row) : Task.CompletedTask;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_panel is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (firstRender && EnableSwipe)
+            {
+                _selfRef = DotNetObjectReference.Create(this);
+                await JS.InvokeVoidAsync("bwViewport.attachSwipe", _viewportRef, _selfRef);
+            }
+
+            // Idempotent in JS (a no-op once bound to this node); re-run every render so a node
+            // replaced by a re-render or reconnect gets its pan/zoom engine back.
+            await JS.InvokeVoidAsync("bwViewport.setupScroll", _viewportRef, null);
+
+            if (_fitBoxForPanelId != _panel.Id)
+            {
+                _fitBoxForPanelId = _panel.Id;
+                await JS.InvokeVoidAsync("bwViewport.fitBox", _viewportRef);
+            }
+
+            if (_recenterPending)
+            {
+                _recenterPending = false;
+                // Reset to fit and re-centre after a panel swap (the .photo-editor node is reused,
+                // so its zoom would otherwise carry over from the previous panel).
+                await JS.InvokeVoidAsync("bwViewport.centerOn", _viewportRef, 0.5, 0.5, 1.0);
+            }
+        }
+        catch (JSException)
+        {
+            _fitBoxForPanelId = null;
+        }
+        catch (JSDisconnectedException)
+        {
+            _fitBoxForPanelId = null;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_selfRef is not null)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("bwViewport.detachSwipe", _viewportRef);
+            }
+            catch (Exception)
+            {
+                // The circuit is usually already gone on dispose; nothing to detach from.
+            }
+
+            _selfRef.Dispose();
+            _selfRef = null;
+        }
+    }
+
+    private string FillOf(PanelHold h, bool highlighted)
+    {
+        if (highlighted)
+        {
+            return HoldColor?.Invoke(h.Id).Fill
+                   ?? HoldPalette.Rgba(FootHoldIds?.Contains(h.Id) == true ? BoulderHoldColors.Foot : BoulderHoldColors.Normal, 0.55);
+        }
+
+        // Context holds: faintly tinted by their own paint colour, dim when a boulder is highlighted.
+        return HoldPalette.Fill(h.Color, HighlightedHoldIds is { Count: > 0 } ? 0.12 : 0.35);
+    }
+
+    private string StrokeOf(PanelHold h, bool highlighted)
+    {
+        if (highlighted)
+        {
+            return HoldColor?.Invoke(h.Id).Stroke
+                   ?? (FootHoldIds?.Contains(h.Id) == true ? BoulderHoldColors.Foot : BoulderHoldColors.Normal);
+        }
+
+        return HighlightedHoldIds is { Count: > 0 } ? "rgba(255,255,255,0.35)" : HoldPalette.StrokeHex(h.Color);
+    }
+
+    private static MarkupString Chevron(string dir)
+    {
+        var d = dir switch
+        {
+            "left" => "M15 5 L8 12 L15 19",
+            "right" => "M9 5 L16 12 L9 19",
+            "up" => "M5 15 L12 8 L19 15",
+            _ => "M5 9 L12 16 L19 9",
+        };
+        return new MarkupString(
+            $"<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" " +
+            $"stroke-linecap=\"round\" stroke-linejoin=\"round\" width=\"24\" height=\"24\"><path d=\"{d}\"/></svg>");
+    }
+
+    private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+}

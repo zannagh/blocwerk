@@ -64,6 +64,8 @@ public static class CoreServices
         builder.Services.AddHostedService<TelemetryStatsCollector>();
 
         builder.Services.AddScoped<IWallService, WallService>();
+        builder.Services.AddScoped<IWallPanelService, WallPanelService>();
+        builder.Services.AddScoped<IWallBigUpdateService, WallBigUpdateService>();
 
         return builder;
     }
@@ -97,6 +99,18 @@ public static class CoreServices
             catch (Exception ex)
             {
                 logger.LogWarning(ex, "Dev data import failed; continuing with the current dev database contents.");
+            }
+
+            // Make the configured dev user (BLOCWERK_DEV_USER) an admin of every wall so local
+            // testing can see and administer all walls without hand-seeding membership.
+            try
+            {
+                var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<BlocwerkDbContext>>();
+                DevWallAdminSeeder.SeedIfNeededAsync(factory, logger).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Dev wall-admin seed failed; continuing without all-wall admin.");
             }
         }
 

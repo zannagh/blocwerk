@@ -18,6 +18,19 @@
         and revoke it as soon as you no longer need it.
     </p>
 
+    <div class="apikey-docs-toggle">
+        <button type="button" class="apikey-btn" @onclick="() => showDocs = !showDocs">
+            @(showDocs ? "Hide documentation" : "Documentation")
+        </button>
+    </div>
+
+    @if (showDocs)
+    {
+        <section class="apikey-docs">
+            <ApiDocs />
+        </section>
+    }
+
     @if (newToken != null)
     {
         <div class="apikey-reveal">
@@ -85,6 +98,7 @@
     private string? error;
     private string copyLabel = "Copy to clipboard";
     private bool busy;
+    private bool showDocs;
 
     protected override async Task OnInitializedAsync()
     {

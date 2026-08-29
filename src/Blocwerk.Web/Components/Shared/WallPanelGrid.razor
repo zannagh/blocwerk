@@ -1,0 +1,222 @@
+@inject IWallPanelService WallPanelService
+
+@* The big-wall panel topology: live panels laid out at their (Col,Row) with the centre in the
+   middle, and a "+" add card at every frontier cell. Picking an image for a "+" stages a panel
+   and drops into the overlap confirmation flow. *@
+
+@if (_staging is not null)
+{
+    <PanelOverlapStepper WallId="WallId" PanelId="_staging.PanelId" Col="_staging.Col" Row="_staging.Row"
+                         Proposals="_staging.Proposals"
+                         OnConfirm="ConfirmStaged" OnDiscard="DiscardStaged" />
+}
+else if (_loading)
+{
+    <p class="loading-small">Loading panels…</p>
+}
+else if (_panels.Count == 0 && _frontier.Count == 0)
+{
+    <p class="staged-hint">
+        This wall has no base image yet. Turn multi-image off, upload a single wall photo, then turn
+        it back on — that photo becomes the centre panel you grow the wall from.
+    </p>
+}
+else
+{
+    <div class="panel-grid" style="grid-template-columns:repeat(@Cols, 1fr);">
+        @foreach (var p in _panels)
+        {
+            @if (p.IsLive)
+            {
+                <div class="panel-cell panel-thumb" style="@CellStyle(p.Col, p.Row)">
+                    <img src="/api/walls/@WallId/panels/@p.Id/photo" alt="Panel @p.Col,@p.Row" />
+                </div>
+            }
+            else
+            {
+                <div class="panel-cell panel-staged-card" style="@CellStyle(p.Col, p.Row)">
+                    <img src="/api/walls/@WallId/panels/@p.Id/staged-photo" alt="Staged panel @p.Col,@p.Row" />
+                    <span class="panel-staged-badge">In progress</span>
+                    <div class="panel-staged-actions">
+                        <button class="btn-primary" @onclick="() => ResumeStaged(p.Id, p.Col, p.Row)" disabled="@_uploading">Resume</button>
+                        <button class="btn-secondary" @onclick="() => DiscardStagedPanel(p.Id)" disabled="@_uploading">Discard</button>
+                    </div>
+                </div>
+            }
+        }
+        @foreach (var pos in _frontier)
+        {
+            <label class="panel-cell panel-add-card" style="@CellStyle(pos.Col, pos.Row)" title="Add an image here">
+                <span class="panel-add-plus">+</span>
+                <InputFile OnChange="e => OnFrontierFile(e, pos.Col, pos.Row)" accept="image/*" class="panel-add-input" disabled="@_uploading" />
+            </label>
+        }
+    </div>
+    <p class="hint">Add a neighbouring photo at any <strong>+</strong>. Detected holds are matched against the touching panel so shared holds stay one hold.</p>
+}
+
+@if (_uploading)
+{
+    <p class="loading-small">Uploading &amp; detecting holds…</p>
+}
+@if (!string.IsNullOrEmpty(_error))
+{
+    <p class="staged-hint danger">@_error</p>
+}
+
+@code {
+    [Parameter] public Guid WallId { get; set; }
+
+    private bool _loading = true;
+    private bool _uploading;
+    private string? _error;
+    private IReadOnlyList<WallPanelInfo> _panels = [];
+    private IReadOnlyList<PanelPosition> _frontier = [];
+    private StagingContext? _staging;
+
+    private sealed class StagingContext
+    {
+        public required Guid PanelId { get; init; }
+        public required int Col { get; init; }
+        public required int Row { get; init; }
+        public required IReadOnlyList<OverlapProposalDto> Proposals { get; init; }
+    }
+
+    private int MinCol => _panels.Select(p => p.Col).Concat(_frontier.Select(f => f.Col)).DefaultIfEmpty(0).Min();
+    private int MinRow => _panels.Select(p => p.Row).Concat(_frontier.Select(f => f.Row)).DefaultIfEmpty(0).Min();
+    private int MaxCol => _panels.Select(p => p.Col).Concat(_frontier.Select(f => f.Col)).DefaultIfEmpty(0).Max();
+    private int Cols => MaxCol - MinCol + 1;
+
+    private string CellStyle(int col, int row) =>
+        $"grid-column:{col - MinCol + 1};grid-row:{row - MinRow + 1};";
+
+    protected override Task OnInitializedAsync() => Reload();
+
+    private async Task Reload()
+    {
+        _loading = true;
+        _panels = await WallPanelService.GetPanelsAsync(WallId);
+        _frontier = await WallPanelService.GetFrontierPositionsAsync(WallId);
+        _loading = false;
+    }
+
+    private async Task OnFrontierFile(InputFileChangeEventArgs e, int col, int row)
+    {
+        _error = null;
+        var file = e.File;
+        if (file.Size > 10 * 1024 * 1024)
+        {
+            _error = "Photo too large (max 10 MB)";
+            return;
+        }
+
+        _uploading = true;
+        try
+        {
+            using var stream = file.OpenReadStream(10 * 1024 * 1024);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+
+            var result = await WallPanelService.StagePanelAsync(WallId, col, row, ms.ToArray(), file.ContentType);
+            _staging = new StagingContext
+            {
+                PanelId = result.PanelId,
+                Col = col,
+                Row = row,
+                Proposals = result.Proposals,
+            };
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not stage panel: {ex.Message}";
+        }
+        finally
+        {
+            _uploading = false;
+        }
+    }
+
+    private async Task ResumeStaged(Guid panelId, int col, int row)
+    {
+        _error = null;
+        _uploading = true;
+        try
+        {
+            var result = await WallPanelService.ResumePanelAsync(WallId, panelId);
+            _staging = new StagingContext
+            {
+                PanelId = result.PanelId,
+                Col = col,
+                Row = row,
+                Proposals = result.Proposals,
+            };
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not resume panel: {ex.Message}";
+        }
+        finally
+        {
+            _uploading = false;
+        }
+    }
+
+    private async Task DiscardStagedPanel(Guid panelId)
+    {
+        _error = null;
+        try
+        {
+            await WallPanelService.DiscardPanelAsync(WallId, panelId);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not discard panel: {ex.Message}";
+        }
+        finally
+        {
+            await Reload();
+        }
+    }
+
+    private async Task ConfirmStaged(PanelConfirmation confirmation)
+    {
+        if (_staging is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await WallPanelService.ConfirmPanelAsync(
+                WallId, _staging.PanelId, confirmation.Links, confirmation.RemovedNeighborHoldIds);
+            _staging = null;
+            await Reload();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not add panel: {ex.Message}";
+        }
+    }
+
+    private async Task DiscardStaged()
+    {
+        if (_staging is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await WallPanelService.DiscardPanelAsync(WallId, _staging.PanelId);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not discard panel: {ex.Message}";
+        }
+        finally
+        {
+            _staging = null;
+            await Reload();
+        }
+    }
+}

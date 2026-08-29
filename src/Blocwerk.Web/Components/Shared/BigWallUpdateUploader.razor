@@ -1,0 +1,134 @@
+@* Entry to the big-wall update: pick the new CENTRE photo (required, grid 0,0) and any neighbour
+   photos, each dropped into its direction slot (right = col+1, left = col-1, up = row-1, down = row+1).
+   "Upload all wall-piece photos at once", then Start hands the assembled set to StartAsync. *@
+
+<div class="bigupdate-uploader">
+    <p class="hint">
+        Upload the fresh photos of your wall. The <strong>centre</strong> photo is required and becomes the
+        new middle of the wall; drop each neighbouring photo into the direction it sits, relative to the centre.
+        Your old holds (and their boulders) are matched onto the new centre so nothing is lost.
+    </p>
+
+    <div class="bigupdate-slots">
+        @foreach (var slot in _slots)
+        {
+            <div class="bigupdate-slot @(slot.Required ? "required" : "") @(slot.HasFile ? "filled" : "")">
+                <div class="bigupdate-slot-head">
+                    <span class="bigupdate-slot-label">@slot.Label</span>
+                    @if (slot.Required)
+                    {
+                        <span class="bigupdate-slot-req">required</span>
+                    }
+                </div>
+                @if (slot.HasFile)
+                {
+                    <span class="bigupdate-slot-file">@slot.FileName</span>
+                    <button class="btn-link" @onclick="() => Clear(slot)" disabled="@_busy">Remove</button>
+                }
+                else
+                {
+                    <label class="bigupdate-slot-pick">
+                        <span class="panel-add-plus">+</span>
+                        <InputFile OnChange="e => OnSlotFile(e, slot)" accept="image/*"
+                                   class="panel-add-input" disabled="@_busy" />
+                    </label>
+                }
+            </div>
+        }
+    </div>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <p class="staged-hint danger">@_error</p>
+    }
+
+    <div class="staged-actions">
+        <button class="btn-primary" @onclick="Start" disabled="@(_busy || !CentreReady)">
+            @(_busy ? "Preparing…" : "Start update")
+        </button>
+        <button class="btn-secondary" @onclick="() => OnCancel.InvokeAsync()" disabled="@_busy">Cancel</button>
+    </div>
+</div>
+
+@code {
+    [Parameter] public EventCallback<IReadOnlyList<BigUpdatePhoto>> OnStart { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private const long MaxBytes = 10 * 1024 * 1024;
+
+    private bool _busy;
+    private string? _error;
+
+    private readonly List<Slot> _slots =
+    [
+        new("Centre", 0, 0, Required: true),
+        new("Left", -1, 0, Required: false),
+        new("Right", 1, 0, Required: false),
+        new("Up", 0, -1, Required: false),
+        new("Down", 0, 1, Required: false),
+    ];
+
+    private bool CentreReady => _slots[0].HasFile;
+
+    private sealed class Slot(string label, int col, int row, bool Required)
+    {
+        public string Label { get; } = label;
+        public int Col { get; } = col;
+        public int Row { get; } = row;
+        public bool Required { get; } = Required;
+        public byte[]? Bytes { get; set; }
+        public string? ContentType { get; set; }
+        public string? FileName { get; set; }
+        public bool HasFile => Bytes is not null;
+    }
+
+    private async Task OnSlotFile(InputFileChangeEventArgs e, Slot slot)
+    {
+        _error = null;
+        var file = e.File;
+        if (file.Size > MaxBytes)
+        {
+            _error = $"{slot.Label} photo too large (max 10 MB)";
+            return;
+        }
+
+        try
+        {
+            using var stream = file.OpenReadStream(MaxBytes);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            slot.Bytes = ms.ToArray();
+            slot.ContentType = string.IsNullOrEmpty(file.ContentType) ? "image/jpeg" : file.ContentType;
+            slot.FileName = file.Name;
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not read {slot.Label} photo: {ex.Message}";
+        }
+    }
+
+    private void Clear(Slot slot)
+    {
+        slot.Bytes = null;
+        slot.ContentType = null;
+        slot.FileName = null;
+    }
+
+    private async Task Start()
+    {
+        if (!CentreReady)
+        {
+            _error = "A centre photo is required.";
+            return;
+        }
+
+        _busy = true;
+        var photos = _slots
+            .Where(s => s.HasFile)
+            .Select(s => new BigUpdatePhoto(s.Bytes!, s.ContentType!, s.Col, s.Row))
+            .ToList();
+
+        await OnStart.InvokeAsync(photos);
+        _busy = false;
+    }
+}

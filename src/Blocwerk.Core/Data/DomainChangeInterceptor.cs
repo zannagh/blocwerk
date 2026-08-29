@@ -85,6 +85,12 @@ public sealed class DomainChangeInterceptor : SaveChangesInterceptor
                 case WallSegment segment:
                     changes.Add(new DomainChange(DomainChangeScope.Wall, segment.WallId, Guid.Empty));
                     break;
+                case WallPanel panel:
+                    changes.Add(new DomainChange(DomainChangeScope.Wall, panel.WallId, Guid.Empty));
+                    break;
+                case HoldLink holdLink:
+                    changes.Add(new DomainChange(DomainChangeScope.Wall, holdLink.WallId, Guid.Empty));
+                    break;
                 case WallMember member:
                     changes.Add(new DomainChange(DomainChangeScope.Wall, member.WallId, Guid.Empty));
                     wallListTouched = true;

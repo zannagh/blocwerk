@@ -1,0 +1,101 @@
+@inject IWallPanelService WallPanelService
+
+@* Focused, one-at-a-time overlap confirmation for a newly staged big-wall panel. Each proposed
+   hold-match is reviewed on its own: the neighbour hold (left) and the proposed new hold (right)
+   are shown side by side, each on an independently zoom/pannable image, colour-and-number paired.
+   Proposals are ordered by confidence so the obvious ones fly by. See PanelImageView.razor. *@
+
+<div class="panel-stepper" tabindex="0" @ref="_rootRef" @onkeydown="OnKeyDown">
+    <div class="panel-stepper-head">
+        <div>
+            <h3 class="panel-overlap-title">Confirm overlapping holds</h3>
+            <p class="hint">New panel at (@Col, @Row). Is the numbered hold on the left the same physical hold as the one on the right?</p>
+        </div>
+        <button class="btn-secondary" @onclick="Discard" title="Cancel adding this panel entirely">Discard this panel</button>
+    </div>
+
+    @if (_loading)
+    {
+        <p class="loading-small">Loading holds…</p>
+    }
+    else if (_steps.Count == 0)
+    {
+        <p class="staged-hint">No overlapping holds were proposed. You can still add this panel — it just won't be linked to a neighbour yet.</p>
+        <div class="staged-actions">
+            <button class="btn-primary" @onclick="Finish">Add panel</button>
+            <button class="btn-secondary" @onclick="Discard">Cancel</button>
+        </div>
+    }
+    else if (_finishing)
+    {
+        <p class="loading-small">Adding panel…</p>
+    }
+    else
+    {
+        var step = _steps[_index];
+        var color = PairColor(_index);
+        var newHold = _stagedHolds.GetValueOrDefault(step.HoldBId);
+        var neighborHold = NeighborHold(step.NeighborPanelId, step.HoldAId);
+
+        <div class="panel-stepper-bar">
+            <span class="panel-stepper-progress">@(_index + 1) / @_steps.Count</span>
+            <span class="panel-stepper-band @Band(step.Confidence)">@BandLabel(step.Confidence)</span>
+            <span class="panel-proposal-conf">@Pct(step.Confidence)% confident</span>
+            @if (_decisions[_index] is { } d)
+            {
+                <span class="panel-stepper-decided">@(d.Moved ? "moved ✓" : "linked ✓")</span>
+            }
+        </div>
+
+        <div class="panel-stepper-pair">
+            <PanelImageView WallId="WallId" Caption="Existing neighbour"
+                            PhotoUrl="@PhotoUrl(step.NeighborPanelId, staged: false)"
+                            Holds="NeighborHolds(step.NeighborPanelId)"
+                            HighlightHoldId="step.HoldAId" BadgeNumber="_index + 1" BadgeColor="@color"
+                            FocusKey="_index" FocusPoint="Point(neighborHold)" />
+
+            <PanelImageView WallId="WallId" Caption="@(_movedMode ? "New panel — pick the ACTUAL hold" : "New panel")"
+                            PhotoUrl="@PhotoUrl(PanelId, staged: true)"
+                            Holds="_stagedList"
+                            HighlightHoldId="@(_movedMode ? null : step.HoldBId)"
+                            SelectedHoldId="_movedSelectedHoldId"
+                            HintPoint="@(_movedMode ? Point(newHold) : null)"
+                            Interactive="_movedMode" AddMode="_addMode"
+                            BadgeNumber="_index + 1" BadgeColor="@color"
+                            FocusKey="_index" FocusPoint="Point(newHold)"
+                            OnHoldTap="OnMovedHoldTap" OnEmptyTap="OnMovedAddTap" />
+        </div>
+
+        @if (!string.IsNullOrEmpty(_warning))
+        {
+            <p class="staged-hint danger">@_warning</p>
+        }
+
+        @if (_movedMode)
+        {
+            <div class="panel-stepper-actions">
+                <span class="panel-stepper-hint">Tap the hold on the right that this really is, or add it if the matcher missed it.</span>
+                <button class="opt-btn @(_addMode ? "active" : "")" @onclick="() => _addMode = !_addMode">＋ Add hold here</button>
+                <button class="btn-primary" @onclick="UseMovedHold" disabled="@(_movedSelectedHoldId is null)">Use this hold</button>
+                <button class="btn-secondary" @onclick="CancelMoved">Cancel</button>
+            </div>
+        }
+        else
+        {
+            <div class="panel-stepper-actions">
+                <button class="btn-secondary" @onclick="Back" disabled="@(_index == 0)" title="Previous (←)">←</button>
+                <button class="btn-danger-soft" @onclick="DiscardMatch" title="Not the same hold (D)">Discard match</button>
+                <button class="btn-primary" @onclick="ConfirmMatch" title="Same hold (Enter / C)">Confirm match</button>
+                <button class="btn-secondary" @onclick="EnterMoved" title="Same hold, different position (M)">Moved hold</button>
+                <button class="btn-danger-soft" @onclick="DeleteHold" title="This hold was removed from the wall (X / Delete)">Delete hold</button>
+                <button class="btn-secondary" @onclick="Next" title="Skip (→)">→</button>
+            </div>
+            <div class="panel-stepper-foot">
+                <span class="panel-stepper-legend"><kbd>Enter</kbd>/<kbd>C</kbd> confirm · <kbd>D</kbd> discard · <kbd>M</kbd> moved · <kbd>X</kbd> delete · <kbd>←</kbd>/<kbd>→</kbd> step</span>
+                <button class="btn-link" @onclick="ConfirmAllHighConfidence" title="Auto-confirm every remaining match at 90% or higher, discard the rest, and finish">
+                    Confirm all remaining ≥ 90% (@RemainingHighConfidence)
+                </button>
+            </div>
+        }
+    }
+</div>

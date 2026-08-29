@@ -38,6 +38,12 @@
     <PackageVersion Include="SkiaSharp" Version="3.119.1" />
     <PackageVersion Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="3.119.1" />
 
+    <!-- OpenCvSharp for cross-image hold matching (big wall). osx_arm64 and linux-arm64
+         native runtimes ship at different versions, so the csproj conditions by build OS. -->
+    <PackageVersion Include="OpenCvSharp4" Version="4.13.0.20260526" />
+    <PackageVersion Include="OpenCvSharp4.runtime.linux-arm64" Version="4.13.0.20260526" />
+    <PackageVersion Include="OpenCvSharp4.runtime.osx_arm64" Version="4.8.1" />
+
     <!-- Testing packages -->
     <PackageVersion Include="coverlet.collector" Version="6.0.2" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" />

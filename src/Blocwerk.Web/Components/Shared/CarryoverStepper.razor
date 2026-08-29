@@ -1,0 +1,92 @@
+@* Focused, one-at-a-time carryover review. Old photo (left) and new centre (right) side by side,
+   each independently zoom/pannable via PanelImageView, the subject hold highlighted. Actions default
+   to KEEP; removing/discarding is always an explicit choice. See CarryoverStepper.razor.cs. *@
+
+<div class="panel-stepper" tabindex="0" @ref="_rootRef" @onkeydown="OnKeyDown">
+    <div class="panel-stepper-head">
+        <div>
+            <h3 class="panel-overlap-title">@ModeTitle</h3>
+            <p class="hint">@ModeHint</p>
+        </div>
+        <button class="btn-secondary" @onclick="() => OnClose.InvokeAsync()">Done — back to overview</button>
+    </div>
+
+    @if (Items.Count == 0)
+    {
+        <p class="staged-hint">Nothing to review here.</p>
+    }
+    else
+    {
+        <div class="panel-stepper-bar">
+            <span class="panel-stepper-progress">@(_index + 1) / @Items.Count</span>
+        </div>
+
+        <div class="panel-stepper-pair">
+            <PanelImageView WallId="WallId" Caption="Old wall (before)"
+                            PhotoUrl="@OldPhotoUrl"
+                            Holds="OldHolds"
+                            HighlightHoldId="Current?.OldHoldId"
+                            BadgeNumber="_index + 1" BadgeColor="#ffb020"
+                            FocusKey="_index" FocusPoint="Point(OldHold)" />
+
+            <PanelImageView WallId="WallId" Caption="@(_interactive ? "New centre — tap the matching hold" : "New centre (after)")"
+                            PhotoUrl="@NewPhotoUrl"
+                            Holds="NewHolds"
+                            HighlightHoldId="@(_interactive ? null : Current?.NewHoldId)"
+                            SelectedHoldId="_selectedNewId"
+                            HintPoint="@(_interactive ? Point(NewHold) : null)"
+                            Interactive="_interactive"
+                            BadgeNumber="_index + 1" BadgeColor="#4aa8ff"
+                            FocusKey="_index" FocusPoint="Point(NewHold ?? OldHold)"
+                            OnHoldTap="OnNewHoldTap" />
+        </div>
+
+        @if (_interactive)
+        {
+            <div class="panel-stepper-actions">
+                <span class="panel-stepper-hint">Tap the hold on the right that this old hold really is now.</span>
+                <button class="btn-primary" @onclick="UseInteractive" disabled="@(_selectedNewId is null)">Use this hold</button>
+                <button class="btn-secondary" @onclick="CancelInteractive">Cancel</button>
+            </div>
+        }
+        else if (Mode == CarryReviewMode.Moved)
+        {
+            <div class="panel-stepper-actions">
+                <button class="btn-secondary" @onclick="Back" disabled="@(_index == 0)" title="Previous (←)">←</button>
+                <button class="btn-primary" @onclick="KeepMoved" title="Keep, flagged as moved (Enter)">Keep — moved ✓</button>
+                <button class="btn-secondary" @onclick="KeepInPlace" title="Same spot after all">Not moved</button>
+                <button class="btn-secondary" @onclick="EnterInteractive" title="Point at the real hold">Re-target</button>
+                <button class="btn-danger-soft" @onclick="RemoveOld" title="This hold is gone (X)">Remove</button>
+                <button class="btn-secondary" @onclick="Next" title="Skip (→)">→</button>
+            </div>
+            <div class="panel-stepper-foot">
+                <span class="panel-stepper-legend"><kbd>Enter</kbd> keep · <kbd>X</kbd> remove · <kbd>←</kbd>/<kbd>→</kbd> step</span>
+            </div>
+        }
+        else if (Mode == CarryReviewMode.Removal)
+        {
+            <div class="panel-stepper-actions">
+                <button class="btn-secondary" @onclick="Back" disabled="@(_index == 0)" title="Previous (←)">←</button>
+                <button class="btn-primary" @onclick="KeepInPlace" title="Keep at its old position (Enter)">Keep in place ✓</button>
+                <button class="btn-secondary" @onclick="EnterInteractive" title="Find it on the new photo">Re-find</button>
+                <button class="btn-danger-soft" @onclick="RemoveOld" title="It is really gone (X)">Remove — it's gone</button>
+                <button class="btn-secondary" @onclick="Next" title="Skip (→)">→</button>
+            </div>
+            <div class="panel-stepper-foot">
+                <span class="panel-stepper-legend"><kbd>Enter</kbd> keep · <kbd>X</kbd> remove · <kbd>←</kbd>/<kbd>→</kbd> step</span>
+            </div>
+        }
+        else
+        {
+            <div class="panel-stepper-actions">
+                <button class="btn-secondary" @onclick="Back" disabled="@(_index == 0)" title="Previous (←)">←</button>
+                <button class="btn-primary" @onclick="KeepNew" title="Keep this new hold (Enter)">Keep ✓</button>
+                <button class="btn-danger-soft" @onclick="DiscardNew" title="False detection (X)">Discard</button>
+                <button class="btn-secondary" @onclick="Next" title="Skip (→)">→</button>
+            </div>
+            <div class="panel-stepper-foot">
+                <span class="panel-stepper-legend"><kbd>Enter</kbd> keep · <kbd>X</kbd> discard · <kbd>←</kbd>/<kbd>→</kbd> step</span>
+            </div>
+        }
+    }
+</div>
