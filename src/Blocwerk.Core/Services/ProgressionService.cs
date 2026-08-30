@@ -217,7 +217,17 @@ public class ProgressionService : IProgressionService
                 .Select(p => p.Timestamp)
                 .ToListAsync();
 
-            var allTimestamps = attempts.Concat(hangboard).Concat(pullups).ToList();
+            // Imported TopLogger ascents are date-anchored at local midnight (stored as UTC), so bucket
+            // them at noon of their recovered local day — otherwise a UTC-day grid lights the wrong day.
+            var external = await db.ExternalAscents
+                .Where(a => a.UserId == user.Id && a.LoggedAt >= since.AddDays(-1))
+                .Select(a => a.LoggedAt)
+                .ToListAsync();
+            var externalStamps = external
+                .Select(t => new DateTimeOffset(ExternalLocalDate(t).ToDateTime(new TimeOnly(12, 0)), TimeSpan.Zero))
+                .ToList();
+
+            var allTimestamps = attempts.Concat(hangboard).Concat(pullups).Concat(externalStamps).ToList();
 
             var result = new List<DayActivity>();
             var startDate = DateOnly.FromDateTime(DateTimeOffset.UtcNow.AddDays(-days).Date);
@@ -299,6 +309,24 @@ public class ProgressionService : IProgressionService
             var pullups = await db.PullupSessions
                 .Where(p => p.UserId == user.Id && p.Timestamp >= dayStart && p.Timestamp < dayEnd)
                 .ToListAsync();
+
+            // Imported TopLogger ascents belonging to this LOCAL day (their UTC instant sits on the
+            // previous day). One row per climb, matching the native grouping above.
+            var extStart = new DateTimeOffset(date.AddDays(-1).ToDateTime(new TimeOnly(12, 0)), TimeSpan.Zero);
+            var extEnd = new DateTimeOffset(date.ToDateTime(new TimeOnly(12, 0)), TimeSpan.Zero);
+            var externalAscents = (await db.ExternalAscents
+                .Where(a => a.UserId == user.Id && a.LoggedAt >= extStart && a.LoggedAt < extEnd)
+                .ToListAsync())
+                .Where(a => ExternalLocalDate(a.LoggedAt) == date)
+                .ToList();
+            boulders.AddRange(externalAscents
+                .GroupBy(a => a.ClimbId ?? a.ExternalId)
+                .Select(g =>
+                {
+                    var best = g.OrderByDescending(a => a.Type).First();
+                    return new BoulderAttemptSummary(
+                        ExternalClimbLabel(best.ClimbName, best.MappedGrade), best.MappedGrade, g.Max(a => a.Type), g.Count());
+                }));
 
             TimeSpan? sessionDuration = null;
             var allTimestamps = attempts.Select(a => a.Timestamp)
@@ -685,6 +713,19 @@ public class ProgressionService : IProgressionService
         string.IsNullOrEmpty(climbName) || climbName == "Unknown climb"
             ? (mappedGrade ?? "Ungraded")
             : climbName;
+
+    /// <summary>
+    /// The local calendar day an imported (TopLogger) ascent belongs to. Imports are date-anchored at the
+    /// climber's LOCAL midnight and stored as UTC, so their instant sits a few hours off UTC midnight
+    /// (e.g. Berlin midnight = 22:00/23:00 UTC the previous day). Rounding to the nearest UTC midnight
+    /// recovers the day the user actually climbed, which is what the activity heatmap and day popup show.
+    /// </summary>
+    private static DateOnly ExternalLocalDate(DateTimeOffset loggedAt)
+    {
+        var utc = loggedAt.UtcDateTime;
+        var day = utc.TimeOfDay >= TimeSpan.FromHours(12) ? utc.Date.AddDays(1) : utc.Date;
+        return DateOnly.FromDateTime(day);
+    }
 
     private static IEnumerable<int> ExternalSendScores(List<ExternalAscent> ascents) =>
         ascents
