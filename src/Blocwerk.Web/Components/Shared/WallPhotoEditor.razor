@@ -119,7 +119,7 @@
 
 @* Zoom geometry is owned by JS via the `--zoom` custom property (viewport.js); the
    markup must not emit a width or a late re-render would stomp the live transform. *@
-<div class="photo-viewport" @ref="_viewportRef"
+<div class="photo-viewport@(_frame != null ? " bw-framed" : string.Empty)" @ref="_viewportRef"
      style="cursor: @CursorForMode();">
 <div class="photo-editor" @ref="_containerRef">
     <img src="@EffectivePhotoUrl" alt="Wall" class="wall-photo" />
@@ -750,6 +750,10 @@
 
     private ElementReference _containerRef;
     private ElementReference _viewportRef;
+
+    // Normalized wall-region rectangle the read-only view is framed to (null = full photo / editing).
+    private double[]? _frame;
+    private string? _fitKey;
     private readonly ViewportZoomState _zoomState;
     private Guid? _selectedHoldId;
     private Guid? _shapeEditHoldId;
@@ -822,19 +826,28 @@
         {
             await JS.InvokeVoidAsync("bwViewport.setupScroll", _viewportRef, _zoomState.Reference);
 
-            // Publish the photo aspect (as --fit-aspect only, not an inline aspect-ratio) so the
-            // fullscreen/desktop layout can contain the wall photo within the window. Mobile/narrow
-            // is untouched: the box keeps its flex-driven height until the .bw-fullscreen CSS opts in.
-            await JS.InvokeVoidAsync("bwViewport.fitBox", _viewportRef, false);
+            // In the read-only view the box is framed to the wall region (_frame), so it pins that
+            // region's aspect and scrolls to it once. In edit mode _frame is null: publish the full
+            // photo aspect as --fit-aspect only (no inline aspect-ratio) so the box keeps its
+            // flex-driven height until the .bw-fullscreen CSS opts in — exactly as before. Gated so
+            // the one-time framing scroll is never re-applied on top of the user panning.
+            var fitKey = EffectivePhotoUrl + "|" + (_frame == null ? string.Empty : string.Join(",", _frame));
+            if (_fitKey != fitKey)
+            {
+                _fitKey = fitKey;
+                await JS.InvokeVoidAsync("bwViewport.fitBox", _viewportRef, _frame != null, _frame);
+            }
         }
         catch (JSException)
         {
-            // Stale element reference after a re-render/reconnect: the next render retries.
+            // Stale element reference after a re-render/reconnect: allow the next render to retry.
             // Never let it become an unhandled circuit error.
+            _fitKey = null;
         }
         catch (JSDisconnectedException)
         {
             // Circuit went away mid-call; nothing to attach to.
+            _fitKey = null;
         }
     }
 
@@ -849,6 +862,12 @@
             .OrderBy(s => s.SortOrder)
             .Select(WallSegmentDraft.FromEntity)
             .ToList();
+
+        // Frame the read-only view to the wall region (border if present, else the holds' bbox) so
+        // the photo isn't mostly floor/ceiling. Editing stays uncropped: the editor needs the whole
+        // canvas (adding holds outside the border, editing the border itself) and its flex/fullscreen
+        // layout doesn't cleanly adopt the region aspect. A null frame renders exactly as before.
+        _frame = CanEdit ? null : WallFraming.TryComputeFrame(BorderPoints, Holds);
 
         // Reset all editing state whenever we enter or leave manual alignment so
         // stale hold ids from a prior staging session never bleed into the next one.

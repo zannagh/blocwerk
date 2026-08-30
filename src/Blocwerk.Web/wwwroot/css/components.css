@@ -73,6 +73,12 @@
    fallback (before load / on error) that would otherwise track the content. */
 .photo-viewport.photo-section { height: auto; max-height: 80vh; }
 
+/* Framed view: the photo + overlay are cropped to the wall region (--crop-scale + a bbox-aspect
+   box, both set by bwViewport.fitBox). The widened content overflows the box in both axes at fit,
+   so hide the scrollbars for a clean crop — panning still works via the scroll model once zoomed. */
+.photo-viewport.bw-framed { scrollbar-width: none; }
+.photo-viewport.bw-framed::-webkit-scrollbar { width: 0; height: 0; }
+
 
 /* "First-fold" layout: the wall editor + stats panels size to fit in the visible
    viewport (accounting for sticky bw-topbar and fixed bw-tabbar), with a peek so
@@ -111,8 +117,11 @@
    the element without a width so a late server re-render cannot stomp the transform. */
 /* No touch-action here: the parent .photo-viewport owns it (viewport.js). A `none` on
    this content child would override the viewport's pan-y and re-block page scrolling. */
+/* --crop-scale (default 1) is written by JS (viewport.js fitBox) when the view is framed to the
+   wall region: it widens the shared content layer so the region fills the box, composing with
+   --zoom in the same calc. Both custom properties are JS-owned; Razor renders no width. */
 .photo-editor { position: relative; overflow: hidden; user-select: none;
-    width: calc(var(--zoom, 1) * 100%); min-width: 100%; }
+    width: calc(var(--zoom, 1) * var(--crop-scale, 1) * 100%); min-width: 100%; }
 .photo-editor .wall-photo { width: 100%; display: block; }
 .photo-editor .hold-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
 /* Boulder viewer only: the overlay holds are display-only (no tap/click handlers), so let

@@ -194,7 +194,7 @@ else
             else
             {
                 @* Zoom geometry is owned by JS via `--zoom` (wwwroot/js/viewport.js). *@
-                <div class="photo-viewport photo-section" @ref="_photoViewportRef">
+                <div class="photo-viewport photo-section@(_frame != null ? " bw-framed" : "")" @ref="_photoViewportRef">
                     <div class="photo-editor">
                         <img src="@PhotoUrl" alt="Wall" class="wall-photo" />
                         <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -348,6 +348,9 @@ else
     private BoulderBetaVideos? _betaVideos;
     private ViewMode _viewMode = ViewMode.Photo;
     private List<Hold>? _wallHolds;
+
+    // Normalized wall-region rectangle the photo view is framed to (null = show the whole photo).
+    private double[]? _frame;
     private List<Hold> _colorRuleHolds = [];
     private HashSet<Guid> _boulderHoldIds = [];
 
@@ -416,13 +419,15 @@ else
                 // dead. No .NET callback: this page shows no zoom read-out.
                 await JS.InvokeVoidAsync("bwViewport.setupScroll", _photoViewportRef, null);
 
-                // Pin the box to the photo's aspect ratio so zooming scrolls inside a fixed box
-                // instead of growing the card. Re-run only when the image behind it changes — the
-                // Then/Now toggle swaps PhotoUrl, and the box must track the new image's ratio.
-                if (_fitBoxForUrl != PhotoUrl)
+                // Pin the box to the framed wall region (or the whole photo when there is nothing to
+                // frame) so zooming scrolls inside a fixed box instead of growing the card. Re-run only
+                // when the image or the frame changes — the Then/Now toggle swaps PhotoUrl and holds, and
+                // the box (plus its one-time framing scroll) must track the new region.
+                var fitKey = PhotoUrl + "|" + (_frame == null ? string.Empty : string.Join(",", _frame));
+                if (_fitBoxForUrl != fitKey)
                 {
-                    _fitBoxForUrl = PhotoUrl;
-                    await JS.InvokeVoidAsync("bwViewport.fitBox", _photoViewportRef);
+                    _fitBoxForUrl = fitKey;
+                    await JS.InvokeVoidAsync("bwViewport.fitBox", _photoViewportRef, true, _frame);
                 }
             }
             catch (JSException)
@@ -690,6 +695,10 @@ else
         _colorRuleHolds = _boulder is { FootColorOnly: { Length: > 0 } color } && _wallHolds != null
             ? _wallHolds.Where(h => h.Color == color && !_boulderHoldIds.Contains(h.Id)).ToList()
             : [];
+
+        // Frame the photo view to the wall region (border if present, else the wall holds' bbox)
+        // so the boulder isn't drowned in floor/ceiling. Null when there's nothing usable to frame.
+        _frame = WallFraming.TryComputeFrame(_boulder?.Wall.BorderPoints, _wallHolds);
     }
 
     /// <summary>

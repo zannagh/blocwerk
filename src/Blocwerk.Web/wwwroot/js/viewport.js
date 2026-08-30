@@ -226,8 +226,17 @@ window.bwViewport = (function () {
          * `pinAspect === false` (the wall editor) to publish it WITHOUT also writing an inline
          * `aspect-ratio`, so the box keeps its flex-driven height in mobile/narrow mode and only
          * the fullscreen CSS opts it into aspect sizing.
+         *
+         * Optional `frame` = [minX, minY, maxX, maxY] in the image's normalized 0..1 space frames the
+         * view to that sub-region (the actual wall) instead of the whole photo. It is a pure crop of
+         * the SHARED content layer — the box aspect becomes the region's *pixel* aspect
+         * ((frameW*naturalW)/(frameH*naturalH)), the content is widened by `--crop-scale = 1/frameW`
+         * (composing with `--zoom` in the CSS width calc), and the viewport is scrolled so the region
+         * fills the box. Because the img and the hold SVG are both inside that one content layer and
+         * scale/scroll together, holds stay aligned and the SVG viewBox never has to change. With no
+         * (or a degenerate) frame it clears the crop and behaves exactly as before.
          */
-        fitBox: function (viewport, pinAspect) {
+        fitBox: function (viewport, pinAspect, frame) {
             // Guard a stale/non-element reference the same way setupScroll does.
             if (!viewport || typeof viewport.querySelector !== 'function') {
                 return;
@@ -239,12 +248,41 @@ window.bwViewport = (function () {
             }
 
             const pin = pinAspect !== false;
+
+            // A frame is used only when it is a real, non-degenerate sub-rectangle.
+            let fx0, fy0, fw, fh;
+            const framed = Array.isArray(frame) && frame.length === 4 &&
+                (fx0 = frame[0], fy0 = frame[1], fw = frame[2] - frame[0], fh = frame[3] - frame[1],
+                    fw > 0.001 && fh > 0.001);
+
             const apply = function () {
-                if (img.naturalWidth > 0 && img.naturalHeight > 0) {
-                    viewport.style.setProperty('--fit-aspect', img.naturalWidth / img.naturalHeight);
+                if (!(img.naturalWidth > 0 && img.naturalHeight > 0)) {
+                    return;
+                }
+
+                if (framed) {
+                    const aspect = (fw * img.naturalWidth) / (fh * img.naturalHeight);
+                    viewport.style.setProperty('--fit-aspect', aspect);
+                    viewport.style.setProperty('--crop-scale', 1 / fw);
                     if (pin) {
-                        viewport.style.aspectRatio = img.naturalWidth + ' / ' + img.naturalHeight;
+                        viewport.style.aspectRatio = String(aspect);
                     }
+
+                    // Read the widened scroll size AFTER the crop scale/aspect land, then scroll so the
+                    // region sits centred (which, with the box at the region's aspect, is also flush).
+                    void viewport.scrollWidth;
+                    const sw = viewport.scrollWidth;
+                    const sh = viewport.scrollHeight;
+                    viewport.scrollLeft = clamp((fx0 + fw / 2) * sw - viewport.clientWidth / 2, 0, sw);
+                    viewport.scrollTop = clamp((fy0 + fh / 2) * sh - viewport.clientHeight / 2, 0, sh);
+                    return;
+                }
+
+                // No frame: the whole photo, exactly as before. Clear any crop a prior state set.
+                viewport.style.removeProperty('--crop-scale');
+                viewport.style.setProperty('--fit-aspect', img.naturalWidth / img.naturalHeight);
+                if (pin) {
+                    viewport.style.aspectRatio = img.naturalWidth + ' / ' + img.naturalHeight;
                 }
             };
 
