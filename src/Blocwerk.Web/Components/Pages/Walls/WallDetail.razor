@@ -415,6 +415,8 @@ else
                                              OnCleanArtifactsRequested="OnCleanArtifacts"
                                              OnMarkHoldModified="OnMarkHoldModified"
                                              OnMergeHolds="OnMergeHolds"
+                                             OnMakeHoldActual="OnMakeHoldActual"
+                                             OnMergeVirtualHold="OnMergeVirtualHold"
                                              OnConfirmManualAlignment="OnConfirmManualAlignment"
                                              OnDiscardManualAlignment="DiscardStagedPhoto"
                                              OnRequestAutoAlign="EstimateStagingAlignment"
@@ -1360,6 +1362,34 @@ else
             await WallService.MergeHoldsAsync(pair.stagedHoldId, pair.liveHoldId);
             await LoadWall();
             await ShowToast("Holds merged");
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"Merge failed: {ex.Message}");
+        }
+    }
+
+    private async Task OnMakeHoldActual(Guid virtualHoldId)
+    {
+        try
+        {
+            await WallService.PromoteVirtualHoldAsync(virtualHoldId);
+            await LoadWall();
+            await ShowToast("Virtual hold is now actual");
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"Failed: {ex.Message}");
+        }
+    }
+
+    private async Task OnMergeVirtualHold((Guid virtualHoldId, Guid actualHoldId) pair)
+    {
+        try
+        {
+            await WallService.MergeVirtualHoldAsync(pair.virtualHoldId, pair.actualHoldId);
+            await LoadWall();
+            await ShowToast("Virtual hold merged into detected hold");
         }
         catch (Exception ex)
         {

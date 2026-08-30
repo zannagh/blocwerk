@@ -928,6 +928,149 @@ public class WallService : IWallService
         }
     }
 
+    public async Task MergeVirtualHoldAsync(Guid virtualHoldId, Guid actualHoldId, CancellationToken ct = default)
+    {
+        using var op = BlocwerkMetrics.TimeOperation("Wall.MergeVirtualHold");
+        try
+        {
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
+            db.CurrentUserId = user.Id;
+
+            if (virtualHoldId == actualHoldId)
+            {
+                throw new InvalidOperationException("A hold cannot be merged into itself");
+            }
+
+            var virtualHold = await db.Holds.FirstOrDefaultAsync(h => h.Id == virtualHoldId, ct);
+            if (virtualHold == null)
+            {
+                _logger.LogWarning("Virtual hold {VirtualHoldId} not found for make-actual merge by {UserId}", virtualHoldId, user.Id);
+                throw new InvalidOperationException("Virtual hold not found");
+            }
+
+            if (!virtualHold.IsVirtual)
+            {
+                throw new InvalidOperationException("Selected hold is not virtual");
+            }
+
+            var actualHold = await db.Holds.FirstOrDefaultAsync(h => h.Id == actualHoldId, ct);
+            if (actualHold == null)
+            {
+                _logger.LogWarning("Target hold {ActualHoldId} not found for make-actual merge by {UserId}", actualHoldId, user.Id);
+                throw new InvalidOperationException("Target hold not found");
+            }
+
+            if (virtualHold.WallId != actualHold.WallId)
+            {
+                throw new InvalidOperationException("Holds belong to different walls");
+            }
+
+            // The virtual hold is the survivor: boulders already point at it, so keeping its
+            // Id preserves every BoulderHold link. Adopt the detected hold's geometry and look.
+            virtualHold.X = actualHold.X;
+            virtualHold.Y = actualHold.Y;
+            virtualHold.Radius = actualHold.Radius;
+            virtualHold.ShapePoints = actualHold.ShapePoints?
+                .Select(sp => new ShapePoint { Dx = sp.Dx, Dy = sp.Dy })
+                .ToList();
+            if (!string.IsNullOrEmpty(actualHold.Color))
+            {
+                virtualHold.Color = actualHold.Color;
+            }
+
+            virtualHold.Material = actualHold.Material;
+            virtualHold.Category = actualHold.Category;
+            virtualHold.IsAutoDetected = actualHold.IsAutoDetected;
+            virtualHold.Confidence = actualHold.Confidence;
+            virtualHold.IsVirtual = false;
+            virtualHold.NeedsReview = true;
+
+            // Re-point any BoulderHold rows off the consumed actual hold onto the survivor so no
+            // boulder loses a hold. Detected holds normally have none, but handle it correctly.
+            // HoldId is part of the composite key and can't be mutated in place, so we drop the
+            // old row and add an equivalent on the survivor, deduped against its existing links.
+            var actualLinks = await db.BoulderHolds.Where(bh => bh.HoldId == actualHoldId).ToListAsync(ct);
+            var survivorBoulderIds = (await db.BoulderHolds
+                    .Where(bh => bh.HoldId == virtualHoldId)
+                    .Select(bh => bh.BoulderId)
+                    .ToListAsync(ct))
+                .ToHashSet();
+            foreach (var link in actualLinks)
+            {
+                if (survivorBoulderIds.Add(link.BoulderId))
+                {
+                    db.BoulderHolds.Add(new BoulderHold
+                    {
+                        BoulderId = link.BoulderId,
+                        HoldId = virtualHoldId,
+                        Type = link.Type,
+                        Usage = link.Usage,
+                    });
+                }
+
+                db.BoulderHolds.Remove(link);
+            }
+
+            // The detected hold may carry HoldLink rows (Restrict FK on both hold ends), which would
+            // reject the delete below. They are alignment-graph artifacts, safe to drop on a merge.
+            var actualHoldLinks = await db.HoldLinks
+                .Where(l => l.HoldAId == actualHoldId || l.HoldBId == actualHoldId)
+                .ToListAsync(ct);
+            db.HoldLinks.RemoveRange(actualHoldLinks);
+
+            db.Holds.Remove(actualHold);
+
+            await db.SaveChangesAsync(ct);
+            BlocwerkMetrics.RecordHoldUpdated(virtualHold.WallId, "merged");
+            await _activityLogService.LogAsync(virtualHold.WallId, null, ActivityType.HoldMerged,
+                "virtual hold merged into a detected hold");
+            _logger.LogInformation("Virtual hold {VirtualHoldId} merged into actual hold {ActualHoldId} on wall {WallId} by {UserId}", virtualHoldId, actualHoldId, virtualHold.WallId, user.Id);
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
+    }
+
+    public async Task PromoteVirtualHoldAsync(Guid virtualHoldId, CancellationToken ct = default)
+    {
+        using var op = BlocwerkMetrics.TimeOperation("Wall.PromoteVirtualHold");
+        try
+        {
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
+            db.CurrentUserId = user.Id;
+
+            var hold = await db.Holds.FirstOrDefaultAsync(h => h.Id == virtualHoldId, ct);
+            if (hold == null)
+            {
+                _logger.LogWarning("Virtual hold {VirtualHoldId} not found for promote by {UserId}", virtualHoldId, user.Id);
+                throw new InvalidOperationException("Virtual hold not found");
+            }
+
+            if (!hold.IsVirtual)
+            {
+                throw new InvalidOperationException("Selected hold is not virtual");
+            }
+
+            // Promote in place: the hold keeps its Id, geometry and boulder links untouched.
+            hold.IsVirtual = false;
+
+            await db.SaveChangesAsync(ct);
+            BlocwerkMetrics.RecordHoldUpdated(hold.WallId, "modified");
+            await _activityLogService.LogAsync(hold.WallId, null, ActivityType.HoldMarkedModified,
+                "virtual hold promoted to actual");
+            _logger.LogInformation("Virtual hold {VirtualHoldId} promoted to actual on wall {WallId} by {UserId}", virtualHoldId, hold.WallId, user.Id);
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
+    }
+
     public async Task<string> GenerateShareTokenAsync(Guid wallId)
     {
         using var op = BlocwerkMetrics.TimeOperation("Wall.GenerateShareToken", wallId);

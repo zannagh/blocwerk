@@ -103,6 +103,16 @@
                     </svg>
                 </button>
             }
+            @if (!IsStaging)
+            {
+                <span class="toolbar-sep"></span>
+                <button class="tool-btn @A(EditMode.MakeActual)" @onclick="() => SetMode(EditMode.MakeActual)"
+                        title="Make a virtual (placeholder) hold actual: promote it as-is or merge it into a detected hold">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                        <circle cx="12" cy="12" r="9" stroke-dasharray="2.2 1.6" /><polyline points="8.5 12 11 14.5 15.5 9.5" />
+                    </svg>
+                </button>
+            }
         }
     </div>
 </div>
@@ -172,6 +182,12 @@
             {
                 strokeColor = "#ffd700";
             }
+            var isMakeActualPick = _mode == EditMode.MakeActual &&
+                (_makeActualVirtualId == hold.Id || _makeActualTargetId == hold.Id);
+            if (isMakeActualPick)
+            {
+                strokeColor = "#ffd700";
+            }
             var sw = (isSelected || isShapeEditing || isNaming) ? "0.4" : (IsStaging ? "0.45" : "0.25");
             var dash = "";
             if (ManualAlignment && !(isSelected || isShapeEditing || isNaming))
@@ -182,7 +198,7 @@
             {
                 dash = IsStagedHold(hold) ? "0.6 0.3" : "0.3 0.3";
             }
-            if (hold.IsVirtual && !(isSelected || isShapeEditing || isNaming))
+            if (hold.IsVirtual && !(isSelected || isShapeEditing || isNaming) && !isMakeActualPick)
             {
                 strokeColor = "#c86dff";
                 dash = "0.6 0.4";
@@ -558,6 +574,32 @@
             }
         </div>
     }
+    @if (CanEdit && _mode == EditMode.MakeActual)
+    {
+        <div class="option-bar">
+            @if (_makeActualVirtualId is { } virtualId)
+            {
+                var virtualHold = Holds.FirstOrDefault(h => h.Id == virtualId);
+                @if (_makeActualTargetId is { } targetId)
+                {
+                    var target = Holds.FirstOrDefault(h => h.Id == targetId);
+                    <span class="option-hint">Merge virtual <strong>@(virtualHold?.Name ?? "hold")</strong> into detected <strong>@(target?.Name ?? "hold")</strong>? Boulders using it will be flagged for review.</span>
+                    <button class="opt-btn active" @onclick="ConfirmMakeActualMerge">Confirm merge</button>
+                    <button class="opt-btn" @onclick="CancelMakeActual">Cancel</button>
+                }
+                else
+                {
+                    <span class="option-hint">Virtual <strong>@(virtualHold?.Name ?? "hold")</strong> selected. Tap a detected hold to merge into it, or make it actual where it is.</span>
+                    <button class="opt-btn active" @onclick="MakeActualAsIs">Make actual as-is</button>
+                    <button class="opt-btn" @onclick="CancelMakeActual">Cancel</button>
+                }
+            }
+            else
+            {
+                <span class="option-hint">Tap a <strong style="color:#c86dff">virtual</strong> (dotted) hold to make it actual.</span>
+            }
+        </div>
+    }
     @if (CanEdit && ManualAlignment)
     {
         <div class="batch-bar">
@@ -610,6 +652,18 @@
     [Parameter] public EventCallback<BatchChanges> OnBatchSave { get; set; }
     [Parameter] public EventCallback<Guid> OnMarkHoldModified { get; set; }
     [Parameter] public EventCallback<(Guid stagedHoldId, Guid liveHoldId)> OnMergeHolds { get; set; }
+
+    /// <summary>
+    /// Promotes a virtual hold to actual in place (non-staging "make actual" tool).
+    /// Passes the virtual hold's id.
+    /// </summary>
+    [Parameter] public EventCallback<Guid> OnMakeHoldActual { get; set; }
+
+    /// <summary>
+    /// Merges a virtual hold into an existing detected hold (non-staging "make actual" tool).
+    /// Passes the virtual hold id and the target actual hold id.
+    /// </summary>
+    [Parameter] public EventCallback<(Guid virtualHoldId, Guid actualHoldId)> OnMergeVirtualHold { get; set; }
     [Parameter] public bool IsStaging { get; set; }
     [Parameter] public int LiveGeneration { get; set; }
     [Parameter] public bool BottomToolbar { get; set; }
@@ -749,7 +803,7 @@
     // ballooning when zoomed in.
     private double HandleScale => 1.0 / Math.Clamp(_zoom, 0.5, 6.0);
 
-    private enum EditMode { Add, Move, Shape, Paint, Delete, Border, Name, Merge, ShapeTilt, Usage }
+    private enum EditMode { Add, Move, Shape, Paint, Delete, Border, Name, Merge, ShapeTilt, Usage, MakeActual }
 
     public record BatchChanges(List<Hold> Added, List<Hold> Updated, List<Guid> Deleted);
 
@@ -825,6 +879,7 @@
         EditMode.Add => "crosshair", EditMode.Name => "help",
         EditMode.ShapeTilt => "pointer",
         EditMode.Merge => "pointer",
+        EditMode.MakeActual => "pointer",
         EditMode.Usage => "pointer",
         _ => "default"
     };
@@ -841,6 +896,11 @@
         if (mode != EditMode.Shape) _shapeEditHoldId = null;
         if (mode != EditMode.Name) _namingHoldId = null;
         if (mode != EditMode.Usage) _usageHoldId = null;
+        if (mode != EditMode.MakeActual)
+        {
+            _makeActualVirtualId = null;
+            _makeActualTargetId = null;
+        }
     }
 
     private void TakeSnapshot()
@@ -940,6 +1000,9 @@
             case EditMode.Merge:
                 HandleMergeClick(hold);
                 return;
+            case EditMode.MakeActual:
+                HandleMakeActualClick(hold);
+                return;
             case EditMode.ShapeTilt:
                 _shapeTiltHoldId = hold.Id;
                 CaptureShapeTiltSnapshot(hold);
@@ -1019,6 +1082,60 @@
     {
         _pendingMerge = null;
         _mergeFirstPickId = null;
+    }
+
+    // ---- Make-actual tool (non-staging): promote a virtual hold, or merge it into a detected one ----
+    private Guid? _makeActualVirtualId;
+    private Guid? _makeActualTargetId;
+
+    private void HandleMakeActualClick(Hold hold)
+    {
+        // A fresh virtual pick always (re)selects and clears any pending merge target.
+        if (hold.IsVirtual)
+        {
+            _makeActualVirtualId = hold.Id;
+            _makeActualTargetId = null;
+            return;
+        }
+
+        // A non-virtual pick only means something once a virtual hold is selected: it becomes
+        // the merge target (same wall is guaranteed — all Holds belong to this wall).
+        if (_makeActualVirtualId == null || _makeActualVirtualId == hold.Id)
+        {
+            return;
+        }
+
+        _makeActualTargetId = hold.Id;
+    }
+
+    private async Task ConfirmMakeActualMerge()
+    {
+        if (_makeActualVirtualId is not { } virtualId || _makeActualTargetId is not { } targetId)
+        {
+            return;
+        }
+
+        _makeActualVirtualId = null;
+        _makeActualTargetId = null;
+        await OnMergeVirtualHold.InvokeAsync((virtualId, targetId));
+    }
+
+    private async Task MakeActualAsIs()
+    {
+        if (_makeActualVirtualId is not { } virtualId)
+        {
+            return;
+        }
+
+        _makeActualVirtualId = null;
+        _makeActualTargetId = null;
+        await OnMakeHoldActual.InvokeAsync(virtualId);
+    }
+
+    private void CancelMakeActual()
+    {
+        _makeActualVirtualId = null;
+        _makeActualTargetId = null;
     }
 
     private (double X, double Y) LiveCentroid()

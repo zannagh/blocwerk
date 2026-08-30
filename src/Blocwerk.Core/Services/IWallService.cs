@@ -58,6 +58,20 @@ public interface IWallService
 
     Task<Hold> MergeHoldsAsync(Guid stagedHoldId, Guid liveHoldId);
 
+    /// <summary>
+    /// Makes a virtual (placeholder) hold actual by merging it into an existing detected hold.
+    /// The virtual hold survives (keeping its Id so its boulders stay linked) and adopts the
+    /// detected hold's geometry and appearance; the detected hold's own boulder links are
+    /// re-pointed onto the survivor and it is then deleted. Not gated to staging.
+    /// </summary>
+    Task MergeVirtualHoldAsync(Guid virtualHoldId, Guid actualHoldId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Promotes a virtual (placeholder) hold to an actual hold in place, clearing its virtual
+    /// flag while leaving its Id, geometry and boulder links untouched. Not gated to staging.
+    /// </summary>
+    Task PromoteVirtualHoldAsync(Guid virtualHoldId, CancellationToken ct = default);
+
     Task<string> GenerateShareTokenAsync(Guid wallId);
 
     Task<Wall> JoinWallAsync(string shareToken);
