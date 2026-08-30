@@ -32,6 +32,7 @@ internal static class TopLoggerTickMapping
 
         return new TopLoggerTick(
             log.GetStringOrNull("id") ?? string.Empty,
+            log.GetStringOrNull("climbId"),
             climbName,
             log.GetStringOrNull("climbType") ?? climbClimbType,
             log.GetStringOrNull("gymId"),

@@ -25,5 +25,12 @@ public class ExternalGym
     [MaxLength(256)]
     public string? Slug { get; set; }
 
+    /// <summary>
+    /// Points this gym's scoring adds ON TOP of a climb's base grade points for a flash (0 when the
+    /// gym has no flash bonus, or is not calibrated). Combined with the per-grade base points in
+    /// <see cref="GymGradePoint"/>, it lets an ascent's <c>points</c> resolve to a grade AND flash/send.
+    /// </summary>
+    public int FlashBonusPoints { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

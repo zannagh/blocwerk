@@ -421,6 +421,29 @@ h2 { font-size: 1.15rem; }
     to   { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 
+/* The app-wide "your TopLogger session expired" banner. Sits a little higher than a transient
+   toast, stays until dismissed, and carries the reconnect link + a dismiss button. */
+.toast-reauth {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: var(--accent);
+}
+.toast-reauth a {
+    color: white;
+    font-weight: 600;
+    text-decoration: underline;
+}
+.toast-reauth-dismiss {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 1.2rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 2px;
+}
+
 .error-toast {
     position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
     background: var(--accent); color: white; padding: 12px 24px;

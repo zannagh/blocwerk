@@ -75,3 +75,35 @@ public sealed record TopLoggerStatus(
     public static TopLoggerStatus Disconnected { get; } =
         new(false, false, null, null, 0, 0);
 }
+
+/// <summary>
+/// One distinct raw grade token among a user's TopLogger ascents that still needs a manual mapping,
+/// with how many ascents share it and a sample climb name for context. The null/empty raw grade is
+/// reported as a single bucket keyed by the empty string, so it can still be resolved.
+/// </summary>
+/// <param name="RawGrade">The raw grade key (empty string for the null/empty bucket).</param>
+/// <param name="Count">How many unmapped ascents carry this raw grade.</param>
+/// <param name="SampleClimbName">A sample climb name carrying this raw grade, for context.</param>
+public sealed record TopLoggerUnmappedGrade(string RawGrade, int Count, string? SampleClimbName);
+
+/// <summary>
+/// A gym the user has TopLogger ascents at, for the points→grade calibration picker.
+/// </summary>
+/// <param name="Id">The <see cref="Entities.ExternalGym"/> id.</param>
+/// <param name="Name">The gym's display name.</param>
+public sealed record TopLoggerGymRef(Guid Id, string Name);
+
+/// <summary>
+/// One calibrated (grade → base points) entry for a gym, exchanged with the UI.
+/// </summary>
+/// <param name="Grade">The Font grade label.</param>
+/// <param name="Points">The base points the gym awards for a send at this grade.</param>
+public sealed record GymGradePointDto(string Grade, int Points);
+
+/// <summary>
+/// A gym's full points→grade calibration: its per-grade base points (ordered ascending by points) and
+/// the flash bonus added on top of the base for a flashed ascent.
+/// </summary>
+/// <param name="Points">The calibrated (grade, base points) entries, ascending by points.</param>
+/// <param name="FlashBonusPoints">Points added on top of the base grade for a flash (0 when none).</param>
+public sealed record GymCalibration(IReadOnlyList<GymGradePointDto> Points, int FlashBonusPoints);

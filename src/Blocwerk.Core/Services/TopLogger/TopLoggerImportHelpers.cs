@@ -1,3 +1,4 @@
+using System.Globalization;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
@@ -97,11 +98,91 @@ internal static class TopLoggerImportHelpers
     }
 
     /// <summary>
-    /// Projects a tick to an ascent: grade via the tick's own mapping then the user's, tick type to
-    /// Flash/Send, and the flag when no grade could be resolved. Pure — the caller wires the activity.
+    /// Loads a gym's calibration once per distinct gym (cached like the gym cache, so no per-tick N+1).
+    /// Returns null when the gym is unknown or has no calibrated grade points, so the caller falls back
+    /// to the raw-grade formatter and <see cref="ClassifyAttempt"/>.
+    /// </summary>
+    public static async Task<GymCalibrationData?> LoadCalibrationAsync(
+        BlocwerkDbContext db,
+        Dictionary<Guid, GymCalibrationData?> cache,
+        ExternalGym? gym,
+        CancellationToken cancellationToken)
+    {
+        if (gym is null)
+        {
+            return null;
+        }
+
+        if (cache.TryGetValue(gym.Id, out GymCalibrationData? cached))
+        {
+            return cached;
+        }
+
+        List<(string Grade, int Points)> points = (await db.GymGradePoints
+            .Where(p => p.ExternalGymId == gym.Id)
+            .OrderBy(p => p.Points)
+            .Select(p => new { p.Grade, p.Points })
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false))
+            .Select(p => (p.Grade, p.Points))
+            .ToList();
+
+        GymCalibrationData? data = points.Count == 0 ? null : new GymCalibrationData(points, gym.FlashBonusPoints);
+        cache[gym.Id] = data;
+        return data;
+    }
+
+    // Small tolerance for the double points compare (source points are effectively integers).
+    private const double PointsTolerance = 0.5;
+
+    /// <summary>
+    /// Derives an ascent's grade and flash/send from a gym's calibration and the ascent's points: the
+    /// calibrated grade whose base points is the LARGEST value ≤ points, then flash when the delta above
+    /// that base reaches the flash bonus. Returns <c>(null, false)</c> when the points fall below the
+    /// lowest calibrated grade or the map is empty (uncalibratable). Pure.
+    /// </summary>
+    public static (string? Grade, bool IsFlash) DeriveFromCalibration(
+        IReadOnlyList<(string Grade, int Points)> sortedPoints, int flashBonus, double points)
+    {
+        string? grade = null;
+        int basePoints = 0;
+        foreach ((string Grade, int Points) entry in sortedPoints)
+        {
+            // sortedPoints is ascending; the last entry still ≤ points is the matched (base) grade.
+            if (entry.Points <= points + PointsTolerance)
+            {
+                grade = entry.Grade;
+                basePoints = entry.Points;
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        if (grade is null)
+        {
+            return (null, false);
+        }
+
+        double delta = points - basePoints;
+        bool isFlash = flashBonus > 0 && delta >= flashBonus - PointsTolerance;
+        return (grade, isFlash);
+    }
+
+    /// <summary>
+    /// Projects a tick to an ascent. When the gym has a calibration and the tick is a topped/ticked
+    /// ascent with points, the grade and flash/send are derived deterministically from that calibration
+    /// (overriding the formatter and <see cref="ClassifyAttempt"/>). Otherwise falls back to the tick's
+    /// own mapping then the user's raw-grade resolution, with <see cref="ClassifyAttempt"/> for the type.
+    /// Pure — the caller wires the activity.
     /// </summary>
     public static ExternalAscent BuildAscent(
-        Guid userId, TopLoggerTick tick, ExternalGym? gym, IReadOnlyDictionary<string, string> gradeMap)
+        Guid userId,
+        TopLoggerTick tick,
+        ExternalGym? gym,
+        IReadOnlyDictionary<string, string> gradeMap,
+        GymCalibrationData? calibration)
     {
         string? mapped = tick.MappedFontGrade;
         if (string.IsNullOrWhiteSpace(mapped)
@@ -111,17 +192,35 @@ internal static class TopLoggerImportHelpers
             mapped = fromUser;
         }
 
+        AttemptType type = ClassifyAttempt(tick);
+
+        // A calibrated gym resolves grade + flash/send from the ascent's points, superseding the raw
+        // grade path. Only for topped/ticked ascents with points; uncalibratable points leave the
+        // fallback in place.
+        bool topped = tick.Ticked || tick.Topped == true;
+        if (calibration is not null && topped && tick.Points is { } points)
+        {
+            (string? grade, bool isFlash) =
+                DeriveFromCalibration(calibration.Sorted, calibration.FlashBonus, points);
+            if (grade is not null)
+            {
+                mapped = grade;
+                type = isFlash ? AttemptType.Flash : AttemptType.Send;
+            }
+        }
+
         return new ExternalAscent
         {
             UserId = userId,
             Source = ExternalSource.TopLogger,
             ExternalId = tick.ExternalId,
+            ClimbId = Truncate(tick.ClimbId, 64),
             ClimbName = Truncate(string.IsNullOrWhiteSpace(tick.ClimbName) ? "Unknown climb" : tick.ClimbName, 256)!,
             ExternalGymId = gym?.Id,
             // TopLogger returns the tick's local offset (e.g. +02:00); Blocwerk stores everything as
             // UTC (Npgsql's timestamptz rejects a non-zero offset), so normalise before persisting.
             LoggedAt = tick.LoggedAt!.Value.ToUniversalTime(),
-            Type = ClassifyAttempt(tick),
+            Type = type,
             Ticked = tick.Ticked,
             Topped = tick.Topped,
             Points = tick.Points,
@@ -131,13 +230,16 @@ internal static class TopLoggerImportHelpers
         };
     }
 
-    // tickType strings we treat as a flash (case-insensitive). The POC's only climbLogs fixture is
-    // hand-authored and uses the literal "flash", but live data showed zero literal-"flash" ticks
-    // across 2248 rows, so the string alone is not reliable; the try-index heuristic below backs it up.
-    private static readonly string[] FlashTickTypes = ["flash", "flashed"];
+    // tickType values TopLogger uses to explicitly tag a first-try success (case-insensitive).
+    // "onsight"/"flash" both mean topped first try; "redpoint" is a worked send, never a flash.
+    private static readonly string[] FlashTickTypes = ["flash", "flashed", "onsight"];
 
     /// <summary>
-    /// Classifies a tick as Attempt / Send / Flash from its ticked/topped/tickType/tryIndex fields.
+    /// Classifies a tick as Attempt / Send / Flash. A flash is detected two ways, both reliable and
+    /// mutually reinforcing: (1) TopLogger's explicit first-try tickType tag (flash/onsight), or (2) a
+    /// score-system points bonus — a gym awards points ABOVE the climb's base grade only for a flash, so
+    /// <c>points &gt; base grade</c> means it was flashed (a redpoint scores exactly the base grade). We do
+    /// NOT infer flash from tickIndex/first-try, which over-counts (confirmed wrong against live data).
     /// </summary>
     private static AttemptType ClassifyAttempt(TopLoggerTick tick)
     {
@@ -149,14 +251,15 @@ internal static class TopLoggerImportHelpers
 
         bool flashType = Array.Exists(
             FlashTickTypes, t => string.Equals(t, tick.TickType, StringComparison.OrdinalIgnoreCase));
+        if (flashType)
+        {
+            return AttemptType.Flash;
+        }
 
-        // ASSUMPTION (verify against live data): tryIndex is 1-based — the POC fixture logs a flash at
-        // tryIndex 1 and a redpoint at tryIndex 4. A successful ascent topped on the first attempt is a
-        // flash. tryIndex defaults to 0 when the API omits it, so we require == 1 (a proven first try)
-        // rather than <= 1, which would misread an unknown-try send as a flash.
-        bool firstTry = tick.TryIndex == 1;
-
-        if (flashType || firstTry)
+        // Score-system bonus: points strictly above the climb's base grade points => flashed.
+        if (tick.Points is { } points
+            && double.TryParse(tick.RawGrade, NumberStyles.Any, CultureInfo.InvariantCulture, out double baseGrade)
+            && points > baseGrade + 0.5)
         {
             return AttemptType.Flash;
         }

@@ -5,6 +5,7 @@ namespace Blocwerk.Core.Services.TopLogger;
 /// import into Blocwerk. Fields the API does not populate are left null.
 /// </summary>
 /// <param name="ExternalId">The TopLogger climb-log id (stable per tick).</param>
+/// <param name="ClimbId">The TopLogger climb id (stable per climb across ticks / sessions), when known.</param>
 /// <param name="ClimbName">The climb / boulder name, when known.</param>
 /// <param name="ClimbType">The climb type (e.g. <c>boulder</c>, <c>route</c>).</param>
 /// <param name="GymId">The TopLogger gym id the climb belongs to.</param>
@@ -23,6 +24,7 @@ namespace Blocwerk.Core.Services.TopLogger;
 /// </param>
 public sealed record TopLoggerTick(
     string ExternalId,
+    string? ClimbId,
     string? ClimbName,
     string? ClimbType,
     string? GymId,

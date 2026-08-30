@@ -30,6 +30,13 @@ public class ExternalAscent
     [MaxLength(256)]
     public required string ClimbName { get; set; }
 
+    /// <summary>
+    /// The source's stable id for the climb itself (recurs across ticks / sessions, unlike
+    /// <see cref="ExternalId"/>). Used to dedupe the rating by climb identity. Null when unknown.
+    /// </summary>
+    [MaxLength(64)]
+    public string? ClimbId { get; set; }
+
     /// <summary>The gym this ascent was logged at, if known. SetNull if the gym row is removed.</summary>
     public Guid? ExternalGymId { get; set; }
 

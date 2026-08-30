@@ -176,8 +176,18 @@ wrapped + records LastError on a fresh context (done).
       Investigate whether any finer per-ascent time field exists; otherwise document the limitation.
 - [ ] **Resilience**: batched SaveChanges during import (progress persists, count grows live) + background
       the initial full sync (user floated this; strongly indicated by the ~4–10 min pull).
-- [ ] Restore pacing to default before ship — currently overridden to 500ms via local env for testing only
-      (`TopLogger__MinRequestInterval`); default is 1500ms in `TopLoggerSettings`.
+- [x] **Activities + rating (#1) DONE**: imported sessions render on the activities list + detail (gym
+      label, per-ascent grade/result badges), duration editor works on them, and imported sends feed the
+      rolling 60-day rating via the SAME `GradeScoring`. Deduped by **`ClimbId`** (TopLogger climbs are
+      usually UNNAMED — "Unknown climb" — so name-based dedup was wrong; captured `climbId` end-to-end +
+      new migration `AddExternalAscentClimbId`; unnamed climbs labeled by grade in the UI). Validated:
+      769 recent ascents → 600 distinct climbs, 0 null climbid.
+- [x] **PACING LESSON**: 500ms test override got TopLogger **429 ThrottlerException** → import silently
+      TRUNCATED (769/2248) but reported success. Default **1500ms** is required; do NOT override low. #5
+      is NOT a non-issue.
+- [ ] **THROTTLE ROBUSTNESS (in progress)**: add 429 backoff-retry in the GraphQL client + make a
+      persistent throttle/error PROPAGATE (fail the sync) instead of silent partial success.
+- [ ] Restore pacing to default before ship (stop passing `TopLogger__MinRequestInterval` env override).
 - [ ] (still) Wire imported ascents onto activities page + rating; grade-resolution UI for the unmapped.
 
 ## 16. Separate account/profile batch (user asked to fold in, 2026-08-30 pm) — NOT TopLogger
@@ -237,7 +247,26 @@ Delegated agents implemented (profile UI all in `Profile.razor`):
 - [ ] `DisconnectAsync(deleteImportedAscents:true)` leaves orphan `Activity` rows (ExternalAscent.ActivityId
       is SetNull) — empty external-gym activities linger. Clean up when wiring activities display.
 
-### Later phases (post-validation)
+### ALL 5 REMAINING ITEMS DONE 2026-08-30 pm (uncommitted working tree; builds 0 errors)
+- [x] #1 activities+rating+duration (climbId dedup).
+- [x] #2 grade-resolution UI (map unmapped RawGrade → Font, ExecuteUpdate retro-apply).
+- [x] #3 DESCOPED by user (rate-limiting fear): DROPPED the background service + the whole per-user
+      timezone/daytime-window (no migration). KEPT only session-start sync (MainLayout
+      OnAfterRenderAsync firstRender, once/circuit, fire-and-forget via IServiceScopeFactory+Task.Run, only
+      if connected & !NeedsReauth & LastSyncAt>1h) + app-wide "Reset TopLogger Tokens" toast.
+- [x] #4 duration adjust — folded into #1 (existing editor works on imported activities).
+- [x] #5 pacing — default 1500ms is correct; the 500ms test override caused the 429s.
+- [x] Throttle handling: 429 detect + exp backoff (Retry-After honored) + persistent throttle/error now
+      PROPAGATES (fails the sync) instead of silent partial import.
+- [x] Flash = explicit tickType (flash/onsight) OR points > base-grade (score-system bonus). Dropped the
+      TryIndex first-try heuristic (over-counted).
+- **RATE-LIMITED (user's TopLogger account) from repeated test syncs — 429 ThrottlerException, NOT a ban.
+  PAUSED all syncing. App held DOWN so session-start sync can't auto-full-pull (data is reset, LastSyncAt
+  null → next app-open would full-sync). Bring app up only after cooldown + user ready. Then user does one
+  clean full sync.**
+- Nothing committed since the merge (`8ed4742`); offer to checkpoint once user is happy.
+
+### Dropped/never-needed phases
 - [ ] Surface imported ascents on the activities page + feed the rolling rating (ProgressionService /
       ActivityView read `ExternalAscent` by ActivityId, not just `Attempt`) — **essential to the ask,
       deferred until the fetch is proven**.

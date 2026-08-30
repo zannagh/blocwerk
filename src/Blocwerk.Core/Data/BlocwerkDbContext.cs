@@ -69,6 +69,8 @@ public class BlocwerkDbContext : DbContext
 
     public DbSet<UserGradeMapping> UserGradeMappings => Set<UserGradeMapping>();
 
+    public DbSet<GymGradePoint> GymGradePoints => Set<GymGradePoint>();
+
     public BlocwerkDbContext(DbContextOptions<BlocwerkDbContext> options)
         : base(options)
     {
@@ -134,6 +136,18 @@ public class BlocwerkDbContext : DbContext
             // Global, shared across users: one row per real gym on a source. Not user-scoped, so no
             // per-user query filter applies here.
             entity.HasIndex(g => new { g.Source, g.ExternalId }).IsUnique();
+        });
+
+        modelBuilder.Entity<GymGradePoint>(entity =>
+        {
+            // Part of the gym's (shared) calibration; deleting the gym takes its points with it.
+            entity.HasOne(p => p.ExternalGym)
+                .WithMany()
+                .HasForeignKey(p => p.ExternalGymId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // At most one base-points entry per (gym, grade).
+            entity.HasIndex(p => new { p.ExternalGymId, p.Grade }).IsUnique();
         });
 
         modelBuilder.Entity<ExternalAscent>(entity =>

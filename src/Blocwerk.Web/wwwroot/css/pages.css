@@ -2244,6 +2244,27 @@ html.bw-fullscreen .wall-main .photo-viewport {
 }
 .tl-token-edit[open] > summary::before { transform: rotate(90deg); }
 
+/* Gym points→grade calibration disclosure: matches the "Update tokens" summary, with a scrollable
+   grade→points table and compact numeric inputs. */
+.tl-calibration { margin-top: 14px; }
+.tl-calibration > summary {
+    cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 6px;
+    font-size: 0.85rem; font-weight: 600; color: var(--accent); padding: 2px 0;
+}
+.tl-calibration > summary::-webkit-details-marker { display: none; }
+.tl-calibration > summary::before {
+    content: ''; width: 0; height: 0; flex: none;
+    border-left: 5px solid currentColor;
+    border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+    transition: transform 0.15s ease;
+}
+.tl-calibration[open] > summary::before { transform: rotate(90deg); }
+.tl-calib-grid { max-height: 260px; overflow-y: auto; margin: 8px 0; }
+.tl-calib-table { width: 100%; border-collapse: collapse; }
+.tl-calib-table th, .tl-calib-table td { text-align: left; padding: 3px 8px 3px 0; }
+.tl-calib-table th { font-size: 0.8rem; color: var(--text-secondary); font-weight: 600; }
+.tl-calib-input { width: 100px; margin-bottom: 0; }
+
 /* ---- Header avatar with overlaid edit/remove icon controls (self view). Centered inside the
    text-align:center profile card; the 12px gap below matches the avatar's normal bottom margin. ---- */
 .avatar-edit { position: relative; display: inline-block; width: 64px; margin: 0 auto 12px; }

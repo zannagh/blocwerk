@@ -191,6 +191,7 @@ public sealed class TopLoggerApiClient : ITopLoggerApiClient
         GraphQlResponse<JsonElement> response = await client
             .SendAsync<JsonElement>(userId, "climbDaysStravaList", SessionsQuery, variables, cancellationToken)
             .ConfigureAwait(false);
+        EnsureNoErrors(response, "climbDaysStravaList");
 
         List<(DateTimeOffset?, string)> days = [];
         long total = 0;
@@ -222,6 +223,13 @@ public sealed class TopLoggerApiClient : ITopLoggerApiClient
             .SendAsync<JsonElement>(userId, "climbLogsForDay", DayLogsQuery, variables, cancellationToken)
             .ConfigureAwait(false);
 
+        // A per-day fetch that comes back as a GraphQL ERROR must fail the whole pull
+        // rather than be treated as an empty day: silently skipping it truncates the
+        // import (e.g. a lingering throttle or server error) yet reports success.
+        // A successful-but-empty day (data present, no errors) is not an error and
+        // legitimately yields zero ticks below.
+        EnsureNoErrors(response, "climbLogsForDay");
+
         List<TopLoggerTick> ticks = [];
         if (response.Data.TryObj("climbLogs", out JsonElement climbLogs))
         {
@@ -232,6 +240,24 @@ public sealed class TopLoggerApiClient : ITopLoggerApiClient
         }
 
         return ticks;
+    }
+
+    /// <summary>
+    /// Throws when a GraphQL response carried errors, so a genuine failure surfaces
+    /// out of the tick pull instead of being swallowed into a truncated success. A
+    /// persistent throttle has already thrown <see cref="TopLoggerThrottledException"/>
+    /// from the client; this covers any other error the API returns mid-pagination.
+    /// </summary>
+    private static void EnsureNoErrors(GraphQlResponse<JsonElement> response, string operationName)
+    {
+        if (!response.HasErrors || response.Errors is null)
+        {
+            return;
+        }
+
+        string detail = string.Join("; ", response.Errors.Select(e => e.Message));
+        throw new InvalidOperationException(
+            $"TopLogger operation '{operationName}' returned an error: {detail}");
     }
 
     private static string BuildDateKey(JsonElement day)

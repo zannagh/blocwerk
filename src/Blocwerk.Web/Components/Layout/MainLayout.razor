@@ -2,8 +2,11 @@
 @implements IDisposable
 @using Blocwerk.Web.Components.Shared
 @using Blocwerk.Web.State
+@using Blocwerk.Core.Services.TopLogger
+@using Microsoft.Extensions.DependencyInjection
 @inject SessionState SessionState
 @inject ICurrentUserService CurrentUserService
+@inject IServiceScopeFactory ScopeFactory
 
 <div class="app-shell">
     <header class="bw-topbar">
@@ -90,18 +93,97 @@
         </AuthorizeView>
     </nav>
 
+    @if (_showReauthToast && !_reauthDismissed)
+    {
+        <div class="toast-msg toast-reauth" role="alert">
+            <a href="/profile" @onclick="() => _reauthDismissed = true">Reset TopLogger Tokens</a>
+            <button type="button" class="toast-reauth-dismiss" aria-label="Dismiss"
+                    @onclick="() => _reauthDismissed = true">&times;</button>
+        </div>
+    }
+
     <CookieConsent />
     <ConnectionStatus />
 </div>
 
 @code {
+    // A session-start sync only fires when the last successful sync is at least this old, so opening
+    // several tabs / reconnecting in one session cannot re-hit the rate-limited TopLogger API.
+    private static readonly TimeSpan SessionSyncMinInterval = TimeSpan.FromHours(1);
+
     private Guid? _homeWallId;
+    private bool _startupTriggered;
+    private bool _showReauthToast;
+    private bool _reauthDismissed;
 
     protected override async Task OnInitializedAsync()
     {
         SessionState.Changed += OnSessionChanged;
         await SessionState.EnsureLoadedAsync();
         await RefreshHomeWallAsync();
+    }
+
+    // Once per circuit (first interactive render): kick the session-start TopLogger work. OnAfterRender
+    // only fires when the layout is interactive, so this never runs during static SSR.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _startupTriggered)
+        {
+            return;
+        }
+        _startupTriggered = true;
+
+        Guid userId;
+        try
+        {
+            var user = await CurrentUserService.GetCurrentUserAsync();
+            userId = user.Id;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Anonymous page: nothing to sync.
+            return;
+        }
+
+        StartSessionTopLoggerWork(userId);
+    }
+
+    // Fires the session-start sync + reauth check OFF the circuit (its own DI scope on a background
+    // task) so a dispose of this circuit's scoped services can never race the work, and render is never
+    // blocked. Swallows everything — a failed session-start sync must never surface to the user.
+    private void StartSessionTopLoggerWork(Guid userId)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var scope = ScopeFactory.CreateScope();
+                var importService = scope.ServiceProvider.GetRequiredService<ITopLoggerImportService>();
+                var status = await importService.GetStatusAsync(userId);
+
+                if (status.NeedsReauth)
+                {
+                    _showReauthToast = true;
+                    await InvokeAsync(StateHasChanged);
+                }
+
+                // Only an incremental catch-up on app-open: require a prior sync (LastSyncAt set). The
+                // first full import stays an explicit user action ("Sync now"), so merely opening the app
+                // can never kick off the big pull — keeping TopLogger API traffic to a cheap check.
+                bool due = status.Connected
+                           && !status.NeedsReauth
+                           && status.LastSyncAt is { } last
+                           && DateTimeOffset.UtcNow - last >= SessionSyncMinInterval;
+                if (due)
+                {
+                    await importService.SyncAsync(userId);
+                }
+            }
+            catch (Exception)
+            {
+                // A session-start sync failure must never surface; the next app-open retries.
+            }
+        });
     }
 
     // The layout instance persists across enhanced/interactive navigations, so re-read the home wall

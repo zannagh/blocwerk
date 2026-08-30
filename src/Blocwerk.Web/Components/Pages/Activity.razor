@@ -499,7 +499,17 @@
         if (a.HangboardCount > 0) parts.Add($"{a.HangboardCount} hangboard");
         if (a.PullupCount > 0) parts.Add($"{a.PullupCount} pull-up{(a.PullupCount == 1 ? "" : "s")}");
         var text = parts.Count > 0 ? string.Join(" · ", parts) : "no items";
-        return a.WallName != null ? $"{text} · {a.WallName}" : text;
+        if (a.WallName != null)
+        {
+            return $"{text} · {a.WallName}";
+        }
+
+        if (a.GymName != null)
+        {
+            return $"{text} · TopLogger · {a.GymName}";
+        }
+
+        return text;
     }
 
     private static string IntensityLabel(int intensity) => intensity switch

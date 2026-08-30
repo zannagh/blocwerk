@@ -301,8 +301,110 @@
                         <p class="tl-meta">@_tlStatus.AscentCount imported ascent(s).</p>
                         @if (_tlStatus.UnmappedGradeCount > 0)
                         {
-                            <p class="tl-meta">@_tlStatus.UnmappedGradeCount send(s) need a grade (mapping coming soon).</p>
+                            <p class="tl-meta">@_tlStatus.UnmappedGradeCount send(s) need a grade.</p>
+                            <details class="tl-resolve" @ontoggle="OnResolveGradesToggle">
+                                <summary>Resolve grades</summary>
+                                @if (_tlUnmapped == null)
+                                {
+                                    <p class="tl-meta">Loading…</p>
+                                }
+                                else
+                                {
+                                    @foreach (var item in _tlUnmapped)
+                                    {
+                                        var selection = GetGradeSelection(item.RawGrade);
+                                        <div class="tl-resolve-row">
+                                            <div class="tl-resolve-info">
+                                                <span class="tl-resolve-raw">@(string.IsNullOrEmpty(item.RawGrade) ? "(no grade)" : item.RawGrade)</span>
+                                                <span class="tl-meta">
+                                                    @item.Count ascent(s)@(string.IsNullOrEmpty(item.SampleClimbName) ? string.Empty : $" · e.g. {item.SampleClimbName}")
+                                                </span>
+                                            </div>
+                                            <GradePicker Value="@selection"
+                                                         ValueChanged="@(v => SetGradeSelection(item.RawGrade, v))" />
+                                            <button class="btn-primary"
+                                                    @onclick="() => ResolveGradeAsync(item)"
+                                                    disabled="@(tlBusy || _tlResolveBusy || string.IsNullOrEmpty(selection))">
+                                                Save
+                                            </button>
+                                        </div>
+                                    }
+                                }
+                            </details>
                         }
+
+                        <details class="tl-calibration" @ontoggle="OnCalibrationToggle">
+                            <summary>Gym grade points</summary>
+                            <p class="tl-meta">
+                                Enter the points your gym awards per grade, plus the flash bonus. We use these
+                                to read the grade and flash from each ascent's points.
+                            </p>
+                            @if (_tlGyms == null)
+                            {
+                                <p class="tl-meta">Loading…</p>
+                            }
+                            else if (_tlGyms.Count == 0)
+                            {
+                                <p class="tl-meta">No gyms yet — sync some ascents first.</p>
+                            }
+                            else
+                            {
+                                <div class="field-group">
+                                    <label class="field-label" for="tl-calib-gym">Gym</label>
+                                    <select id="tl-calib-gym" class="window-select"
+                                            value="@_tlSelectedGymId" @onchange="OnCalibrationGymChange">
+                                        <option value="">Select a gym…</option>
+                                        @foreach (var g in _tlGyms)
+                                        {
+                                            <option value="@g.Id">@g.Name</option>
+                                        }
+                                    </select>
+                                </div>
+
+                                @if (_tlSelectedGymId != null)
+                                {
+                                    <div class="tl-calib-grid">
+                                        <table class="tl-calib-table">
+                                            <thead>
+                                                <tr><th>Grade</th><th>Points</th></tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var grade in GradeScale.FontGrades)
+                                                {
+                                                    <tr>
+                                                        <td>@grade</td>
+                                                        <td>
+                                                            <input type="number" min="0" inputmode="numeric"
+                                                                   class="text-input tl-calib-input"
+                                                                   value="@GetCalibPoints(grade)"
+                                                                   @onchange="e => SetCalibPoints(grade, e.Value?.ToString())" />
+                                                        </td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    <div class="field-group">
+                                        <label class="field-label" for="tl-calib-bonus">Bonus points for flash</label>
+                                        <input id="tl-calib-bonus" type="number" min="0" inputmode="numeric"
+                                               class="text-input tl-calib-input"
+                                               value="@_tlFlashBonusInput"
+                                               @onchange="e => _tlFlashBonusInput = e.Value?.ToString() ?? string.Empty" />
+                                    </div>
+
+                                    <div class="tl-actions">
+                                        <button class="btn-primary" @onclick="SaveCalibrationAsync"
+                                                disabled="@(tlBusy || _tlCalibBusy)">
+                                            @(_tlCalibBusy ? "Saving…" : "Save")
+                                        </button>
+                                        <button class="btn-secondary" @onclick="DiscardCalibrationAsync"
+                                                disabled="@(tlBusy || _tlCalibBusy)">Discard</button>
+                                    </div>
+                                }
+                            }
+                        </details>
+
                         @if (!string.IsNullOrEmpty(_tlStatus.LastError))
                         {
                             <p class="field-error">@_tlStatus.LastError</p>
@@ -520,6 +622,21 @@
     private string? _tlError;
     private bool _tlDeleteAscents;
     private bool _tlConfirmingDisconnect;
+
+    // Grade-resolution panel: the unmapped-grade buckets (null until the disclosure is first opened),
+    // a per-bucket picker selection keyed by raw grade, and a save busy flag.
+    private IReadOnlyList<TopLoggerUnmappedGrade>? _tlUnmapped;
+    private readonly Dictionary<string, string?> _tlGradeSelections = new(StringComparer.Ordinal);
+    private bool _tlResolveBusy;
+
+    // Gym points→grade calibration panel: the user's gyms (null until the disclosure first opens), the
+    // selected gym, the per-grade points inputs (blank = unset) + the flash bonus input, and a save flag.
+    private IReadOnlyList<TopLoggerGymRef>? _tlGyms;
+    private Guid? _tlSelectedGymId;
+    private readonly Dictionary<string, string> _tlPointInputs = new(StringComparer.Ordinal);
+    private string _tlFlashBonusInput = string.Empty;
+    private bool _tlCalibBusy;
+
     private string? _toast;
 
     // Window/grouping for the other-user view is kept locally: it must not persist onto the viewer's
@@ -1051,6 +1168,162 @@
         if (_viewer != null)
         {
             _tlStatus = await TopLogger.GetStatusAsync(_viewer.Id, CancellationToken.None);
+        }
+    }
+
+    // ---- TopLogger grade resolution ----
+
+    private string? GetGradeSelection(string rawGradeKey) =>
+        _tlGradeSelections.TryGetValue(rawGradeKey, out var value) ? value : null;
+
+    private void SetGradeSelection(string rawGradeKey, string? value)
+    {
+        _tlGradeSelections[rawGradeKey] = value;
+    }
+
+    // Loads the unmapped buckets the first time the disclosure is opened (ontoggle fires on open+close;
+    // the null guard makes this a one-shot load per fresh list).
+    private async Task OnResolveGradesToggle()
+    {
+        if (_viewer != null && _tlUnmapped == null)
+        {
+            _tlUnmapped = await TopLogger.GetUnmappedGradesAsync(_viewer.Id, CancellationToken.None);
+            StateHasChanged();
+        }
+    }
+
+    private async Task ResolveGradeAsync(TopLoggerUnmappedGrade item)
+    {
+        if (_viewer == null)
+        {
+            return;
+        }
+
+        var grade = GetGradeSelection(item.RawGrade);
+        if (string.IsNullOrEmpty(grade))
+        {
+            return;
+        }
+
+        _tlResolveBusy = true;
+        _tlError = null;
+        try
+        {
+            var updated = await TopLogger.ResolveGradeMappingAsync(_viewer.Id, item.RawGrade, grade, CancellationToken.None);
+            var rawLabel = string.IsNullOrEmpty(item.RawGrade) ? "(no grade)" : item.RawGrade;
+
+            await ReloadTopLoggerStatusAsync();
+            _tlUnmapped = await TopLogger.GetUnmappedGradesAsync(_viewer.Id, CancellationToken.None);
+            _tlGradeSelections.Remove(item.RawGrade);
+
+            await ShowToast($"Mapped {rawLabel} → {grade} on {updated} ascent(s).");
+        }
+        catch (Exception)
+        {
+            _tlError = "Couldn't resolve the grade. Please try again.";
+        }
+        finally
+        {
+            _tlResolveBusy = false;
+        }
+    }
+
+    // ---- TopLogger gym points calibration ----
+
+    private string GetCalibPoints(string grade) =>
+        _tlPointInputs.TryGetValue(grade, out var value) ? value : string.Empty;
+
+    private void SetCalibPoints(string grade, string? value)
+    {
+        _tlPointInputs[grade] = value ?? string.Empty;
+    }
+
+    // Loads the user's gyms the first time the disclosure opens (ontoggle fires on open+close; the null
+    // guard makes it a one-shot load).
+    private async Task OnCalibrationToggle()
+    {
+        if (_viewer != null && _tlGyms == null)
+        {
+            _tlGyms = await TopLogger.GetCalibratableGymsAsync(_viewer.Id, CancellationToken.None);
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnCalibrationGymChange(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var gymId))
+        {
+            _tlSelectedGymId = gymId;
+            await LoadCalibrationFormAsync(gymId);
+        }
+        else
+        {
+            _tlSelectedGymId = null;
+            _tlPointInputs.Clear();
+            _tlFlashBonusInput = string.Empty;
+        }
+    }
+
+    // Loads a gym's saved calibration into the editable form state (blank inputs where unset).
+    private async Task LoadCalibrationFormAsync(Guid gymId)
+    {
+        var calibration = await TopLogger.GetGymCalibrationAsync(gymId, CancellationToken.None);
+        _tlPointInputs.Clear();
+        foreach (var p in calibration.Points)
+        {
+            _tlPointInputs[p.Grade] = p.Points.ToString();
+        }
+
+        _tlFlashBonusInput = calibration.FlashBonusPoints > 0 ? calibration.FlashBonusPoints.ToString() : string.Empty;
+    }
+
+    private async Task SaveCalibrationAsync()
+    {
+        if (_viewer == null || _tlSelectedGymId is not { } gymId)
+        {
+            return;
+        }
+
+        _tlCalibBusy = true;
+        _tlError = null;
+        try
+        {
+            var points = new List<GymGradePointDto>();
+            foreach (var grade in GradeScale.FontGrades)
+            {
+                if (_tlPointInputs.TryGetValue(grade, out var text)
+                    && int.TryParse(text, out var value) && value > 0)
+                {
+                    points.Add(new GymGradePointDto(grade, value));
+                }
+            }
+
+            var bonus = int.TryParse(_tlFlashBonusInput, out var b) && b > 0 ? b : 0;
+
+            var updated = await TopLogger.SaveGymCalibrationAsync(gymId, points, bonus, _viewer.Id, CancellationToken.None);
+            var gymName = _tlGyms?.FirstOrDefault(g => g.Id == gymId)?.Name ?? "gym";
+
+            await ReloadTopLoggerStatusAsync();
+            await LoadCalibrationFormAsync(gymId);
+
+            await ShowToast($"Saved {gymName}; recalculated {updated} ascent(s).");
+        }
+        catch (Exception)
+        {
+            _tlError = "Couldn't save the calibration. Please try again.";
+        }
+        finally
+        {
+            _tlCalibBusy = false;
+        }
+    }
+
+    // Drop unsaved edits: reload the saved calibration for the selected gym back into the form.
+    private async Task DiscardCalibrationAsync()
+    {
+        if (_tlSelectedGymId is { } gymId)
+        {
+            await LoadCalibrationFormAsync(gymId);
         }
     }
 

@@ -14,7 +14,7 @@ namespace Blocwerk.Core.Services.TopLogger;
 /// and maps grades. Uses <see cref="IDbContextFactory{TContext}"/> so it can run from a future
 /// background worker; an auth failure is turned into a "needs reauth" result rather than thrown.
 /// </summary>
-public sealed class TopLoggerImportService : ITopLoggerImportService
+public sealed partial class TopLoggerImportService : ITopLoggerImportService
 {
     private const int MaxErrorLength = 1024;
 
@@ -109,6 +109,15 @@ public sealed class TopLoggerImportService : ITopLoggerImportService
         catch (TopLoggerAuthException ex)
         {
             return await FailReauthAsync(db, connection, ex, cancellationToken).ConfigureAwait(false);
+        }
+        catch (TopLoggerThrottledException ex)
+        {
+            // Rate-limited (429) after backoff — not an auth problem. Record a clear, calm message and
+            // stop; the user (or the next app-open) can retry later. Never hammer.
+            logger.LogWarning(ex, "TopLogger rate-limited the sync for user {UserId}.", userId);
+            connection.LastError = "TopLogger is rate-limiting us right now — please try again in a little while.";
+            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return TopLoggerSyncResult.Failed(connection.LastError);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -249,6 +258,112 @@ public sealed class TopLoggerImportService : ITopLoggerImportService
             connected, connection.NeedsReauth, connection.LastSyncAt, connection.LastError, ascentCount, unmapped);
     }
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<TopLoggerUnmappedGrade>> GetUnmappedGradesAsync(
+        Guid userId, CancellationToken cancellationToken = default)
+    {
+        await using BlocwerkDbContext db = await dbContextFactory.CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        // Group by the raw grade, collapsing null/empty into a single "" bucket so it can still be
+        // resolved. Min(ClimbName) yields a deterministic sample without a per-group First() subquery.
+        List<TopLoggerUnmappedGrade> grades = await db.ExternalAscents
+            .AsNoTracking()
+            .Where(a => a.UserId == userId && a.Source == ExternalSource.TopLogger && a.NeedsGradeMapping)
+            .GroupBy(a => a.RawGrade ?? string.Empty)
+            .Select(g => new TopLoggerUnmappedGrade(g.Key, g.Count(), g.Min(a => a.ClimbName)))
+            .OrderByDescending(g => g.Count)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return grades;
+    }
+
+    /// <inheritdoc />
+    public async Task<int> ResolveGradeMappingAsync(
+        Guid userId, string rawGradeKey, string fontGrade, CancellationToken cancellationToken = default)
+    {
+        // Only a grade the scoring path recognises may be stored; otherwise the ascents would be marked
+        // "mapped" yet silently score zero. Accepts a V-scale value from the picker and normalises it.
+        string? normalized = NormalizeFontGrade(fontGrade);
+        if (normalized is null)
+        {
+            return 0;
+        }
+
+        rawGradeKey ??= string.Empty;
+
+        await using BlocwerkDbContext db = await dbContextFactory.CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+        db.CurrentUserId = userId;
+
+        // Upsert the (user, raw grade) resolution so future syncs auto-apply it too.
+        UserGradeMapping? mapping = await db.UserGradeMappings
+            .FirstOrDefaultAsync(m => m.UserId == userId && m.RawGradeKey == rawGradeKey, cancellationToken)
+            .ConfigureAwait(false);
+        if (mapping is null)
+        {
+            db.UserGradeMappings.Add(new UserGradeMapping
+            {
+                UserId = userId,
+                RawGradeKey = rawGradeKey,
+                FontGrade = normalized,
+            });
+        }
+        else
+        {
+            mapping.FontGrade = normalized;
+        }
+
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        // Retroactively resolve the existing unmapped ascents in a single UPDATE. The empty bucket
+        // matches both a null and an empty raw grade.
+        bool emptyBucket = rawGradeKey.Length == 0;
+        IQueryable<ExternalAscent> query = db.ExternalAscents
+            .Where(a => a.UserId == userId && a.Source == ExternalSource.TopLogger && a.NeedsGradeMapping);
+        query = emptyBucket
+            ? query.Where(a => a.RawGrade == null || a.RawGrade == string.Empty)
+            : query.Where(a => a.RawGrade == rawGradeKey);
+
+        int updated = await query
+            .ExecuteUpdateAsync(
+                s => s
+                    .SetProperty(a => a.MappedGrade, normalized)
+                    .SetProperty(a => a.NeedsGradeMapping, false),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        logger.LogInformation(
+            "TopLogger grade resolution for user {UserId}: '{RawGrade}' → {FontGrade} on {Count} ascent(s).",
+            userId, rawGradeKey, normalized, updated);
+        return updated;
+    }
+
+    /// <summary>
+    /// Normalises a picker value (Font or V scale) to a Font grade the scoring path knows, or null when
+    /// blank or unrecognised.
+    /// </summary>
+    private static string? NormalizeFontGrade(string? grade)
+    {
+        if (string.IsNullOrWhiteSpace(grade))
+        {
+            return null;
+        }
+
+        string trimmed = grade.Trim();
+        string? font = trimmed.StartsWith("V", StringComparison.OrdinalIgnoreCase)
+            ? GradeScale.ToFont(trimmed)
+            : trimmed;
+
+        if (string.IsNullOrEmpty(font))
+        {
+            return null;
+        }
+
+        return GradeScoring.AllScores.ContainsKey(font) ? font : null;
+    }
+
     private async Task<TopLoggerSyncResult> FailReauthAsync(
         BlocwerkDbContext db, TopLoggerConnection connection, TopLoggerAuthException ex, CancellationToken cancellationToken)
     {
@@ -270,6 +385,7 @@ public sealed class TopLoggerImportService : ITopLoggerImportService
         Dictionary<string, string> gradeMap =
             await TopLoggerImportHelpers.LoadGradeMapAsync(db, userId, cancellationToken).ConfigureAwait(false);
         Dictionary<string, ExternalGym> gymCache = new(StringComparer.Ordinal);
+        Dictionary<Guid, GymCalibrationData?> calibrationCache = new();
 
         int imported = 0;
         int skipped = 0;
@@ -287,7 +403,10 @@ public sealed class TopLoggerImportService : ITopLoggerImportService
 
             ExternalGym? gym = await TopLoggerImportHelpers.GetOrCreateGymAsync(db, gymCache, tick, cancellationToken)
                 .ConfigureAwait(false);
-            ExternalAscent ascent = TopLoggerImportHelpers.BuildAscent(userId, tick, gym, gradeMap);
+            GymCalibrationData? calibration =
+                await TopLoggerImportHelpers.LoadCalibrationAsync(db, calibrationCache, gym, cancellationToken)
+                    .ConfigureAwait(false);
+            ExternalAscent ascent = TopLoggerImportHelpers.BuildAscent(userId, tick, gym, gradeMap, calibration);
             if (ascent.NeedsGradeMapping)
             {
                 unmapped++;
