@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blocwerk.Core.Migrations
 {
     [DbContext(typeof(BlocwerkDbContext))]
-    [Migration("20260830102901_AddTopLoggerImport")]
+    [Migration("20260830133858_AddTopLoggerImport")]
     partial class AddTopLoggerImport
     {
         /// <inheritdoc />
@@ -990,6 +990,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<DateTimeOffset?>("LastResetAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("MaintenanceByUserId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(256)
@@ -1024,6 +1027,9 @@ namespace Blocwerk.Core.Migrations
 
                     b.Property<int>("StagingMode")
                         .HasColumnType("integer");
+
+                    b.Property<bool>("UnderMaintenance")
+                        .HasColumnType("boolean");
 
                     b.Property<bool>("UsesMultipleImages")
                         .HasColumnType("boolean");
