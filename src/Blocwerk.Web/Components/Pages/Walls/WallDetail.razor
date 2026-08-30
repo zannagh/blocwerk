@@ -20,6 +20,17 @@
 {
     <p class="loading">Loading...</p>
 }
+else if (_wall.UnderMaintenance && _currentUserId != _wall.MaintenanceByUserId)
+{
+    @* Update mode: hide the wall from everyone except the admin who enabled it. *@
+    <SectionContent SectionName="TopBarTitle">@_wall.Name</SectionContent>
+
+    <div class="maintenance-notice">
+        <div class="maintenance-icon">🛠️</div>
+        <h2>This wall is currently being updated</h2>
+        <p>@_wall.Name is being updated right now. Please check back in a little while.</p>
+    </div>
+}
 else
 {
     <SectionContent SectionName="TopBarTitle">@_wall.Name</SectionContent>
@@ -60,6 +71,14 @@ else
                                 <button class="btn-secondary" @onclick="() => _confirmingDisableMulti = false">Cancel</button>
                             </div>
                         }
+                    </div>
+
+                    <div class="form-group">
+                        <label class="filter-check">
+                            <input type="checkbox" checked="@_wall.UnderMaintenance" @onchange="OnToggleMaintenance" />
+                            Update mode — hide this wall from others while you work on it
+                        </label>
+                        <p class="field-hint">While this is on, everyone except you sees a "currently being updated" notice instead of the wall.</p>
                     </div>
 
                     @if (_showBigUpdate)
@@ -1115,6 +1134,23 @@ else
         catch (Exception ex)
         {
             await ShowToast($"Disable failed: {ex.Message}");
+        }
+    }
+
+    private async Task OnToggleMaintenance(ChangeEventArgs e)
+    {
+        var on = e.Value is bool b && b;
+        try
+        {
+            await WallService.SetMaintenanceAsync(WallId, on);
+            await LoadWall();
+            await ShowToast(on
+                ? "Update mode on — others now see a \"being updated\" notice"
+                : "Update mode off — the wall is visible again");
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"Update mode change failed: {ex.Message}");
         }
     }
 

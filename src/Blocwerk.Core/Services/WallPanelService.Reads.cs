@@ -17,12 +17,26 @@ public partial class WallPanelService
         await using var db = await dbContextFactory.CreateDbContextAsync();
         db.CurrentUserId = user.Id;
 
-        return await db.WallPanels
+        // A centre/neighbour update adds a NEW panel row at the next generation and promotes it, but the
+        // superseded row keeps its Photo. Without deduping we'd surface two live panels at the same
+        // (Col,Row) — the stale one can win and show the old image with no holds. Keep only the latest
+        // generation per position so each grid cell resolves to its current panel.
+        var panels = await db.WallPanels
             .AsNoTracking()
             .Where(p => p.WallId == wallId && (p.Photo != null || p.StagedPhoto != null))
-            .OrderBy(p => p.Row).ThenBy(p => p.Col)
-            .Select(p => new WallPanelInfo(p.Id, p.Col, p.Row, p.Photo != null, p.StagedPhoto != null))
+            .Select(p => new { p.Id, p.Col, p.Row, p.Generation, HasLive = p.Photo != null, HasStaged = p.StagedPhoto != null })
             .ToListAsync();
+
+        return panels
+            .GroupBy(p => (p.Col, p.Row))
+            // Prefer the latest LIVE panel for the cell. Live-first matters mid-update: a staged row
+            // sits one generation ahead of the live one, so ordering by generation alone would let the
+            // not-yet-live staged panel win and the live viewers (which filter on IsLive) would drop
+            // the cell. Only when a cell has no live panel at all does the latest staged row stand in.
+            .Select(g => g.OrderByDescending(p => p.HasLive).ThenByDescending(p => p.Generation).First())
+            .OrderBy(p => p.Row).ThenBy(p => p.Col)
+            .Select(p => new WallPanelInfo(p.Id, p.Col, p.Row, p.HasLive, p.HasStaged))
+            .ToList();
     }
 
     /// <inheritdoc/>

@@ -1566,6 +1566,42 @@ public class WallService : IWallService
         }
     }
 
+    /// <inheritdoc/>
+    public async Task SetMaintenanceAsync(Guid wallId, bool underMaintenance)
+    {
+        using var op = BlocwerkMetrics.TimeOperation("Wall.SetMaintenance", wallId);
+        try
+        {
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
+
+            // Owner or an Admin member may toggle update mode. Loading is filter-ignoring so an owner
+            // without an explicit member row can still administer their own wall.
+            await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
+
+            var wall = await db.Walls
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(w => w.Id == wallId);
+            if (wall == null)
+            {
+                throw new InvalidOperationException("Wall not found");
+            }
+
+            wall.UnderMaintenance = underMaintenance;
+            wall.MaintenanceByUserId = underMaintenance ? user.Id : null;
+            await db.SaveChangesAsync();
+
+            _logger.LogInformation(
+                "Wall {WallId} update mode set to {State} by {UserId}", wallId, underMaintenance, user.Id);
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
+    }
+
     private static bool IsPointInPolygon(double px, double py, List<(double X, double Y)> polygon) =>
         WallProjection.IsPointInPolygon(px, py, polygon);
 

@@ -8,6 +8,9 @@ public record ApiErrorResponse(string Message);
 /// <summary>One temperature sample as the API exposes it.</summary>
 public record TemperatureReadingResponse(DateTimeOffset RecordedAt, double TemperatureCelsius);
 
+/// <summary>Toggles a wall's "update mode" (maintenance) over the API.</summary>
+public record WallMaintenanceRequest(bool Enabled);
+
 /// <summary>
 /// One gallery entry. <paramref name="Source"/> is the discriminator the caller has to put back
 /// into the content route, because the three sources live in three different stores.
