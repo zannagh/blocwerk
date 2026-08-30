@@ -9,6 +9,7 @@ using Blocwerk.Core.Helpers;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using SkiaSharp;
 
 namespace Blocwerk.Authentication.Services;
 
@@ -70,7 +71,11 @@ public class CurrentUserService : ICurrentUserService
     }
 
     private const int MaxDisplayNameLength = 256;
-    private const long MaxAvatarBytes = 4L * 1024 * 1024;
+
+    // Blazor Server streams the upload over SignalR, so a generous ceiling is fine here — the image is
+    // downscaled to at most AvatarMaxEdge px before it is ever persisted, so the stored bytes stay tiny.
+    private const long MaxAvatarBytes = 30L * 1024 * 1024;
+    private const int AvatarMaxEdge = 512;
 
     private static readonly HashSet<string> AllowedAvatarContentTypes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -105,36 +110,72 @@ public class CurrentUserService : ICurrentUserService
     {
         var user = await GetCurrentUserAsync();
 
+        byte[]? storedImage = null;
+        string? storedContentType = null;
+
         if (image is { Length: > 0 })
         {
             if (image.LongLength > MaxAvatarBytes)
             {
-                throw new InvalidOperationException("Avatar image is too large (max 4 MB).");
+                throw new InvalidOperationException("Avatar image is too large (max 30 MB).");
             }
 
             if (string.IsNullOrEmpty(contentType) || !AllowedAvatarContentTypes.Contains(contentType))
             {
                 throw new InvalidOperationException("Avatar image must be a JPEG, PNG or WebP file.");
             }
+
+            // Downscale + re-encode server-side so avatars are stored small regardless of the source
+            // resolution. Original bytes may be many MB from a phone camera; the stored copy is a
+            // <=512px PNG. A decode failure surfaces to the caller's error field.
+            (storedImage, storedContentType) = ScaleAvatar(image);
         }
 
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync();
         var dbUser = await dbContext.Users.FirstAsync(u => u.Id == user.Id);
 
-        if (image is { Length: > 0 })
-        {
-            dbUser.AvatarImage = image;
-            dbUser.AvatarContentType = contentType;
-        }
-        else
-        {
-            dbUser.AvatarImage = null;
-            dbUser.AvatarContentType = null;
-        }
+        dbUser.AvatarImage = storedImage;
+        dbUser.AvatarContentType = storedContentType;
 
         await dbContext.SaveChangesAsync();
 
         InvalidateCache();
+    }
+
+    // Decodes the uploaded image, scales it so its longest edge is at most AvatarMaxEdge (preserving
+    // aspect ratio; smaller images are left at their pixel size), and re-encodes it as PNG. Throws
+    // InvalidOperationException when the bytes can't be decoded so the UI can show its avatar error.
+    private static (byte[] Image, string ContentType) ScaleAvatar(byte[] image)
+    {
+        using var decoded = SKBitmap.Decode(image);
+        if (decoded == null)
+        {
+            throw new InvalidOperationException("Couldn't read that image. Please try a JPEG, PNG or WebP file.");
+        }
+
+        var longEdge = Math.Max(decoded.Width, decoded.Height);
+        SKBitmap source = decoded;
+        SKBitmap? scaled = null;
+        if (longEdge > AvatarMaxEdge)
+        {
+            var scale = (double)AvatarMaxEdge / longEdge;
+            var w = Math.Max(1, (int)Math.Round(decoded.Width * scale));
+            var h = Math.Max(1, (int)Math.Round(decoded.Height * scale));
+            scaled = new SKBitmap(new SKImageInfo(w, h, SKColorType.Bgra8888, SKAlphaType.Premul));
+            decoded.ScalePixels(scaled, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None));
+            source = scaled;
+        }
+
+        try
+        {
+            using var pixmapImage = SKImage.FromBitmap(source);
+            using var data = pixmapImage.Encode(SKEncodedImageFormat.Png, 90);
+            return (data.ToArray(), "image/png");
+        }
+        finally
+        {
+            scaled?.Dispose();
+        }
     }
 
     public async Task SetPasswordAsync(string loginUsername, string password, string? currentPassword)
@@ -259,6 +300,13 @@ public class CurrentUserService : ICurrentUserService
     {
         var user = await GetCurrentUserAsync();
 
+        // Only UserIdentities can name a provider. A legacy account's ORIGINAL provider is NOT recorded
+        // anywhere — the legacy Identifier ("{name}__{sub}") stores the subject but no provider name, and
+        // no other column or claim carries it — so a provider used ONLY on a legacy account (never
+        // re-linked) cannot be shown as "Linked" here and is still offered as "Link". That is harmless:
+        // the first login/link through that provider back-fills its UserIdentity (login) or a legacy
+        // merge (link), after which it registers correctly. A sub-format heuristic would be fragile and
+        // is deliberately avoided.
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync();
         return await dbContext.UserIdentities
             .AsNoTracking()
@@ -319,11 +367,12 @@ public class CurrentUserService : ICurrentUserService
     ///     This makes password sessions resolve precisely and sidesteps the lossy "{name}__{id}"
     ///     identifier round-trip, which misresolves (and would otherwise CREATE a blank user) when the
     ///     name itself contains "__";
-    /// (a) provider present and a matching <see cref="UserIdentity"/> exists → that identity's user;
-    /// (b) otherwise fall back to the legacy <see cref="User.Identifier"/> lookup, back-filling a
-    ///     <see cref="UserIdentity"/> for an OAuth login that lacked one;
+    /// (a)/(b) for an OAuth login, resolve through the shared <see cref="LegacyIdentityResolver"/>
+    ///     (UserIdentity row → legacy Identifier subject-suffix), back-filling a
+    ///     <see cref="UserIdentity"/> when the match came from a legacy row. Sharing this resolver with
+    ///     the account-link path is what keeps login and linking from diverging on identity ownership;
+    /// (b') no provider claim (dev login / legacy cookie) → resolve purely by the full identifier;
     /// (c) no user at all → create the user (as before) plus, for an OAuth login, its identity.
-    /// Dev login and legacy sessions carry no provider claim, so they resolve purely by identifier.
     /// </summary>
     private static async Task<User> ResolveUserAsync(BlocwerkDbContext dbContext, string identifier, string provider, string providerUserId, string uid)
     {
@@ -339,30 +388,24 @@ public class CurrentUserService : ICurrentUserService
 
         bool hasProvider = !string.IsNullOrEmpty(provider) && !string.IsNullOrEmpty(providerUserId);
 
-        // (a) Resolve by provider identity first.
+        // (a)/(b) Resolve the OAuth identity through the ONE shared resolver, then back-fill a
+        // UserIdentity so a legacy match becomes a first-class identity row (no-op if it already exists).
         if (hasProvider)
         {
-            var identity = await dbContext.UserIdentities
-                .Include(i => i.User)
-                .FirstOrDefaultAsync(i => i.Provider == provider && i.ProviderUserId == providerUserId);
-            if (identity is not null)
+            var owner = await LegacyIdentityResolver.FindByProviderIdentityAsync(dbContext, provider, providerUserId);
+            if (owner is not null)
             {
-                return identity.User;
+                await EnsureIdentityAsync(dbContext, owner.Id, provider, providerUserId);
+                return owner;
             }
         }
 
-        // (b) Fall back to the legacy identifier lookup. This lookup is not provider-qualified, so in
-        // theory two providers could mint the same "{name}__{id}" — accepted as LOW risk since provider
-        // id-spaces don't overlap in practice, and the fallback is required for legacy users with no
-        // UserIdentity row. Password/TOTP sessions never reach here (they resolve at (0) by uid).
+        // (b') No provider claim (dev login / legacy cookie): resolve purely by the full identifier.
+        // (An OAuth login that reaches here found no identity and no legacy subject match, so the
+        // full-identifier lookup below would not match it either — it falls through to creation.)
         var user = await dbContext.Users.FirstOrDefaultAsync(u => u.Identifier == identifier);
         if (user is not null)
         {
-            if (hasProvider)
-            {
-                await EnsureIdentityAsync(dbContext, user.Id, provider, providerUserId);
-            }
-
             return user;
         }
 

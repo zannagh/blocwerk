@@ -3,6 +3,7 @@ using System;
 using Blocwerk.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blocwerk.Core.Migrations
 {
     [DbContext(typeof(BlocwerkDbContext))]
-    partial class BlocwerkDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260830102901_AddTopLoggerImport")]
+    partial class AddTopLoggerImport
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -987,9 +990,6 @@ namespace Blocwerk.Core.Migrations
                     b.Property<DateTimeOffset?>("LastResetAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<Guid?>("MaintenanceByUserId")
-                        .HasColumnType("uuid");
-
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(256)
@@ -1024,9 +1024,6 @@ namespace Blocwerk.Core.Migrations
 
                     b.Property<int>("StagingMode")
                         .HasColumnType("integer");
-
-                    b.Property<bool>("UnderMaintenance")
-                        .HasColumnType("boolean");
 
                     b.Property<bool>("UsesMultipleImages")
                         .HasColumnType("boolean");

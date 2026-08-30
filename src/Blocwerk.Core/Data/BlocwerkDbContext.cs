@@ -61,6 +61,14 @@ public class BlocwerkDbContext : DbContext
 
     public DbSet<UserIdentity> UserIdentities => Set<UserIdentity>();
 
+    public DbSet<TopLoggerConnection> TopLoggerConnections => Set<TopLoggerConnection>();
+
+    public DbSet<ExternalGym> ExternalGyms => Set<ExternalGym>();
+
+    public DbSet<ExternalAscent> ExternalAscents => Set<ExternalAscent>();
+
+    public DbSet<UserGradeMapping> UserGradeMappings => Set<UserGradeMapping>();
+
     public BlocwerkDbContext(DbContextOptions<BlocwerkDbContext> options)
         : base(options)
     {
@@ -105,6 +113,72 @@ public class BlocwerkDbContext : DbContext
         ConfigureWallImage(modelBuilder);
         ConfigureWallPanel(modelBuilder);
         ConfigureHoldLink(modelBuilder);
+        ConfigureTopLogger(modelBuilder);
+    }
+
+    private static void ConfigureTopLogger(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<TopLoggerConnection>(entity =>
+        {
+            // One connection per user.
+            entity.HasIndex(c => c.UserId).IsUnique();
+
+            entity.HasOne(c => c.User)
+                .WithMany()
+                .HasForeignKey(c => c.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ExternalGym>(entity =>
+        {
+            // Global, shared across users: one row per real gym on a source. Not user-scoped, so no
+            // per-user query filter applies here.
+            entity.HasIndex(g => new { g.Source, g.ExternalId }).IsUnique();
+        });
+
+        modelBuilder.Entity<ExternalAscent>(entity =>
+        {
+            // One row per (user, source, source-id): the upsert key across re-syncs.
+            entity.HasIndex(a => new { a.UserId, a.Source, a.ExternalId }).IsUnique();
+            entity.HasIndex(a => new { a.UserId, a.LoggedAt });
+
+            entity.HasOne(a => a.User)
+                .WithMany()
+                .HasForeignKey(a => a.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // The gym is global; removing it detaches the ascent rather than deleting logged history.
+            entity.HasOne(a => a.ExternalGym)
+                .WithMany()
+                .HasForeignKey(a => a.ExternalGymId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(a => a.Activity)
+                .WithMany()
+                .HasForeignKey(a => a.ActivityId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<UserGradeMapping>(entity =>
+        {
+            // One resolution per (user, raw grade token).
+            entity.HasIndex(m => new { m.UserId, m.RawGradeKey }).IsUnique();
+
+            entity.HasOne(m => m.User)
+                .WithMany()
+                .HasForeignKey(m => m.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // An imported activity references a gym instead of a wall. The gym is global; removing it
+        // nulls the field rather than blocking the delete (mirrors the Activity → Wall SetNull).
+        modelBuilder.Entity<Activity>(entity =>
+        {
+            entity.HasOne(a => a.ExternalGym)
+                .WithMany()
+                .HasForeignKey(a => a.ExternalGymId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
     }
 
     private static void ConfigureWallPanel(ModelBuilder modelBuilder)

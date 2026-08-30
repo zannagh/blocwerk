@@ -25,6 +25,12 @@ public class Activity
     [ForeignKey(nameof(WallId))]
     public Wall? Wall { get; set; }
 
+    /// <summary>The external gym of the activity, if any. Set on imported activities in place of a wall.</summary>
+    public Guid? ExternalGymId { get; set; }
+
+    [ForeignKey(nameof(ExternalGymId))]
+    public ExternalGym? ExternalGym { get; set; }
+
     /// <summary>Timestamp of the earliest event in the activity.</summary>
     public DateTimeOffset StartedAt { get; set; }
 
