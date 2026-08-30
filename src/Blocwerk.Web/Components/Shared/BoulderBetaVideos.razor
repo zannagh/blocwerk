@@ -195,7 +195,12 @@
             // side reads it off the input, attaches a poster frame, and re-encodes happen server-side.
             _selfRef ??= DotNetObjectReference.Create(this);
             var url = $"/api/beta-videos/{BoulderId}";
-            var result = await JS.InvokeAsync<UploadResult>("blocwerkBetaVideo.upload", _inputId, url, _selfRef, 480);
+            // The whole upload + server-side transcode runs inside this single JS interop call. Blazor's
+            // default interop timeout is 1 minute, so any clip slower than that was cancelled mid-upload
+            // and surfaced as "A task was canceled". Give this call a generous budget (the browser XHR
+            // carries a slightly shorter timeout so a genuine stall reports a clearer message first).
+            using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromMinutes(16));
+            var result = await JS.InvokeAsync<UploadResult>("blocwerkBetaVideo.upload", cts.Token, _inputId, url, _selfRef, 480);
 
             if (result.Ok)
             {
