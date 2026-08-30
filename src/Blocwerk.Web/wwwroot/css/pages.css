@@ -1900,6 +1900,10 @@ html.bw-fullscreen .wall-main .photo-viewport {
 }
 .panel-step-view { margin: 0; }
 .panel-step-cap {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
     font-size: 0.72rem;
     font-weight: 600;
     color: var(--text-secondary);
@@ -1907,6 +1911,22 @@ html.bw-fullscreen .wall-main .photo-viewport {
     text-transform: uppercase;
     letter-spacing: 0.04em;
 }
+/* Per-image overlay show/hide. Not uppercase — it is a control, not the caption label. */
+.panel-step-toggle {
+    flex: none;
+    padding: 2px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-pill);
+    background: var(--surface-2, rgba(120,190,255,0.12));
+    color: var(--text-secondary);
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: 0;
+    cursor: pointer;
+}
+.panel-step-toggle:hover { color: var(--text-primary); border-color: var(--accent, #4aa8ff); }
+.panel-step-toggle.off { background: transparent; color: var(--text-tertiary, var(--text-secondary)); }
 /* A scroll-model viewport (see viewport.js): the .photo-editor child is widened by --zoom
    and scrolls inside this fixed box. touch-action mirrors the other viewports. */
 .panel-step-viewport {

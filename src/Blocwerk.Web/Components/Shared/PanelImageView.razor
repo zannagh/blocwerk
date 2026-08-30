@@ -7,41 +7,57 @@
    In interactive (moved) mode taps select a detected hold, or — in add mode — an empty spot. *@
 
 <figure class="panel-step-view">
-    <figcaption class="panel-step-cap">@Caption</figcaption>
+    <figcaption class="panel-step-cap">
+        <span>@Caption</span>
+        <button type="button" class="panel-step-toggle @(_overlayHidden ? "off" : "")"
+                @onclick="ToggleOverlay"
+                title="@(_overlayHidden ? "Show the hold overlay" : "Hide the overlay to see the photo behind small holds")">
+            @(_overlayHidden ? "◌ Show holds" : "● Hide holds")
+        </button>
+    </figcaption>
     <div class="panel-step-viewport" @ref="_viewportRef"
          style="cursor: @(AddMode ? "crosshair" : "default");">
         <div class="photo-editor" @ref="_editorRef">
             <img src="@PhotoUrl" alt="@Caption" class="wall-photo" />
             <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none"
                  @onclick="OnSvgClick">
-                @foreach (var h in Holds)
+                @if (!_overlayHidden)
                 {
-                    var isHighlight = HighlightHoldId == h.Id;
-                    var isSelected = SelectedHoldId == h.Id;
-                    var custom = !isSelected && !isHighlight && HoldColors is not null
-                        && HoldColors.TryGetValue(h.Id, out var cc) ? cc : null;
-                    var stroke = isSelected ? "#33dd66"
-                        : isHighlight ? BadgeColor : custom ?? "rgba(150,150,160,0.6)";
-                    var fill = isSelected ? "rgba(51,221,102,0.25)"
-                        : isHighlight ? BadgeFill : "transparent";
-                    var sw = isSelected || isHighlight ? "0.9" : custom is not null ? "0.6" : "0.35";
-                    <circle @key="h.Id" cx="@F(h.X * 100)" cy="@F(h.Y * 100)" r="@F(h.Radius * 100)"
-                            fill="@fill" stroke="@stroke" stroke-width="@sw"
-                            style="cursor: @(Interactive ? "pointer" : "inherit"); pointer-events: @(Interactive ? "auto" : "none");"
-                            @onclick="() => OnHoldTap.InvokeAsync(h.Id)" @onclick:stopPropagation="true" />
-                }
+                    @foreach (var h in Holds)
+                    {
+                        var isHighlight = HighlightHoldId == h.Id;
+                        var isSelected = SelectedHoldId == h.Id;
+                        var custom = !isSelected && !isHighlight && HoldColors is not null
+                            && HoldColors.TryGetValue(h.Id, out var cc) ? cc : null;
+                        // In interactive (re-target) mode every hold is a pick target, so plain holds
+                        // are drawn boldly instead of near-invisible — otherwise there is nothing to aim at.
+                        var stroke = isSelected ? "#33dd66"
+                            : isHighlight ? BadgeColor
+                            : custom ?? (Interactive ? "rgba(120,190,255,0.95)" : "rgba(150,150,160,0.6)");
+                        var fill = isSelected ? "rgba(51,221,102,0.25)"
+                            : isHighlight ? BadgeFill
+                            : custom is null && Interactive ? "rgba(120,190,255,0.15)" : "transparent";
+                        var sw = isSelected || isHighlight ? "0.9"
+                            : custom is not null ? "0.6"
+                            : Interactive ? "0.7" : "0.35";
+                        <circle @key="h.Id" cx="@F(h.X * 100)" cy="@F(h.Y * 100)" r="@F(h.Radius * 100)"
+                                fill="@fill" stroke="@stroke" stroke-width="@sw"
+                                style="cursor: @(Interactive ? "pointer" : "inherit"); pointer-events: @(Interactive ? "auto" : "none");"
+                                @onclick="() => OnHoldTap.InvokeAsync(h.Id)" @onclick:stopPropagation="true" />
+                    }
 
-                @if (HintPoint is { } hint)
-                {
-                    @* Moved-mode: the matcher's proposed position, as a hint to pick the real hold near it. *@
-                    <circle cx="@F(hint.X * 100)" cy="@F(hint.Y * 100)" r="2"
-                            fill="none" stroke="#ffb020" stroke-width="0.6" stroke-dasharray="1 0.7"
-                            style="pointer-events: none" />
+                    @if (HintPoint is { } hint)
+                    {
+                        @* Moved-mode: the matcher's proposed position, as a hint to pick the real hold near it. *@
+                        <circle cx="@F(hint.X * 100)" cy="@F(hint.Y * 100)" r="2"
+                                fill="none" stroke="#ffb020" stroke-width="0.6" stroke-dasharray="1 0.7"
+                                style="pointer-events: none" />
+                    }
                 }
             </svg>
 
             @* Number badge on the highlighted hold — HTML so it keeps a constant size. *@
-            @if (BadgeHold is { } bh)
+            @if (BadgeHold is { } bh && !_overlayHidden)
             {
                 <span class="panel-step-badge" style="left:@F(bh.X * 100)%;top:@F(bh.Y * 100)%;background:@BadgeColor">@BadgeNumber</span>
             }
@@ -92,6 +108,11 @@
     private ElementReference _editorRef;
     private readonly ViewportZoomState _zoomState;
     private int _lastFocusKey = int.MinValue;
+
+    // Per-image, local: temporarily hide the overlay so tiny holds under it are visible.
+    private bool _overlayHidden;
+
+    private void ToggleOverlay() => _overlayHidden = !_overlayHidden;
 
     public PanelImageView()
     {
