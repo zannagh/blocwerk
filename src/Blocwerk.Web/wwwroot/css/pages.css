@@ -82,6 +82,34 @@
 
 .oauth-container .footer { text-align: center; margin-top: 24px; color: var(--text-secondary); font-size: 0.85rem; }
 
+/* Password sign-in form: "or" divider, labelled inputs and a primary-styled submit, all matching
+   the OAuth provider buttons above it. */
+.password-login { margin-top: 20px; }
+.password-divider {
+    display: flex; align-items: center; text-align: center;
+    color: var(--text-secondary); font-size: 0.85rem; margin: 0 0 16px;
+}
+.password-divider::before, .password-divider::after {
+    content: ""; flex: 1; height: 1px; background: var(--border);
+}
+.password-divider span { padding: 0 12px; white-space: nowrap; }
+.password-login .field-label { color: var(--text); }
+.password-login .text-input {
+    width: 100%; padding: 12px 14px; font-size: 0.95rem;
+    border: 1px solid var(--border); border-radius: 10px;
+    background: var(--bg-surface); color: var(--text);
+    margin-bottom: 14px;
+}
+.password-login .text-input:focus {
+    outline: none; border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.password-submit {
+    justify-content: center; width: 100%; margin-top: 4px;
+    background: var(--accent); border-color: var(--accent); color: white;
+}
+.password-submit:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: white; }
+
 /* OAuth page needs dark background even in light mode */
 body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%); }
 
@@ -625,7 +653,7 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
 }
 .member-name-link {
     font-weight: 600; font-size: 0.9rem; color: var(--secondary);
-    text-decoration: underline; padding: 4px 0; min-height: 24px; display: inline-flex; align-items: center;
+    text-decoration: underline; padding: 4px 0; min-height: 24px; display: inline-flex; align-items: center; gap: 8px;
 }
 .member-name-link:hover { text-decoration: underline; }
 .member-name-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -1262,12 +1290,32 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     align-items: center; justify-content: center; margin: 0 auto 12px;
     text-transform: uppercase;
 }
+img.avatar { object-fit: cover; }
+/* Compact avatar for inline author/member rows next to a name. */
+.avatar-sm {
+    width: 26px; height: 26px; font-size: 0.8rem; margin: 0;
+    display: inline-flex; vertical-align: middle; flex-shrink: 0;
+}
 .profile-card h1 { font-size: 1.3rem; font-weight: 700; color: var(--text-heading); margin-bottom: 6px; }
 .role-badge {
     display: inline-block; padding: 4px 12px; background: var(--info-bg);
     color: var(--secondary); border-radius: 12px; font-size: 0.8rem; font-weight: 600;
 }
 .member-since { color: var(--text-secondary); font-size: 0.85rem; margin-top: 8px; }
+
+/* Profile edit fields (display name + avatar) */
+.field-group { margin-bottom: 18px; }
+.field-label { display: block; font-size: 0.85rem; font-weight: 600; color: var(--text-heading); margin-bottom: 6px; }
+.field-group .text-input {
+    width: 100%; padding: 10px 12px; font-size: 0.95rem;
+    border: 1px solid var(--border); border-radius: var(--r-md);
+    background: var(--bg-surface); color: var(--text);
+}
+.field-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.field-actions .btn-primary { padding: 10px 20px; font-size: 0.95rem; }
+.field-actions .btn-secondary { width: auto; margin-bottom: 0; padding: 10px 16px; font-size: 0.95rem; }
+.field-actions .btn-primary[disabled],
+.field-actions .btn-secondary[disabled] { opacity: 0.5; cursor: not-allowed; }
 
 .profile-page .chart-section h2 { font-size: 1rem; font-weight: 600; color: var(--text-heading); margin-bottom: 8px; }
 .chart-box {

@@ -1,0 +1,29 @@
+@* Renders a user's avatar: their uploaded image when they have one, else the initial-circle
+   fallback used across the app. Reuses the shared .avatar styling. *@
+
+@if (HasAvatar && UserId is { } id)
+{
+    <img class="avatar @CssClass" src="/api/users/@id/avatar" alt="@Name" />
+}
+else
+{
+    <div class="avatar @CssClass">@(Name?.FirstOrDefault())</div>
+}
+
+@code {
+    /// <summary>The user's id, used to build the avatar image URL.</summary>
+    [Parameter]
+    public Guid? UserId { get; set; }
+
+    /// <summary>The user's effective display name; its first letter is the fallback glyph.</summary>
+    [Parameter]
+    public string? Name { get; set; }
+
+    /// <summary>Whether the user has an uploaded avatar image.</summary>
+    [Parameter]
+    public bool HasAvatar { get; set; }
+
+    /// <summary>Optional extra CSS class(es) for sizing/placement overrides.</summary>
+    [Parameter]
+    public string? CssClass { get; set; }
+}

@@ -13,6 +13,8 @@
         @foreach (var item in _items)
         {
             <div class="activity-row">
+                <UserAvatar UserId="item.User.Id" Name="@item.User.Name"
+                            HasAvatar="item.User.HasAvatar" CssClass="avatar-sm" />
                 <span class="activity-text">@Describe(item)</span>
                 <span class="activity-time"><LocalTime Value="@item.Timestamp" Format="LocalTimeFormat.Relative" /></span>
             </div>
@@ -65,12 +67,12 @@
 
     private static string Describe(ActivityLogEntry item) => item.Type switch
     {
-        ActivityType.AttemptLogged => $"{item.User.DisplayName} {AttemptVerb(item.Details)} this",
-        ActivityType.CommentAdded => $"{item.User.DisplayName} commented",
-        ActivityType.BoulderCreated => $"{item.User.DisplayName} created this",
-        ActivityType.BoulderRevised => $"{item.User.DisplayName} revised this",
-        ActivityType.BetaVideoUploaded => $"{item.User.DisplayName} added a beta video",
-        _ => $"{item.User.DisplayName} made a change",
+        ActivityType.AttemptLogged => $"{item.User.Name} {AttemptVerb(item.Details)} this",
+        ActivityType.CommentAdded => $"{item.User.Name} commented",
+        ActivityType.BoulderCreated => $"{item.User.Name} created this",
+        ActivityType.BoulderRevised => $"{item.User.Name} revised this",
+        ActivityType.BetaVideoUploaded => $"{item.User.Name} added a beta video",
+        _ => $"{item.User.Name} made a change",
     };
 
     private static string AttemptVerb(string? details) => details switch

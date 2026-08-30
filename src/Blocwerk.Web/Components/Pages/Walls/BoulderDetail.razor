@@ -72,7 +72,7 @@ else
                 </div>
             }
 
-            <p class="meta">by @_boulder.CreatedBy.DisplayName &middot; <LocalTime Value="@_boulder.CreatedAt" Format="LocalTimeFormat.Date" /></p>
+            <p class="meta">by @_boulder.CreatedBy.Name &middot; <LocalTime Value="@_boulder.CreatedAt" Format="LocalTimeFormat.Date" /></p>
 
             @if (CanFullRevise)
             {
@@ -125,7 +125,7 @@ else
         @if (_activeProposal != null && _isCreator)
         {
             <div class="bw-grade-proposal-notice creator">
-                <p><strong>@_activeProposal.ProposedBy.DisplayName</strong> proposed changing the grade to <strong>@_activeProposal.ProposedGrade</strong></p>
+                <p><strong>@_activeProposal.ProposedBy.Name</strong> proposed changing the grade to <strong>@_activeProposal.ProposedGrade</strong></p>
                 <div class="proposal-actions">
                     <button class="proposal-btn accept" @onclick="AcceptProposal">Accept</button>
                     <button class="proposal-btn reject" @onclick="RejectProposal">Reject</button>
@@ -135,7 +135,7 @@ else
         else if (_activeProposal != null)
         {
             <div class="bw-grade-proposal-notice viewer">
-                <p>A grade change to <strong>@_activeProposal.ProposedGrade</strong> has been proposed by @_activeProposal.ProposedBy.DisplayName</p>
+                <p>A grade change to <strong>@_activeProposal.ProposedGrade</strong> has been proposed by @_activeProposal.ProposedBy.Name</p>
             </div>
         }
 
@@ -308,7 +308,7 @@ else
                     <div class="attempt-row">
                         <div class="attempt-info">
                             <span class="attempt-type @attempt.Type.ToString().ToLower()">@attempt.Type</span>
-                            <span class="attempt-user">@attempt.User.DisplayName</span>
+                            <span class="attempt-user">@attempt.User.Name</span>
                         </div>
                         <span class="attempt-time"><LocalTime Value="@attempt.Timestamp" Format="LocalTimeFormat.DateTime" /></span>
                         @if (attempt.UserId == _currentUserId)

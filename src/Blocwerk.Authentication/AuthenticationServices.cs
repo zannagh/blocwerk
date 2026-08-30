@@ -46,6 +46,10 @@ public static class AuthenticationServices
 
         app.Services.AddScoped<AuthenticationStateProvider, CookieAuthenticationStateProvider>();
         app.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+
+        // TOTP second factor: stateless, so a singleton. Uses the persisted DataProtection key ring to
+        // encrypt the shared secret at rest (see the "blocwerk.totp" protector inside TotpService).
+        app.Services.AddSingleton<ITotpService, TotpService>();
         app.Services.AddSingleton<IAuthorizationHandler, WallGalleryImageHandler>();
 
         var policyScheme = "BlocwerkPolicy";

@@ -54,7 +54,11 @@
                     {
                         <tr>
                             <td>
-                                <a href="/profile/@entry.UserId" class="member-name-link">@entry.DisplayName</a>
+                                <a href="/profile/@entry.UserId" class="member-name-link">
+                                    <UserAvatar UserId="entry.UserId" Name="@entry.DisplayName"
+                                                HasAvatar="entry.HasAvatar" CssClass="avatar-sm" />
+                                    @entry.DisplayName
+                                </a>
                             </td>
                             <td class="num">@(entry.HardestSendGrade ?? "—")</td>
                             <td class="num">@entry.Score</td>

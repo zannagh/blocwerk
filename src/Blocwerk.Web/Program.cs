@@ -231,6 +231,9 @@ public static class Program
         // wall photo routes above.
         app.MapWallPanelPhotos();
 
+        // User avatar bytes; same browser-only auth posture as the wall photo routes above.
+        app.MapUserAvatars();
+
         // Beta clips and their poster frames. Access mirrors the wall photo routes above: a share
         // token takes the anonymous path, otherwise the caller must be signed in.
         // enableRangeProcessing matters here — without it <video> cannot seek, and Safari refuses

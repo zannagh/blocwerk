@@ -164,6 +164,8 @@ public class ApiKeyPrivilegeBoundaryTests
         var service = new CurrentUserService(
             new BlocwerkSettings(),
             h.DbContextFactory,
+            Substitute.For<Blocwerk.Core.Abstractions.IPasswordLoginService>(),
+            Substitute.For<Blocwerk.Authentication.Services.ITotpService>(),
             authenticationStateProvider: null,
             accessor: Accessor(unguarded));
 
@@ -189,6 +191,8 @@ public class ApiKeyPrivilegeBoundaryTests
         var service = new CurrentUserService(
             new BlocwerkSettings(),
             h.DbContextFactory,
+            Substitute.For<Blocwerk.Core.Abstractions.IPasswordLoginService>(),
+            Substitute.For<Blocwerk.Authentication.Services.ITotpService>(),
             authenticationStateProvider: null,
             accessor: Accessor(guarded));
 

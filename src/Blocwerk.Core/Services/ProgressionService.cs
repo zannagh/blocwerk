@@ -548,7 +548,8 @@ public class ProgressionService : IProgressionService
 
                 entries.Add(new WallLeaderboardEntry(
                     member.UserId,
-                    member.User?.DisplayName ?? "Unknown",
+                    member.User?.Name ?? "Unknown",
+                    member.User?.HasAvatar ?? false,
                     hardestGrade,
                     hardestScore,
                     score,

@@ -5,10 +5,12 @@ namespace Blocwerk.Core.Services;
 /// (including the flash bonus) used purely for sorting; <see cref="HardestSendGrade"/> is the grade to
 /// display and is null when the member has no send on this wall. <see cref="Score"/> is the wall-scoped
 /// rolling boulder rating and <see cref="VolumeMinutes"/> the all-time training minutes on this wall.
+/// <see cref="HasAvatar"/> drives whether the row shows the member's uploaded avatar or the initial fallback.
 /// </summary>
 public record WallLeaderboardEntry(
     Guid UserId,
     string DisplayName,
+    bool HasAvatar,
     string? HardestSendGrade,
     int HardestSendScore,
     int Score,

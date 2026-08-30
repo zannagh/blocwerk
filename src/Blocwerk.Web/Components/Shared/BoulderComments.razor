@@ -20,7 +20,9 @@
         {
             <div class="comment-row">
                 <div class="comment-header">
-                    <span class="comment-author">@comment.User.DisplayName</span>
+                    <UserAvatar UserId="comment.User.Id" Name="@comment.User.Name"
+                                HasAvatar="comment.User.HasAvatar" CssClass="avatar-sm" />
+                    <span class="comment-author">@comment.User.Name</span>
                     <span class="comment-time"><LocalTime Value="@comment.CreatedAt" Format="LocalTimeFormat.Relative" /></span>
                     @if (comment.UserId == CurrentUserId)
                     {

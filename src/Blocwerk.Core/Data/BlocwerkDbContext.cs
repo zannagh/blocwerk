@@ -59,6 +59,8 @@ public class BlocwerkDbContext : DbContext
 
     public DbSet<HoldLink> HoldLinks => Set<HoldLink>();
 
+    public DbSet<UserIdentity> UserIdentities => Set<UserIdentity>();
+
     public BlocwerkDbContext(DbContextOptions<BlocwerkDbContext> options)
         : base(options)
     {
@@ -82,6 +84,7 @@ public class BlocwerkDbContext : DbContext
         base.OnModelCreating(modelBuilder);
 
         ConfigureUser(modelBuilder);
+        ConfigureUserIdentity(modelBuilder);
         ConfigureWall(modelBuilder);
         ConfigureWallMember(modelBuilder);
         ConfigureWallSegment(modelBuilder);
@@ -258,12 +261,37 @@ public class BlocwerkDbContext : DbContext
         {
             entity.HasIndex(u => u.Identifier).IsUnique();
 
+            // Password-login username is unique across users. Filtered to non-null so the many users
+            // without a password login (all NULLs) don't collide. Postgres ignores NULLs in a unique
+            // index anyway, but the explicit filter keeps the intent and the SQL identical everywhere.
+            entity.HasIndex(u => u.LoginUsername)
+                .IsUnique()
+                .HasFilter("\"LoginUsername\" IS NOT NULL");
+
             // Home wall is an optional scalar FK (no nav) so it never trips the Wall membership
             // query filter. Deleting the wall nulls the field rather than blocking the delete.
             entity.HasOne<Wall>()
                 .WithMany()
                 .HasForeignKey(u => u.HomeWallId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+    }
+
+    private static void ConfigureUserIdentity(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<UserIdentity>(entity =>
+        {
+            // A provider identity is part of the user aggregate; deleting the user takes its linked
+            // provider identities with it.
+            entity.HasOne(i => i.User)
+                .WithMany(u => u.Identities)
+                .HasForeignKey(i => i.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // A given provider subject maps to exactly one local user.
+            entity.HasIndex(i => new { i.Provider, i.ProviderUserId }).IsUnique();
+
+            entity.HasIndex(i => i.UserId);
         });
     }
 

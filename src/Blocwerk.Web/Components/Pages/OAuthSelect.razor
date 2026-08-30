@@ -21,6 +21,11 @@
         <div class="oauth-error" role="alert">Sign-in didn't complete. Please try again.</div>
     }
 
+    @if (PasswordError is not null)
+    {
+        <div class="oauth-error" role="alert">Invalid username or password.</div>
+    }
+
     @* data-enhance-nav="false": these links 302 to a cross-origin OAuth provider, which Blazor's
        enhanced navigation cannot apply (it fetch()es the link and silently drops a cross-origin
        redirect). Force a real full-document navigation so the browser follows the provider redirect. *@
@@ -70,6 +75,25 @@
         <span>Remember my sign-in method on this device</span>
     </label>
 
+    @* Password sign-in for accounts that set a username + password (in Profile). A plain form POST to
+       the AccountController — no Blazor circuit needed. data-enhance-nav="false" so the browser does a
+       real navigation and follows the controller's redirect. AntiforgeryToken emits the
+       __RequestVerificationToken the [ValidateAntiForgeryToken] action requires. *@
+    <div class="password-login" data-enhance-nav="false">
+        <div class="password-divider"><span>or sign in with a password</span></div>
+        <form method="post" action="/account/password">
+            <AntiforgeryToken />
+            <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+            <label class="field-label" for="pw-username">Username</label>
+            <input id="pw-username" class="text-input" type="text" name="username"
+                   autocomplete="username" maxlength="64" required />
+            <label class="field-label" for="pw-password">Password</label>
+            <input id="pw-password" class="text-input" type="password" name="password"
+                   autocomplete="current-password" required />
+            <button type="submit" class="provider-button password-submit">Sign in</button>
+        </form>
+    </div>
+
     <div class="footer">
         <p>Secure authentication via OAuth 2.0</p>
     </div>
@@ -97,6 +121,7 @@
 
 @code {
     [SupplyParameterFromQuery(Name = "error")] public string? Error { get; set; }
+    [SupplyParameterFromQuery(Name = "perror")] public string? PasswordError { get; set; }
     [SupplyParameterFromQuery(Name = "returnUrl")] public string? ReturnUrl { get; set; }
 
     // Links default to remember=0 (fail-safe); the inline script flips them to 1 while the box is

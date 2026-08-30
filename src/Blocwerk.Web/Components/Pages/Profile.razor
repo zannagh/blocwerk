@@ -5,6 +5,8 @@
 @inject ICurrentUserService CurrentUserService
 @inject IProgressionService ProgressionService
 @inject IWallService WallService
+@inject Blocwerk.Core.Configuration.BlocwerkSettings Settings
+@inject NavigationManager Navigation
 @using Blocwerk.Core.Helpers
 
 <PageTitle>Profile - Blocwerk</PageTitle>
@@ -24,17 +26,202 @@
     else
     {
         <div class="profile-card">
-            <div class="avatar">@_target.DisplayName.FirstOrDefault()</div>
-            <h1>@_target.DisplayName</h1>
+            <UserAvatar UserId="_target.Id" Name="_target.Name" HasAvatar="_target.HasAvatar" />
+            <h1>@_target.Name</h1>
             <span class="role-badge">@_target.Role</span>
             <p class="member-since">Member since <LocalTime Value="@_target.CreatedAt" Format="LocalTimeFormat.MonthYear" /></p>
         </div>
 
         @if (_isSelf)
         {
+            <div class="section">
+                <h2>Profile</h2>
+
+                <div class="field-group">
+                    <label class="field-label" for="display-name">Display name</label>
+                    <input id="display-name" class="text-input" maxlength="256" @bind="_nameInput" @bind:event="oninput" />
+                    <div class="field-actions">
+                        <button class="btn-primary" @onclick="SaveDisplayNameAsync" disabled="@_savingName">Save</button>
+                        @if (!string.IsNullOrWhiteSpace(_target.CustomDisplayName))
+                        {
+                            <button class="btn-secondary" @onclick="ResetDisplayNameAsync" disabled="@_savingName">Reset to @_target.DisplayName</button>
+                        }
+                    </div>
+                    <p class="member-since">Leave empty to use your account name (@_target.DisplayName).</p>
+                    @if (_nameError != null)
+                    {
+                        <p class="field-error">@_nameError</p>
+                    }
+                </div>
+
+                <div class="field-group">
+                    <label class="field-label">Profile picture</label>
+                    <div class="field-actions">
+                        <InputFile OnChange="OnAvatarSelectedAsync" accept="image/*" disabled="@_savingAvatar" />
+                        @if (_target.HasAvatar)
+                        {
+                            <button class="btn-secondary" @onclick="RemoveAvatarAsync" disabled="@_savingAvatar">Remove photo</button>
+                        }
+                    </div>
+                    <p class="member-since">JPEG, PNG or WebP, up to 4 MB.</p>
+                    @if (_avatarError != null)
+                    {
+                        <p class="field-error">@_avatarError</p>
+                    }
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>Password sign-in</h2>
+                @if (_target.HasPassword)
+                {
+                    <p class="member-since">
+                        A password is set for username <strong>@_target.LoginUsername</strong>.
+                        You can sign in without a provider. Enter a new username and password below to change it.
+                    </p>
+                }
+                else
+                {
+                    <p class="member-since">
+                        Set a username and password to sign in without an OAuth provider. This never
+                        replaces your linked accounts — it's an additional way in.
+                    </p>
+                }
+
+                <div class="field-group">
+                    <label class="field-label" for="login-username">Username</label>
+                    <input id="login-username" class="text-input" maxlength="64" autocomplete="off"
+                           @bind="_pwUsername" @bind:event="oninput" />
+
+                    @if (_target.HasPassword)
+                    {
+                        <label class="field-label" for="login-current-password">Current password</label>
+                        <input id="login-current-password" class="text-input" type="password" autocomplete="current-password"
+                               @bind="_pwCurrent" @bind:event="oninput" />
+                    }
+
+                    <label class="field-label" for="login-password">Password</label>
+                    <input id="login-password" class="text-input" type="password" autocomplete="new-password"
+                           @bind="_pwPassword" @bind:event="oninput" />
+
+                    <label class="field-label" for="login-password-confirm">Confirm password</label>
+                    <input id="login-password-confirm" class="text-input" type="password" autocomplete="new-password"
+                           @bind="_pwConfirm" @bind:event="oninput" />
+
+                    <div class="field-actions">
+                        <button class="btn-primary" @onclick="SavePasswordAsync" disabled="@_savingPassword">
+                            @(_target.HasPassword ? "Change password" : "Set password")
+                        </button>
+                    </div>
+                    <p class="member-since">Username 3–64 characters (letters, digits, dot, underscore, hyphen); password at least 8 characters.</p>
+                    @if (_passwordError != null)
+                    {
+                        <p class="field-error">@_passwordError</p>
+                    }
+                    @if (_passwordSuccess)
+                    {
+                        <p class="field-label">Password saved.</p>
+                    }
+                </div>
+            </div>
+
+            @if (_target.HasPassword)
+            {
+                <div class="section">
+                    <h2>Two-factor authentication</h2>
+                    @if (_target.HasTotp)
+                    {
+                        <p class="member-since">
+                            Two-factor authentication is <strong>on</strong>. It is required <strong>only when
+                            you sign in with your username &amp; password</strong> — signing in through a linked
+                            OAuth provider is not affected. Enter a current code to turn it off.
+                        </p>
+                        <div class="field-group">
+                            <label class="field-label" for="totp-disable">6-digit code</label>
+                            <input id="totp-disable" class="text-input" inputmode="numeric" maxlength="8"
+                                   autocomplete="one-time-code" @bind="_totpCode" @bind:event="oninput" />
+                            <div class="field-actions">
+                                <button class="btn-secondary" @onclick="DisableTotpAsync" disabled="@_totpBusy">Disable 2FA</button>
+                            </div>
+                        </div>
+                        @if (_totpError != null)
+                        {
+                            <p class="field-error">@_totpError</p>
+                        }
+                    }
+                    else if (_totpEnrollment != null)
+                    {
+                        <p class="member-since">
+                            Scan this QR code with your authenticator app (or enter the secret manually),
+                            then enter a code below to finish enabling 2FA.
+                        </p>
+                        <img class="totp-qr" width="220" height="220" alt="TOTP QR code"
+                             src="data:image/png;base64,@Convert.ToBase64String(_totpEnrollment.QrPng)" />
+                        <p class="member-since">Secret: <code>@_totpEnrollment.Secret</code></p>
+
+                        <div class="field-group">
+                            <label class="field-label" for="totp-confirm">6-digit code</label>
+                            <input id="totp-confirm" class="text-input" inputmode="numeric" maxlength="8"
+                                   autocomplete="one-time-code" @bind="_totpCode" @bind:event="oninput" />
+                            <div class="field-actions">
+                                <button class="btn-primary" @onclick="ConfirmTotpAsync" disabled="@_totpBusy">Confirm &amp; enable</button>
+                                <button class="btn-secondary" @onclick="CancelTotpEnrollment" disabled="@_totpBusy">Cancel</button>
+                            </div>
+                            @if (_totpError != null)
+                            {
+                                <p class="field-error">@_totpError</p>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="member-since">
+                            Add a second factor: after your password, sign-in will ask for a rotating
+                            6-digit code from an authenticator app (Google Authenticator, Aegis, 1Password…).
+                        </p>
+                        <div class="field-actions">
+                            <button class="btn-primary" @onclick="EnableTotpAsync" disabled="@_totpBusy">Enable 2FA</button>
+                        </div>
+                        @if (_totpError != null)
+                        {
+                            <p class="field-error">@_totpError</p>
+                        }
+                    }
+                </div>
+            }
+
             <div class="profile-links">
                 <a href="/settings/api-keys">API keys</a>
             </div>
+
+            @if (_allProviders.Count > 0)
+            {
+                <div class="section">
+                    <h2>Linked accounts</h2>
+                    @if (_linkMessage != null)
+                    {
+                        <p class="field-label">@_linkMessage</p>
+                    }
+                    <p class="member-since">Sign in with any linked provider to reach this account. Linking a provider that already belongs to another account merges that account into this one.</p>
+                    <div class="field-group">
+                        @foreach (var provider in _allProviders)
+                        {
+                            <div class="field-actions">
+                                <span class="field-label">@provider.Label</span>
+                                @if (_linkedProviders.Contains(provider.Key))
+                                {
+                                    <span class="role-badge">Linked</span>
+                                }
+                                else
+                                {
+                                    <button class="btn-secondary" @onclick="() => StartLink(provider.Key)">Link @provider.Label</button>
+                                }
+                            </div>
+                        }
+                    </div>
+                    <p class="member-since">Unlinking a provider isn't supported yet.</p>
+                </div>
+            }
 
             <div class="section">
                 <div class="progression-header">
@@ -112,6 +299,13 @@
     [Parameter]
     public Guid? UserId { get; set; }
 
+    [SupplyParameterFromQuery(Name = "link")]
+    public string? LinkResult { get; set; }
+
+    private IReadOnlyList<string> _linkedProviders = [];
+    private List<(string Key, string Label)> _allProviders = [];
+    private string? _linkMessage;
+
     private User? _viewer;
     private User? _target;
     private UserProgression? _progression;
@@ -122,6 +316,26 @@
     private int _boulderGradeSpan = 5;
     private List<Wall> _myWalls = [];
     private string? _homeWallError;
+
+    private const long MaxAvatarBytes = 4L * 1024 * 1024;
+    private string _nameInput = string.Empty;
+    private bool _savingName;
+    private string? _nameError;
+    private bool _savingAvatar;
+    private string? _avatarError;
+
+    private string _pwUsername = string.Empty;
+    private string _pwCurrent = string.Empty;
+    private string _pwPassword = string.Empty;
+    private string _pwConfirm = string.Empty;
+    private bool _savingPassword;
+    private string? _passwordError;
+    private bool _passwordSuccess;
+
+    private TotpEnrollment? _totpEnrollment;
+    private string _totpCode = string.Empty;
+    private bool _totpBusy;
+    private string? _totpError;
 
     // Window/grouping for the other-user view is kept locally: it must not persist onto the viewer's
     // own settings, nor onto the target's. Self view reuses the persisted per-user settings.
@@ -154,8 +368,12 @@
         {
             _isSelf = true;
             _target = _viewer;
+            _nameInput = _viewer.CustomDisplayName ?? string.Empty;
             _progression = await ProgressionService.GetProgressionAsync();
             _myWalls = await WallService.GetMyWallsAsync();
+            _linkedProviders = await CurrentUserService.GetLinkedProvidersAsync();
+            _allProviders = EnabledProviders();
+            _linkMessage = LinkResultMessage(LinkResult);
         }
         else
         {
@@ -173,6 +391,45 @@
         }
 
         _loading = false;
+    }
+
+    // Enabled providers, in a stable display order, for the linked-accounts list.
+    private List<(string Key, string Label)> EnabledProviders()
+    {
+        var providers = new List<(string, string)>();
+        if (Settings.GitHubOAuth.Enabled)
+        {
+            providers.Add(("github", "GitHub"));
+        }
+
+        if (Settings.GoogleOAuth.Enabled)
+        {
+            providers.Add(("google", "Google"));
+        }
+
+        if (Settings.MicrosoftOAuth.Enabled)
+        {
+            providers.Add(("microsoft", "Microsoft"));
+        }
+
+        return providers;
+    }
+
+    private static string? LinkResultMessage(string? result) => result switch
+    {
+        "linked" => "Account linked.",
+        "merged" => "Accounts merged — the other account was absorbed into this one.",
+        "already" => "That account is already linked to this profile.",
+        "error" => "Couldn't link that account. Please try again.",
+        "unavailable" => "That provider isn't available.",
+        _ => null,
+    };
+
+    private void StartLink(string provider)
+    {
+        // Full navigation (not enhanced): /account/link 302s to a cross-origin OAuth provider, which
+        // Blazor's fetch-based enhanced navigation cannot follow.
+        Navigation.NavigateTo($"/account/link?provider={Uri.EscapeDataString(provider)}", forceLoad: true);
     }
 
     private async Task OnWindowChange(ChangeEventArgs e)
@@ -240,6 +497,229 @@
         {
             _homeWallError = "Couldn't update your main wall. Please try again.";
         }
+    }
+
+    private async Task SaveDisplayNameAsync()
+    {
+        _savingName = true;
+        _nameError = null;
+        try
+        {
+            await CurrentUserService.SetDisplayNameAsync(_nameInput);
+            CurrentUserService.InvalidateCache();
+            await ReloadSelfAsync();
+        }
+        catch (Exception)
+        {
+            _nameError = "Couldn't update your display name. Please try again.";
+        }
+        finally
+        {
+            _savingName = false;
+        }
+    }
+
+    private async Task ResetDisplayNameAsync()
+    {
+        _nameInput = string.Empty;
+        await SaveDisplayNameAsync();
+    }
+
+    private async Task OnAvatarSelectedAsync(InputFileChangeEventArgs e)
+    {
+        _savingAvatar = true;
+        _avatarError = null;
+        try
+        {
+            var file = e.File;
+            if (file.Size > MaxAvatarBytes)
+            {
+                _avatarError = "That image is too large (max 4 MB).";
+                return;
+            }
+
+            using var stream = file.OpenReadStream(MaxAvatarBytes);
+            using var memory = new MemoryStream();
+            await stream.CopyToAsync(memory);
+
+            await CurrentUserService.SetAvatarAsync(memory.ToArray(), file.ContentType);
+            CurrentUserService.InvalidateCache();
+            await ReloadSelfAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            _avatarError = ex.Message;
+        }
+        catch (Exception)
+        {
+            _avatarError = "Couldn't update your photo. Please try again.";
+        }
+        finally
+        {
+            _savingAvatar = false;
+        }
+    }
+
+    private async Task RemoveAvatarAsync()
+    {
+        _savingAvatar = true;
+        _avatarError = null;
+        try
+        {
+            await CurrentUserService.SetAvatarAsync(null, null);
+            CurrentUserService.InvalidateCache();
+            await ReloadSelfAsync();
+        }
+        catch (Exception)
+        {
+            _avatarError = "Couldn't remove your photo. Please try again.";
+        }
+        finally
+        {
+            _savingAvatar = false;
+        }
+    }
+
+    private async Task SavePasswordAsync()
+    {
+        _savingPassword = true;
+        _passwordError = null;
+        _passwordSuccess = false;
+        try
+        {
+            if (_pwPassword.Length < 8)
+            {
+                _passwordError = "Password must be at least 8 characters.";
+                return;
+            }
+
+            if (_pwPassword != _pwConfirm)
+            {
+                _passwordError = "The passwords don't match.";
+                return;
+            }
+
+            // Server-side validation (username format, case-insensitive uniqueness, and — when a password
+            // already exists — the current-password step-up check) runs in the service and surfaces here
+            // as InvalidOperationException. currentPassword is ignored for a first-time set.
+            var currentPassword = _target?.HasPassword == true ? _pwCurrent : null;
+            await CurrentUserService.SetPasswordAsync(_pwUsername, _pwPassword, currentPassword);
+            CurrentUserService.InvalidateCache();
+            await ReloadSelfAsync();
+
+            _pwCurrent = string.Empty;
+            _pwPassword = string.Empty;
+            _pwConfirm = string.Empty;
+            _passwordSuccess = true;
+        }
+        catch (InvalidOperationException ex)
+        {
+            _passwordError = ex.Message;
+        }
+        catch (Exception)
+        {
+            _passwordError = "Couldn't save your password. Please try again.";
+        }
+        finally
+        {
+            _savingPassword = false;
+        }
+    }
+
+    private async Task EnableTotpAsync()
+    {
+        _totpBusy = true;
+        _totpError = null;
+        try
+        {
+            _totpEnrollment = await CurrentUserService.BeginTotpEnrollmentAsync();
+            _totpCode = string.Empty;
+        }
+        catch (InvalidOperationException ex)
+        {
+            _totpError = ex.Message;
+        }
+        catch (Exception)
+        {
+            _totpError = "Couldn't start two-factor setup. Please try again.";
+        }
+        finally
+        {
+            _totpBusy = false;
+        }
+    }
+
+    private async Task ConfirmTotpAsync()
+    {
+        _totpBusy = true;
+        _totpError = null;
+        try
+        {
+            var ok = await CurrentUserService.ConfirmTotpAsync(_totpCode);
+            if (ok)
+            {
+                _totpEnrollment = null;
+                _totpCode = string.Empty;
+                CurrentUserService.InvalidateCache();
+                await ReloadSelfAsync();
+            }
+            else
+            {
+                _totpError = "That code didn't match. Check your app's time and try again.";
+            }
+        }
+        catch (Exception)
+        {
+            _totpError = "Couldn't verify that code. Please try again.";
+        }
+        finally
+        {
+            _totpBusy = false;
+        }
+    }
+
+    private void CancelTotpEnrollment()
+    {
+        _totpEnrollment = null;
+        _totpCode = string.Empty;
+        _totpError = null;
+    }
+
+    private async Task DisableTotpAsync()
+    {
+        _totpBusy = true;
+        _totpError = null;
+        try
+        {
+            // Step-up: a current authenticator code is required to disable 2FA.
+            var ok = await CurrentUserService.DisableTotpAsync(_totpCode);
+            if (ok)
+            {
+                _totpEnrollment = null;
+                _totpCode = string.Empty;
+                CurrentUserService.InvalidateCache();
+                await ReloadSelfAsync();
+            }
+            else
+            {
+                _totpError = "That code didn't match. Check your app's time and try again.";
+            }
+        }
+        catch (Exception)
+        {
+            _totpError = "Couldn't disable two-factor. Please try again.";
+        }
+        finally
+        {
+            _totpBusy = false;
+        }
+    }
+
+    private async Task ReloadSelfAsync()
+    {
+        _viewer = await CurrentUserService.GetCurrentUserAsync();
+        _target = _viewer;
+        _nameInput = _viewer.CustomDisplayName ?? string.Empty;
     }
 
     // ---- chart data builders (mirrors Activity's progression charts) ----

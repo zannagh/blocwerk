@@ -9,6 +9,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- TOTP second factor: code generation/verification + Base32, and the enrolment QR PNG. -->
+    <PackageReference Include="Otp.NET" />
+    <PackageReference Include="QRCoder" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Blocwerk.Core\Blocwerk.Core.csproj" />
   </ItemGroup>
 

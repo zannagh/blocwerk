@@ -146,7 +146,7 @@ public class BetaVideoService : IBetaVideoService
                 video.Id,
                 boulderId,
                 user.Id,
-                user.DisplayName,
+                user.Name,
                 video.CreatedAt,
                 video.ContentType,
                 video.SizeBytes,
@@ -341,7 +341,10 @@ public class BetaVideoService : IBetaVideoService
                 v.Id,
                 v.BoulderId,
                 v.UploadedByUserId,
-                v.UploadedBy.DisplayName,
+
+                // Server-side projection: the User.Name computed property is not mapped, so inline
+                // its fallback (custom name when set, else the OAuth name) for EF to translate.
+                v.UploadedBy.CustomDisplayName ?? v.UploadedBy.DisplayName,
                 v.CreatedAt,
                 v.ContentType,
                 v.SizeBytes,

@@ -17,6 +17,22 @@ public static class ClaimsHelper
         return new ClaimsIdentity(claims, authenticationScheme);
     }
 
+    public static ClaimsIdentity ClaimsIdentityFromUserNameAndIdAndProvider(string userName, string userId, string provider, string authenticationScheme = "Bearer")
+    {
+        var identity = ClaimsIdentityFromUserNameAndId(userName, userId, authenticationScheme);
+        if (!string.IsNullOrEmpty(provider))
+        {
+            identity.AddClaim(new Claim("provider", provider));
+        }
+
+        return identity;
+    }
+
+    public static string GetProvider(this ClaimsIdentity identity)
+    {
+        return identity.FindFirst("provider")?.Value ?? string.Empty;
+    }
+
     public static string ToUserId(this ClaimsIdentity identity)
     {
         return identity.FindFirst(ClaimTypes.NameIdentifier)?.Value

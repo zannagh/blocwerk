@@ -3,6 +3,7 @@ using System;
 using Blocwerk.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blocwerk.Core.Migrations
 {
     [DbContext(typeof(BlocwerkDbContext))]
-    partial class BlocwerkDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260829233137_AddUserTotp")]
+    partial class AddUserTotp
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -689,9 +692,6 @@ namespace Blocwerk.Core.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
 
-                    b.Property<int>("FailedAuthCount")
-                        .HasColumnType("integer");
-
                     b.Property<Guid?>("HomeWallId")
                         .HasColumnType("uuid");
 
@@ -699,9 +699,6 @@ namespace Blocwerk.Core.Migrations
                         .IsRequired()
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
-
-                    b.Property<DateTimeOffset?>("LockoutUntil")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("LoginUsername")
                         .HasMaxLength(64)
@@ -721,9 +718,6 @@ namespace Blocwerk.Core.Migrations
 
                     b.Property<bool>("TotpEnabled")
                         .HasColumnType("boolean");
-
-                    b.Property<long?>("TotpLastUsedStep")
-                        .HasColumnType("bigint");
 
                     b.Property<string>("TotpSecretProtected")
                         .HasColumnType("text");

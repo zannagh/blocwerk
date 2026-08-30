@@ -220,7 +220,7 @@ else
                     {
                         <div class="activity-row">
                             <span class="activity-icon">@ActivityIcon(item.Type)</span>
-                            <span class="activity-text">@item.User.DisplayName @ActivityVerb(item.Type)</span>
+                            <span class="activity-text">@item.User.Name @ActivityVerb(item.Type)</span>
                             <span class="activity-time"><LocalTime Value="@item.Timestamp" Format="LocalTimeFormat.Relative" /></span>
                         </div>
                     }
@@ -257,7 +257,11 @@ else
                         @foreach (var member in _members)
                         {
                             <div class="member-row">
-                                <a href="/profile/@member.UserId" class="member-name-link">@(member.User?.DisplayName ?? "Unknown")</a>
+                                <a href="/profile/@member.UserId" class="member-name-link">
+                                    <UserAvatar UserId="member.UserId" Name="@(member.User?.Name ?? "Unknown")"
+                                                HasAvatar="member.User?.HasAvatar ?? false" CssClass="avatar-sm" />
+                                    @(member.User?.Name ?? "Unknown")
+                                </a>
                                 @if (member.UserId == _wall.OwnerId)
                                 {
                                     <span class="member-role owner">Owner</span>
@@ -934,7 +938,7 @@ else
         var newRole = member.Role == WallRole.Admin ? WallRole.Member : WallRole.Admin;
         await WallService.SetMemberRoleAsync(WallId, member.UserId, newRole);
         member.Role = newRole;
-        await ShowToast($"{member.User.DisplayName} is now {newRole}");
+        await ShowToast($"{member.User.Name} is now {newRole}");
     }
 
     private async Task GenerateShareLink()

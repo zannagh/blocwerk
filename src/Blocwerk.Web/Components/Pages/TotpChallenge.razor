@@ -1,0 +1,40 @@
+@page "/account/totp"
+@layout EmptyLayout
+
+@* Static SSR by design (no @rendermode): the challenge must work the instant the HTML lands, exactly
+   like the sign-in page. The form is a plain POST to the AccountController, which reads the signed,
+   single-use pending cookie set by the password step — this page carries no secret itself. A GET here
+   without that cookie simply shows an inert form; the POST is what enforces "password first". *@
+
+<PageTitle>Two-factor - Blocwerk</PageTitle>
+
+<div class="oauth-container">
+    <div class="header">
+        <h1>Blocwerk</h1>
+        <p>Enter the 6-digit code from your authenticator app</p>
+    </div>
+
+    @if (Error is not null)
+    {
+        <div class="oauth-error" role="alert">That code didn't work. Please try again.</div>
+    }
+
+    <div class="password-login" data-enhance-nav="false">
+        <form method="post" action="/account/totp">
+            <AntiforgeryToken />
+            <label class="field-label" for="totp-code">Authentication code</label>
+            <input id="totp-code" class="text-input" type="text" name="code"
+                   inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*"
+                   maxlength="8" autofocus required />
+            <button type="submit" class="provider-button password-submit">Verify</button>
+        </form>
+    </div>
+
+    <div class="footer">
+        <p>Lost your device? Sign in with a linked provider instead.</p>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "terror")] public string? Error { get; set; }
+}

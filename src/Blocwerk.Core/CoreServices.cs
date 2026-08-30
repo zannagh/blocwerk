@@ -59,6 +59,15 @@ public static class CoreServices
         builder.Services.AddScoped<IProgressionService, ProgressionService>();
         builder.Services.AddScoped<ITrainingService, TrainingService>();
         builder.Services.AddScoped<ISessionService, SessionService>();
+        builder.Services.AddScoped<IAccountMergeService, AccountMergeService>();
+
+        // Password login: the hasher is stateless (singleton); the credential/lookup service is scoped
+        // like the other DB services.
+        builder.Services.AddSingleton<IPasswordService, PasswordService>();
+        builder.Services.AddScoped<IPasswordLoginService, PasswordLoginService>();
+
+        // Per-user, persisted brute-force lockout shared by the password and TOTP login endpoints.
+        builder.Services.AddScoped<ILoginLockoutService, LoginLockoutService>();
 
         // Polls the DB for the "how many exist now" telemetry gauges (walls, boulders, users...).
         builder.Services.AddHostedService<TelemetryStatsCollector>();

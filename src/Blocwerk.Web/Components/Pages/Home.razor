@@ -37,6 +37,19 @@
             var target = LastPageRedirect.Resolve(stored, "/walls");
 
             Navigation.NavigateTo(target, replace: true);
+            return;
+        }
+
+        // Logged out: a device that has signed in before (blocwerk-returning is set on every successful
+        // sign-in) skips the Get Started landing and goes straight to login, which itself silently
+        // re-auths when a method is remembered. First-time visitors fall through to the CTA. HttpContext
+        // is live on the prerender pass and null on an interactive re-render, so a missing cookie simply
+        // shows the landing rather than crashing.
+        var returning = HttpContextAccessor.HttpContext?.Request.Cookies["blocwerk-returning"];
+        if (!string.IsNullOrEmpty(returning))
+        {
+            _redirecting = true;
+            Navigation.NavigateTo("/account/login", forceLoad: true);
         }
     }
 }
