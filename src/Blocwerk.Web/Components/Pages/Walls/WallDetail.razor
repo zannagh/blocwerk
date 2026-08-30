@@ -363,7 +363,32 @@ else
                     </div>
 
                     <div class="wall-photo-container">
-                        @if (_wall.UsesMultipleImages && _viewMode == ViewMode.Photo && _livePanels.Count > 0)
+                        @if (_wall.UsesMultipleImages && _viewMode == ViewMode.Photo && _livePanels.Count > 0 && _isAdmin && _isEditing && _editingPanel != null)
+                        {
+                            @* Big wall in edit mode: scope the single-image editor to one live panel
+                               (its own photo + holds) and let the admin step between panels. Wall-level
+                               tools (border, segments, redetect, merge, alignment) are inert here —
+                               those belong to the wall/panel-grid settings, not per-panel hold editing. *@
+                            <div class="panel-selector">
+                                <button class="btn-icon" @onclick="() => StepEditingPanel(-1)"
+                                        disabled="@(_livePanels.Count < 2)" title="Previous panel">‹</button>
+                                <span class="panel-selector-label">Panel @(_livePanels.FindIndex(p => p.Id == _editingPanel.Id) + 1)/@_livePanels.Count</span>
+                                <button class="btn-icon" @onclick="() => StepEditingPanel(1)"
+                                        disabled="@(_livePanels.Count < 2)" title="Next panel">›</button>
+                            </div>
+                            <WallPhotoEditor WallId="_wall.Id"
+                                             PhotoUrlOverride="@($"/api/walls/{_wall.Id}/panels/{_editingPanel!.Id}/photo")"
+                                             Holds="_editingPanelHolds"
+                                             BorderPoints="new List<ShapePoint>()"
+                                             Segments="null"
+                                             CanEdit="true"
+                                             BottomToolbar="true"
+                                             IsStaging="false"
+                                             ManualAlignment="false"
+                                             OnBatchSave="OnPanelBatchSave"
+                                             OnRequestHoldUsage="@(_isAnonymous ? null : LoadHoldUsage)" />
+                        }
+                        else if (_wall.UsesMultipleImages && _viewMode == ViewMode.Photo && _livePanels.Count > 0)
                         {
                             @* Big wall: step between the live panel images instead of one flat photo.
                                Editing the panel grid lives in the wall settings, never here. *@
@@ -546,6 +571,8 @@ else
     private List<ShapePoint> _borderPoints = [];
     private List<WallSegment> _segments = [];
     private List<WallPanelInfo> _livePanels = [];
+    private WallPanelInfo? _editingPanel;
+    private List<Hold> _editingPanelHolds = [];
     private List<Boulder> _boulders = [];
     private List<BoulderListItem> _items = [];
     private bool _isAdmin;
@@ -864,6 +891,7 @@ else
         if (_wall is not { UsesMultipleImages: true })
         {
             _livePanels = [];
+            _editingPanel = null;
             return;
         }
 
@@ -876,10 +904,96 @@ else
         {
             _livePanels = [];
         }
+
+        // Keep the edited-panel selection pointing at a panel that still exists after a reload.
+        if (_editingPanel is not null && _livePanels.All(p => p.Id != _editingPanel.Id))
+        {
+            _editingPanel = _livePanels.Count > 0 ? _livePanels[0] : null;
+        }
     }
 
     private async Task<IReadOnlyList<PanelHold>> LoadPanelHolds(Guid panelId) =>
         await WallPanelService.GetPanelHoldsAsync(WallId, panelId, includeStaged: false);
+
+    /// <summary>
+    /// Loads the editable working set of full holds for the panel currently being edited on a big
+    /// wall. Cloned like <c>_holds</c> is: the photo editor mutates hold coordinates in place while
+    /// dragging, so handing it the cached read result would corrupt shared state.
+    /// </summary>
+    private async Task LoadEditingPanelHolds()
+    {
+        if (_editingPanel is null)
+        {
+            _editingPanelHolds = [];
+            return;
+        }
+
+        var holds = await WallPanelService.GetPanelHoldEntitiesAsync(WallId, _editingPanel.Id);
+        _editingPanelHolds = holds.Select(h => h.Clone()).ToList();
+    }
+
+    /// <summary>
+    /// Selects a panel to edit on a big wall and reloads its holds. Used by the panel selector.
+    /// </summary>
+    private async Task SelectEditingPanel(WallPanelInfo panel)
+    {
+        _editingPanel = panel;
+        await LoadEditingPanelHolds();
+    }
+
+    private async Task StepEditingPanel(int delta)
+    {
+        if (_editingPanel is null || _livePanels.Count == 0)
+        {
+            return;
+        }
+
+        var idx = _livePanels.FindIndex(p => p.Id == _editingPanel.Id);
+        if (idx < 0)
+        {
+            idx = 0;
+        }
+
+        var next = ((idx + delta) % _livePanels.Count + _livePanels.Count) % _livePanels.Count;
+        await SelectEditingPanel(_livePanels[next]);
+    }
+
+    /// <summary>
+    /// Batch-saves per-panel hold edits. Mirrors <see cref="OnBatchSave"/>, except added holds go
+    /// through <c>AddPanelHoldAsync</c> so they stay parented to the edited panel; updates and
+    /// deletes reuse the by-id wall APIs (which preserve <c>WallPanelId</c>).
+    /// </summary>
+    private async Task OnPanelBatchSave(WallPhotoEditor.BatchChanges changes)
+    {
+        if (_editingPanel is null)
+        {
+            return;
+        }
+
+        foreach (var hold in changes.Added)
+        {
+            var savedId = await WallPanelService.AddPanelHoldAsync(
+                WallId, _editingPanel.Id, hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.ShapePoints, hold.Material);
+            var local = _editingPanelHolds.FirstOrDefault(h => h.Id == hold.Id);
+            if (local != null)
+            {
+                local.Id = savedId;
+            }
+        }
+
+        foreach (var hold in changes.Updated)
+        {
+            await WallService.UpdateHoldAsync(hold.Id, hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.IsOnKickboard, hold.ShapePoints, hold.Name, hold.Material);
+        }
+
+        foreach (var holdId in changes.Deleted)
+        {
+            await WallService.DeleteHoldAsync(holdId);
+        }
+
+        await LoadEditingPanelHolds();
+        await ShowToast($"Saved {changes.Added.Count + changes.Updated.Count + changes.Deleted.Count} changes");
+    }
 
     private void OnWallAngleInput(ChangeEventArgs e)
     {
@@ -930,9 +1044,17 @@ else
         await ShowToast($"Detected {count} holds");
     }
 
-    private void ToggleEditing()
+    private async Task ToggleEditing()
     {
         _isEditing = !_isEditing;
+
+        // Entering edit mode on a big wall: default to the first live panel and load its editable
+        // holds so the per-panel editor branch has a non-null selection to render.
+        if (_isEditing && _wall is { UsesMultipleImages: true } && _livePanels.Count > 0)
+        {
+            _editingPanel ??= _livePanels[0];
+            await LoadEditingPanelHolds();
+        }
     }
 
     private Task GoToBoulders() => _carousel?.GoToPageAsync(4) ?? Task.CompletedTask;

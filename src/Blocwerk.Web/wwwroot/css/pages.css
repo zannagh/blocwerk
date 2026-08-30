@@ -1911,6 +1911,23 @@ html.bw-fullscreen .wall-main .photo-viewport {
 .maintenance-notice p { margin: 0; }
 .maintenance-icon { font-size: 2.4rem; line-height: 1; }
 
+/* Prev/next selector shown above the per-panel hold editor on a big wall. */
+.panel-selector {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+.panel-selector-label {
+    min-width: 84px;
+    text-align: center;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
 .panel-stepper-pair {
     display: grid;
     grid-template-columns: 1fr 1fr;

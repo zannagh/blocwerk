@@ -112,7 +112,7 @@
 <div class="photo-viewport" @ref="_viewportRef"
      style="cursor: @CursorForMode();">
 <div class="photo-editor" @ref="_containerRef">
-    <img src="@PhotoUrl" alt="Wall" class="wall-photo" />
+    <img src="@EffectivePhotoUrl" alt="Wall" class="wall-photo" />
     <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none"
          @onclick="OnSvgClick"
          @onmousedown="OnSvgMouseDown"
@@ -595,6 +595,12 @@
     [Parameter] public List<WallSegment>? Segments { get; set; }
     [Parameter] public bool CanEdit { get; set; }
     [Parameter] public string? ShareToken { get; set; }
+
+    /// <summary>
+    /// When set, overrides the computed photo URL. Big walls point the editor at a specific
+    /// panel's photo endpoint; single-image callers leave this null and keep the computed URL.
+    /// </summary>
+    [Parameter] public string? PhotoUrlOverride { get; set; }
     [Parameter] public EventCallback<Hold> OnHoldAdded { get; set; }
     [Parameter] public EventCallback<Hold> OnHoldUpdated { get; set; }
     [Parameter] public EventCallback<Guid> OnHoldDeleted { get; set; }
@@ -729,6 +735,8 @@
         : !string.IsNullOrEmpty(ShareToken)
             ? $"/api/walls/{WallId}/photo?token={ShareToken}"
             : $"/api/walls/{WallId}/photo";
+
+    private string EffectivePhotoUrl => PhotoUrlOverride ?? PhotoUrl;
 
     private bool IsStagedHold(Hold h) => IsStaging && h.Generation > LiveGeneration;
     private bool IsLiveHold(Hold h) => IsStaging && h.Generation <= LiveGeneration;

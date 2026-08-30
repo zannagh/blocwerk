@@ -1,3 +1,6 @@
+using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
+
 namespace Blocwerk.Core.Services;
 
 /// <summary>
@@ -83,6 +86,15 @@ public interface IWallPanelService
     Task<IReadOnlyList<PanelHold>> GetPanelHoldsAsync(Guid wallId, Guid panelId, bool includeStaged);
 
     /// <summary>
+    /// The panel's full live-generation <see cref="Entities.Hold"/> entities — the editable working
+    /// set for per-panel hold editing on a big wall. Mirrors the visibility gating of
+    /// <see cref="GetPanelHoldsAsync"/> (live generation, no staged rows) but returns whole entities
+    /// rather than the thin <see cref="PanelHold"/> projection. Empty when the wall or panel is not
+    /// visible to the caller.
+    /// </summary>
+    Task<IReadOnlyList<Hold>> GetPanelHoldEntitiesAsync(Guid wallId, Guid panelId);
+
+    /// <summary>
     /// The wall's hold links — pairs of holds recorded as the same physical hold across two
     /// overlapping panels. Visibility-gated the same way the other reads are: a wall the caller
     /// cannot see yields nothing. Both link kinds (Same and Moved) are returned; the caller treats
@@ -96,5 +108,14 @@ public interface IWallPanelService
     /// wall generation, flagged for review, in the panel image's normalized coordinate space,
     /// and returns its id. Gated by <see cref="WallAdminGuard"/>.
     /// </summary>
-    Task<Guid> AddPanelHoldAsync(Guid wallId, Guid panelId, double x, double y, double radius);
+    Task<Guid> AddPanelHoldAsync(
+        Guid wallId,
+        Guid panelId,
+        double x,
+        double y,
+        double radius,
+        string? color = null,
+        HoldCategory? category = null,
+        List<ShapePoint>? shapePoints = null,
+        HoldMaterial? material = null);
 }

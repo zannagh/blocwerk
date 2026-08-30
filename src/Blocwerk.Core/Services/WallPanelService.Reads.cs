@@ -127,6 +127,44 @@ public partial class WallPanelService
     }
 
     /// <inheritdoc/>
+    public async Task<IReadOnlyList<Hold>> GetPanelHoldEntitiesAsync(Guid wallId, Guid panelId)
+    {
+        var user = await currentUserService.GetCurrentUserAsync();
+        await using var db = await dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = user.Id;
+
+        // Setting CurrentUserId applies the same visibility filters the other reads rely on: a
+        // wall the caller cannot see yields no panel row and therefore no holds.
+        var panel = await db.WallPanels
+            .AsNoTracking()
+            .Where(p => p.Id == panelId && p.WallId == wallId)
+            .Select(p => new { HasLive = p.Photo != null })
+            .FirstOrDefaultAsync();
+        if (panel is null || !panel.HasLive)
+        {
+            return [];
+        }
+
+        var generation = await db.Walls
+            .AsNoTracking()
+            .Where(w => w.Id == wallId)
+            .Select(w => (int?)w.CurrentGeneration)
+            .FirstOrDefaultAsync();
+        if (generation is null)
+        {
+            return [];
+        }
+
+        // The live generation only (includeStaged:false semantics): per-panel editing works on the
+        // live wall, not an in-flight staged update. Full entities, no projection — the editor needs
+        // the complete Hold (shape points, colour, category, material) to hand out editable clones.
+        return await db.Holds
+            .AsNoTracking()
+            .Where(h => h.WallPanelId == panelId && h.Generation == generation.Value)
+            .ToListAsync();
+    }
+
+    /// <inheritdoc/>
     public Task<WallPhoto?> GetPanelPhotoAsync(Guid wallId, Guid panelId) =>
         GetPanelBytesAsync(wallId, panelId, staged: false);
 
