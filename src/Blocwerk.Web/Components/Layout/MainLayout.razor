@@ -107,9 +107,10 @@
 </div>
 
 @code {
-    // A session-start sync only fires when the last successful sync is at least this old, so opening
-    // several tabs / reconnecting in one session cannot re-hit the rate-limited TopLogger API.
-    private static readonly TimeSpan SessionSyncMinInterval = TimeSpan.FromHours(1);
+    // On app-open we skip the sync if we already synced within this window AND it's still the same day;
+    // otherwise we sync. So repeated interactions on the same day stay quiet after one sync, but a new
+    // day (or 3h+ later) syncs again. The explicit "Sync" button always works regardless.
+    private static readonly TimeSpan SessionSyncMinInterval = TimeSpan.FromHours(3);
 
     private Guid? _homeWallId;
     private bool _startupTriggered;
@@ -167,13 +168,15 @@
                     await InvokeAsync(StateHasChanged);
                 }
 
-                // Only an incremental catch-up on app-open: require a prior sync (LastSyncAt set). The
-                // first full import stays an explicit user action ("Sync now"), so merely opening the app
-                // can never kick off the big pull — keeping TopLogger API traffic to a cheap check.
+                // Only an incremental catch-up on app-open: require a prior sync (LastSyncAt set) — the
+                // first full import stays an explicit user action ("Sync now"). Then skip when we already
+                // synced within the 3h window on the same (UTC) day; sync when it's a new day or 3h+ old.
+                var now = DateTimeOffset.UtcNow;
                 bool due = status.Connected
                            && !status.NeedsReauth
                            && status.LastSyncAt is { } last
-                           && DateTimeOffset.UtcNow - last >= SessionSyncMinInterval;
+                           && (now - last >= SessionSyncMinInterval
+                               || last.UtcDateTime.Date != now.UtcDateTime.Date);
                 if (due)
                 {
                     await importService.SyncAsync(userId);
