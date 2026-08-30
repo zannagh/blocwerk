@@ -1,4 +1,5 @@
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -11,7 +12,16 @@ namespace Blocwerk.Core.Services;
 public partial class WallPanelService
 {
     /// <inheritdoc/>
-    public async Task<Guid> AddPanelHoldAsync(Guid wallId, Guid panelId, double x, double y, double radius)
+    public async Task<Guid> AddPanelHoldAsync(
+        Guid wallId,
+        Guid panelId,
+        double x,
+        double y,
+        double radius,
+        string? color = null,
+        HoldCategory? category = null,
+        List<ShapePoint>? shapePoints = null,
+        HoldMaterial? material = null)
     {
         var user = await currentUserService.GetCurrentUserAsync();
         await using var db = await dbContextFactory.CreateDbContextAsync();
@@ -37,10 +47,17 @@ public partial class WallPanelService
             X = Math.Clamp(x, 0, 1),
             Y = Math.Clamp(y, 0, 1),
             Radius = Math.Clamp(radius, 0.003, 0.2),
+            Color = color,
+            ShapePoints = shapePoints,
+            Material = material,
             Generation = wall.CurrentGeneration,
             IsAutoDetected = false,
             NeedsReview = true,
         };
+        if (category is not null)
+        {
+            hold.Category = category.Value;
+        }
         db.Holds.Add(hold);
         await db.SaveChangesAsync();
 

@@ -63,6 +63,10 @@ window.blocwerkBetaVideo = {
         return await new Promise((resolve) => {
             const xhr = new XMLHttpRequest();
             xhr.open('POST', url, true);
+            // Upload + server transcode can take minutes for a large clip. Keep this just under the
+            // .NET interop budget so a real stall resolves here with a clear message rather than a
+            // generic interop cancellation.
+            xhr.timeout = 15 * 60 * 1000;
 
             xhr.upload.onprogress = (e) => {
                 if (e.lengthComputable && dotNetRef) {
@@ -76,6 +80,7 @@ window.blocwerkBetaVideo = {
                 resolve({ ok, error: ok ? null : (xhr.responseText || ('Upload failed (HTTP ' + xhr.status + ').')) });
             };
             xhr.onerror = () => resolve({ ok: false, error: 'Network error during upload.' });
+            xhr.ontimeout = () => resolve({ ok: false, error: 'Upload timed out — try a shorter clip or a faster connection.' });
             xhr.send(form);
         });
     },

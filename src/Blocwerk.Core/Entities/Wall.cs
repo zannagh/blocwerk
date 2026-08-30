@@ -59,6 +59,16 @@ public class Wall
     /// </summary>
     public bool UsesMultipleImages { get; set; }
 
+    /// <summary>
+    /// When true the wall is in "update mode": everyone except the admin who enabled it (see
+    /// <see cref="MaintenanceByUserId"/>) sees a "this wall is currently being updated" notice
+    /// instead of the wall, so an in-progress re-shoot/update is hidden from members until done.
+    /// </summary>
+    public bool UnderMaintenance { get; set; }
+
+    /// <summary>The user who put the wall into update mode; they still see the real wall.</summary>
+    public Guid? MaintenanceByUserId { get; set; }
+
     public ICollection<WallMember> Members { get; set; } = [];
 
     public ICollection<Hold> Holds { get; set; } = [];

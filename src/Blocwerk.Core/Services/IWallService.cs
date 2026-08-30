@@ -103,4 +103,11 @@ public interface IWallService
     Task<bool> UsersShareAWallAsync(Guid userA, Guid userB);
 
     Task SetMemberRoleAsync(Guid wallId, Guid userId, WallRole role);
+
+    /// <summary>
+    /// Puts the wall into (or out of) "update mode". While enabled, every viewer except the admin who
+    /// enabled it sees a "currently being updated" notice instead of the wall. Requires the caller to
+    /// be the wall owner or an Admin member.
+    /// </summary>
+    Task SetMaintenanceAsync(Guid wallId, bool underMaintenance);
 }
