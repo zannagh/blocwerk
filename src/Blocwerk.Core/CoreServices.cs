@@ -2,6 +2,7 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Services;
+using Blocwerk.Core.Services.TopLogger;
 using Blocwerk.Core.Telemetry;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -76,6 +77,8 @@ public static class CoreServices
         builder.Services.AddScoped<IWallPanelService, WallPanelService>();
         builder.Services.AddScoped<IWallBigUpdateService, WallBigUpdateService>();
 
+        ConfigureTopLogger(builder);
+
         return builder;
     }
 
@@ -123,6 +126,20 @@ public static class CoreServices
             }
         }
 
+        // Self-heal duplicate accounts left by the pre-UserIdentities era: absorb a legacy user into the
+        // account that now owns its provider subject. Idempotent and strictly guarded; a failure here must
+        // never block startup, so it is isolated exactly like the Migrate() block above.
+        try
+        {
+            var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<BlocwerkDbContext>>();
+            var mergeService = scope.ServiceProvider.GetRequiredService<IAccountMergeService>();
+            LegacyIdentityReconciliation.RunIfNeededAsync(factory, mergeService, logger).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Legacy-identity reconciliation failed; duplicate accounts remain until the next start.");
+        }
+
         // Reconstruct Activity rows for any events that predate the activity model. Idempotent, so it
         // is safe to run on every start; it no-ops once all events are grouped.
         try
@@ -136,5 +153,35 @@ public static class CoreServices
         }
 
         return app;
+    }
+
+    private static void ConfigureTopLogger(IHostApplicationBuilder builder)
+    {
+        // TopLogger import (Phase 1): the vendored GraphQL client plus the import/sync service. No
+        // background HostedService yet — a sync is triggered from the profile UI. The token pair lives
+        // encrypted per-user in the DataProtection-backed ITopLoggerTokenStore, registered alongside
+        // the auth stack (Blocwerk.Authentication) so this project keeps no DataProtection dependency.
+        var topLoggerSettings = builder.Configuration.GetSection("TopLogger").Get<TopLoggerSettings>()
+            ?? new TopLoggerSettings();
+        builder.Services.AddSingleton(topLoggerSettings);
+
+        // Paces + stamps a browser User-Agent on the typed GraphQL client's requests.
+        builder.Services.AddTransient<PacingHandler>();
+
+        // Direct refresh call: the refresh token doubles as the Bearer header (see TopLoggerAuthService).
+        builder.Services.AddHttpClient(TopLoggerAuthService.RefreshHttpClientName, client =>
+        {
+            if (!string.IsNullOrWhiteSpace(topLoggerSettings.UserAgent))
+            {
+                client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", topLoggerSettings.UserAgent);
+            }
+        });
+
+        builder.Services.AddHttpClient<ITopLoggerGraphQlClient, TopLoggerGraphQlClient>()
+            .AddHttpMessageHandler<PacingHandler>();
+
+        builder.Services.AddScoped<ITopLoggerAuthService, TopLoggerAuthService>();
+        builder.Services.AddScoped<ITopLoggerApiClient, TopLoggerApiClient>();
+        builder.Services.AddScoped<ITopLoggerImportService, TopLoggerImportService>();
     }
 }

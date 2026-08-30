@@ -1317,6 +1317,20 @@ img.avatar { object-fit: cover; }
 .field-actions .btn-primary[disabled],
 .field-actions .btn-secondary[disabled] { opacity: 0.5; cursor: not-allowed; }
 
+/* Consistent vertical rhythm for every profile section, matching the collapsible cards' gap. */
+.profile-page .section { margin-bottom: 16px; }
+
+/* Non-collapsible section cards (Home wall, TopLogger import) — same surface/border/radius as
+   the .profile-collapsible cards so the whole page reads as one consistent stack. */
+.profile-section-card {
+    background: var(--bg-surface); border: 1px solid var(--border);
+    border-radius: var(--r-md); box-shadow: 0 1px 2px var(--shadow-sm);
+    padding: 16px;
+}
+
+/* Home wall dropdown left-aligned like a normal form control (was right-aligned in a flex header). */
+.home-wall-select { display: block; margin-bottom: 4px; }
+
 .profile-page .chart-section h2 { font-size: 1rem; font-weight: 600; color: var(--text-heading); margin-bottom: 8px; }
 .chart-box {
     height: 80px; background: var(--bg-surface); border-radius: 12px;
@@ -2198,3 +2212,101 @@ html.bw-fullscreen .wall-main .photo-viewport {
 .tl-confirm { margin-top: 12px; }
 .tl-check { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--text-secondary); }
 .tl-check input { width: auto; }
+
+/* Two-phase busy indicator: a small rotating circle beside the "Connecting…" / "Syncing…" text. */
+.tl-busy {
+    display: flex; align-items: center; gap: 8px; margin-top: 12px;
+    font-size: 0.85rem; color: var(--text-secondary);
+}
+.tl-spinner {
+    width: 16px; height: 16px; flex: none; border-radius: 50%;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    animation: tl-spin 0.7s linear infinite;
+}
+@keyframes tl-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Collapsed "Update tokens" disclosure shown once connected, so the token inputs stop cluttering
+   the connected view. The summary reads as a small clickable link row. */
+.tl-token-edit { margin-top: 14px; }
+.tl-token-edit summary {
+    cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 6px;
+    font-size: 0.85rem; font-weight: 600; color: var(--accent); padding: 2px 0;
+}
+.tl-token-edit summary::-webkit-details-marker { display: none; }
+.tl-token-edit summary::before {
+    content: ''; width: 0; height: 0; flex: none;
+    border-left: 5px solid currentColor;
+    border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+    transition: transform 0.15s ease;
+}
+.tl-token-edit[open] > summary::before { transform: rotate(90deg); }
+
+/* Gym points→grade calibration disclosure: matches the "Update tokens" summary, with a scrollable
+   grade→points table and compact numeric inputs. */
+.tl-calibration { margin-top: 14px; }
+.tl-calibration > summary {
+    cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 6px;
+    font-size: 0.85rem; font-weight: 600; color: var(--accent); padding: 2px 0;
+}
+.tl-calibration > summary::-webkit-details-marker { display: none; }
+.tl-calibration > summary::before {
+    content: ''; width: 0; height: 0; flex: none;
+    border-left: 5px solid currentColor;
+    border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+    transition: transform 0.15s ease;
+}
+.tl-calibration[open] > summary::before { transform: rotate(90deg); }
+.tl-calib-grid { max-height: 260px; overflow-y: auto; margin: 8px 0; }
+.tl-calib-table { width: 100%; border-collapse: collapse; }
+.tl-calib-table th, .tl-calib-table td { text-align: left; padding: 3px 8px 3px 0; }
+.tl-calib-table th { font-size: 0.8rem; color: var(--text-secondary); font-weight: 600; }
+.tl-calib-input { width: 100px; margin-bottom: 0; }
+
+/* ---- Header avatar with overlaid edit/remove icon controls (self view). Centered inside the
+   text-align:center profile card; the 12px gap below matches the avatar's normal bottom margin. ---- */
+.avatar-edit { position: relative; display: inline-block; width: 64px; margin: 0 auto 12px; }
+.avatar-edit .avatar { margin: 0; }
+.avatar-file-input { display: none; }
+.avatar-icon-btn {
+    position: absolute; bottom: -2px;
+    width: 26px; height: 26px; border-radius: 50%; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--bg-surface); color: var(--text-heading);
+    border: 1px solid var(--border); box-shadow: 0 1px 2px var(--shadow-sm);
+    cursor: pointer;
+}
+.avatar-icon-btn:hover { background: var(--bg-surface-alt); border-color: var(--text-secondary); }
+.avatar-edit-btn { right: -6px; }
+.avatar-delete-btn { left: -6px; color: var(--danger-text); }
+.avatar-icon-btn.is-disabled { opacity: 0.5; pointer-events: none; }
+.avatar-icon-btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+/* ---- Collapsible profile cards (password sign-in, 2FA, linked accounts). Collapsed by default;
+   the summary is the whole clickable header row, mirroring the tl-token-edit disclosure. ---- */
+.profile-collapsible {
+    background: var(--bg-surface); border: 1px solid var(--border);
+    border-radius: var(--r-md); box-shadow: 0 1px 2px var(--shadow-sm);
+    padding: 0 16px; margin-bottom: 16px;
+}
+.profile-collapsible > summary {
+    cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px;
+    font-size: 1.05rem; font-weight: 600; color: var(--text-heading); padding: 16px 0;
+}
+.profile-collapsible > summary::-webkit-details-marker { display: none; }
+.profile-collapsible > summary::before {
+    content: ''; width: 0; height: 0; flex: none;
+    border-left: 6px solid currentColor;
+    border-top: 5px solid transparent; border-bottom: 5px solid transparent;
+    transition: transform 0.15s ease;
+}
+.profile-collapsible[open] > summary::before { transform: rotate(90deg); }
+.profile-collapsible[open] > summary { padding-bottom: 8px; }
+
+/* API keys link styled to match the app's secondary buttons instead of a bare underlined link. */
+.profile-links a.btn-secondary {
+    display: inline-block; width: auto; margin-bottom: 0;
+    padding: 10px 16px; font-size: 0.95rem; text-decoration: none;
+}

@@ -3,6 +3,7 @@ using System;
 using Blocwerk.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blocwerk.Core.Migrations
 {
     [DbContext(typeof(BlocwerkDbContext))]
-    partial class BlocwerkDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260830133858_AddTopLoggerImport")]
+    partial class AddTopLoggerImport
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -435,10 +438,6 @@ namespace Blocwerk.Core.Migrations
                     b.Property<Guid?>("ActivityId")
                         .HasColumnType("uuid");
 
-                    b.Property<string>("ClimbId")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
                     b.Property<string>("ClimbName")
                         .IsRequired()
                         .HasMaxLength(256)
@@ -512,9 +511,6 @@ namespace Blocwerk.Core.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
 
-                    b.Property<int>("FlashBonusPoints")
-                        .HasColumnType("integer");
-
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(256)
@@ -565,31 +561,6 @@ namespace Blocwerk.Core.Migrations
                     b.HasIndex("ProposedByUserId");
 
                     b.ToTable("GradeProposals");
-                });
-
-            modelBuilder.Entity("Blocwerk.Core.Entities.GymGradePoint", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ExternalGymId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Grade")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
-
-                    b.Property<int>("Points")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ExternalGymId", "Grade")
-                        .IsUnique();
-
-                    b.ToTable("GymGradePoints");
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.HangboardSession", b =>
@@ -1547,17 +1518,6 @@ namespace Blocwerk.Core.Migrations
                     b.Navigation("Boulder");
 
                     b.Navigation("ProposedBy");
-                });
-
-            modelBuilder.Entity("Blocwerk.Core.Entities.GymGradePoint", b =>
-                {
-                    b.HasOne("Blocwerk.Core.Entities.ExternalGym", "ExternalGym")
-                        .WithMany()
-                        .HasForeignKey("ExternalGymId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("ExternalGym");
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.HangboardSession", b =>

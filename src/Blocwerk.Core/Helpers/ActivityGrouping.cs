@@ -39,12 +39,27 @@ public static class ActivityGrouping
         var lo = timestamp - Gap;
         var hi = timestamp + Gap;
 
-        var match = await db.Activities
+        bool Matches(Activity a) => a.UserId == userId
+            && a.StartedAt >= dayStart && a.StartedAt < dayEnd
+            && a.StartedAt <= hi && a.LastEventAt >= lo;
+
+        // Persisted candidates plus any added earlier in this same (unsaved) batch — a batch importer
+        // (sync/backfill) adds several activities before saving, and a DB query wouldn't see those yet.
+        var dbMatch = await db.Activities
             .Where(a => a.UserId == userId
                 && a.StartedAt >= dayStart && a.StartedAt < dayEnd
                 && a.StartedAt <= hi && a.LastEventAt >= lo)
             .OrderByDescending(a => a.LastEventAt)
             .FirstOrDefaultAsync();
+
+        var localMatch = db.Activities.Local
+            .Where(Matches)
+            .OrderByDescending(a => a.LastEventAt)
+            .FirstOrDefault();
+
+        var match = localMatch is null || (dbMatch is not null && dbMatch.LastEventAt > localMatch.LastEventAt)
+            ? dbMatch
+            : localMatch;
 
         if (match != null)
         {

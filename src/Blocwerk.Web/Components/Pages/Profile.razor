@@ -7,11 +7,18 @@
 @inject IWallService WallService
 @inject Blocwerk.Core.Configuration.BlocwerkSettings Settings
 @inject NavigationManager Navigation
+@inject ITopLoggerImportService TopLogger
 @using Blocwerk.Core.Helpers
+@using Blocwerk.Core.Services.TopLogger
 
 <PageTitle>Profile - Blocwerk</PageTitle>
 
 <div class="profile-page">
+    @if (!string.IsNullOrEmpty(_toast))
+    {
+        <div class="toast-msg">@_toast</div>
+    }
+
     @if (_loading)
     {
         <p class="loading">Loading...</p>
@@ -26,10 +33,46 @@
     else
     {
         <div class="profile-card">
-            <UserAvatar UserId="_target.Id" Name="_target.Name" HasAvatar="_target.HasAvatar" />
+            @if (_isSelf)
+            {
+                <div class="avatar-edit">
+                    <UserAvatar UserId="_target.Id" Name="_target.Name" HasAvatar="_target.HasAvatar" />
+
+                    @* Hidden file input triggered by the pencil label below, overlaying the header avatar. *@
+                    <InputFile id="avatar-file" class="avatar-file-input" OnChange="OnAvatarSelectedAsync"
+                               accept="image/*" disabled="@_savingAvatar" />
+                    <label class="avatar-icon-btn avatar-edit-btn @(_savingAvatar ? "is-disabled" : null)"
+                           for="avatar-file" title="Change photo" aria-label="Change photo">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                            <path d="M12 20h9" />
+                            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+                        </svg>
+                    </label>
+
+                    @if (_target.HasAvatar)
+                    {
+                        <button type="button" class="avatar-icon-btn avatar-delete-btn"
+                                @onclick="RemoveAvatarAsync" disabled="@_savingAvatar"
+                                title="Remove photo" aria-label="Remove photo">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                                <polyline points="3 6 5 6 21 6" />
+                                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                            </svg>
+                        </button>
+                    }
+                </div>
+            }
+            else
+            {
+                <UserAvatar UserId="_target.Id" Name="_target.Name" HasAvatar="_target.HasAvatar" />
+            }
             <h1>@_target.Name</h1>
             <span class="role-badge">@_target.Role</span>
             <p class="member-since">Member since <LocalTime Value="@_target.CreatedAt" Format="LocalTimeFormat.MonthYear" /></p>
+            @if (_isSelf && _avatarError != null)
+            {
+                <p class="field-error">@_avatarError</p>
+            }
         </div>
 
         @if (_isSelf)
@@ -53,26 +96,26 @@
                         <p class="field-error">@_nameError</p>
                     }
                 </div>
-
-                <div class="field-group">
-                    <label class="field-label">Profile picture</label>
-                    <div class="field-actions">
-                        <InputFile OnChange="OnAvatarSelectedAsync" accept="image/*" disabled="@_savingAvatar" />
-                        @if (_target.HasAvatar)
-                        {
-                            <button class="btn-secondary" @onclick="RemoveAvatarAsync" disabled="@_savingAvatar">Remove photo</button>
-                        }
-                    </div>
-                    <p class="member-since">JPEG, PNG or WebP, up to 4 MB.</p>
-                    @if (_avatarError != null)
-                    {
-                        <p class="field-error">@_avatarError</p>
-                    }
-                </div>
             </div>
 
-            <div class="section">
-                <h2>Password sign-in</h2>
+            <div class="section profile-section-card">
+                <h2>Home wall</h2>
+                <select class="window-select home-wall-select" value="@_viewer?.HomeWallId" @onchange="OnHomeWallChange">
+                    <option value="">None</option>
+                    @foreach (var wall in _myWalls)
+                    {
+                        <option value="@wall.Id">@wall.Name</option>
+                    }
+                </select>
+                <p class="member-since">Adds a Home shortcut to the bottom bar that jumps to this wall.</p>
+                @if (_homeWallError != null)
+                {
+                    <p class="field-error">@_homeWallError</p>
+                }
+            </div>
+
+            <details class="section profile-collapsible" id="password-section">
+                <summary>@(_target.HasPassword ? "Password sign-in (all set)" : "Password sign-in")</summary>
                 @if (_target.HasPassword)
                 {
                     <p class="member-since">
@@ -123,12 +166,12 @@
                         <p class="field-label">Password saved.</p>
                     }
                 </div>
-            </div>
+            </details>
 
             @if (_target.HasPassword)
             {
-                <div class="section">
-                    <h2>Two-factor authentication</h2>
+                <details class="section profile-collapsible">
+                    <summary>@(_target.HasTotp ? "Two-factor authentication (all set)" : "Two-factor authentication")</summary>
                     @if (_target.HasTotp)
                     {
                         <p class="member-since">
@@ -187,61 +230,291 @@
                             <p class="field-error">@_totpError</p>
                         }
                     }
-                </div>
+                </details>
             }
 
+            <div class="section tl-card profile-section-card">
+                <h2>TopLogger import</h2>
+
+                @if (!_target.HasPassword)
+                {
+                    <p class="member-since">
+                        Set a password first to connect TopLogger — your tokens are stored encrypted.
+                        <a href="#password-section">Set a password above.</a>
+                    </p>
+                }
+                else
+                {
+                    var tlConnected = _tlStatus is { Connected: true, NeedsReauth: false };
+                    var tlBusy = _tlBusyPhase is not null;
+
+                    // The token form (help text + two textareas + Connect). Shown expanded when not
+                    // connected (or on reauth) as the primary call-to-action, and tucked inside a
+                    // collapsed "Update tokens" disclosure once connected and healthy.
+                    RenderFragment tokenForm =
+                        @<text>
+                            <p class="member-since">
+                                Paste your TopLogger access + refresh token from app.toplogger.nu → DevTools →
+                                Network → a graphql request's Authorization header (access token) and the refresh token.
+                            </p>
+                            <div class="field-group">
+                                <label class="field-label" for="tl-access">Access token</label>
+                                <textarea id="tl-access" class="text-input tl-token" rows="2" autocomplete="off"
+                                          @bind="_tlAccessToken" @bind:event="oninput"></textarea>
+
+                                <label class="field-label" for="tl-refresh">Refresh token</label>
+                                <textarea id="tl-refresh" class="text-input tl-token" rows="2" autocomplete="off"
+                                          @bind="_tlRefreshToken" @bind:event="oninput"></textarea>
+
+                                <div class="field-actions">
+                                    <button class="btn-primary" @onclick="ConnectTopLoggerAsync" disabled="@tlBusy">
+                                        @(tlBusy ? TlBusyLabel : "Connect")
+                                    </button>
+                                </div>
+                            </div>
+                        </text>;
+
+                    @if (_tlStatus?.NeedsReauth == true)
+                    {
+                        <p class="tl-reauth">
+                            Reset TopLogger Tokens — your saved session was rejected. Paste fresh tokens below to reconnect.
+                        </p>
+                        @if (!string.IsNullOrEmpty(_tlStatus.LastError))
+                        {
+                            <p class="field-error">@_tlStatus.LastError</p>
+                        }
+                    }
+
+                    @if (tlConnected)
+                    {
+                        <p class="tl-meta">
+                            Last sync:
+                            @if (_tlStatus!.LastSyncAt != null)
+                            {
+                                <LocalTime Value="@_tlStatus.LastSyncAt" Format="LocalTimeFormat.DateTime" />
+                            }
+                            else
+                            {
+                                <span>never</span>
+                            }
+                        </p>
+                        <p class="tl-meta">@_tlStatus.AscentCount imported ascent(s).</p>
+                        @if (_tlStatus.UnmappedGradeCount > 0)
+                        {
+                            <p class="tl-meta">@_tlStatus.UnmappedGradeCount send(s) need a grade.</p>
+                            <details class="tl-resolve" @ontoggle="OnResolveGradesToggle">
+                                <summary>Resolve grades</summary>
+                                @if (_tlUnmapped == null)
+                                {
+                                    <p class="tl-meta">Loading…</p>
+                                }
+                                else
+                                {
+                                    @foreach (var item in _tlUnmapped)
+                                    {
+                                        var selection = GetGradeSelection(item.RawGrade);
+                                        <div class="tl-resolve-row">
+                                            <div class="tl-resolve-info">
+                                                <span class="tl-resolve-raw">@(string.IsNullOrEmpty(item.RawGrade) ? "(no grade)" : item.RawGrade)</span>
+                                                <span class="tl-meta">
+                                                    @item.Count ascent(s)@(string.IsNullOrEmpty(item.SampleClimbName) ? string.Empty : $" · e.g. {item.SampleClimbName}")
+                                                </span>
+                                            </div>
+                                            <GradePicker Value="@selection"
+                                                         ValueChanged="@(v => SetGradeSelection(item.RawGrade, v))" />
+                                            <button class="btn-primary"
+                                                    @onclick="() => ResolveGradeAsync(item)"
+                                                    disabled="@(tlBusy || _tlResolveBusy || string.IsNullOrEmpty(selection))">
+                                                Save
+                                            </button>
+                                        </div>
+                                    }
+                                }
+                            </details>
+                        }
+
+                        <details class="tl-calibration" @ontoggle="OnCalibrationToggle">
+                            <summary>Gym grade points</summary>
+                            <p class="tl-meta">
+                                Enter the points your gym awards per grade, plus the flash bonus. We use these
+                                to read the grade and flash from each ascent's points.
+                            </p>
+                            @if (_tlGyms == null)
+                            {
+                                <p class="tl-meta">Loading…</p>
+                            }
+                            else if (_tlGyms.Count == 0)
+                            {
+                                <p class="tl-meta">No gyms yet — sync some ascents first.</p>
+                            }
+                            else
+                            {
+                                <div class="field-group">
+                                    <label class="field-label" for="tl-calib-gym">Gym</label>
+                                    <select id="tl-calib-gym" class="window-select"
+                                            value="@_tlSelectedGymId" @onchange="OnCalibrationGymChange">
+                                        <option value="">Select a gym…</option>
+                                        @foreach (var g in _tlGyms)
+                                        {
+                                            <option value="@g.Id">@g.Name</option>
+                                        }
+                                    </select>
+                                </div>
+
+                                @if (_tlSelectedGymId != null)
+                                {
+                                    <div class="tl-calib-grid">
+                                        <table class="tl-calib-table">
+                                            <thead>
+                                                <tr><th>Grade</th><th>Points</th></tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var grade in GradeScale.FontGrades)
+                                                {
+                                                    <tr>
+                                                        <td>@grade</td>
+                                                        <td>
+                                                            <input type="number" min="0" inputmode="numeric"
+                                                                   class="text-input tl-calib-input"
+                                                                   value="@GetCalibPoints(grade)"
+                                                                   @onchange="e => SetCalibPoints(grade, e.Value?.ToString())" />
+                                                        </td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    <div class="field-group">
+                                        <label class="field-label" for="tl-calib-bonus">Bonus points for flash</label>
+                                        <input id="tl-calib-bonus" type="number" min="0" inputmode="numeric"
+                                               class="text-input tl-calib-input"
+                                               value="@_tlFlashBonusInput"
+                                               @onchange="e => _tlFlashBonusInput = e.Value?.ToString() ?? string.Empty" />
+                                    </div>
+
+                                    <div class="tl-actions">
+                                        <button class="btn-primary" @onclick="SaveCalibrationAsync"
+                                                disabled="@(tlBusy || _tlCalibBusy)">
+                                            @(_tlCalibBusy ? "Saving…" : "Save")
+                                        </button>
+                                        <button class="btn-secondary" @onclick="DiscardCalibrationAsync"
+                                                disabled="@(tlBusy || _tlCalibBusy)">Discard</button>
+                                    </div>
+                                }
+                            }
+                        </details>
+
+                        @if (!string.IsNullOrEmpty(_tlStatus.LastError))
+                        {
+                            <p class="field-error">@_tlStatus.LastError</p>
+                        }
+
+                        <div class="tl-actions">
+                            <button class="btn-primary" @onclick="SyncTopLoggerAsync" disabled="@tlBusy">
+                                @(tlBusy ? TlBusyLabel : "Sync now")
+                            </button>
+                            @if (!_tlConfirmingDisconnect)
+                            {
+                                <button class="btn-secondary" @onclick="() => _tlConfirmingDisconnect = true" disabled="@tlBusy">Disconnect</button>
+                            }
+                        </div>
+
+                        @if (_tlConfirmingDisconnect)
+                        {
+                            <div class="tl-confirm">
+                                <label class="tl-check">
+                                    <input type="checkbox" @bind="_tlDeleteAscents" disabled="@tlBusy" />
+                                    Also delete imported ascents
+                                </label>
+                                <div class="tl-actions">
+                                    <button class="btn-secondary" @onclick="DisconnectTopLoggerAsync" disabled="@tlBusy">Confirm disconnect</button>
+                                    <button class="btn-secondary" @onclick="() => _tlConfirmingDisconnect = false" disabled="@tlBusy">Cancel</button>
+                                </div>
+                            </div>
+                        }
+
+                        @if (tlBusy)
+                        {
+                            <div class="tl-busy">
+                                <span class="tl-spinner" aria-hidden="true"></span>
+                                <span>@TlBusyLabel</span>
+                            </div>
+                        }
+
+                        <details class="tl-token-edit">
+                            <summary>Update tokens</summary>
+                            @tokenForm
+                        </details>
+                    }
+                    else
+                    {
+                        @tokenForm
+
+                        @if (tlBusy)
+                        {
+                            <div class="tl-busy">
+                                <span class="tl-spinner" aria-hidden="true"></span>
+                                <span>@TlBusyLabel</span>
+                            </div>
+                        }
+                    }
+
+                    @if (_tlError != null)
+                    {
+                        <p class="field-error">@_tlError</p>
+                    }
+                }
+            </div>
+
             <div class="profile-links">
-                <a href="/settings/api-keys">API keys</a>
+                <a class="btn-secondary" href="/settings/api-keys">API keys</a>
             </div>
 
             @if (_allProviders.Count > 0)
             {
-                <div class="section">
-                    <h2>Linked accounts</h2>
+                // Only providers the user hasn't linked yet can be linked; already-linked ones are listed
+                // read-only below so the section still shows what's connected.
+                var unlinkedProviders = _allProviders.Where(p => !IsProviderLinked(p.Key)).ToList();
+                var linkedLabels = _allProviders.Where(p => IsProviderLinked(p.Key)).Select(p => p.Label).ToList();
+
+                <details class="section profile-collapsible">
+                    <summary>Linked accounts</summary>
                     @if (_linkMessage != null)
                     {
                         <p class="field-label">@_linkMessage</p>
                     }
                     <p class="member-since">Sign in with any linked provider to reach this account. Linking a provider that already belongs to another account merges that account into this one.</p>
-                    <div class="field-group">
-                        @foreach (var provider in _allProviders)
-                        {
-                            <div class="field-actions">
-                                <span class="field-label">@provider.Label</span>
-                                @if (_linkedProviders.Contains(provider.Key))
-                                {
+
+                    @if (linkedLabels.Count > 0)
+                    {
+                        <div class="field-group">
+                            @foreach (var label in linkedLabels)
+                            {
+                                <div class="field-actions">
+                                    <span class="field-label">@label</span>
                                     <span class="role-badge">Linked</span>
-                                }
-                                else
-                                {
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    @if (unlinkedProviders.Count > 0)
+                    {
+                        <div class="field-group">
+                            @foreach (var provider in unlinkedProviders)
+                            {
+                                <div class="field-actions">
+                                    <span class="field-label">@provider.Label</span>
                                     <button class="btn-secondary" @onclick="() => StartLink(provider.Key)">Link @provider.Label</button>
-                                }
-                            </div>
-                        }
-                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
                     <p class="member-since">Unlinking a provider isn't supported yet.</p>
-                </div>
+                </details>
             }
 
-            <div class="section">
-                <div class="progression-header">
-                    <h2>Home wall</h2>
-                    <div class="window-control">
-                        <select class="window-select" value="@_viewer?.HomeWallId" @onchange="OnHomeWallChange">
-                            <option value="">None</option>
-                            @foreach (var wall in _myWalls)
-                            {
-                                <option value="@wall.Id">@wall.Name</option>
-                            }
-                        </select>
-                    </div>
-                </div>
-                <p class="member-since">Adds a Home shortcut to the bottom bar that jumps to this wall.</p>
-                @if (_homeWallError != null)
-                {
-                    <p class="field-error">@_homeWallError</p>
-                }
-            </div>
         }
 
         @if (_progression != null)
@@ -317,7 +590,9 @@
     private List<Wall> _myWalls = [];
     private string? _homeWallError;
 
-    private const long MaxAvatarBytes = 4L * 1024 * 1024;
+    // Upper bound for the SignalR upload stream. The server downscales to a small avatar before storing,
+    // so this only caps what may be streamed in, not what is persisted.
+    private const long MaxAvatarUploadBytes = 30L * 1024 * 1024;
     private string _nameInput = string.Empty;
     private bool _savingName;
     private string? _nameError;
@@ -336,6 +611,33 @@
     private string _totpCode = string.Empty;
     private bool _totpBusy;
     private string? _totpError;
+
+    private TopLoggerStatus? _tlStatus;
+    private string _tlAccessToken = string.Empty;
+    private string _tlRefreshToken = string.Empty;
+
+    // Two-phase busy indicator: "Connecting" (fast token save) then "Syncing" (the long data pull),
+    // or null when idle. Everything that used to gate on a plain bool now checks `_tlBusyPhase is not null`.
+    private string? _tlBusyPhase;
+    private string? _tlError;
+    private bool _tlDeleteAscents;
+    private bool _tlConfirmingDisconnect;
+
+    // Grade-resolution panel: the unmapped-grade buckets (null until the disclosure is first opened),
+    // a per-bucket picker selection keyed by raw grade, and a save busy flag.
+    private IReadOnlyList<TopLoggerUnmappedGrade>? _tlUnmapped;
+    private readonly Dictionary<string, string?> _tlGradeSelections = new(StringComparer.Ordinal);
+    private bool _tlResolveBusy;
+
+    // Gym points→grade calibration panel: the user's gyms (null until the disclosure first opens), the
+    // selected gym, the per-grade points inputs (blank = unset) + the flash bonus input, and a save flag.
+    private IReadOnlyList<TopLoggerGymRef>? _tlGyms;
+    private Guid? _tlSelectedGymId;
+    private readonly Dictionary<string, string> _tlPointInputs = new(StringComparer.Ordinal);
+    private string _tlFlashBonusInput = string.Empty;
+    private bool _tlCalibBusy;
+
+    private string? _toast;
 
     // Window/grouping for the other-user view is kept locally: it must not persist onto the viewer's
     // own settings, nor onto the target's. Self view reuses the persisted per-user settings.
@@ -374,6 +676,7 @@
             _linkedProviders = await CurrentUserService.GetLinkedProvidersAsync();
             _allProviders = EnabledProviders();
             _linkMessage = LinkResultMessage(LinkResult);
+            _tlStatus = await TopLogger.GetStatusAsync(_viewer.Id);
         }
         else
         {
@@ -424,6 +727,10 @@
         "unavailable" => "That provider isn't available.",
         _ => null,
     };
+
+    // Case-insensitive so a provider key ("github") still matches a stored identity regardless of casing.
+    private bool IsProviderLinked(string providerKey) =>
+        _linkedProviders.Any(p => string.Equals(p, providerKey, StringComparison.OrdinalIgnoreCase));
 
     private void StartLink(string provider)
     {
@@ -532,13 +839,7 @@
         try
         {
             var file = e.File;
-            if (file.Size > MaxAvatarBytes)
-            {
-                _avatarError = "That image is too large (max 4 MB).";
-                return;
-            }
-
-            using var stream = file.OpenReadStream(MaxAvatarBytes);
+            using var stream = file.OpenReadStream(MaxAvatarUploadBytes);
             using var memory = new MemoryStream();
             await stream.CopyToAsync(memory);
 
@@ -720,6 +1021,319 @@
         _viewer = await CurrentUserService.GetCurrentUserAsync();
         _target = _viewer;
         _nameInput = _viewer.CustomDisplayName ?? string.Empty;
+    }
+
+    // ---- TopLogger import ----
+
+    // Text for the busy indicator and busy buttons, derived from the current phase.
+    private string TlBusyLabel => _tlBusyPhase == "Syncing" ? "Syncing…" : "Connecting…";
+
+    private async Task ConnectTopLoggerAsync()
+    {
+        if (_viewer == null)
+        {
+            return;
+        }
+
+        var access = _tlAccessToken.Trim();
+        var refresh = _tlRefreshToken.Trim();
+        if (string.IsNullOrWhiteSpace(access) || string.IsNullOrWhiteSpace(refresh))
+        {
+            _tlError = "Paste both the access token and the refresh token.";
+            return;
+        }
+
+        _tlError = null;
+        try
+        {
+            // Phase 1: save the tokens. Render the "Connecting…" state before the (short) call.
+            _tlBusyPhase = "Connecting";
+            await InvokeAsync(StateHasChanged);
+
+            var connect = await TopLogger.ConnectAsync(_viewer.Id, access, refresh, CancellationToken.None);
+            if (connect.PasswordRequired)
+            {
+                // The client-side gate already hides the form without a password; reflect the backend
+                // refusal too, in case the password was cleared mid-session.
+                _tlError = connect.Error ?? "Set a password before connecting TopLogger.";
+                _tlBusyPhase = null;
+                return;
+            }
+
+            if (!connect.Success)
+            {
+                _tlError = connect.Error ?? "Couldn't connect to TopLogger. Please try again.";
+                _tlBusyPhase = null;
+                await ReloadTopLoggerStatusAsync();
+                return;
+            }
+
+            // Phase 2: connected — now pull the logbook as a visibly separate, spinner-backed phase.
+            _tlBusyPhase = "Syncing";
+            await ReloadTopLoggerStatusAsync();      // status now reads connected
+            await InvokeAsync(StateHasChanged);      // render the Syncing spinner before the long await
+
+            var sync = await TopLogger.SyncAsync(_viewer.Id, CancellationToken.None);
+            _tlBusyPhase = null;
+            if (sync.NeedsReauth)
+            {
+                await ShowToast("Reset TopLogger Tokens — reconnect below.");
+            }
+            else if (sync.Success)
+            {
+                _tlAccessToken = string.Empty;
+                _tlRefreshToken = string.Empty;
+                await ShowToast($"Synced — imported {sync.Imported} ascent(s).");
+            }
+            else
+            {
+                _tlError = sync.Error ?? "Sync failed. Please try again.";
+            }
+
+            await ReloadTopLoggerStatusAsync();
+        }
+        catch (Exception)
+        {
+            _tlError = "Couldn't connect to TopLogger. Please try again.";
+            _tlBusyPhase = null;
+        }
+    }
+
+    private async Task SyncTopLoggerAsync()
+    {
+        if (_viewer == null)
+        {
+            return;
+        }
+
+        _tlError = null;
+        try
+        {
+            // Render the Syncing spinner before the long pull (Blazor Server re-renders after the await).
+            _tlBusyPhase = "Syncing";
+            await InvokeAsync(StateHasChanged);
+
+            var result = await TopLogger.SyncAsync(_viewer.Id, CancellationToken.None);
+            _tlBusyPhase = null;
+            await ReloadTopLoggerStatusAsync();
+            if (result.NeedsReauth)
+            {
+                await ShowToast("Reset TopLogger Tokens — reconnect below.");
+            }
+            else if (!result.Success)
+            {
+                _tlError = result.Error ?? "Sync failed. Please try again.";
+            }
+            else
+            {
+                await ShowToast($"Synced — {result.Imported} new, {result.Skipped} already imported.");
+            }
+        }
+        catch (Exception)
+        {
+            _tlError = "Sync failed. Please try again.";
+            _tlBusyPhase = null;
+        }
+    }
+
+    private async Task DisconnectTopLoggerAsync()
+    {
+        if (_viewer == null)
+        {
+            return;
+        }
+
+        _tlBusyPhase = "Connecting";
+        _tlError = null;
+        try
+        {
+            await TopLogger.DisconnectAsync(_viewer.Id, _tlDeleteAscents, CancellationToken.None);
+            _tlConfirmingDisconnect = false;
+            _tlDeleteAscents = false;
+            await ReloadTopLoggerStatusAsync();
+            await ShowToast("TopLogger disconnected.");
+        }
+        catch (Exception)
+        {
+            _tlError = "Couldn't disconnect. Please try again.";
+        }
+        finally
+        {
+            _tlBusyPhase = null;
+        }
+    }
+
+    private async Task ReloadTopLoggerStatusAsync()
+    {
+        if (_viewer != null)
+        {
+            _tlStatus = await TopLogger.GetStatusAsync(_viewer.Id, CancellationToken.None);
+        }
+    }
+
+    // ---- TopLogger grade resolution ----
+
+    private string? GetGradeSelection(string rawGradeKey) =>
+        _tlGradeSelections.TryGetValue(rawGradeKey, out var value) ? value : null;
+
+    private void SetGradeSelection(string rawGradeKey, string? value)
+    {
+        _tlGradeSelections[rawGradeKey] = value;
+    }
+
+    // Loads the unmapped buckets the first time the disclosure is opened (ontoggle fires on open+close;
+    // the null guard makes this a one-shot load per fresh list).
+    private async Task OnResolveGradesToggle()
+    {
+        if (_viewer != null && _tlUnmapped == null)
+        {
+            _tlUnmapped = await TopLogger.GetUnmappedGradesAsync(_viewer.Id, CancellationToken.None);
+            StateHasChanged();
+        }
+    }
+
+    private async Task ResolveGradeAsync(TopLoggerUnmappedGrade item)
+    {
+        if (_viewer == null)
+        {
+            return;
+        }
+
+        var grade = GetGradeSelection(item.RawGrade);
+        if (string.IsNullOrEmpty(grade))
+        {
+            return;
+        }
+
+        _tlResolveBusy = true;
+        _tlError = null;
+        try
+        {
+            var updated = await TopLogger.ResolveGradeMappingAsync(_viewer.Id, item.RawGrade, grade, CancellationToken.None);
+            var rawLabel = string.IsNullOrEmpty(item.RawGrade) ? "(no grade)" : item.RawGrade;
+
+            await ReloadTopLoggerStatusAsync();
+            _tlUnmapped = await TopLogger.GetUnmappedGradesAsync(_viewer.Id, CancellationToken.None);
+            _tlGradeSelections.Remove(item.RawGrade);
+
+            await ShowToast($"Mapped {rawLabel} → {grade} on {updated} ascent(s).");
+        }
+        catch (Exception)
+        {
+            _tlError = "Couldn't resolve the grade. Please try again.";
+        }
+        finally
+        {
+            _tlResolveBusy = false;
+        }
+    }
+
+    // ---- TopLogger gym points calibration ----
+
+    private string GetCalibPoints(string grade) =>
+        _tlPointInputs.TryGetValue(grade, out var value) ? value : string.Empty;
+
+    private void SetCalibPoints(string grade, string? value)
+    {
+        _tlPointInputs[grade] = value ?? string.Empty;
+    }
+
+    // Loads the user's gyms the first time the disclosure opens (ontoggle fires on open+close; the null
+    // guard makes it a one-shot load).
+    private async Task OnCalibrationToggle()
+    {
+        if (_viewer != null && _tlGyms == null)
+        {
+            _tlGyms = await TopLogger.GetCalibratableGymsAsync(_viewer.Id, CancellationToken.None);
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnCalibrationGymChange(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var gymId))
+        {
+            _tlSelectedGymId = gymId;
+            await LoadCalibrationFormAsync(gymId);
+        }
+        else
+        {
+            _tlSelectedGymId = null;
+            _tlPointInputs.Clear();
+            _tlFlashBonusInput = string.Empty;
+        }
+    }
+
+    // Loads a gym's saved calibration into the editable form state (blank inputs where unset).
+    private async Task LoadCalibrationFormAsync(Guid gymId)
+    {
+        var calibration = await TopLogger.GetGymCalibrationAsync(gymId, CancellationToken.None);
+        _tlPointInputs.Clear();
+        foreach (var p in calibration.Points)
+        {
+            _tlPointInputs[p.Grade] = p.Points.ToString();
+        }
+
+        _tlFlashBonusInput = calibration.FlashBonusPoints > 0 ? calibration.FlashBonusPoints.ToString() : string.Empty;
+    }
+
+    private async Task SaveCalibrationAsync()
+    {
+        if (_viewer == null || _tlSelectedGymId is not { } gymId)
+        {
+            return;
+        }
+
+        _tlCalibBusy = true;
+        _tlError = null;
+        try
+        {
+            var points = new List<GymGradePointDto>();
+            foreach (var grade in GradeScale.FontGrades)
+            {
+                if (_tlPointInputs.TryGetValue(grade, out var text)
+                    && int.TryParse(text, out var value) && value > 0)
+                {
+                    points.Add(new GymGradePointDto(grade, value));
+                }
+            }
+
+            var bonus = int.TryParse(_tlFlashBonusInput, out var b) && b > 0 ? b : 0;
+
+            var updated = await TopLogger.SaveGymCalibrationAsync(gymId, points, bonus, _viewer.Id, CancellationToken.None);
+            var gymName = _tlGyms?.FirstOrDefault(g => g.Id == gymId)?.Name ?? "gym";
+
+            await ReloadTopLoggerStatusAsync();
+            await LoadCalibrationFormAsync(gymId);
+
+            await ShowToast($"Saved {gymName}; recalculated {updated} ascent(s).");
+        }
+        catch (Exception)
+        {
+            _tlError = "Couldn't save the calibration. Please try again.";
+        }
+        finally
+        {
+            _tlCalibBusy = false;
+        }
+    }
+
+    // Drop unsaved edits: reload the saved calibration for the selected gym back into the form.
+    private async Task DiscardCalibrationAsync()
+    {
+        if (_tlSelectedGymId is { } gymId)
+        {
+            await LoadCalibrationFormAsync(gymId);
+        }
+    }
+
+    private async Task ShowToast(string message)
+    {
+        _toast = message;
+        StateHasChanged();
+        await Task.Delay(2500);
+        _toast = null;
+        StateHasChanged();
     }
 
     // ---- chart data builders (mirrors Activity's progression charts) ----

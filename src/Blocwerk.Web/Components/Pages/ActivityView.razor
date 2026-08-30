@@ -21,7 +21,7 @@
         <div class="page-header">
             <h1><LocalTime Value="@_activity.StartedAt" Format="LocalTimeFormat.WeekdayDate" /></h1>
             <span class="detail-sub">
-                Started <LocalTime Value="@_activity.StartedAt" Format="LocalTimeFormat.Time" />@(_activity.WallName != null ? $" · {_activity.WallName}" : "")
+                Started <LocalTime Value="@_activity.StartedAt" Format="LocalTimeFormat.Time" />@(_activity.WallName != null ? $" · {_activity.WallName}" : "")@(_activity.WallName == null && _activity.GymName != null ? $" · TopLogger · {_activity.GymName}" : "")
             </span>
         </div>
 

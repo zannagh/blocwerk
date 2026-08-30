@@ -7,6 +7,7 @@ using Blocwerk.Authentication.Services;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Services.TopLogger;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
@@ -51,6 +52,11 @@ public static class AuthenticationServices
         // encrypt the shared secret at rest (see the "blocwerk.totp" protector inside TotpService).
         app.Services.AddSingleton<ITotpService, TotpService>();
         app.Services.AddSingleton<IAuthorizationHandler, WallGalleryImageHandler>();
+
+        // TopLogger token pair, encrypted at rest with the persisted DataProtection key ring
+        // (protector "blocwerk.toplogger"). Lives here — with the DataProtection stack — while
+        // Blocwerk.Core owns only the ITopLoggerTokenStore interface, so there is no circular reference.
+        app.Services.AddScoped<ITopLoggerTokenStore, DataProtectionTopLoggerTokenStore>();
 
         var policyScheme = "BlocwerkPolicy";
 

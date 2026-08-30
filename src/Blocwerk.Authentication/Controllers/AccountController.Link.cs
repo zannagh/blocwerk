@@ -1,4 +1,6 @@
 using Blocwerk.Authentication.Resources;
+using Blocwerk.Authentication.Services;
+using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
@@ -122,14 +124,42 @@ public partial class AccountController
             return Redirect("/profile?link=merged");
         }
 
+        // No UserIdentity row yet. A pre-UserIdentities (legacy) account may still OWN this provider
+        // subject, recorded only as the "__{sub}" suffix of its Identifier and therefore invisible to the
+        // query above. Detect that duplicate via the SAME resolver login uses so a link can never
+        // silently fork the user's history into a second account.
+        var legacyOwner = await LegacyIdentityResolver.FindByLegacyIdentifierAsync(db, providerUserId);
+        if (legacyOwner is not null && legacyOwner.Id != currentUser.Id)
+        {
+            // Absorb the legacy duplicate INTO the current (surviving) account, then record the identity
+            // on the survivor. Merge direction always keeps the account the user is actively signed in as.
+            await _mergeService.MergeUsersAsync(legacyOwner.Id, currentUser.Id);
+            _currentUserService.InvalidateCache();
+            Log.Information(
+                "[Web Authentication] Merged legacy account {Source} into {Target} while linking {Provider} (matched by subject).",
+                legacyOwner.Id,
+                currentUser.Id,
+                provider);
+
+            await InsertUserIdentityAsync(db, currentUser.Id, provider, providerUserId);
+            return Redirect("/profile?link=merged");
+        }
+
+        // Either the provider subject is truly new, or the legacy owner IS the current user (back-fill
+        // the missing identity row). Both simply record the identity on the current account.
+        await InsertUserIdentityAsync(db, currentUser.Id, provider, providerUserId);
+        return Redirect("/profile?link=linked");
+    }
+
+    private static async Task InsertUserIdentityAsync(BlocwerkDbContext db, Guid userId, string provider, string providerUserId)
+    {
         await db.UserIdentities.AddAsync(new UserIdentity
         {
-            UserId = currentUser.Id,
+            UserId = userId,
             Provider = provider,
             ProviderUserId = providerUserId,
         });
         await db.SaveChangesAsync();
-        return Redirect("/profile?link=linked");
     }
 
     /// <summary>
