@@ -1490,23 +1490,37 @@ public class WallService : IWallService
                 throw new InvalidOperationException("Hold not found");
             }
 
-            var affectedBoulders = await db.BoulderHolds
+            // The HoldId FK is Restrict, so the hold cannot be removed while any BoulderHold references
+            // it — load the link rows, flag each active boulder historic, then drop the links.
+            var boulderLinks = await db.BoulderHolds
+                .Include(bh => bh.Boulder)
                 .Where(bh => bh.HoldId == holdId)
-                .Select(bh => bh.Boulder)
-                .Where(b => !b.IsArchived && !b.IsHistoric)
                 .ToListAsync();
 
-            foreach (var boulder in affectedBoulders)
+            var historicCount = 0;
+            foreach (var link in boulderLinks)
             {
-                boulder.IsHistoric = true;
+                if (link.Boulder is { IsArchived: false, IsHistoric: false })
+                {
+                    link.Boulder.IsHistoric = true;
+                    historicCount++;
+                }
             }
+
+            db.BoulderHolds.RemoveRange(boulderLinks);
+
+            // Hold-to-hold alignment links are Restrict on both ends too; drop any that touch this hold.
+            var holdLinks = await db.HoldLinks
+                .Where(l => l.HoldAId == holdId || l.HoldBId == holdId)
+                .ToListAsync();
+            db.HoldLinks.RemoveRange(holdLinks);
 
             db.Holds.Remove(hold);
             await db.SaveChangesAsync();
 
             BlocwerkMetrics.RecordHoldDeleted(hold.WallId);
             await _activityLogService.LogAsync(hold.WallId, null, ActivityType.HoldDeleted);
-            _logger.LogInformation("Hold {HoldId} on wall {WallId} deleted by {UserId}, {HistoricCount} boulder(s) made historic", holdId, hold.WallId, user.Id, affectedBoulders.Count);
+            _logger.LogInformation("Hold {HoldId} on wall {WallId} deleted by {UserId}, {HistoricCount} boulder(s) made historic", holdId, hold.WallId, user.Id, historicCount);
         }
         catch (Exception ex)
         {
