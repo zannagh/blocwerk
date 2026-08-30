@@ -100,7 +100,7 @@ else
             }
         }
 
-        @if (_boulder.IsHistoric && _isCreator)
+        @if (_boulder.IsHistoric && (_isCreator || _isAdmin))
         {
             <div class="bw-revision-notice">
                 <p>
@@ -110,13 +110,17 @@ else
                 </p>
                 <div class="revision-actions">
                     <a href="/walls/@WallId/boulders/@BoulderId/revise" class="btn-revise">Revise Boulder</a>
-                    @if (_boulder.IsArchived)
+                    @* Archiving stays a creator-only action; only the revise entry point is opened to admins. *@
+                    @if (_isCreator)
                     {
-                        <button class="btn-archive" @onclick="UnarchiveBoulder">Restore from archive</button>
-                    }
-                    else
-                    {
-                        <button class="btn-archive" @onclick="ArchiveBoulder">Archive</button>
+                        @if (_boulder.IsArchived)
+                        {
+                            <button class="btn-archive" @onclick="UnarchiveBoulder">Restore from archive</button>
+                        }
+                        else
+                        {
+                            <button class="btn-archive" @onclick="ArchiveBoulder">Archive</button>
+                        }
                     }
                 </div>
             </div>
@@ -347,6 +351,7 @@ else
     private Guid _currentUserId;
     private bool _isAnonymous;
     private bool _isCreator;
+    private bool _isAdmin;
     private bool _sentByOther;
     private bool _showHistoric;
     private string? _publishError;
@@ -538,12 +543,13 @@ else
         _boulder != null && BoulderHoldGeneration is { } g && g < _boulder.Wall.CurrentGeneration;
 
     /// <summary>
-    /// A live/published boulder the creator may still fully re-edit (holds and rules), because no
-    /// other climber has sent it yet. Once someone else has an ascent the pencil name+grade edit is
-    /// the only option. Drafts and historic boulders have their own revise links elsewhere.
+    /// A live/published boulder the creator OR a wall admin may still fully re-edit (holds and
+    /// rules), because no other climber has sent it yet. Once someone else has an ascent the pencil
+    /// name+grade edit is the only option. Drafts and historic boulders have their own revise links
+    /// elsewhere.
     /// </summary>
     private bool CanFullRevise =>
-        _isCreator && !_isAnonymous && !_sentByOther
+        (_isCreator || _isAdmin) && !_isAnonymous && !_sentByOther
         && _boulder is { IsDraft: false, IsHistoric: false };
 
     private string PhotoUrl
@@ -617,11 +623,24 @@ else
         if (_boulder != null)
         {
             _isCreator = _boulder.CreatedByUserId == _currentUserId;
+
+            // A wall admin (a WallRole.Admin member of this wall) may revise ANY boulder on the
+            // wall, not only the ones they created — same membership-role check used across the
+            // wall UI. Only meaningful for a signed-in viewer on the normal (non-share) path; the
+            // boulder's own Wall include carries no Members, so read the wall from the cache.
+            if (!_isAnonymous && string.IsNullOrEmpty(ShareToken))
+            {
+                var wall = await Cache.GetWallAsync(WallId);
+                var membership = wall?.Members.FirstOrDefault(m => m.UserId == _currentUserId);
+                _isAdmin = membership?.Role == WallRole.Admin;
+            }
+
             _boulderHoldIds = _boulder.BoulderHolds.Select(bh => bh.HoldId).ToHashSet();
 
-            // Whether a live boulder may still be fully re-edited: only its own creator, and only
-            // until another climber has sent it. Gate the read so a share viewer never triggers it.
-            if (!_isAnonymous && _isCreator && _boulder is { IsDraft: false, IsHistoric: false })
+            // Whether a live boulder may still be fully re-edited: the creator or a wall admin, and
+            // only until another climber has sent it (the server enforces the same rule for both).
+            // Gate the read so a share viewer never triggers it.
+            if (!_isAnonymous && (_isCreator || _isAdmin) && _boulder is { IsDraft: false, IsHistoric: false })
             {
                 _sentByOther = await AttemptService.HasBeenSentByOthersAsync(BoulderId, _boulder.CreatedByUserId);
             }

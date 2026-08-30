@@ -19,9 +19,9 @@
     {
         <p class="loading">Loading...</p>
     }
-    else if (!_isCreator)
+    else if (!_isCreator && !_isAdmin)
     {
-        <p class="error-msg">Only the creator can edit this boulder.</p>
+        <p class="error-msg">Only the creator or a wall admin can edit this boulder.</p>
     }
     else
     {
@@ -116,6 +116,7 @@
     // the classic full-edit UI; the radial experience is create-only.
     private bool _noMatch;
     private bool _isCreator;
+    private bool _isAdmin;
     private bool _isDraft;
     private int? _referenceGeneration;
     private bool _isSubmitting;
@@ -149,7 +150,11 @@
 
         var user = await CurrentUserService.GetCurrentUserAsync();
         _isCreator = _boulder.CreatedByUserId == user.Id;
-        if (!_isCreator)
+        // A wall admin (a WallRole.Admin member of this wall) may revise ANY boulder on the wall,
+        // not only the ones they created — same membership-role check used across the wall UI.
+        var membership = _wall.Members.FirstOrDefault(m => m.UserId == user.Id);
+        _isAdmin = membership?.Role == WallRole.Admin;
+        if (!_isCreator && !_isAdmin)
         {
             return;
         }

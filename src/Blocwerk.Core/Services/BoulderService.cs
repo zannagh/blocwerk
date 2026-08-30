@@ -575,12 +575,15 @@ public class BoulderService : IBoulderService
                 throw new InvalidOperationException("Boulder not found");
             }
 
-            if (boulder.CreatedByUserId != user.Id)
+            // A boulder's creator may revise it, and so may any wall admin — an admin may revise
+            // ANY historic boulder on their wall, not only the ones they set themselves.
+            if (boulder.CreatedByUserId != user.Id
+                && !await WallAdminGuard.IsWallAdminAsync(db, boulder.WallId, user.Id, CancellationToken.None))
             {
                 _logger.LogWarning(
-                    "Revise denied: user {UserId} is not creator {OwnerUserId} of boulder {BoulderId}",
+                    "Revise denied: user {UserId} is neither creator {OwnerUserId} nor an admin of wall for boulder {BoulderId}",
                     user.Id, boulder.CreatedByUserId, boulderId);
-                throw new InvalidOperationException("Only the creator can revise a boulder");
+                throw new InvalidOperationException("Only the creator or a wall admin can revise a boulder");
             }
 
             if (!boulder.IsHistoric && !boulder.IsDraft)
