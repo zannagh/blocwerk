@@ -203,10 +203,19 @@ else
                                own holds (including dedicated orange footholds) are drawn here. *@
                             @foreach (var bh in _boulder.BoulderHolds)
                             {
-                                <circle @key="bh.HoldId" cx="@F(bh.Hold.X * 100)" cy="@F(bh.Hold.Y * 100)"
-                                        r="@F(bh.Hold.Radius * 100)"
-                                        fill="@BoulderHoldColors.FillFor(bh.Type, bh.Usage)"
-                                        stroke="@BoulderHoldColors.Stroke(bh.Type)" stroke-width="0.5" />
+                                @if (bh.Hold.ShapePoints is { Count: >= 3 })
+                                {
+                                    <polygon @key="bh.HoldId" points="@ShapePolygon(bh.Hold)"
+                                             fill="@BoulderHoldColors.FillFor(bh.Type, bh.Usage)"
+                                             stroke="@BoulderHoldColors.Stroke(bh.Type)" stroke-width="0.5" />
+                                }
+                                else
+                                {
+                                    <circle @key="bh.HoldId" cx="@F(bh.Hold.X * 100)" cy="@F(bh.Hold.Y * 100)"
+                                            r="@F(bh.Hold.Radius * 100)"
+                                            fill="@BoulderHoldColors.FillFor(bh.Type, bh.Usage)"
+                                            stroke="@BoulderHoldColors.Stroke(bh.Type)" stroke-width="0.5" />
+                                }
                             }
                         </svg>
                     </div>
@@ -743,7 +752,7 @@ else
             .GroupBy(bh => bh.Hold.WallPanelId!.Value)
             .ToDictionary(
                 g => g.Key,
-                g => g.Select(bh => new PanelHold(bh.HoldId, bh.Hold.X, bh.Hold.Y, bh.Hold.Radius, bh.Hold.Color)).ToList());
+                g => g.Select(bh => new PanelHold(bh.HoldId, bh.Hold.X, bh.Hold.Y, bh.Hold.Radius, bh.Hold.Color, bh.Hold.ShapePoints)).ToList());
         foreach (var bh in onPanels)
         {
             _highlightedHoldIds.Add(bh.HoldId);
@@ -1102,6 +1111,11 @@ else
     }, "Could not reject that proposal");
 
     private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+
+    // A hold's custom shape as SVG polygon points (0-100 space), so a boulder's shaped holds render as
+    // their real shape instead of a plain circle.
+    private static string ShapePolygon(Blocwerk.Core.Entities.Hold h) =>
+        string.Join(" ", h.ShapePoints!.Select(sp => F((h.X + sp.Dx) * 100) + "," + F((h.Y + sp.Dy) * 100)));
 
     /// <summary>
     /// An upload writes an activity entry, so the feed below the strip is stale until it re-reads.

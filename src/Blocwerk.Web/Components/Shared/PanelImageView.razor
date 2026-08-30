@@ -40,10 +40,20 @@
                         var sw = isSelected || isHighlight ? "0.9"
                             : custom is not null ? "0.6"
                             : Interactive ? "0.7" : "0.35";
-                        <circle @key="h.Id" cx="@F(h.X * 100)" cy="@F(h.Y * 100)" r="@F(h.Radius * 100)"
-                                fill="@fill" stroke="@stroke" stroke-width="@sw"
-                                style="cursor: @(Interactive ? "pointer" : "inherit"); pointer-events: @(Interactive ? "auto" : "none");"
-                                @onclick="() => OnHoldTap.InvokeAsync(h.Id)" @onclick:stopPropagation="true" />
+                        @if (h.ShapePoints is { Count: >= 3 })
+                        {
+                            <polygon @key="h.Id" points="@ShapePolygon(h)"
+                                     fill="@fill" stroke="@stroke" stroke-width="@sw"
+                                     style="cursor: @(Interactive ? "pointer" : "inherit"); pointer-events: @(Interactive ? "auto" : "none");"
+                                     @onclick="() => OnHoldTap.InvokeAsync(h.Id)" @onclick:stopPropagation="true" />
+                        }
+                        else
+                        {
+                            <circle @key="h.Id" cx="@F(h.X * 100)" cy="@F(h.Y * 100)" r="@F(h.Radius * 100)"
+                                    fill="@fill" stroke="@stroke" stroke-width="@sw"
+                                    style="cursor: @(Interactive ? "pointer" : "inherit"); pointer-events: @(Interactive ? "auto" : "none");"
+                                    @onclick="() => OnHoldTap.InvokeAsync(h.Id)" @onclick:stopPropagation="true" />
+                        }
                     }
 
                     @if (HintPoint is { } hint)
@@ -170,6 +180,11 @@
     private record RelativePos(double X, double Y);
 
     private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+
+    // A hold's custom shape as SVG polygon points (0-100 space), so shaped holds render as their real
+    // shape here (matching the single-image editor) instead of a plain circle.
+    private static string ShapePolygon(Blocwerk.Core.Services.PanelHold h) =>
+        string.Join(" ", h.ShapePoints!.Select(sp => F((h.X + sp.Dx) * 100) + "," + F((h.Y + sp.Dy) * 100)));
 
     // A translucent fill for the highlighted hold, derived from the badge colour.
     private static string Blend(string hslOrHex) =>

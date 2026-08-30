@@ -21,9 +21,18 @@ else
                     @foreach (var h in _holds)
                     {
                         var isHi = HighlightedHoldIds?.Contains(h.Id) == true;
-                        <circle @key="h.Id" cx="@F(h.X * 100)" cy="@F(h.Y * 100)" r="@F(h.Radius * 100)"
-                                fill="@FillOf(h, isHi)" stroke="@StrokeOf(h, isHi)"
-                                stroke-width="@(isHi ? "0.5" : "0.25")" />
+                        @if (h.ShapePoints is { Count: >= 3 })
+                        {
+                            <polygon @key="h.Id" points="@ShapePolygon(h)"
+                                     fill="@FillOf(h, isHi)" stroke="@StrokeOf(h, isHi)"
+                                     stroke-width="@(isHi ? "0.5" : "0.25")" />
+                        }
+                        else
+                        {
+                            <circle @key="h.Id" cx="@F(h.X * 100)" cy="@F(h.Y * 100)" r="@F(h.Radius * 100)"
+                                    fill="@FillOf(h, isHi)" stroke="@StrokeOf(h, isHi)"
+                                    stroke-width="@(isHi ? "0.5" : "0.25")" />
+                        }
                     }
                 </svg>
             </div>
@@ -296,4 +305,9 @@ else
     }
 
     private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+
+    // A hold's custom shape as SVG polygon points (0-100 space), matching the single-image editor so
+    // shaped holds don't fall back to a plain circle on multi-image walls.
+    private static string ShapePolygon(Blocwerk.Core.Services.PanelHold h) =>
+        string.Join(" ", h.ShapePoints!.Select(sp => F((h.X + sp.Dx) * 100) + "," + F((h.Y + sp.Dy) * 100)));
 }

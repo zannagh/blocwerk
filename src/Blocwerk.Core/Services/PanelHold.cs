@@ -1,3 +1,5 @@
+using Blocwerk.Core.Entities;
+
 namespace Blocwerk.Core.Services;
 
 /// <summary>
@@ -10,4 +12,5 @@ namespace Blocwerk.Core.Services;
 /// <param name="Y">Normalized centre Y (0..1).</param>
 /// <param name="Radius">Normalized radius (0..1).</param>
 /// <param name="Color">The detected colour name, or null.</param>
-public record PanelHold(Guid Id, double X, double Y, double Radius, string? Color);
+/// <param name="ShapePoints">The hold's custom shape outline (offsets from the centre), or null for a circle.</param>
+public record PanelHold(Guid Id, double X, double Y, double Radius, string? Color, List<ShapePoint>? ShapePoints = null);
