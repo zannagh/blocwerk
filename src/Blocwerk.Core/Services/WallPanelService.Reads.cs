@@ -99,9 +99,15 @@ public partial class WallPanelService
             return [];
         }
 
+        // Staged holds from an in-flight big-wall update live one generation ahead of the live wall
+        // (see WallBigUpdateService: stagedGen = CurrentGeneration + 1). When the caller asks for the
+        // staged view we must read that generation — otherwise the update UI (carryover re-target, the
+        // new panel overlap stepper) gets an empty list and shows no overlay on the staged image.
+        var effectiveGeneration = includeStaged ? generation.Value + 1 : generation.Value;
+
         return await db.Holds
             .AsNoTracking()
-            .Where(h => h.WallPanelId == panelId && h.Generation == generation.Value)
+            .Where(h => h.WallPanelId == panelId && h.Generation == effectiveGeneration)
             .Select(h => new PanelHold(h.Id, h.X, h.Y, h.Radius, h.Color))
             .ToListAsync();
     }

@@ -66,6 +66,17 @@ public partial class CarryoverStepper
 
     private static (double X, double Y)? Point(PanelHold? h) => h is null ? null : (h.X, h.Y);
 
+    // A moved hold and its detected new position form a linked pair — badge both green so they read
+    // as one link across the two images (the R&D green-dot cue). Other modes keep old=amber/new=blue.
+    private const string LinkGreen = "#33dd66";
+    private string LeftBadgeColor => Mode == CarryReviewMode.Moved ? LinkGreen : "#ffb020";
+    private string RightBadgeColor => Mode == CarryReviewMode.Moved ? LinkGreen : "#4aa8ff";
+
+    private string RightCaption =>
+        _interactive ? "New centre — tap the matching hold"
+        : Mode == CarryReviewMode.Moved && Current?.NewHoldId is not null ? "New centre — detected new position"
+        : "New centre (after)";
+
     private string ModeTitle => Mode switch
     {
         CarryReviewMode.Moved => "Review moved holds",

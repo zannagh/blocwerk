@@ -22,21 +22,24 @@
         </div>
 
         <div class="panel-stepper-pair">
+            @* In the Moved review a hold and its detected new position are a linked pair: badge both
+               green (echoing the R&D green-dot ↔ green-dot link cue) so the eye pairs them across the
+               two images. Other modes keep their old=amber / new=blue colours. *@
             <PanelImageView WallId="WallId" Caption="Old wall (before)"
                             PhotoUrl="@OldPhotoUrl"
                             Holds="OldHolds"
                             HighlightHoldId="Current?.OldHoldId"
-                            BadgeNumber="_index + 1" BadgeColor="#ffb020"
+                            BadgeNumber="_index + 1" BadgeColor="@LeftBadgeColor"
                             FocusKey="_index" FocusPoint="Point(OldHold)" />
 
-            <PanelImageView WallId="WallId" Caption="@(_interactive ? "New centre — tap the matching hold" : "New centre (after)")"
+            <PanelImageView WallId="WallId" Caption="@RightCaption"
                             PhotoUrl="@NewPhotoUrl"
                             Holds="NewHolds"
                             HighlightHoldId="@(_interactive ? null : Current?.NewHoldId)"
                             SelectedHoldId="_selectedNewId"
                             HintPoint="@(_interactive ? Point(NewHold) : null)"
                             Interactive="_interactive"
-                            BadgeNumber="_index + 1" BadgeColor="#4aa8ff"
+                            BadgeNumber="_index + 1" BadgeColor="@RightBadgeColor"
                             FocusKey="_index" FocusPoint="Point(NewHold ?? OldHold)"
                             OnHoldTap="OnNewHoldTap" />
         </div>
