@@ -5,6 +5,7 @@
 @inject NavigationManager Navigation
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IHttpContextAccessor HttpContextAccessor
+@inject Blocwerk.Core.Abstractions.ICurrentUserService CurrentUser
 
 <PageTitle>Blocwerk</PageTitle>
 
@@ -22,21 +23,36 @@
 @code {
     private bool _redirecting;
 
+    // A user with a home wall set lands there directly ("The Attic" as the landing page). Otherwise
+    // resume the last page recorded client-side in blocwerk-last-page, falling back to the walls list.
+    // HttpContext is live on the prerender pass and null on an interactive re-render — a failure there
+    // simply falls through to the last-page/list target rather than crashing.
+    private async Task<string> ResolveLandingTargetAsync()
+    {
+        try
+        {
+            var user = await CurrentUser.GetCurrentUserAsync();
+            if (user?.HomeWallId is { } homeWallId)
+            {
+                return $"/walls/{homeWallId}";
+            }
+        }
+        catch (Exception)
+        {
+            // Fall through to the last-page/list target.
+        }
+
+        var stored = HttpContextAccessor.HttpContext?.Request.Cookies["blocwerk-last-page"];
+        return LastPageRedirect.Resolve(stored, "/walls");
+    }
+
     protected override async Task OnInitializedAsync()
     {
         var authState = await AuthStateProvider.GetAuthenticationStateAsync();
         if (authState.User.Identity?.IsAuthenticated == true)
         {
             _redirecting = true;
-
-            // Prefer the last page the user was on (recorded client-side into blocwerk-last-page by
-            // prefs.js). Reading the cookie server-side on the prerender pass — HttpContext is live
-            // there, mirroring BoulderCreate — gives a no-flash redirect. On an interactive
-            // re-render HttpContext is null, so we simply fall back to /walls without crashing.
-            var stored = HttpContextAccessor.HttpContext?.Request.Cookies["blocwerk-last-page"];
-            var target = LastPageRedirect.Resolve(stored, "/walls");
-
-            Navigation.NavigateTo(target, replace: true);
+            Navigation.NavigateTo(await ResolveLandingTargetAsync(), replace: true);
             return;
         }
 

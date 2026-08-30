@@ -29,13 +29,13 @@ public partial class AccountController
     /// wrong-but-not-exhausted attempt the cookie is re-issued (attempt counter bumped) so a fat-finger
     /// gets another try without a fresh password entry.
     /// </summary>
-    [HttpPost("/account/totp")]
+    [HttpPost("/account/totp/verify")]
     [AllowAnonymous]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> TotpVerify([FromForm] string? code)
     {
         // Single-use: drop the pending cookie before doing anything so a replay can't reuse it.
-        var hadCookie = TryReadTotpPending(out var userId, out var returnUrl, out var attempts);
+        var hadCookie = TryReadTotpPending(out var userId, out var returnUrl, out var attempts, out var isPersistent);
         Response.Cookies.Delete(TotpPendingCookieName, TotpPendingCookieDeleteOptions());
 
         if (!hadCookie)
@@ -80,7 +80,7 @@ public partial class AccountController
             // Success: record the consumed step and clear the failure window in one authoritative write,
             // then complete the same persistent sign-in the password path builds.
             await RecordTotpSuccessAsync(userId, matchedStep);
-            return await CompletePasswordSignInAsync(user, returnUrl);
+            return await CompletePasswordSignInAsync(user, returnUrl, isPersistent);
         }
 
         // Wrong code: count it toward the persisted, per-user lockout (the security cap).
@@ -93,7 +93,7 @@ public partial class AccountController
         var nextAttempt = attempts + 1;
         if (nextAttempt < MaxTotpAttempts)
         {
-            IssueTotpPendingCookie(userId, returnUrl, nextAttempt);
+            IssueTotpPendingCookie(userId, returnUrl, isPersistent, nextAttempt);
             var challenge = "/account/totp?terror=1";
             if (!string.IsNullOrEmpty(returnUrl))
             {
@@ -110,11 +110,11 @@ public partial class AccountController
     /// Writes the signed, short-lived pending marker (userId + returnUrl + expiry + attempt count) that
     /// bridges a verified password to the TOTP challenge.
     /// </summary>
-    private void IssueTotpPendingCookie(Guid userId, string? returnUrl, int attempts = 0)
+    private void IssueTotpPendingCookie(Guid userId, string? returnUrl, bool isPersistent, int attempts = 0)
     {
         var expiresAt = DateTimeOffset.UtcNow.Add(TotpPendingTtl).ToUnixTimeSeconds();
         var encodedReturn = Uri.EscapeDataString(returnUrl ?? string.Empty);
-        var payload = $"{userId:N}|{encodedReturn}|{expiresAt}|{attempts}";
+        var payload = $"{userId:N}|{encodedReturn}|{expiresAt}|{attempts}|{(isPersistent ? 1 : 0)}";
         Response.Cookies.Append(TotpPendingCookieName, _totpPendingProtector.Protect(payload), TotpPendingCookieOptions());
     }
 
@@ -122,11 +122,12 @@ public partial class AccountController
     /// Reads and validates the pending cookie. Returns false (with empty outputs) when it is absent,
     /// tampered, malformed or expired.
     /// </summary>
-    private bool TryReadTotpPending(out Guid userId, out string? returnUrl, out int attempts)
+    private bool TryReadTotpPending(out Guid userId, out string? returnUrl, out int attempts, out bool isPersistent)
     {
         userId = Guid.Empty;
         returnUrl = null;
         attempts = 0;
+        isPersistent = false;
 
         if (!Request.Cookies.TryGetValue(TotpPendingCookieName, out var raw) || string.IsNullOrEmpty(raw))
         {
@@ -137,10 +138,11 @@ public partial class AccountController
         {
             var decoded = _totpPendingProtector.Unprotect(raw);
             var parts = decoded.Split('|');
-            if (parts.Length != 4
+            if (parts.Length != 5
                 || !Guid.TryParseExact(parts[0], "N", out var parsedUser)
                 || !long.TryParse(parts[2], out var expiresAtUnix)
-                || !int.TryParse(parts[3], out var parsedAttempts))
+                || !int.TryParse(parts[3], out var parsedAttempts)
+                || !int.TryParse(parts[4], out var parsedPersistent))
             {
                 return false;
             }
@@ -156,6 +158,7 @@ public partial class AccountController
             // Only ever honour a local returnUrl — the same guard the password endpoint applies.
             returnUrl = !string.IsNullOrEmpty(candidate) && Url.IsLocalUrl(candidate) ? candidate : null;
             attempts = parsedAttempts;
+            isPersistent = parsedPersistent == 1;
             return true;
         }
         catch (Exception)

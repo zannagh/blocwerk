@@ -20,7 +20,7 @@
     }
 
     <div class="password-login" data-enhance-nav="false">
-        <form method="post" action="/account/totp">
+        <form method="post" action="/account/totp/verify">
             <AntiforgeryToken />
             <label class="field-label" for="totp-code">Authentication code</label>
             <input id="totp-code" class="text-input" type="text" name="code"

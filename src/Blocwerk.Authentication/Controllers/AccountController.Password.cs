@@ -18,6 +18,7 @@ public partial class AccountController
     public async Task<IActionResult> PasswordLogin(
         [FromForm] string? username,
         [FromForm] string? password,
+        [FromForm] bool keepSignedIn = false,
         [FromForm] string? returnUrl = null)
     {
         // Only ever honour a local returnUrl (LocalRedirect guards the return leg too).
@@ -66,11 +67,11 @@ public partial class AccountController
         // This marker is the ONLY bridge to the challenge: no code is accepted without a password success.
         if (user.TotpEnabled)
         {
-            IssueTotpPendingCookie(user.Id, returnUrl);
+            IssueTotpPendingCookie(user.Id, returnUrl, keepSignedIn);
             return Redirect("/account/totp");
         }
 
-        return await CompletePasswordSignInAsync(user, returnUrl);
+        return await CompletePasswordSignInAsync(user, returnUrl, keepSignedIn);
     }
 
     // A fixed dummy hash so the "unknown user / no password" miss path spends the same PBKDF2 time as a
@@ -85,7 +86,8 @@ public partial class AccountController
     /// the no-second-factor path above and the successful TOTP challenge, so both produce the exact same
     /// session.
     /// </summary>
-    internal async Task<IActionResult> CompletePasswordSignInAsync(Core.Entities.User user, string? returnUrl)
+    internal async Task<IActionResult> CompletePasswordSignInAsync(
+        Core.Entities.User user, string? returnUrl, bool isPersistent)
     {
         // Build a cookie principal carrying the exact user id as a "uid" claim, so CurrentUserService
         // resolves this session by id (path 0) — precise, and never misresolving or creating a blank user
@@ -102,14 +104,21 @@ public partial class AccountController
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
         var principal = new ClaimsPrincipal(identity);
 
-        // Persistent, long-lived session: these per-sign-in properties override the cookie handler's
-        // 8h sliding default (which is left intact for OAuth logins) with a 1-year absolute expiry.
-        var authProperties = new AuthenticationProperties
-        {
-            IsPersistent = true,
-            ExpiresUtc = DateTimeOffset.UtcNow.AddYears(1),
-            AllowRefresh = true,
-        };
+        // "Keep me signed in" → a persistent, long-lived (1-year absolute) cookie that overrides the cookie
+        // handler's 8h sliding default. Unchecked → a session cookie that ends when the browser closes (the
+        // handler's sliding window still bounds the ticket). OAuth logins are unaffected either way.
+        var authProperties = isPersistent
+            ? new AuthenticationProperties
+            {
+                IsPersistent = true,
+                ExpiresUtc = DateTimeOffset.UtcNow.AddYears(1),
+                AllowRefresh = true,
+            }
+            : new AuthenticationProperties
+            {
+                IsPersistent = false,
+                AllowRefresh = true,
+            };
 
         await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, authProperties);
 
