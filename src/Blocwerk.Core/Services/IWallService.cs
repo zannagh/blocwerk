@@ -56,6 +56,15 @@ public interface IWallService
 
     Task<Hold> MarkHoldModifiedAsync(Guid holdId);
 
+    /// <summary>
+    /// Recovers boulders that went historic during a wall update whose holds are all fine now.
+    /// For each historic boulder referencing <paramref name="holdId"/>, it un-historics the boulder
+    /// only if every hold it references still exists (no removed/dangling hold); boulders that lost a
+    /// hold are left historic. Deliberately conservative — the sole restore rule is "all its holds
+    /// still exist". Returns the number of boulders restored.
+    /// </summary>
+    Task<int> RestoreBouldersForUnchangedHoldAsync(Guid holdId, CancellationToken ct = default);
+
     Task<Hold> MergeHoldsAsync(Guid stagedHoldId, Guid liveHoldId);
 
     /// <summary>

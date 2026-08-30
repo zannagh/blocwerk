@@ -386,6 +386,7 @@ else
                                              IsStaging="false"
                                              ManualAlignment="false"
                                              OnBatchSave="OnPanelBatchSave"
+                                             OnRestoreUnchangedHold="OnRestoreUnchangedHold"
                                              OnRequestHoldUsage="@(_isAnonymous ? null : LoadHoldUsage)" />
                         }
                         else if (_wall.UsesMultipleImages && _viewMode == ViewMode.Photo && _livePanels.Count > 0)
@@ -417,6 +418,7 @@ else
                                              OnMergeHolds="OnMergeHolds"
                                              OnMakeHoldActual="OnMakeHoldActual"
                                              OnMergeVirtualHold="OnMergeVirtualHold"
+                                             OnRestoreUnchangedHold="OnRestoreUnchangedHold"
                                              OnConfirmManualAlignment="OnConfirmManualAlignment"
                                              OnDiscardManualAlignment="DiscardStagedPhoto"
                                              OnRequestAutoAlign="EstimateStagingAlignment"
@@ -1408,6 +1410,22 @@ else
         catch (Exception ex)
         {
             await ShowToast($"Failed: {ex.Message}");
+        }
+    }
+
+    private async Task OnRestoreUnchangedHold(Guid holdId)
+    {
+        try
+        {
+            var restored = await WallService.RestoreBouldersForUnchangedHoldAsync(holdId);
+            await LoadWall();
+            await ShowToast(restored > 0
+                ? $"Restored {restored} boulder(s)"
+                : "No boulders could be restored — a hold is missing");
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"Restore failed: {ex.Message}");
         }
     }
 

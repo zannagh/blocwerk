@@ -834,6 +834,66 @@ public class WallService : IWallService
         }
     }
 
+    public async Task<int> RestoreBouldersForUnchangedHoldAsync(Guid holdId, CancellationToken ct = default)
+    {
+        using var op = BlocwerkMetrics.TimeOperation("Wall.RestoreBouldersForUnchangedHold");
+        try
+        {
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
+            db.CurrentUserId = user.Id;
+
+            var hold = await db.Holds.FirstOrDefaultAsync(h => h.Id == holdId, ct);
+            if (hold == null)
+            {
+                _logger.LogWarning("Hold {HoldId} not found for restore-unchanged by {UserId}", holdId, user.Id);
+                throw new InvalidOperationException("Hold not found");
+            }
+
+            // Candidate boulders: historic ones that reference this hold.
+            var candidates = await db.Boulders
+                .Include(b => b.BoulderHolds)
+                .Where(b => b.IsHistoric && b.BoulderHolds.Any(bh => bh.HoldId == holdId))
+                .ToListAsync(ct);
+
+            // Every hold still present on this wall — used to test each boulder's completeness.
+            var existingHoldIds = (await db.Holds
+                .Where(h => h.WallId == hold.WallId)
+                .Select(h => h.Id)
+                .ToListAsync(ct))
+                .ToHashSet();
+
+            var restored = 0;
+            var skipped = 0;
+            foreach (var boulder in candidates)
+            {
+                // Only restore when EVERY hold the boulder references still exists. A boulder that
+                // lost a hold can't be auto-restored and is left historic.
+                if (boulder.BoulderHolds.All(bh => existingHoldIds.Contains(bh.HoldId)))
+                {
+                    boulder.IsHistoric = false;
+                    boulder.NeedsReview = false;
+                    restored++;
+                }
+                else
+                {
+                    skipped++;
+                }
+            }
+
+            await db.SaveChangesAsync(ct);
+            _logger.LogInformation(
+                "Hold {HoldId} on wall {WallId} marked unchanged by {UserId}: {Restored} boulder(s) restored, {Skipped} skipped (missing holds)",
+                holdId, hold.WallId, user.Id, restored, skipped);
+            return restored;
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
+    }
+
     public async Task<Hold> MergeHoldsAsync(Guid stagedHoldId, Guid liveHoldId)
     {
         using var op = BlocwerkMetrics.TimeOperation("Wall.MergeHolds");

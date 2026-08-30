@@ -113,6 +113,13 @@
                     </svg>
                 </button>
             }
+            <span class="toolbar-sep"></span>
+            <button class="tool-btn @A(EditMode.MarkUnchanged)" @onclick="() => SetMode(EditMode.MarkUnchanged)"
+                    title="This hold didn't physically change: reset a falsely-moved staged hold, and pull its boulders back out of historic state">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                    <path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><polyline points="3 3 3 8 8 8" /><polyline points="9 12 11.4 14.4 15.5 10" />
+                </svg>
+            </button>
         }
     </div>
 </div>
@@ -188,6 +195,11 @@
             {
                 strokeColor = "#ffd700";
             }
+            var isMarkUnchangedPick = _mode == EditMode.MarkUnchanged && _markUnchangedHoldId == hold.Id;
+            if (isMarkUnchangedPick)
+            {
+                strokeColor = "#38e1c6";
+            }
             var sw = (isSelected || isShapeEditing || isNaming) ? "0.4" : (IsStaging ? "0.45" : "0.25");
             var dash = "";
             if (ManualAlignment && !(isSelected || isShapeEditing || isNaming))
@@ -198,7 +210,7 @@
             {
                 dash = IsStagedHold(hold) ? "0.6 0.3" : "0.3 0.3";
             }
-            if (hold.IsVirtual && !(isSelected || isShapeEditing || isNaming) && !isMakeActualPick)
+            if (hold.IsVirtual && !(isSelected || isShapeEditing || isNaming) && !isMakeActualPick && !isMarkUnchangedPick)
             {
                 strokeColor = "#c86dff";
                 dash = "0.6 0.4";
@@ -253,6 +265,19 @@
                     <text x="@F(hold.X * 100 + r * 0.85)" y="@F(hold.Y * 100 - r * 0.85)"
                           text-anchor="middle" dominant-baseline="central"
                           font-size="1.7" font-weight="700" fill="white">@usageRefs.Count</text>
+                </g>
+            }
+
+            @* Changed-since-last-generation overlay: a distinct badge ring on holds whose
+               geometry drifted from their previous-generation source. Layered on top of the
+               existing manual stroke, pointer-events off, and only while "Show changes" is on. *@
+            @if (ManualAlignment && _showChanges && IsAutoChanged(hold))
+            {
+                <g pointer-events="none">
+                    <circle cx="@F(hold.X * 100)" cy="@F(hold.Y * 100)" r="@F(r + 1.3)"
+                            fill="none" stroke="#ff3db4" stroke-width="0.4" stroke-dasharray="0.9 0.5" opacity="0.95" />
+                    <circle cx="@F(hold.X * 100 + r * 0.9)" cy="@F(hold.Y * 100 - r * 0.9)" r="1.1"
+                            fill="#ff3db4" stroke="white" stroke-width="0.2" />
                 </g>
             }
 
@@ -531,6 +556,15 @@
         <div class="option-bar">
             <span class="option-hint">Drag each hold onto its new position, then <strong>Confirm hold</strong>. @_alignedHoldIds.Count/@Holds.Count confirmed.</span>
             <div class="option-group">
+                <button class="opt-btn @(_showChanges ? "active" : "")"
+                        title="Highlight holds whose position or size drifted from the last wall generation."
+                        @onclick="() => _showChanges = !_showChanges">Show changes (@ChangedCount)</button>
+                <span style="display:inline-flex;align-items:center;gap:0.3rem;font-size:0.8rem;opacity:0.85;">
+                    <span style="width:0.7rem;height:0.7rem;border-radius:50%;background:#ff3db4;display:inline-block;"></span>
+                    moved vs last photo
+                </span>
+            </div>
+            <div class="option-group">
                 <button class="opt-btn" title="Mark every hold as changed — all boulders will be flagged for review." @onclick="MarkAllChanged">Wall completely reset</button>
                 <button class="opt-btn" title="Mark every hold as unchanged (default)." @onclick="MarkAllUnchanged">Mark all unchanged</button>
             </div>
@@ -600,6 +634,33 @@
             }
         </div>
     }
+    @if (CanEdit && _mode == EditMode.MarkUnchanged)
+    {
+        <div class="option-bar">
+            @if (_markUnchangedHoldId is { } uid)
+            {
+                var uh = Holds.FirstOrDefault(h => h.Id == uid);
+                var hasBaseline = _manualBaseline.ContainsKey(uid);
+                <span class="option-hint">
+                    <strong>@(uh?.Name ?? "This hold")</strong> — mark as physically unchanged.
+                </span>
+                @if (ManualAlignment && hasBaseline)
+                {
+                    <button class="opt-btn active"
+                            title="Snap this staged hold back to its previous-generation position and clear its changed flag, so confirming won't flag its boulders."
+                            @onclick="() => ResetHoldToUnchanged(uid)">Reset — didn't move</button>
+                }
+                <button class="opt-btn"
+                        title="Pull boulders that went historic in a past update back out of historic state, when all their holds still exist."
+                        @onclick="() => RestoreUnchangedBoulders(uid)">Restore its boulders</button>
+                <button class="opt-btn" @onclick="() => _markUnchangedHoldId = null">Done</button>
+            }
+            else
+            {
+                <span class="option-hint">Tap a hold that didn't physically change. You can reset a falsely-moved staged hold and pull its boulders back out of historic state.</span>
+            }
+        </div>
+    }
     @if (CanEdit && ManualAlignment)
     {
         <div class="batch-bar">
@@ -664,6 +725,12 @@
     /// Passes the virtual hold id and the target actual hold id.
     /// </summary>
     [Parameter] public EventCallback<(Guid virtualHoldId, Guid actualHoldId)> OnMergeVirtualHold { get; set; }
+
+    /// <summary>
+    /// "This hold didn't physically change": restores boulders that went historic in a past update
+    /// but whose holds all still exist. Passes the tapped hold's id. Works in any editor mode.
+    /// </summary>
+    [Parameter] public EventCallback<Guid> OnRestoreUnchangedHold { get; set; }
     [Parameter] public bool IsStaging { get; set; }
     [Parameter] public int LiveGeneration { get; set; }
     [Parameter] public bool BottomToolbar { get; set; }
@@ -748,6 +815,17 @@
     private readonly HashSet<Guid> _changedHoldIds = [];
     private bool _lastManualAlignment;
 
+    // ---- Changed-since-last-generation overlay + MarkUnchanged tool --------------------------
+    // Geometry each staged clone had when manual alignment began (== its previous-generation
+    // source, since a clone starts at its source's position). The changed overlay diffs the
+    // live hold against this, and the MarkUnchanged reset restores a hold back to it.
+    private readonly Dictionary<Guid, (double X, double Y, double Radius, List<ShapePoint>? Shape)> _manualBaseline = new();
+    private bool _showChanges = true;
+    private Guid? _markUnchangedHoldId;
+    private const double ChangedPosThreshold = 0.015;
+    private const double ChangedRadiusThreshold = 0.005;
+    private const double ChangedShapeThreshold = 0.005;
+
     private ElementReference _containerRef;
     private ElementReference _viewportRef;
 
@@ -807,7 +885,7 @@
     // ballooning when zoomed in.
     private double HandleScale => 1.0 / Math.Clamp(_zoom, 0.5, 6.0);
 
-    private enum EditMode { Add, Move, Shape, Paint, Delete, Border, Name, Merge, ShapeTilt, Usage, MakeActual }
+    private enum EditMode { Add, Move, Shape, Paint, Delete, Border, Name, Merge, ShapeTilt, Usage, MakeActual, MarkUnchanged }
 
     public record BatchChanges(List<Hold> Added, List<Hold> Updated, List<Guid> Deleted);
 
@@ -881,9 +959,12 @@
             _alignmentChangedIds.Clear();
             _snapshotHolds = null;
             _selectedHoldId = null;
+            _markUnchangedHoldId = null;
+            _manualBaseline.Clear();
             if (ManualAlignment)
             {
                 _mode = EditMode.Move;
+                CaptureManualBaseline();
             }
 
             _lastManualAlignment = ManualAlignment;
@@ -899,6 +980,7 @@
         EditMode.ShapeTilt => "pointer",
         EditMode.Merge => "pointer",
         EditMode.MakeActual => "pointer",
+        EditMode.MarkUnchanged => "pointer",
         EditMode.Usage => "pointer",
         _ => "default"
     };
@@ -919,6 +1001,10 @@
         {
             _makeActualVirtualId = null;
             _makeActualTargetId = null;
+        }
+        if (mode != EditMode.MarkUnchanged)
+        {
+            _markUnchangedHoldId = null;
         }
     }
 
@@ -1021,6 +1107,9 @@
                 return;
             case EditMode.MakeActual:
                 HandleMakeActualClick(hold);
+                return;
+            case EditMode.MarkUnchanged:
+                _markUnchangedHoldId = _markUnchangedHoldId == hold.Id ? null : hold.Id;
                 return;
             case EditMode.ShapeTilt:
                 _shapeTiltHoldId = hold.Id;
@@ -1535,6 +1624,94 @@
     private void MarkAllUnchanged()
     {
         _changedHoldIds.Clear();
+    }
+
+    // ---- Changed overlay + MarkUnchanged tool ------------------------------
+    private void CaptureManualBaseline()
+    {
+        _manualBaseline.Clear();
+        foreach (var h in Holds)
+        {
+            _manualBaseline[h.Id] = (h.X, h.Y, h.Radius,
+                h.ShapePoints?.Select(sp => new ShapePoint { Dx = sp.Dx, Dy = sp.Dy }).ToList());
+        }
+    }
+
+    /// <summary>
+    /// True when a staged hold's geometry drifted from its previous-generation baseline beyond a
+    /// small threshold (position, radius, or shape). Derived/visual only — no persistence.
+    /// </summary>
+    private bool IsAutoChanged(Hold hold)
+    {
+        if (!_manualBaseline.TryGetValue(hold.Id, out var b))
+        {
+            return false;
+        }
+
+        var dx = hold.X - b.X;
+        var dy = hold.Y - b.Y;
+        if (Math.Sqrt(dx * dx + dy * dy) > ChangedPosThreshold)
+        {
+            return true;
+        }
+
+        if (Math.Abs(hold.Radius - b.Radius) > ChangedRadiusThreshold)
+        {
+            return true;
+        }
+
+        return ShapePointsDiffer(hold.ShapePoints, b.Shape);
+    }
+
+    private static bool ShapePointsDiffer(List<ShapePoint>? a, List<ShapePoint>? b)
+    {
+        var ca = a?.Count ?? 0;
+        var cb = b?.Count ?? 0;
+        if (ca != cb)
+        {
+            return true;
+        }
+
+        for (var i = 0; i < ca; i++)
+        {
+            if (Math.Abs(a![i].Dx - b![i].Dx) > ChangedShapeThreshold
+                || Math.Abs(a[i].Dy - b[i].Dy) > ChangedShapeThreshold)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private int ChangedCount => ManualAlignment ? Holds.Count(IsAutoChanged) : 0;
+
+    /// <summary>
+    /// Pre-promote fix: snap a falsely-flagged staged clone back to its previous-generation
+    /// geometry and clear its changed flag, so confirming the alignment records DidChange=false
+    /// and no boulder is flagged for review. Client-only until the alignment is confirmed.
+    /// </summary>
+    private void ResetHoldToUnchanged(Guid holdId)
+    {
+        var hold = Holds.FirstOrDefault(h => h.Id == holdId);
+        if (hold == null || !_manualBaseline.TryGetValue(holdId, out var b))
+        {
+            return;
+        }
+
+        TakeSnapshot();
+        hold.X = b.X;
+        hold.Y = b.Y;
+        hold.Radius = b.Radius;
+        hold.ShapePoints = b.Shape?.Select(sp => new ShapePoint { Dx = sp.Dx, Dy = sp.Dy }).ToList();
+        _changedHoldIds.Remove(holdId);
+        _alignedHoldIds.Add(holdId);
+    }
+
+    private async Task RestoreUnchangedBoulders(Guid holdId)
+    {
+        _markUnchangedHoldId = null;
+        await OnRestoreUnchangedHold.InvokeAsync(holdId);
     }
 
     private async Task ConfirmManualAlignment()
