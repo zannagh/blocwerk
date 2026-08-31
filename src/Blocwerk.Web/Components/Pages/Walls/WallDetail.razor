@@ -1419,6 +1419,12 @@ else
         try
         {
             await WallService.PromoteVirtualHoldAsync(virtualHoldId);
+            // Repaint the editor overlay immediately: flip the in-memory hold so it stops rendering
+            // dotted even before the wall reload swaps the list in.
+            foreach (var h in _holds.Where(h => h.Id == virtualHoldId))
+            {
+                h.IsVirtual = false;
+            }
             await LoadWall();
             await ShowToast("Virtual hold is now actual");
         }
@@ -1433,6 +1439,13 @@ else
         try
         {
             await WallService.MergeVirtualHoldAsync(pair.virtualHoldId, pair.actualHoldId);
+            // The virtual hold survives (now actual); the detected hold it absorbed is gone. Reflect
+            // both on the in-memory list so the editor repaints before the wall reload.
+            foreach (var h in _holds.Where(h => h.Id == pair.virtualHoldId))
+            {
+                h.IsVirtual = false;
+            }
+            _holds.RemoveAll(h => h.Id == pair.actualHoldId);
             await LoadWall();
             await ShowToast("Virtual hold merged into detected hold");
         }
