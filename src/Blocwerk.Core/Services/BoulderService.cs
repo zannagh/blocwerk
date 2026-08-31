@@ -129,6 +129,14 @@ public class BoulderService : IBoulderService
     public const string SentByOthersRevisionMessage =
         "This boulder has already been sent by others; only its name and grade can be changed";
 
+    /// <summary>
+    /// Thrown by <see cref="ReviseBoulderAsync"/> when the acting user is neither the boulder's
+    /// creator nor a wall admin. Exposed as a const so the offline controller can list it among its
+    /// permanent (non-retryable) rejections without the two strings drifting apart.
+    /// </summary>
+    public const string CreatorOrAdminRevisionMessage =
+        "Only the creator or a wall admin can revise a boulder";
+
     private readonly IDbContextFactory<BlocwerkDbContext> _dbContextFactory;
     private readonly ICurrentUserService _currentUserService;
     private readonly IActivityLogService _activityLogService;
@@ -583,7 +591,7 @@ public class BoulderService : IBoulderService
                 _logger.LogWarning(
                     "Revise denied: user {UserId} is neither creator {OwnerUserId} nor an admin of wall for boulder {BoulderId}",
                     user.Id, boulder.CreatedByUserId, boulderId);
-                throw new InvalidOperationException("Only the creator or a wall admin can revise a boulder");
+                throw new InvalidOperationException(CreatorOrAdminRevisionMessage);
             }
 
             if (!boulder.IsHistoric && !boulder.IsDraft)

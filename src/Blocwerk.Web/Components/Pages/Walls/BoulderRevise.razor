@@ -15,7 +15,12 @@
         <h1>@(_isDraft ? "Edit Draft" : "Revise Boulder")</h1>
     </div>
 
-    @if (_boulder == null || _wall == null)
+    @if (_notFound)
+    {
+        <p class="error-msg">This boulder no longer exists.</p>
+        <a href="/walls/@WallId" class="back-link">&larr; Back to wall</a>
+    }
+    else if (_boulder == null || _wall == null)
     {
         <p class="loading">Loading...</p>
     }
@@ -117,6 +122,7 @@
     private bool _noMatch;
     private bool _isCreator;
     private bool _isAdmin;
+    private bool _notFound;
     private bool _isDraft;
     private int? _referenceGeneration;
     private bool _isSubmitting;
@@ -145,6 +151,7 @@
 
         if (_wall == null || _boulder == null)
         {
+            _notFound = true;
             return;
         }
 
@@ -152,8 +159,10 @@
         _isCreator = _boulder.CreatedByUserId == user.Id;
         // A wall admin (a WallRole.Admin member of this wall) may revise ANY boulder on the wall,
         // not only the ones they created — same membership-role check used across the wall UI.
+        // The wall owner counts as an admin even without an explicit Admin member row, matching
+        // WallAdminGuard on the server, so an owner is never bounced off a page the server would allow.
         var membership = _wall.Members.FirstOrDefault(m => m.UserId == user.Id);
-        _isAdmin = membership?.Role == WallRole.Admin;
+        _isAdmin = membership?.Role == WallRole.Admin || _wall.OwnerId == user.Id;
         if (!_isCreator && !_isAdmin)
         {
             return;

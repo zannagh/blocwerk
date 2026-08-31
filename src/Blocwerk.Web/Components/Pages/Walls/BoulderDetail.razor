@@ -632,7 +632,10 @@ else
             {
                 var wall = await Cache.GetWallAsync(WallId);
                 var membership = wall?.Members.FirstOrDefault(m => m.UserId == _currentUserId);
-                _isAdmin = membership?.Role == WallRole.Admin;
+                // The wall owner counts as an admin even without an explicit Admin member row, matching
+                // WallAdminGuard on the server — otherwise an owner would be offered no revise entry
+                // point yet the server would accept the revise.
+                _isAdmin = membership?.Role == WallRole.Admin || wall?.OwnerId == _currentUserId;
             }
 
             _boulderHoldIds = _boulder.BoulderHolds.Select(bh => bh.HoldId).ToHashSet();

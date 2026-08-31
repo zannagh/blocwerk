@@ -32,9 +32,8 @@ public sealed class OfflineBouldersController : ControllerBase
     {
         ["Boulder not found"] = StatusCodes.Status404NotFound,
         ["Wall not found"] = StatusCodes.Status404NotFound,
-        ["Only the creator can revise a boulder"] = StatusCodes.Status403Forbidden,
+        [BoulderService.CreatorOrAdminRevisionMessage] = StatusCodes.Status403Forbidden,
         [BoulderService.SentByOthersRevisionMessage] = StatusCodes.Status403Forbidden,
-        ["Boulder is not historic"] = StatusCodes.Status400BadRequest,
         ["Select at least one hold"] = StatusCodes.Status400BadRequest,
     };
 
