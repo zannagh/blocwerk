@@ -40,7 +40,7 @@
             @if (_isSelf)
             {
                 <div class="avatar-edit">
-                    <UserAvatar UserId="_target.Id" Name="_target.Name" HasAvatar="_target.HasAvatar" />
+                    <UserAvatar UserId="_target.Id" Name="@_target.Name" HasAvatar="_target.HasAvatar" />
 
                     @* Hidden file input triggered by the pencil label below, overlaying the header avatar. *@
                     <InputFile id="avatar-file" class="avatar-file-input" OnChange="OnAvatarSelectedAsync"
@@ -68,7 +68,7 @@
             }
             else
             {
-                <UserAvatar UserId="_target.Id" Name="_target.Name" HasAvatar="_target.HasAvatar" />
+                <UserAvatar UserId="_target.Id" Name="@_target.Name" HasAvatar="_target.HasAvatar" />
             }
             <h1>@_target.Name</h1>
             <span class="role-badge">@_target.Role</span>
