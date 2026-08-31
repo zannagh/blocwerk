@@ -1,5 +1,11 @@
 @inject IJSRuntime JS
 @implements IDisposable
+@using Microsoft.AspNetCore.Components.Routing
+
+@* Warn before navigating away with unsaved manual-alignment drag work: all of it lives in
+   client state until "Confirm & Update Wall", so an internal nav or a full page leave would
+   silently discard it. *@
+<NavigationLock ConfirmExternalNavigation="_hasPendingAlignmentWork" OnBeforeInternalNavigation="OnBeforeNavigateAway" />
 
 <div class="editor-toolbar @(BottomToolbar ? "docked-bottom" : string.Empty)">
     <div class="toolbar-left">
@@ -268,10 +274,12 @@
                 </g>
             }
 
-            @* Changed-since-last-generation overlay: a distinct badge ring on holds whose
-               geometry drifted from their previous-generation source. Layered on top of the
-               existing manual stroke, pointer-events off, and only while "Show changes" is on. *@
-            @if (ManualAlignment && _showChanges && IsAutoChanged(hold))
+            @* Changed-holds overlay: a distinct badge ring on holds the reviewer has marked as changed
+               (the same set that flags boulders for review on confirm). Geometry drift is deliberately
+               NOT used — on a large wall re-shot from a slightly different spot, drift is mostly parallax
+               and would flag almost everything. Layered over the manual stroke, pointer-events off, and
+               only while "Show changes" is on. *@
+            @if (_showChanges && (ManualAlignment ? _changedHoldIds.Contains(hold.Id) : (ChangeReview && hold.NeedsReview)))
             {
                 <g pointer-events="none">
                     <circle cx="@F(hold.X * 100)" cy="@F(hold.Y * 100)" r="@F(r + 1.3)"
@@ -557,8 +565,8 @@
             <span class="option-hint">Drag each hold onto its new position, then <strong>Confirm hold</strong>. @_alignedHoldIds.Count/@Holds.Count confirmed.</span>
             <div class="option-group">
                 <button class="opt-btn @(_showChanges ? "active" : "")"
-                        title="Highlight holds whose position or size drifted from the last wall generation."
-                        @onclick="() => _showChanges = !_showChanges">Show changes (@ChangedCount)</button>
+                        title="Highlight the holds you've marked as changed — the ones whose boulders get flagged for review on confirm."
+                        @onclick="() => _showChanges = !_showChanges">Marked changed (@ChangedCount)</button>
                 <span style="display:inline-flex;align-items:center;gap:0.3rem;font-size:0.8rem;opacity:0.85;">
                     <span style="width:0.7rem;height:0.7rem;border-radius:50%;background:#ff3db4;display:inline-block;"></span>
                     moved vs last photo
@@ -567,6 +575,21 @@
             <div class="option-group">
                 <button class="opt-btn" title="Mark every hold as changed — all boulders will be flagged for review." @onclick="MarkAllChanged">Wall completely reset</button>
                 <button class="opt-btn" title="Mark every hold as unchanged (default)." @onclick="MarkAllUnchanged">Mark all unchanged</button>
+            </div>
+        </div>
+    }
+    @if (CanEdit && ChangeReview && !ManualAlignment)
+    {
+        <div class="option-bar">
+            <span class="option-hint">Move holds freely — that alone won't flag boulders. Use <strong>Mark modified</strong> / <strong>Mark unchanged</strong> on a hold to record what changed; a nearer-centre panel's verdict carries to its overlap twins.</span>
+            <div class="option-group">
+                <button class="opt-btn @(_showChanges ? "active" : "")"
+                        title="Highlight the holds marked as changed on this panel — their boulders are flagged for review."
+                        @onclick="() => _showChanges = !_showChanges">Marked changed (@ReviewChangedCount)</button>
+                <span style="display:inline-flex;align-items:center;gap:0.3rem;font-size:0.8rem;opacity:0.85;">
+                    <span style="width:0.7rem;height:0.7rem;border-radius:50%;background:#ff3db4;display:inline-block;"></span>
+                    needs review
+                </span>
             </div>
         </div>
     }
@@ -735,9 +758,46 @@
     [Parameter] public int LiveGeneration { get; set; }
     [Parameter] public bool BottomToolbar { get; set; }
     [Parameter] public bool ManualAlignment { get; set; }
+
+    // Enables the per-panel change-review overlay + "Marked changed" toggle in the live (non-alignment)
+    // editor: highlights holds flagged NeedsReview and lets the reviewer mark holds changed/unchanged.
+    [Parameter] public bool ChangeReview { get; set; }
     [Parameter] public EventCallback<ManualAlignmentResult> OnConfirmManualAlignment { get; set; }
     [Parameter] public EventCallback OnDiscardManualAlignment { get; set; }
     [Parameter] public Func<Task<Homography?>>? OnRequestAutoAlign { get; set; }
+
+    /// <summary>
+    /// Changes whenever the parent re-scopes this editor to a different subject (e.g. a big wall
+    /// stepping between panels). A new token clears the per-panel edit tracking so unsaved holds
+    /// never bleed onto the next panel. Null for single-subject callers (a no-op).
+    /// </summary>
+    [Parameter] public Guid? ResetToken { get; set; }
+
+    /// <summary>
+    /// True while this editor holds unsaved hold edits (adds/updates/deletes). Lets the parent
+    /// warn before it re-scopes the editor (e.g. stepping panels) and drops them.
+    /// </summary>
+    public bool HasUnsavedChanges => _pendingChanges > 0;
+
+    // Any unsaved manual-alignment work: holds dragged (tracked in _pendingChanges via _updatedHoldIds),
+    // confirmed-aligned, or moved by the auto-align gizmo. All of it lives only in the circuit until
+    // "Confirm & Update Wall", so navigating away (internal or external) would discard it silently.
+    private bool _hasPendingAlignmentWork => ManualAlignment
+        && (_pendingChanges > 0 || _alignedHoldIds.Count > 0 || _alignmentChangedIds.Count > 0);
+
+    private async Task OnBeforeNavigateAway(LocationChangingContext ctx)
+    {
+        if (!_hasPendingAlignmentWork)
+        {
+            return;
+        }
+
+        var proceed = await JS.InvokeAsync<bool>("confirm", "You have unsaved alignment changes. Leave and discard them?");
+        if (!proceed)
+        {
+            ctx.PreventNavigation();
+        }
+    }
 
     /// <summary>
     /// Supplies the hold-to-boulders map for the usage tool. The tool button is hidden
@@ -814,17 +874,15 @@
     private readonly HashSet<Guid> _alignedHoldIds = [];
     private readonly HashSet<Guid> _changedHoldIds = [];
     private bool _lastManualAlignment;
+    private Guid? _lastResetToken;
 
-    // ---- Changed-since-last-generation overlay + MarkUnchanged tool --------------------------
+    // ---- MarkUnchanged tool -------------------------------------------------------------------
     // Geometry each staged clone had when manual alignment began (== its previous-generation
-    // source, since a clone starts at its source's position). The changed overlay diffs the
-    // live hold against this, and the MarkUnchanged reset restores a hold back to it.
+    // source, since a clone starts at its source's position). The MarkUnchanged reset restores a
+    // hold back to it; "changed" is now a manual reviewer decision (_changedHoldIds), not geometry.
     private readonly Dictionary<Guid, (double X, double Y, double Radius, List<ShapePoint>? Shape)> _manualBaseline = new();
     private bool _showChanges = true;
     private Guid? _markUnchangedHoldId;
-    private const double ChangedPosThreshold = 0.015;
-    private const double ChangedRadiusThreshold = 0.005;
-    private const double ChangedShapeThreshold = 0.005;
 
     private ElementReference _containerRef;
     private ElementReference _viewportRef;
@@ -968,6 +1026,24 @@
             }
 
             _lastManualAlignment = ManualAlignment;
+        }
+
+        // Reset the per-panel edit tracking whenever the parent re-scopes this editor to a
+        // different subject (a new ResetToken), so a previous panel's unsaved adds/updates/deletes
+        // never carry over onto the next panel. Only outside manual alignment: the alignment sets
+        // (_alignedHoldIds/_changedHoldIds/_alignmentChangedIds/_manualBaseline) are owned by the
+        // ManualAlignment toggle above and must survive.
+        if (ResetToken != _lastResetToken)
+        {
+            _lastResetToken = ResetToken;
+            if (!ManualAlignment)
+            {
+                _addedHolds.Clear();
+                _updatedHoldIds.Clear();
+                _deletedHoldIds.Clear();
+                _snapshotHolds = null;
+                _selectedHoldId = null;
+            }
         }
     }
 
@@ -1641,50 +1717,10 @@
     /// True when a staged hold's geometry drifted from its previous-generation baseline beyond a
     /// small threshold (position, radius, or shape). Derived/visual only — no persistence.
     /// </summary>
-    private bool IsAutoChanged(Hold hold)
-    {
-        if (!_manualBaseline.TryGetValue(hold.Id, out var b))
-        {
-            return false;
-        }
+    private int ChangedCount => ManualAlignment ? Holds.Count(h => _changedHoldIds.Contains(h.Id)) : 0;
 
-        var dx = hold.X - b.X;
-        var dy = hold.Y - b.Y;
-        if (Math.Sqrt(dx * dx + dy * dy) > ChangedPosThreshold)
-        {
-            return true;
-        }
-
-        if (Math.Abs(hold.Radius - b.Radius) > ChangedRadiusThreshold)
-        {
-            return true;
-        }
-
-        return ShapePointsDiffer(hold.ShapePoints, b.Shape);
-    }
-
-    private static bool ShapePointsDiffer(List<ShapePoint>? a, List<ShapePoint>? b)
-    {
-        var ca = a?.Count ?? 0;
-        var cb = b?.Count ?? 0;
-        if (ca != cb)
-        {
-            return true;
-        }
-
-        for (var i = 0; i < ca; i++)
-        {
-            if (Math.Abs(a![i].Dx - b![i].Dx) > ChangedShapeThreshold
-                || Math.Abs(a[i].Dy - b[i].Dy) > ChangedShapeThreshold)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private int ChangedCount => ManualAlignment ? Holds.Count(IsAutoChanged) : 0;
+    // Holds flagged for review on this panel (the change-review overlay's count).
+    private int ReviewChangedCount => Holds.Count(h => h.NeedsReview);
 
     /// <summary>
     /// Pre-promote fix: snap a falsely-flagged staged clone back to its previous-generation

@@ -371,12 +371,22 @@ else
                                those belong to the wall/panel-grid settings, not per-panel hold editing. *@
                             <div class="panel-selector">
                                 <button class="btn-icon" @onclick="() => StepEditingPanel(-1)"
-                                        disabled="@(_livePanels.Count < 2)" title="Previous panel">‹</button>
+                                        disabled="@(_livePanels.Count < 2 || _confirmingPanelStep)" title="Previous panel">‹</button>
                                 <span class="panel-selector-label">Panel @(_livePanels.FindIndex(p => p.Id == _editingPanel.Id) + 1)/@_livePanels.Count</span>
                                 <button class="btn-icon" @onclick="() => StepEditingPanel(1)"
-                                        disabled="@(_livePanels.Count < 2)" title="Next panel">›</button>
+                                        disabled="@(_livePanels.Count < 2 || _confirmingPanelStep)" title="Next panel">›</button>
                             </div>
+                            @if (_confirmingPanelStep)
+                            {
+                                <p class="staged-hint">Unsaved hold changes on this panel will be discarded. Switch anyway?</p>
+                                <div class="staged-actions">
+                                    <button class="btn-primary" @onclick="ConfirmPanelStep">Discard &amp; switch</button>
+                                    <button class="btn-secondary" @onclick="CancelPanelStep">Cancel</button>
+                                </div>
+                            }
                             <WallPhotoEditor WallId="_wall.Id"
+                                             @ref="_panelEditor"
+                                             ResetToken="_editingPanel?.Id"
                                              PhotoUrlOverride="@($"/api/walls/{_wall.Id}/panels/{_editingPanel!.Id}/photo")"
                                              Holds="_editingPanelHolds"
                                              BorderPoints="new List<ShapePoint>()"
@@ -385,7 +395,9 @@ else
                                              BottomToolbar="true"
                                              IsStaging="false"
                                              ManualAlignment="false"
+                                             ChangeReview="true"
                                              OnBatchSave="OnPanelBatchSave"
+                                             OnMarkHoldModified="OnMarkHoldModified"
                                              OnRestoreUnchangedHold="OnRestoreUnchangedHold"
                                              OnRequestHoldUsage="@(_isAnonymous ? null : LoadHoldUsage)" />
                         }
@@ -577,6 +589,9 @@ else
     private List<WallPanelInfo> _livePanels = [];
     private WallPanelInfo? _editingPanel;
     private List<Hold> _editingPanelHolds = [];
+    private WallPhotoEditor? _panelEditor;
+    private bool _confirmingPanelStep;
+    private int _pendingPanelStepDelta;
     private List<Boulder> _boulders = [];
     private List<BoulderListItem> _items = [];
     private bool _isAdmin;
@@ -947,6 +962,31 @@ else
 
     private async Task StepEditingPanel(int delta)
     {
+        // Stepping panels reloads fresh holds, so any unsaved edits on the current panel are lost.
+        // Guard behind an inline confirm banner (the app's convention) instead of switching silently.
+        if (_panelEditor?.HasUnsavedChanges == true)
+        {
+            _pendingPanelStepDelta = delta;
+            _confirmingPanelStep = true;
+            return;
+        }
+
+        await DoStepEditingPanel(delta);
+    }
+
+    private async Task ConfirmPanelStep()
+    {
+        _confirmingPanelStep = false;
+        await DoStepEditingPanel(_pendingPanelStepDelta);
+    }
+
+    private void CancelPanelStep()
+    {
+        _confirmingPanelStep = false;
+    }
+
+    private async Task DoStepEditingPanel(int delta)
+    {
         if (_editingPanel is null || _livePanels.Count == 0)
         {
             return;
@@ -987,7 +1027,10 @@ else
 
         foreach (var hold in changes.Updated)
         {
-            await WallService.UpdateHoldAsync(hold.Id, hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.IsOnKickboard, hold.ShapePoints, hold.Name, hold.Material);
+            // Per-panel edit: a hold's position shifts by parallax between panel photos, so a move must
+            // not auto-flag boulders. "Changed" is a manual per-hold decision here (Mark modified /
+            // Mark unchanged), surfaced by the panel editor's change-review overlay.
+            await WallService.UpdateHoldAsync(hold.Id, hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.IsOnKickboard, hold.ShapePoints, hold.Name, hold.Material, flagBouldersOnMove: false);
         }
 
         foreach (var holdId in changes.Deleted)
@@ -1405,6 +1448,10 @@ else
         {
             await WallService.MarkHoldModifiedAsync(holdId);
             await LoadWall();
+            if (_editingPanel is not null)
+            {
+                await LoadEditingPanelHolds();
+            }
             await ShowToast("Hold marked as modified; affected boulders flagged for review");
         }
         catch (Exception ex)
@@ -1419,6 +1466,10 @@ else
         {
             var restored = await WallService.RestoreBouldersForUnchangedHoldAsync(holdId);
             await LoadWall();
+            if (_editingPanel is not null)
+            {
+                await LoadEditingPanelHolds();
+            }
             await ShowToast(restored > 0
                 ? $"Restored {restored} boulder(s)"
                 : "No boulders could be restored — a hold is missing");

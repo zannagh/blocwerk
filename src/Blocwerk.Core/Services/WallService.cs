@@ -850,10 +850,25 @@ public class WallService : IWallService
                 throw new InvalidOperationException("Hold not found");
             }
 
-            // Candidate boulders: historic ones that reference this hold.
+            // Marking this hold unchanged confirms it did not move. On a big wall the same physical hold
+            // also appears on more peripheral panels as linked twins, and this (more central) panel is
+            // ground truth for them — settle those twins too so the verdict propagates from the centre
+            // outward. clearedHolds = this hold plus those twins.
+            var peripheralTwinIds = await GetPeripheralTwinIdsAsync(db, hold);
+            var confirmedUnchanged = new HashSet<Guid>(peripheralTwinIds) { holdId };
+
+            var clearedHolds = await db.Holds
+                .Where(h => confirmedUnchanged.Contains(h.Id))
+                .ToListAsync(ct);
+            foreach (var cleared in clearedHolds)
+            {
+                cleared.NeedsReview = false;
+            }
+
+            // Candidate boulders: historic ones that reference this hold or any of its settled twins.
             var candidates = await db.Boulders
                 .Include(b => b.BoulderHolds)
-                .Where(b => b.IsHistoric && b.BoulderHolds.Any(bh => bh.HoldId == holdId))
+                .Where(b => b.IsHistoric && b.BoulderHolds.Any(bh => confirmedUnchanged.Contains(bh.HoldId)))
                 .ToListAsync(ct);
 
             // Every hold still present on this wall — used to test each boulder's completeness.
@@ -863,13 +878,25 @@ public class WallService : IWallService
                 .ToListAsync(ct))
                 .ToHashSet();
 
+            // Holds on this wall STILL flagged as modified, excluding the ones we just settled (the DB
+            // query can't see those unsaved changes yet). A boulder referencing any of these genuinely
+            // changed on some OTHER hold; restoring it would present stale geometry as current, so it
+            // must stay historic even though these holds are unchanged.
+            var stillModifiedHoldIds = (await db.Holds
+                .Where(h => h.WallId == hold.WallId && h.NeedsReview && !confirmedUnchanged.Contains(h.Id))
+                .Select(h => h.Id)
+                .ToListAsync(ct))
+                .ToHashSet();
+
             var restored = 0;
             var skipped = 0;
             foreach (var boulder in candidates)
             {
-                // Only restore when EVERY hold the boulder references still exists. A boulder that
-                // lost a hold can't be auto-restored and is left historic.
-                if (boulder.BoulderHolds.All(bh => existingHoldIds.Contains(bh.HoldId)))
+                // Restore only when EVERY hold the boulder references still exists AND none of them is
+                // still flagged modified — i.e. all of the boulder's holds are confirmed unchanged.
+                var allHoldsExist = boulder.BoulderHolds.All(bh => existingHoldIds.Contains(bh.HoldId));
+                var anyStillModified = boulder.BoulderHolds.Any(bh => stillModifiedHoldIds.Contains(bh.HoldId));
+                if (allHoldsExist && !anyStillModified)
                 {
                     boulder.IsHistoric = false;
                     boulder.NeedsReview = false;
@@ -883,8 +910,8 @@ public class WallService : IWallService
 
             await db.SaveChangesAsync(ct);
             _logger.LogInformation(
-                "Hold {HoldId} on wall {WallId} marked unchanged by {UserId}: {Restored} boulder(s) restored, {Skipped} skipped (missing holds)",
-                holdId, hold.WallId, user.Id, restored, skipped);
+                "Hold {HoldId} on wall {WallId} marked unchanged by {UserId}: {Restored} boulder(s) restored, {Skipped} skipped; {Twins} peripheral twin(s) settled",
+                holdId, hold.WallId, user.Id, restored, skipped, peripheralTwinIds.Count);
             return restored;
         }
         catch (Exception ex)
@@ -1371,7 +1398,7 @@ public class WallService : IWallService
         }
     }
 
-    public async Task<Hold> UpdateHoldAsync(Guid holdId, double x, double y, double radius, string? color = null, HoldCategory? category = null, bool? isOnKickboard = null, List<ShapePoint>? shapePoints = null, string? name = null, HoldMaterial? material = null)
+    public async Task<Hold> UpdateHoldAsync(Guid holdId, double x, double y, double radius, string? color = null, HoldCategory? category = null, bool? isOnKickboard = null, List<ShapePoint>? shapePoints = null, string? name = null, HoldMaterial? material = null, bool flagBouldersOnMove = true)
     {
         using var op = BlocwerkMetrics.TimeOperation("Wall.UpdateHold");
         try
@@ -1426,21 +1453,28 @@ public class WallService : IWallService
 
             if (positionChanged)
             {
-                var affectedBoulders = await db.BoulderHolds
-                    .Where(bh => bh.HoldId == holdId)
-                    .Select(bh => bh.Boulder)
-                    .Where(b => !b.IsArchived)
-                    .ToListAsync();
-
-                foreach (var boulder in affectedBoulders)
+                // Big-wall panel edits pass flagBouldersOnMove:false — between two panel photos taken from
+                // slightly different spots, a hold's position drifts by parallax, so a move alone must not
+                // flag its boulders. There, "changed" is a manual per-hold decision (Mark modified / Mark
+                // unchanged). The single-image editors keep the default, so a move still retires boulders.
+                if (flagBouldersOnMove)
                 {
-                    if (isStaging)
+                    var affectedBoulders = await db.BoulderHolds
+                        .Where(bh => bh.HoldId == holdId)
+                        .Select(bh => bh.Boulder)
+                        .Where(b => !b.IsArchived)
+                        .ToListAsync();
+
+                    foreach (var boulder in affectedBoulders)
                     {
-                        boulder.NeedsReview = true;
-                    }
-                    else if (!boulder.IsHistoric)
-                    {
-                        boulder.IsHistoric = true;
+                        if (isStaging)
+                        {
+                            boulder.NeedsReview = true;
+                        }
+                        else if (!boulder.IsHistoric)
+                        {
+                            boulder.IsHistoric = true;
+                        }
                     }
                 }
 
@@ -1472,6 +1506,56 @@ public class WallService : IWallService
             op.Fail(ex);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Overlap twins of <paramref name="hold"/> (linked via <see cref="HoldLink"/>) that sit on a MORE
+    /// peripheral panel — further from the (0,0) centre. The centre panel is ground truth, so a hold
+    /// confirmed unchanged here also settles those twins (the same physical hold on an outer photo).
+    /// </summary>
+    private async Task<List<Guid>> GetPeripheralTwinIdsAsync(BlocwerkDbContext db, Hold hold)
+    {
+        var twinIds = await db.HoldLinks
+            .Where(l => l.HoldAId == hold.Id || l.HoldBId == hold.Id)
+            .Select(l => l.HoldAId == hold.Id ? l.HoldBId : l.HoldAId)
+            .ToListAsync();
+        if (twinIds.Count == 0)
+        {
+            return [];
+        }
+
+        var selfCentrality = await PanelCentralityAsync(db, hold.WallPanelId);
+        var twins = await db.Holds
+            .Where(h => twinIds.Contains(h.Id))
+            .Select(h => new { h.Id, h.WallPanelId })
+            .ToListAsync();
+
+        var peripheral = new List<Guid>();
+        foreach (var twin in twins)
+        {
+            if (await PanelCentralityAsync(db, twin.WallPanelId) > selfCentrality)
+            {
+                peripheral.Add(twin.Id);
+            }
+        }
+
+        return peripheral;
+    }
+
+    // A panel's distance from the (0,0) centre on the sparse panel grid (Manhattan). A null panel is a
+    // legacy single-photo/centre hold, treated as the centre (0). Smaller = more central = more authoritative.
+    private static async Task<int> PanelCentralityAsync(BlocwerkDbContext db, Guid? panelId)
+    {
+        if (panelId is not { } id)
+        {
+            return 0;
+        }
+
+        var pos = await db.WallPanels
+            .Where(p => p.Id == id)
+            .Select(p => new { p.Col, p.Row })
+            .FirstOrDefaultAsync();
+        return pos is null ? 0 : Math.Abs(pos.Col) + Math.Abs(pos.Row);
     }
 
     public async Task DeleteHoldAsync(Guid holdId)
