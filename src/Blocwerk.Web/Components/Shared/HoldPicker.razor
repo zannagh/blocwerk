@@ -109,6 +109,16 @@
                             style="cursor: pointer"
                             @onclick="(e) => OnHoldClicked(hold, e)" @onclick:stopPropagation="true" />
                 }
+
+                @if (_typeBubbleHoldId == hold.Id)
+                {
+                    <foreignObject x="@F((hold.X - 0.1) * 100)" y="@F((hold.Y - hold.Radius - 0.03) * 100)"
+                                   width="20" height="3" style="pointer-events: none; overflow: visible;">
+                        <span style="font-size: 1.9px; color: white; text-shadow: 0 0 1px #000, 0 0 1px #000;
+                                     font-family: sans-serif; font-weight: 600; white-space: nowrap;
+                                     display: block; text-align: center;">@HoldTypeLabel(hold)</span>
+                    </foreignObject>
+                }
             }
         </svg>
     </div>
@@ -149,6 +159,16 @@ else
                     <circle @key="hold.Id" cx="@F(p.X * 100)" cy="@F(p.Y * 100)" r="@F(r)"
                             fill="@fillColor" stroke="@strokeColor" stroke-width="@sw" stroke-dasharray="@dash"
                             style="cursor: pointer" @onclick="() => ToggleHold(hold)" />
+                }
+
+                @if (_typeBubbleHoldId == hold.Id)
+                {
+                    <foreignObject x="@F((p.X - 0.1) * 100)" y="@F((p.Y * 100) - r - 3)"
+                                   width="20" height="3" style="pointer-events: none; overflow: visible;">
+                        <span style="font-size: 1.9px; color: white; text-shadow: 0 0 1px #000, 0 0 1px #000;
+                                     font-family: sans-serif; font-weight: 600; white-space: nowrap;
+                                     display: block; text-align: center;">@HoldTypeLabel(hold)</span>
+                    </foreignObject>
                 }
             }
         </svg>
@@ -230,7 +250,16 @@ else
     private double _overlayX;
     private double _overlayY;
 
+    // Transient "what is this hold" bubble shown on tap during creation. Holds the id of the
+    // last-tapped hold; cleared when tapping empty space so it never lingers.
+    private Guid? _typeBubbleHoldId;
+
     private enum ViewMode { Photo, Schematic }
+
+    private static string HoldTypeLabel(Hold hold) =>
+        hold.Category == HoldCategory.Foot
+            ? "Foot"
+            : hold.HandType.HasValue ? $"Hand · {hold.HandType.Value}" : "Hand";
 
     public HoldPicker()
     {
@@ -323,6 +352,8 @@ else
 
     private async Task OnSvgClick(MouseEventArgs e)
     {
+        // A tap on empty canvas dismisses the transient hold-type bubble.
+        _typeBubbleHoldId = null;
         if (!_placingVirtual || _isPanning) return;
         var pos = await JS.InvokeAsync<RelativePos>("wallEditor.getRelativePosition", _photoPickerRef, e.ClientX, e.ClientY);
         var usage = EffectiveUsage;
@@ -348,6 +379,7 @@ else
     /// the classify overlay centred on the tap point.</summary>
     private void OnHoldClicked(Hold hold, MouseEventArgs e)
     {
+        _typeBubbleHoldId = hold.Id;
         if (RadialMode)
         {
             _overlayHold = hold;
@@ -449,6 +481,7 @@ else
     private void ToggleHold(Hold hold)
     {
         if (_isPanning) return;
+        _typeBubbleHoldId = hold.Id;
         var usage = EffectiveUsage;
         var existing = SelectedHolds.FirstOrDefault(s => s.HoldId == hold.Id);
         if (existing != null)
