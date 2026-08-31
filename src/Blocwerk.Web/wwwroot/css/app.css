@@ -399,6 +399,19 @@ h2 { font-size: 1.15rem; }
     z-index: 60;
     background: var(--topbar-bg);
     border-top: 1px solid var(--nav-border);
+    /* Cap the fixed tool row so it never eats the whole screen; extra tools scroll within it. */
+    max-height: 45vh;
+    overflow-y: auto;
+}
+
+/* With the tool row docked (fixed) at the bottom, the interactive option bars sit in normal flow
+   below the photo and would otherwise scroll underneath — and out of reach — behind it. Reserve
+   clearance so they always come to rest above the toolbar, and hold a small floor so selecting or
+   deselecting a hold doesn't jump the layout. Tune the clearance to taste on-device. */
+.app-shell:has(.editor-toolbar.docked-bottom) .editor-bottom {
+    margin-bottom: calc(112px + env(safe-area-inset-bottom));
+    min-height: 42px;
+    scroll-margin-bottom: calc(120px + env(safe-area-inset-bottom));
 }
 
 .loading { text-align: center; color: var(--text-secondary); padding: 48px; }
