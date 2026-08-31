@@ -51,10 +51,17 @@ window.blocwerkBetaVideo = {
 
         try {
             const objUrl = URL.createObjectURL(file);
-            const thumb = await grabFrame(objUrl, maxEdge || 480);
-            URL.revokeObjectURL(objUrl);
-            if (thumb) {
-                form.append('thumbnail', base64ToBlob(thumb, 'image/jpeg'), 'thumb.jpg');
+            try {
+                // Hard-bound the poster step: a large 4K clip can take a long time to decode a frame
+                // (or never fire on an unsupported codec). Past a few seconds we skip the poster and
+                // upload anyway — the server tolerates a missing thumbnail and the tile falls back —
+                // so the "Optimising…" state can never hang here.
+                const thumb = await posterFrameBounded(objUrl, maxEdge || 480, 4000);
+                if (thumb) {
+                    form.append('thumbnail', base64ToBlob(thumb, 'image/jpeg'), 'thumb.jpg');
+                }
+            } finally {
+                URL.revokeObjectURL(objUrl);
             }
         } catch (e) {
             // A missing poster frame never blocks the upload.
@@ -105,6 +112,27 @@ window.blocwerkBetaVideo = {
     }
 };
 
+/**
+ * grabFrame, but guaranteed to settle within timeoutMs. On a slow decode (large 4K files) or a
+ * grabFrame that never resolves, this resolves null so the upload proceeds without a poster rather
+ * than hanging. Timers are always cleared and the promise settles exactly once.
+ */
+function posterFrameBounded(url, maxEdge, timeoutMs) {
+    return new Promise((resolve) => {
+        let settled = false;
+        const finish = (value) => {
+            if (!settled) {
+                settled = true;
+                clearTimeout(timer);
+                resolve(value);
+            }
+        };
+
+        const timer = setTimeout(() => finish(null), timeoutMs);
+        grabFrame(url, maxEdge).then((value) => finish(value), () => finish(null));
+    });
+}
+
 function base64ToBlob(base64, contentType) {
     const bytes = atob(base64);
     const buffer = new Uint8Array(bytes.length);
@@ -123,8 +151,9 @@ function grabFrame(url, maxEdge) {
         video.crossOrigin = 'anonymous';
 
         // A clip that never fires loadeddata (unsupported codec, corrupt file) would otherwise
-        // leave the upload waiting forever.
-        const timer = setTimeout(() => cleanup(null), 8000);
+        // leave the upload waiting forever. The upload path bounds this more tightly still
+        // (see posterFrameBounded); this is the backstop for any direct caller.
+        const timer = setTimeout(() => cleanup(null), 5000);
 
         function cleanup(result, error) {
             clearTimeout(timer);

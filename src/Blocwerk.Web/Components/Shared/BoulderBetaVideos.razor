@@ -14,7 +14,7 @@
     upload — the rest of the page still works.
 *@
 
-<details class="beta-section" open="@StartExpanded">
+<details class="beta-section" open="@(StartExpanded || _videos is { Count: > 0 })">
     <summary class="beta-summary">
         <span class="beta-title">Beta Videos</span>
         @if (_videos is { Count: > 0 })
@@ -40,25 +40,38 @@
 
             @foreach (var video in _videos ?? [])
             {
-                <button type="button" class="beta-tile" @onclick="() => OpenVideo(video)"
-                        title="@($"Beta by {video.UploaderName}")">
-                    <span class="beta-thumb">
-                        @if (video.HasThumbnail)
-                        {
-                            <img src="@ThumbnailUrl(video)" alt="" loading="lazy" />
-                        }
-                        else
-                        {
-                            <span class="beta-thumb-fallback" aria-hidden="true"></span>
-                        }
-                        <span class="beta-play" aria-hidden="true">
-                            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
-                                <path d="M8 5v14l11-7z" />
-                            </svg>
+                @* A wrapper (not a nested button) so the uploader's delete affordance can sit over the
+                   tile without producing invalid <button>-inside-<button> markup. *@
+                <div class="beta-tile-wrap" style="position: relative; flex: none; scroll-snap-align: start;">
+                    <button type="button" class="beta-tile" @onclick="() => OpenVideo(video)"
+                            title="@($"Beta by {video.UploaderName}")">
+                        <span class="beta-thumb">
+                            @if (video.HasThumbnail)
+                            {
+                                <img src="@ThumbnailUrl(video)" alt="" loading="lazy" />
+                            }
+                            else
+                            {
+                                <span class="beta-thumb-fallback" aria-hidden="true"></span>
+                            }
+                            <span class="beta-play" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                                    <path d="M8 5v14l11-7z" />
+                                </svg>
+                            </span>
                         </span>
-                    </span>
-                    <span class="beta-uploader">@video.UploaderName</span>
-                </button>
+                        <span class="beta-uploader">@video.UploaderName</span>
+                    </button>
+                    @if (!IsAnonymous && video.UploadedByUserId == CurrentUserId)
+                    {
+                        <button type="button" title="Delete beta" aria-label="Delete beta"
+                                @onclick="() => ConfirmDeleteAsync(video)" @onclick:stopPropagation="true"
+                                style="position: absolute; top: 6px; right: 6px; width: 24px; height: 24px;
+                                       display: grid; place-items: center; padding: 0; border: none;
+                                       border-radius: 50%; background: rgba(0, 0, 0, 0.55); color: #fff;
+                                       font-size: 1rem; line-height: 1; cursor: pointer;">&times;</button>
+                    }
+                </div>
             }
 
             @if (_videos is { Count: 0 } && IsAnonymous)
@@ -158,9 +171,14 @@
     {
         try
         {
-            _videos = string.IsNullOrEmpty(ShareToken)
-                ? await VideoService.GetVideosAsync(BoulderId)
-                : await VideoService.GetVideosByShareTokenAsync(BoulderId, ShareToken);
+            // The share-token query (restricted to the wall's share token, drafts excluded) is
+            // ONLY for genuinely anonymous viewers. An authenticated user must always use the
+            // normal query — otherwise a stray/stale ShareToken in the URL (enhanced-nav retains
+            // route params, and the last-page cookie can restore a /shared/ link) silently routes
+            // the owner through the anonymous filter and returns an empty list.
+            _videos = IsAnonymous && !string.IsNullOrEmpty(ShareToken)
+                ? await VideoService.GetVideosByShareTokenAsync(BoulderId, ShareToken)
+                : await VideoService.GetVideosAsync(BoulderId);
             _error = null;
         }
         catch (Exception ex)
@@ -249,18 +267,49 @@
         _autoplayPending = false;
     }
 
-    private async Task DeleteCurrentAsync()
+    /// <summary>Player-overlay delete: the clip is already open, so remove it without a second prompt.</summary>
+    private Task DeleteCurrentAsync() =>
+        _playing is { } video ? DeleteVideoAsync(video) : Task.CompletedTask;
+
+    /// <summary>Tile delete: asks first, since the tile can be tapped without opening the clip.</summary>
+    private async Task ConfirmDeleteAsync(BetaVideoInfo video)
     {
-        if (_playing is not { } video)
+        bool confirmed;
+        try
+        {
+            confirmed = await JS.InvokeAsync<bool>("confirm", "Delete this beta video?");
+        }
+        catch (JSException)
+        {
+            // If confirm is unavailable for any reason, fall through — the service still gates on
+            // ownership, so a mis-fire cannot delete someone else's clip.
+            confirmed = true;
+        }
+        catch (JSDisconnectedException)
         {
             return;
         }
 
+        if (confirmed)
+        {
+            await DeleteVideoAsync(video);
+        }
+    }
+
+    private async Task DeleteVideoAsync(BetaVideoInfo video)
+    {
         try
         {
             await VideoService.DeleteVideoAsync(video.Id);
-            _videos?.RemoveAll(v => v.Id == video.Id);
-            Close();
+            if (_playing?.Id == video.Id)
+            {
+                Close();
+            }
+
+            // Reload rather than a local remove so a concurrently uploaded/deleted clip is reflected
+            // too, then notify the parent so its count and activity feed refresh.
+            await ReloadAsync();
+            await Uploaded.InvokeAsync();
             _error = null;
         }
         catch (Exception ex)
