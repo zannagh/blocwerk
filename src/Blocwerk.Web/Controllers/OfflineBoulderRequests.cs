@@ -52,6 +52,12 @@ public sealed class CreateBoulderRequest
 
     public List<BoulderHoldDto> Holds { get; set; } = [];
 
+    /// <summary>
+    /// The boulder's setter(s), as wall-member user ids. Non-members are skipped server-side. Empty
+    /// means no explicit setter.
+    /// </summary>
+    public List<Guid> Setters { get; set; } = [];
+
     public List<BoulderHoldInput> ToInputs() => Holds.Select(h => h.ToInput()).ToList();
 }
 
@@ -77,6 +83,12 @@ public sealed class ReviseBoulderRequest
     public bool NoMatch { get; set; }
 
     public List<BoulderHoldDto> Holds { get; set; } = [];
+
+    /// <summary>
+    /// The boulder's setter(s), as wall-member user ids. On revise this REPLACES the stored set
+    /// (empty clears it); non-members are skipped server-side.
+    /// </summary>
+    public List<Guid> Setters { get; set; } = [];
 
     public List<BoulderHoldInput> ToInputs() => Holds.Select(h => h.ToInput()).ToList();
 }

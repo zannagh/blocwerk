@@ -407,6 +407,8 @@ else
                                              ChangeReview="true"
                                              OnBatchSave="OnPanelBatchSave"
                                              OnMarkHoldModified="OnMarkHoldModified"
+                                             OnMakeHoldActual="OnMakeHoldActual"
+                                             OnMergeVirtualHold="OnMergeVirtualHold"
                                              OnRestoreUnchangedHold="OnRestoreUnchangedHold"
                                              OnRequestHoldUsage="@(_isAnonymous ? null : LoadHoldUsage)" />
                         }
@@ -1478,6 +1480,12 @@ else
                 h.IsVirtual = false;
             }
             await LoadWall();
+            // On multi-image walls the tool operates on the per-panel editor list, which LoadWall
+            // never touches; reload it so the promoted hold repaints solid instead of staying dotted.
+            if (_editingPanel is not null)
+            {
+                await LoadEditingPanelHolds();
+            }
             await ShowToast("Virtual hold is now actual");
         }
         catch (Exception ex)
@@ -1499,6 +1507,12 @@ else
             }
             _holds.RemoveAll(h => h.Id == pair.actualHoldId);
             await LoadWall();
+            // On multi-image walls the tool operates on the per-panel editor list, which LoadWall
+            // never touches; reload it so the merged hold repaints solid instead of staying dotted.
+            if (_editingPanel is not null)
+            {
+                await LoadEditingPanelHolds();
+            }
             await ShowToast("Virtual hold merged into detected hold");
         }
         catch (Exception ex)

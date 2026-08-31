@@ -4,7 +4,7 @@
     <div class="boulder-card-left">
         <span class="boulder-name">
             @Boulder.Name
-            @if (Boulder.IsDraft) { <span class="draft-badge" title="Only visible to you until published">draft</span> }
+            @if (Boulder.IsDraft) { <span class="draft-badge" title="Draft — not climbable until published">draft</span> }
             @if (Boulder.IsHistoric) { <span class="historic-badge" title="Wall changed since creation">historic</span> }
             @if (Boulder.NeedsReview) { <span class="review-badge" title="A hold on this boulder changed — review needed">review</span> }
         </span>
@@ -24,7 +24,7 @@
         }
     </div>
     <div class="boulder-card-right">
-        @if (Boulder.IsDraft && Boulder.CreatedByUserId == CurrentUserId)
+        @if (Boulder.IsDraft && CanPublish)
         {
             <button class="card-publish" title="Publish this draft"
                     disabled="@(Boulder.BoulderHolds.Count == 0)"
@@ -95,6 +95,12 @@
     [Parameter] public EventCallback<Boulder> OnUnarchive { get; set; }
 
     private Boulder Boulder => Item.Boulder;
+
+    // A draft can be published by its creator or any of its setters (co-setters), mirroring the
+    // server gate in PublishBoulderAsync. Plain viewers get no publish button.
+    private bool CanPublish =>
+        Boulder.CreatedByUserId == CurrentUserId
+        || Boulder.Setters.Any(s => s.UserId == CurrentUserId);
 
     private string BoulderUrl => !string.IsNullOrEmpty(ShareToken)
         ? $"/walls/{WallId}/boulders/{Boulder.Id}/shared/{ShareToken}"

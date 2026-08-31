@@ -62,6 +62,11 @@ public sealed class MeAttemptsController : ControllerBase
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ApiErrorResponse(ex.Message));
         }
+        catch (InvalidOperationException ex) when (ex.Message == AttemptService.DraftNotLoggableMessage)
+        {
+            // A draft is not climbable until it is published.
+            return StatusCode(StatusCodes.Status403Forbidden, new ApiErrorResponse(ex.Message));
+        }
         catch (InvalidOperationException ex)
         {
             // "Boulder not found".

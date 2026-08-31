@@ -44,6 +44,15 @@ public record AttemptSummary(int TotalAttempts, bool HasSent, bool HasFlashed);
 
 public class AttemptService : IAttemptService
 {
+    /// <summary>
+    /// Thrown by <see cref="LogAttemptAsync"/> when the boulder is still a draft: nobody can log an
+    /// attempt, send or flash on it until it is published. Exposed as a const so the offline and API
+    /// controllers can classify it as a permanent (non-retryable) rejection without the strings
+    /// drifting apart — mirrors <see cref="BoulderService.SentByOthersRevisionMessage"/>.
+    /// </summary>
+    public const string DraftNotLoggableMessage =
+        "This boulder is a draft; it can't be logged until it is published";
+
     private readonly IDbContextFactory<BlocwerkDbContext> _dbContextFactory;
     private readonly ICurrentUserService _currentUserService;
     private readonly IActivityLogService _activityLogService;
@@ -80,6 +89,16 @@ public class AttemptService : IAttemptService
             {
                 _logger.LogWarning("Cannot log attempt: boulder {BoulderId} not found for {UserId}", boulderId, user.Id);
                 throw new InvalidOperationException("Boulder not found");
+            }
+
+            // A draft is visible to every wall member but not climbable: block all logging (attempt,
+            // send, flash) at this single service choke point until the boulder is published. Thrown
+            // as a permanent rejection so the offline queue drops the entry rather than poisoning the
+            // FIFO with an action that can never succeed while the boulder is a draft.
+            if (boulder.IsDraft)
+            {
+                _logger.LogWarning("Cannot log attempt: boulder {BoulderId} is still a draft ({UserId})", boulderId, user.Id);
+                throw new InvalidOperationException(DraftNotLoggableMessage);
             }
 
             if (clientRequestId.HasValue)

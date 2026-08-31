@@ -18,7 +18,7 @@ namespace Blocwerk.Web.Controllers;
 [Produces("application/json")]
 public sealed class OfflineActionsController : ControllerBase
 {
-    // Verbatim messages the Core services throw for their two permanent domain guards. Anything
+    // Verbatim messages the Core services throw for their permanent domain guards. Anything
     // else surfacing as InvalidOperationException is infrastructure and must stay retryable.
     private const string BoulderNotFound = "Boulder not found";
     private const string NotAWallMember = "Only wall members can do this";
@@ -158,7 +158,8 @@ public sealed class OfflineActionsController : ControllerBase
     private static bool IsDomainGuard(InvalidOperationException ex)
     {
         return ex.Message.Equals(BoulderNotFound, StringComparison.Ordinal)
-               || ex.Message.Equals(NotAWallMember, StringComparison.Ordinal);
+               || ex.Message.Equals(NotAWallMember, StringComparison.Ordinal)
+               || ex.Message.Equals(AttemptService.DraftNotLoggableMessage, StringComparison.Ordinal);
     }
 
     private ObjectResult Permanent(string message)

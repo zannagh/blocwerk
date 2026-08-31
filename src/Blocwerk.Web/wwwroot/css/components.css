@@ -121,6 +121,7 @@
    wall region: it widens the shared content layer so the region fills the box, composing with
    --zoom in the same calc. Both custom properties are JS-owned; Razor renders no width. */
 .photo-editor { position: relative; overflow: hidden; user-select: none;
+    -webkit-touch-callout: none; -webkit-user-select: none;
     width: calc(var(--zoom, 1) * var(--crop-scale, 1) * 100%); min-width: 100%; }
 /* Corner rounding lives on the CONTAINER, not on .photo-editor. The wall single-image path rounds
    via its .photo-viewport (pages.css). The multi-panel/boulder path uses the transform model
@@ -133,7 +134,15 @@
    grabbing the image. Mirrors the .stitcher-layer precedent in pages.css. */
 .photo-editor .wall-photo { width: 100%; display: block;
     -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; -webkit-user-drag: none; }
-.photo-editor .hold-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+.photo-editor .hold-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+/* Editor Move mode only: the draggable hold shapes take touch-action:none so a one-finger
+   press-drag moves the hold (pointer events) instead of the browser scrolling. Scoped by the
+   [data-hold-drag] marker so it never touches the .photo-editor content child at large (which
+   would re-block the viewport's JS-owned pan-y/none toggle — see the note near .photo-editor). */
+.photo-editor[data-hold-drag] .hold-overlay circle,
+.photo-editor[data-hold-drag] .hold-overlay polygon,
+.photo-editor[data-hold-drag] .hold-overlay rect { touch-action: none; }
 /* Boulder viewer only: the overlay holds are display-only (no tap/click handlers), so let
    pointer/touch events fall through to the viewport. Otherwise a mouse drag or double-tap that
    happens to start on a hold is treated as landing on an interactive shape and neither pans nor

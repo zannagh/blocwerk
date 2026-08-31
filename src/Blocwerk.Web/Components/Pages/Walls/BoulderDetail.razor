@@ -49,7 +49,7 @@ else
                 {
                     <BoulderFavoriteToggle BoulderId="_boulder.Id" IsFavorite="_isFavorite" />
                 }
-                @if (_isCreator && !_isAnonymous && !_editMeta)
+                @if ((_isCreator || _isAdmin || _isSetter) && !_isAnonymous && !_editMeta)
                 {
                     <button class="btn-icon boulder-edit-btn" @onclick="StartEditMeta" title="Rename or change grade">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
@@ -74,7 +74,14 @@ else
                 </div>
             }
 
-            <p class="meta">by @_boulder.CreatedBy.Name &middot; <LocalTime Value="@_boulder.CreatedAt" Format="LocalTimeFormat.Date" /></p>
+            @if (_boulder.Setters.Count > 0)
+            {
+                <p class="meta">Set by @SettersDisplay &middot; added by @_boulder.CreatedBy.Name &middot; <LocalTime Value="@_boulder.CreatedAt" Format="LocalTimeFormat.Date" /></p>
+            }
+            else
+            {
+                <p class="meta">by @_boulder.CreatedBy.Name &middot; <LocalTime Value="@_boulder.CreatedAt" Format="LocalTimeFormat.Date" /></p>
+            }
 
             @if (CanFullRevise)
             {
@@ -84,25 +91,30 @@ else
             }
         </div>
 
-        @if (_boulder.IsDraft && _isCreator)
+        @if (_boulder.IsDraft)
         {
             <div class="bw-draft-notice">
-                <p>This is a draft. Only you can see it until you publish it.</p>
-                <div class="draft-actions">
-                    <a href="/walls/@WallId/boulders/@BoulderId/revise" class="btn-revise">Edit</a>
-                    <button class="btn-publish" @onclick="PublishDraft"
-                            disabled="@(_boulder.BoulderHolds.Count == 0)">
-                        Publish
-                    </button>
-                </div>
+                @* Drafts are visible to every wall member now, but can't be climbed until published.
+                   Only the creator sees the edit/publish actions. *@
+                <p>This is a draft — it can't be climbed until it is published.</p>
+                @if (_isCreator || _isAdmin || _isSetter)
+                {
+                    <div class="draft-actions">
+                        <a href="/walls/@WallId/boulders/@BoulderId/revise" class="btn-revise">Edit</a>
+                        <button class="btn-publish" @onclick="PublishDraft"
+                                disabled="@(_boulder.BoulderHolds.Count == 0)">
+                            Publish
+                        </button>
+                    </div>
+                    @if (!string.IsNullOrEmpty(_publishError))
+                    {
+                        <div class="error-msg">@_publishError</div>
+                    }
+                }
             </div>
-            @if (!string.IsNullOrEmpty(_publishError))
-            {
-                <div class="error-msg">@_publishError</div>
-            }
         }
 
-        @if (_boulder.IsHistoric && (_isCreator || _isAdmin))
+        @if (_boulder.IsHistoric && (_isCreator || _isAdmin || _isSetter))
         {
             <div class="bw-revision-notice">
                 <p>
@@ -262,7 +274,12 @@ else
 
         @if (!_isAnonymous)
         {
-            <BoulderAttemptBar BoulderId="_boulder.Id" Summary="_summary" />
+            @* A draft can't be logged (the server rejects it, the offline queue drops it as
+               permanent); don't offer the ascent buttons until it's published. *@
+            @if (!_boulder.IsDraft)
+            {
+                <BoulderAttemptBar BoulderId="_boulder.Id" Summary="_summary" />
+            }
 
             <div class="rating-section">
                 <div class="rating-summary">
@@ -290,18 +307,21 @@ else
                 </div>
             </div>
 
-            <details class="backdate-card">
-                <summary>Log at a specific time</summary>
-                <div class="backdate-body">
-                    <label class="backdate-label" for="bw-backdate">When did you climb it?</label>
-                    <input id="bw-backdate" type="datetime-local" class="backdate-input" @bind="_backdateTime" />
-                    <div class="attempt-buttons">
-                        <button type="button" class="attempt-btn try" @onclick="() => LogBackdated(AttemptType.Attempt)">Attempt</button>
-                        <button type="button" class="attempt-btn send" @onclick="() => LogBackdated(AttemptType.Send)">Send</button>
-                        <button type="button" class="attempt-btn flash" @onclick="() => LogBackdated(AttemptType.Flash)">Flash</button>
+            @if (!_boulder.IsDraft)
+            {
+                <details class="backdate-card">
+                    <summary>Log at a specific time</summary>
+                    <div class="backdate-body">
+                        <label class="backdate-label" for="bw-backdate">When did you climb it?</label>
+                        <input id="bw-backdate" type="datetime-local" class="backdate-input" @bind="_backdateTime" />
+                        <div class="attempt-buttons">
+                            <button type="button" class="attempt-btn try" @onclick="() => LogBackdated(AttemptType.Attempt)">Attempt</button>
+                            <button type="button" class="attempt-btn send" @onclick="() => LogBackdated(AttemptType.Send)">Send</button>
+                            <button type="button" class="attempt-btn flash" @onclick="() => LogBackdated(AttemptType.Flash)">Flash</button>
+                        </div>
                     </div>
-                </div>
-            </details>
+                </details>
+            }
 
             @if (!_isCreator)
             {
@@ -378,7 +398,7 @@ else
     private bool _isAnonymous;
     private bool _isCreator;
     private bool _isAdmin;
-    private bool _sentByOther;
+    private bool _isSetter;
     private bool _showHistoric;
     private string? _publishError;
     private string? _toast;
@@ -580,14 +600,41 @@ else
         _boulder != null && BoulderHoldGeneration is { } g && g < _boulder.Wall.CurrentGeneration;
 
     /// <summary>
-    /// A live/published boulder the creator OR a wall admin may still fully re-edit (holds and
-    /// rules), because no other climber has sent it yet. Once someone else has an ascent the pencil
-    /// name+grade edit is the only option. Drafts and historic boulders have their own revise links
-    /// elsewhere.
+    /// A live/published boulder the creator, a setter, OR a wall admin may still fully re-edit (holds
+    /// and rules) — now allowed even after another climber has sent it: the holds are edited in place
+    /// and the existing ascents stay attached (the server enforces the same rule). Drafts and historic
+    /// boulders have their own revise links elsewhere.
     /// </summary>
     private bool CanFullRevise =>
-        (_isCreator || _isAdmin) && !_isAnonymous && !_sentByOther
+        (_isCreator || _isAdmin || _isSetter) && !_isAnonymous
         && _boulder is { IsDraft: false, IsHistoric: false };
+
+    /// <summary>
+    /// The boulder's setters as a human list: "A", "A &amp; B", or "A, B &amp; C". Empty when the
+    /// boulder has no explicit setter (the creator line is shown instead).
+    /// </summary>
+    private string SettersDisplay
+    {
+        get
+        {
+            var names = _boulder?.Setters
+                .Select(s => s.User.Name)
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .ToList() ?? [];
+
+            if (names.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            if (names.Count == 1)
+            {
+                return names[0];
+            }
+
+            return string.Join(", ", names.Take(names.Count - 1)) + " & " + names[^1];
+        }
+    }
 
     private string PhotoUrl
     {
@@ -651,15 +698,16 @@ else
             }
         }
 
-        if (_boulder is { IsDraft: true } && _boulder.CreatedByUserId != _currentUserId)
-        {
-            Navigation.NavigateTo($"/walls/{WallId}", replace: true);
-            return;
-        }
+        // Drafts are visible to every wall member now (they just can't be logged until published),
+        // so a non-creator is no longer redirected away from a draft.
 
         if (_boulder != null)
         {
             _isCreator = _boulder.CreatedByUserId == _currentUserId;
+
+            // A setter (or co-setter) of this boulder may edit/revise/publish it just like the
+            // creator — the server enforces the same rule. Meaningless for an anonymous viewer.
+            _isSetter = !_isAnonymous && _boulder.Setters.Any(s => s.UserId == _currentUserId);
 
             // A wall admin (a WallRole.Admin member of this wall) may revise ANY boulder on the
             // wall, not only the ones they created — same membership-role check used across the
@@ -677,13 +725,8 @@ else
 
             _boulderHoldIds = _boulder.BoulderHolds.Select(bh => bh.HoldId).ToHashSet();
 
-            // Whether a live boulder may still be fully re-edited: the creator or a wall admin, and
-            // only until another climber has sent it (the server enforces the same rule for both).
-            // Gate the read so a share viewer never triggers it.
-            if (!_isAnonymous && (_isCreator || _isAdmin) && _boulder is { IsDraft: false, IsHistoric: false })
-            {
-                _sentByOther = await AttemptService.HasBeenSentByOthersAsync(BoulderId, _boulder.CreatedByUserId);
-            }
+            // A live boulder may now be fully re-edited by the creator or a wall admin even after
+            // others have sent it, so there is no longer a "sent by others" gate to pre-compute here.
 
             // A stale boulder only makes sense against the wall it was set on.
             _showHistoric = CanViewHistoric;

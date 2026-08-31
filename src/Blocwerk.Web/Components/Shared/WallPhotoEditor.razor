@@ -137,14 +137,17 @@
    markup must not emit a width or a late re-render would stomp the live transform. *@
 <div class="photo-viewport@(_frame != null ? " bw-framed" : string.Empty)" @ref="_viewportRef"
      style="cursor: @CursorForMode();">
-<div class="photo-editor" @ref="_containerRef">
+<div class="photo-editor" @ref="_containerRef"
+     data-hold-drag="@(CanEdit && _mode == EditMode.Move ? "true" : null)">
     <img src="@EffectivePhotoUrl" alt="Wall" class="wall-photo" />
+    @* Hold drag uses POINTER events so mouse, touch and pen share one path. PointerEventArgs
+       derives from MouseEventArgs, so OnSvgMouseMove/OnSvgMouseUp bind unchanged. *@
     <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none"
          @onclick="OnSvgClick"
          @onmousedown="OnSvgMouseDown"
-         @onmousemove="OnSvgMouseMove"
-         @onmouseup="OnSvgMouseUp"
-         @ontouchend="OnSvgMouseUp">
+         @onpointermove="OnSvgMouseMove"
+         @onpointerup="OnSvgMouseUp"
+         @onpointercancel="OnSvgMouseUp">
 
         @* Wall border *@
         @if (_showBorder && BorderPoints.Count >= 3)
@@ -246,7 +249,7 @@
                          fill="@fillColor" stroke="@strokeColor" stroke-width="@sw" stroke-dasharray="@dash"
                          style="cursor: pointer"
                          @onclick="() => OnHoldClick(hold)" @onclick:stopPropagation="true"
-                         @onmousedown="() => StartDrag(hold)" @onmousedown:stopPropagation="true" />
+                         @onpointerdown="() => StartDrag(hold)" @onpointerdown:stopPropagation="true" />
             }
             else if (isFoot)
             {
@@ -255,7 +258,7 @@
                       rx="0.3" fill="@fillColor" stroke="@strokeColor" stroke-width="@sw" stroke-dasharray="@dash"
                       style="cursor: pointer"
                       @onclick="() => OnHoldClick(hold)" @onclick:stopPropagation="true"
-                      @onmousedown="() => StartDrag(hold)" @onmousedown:stopPropagation="true" />
+                      @onpointerdown="() => StartDrag(hold)" @onpointerdown:stopPropagation="true" />
             }
             else
             {
@@ -263,7 +266,7 @@
                         fill="@fillColor" stroke="@strokeColor" stroke-width="@sw" stroke-dasharray="@dash"
                         style="cursor: pointer"
                         @onclick="() => OnHoldClick(hold)" @onclick:stopPropagation="true"
-                        @onmousedown="() => StartDrag(hold)" @onmousedown:stopPropagation="true" />
+                        @onpointerdown="() => StartDrag(hold)" @onpointerdown:stopPropagation="true" />
             }
 
             @if (_mode == EditMode.Usage && usageRefs.Count > 0)

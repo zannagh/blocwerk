@@ -20,6 +20,11 @@ public interface IBoulderService
     /// (from the same creator) returns the boulder already stored instead of inserting a duplicate.
     /// </para>
     /// </summary>
+    /// <remarks>
+    /// <paramref name="setterUserIds"/> attributes the boulder to one or more setters (co-setters),
+    /// distinct from the creator. Each id is validated as a member of the wall; non-members are
+    /// skipped. Null or empty leaves the boulder without an explicit setter.
+    /// </remarks>
     Task<Boulder> CreateBoulderAsync(
         Guid wallId,
         string name,
@@ -30,7 +35,8 @@ public interface IBoulderService
         bool handsFollowFeet = true,
         string? footColorOnly = null,
         Guid? id = null,
-        bool noMatch = false);
+        bool noMatch = false,
+        IReadOnlyList<Guid>? setterUserIds = null);
 
     /// <summary>
     /// Makes a draft visible to everyone on the wall.
@@ -45,8 +51,8 @@ public interface IBoulderService
 
     /// <summary>
     /// Which boulders currently use each hold on the wall, keyed by hold id. Holds that
-    /// no boulder uses are absent from the map. Respects draft visibility: another
-    /// member's unpublished draft never shows up.
+    /// no boulder uses are absent from the map. Drafts are included — they are visible to
+    /// every wall member — and flagged via <see cref="HoldUsageRef.IsDraft"/>.
     /// </summary>
     Task<Dictionary<Guid, List<HoldUsageRef>>> GetHoldUsageAsync(Guid wallId);
 
@@ -68,6 +74,10 @@ public interface IBoulderService
     /// and regrading it. Attempts, comments and grade proposals are preserved. Null rule
     /// arguments leave the stored rule untouched; pass an empty string for
     /// <paramref name="footColorOnly"/> to clear the foot color rule.
+    /// <para>
+    /// When <paramref name="setterUserIds"/> is non-null it REPLACES the boulder's setter set
+    /// (each id validated as a wall member; non-members skipped). Null leaves the setters untouched.
+    /// </para>
     /// </summary>
     Task<Boulder> ReviseBoulderAsync(
         Guid boulderId,
@@ -77,7 +87,8 @@ public interface IBoulderService
         bool? kickboardFootholdsOn = null,
         bool? handsFollowFeet = null,
         string? footColorOnly = null,
-        bool noMatch = false);
+        bool noMatch = false,
+        IReadOnlyList<Guid>? setterUserIds = null);
 
     /// <summary>
     /// Renames and/or regrades a boulder in place, without touching its holds. Only the
@@ -131,11 +142,11 @@ public class BoulderService : IBoulderService
 
     /// <summary>
     /// Thrown by <see cref="ReviseBoulderAsync"/> when the acting user is neither the boulder's
-    /// creator nor a wall admin. Exposed as a const so the offline controller can list it among its
-    /// permanent (non-retryable) rejections without the two strings drifting apart.
+    /// creator, one of its setters, nor a wall admin. Exposed as a const so the offline controller
+    /// can list it among its permanent (non-retryable) rejections without the strings drifting apart.
     /// </summary>
     public const string CreatorOrAdminRevisionMessage =
-        "Only the creator or a wall admin can revise a boulder";
+        "Only the creator, a setter, or a wall admin can revise a boulder";
 
     private readonly IDbContextFactory<BlocwerkDbContext> _dbContextFactory;
     private readonly ICurrentUserService _currentUserService;
@@ -164,7 +175,8 @@ public class BoulderService : IBoulderService
         bool handsFollowFeet = true,
         string? footColorOnly = null,
         Guid? id = null,
-        bool noMatch = false)
+        bool noMatch = false,
+        IReadOnlyList<Guid>? setterUserIds = null)
     {
         using var op = BlocwerkMetrics.TimeOperation("Boulder.Create", wallId);
         try
@@ -236,6 +248,8 @@ public class BoulderService : IBoulderService
                 });
             }
 
+            await AddSettersAsync(db, boulder.Id, wallId, setterUserIds);
+
             await db.SaveChangesAsync();
             BlocwerkMetrics.RecordBoulderCreated(wallId, isDraft);
             _logger.LogInformation(
@@ -268,6 +282,7 @@ public class BoulderService : IBoulderService
 
             var boulder = await db.Boulders
                 .Include(b => b.BoulderHolds)
+                .Include(b => b.Setters)
                 .FirstOrDefaultAsync(b => b.Id == boulderId);
             if (boulder == null)
             {
@@ -275,12 +290,16 @@ public class BoulderService : IBoulderService
                 throw new InvalidOperationException("Boulder not found");
             }
 
-            if (boulder.CreatedByUserId != user.Id)
+            // The creator, any of the boulder's setters, and any wall admin may publish the draft.
+            var isCreator = boulder.CreatedByUserId == user.Id;
+            var isSetter = boulder.Setters.Any(s => s.UserId == user.Id);
+            if (!isCreator && !isSetter
+                && !await WallAdminGuard.IsWallAdminAsync(db, boulder.WallId, user.Id, CancellationToken.None))
             {
                 _logger.LogWarning(
-                    "Publish denied: user {UserId} is not creator {OwnerUserId} of boulder {BoulderId}",
+                    "Publish denied: user {UserId} is neither creator {OwnerUserId}, a setter, nor an admin of boulder {BoulderId}",
                     user.Id, boulder.CreatedByUserId, boulderId);
-                throw new InvalidOperationException("Only the creator can publish a boulder");
+                throw new InvalidOperationException("Only the creator, a setter, or a wall admin can publish a boulder");
             }
 
             if (!boulder.IsDraft)
@@ -331,10 +350,12 @@ public class BoulderService : IBoulderService
 
                 // Attempts are unbounded and nobody reads boulder.Attempts off this call — the
                 // detail page loads them separately (with the User) only when shown — so don't drag
-                // them in here. That leaves a single collection include (BoulderHolds), so a single
-                // query is optimal (no cartesian, one round-trip). AsNoTracking: read-only display.
+                // them in here. Two collection includes remain (BoulderHolds + Setters), so split the
+                // query to avoid a cartesian blow-up. AsNoTracking: read-only display.
+                .AsSplitQuery()
                 .AsNoTracking()
                 .Include(b => b.BoulderHolds).ThenInclude(bh => bh.Hold)
+                .Include(b => b.Setters).ThenInclude(s => s.User)
                 .Include(b => b.CreatedBy)
                 .Include(b => b.Wall)
                 .FirstOrDefaultAsync(b => b.Id == boulderId);
@@ -361,6 +382,7 @@ public class BoulderService : IBoulderService
                 .AsNoTracking()
                 .Include(b => b.BoulderHolds).ThenInclude(bh => bh.Hold)
                 .Include(b => b.Attempts.OrderByDescending(a => a.Timestamp)).ThenInclude(a => a.User)
+                .Include(b => b.Setters).ThenInclude(s => s.User)
                 .Include(b => b.CreatedBy)
                 .Include(b => b.Wall)
                 .Where(b => b.Id == boulderId && b.Wall.ShareToken == shareToken && !b.IsDraft)
@@ -390,8 +412,10 @@ public class BoulderService : IBoulderService
                 .Include(b => b.BoulderHolds)
                 .Include(b => b.Attempts)
                 .Include(b => b.CreatedBy)
-                .Where(b => b.WallId == wallId)
-                .Where(b => !b.IsDraft || b.CreatedByUserId == user.Id);
+
+                // Drafts are visible to every wall member (they just can't be logged until published),
+                // so no creator-only draft filter here.
+                .Where(b => b.WallId == wallId);
 
             if (!includeArchived)
             {
@@ -419,7 +443,8 @@ public class BoulderService : IBoulderService
             var links = await db.BoulderHolds
                 .AsNoTracking()
                 .Where(bh => bh.Boulder.WallId == wallId && !bh.Boulder.IsArchived)
-                .Where(bh => !bh.Boulder.IsDraft || bh.Boulder.CreatedByUserId == user.Id)
+
+                // Drafts are visible to every wall member, so no creator-only draft filter here.
                 .Select(bh => new
                 {
                     bh.HoldId,
@@ -529,19 +554,25 @@ public class BoulderService : IBoulderService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
-            var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId);
+            var boulder = await db.Boulders
+                .Include(b => b.Setters)
+                .FirstOrDefaultAsync(b => b.Id == boulderId);
             if (boulder == null)
             {
                 _logger.LogWarning("Rename failed: boulder {BoulderId} not found for user {UserId}", boulderId, user.Id);
                 throw new InvalidOperationException("Boulder not found");
             }
 
-            if (boulder.CreatedByUserId != user.Id)
+            // The creator, any of the boulder's setters, and any wall admin may edit its name/grade.
+            var isCreator = boulder.CreatedByUserId == user.Id;
+            var isSetter = boulder.Setters.Any(s => s.UserId == user.Id);
+            if (!isCreator && !isSetter
+                && !await WallAdminGuard.IsWallAdminAsync(db, boulder.WallId, user.Id, CancellationToken.None))
             {
                 _logger.LogWarning(
-                    "Rename denied: user {UserId} is not creator {OwnerUserId} of boulder {BoulderId}",
+                    "Rename denied: user {UserId} is neither creator {OwnerUserId}, a setter, nor an admin of boulder {BoulderId}",
                     user.Id, boulder.CreatedByUserId, boulderId);
-                throw new InvalidOperationException("Only the creator can edit this boulder");
+                throw new InvalidOperationException("Only the creator, a setter, or a wall admin can edit this boulder");
             }
 
             boulder.Name = name.Trim();
@@ -565,7 +596,8 @@ public class BoulderService : IBoulderService
         bool? kickboardFootholdsOn = null,
         bool? handsFollowFeet = null,
         string? footColorOnly = null,
-        bool noMatch = false)
+        bool noMatch = false,
+        IReadOnlyList<Guid>? setterUserIds = null)
     {
         using var op = BlocwerkMetrics.TimeOperation("Boulder.Revise");
         try
@@ -576,6 +608,7 @@ public class BoulderService : IBoulderService
 
             var boulder = await db.Boulders
                 .Include(b => b.BoulderHolds)
+                .Include(b => b.Setters)
                 .FirstOrDefaultAsync(b => b.Id == boulderId);
             if (boulder == null)
             {
@@ -583,15 +616,18 @@ public class BoulderService : IBoulderService
                 throw new InvalidOperationException("Boulder not found");
             }
 
-            // A boulder's creator may revise it, and so may any wall admin — an admin may revise
-            // ANY historic boulder on their wall, not only the ones they set themselves.
-            // NOTE: intentionally kept creator-or-admin. Extending revise rights to wall moderators
-            // (WallRole.Moderator) is a possible follow-up but deliberately not done here.
-            if (boulder.CreatedByUserId != user.Id
-                && !await WallAdminGuard.IsWallAdminAsync(db, boulder.WallId, user.Id, CancellationToken.None))
+            // A boulder's creator may revise it, and so may any of its setters (co-setters) and any
+            // wall admin — an admin may revise ANY historic boulder on their wall, not only the ones
+            // they set themselves. NOTE: extending revise rights to wall moderators (WallRole.Moderator)
+            // is a possible follow-up but deliberately not done here.
+            var isCreator = boulder.CreatedByUserId == user.Id;
+            var isSetter = boulder.Setters.Any(s => s.UserId == user.Id);
+            var isAdmin = !isCreator && !isSetter
+                && await WallAdminGuard.IsWallAdminAsync(db, boulder.WallId, user.Id, CancellationToken.None);
+            if (!isCreator && !isSetter && !isAdmin)
             {
                 _logger.LogWarning(
-                    "Revise denied: user {UserId} is neither creator {OwnerUserId} nor an admin of wall for boulder {BoulderId}",
+                    "Revise denied: user {UserId} is neither creator {OwnerUserId}, a setter, nor an admin of wall for boulder {BoulderId}",
                     user.Id, boulder.CreatedByUserId, boulderId);
                 throw new InvalidOperationException(CreatorOrAdminRevisionMessage);
             }
@@ -602,22 +638,28 @@ public class BoulderService : IBoulderService
                 // here after the first apply flipped IsHistoric off; if the requested state already
                 // matches what is stored, this is that replay: return the boulder unchanged so the
                 // queue records a success.
-                if (RevisionIsNoOp(boulder, updatedHolds, name, grade, kickboardFootholdsOn, handsFollowFeet, footColorOnly, noMatch))
+                if (RevisionIsNoOp(boulder, updatedHolds, name, grade, kickboardFootholdsOn, handsFollowFeet, footColorOnly, noMatch, setterUserIds))
                 {
                     return boulder;
                 }
 
-                // A live boulder may still be fully re-edited as long as no other climber has sent
-                // it yet — once someone else has an ascent on it, only the name and grade may change
-                // (through RenameBoulderAsync), so a revise cannot move the holds under their send.
-                var sentByOthers = await db.Attempts.AnyAsync(a =>
-                    a.BoulderId == boulderId
-                    && a.UserId != boulder.CreatedByUserId
-                    && (a.Type == AttemptType.Send || a.Type == AttemptType.Flash));
-                if (sentByOthers)
+                // A live boulder that others have already sent used to be locked to name+grade edits
+                // only. That block is now lifted for the creator, a setter, or a wall admin: they may
+                // re-edit the holds in place even after others' sends (the existing ascents stay
+                // attached to the boulder). The guard above already guarantees the reviser is one of
+                // those, so this only fires for a non-creator/non-setter/non-admin — a case that is not
+                // reachable here but kept explicit so HasBeenSentByOthersAsync and the const keep meaning.
+                if (!isCreator && !isSetter && !isAdmin)
                 {
-                    _logger.LogWarning("Revise rejected: boulder {BoulderId} has already been sent by others", boulderId);
-                    throw new InvalidOperationException(SentByOthersRevisionMessage);
+                    var sentByOthers = await db.Attempts.AnyAsync(a =>
+                        a.BoulderId == boulderId
+                        && a.UserId != boulder.CreatedByUserId
+                        && (a.Type == AttemptType.Send || a.Type == AttemptType.Flash));
+                    if (sentByOthers)
+                    {
+                        _logger.LogWarning("Revise rejected: boulder {BoulderId} has already been sent by others", boulderId);
+                        throw new InvalidOperationException(SentByOthersRevisionMessage);
+                    }
                 }
             }
 
@@ -664,6 +706,13 @@ public class BoulderService : IBoulderService
                     Type = h.Type,
                     Usage = h.Usage,
                 });
+            }
+
+            // Replace the setter set when the caller supplied one (null = leave untouched).
+            if (setterUserIds != null)
+            {
+                db.BoulderSetters.RemoveRange(boulder.Setters);
+                await AddSettersAsync(db, boulderId, boulder.WallId, setterUserIds);
             }
 
             // Remapping onto the current hold model resolves both staleness flags.
@@ -930,6 +979,39 @@ public class BoulderService : IBoulderService
     }
 
     /// <summary>
+    /// Inserts a <see cref="BoulderSetter"/> row for each supplied user id that is actually a member
+    /// of the wall — non-members (and duplicates) are silently skipped, so an unknown or off-wall id
+    /// can never attach a phantom setter. Adds to the change tracker only; the caller saves.
+    /// </summary>
+    private static async Task AddSettersAsync(
+        BlocwerkDbContext db,
+        Guid boulderId,
+        Guid wallId,
+        IReadOnlyList<Guid>? setterUserIds)
+    {
+        if (setterUserIds is not { Count: > 0 })
+        {
+            return;
+        }
+
+        var distinct = setterUserIds.Where(id => id != Guid.Empty).Distinct().ToList();
+        if (distinct.Count == 0)
+        {
+            return;
+        }
+
+        var memberIds = await db.WallMembers
+            .Where(m => m.WallId == wallId && distinct.Contains(m.UserId))
+            .Select(m => m.UserId)
+            .ToListAsync();
+
+        foreach (var userId in memberIds)
+        {
+            db.BoulderSetters.Add(new BoulderSetter { BoulderId = boulderId, UserId = userId });
+        }
+    }
+
+    /// <summary>
     /// An empty foot color means "no foot color rule"; anything else is stored as given.
     /// </summary>
     private static string? NormalizeFootColor(string? footColorOnly) =>
@@ -948,7 +1030,8 @@ public class BoulderService : IBoulderService
         bool? kickboardFootholdsOn,
         bool? handsFollowFeet,
         string? footColorOnly,
-        bool noMatch)
+        bool noMatch,
+        IReadOnlyList<Guid>? setterUserIds)
     {
         var effectiveHandsFollowFeet = handsFollowFeet ?? boulder.HandsFollowFeet;
         var target = EnforceHandsFollowFeet(updatedHolds, effectiveHandsFollowFeet)
@@ -993,6 +1076,18 @@ public class BoulderService : IBoulderService
         if (boulder.NoMatch != noMatch)
         {
             return false;
+        }
+
+        // Setters are replaced only when the caller supplied them (null = leave untouched). A
+        // supplied set that differs from the stored setters is a real change, not a replay.
+        if (setterUserIds != null)
+        {
+            var targetSetters = setterUserIds.Where(id => id != Guid.Empty).ToHashSet();
+            var currentSetters = boulder.Setters.Select(s => s.UserId).ToHashSet();
+            if (!currentSetters.SetEquals(targetSetters))
+            {
+                return false;
+            }
         }
 
         return true;

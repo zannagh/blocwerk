@@ -45,6 +45,25 @@
                 <GradePicker @bind-Value="_grade" />
             </div>
 
+            @if (_members.Count > 0)
+            {
+                <div class="form-group">
+                    <label>Setter(s)</label>
+                    <p class="hint">Who set this boulder? Leave empty if it's just you adding it.</p>
+                    <div class="setter-select">
+                        @foreach (var member in _members)
+                        {
+                            var uid = member.UserId;
+                            <label class="checkbox-label">
+                                <input type="checkbox" checked="@_selectedSetters.Contains(uid)"
+                                       @onchange="e => ToggleSetter(uid, e.Value is true)" />
+                                @member.User.Name
+                            </label>
+                        }
+                    </div>
+                </div>
+            }
+
             @if (_useNew)
             {
                 <div class="rules-block">
@@ -123,6 +142,11 @@
     private List<Hold> _holds = [];
     private List<BoulderHoldInput> _selectedHolds = [];
 
+    // The wall's members, offered as selectable setters, and the ids the user picked. The creator is
+    // deliberately NOT auto-selected: the setter may differ from whoever adds the boulder in the app.
+    private List<WallMember> _members = [];
+    private readonly HashSet<Guid> _selectedSetters = [];
+
     // Minted once, offline-safe. Both the online (CreateBoulderAsync) and the queued offline path
     // key on this id, so a create is an idempotent upsert no matter which path (or a replay) runs.
     private Guid _clientId = Guid.NewGuid();
@@ -137,9 +161,9 @@
     private bool _isSubmitting;
     private string? _error;
 
-    // "new" | "old"; default "old". Read server-side (no flash) on the prerender pass, then
-    // reconciled from the cookie via JS on first interactive render.
-    private string _experience = "old";
+    // "new" | "old"; default "new" (unset cookie resolves to the new experience). Read server-side
+    // (no flash) on the prerender pass, then reconciled from the cookie via JS on first interactive render.
+    private string _experience = "new";
     private bool _useNew => _experience == "new";
 
     private string DetailUrl => $"/walls/{WallId}/boulders/{_clientId}";
@@ -166,6 +190,7 @@
         footColorOnly = _footColorOnly,
         noMatch = _noMatch,
         holds = _selectedHolds.Select(h => new { holdId = h.HoldId, type = (int)h.Type, usage = (int)h.Usage }),
+        setters = _selectedSetters.ToList(),
     });
 
     private const string ExperienceStateKey = "boulder-create-experience";
@@ -212,6 +237,19 @@
             // Foot holds are always selectable; whether a hold is hand, foot or both
             // is now marked per hold from the picker.
             _holds = _wall.Holds.ToList();
+            _members = await WallService.GetMembersAsync(WallId);
+        }
+    }
+
+    private void ToggleSetter(Guid userId, bool selected)
+    {
+        if (selected)
+        {
+            _selectedSetters.Add(userId);
+        }
+        else
+        {
+            _selectedSetters.Remove(userId);
         }
     }
 
@@ -225,7 +263,8 @@
         try
         {
             var stored = await JS.InvokeAsync<string?>("bwPrefs.getExperience");
-            var resolved = stored == "new" ? "new" : "old";
+            // Only an explicit "old" cookie opts out; an unset/null pref keeps the new default.
+            var resolved = stored == "old" ? "old" : "new";
             if (resolved != _experience)
             {
                 _experience = resolved;
@@ -284,7 +323,8 @@
         {
             var boulder = await BoulderService.CreateBoulderAsync(
                 WallId, _name, _grade, _selectedHolds, isDraft,
-                _allKickboardOn, EffectiveHandsFollowFeet, _footColorOnly, _clientId, _noMatch);
+                _allKickboardOn, EffectiveHandsFollowFeet, _footColorOnly, _clientId, _noMatch,
+                _selectedSetters.ToList());
             Navigation.NavigateTo($"/walls/{WallId}/boulders/{boulder.Id}");
         }
         catch (Exception ex)

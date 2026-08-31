@@ -92,4 +92,10 @@ public class Boulder
     public ICollection<BoulderRating> Ratings { get; set; } = [];
 
     public ICollection<BoulderFavorite> Favorites { get; set; } = [];
+
+    /// <summary>
+    /// Who set the boulder on the wall (one or more co-setters). Distinct from
+    /// <see cref="CreatedBy"/>, which is whoever added it in the app.
+    /// </summary>
+    public ICollection<BoulderSetter> Setters { get; set; } = [];
 }

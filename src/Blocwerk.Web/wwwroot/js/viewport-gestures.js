@@ -65,6 +65,24 @@ window.bwGestures = (function () {
         return false;
     }
 
+    /**
+     * Whether this touch/press started inside a wall editor that is currently in
+     * hold-drag (Move) mode — the `.photo-editor` ancestor then carries [data-hold-drag].
+     * Used to hand a one-finger gesture that grabbed a hold to Blazor's pointer drag
+     * instead of panning the viewport, and to suppress the long-press lens while editing.
+     */
+    function isHoldDragTarget(target) {
+        if (!target || typeof target.closest !== 'function') {
+            return false;
+        }
+
+        try {
+            return !!target.closest('.photo-editor[data-hold-drag]');
+        } catch (_) {
+            return false;
+        }
+    }
+
     function touchDistance(touches) {
         const dx = touches[0].clientX - touches[1].clientX;
         const dy = touches[0].clientY - touches[1].clientY;
@@ -179,6 +197,10 @@ window.bwGestures = (function () {
             cancelLens();
             if (isInteractiveTarget(target)) {
                 return; // a hold: leave it to the editor's own drag/tap
+            }
+
+            if (isHoldDragTarget(target)) {
+                return; // editor Move mode: the lens is unwanted and clashes with the iOS callout window
             }
 
             const img = lensPhoto();
@@ -399,6 +421,9 @@ window.bwGestures = (function () {
         // back to the shape as a tap; the moment the finger travels past the slop it
         // becomes a pan of the viewport instead.
         let startInteractive = false;
+        // The one-finger gesture grabbed a hold in a wall editor that is in Move mode.
+        // The viewport must NOT pan for it — Blazor's pointer drag owns the hold instead.
+        let startHoldDrag = false;
         let lastTapAt = 0;
         let lastTapX = 0;
         let lastTapY = 0;
@@ -419,6 +444,7 @@ window.bwGestures = (function () {
                 // freeze the whole viewport for the gesture.
                 mode = 'pan';
                 startInteractive = !model.canPanFrom(e.target);
+                startHoldDrag = startInteractive && isHoldDragTarget(e.target);
                 lastX = e.touches[0].clientX;
                 lastY = e.touches[0].clientY;
                 touchMoved = 0;
@@ -448,6 +474,12 @@ window.bwGestures = (function () {
                 lastCy = c.y;
                 el.dataset.panActive = 'true';
             } else if (mode === 'pan' && e.touches.length === 1) {
+                if (startHoldDrag) {
+                    // Grabbed a hold in editor Move mode: don't preventDefault or pan —
+                    // let Blazor's pointer drag move the hold (the shape has touch-action:none).
+                    return;
+                }
+
                 const dx = e.touches[0].clientX - lastX;
                 const dy = e.touches[0].clientY - lastY;
                 touchMoved += Math.abs(dx) + Math.abs(dy);
@@ -503,6 +535,7 @@ window.bwGestures = (function () {
             // the browser won't synthesise a click, so the hold is not toggled either.
             const wasTap = mode === 'pan' && touchMoved <= 4 && !startInteractive;
             mode = null;
+            startHoldDrag = false;
             setTimeout(function () { delete el.dataset.panActive; }, 0);
 
             const t = e.changedTouches[0];

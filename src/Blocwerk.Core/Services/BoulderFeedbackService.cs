@@ -265,13 +265,18 @@ public class BoulderFeedbackService : IBoulderFeedbackService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
-            // Read-only list for the wall overview; single collection include so AsNoTracking is safe.
+            // Read-only list for the wall overview. Two collection includes (holds + setters), so
+            // split the query to avoid a cartesian blow-up; AsNoTracking as it is display-only.
             var boulders = await db.Boulders
+                .AsSplitQuery()
                 .AsNoTracking()
                 .Include(b => b.BoulderHolds)
+                .Include(b => b.Setters)
                 .Include(b => b.CreatedBy)
+
+                // Drafts are visible to every wall member (they just can't be logged until published),
+                // so no creator-only draft filter here.
                 .Where(b => b.WallId == wallId)
-                .Where(b => !b.IsDraft || b.CreatedByUserId == user.Id)
                 .ToListAsync();
 
             var ids = boulders.Select(b => b.Id).ToList();

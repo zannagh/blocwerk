@@ -48,7 +48,7 @@ public class HoldUsageTests
     }
 
     [Fact]
-    public async Task GetHoldUsage_HidesAnotherMembersDraft_ButShowsYourOwn()
+    public async Task GetHoldUsage_ShowsDraftsToAllMembers()
     {
         using var h = new WallTestHarness();
         var holds = await h.SeedWallAsync(holdCount: 3);
@@ -71,8 +71,10 @@ public class HoldUsageTests
         h.CurrentUser.GetCurrentUserAsync().Returns(_ => Task.FromResult(other));
         var theirs = await h.BoulderService.GetHoldUsageAsync(h.WallId);
 
-        // The draft must not leak the fact that the hold is spoken for.
-        Assert.False(theirs.ContainsKey(holds[0].Id));
+        // Drafts are visible to every wall member now, so the hold shows as spoken-for (still
+        // flagged as a draft) to a second member.
+        Assert.True(theirs.ContainsKey(holds[0].Id));
+        Assert.True(Assert.Single(theirs[holds[0].Id]).IsDraft);
     }
 
     [Fact]

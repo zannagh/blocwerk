@@ -13,7 +13,7 @@ namespace Blocwerk.Core.Tests;
 public class BoulderDraftTests
 {
     [Fact]
-    public async Task Draft_IsHiddenFromOtherMembers_ButVisibleToItsCreator()
+    public async Task Draft_IsVisibleToAllWallMembers()
     {
         using var h = new WallTestHarness();
         var holds = await h.SeedWallAsync(holdCount: 2);
@@ -24,7 +24,8 @@ public class BoulderDraftTests
         var mine = await h.BoulderService.GetBouldersForWallAsync(h.WallId);
         Assert.Contains(mine, b => b.Id == draft.Id);
 
-        // A second member of the same wall must not see it.
+        // A second member of the same wall now also sees the draft: drafts are visible to every
+        // wall member (they just can't be logged until published).
         var other = new User { Identifier = "other@test", DisplayName = "Other" };
         await using (var db = h.CreateContext())
         {
@@ -35,7 +36,7 @@ public class BoulderDraftTests
 
         h.CurrentUser.GetCurrentUserAsync().Returns(_ => Task.FromResult(other));
         var theirs = await h.BoulderService.GetBouldersForWallAsync(h.WallId);
-        Assert.DoesNotContain(theirs, b => b.Id == draft.Id);
+        Assert.Contains(theirs, b => b.Id == draft.Id);
     }
 
     [Fact]
@@ -76,18 +77,20 @@ public class BoulderDraftTests
     }
 
     [Fact]
-    public async Task PublishBoulder_Throws_ForNonCreator()
+    public async Task PublishBoulder_Throws_ForPlainMember()
     {
         using var h = new WallTestHarness();
         var holds = await h.SeedWallAsync(holdCount: 2);
         var draft = await h.BoulderService.CreateBoulderAsync(
             h.WallId, "WIP", null, [new BoulderHoldInput(holds[0].Id)], isDraft: true);
 
+        // A plain member (not the creator, not a setter, not a wall admin) cannot publish. Admins
+        // and setters CAN publish now, so this uses a plain Member role to stay a true negative.
         var other = new User { Identifier = "other@test", DisplayName = "Other" };
         await using (var db = h.CreateContext())
         {
             db.Users.Add(other);
-            db.WallMembers.Add(new WallMember { WallId = h.WallId, UserId = other.Id, Role = WallRole.Admin });
+            db.WallMembers.Add(new WallMember { WallId = h.WallId, UserId = other.Id, Role = WallRole.Member });
             await db.SaveChangesAsync();
         }
 
@@ -200,14 +203,15 @@ public class BoulderDraftTests
     }
 
     [Fact]
-    public async Task ReviseBoulder_Throws_ForLiveBoulderAlreadySentByOthers()
+    public async Task ReviseBoulder_AllowsFullEdit_ForCreator_EvenAfterSentByOthers()
     {
         using var h = new WallTestHarness();
         var holds = await h.SeedWallAsync(holdCount: 2);
         var boulder = await h.BoulderService.CreateBoulderAsync(
             h.WallId, "Live", null, [new BoulderHoldInput(holds[0].Id)]);
 
-        // Another climber sends the boulder: from now on only its name and grade may change.
+        // Another climber sends the boulder. The creator (and wall admins/setters) may still fully
+        // re-edit the holds in place — the existing send stays attached to the boulder.
         var other = await h.AddMemberAsync("sender@test", WallRole.Member);
         await using (var db = h.CreateContext())
         {
@@ -220,7 +224,95 @@ public class BoulderDraftTests
             await db.SaveChangesAsync();
         }
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
+        await h.BoulderService.ReviseBoulderAsync(boulder.Id, [new BoulderHoldInput(holds[1].Id)]);
+
+        await using var check = h.CreateContext();
+        var saved = await check.Boulders
+            .Include(b => b.BoulderHolds)
+            .FirstAsync(b => b.Id == boulder.Id);
+        Assert.Equal(holds[1].Id, Assert.Single(saved.BoulderHolds).HoldId);
+    }
+
+    [Fact]
+    public async Task ReviseBoulder_Throws_ForPlainMember()
+    {
+        using var h = new WallTestHarness();
+        var holds = await h.SeedWallAsync(holdCount: 2);
+        var boulder = await h.BoulderService.CreateBoulderAsync(
+            h.WallId, "Live", null, [new BoulderHoldInput(holds[0].Id)]);
+
+        // A plain member who is neither the creator, a setter, nor a wall admin cannot revise.
+        var other = await h.AddMemberAsync("member@test", WallRole.Member);
+        h.CurrentUser.GetCurrentUserAsync().Returns(_ => Task.FromResult(other));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
             () => h.BoulderService.ReviseBoulderAsync(boulder.Id, [new BoulderHoldInput(holds[1].Id)]));
+        Assert.Equal(BoulderService.CreatorOrAdminRevisionMessage, ex.Message);
+    }
+
+    [Fact]
+    public async Task LogAttempt_Throws_ForDraft_ThenSucceedsAfterPublish()
+    {
+        using var h = new WallTestHarness();
+        var holds = await h.SeedWallAsync(holdCount: 2);
+        var draft = await h.BoulderService.CreateBoulderAsync(
+            h.WallId, "WIP", null, [new BoulderHoldInput(holds[0].Id)], isDraft: true);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => h.AttemptService.LogAttemptAsync(draft.Id, AttemptType.Send));
+        Assert.Equal(AttemptService.DraftNotLoggableMessage, ex.Message);
+
+        await h.BoulderService.PublishBoulderAsync(draft.Id);
+        var attempt = await h.AttemptService.LogAttemptAsync(draft.Id, AttemptType.Send);
+        Assert.Equal(AttemptType.Send, attempt.Type);
+    }
+
+    [Fact]
+    public async Task CreateBoulder_PersistsSetters_SkippingNonMembers()
+    {
+        using var h = new WallTestHarness();
+        var holds = await h.SeedWallAsync(holdCount: 2);
+        var setter = await h.AddMemberAsync("setter@test", WallRole.Member);
+
+        // A user who is not a member of the wall must be silently skipped.
+        var stranger = new User { Identifier = "stranger@test", DisplayName = "Stranger" };
+        await using (var db = h.CreateContext())
+        {
+            db.Users.Add(stranger);
+            await db.SaveChangesAsync();
+        }
+
+        var boulder = await h.BoulderService.CreateBoulderAsync(
+            h.WallId, "B", null, [new BoulderHoldInput(holds[0].Id)],
+            setterUserIds: new[] { setter.Id, stranger.Id });
+
+        await using var check = h.CreateContext();
+        var saved = await check.Boulders.Include(b => b.Setters).FirstAsync(b => b.Id == boulder.Id);
+        Assert.Equal(setter.Id, Assert.Single(saved.Setters).UserId);
+    }
+
+    [Fact]
+    public async Task ReviseBoulder_ReplacesSetters_AndLetsASetterRevise()
+    {
+        using var h = new WallTestHarness();
+        var holds = await h.SeedWallAsync(holdCount: 3);
+        var setter = await h.AddMemberAsync("setter@test", WallRole.Member);
+        var coSetter = await h.AddMemberAsync("cosetter@test", WallRole.Member);
+
+        var boulder = await h.BoulderService.CreateBoulderAsync(
+            h.WallId, "B", null, [new BoulderHoldInput(holds[0].Id)],
+            setterUserIds: new[] { setter.Id });
+
+        // The setter (not the creator) revises, and the setter set is replaced with two co-setters.
+        h.CurrentUser.GetCurrentUserAsync().Returns(_ => Task.FromResult(setter));
+        await h.BoulderService.ReviseBoulderAsync(
+            boulder.Id,
+            [new BoulderHoldInput(holds[1].Id)],
+            setterUserIds: new[] { setter.Id, coSetter.Id });
+
+        await using var check = h.CreateContext();
+        var saved = await check.Boulders.Include(b => b.Setters).FirstAsync(b => b.Id == boulder.Id);
+        Assert.Equal(2, saved.Setters.Count);
+        Assert.Contains(saved.Setters, s => s.UserId == coSetter.Id);
     }
 }

@@ -39,6 +39,8 @@ public class BlocwerkDbContext : DbContext
 
     public DbSet<BoulderFavorite> BoulderFavorites => Set<BoulderFavorite>();
 
+    public DbSet<BoulderSetter> BoulderSetters => Set<BoulderSetter>();
+
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     public DbSet<HangboardSession> HangboardSessions => Set<HangboardSession>();
@@ -112,6 +114,7 @@ public class BlocwerkDbContext : DbContext
         ConfigureGradeProposal(modelBuilder);
         ConfigureBoulderRating(modelBuilder);
         ConfigureBoulderFavorite(modelBuilder);
+        ConfigureBoulderSetter(modelBuilder);
         ConfigureActivity(modelBuilder);
         ConfigureApiKey(modelBuilder);
         ConfigureWallTemperatureReading(modelBuilder);
@@ -625,6 +628,24 @@ public class BlocwerkDbContext : DbContext
             entity.HasOne(f => f.User)
                 .WithMany()
                 .HasForeignKey(f => f.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+    }
+
+    private static void ConfigureBoulderSetter(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<BoulderSetter>(entity =>
+        {
+            entity.HasKey(s => new { s.BoulderId, s.UserId });
+
+            entity.HasOne(s => s.Boulder)
+                .WithMany(b => b.Setters)
+                .HasForeignKey(s => s.BoulderId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(s => s.User)
+                .WithMany()
+                .HasForeignKey(s => s.UserId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
     }
