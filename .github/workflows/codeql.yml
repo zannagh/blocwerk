@@ -1,0 +1,91 @@
+name: "CodeQL"
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  push:
+    branches: [ "main" ]
+  schedule:
+    - cron: '34 5 * * 0'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  determine-jobs:
+    name: Determine Jobs
+    outputs:
+      has_code_changes: ${{ steps.check_changes.outputs.has_code_changes }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for code changes
+        id: check_changes
+        run: |
+          if [[ "${{ github.event_name }}" != "push" ]]; then
+            echo "has_code_changes=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          DOCS_PATTERN='\.(md|yaml|yml|html)$'
+          HAS_CODE=false
+
+          while IFS= read -r file; do
+            if [[ -n "$file" && "$file" =~ ^\.github/workflows/ ]]; then
+              HAS_CODE=true
+              break
+            fi
+            if [[ -n "$file" && ! "$file" =~ $DOCS_PATTERN ]]; then
+              HAS_CODE=true
+              break
+            fi
+          done <<< "$(git diff --name-only HEAD~1 HEAD)"
+
+          echo "has_code_changes=$HAS_CODE" >> "$GITHUB_OUTPUT"
+
+  analyze:
+    name: Analyze
+    needs: determine-jobs
+    if: ${{ !cancelled() && needs.determine-jobs.outputs.has_code_changes == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # Initializes the CodeQL tools for scanning.
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: csharp
+          config-file: ./.github/codeql/codeql-config.yml
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: "global.json"
+
+      - name: Setup GitVersion
+        uses: gittools/actions/gitversion/setup@v4.2.0
+        with:
+          versionSpec: '6.x'
+
+      - name: Update project files with version
+        uses: gittools/actions/gitversion/command@v4.2.0
+        with:
+          arguments: -updateprojectfiles
+
+      - name: Build
+        run: dotnet build -c Release
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
