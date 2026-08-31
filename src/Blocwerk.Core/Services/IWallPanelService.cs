@@ -117,5 +117,6 @@ public interface IWallPanelService
         string? color = null,
         HoldCategory? category = null,
         List<ShapePoint>? shapePoints = null,
-        HoldMaterial? material = null);
+        HoldMaterial? material = null,
+        HoldHandType? handType = null);
 }

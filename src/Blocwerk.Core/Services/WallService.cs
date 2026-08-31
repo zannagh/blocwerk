@@ -1351,7 +1351,7 @@ public class WallService : IWallService
         }
     }
 
-    public async Task<Hold> AddHoldAsync(Guid wallId, double x, double y, double radius, string? color, HoldCategory category = HoldCategory.Hand, List<ShapePoint>? shapePoints = null, bool isVirtual = false, HoldMaterial? material = null)
+    public async Task<Hold> AddHoldAsync(Guid wallId, double x, double y, double radius, string? color, HoldCategory category = HoldCategory.Hand, List<ShapePoint>? shapePoints = null, bool isVirtual = false, HoldMaterial? material = null, HoldHandType? handType = null)
     {
         using var op = BlocwerkMetrics.TimeOperation("Wall.AddHold", wallId);
         try
@@ -1377,6 +1377,7 @@ public class WallService : IWallService
                 Color = color,
                 Material = material,
                 Category = category,
+                HandType = handType,
                 ShapePoints = shapePoints,
                 IsAutoDetected = false,
                 IsVirtual = isVirtual,
@@ -1398,7 +1399,7 @@ public class WallService : IWallService
         }
     }
 
-    public async Task<Hold> UpdateHoldAsync(Guid holdId, double x, double y, double radius, string? color = null, HoldCategory? category = null, bool? isOnKickboard = null, List<ShapePoint>? shapePoints = null, string? name = null, HoldMaterial? material = null, bool flagBouldersOnMove = true)
+    public async Task<Hold> UpdateHoldAsync(Guid holdId, double x, double y, double radius, string? color = null, HoldCategory? category = null, bool? isOnKickboard = null, List<ShapePoint>? shapePoints = null, string? name = null, HoldMaterial? material = null, bool flagBouldersOnMove = true, HoldHandType? handType = null)
     {
         using var op = BlocwerkMetrics.TimeOperation("Wall.UpdateHold");
         try
@@ -1430,6 +1431,7 @@ public class WallService : IWallService
             hold.Radius = radius;
             hold.Color = color;
             hold.Material = material;
+            hold.HandType = handType;
 
             if (category.HasValue)
             {

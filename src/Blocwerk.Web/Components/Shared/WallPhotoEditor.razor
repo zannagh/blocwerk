@@ -529,6 +529,15 @@
                     <button class="opt-btn foot @(sel.Category == HoldCategory.Foot ? "active" : "")" @onclick="() => SetSelectedCategory(HoldCategory.Foot)">Foot</button>
                 </div>
                 <div class="option-group"><label class="cb-label"><input type="checkbox" checked="@sel.IsOnKickboard" @onchange="() => ToggleKickboard(sel)" /> KB</label></div>
+                @if (sel.Category == HoldCategory.Hand)
+                {
+                    <div class="option-group"><label>Sub-type:</label>
+                        <select class="color-select" value="@(sel.HandType?.ToString() ?? "none")" @onchange="e => OnSelectedHandTypeChange(sel, e)">
+                            <option value="none">—</option>
+                            @foreach (var t in _handTypes) { <option value="@t">@t</option> }
+                        </select>
+                    </div>
+                }
                 <div class="option-group"><label>Material:</label>
                     <select class="color-select" value="@(sel.Material?.ToString() ?? "none")" @onchange="e => OnSelectedMaterialChange(sel, e)">
                         <option value="none">—</option>
@@ -953,6 +962,7 @@
     private bool IsLiveHold(Hold h) => IsStaging && h.Generation <= LiveGeneration;
 
     private static readonly HoldMaterial[] _materials = [HoldMaterial.PU, HoldMaterial.PE, HoldMaterial.DualTex, HoldMaterial.Wood];
+    private static readonly HoldHandType[] _handTypes = [HoldHandType.Jug, HoldHandType.Pinch, HoldHandType.Crimp, HoldHandType.Pocket, HoldHandType.Sloper];
     private static string MaterialLabel(HoldMaterial m) => m == HoldMaterial.DualTex ? "DualTex" : m.ToString();
 
     // Handles are drawn in SVG user units, which the zoom scales up with the photo.
@@ -1107,7 +1117,7 @@
         _snapshotHolds = Holds.Select(h => new Hold
         {
             Id = h.Id, WallId = h.WallId, X = h.X, Y = h.Y, Radius = h.Radius,
-            Color = h.Color, Material = h.Material, Category = h.Category, IsOnKickboard = h.IsOnKickboard,
+            Color = h.Color, Material = h.Material, Category = h.Category, HandType = h.HandType, IsOnKickboard = h.IsOnKickboard,
             IsAutoDetected = h.IsAutoDetected, Confidence = h.Confidence, Generation = h.Generation,
             Name = h.Name,
             ShapePoints = h.ShapePoints?.Select(sp => new ShapePoint { Dx = sp.Dx, Dy = sp.Dy }).ToList(),
@@ -1848,6 +1858,13 @@
         // A blue hold turned wooden can't stay blue; snap it to a valid tone.
         h.Color = HoldPalette.CoerceTo(h.Color, h.Material)
             ?? (h.Material == HoldMaterial.Wood ? "wood-medium" : null);
+        _updatedHoldIds.Add(h.Id);
+    }
+
+    private void OnSelectedHandTypeChange(Hold h, ChangeEventArgs e)
+    {
+        TakeSnapshot();
+        h.HandType = Enum.TryParse<HoldHandType>(e.Value?.ToString(), out var t) ? t : null;
         _updatedHoldIds.Add(h.Id);
     }
 

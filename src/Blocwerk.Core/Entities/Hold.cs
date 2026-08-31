@@ -46,6 +46,12 @@ public class Hold
 
     public HoldCategory Category { get; set; } = HoldCategory.Hand;
 
+    /// <summary>
+    /// The grip sub-type of a hand hold (jug, crimp, sloper, …). Only meaningful when
+    /// <see cref="Category"/> is <see cref="HoldCategory.Hand"/>. Null means unspecified.
+    /// </summary>
+    public HoldHandType? HandType { get; set; }
+
     public bool IsOnKickboard { get; set; }
 
     public bool IsAutoDetected { get; set; }
@@ -91,6 +97,7 @@ public class Hold
         Color = Color,
         Material = Material,
         Category = Category,
+        HandType = HandType,
         IsOnKickboard = IsOnKickboard,
         IsAutoDetected = IsAutoDetected,
         Confidence = Confidence,

@@ -864,14 +864,14 @@ else
     {
         foreach (var hold in changes.Added)
         {
-            var saved = await WallService.AddHoldAsync(WallId, hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.ShapePoints, material: hold.Material);
+            var saved = await WallService.AddHoldAsync(WallId, hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.ShapePoints, material: hold.Material, handType: hold.HandType);
             var local = _holds.FirstOrDefault(h => h.Id == hold.Id);
             if (local != null) local.Id = saved.Id;
         }
 
         foreach (var hold in changes.Updated)
         {
-            await WallService.UpdateHoldAsync(hold.Id, hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.IsOnKickboard, hold.ShapePoints, hold.Name, hold.Material);
+            await WallService.UpdateHoldAsync(hold.Id, hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.IsOnKickboard, hold.ShapePoints, hold.Name, hold.Material, handType: hold.HandType);
         }
 
         foreach (var holdId in changes.Deleted)
@@ -1017,7 +1017,7 @@ else
         foreach (var hold in changes.Added)
         {
             var savedId = await WallPanelService.AddPanelHoldAsync(
-                WallId, _editingPanel.Id, hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.ShapePoints, hold.Material);
+                WallId, _editingPanel.Id, hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.ShapePoints, hold.Material, hold.HandType);
             var local = _editingPanelHolds.FirstOrDefault(h => h.Id == hold.Id);
             if (local != null)
             {
@@ -1030,7 +1030,7 @@ else
             // Per-panel edit: a hold's position shifts by parallax between panel photos, so a move must
             // not auto-flag boulders. "Changed" is a manual per-hold decision here (Mark modified /
             // Mark unchanged), surfaced by the panel editor's change-review overlay.
-            await WallService.UpdateHoldAsync(hold.Id, hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.IsOnKickboard, hold.ShapePoints, hold.Name, hold.Material, flagBouldersOnMove: false);
+            await WallService.UpdateHoldAsync(hold.Id, hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.IsOnKickboard, hold.ShapePoints, hold.Name, hold.Material, flagBouldersOnMove: false, handType: hold.HandType);
         }
 
         foreach (var holdId in changes.Deleted)

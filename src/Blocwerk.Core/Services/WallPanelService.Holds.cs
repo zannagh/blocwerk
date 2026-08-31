@@ -21,7 +21,8 @@ public partial class WallPanelService
         string? color = null,
         HoldCategory? category = null,
         List<ShapePoint>? shapePoints = null,
-        HoldMaterial? material = null)
+        HoldMaterial? material = null,
+        HoldHandType? handType = null)
     {
         var user = await currentUserService.GetCurrentUserAsync();
         await using var db = await dbContextFactory.CreateDbContextAsync();
@@ -50,6 +51,7 @@ public partial class WallPanelService
             Color = color,
             ShapePoints = shapePoints,
             Material = material,
+            HandType = handType,
             Generation = wall.CurrentGeneration,
             IsAutoDetected = false,
             NeedsReview = true,
