@@ -126,20 +126,6 @@ public static class CoreServices
             }
         }
 
-        // Self-heal duplicate accounts left by the pre-UserIdentities era: absorb a legacy user into the
-        // account that now owns its provider subject. Idempotent and strictly guarded; a failure here must
-        // never block startup, so it is isolated exactly like the Migrate() block above.
-        try
-        {
-            var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<BlocwerkDbContext>>();
-            var mergeService = scope.ServiceProvider.GetRequiredService<IAccountMergeService>();
-            LegacyIdentityReconciliation.RunIfNeededAsync(factory, mergeService, logger).GetAwaiter().GetResult();
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Legacy-identity reconciliation failed; duplicate accounts remain until the next start.");
-        }
-
         // Reconstruct Activity rows for any events that predate the activity model. Idempotent, so it
         // is safe to run on every start; it no-ops once all events are grouped.
         try
