@@ -140,7 +140,12 @@ public sealed class TopLoggerApiClient : ITopLoggerApiClient
                 await LoadDayTicksAsync(userId, tlUserId, dateKey, cancellationToken).ConfigureAwait(false);
             foreach (TopLoggerTick tick in dayTicks)
             {
-                if (since is { } c && tick.LoggedAt is { } loggedAt && loggedAt < c)
+                // Compare at day granularity (mirroring the whole-day cutoff above): climbedAtDate is
+                // day-anchored, so an instant-level "< since" would drop ticks logged later on the same
+                // day as the last sync. Re-including an already-imported tick is harmless — the import
+                // dedupes on the tick's external id.
+                if (since is { } c && tick.LoggedAt is { } loggedAt
+                    && loggedAt.UtcDateTime.Date < c.UtcDateTime.Date)
                 {
                     continue;
                 }

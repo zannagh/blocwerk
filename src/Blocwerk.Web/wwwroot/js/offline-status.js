@@ -15,6 +15,23 @@
     let host = null;
     let expanded = false;
 
+    // A transient message shown in the pill for a few seconds (e.g. "TopLogger synced"), then cleared.
+    // A real connection/queue status always wins over it, so it never masks an offline/reconnecting state.
+    let flashState = null;
+    let flashTimer = null;
+
+    function flashMessage(label, tone, ms) {
+        flashState = { label: label, tone: tone || 'warn' };
+        render();
+        if (flashTimer) {
+            clearTimeout(flashTimer);
+        }
+        flashTimer = setTimeout(function () {
+            flashState = null;
+            render();
+        }, ms || 4000);
+    }
+
     function ensureHost() {
         if (host && host.isConnected) {
             return host;
@@ -122,6 +139,21 @@
 
         const summary = summarise(queueState, connection);
         if (!summary && queueState.rejected.length === 0) {
+            // Nothing to report from the connection/queue — but a transient flash may be showing.
+            if (flashState) {
+                container.classList.add('bw-conn-active');
+                const flashPill = document.createElement('div');
+                flashPill.className = 'bw-conn-pill bw-conn-' + flashState.tone + ' bw-conn-flash';
+                const flashDot = document.createElement('span');
+                flashDot.className = 'bw-conn-dot';
+                flashPill.appendChild(flashDot);
+                const flashLabel = document.createElement('span');
+                flashLabel.className = 'bw-conn-label';
+                flashLabel.textContent = flashState.label;
+                flashPill.appendChild(flashLabel);
+                container.appendChild(flashPill);
+                return;
+            }
             expanded = false;
             container.classList.remove('bw-conn-active');
             return;
@@ -175,5 +207,5 @@
     // A few cheap re-renders cover the gap without an always-on MutationObserver.
     [200, 1000, 3000].forEach(delay => setTimeout(render, delay));
 
-    window.blocwerkStatus = { render: render };
+    window.blocwerkStatus = { render: render, flash: flashMessage };
 })();

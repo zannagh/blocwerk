@@ -32,7 +32,6 @@ public sealed class TopLoggerGraphQlClient : ITopLoggerGraphQlClient
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
     };
 
-    private static readonly Random Jitter = new();
 
     private readonly HttpClient httpClient;
     private readonly TopLoggerSettings settings;
@@ -165,7 +164,7 @@ public sealed class TopLoggerGraphQlClient : ITopLoggerGraphQlClient
         }
 
         double baseMs = ThrottleBaseDelay.TotalMilliseconds * Math.Pow(2, attempt);
-        double jitterMs = Jitter.NextDouble() * ThrottleJitter.TotalMilliseconds;
+        double jitterMs = Random.Shared.NextDouble() * ThrottleJitter.TotalMilliseconds;
         TimeSpan computed = TimeSpan.FromMilliseconds(baseMs + jitterMs);
         return computed < MaxThrottleDelay ? computed : MaxThrottleDelay;
     }

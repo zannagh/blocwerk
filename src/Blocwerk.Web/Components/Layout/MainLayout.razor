@@ -7,6 +7,7 @@
 @inject SessionState SessionState
 @inject ICurrentUserService CurrentUserService
 @inject IServiceScopeFactory ScopeFactory
+@inject IJSRuntime JS
 
 <div class="app-shell">
     <header class="bw-topbar">
@@ -179,7 +180,14 @@
                                || last.UtcDateTime.Date != now.UtcDateTime.Date);
                 if (due)
                 {
-                    await importService.SyncAsync(userId);
+                    var result = await importService.SyncAsync(userId);
+                    if (result.Success && !result.NeedsReauth)
+                    {
+                        // Marshal back onto the circuit to surface a brief pink status-pill flash. A JS
+                        // interop failure (circuit already gone) is swallowed by the outer catch.
+                        await InvokeAsync(async () =>
+                            await JS.InvokeVoidAsync("blocwerkStatus.flash", "TopLogger synced", "warn"));
+                    }
                 }
             }
             catch (Exception)
