@@ -551,6 +551,23 @@
                     </label>
                     <button class="opt-btn active" @onclick="() => ConfirmHoldAligned(sel.Id)">@(_alignedHoldIds.Contains(sel.Id) ? "Confirmed ✓" : "Confirm hold")</button>
                 }
+                else if (ChangeReview)
+                {
+                    @if (_pendingChanges > 0)
+                    {
+                        <span class="option-hint">Save changes first to mark this hold changed / unchanged.</span>
+                    }
+                    else if (sel.NeedsReview)
+                    {
+                        <button class="opt-btn active" title="This hold is flagged as changed — click to mark it unchanged and pull its boulders back out of review."
+                                @onclick="() => MarkSelectedUnchanged(sel.Id)">Changed ✓ — mark unchanged</button>
+                    }
+                    else
+                    {
+                        <button class="opt-btn" title="Flag this hold as changed so boulders using it are flagged for review."
+                                @onclick="() => MarkSelectedModified(sel.Id)">Mark changed</button>
+                    }
+                }
                 else if (!IsStaging && _pendingChanges == 0)
                 {
                     <button class="opt-btn" title="Mark this hold as slightly modified; boulders using it will be flagged for review."
@@ -581,7 +598,7 @@
     @if (CanEdit && ChangeReview && !ManualAlignment)
     {
         <div class="option-bar">
-            <span class="option-hint">Move holds freely — that alone won't flag boulders. Use <strong>Mark modified</strong> / <strong>Mark unchanged</strong> on a hold to record what changed; a nearer-centre panel's verdict carries to its overlap twins.</span>
+            <span class="option-hint"><strong>Tap a hold</strong> to mark it changed or unchanged — moving holds alone won't flag boulders. A nearer-centre panel's verdict carries to its overlap twins.</span>
             <div class="option-group">
                 <button class="opt-btn @(_showChanges ? "active" : "")"
                         title="Highlight the holds marked as changed on this panel — their boulders are flagged for review."
@@ -1663,6 +1680,11 @@
     private async Task MarkSelectedModified(Guid holdId)
     {
         await OnMarkHoldModified.InvokeAsync(holdId);
+    }
+
+    private async Task MarkSelectedUnchanged(Guid holdId)
+    {
+        await OnRestoreUnchangedHold.InvokeAsync(holdId);
     }
 
     // ---- Manual alignment --------------------------------------------------
