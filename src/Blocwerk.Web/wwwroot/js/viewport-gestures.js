@@ -105,10 +105,59 @@ window.bwGestures = (function () {
         let lensTimer = 0;
         let lensEl = null;
         let lensImg = null;
+        let lensOverlay = null;
         let lensActive = false;
 
         function lensPhoto() {
             return el.querySelector('.photo-editor img.wall-photo');
+        }
+
+        // The boulder-detail photo-editor carries `data-lens-overlay`; the wall view's does not. Only
+        // there do we bake the marked-hold SVG into the lens, so everywhere else the lens stays
+        // photo-only exactly as before. Returns the live overlay to clone, or null.
+        function lensOverlaySource() {
+            if (!lensImg) {
+                return null;
+            }
+
+            const editor = lensImg.closest('.photo-editor[data-lens-overlay]');
+            if (!editor) {
+                return null;
+            }
+
+            return editor.querySelector('svg.hold-overlay');
+        }
+
+        // Clone the live overlay into the lens as a child layer. It is sized to the MAGNIFIED photo
+        // (not the lens) and offset to the same origin as the background-image in updateLens, so its
+        // 0-100 viewBox (preserveAspectRatio="none") maps onto the exact pixels the photo occupies —
+        // each hold outline sits over its hold. Cloning fresh picks up current colours / info bubbles.
+        function attachLensOverlay() {
+            detachLensOverlay();
+            if (!lensEl) {
+                return;
+            }
+
+            const svg = lensOverlaySource();
+            if (!svg) {
+                return;
+            }
+
+            const clone = svg.cloneNode(true);
+            clone.style.position = 'absolute';
+            clone.style.left = '0';
+            clone.style.top = '0';
+            clone.style.pointerEvents = 'none';
+            lensEl.appendChild(clone);
+            lensOverlay = clone;
+        }
+
+        function detachLensOverlay() {
+            if (lensOverlay && lensOverlay.parentNode) {
+                lensOverlay.parentNode.removeChild(lensOverlay);
+            }
+
+            lensOverlay = null;
         }
 
         // The current magnification, read live from the client pref each time the lens updates so a
@@ -154,7 +203,7 @@ window.bwGestures = (function () {
                 lensEl.className = 'bw-zoom-lens';
                 lensEl.style.cssText = 'position:fixed; z-index:2000; width:' + LENS_SIZE +
                     'px; height:' + LENS_SIZE + 'px; border-radius:50%; border:3px solid ' +
-                    'rgba(255,255,255,0.9); box-shadow:0 6px 24px rgba(0,0,0,0.45); ' +
+                    'rgba(255,255,255,0.9); box-shadow:0 6px 24px rgba(0,0,0,0.45); overflow:hidden; ' +
                     'background-repeat:no-repeat; background-color:#000; pointer-events:none; display:none;';
                 document.body.appendChild(lensEl);
             }
@@ -162,6 +211,7 @@ window.bwGestures = (function () {
             lensEl.style.backgroundImage = 'url("' + (lensImg.currentSrc || lensImg.src) + '")';
             lensEl.style.display = 'block';
             lensActive = true;
+            attachLensOverlay();
             updateLens(clientX, clientY);
         }
 
@@ -186,9 +236,19 @@ window.bwGestures = (function () {
             const M = lensMag() * LENS_MAG_SCALE;
             const bgW = lensImg.naturalWidth > 0 ? lensImg.naturalWidth * M : r.width * M;
             const bgH = lensImg.naturalHeight > 0 ? lensImg.naturalHeight * M : r.height * M;
+            const offX = LENS_SIZE / 2 - fx * bgW;
+            const offY = LENS_SIZE / 2 - fy * bgH;
             lensEl.style.backgroundSize = bgW + 'px ' + bgH + 'px';
-            lensEl.style.backgroundPosition =
-                (LENS_SIZE / 2 - fx * bgW) + 'px ' + (LENS_SIZE / 2 - fy * bgH) + 'px';
+            lensEl.style.backgroundPosition = offX + 'px ' + offY + 'px';
+
+            // The overlay shares the photo's magnified size and origin, so its holds stay pinned to
+            // the magnified photo at any touch point (boulder detail only; null everywhere else).
+            if (lensOverlay) {
+                lensOverlay.style.width = bgW + 'px';
+                lensOverlay.style.height = bgH + 'px';
+                lensOverlay.style.left = offX + 'px';
+                lensOverlay.style.top = offY + 'px';
+            }
 
             // Float above the finger/cursor; drop below only when it would clip the top edge.
             const left = clamp(clientX - LENS_SIZE / 2, 4, window.innerWidth - LENS_SIZE - 4);
@@ -206,6 +266,8 @@ window.bwGestures = (function () {
                 clearTimeout(lensTimer);
                 lensTimer = 0;
             }
+
+            detachLensOverlay();
 
             if (lensActive && lensEl) {
                 lensEl.style.display = 'none';

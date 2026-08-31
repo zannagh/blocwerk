@@ -15,7 +15,9 @@ else
     <div class="panel-viewer">
         @* Zoom geometry is owned by JS via `--zoom` (wwwroot/js/viewport.js). *@
         <div class="photo-viewport photo-section" @ref="_viewportRef">
-            <div class="photo-editor">
+            @* data-lens-overlay (boulder detail only) makes the long-press magnifier bake the
+               marked-hold overlay into the lens; omitted in the wall view. *@
+            <div class="photo-editor" data-lens-overlay="@(LensOverlay ? "true" : null)">
                 <img src="@PhotoUrl(_panel.Id)" alt="Wall panel @_panel.Col,@_panel.Row" class="wall-photo" />
                 <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
                     @foreach (var h in _holds)
@@ -106,6 +108,13 @@ else
     /// swipe already pages the carousel; the arrows are always available regardless.
     /// </summary>
     [Parameter] public bool EnableSwipe { get; set; }
+
+    /// <summary>
+    /// When true, mark each panel's <c>.photo-editor</c> with <c>data-lens-overlay</c> so the
+    /// long-press magnifier bakes the marked-hold overlay into the lens. Set only from the boulder
+    /// detail view; left false in the wall view, whose editor stays photo-only in the lens.
+    /// </summary>
+    [Parameter] public bool LensOverlay { get; set; }
 
     public enum ArrowDisplayMode { AllNeighbours, HoldsOnly }
 

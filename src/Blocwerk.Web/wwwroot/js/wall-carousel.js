@@ -4,17 +4,24 @@ window.wallCarousel = {
     // from page 1).
     //
     // Returns a promise that resolves only once the offset is actually applied, so the caller keeps
-    // the carousel hidden (.carousel-pending) until then. The reason this is deferred and re-asserted
-    // across a few animation frames: at first paint the carousel's async-loaded child pages (wall
-    // photo, boulders) may not have their full laid-out width yet, so a raw
-    // `scrollLeft = idx * clientWidth` set too early is clamped toward 0 — and the reveal then shows
-    // page 1 instead of the intended centre page. We wait until the flex track is wide enough to hold
-    // page `idx`, position off the real target page element, then reveal.
+    // the carousel hidden (.carousel-pending) until then.
+    //
+    // Two things must be true for this to land exactly on `idx`:
+    //   1. The flex track must already be wide enough to hold page `idx`. We wait for that and then
+    //      measure the real page element (targetOffset) rather than assuming a uniform clientWidth.
+    //   2. The positioning must be INSTANT. The stylesheet sets `scroll-behavior: smooth` on
+    //      `.wall-carousel`, which means a plain `el.scrollLeft = x` assignment ANIMATES instead of
+    //      jumping. If we reveal mid-animation, `scroll-snap-type: x mandatory` snaps to whatever
+    //      near page the animation has reached in those few frames (e.g. page 1 instead of 3). So we
+    //      override scroll-behavior to `auto` inline while positioning, then restore it so ordinary
+    //      user-driven navigation stays smooth afterward.
     initPage(el, idx) {
         if (!el) {
             return Promise.resolve();
         }
         return new Promise((resolve) => {
+            const prevBehavior = el.style.scrollBehavior;
+            el.style.scrollBehavior = 'auto';
             let frames = 0;
             const settle = () => {
                 frames++;
@@ -24,9 +31,11 @@ window.wallCarousel = {
                 const ready = w > 0 && el.scrollWidth >= (idx + 1) * w - 1;
                 if (ready || frames >= 30) {
                     el.scrollLeft = this.targetOffset(el, idx);
-                    // Re-assert once more next frame in case a late reflow nudges the track, then reveal.
+                    // Re-assert once more next frame in case a late reflow nudges the track, then
+                    // restore smooth behavior and reveal.
                     requestAnimationFrame(() => {
                         el.scrollLeft = this.targetOffset(el, idx);
+                        el.style.scrollBehavior = prevBehavior;
                         resolve();
                     });
                     return;
@@ -48,7 +57,9 @@ window.wallCarousel = {
     },
     scrollToPage(el, idx, smooth) {
         if (!el) return;
-        el.scrollTo({ left: this.targetOffset(el, idx), behavior: smooth ? 'smooth' : 'auto' });
+        // `behavior: 'auto'` would resolve to the element's CSS scroll-behavior (smooth here), so a
+        // non-smooth caller must ask for 'instant' explicitly to actually jump.
+        el.scrollTo({ left: this.targetOffset(el, idx), behavior: smooth ? 'smooth' : 'instant' });
     },
     currentPage(el) {
         if (!el || el.clientWidth === 0) return 0;

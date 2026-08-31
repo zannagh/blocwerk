@@ -27,7 +27,10 @@ public partial class WallPanelService
         var user = await currentUserService.GetCurrentUserAsync();
         await using var db = await dbContextFactory.CreateDbContextAsync();
         db.CurrentUserId = user.Id;
-        await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
+        // Per-panel hold add is hold-editing, reached by the normal per-panel editor on multi-image
+        // walls, so moderators may use it. Admins/owners still pass. The admin-only big-wall staging
+        // session is separately gated at the WallBigUpdateService level.
+        await WallAdminGuard.EnsureWallEditorAsync(db, wallId, user.Id, CancellationToken.None);
 
         var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId);
         if (wall is null)

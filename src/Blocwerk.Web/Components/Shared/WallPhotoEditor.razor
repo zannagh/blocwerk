@@ -69,11 +69,14 @@
                 </svg>
             </button>
             <span class="toolbar-sep"></span>
-            <button class="tool-btn @A(EditMode.Border)" @onclick="() => SetMode(EditMode.Border)" title="Edit wall border">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                    <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2" />
-                </svg>
-            </button>
+            @if (CanEditShape)
+            {
+                <button class="tool-btn @A(EditMode.Border)" @onclick="() => SetMode(EditMode.Border)" title="Edit wall border">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                        <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2" />
+                    </svg>
+                </button>
+            }
             <button class="tool-btn" @onclick="() => _showBorder = !_showBorder" title="@(_showBorder ? "Hide" : "Show") border &amp; segments">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="@(_showBorder ? "2" : "1")" width="20" height="20" opacity="@(_showBorder ? "1" : "0.4")">
                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
@@ -149,7 +152,7 @@
             <polygon points="@Pts(BorderPoints.Select(p => (p.Dx, p.Dy)))"
                      fill="none" stroke="#FF9800" stroke-width="0.3" stroke-dasharray="1 0.5"
                      style="pointer-events: none" />
-            @if (_mode == EditMode.Border)
+            @if (CanEditShape && _mode == EditMode.Border)
             {
                 @for (int i = 0; i < BorderPoints.Count; i++)
                 {
@@ -463,7 +466,7 @@
             </div>
         </div>
     }
-    @if (CanEdit && _mode == EditMode.Border)
+    @if (CanEditShape && _mode == EditMode.Border)
     {
         <div class="option-bar">
             <div class="option-group"><label>Border:</label>
@@ -746,6 +749,13 @@
     /// </summary>
     [Parameter] public List<WallSegment>? Segments { get; set; }
     [Parameter] public bool CanEdit { get; set; }
+
+    /// <summary>
+    /// Whether the wall-border tool is available. This is a wall-settings capability (admin/owner),
+    /// separate from hold editing (<see cref="CanEdit"/>, which moderators also get). Defaults false
+    /// so hold-only editors never expose the border tool.
+    /// </summary>
+    [Parameter] public bool CanEditShape { get; set; }
     [Parameter] public string? ShareToken { get; set; }
 
     /// <summary>
@@ -1592,7 +1602,15 @@
         _draggingShapePointIdx = idx;
     }
 
-    private void StartBorderDrag(int idx) => _draggingBorderIdx = idx;
+    private void StartBorderDrag(int idx)
+    {
+        if (!CanEditShape)
+        {
+            return;
+        }
+
+        _draggingBorderIdx = idx;
+    }
 
     private async Task OnSvgClick(MouseEventArgs e)
     {

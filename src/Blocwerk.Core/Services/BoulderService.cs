@@ -585,6 +585,8 @@ public class BoulderService : IBoulderService
 
             // A boulder's creator may revise it, and so may any wall admin — an admin may revise
             // ANY historic boulder on their wall, not only the ones they set themselves.
+            // NOTE: intentionally kept creator-or-admin. Extending revise rights to wall moderators
+            // (WallRole.Moderator) is a possible follow-up but deliberately not done here.
             if (boulder.CreatedByUserId != user.Id
                 && !await WallAdminGuard.IsWallAdminAsync(db, boulder.WallId, user.Id, CancellationToken.None))
             {

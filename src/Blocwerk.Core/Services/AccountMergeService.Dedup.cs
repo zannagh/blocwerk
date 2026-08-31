@@ -1,5 +1,6 @@
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Services;
@@ -27,8 +28,11 @@ public partial class AccountMergeService
             var targetMember = targetMembers.FirstOrDefault(m => m.WallId == sourceMember.WallId);
             if (targetMember is not null)
             {
-                // Already a member of this wall on both sides: keep the higher role, drop the source's.
-                if (sourceMember.Role > targetMember.Role)
+                // Already a member of this wall on both sides: keep the more-capable role, drop the
+                // source's. Compare by capability precedence (Admin > Moderator > Member), NOT the
+                // stored numeric value — WallRole is Member=0, Admin=1, Moderator=2, so a numeric
+                // comparison would wrongly rank Moderator above Admin and demote the admin.
+                if (WallRoleRank(sourceMember.Role) > WallRoleRank(targetMember.Role))
                 {
                     targetMember.Role = sourceMember.Role;
                 }
@@ -51,6 +55,18 @@ public partial class AccountMergeService
 
         await db.SaveChangesAsync();
     }
+
+    /// <summary>
+    /// Capability precedence for a wall role: Admin (2) &gt; Moderator (1) &gt; Member (0). This is
+    /// deliberately independent of the stored enum values (Member=0, Admin=1, Moderator=2) so role
+    /// comparisons follow capability, not numeric order.
+    /// </summary>
+    private static int WallRoleRank(WallRole role) => role switch
+    {
+        WallRole.Admin => 2,
+        WallRole.Moderator => 1,
+        _ => 0,
+    };
 
     private static async Task DedupBoulderRatingsAsync(BlocwerkDbContext db, Guid sourceUserId, Guid targetUserId)
     {

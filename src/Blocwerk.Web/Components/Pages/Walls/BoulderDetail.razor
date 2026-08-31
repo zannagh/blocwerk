@@ -195,13 +195,16 @@ else
                                   FootHoldIds="FootHoldIds"
                                   HoldColor="BoulderHoldColorOf"
                                   HighlightedPanelIds="_highlightedPanelIds"
-                                  EnableSwipe="true" />
+                                  EnableSwipe="true"
+                                  LensOverlay="true" />
             }
             else
             {
                 @* Zoom geometry is owned by JS via `--zoom` (wwwroot/js/viewport.js). *@
                 <div class="photo-viewport photo-section@(_frame != null ? " bw-framed" : "")" @ref="_photoViewportRef">
-                    <div class="photo-editor">
+                    @* data-lens-overlay marks this editor so the long-press magnifier bakes the marked-hold
+                       overlay into the lens — boulder detail only; the wall view's editor is never marked. *@
+                    <div class="photo-editor" data-lens-overlay="true">
                         <img src="@PhotoUrl" alt="Wall" class="wall-photo" />
                         <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
                             @* The "feet of one colour only" rule is shown as an info banner above the

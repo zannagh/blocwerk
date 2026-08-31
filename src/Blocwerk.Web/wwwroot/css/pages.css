@@ -416,13 +416,13 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
 
 .wall-photo-container { margin-bottom: 16px; }
 
-.wall-main { display: flex; flex-direction: column; gap: 12px; height: 100%; min-height: 0; }
+/* Grow-with-content, not viewport-locked: `.wall-page` (overflow-y:auto) is the vertical scroller,
+   so the column and its card must be free to exceed the viewport slice and let the page scroll
+   instead of being height-locked and clipped. `min-height:100%` still fills a short viewport. */
+.wall-main { display: flex; flex-direction: column; gap: 12px; min-height: 100%; }
 .wall-main .wall-detail-card {
-    flex: 1 1 0;
-    min-height: 0;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
     background: var(--bg-surface);
     border: 1px solid var(--border-light);
     border-radius: var(--r-lg);
@@ -430,19 +430,30 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     gap: 10px;
     box-shadow: 0 1px 2px var(--shadow-sm), 0 8px 32px -18px var(--shadow-md);
 }
-.wall-main .wall-photo-container { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; margin-bottom: 0; }
+.wall-main .wall-photo-container { display: flex; flex-direction: column; margin-bottom: 0; }
+/* The card no longer supplies a locked flex height for the photo to fill, so bound the photo box to
+   a viewport slice directly (fullscreen overrides this with its own aspect cap below). Rounded via
+   the container: the base .photo-viewport overflow (auto) clips the width-scaled/scrolled content to
+   this radius, so the wall photo has rounded corners without the removed .photo-editor band-aid. */
 .wall-main .photo-viewport,
-.wall-main .schematic-viewport { flex: 1 1 0; height: auto; min-height: 0; }
+.wall-main .schematic-viewport {
+    flex: 0 1 auto;
+    height: auto;
+    min-height: 0;
+    max-height: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - var(--wall-photo-chrome));
+    border-radius: 12px;
+}
 
 /* When the wall photo is framed to its wall region, size the box to the region aspect (published
    as --fit-aspect by bwViewport.fitBox) instead of stretching to fill the card — this is what
    actually trims the floor/ceiling dead band. Only the read-only view is framed; the editor keeps
-   the full flex-height box. Centred, and never taller than the card. */
+   the intrinsic-aspect box. Centred, and capped to a viewport slice so the rest of the page flows
+   below and scrolls. */
 .wall-main .photo-viewport.bw-framed {
     flex: 0 1 auto;
     aspect-ratio: var(--fit-aspect, 1.4);
     height: auto;
-    max-height: 100%;
+    max-height: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - var(--wall-photo-chrome));
     margin-inline: auto;
 }
 

@@ -450,12 +450,17 @@ h2 { font-size: 1.15rem; }
     overflow-y: auto;
 }
 
-/* With the tool row docked (fixed) at the bottom, the interactive option bars sit in normal flow
-   below the photo and would otherwise scroll underneath — and out of reach — behind it. Reserve
-   clearance so they always come to rest above the toolbar, and hold a small floor so selecting or
-   deselecting a hold doesn't jump the layout. Tune the clearance to taste on-device. */
+/* The tool row is docked (fixed, z-index 60) at the viewport bottom, so the option bars + Save
+   batch-bar in normal flow would scroll underneath it. Reserve the clearance on the ACTUAL vertical
+   scroller (.wall-page) — the old margin-bottom lived inside the height-locked card that clipped it,
+   which only buried Save deeper. As bottom padding on the scroll container it reliably extends the
+   scrollable range so Save comes to rest ABOVE the toolbar. Tune the clearance to taste on-device. */
+.app-shell:has(.editor-toolbar.docked-bottom) .wall-page {
+    padding-bottom: calc(120px + env(safe-area-inset-bottom));
+}
+/* Keep a small floor so (de)selecting a hold doesn't jump the layout, and leave room above the
+   fixed toolbar when a control is scrolled into view. */
 .app-shell:has(.editor-toolbar.docked-bottom) .editor-bottom {
-    margin-bottom: calc(112px + env(safe-area-inset-bottom));
     min-height: 42px;
     scroll-margin-bottom: calc(120px + env(safe-area-inset-bottom));
 }

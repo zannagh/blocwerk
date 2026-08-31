@@ -183,6 +183,7 @@ public class WallService : IWallService
             var user = await _currentUserService.GetCurrentUserAsync();
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
+            await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
 
             var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId);
             if (wall == null)
@@ -244,6 +245,7 @@ public class WallService : IWallService
             var user = await _currentUserService.GetCurrentUserAsync();
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
+            await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
 
             var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId);
             if (wall == null)
@@ -305,6 +307,7 @@ public class WallService : IWallService
             var user = await _currentUserService.GetCurrentUserAsync();
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
+            await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
 
             var wall = await db.Walls
                            .Include(w => w.Holds)
@@ -375,6 +378,7 @@ public class WallService : IWallService
             var user = await _currentUserService.GetCurrentUserAsync();
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
+            await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
 
             var wall = await db.Walls
                            .Include(w => w.Holds)
@@ -436,6 +440,7 @@ public class WallService : IWallService
         var user = await _currentUserService.GetCurrentUserAsync();
         await using var db = await _dbContextFactory.CreateDbContextAsync();
         db.CurrentUserId = user.Id;
+        await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
 
         var wall = await db.Walls
                        .Include(w => w.Holds)
@@ -614,6 +619,7 @@ public class WallService : IWallService
             var user = await _currentUserService.GetCurrentUserAsync();
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
+            await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
 
             var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId);
             if (wall == null)
@@ -716,6 +722,7 @@ public class WallService : IWallService
             var user = await _currentUserService.GetCurrentUserAsync();
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
+            await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
 
             var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId);
             if (wall == null)
@@ -807,6 +814,8 @@ public class WallService : IWallService
                 throw new InvalidOperationException("Hold not found");
             }
 
+            await WallAdminGuard.EnsureWallEditorAsync(db, hold.WallId, user.Id, CancellationToken.None);
+
             hold.NeedsReview = true;
 
             var affectedBoulders = await db.BoulderHolds
@@ -849,6 +858,8 @@ public class WallService : IWallService
                 _logger.LogWarning("Hold {HoldId} not found for restore-unchanged by {UserId}", holdId, user.Id);
                 throw new InvalidOperationException("Hold not found");
             }
+
+            await WallAdminGuard.EnsureWallEditorAsync(db, hold.WallId, user.Id, ct);
 
             // Marking this hold unchanged confirms it did not move. On a big wall the same physical hold
             // also appears on more peripheral panels as linked twins, and this (more central) panel is
@@ -936,6 +947,8 @@ public class WallService : IWallService
                 _logger.LogWarning("Staged hold {StagedHoldId} not found for merge by {UserId}", stagedHoldId, user.Id);
                 throw new InvalidOperationException("Staged hold not found");
             }
+
+            await WallAdminGuard.EnsureWallEditorAsync(db, staged.WallId, user.Id, CancellationToken.None);
 
             var live = await db.Holds.FirstOrDefaultAsync(h => h.Id == liveHoldId);
             if (live == null)
@@ -1035,6 +1048,8 @@ public class WallService : IWallService
                 _logger.LogWarning("Virtual hold {VirtualHoldId} not found for make-actual merge by {UserId}", virtualHoldId, user.Id);
                 throw new InvalidOperationException("Virtual hold not found");
             }
+
+            await WallAdminGuard.EnsureWallEditorAsync(db, virtualHold.WallId, user.Id, ct);
 
             if (!virtualHold.IsVirtual)
             {
@@ -1137,6 +1152,8 @@ public class WallService : IWallService
                 throw new InvalidOperationException("Virtual hold not found");
             }
 
+            await WallAdminGuard.EnsureWallEditorAsync(db, hold.WallId, user.Id, ct);
+
             if (!hold.IsVirtual)
             {
                 throw new InvalidOperationException("Selected hold is not virtual");
@@ -1167,6 +1184,10 @@ public class WallService : IWallService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
+            // Owner-aware admin check: a bare-owner (no explicit Admin member row) counts as admin,
+            // matching the client _isAdmin gate. Everyone else is rejected exactly as before.
+            await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
+
             var wall = await db.Walls
                            .Include(w => w.Members)
                            .FirstOrDefaultAsync(w => w.Id == wallId);
@@ -1174,13 +1195,6 @@ public class WallService : IWallService
             {
                 _logger.LogWarning("Wall {WallId} not found for share token generation by {UserId}", wallId, user.Id);
                 throw new InvalidOperationException("Wall not found");
-            }
-
-            var membership = wall.Members.FirstOrDefault(m => m.UserId == user.Id);
-            if (membership?.Role != WallRole.Admin)
-            {
-                _logger.LogWarning("User {UserId} not authorized to generate share token for wall {WallId}", user.Id, wallId);
-                throw new InvalidOperationException("Not authorized");
             }
 
             wall.ShareToken = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
@@ -1360,6 +1374,16 @@ public class WallService : IWallService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
+            // Placing an ACTUAL hold is an editor capability (owner/admin/moderator). Placing a
+            // VIRTUAL placeholder hold is a plain member capability used while building a boulder, so
+            // it is only gated by wall membership (already enforced by the wall query filter). A
+            // virtual hold can become actual only via the editor-gated PromoteVirtualHoldAsync, so
+            // exempting virtual creation here grants no editor privilege.
+            if (!isVirtual)
+            {
+                await WallAdminGuard.EnsureWallEditorAsync(db, wallId, user.Id, CancellationToken.None);
+            }
+
             var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId);
             if (wall == null)
             {
@@ -1414,6 +1438,8 @@ public class WallService : IWallService
                 _logger.LogWarning("Hold {HoldId} not found for update by {UserId}", holdId, user.Id);
                 throw new InvalidOperationException("Hold not found");
             }
+
+            await WallAdminGuard.EnsureWallEditorAsync(db, hold.WallId, user.Id, CancellationToken.None);
 
             var wallStagedAt = await db.Walls.Where(w => w.Id == hold.WallId).Select(w => w.StagedAt).FirstOrDefaultAsync();
             bool isStaging = wallStagedAt != null;
@@ -1576,6 +1602,8 @@ public class WallService : IWallService
                 throw new InvalidOperationException("Hold not found");
             }
 
+            await WallAdminGuard.EnsureWallEditorAsync(db, hold.WallId, user.Id, CancellationToken.None);
+
             // The HoldId FK is Restrict, so the hold cannot be removed while any BoulderHold references
             // it — load the link rows, flag each active boulder historic, then drop the links.
             var boulderLinks = await db.BoulderHolds
@@ -1623,6 +1651,7 @@ public class WallService : IWallService
             var user = await _currentUserService.GetCurrentUserAsync();
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
+            await WallAdminGuard.EnsureWallEditorAsync(db, wallId, user.Id, CancellationToken.None);
 
             var wall = await db.Walls
                            .Include(w => w.Holds)
@@ -1678,6 +1707,7 @@ public class WallService : IWallService
             var user = await _currentUserService.GetCurrentUserAsync();
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
+            await WallAdminGuard.EnsureWallEditorAsync(db, wallId, user.Id, CancellationToken.None);
 
             var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId);
             if (wall == null)
@@ -1709,6 +1739,7 @@ public class WallService : IWallService
             var user = await _currentUserService.GetCurrentUserAsync();
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
+            await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
 
             var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId);
             if (wall == null)
@@ -1736,6 +1767,7 @@ public class WallService : IWallService
             var user = await _currentUserService.GetCurrentUserAsync();
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
+            await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
 
             var wall = await db.Walls
                            .Include(w => w.Holds)
@@ -1841,12 +1873,9 @@ public class WallService : IWallService
                 throw new InvalidOperationException("Wall not found");
             }
 
-            var callerMembership = wall.Members.FirstOrDefault(m => m.UserId == user.Id);
-            if (callerMembership?.Role != WallRole.Admin)
-            {
-                _logger.LogWarning("User {UserId} not authorized to change member roles on wall {WallId}", user.Id, wallId);
-                throw new InvalidOperationException("Not authorized");
-            }
+            // Owner-aware admin check: a bare-owner (no explicit Admin member row) counts as admin,
+            // matching the client _isAdmin gate. Everyone else is rejected exactly as before.
+            await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
 
             var membership = await db.WallMembers
                 .FirstOrDefaultAsync(wm => wm.WallId == wallId && wm.UserId == userId);
@@ -1941,6 +1970,7 @@ public class WallService : IWallService
             var user = await _currentUserService.GetCurrentUserAsync();
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
+            await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
 
             var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId);
             if (wall == null)

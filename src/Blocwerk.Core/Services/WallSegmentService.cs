@@ -83,6 +83,7 @@ public class WallSegmentService : IWallSegmentService
             var user = await _currentUserService.GetCurrentUserAsync();
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
+            await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
 
             var wall = await db.Walls
                 .Include(w => w.Segments)
@@ -147,6 +148,8 @@ public class WallSegmentService : IWallSegmentService
                 _logger.LogWarning("Segment {SegmentId} not found while deleting for {UserId}", segmentId, user.Id);
                 throw new InvalidOperationException("Segment not found");
             }
+
+            await WallAdminGuard.EnsureWallAdminAsync(db, segment.WallId, user.Id, CancellationToken.None);
 
             db.WallSegments.Remove(segment);
             await db.SaveChangesAsync();

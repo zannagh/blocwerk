@@ -293,14 +293,17 @@ else
                                 }
                                 else if (_isAdmin)
                                 {
-                                    <button class="role-toggle @(member.Role == WallRole.Admin ? "admin" : "member")"
-                                            @onclick="() => ToggleMemberRole(member)">
-                                        @(member.Role == WallRole.Admin ? "Admin" : "Member")
-                                    </button>
+                                    <select class="role-select @(member.Role == WallRole.Admin ? "admin" : member.Role == WallRole.Moderator ? "moderator" : "member")"
+                                            value="@member.Role"
+                                            @onchange="e => OnMemberRoleChanged(member, e)">
+                                        <option value="@WallRole.Member">Member</option>
+                                        <option value="@WallRole.Moderator">Moderator</option>
+                                        <option value="@WallRole.Admin">Admin</option>
+                                    </select>
                                 }
                                 else
                                 {
-                                    <span class="member-role">@(member.Role == WallRole.Admin ? "Admin" : "Member")</span>
+                                    <span class="member-role">@member.Role</span>
                                 }
                             </div>
                         }
@@ -347,7 +350,7 @@ else
                         {
                             <div></div>
                         }
-                        @if (_isAdmin)
+                        @if (_canEditHolds)
                         {
                             <button class="btn-icon @(_isEditing ? "editing" : "")" @onclick="ToggleEditing" title="@(_isEditing ? "Exit edit mode" : "Edit wall")">
                                 @if (_isEditing)
@@ -369,7 +372,7 @@ else
                     </div>
 
                     <div class="wall-photo-container">
-                        @if (_wall.UsesMultipleImages && _viewMode == ViewMode.Photo && _livePanels.Count > 0 && _isAdmin && _isEditing && _editingPanel != null)
+                        @if (_wall.UsesMultipleImages && _viewMode == ViewMode.Photo && _livePanels.Count > 0 && _canEditHolds && _isEditing && _editingPanel != null)
                         {
                             @* Big wall in edit mode: scope the single-image editor to one live panel
                                (its own photo + holds) and let the admin step between panels. Wall-level
@@ -422,7 +425,8 @@ else
                                              Holds="_holds"
                                              BorderPoints="_borderPoints"
                                              Segments="_segments"
-                                             CanEdit="_isAdmin && _isEditing"
+                                             CanEdit="_canEditHolds && _isEditing"
+                                             CanEditShape="_isAdmin"
                                              BottomToolbar="_isEditing"
                                              ShareToken="@ShareToken"
                                              IsStaging="@_wall.StagedAt.HasValue"
@@ -602,10 +606,15 @@ else
     private List<Boulder> _boulders = [];
     private List<BoulderListItem> _items = [];
     private bool _isAdmin;
+    private bool _isModerator;
     private bool _isMember;
     private bool _isAnonymous;
     private Guid _currentUserId;
     private bool _isEditing;
+
+    // Hold-editor access: owner, admin, or moderator. Mirrors WallAdminGuard.EnsureWallEditorAsync
+    // on the server. Settings/photos/shape/API keys/border stay on _isAdmin.
+    private bool _canEditHolds => _isAdmin || _isModerator;
 
     // Marks the app "busy" while this wall is in edit/alignment mode. Kept in lock-step with
     // _isEditing via SyncEditLease() so every enter/leave transition is covered exactly once.
@@ -798,18 +807,21 @@ else
             _wall = await WallService.GetWallByShareTokenAsync(ShareToken);
             _isAnonymous = true;
             _isAdmin = false;
+            _isModerator = false;
             _isMember = false;
 
             try
             {
                 var user = await CurrentUserService.GetCurrentUserAsync();
                 var membership = _wall?.Members.FirstOrDefault(m => m.UserId == user.Id);
-                if (membership != null)
+                var isOwner = _wall?.OwnerId == user.Id;
+                if (membership != null || isOwner)
                 {
+                    _currentUserId = user.Id;
                     _isAnonymous = false;
                     _isMember = true;
-                    _isAdmin = membership.Role == WallRole.Admin;
-                    _currentUserId = user.Id;
+                    _isAdmin = membership?.Role == WallRole.Admin || isOwner;
+                    _isModerator = membership?.Role == WallRole.Moderator;
                 }
             }
             catch (UnauthorizedAccessException)
@@ -825,9 +837,10 @@ else
                 {
                     var user = await CurrentUserService.GetCurrentUserAsync();
                     var membership = _wall.Members.FirstOrDefault(m => m.UserId == user.Id);
-                    _isMember = membership != null;
-                    _isAdmin = membership?.Role == WallRole.Admin;
                     _currentUserId = user.Id;
+                    _isMember = membership != null;
+                    _isAdmin = membership?.Role == WallRole.Admin || _wall.OwnerId == user.Id;
+                    _isModerator = membership?.Role == WallRole.Moderator;
                 }
             }
             catch (UnauthorizedAccessException)
@@ -1155,9 +1168,13 @@ else
         _activityTotal = total;
     }
 
-    private async Task ToggleMemberRole(WallMember member)
+    private async Task OnMemberRoleChanged(WallMember member, ChangeEventArgs e)
     {
-        var newRole = member.Role == WallRole.Admin ? WallRole.Member : WallRole.Admin;
+        if (!Enum.TryParse<WallRole>(e.Value?.ToString(), out var newRole) || newRole == member.Role)
+        {
+            return;
+        }
+
         await WallService.SetMemberRoleAsync(WallId, member.UserId, newRole);
         member.Role = newRole;
         await ShowToast($"{member.User.Name} is now {newRole}");
