@@ -665,8 +665,8 @@
 
     // Client-only rendering preference (stored in a cookie via bwPrefs, no server persistence): the
     // magnification of the long-press zoom lens. Default 8×; read once the circuit can call JS.
-    private static readonly int[] ZoomLensMagOptions = [2, 4, 6, 8, 10, 12, 14, 16];
-    private int _zoomLensMag = 8;
+    private static readonly int[] ZoomLensMagOptions = [1, 2, 4, 6, 8, 10, 12, 14, 16];
+    private int _zoomLensMag = 2;
 
     // Upper bound for the SignalR upload stream. The server downscales to a small avatar before storing,
     // so this only caps what may be streamed in, not what is persisted.

@@ -363,29 +363,6 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     background: var(--accent);
 }
 
-/* Compact page indicator under the wall name in the top bar. */
-.topbar-wall-name { display: block; }
-.topbar-page-dots {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 5px;
-    margin-top: 3px;
-}
-.topbar-dot {
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: var(--text-secondary);
-    opacity: 0.35;
-    transition: opacity 0.18s, background 0.18s, transform 0.18s;
-}
-.topbar-dot.active {
-    opacity: 1;
-    background: var(--accent);
-    transform: scale(1.25);
-}
-
 /* Collapsible wall-settings cards: the <summary> reads as the card header. */
 .settings-card > .settings-card-summary {
     list-style: none;

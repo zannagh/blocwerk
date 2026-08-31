@@ -12,8 +12,8 @@ window.bwPrefs = (function () {
     const EXPERIENCE_KEY = 'blocwerk-boulder-experience';
     const LAST_PAGE_KEY = 'blocwerk-last-page';
     const ZOOM_LENS_MAG_KEY = 'blocwerk-zoom-lens-mag';
-    const ZOOM_LENS_MAG_DEFAULT = 8;
-    const ZOOM_LENS_MAG_MIN = 2;
+    const ZOOM_LENS_MAG_DEFAULT = 2;
+    const ZOOM_LENS_MAG_MIN = 1;
     const ZOOM_LENS_MAG_MAX = 16;
     const ONE_YEAR = 60 * 60 * 24 * 365;
 

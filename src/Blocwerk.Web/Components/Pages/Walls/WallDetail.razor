@@ -34,18 +34,9 @@ else if (_wall.UnderMaintenance && _currentUserId != _wall.MaintenanceByUserId)
 }
 else
 {
-    <SectionContent SectionName="TopBarTitle">
-        <span class="topbar-wall-name">@_wall.Name</span>
-        <span class="topbar-page-dots" aria-hidden="true">
-            @for (var i = 0; i < CarouselPageCount; i++)
-            {
-                <span class="topbar-dot @(i == _currentCarouselPage ? "active" : string.Empty)"></span>
-            }
-        </span>
-    </SectionContent>
+    <SectionContent SectionName="TopBarTitle">@_wall.Name</SectionContent>
 
-    <WallCarousel @ref="_carousel" InitialPage="@InitialCarouselPage" Locked="_isEditing"
-                  OnPageChanged="OnCarouselPageChanged">
+    <WallCarousel @ref="_carousel" InitialPage="@InitialCarouselPage" Locked="_isEditing">
         <Page1>
             @* Activity is visible to all wall members; settings/shape/API keys stay admin-only. *@
             <details open class="settings-panel settings-card">
@@ -594,12 +585,8 @@ else
     public string? View { get; set; }
 
     @* Carousel pages (0-based): 0 Settings, 1 Members, 2 Overview (centre), 3 Boulders, 4 Details. *@
-    private const int CarouselPageCount = 5;
-
     private int InitialCarouselPage =>
         string.Equals(View, "boulders", StringComparison.OrdinalIgnoreCase) ? 3 : 2;
-
-    private int _currentCarouselPage;
 
     private WallCarousel? _carousel;
     private Wall? _wall;
@@ -768,7 +755,6 @@ else
     protected override async Task OnInitializedAsync()
     {
         Cache.Changed += OnCacheChanged;
-        _currentCarouselPage = InitialCarouselPage;
         await LoadWall();
         if (_wall != null && !_isAnonymous)
         {
@@ -1149,12 +1135,6 @@ else
 
     private Task GoToBoulders() => _carousel?.GoToPageAsync(3) ?? Task.CompletedTask;
     private Task GoToMembers() => _carousel?.GoToPageAsync(1) ?? Task.CompletedTask;
-
-    private void OnCarouselPageChanged(int page)
-    {
-        _currentCarouselPage = page;
-        StateHasChanged();
-    }
 
     private async Task StartAlignmentFlow()
     {

@@ -96,9 +96,12 @@ window.bwGestures = (function () {
         const LENS_HOLD_MS = 450;
         const LENS_SLOP = 8;
         const LENS_SIZE = 140;
-        const LENS_MAG_DEFAULT = 8;
-        const LENS_MAG_MIN = 2;
+        const LENS_MAG_DEFAULT = 2;
+        const LENS_MAG_MIN = 1;
         const LENS_MAG_MAX = 16;
+        // The selector value is a user-facing "dial" number; the effective magnification actually
+        // applied to the image is a quarter of it (the lens already enlarges somewhat on its own).
+        const LENS_MAG_SCALE = 0.25;
         let lensTimer = 0;
         let lensEl = null;
         let lensImg = null;
@@ -180,7 +183,7 @@ window.bwGestures = (function () {
             // Magnify M× the image's ORIGINAL resolution, independent of the viewport's current
             // --zoom, so the effective magnification never compounds with it. Fall back to the
             // on-screen rect only when the natural size is unavailable.
-            const M = lensMag();
+            const M = lensMag() * LENS_MAG_SCALE;
             const bgW = lensImg.naturalWidth > 0 ? lensImg.naturalWidth * M : r.width * M;
             const bgH = lensImg.naturalHeight > 0 ? lensImg.naturalHeight * M : r.height * M;
             lensEl.style.backgroundSize = bgW + 'px ' + bgH + 'px';
