@@ -10,7 +10,9 @@
 @inject ICurrentUserService CurrentUserService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject CircuitEditActivity EditActivity
 @using Blocwerk.Web.Components.Shared
+@using Blocwerk.Web.State
 @implements IAsyncDisposable
 
 <PageTitle>@(_boulder?.Name ?? "Boulder") - Blocwerk</PageTitle>
@@ -67,7 +69,7 @@ else
                     <div class="meta-edit-actions">
                         <button class="proposal-btn accept" @onclick="SaveMeta"
                                 disabled="@string.IsNullOrWhiteSpace(_editName)">Save</button>
-                        <button class="proposal-btn reject" @onclick="() => _editMeta = false">Cancel</button>
+                        <button class="proposal-btn reject" @onclick="CancelEditMeta">Cancel</button>
                     </div>
                 </div>
             }
@@ -307,13 +309,13 @@ else
                         <div class="grade-propose-actions">
                             <button class="proposal-btn accept" @onclick="SubmitGradeProposal"
                                     disabled="@(string.IsNullOrEmpty(_proposedGrade))">Propose</button>
-                            <button class="proposal-btn reject" @onclick="() => _showGradeForm = false">Cancel</button>
+                            <button class="proposal-btn reject" @onclick="CancelGradeForm">Cancel</button>
                         </div>
                     </div>
                 }
                 else
                 {
-                    <button class="btn-propose-grade" @onclick="() => _showGradeForm = true">Propose different grade</button>
+                    <button class="btn-propose-grade" @onclick="ShowGradeForm">Propose different grade</button>
                 }
             }
         }
@@ -422,6 +424,11 @@ else
     private string? _editGrade;
     private DateTime _backdateTime = DateTime.Now;
 
+    // A single busy lease held whenever any inline editor (name/grade or grade proposal) is open, so a
+    // deploy can't recreate the container while that unsaved edit is on screen. Kept in lock-step with
+    // the edit flags via SyncBoulderEditLease(), released there when both close and in DisposeAsync.
+    private IDisposable? _editLease;
+
     private ElementReference _photoViewportRef;
     private string? _fitBoxForUrl;
     private DotNetObjectReference<BoulderDetail>? _selfRef;
@@ -486,6 +493,7 @@ else
     public async ValueTask DisposeAsync()
     {
         Cache.Changed -= OnCacheChanged;
+        _editLease?.Dispose();
 
         if (_selfRef != null)
         {
@@ -1059,6 +1067,41 @@ else
         _editName = _boulder?.Name ?? "";
         _editGrade = _boulder?.Grade;
         _editMeta = true;
+        SyncBoulderEditLease();
+    }
+
+    private void CancelEditMeta()
+    {
+        _editMeta = false;
+        SyncBoulderEditLease();
+    }
+
+    private void ShowGradeForm()
+    {
+        _showGradeForm = true;
+        SyncBoulderEditLease();
+    }
+
+    private void CancelGradeForm()
+    {
+        _showGradeForm = false;
+        SyncBoulderEditLease();
+    }
+
+    // Single source of truth for the busy lease: acquire when an inline editor opens (and one isn't
+    // already held, so re-opening never double-acquires), release when both editors are closed.
+    // Called after every edit-flag change and from DisposeAsync.
+    private void SyncBoulderEditLease()
+    {
+        if (_editMeta || _showGradeForm)
+        {
+            _editLease ??= EditActivity.BeginBoulderEdit(WallId, _currentUserId == Guid.Empty ? null : _currentUserId);
+        }
+        else
+        {
+            _editLease?.Dispose();
+            _editLease = null;
+        }
     }
 
     private Task SaveMeta() => Guard(async () =>
@@ -1072,6 +1115,7 @@ else
         _boulder.Name = updated.Name;
         _boulder.Grade = updated.Grade;
         _editMeta = false;
+        SyncBoulderEditLease();
         await ShowToast("Boulder updated");
     }, "Could not update the boulder");
 
@@ -1126,6 +1170,7 @@ else
 
         _activeProposal = await BoulderService.ProposeGradeAsync(BoulderId, _proposedGrade);
         _showGradeForm = false;
+        SyncBoulderEditLease();
         await ShowToast("Grade proposal submitted");
     }, "Could not submit that proposal");
 

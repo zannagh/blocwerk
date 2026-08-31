@@ -3,7 +3,10 @@
 @attribute [Authorize]
 @inject IWallService WallService
 @inject NavigationManager Navigation
+@inject CircuitEditActivity EditActivity
+@implements IDisposable
 @using Blocwerk.Web.Components.Shared
+@using Blocwerk.Web.State
 
 <PageTitle>Create Wall - Blocwerk</PageTitle>
 
@@ -90,6 +93,21 @@
     private bool _autoDetect = true;
     private bool _isSubmitting;
     private string? _error;
+
+    // The whole page is an unsaved new-wall draft (_model, plus a possibly large staged photo): hold a
+    // busy lease for its mounted lifetime so a deploy can't discard it. Released in Dispose, with the
+    // circuit-teardown backstop behind it.
+    private IDisposable? _editLease;
+
+    protected override void OnInitialized()
+    {
+        _editLease = EditActivity.BeginWallCreate(userId: null);
+    }
+
+    public void Dispose()
+    {
+        _editLease?.Dispose();
+    }
 
     private async Task OnFileSelected(InputFileChangeEventArgs e)
     {

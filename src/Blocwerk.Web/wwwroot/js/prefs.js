@@ -11,6 +11,10 @@ window.bwPrefs = (function () {
 
     const EXPERIENCE_KEY = 'blocwerk-boulder-experience';
     const LAST_PAGE_KEY = 'blocwerk-last-page';
+    const ZOOM_LENS_MAG_KEY = 'blocwerk-zoom-lens-mag';
+    const ZOOM_LENS_MAG_DEFAULT = 8;
+    const ZOOM_LENS_MAG_MIN = 2;
+    const ZOOM_LENS_MAG_MAX = 16;
     const ONE_YEAR = 60 * 60 * 24 * 365;
 
     function readCookie(name) {
@@ -119,6 +123,25 @@ window.bwPrefs = (function () {
             const v = value === 'new' ? 'new' : 'old';
             writeCookie(EXPERIENCE_KEY, v);
             return v;
+        },
+        // Zoom-lens magnification: the long-press magnifier shows the wall photo at this multiple
+        // of its ORIGINAL resolution. Stored as a plain integer cookie, clamped to a sane range.
+        // Read defensively — an unset/garbage/out-of-range cookie falls back to the default.
+        getZoomLensMag: function () {
+            const n = parseInt(readCookie(ZOOM_LENS_MAG_KEY), 10);
+            if (!isNaN(n) && n >= ZOOM_LENS_MAG_MIN && n <= ZOOM_LENS_MAG_MAX) {
+                return n;
+            }
+            return ZOOM_LENS_MAG_DEFAULT;
+        },
+        setZoomLensMag: function (value) {
+            let n = parseInt(value, 10);
+            if (isNaN(n)) {
+                n = ZOOM_LENS_MAG_DEFAULT;
+            }
+            n = Math.max(ZOOM_LENS_MAG_MIN, Math.min(ZOOM_LENS_MAG_MAX, n));
+            writeCookie(ZOOM_LENS_MAG_KEY, String(n));
+            return n;
         },
         recordLastPage: recordLastPage
     };

@@ -30,6 +30,18 @@ public class User : IEquatable<User>
     [MaxLength(64)]
     public string? AvatarContentType { get; set; }
 
+    /// <summary>
+    /// The user's email address, or null when they have not set one. Stored normalized (trimmed,
+    /// lower-cased) and unique (case-insensitively) across users where present. Set only after the
+    /// address is confirmed through an email verification code; read the confirmed state via
+    /// <see cref="EmailVerified"/>.
+    /// </summary>
+    [MaxLength(256)]
+    public string? Email { get; set; }
+
+    /// <summary>True once the user has confirmed <see cref="Email"/> with a verification code.</summary>
+    public bool EmailVerified { get; set; }
+
     public IdentityRole Role { get; set; } = IdentityRole.User;
 
     /// <summary>

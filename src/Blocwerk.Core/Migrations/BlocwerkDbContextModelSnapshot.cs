@@ -426,6 +426,46 @@ namespace Blocwerk.Core.Migrations
                     b.ToTable("ClimbingSessions");
                 });
 
+            modelBuilder.Entity("Blocwerk.Core.Entities.EmailVerificationCode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("CodeHash")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("ConsumedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<DateTimeOffset>("ExpiresUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Purpose")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Email", "Purpose");
+
+                    b.ToTable("EmailVerificationCodes");
+                });
+
             modelBuilder.Entity("Blocwerk.Core.Entities.ExternalAscent", b =>
                 {
                     b.Property<Guid>("Id")
@@ -879,6 +919,13 @@ namespace Blocwerk.Core.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
 
+                    b.Property<string>("Email")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<bool>("EmailVerified")
+                        .HasColumnType("boolean");
+
                     b.Property<int>("FailedAuthCount")
                         .HasColumnType("integer");
 
@@ -919,6 +966,10 @@ namespace Blocwerk.Core.Migrations
                         .HasColumnType("text");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Email")
+                        .IsUnique()
+                        .HasFilter("\"Email\" IS NOT NULL");
 
                     b.HasIndex("HomeWallId");
 

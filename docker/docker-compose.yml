@@ -38,6 +38,16 @@ services:
       POSTGRES__PASSWORD: blocwerk_dev
       # Beta clips live on disk (not the database); this is where they land inside the container.
       BETAVIDEO__STORAGEPATH: /data/beta-videos
+      # Outgoing SMTP mail. Empty by default => email features are disabled. Fill these (ideally via
+      # docker/.env, e.g. ${SMTP__HOST}) to enable. Security: StartTls | ForceTls | Off.
+      # Do NOT hardcode real credentials here.
+      # SMTP__HOST: ""
+      # SMTP__PORT: "587"
+      # SMTP__USERNAME: ""
+      # SMTP__PASSWORD: ""
+      # SMTP__FROM: ""
+      # SMTP__FROMNAME: "Blocwerk"
+      # SMTP__SECURITY: "StartTls"
     volumes:
       - ./appsettings.json:/app/appsettings.json:ro
       # Persist the DataProtection key ring across redeploys (see AuthenticationServices.cs) so a

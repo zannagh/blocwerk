@@ -2,7 +2,7 @@
 @implements IAsyncDisposable
 
 <div class="wall-carousel-root @(Locked ? "editing" : string.Empty)">
-    <div class="wall-carousel" @ref="_ref" @onscroll="OnScroll">
+    <div class="wall-carousel @(_initialized ? string.Empty : "carousel-pending")" @ref="_ref" @onscroll="OnScroll">
         @foreach (var (frag, idx) in Pages())
         {
             <div class="wall-page @(PageClass(idx))">
@@ -32,6 +32,10 @@
     [Parameter] public int InitialPage { get; set; } = 2;
     [Parameter] public bool Locked { get; set; }
     [Parameter] public string? PageClasses { get; set; }
+
+    /// <summary>Raised whenever the visible page changes, so a host (e.g. WallDetail) can mirror the
+    /// current page in an out-of-band indicator. Fires on the initial landing and on every navigation.</summary>
+    [Parameter] public EventCallback<int> OnPageChanged { get; set; }
 
     private ElementReference _ref;
     private int _currentPage;
@@ -70,25 +74,44 @@
         if (firstRender && _fragCount > 0)
         {
             _currentPage = Math.Clamp(InitialPage, 0, _fragCount - 1);
-            await JS.InvokeVoidAsync("wallCarousel.scrollToPage", _ref, _currentPage, false);
+            // Position the scroll offset instantly while the carousel is still hidden
+            // (.carousel-pending), so the first painted frame is already the target page — no
+            // visible swipe from page 1. Revealing happens on the StateHasChanged re-render below.
+            await JS.InvokeVoidAsync("wallCarousel.initPage", _ref, _currentPage);
             _initialized = true;
             StateHasChanged();
+            await OnPageChanged.InvokeAsync(_currentPage);
         }
     }
 
     private async Task GoTo(int idx)
     {
-        if (Locked) return;
-        _currentPage = idx;
+        if (Locked)
+        {
+            return;
+        }
+
+        await SetCurrentPage(idx);
         await JS.InvokeVoidAsync("wallCarousel.scrollToPage", _ref, idx, true);
     }
 
     public async Task GoToPageAsync(int idx, bool smooth = true)
     {
         var clamped = Math.Clamp(idx, 0, Math.Max(0, _fragCount - 1));
-        _currentPage = clamped;
+        await SetCurrentPage(clamped);
         await JS.InvokeVoidAsync("wallCarousel.scrollToPage", _ref, clamped, smooth);
         StateHasChanged();
+    }
+
+    private async Task SetCurrentPage(int idx)
+    {
+        if (_currentPage == idx)
+        {
+            return;
+        }
+
+        _currentPage = idx;
+        await OnPageChanged.InvokeAsync(idx);
     }
 
     private bool _scrollQuerying;
@@ -105,7 +128,7 @@
             var frag = await JS.InvokeAsync<int>("wallCarousel.currentPage", _ref);
             if (frag != _currentPage)
             {
-                _currentPage = frag;
+                await SetCurrentPage(frag);
                 StateHasChanged();
             }
         }

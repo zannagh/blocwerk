@@ -10,11 +10,14 @@ using Blocwerk.HoldDetection;
 using Blocwerk.Web.Components;
 using Blocwerk.Web.Controllers;
 using Blocwerk.Web.Endpoints;
+using Blocwerk.Web.HealthChecks;
 using Blocwerk.Web.State;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Components.Server.Circuits;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -176,6 +179,18 @@ public static class Program
         // Counts live circuits into the "connected users" gauge.
         builder.Services.AddScoped<CircuitHandler, TelemetryCircuitHandler>();
 
+        // App-wide, in-memory "busy" signal: the singleton registry tracks unsaved in-flight edits
+        // across every circuit; the scoped wrapper is injected into the editing components and
+        // releases its leases on circuit teardown (backstop against an abrupt disconnect).
+        builder.Services.AddSingleton<EditActivityRegistry>();
+        builder.Services.AddScoped<CircuitEditActivity>();
+
+        // Health checks: "busy" (Degraded while editing, not Unhealthy) gates deploys; "database"
+        // probes PostgreSQL. Both are surfaced anonymously via MapHealthChecks below.
+        builder.Services.AddHealthChecks()
+            .AddCheck<BusyHealthCheck>("busy", tags: new[] { "busy" })
+            .AddCheck<DatabaseHealthCheck>("database", tags: new[] { "db" });
+
         ConfigureApiCookieBehaviour(builder);
 
         var app = builder.Build();
@@ -219,6 +234,35 @@ public static class Program
         // It is unauthenticated and carries operational counts (no PII; wall ids are hashed), so
         // keep it off any public reverse-proxy route or scrape it only from the internal network.
         app.MapPrometheusScrapingEndpoint();
+
+        // Full health report as JSON (overall status + each check's name/status/description/data,
+        // so the "busy" entry is visible). Anonymous by default — there is no FallbackPolicy and
+        // /health is not under /api, so the cookie handler never redirects it. DB-down => overall
+        // Unhealthy => 503; busy (Degraded) keeps the overall report at 200.
+        app.MapHealthChecks("/health", new HealthCheckOptions
+        {
+            ResponseWriter = HealthCheckResponseWriter.WriteAsync,
+        });
+
+        // Deploy gate: only the "busy" check, mapped so idle => 200 and busy => 503. The deploy
+        // hook polls this and waits while it returns 503. The plain-text body is a stable token —
+        // "idle" only when the busy check is Healthy, "busy" otherwise — so the hook asserts on the
+        // body, not just the 2xx, and a fail-open (a 200 that somehow isn't idle) can't slip past.
+        app.MapHealthChecks("/health/ready-to-deploy", new HealthCheckOptions
+        {
+            Predicate = r => r.Tags.Contains("busy"),
+            ResultStatusCodes =
+            {
+                [HealthStatus.Healthy] = StatusCodes.Status200OK,
+                [HealthStatus.Degraded] = StatusCodes.Status503ServiceUnavailable,
+                [HealthStatus.Unhealthy] = StatusCodes.Status503ServiceUnavailable,
+            },
+            ResponseWriter = (context, report) =>
+            {
+                context.Response.ContentType = "text/plain";
+                return context.Response.WriteAsync(report.Status == HealthStatus.Healthy ? "idle" : "busy");
+            },
+        });
 
         app.MapRazorComponents<BlocwerkApp>()
             .AddInteractiveServerRenderMode();

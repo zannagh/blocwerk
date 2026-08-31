@@ -8,8 +8,12 @@
 @inject Blocwerk.Core.Configuration.BlocwerkSettings Settings
 @inject NavigationManager Navigation
 @inject ITopLoggerImportService TopLogger
+@inject IEmailVerificationService EmailVerification
+@inject IJSRuntime JS
+@inject IDbContextFactory<Blocwerk.Core.Data.BlocwerkDbContext> DbContextFactory
 @using Blocwerk.Core.Helpers
 @using Blocwerk.Core.Services.TopLogger
+@using Microsoft.EntityFrameworkCore
 
 <PageTitle>Profile - Blocwerk</PageTitle>
 
@@ -113,6 +117,75 @@
                     <p class="field-error">@_homeWallError</p>
                 }
             </div>
+
+            <div class="section profile-section-card">
+                <h2>Zoom lens magnification</h2>
+                <select class="window-select" value="@_zoomLensMag" @onchange="OnZoomLensMagChange">
+                    @foreach (var mag in ZoomLensMagOptions)
+                    {
+                        <option value="@mag">@(mag)×</option>
+                    }
+                </select>
+                <p class="member-since">
+                    How much the long-press magnifier enlarges the wall photo (relative to its
+                    original resolution) while viewing a wall or boulder. Currently @(_zoomLensMag)×.
+                </p>
+            </div>
+
+            <details class="section profile-collapsible" id="email-section">
+                <summary>@(_target.EmailVerified ? "Email (verified)" : "Email")</summary>
+
+                @if (_target.EmailVerified && !string.IsNullOrEmpty(_target.Email))
+                {
+                    <p class="member-since">
+                        Your email <strong>@_target.Email</strong> is verified. Enter a new address and
+                        verify it below to change it.
+                    </p>
+                }
+                else if (!string.IsNullOrEmpty(_target.Email))
+                {
+                    <p class="member-since">Your email <strong>@_target.Email</strong> isn't verified yet.</p>
+                }
+                else
+                {
+                    <p class="member-since">Add an email address and confirm it with a code we send you.</p>
+                }
+
+                @if (!Settings.Smtp.IsConfigured)
+                {
+                    <p class="member-since">Email sending isn't configured on this server, so email can't be verified right now.</p>
+                }
+                else
+                {
+                    <div class="field-group">
+                        <label class="field-label" for="verify-email">Email address</label>
+                        <input id="verify-email" class="text-input" type="email" maxlength="256" autocomplete="email"
+                               @bind="_emailInput" @bind:event="oninput" />
+                        <div class="field-actions">
+                            <button class="btn-primary" @onclick="SendEmailCodeAsync" disabled="@_emailBusy">Send code</button>
+                        </div>
+
+                        @if (_emailCodeSent)
+                        {
+                            <label class="field-label" for="verify-email-code">6-digit code</label>
+                            <input id="verify-email-code" class="text-input" inputmode="numeric" maxlength="6"
+                                   autocomplete="one-time-code" @bind="_emailCode" @bind:event="oninput" />
+                            <div class="field-actions">
+                                <button class="btn-primary" @onclick="VerifyEmailCodeAsync" disabled="@_emailBusy">Verify</button>
+                            </div>
+                        }
+
+                        @if (_emailError != null)
+                        {
+                            <p class="field-error">@_emailError</p>
+                        }
+                        @if (_emailInfo != null)
+                        {
+                            <p class="field-label">@_emailInfo</p>
+                        }
+                    </div>
+                }
+            </details>
 
             <details class="section profile-collapsible" id="password-section">
                 <summary>@(_target.HasPassword ? "Password sign-in (all set)" : "Password sign-in")</summary>
@@ -590,6 +663,11 @@
     private List<Wall> _myWalls = [];
     private string? _homeWallError;
 
+    // Client-only rendering preference (stored in a cookie via bwPrefs, no server persistence): the
+    // magnification of the long-press zoom lens. Default 8×; read once the circuit can call JS.
+    private static readonly int[] ZoomLensMagOptions = [2, 4, 6, 8, 10, 12, 14, 16];
+    private int _zoomLensMag = 8;
+
     // Upper bound for the SignalR upload stream. The server downscales to a small avatar before storing,
     // so this only caps what may be streamed in, not what is persisted.
     private const long MaxAvatarUploadBytes = 30L * 1024 * 1024;
@@ -611,6 +689,15 @@
     private string _totpCode = string.Empty;
     private bool _totpBusy;
     private string? _totpError;
+
+    // Verify-email card: the address input (prefilled with the current email), the code input, a
+    // "code has been sent" flag that reveals the code field, a shared busy flag, and error/info text.
+    private string _emailInput = string.Empty;
+    private string _emailCode = string.Empty;
+    private bool _emailCodeSent;
+    private bool _emailBusy;
+    private string? _emailError;
+    private string? _emailInfo;
 
     private TopLoggerStatus? _tlStatus;
     private string _tlAccessToken = string.Empty;
@@ -644,6 +731,42 @@
     private int _otherWindowDays = 90;
     private ProgressionGroupBy _otherGroupBy = ProgressionGroupBy.Week;
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Read the client-side zoom-lens pref once the circuit can call into JS. Defensive: any
+        // interop failure just leaves the 8× default in place.
+        if (firstRender)
+        {
+            try
+            {
+                _zoomLensMag = await JS.InvokeAsync<int>("bwPrefs.getZoomLensMag");
+                StateHasChanged();
+            }
+            catch (Exception)
+            {
+                /* JS unavailable (prerender/circuit gone) — keep the default. */
+            }
+        }
+    }
+
+    private async Task OnZoomLensMagChange(ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out var mag))
+        {
+            return;
+        }
+
+        try
+        {
+            // setZoomLensMag clamps and returns the stored value, so echo that back to the UI.
+            _zoomLensMag = await JS.InvokeAsync<int>("bwPrefs.setZoomLensMag", mag);
+        }
+        catch (Exception)
+        {
+            /* couldn't persist the pref — leave the shown value as-is. */
+        }
+    }
+
     protected override async Task OnParametersSetAsync()
     {
         // The same component instance is reused when navigating between profiles, so reload only when
@@ -671,6 +794,7 @@
             _isSelf = true;
             _target = _viewer;
             _nameInput = _viewer.CustomDisplayName ?? string.Empty;
+            _emailInput = _viewer.Email ?? string.Empty;
             _progression = await ProgressionService.GetProgressionAsync();
             _myWalls = await WallService.GetMyWallsAsync();
             _linkedProviders = await CurrentUserService.GetLinkedProvidersAsync();
@@ -1021,6 +1145,120 @@
         _viewer = await CurrentUserService.GetCurrentUserAsync();
         _target = _viewer;
         _nameInput = _viewer.CustomDisplayName ?? string.Empty;
+    }
+
+    // ---- Verify email ----
+
+    private async Task SendEmailCodeAsync()
+    {
+        if (_viewer == null)
+        {
+            return;
+        }
+
+        _emailBusy = true;
+        _emailError = null;
+        _emailInfo = null;
+        try
+        {
+            var result = await EmailVerification.IssueCodeAsync(
+                EmailVerificationPurpose.VerifyEmail, _emailInput, _viewer.Id);
+            switch (result.Status)
+            {
+                case EmailVerificationStatus.Success:
+                    _emailCodeSent = true;
+                    _emailCode = string.Empty;
+                    _emailInfo = "We sent a 6-digit code to that address. It expires in 10 minutes.";
+                    break;
+                case EmailVerificationStatus.Throttled:
+                    _emailError = "You requested a code very recently. Please wait a minute and try again.";
+                    break;
+                case EmailVerificationStatus.EmailNotConfigured:
+                    _emailError = "Email sending isn't configured on this server.";
+                    break;
+                default:
+                    _emailError = "That doesn't look like a valid email address.";
+                    break;
+            }
+        }
+        catch (Exception)
+        {
+            _emailError = "Couldn't send a code. Please try again.";
+        }
+        finally
+        {
+            _emailBusy = false;
+        }
+    }
+
+    private async Task VerifyEmailCodeAsync()
+    {
+        if (_viewer == null)
+        {
+            return;
+        }
+
+        _emailBusy = true;
+        _emailError = null;
+        _emailInfo = null;
+        try
+        {
+            var result = await EmailVerification.VerifyCodeAsync(
+                EmailVerificationPurpose.VerifyEmail, _emailInput, _emailCode);
+            switch (result.Status)
+            {
+                case EmailVerificationStatus.Success:
+                    await SaveVerifiedEmailAsync(_emailInput);
+                    break;
+                case EmailVerificationStatus.Expired:
+                    _emailError = "That code has expired. Request a new one.";
+                    _emailCodeSent = false;
+                    break;
+                case EmailVerificationStatus.TooManyAttempts:
+                    _emailError = "Too many attempts. Request a new code.";
+                    _emailCodeSent = false;
+                    break;
+                default:
+                    _emailError = "That code didn't match. Check it and try again.";
+                    break;
+            }
+        }
+        catch (Exception)
+        {
+            _emailError = "Couldn't verify that code. Please try again.";
+        }
+        finally
+        {
+            _emailBusy = false;
+        }
+    }
+
+    // Persists the (already verified) email onto the current user. Done here via the DbContext factory —
+    // the verification service is purpose-agnostic and never touches User.Email. A unique-index clash
+    // means the address is already verified on another account.
+    private async Task SaveVerifiedEmailAsync(string email)
+    {
+        var normalized = email.Trim().ToLowerInvariant();
+        try
+        {
+            await using var dbContext = await DbContextFactory.CreateDbContextAsync();
+            var dbUser = await dbContext.Users.FirstAsync(u => u.Id == _viewer!.Id);
+            dbUser.Email = normalized;
+            dbUser.EmailVerified = true;
+            await dbContext.SaveChangesAsync();
+
+            CurrentUserService.InvalidateCache();
+            await ReloadSelfAsync();
+
+            _emailCodeSent = false;
+            _emailCode = string.Empty;
+            _emailInput = normalized;
+            _emailInfo = "Your email is verified.";
+        }
+        catch (DbUpdateException)
+        {
+            _emailError = "That email is already in use by another account.";
+        }
     }
 
     // ---- TopLogger import ----

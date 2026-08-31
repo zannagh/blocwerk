@@ -183,8 +183,11 @@ h2 { font-size: 1.15rem; }
     box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.06);
 }
 
-.bw-topbar > .app-title { justify-self: start; }
-.bw-topbar > .header-actions { justify-self: end; }
+.bw-topbar > .app-title { grid-column: 1; justify-self: start; }
+/* Pin the actions to the last column so they stay hard right-aligned even when the middle title cell
+   is empty and collapses (/walls) — otherwise the two 1fr columns would recenter them. margin-left:auto
+   is a belt-and-braces fallback inside the cell. */
+.bw-topbar > .header-actions { grid-column: 3; justify-self: end; margin-left: auto; }
 .bw-topbar-title {
     justify-self: center;
     font-family: var(--font-display);
@@ -384,6 +387,49 @@ h2 { font-size: 1.15rem; }
 @media (prefers-reduced-motion: reduce) {
     .nav-item.session .session-icon { animation: none; opacity: 1; }
 }
+
+/* Small chevron button that hides the tab bar to reclaim screen space. Sits flush right, not a flex:1
+   tab, so it never steals width from the labelled nav items. */
+.tabbar-toggle {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-secondary);
+    padding: 6px 12px;
+    transition: color 0.18s ease;
+}
+.tabbar-toggle:hover { color: var(--text-heading); }
+.tabbar-toggle svg { width: 22px; height: 22px; }
+
+/* Collapsed: mirror the edit-mode approach (display:none) so the bar leaves no reserved space. */
+.bw-tabbar.collapsed { display: none; }
+
+/* Floating '^' handle that stays visible while the bar is hidden so it can be brought back. */
+.tabbar-restore {
+    position: fixed;
+    right: 12px;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 1px solid var(--nav-border);
+    border-radius: 50%;
+    background: var(--nav-bg);
+    color: var(--text-secondary);
+    cursor: pointer;
+    z-index: 50;
+    box-shadow: 0 -1px 0 var(--nav-border), 0 6px 16px -8px var(--shadow-md);
+    transition: color 0.18s ease;
+}
+.tabbar-restore:hover { color: var(--text-heading); }
+.tabbar-restore svg { width: 22px; height: 22px; }
 
 /* When the wall is in edit mode, the docked editor toolbar replaces the bottom nav. */
 .app-shell:has(.editor-toolbar.docked-bottom) .bw-tabbar { display: none; }

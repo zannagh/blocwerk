@@ -22,6 +22,20 @@ public interface IProgressionService
 
     Task<List<DayActivity>> GetActivityGridAsync(int weeks = 20);
 
+    /// <summary>
+    /// The GitHub-style day grid for a single calendar <paramref name="year"/>: Jan 1 → Dec 31 padded out
+    /// to whole Sunday-started weeks (so the first/last columns spill a few days into the neighbouring
+    /// years, matching a contribution graph). Same per-day intensity bucketing as <see cref="GetActivityGridAsync"/>.
+    /// </summary>
+    Task<List<DayActivity>> GetActivityGridForYearAsync(int year);
+
+    /// <summary>
+    /// The calendar years that have any activity to show: from the earliest year with data through the
+    /// current year (a contiguous run). Always returns at least the current year, so the caller can render
+    /// an empty grid and omit the year selector when only one year is present.
+    /// </summary>
+    Task<List<int>> GetActivityYearsAsync();
+
     Task<DaySummary> GetDaySummaryAsync(DateOnly date);
 
     Task UpdateProgressionWindowAsync(int days);
@@ -193,34 +207,121 @@ public class ProgressionService : IProgressionService
 
     public async Task<List<DayActivity>> GetActivityGridAsync(int weeks = 20)
     {
-        using var op = BlocwerkMetrics.TimeOperation("Progression.GetActivityGrid");
+        var days = weeks * 7;
+        var endDate = DateOnly.FromDateTime(DateTimeOffset.UtcNow.UtcDateTime.Date);
+        var startDate = DateOnly.FromDateTime(DateTimeOffset.UtcNow.AddDays(-days).UtcDateTime.Date);
+        return await ComputeActivityGridAsync(startDate, endDate, "Progression.GetActivityGrid");
+    }
+
+    public async Task<List<DayActivity>> GetActivityGridForYearAsync(int year)
+    {
+        var jan1 = new DateOnly(year, 1, 1);
+        var dec31 = new DateOnly(year, 12, 31);
+
+        // GitHub-style: columns are Sunday-started weeks, so pad the range back to the Sunday on/before
+        // Jan 1 and forward to the Saturday on/after Dec 31. The grid is then a whole number of weeks.
+        var startDate = jan1.AddDays(-(int)jan1.DayOfWeek);
+        var endDate = dec31.AddDays(6 - (int)dec31.DayOfWeek);
+        return await ComputeActivityGridAsync(startDate, endDate, "Progression.GetActivityGridForYear");
+    }
+
+    public async Task<List<int>> GetActivityYearsAsync()
+    {
+        using var op = BlocwerkMetrics.TimeOperation("Progression.GetActivityYears");
         try
         {
             var user = await _currentUserService.GetCurrentUserAsync();
             await using var db = await _dbContextFactory.CreateDbContextAsync();
 
-            var days = weeks * 7;
-            var since = DateTimeOffset.UtcNow.AddDays(-days);
+            var minAttempt = await db.Attempts
+                .Where(a => a.UserId == user.Id).Select(a => (DateTimeOffset?)a.Timestamp).MinAsync();
+            var minHangboard = await db.HangboardSessions
+                .Where(h => h.UserId == user.Id).Select(h => (DateTimeOffset?)h.Timestamp).MinAsync();
+            var minPullup = await db.PullupSessions
+                .Where(p => p.UserId == user.Id).Select(p => (DateTimeOffset?)p.Timestamp).MinAsync();
+            var minExternal = await db.ExternalAscents
+                .Where(a => a.UserId == user.Id).Select(a => (DateTimeOffset?)a.LoggedAt).MinAsync();
+
+            var earliestYears = new List<int>();
+            if (minAttempt.HasValue)
+            {
+                earliestYears.Add(minAttempt.Value.UtcDateTime.Year);
+            }
+
+            if (minHangboard.HasValue)
+            {
+                earliestYears.Add(minHangboard.Value.UtcDateTime.Year);
+            }
+
+            if (minPullup.HasValue)
+            {
+                earliestYears.Add(minPullup.Value.UtcDateTime.Year);
+            }
+
+            // Imported ascents are anchored to a recovered local day, so read their year the same way.
+            if (minExternal.HasValue)
+            {
+                earliestYears.Add(ExternalLocalDate(minExternal.Value).Year);
+            }
+
+            var currentYear = DateTimeOffset.UtcNow.Year;
+            if (earliestYears.Count == 0)
+            {
+                return [currentYear];
+            }
+
+            var earliest = Math.Min(earliestYears.Min(), currentYear);
+            var years = new List<int>();
+            for (var y = earliest; y <= currentYear; y++)
+            {
+                years.Add(y);
+            }
+
+            return years;
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Shared per-day activity bucketing over an inclusive <paramref name="startDate"/>..<paramref name="endDate"/>
+    /// range: loads the user's attempts, training and imported ascents in that range and emits one
+    /// <see cref="DayActivity"/> per day with a 0–4 intensity.
+    /// </summary>
+    private async Task<List<DayActivity>> ComputeActivityGridAsync(DateOnly startDate, DateOnly endDate, string operationName)
+    {
+        using var op = BlocwerkMetrics.TimeOperation(operationName);
+        try
+        {
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+
+            var since = new DateTimeOffset(startDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+            var until = new DateTimeOffset(endDate.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
 
             var attempts = await db.Attempts
-                .Where(a => a.UserId == user.Id && a.Timestamp >= since)
+                .Where(a => a.UserId == user.Id && a.Timestamp >= since && a.Timestamp < until)
                 .Select(a => a.Timestamp)
                 .ToListAsync();
 
             var hangboard = await db.HangboardSessions
-                .Where(h => h.UserId == user.Id && h.Timestamp >= since)
+                .Where(h => h.UserId == user.Id && h.Timestamp >= since && h.Timestamp < until)
                 .Select(h => h.Timestamp)
                 .ToListAsync();
 
             var pullups = await db.PullupSessions
-                .Where(p => p.UserId == user.Id && p.Timestamp >= since)
+                .Where(p => p.UserId == user.Id && p.Timestamp >= since && p.Timestamp < until)
                 .Select(p => p.Timestamp)
                 .ToListAsync();
 
             // Imported TopLogger ascents are date-anchored at local midnight (stored as UTC), so bucket
             // them at noon of their recovered local day — otherwise a UTC-day grid lights the wrong day.
+            // The recovered day can round up to +1, so widen the query a day on each side.
             var external = await db.ExternalAscents
-                .Where(a => a.UserId == user.Id && a.LoggedAt >= since.AddDays(-1))
+                .Where(a => a.UserId == user.Id && a.LoggedAt >= since.AddDays(-1) && a.LoggedAt < until.AddDays(1))
                 .Select(a => a.LoggedAt)
                 .ToListAsync();
             var externalStamps = external
@@ -230,41 +331,13 @@ public class ProgressionService : IProgressionService
             var allTimestamps = attempts.Concat(hangboard).Concat(pullups).Concat(externalStamps).ToList();
 
             var result = new List<DayActivity>();
-            var startDate = DateOnly.FromDateTime(DateTimeOffset.UtcNow.AddDays(-days).Date);
-
-            for (int i = 0; i <= days; i++)
+            for (var date = startDate; date <= endDate; date = date.AddDays(1))
             {
-                var date = startDate.AddDays(i);
                 var dayStart = new DateTimeOffset(date.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
                 var dayEnd = dayStart.AddDays(1);
 
                 var dayStamps = allTimestamps.Where(t => t >= dayStart && t < dayEnd).ToList();
-                int intensity = 0;
-
-                if (dayStamps.Count > 0)
-                {
-                    var span = dayStamps.Max() - dayStamps.Min();
-                    var count = dayStamps.Count;
-
-                    if (span.TotalMinutes >= 90 || count >= 15)
-                    {
-                        intensity = 4;
-                    }
-                    else if (span.TotalMinutes >= 60 || count >= 10)
-                    {
-                        intensity = 3;
-                    }
-                    else if (span.TotalMinutes >= 30 || count >= 5)
-                    {
-                        intensity = 2;
-                    }
-                    else
-                    {
-                        intensity = 1;
-                    }
-                }
-
-                result.Add(new DayActivity(date, intensity));
+                result.Add(new DayActivity(date, DayIntensity(dayStamps)));
             }
 
             return result;
@@ -274,6 +347,35 @@ public class ProgressionService : IProgressionService
             op.Fail(ex);
             throw;
         }
+    }
+
+    /// <summary>Maps a day's timestamps to a 0–4 heatmap intensity from its span and count.</summary>
+    private static int DayIntensity(List<DateTimeOffset> dayStamps)
+    {
+        if (dayStamps.Count == 0)
+        {
+            return 0;
+        }
+
+        var span = dayStamps.Max() - dayStamps.Min();
+        var count = dayStamps.Count;
+
+        if (span.TotalMinutes >= 90 || count >= 15)
+        {
+            return 4;
+        }
+
+        if (span.TotalMinutes >= 60 || count >= 10)
+        {
+            return 3;
+        }
+
+        if (span.TotalMinutes >= 30 || count >= 5)
+        {
+            return 2;
+        }
+
+        return 1;
     }
 
     public async Task<DaySummary> GetDaySummaryAsync(DateOnly date)

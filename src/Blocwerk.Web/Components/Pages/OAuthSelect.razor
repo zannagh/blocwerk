@@ -26,12 +26,47 @@
         <div class="oauth-error" role="alert">Invalid username or password.</div>
     }
 
-    @* data-enhance-nav="false": these links 302 to a cross-origin OAuth provider, which Blazor's
-       enhanced navigation cannot apply (it fetch()es the link and silently drops a cross-origin
-       redirect). Force a real full-document navigation so the browser follows the provider redirect. *@
-    <div class="providers" data-enhance-nav="false">
-        @if (Settings.GitHubOAuth.Enabled)
-        {
+    @if (ResetDone is not null)
+    {
+        <div role="status" style="background:rgba(46,160,67,0.15);color:var(--text);border:1px solid rgba(46,160,67,0.4);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:0.9rem;">Your password was reset. Please sign in with your new password.</div>
+    }
+
+    @* PRIMARY sign-in: username + password. A plain form POST to the AccountController — no Blazor circuit
+       needed. data-enhance-nav="false" so the browser does a real navigation and follows the controller's
+       redirect. AntiforgeryToken emits the __RequestVerificationToken the [ValidateAntiForgeryToken] action
+       requires. Below it: links to self-serve signup and password recovery. *@
+    <div class="password-login" data-enhance-nav="false">
+        <form method="post" action="/account/password">
+            <AntiforgeryToken />
+            <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+            <label class="field-label" for="pw-username">Username</label>
+            <input id="pw-username" class="text-input" type="text" name="username"
+                   autocomplete="username" maxlength="64" required />
+            <label class="field-label" for="pw-password">Password</label>
+            <input id="pw-password" class="text-input" type="password" name="password"
+                   autocomplete="current-password" required />
+            <label class="password-remember">
+                <input type="checkbox" name="keepSignedIn" value="true" />
+                <span>Keep me signed in</span>
+            </label>
+            <button type="submit" class="provider-button password-submit">Sign in</button>
+        </form>
+        <div class="password-links" style="display:flex;justify-content:space-between;gap:12px;margin-top:14px;font-size:0.9rem;">
+            <a href="@SignupHref">Create an account</a>
+            <a href="@ForgotHref">Forgot password?</a>
+        </div>
+    </div>
+
+    @if (AnyProviderEnabled)
+    {
+        <div class="password-divider"><span>or continue with</span></div>
+
+        @* data-enhance-nav="false": these links 302 to a cross-origin OAuth provider, which Blazor's
+           enhanced navigation cannot apply (it fetch()es the link and silently drops a cross-origin
+           redirect). Force a real full-document navigation so the browser follows the provider redirect. *@
+        <div class="providers" data-enhance-nav="false">
+            @if (Settings.GitHubOAuth.Enabled)
+            {
             <a href="@ProviderHref("github")" class="provider-button github" rel="nofollow">
                 <div class="provider-icon">
                     <svg viewBox="0 0 24 24" fill="currentColor">
@@ -68,35 +103,13 @@
                 <div class="provider-text">Sign in with Google</div>
             </a>
         }
-    </div>
+        </div>
 
-    <label class="remember-method">
-        <input type="checkbox" id="remember-method" checked />
-        <span>Remember my sign-in method on this device</span>
-    </label>
-
-    @* Password sign-in for accounts that set a username + password (in Profile). A plain form POST to
-       the AccountController — no Blazor circuit needed. data-enhance-nav="false" so the browser does a
-       real navigation and follows the controller's redirect. AntiforgeryToken emits the
-       __RequestVerificationToken the [ValidateAntiForgeryToken] action requires. *@
-    <div class="password-login" data-enhance-nav="false">
-        <div class="password-divider"><span>or sign in with a password</span></div>
-        <form method="post" action="/account/password">
-            <AntiforgeryToken />
-            <input type="hidden" name="returnUrl" value="@ReturnUrl" />
-            <label class="field-label" for="pw-username">Username</label>
-            <input id="pw-username" class="text-input" type="text" name="username"
-                   autocomplete="username" maxlength="64" required />
-            <label class="field-label" for="pw-password">Password</label>
-            <input id="pw-password" class="text-input" type="password" name="password"
-                   autocomplete="current-password" required />
-            <label class="password-remember">
-                <input type="checkbox" name="keepSignedIn" value="true" />
-                <span>Keep me signed in</span>
-            </label>
-            <button type="submit" class="provider-button password-submit">Sign in</button>
-        </form>
-    </div>
+        <label class="remember-method">
+            <input type="checkbox" id="remember-method" checked />
+            <span>Remember my sign-in method on this device</span>
+        </label>
+    }
 
     <div class="footer">
         <p>Secure authentication via OAuth 2.0</p>
@@ -126,7 +139,21 @@
 @code {
     [SupplyParameterFromQuery(Name = "error")] public string? Error { get; set; }
     [SupplyParameterFromQuery(Name = "perror")] public string? PasswordError { get; set; }
+    [SupplyParameterFromQuery(Name = "reset")] public string? ResetDone { get; set; }
     [SupplyParameterFromQuery(Name = "returnUrl")] public string? ReturnUrl { get; set; }
+
+    // Whether any OAuth provider is configured — the whole "or continue with" block (divider, provider
+    // buttons, remember-method checkbox) is hidden when password login is the only option.
+    private bool AnyProviderEnabled =>
+        Settings.GitHubOAuth.Enabled || Settings.MicrosoftOAuth.Enabled || Settings.GoogleOAuth.Enabled;
+
+    private string SignupHref => WithReturnUrl("/signup");
+
+    private string ForgotHref => WithReturnUrl("/forgot-password");
+
+    // Carries the original returnUrl onto the signup/forgot links so the flow lands back where it started.
+    private string WithReturnUrl(string path) =>
+        string.IsNullOrEmpty(ReturnUrl) ? path : $"{path}?returnUrl={Uri.EscapeDataString(ReturnUrl)}";
 
     // Links default to remember=0 (fail-safe); the inline script flips them to 1 while the box is
     // checked. returnUrl is preserved so a successful login lands back where the user started.

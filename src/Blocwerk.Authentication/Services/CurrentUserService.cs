@@ -349,9 +349,21 @@ public class CurrentUserService : ICurrentUserService
 
         var user = await ResolveUserAsync(dbContext, identifier, provider, providerUserId, uid);
 
-        if (_settings.AdminIdentifiers.Contains(identifier) && user.Role != IdentityRole.Admin)
+        // AdminIdentifiers is authoritative for the app-wide admin bit in BOTH directions: on every
+        // resolution Role == Admin IFF the identifier is configured. Promote a configured admin that
+        // isn't yet Admin, and — critically — demote an identifier that is Admin but no longer
+        // configured, so removing someone from AdminIdentifiers actually revokes their admin. Only the
+        // Admin/User toggle is touched here (Guest and other role semantics are left alone), and the
+        // branches are mutually exclusive so a single resolution never promotes and demotes.
+        bool shouldBeAdmin = _settings.AdminIdentifiers.Contains(identifier);
+        if (shouldBeAdmin && user.Role != IdentityRole.Admin)
         {
             user.Role = IdentityRole.Admin;
+            await dbContext.SaveChangesAsync();
+        }
+        else if (!shouldBeAdmin && user.Role == IdentityRole.Admin)
+        {
+            user.Role = IdentityRole.User;
             await dbContext.SaveChangesAsync();
         }
 

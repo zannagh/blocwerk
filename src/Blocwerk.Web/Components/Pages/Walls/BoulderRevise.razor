@@ -5,7 +5,10 @@
 @inject IBoulderService BoulderService
 @inject ICurrentUserService CurrentUserService
 @inject NavigationManager Navigation
+@inject CircuitEditActivity EditActivity
+@implements IDisposable
 @using Blocwerk.Web.Components.Shared
+@using Blocwerk.Web.State
 
 <PageTitle>@(_isDraft ? "Edit Draft" : "Revise Boulder") - Blocwerk</PageTitle>
 
@@ -130,6 +133,11 @@
 
     private string DetailUrl => $"/walls/{WallId}/boulders/{BoulderId}";
 
+    // The whole page is revise mode: hold a busy lease for its mounted lifetime so a deploy never
+    // recreates the container while unsaved hold/rule edits are open. Released in Dispose, with the
+    // circuit-teardown backstop behind it.
+    private IDisposable? _editLease;
+
     /// <summary>The whole revise form as the JSON the offline queue replays. See offline-boulder.js.</summary>
     private string SnapshotJson => System.Text.Json.JsonSerializer.Serialize(new
     {
@@ -146,6 +154,10 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // Acquire before any await so the page is marked busy for its whole lifetime. No current-user
+        // id is resolved yet here, so userId is left null (the deploy gate only needs the count).
+        _editLease = EditActivity.BeginBoulderRevise(WallId, userId: null);
+
         _wall = await WallService.GetWallAsync(WallId);
         _boulder = await BoulderService.GetBoulderAsync(BoulderId);
 
@@ -222,4 +234,9 @@
     }
 
     private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+
+    public void Dispose()
+    {
+        _editLease?.Dispose();
+    }
 }

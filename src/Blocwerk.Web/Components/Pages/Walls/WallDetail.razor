@@ -9,6 +9,7 @@
 @inject IBoulderFeedbackService FeedbackService
 @inject IActivityLogService ActivityLogService
 @inject ICurrentUserService CurrentUserService
+@inject CircuitEditActivity EditActivity
 @inject NavigationManager Navigation
 @implements IDisposable
 @using Blocwerk.Web.Components.Shared
@@ -33,15 +34,64 @@ else if (_wall.UnderMaintenance && _currentUserId != _wall.MaintenanceByUserId)
 }
 else
 {
-    <SectionContent SectionName="TopBarTitle">@_wall.Name</SectionContent>
+    <SectionContent SectionName="TopBarTitle">
+        <span class="topbar-wall-name">@_wall.Name</span>
+        <span class="topbar-page-dots" aria-hidden="true">
+            @for (var i = 0; i < CarouselPageCount; i++)
+            {
+                <span class="topbar-dot @(i == _currentCarouselPage ? "active" : string.Empty)"></span>
+            }
+        </span>
+    </SectionContent>
 
-    <WallCarousel @ref="_carousel" InitialPage="@InitialCarouselPage" Locked="_isEditing">
+    <WallCarousel @ref="_carousel" InitialPage="@InitialCarouselPage" Locked="_isEditing"
+                  OnPageChanged="OnCarouselPageChanged">
         <Page1>
-            @* Wall settings, shape, and API keys (admins only) *@
+            @* Activity is visible to all wall members; settings/shape/API keys stay admin-only. *@
+            <details open class="settings-panel settings-card">
+                <summary class="settings-card-summary"><h2>Activity</h2></summary>
+                <div class="settings-card-body">
+                    @if (_isAnonymous)
+                    {
+                        <p class="empty-activity">Log in to see this wall's activity.</p>
+                    }
+                    else if (_activityItems == null)
+                    {
+                        <p class="loading-small">Loading...</p>
+                    }
+                    else
+                    {
+                        @foreach (var item in _activityItems)
+                        {
+                            <div class="activity-row">
+                                <span class="activity-icon">@ActivityIcon(item.Type)</span>
+                                <span class="activity-text">@item.User.Name @ActivityVerb(item.Type)</span>
+                                <span class="activity-time"><LocalTime Value="@item.Timestamp" Format="LocalTimeFormat.Relative" /></span>
+                            </div>
+                        }
+                        @if (_activityTotal > _activityItems.Count)
+                        {
+                            <div class="activity-pager">
+                                @if (_activityPage > 0)
+                                {
+                                    <button class="pager-btn" @onclick="() => LoadActivity(_activityPage - 1)">&larr; Newer</button>
+                                }
+                                <button class="pager-btn" @onclick="() => LoadActivity(_activityPage + 1)">Older &rarr;</button>
+                            </div>
+                        }
+                        @if (_activityItems.Count == 0)
+                        {
+                            <p class="empty-activity">No activity yet.</p>
+                        }
+                    }
+                </div>
+            </details>
+
             @if (_isAdmin)
             {
-                <div class="settings-panel">
-                    <h2>Wall Settings</h2>
+                <details class="settings-panel settings-card">
+                    <summary class="settings-card-summary"><h2>Wall Settings</h2></summary>
+                    <div class="settings-card-body">
 
                     <div class="form-group">
                         <label class="filter-check multi-image-toggle">
@@ -175,10 +225,12 @@ else
                     }
 
                     <button class="btn-danger" @onclick="DeleteWall">Delete Wall</button>
-                </div>
+                    </div>
+                </details>
 
-                <div class="settings-panel">
-                    <h2>Wall Shape</h2>
+                <details class="settings-panel settings-card">
+                    <summary class="settings-card-summary"><h2>Wall Shape</h2></summary>
+                    <div class="settings-card-body">
                     <div class="form-group">
                         <label>Fallback angle: @_wall.Angle&deg; <span class="segment-angle-word">@WallAngleRange.Label(_wall.Angle)</span></label>
                         <input type="range" min="@WallAngleRange.Min" max="@WallAngleRange.Max" value="@_wall.Angle"
@@ -209,59 +261,22 @@ else
                     {
                         <p class="empty-msg">Upload a wall photo to draw segments on it.</p>
                     }
-                </div>
+                    </div>
+                </details>
 
                 @if (_currentUserId != Guid.Empty)
                 {
-                    <WallApiKeyPanel WallId="WallId" CurrentUserId="_currentUserId" />
+                    <details class="settings-panel settings-card">
+                        <summary class="settings-card-summary"><h2>API key</h2></summary>
+                        <div class="settings-card-body">
+                            <WallApiKeyPanel WallId="WallId" CurrentUserId="_currentUserId" />
+                        </div>
+                    </details>
                 }
-            }
-            else
-            {
-                <div class="settings-panel">
-                    <h2>Wall Settings</h2>
-                    <p class="empty-msg">Only wall admins can change wall settings.</p>
-                </div>
             }
         </Page1>
 
         <Page2>
-            @* Activity *@
-            <div class="settings-panel">
-                <h2>Activity</h2>
-                @if (_activityItems == null)
-                {
-                    <p class="loading-small">Loading...</p>
-                }
-                else
-                {
-                    @foreach (var item in _activityItems)
-                    {
-                        <div class="activity-row">
-                            <span class="activity-icon">@ActivityIcon(item.Type)</span>
-                            <span class="activity-text">@item.User.Name @ActivityVerb(item.Type)</span>
-                            <span class="activity-time"><LocalTime Value="@item.Timestamp" Format="LocalTimeFormat.Relative" /></span>
-                        </div>
-                    }
-                    @if (_activityTotal > _activityItems.Count)
-                    {
-                        <div class="activity-pager">
-                            @if (_activityPage > 0)
-                            {
-                                <button class="pager-btn" @onclick="() => LoadActivity(_activityPage - 1)">&larr; Newer</button>
-                            }
-                            <button class="pager-btn" @onclick="() => LoadActivity(_activityPage + 1)">Older &rarr;</button>
-                        </div>
-                    }
-                    @if (_activityItems.Count == 0)
-                    {
-                        <p class="empty-activity">No activity yet.</p>
-                    }
-                }
-            </div>
-        </Page2>
-
-        <Page3>
             @* Members (visible to all wall members) + leaderboard *@
             @if (_isMember)
             {
@@ -310,10 +325,10 @@ else
                     <p class="leaderboard-empty">Members are visible to wall members.</p>
                 </div>
             }
-        </Page3>
+        </Page2>
 
-        <Page4>
-            @* Overview *@
+        <Page3>
+            @* Overview (centre page — the wall itself) *@
             <div class="wall-main">
                 <div class="wall-detail-card">
                     @if (_isAnonymous)
@@ -469,9 +484,9 @@ else
                     </div>
                 }
             </div>
-        </Page4>
+        </Page3>
 
-        <Page5>
+        <Page4>
             @* Boulders *@
             <div class="boulder-section">
                 <div class="section-header">
@@ -552,15 +567,15 @@ else
                     }
                 }
             </div>
-        </Page5>
+        </Page4>
 
-        <Page6>
+        <Page5>
             @* Wall details: temperature and gallery *@
             <WallTemperaturePanel WallId="WallId" />
 
             <WallGalleryPanel WallId="WallId" ShareToken="@ShareToken"
                               IsAdmin="_isAdmin" CurrentUserId="_currentUserId" />
-        </Page6>
+        </Page5>
     </WallCarousel>
 }
 
@@ -578,8 +593,13 @@ else
     [SupplyParameterFromQuery(Name = "view")]
     public string? View { get; set; }
 
+    @* Carousel pages (0-based): 0 Settings, 1 Members, 2 Overview (centre), 3 Boulders, 4 Details. *@
+    private const int CarouselPageCount = 5;
+
     private int InitialCarouselPage =>
-        string.Equals(View, "boulders", StringComparison.OrdinalIgnoreCase) ? 4 : 3;
+        string.Equals(View, "boulders", StringComparison.OrdinalIgnoreCase) ? 3 : 2;
+
+    private int _currentCarouselPage;
 
     private WallCarousel? _carousel;
     private Wall? _wall;
@@ -599,6 +619,10 @@ else
     private bool _isAnonymous;
     private Guid _currentUserId;
     private bool _isEditing;
+
+    // Marks the app "busy" while this wall is in edit/alignment mode. Kept in lock-step with
+    // _isEditing via SyncEditLease() so every enter/leave transition is covered exactly once.
+    private IDisposable? _editLease;
     private bool _confirmingRecreate;
     private bool _confirmingEnableMulti;
     private bool _confirmingDisableMulti;
@@ -744,6 +768,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         Cache.Changed += OnCacheChanged;
+        _currentCarouselPage = InitialCarouselPage;
         await LoadWall();
         if (_wall != null && !_isAnonymous)
         {
@@ -777,6 +802,7 @@ else
     public void Dispose()
     {
         Cache.Changed -= OnCacheChanged;
+        _editLease?.Dispose();
     }
 
     private async Task LoadWall()
@@ -1094,6 +1120,7 @@ else
     private async Task ToggleEditing()
     {
         _isEditing = !_isEditing;
+        SyncEditLease();
 
         // Entering edit mode on a big wall: default to the first live panel and load its editable
         // holds so the per-panel editor branch has a non-null selection to render.
@@ -1104,13 +1131,40 @@ else
         }
     }
 
-    private Task GoToBoulders() => _carousel?.GoToPageAsync(4) ?? Task.CompletedTask;
-    private Task GoToMembers() => _carousel?.GoToPageAsync(2) ?? Task.CompletedTask;
+    // Single source of truth for the busy lease: acquire when we start editing and don't already
+    // hold one (so toggling on twice never double-acquires), release when we stop. Called after
+    // every _isEditing change and from Dispose.
+    private void SyncEditLease()
+    {
+        if (_isEditing)
+        {
+            _editLease ??= EditActivity.BeginWallEdit(WallId, _currentUserId == Guid.Empty ? null : _currentUserId);
+        }
+        else
+        {
+            _editLease?.Dispose();
+            _editLease = null;
+        }
+    }
+
+    private Task GoToBoulders() => _carousel?.GoToPageAsync(3) ?? Task.CompletedTask;
+    private Task GoToMembers() => _carousel?.GoToPageAsync(1) ?? Task.CompletedTask;
+
+    private void OnCarouselPageChanged(int page)
+    {
+        _currentCarouselPage = page;
+        StateHasChanged();
+    }
 
     private async Task StartAlignmentFlow()
     {
-        if (_carousel != null) await _carousel.GoToPageAsync(3, smooth: false);
+        if (_carousel != null)
+        {
+            await _carousel.GoToPageAsync(2, smooth: false);
+        }
+
         _isEditing = true;
+        SyncEditLease();
     }
 
     private async Task LoadActivity(int page)
@@ -1373,6 +1427,7 @@ else
             await WallService.ConfirmManualAlignmentAsync(WallId, holds, r.DeletedHoldIds);
             await LoadWall();
             _isEditing = false;
+            SyncEditLease();
             await ShowToast("Wall updated");
         }
         catch (Exception ex)
@@ -1500,6 +1555,7 @@ else
             await WallService.DiscardStagedPhotoAsync(WallId);
             await LoadWall();
             _isEditing = false;
+            SyncEditLease();
             await ShowToast("Staged photo discarded");
         }
         catch (Exception ex)

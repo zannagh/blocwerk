@@ -32,6 +32,13 @@ public class BlocwerkSettings
 
     public WallImageSettings WallImage { get; private set; } = new();
 
+    /// <summary>
+    /// Outgoing SMTP mail settings. Vaultwarden-style: everything is env-configurable
+    /// (<c>SMTP__HOST</c>, <c>SMTP__PORT</c>, ...). Empty by default; features must gate on
+    /// <see cref="SmtpSettings.IsConfigured"/> before attempting to send.
+    /// </summary>
+    public SmtpSettings Smtp { get; private set; } = new();
+
     public List<string> AdminIdentifiers { get; private set; } = [];
 
     /// <summary>
@@ -131,6 +138,22 @@ public class BlocwerkSettings
                           ?? "wall-images",
         };
 
+        Smtp = new SmtpSettings
+        {
+            Host = section["Smtp:Host"] ?? Environment.GetEnvironmentVariable("SMTP__HOST"),
+            Port = int.TryParse(
+                section["Smtp:Port"] ?? Environment.GetEnvironmentVariable("SMTP__PORT"),
+                out var smtpPort)
+                ? smtpPort
+                : 587,
+            Username = section["Smtp:Username"] ?? Environment.GetEnvironmentVariable("SMTP__USERNAME"),
+            Password = section["Smtp:Password"] ?? Environment.GetEnvironmentVariable("SMTP__PASSWORD"),
+            From = section["Smtp:From"] ?? Environment.GetEnvironmentVariable("SMTP__FROM"),
+            FromName = section["Smtp:FromName"] ?? Environment.GetEnvironmentVariable("SMTP__FROMNAME") ?? "Blocwerk",
+            Security = ParseSmtpSecurity(
+                section["Smtp:Security"] ?? Environment.GetEnvironmentVariable("SMTP__SECURITY")),
+        };
+
         GitHubOAuth = BindOAuthProvider(section, "GitHub", "https://github.com/login/oauth/authorize");
         GoogleOAuth = BindOAuthProvider(section, "Google", "https://accounts.google.com/o/oauth2/v2/auth");
         MicrosoftOAuth = BindOAuthProvider(section, "Microsoft", "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize");
@@ -170,6 +193,11 @@ public class BlocwerkSettings
         RandomNumberGenerator.Fill(bytes);
         return Convert.ToHexStringLower(bytes);
     }
+
+    private static SmtpSecurity ParseSmtpSecurity(string? value) =>
+        Enum.TryParse<SmtpSecurity>(value, ignoreCase: true, out var security)
+            ? security
+            : SmtpSecurity.StartTls;
 
     private static long ParseBytes(string? sectionValue, string envName, long fallback) =>
         long.TryParse(sectionValue ?? Environment.GetEnvironmentVariable(envName), out var value) && value > 0

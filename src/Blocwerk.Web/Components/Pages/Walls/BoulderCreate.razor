@@ -7,8 +7,10 @@
 @inject IJSRuntime JS
 @inject IHttpContextAccessor HttpContextAccessor
 @inject PersistentComponentState ApplicationState
+@inject CircuitEditActivity EditActivity
 @implements IDisposable
 @using Blocwerk.Web.Components.Shared
+@using Blocwerk.Web.State
 
 <PageTitle>Create Boulder - Blocwerk</PageTitle>
 
@@ -169,8 +171,16 @@
     private const string ExperienceStateKey = "boulder-create-experience";
     private PersistingComponentStateSubscription _persistingSubscription;
 
+    // Marks the app "busy" for the duration this create page is mounted (see EditActivityRegistry).
+    // Released in Dispose, and as a backstop when the circuit's scope is torn down.
+    private IDisposable? _editLease;
+
     protected override async Task OnInitializedAsync()
     {
+        // The whole page is "create mode": hold a busy lease while it's mounted. No current-user
+        // service is injected here, so userId is left null (the deploy gate only needs the count).
+        _editLease = EditActivity.BeginBoulderCreate(WallId, userId: null);
+
         // The experience is read server-side from the cookie on the prerender pass (HttpContext is
         // live there) and persisted via PersistentComponentState. On the interactive re-render
         // HttpContext is null, so without this the value would snap back to the "old" default and
@@ -258,6 +268,7 @@
     public void Dispose()
     {
         _persistingSubscription.Dispose();
+        _editLease?.Dispose();
     }
 
     private Task SaveDraft() => Submit(isDraft: true);

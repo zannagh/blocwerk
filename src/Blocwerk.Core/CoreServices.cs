@@ -23,6 +23,20 @@ public static class CoreServices
             .AddEnvironmentVariables();
 
         settings = new BlocwerkSettings(builder.Configuration);
+
+        // Dev auto-login (BLOCWERK_DEV_USER) grants the dev user admin via DevWallAdminSeeder. Feed that
+        // identifier into the effective AdminIdentifiers so the config-authoritative admin reconciliation
+        // in CurrentUserService keeps the dev user an admin instead of revoking it on the next resolve.
+        // Development only — in production BLOCWERK_DEV_USER is never honoured, so it must not grant admin.
+        if (builder.Environment.IsDevelopment())
+        {
+            var devUser = Environment.GetEnvironmentVariable("BLOCWERK_DEV_USER");
+            if (!string.IsNullOrWhiteSpace(devUser) && !settings.AdminIdentifiers.Contains(devUser))
+            {
+                settings.AdminIdentifiers.Add(devUser);
+            }
+        }
+
         var config = settings;
         builder.Services.AddSingleton(config);
 
@@ -61,6 +75,7 @@ public static class CoreServices
         builder.Services.AddScoped<ITrainingService, TrainingService>();
         builder.Services.AddScoped<ISessionService, SessionService>();
         builder.Services.AddScoped<IAccountMergeService, AccountMergeService>();
+        builder.Services.AddScoped<IAdminDashboardService, AdminDashboardService>();
 
         // Password login: the hasher is stateless (singleton); the credential/lookup service is scoped
         // like the other DB services.
@@ -69,6 +84,14 @@ public static class CoreServices
 
         // Per-user, persisted brute-force lockout shared by the password and TOTP login endpoints.
         builder.Services.AddScoped<ILoginLockoutService, LoginLockoutService>();
+
+        // Outgoing SMTP mail. Stateless (a MailKit client is created per send), so a singleton.
+        // Not wired to any feature yet — callers gate on IEmailSender.IsConfigured.
+        builder.Services.AddSingleton<IEmailSender, EmailSender>();
+
+        // Reusable email verification codes (verify-email now; password-reset + signup later). Scoped
+        // like the other DB services; codes are stored hashed and rate-limited per (email, purpose).
+        builder.Services.AddScoped<IEmailVerificationService, EmailVerificationService>();
 
         // Polls the DB for the "how many exist now" telemetry gauges (walls, boulders, users...).
         builder.Services.AddHostedService<TelemetryStatsCollector>();

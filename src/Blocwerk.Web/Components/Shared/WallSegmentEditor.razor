@@ -1,7 +1,9 @@
 @inject IJSRuntime JS
 @inject IWallSegmentService SegmentService
+@inject CircuitEditActivity EditActivity
 @implements IDisposable
 @using Blocwerk.Core.Helpers
+@using Blocwerk.Web.State
 
 @*
     Wall segments: one polygon per plane of the wall, each with its own inclination.
@@ -103,6 +105,12 @@
     private bool _saving;
     private string? _error;
 
+    // This editor renders inside a <details> that lives OUTSIDE the wall's _isEditing flag, so it is
+    // mounted whenever an admin opens the (collapsed) wall-settings card — not necessarily editing.
+    // Hold a wall-edit busy lease ONLY while there are unsaved polygon drafts (_dirty), so a deploy
+    // is deferred for real in-flight work but not merely because someone is viewing settings.
+    private IDisposable? _editLease;
+
     public WallSegmentEditor()
     {
         _zoomState = new ViewportZoomState(() => InvokeAsync(StateHasChanged));
@@ -114,7 +122,26 @@
     private List<WallSegment> Entities() =>
         _drafts.Where(d => d.Points.Count >= 3).Select((d, i) => d.ToEntity(i)).ToList();
 
-    protected override async Task OnInitializedAsync() => await ReloadAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+    }
+
+    // Acquire the busy lease when unsaved drafts exist, release it when clean. Idempotent: acquiring
+    // while already held (or releasing while already clear) is a no-op, so it's safe to call after
+    // every _dirty transition.
+    private void SyncEditLease()
+    {
+        if (_dirty && _editLease is null)
+        {
+            _editLease = EditActivity.BeginWallEdit(WallId, userId: null);
+        }
+        else if (!_dirty && _editLease is not null)
+        {
+            _editLease.Dispose();
+            _editLease = null;
+        }
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -136,7 +163,11 @@
         }
     }
 
-    public void Dispose() => _zoomState.Dispose();
+    public void Dispose()
+    {
+        _editLease?.Dispose();
+        _zoomState.Dispose();
+    }
 
     private async Task ReloadAsync()
     {
@@ -146,6 +177,7 @@
             _drafts = segments.Select(WallSegmentDraft.FromEntity).ToList();
             _activeIndex = _drafts.Count > 0 ? 0 : null;
             _dirty = false;
+            SyncEditLease();
             _error = null;
         }
         catch (Exception ex)
@@ -154,7 +186,11 @@
         }
     }
 
-    private void MarkDirty() => _dirty = true;
+    private void MarkDirty()
+    {
+        _dirty = true;
+        SyncEditLease();
+    }
 
     private void Select(int index) => _activeIndex = index;
 
@@ -289,6 +325,7 @@
             var saved = await SegmentService.ReplaceSegmentsAsync(WallId, inputs);
             _drafts = saved.Select(WallSegmentDraft.FromEntity).ToList();
             _dirty = false;
+            SyncEditLease();
             await OnSegmentsSaved.InvokeAsync(saved);
         }
         catch (Exception ex)

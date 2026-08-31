@@ -85,9 +85,138 @@ window.bwGestures = (function () {
      * intent is applied exactly once per input event — no deferred second pass.
      */
     function bindGestures(el, model) {
+        // ---- Long-press magnifier lens (~8x) on the wall photo.
+        // A stationary press-and-hold (touch or mouse) after LENS_HOLD_MS pops a circular
+        // lens ABOVE the finger/cursor that magnifies the wall image at the press point. It
+        // follows the press while held and is removed on release, on a move past the slop
+        // BEFORE it appears, on a second finger, or on scroll/wheel/pinch. Only arms over a
+        // `.photo-editor img.wall-photo` and never on an interactive target (a hold), so the
+        // editor's own hold drag/tap is untouched. getBoundingClientRect() on the image
+        // already folds in the current zoom/crop/scroll, so the coord math needs nothing else.
+        const LENS_HOLD_MS = 450;
+        const LENS_SLOP = 8;
+        const LENS_SIZE = 140;
+        const LENS_MAG_DEFAULT = 8;
+        const LENS_MAG_MIN = 2;
+        const LENS_MAG_MAX = 16;
+        let lensTimer = 0;
+        let lensEl = null;
+        let lensImg = null;
+        let lensActive = false;
+
+        function lensPhoto() {
+            return el.querySelector('.photo-editor img.wall-photo');
+        }
+
+        // The current magnification, read live from the client pref each time the lens updates so a
+        // change on the Profile page takes effect without a reload. Defensive: any missing pref /
+        // NaN / out-of-range value falls back to the default.
+        function lensMag() {
+            try {
+                if (window.bwPrefs && typeof window.bwPrefs.getZoomLensMag === 'function') {
+                    const m = window.bwPrefs.getZoomLensMag();
+                    if (typeof m === 'number' && m >= LENS_MAG_MIN && m <= LENS_MAG_MAX) {
+                        return m;
+                    }
+                }
+            } catch (_) { /* fall through to default */ }
+            return LENS_MAG_DEFAULT;
+        }
+
+        function armLens(clientX, clientY, target) {
+            cancelLens();
+            if (isInteractiveTarget(target)) {
+                return; // a hold: leave it to the editor's own drag/tap
+            }
+
+            const img = lensPhoto();
+            if (!img || !(img.naturalWidth > 0)) {
+                return;
+            }
+
+            lensImg = img;
+            lensTimer = setTimeout(function () {
+                lensTimer = 0;
+                showLens(clientX, clientY);
+            }, LENS_HOLD_MS);
+        }
+
+        function showLens(clientX, clientY) {
+            if (!lensImg) {
+                return;
+            }
+
+            if (!lensEl) {
+                lensEl = document.createElement('div');
+                lensEl.className = 'bw-zoom-lens';
+                lensEl.style.cssText = 'position:fixed; z-index:2000; width:' + LENS_SIZE +
+                    'px; height:' + LENS_SIZE + 'px; border-radius:50%; border:3px solid ' +
+                    'rgba(255,255,255,0.9); box-shadow:0 6px 24px rgba(0,0,0,0.45); ' +
+                    'background-repeat:no-repeat; background-color:#000; pointer-events:none; display:none;';
+                document.body.appendChild(lensEl);
+            }
+
+            lensEl.style.backgroundImage = 'url("' + (lensImg.currentSrc || lensImg.src) + '")';
+            lensEl.style.display = 'block';
+            lensActive = true;
+            updateLens(clientX, clientY);
+        }
+
+        function updateLens(clientX, clientY) {
+            if (!lensActive || !lensEl || !lensImg) {
+                return;
+            }
+
+            const r = lensImg.getBoundingClientRect();
+            if (!(r.width > 0 && r.height > 0)) {
+                return;
+            }
+
+            // Fraction of the (currently rendered) image under the press, from the live rect so the
+            // lens still centres on the finger/cursor at any viewport zoom.
+            const fx = clamp((clientX - r.left) / r.width, 0, 1);
+            const fy = clamp((clientY - r.top) / r.height, 0, 1);
+
+            // Magnify M× the image's ORIGINAL resolution, independent of the viewport's current
+            // --zoom, so the effective magnification never compounds with it. Fall back to the
+            // on-screen rect only when the natural size is unavailable.
+            const M = lensMag();
+            const bgW = lensImg.naturalWidth > 0 ? lensImg.naturalWidth * M : r.width * M;
+            const bgH = lensImg.naturalHeight > 0 ? lensImg.naturalHeight * M : r.height * M;
+            lensEl.style.backgroundSize = bgW + 'px ' + bgH + 'px';
+            lensEl.style.backgroundPosition =
+                (LENS_SIZE / 2 - fx * bgW) + 'px ' + (LENS_SIZE / 2 - fy * bgH) + 'px';
+
+            // Float above the finger/cursor; drop below only when it would clip the top edge.
+            const left = clamp(clientX - LENS_SIZE / 2, 4, window.innerWidth - LENS_SIZE - 4);
+            let top = clientY - 24 - LENS_SIZE;
+            if (top < 4) {
+                top = clientY + 24;
+            }
+
+            lensEl.style.left = left + 'px';
+            lensEl.style.top = top + 'px';
+        }
+
+        function cancelLens() {
+            if (lensTimer) {
+                clearTimeout(lensTimer);
+                lensTimer = 0;
+            }
+
+            if (lensActive && lensEl) {
+                lensEl.style.display = 'none';
+            }
+
+            lensActive = false;
+            lensImg = null;
+        }
+
         // ---- wheel: ctrl/cmd (and trackpad pinch, which browsers synthesise as
         // ctrl+wheel) zooms; plain wheel pans.
+        el.addEventListener('scroll', cancelLens, { passive: true });
         el.addEventListener('wheel', function (e) {
+            cancelLens();
             if (e.ctrlKey || e.metaKey) {
                 e.preventDefault();
                 model.zoomBy(Math.exp(-e.deltaY * 0.01), e.clientX, e.clientY, 0, 0);
@@ -104,6 +233,7 @@ window.bwGestures = (function () {
         let gestureScale = 1;
         el.addEventListener('gesturestart', function (e) {
             e.preventDefault();
+            cancelLens();
             gestureScale = 1;
         }, { passive: false });
 
@@ -124,6 +254,13 @@ window.bwGestures = (function () {
         let mouseY = 0;
         let mouseMoved = 0;
 
+        // Suppress the browser's native image drag (the drag ghost) so a left-click-drag
+        // pans the zoomed viewport instead of trying to copy the image. Unconditional:
+        // native image drag is never wanted here. Mouse/touch events still flow normally.
+        el.addEventListener('dragstart', function (e) {
+            e.preventDefault();
+        });
+
         el.addEventListener('mousedown', function (e) {
             if (e.button !== 0 && e.button !== 1) {
                 return;
@@ -137,6 +274,7 @@ window.bwGestures = (function () {
             mouseX = e.clientX;
             mouseY = e.clientY;
             mouseMoved = 0;
+            armLens(e.clientX, e.clientY, e.target);
         });
 
         window.addEventListener('mousemove', function (e) {
@@ -144,9 +282,18 @@ window.bwGestures = (function () {
                 return;
             }
 
+            if (lensActive) {
+                updateLens(e.clientX, e.clientY);
+                return; // lens owns the gesture; don't also pan
+            }
+
             const dx = e.clientX - mouseX;
             const dy = e.clientY - mouseY;
             mouseMoved += Math.abs(dx) + Math.abs(dy);
+            if (mouseMoved > LENS_SLOP) {
+                cancelLens(); // moved before the hold fired: it's a drag, not a long-press
+            }
+
             if (mouseMoved > 3) {
                 if (model.capturesPan && !model.capturesPan()) {
                     return; // at fit: nothing to pan
@@ -161,6 +308,7 @@ window.bwGestures = (function () {
 
         window.addEventListener('mouseup', function () {
             mouseDown = false;
+            cancelLens();
             setTimeout(function () { delete el.dataset.panActive; }, 0);
         });
 
@@ -193,6 +341,7 @@ window.bwGestures = (function () {
         el.addEventListener('touchstart', function (e) {
             if (e.touches.length === 2) {
                 e.preventDefault();
+                cancelLens(); // second finger: this is a pinch, not a long-press
                 mode = 'pinch';
                 lastDist = touchDistance(e.touches);
                 const c = touchCenter(e.touches);
@@ -208,10 +357,19 @@ window.bwGestures = (function () {
                 lastX = e.touches[0].clientX;
                 lastY = e.touches[0].clientY;
                 touchMoved = 0;
+                armLens(e.touches[0].clientX, e.touches[0].clientY, e.target);
             }
         }, { passive: false });
 
         el.addEventListener('touchmove', function (e) {
+            // Once the lens is up it owns the single-finger gesture: it follows the finger
+            // and the viewport does not pan until release.
+            if (lensActive && e.touches.length === 1) {
+                e.preventDefault();
+                updateLens(e.touches[0].clientX, e.touches[0].clientY);
+                return;
+            }
+
             if (mode === 'pinch' && e.touches.length === 2) {
                 e.preventDefault();
                 const dist = touchDistance(e.touches);
@@ -228,6 +386,10 @@ window.bwGestures = (function () {
                 const dx = e.touches[0].clientX - lastX;
                 const dy = e.touches[0].clientY - lastY;
                 touchMoved += Math.abs(dx) + Math.abs(dy);
+                if (touchMoved > LENS_SLOP) {
+                    cancelLens(); // moved before the hold fired: it's a pan, not a long-press
+                }
+
                 if (touchMoved > 4) {
                     if (model.capturesPan && !model.capturesPan()) {
                         // At fit: don't preventDefault, so the browser scrolls the page
@@ -245,6 +407,18 @@ window.bwGestures = (function () {
         }, { passive: false });
 
         el.addEventListener('touchend', function (e) {
+            // Tear down the lens (or a still-pending long-press timer). If it was showing,
+            // this release belongs to the lens: swallow it so it doesn't also fire a tap /
+            // double-tap zoom.
+            const wasLens = lensActive;
+            cancelLens();
+            if (wasLens && e.touches.length === 0) {
+                e.preventDefault();
+                mode = null;
+                setTimeout(function () { delete el.dataset.panActive; }, 0);
+                return;
+            }
+
             // Lifting one finger of a pinch continues as a pan with the survivor.
             if (e.touches.length === 1 && mode === 'pinch') {
                 mode = 'pan';

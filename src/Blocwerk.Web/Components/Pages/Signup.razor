@@ -1,0 +1,246 @@
+@page "/signup"
+@rendermode InteractiveServer
+@layout EmptyLayout
+@using System.Text.RegularExpressions
+@inject IPasswordLoginService PasswordLogin
+@inject IEmailVerificationService EmailVerification
+@inject NavigationManager Navigation
+
+@* Self-serve signup. Interactive by design: the email-code step needs live feedback that a static POST
+   page can't give. A user is created ONLY after VerifyCodeAsync(Signup) returns Success; the created
+   account is then signed in through the EXISTING password-login endpoint (/account/password) — the one
+   place that can issue the auth cookie — so no second auth mechanism is introduced. *@
+
+<PageTitle>Create account - Blocwerk</PageTitle>
+
+<div class="oauth-container">
+    <div class="header">
+        <h1>Blocwerk</h1>
+        <p>Create your account</p>
+    </div>
+
+    @if (_error is not null)
+    {
+        <div class="oauth-error" role="alert">@_error</div>
+    }
+
+    @if (_info is not null)
+    {
+        <div role="status" style="background:rgba(88,166,255,0.12);color:var(--text);border:1px solid rgba(88,166,255,0.35);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:0.9rem;">@_info</div>
+    }
+
+    <div class="password-login">
+        @if (_step == Step.Details)
+        {
+            <label class="field-label" for="su-username">Username</label>
+            <input id="su-username" class="text-input" type="text" @bind="_username" maxlength="64"
+                   autocomplete="username" disabled="@_busy" />
+            <label class="field-label" for="su-email">Email</label>
+            <input id="su-email" class="text-input" type="email" @bind="_email" maxlength="256"
+                   autocomplete="email" disabled="@_busy" />
+            <label class="field-label" for="su-password">Password</label>
+            <input id="su-password" class="text-input" type="password" @bind="_password"
+                   autocomplete="new-password" disabled="@_busy" />
+            <button type="button" class="provider-button password-submit" @onclick="SendCodeAsync"
+                    disabled="@_busy">@(_busy ? "Sending…" : "Send verification code")</button>
+        }
+        else if (_step == Step.Code)
+        {
+            <p style="color:var(--text-secondary);font-size:0.9rem;margin-bottom:12px;">
+                Enter the 6-digit code we sent to <strong>@_email</strong>.
+            </p>
+            <label class="field-label" for="su-code">Verification code</label>
+            <input id="su-code" class="text-input" type="text" @bind="_code" inputmode="numeric"
+                   autocomplete="one-time-code" maxlength="6" disabled="@_busy" />
+            <button type="button" class="provider-button password-submit" @onclick="CreateAsync"
+                    disabled="@_busy">@(_busy ? "Creating…" : "Create account")</button>
+            <button type="button" class="text-input" style="margin-top:10px;background:transparent;cursor:pointer;"
+                    @onclick="ResendAsync" disabled="@_busy">Resend code</button>
+        }
+        else
+        {
+            @* Account created. Sign in via the EXISTING password endpoint so the exact same cookie +
+               lockout + (absent) TOTP path runs. data-enhance-nav="false" forces a real navigation that
+               follows the controller's redirect to the post-login landing. *@
+            <p style="color:var(--text-secondary);font-size:0.9rem;margin-bottom:12px;">
+                Your account is ready. Continue to sign in.
+            </p>
+            <form method="post" action="/account/password" data-enhance-nav="false">
+                <AntiforgeryToken />
+                <input type="hidden" name="username" value="@_username" />
+                <input type="hidden" name="password" value="@_password" />
+                <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+                <button type="submit" class="provider-button password-submit">Continue to Blocwerk</button>
+            </form>
+        }
+
+        <div class="password-links" style="display:flex;justify-content:center;gap:12px;margin-top:16px;font-size:0.9rem;">
+            <a href="@LoginHref">Already have an account? Sign in</a>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>We'll email you a code to confirm your address.</p>
+    </div>
+</div>
+
+@code {
+    private enum Step { Details, Code, Done }
+
+    [SupplyParameterFromQuery(Name = "returnUrl")] public string? ReturnUrl { get; set; }
+
+    private Step _step = Step.Details;
+    private string _username = string.Empty;
+    private string _email = string.Empty;
+    private string _password = string.Empty;
+    private string _code = string.Empty;
+    private string? _error;
+    private string? _info;
+    private bool _busy;
+
+    private string LoginHref =>
+        string.IsNullOrEmpty(ReturnUrl) ? "/oauth-select" : $"/oauth-select?returnUrl={Uri.EscapeDataString(ReturnUrl)}";
+
+    private static readonly Regex UsernamePattern = new("^[A-Za-z0-9._-]+$", RegexOptions.Compiled);
+
+    private async Task SendCodeAsync()
+    {
+        _error = null;
+        _info = null;
+
+        var username = _username.Trim();
+        if (username.Length is < 3 or > 64 || !UsernamePattern.IsMatch(username))
+        {
+            _error = "Choose a username of 3–64 characters using letters, digits, dot, underscore or hyphen.";
+            return;
+        }
+
+        if (_password.Length < 8)
+        {
+            _error = "Password must be at least 8 characters.";
+            return;
+        }
+
+        var email = _email.Trim();
+        if (email.Length == 0 || !email.Contains('@'))
+        {
+            _error = "Enter a valid email address.";
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            // Username availability is checked up-front (its taken/free state is inherent and acceptable to
+            // reveal). Email existence is NOT checked here: doing so would make the send step a deterministic
+            // oracle for which addresses are registered. Instead the send step behaves IDENTICALLY for a free
+            // or a taken email — a code is always issued — and account creation is gated later by the code the
+            // real mailbox owner receives, so a taken email simply can't be completed by anyone but its owner.
+            if (!await PasswordLogin.IsUsernameAvailableAsync(username))
+            {
+                _error = "That username isn't available. Please choose another.";
+                return;
+            }
+
+            var result = await EmailVerification.IssueCodeAsync(EmailVerificationPurpose.Signup, email, null);
+            switch (result.Status)
+            {
+                case EmailVerificationStatus.Success:
+                    _code = string.Empty;
+                    _step = Step.Code;
+                    _info = "We sent a 6-digit code to that address. It expires in 10 minutes.";
+                    break;
+                case EmailVerificationStatus.Throttled:
+                    _error = "You requested a code very recently. Please wait a minute and try again.";
+                    break;
+                case EmailVerificationStatus.EmailNotConfigured:
+                    _error = "Signup isn't available right now: email sending isn't configured on this server.";
+                    break;
+                default:
+                    _error = "That doesn't look like a valid email address.";
+                    break;
+            }
+        }
+        catch (Exception)
+        {
+            _error = "Something went wrong. Please try again.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ResendAsync()
+    {
+        _step = Step.Details;
+        await SendCodeAsync();
+    }
+
+    private async Task CreateAsync()
+    {
+        _error = null;
+        _info = null;
+
+        var code = _code.Trim();
+        if (code.Length == 0)
+        {
+            _error = "Enter the 6-digit code from your email.";
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            // The code is single-use: verify it EXACTLY once. Only a Success permits account creation.
+            var verify = await EmailVerification.VerifyCodeAsync(EmailVerificationPurpose.Signup, _email.Trim(), code);
+            switch (verify.Status)
+            {
+                case EmailVerificationStatus.Success:
+                    break;
+                case EmailVerificationStatus.Expired:
+                    _error = "That code has expired. Request a new one.";
+                    _step = Step.Details;
+                    return;
+                case EmailVerificationStatus.TooManyAttempts:
+                    _error = "Too many attempts. Request a new code.";
+                    _step = Step.Details;
+                    return;
+                default:
+                    _error = "That code didn't match. Check it and try again.";
+                    return;
+            }
+
+            var result = await PasswordLogin.CreateLocalUserAsync(_username.Trim(), _password, _email.Trim());
+            switch (result.Status)
+            {
+                case LocalUserCreateStatus.Created:
+                    _step = Step.Done;
+                    break;
+                case LocalUserCreateStatus.UsernameTaken:
+                    _error = "That username was just taken. Please start over with another.";
+                    _step = Step.Details;
+                    break;
+                case LocalUserCreateStatus.EmailTaken:
+                    // GENERIC message: even though the verified code proves mailbox ownership here, keep the
+                    // wording indistinguishable from other create failures so nothing about email existence
+                    // leaks back through this path. Creation still happens ONLY after VerifyCodeAsync Success.
+                    _error = "Couldn't complete signup. Please try again, or log in if you already have an account.";
+                    _step = Step.Details;
+                    break;
+                default:
+                    _error = "Couldn't create the account. Check your details and try again.";
+                    _step = Step.Details;
+                    break;
+            }
+        }
+        catch (Exception)
+        {
+            _error = "Something went wrong. Please try again.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

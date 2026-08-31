@@ -16,6 +16,7 @@
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
     <PackageReference Include="Microsoft.Extensions.Identity.Core" />
     <PackageReference Include="Microsoft.Extensions.Http" />
+    <PackageReference Include="MailKit" />
     <PackageReference Include="System.Security.Cryptography.Xml" />
     <PackageReference Include="SkiaSharp" />
   </ItemGroup>

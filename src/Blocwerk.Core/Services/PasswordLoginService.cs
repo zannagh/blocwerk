@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Services;
@@ -90,6 +91,131 @@ public partial class PasswordLoginService : IPasswordLoginService
             .FirstOrDefaultAsync(u => u.LoginUsername != null
                                       && u.PasswordHash != null
                                       && u.LoginUsername.ToLower() == normalized);
+    }
+
+    public async Task<bool> IsUsernameAvailableAsync(string loginUsername)
+    {
+        var username = (loginUsername ?? string.Empty).Trim();
+        if (!IsValidUsername(username))
+        {
+            return false;
+        }
+
+        var normalized = username.ToLowerInvariant();
+
+        await using var dbContext = await dbContextFactory.CreateDbContextAsync();
+        bool taken = await dbContext.Users
+            .AnyAsync(u => u.LoginUsername != null && u.LoginUsername.ToLower() == normalized);
+        return !taken;
+    }
+
+    public async Task<User?> FindByEmailAsync(string email)
+    {
+        var normalized = (email ?? string.Empty).Trim().ToLowerInvariant();
+        if (normalized.Length == 0)
+        {
+            return null;
+        }
+
+        // Email is always stored normalized (lower-cased), so a plain equality is already case-insensitive.
+        // Only a CONFIRMED email may match — an unverified/absent address must look like "no such account".
+        await using var dbContext = await dbContextFactory.CreateDbContextAsync();
+        return await dbContext.Users
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Email != null && u.EmailVerified && u.Email == normalized);
+    }
+
+    public async Task<LocalUserCreateResult> CreateLocalUserAsync(string loginUsername, string password, string email)
+    {
+        var username = (loginUsername ?? string.Empty).Trim();
+        if (!IsValidUsername(username))
+        {
+            return new LocalUserCreateResult(LocalUserCreateStatus.Invalid);
+        }
+
+        if (string.IsNullOrEmpty(password) || password.Length < MinPasswordLength)
+        {
+            return new LocalUserCreateResult(LocalUserCreateStatus.Invalid);
+        }
+
+        var normalizedEmail = (email ?? string.Empty).Trim().ToLowerInvariant();
+        if (normalizedEmail.Length == 0)
+        {
+            return new LocalUserCreateResult(LocalUserCreateStatus.Invalid);
+        }
+
+        var normalizedUsername = username.ToLowerInvariant();
+
+        await using var dbContext = await dbContextFactory.CreateDbContextAsync();
+
+        // App-level pre-checks for a friendly message. The DB unique indexes — lower("LoginUsername") and
+        // the normalized Email — are the real race-safe backstop; a lost race surfaces as the
+        // DbUpdateException caught below, so two concurrent signups for the same name can't both win.
+        if (await dbContext.Users
+                .AnyAsync(u => u.LoginUsername != null && u.LoginUsername.ToLower() == normalizedUsername))
+        {
+            return new LocalUserCreateResult(LocalUserCreateStatus.UsernameTaken);
+        }
+
+        if (await dbContext.Users.AnyAsync(u => u.Email == normalizedEmail))
+        {
+            return new LocalUserCreateResult(LocalUserCreateStatus.EmailTaken);
+        }
+
+        var user = new User
+        {
+            // Synthesized unique identifier for a local (non-OAuth) account. "local__{guid}" keeps the
+            // "{name}__{authid}" shape the rest of the system splits on, without ever colliding with a real
+            // provider subject. The chosen name lives in LoginUsername/DisplayName, not the identifier.
+            Identifier = $"local__{Guid.NewGuid():N}",
+            DisplayName = username,
+            LoginUsername = username,
+            PasswordHash = passwordService.Hash(password),
+            Email = normalizedEmail,
+            EmailVerified = true,
+            Role = IdentityRole.User,
+
+            // No OAuth UserIdentity for a local signup: the Identities collection stays empty. Resolution
+            // by the "uid" claim (stamped at sign-in) never needs an identity row.
+        };
+
+        dbContext.Users.Add(user);
+
+        try
+        {
+            await dbContext.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            // Lost the uniqueness race between the pre-check and the insert. Re-read on a fresh context to
+            // report which constraint fired so the UI can steer the user correctly.
+            await using var probe = await dbContextFactory.CreateDbContextAsync();
+            if (await probe.Users.AnyAsync(u => u.Email == normalizedEmail))
+            {
+                return new LocalUserCreateResult(LocalUserCreateStatus.EmailTaken);
+            }
+
+            return new LocalUserCreateResult(LocalUserCreateStatus.UsernameTaken);
+        }
+
+        return new LocalUserCreateResult(LocalUserCreateStatus.Created, user);
+    }
+
+    public async Task ResetPasswordAsync(Guid userId, string newPassword)
+    {
+        if (string.IsNullOrEmpty(newPassword) || newPassword.Length < MinPasswordLength)
+        {
+            throw new InvalidOperationException($"Password must be at least {MinPasswordLength} characters.");
+        }
+
+        await using var dbContext = await dbContextFactory.CreateDbContextAsync();
+        var dbUser = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId)
+                     ?? throw new InvalidOperationException("User not found.");
+
+        // No step-up here: the verified reset code is itself the proof of control. Only the password hash
+        // changes — the lockout counters are left to the login lockout service, unchanged.
+        dbUser.PasswordHash = passwordService.Hash(newPassword);
+        await dbContext.SaveChangesAsync();
     }
 
     private static bool IsValidUsername(string username)

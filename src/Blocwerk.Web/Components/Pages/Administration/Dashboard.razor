@@ -1,0 +1,91 @@
+@page "/administration"
+@rendermode InteractiveServer
+@using Blocwerk.Authentication.Authorization
+@attribute [Authorize(Policy = BlocwerkPolicies.AppAdmin)]
+@inject IAdminDashboardService AdminDashboard
+
+<PageTitle>Administration - Blocwerk</PageTitle>
+
+<div class="admin-dashboard">
+    <div class="list-header">
+        <h1>Administration</h1>
+    </div>
+
+    @if (_overview is null)
+    {
+        <p class="loading">Loading...</p>
+    }
+    else
+    {
+        <div class="stats-bar">
+            <div class="stat">
+                <span class="stat-value">@_overview.TotalWalls</span>
+                <span class="stat-label">Walls</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value">@_overview.TotalUsers</span>
+                <span class="stat-label">Users</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value">@_overview.TotalBoulders</span>
+                <span class="stat-label">Boulders</span>
+            </div>
+        </div>
+
+        @if (_overview.Walls.Count == 0)
+        {
+            <div class="empty-state">
+                <p>No walls yet.</p>
+            </div>
+        }
+        else
+        {
+            <div class="leaderboard-scroll">
+                <table class="leaderboard-table">
+                    <thead>
+                        <tr>
+                            <th>Wall</th>
+                            <th class="num">Members</th>
+                            <th class="num">Boulders</th>
+                            <th class="num">Activity (30d)</th>
+                            <th class="num">Live</th>
+                            <th>Last activity</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var wall in _overview.Walls)
+                        {
+                            <tr>
+                                <td>@wall.WallName</td>
+                                <td class="num">@wall.MemberCount</td>
+                                <td class="num">@wall.BoulderCount</td>
+                                <td class="num">@wall.RecentActivityCount</td>
+                                <td class="num">@wall.ActiveSessionCount</td>
+                                <td>@FormatLastActivity(wall.LastActivityAt)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private AdminOverview? _overview;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _overview = await AdminDashboard.GetOverviewAsync();
+    }
+
+    private static string FormatLastActivity(DateTimeOffset? at)
+    {
+        if (at is not { } value)
+        {
+            return "—";
+        }
+
+        return value.ToLocalTime().ToString("yyyy-MM-dd");
+    }
+}

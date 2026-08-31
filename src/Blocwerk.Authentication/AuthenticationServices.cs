@@ -53,6 +53,10 @@ public static class AuthenticationServices
         app.Services.AddSingleton<ITotpService, TotpService>();
         app.Services.AddSingleton<IAuthorizationHandler, WallGalleryImageHandler>();
 
+        // App-wide admin gate. Scoped, not singleton, because it resolves the current user through the
+        // scoped ICurrentUserService — the Admin role is not a claim, so it must be read per request.
+        app.Services.AddScoped<IAuthorizationHandler, AppAdminHandler>();
+
         // TopLogger token pair, encrypted at rest with the persisted DataProtection key ring
         // (protector "blocwerk.toplogger"). Lives here — with the DataProtection stack — while
         // Blocwerk.Core owns only the ITopLoggerTokenStore interface, so there is no circular reference.
@@ -107,6 +111,11 @@ public static class AuthenticationServices
             options.AddPolicy(BlocwerkPolicies.UserApiKey, policy => BuildApiKeyPolicy(policy, ApiKeyScope.User));
             options.AddPolicy(BlocwerkPolicies.AnyApiKey, policy => BuildApiKeyPolicy(policy, null));
             options.AddPolicy(BlocwerkPolicies.WallGalleryImage, BuildGalleryImagePolicy(new AuthorizationPolicyBuilder()));
+            options.AddPolicy(BlocwerkPolicies.AppAdmin, policy =>
+            {
+                policy.RequireAuthenticatedUser();
+                policy.AddRequirements(new AppAdminRequirement());
+            });
         });
 
         app.Services.AddAntiforgery(options =>

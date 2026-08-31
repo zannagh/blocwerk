@@ -23,6 +23,41 @@ if [ -n "${GHCR_TOKEN:-}" ]; then
   echo "$GHCR_TOKEN" | docker login ghcr.io -u "${GHCR_USER:-zannagh}" --password-stdin
 fi
 
+# Busy gate: hold the deploy while a user is actively creating a boulder or editing a wall (their
+# unsaved in-flight work would be lost when the container is recreated). The app's
+# /health/ready-to-deploy endpoint answers 200 + body "idle" when idle and 503 + body "busy" when
+# busy. busybox wget (curl is not in docker:27-cli) has no --fail flag, so we capture the body with
+# -O - and only proceed when wget succeeded AND that body says "idle". Any non-zero wget (a 503, or
+# unreachable) OR a 2xx whose body isn't "idle" (a fail-open we must not trust) keeps us waiting.
+# Interval ~15s, capped at ~120 tries (~30 min) so a stuck-busy state can never block a deploy forever.
+HEALTH_URL="${HEALTH_URL:-https://blocwerk.zannagh.me/health/ready-to-deploy}"
+GATE_INTERVAL="${GATE_INTERVAL:-15}"
+GATE_MAX_TRIES="${GATE_MAX_TRIES:-120}"
+
+gate_try=0
+while :; do
+  # `if body=$(...)` keeps set -e from aborting on a non-zero wget: the assignment's status is
+  # wget's, and using it as an if-condition is exempt from set -e.
+  if body=$(wget -q -O - -T 5 "$HEALTH_URL" 2>/dev/null); then
+    case "$body" in
+      *idle*)
+        echo "[deploy-hook] $(stamp) busy gate clear (idle), proceeding."
+        break
+        ;;
+    esac
+  fi
+
+  gate_try=$((gate_try + 1))
+  if [ "$gate_try" -ge "$GATE_MAX_TRIES" ]; then
+    waited_min=$(( gate_try * GATE_INTERVAL / 60 ))
+    echo "[deploy-hook] $(stamp) WARNING: busy-gate timed out after ~30m (${waited_min}m); DEPLOYING ANYWAY — a user may have been mid-edit."
+    break
+  fi
+
+  echo "[deploy-hook] $(stamp) app busy (or gate unreachable), waiting... (try ${gate_try}/${GATE_MAX_TRIES})"
+  sleep "$GATE_INTERVAL"
+done
+
 echo "[deploy-hook] $(stamp) pulling ${SERVICE} image..."
 docker compose -f "$COMPOSE_FILE" pull "$SERVICE"
 

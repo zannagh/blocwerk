@@ -30,7 +30,7 @@
         @Body
     </main>
 
-    <nav class="bw-tabbar">
+    <nav class="bw-tabbar @(_tabbarCollapsed ? "collapsed" : null)">
         <AuthorizeView>
             <Authorized>
                 <a href="/walls" class="nav-item">
@@ -72,6 +72,16 @@
                         <span>Activity</span>
                     </a>
                 }
+                @if (_isAdmin)
+                {
+                    <a href="/administration" class="nav-item">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
+                            <path d="M12 3l7 4v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V7z" />
+                            <polyline points="9 12 11 14 15 10" />
+                        </svg>
+                        <span>Admin</span>
+                    </a>
+                }
             </Authorized>
         </AuthorizeView>
         <a href="/tools" class="nav-item">
@@ -92,7 +102,23 @@
                 </a>
             </Authorized>
         </AuthorizeView>
+        <button type="button" class="tabbar-toggle" aria-label="Hide navigation bar"
+                @onclick="() => _tabbarCollapsed = true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
+                <polyline points="6 9 12 15 18 9" />
+            </svg>
+        </button>
     </nav>
+
+    @if (_tabbarCollapsed)
+    {
+        <button type="button" class="tabbar-restore" aria-label="Show navigation bar"
+                @onclick="() => _tabbarCollapsed = false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
+                <polyline points="6 15 12 9 18 15" />
+            </svg>
+        </button>
+    }
 
     @if (_showReauthToast && !_reauthDismissed)
     {
@@ -114,9 +140,11 @@
     private static readonly TimeSpan SessionSyncMinInterval = TimeSpan.FromHours(3);
 
     private Guid? _homeWallId;
+    private bool _isAdmin;
     private bool _startupTriggered;
     private bool _showReauthToast;
     private bool _reauthDismissed;
+    private bool _tabbarCollapsed;
 
     protected override async Task OnInitializedAsync()
     {
@@ -215,10 +243,12 @@
         {
             var user = await CurrentUserService.GetCurrentUserAsync();
             _homeWallId = user?.HomeWallId;
+            _isAdmin = user?.Role == IdentityRole.Admin;
         }
         catch (UnauthorizedAccessException)
         {
             _homeWallId = null;
+            _isAdmin = false;
         }
     }
 

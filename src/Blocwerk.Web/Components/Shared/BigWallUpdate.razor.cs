@@ -1,5 +1,6 @@
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
+using Blocwerk.Web.State;
 using Microsoft.AspNetCore.Components;
 
 namespace Blocwerk.Web.Components.Shared;
@@ -10,10 +11,19 @@ namespace Blocwerk.Web.Components.Shared;
 /// promote it all live in one go. Orchestrates the phases and the <see cref="IWallBigUpdateService"/>
 /// calls; each phase's UI lives in its own component. State here, markup in the .razor.
 /// </summary>
-public partial class BigWallUpdate
+public partial class BigWallUpdate : IDisposable
 {
     [Inject]
     private IWallBigUpdateService BigUpdate { get; set; } = default!;
+
+    [Inject]
+    private CircuitEditActivity EditActivity { get; set; } = default!;
+
+    // The whole carryover flow is unsaved, in-flight wall work (staged panels, carryover decisions,
+    // overlap links) until Apply promotes it. Hold a wall-edit busy lease for the component's mounted
+    // lifetime so a deploy can't recreate the container mid-flow. Released in Dispose (WallDetail
+    // unmounts this component when the flow closes), with the circuit-teardown backstop behind it.
+    private IDisposable? _editLease;
 
     [Parameter] public Guid WallId { get; set; }
     [Parameter] public int CurrentGeneration { get; set; }
@@ -46,6 +56,8 @@ public partial class BigWallUpdate
 
     protected override async Task OnInitializedAsync()
     {
+        _editLease = EditActivity.BeginWallEdit(WallId, userId: null);
+
         // A prior update may still be in flight (staged panels persisted); offer to resume it.
         try
         {
@@ -187,4 +199,9 @@ public partial class BigWallUpdate
     }
 
     private Task Close() => OnClose.InvokeAsync();
+
+    public void Dispose()
+    {
+        _editLease?.Dispose();
+    }
 }

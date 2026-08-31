@@ -61,6 +61,8 @@ public class BlocwerkDbContext : DbContext
 
     public DbSet<UserIdentity> UserIdentities => Set<UserIdentity>();
 
+    public DbSet<EmailVerificationCode> EmailVerificationCodes => Set<EmailVerificationCode>();
+
     public DbSet<TopLoggerConnection> TopLoggerConnections => Set<TopLoggerConnection>();
 
     public DbSet<ExternalGym> ExternalGyms => Set<ExternalGym>();
@@ -95,6 +97,7 @@ public class BlocwerkDbContext : DbContext
 
         ConfigureUser(modelBuilder);
         ConfigureUserIdentity(modelBuilder);
+        ConfigureEmailVerificationCode(modelBuilder);
         ConfigureWall(modelBuilder);
         ConfigureWallMember(modelBuilder);
         ConfigureWallSegment(modelBuilder);
@@ -356,6 +359,13 @@ public class BlocwerkDbContext : DbContext
                 .IsUnique()
                 .HasFilter("\"LoginUsername\" IS NOT NULL");
 
+            // Email is unique across users. Filtered to non-null so the many users without one (all
+            // NULLs) don't collide. Case-insensitive uniqueness comes from always storing the address
+            // normalized (lower-cased), the same way LoginUsername is — same index shape.
+            entity.HasIndex(u => u.Email)
+                .IsUnique()
+                .HasFilter("\"Email\" IS NOT NULL");
+
             // Home wall is an optional scalar FK (no nav) so it never trips the Wall membership
             // query filter. Deleting the wall nulls the field rather than blocking the delete.
             entity.HasOne<Wall>()
@@ -380,6 +390,15 @@ public class BlocwerkDbContext : DbContext
             entity.HasIndex(i => new { i.Provider, i.ProviderUserId }).IsUnique();
 
             entity.HasIndex(i => i.UserId);
+        });
+    }
+
+    private static void ConfigureEmailVerificationCode(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<EmailVerificationCode>(entity =>
+        {
+            // Every lookup (rate-limit check, invalidate-priors, verify) is keyed by (email, purpose).
+            entity.HasIndex(c => new { c.Email, c.Purpose });
         });
     }
 

@@ -21,4 +21,11 @@ public static class BlocwerkPolicies
     /// viewer, never an API key.
     /// </summary>
     public const string WallGalleryImage = "WallGalleryImage";
+
+    /// <summary>
+    /// Guards the app-wide administration area: a signed-in user whose role is
+    /// <see cref="Blocwerk.Core.Enums.IdentityRole.Admin"/>. The role is not a claim, so the policy
+    /// is decided by <see cref="AppAdminHandler"/> against the database, not the principal.
+    /// </summary>
+    public const string AppAdmin = "AppAdmin";
 }

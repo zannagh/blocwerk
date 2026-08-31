@@ -47,30 +47,48 @@
                         </div>
                     </div>
 
-                    <div class="contribution-grid">
-                        @for (int week = 0; week < _weekCount; week++)
+                    <div class="contribution-section">
+                        @if (_years.Count > 1)
                         {
-                            var w = week;
-                            <div class="grid-column">
-                                @for (int day = 0; day < 7; day++)
+                            <div class="year-selector">
+                                @foreach (var year in _years.OrderByDescending(y => y))
                                 {
-                                    var idx = w * 7 + day;
-                                    if (idx < _grid.Count)
-                                    {
-                                        var item = _grid[idx];
-                                        <div class="grid-cell intensity-@item.Intensity"
-                                             title="@item.Date.ToString("MMM d") — @IntensityLabel(item.Intensity)"
-                                             @onclick="() => SelectDay(item.Date)"></div>
-                                    }
+                                    <button class="year-btn @(year == _selectedYear ? "active" : "")"
+                                            @onclick="() => SelectYear(year)">
+                                        @year
+                                    </button>
                                 }
                             </div>
                         }
-                    </div>
-                    <div class="month-labels">
-                        @foreach (var label in _monthLabels)
-                        {
-                            <span class="month-label" style="left: @label.OffsetPercent%;">@label.Name</span>
-                        }
+                        <div class="contribution-scroll">
+                            <div class="contribution-inner">
+                                <div class="contribution-grid">
+                                    @for (int week = 0; week < _weekCount; week++)
+                                    {
+                                        var w = week;
+                                        <div class="grid-column">
+                                            @for (int day = 0; day < 7; day++)
+                                            {
+                                                var idx = w * 7 + day;
+                                                if (idx < _grid.Count)
+                                                {
+                                                    var item = _grid[idx];
+                                                    <div class="grid-cell intensity-@item.Intensity"
+                                                         title="@item.Date.ToString("MMM d") — @IntensityLabel(item.Intensity)"
+                                                         @onclick="() => SelectDay(item.Date)"></div>
+                                                }
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                                <div class="month-labels">
+                                    @foreach (var label in _monthLabels)
+                                    {
+                                        <span class="month-label" style="left: @label.OffsetPercent%;">@label.Name</span>
+                                    }
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     <div class="grid-legend">
                         <span class="legend-text">Less</span>
@@ -282,6 +300,8 @@
     public string? View { get; set; }
 
     private List<DayActivity>? _grid;
+    private List<int> _years = [];
+    private int _selectedYear;
     private bool _showWallPicker;
     private List<Wall>? _myWalls;
     private int _weekCount;
@@ -299,7 +319,10 @@
     protected override async Task OnInitializedAsync()
     {
         _initialPage = string.Equals(View, "list", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
-        _grid = await ProgressionService.GetActivityGridAsync(20);
+        _years = await ProgressionService.GetActivityYearsAsync();
+        var currentYear = DateTime.UtcNow.Year;
+        _selectedYear = _years.Contains(currentYear) ? currentYear : _years.Max();
+        _grid = await ProgressionService.GetActivityGridForYearAsync(_selectedYear);
         _weekCount = (_grid.Count + 6) / 7;
         _progression = await ProgressionService.GetProgressionAsync();
         _activities = await ProgressionService.GetActivitiesAsync();
@@ -377,10 +400,29 @@
 
     private async Task ReloadAsync()
     {
-        if (_selectedDay != null) _selectedDay = await ProgressionService.GetDaySummaryAsync(_selectedDay.Date);
-        _grid = await ProgressionService.GetActivityGridAsync(20);
+        if (_selectedDay != null)
+        {
+            _selectedDay = await ProgressionService.GetDaySummaryAsync(_selectedDay.Date);
+        }
+
+        _grid = await ProgressionService.GetActivityGridForYearAsync(_selectedYear);
+        _weekCount = (_grid.Count + 6) / 7;
+        BuildMonthLabels();
         _progression = await ProgressionService.GetProgressionAsync();
         _activities = await ProgressionService.GetActivitiesAsync();
+    }
+
+    private async Task SelectYear(int year)
+    {
+        if (year == _selectedYear)
+        {
+            return;
+        }
+
+        _selectedYear = year;
+        _grid = await ProgressionService.GetActivityGridForYearAsync(year);
+        _weekCount = (_grid.Count + 6) / 7;
+        BuildMonthLabels();
     }
 
     private async Task OnWindowChange(ChangeEventArgs e)

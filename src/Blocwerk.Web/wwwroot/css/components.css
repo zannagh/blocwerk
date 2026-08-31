@@ -120,9 +120,18 @@
 /* --crop-scale (default 1) is written by JS (viewport.js fitBox) when the view is framed to the
    wall region: it widens the shared content layer so the region fills the box, composing with
    --zoom in the same calc. Both custom properties are JS-owned; Razor renders no width. */
-.photo-editor { position: relative; overflow: hidden; user-select: none;
+/* border-radius here (with the existing overflow:hidden) rounds the framed/scrolled
+   content so its BOTTOM corners match the outer .photo-section's 12px rounding — the
+   inner square-corner mismatch was the visible defect. At fit (unframed, --zoom/--crop-scale=1)
+   the content fills the box exactly so all four corners align; when zoomed/framed the
+   overflow is clipped to the same radius. */
+.photo-editor { position: relative; overflow: hidden; user-select: none; border-radius: 12px;
     width: calc(var(--zoom, 1) * var(--crop-scale, 1) * 100%); min-width: 100%; }
-.photo-editor .wall-photo { width: 100%; display: block; }
+/* Forbid the native image drag (desktop click-drag ghost) and the iOS tap-and-hold
+   callout / selection, so a press-drag pans (see viewport-gestures.js) instead of
+   grabbing the image. Mirrors the .stitcher-layer precedent in pages.css. */
+.photo-editor .wall-photo { width: 100%; display: block;
+    -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; -webkit-user-drag: none; }
 .photo-editor .hold-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
 /* Boulder viewer only: the overlay holds are display-only (no tap/click handlers), so let
    pointer/touch events fall through to the viewport. Otherwise a mouse drag or double-tap that

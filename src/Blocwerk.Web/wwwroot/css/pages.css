@@ -324,6 +324,9 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     -webkit-overflow-scrolling: touch;
 }
 .wall-carousel::-webkit-scrollbar { display: none; }
+/* Hidden until the initial page is positioned (see wall-carousel.js initPage), so the first
+   painted frame is already the target page instead of a flash of page 1. */
+.wall-carousel.carousel-pending { visibility: hidden; }
 .wall-page {
     flex: 0 0 100%;
     width: 100%;
@@ -358,6 +361,58 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     height: 10px;
     opacity: 1;
     background: var(--accent);
+}
+
+/* Compact page indicator under the wall name in the top bar. */
+.topbar-wall-name { display: block; }
+.topbar-page-dots {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 5px;
+    margin-top: 3px;
+}
+.topbar-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--text-secondary);
+    opacity: 0.35;
+    transition: opacity 0.18s, background 0.18s, transform 0.18s;
+}
+.topbar-dot.active {
+    opacity: 1;
+    background: var(--accent);
+    transform: scale(1.25);
+}
+
+/* Collapsible wall-settings cards: the <summary> reads as the card header. */
+.settings-card > .settings-card-summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.settings-card > .settings-card-summary::-webkit-details-marker { display: none; }
+.settings-card > .settings-card-summary h2 { margin-bottom: 0; }
+.settings-card > .settings-card-summary::after {
+    content: "▾";
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    transition: transform 0.18s;
+}
+.settings-card[open] > .settings-card-summary::after { transform: rotate(180deg); }
+.settings-card > .settings-card-summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.settings-card > .settings-card-body { margin-top: 14px; }
+/* The API-key panel supplies its own settings-panel chrome; drop the nested inset inside its card. */
+.settings-card > .settings-card-body > .wall-apikey-panel {
+    margin-top: 0;
+    padding: 0;
+    background: none;
+    border: none;
+    box-shadow: none;
 }
 
 .app-shell:has(.wall-carousel-root.editing) .carousel-dots { display: none; }
@@ -1137,9 +1192,23 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
 }
 .wall-pick-item:hover { border-color: var(--accent); background: var(--accent-soft); }
 
-.contribution-grid { display: flex; gap: 2px; width: 100%; }
-.grid-column { display: flex; flex-direction: column; gap: 2px; flex: 1; }
-.grid-cell { width: 100%; aspect-ratio: 1; border-radius: 2px; cursor: pointer; }
+/* GitHub-style contribution graph: fixed-metric cells that can be wider than the viewport, with the
+   grid area scrolling horizontally (swipe / trackpad / overflow) so the page body never scrolls sideways.
+   A vertical year selector sits to its left; it is omitted entirely when only one year has data. */
+.contribution-section { display: flex; align-items: flex-start; gap: 10px; }
+.year-selector { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
+.year-btn {
+    padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--input-bg); color: var(--text-secondary);
+    font-size: 0.8rem; font-weight: 600; cursor: pointer; text-align: center;
+}
+.year-btn:hover { border-color: var(--accent); }
+.year-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.contribution-scroll { flex: 1; min-width: 0; overflow-x: auto; }
+.contribution-inner { display: inline-block; }
+.contribution-grid { display: flex; gap: 3px; }
+.grid-column { display: flex; flex-direction: column; gap: 3px; }
+.grid-cell { width: 11px; height: 11px; border-radius: 2px; cursor: pointer; }
 .grid-cell.intensity-0 { background: #ebedf0; }
 .grid-cell.intensity-1 { background: #9be9a8; }
 .grid-cell.intensity-2 { background: #40c463; }
@@ -1148,7 +1217,7 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
 
 [data-theme="dark"] .grid-cell.intensity-0 { background: #2d2d3a; }
 
-.month-labels { position: relative; height: 18px; margin-top: 4px; }
+.month-labels { position: relative; width: 100%; height: 18px; margin-top: 4px; }
 .month-label { position: absolute; font-size: 0.65rem; color: var(--text-secondary); transform: translateX(-50%); }
 
 .grid-legend { display: flex; align-items: center; gap: 3px; margin-top: 2px; justify-content: flex-end; }
@@ -1583,7 +1652,7 @@ html.bw-fullscreen .wall-main .photo-viewport {
 }
 .apidocs-note { font-size: 0.74rem; color: var(--text-secondary); line-height: 1.5; margin: 8px 0 0; font-style: italic; }
 
-.profile-links { text-align: center; margin-top: 12px; font-size: 0.85rem; }
+.profile-links { text-align: center; margin-top: 12px; margin-bottom: 24px; font-size: 0.85rem; }
 
 /* ========== Wall details page (temperature, gallery, wall API keys) ========== */
 
