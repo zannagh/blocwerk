@@ -105,6 +105,34 @@ public static class CoreServices
         return builder;
     }
 
+    /// <summary>
+    /// True when the exception indicates Postgres is not yet available (still starting/recovering or
+    /// not accepting connections) — a transient startup condition worth retrying, as opposed to a
+    /// real migration/schema error which must fail loudly.
+    /// </summary>
+    private static bool IsDatabaseUnavailable(Exception ex)
+    {
+        for (var e = ex; e is not null; e = e.InnerException)
+        {
+            if (e is Npgsql.PostgresException pg)
+            {
+                // 57xxx = operator intervention (incl. 57P03 "the database system is starting up");
+                // 08xxx = connection exceptions. Any other SQL state (e.g. a real 42xxx migration
+                // error) must NOT be retried.
+                return pg.SqlState.StartsWith("57", StringComparison.Ordinal)
+                    || pg.SqlState.StartsWith("08", StringComparison.Ordinal);
+            }
+
+            if (e is Npgsql.NpgsqlException)
+            {
+                // Socket/connection failure — Postgres isn't accepting connections yet.
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public static IHost ConfigureCoreApplication(this IHost app)
     {
         using var scope = app.Services.CreateScope();
@@ -114,7 +142,28 @@ public static class CoreServices
         try
         {
             var db = scope.ServiceProvider.GetRequiredService<BlocwerkDbContext>();
-            db.Database.Migrate();
+
+            // After a host reboot the Docker daemon restarts containers in arbitrary order (compose
+            // depends_on does NOT apply on reboot), so Postgres may still be doing crash recovery
+            // (57P03 "the database system is starting up") or not yet accepting connections. Retry
+            // the migration instead of crashing the whole app on that transient condition.
+            const int maxDbWaitAttempts = 30;
+            var attempt = 0;
+            while (true)
+            {
+                try
+                {
+                    db.Database.Migrate();
+                    break;
+                }
+                catch (Exception ex) when (!env.IsDevelopment() && attempt < maxDbWaitAttempts && IsDatabaseUnavailable(ex))
+                {
+                    attempt++;
+                    logger.LogWarning("Database not ready yet (attempt {Attempt}/{Max}): {Message}. Retrying in 5s…",
+                        attempt, maxDbWaitAttempts, ex.Message);
+                    System.Threading.Thread.Sleep(TimeSpan.FromSeconds(5));
+                }
+            }
         }
         catch (Exception ex) when (env.IsDevelopment())
         {
