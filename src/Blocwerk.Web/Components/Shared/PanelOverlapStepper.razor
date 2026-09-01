@@ -18,17 +18,72 @@
     {
         <p class="loading-small">Loading holds…</p>
     }
+    else if (_finishing)
+    {
+        <p class="loading-small">Adding panel…</p>
+    }
+    else if (_manualMode)
+    {
+        <p class="panel-stepper-hint">Tap a hold on the left (neighbour) and the same physical hold on the right (new panel), then mark them as overlapping. Repeat for as many as you need.</p>
+
+        @if (_neighborPanels.Count > 1 && _manualNeighborId is { } curNeighbor)
+        {
+            <div class="panel-stepper-bar">
+                <span class="panel-stepper-progress">Neighbour</span>
+                @foreach (var n in _neighborPanels)
+                {
+                    <button class="opt-btn @(n.Id == curNeighbor ? "active" : "")" @onclick="() => SelectManualNeighbor(n.Id)">(@n.Col, @n.Row)</button>
+                }
+            </div>
+        }
+
+        @if (_manualNeighborId is { } neighborId)
+        {
+            <div class="panel-stepper-pair">
+                <PanelImageView WallId="WallId" Caption="Existing neighbour — pick a hold"
+                                PhotoUrl="@PhotoUrl(neighborId, staged: false)"
+                                Holds="NeighborHolds(neighborId)"
+                                SelectedHoldId="_manualLeftId"
+                                Interactive="true"
+                                FocusKey="_manualFocusKey"
+                                OnHoldTap="OnManualLeftTap" />
+
+                <PanelImageView WallId="WallId" Caption="New panel — pick the same hold"
+                                PhotoUrl="@PhotoUrl(PanelId, staged: true)"
+                                Holds="_stagedList"
+                                SelectedHoldId="_manualRightId"
+                                Interactive="true"
+                                FocusKey="_manualFocusKey"
+                                OnHoldTap="OnManualRightTap" />
+            </div>
+        }
+        else
+        {
+            <p class="staged-hint">No live neighbour panel is available to link to.</p>
+        }
+
+        @if (!string.IsNullOrEmpty(_warning))
+        {
+            <p class="staged-hint danger">@_warning</p>
+        }
+
+        <div class="panel-stepper-actions">
+            <span class="panel-stepper-hint">@_manualLinks.Count manual link@(_manualLinks.Count == 1 ? "" : "s") added.</span>
+            <button class="btn-primary" @onclick="MarkManualOverlap" disabled="@(_manualLeftId is null || _manualRightId is null)" title="Mark the two selected holds as the same physical hold (Enter)">Mark as overlapping</button>
+            <button class="btn-secondary" @onclick="CancelManual" title="Back to the proposals (Esc)">Done</button>
+        </div>
+    }
     else if (_steps.Count == 0)
     {
         <p class="staged-hint">No overlapping holds were proposed. You can still add this panel — it just won't be linked to a neighbour yet.</p>
         <div class="staged-actions">
             <button class="btn-primary" @onclick="Finish">Add panel</button>
+            @if (_neighborPanels.Count > 0)
+            {
+                <button class="btn-secondary" @onclick="EnterManual">Link holds manually@(_manualLinks.Count > 0 ? $" ({_manualLinks.Count})" : "")</button>
+            }
             <button class="btn-secondary" @onclick="Discard">Cancel</button>
         </div>
-    }
-    else if (_finishing)
-    {
-        <p class="loading-small">Adding panel…</p>
     }
     else
     {
@@ -92,6 +147,12 @@
             </div>
             <div class="panel-stepper-foot">
                 <span class="panel-stepper-legend"><kbd>Enter</kbd>/<kbd>C</kbd> confirm · <kbd>D</kbd> discard · <kbd>M</kbd> moved · <kbd>X</kbd> delete · <kbd>←</kbd>/<kbd>→</kbd> step</span>
+                @if (_neighborPanels.Count > 0)
+                {
+                    <button class="btn-link" @onclick="EnterManual" title="Manually link a neighbour hold to a new-panel hold the matcher missed">
+                        Link holds manually@(_manualLinks.Count > 0 ? $" ({_manualLinks.Count})" : "")
+                    </button>
+                }
                 <button class="btn-link" @onclick="ConfirmAllHighConfidence" title="Auto-confirm every remaining match at 90% or higher, discard the rest, and finish">
                     Confirm all remaining ≥ 90% (@RemainingHighConfidence)
                 </button>

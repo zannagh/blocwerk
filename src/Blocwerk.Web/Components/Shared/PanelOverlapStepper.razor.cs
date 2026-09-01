@@ -36,6 +36,17 @@ public partial class PanelOverlapStepper
     private Guid? _movedSelectedHoldId;
     private bool _refocus = true;
 
+    // Free-form manual pairing: link a neighbour hold to a new-panel hold the matcher never proposed.
+    // Independent of the proposal steps (which live in the fixed-length _decisions array), so manual
+    // links get their own list and go in alongside the decisions at Finish. Works with zero proposals.
+    private bool _manualMode;
+    private Guid? _manualNeighborId;
+    private Guid? _manualLeftId;
+    private Guid? _manualRightId;
+    private int _manualFocusKey;
+    private readonly List<ConfirmedLink> _manualLinks = [];
+    private List<WallPanelInfo> _neighborPanels = [];
+
     private ElementReference _rootRef;
     private Dictionary<Guid, PanelHold> _stagedHolds = [];
     private List<PanelHold> _stagedList = [];
@@ -50,7 +61,27 @@ public partial class PanelOverlapStepper
         _stagedHolds = staged.ToDictionary(h => h.Id);
         _stagedList = staged.ToList();
 
-        foreach (var neighborId in _steps.Select(p => p.NeighborPanelId).Distinct())
+        // The adjacent live neighbours are the left-hand candidates for manual linking — including
+        // ones the matcher produced no proposal for, so manual mode works even with zero proposals.
+        // Computed from this new panel's grid position against the wall's live panels.
+        var neighborPositions = new HashSet<(int Col, int Row)>
+        {
+            (Col - 1, Row), (Col + 1, Row), (Col, Row - 1), (Col, Row + 1),
+        };
+        var panels = await WallPanelService.GetPanelsAsync(WallId);
+        _neighborPanels = panels
+            .Where(p => p.IsLive && neighborPositions.Contains((p.Col, p.Row)))
+            .ToList();
+        _manualNeighborId = _neighborPanels.FirstOrDefault()?.Id;
+
+        // Load holds for every neighbour we might show: the proposal steps' neighbours (proposal
+        // stepping) plus the grid-adjacent live neighbours (manual linking). Union so neither path
+        // is starved even if the two sets ever diverge.
+        var neighborIds = _neighborPanels
+            .Select(p => p.Id)
+            .Union(_steps.Select(p => p.NeighborPanelId))
+            .Distinct();
+        foreach (var neighborId in neighborIds)
         {
             _neighborHolds[neighborId] = await WallPanelService.GetPanelHoldsAsync(WallId, neighborId, includeStaged: false);
         }
@@ -166,6 +197,76 @@ public partial class PanelOverlapStepper
         Next();
     }
 
+    // ---- Manual linking --------------------------------------------------------
+    private void EnterManual()
+    {
+        if (_neighborPanels.Count == 0)
+        {
+            return;
+        }
+
+        _manualMode = true;
+        _movedMode = false;
+        _addMode = false;
+        _manualLeftId = null;
+        _manualRightId = null;
+        _manualNeighborId ??= _neighborPanels.First().Id;
+        _warning = null;
+        _manualFocusKey++;
+        _refocus = true;
+    }
+
+    private void CancelManual()
+    {
+        _manualMode = false;
+        _manualLeftId = null;
+        _manualRightId = null;
+        _warning = null;
+        _refocus = true;
+    }
+
+    private void OnManualLeftTap(Guid holdId) => _manualLeftId = holdId;
+
+    private void OnManualRightTap(Guid holdId) => _manualRightId = holdId;
+
+    private void SelectManualNeighbor(Guid neighborId)
+    {
+        _manualNeighborId = neighborId;
+        // The left selection belongs to a specific neighbour; drop it when switching neighbours.
+        _manualLeftId = null;
+        _manualFocusKey++;
+    }
+
+    /// <summary>
+    /// Records a free-form neighbour-hold ↔ new-hold pair the matcher never proposed, then clears the
+    /// two selections so the user can pair more. Reuses the same "one new hold, one link" guard as the
+    /// proposal steps and dedupes against links already marked manually.
+    /// </summary>
+    private void MarkManualOverlap()
+    {
+        if (_manualLeftId is not { } left || _manualRightId is not { } right)
+        {
+            return;
+        }
+
+        if (IsNewHoldTaken(right, exceptIndex: -1) || _manualLinks.Any(l => l.NewHoldId == right))
+        {
+            _warning = "That hold is already linked to another neighbour hold — pick a different one.";
+            return;
+        }
+
+        if (_manualLinks.Any(l => l.NeighborHoldId == left && l.NewHoldId == right))
+        {
+            _warning = "Those two holds are already marked as overlapping.";
+            return;
+        }
+
+        _manualLinks.Add(new ConfirmedLink(left, right, Moved: false));
+        _manualLeftId = null;
+        _manualRightId = null;
+        _warning = null;
+    }
+
     /// <summary>Records a decision, guarding against linking the same new hold from two steps.</summary>
     private bool TryRecord(ConfirmedLink link)
     {
@@ -245,6 +346,7 @@ public partial class PanelOverlapStepper
         var links = _decisions
             .Where(d => d is not null)
             .Select(d => d!)
+            .Concat(_manualLinks)
             .Where(d => !_removed.Contains(d.NeighborHoldId))
             .ToList();
         await OnConfirm.InvokeAsync(new PanelConfirmation(links, _removed.ToList()));

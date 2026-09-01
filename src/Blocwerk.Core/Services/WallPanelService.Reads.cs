@@ -96,7 +96,7 @@ public partial class WallPanelService
         var panel = await db.WallPanels
             .AsNoTracking()
             .Where(p => p.Id == panelId && p.WallId == wallId)
-            .Select(p => new { HasLive = p.Photo != null })
+            .Select(p => new { HasLive = p.Photo != null, p.Generation })
             .FirstOrDefaultAsync();
         if (panel is null || (!includeStaged && !panel.HasLive))
         {
@@ -113,11 +113,14 @@ public partial class WallPanelService
             return [];
         }
 
-        // Staged holds from an in-flight big-wall update live one generation ahead of the live wall
-        // (see WallBigUpdateService: stagedGen = CurrentGeneration + 1). When the caller asks for the
-        // staged view we must read that generation — otherwise the update UI (carryover re-target, the
-        // new panel overlap stepper) gets an empty list and shows no overlay on the staged image.
-        var effectiveGeneration = includeStaged ? generation.Value + 1 : generation.Value;
+        // A staged panel's holds live at the panel's OWN Generation, which differs by flow: the
+        // big-wall update stages panel + holds one generation ahead (WallBigUpdateService:
+        // stagedGen = CurrentGeneration + 1), while adding a single adjacent panel stages them AT the
+        // live generation (WallPanelService.StagePanelAsync: Generation = CurrentGeneration). Reading
+        // the panel's own Generation covers both — a blind CurrentGeneration + 1 would miss the
+        // add-panel holds and leave the overlap stepper's new-panel image with no overlay. The live
+        // view (includeStaged:false) always reads the current live generation.
+        var effectiveGeneration = includeStaged ? panel.Generation : generation.Value;
 
         return await db.Holds
             .AsNoTracking()

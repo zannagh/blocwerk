@@ -75,7 +75,27 @@ public partial class PanelOverlapStepper : IAsyncDisposable
 
     private void OnKeyDown(KeyboardEventArgs e)
     {
-        if (_loading || _finishing || _steps.Count == 0)
+        if (_loading || _finishing)
+        {
+            return;
+        }
+
+        if (_manualMode)
+        {
+            switch (e.Key)
+            {
+                case "Enter":
+                    MarkManualOverlap();
+                    break;
+                case "Escape":
+                    CancelManual();
+                    break;
+            }
+
+            return;
+        }
+
+        if (_steps.Count == 0)
         {
             return;
         }
