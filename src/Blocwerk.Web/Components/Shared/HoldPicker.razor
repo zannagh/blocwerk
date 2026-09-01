@@ -23,7 +23,7 @@
              style="cursor: @(_placingVirtual ? "crosshair" : "default");">
             @foreach (var hold in AllHolds)
             {
-                var selection = SelectedHolds.FirstOrDefault(s => s.HoldId == hold.Id);
+                var selection = SelectedEntryFor(hold.Id);
                 var isSelected = selection != null;
                 var isColorFoot = IsColorRuleFoot(hold);
                 var fillColor = isSelected
@@ -73,7 +73,7 @@ else
 
             @foreach (var hold in AllHolds)
             {
-                var selection = SelectedHolds.FirstOrDefault(s => s.HoldId == hold.Id);
+                var selection = SelectedEntryFor(hold.Id);
                 var isSelected = selection != null;
                 var isColorFoot = IsColorRuleFoot(hold);
                 var fillColor = isSelected
@@ -139,6 +139,15 @@ else
     [Parameter] public List<BoulderHoldInput> SelectedHolds { get; set; } = [];
     [Parameter] public EventCallback<List<BoulderHoldInput>> SelectedHoldsChanged { get; set; }
     [Parameter] public int WallAngle { get; set; }
+
+    /// <summary>
+    /// Cross-panel twin map for a multi-image wall: each hold id → the OTHER hold ids that are the same
+    /// physical hold seen on other panels (its <see cref="Blocwerk.Core.Entities.HoldLink"/> connected
+    /// component, minus itself). Null / empty on a single-image wall, where selection is a plain per-hold
+    /// lookup. Used only for display and dedupe — <see cref="SelectedHolds"/> still carries at most one
+    /// entry per physical hold, so the count and Publish label never inflate.
+    /// </summary>
+    [Parameter] public IReadOnlyDictionary<Guid, IReadOnlyList<Guid>>? HoldTwins { get; set; }
 
     /// <summary>
     /// The boulder's "hands follow feet" rule. While it is on the picker offers no
@@ -297,7 +306,7 @@ else
                 return null;
             }
 
-            var sel = SelectedHolds.FirstOrDefault(s => s.HoldId == _overlayHold.Id);
+            var sel = SelectedEntryFor(_overlayHold.Id);
             if (sel == null)
             {
                 return null;
@@ -337,11 +346,9 @@ else
             return;
         }
 
-        var existing = SelectedHolds.FirstOrDefault(s => s.HoldId == hold.Id);
-        if (existing != null)
-        {
-            SelectedHolds.Remove(existing);
-        }
+        // Drop any prior entry for this physical hold — its own, or a linked twin's on another panel —
+        // so exactly one entry survives, carried under the TAPPED hold's id.
+        RemoveEntriesFor(hold.Id);
 
         var (type, usage) = MapQuadrant(quadrant);
         SelectedHolds.Add(new BoulderHoldInput(hold.Id, type, usage));
@@ -358,12 +365,62 @@ else
             return;
         }
 
-        var existing = SelectedHolds.FirstOrDefault(s => s.HoldId == hold.Id);
-        if (existing != null)
+        if (RemoveEntriesFor(hold.Id))
         {
-            SelectedHolds.Remove(existing);
             await SelectedHoldsChanged.InvokeAsync(SelectedHolds);
         }
+    }
+
+    /// <summary>
+    /// The selection entry that makes <paramref name="holdId"/> read as selected: its own entry when
+    /// present, otherwise — on a multi-image wall — the entry of any linked twin (the same physical hold
+    /// seen on another panel). Twin-aware so a hold picked on one panel draws selected, with the twin's
+    /// Type/Usage, on the panel its twin lives on. Null when neither the hold nor any twin is selected.
+    /// On a single-image wall (<see cref="HoldTwins"/> null) this is exactly the direct lookup.
+    /// </summary>
+    private BoulderHoldInput? SelectedEntryFor(Guid holdId)
+    {
+        var direct = SelectedHolds.FirstOrDefault(s => s.HoldId == holdId);
+        if (direct != null)
+        {
+            return direct;
+        }
+
+        if (HoldTwins != null && HoldTwins.TryGetValue(holdId, out var twins))
+        {
+            foreach (var twinId in twins)
+            {
+                var twin = SelectedHolds.FirstOrDefault(s => s.HoldId == twinId);
+                if (twin != null)
+                {
+                    return twin;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Removes the selection entry for <paramref name="holdId"/> — its own, and any linked twin's on
+    /// another panel — preserving the invariant of at most one entry per physical hold. Returns whether
+    /// anything was removed. On a single-image wall this removes only the direct entry.
+    /// </summary>
+    private bool RemoveEntriesFor(Guid holdId)
+    {
+        var removed = SelectedHolds.RemoveAll(s => s.HoldId == holdId) > 0;
+        if (HoldTwins != null && HoldTwins.TryGetValue(holdId, out var twins))
+        {
+            foreach (var twinId in twins)
+            {
+                if (SelectedHolds.RemoveAll(s => s.HoldId == twinId) > 0)
+                {
+                    removed = true;
+                }
+            }
+        }
+
+        return removed;
     }
 
     private static (HoldType Type, HoldUsage Usage) MapQuadrant(RadialQuadrant quadrant) => quadrant switch
@@ -378,12 +435,13 @@ else
     {
         if (_isPanning) return;
         var usage = EffectiveUsage;
-        var existing = SelectedHolds.FirstOrDefault(s => s.HoldId == hold.Id);
+        var existing = SelectedEntryFor(hold.Id);
         if (existing != null)
         {
             // Re-tapping with the same tools deselects; with different tools it
-            // reclassifies, so switching tool and tapping again changes the mark.
-            SelectedHolds.Remove(existing);
+            // reclassifies, so switching tool and tapping again changes the mark. The prior
+            // entry may live under a linked twin's id, so clear the hold OR its twins first.
+            RemoveEntriesFor(hold.Id);
             if (existing.Type != _placeType || existing.Usage != usage)
             {
                 SelectedHolds.Add(new BoulderHoldInput(hold.Id, _placeType, usage));

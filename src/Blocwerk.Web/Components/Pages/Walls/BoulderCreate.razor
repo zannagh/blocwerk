@@ -57,6 +57,7 @@
                     WallAngle="_wall.Angle"
                     HandsFollowFeet="_handsFollowFeet"
                     FootColorOnly="_footColorOnly"
+                    HoldTwins="_holdTwins"
                     @bind-SelectedHolds="_selectedHolds" />
 
         <BoulderNewRules @bind-FootColorOnly="_footColorOnly"
@@ -126,6 +127,10 @@
     // Big-wall (multi-image) panel switcher state; empty / null on a normal single-image wall.
     private List<WallPanelInfo> _panels = [];
     private WallPanelInfo? _currentPanel;
+
+    // Cross-panel twin map handed to the picker so a hold linked across a seam reads as selected on
+    // both panels. Built only for multi-image walls; null on single-image walls (no behaviour change).
+    private IReadOnlyDictionary<Guid, IReadOnlyList<Guid>>? _holdTwins;
 
     private List<BoulderHoldInput> _selectedHolds = [];
 
@@ -224,6 +229,8 @@
                 }
 
                 _currentPanel = _panels.FirstOrDefault(p => p is { Col: 0, Row: 0 }) ?? _panels.FirstOrDefault();
+
+                await BuildTwinMapAsync();
             }
 
             RefreshPickerHolds();
@@ -245,6 +252,34 @@
         _pickerHolds = _wall is { UsesMultipleImages: true } && _currentPanel is not null
             ? _holds.Where(h => h.WallPanelId == _currentPanel.Id).ToList()
             : _holds;
+    }
+
+    // Builds the cross-panel twin map for the picker: each wall hold id → the OTHER hold ids in its
+    // HoldLink connected component. Only holds with at least one twin appear. Reuses the shared
+    // ConnectedComponents BFS over ALL wall hold ids so a transitive chain (centre-right-right2)
+    // collapses into one component. A failed link load leaves the map null — picking still works, just
+    // without cross-panel twin awareness.
+    private async Task BuildTwinMapAsync()
+    {
+        try
+        {
+            var links = await WallPanelService.GetHoldLinksAsync(WallId);
+            var components = HoldPropertySync.ConnectedComponents(_holds.Select(h => h.Id), links);
+            var map = new Dictionary<Guid, IReadOnlyList<Guid>>();
+            foreach (var component in components.Where(c => c.Count >= 2))
+            {
+                foreach (var id in component)
+                {
+                    map[id] = component.Where(other => other != id).ToList();
+                }
+            }
+
+            _holdTwins = map.Count > 0 ? map : null;
+        }
+        catch (Exception)
+        {
+            _holdTwins = null;
+        }
     }
 
     // Switching panels keeps the accumulated selection (it is holdId-based in _selectedHolds); only
