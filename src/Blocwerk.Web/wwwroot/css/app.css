@@ -405,15 +405,19 @@ h2 { font-size: 1.15rem; }
 .tabbar-toggle:hover { color: var(--text-heading); }
 .tabbar-toggle svg { width: 22px; height: 22px; }
 
-/* Collapsed: mirror the edit-mode approach (display:none) so the bar leaves no reserved space. */
-.bw-tabbar.collapsed { display: none; }
+/* Collapsed state lives as a class on <body>, toggled by wwwroot/js/nav.js (bwNav) — MainLayout is
+   static, so a Blazor field can't drive this. Mirror the edit-mode approach (display:none) so the
+   bar leaves no reserved space; its down-chevron sits inside the bar and disappears with it. */
+body.bw-tabbar-collapsed .bw-tabbar { display: none; }
 
-/* Floating '^' handle that stays visible while the bar is hidden so it can be brought back. */
+/* Floating '^' handle that brings the bar back — shown only while collapsed. */
+.tabbar-restore { display: none; }
+body.bw-tabbar-collapsed .tabbar-restore { display: flex; }
+
 .tabbar-restore {
     position: fixed;
     right: 12px;
     bottom: max(12px, env(safe-area-inset-bottom));
-    display: flex;
     align-items: center;
     justify-content: center;
     width: 40px;

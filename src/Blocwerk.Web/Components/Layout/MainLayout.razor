@@ -30,7 +30,7 @@
         @Body
     </main>
 
-    <nav class="bw-tabbar @(_tabbarCollapsed ? "collapsed" : null)">
+    <nav class="bw-tabbar">
         <AuthorizeView>
             <Authorized>
                 <a href="/walls" class="nav-item">
@@ -102,23 +102,23 @@
                 </a>
             </Authorized>
         </AuthorizeView>
+        @* Static layout: drive the toggle via JS/CSS (bwNav) — a Blazor @onclick would never fire
+           since MainLayout has no @rendermode. Both buttons live in the DOM permanently; CSS shows
+           the right one based on the body.bw-tabbar-collapsed class bwNav.toggleTabbar() flips. *@
         <button type="button" class="tabbar-toggle" aria-label="Hide navigation bar"
-                @onclick="() => _tabbarCollapsed = true">
+                onclick="bwNav.toggleTabbar()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
                 <polyline points="6 9 12 15 18 9" />
             </svg>
         </button>
     </nav>
 
-    @if (_tabbarCollapsed)
-    {
-        <button type="button" class="tabbar-restore" aria-label="Show navigation bar"
-                @onclick="() => _tabbarCollapsed = false">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
-                <polyline points="6 15 12 9 18 15" />
-            </svg>
-        </button>
-    }
+    <button type="button" class="tabbar-restore" aria-label="Show navigation bar"
+            onclick="bwNav.toggleTabbar()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
+            <polyline points="6 15 12 9 18 15" />
+        </svg>
+    </button>
 
     @if (_showReauthToast && !_reauthDismissed)
     {
@@ -144,7 +144,6 @@
     private bool _startupTriggered;
     private bool _showReauthToast;
     private bool _reauthDismissed;
-    private bool _tabbarCollapsed;
 
     protected override async Task OnInitializedAsync()
     {
