@@ -6,6 +6,7 @@ using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Helpers;
+using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -21,6 +22,7 @@ public class CurrentUserService : ICurrentUserService
     private readonly IPasswordLoginService _passwordLoginService;
     private readonly ITotpService _totpService;
     private readonly BlocwerkSettings _settings;
+    private readonly IKioskContext? _kioskContext;
 
     // Scoped service = one instance per circuit / HTTP request. The signed-in identity is stable for
     // that lifetime (sign-in/out does a full reload that starts a fresh scope), so resolve the User
@@ -34,8 +36,10 @@ public class CurrentUserService : ICurrentUserService
         IPasswordLoginService passwordLoginService,
         ITotpService totpService,
         AuthenticationStateProvider? authenticationStateProvider = null,
-        IHttpContextAccessor? accessor = null)
+        IHttpContextAccessor? accessor = null,
+        IKioskContext? kioskContext = null)
     {
+        _kioskContext = kioskContext;
         _accessor = accessor;
         _authenticationStateProvider = authenticationStateProvider;
         _dbContextFactory = dbContextFactory;
@@ -192,6 +196,8 @@ public class CurrentUserService : ICurrentUserService
 
     public async Task SetPasswordAsync(string loginUsername, string password, string? currentPassword)
     {
+        EnsureNotKiosk("Changing the password");
+
         // Resolve the signed-in user first: this asserts an authenticated identity and gives the id
         // the credential is attached to. There is no path here that creates a user.
         var user = await GetCurrentUserAsync();
@@ -203,6 +209,8 @@ public class CurrentUserService : ICurrentUserService
 
     public async Task<TotpEnrollment> BeginTotpEnrollmentAsync()
     {
+        EnsureNotKiosk("Enrolling a second factor");
+
         var user = await GetCurrentUserAsync();
 
         // TOTP is a second factor on top of the password, never a standalone credential: refuse to enrol
@@ -232,6 +240,8 @@ public class CurrentUserService : ICurrentUserService
 
     public async Task<bool> ConfirmTotpAsync(string code)
     {
+        EnsureNotKiosk("Enrolling a second factor");
+
         var user = await GetCurrentUserAsync();
 
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync();
@@ -266,6 +276,8 @@ public class CurrentUserService : ICurrentUserService
 
     public async Task<bool> DisableTotpAsync(string code)
     {
+        EnsureNotKiosk("Disabling the second factor");
+
         var user = await GetCurrentUserAsync();
 
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync();
@@ -467,6 +479,25 @@ public class CurrentUserService : ICurrentUserService
             ProviderUserId = providerUserId,
         });
         await dbContext.SaveChangesAsync();
+    }
+
+
+    /// <summary>
+    /// Refuses an account-security change while the session belongs to a kiosk tablet.
+    /// </summary>
+    /// <remarks>
+    /// A kiosk session keeps the picked user's full authority over the WALL, but it must never be
+    /// able to take over the ACCOUNT: whoever is standing at the tablet would still own the login
+    /// long after the 30 minutes are up. The check lives here, next to the mutation, because these
+    /// are called straight from interactive Blazor components inside the circuit, where no route
+    /// middleware ever runs — hiding the buttons is not a gate.
+    /// </remarks>
+    private void EnsureNotKiosk(string action)
+    {
+        if (_kioskContext is { IsKiosk: true })
+        {
+            throw new KioskRestrictedException($"{action} is not available from a kiosk session.");
+        }
     }
 
     private async Task<ClaimsIdentity?> TryGetClaimsIdentityFromCookie()

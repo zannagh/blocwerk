@@ -1,6 +1,7 @@
 using System.Text;
 using Blocwerk.Authentication.Authorization;
 using Blocwerk.Authentication.Handlers;
+using Blocwerk.Authentication.Kiosk;
 using Blocwerk.Authentication.Middleware;
 using Blocwerk.Authentication.Providers;
 using Blocwerk.Authentication.Services;
@@ -48,6 +49,15 @@ public static class AuthenticationServices
         app.Services.AddScoped<AuthenticationStateProvider, CookieAuthenticationStateProvider>();
         app.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 
+        // Kiosk mode. The device cookie's protector is a singleton (it is stateless and reads the
+        // same persisted key ring as the auth cookie); the context and the key validator are scoped,
+        // because "is this session a kiosk" is a property of the request/circuit and both cache
+        // within it. See KioskContext for how the scoped instance survives a live circuit.
+        app.Services.AddSingleton<KioskDeviceCookie>();
+        app.Services.AddScoped<IKioskContext, KioskContext>();
+        app.Services.AddScoped<KioskKeyValidator>();
+        app.Services.AddScoped<IAuthorizationHandler, KioskRouteHandler>();
+
         // TOTP second factor: stateless, so a singleton. Uses the persisted DataProtection key ring to
         // encrypt the shared secret at rest (see the "blocwerk.totp" protector inside TotpService).
         app.Services.AddSingleton<ITotpService, TotpService>();
@@ -91,6 +101,12 @@ public static class AuthenticationServices
                 options.LogoutPath = "/account/logout";
                 options.SlidingExpiration = true;
                 options.ExpireTimeSpan = TimeSpan.FromHours(8);
+
+                // Kiosk sessions only: a 30-minute IDLE window, plus a re-check that the kiosk key
+                // and the member's consent are both still live. Every principal without a kiosk
+                // claim leaves the validator untouched on its first line, so the 8h sliding window,
+                // the claims and the cookie of an ordinary login are exactly as they were.
+                KioskSessionValidator.Configure(options);
             })
             .AddScheme<ApiKeyAuthenticationOptions, ApiKeyAuthenticationHandler>(
                 ApiKeyAuthenticationHandler.SchemeName,
@@ -111,11 +127,7 @@ public static class AuthenticationServices
             options.AddPolicy(BlocwerkPolicies.UserApiKey, policy => BuildApiKeyPolicy(policy, ApiKeyScope.User));
             options.AddPolicy(BlocwerkPolicies.AnyApiKey, policy => BuildApiKeyPolicy(policy, null));
             options.AddPolicy(BlocwerkPolicies.WallGalleryImage, BuildGalleryImagePolicy(new AuthorizationPolicyBuilder()));
-            options.AddPolicy(BlocwerkPolicies.AppAdmin, policy =>
-            {
-                policy.RequireAuthenticatedUser();
-                policy.AddRequirements(new AppAdminRequirement());
-            });
+            options.AddPolicy(BlocwerkPolicies.AppAdmin, BuildAppAdminPolicy(new AuthorizationPolicyBuilder()));
         });
 
         app.Services.AddAntiforgery(options =>
@@ -143,6 +155,11 @@ public static class AuthenticationServices
             app.UseMiddleware<DevAuthenticationMiddleware>();
         }
 
+        // After authentication — including the dev shim above, so it sees the final principal — and
+        // before authorization, so a blocked path never reaches an endpoint. Also primes
+        // IKioskContext for the request.
+        app.UseMiddleware<KioskRestrictionMiddleware>();
+
         app.UseAuthorization();
         app.UseAntiforgery();
         return app;
@@ -169,6 +186,31 @@ public static class AuthenticationServices
         return policy
             .RequireAuthenticatedUser()
             .RequireAssertion(context => !context.User.IsApiKeyPrincipal())
+
+            // Satisfied immediately for every session that is not a kiosk. For a kiosk it is what
+            // stops in-circuit navigation to pages outside the kiosk allow-list, which no middleware sees.
+            .AddRequirements(new KioskRouteRequirement())
+            .Build();
+    }
+
+    /// <summary>
+    /// App-wide administration: authority over every wall and every user in the installation, which
+    /// is not wall authority and is therefore never something a kiosk session inherits.
+    /// </summary>
+    /// <remarks>
+    /// The <see cref="KioskRouteRequirement"/> here is load-bearing, not decoration. A NAMED policy
+    /// REPLACES the default policy for the endpoints that reference it rather than adding to it, so
+    /// the copy of this requirement in <see cref="BuildHumanPolicy"/> never runs for the
+    /// administration dashboard — it carries <c>[Authorize(Policy = AppAdmin)]</c>. Without this
+    /// line the "second layer" the kiosk page list claims to provide was dead code, and the
+    /// middleware's path block was the only thing in the way.
+    /// </remarks>
+    public static AuthorizationPolicy BuildAppAdminPolicy(AuthorizationPolicyBuilder policy)
+    {
+        return policy
+            .RequireAuthenticatedUser()
+            .AddRequirements(new AppAdminRequirement())
+            .AddRequirements(new KioskRouteRequirement())
             .Build();
     }
 

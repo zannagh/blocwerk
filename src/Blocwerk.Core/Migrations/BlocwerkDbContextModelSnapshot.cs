@@ -1199,6 +1199,13 @@ namespace Blocwerk.Core.Migrations
                     b.Property<DateTimeOffset>("JoinedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTimeOffset?>("KioskConsentedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("KioskPinHash")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
                     b.Property<int>("Role")
                         .HasColumnType("integer");
 

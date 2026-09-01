@@ -19,19 +19,45 @@ public interface IApiKeyService
         DateTimeOffset? expiresAt,
         CancellationToken ct = default);
 
-    /// <summary>Issues a key scoped to the user's own access.</summary>
-    Task<(ApiKey Key, string Token)> CreateUserKeyAsync(
-        Guid userId,
+    /// <summary>
+    /// Issues a kiosk key for a wall-mounted tablet. The acting user must be an admin member (or the
+    /// owner) of the wall. The key is deliberately <see cref="Enums.ApiKeyScope.Kiosk"/> rather than
+    /// <see cref="Enums.ApiKeyScope.Wall"/>, so it does not inherit the wall write endpoints.
+    /// </summary>
+    /// <exception cref="UnauthorizedAccessException">The acting user does not administer the wall.</exception>
+    Task<(ApiKey Key, string Token)> CreateKioskKeyAsync(
+        Guid wallId,
+        Guid actingUserId,
         string name,
         DateTimeOffset? expiresAt,
         CancellationToken ct = default);
 
-    /// <summary>All keys of a wall, newest first. Revoked and expired keys are included.</summary>
+    /// <summary>
+    /// Issues a key scoped to the user's own access. A personal key has no admin path, so the
+    /// acting user may only mint their own.
+    /// </summary>
+    /// <exception cref="UnauthorizedAccessException">The acting user is not the named user.</exception>
+    Task<(ApiKey Key, string Token)> CreateUserKeyAsync(
+        Guid userId,
+        Guid actingUserId,
+        string name,
+        DateTimeOffset? expiresAt,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// All keys of a wall, newest first — both <see cref="Enums.ApiKeyScope.Wall"/> and
+    /// <see cref="Enums.ApiKeyScope.Kiosk"/> keys, since both carry the wall's id. Revoked and expired
+    /// keys are included.
+    /// </summary>
     /// <exception cref="UnauthorizedAccessException">The acting user does not administer the wall.</exception>
     Task<IReadOnlyList<ApiKey>> GetWallKeysAsync(Guid wallId, Guid actingUserId, CancellationToken ct = default);
 
-    /// <summary>All user-scoped keys of a user, newest first. Revoked and expired keys are included.</summary>
-    Task<IReadOnlyList<ApiKey>> GetUserKeysAsync(Guid userId, CancellationToken ct = default);
+    /// <summary>
+    /// All user-scoped keys of a user, newest first. Revoked and expired keys are included.
+    /// A personal key has no admin path, so the acting user may only list their own.
+    /// </summary>
+    /// <exception cref="UnauthorizedAccessException">The acting user is not the named user.</exception>
+    Task<IReadOnlyList<ApiKey>> GetUserKeysAsync(Guid userId, Guid actingUserId, CancellationToken ct = default);
 
     /// <summary>
     /// Revokes a key. The acting user must own it (user scope) or administer its wall (wall scope).
@@ -44,5 +70,17 @@ public interface IApiKeyService
     /// Resolves a bearer token to its key, or null when it is unknown, revoked or expired.
     /// Stamps <see cref="ApiKey.LastUsedAt"/>, throttled to at most one write per minute.
     /// </summary>
+    /// <remarks>
+    /// The returned entity carries <see cref="ApiKey.Scope"/> and <see cref="ApiKey.WallId"/>, so a
+    /// caller that needs to know "which kind of key is this, and for which wall" can read them straight
+    /// off the result. <see cref="ValidateKioskAsync"/> is the narrow convenience over exactly that.
+    /// </remarks>
     Task<ApiKey?> ValidateAsync(string token, CancellationToken ct = default);
+
+    /// <summary>
+    /// Resolves a bearer token to the wall its kiosk key is registered to, or null when the token is
+    /// invalid, revoked, expired, or not a <see cref="Enums.ApiKeyScope.Kiosk"/> key. Wall- and
+    /// user-scoped keys deliberately return null: a kiosk tablet is its own scope.
+    /// </summary>
+    Task<Guid?> ValidateKioskAsync(string token, CancellationToken ct = default);
 }

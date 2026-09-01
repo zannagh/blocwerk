@@ -178,7 +178,7 @@
             // the owner through the anonymous filter and returns an empty list.
             _videos = IsAnonymous && !string.IsNullOrEmpty(ShareToken)
                 ? await VideoService.GetVideosByShareTokenAsync(BoulderId, ShareToken)
-                : await VideoService.GetVideosAsync(BoulderId);
+                : await LoadForSignedInViewerAsync();
             _error = null;
         }
         catch (Exception ex)
@@ -316,6 +316,24 @@
         {
             _error = $"That beta video could not be deleted: {ex.Message}";
         }
+    }
+
+    /// <summary>
+    /// The normal list is gated on membership of the boulder's wall. A SIGNED-IN viewer who is not
+    /// a member is still a legitimate share-link visitor (they count as non-anonymous the moment
+    /// they have an account), and for them that list is empty — so fall back to the share list,
+    /// which is what the byte URLs below already do unconditionally when a token is present. The
+    /// member path stays first so a stale token in the URL never costs a member their own list.
+    /// </summary>
+    private async Task<List<BetaVideoInfo>> LoadForSignedInViewerAsync()
+    {
+        var videos = await VideoService.GetVideosAsync(BoulderId);
+        if (videos.Count > 0 || string.IsNullOrEmpty(ShareToken))
+        {
+            return videos;
+        }
+
+        return await VideoService.GetVideosByShareTokenAsync(BoulderId, ShareToken);
     }
 
     private string VideoUrl(BetaVideoInfo video) => WithToken($"/api/beta-videos/{video.Id}");

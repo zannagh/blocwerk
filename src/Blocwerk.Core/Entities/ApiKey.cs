@@ -34,7 +34,9 @@ public class ApiKey
     [ForeignKey(nameof(UserId))]
     public User User { get; set; } = null!;
 
-    /// <summary>Set only for <see cref="ApiKeyScope.Wall"/> keys; null otherwise.</summary>
+    /// <summary>
+    /// Set for <see cref="ApiKeyScope.Wall"/> and <see cref="ApiKeyScope.Kiosk"/> keys; null otherwise.
+    /// </summary>
     public Guid? WallId { get; set; }
 
     [ForeignKey(nameof(WallId))]

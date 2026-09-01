@@ -106,7 +106,7 @@
         {
             var user = await CurrentUserService.GetCurrentUserAsync();
             userId = user.Id;
-            keys = await ApiKeyService.GetUserKeysAsync(userId);
+            keys = await ApiKeyService.GetUserKeysAsync(userId, userId);
         }
         catch (Exception ex)
         {
@@ -134,12 +134,12 @@
         busy = true;
         try
         {
-            var (_, token) = await ApiKeyService.CreateUserKeyAsync(userId, name.Trim(), expiresAt);
+            var (_, token) = await ApiKeyService.CreateUserKeyAsync(userId, userId, name.Trim(), expiresAt);
             newToken = token;
             copyLabel = "Copy to clipboard";
             name = string.Empty;
             expiresOn = null;
-            keys = await ApiKeyService.GetUserKeysAsync(userId);
+            keys = await ApiKeyService.GetUserKeysAsync(userId, userId);
         }
         catch (Exception ex)
         {
@@ -164,7 +164,7 @@
         try
         {
             await ApiKeyService.RevokeAsync(keyId, userId);
-            keys = await ApiKeyService.GetUserKeysAsync(userId);
+            keys = await ApiKeyService.GetUserKeysAsync(userId, userId);
         }
         catch (UnauthorizedAccessException)
         {

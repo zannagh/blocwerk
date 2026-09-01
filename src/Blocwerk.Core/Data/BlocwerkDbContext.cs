@@ -9,6 +9,38 @@ public class BlocwerkDbContext : DbContext
 {
     public Guid CurrentUserId { get; set; } = Guid.Empty;
 
+    /// <summary>
+    /// The single wall a kiosk tablet is registered to, or null for every ordinary session. When set,
+    /// the <see cref="Wall"/> query filter narrows to that wall ON TOP of the member check.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>What this actually covers, and what it does not.</b> <see cref="Wall"/> is the ONLY
+    /// entity in the solution with a query filter, so this gate applies to <see cref="Walls"/> and to
+    /// navigations that traverse it — nothing more. A query that starts at
+    /// <see cref="Boulders"/>, <see cref="WallMembers"/>, <see cref="Holds"/>, <see cref="Attempts"/>
+    /// or any other set reaches rows on any wall, and so does anything calling
+    /// <c>IgnoreQueryFilters()</c> — which the owner branches of <c>WallAdminGuard</c> deliberately
+    /// do. It is therefore NOT true that "a kiosk session can never reach another wall" by virtue of
+    /// this property alone: it is one layer, and the authorisation guards
+    /// (<c>WallAdminGuard.EnsureNotForeignWall</c>, <c>KioskGuard</c>) are the ones that make the
+    /// claim hold for writes.</para>
+    /// <para><b>Fail-open, not fail-closed.</b> Deliberately NOT set by hand inside services (unlike
+    /// <see cref="CurrentUserId"/>, which ~40 methods stamp ad hoc): it is stamped centrally by
+    /// <c>KioskScopedDbContextFactory</c> on every context it creates. That is what makes forgetting
+    /// it unlikely, but it is not what makes forgetting it safe — a context built by any other route
+    /// (the raw <c>RootDbContextFactory</c>, a test factory, a design-time context) is UNSTAMPED, and
+    /// an unstamped kiosk context gets the ordinary filter, i.e. the gate is simply absent. An
+    /// unstamped context is acceptable only where nothing depends on this gate; anywhere a kiosk
+    /// restriction is being enforced, read <c>IKioskContext</c> as well, which is exactly what
+    /// <c>KioskGuard</c> does.</para>
+    /// <para>Note the asymmetry with <see cref="CurrentUserId"/>: <see cref="Guid.Empty"/> there
+    /// DISABLES the member check (fail-open, by design for anonymous/share-token reads), whereas
+    /// <see cref="Guid.Empty"/> here is NOT a second "disabled" value — no wall has an empty id, so
+    /// setting it restricts the session to nothing at all. That is the deliberate fail-closed value
+    /// for "this is a kiosk but its wall could not be determined".</para>
+    /// </remarks>
+    public Guid? KioskWallId { get; set; }
+
     public DbSet<User> Users => Set<User>();
 
     public DbSet<Wall> Walls => Set<Wall>();
@@ -423,9 +455,15 @@ public class BlocwerkDbContext : DbContext
                     v => v == null ? null : JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
                     v => v == null ? null : JsonSerializer.Deserialize<List<ShapePoint>>(v, (JsonSerializerOptions?)null));
 
+            // Two independent gates, ANDed. The first is the ordinary membership gate and is
+            // unchanged (Guid.Empty still disables it for anonymous/share-token reads). The second
+            // is the kiosk gate: a tablet is registered to exactly ONE wall, so a kiosk session sees
+            // that wall and nothing else — including anonymous kiosk browsing, where the membership
+            // gate is open. null means "not a kiosk" and leaves the filter as it always was.
             entity.HasQueryFilter(w =>
-                CurrentUserId == Guid.Empty
-                || w.Members.Any(m => m.UserId == CurrentUserId));
+                (CurrentUserId == Guid.Empty
+                    || w.Members.Any(m => m.UserId == CurrentUserId))
+                && (KioskWallId == null || w.Id == KioskWallId));
         });
     }
 

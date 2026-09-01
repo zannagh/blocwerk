@@ -2,7 +2,13 @@
 
 <div class="apikey-row @StateClass">
     <div class="apikey-row-main">
-        <span class="apikey-name">@Key.Name</span>
+        <span class="apikey-name">
+            @Key.Name
+            @if (Key.Scope == ApiKeyScope.Kiosk)
+            {
+                <span class="apikey-scope kiosk">Kiosk</span>
+            }
+        </span>
         <code class="apikey-prefix">@Key.Prefix&hellip;</code>
         <span class="apikey-meta">
             Created <LocalTime Value="@Key.CreatedAt" Format="LocalTimeFormat.DateDmy" />

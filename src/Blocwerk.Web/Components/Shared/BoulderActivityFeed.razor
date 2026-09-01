@@ -39,6 +39,13 @@
 @code {
     [Parameter] public Guid BoulderId { get; set; }
 
+    /// <summary>
+    /// Set on the anonymous share-link view of a boulder. The service authorizes the read against
+    /// the boulder's wall, and without a token that means wall membership — so a share viewer has
+    /// to hand its token down here too, or the feed it is allowed to see would come back empty.
+    /// </summary>
+    [Parameter] public string? ShareToken { get; set; }
+
     private List<ActivityLogEntry>? _items;
     private int _total;
     private int _page;
@@ -52,7 +59,7 @@
     {
         try
         {
-            var (items, total) = await ActivityLogService.GetBoulderActivityAsync(BoulderId, page);
+            var (items, total) = await LoadPageAsync(page);
             _page = page;
             _items = items;
             _total = total;
@@ -62,6 +69,25 @@
             // A feed that cannot load must not take the page down with it; the ascent buttons
             // above it are the point of this screen and keep working regardless.
             _items ??= [];
+        }
+    }
+
+    /// <summary>
+    /// The service gates the log on membership of the boulder's wall, so the member path goes
+    /// first: a stale share token in the URL (enhanced-nav keeps route params, and the last-page
+    /// cookie can restore a /shared/ link) must never cost a member their own feed. Anyone the
+    /// membership gate turns away — an anonymous share viewer, or a signed-in visitor who is not a
+    /// member — falls through to the token, which is the gate that was meant for them.
+    /// </summary>
+    private async Task<(List<ActivityLogEntry> Items, int TotalCount)> LoadPageAsync(int page)
+    {
+        try
+        {
+            return await ActivityLogService.GetBoulderActivityAsync(BoulderId, page);
+        }
+        catch (UnauthorizedAccessException) when (!string.IsNullOrEmpty(ShareToken))
+        {
+            return await ActivityLogService.GetBoulderActivityAsync(BoulderId, page, shareToken: ShareToken);
         }
     }
 

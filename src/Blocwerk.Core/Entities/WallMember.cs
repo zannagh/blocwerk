@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using Blocwerk.Core.Enums;
 
@@ -18,4 +19,18 @@ public class WallMember
     public WallRole Role { get; set; } = WallRole.Member;
 
     public DateTimeOffset JoinedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    /// <summary>
+    /// When this member agreed to be offered as a pickable user on the wall's kiosk tablets. Null means
+    /// no consent, which is the default and what a revocation returns to. Consent is per member row, so
+    /// it never leaks to the user's other walls.
+    /// </summary>
+    public DateTimeOffset? KioskConsentedAt { get; set; }
+
+    /// <summary>
+    /// Optional salted hash of the short PIN the member must type to be picked at the kiosk. Null means
+    /// no PIN, i.e. anyone at the tablet may pick them. The PIN itself is never stored.
+    /// </summary>
+    [MaxLength(256)]
+    public string? KioskPinHash { get; set; }
 }

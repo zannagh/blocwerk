@@ -100,6 +100,8 @@ public class ApiSurfaceAuthorizationTests
         Assert.Contains("/api/walls/{wallId:guid}/photo", routes);
         Assert.Contains("/api/walls/{wallId:guid}/staged-photo", routes);
         Assert.Contains("/api/walls/{wallId:guid}/temperature", routes);
+        Assert.Contains("/api/walls/{wallId:guid}/panels/{panelId:guid}/photo", routes);
+        Assert.Contains("/api/walls/{wallId:guid}/panels/{panelId:guid}/staged-photo", routes);
         Assert.Contains("/api/v1/me/sessions", routes);
 
         // The browser gallery route lives under /media, outside the prefixes, so it must NOT show
@@ -128,6 +130,39 @@ public class ApiSurfaceAuthorizationTests
         Assert.True(route.StartsWithSegments("/media", StringComparison.Ordinal));
         Assert.False(route.StartsWithSegments("/walls", StringComparison.OrdinalIgnoreCase));
         Assert.False(ApiKeySurface.Covers(route));
+    }
+
+    /// <summary>
+    /// <see cref="DeniesApiKeyPrincipals"/> alone satisfies the guard test above, and the panel
+    /// photo routes carried nothing but that: no <c>[Authorize]</c>, no <c>RequireAuthorization</c>,
+    /// and the app declares no fallback policy — so two guessed guids read a panel photo of any
+    /// wall from the open internet. Rejecting machine callers is not the same as admitting only
+    /// people who may see the wall.
+    /// </summary>
+    [Fact]
+    public void TheWallMediaByteRoutes_RequireAuthorization_NotOnlyAnApiKeyRejection()
+    {
+        var mediaRoutes = AllEndpoints()
+            .Where(e => (e.RoutePattern.RawText ?? string.Empty)
+                .Contains("/panels/", StringComparison.Ordinal)
+                || (e.RoutePattern.RawText ?? string.Empty)
+                    .Contains("/gallery/", StringComparison.Ordinal))
+            .ToList();
+
+        Assert.NotEmpty(mediaRoutes);
+
+        foreach (var route in mediaRoutes)
+        {
+            var authorize = route.Metadata.GetMetadata<IAuthorizeData>();
+            Assert.True(
+                authorize is not null,
+                $"{route.RoutePattern.RawText} serves wall bytes but declares no authorization.");
+
+            // The gallery policy is the one that admits a signed-in caller OR an anonymous viewer
+            // holding a share token, while rejecting an API-key principal — anything else here
+            // either locks out share links or lets a leaked key walk other walls.
+            Assert.Equal(BlocwerkPolicies.WallGalleryImage, authorize!.Policy);
+        }
     }
 
     /// <summary>Every endpoint the registration calls under test produce.</summary>
@@ -167,12 +202,17 @@ public class ApiSurfaceAuthorizationTests
         builder.Services.AddSingleton(Substitute.For<IWallImageService>());
         builder.Services.AddSingleton(Substitute.For<IWallImageStorage>());
         builder.Services.AddSingleton(Substitute.For<ICurrentUserService>());
+        builder.Services.AddSingleton(Substitute.For<IWallPanelService>());
         builder.Services.AddSingleton(Substitute.For<IDbContextFactory<BlocwerkDbContext>>());
 
         var app = builder.Build();
         app.MapControllers();
         app.MapWallPhotos();
         app.MapWallGalleryImages();
+
+        // The panel photo routes were missing here, which is precisely how they came to sit under
+        // /api/walls with no authorization at all: the guard test below could not see them.
+        app.MapWallPanelPhotos();
         return app;
     }
 

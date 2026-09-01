@@ -1563,6 +1563,40 @@ html.bw-fullscreen .wall-main .photo-viewport {
 .apikey-row-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .apikey-confirm-text { font-size: 0.78rem; font-weight: 600; color: var(--text-heading); }
 
+/* Scope badge next to a key's name; only kiosk keys carry one today. */
+.apikey-scope {
+    font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+    border-radius: 999px; padding: 1px 7px; margin-left: 6px; vertical-align: middle;
+}
+.apikey-scope.kiosk { background: var(--info-bg); color: var(--info-text); }
+
+/* Kiosk consent, shown under the current user's own row in the members list. */
+.kiosk-consent-line {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+    margin: -2px 0 8px; padding: 0 12px 0 12px;
+}
+.kiosk-consent-state { font-size: 0.78rem; font-weight: 600; color: var(--text-secondary); }
+.kiosk-consent-confirm { font-size: 0.78rem; font-weight: 600; color: var(--text-heading); }
+.kiosk-consent-btn {
+    padding: 4px 10px; border: 1px solid var(--border); background: var(--bg-surface); color: var(--text);
+    border-radius: 6px; font-size: 0.78rem; font-weight: 600; cursor: pointer; min-height: 30px;
+}
+.kiosk-consent-btn:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); }
+.kiosk-consent-btn:disabled { opacity: 0.55; cursor: default; }
+.kiosk-consent-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.kiosk-consent-btn.danger { color: var(--danger-text); border-color: var(--danger-text); }
+
+.kiosk-modal-text { font-size: 0.85rem; line-height: 1.6; color: var(--text-secondary); }
+.kiosk-modal-warning {
+    font-size: 0.82rem; line-height: 1.55; color: var(--warning-text, var(--text-heading));
+    background: var(--warning-bg, var(--bg-surface-alt)); border-radius: 8px; padding: 10px 12px;
+}
+.kiosk-pin-toggle {
+    display: flex; align-items: center; gap: 8px; font-size: 0.88rem; font-weight: 600;
+    color: var(--text); cursor: pointer;
+}
+.kiosk-modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
 .apikey-state {
     font-size: 0.7rem;
     font-weight: 700;
@@ -2446,3 +2480,95 @@ html.bw-fullscreen .wall-main .photo-viewport {
     display: inline-block; width: auto; margin-bottom: 0;
     padding: 10px 16px; font-size: 0.95rem; text-decoration: none;
 }
+
+/* ============================================================================
+   Kiosk mode (Phase 3 UI)
+   Everything here is sized for a wall-mounted tablet read at arm's length and
+   tapped with a chalky finger: 64px rows, 1.15rem names, no dense list.
+   ============================================================================ */
+
+/* Avatar standing in for the tab icon while somebody is acting as a member. Matches the 22px svg
+   the other tabs use so the bar's height never shifts between anonymous and acting-as. */
+.nav-item .nav-avatar {
+    width: 24px; height: 24px; font-size: 0.75rem; margin: 0; flex: none;
+}
+
+.kiosk-picker { max-width: 560px; margin: 0 auto; padding: 20px 16px 32px; }
+.kiosk-picker-head { text-align: center; margin-bottom: 20px; }
+.kiosk-picker-head h1 { font-size: 1.5rem; font-weight: 700; color: var(--text-heading); margin-bottom: 6px; }
+.kiosk-picker-head p { color: var(--text-secondary); font-size: 0.95rem; }
+
+.kiosk-user-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.kiosk-user-list form { margin: 0; }
+
+/* One row shape for links and submit buttons alike, so a PIN user and a no-PIN user are visually
+   identical even though one is an <a> and the other a <button>. */
+.kiosk-row {
+    display: flex; align-items: center; gap: 14px; width: 100%;
+    min-height: 64px; padding: 12px 16px; box-sizing: border-box;
+    background: var(--bg-surface); border: 1px solid var(--border);
+    border-radius: var(--r-md); box-shadow: 0 1px 2px var(--shadow-sm);
+    color: var(--text-heading); font-family: inherit; font-size: 1.15rem; font-weight: 600;
+    text-align: left; text-decoration: none; cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+.kiosk-row:hover, .kiosk-row:active { background: var(--bg-surface-alt); border-color: var(--accent); }
+.kiosk-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kiosk-row-hint {
+    flex: none; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.06em;
+    color: var(--text-secondary); border: 1px solid var(--border);
+    border-radius: 999px; padding: 3px 10px;
+}
+.kiosk-row-primary { justify-content: center; background: var(--accent); border-color: var(--accent); color: #fff; }
+.kiosk-row-primary:hover { background: var(--accent); border-color: var(--accent); filter: brightness(1.08); }
+.kiosk-row-secondary { justify-content: center; margin-top: 12px; color: var(--text-secondary); font-weight: 500; }
+.kiosk-row-danger { justify-content: center; color: var(--danger-text); }
+
+.kiosk-avatar { width: 44px; height: 44px; font-size: 1.25rem; margin: 0; flex: none; }
+
+.kiosk-current {
+    display: flex; align-items: center; gap: 14px; justify-content: center;
+    margin-bottom: 20px; padding: 16px;
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r-md);
+}
+.kiosk-current-name { font-size: 1.25rem; font-weight: 700; color: var(--text-heading); }
+
+.kiosk-pin-form { display: block; margin: 0; }
+.kiosk-pin-form .field-label { color: var(--text); }
+.kiosk-pin-input {
+    width: 100%; box-sizing: border-box; margin-bottom: 16px;
+    padding: 14px 16px; font-size: 1.6rem; letter-spacing: 0.4em; text-align: center;
+    background: var(--bg-surface); color: var(--text-heading);
+    border: 1px solid var(--border); border-radius: var(--r-md);
+}
+.kiosk-pin-input:focus { outline: none; border-color: var(--accent); }
+
+.kiosk-note { margin-top: 20px; text-align: center; color: var(--text-secondary); font-size: 0.85rem; }
+.kiosk-empty { text-align: center; color: var(--text-secondary); font-size: 0.95rem; padding: 24px 8px; }
+
+/* Shared by the picker page and the layout banner that catches ?kiosk_pin_error=1 wherever act-as
+   bounced the tablet to. */
+.kiosk-banner-error {
+    max-width: 560px; margin: 12px auto; padding: 12px 16px;
+    background: var(--danger-bg); color: var(--danger-text);
+    border: 1px solid var(--danger-border, var(--border)); border-radius: var(--r-md);
+    font-size: 0.95rem; text-align: center;
+}
+
+/* Register-kiosk disclosure on the sign-in page: deliberately quiet, below the human options. */
+.kiosk-register { margin-top: 24px; font-size: 0.9rem; }
+.kiosk-register > summary {
+    cursor: pointer; list-style: none; color: var(--text-secondary);
+    text-align: center; padding: 8px 0;
+}
+.kiosk-register > summary::-webkit-details-marker { display: none; }
+.kiosk-register > summary:hover { color: var(--text-heading); }
+.kiosk-register form { margin-top: 12px; }
+.kiosk-register .text-input {
+    width: 100%; box-sizing: border-box; margin-bottom: 12px; padding: 12px 14px;
+    background: var(--bg-surface); color: var(--text-heading);
+    border: 1px solid var(--border); border-radius: var(--r-md); font-size: 1rem;
+}
+.kiosk-register .text-input:focus { outline: none; border-color: var(--accent); }
+.kiosk-register-submit { justify-content: center; }
+.kiosk-register-note { margin-top: 10px; color: var(--text-secondary); font-size: 0.8rem; line-height: 1.5; }

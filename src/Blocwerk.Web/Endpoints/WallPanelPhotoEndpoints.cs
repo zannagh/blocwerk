@@ -1,7 +1,11 @@
 using System.Security.Claims;
 using Blocwerk.Authentication.Authorization;
+using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Data;
+using Blocwerk.Core.Entities;
 using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Web.Endpoints;
 
@@ -10,45 +14,115 @@ namespace Blocwerk.Web.Endpoints;
 /// photo and the staged (not-yet-confirmed) photo of a panel being added.
 /// </summary>
 /// <remarks>
-/// Mirrors <see cref="WallPhotoEndpoints"/>: these routes sit under <c>/api/walls</c> but are
-/// browser routes gated on the signed-in caller, so an API-key principal is rejected outright.
+/// Gated exactly like <see cref="WallGalleryImageEndpoint"/> — the pattern for wall media in this
+/// codebase — rather than left open: a signed-in member of the wall, or an anonymous viewer holding
+/// the wall's share token, and an API-key principal is rejected outright. The routes previously
+/// carried no authorization at all and the app has no fallback policy, so two guessed GUIDs read a
+/// panel photo of any wall from the open internet.
 /// </remarks>
 public static class WallPanelPhotoEndpoints
 {
     public static void MapWallPanelPhotos(this WebApplication app)
     {
-        app.MapGet("/api/walls/{wallId:guid}/panels/{panelId:guid}/photo", async (
+        app.MapGet("/api/walls/{wallId:guid}/panels/{panelId:guid}/photo", (
             Guid wallId,
             Guid panelId,
+            [FromQuery] string? token,
             ClaimsPrincipal user,
-            [FromServices] IWallPanelService panelService) =>
-        {
-            if (user.IsApiKeyPrincipal())
-            {
-                return Results.NotFound();
-            }
+            [FromServices] IWallPanelService panelService,
+            [FromServices] ICurrentUserService currentUserService,
+            [FromServices] IDbContextFactory<BlocwerkDbContext> dbContextFactory,
+            CancellationToken ct) =>
+                ServeAsync(
+                    wallId, panelId, token, user, currentUserService, dbContextFactory,
+                    () => panelService.GetPanelPhotoAsync(wallId, panelId), ct))
+            .RequireAuthorization(BlocwerkPolicies.WallGalleryImage)
+            .DenyApiKeyPrincipals();
 
-            var photo = await panelService.GetPanelPhotoAsync(wallId, panelId);
-            return photo == null
-                ? Results.NotFound()
-                : Results.File(photo.Photo, photo.ContentType ?? "image/jpeg");
-        }).DenyApiKeyPrincipals();
-
-        app.MapGet("/api/walls/{wallId:guid}/panels/{panelId:guid}/staged-photo", async (
+        app.MapGet("/api/walls/{wallId:guid}/panels/{panelId:guid}/staged-photo", (
             Guid wallId,
             Guid panelId,
+            [FromQuery] string? token,
             ClaimsPrincipal user,
-            [FromServices] IWallPanelService panelService) =>
-        {
-            if (user.IsApiKeyPrincipal())
-            {
-                return Results.NotFound();
-            }
+            [FromServices] IWallPanelService panelService,
+            [FromServices] ICurrentUserService currentUserService,
+            [FromServices] IDbContextFactory<BlocwerkDbContext> dbContextFactory,
+            CancellationToken ct) =>
+                ServeAsync(
+                    wallId, panelId, token, user, currentUserService, dbContextFactory,
+                    () => panelService.GetPanelStagedPhotoAsync(wallId, panelId), ct))
+            .RequireAuthorization(BlocwerkPolicies.WallGalleryImage)
+            .DenyApiKeyPrincipals();
+    }
 
-            var photo = await panelService.GetPanelStagedPhotoAsync(wallId, panelId);
-            return photo == null
-                ? Results.NotFound()
-                : Results.File(photo.Photo, photo.ContentType ?? "image/jpeg");
-        }).DenyApiKeyPrincipals();
+    private static async Task<IResult> ServeAsync(
+        Guid wallId,
+        Guid panelId,
+        string? token,
+        ClaimsPrincipal user,
+        ICurrentUserService currentUserService,
+        IDbContextFactory<BlocwerkDbContext> dbContextFactory,
+        Func<Task<WallPhoto?>> load,
+        CancellationToken ct)
+    {
+        if (user.IsApiKeyPrincipal())
+        {
+            return Results.NotFound();
+        }
+
+        if (!await HasWallAccessAsync(wallId, token, currentUserService, dbContextFactory, ct))
+        {
+            return Results.NotFound();
+        }
+
+        // The panel/wall pairing itself is already enforced by the service, which matches on both
+        // ids — so a panel of another wall cannot be pulled through an authorized wallId.
+        var photo = await load();
+        return photo == null
+            ? Results.NotFound()
+            : Results.File(photo.Photo, photo.ContentType ?? "image/jpeg");
+    }
+
+    /// <summary>
+    /// The same two gates as the gallery bytes — a matching share token, or membership of the wall —
+    /// but accepted as EITHER rather than one or the other. Each is independently sufficient, and a
+    /// panel image request carries whatever token the page was opened with: enhanced-nav keeps route
+    /// params and the last-page cookie can restore a /shared/ link, so a member browsing under a
+    /// stale token would otherwise get a wall full of broken images.
+    /// </summary>
+    private static async Task<bool> HasWallAccessAsync(
+        Guid wallId,
+        string? token,
+        ICurrentUserService currentUserService,
+        IDbContextFactory<BlocwerkDbContext> dbContextFactory,
+        CancellationToken ct)
+    {
+        if (!string.IsNullOrEmpty(token))
+        {
+            await using var anonymousDb = await dbContextFactory.CreateDbContextAsync(ct);
+            anonymousDb.CurrentUserId = Guid.Empty;
+            if (await anonymousDb.Walls.AnyAsync(w => w.Id == wallId && w.ShareToken == token, ct))
+            {
+                return true;
+            }
+        }
+
+        User user;
+        try
+        {
+            user = await currentUserService.GetCurrentUserAsync();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Nobody is signed in. With a token that just means it did not match; without one the
+            // caller is anonymous on a non-shared wall. Either way there is nothing more to check,
+            // and a 404 says less than a challenge would.
+            return false;
+        }
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+        db.CurrentUserId = user.Id;
+
+        return await db.Walls.AnyAsync(w => w.Id == wallId, ct);
     }
 }

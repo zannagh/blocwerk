@@ -18,14 +18,23 @@ public class WallService : IWallService
     private readonly IImageAlignmentService _imageAlignmentService;
     private readonly IActivityLogService _activityLogService;
     private readonly ILogger<WallService> _logger;
+    private readonly IKioskContext? _kioskContext;
 
+    /// <summary>Creates the service.</summary>
+    /// <remarks>
+    /// <c>kioskContext</c> is optional: hosts without an HTTP layer (tests, tooling) never register
+    /// one, which simply means "never a kiosk". The stamped
+    /// <see cref="BlocwerkDbContext.KioskWallId"/> is the second source the guards read, so a
+    /// missing context is not a missing restriction — see <see cref="KioskGuard"/>.
+    /// </remarks>
     public WallService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         ICurrentUserService currentUserService,
         IHoldDetectionService holdDetectionService,
         IImageAlignmentService imageAlignmentService,
         IActivityLogService activityLogService,
-        ILogger<WallService> logger)
+        ILogger<WallService> logger,
+        IKioskContext? kioskContext = null)
     {
         _dbContextFactory = dbContextFactory;
         _currentUserService = currentUserService;
@@ -33,6 +42,7 @@ public class WallService : IWallService
         _imageAlignmentService = imageAlignmentService;
         _activityLogService = activityLogService;
         _logger = logger;
+        _kioskContext = kioskContext;
     }
 
     public async Task<Wall> CreateWallAsync(string name, string? description, int angle = 0)
@@ -43,6 +53,11 @@ public class WallService : IWallService
             var user = await _currentUserService.GetCurrentUserAsync();
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = Guid.Empty;
+
+            // A tablet is registered to exactly one wall and can never be registered to a wall
+            // created after the fact. Creating one from the kiosk only ever produces a wall the
+            // acting user owns and cannot see from here — and it is a write outside the kiosk's wall.
+            KioskGuard.EnsureNotKiosk(_kioskContext, db, "Creating a wall");
 
             var wall = new Wall
             {
@@ -1184,6 +1199,14 @@ public class WallService : IWallService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
+            // A share link is the one thing a wall admin can mint that OUTLIVES the kiosk session:
+            // it is redeemed later, from any browser, by anyone who read it off the tablet, and it
+            // inserts a permanent WallMember that survives the 30-minute window, the PIN and
+            // revoking the kiosk key. So it is refused for every kiosk session — including one
+            // acting as a genuine admin of this very wall, which is why the wall guard below is not
+            // enough on its own.
+            KioskGuard.EnsureNotKiosk(_kioskContext, db, "Generating a share link");
+
             // Owner-aware admin check: a bare-owner (no explicit Admin member row) counts as admin,
             // matching the client _isAdmin gate. Everyone else is rejected exactly as before.
             await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
@@ -1217,6 +1240,12 @@ public class WallService : IWallService
             var user = await _currentUserService.GetCurrentUserAsync();
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = Guid.Empty;
+
+            // The redeeming half of the same escalation: joining writes a permanent WallMember for
+            // the acting user, and this query deliberately runs with the membership gate disabled so
+            // a token alone is enough. From a public tablet that is somebody else's account being
+            // enrolled into a wall they never chose.
+            KioskGuard.EnsureNotKiosk(_kioskContext, db, "Joining a wall from a share link");
 
             var wall = await db.Walls.FirstOrDefaultAsync(w => w.ShareToken == shareToken);
             if (wall == null)

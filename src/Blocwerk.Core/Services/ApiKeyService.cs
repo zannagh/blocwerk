@@ -43,12 +43,32 @@ public class ApiKeyService : IApiKeyService
         return key;
     }
 
-    public async Task<(ApiKey Key, string Token)> CreateUserKeyAsync(
-        Guid userId,
+    public async Task<(ApiKey Key, string Token)> CreateKioskKeyAsync(
+        Guid wallId,
+        Guid actingUserId,
         string name,
         DateTimeOffset? expiresAt,
         CancellationToken ct = default)
     {
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+        db.CurrentUserId = Guid.Empty;
+
+        await WallAdminGuard.EnsureWallAdminAsync(db, wallId, actingUserId, ct);
+
+        var key = await PersistAsync(db, ApiKeyScope.Kiosk, actingUserId, wallId, name, expiresAt, ct);
+        logger.LogInformation("Kiosk API key {ApiKeyId} issued for wall {WallId} by {UserId}", key.Key.Id, wallId, actingUserId);
+        return key;
+    }
+
+    public async Task<(ApiKey Key, string Token)> CreateUserKeyAsync(
+        Guid userId,
+        Guid actingUserId,
+        string name,
+        DateTimeOffset? expiresAt,
+        CancellationToken ct = default)
+    {
+        EnsureSelf(userId, actingUserId, "mint");
+
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);
         db.CurrentUserId = Guid.Empty;
 
@@ -75,8 +95,13 @@ public class ApiKeyService : IApiKeyService
             .ToListAsync(ct);
     }
 
-    public async Task<IReadOnlyList<ApiKey>> GetUserKeysAsync(Guid userId, CancellationToken ct = default)
+    public async Task<IReadOnlyList<ApiKey>> GetUserKeysAsync(
+        Guid userId,
+        Guid actingUserId,
+        CancellationToken ct = default)
     {
+        EnsureSelf(userId, actingUserId, "list");
+
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);
         db.CurrentUserId = Guid.Empty;
 
@@ -99,7 +124,9 @@ public class ApiKeyService : IApiKeyService
             throw new InvalidOperationException("API key not found");
         }
 
-        var allowed = key.Scope == ApiKeyScope.Wall && key.WallId.HasValue
+        // Wall and kiosk keys both belong to a wall, so its admins govern them; a user key is the
+        // creator's own business.
+        var allowed = (key.Scope is ApiKeyScope.Wall or ApiKeyScope.Kiosk) && key.WallId.HasValue
             ? await WallAdminGuard.IsWallAdminAsync(db, key.WallId.Value, actingUserId, ct)
             : key.UserId == actingUserId;
 
@@ -148,6 +175,31 @@ public class ApiKeyService : IApiKeyService
         }
 
         return key;
+    }
+
+    public async Task<Guid?> ValidateKioskAsync(string token, CancellationToken ct = default)
+    {
+        var key = await ValidateAsync(token, ct);
+        if (key is null || key.Scope != ApiKeyScope.Kiosk)
+        {
+            return null;
+        }
+
+        return key.WallId;
+    }
+
+    /// <summary>
+    /// A personal key is its owner's own business — there is no admin path onto someone else's,
+    /// so the only legitimate acting user is the owner. Without this the caller-supplied
+    /// <paramref name="userId"/> was the whole check, and any caller reaching the service could
+    /// enumerate (or mint) another account's personal keys.
+    /// </summary>
+    private static void EnsureSelf(Guid userId, Guid actingUserId, string verb)
+    {
+        if (userId == Guid.Empty || actingUserId != userId)
+        {
+            throw new UnauthorizedAccessException($"User {actingUserId} may not {verb} API keys for user {userId}.");
+        }
     }
 
     private static async Task<(ApiKey Key, string Token)> PersistAsync(

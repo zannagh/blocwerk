@@ -111,6 +111,31 @@
         </label>
     }
 
+    @* Registering a wall tablet is a rare, gym-owner action, so it stays collapsed under the human
+       sign-in options. Same shape as the password form: a plain POST to the controller, an
+       antiforgery token, and data-enhance-nav="false" so the browser follows the 302 for real. The
+       key goes in a FORM FIELD — a bwk_ bearer header is only honoured under /api and would fail
+       open silently here. *@
+    <details class="kiosk-register" open="@(KioskError is not null)">
+        <summary>Register this device as a wall kiosk</summary>
+        @if (KioskError is not null)
+        {
+            <div class="oauth-error" role="alert">That kiosk key isn't valid. Check the key and try again.</div>
+        }
+        <form method="post" action="/kiosk/register" data-enhance-nav="false">
+            <AntiforgeryToken />
+            <label class="field-label" for="kiosk-key">Kiosk key</label>
+            <input id="kiosk-key" class="text-input" type="password" name="key"
+                   autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+                   placeholder="bwk_…" maxlength="128" required />
+            <button type="submit" class="provider-button kiosk-register-submit">Register kiosk</button>
+        </form>
+        <p class="kiosk-register-note">
+            Turns this browser into the wall's shared tablet: anyone can browse the wall, and members
+            who opted in can pick themselves to log climbs.
+        </p>
+    </details>
+
     <div class="footer">
         <p>Secure authentication via OAuth 2.0</p>
     </div>
@@ -141,6 +166,9 @@
     [SupplyParameterFromQuery(Name = "perror")] public string? PasswordError { get; set; }
     [SupplyParameterFromQuery(Name = "reset")] public string? ResetDone { get; set; }
     [SupplyParameterFromQuery(Name = "returnUrl")] public string? ReturnUrl { get; set; }
+    // A failed registration redirects back here with ?kerror=1, which force-opens the disclosure so
+    // its error is visible; otherwise it stays collapsed and out of the way of normal sign-in.
+    [SupplyParameterFromQuery(Name = "kerror")] public string? KioskError { get; set; }
 
     // Whether any OAuth provider is configured — the whole "or continue with" block (divider, provider
     // buttons, remember-method checkbox) is hidden when password login is the only option.

@@ -358,6 +358,13 @@ public class BoulderService : IBoulderService
                 .Include(b => b.Setters).ThenInclude(s => s.User)
                 .Include(b => b.CreatedBy)
                 .Include(b => b.Wall)
+
+                // Boulder carries no query filter of its own — the wall is the only filtered entity
+                // in the model — so the id alone used to be the whole check and ANY signed-in caller
+                // could read ANY boulder (name, grade, setters, holds) by guessing a guid. Reaching
+                // through to db.Walls puts the read back under the membership filter, and picks up
+                // the kiosk wall gate with it.
+                .Where(b => db.Walls.Any(w => w.Id == b.WallId))
                 .FirstOrDefaultAsync(b => b.Id == boulderId);
         }
         catch (Exception ex)

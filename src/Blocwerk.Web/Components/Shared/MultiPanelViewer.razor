@@ -105,6 +105,13 @@ else
 @code {
     [Parameter, EditorRequired] public Guid WallId { get; set; }
 
+    /// <summary>
+    /// Set on the anonymous share-link views (wall and boulder). The panel-photo route is gated on
+    /// wall membership like every other wall media route, so a share viewer has to send the wall's
+    /// token with each image request or the panels come back 404.
+    /// </summary>
+    [Parameter] public string? ShareToken { get; set; }
+
     /// <summary>The wall's panels; only live ones are ever shown or navigated to.</summary>
     [Parameter, EditorRequired] public IReadOnlyList<WallPanelInfo> Panels { get; set; } = [];
 
@@ -181,7 +188,9 @@ else
         (Neighbour(-1, 0) is not null || Neighbour(1, 0) is not null
             || Neighbour(0, -1) is not null || Neighbour(0, 1) is not null);
 
-    private string PhotoUrl(Guid panelId) => $"/api/walls/{WallId}/panels/{panelId}/photo";
+    private string PhotoUrl(Guid panelId) => string.IsNullOrEmpty(ShareToken)
+        ? $"/api/walls/{WallId}/panels/{panelId}/photo"
+        : $"/api/walls/{WallId}/panels/{panelId}/photo?token={Uri.EscapeDataString(ShareToken)}";
 
     protected override async Task OnInitializedAsync()
     {

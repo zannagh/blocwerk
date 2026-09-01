@@ -1,0 +1,179 @@
+@page "/kiosk/users"
+@page "/kiosk/users/{UserId:guid}"
+@inject IKioskContext KioskContext
+@inject IKioskService KioskService
+@inject ICurrentUserService CurrentUserService
+
+@* Static SSR by design, exactly like OAuthSelect: no @rendermode, no @onclick anywhere. Picking a
+   user changes the auth COOKIE, and CookieAuthenticationStateProvider never raises a change
+   notification — so the switch has to be a real navigation (form POST -> 302), not an in-circuit
+   state flip. It also means the picker keeps working on a tablet whose websocket never comes up. *@
+
+<PageTitle>Who's climbing? - Blocwerk</PageTitle>
+
+<div class="kiosk-picker">
+    @if (!KioskContext.IsKiosk)
+    {
+        @* Not a registered tablet. Nothing here is meaningful, and there is no wall id to fall back
+           on — the only one we would ever trust comes from the kiosk context itself. *@
+        <div class="kiosk-picker-head">
+            <h1>Not a kiosk</h1>
+            <p>This device isn't registered as a wall kiosk.</p>
+        </div>
+        <a href="/" class="kiosk-row kiosk-row-secondary">Back to Blocwerk</a>
+    }
+    else
+    {
+        @if (PinError is not null)
+        {
+            <div class="kiosk-banner-error" role="alert">
+                That didn't work. Check the PIN and try again — too many wrong tries lock the pick for a while.
+            </div>
+        }
+
+        @if (_current is not null)
+        {
+            <div class="kiosk-picker-head">
+                <h1>You're climbing as</h1>
+            </div>
+            <div class="kiosk-current">
+                <UserAvatar UserId="_current.Id" Name="@_current.Name" HasAvatar="_current.HasAvatar"
+                            CssClass="kiosk-avatar" />
+                <span class="kiosk-current-name">@_current.Name</span>
+            </div>
+            <form method="post" action="/kiosk/release" data-enhance-nav="false">
+                <AntiforgeryToken />
+                <button type="submit" class="kiosk-row kiosk-row-danger">Log out</button>
+            </form>
+            <p class="kiosk-note">
+                This session also ends by itself after 30 minutes without anyone touching the tablet.
+            </p>
+        }
+        else if (_pinTarget is not null)
+        {
+            @* Second step: one user, one PIN field, one button. A per-row inline PIN input would put a
+               keypad-sized target next to every name on a list that can run long; a dedicated step
+               keeps the rows finger-sized and the keyboard unambiguous. *@
+            <div class="kiosk-picker-head">
+                <h1>Enter PIN</h1>
+                <p>Confirm it's you before the tablet starts logging climbs.</p>
+            </div>
+            <div class="kiosk-current">
+                <UserAvatar UserId="_pinTarget.UserId" Name="@_pinTarget.Name"
+                            HasAvatar="_pinTarget.HasAvatar" CssClass="kiosk-avatar" />
+                <span class="kiosk-current-name">@_pinTarget.Name</span>
+            </div>
+            <form method="post" action="/kiosk/act-as" data-enhance-nav="false" class="kiosk-pin-form">
+                <AntiforgeryToken />
+                <input type="hidden" name="userId" value="@_pinTarget.UserId" />
+                <label class="field-label" for="kiosk-pin">PIN</label>
+                <input id="kiosk-pin" class="text-input kiosk-pin-input" type="password" name="pin"
+                       inputmode="numeric" autocomplete="off" maxlength="8" required />
+                <button type="submit" class="kiosk-row kiosk-row-primary">Start climbing</button>
+            </form>
+            <a href="/kiosk/users" class="kiosk-row kiosk-row-secondary">Cancel</a>
+        }
+        else
+        {
+            <div class="kiosk-picker-head">
+                <h1>Who's climbing?</h1>
+                <p>Pick yourself to log attempts on this wall. Browsing works without picking anyone.</p>
+            </div>
+
+            @if (_users.Count == 0)
+            {
+                <p class="kiosk-empty">
+                    Nobody on this wall has turned on kiosk sign-in yet. Members can enable it from the
+                    wall's page on their own phone.
+                </p>
+            }
+            else
+            {
+                <ul class="kiosk-user-list">
+                    @foreach (var user in _users)
+                    {
+                        <li>
+                            @if (user.RequiresPin)
+                            {
+                                @* PIN users go to the second step; the id in that URL is only ever
+                                   re-checked against this same consenting list. *@
+                                <a href="@($"/kiosk/users/{user.UserId}")" class="kiosk-row">
+                                    <UserAvatar UserId="user.UserId" Name="@user.Name"
+                                                HasAvatar="user.HasAvatar" CssClass="kiosk-avatar" />
+                                    <span class="kiosk-row-name">@user.Name</span>
+                                    <span class="kiosk-row-hint">PIN</span>
+                                </a>
+                            }
+                            else
+                            {
+                                @* No PIN: one small form per row, posting straight to act-as. The wall
+                                   is taken from the device cookie server-side, never from here. *@
+                                <form method="post" action="/kiosk/act-as" data-enhance-nav="false">
+                                    <AntiforgeryToken />
+                                    <input type="hidden" name="userId" value="@user.UserId" />
+                                    <button type="submit" class="kiosk-row">
+                                        <UserAvatar UserId="user.UserId" Name="@user.Name"
+                                                    HasAvatar="user.HasAvatar" CssClass="kiosk-avatar" />
+                                        <span class="kiosk-row-name">@user.Name</span>
+                                    </button>
+                                </form>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+
+            <p class="kiosk-note">
+                A session ends by itself after 30 minutes without anyone touching the tablet.
+            </p>
+        }
+    }
+</div>
+
+@code {
+    /// <summary>The user to collect a PIN for, when the second-step route was hit.</summary>
+    [Parameter]
+    public Guid? UserId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "kiosk_pin_error")]
+    public string? PinError { get; set; }
+
+    private IReadOnlyList<KioskUserInfo> _users = [];
+    private KioskUserInfo? _pinTarget;
+    private User? _current;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _users = [];
+        _pinTarget = null;
+        _current = null;
+
+        if (!KioskContext.IsKiosk || KioskContext.KioskWallId is not { } wallId)
+        {
+            return;
+        }
+
+        // Somebody is already acting as a member: the page becomes "you're climbing as X / log out"
+        // rather than a picker, so a second pick can't be stacked on top of a live session.
+        try
+        {
+            _current = await CurrentUserService.GetCurrentUserAsync();
+            return;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Anonymous tablet — the normal state while the picker is on screen.
+        }
+
+        // GetConsentingUsersAsync does NO authorisation: the wall id must come from the validated
+        // kiosk context and nowhere else.
+        _users = await KioskService.GetConsentingUsersAsync(wallId);
+
+        if (UserId is { } targetId)
+        {
+            // Re-resolve the routed id against the consenting list, so the PIN step can only ever be
+            // shown for someone who is actually pickable on this wall.
+            _pinTarget = _users.FirstOrDefault(u => u.UserId == targetId && u.RequiresPin);
+        }
+    }
+}

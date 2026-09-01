@@ -4,9 +4,12 @@
 @using Blocwerk.Web.State
 @using Blocwerk.Core.Services.TopLogger
 @using Microsoft.Extensions.DependencyInjection
+@using Microsoft.AspNetCore.WebUtilities
 @inject SessionState SessionState
 @inject ICurrentUserService CurrentUserService
 @inject IServiceScopeFactory ScopeFactory
+@inject Blocwerk.Core.Abstractions.IKioskContext KioskContext
+@inject NavigationManager Navigation
 @inject IJSRuntime JS
 
 <div class="app-shell">
@@ -27,10 +30,61 @@
     </header>
 
     <main class="content">
+        @* The act-as endpoint reports a bad PIN / a throttled device by redirecting to the wall page
+           with ?kiosk_pin_error=1. That lands on whatever page the wall renders, so the banner lives
+           in the kiosk layout branch rather than on any one page. *@
+        @if (KioskPinError)
+        {
+            <div class="kiosk-banner-error" role="alert">
+                That didn't work. Check the PIN and try again — too many wrong tries lock the pick for a while.
+            </div>
+        }
         @Body
     </main>
 
     <nav class="bw-tabbar">
+        @if (KioskContext.IsKiosk)
+        {
+            @* Kiosk tablets get a deliberately tiny bar: the wall they are bolted to, the tools, and
+               the user picker. Everything else either points at a route KioskRestrictions blocks or
+               is meaningless on a shared device. *@
+            <a href="@KioskWallHref" class="nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
+                    <path d="M3 10 12 3l9 7" />
+                    <path d="M5 9v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9" />
+                </svg>
+                <span>Home</span>
+            </a>
+            <a href="/tools" class="nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
+                    <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+                    <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+                </svg>
+                <span>Tools</span>
+            </a>
+            <AuthorizeView>
+                <Authorized>
+                    @* Somebody is acting as a member: their face is the clearest possible signal that
+                       the tablet is not anonymous right now. *@
+                    <a href="/kiosk/users" class="nav-item">
+                        <UserAvatar UserId="_userId" Name="@_userName" HasAvatar="_userHasAvatar"
+                                    CssClass="nav-avatar" />
+                        <span>@KioskUserLabel</span>
+                    </a>
+                </Authorized>
+                <NotAuthorized>
+                    <a href="/kiosk/users" class="nav-item">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
+                            <circle cx="12" cy="8" r="4" />
+                            <path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2" />
+                        </svg>
+                        <span>User</span>
+                    </a>
+                </NotAuthorized>
+            </AuthorizeView>
+        }
+        else
+        {
         <AuthorizeView>
             <Authorized>
                 <a href="/walls" class="nav-item">
@@ -102,6 +156,7 @@
                 </a>
             </Authorized>
         </AuthorizeView>
+        }
         @* Static layout: drive the toggle via JS/CSS (bwNav) — a Blazor @onclick would never fire
            since MainLayout has no @rendermode. Both buttons live in the DOM permanently; CSS shows
            the right one based on the body.bw-tabbar-collapsed class bwNav.toggleTabbar() flips. *@
@@ -129,6 +184,22 @@
         </div>
     }
 
+    @* The idle timer in wwwroot/js/kiosk-idle.js submits THIS form after 29 idle minutes and is inert
+       whenever it is absent — which is every non-kiosk page and every anonymous kiosk page, since
+       there is no session to release then. Keeping the antiforgery token server-rendered here is why
+       the script never has to know anything about tokens. *@
+    @if (KioskContext.IsKiosk)
+    {
+        <AuthorizeView>
+            <Authorized>
+                <form id="bw-kiosk-release" method="post" action="/kiosk/release"
+                      data-enhance-nav="false" hidden>
+                    <AntiforgeryToken />
+                </form>
+            </Authorized>
+        </AuthorizeView>
+    }
+
     <CookieConsent />
     <ConnectionStatus />
 </div>
@@ -141,6 +212,9 @@
 
     private Guid? _homeWallId;
     private bool _isAdmin;
+    private Guid? _userId;
+    private string? _userName;
+    private bool _userHasAvatar;
     private bool _startupTriggered;
     private bool _showReauthToast;
     private bool _reauthDismissed;
@@ -243,13 +317,34 @@
             var user = await CurrentUserService.GetCurrentUserAsync();
             _homeWallId = user?.HomeWallId;
             _isAdmin = user?.Role == IdentityRole.Admin;
+            _userId = user?.Id;
+            _userName = user?.Name;
+            _userHasAvatar = user?.HasAvatar ?? false;
         }
         catch (UnauthorizedAccessException)
         {
             _homeWallId = null;
             _isAdmin = false;
+            _userId = null;
+            _userName = null;
+            _userHasAvatar = false;
         }
     }
+
+    // The kiosk Home tab always points at the one wall the tablet is registered to, taken from the
+    // validated kiosk context — never from the URL. Falls back to /walls, which the kiosk restriction
+    // layer leaves reachable, if the context somehow has no wall.
+    private string KioskWallHref =>
+        KioskContext.KioskWallId is { } wallId ? $"/walls/{wallId}" : "/walls";
+
+    // First name only: the tab label has to stay on one line at 0.68rem.
+    private string KioskUserLabel =>
+        string.IsNullOrWhiteSpace(_userName) ? "User" : _userName.Split(' ')[0];
+
+    private bool KioskPinError =>
+        KioskContext.IsKiosk
+        && QueryHelpers.ParseQuery(new Uri(Navigation.Uri).Query).TryGetValue("kiosk_pin_error", out var flag)
+        && flag == "1";
 
     private void OnSessionChanged() => InvokeAsync(StateHasChanged);
 

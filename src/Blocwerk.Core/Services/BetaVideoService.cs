@@ -205,10 +205,13 @@ public class BetaVideoService : IBetaVideoService
         using var op = BlocwerkMetrics.TimeOperation("BetaVideo.List");
         try
         {
-            await using var db = await dbContextFactory.CreateDbContextAsync();
-            db.CurrentUserId = Guid.Empty;
+            // Same gate as the clip bytes: wall membership, decided by the wall query filter. The
+            // list is metadata only, but it still names the people who uploaded.
+            await using var db = await OpenReadableAsync(shareToken: null);
 
-            return await ProjectAsync(db.BetaVideos.Where(v => v.BoulderId == boulderId));
+            return await ProjectAsync(db.BetaVideos
+                .Where(v => v.BoulderId == boulderId
+                            && db.Walls.Any(w => w.Id == v.Boulder.WallId)));
         }
         catch (Exception ex)
         {
@@ -375,25 +378,36 @@ public class BetaVideoService : IBetaVideoService
 
     /// <summary>
     /// Access mirrors the wall photo endpoints: a share token must match the boulder's wall, and
-    /// without one the caller has to be signed in.
+    /// without one the caller has to be a MEMBER of the boulder's wall — being signed in at all is
+    /// not enough. The context therefore carries the caller's id on the non-share path, so the wall
+    /// query filter becomes the membership check that <see cref="AccessibleVideos"/> leans on; the
+    /// share path leaves it open (Guid.Empty) because an anonymous viewer has no membership.
     /// </summary>
     private async Task<BlocwerkDbContext> OpenReadableAsync(string? shareToken)
     {
+        var currentUserId = Guid.Empty;
         if (string.IsNullOrEmpty(shareToken))
         {
-            await currentUserService.GetCurrentUserAsync();
+            var user = await currentUserService.GetCurrentUserAsync();
+            currentUserId = user.Id;
         }
 
         var db = await dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = Guid.Empty;
+        db.CurrentUserId = currentUserId;
         return db;
     }
 
+    /// <summary>
+    /// The clip, if this caller may have it. <see cref="BetaVideo"/> carries no query filter of its
+    /// own, so the non-share branch reaches the only filtered entity in the model — the wall — and
+    /// lets its filter decide. Without that predicate the id alone was the whole check and any
+    /// signed-in session could read every clip in the installation.
+    /// </summary>
     private static IQueryable<BetaVideo> AccessibleVideos(BlocwerkDbContext db, Guid videoId, string? shareToken)
     {
         var query = db.BetaVideos.AsNoTracking().Where(v => v.Id == videoId);
         return string.IsNullOrEmpty(shareToken)
-            ? query
+            ? query.Where(v => db.Walls.Any(w => w.Id == v.Boulder.WallId))
             : query.Where(v => v.Boulder.Wall.ShareToken == shareToken && !v.Boulder.IsDraft);
     }
 

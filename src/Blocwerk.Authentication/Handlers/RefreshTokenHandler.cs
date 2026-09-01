@@ -11,9 +11,13 @@ namespace Blocwerk.Authentication.Handlers;
 
 public class RefreshTokenHandler : IRefreshTokenHandler
 {
+    // RootDbContextFactory rather than IDbContextFactory<BlocwerkDbContext>: this handler is a
+    // SINGLETON, and the interface is registered scoped so kiosk wall scoping can be stamped per
+    // session (see KioskScopedDbContextFactory). Refresh tokens are not wall data, so bypassing that
+    // stamp grants nothing.
     private readonly IDbContextFactory<BlocwerkDbContext> _dbContextFactory;
 
-    public RefreshTokenHandler(IDbContextFactory<BlocwerkDbContext> dbContextFactory)
+    public RefreshTokenHandler(RootDbContextFactory dbContextFactory)
     {
         _dbContextFactory = dbContextFactory;
     }

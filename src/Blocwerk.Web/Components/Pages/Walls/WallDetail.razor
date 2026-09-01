@@ -9,6 +9,7 @@
 @inject IBoulderFeedbackService FeedbackService
 @inject IActivityLogService ActivityLogService
 @inject ICurrentUserService CurrentUserService
+@inject IKioskService KioskService
 @inject CircuitEditActivity EditActivity
 @inject NavigationManager Navigation
 @implements IDisposable
@@ -306,6 +307,39 @@ else
                                     <span class="member-role">@member.Role</span>
                                 }
                             </div>
+                            @if (member.UserId == _currentUserId)
+                            {
+                                <div class="kiosk-consent-line">
+                                    @if (_kioskConsented)
+                                    {
+                                        <span class="kiosk-consent-state">📟 You appear on this wall's kiosk tablet</span>
+                                        @if (_kioskConfirmRevoke)
+                                        {
+                                            <span class="kiosk-consent-confirm">Remove yourself and clear your PIN?</span>
+                                            <button type="button" class="kiosk-consent-btn danger" disabled="@_kioskBusy"
+                                                    @onclick="RevokeKioskConsent">Yes, remove me</button>
+                                            <button type="button" class="kiosk-consent-btn" disabled="@_kioskBusy"
+                                                    @onclick="() => _kioskConfirmRevoke = false">Cancel</button>
+                                        }
+                                        else
+                                        {
+                                            <button type="button" class="kiosk-consent-btn" disabled="@_kioskBusy"
+                                                    @onclick="OpenKioskDialog">Change PIN</button>
+                                            <button type="button" class="kiosk-consent-btn" disabled="@_kioskBusy"
+                                                    @onclick="() => _kioskConfirmRevoke = true">Remove me</button>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <button type="button" class="kiosk-consent-btn" disabled="@_kioskBusy"
+                                                @onclick="OpenKioskDialog">📟 Use Kiosk mode on this wall</button>
+                                    }
+                                </div>
+                                @if (_kioskError != null)
+                                {
+                                    <div class="error-msg">@_kioskError</div>
+                                }
+                            }
                         }
                     }
                 </div>
@@ -410,7 +444,7 @@ else
                         {
                             @* Big wall: step between the live panel images instead of one flat photo.
                                Editing the panel grid lives in the wall settings, never here. *@
-                            <MultiPanelViewer WallId="_wall.Id" Panels="_livePanels"
+                            <MultiPanelViewer WallId="_wall.Id" ShareToken="@ShareToken" Panels="_livePanels"
                                               StartCol="0" StartRow="0"
                                               ArrowMode="MultiPanelViewer.ArrowDisplayMode.AllNeighbours"
                                               HoldsProvider="LoadPanelHolds"
@@ -577,6 +611,54 @@ else
     </WallCarousel>
 }
 
+@if (_kioskDialogOpen)
+{
+    <div class="bw-modal-backdrop" @onclick="CloseKioskDialog">
+        <div class="bw-modal" @onclick:stopPropagation="true">
+            <h3>Use Kiosk mode on this wall</h3>
+            <p class="kiosk-modal-text">
+                This wall's kiosk tablet will list your name. Anyone standing at it can pick you and act
+                as you &mdash; logging climbs, commenting, editing &mdash; until the kiosk session ends.
+            </p>
+
+            @if (_kioskIsPrivileged)
+            {
+                <p class="kiosk-modal-warning">
+                    You have @(_isAdmin ? "admin" : "moderator") rights on this wall. Without a PIN, anyone
+                    at the tablet gets those rights too. You can still skip the PIN &mdash; just untick the box.
+                </p>
+            }
+
+            <label class="kiosk-pin-toggle">
+                <input type="checkbox" checked="@_kioskUsePin" @onchange="OnKioskUsePinChanged" />
+                Protect my pick with a PIN
+            </label>
+            <p class="hint">With a PIN, only someone who knows it can pick you at the tablet.</p>
+
+            @if (_kioskUsePin)
+            {
+                <div class="form-group">
+                    <label for="kiosk-pin">PIN (4&ndash;8 digits)</label>
+                    <input id="kiosk-pin" class="form-input" type="password" inputmode="numeric" maxlength="8"
+                           autocomplete="off" @bind="_kioskPin" @bind:event="oninput" />
+                </div>
+            }
+
+            @if (_kioskDialogError != null)
+            {
+                <div class="error-msg">@_kioskDialogError</div>
+            }
+
+            <div class="kiosk-modal-actions">
+                <button type="button" class="kiosk-consent-btn" disabled="@_kioskBusy" @onclick="CloseKioskDialog">Cancel</button>
+                <button type="button" class="kiosk-consent-btn primary" disabled="@_kioskBusy" @onclick="SubmitKioskConsent">
+                    @(_kioskBusy ? "Working..." : _kioskConsented ? "Save" : "Add me to the kiosk")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
 @if (!string.IsNullOrEmpty(_toast))
 {
     <div class="toast-msg">@_toast</div>
@@ -646,6 +728,22 @@ else
     private enum SortMode { Newest, Oldest, GradeAsc, GradeDesc, Rating, MyAttempts }
 
     private List<WallMember>? _members;
+
+    // Kiosk consent (the current user's own opt-in on this wall's kiosk tablet). Loaded once with
+    // the members list; never inside a render path.
+    private bool _kioskConsented;
+    private bool _kioskDialogOpen;
+    private bool _kioskConfirmRevoke;
+    private bool _kioskBusy;
+    private bool _kioskUsePin;
+    private string _kioskPin = string.Empty;
+    private string? _kioskDialogError;
+    private string? _kioskError;
+
+    /// <summary>Admins (owner included) and moderators hand over real wall powers, so they get the
+    /// PIN pre-ticked and a plain warning — but are never blocked from skipping it.</summary>
+    private bool _kioskIsPrivileged => _isAdmin || _isModerator;
+
     private List<ActivityLogEntry>? _activityItems;
     private int _activityTotal;
     private int _activityPage;
@@ -779,7 +877,132 @@ else
             if (_isMember)
             {
                 _members = await WallService.GetMembersAsync(WallId);
+                await LoadKioskConsent();
             }
+        }
+    }
+
+    private async Task LoadKioskConsent()
+    {
+        try
+        {
+            _kioskConsented = await KioskService.HasConsentedAsync(WallId);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            _kioskConsented = false;
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "Loading the kiosk consent of wall {WallId} failed", WallId);
+            _kioskConsented = false;
+        }
+    }
+
+    private void OpenKioskDialog()
+    {
+        _kioskConfirmRevoke = false;
+        _kioskError = null;
+        _kioskDialogError = null;
+        _kioskPin = string.Empty;
+
+        // Privileged members start with the PIN ticked: skipping it must be a deliberate untick.
+        _kioskUsePin = _kioskIsPrivileged;
+        _kioskDialogOpen = true;
+    }
+
+    private void CloseKioskDialog()
+    {
+        _kioskDialogOpen = false;
+        _kioskPin = string.Empty;
+        _kioskDialogError = null;
+    }
+
+    private void OnKioskUsePinChanged(ChangeEventArgs e)
+    {
+        _kioskUsePin = e.Value is bool value && value;
+        _kioskDialogError = null;
+        if (!_kioskUsePin)
+        {
+            _kioskPin = string.Empty;
+        }
+    }
+
+    private async Task SubmitKioskConsent()
+    {
+        if (_kioskBusy)
+        {
+            return;
+        }
+
+        string? pin = null;
+        if (_kioskUsePin)
+        {
+            pin = _kioskPin.Trim();
+            if (pin.Length is < 4 or > 8 || !pin.All(char.IsAsciiDigit))
+            {
+                _kioskDialogError = "The PIN has to be 4 to 8 digits.";
+                return;
+            }
+        }
+
+        _kioskBusy = true;
+        _kioskDialogError = null;
+        try
+        {
+            await KioskService.ConsentAsync(WallId, pin);
+            _kioskConsented = true;
+            _kioskDialogOpen = false;
+            _kioskPin = string.Empty;
+            await ShowToast(pin == null ? "You're on this wall's kiosk, without a PIN" : "You're on this wall's kiosk");
+        }
+        catch (UnauthorizedAccessException)
+        {
+            _kioskDialogError = "Please sign in again to change your kiosk settings.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            _kioskDialogError = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "Recording kiosk consent for wall {WallId} failed", WallId);
+            _kioskDialogError = "Your kiosk consent could not be saved. Please try again.";
+        }
+        finally
+        {
+            _kioskBusy = false;
+        }
+    }
+
+    private async Task RevokeKioskConsent()
+    {
+        if (_kioskBusy)
+        {
+            return;
+        }
+
+        _kioskBusy = true;
+        _kioskError = null;
+        try
+        {
+            await KioskService.RevokeConsentAsync(WallId);
+            _kioskConsented = false;
+            _kioskConfirmRevoke = false;
+            await ShowToast("You no longer appear on this wall's kiosk");
+        }
+        catch (UnauthorizedAccessException)
+        {
+            _kioskError = "Please sign in again to change your kiosk settings.";
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "Revoking kiosk consent for wall {WallId} failed", WallId);
+            _kioskError = "Your kiosk consent could not be withdrawn. Please try again.";
+        }
+        finally
+        {
+            _kioskBusy = false;
         }
     }
 

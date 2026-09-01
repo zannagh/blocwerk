@@ -19,11 +19,14 @@ public sealed class TelemetryStatsCollector : BackgroundService
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(30);
 
+    // RootDbContextFactory rather than IDbContextFactory<BlocwerkDbContext>: a hosted service is a
+    // SINGLETON, and the interface is registered scoped so kiosk wall scoping can be stamped per
+    // session (see KioskScopedDbContextFactory). These are app-wide totals, outside any session.
     private readonly IDbContextFactory<BlocwerkDbContext> dbContextFactory;
     private readonly ILogger<TelemetryStatsCollector> logger;
 
     public TelemetryStatsCollector(
-        IDbContextFactory<BlocwerkDbContext> dbContextFactory,
+        RootDbContextFactory dbContextFactory,
         ILogger<TelemetryStatsCollector> logger)
     {
         this.dbContextFactory = dbContextFactory;

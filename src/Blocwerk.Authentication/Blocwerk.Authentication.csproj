@@ -6,6 +6,8 @@
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <!-- KioskContext's resolution seam is exercised directly; see KioskAuthTests. -->
+    <InternalsVisibleTo Include="Blocwerk.Core.Tests" />
   </ItemGroup>
 
   <ItemGroup>

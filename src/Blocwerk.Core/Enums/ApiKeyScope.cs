@@ -8,4 +8,11 @@ public enum ApiKeyScope
 
     /// <summary>Scoped to the user who created it, standing in for that user's own access.</summary>
     User = 1,
+
+    /// <summary>
+    /// Identifies a wall-mounted kiosk tablet. Like <see cref="Wall"/> the key carries a wall id, but
+    /// deliberately as its own scope: a <see cref="Wall"/> key is accepted on the wall's write endpoints
+    /// (temperature, images, maintenance) and a tablet in a public gym must not inherit those.
+    /// </summary>
+    Kiosk = 2,
 }

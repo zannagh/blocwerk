@@ -9,6 +9,7 @@
 @inject NavigationManager Navigation
 @inject ITopLoggerImportService TopLogger
 @inject IEmailVerificationService EmailVerification
+@inject Blocwerk.Core.Abstractions.IKioskContext KioskContext
 @inject IJSRuntime JS
 @inject IDbContextFactory<Blocwerk.Core.Data.BlocwerkDbContext> DbContextFactory
 @using Blocwerk.Core.Helpers
@@ -1271,6 +1272,16 @@
     // means the address is already verified on another account.
     private async Task SaveVerifiedEmailAsync(string email)
     {
+        // The e-mail address is an account-recovery credential, so changing it is blocked for kiosk
+        // sessions like the password and the second factor are. Unlike those it has no service seam
+        // to guard — the write is right here — so the check is right here too. /profile is also on
+        // the kiosk route deny-list, but a route block is not a mutation block.
+        if (KioskContext.IsKiosk)
+        {
+            _emailError = "Email can't be changed from a kiosk device.";
+            return;
+        }
+
         var normalized = email.Trim().ToLowerInvariant();
         try
         {

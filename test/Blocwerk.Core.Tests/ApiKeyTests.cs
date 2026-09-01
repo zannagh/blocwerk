@@ -44,25 +44,26 @@ public class ApiKeyTests
         using var h = new WallTestHarness();
         await h.SeedWallAsync();
 
-        var (_, token) = await h.ApiKeyService.CreateUserKeyAsync(h.Owner.Id, "Script", null);
+        var (_, token) = await h.ApiKeyService.CreateUserKeyAsync(h.Owner.Id, h.Owner.Id, "Script", null);
 
         Assert.Null(await h.ApiKeyService.ValidateAsync("not-a-key"));
         Assert.Null(await h.ApiKeyService.ValidateAsync(ApiKey.TokenPrefix + new string('a', 64)));
 
         var (expiredKey, expiredToken) = await h.ApiKeyService.CreateUserKeyAsync(
             h.Owner.Id,
+            h.Owner.Id,
             "Expired",
             DateTimeOffset.UtcNow.AddMinutes(-1));
         Assert.Null(await h.ApiKeyService.ValidateAsync(expiredToken));
         Assert.NotNull(expiredKey.ExpiresAt);
 
-        var (revoked, revokedToken) = await h.ApiKeyService.CreateUserKeyAsync(h.Owner.Id, "Revoked", null);
+        var (revoked, revokedToken) = await h.ApiKeyService.CreateUserKeyAsync(h.Owner.Id, h.Owner.Id, "Revoked", null);
         await h.ApiKeyService.RevokeAsync(revoked.Id, h.Owner.Id);
         Assert.Null(await h.ApiKeyService.ValidateAsync(revokedToken));
 
         // The healthy key is untouched by all of that, and revoked keys stay listed.
         Assert.NotNull(await h.ApiKeyService.ValidateAsync(token));
-        var listed = await h.ApiKeyService.GetUserKeysAsync(h.Owner.Id);
+        var listed = await h.ApiKeyService.GetUserKeysAsync(h.Owner.Id, h.Owner.Id);
         Assert.Equal(3, listed.Count);
         Assert.Contains(listed, k => k.RevokedAt is not null);
     }

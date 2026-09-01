@@ -12,6 +12,11 @@
         a password and revoke it as soon as the device is gone.
     </p>
 
+    <p class="apikey-blurb">
+        A <strong>kiosk key</strong> is different: it registers a wall-mounted tablet, which then shows
+        this wall and lets members who opted in pick themselves. It cannot post sensor data.
+    </p>
+
     @if (newToken != null)
     {
         <div class="apikey-reveal">
@@ -34,6 +39,17 @@
     }
 
     <div class="form-group">
+        <label for="wall-apikey-kind">Key type</label>
+        <select id="wall-apikey-kind" class="form-input" @bind="kind">
+            <option value="@KeyKind.Wall">Wall key &ndash; automation and integrations</option>
+            <option value="@KeyKind.Kiosk">Kiosk key &ndash; a wall-mounted tablet</option>
+        </select>
+        @if (kind == KeyKind.Kiosk)
+        {
+            <p class="hint">Enter this token once on the tablet via "Register Kiosk" on the login screen.</p>
+        }
+    </div>
+    <div class="form-group">
         <label for="wall-apikey-name">Name</label>
         <input id="wall-apikey-name" class="form-input" maxlength="100" placeholder="e.g. Cellar temperature sensor"
                @bind="name" @bind:event="oninput" />
@@ -44,7 +60,7 @@
         <p class="hint">Leave empty for a key that never expires.</p>
     </div>
     <button type="button" class="btn-submit" disabled="@(busy || string.IsNullOrWhiteSpace(name))" @onclick="Create">
-        @(busy ? "Working..." : "Create key")
+        @(busy ? "Working..." : kind == KeyKind.Kiosk ? "Create kiosk key" : "Create wall key")
     </button>
 
     <div class="wall-apikey-list">
@@ -82,6 +98,17 @@
     private string? error;
     private string copyLabel = "Copy to clipboard";
     private bool busy;
+    private KeyKind kind = KeyKind.Wall;
+
+    /// <summary>Which of the two wall-bound key kinds the form creates.</summary>
+    private enum KeyKind
+    {
+        /// <summary>A wall key for automation and integrations.</summary>
+        Wall,
+
+        /// <summary>A kiosk key that registers a wall-mounted tablet.</summary>
+        Kiosk,
+    }
 
     protected override async Task OnInitializedAsync() => await ReloadAsync();
 
@@ -122,7 +149,9 @@
         busy = true;
         try
         {
-            var (_, token) = await ApiKeyService.CreateWallKeyAsync(WallId, CurrentUserId, name.Trim(), expiresAt);
+            var (_, token) = kind == KeyKind.Kiosk
+                ? await ApiKeyService.CreateKioskKeyAsync(WallId, CurrentUserId, name.Trim(), expiresAt)
+                : await ApiKeyService.CreateWallKeyAsync(WallId, CurrentUserId, name.Trim(), expiresAt);
             newToken = token;
             copyLabel = "Copy to clipboard";
             name = string.Empty;

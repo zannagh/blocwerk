@@ -46,12 +46,24 @@ public static class CoreServices
         builder.Services.AddSingleton<IDomainChangeNotifier, DomainChangeNotifier>();
         builder.Services.AddSingleton<DomainChangeInterceptor>();
 
+        // Registers DbContextOptions<BlocwerkDbContext> (singleton) and EF's own factory. The
+        // IDbContextFactory<BlocwerkDbContext> registration is then REPLACED below, so nothing
+        // resolves EF's unstamped factory by accident.
         builder.Services.AddDbContextFactory<BlocwerkDbContext>((sp, options) =>
         {
             options.UseNpgsql(config.Postgres.ConnectionString);
             options.AddInterceptors(sp.GetRequiredService<DomainChangeInterceptor>());
         });
 
+        // Kiosk wall scoping is stamped on EVERY context, centrally, at creation — see
+        // KioskScopedDbContextFactory for why it cannot be left to the individual services.
+        // Scoped, because the kiosk state belongs to the request/circuit; singletons that need a
+        // context outside any session take RootDbContextFactory instead.
+        builder.Services.AddSingleton<RootDbContextFactory>();
+        builder.Services.AddScoped<IDbContextFactory<BlocwerkDbContext>, KioskScopedDbContextFactory>();
+
+        // The plain scoped BlocwerkDbContext resolves the factory from the SAME scope, so it is
+        // stamped by the line above too. Both creation paths are covered by that one decorator.
         builder.Services.AddScoped(sp =>
         {
             var factory = sp.GetRequiredService<IDbContextFactory<BlocwerkDbContext>>();
@@ -69,7 +81,18 @@ public static class CoreServices
         builder.Services.AddSingleton<IWallImageStorage, FileSystemWallImageStorage>();
         builder.Services.AddScoped<IWallImageService, WallImageService>();
         builder.Services.AddScoped<IWallTemperatureService, WallTemperatureService>();
-        builder.Services.AddScoped<IApiKeyService, ApiKeyService>();
+        // API-key MINTING is blocked for kiosk sessions on the service, not just in the UI: the
+        // pages that mint keys are interactive components calling straight into this service inside
+        // the circuit, where no route middleware runs. Hosts without an HTTP layer (tests, tooling)
+        // register no IKioskContext and get the bare service.
+        builder.Services.AddScoped<ApiKeyService>();
+        builder.Services.AddScoped<IApiKeyService>(sp =>
+        {
+            var inner = sp.GetRequiredService<ApiKeyService>();
+            var kioskContext = sp.GetService<IKioskContext>();
+            return kioskContext is null ? inner : new KioskGuardedApiKeyService(inner, kioskContext);
+        });
+        builder.Services.AddScoped<IKioskService, KioskService>();
         builder.Services.AddScoped<IWallSegmentService, WallSegmentService>();
         builder.Services.AddScoped<IProgressionService, ProgressionService>();
         builder.Services.AddScoped<ITrainingService, TrainingService>();

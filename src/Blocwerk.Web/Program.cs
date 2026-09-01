@@ -179,6 +179,14 @@ public static class Program
         // Counts live circuits into the "connected users" gauge.
         builder.Services.AddScoped<CircuitHandler, TelemetryCircuitHandler>();
 
+        // Primes IKioskContext at circuit start, while the connection's HttpContext is still on the
+        // stack, so the kiosk device cookie is captured once and held for the circuit's life.
+        builder.Services.AddScoped<CircuitHandler, KioskCircuitHandler>();
+
+        // In-memory brute-force throttle for kiosk registration and kiosk PIN attempts. Singleton so
+        // it spans circuits and requests; deliberately not the user-row login lockout (see the type).
+        builder.Services.AddSingleton<KioskThrottleRegistry>();
+
         // App-wide, in-memory "busy" signal: the singleton registry tracks unsaved in-flight edits
         // across every circuit; the scoped wrapper is injected into the editing components and
         // releases its leases on circuit teardown (backstop against an abrupt disconnect).

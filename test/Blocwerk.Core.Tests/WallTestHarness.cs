@@ -38,8 +38,9 @@ public sealed class WallTestHarness : IDisposable
             db.Database.EnsureCreated();
         }
 
+        ActingUser = Owner;
         CurrentUser = Substitute.For<ICurrentUserService>();
-        CurrentUser.GetCurrentUserAsync().Returns(_ => Task.FromResult(Owner));
+        CurrentUser.GetCurrentUserAsync().Returns(_ => Task.FromResult(ActingUser));
 
         ActivityLog = Substitute.For<IActivityLogService>();
         HoldDetection = Substitute.For<IHoldDetectionService>();
@@ -62,9 +63,17 @@ public sealed class WallTestHarness : IDisposable
         WallImageService = new WallImageService(DbContextFactory, WallImageStorage, NullLogger<WallImageService>.Instance);
         WallTemperatureService = new WallTemperatureService(DbContextFactory, NullLogger<WallTemperatureService>.Instance);
         ApiKeyService = new ApiKeyService(DbContextFactory, NullLogger<ApiKeyService>.Instance);
+        PasswordService = new PasswordService();
+        KioskService = new KioskService(DbContextFactory, CurrentUser, PasswordService, NullLogger<KioskService>.Instance);
     }
 
     public User Owner { get; }
+
+    /// <summary>
+    /// Whom <see cref="CurrentUser"/> resolves to. Defaults to <see cref="Owner"/>; assign a user from
+    /// <see cref="AddMemberAsync"/> to exercise a service call as somebody else.
+    /// </summary>
+    public User ActingUser { get; set; }
 
     public Guid WallId { get; private set; }
 
@@ -99,6 +108,10 @@ public sealed class WallTestHarness : IDisposable
     public IWallTemperatureService WallTemperatureService { get; }
 
     public IApiKeyService ApiKeyService { get; }
+
+    public IPasswordService PasswordService { get; }
+
+    public IKioskService KioskService { get; }
 
     /// <summary>
     /// Seeds a wall owned by <see cref="Owner"/> with a live photo and the given number

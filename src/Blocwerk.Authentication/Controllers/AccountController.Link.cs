@@ -1,3 +1,4 @@
+using Blocwerk.Authentication.Kiosk;
 using Blocwerk.Authentication.Resources;
 using Blocwerk.Authentication.Services;
 using Blocwerk.Core.Data;
@@ -70,6 +71,19 @@ public partial class AccountController
     {
         // Single-use: drop the intent cookie up front so a replay can't re-trigger a link/merge.
         Response.Cookies.Delete(LinkIntentCookieName, LinkIntentCookieDeleteOptions());
+
+        // A kiosk session may not attach a provider identity — a permanent takeover that would
+        // outlive the 30 minutes by years. This refusal lives HERE rather than on the route, because
+        // /account/callback also completes ordinary OAuth sign-in and a wall admin must still be able
+        // to sign in at the tablet. Nothing has been linked at this point, and the intent cookie is
+        // already gone, so the flow simply stops.
+        if (KioskRestrictions.IsBlockedAccountLink(_kioskContext))
+        {
+            Log.Warning(
+                "[Web Authentication] Account-link refused for user {UserId}: kiosk session.",
+                linkUserId);
+            return KioskLinkRefused();
+        }
 
         User currentUser;
         try
@@ -149,6 +163,20 @@ public partial class AccountController
         // the missing identity row). Both simply record the identity on the current account.
         await InsertUserIdentityAsync(db, currentUser.Id, provider, providerUserId);
         return Redirect("/profile?link=linked");
+    }
+
+    /// <summary>
+    /// Where a kiosk session lands after a refused link. /profile is off limits from a tablet, so it
+    /// goes back to the wall with the same marker the kiosk middleware uses for a blocked page.
+    /// </summary>
+    private IActionResult KioskLinkRefused()
+    {
+        if (_kioskContext.KioskWallId is { } wallId && wallId != Guid.Empty)
+        {
+            return Redirect($"/walls/{wallId}?kiosk_blocked=1");
+        }
+
+        return Redirect("/walls?kiosk_blocked=1");
     }
 
     private static async Task InsertUserIdentityAsync(BlocwerkDbContext db, Guid userId, string provider, string providerUserId)

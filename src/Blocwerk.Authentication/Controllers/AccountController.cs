@@ -33,6 +33,7 @@ public partial class AccountController : Controller
     private readonly IPasswordService _passwordService;
     private readonly ILoginLockoutService _loginLockout;
     private readonly Services.ITotpService _totpService;
+    private readonly IKioskContext _kioskContext;
     private readonly IDataProtector _linkProtector;
     private readonly IDataProtector _totpPendingProtector;
 
@@ -47,6 +48,7 @@ public partial class AccountController : Controller
         IPasswordService passwordService,
         ILoginLockoutService loginLockout,
         Services.ITotpService totpService,
+        IKioskContext kioskContext,
         IDataProtectionProvider dataProtectionProvider)
     {
         _configuration = settings;
@@ -59,6 +61,7 @@ public partial class AccountController : Controller
         _passwordService = passwordService;
         _loginLockout = loginLockout;
         _totpService = totpService;
+        _kioskContext = kioskContext;
         _linkProtector = dataProtectionProvider.CreateProtector(LinkIntentPurpose);
         _totpPendingProtector = dataProtectionProvider.CreateProtector(TotpPendingPurpose);
     }

@@ -199,7 +199,7 @@ else
             {
                 @* Big wall: show the panel holding most of the boulder's holds and let the user
                    step to the neighbouring panels that carry its other holds. *@
-                <MultiPanelViewer WallId="WallId" Panels="_livePanels"
+                <MultiPanelViewer WallId="WallId" ShareToken="@ShareToken" Panels="_livePanels"
                                   StartCol="_startPanelCol" StartRow="_startPanelRow"
                                   ArrowMode="MultiPanelViewer.ArrowDisplayMode.HoldsOnly"
                                   HoldsByPanel="_holdsByPanel"
@@ -332,7 +332,7 @@ else
                            IsAnonymous="_isAnonymous" ShareToken="@ShareToken"
                            Uploaded="OnBetaVideoUploaded" />
 
-        <BoulderActivityFeed @ref="_activityFeed" BoulderId="BoulderId" />
+        <BoulderActivityFeed @ref="_activityFeed" BoulderId="BoulderId" ShareToken="@ShareToken" />
 
         <BoulderComments @ref="_commentList" BoulderId="BoulderId"
                          CurrentUserId="_currentUserId" IsAnonymous="_isAnonymous" />
@@ -672,6 +672,15 @@ else
             }
         }
 
+        // The route names a wall AND a boulder, and nothing tied the two together: a boulder from
+        // another wall loaded happily under this wall's id, and everything below (holds, panels,
+        // photo urls, the activity feed) would then be resolved against the WRONG wall. Treat the
+        // mismatch as not-found — the same answer as a boulder that does not exist.
+        if (_boulder != null && _boulder.WallId != WallId)
+        {
+            _boulder = null;
+        }
+
         // Drafts are visible to every wall member now (they just can't be logged until published),
         // so a non-creator is no longer redirected away from a draft.
 
@@ -725,7 +734,10 @@ else
     /// </summary>
     private void OnCacheChanged(DomainChange change)
     {
-        if (change.Scope == DomainChangeScope.WallList || _isAnonymous || _editMeta)
+        // Share viewers are skipped by TOKEN, not only by _isAnonymous: a signed-in viewer following
+        // a share link has _isAnonymous == false even with no membership on this wall, and their
+        // reads go through the uncached share path that this cache signal says nothing about.
+        if (change.Scope == DomainChangeScope.WallList || _isAnonymous || !string.IsNullOrEmpty(ShareToken) || _editMeta)
         {
             return;
         }
@@ -1041,8 +1053,21 @@ else
         return wall?.Holds.ToList() ?? [];
     }
 
+    /// <summary>
+    /// Re-reads the boulder through the SAME path the initial load used. The share path must stay on
+    /// <c>GetBoulderByShareTokenAsync</c>: the cached read is filtered by wall membership, so for a
+    /// signed-in viewer who is NOT a member of this wall it returns null and a reload would blank the
+    /// page they were legitimately shown. Anonymous viewers hit the same wall by a different route
+    /// (no user at all), so the branch is on the token, not on <c>_isAnonymous</c>.
+    /// </summary>
     private async Task LoadBoulder()
     {
+        if (!string.IsNullOrEmpty(ShareToken))
+        {
+            _boulder = await BoulderService.GetBoulderByShareTokenAsync(BoulderId, ShareToken);
+            return;
+        }
+
         _boulder = await Cache.GetBoulderAsync(BoulderId);
         if (!_isAnonymous)
         {

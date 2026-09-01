@@ -19,11 +19,22 @@ public partial class PasswordLoginService : IPasswordLoginService
 
     private readonly IDbContextFactory<BlocwerkDbContext> dbContextFactory;
     private readonly IPasswordService passwordService;
+    private readonly IKioskContext? kioskContext;
 
-    public PasswordLoginService(IDbContextFactory<BlocwerkDbContext> dbContextFactory, IPasswordService passwordService)
+    /// <summary>Creates the service.</summary>
+    /// <remarks>
+    /// <c>kioskContext</c> is optional: hosts with no HTTP layer never register one, which simply
+    /// means "never a kiosk". See <see cref="KioskGuard"/> for why the stamped database context is
+    /// read as a second source.
+    /// </remarks>
+    public PasswordLoginService(
+        IDbContextFactory<BlocwerkDbContext> dbContextFactory,
+        IPasswordService passwordService,
+        IKioskContext? kioskContext = null)
     {
         this.dbContextFactory = dbContextFactory;
         this.passwordService = passwordService;
+        this.kioskContext = kioskContext;
     }
 
     public async Task SetPasswordAsync(Guid userId, string loginUsername, string password, string? currentPassword)
@@ -127,6 +138,11 @@ public partial class PasswordLoginService : IPasswordLoginService
 
     public async Task<LocalUserCreateResult> CreateLocalUserAsync(string loginUsername, string password, string email)
     {
+        // An account created at the tablet is the half of the share-link escalation that gives the
+        // attacker somewhere to redeem it. Refused before any validation runs, so nothing about the
+        // response distinguishes a kiosk refusal from a malformed request.
+        KioskGuard.EnsureNotKiosk(kioskContext, db: null, "Creating an account");
+
         var username = (loginUsername ?? string.Empty).Trim();
         if (!IsValidUsername(username))
         {
@@ -209,6 +225,13 @@ public partial class PasswordLoginService : IPasswordLoginService
         }
 
         await using var dbContext = await dbContextFactory.CreateDbContextAsync();
+
+        // This is the SECOND way to write a password hash, and it does not go through
+        // CurrentUserService.SetPasswordAsync — so the EnsureNotKiosk there never covered it. A
+        // password set from a public tablet outlives the session by definition, which is the whole
+        // reason account-security changes are refused on a kiosk in the first place.
+        KioskGuard.EnsureNotKiosk(kioskContext, dbContext, "Resetting a password");
+
         var dbUser = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId)
                      ?? throw new InvalidOperationException("User not found.");
 
