@@ -45,19 +45,25 @@ else
                 {
                     <span class="archived-badge">archived</span>
                 }
-                @if (!_isAnonymous)
-                {
-                    <BoulderFavoriteToggle BoulderId="_boulder.Id" IsFavorite="_isFavorite" />
-                }
-                @if ((_isCreator || _isAdmin || _isSetter) && !_isAnonymous && !_editMeta)
-                {
-                    <button class="btn-icon boulder-edit-btn" @onclick="StartEditMeta" title="Rename or change grade">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                            <path d="M12 20h9" />
-                            <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-                        </svg>
-                    </button>
-                }
+                <div class="title-actions">
+                    @if (!_isAnonymous)
+                    {
+                        <BoulderFavoriteToggle BoulderId="_boulder.Id" IsFavorite="_isFavorite" />
+                    }
+                    @if ((_isCreator || _isAdmin || _isSetter) && !_isAnonymous && !_editMeta)
+                    {
+                        <button class="btn-icon boulder-edit-btn" @onclick="StartEditMeta" title="Rename or change grade">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                                <path d="M12 20h9" />
+                                <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                            </svg>
+                        </button>
+                    }
+                    @if (CanFullRevise)
+                    {
+                        <a href="/walls/@WallId/boulders/@BoulderId/revise" class="btn-revise">Revise</a>
+                    }
+                </div>
             </div>
 
             @if (_editMeta)
@@ -83,12 +89,6 @@ else
                 <p class="meta">by @_boulder.CreatedBy.Name &middot; <LocalTime Value="@_boulder.CreatedAt" Format="LocalTimeFormat.Date" /></p>
             }
 
-            @if (CanFullRevise)
-            {
-                <div class="boulder-live-actions">
-                    <a href="/walls/@WallId/boulders/@BoulderId/revise" class="btn-revise">Revise boulder</a>
-                </div>
-            }
         </div>
 
         @if (_boulder.IsDraft)
@@ -157,18 +157,18 @@ else
             </div>
         }
 
-        <div class="view-toggle">
-            <button class="toggle-btn @(_viewMode == ViewMode.Photo ? "active" : "")" @onclick="() => _viewMode = ViewMode.Photo">Photo</button>
-            <button class="toggle-btn @(_viewMode == ViewMode.Schematic ? "active" : "")" @onclick="() => _viewMode = ViewMode.Schematic">Schematic</button>
-            @if (CanViewHistoric)
-            {
-                <span class="toggle-sep"></span>
+        @* The Photo/Schematic switch was removed; _viewMode stays in code (defaults to Photo) so the
+           boulder photo renders as before and the schematic view remains reachable programmatically.
+           The historic Then/Now toggle is a separate feature and keeps its own view-toggle. *@
+        @if (CanViewHistoric)
+        {
+            <div class="view-toggle">
                 <button class="toggle-btn @(_showHistoric ? "active" : "")" @onclick="ToggleHistoric"
                         title="@(_showHistoric ? "Showing the wall as it was when this boulder was set" : "Showing the current wall")">
                     @(_showHistoric ? "Then" : "Now")
                 </button>
-            }
-        </div>
+            </div>
+        }
 
         @if (!string.IsNullOrEmpty(_boulder.FootColorOnly) || _boulder.NoMatch)
         {

@@ -572,8 +572,12 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     background: none; border: none; cursor: pointer; font-size: 1.5rem;
     line-height: 1; color: var(--text-secondary); padding: 0 4px;
     min-width: 40px; min-height: 40px;
+    transition: color 0.12s ease, transform 0.12s ease;
 }
 .fav-toggle.on { color: #f5b301; }
+/* Clear tap/hover affordance on the star, gold like its lit state. */
+.fav-toggle:hover, .fav-toggle:focus-visible { color: #f5b301; transform: scale(1.15); }
+.fav-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
 
 /* Both directions of the favourite are always in the DOM; CSS picks the visible one from
    `bw-opt-on`, which offline-actions.js can add and remove without a circuit. See
@@ -778,7 +782,10 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
 
 .page-header { margin-bottom: 12px; }
 .title-row { display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap; }
-.title-row h1 { font-size: 1.4rem; font-weight: 700; color: var(--text-heading); }
+.title-row h1 { font-size: 1.4rem; font-weight: 700; color: var(--text-heading); min-width: 0; }
+/* Right-aligned action cluster (favourite, meta-edit pencil, Revise) — stays grouped and
+   pushes to the right edge, wrapping as a unit on narrow screens. */
+.title-actions { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; }
 .grade-badge {
     padding: 4px 12px; background: var(--accent); color: white;
     border-radius: 6px; font-weight: 700; font-size: 0.95rem;
@@ -868,8 +875,6 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
 .legend-chip.top { background: var(--danger-bg); color: var(--danger-text); }
 .legend-chip.usage { background: var(--bg-surface); color: var(--text-muted); border: 1px solid var(--border); }
 .legend-chip.foot { background: var(--foot-hold-soft); color: var(--foot-hold-text); }
-
-.boulder-live-actions { margin-top: 10px; }
 
 /* Informational rule banners above the boulder image (feet-of-a-colour, no-match). */
 .boulder-info-banners { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
