@@ -1,4 +1,5 @@
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
 
 namespace Blocwerk.Core.Services;
 
@@ -13,4 +14,18 @@ namespace Blocwerk.Core.Services;
 /// <param name="Radius">Normalized radius (0..1).</param>
 /// <param name="Color">The detected colour name, or null.</param>
 /// <param name="ShapePoints">The hold's custom shape outline (offsets from the centre), or null for a circle.</param>
-public record PanelHold(Guid Id, double X, double Y, double Radius, string? Color, List<ShapePoint>? ShapePoints = null);
+/// <param name="Name">The hold's name, or null. Shown in the read-only tap bubble.</param>
+/// <param name="Material">The hold's material, or null. Shown in the read-only tap bubble.</param>
+/// <param name="Category">Hand vs foot — gates whether the hand sub-type is meaningful.</param>
+/// <param name="HandType">The hand sub-type (Jug/Crimp/…), or null. Shown in the read-only tap bubble.</param>
+public record PanelHold(
+    Guid Id,
+    double X,
+    double Y,
+    double Radius,
+    string? Color,
+    List<ShapePoint>? ShapePoints = null,
+    string? Name = null,
+    HoldMaterial? Material = null,
+    HoldCategory Category = HoldCategory.Hand,
+    HoldHandType? HandType = null);

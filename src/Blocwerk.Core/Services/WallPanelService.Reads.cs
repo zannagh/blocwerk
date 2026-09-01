@@ -122,7 +122,7 @@ public partial class WallPanelService
         return await db.Holds
             .AsNoTracking()
             .Where(h => h.WallPanelId == panelId && h.Generation == effectiveGeneration)
-            .Select(h => new PanelHold(h.Id, h.X, h.Y, h.Radius, h.Color, h.ShapePoints))
+            .Select(h => new PanelHold(h.Id, h.X, h.Y, h.Radius, h.Color, h.ShapePoints, h.Name, h.Material, h.Category, h.HandType))
             .ToListAsync();
     }
 

@@ -419,7 +419,8 @@ else
                             <MultiPanelViewer WallId="_wall.Id" Panels="_livePanels"
                                               StartCol="0" StartRow="0"
                                               ArrowMode="MultiPanelViewer.ArrowDisplayMode.AllNeighbours"
-                                              HoldsProvider="LoadPanelHolds" />
+                                              HoldsProvider="LoadPanelHolds"
+                                              OnRequestHoldUsage="@(_isAnonymous ? null : LoadHoldUsage)" />
                         }
                         else if (_wall.PhotoContentType != null && _viewMode == ViewMode.Photo)
                         {

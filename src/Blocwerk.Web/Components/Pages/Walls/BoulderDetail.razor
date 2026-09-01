@@ -854,7 +854,7 @@ else
             .GroupBy(bh => bh.Hold.WallPanelId!.Value)
             .ToDictionary(
                 g => g.Key,
-                g => g.Select(bh => new PanelHold(bh.HoldId, bh.Hold.X, bh.Hold.Y, bh.Hold.Radius, bh.Hold.Color, bh.Hold.ShapePoints)).ToList());
+                g => g.Select(bh => new PanelHold(bh.HoldId, bh.Hold.X, bh.Hold.Y, bh.Hold.Radius, bh.Hold.Color, bh.Hold.ShapePoints, bh.Hold.Name, bh.Hold.Material, bh.Hold.Category, bh.Hold.HandType)).ToList());
         foreach (var bh in onPanels)
         {
             _highlightedHoldIds.Add(bh.HoldId);
@@ -1263,32 +1263,10 @@ else
     }
 
     // The set fields to show in the info bubble (Color, Material, Sub-type, Name), skipping any
-    // that are unset. Sub-type is only meaningful for hand holds.
-    private static IReadOnlyList<string> HoldInfoLines(Hold h)
-    {
-        var lines = new List<string>();
-        if (!string.IsNullOrEmpty(h.Color))
-        {
-            lines.Add($"Color: {HoldPalette.DisplayName(h.Color)}");
-        }
-
-        if (h.Material.HasValue)
-        {
-            lines.Add($"Material: {(h.Material.Value == HoldMaterial.DualTex ? "DualTex" : h.Material.Value.ToString())}");
-        }
-
-        if (h.Category == HoldCategory.Hand && h.HandType.HasValue)
-        {
-            lines.Add($"Sub-type: {h.HandType.Value}");
-        }
-
-        if (!string.IsNullOrEmpty(h.Name))
-        {
-            lines.Add($"Name: {h.Name}");
-        }
-
-        return lines;
-    }
+    // that are unset. Delegates to the shared helper so the single-image and multi-image bubbles
+    // stay in lockstep.
+    private static IReadOnlyList<string> HoldInfoLines(Hold h) =>
+        HoldInfoText.Lines(h.Color, h.Material, h.Category, h.HandType, h.Name);
 
     /// <summary>
     /// An upload writes an activity entry, so the feed below the strip is stale until it re-reads.

@@ -50,25 +50,46 @@
                 Adjust the selected holds to match the current wall setup.</p>
         }
 
+        @* Press-and-hold reference: editing happens on the CURRENT photo + current holds; while
+           this button is held, the ORIGINAL photo (the generation the boulder was set on) with the
+           boulder's original holds is overlaid, then released to return to editing. The overlay
+           draws _boulder.BoulderHolds over the OLD photo, where those coordinates are correct. *@
         @if (_referenceGeneration.HasValue)
         {
-            <details class="reference-panel" open>
-                <summary>Original holds on the previous wall</summary>
-                <div class="reference-photo">
-                    <img src="/api/walls/@WallId/photo/@_referenceGeneration" alt="Previous wall" />
-                    <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
-                        @foreach (var bh in _boulder.BoulderHolds)
-                        {
-                            <circle cx="@F(bh.Hold.X * 100)" cy="@F(bh.Hold.Y * 100)"
-                                    r="@F(bh.Hold.Radius * 100)"
-                                    fill="@BoulderHoldColors.FillFor(bh.Type, bh.Usage)"
-                                    stroke="@BoulderHoldColors.Stroke(bh.Type)"
-                                    stroke-width="0.5" />
-                        }
-                    </svg>
+            <div class="reference-hold">
+                <button type="button" class="btn-reference"
+                        @onpointerdown="ShowOriginal" @onpointerup="HideOriginal"
+                        @onpointerleave="HideOriginal" @onpointercancel="HideOriginal"
+                        @ontouchstart="ShowOriginal" @ontouchstart:preventDefault="true"
+                        @ontouchend="HideOriginal" @ontouchcancel="HideOriginal"
+                        @oncontextmenu:preventDefault="true">
+                    Hold to see original
+                </button>
+                <p class="hint">Press and hold to compare with the boulder's original holds. Release to keep editing.</p>
+            </div>
+
+            @if (_showOriginal)
+            {
+                <div class="reference-overlay">
+                    <div class="reference-photo">
+                        <img src="/api/walls/@WallId/photo/@_referenceGeneration" alt="Original wall" />
+                        <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
+                            @foreach (var bh in _boulder.BoulderHolds)
+                            {
+                                <circle cx="@F(bh.Hold.X * 100)" cy="@F(bh.Hold.Y * 100)"
+                                        r="@F(bh.Hold.Radius * 100)"
+                                        fill="@BoulderHoldColors.FillFor(bh.Type, bh.Usage)"
+                                        stroke="@BoulderHoldColors.Stroke(bh.Type)"
+                                        stroke-width="0.5" />
+                            }
+                        </svg>
+                    </div>
+                    @if (_wall.UsesMultipleImages)
+                    {
+                        <p class="reference-note">Reference shows the centre image.</p>
+                    }
                 </div>
-                <p class="hint">Use this as a reference while picking the matching holds below.</p>
-            </details>
+            }
         }
 
         <div class="form-section">
@@ -193,6 +214,8 @@
     private bool _notFound;
     private bool _isDraft;
     private int? _referenceGeneration;
+    // True only while the press-and-hold reference button is held: shows the original photo + holds.
+    private bool _showOriginal;
     private bool _isSubmitting;
     private string? _error;
 
@@ -323,11 +346,61 @@
             }
         }
 
+        // Pre-select the current holds the boulder is now on. Editing is current-only, so the goal is
+        // to open with the app's best guess already ticked, all adjustable in the HoldPicker below.
         var currentHoldIds = _wall.Holds.Select(h => h.Id).ToHashSet();
-        _selectedHolds = _boulder.BoulderHolds
-            .Where(bh => currentHoldIds.Contains(bh.HoldId))
-            .Select(bh => new BoulderHoldInput(bh.HoldId, bh.Type, bh.Usage))
-            .ToList();
+        var preselected = new List<BoulderHoldInput>();
+        var usedHoldIds = new HashSet<Guid>();
+
+        // 1. Holds that carried over by identity (still exist at the current generation).
+        foreach (var bh in _boulder.BoulderHolds.Where(bh => currentHoldIds.Contains(bh.HoldId)))
+        {
+            if (usedHoldIds.Add(bh.HoldId))
+            {
+                preselected.Add(new BoulderHoldInput(bh.HoldId, bh.Type, bh.Usage));
+            }
+        }
+
+        // 2. Orphaned holds the matcher couldn't carry (generation < current — virtual/manual holds,
+        //    or anything the wall update dropped): best-guess each to the NEAREST current hold within a
+        //    conservative distance, so a truly-gone hold isn't force-mapped to something unrelated.
+        //    De-duped, so two old holds landing on the same current hold select it once.
+        foreach (var bh in _boulder.BoulderHolds.Where(bh => !currentHoldIds.Contains(bh.HoldId)))
+        {
+            var nearest = NearestHold(_wall.Holds, bh.Hold.X, bh.Hold.Y, MaxRematchDistance);
+            if (nearest is not null && usedHoldIds.Add(nearest.Id))
+            {
+                preselected.Add(new BoulderHoldInput(nearest.Id, bh.Type, bh.Usage));
+            }
+        }
+
+        _selectedHolds = preselected;
+    }
+
+    // Max Euclidean distance in the normalized [0,1] coordinate space for the orphaned-hold re-match.
+    // Conservative on purpose: beyond this the nearest current hold is treated as "not a match" and the
+    // old hold contributes nothing, rather than mis-mapping the boulder onto an unrelated hold.
+    private const double MaxRematchDistance = 0.06;
+
+    // The current hold nearest to a normalized (x, y), or null when the closest is farther than
+    // maxDistance. Pure Euclidean nearest-neighbour over the current-generation holds.
+    private static Hold? NearestHold(IEnumerable<Hold> holds, double x, double y, double maxDistance)
+    {
+        Hold? best = null;
+        var bestDistanceSquared = maxDistance * maxDistance;
+        foreach (var hold in holds)
+        {
+            var dx = hold.X - x;
+            var dy = hold.Y - y;
+            var distanceSquared = (dx * dx) + (dy * dy);
+            if (distanceSquared <= bestDistanceSquared)
+            {
+                bestDistanceSquared = distanceSquared;
+                best = hold;
+            }
+        }
+
+        return best;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -356,6 +429,16 @@
         {
             // Circuit went away; nothing to reconcile.
         }
+    }
+
+    private void ShowOriginal()
+    {
+        _showOriginal = true;
+    }
+
+    private void HideOriginal()
+    {
+        _showOriginal = false;
     }
 
     private void ToggleSetter(Guid userId, bool selected)
