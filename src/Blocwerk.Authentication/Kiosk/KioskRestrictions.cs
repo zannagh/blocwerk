@@ -85,6 +85,13 @@ public static class KioskRestrictions
         // App-wide administration. Note this is NOT wall authority — a kiosk session keeps all of
         // that — it is authority over every wall and every user in the installation.
         "/administration",
+
+        // Approving a device pairing, which mints a kiosk key: a credential that outlives the
+        // session. /kiosk is an allowed PREFIX, so without this entry the middleware waves the page
+        // through and the route gate is the only thing refusing it. Both refuse it now — the gate
+        // covers in-circuit navigation, which never touches middleware, and this covers the first
+        // HTTP GET before any circuit exists.
+        "/kiosk/approve",
     ];
 
     /// <summary>
@@ -175,6 +182,15 @@ public static class KioskRestrictions
         "Blocwerk.Web.Components.Pages.Guides.AngleWedge",
         "Blocwerk.Web.Components.Pages.Guides.HomewallsVolumes",
         "Blocwerk.Web.Components.Pages.Kiosk.KioskUsers",
+
+        // The pairing page a tablet shows before it is anything. Allowed for a reason that only
+        // shows up AFTER pairing succeeds: the device is a kiosk from that moment on, so a refresh,
+        // a back button, or somebody re-pairing the tablet to a different wall would land a kiosk
+        // session here — and if this were refused, that would 302 to ?kiosk_blocked=1 and look like
+        // the tablet had broken. It is also the right answer on the merits: the page hands out
+        // nothing, and re-pairing a tablet in the gym is exactly the kind of thing somebody standing
+        // at the tablet should be able to do, since physical access already unregisters it.
+        "Blocwerk.Web.Components.Pages.Kiosk.KioskPair",
         "Blocwerk.Web.Components.Pages.Tools.ImageStitcher",
         "Blocwerk.Web.Components.Pages.Training.Hangboard",
         "Blocwerk.Web.Components.Pages.Training.Pullups",
@@ -213,6 +229,16 @@ public static class KioskRestrictions
 
         // A wall the tablet is not registered to, and cannot be.
         "Blocwerk.Web.Components.Pages.Walls.WallCreate",
+
+        // The APPROVING half of device pairing. This page is for a wall admin on their own phone,
+        // scanning the QR the tablet is showing; a tablet has no business on it. Approving mints a
+        // kiosk key, which is precisely the "credential that outlives the session" this list exists
+        // to keep off a public screen — and KioskGuardedApiKeyService refuses the mint from a kiosk
+        // session anyway, so refusing the page here just makes it fail early and legibly instead of
+        // after somebody has picked a wall. The page carries [Authorize] — without it the route gate
+        // never evaluates and this entry would be inert — and /kiosk/approve is additionally on
+        // DeniedPaths, so the middleware refuses the first GET too.
+        "Blocwerk.Web.Components.Pages.Kiosk.KioskApprove",
     ];
 
     /// <summary>
@@ -258,6 +284,14 @@ public static class KioskRestrictions
         if (pageType?.FullName is not { } name)
         {
             return false;
+        }
+
+        // Refusal is stated first even though absence from the allow-list would already refuse it.
+        // The list was purely documentary before, which is how a page sat on it and stayed fully
+        // reachable; reading it at runtime means an entry cannot be inert here either.
+        if (RefusedPageTypes.Contains(name))
+        {
+            return true;
         }
 
         return !AllowedPageTypes.Contains(name);

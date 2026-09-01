@@ -13,6 +13,14 @@ public abstract class OfflineActionRequest
     public Guid BoulderId { get; set; }
 
     public Guid? ClientRequestId { get; set; }
+
+    /// <summary>
+    /// The user who was signed in when the action was queued, stamped by the client at enqueue
+    /// time. Replay resolves identity from the cookie, which on a shared device (a kiosk tablet,
+    /// a shared laptop) can be a different person by the time the queue drains — see
+    /// <see cref="OfflineActionOwnership"/>. Null on entries queued before stamping existed.
+    /// </summary>
+    public Guid? QueuedForUserId { get; set; }
 }
 
 public sealed class LogAttemptRequest : OfflineActionRequest

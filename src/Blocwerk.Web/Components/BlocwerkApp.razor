@@ -1,6 +1,8 @@
 @using Microsoft.AspNetCore.Components.Web
 @using Blocwerk.Web.Components
 @using Blocwerk.Web.Components.Layout
+@using Blocwerk.Core.Abstractions
+@inject ICurrentUserService CurrentUserService
 
 <!DOCTYPE html>
 <html lang="en">
@@ -30,10 +32,24 @@
     <script src="js/wall-dim.js"></script>
     @* Inert unless the page renders the kiosk release form; the real idle gate is server-side. *@
     <script src="js/kiosk-idle.js"></script>
+    @* Defines bwKioskPair; does nothing until /kiosk/pair calls it to submit its completion form. *@
+    <script src="js/kiosk-pair.js"></script>
     <HeadOutlet />
     <title>Blocwerk</title>
 </head>
-<body>
+@* data-bw-user is the id of whoever this page was rendered for, and nothing else. It is not a
+   credential — it grants nothing and is never accepted as authentication — it exists so the offline
+   queue can stamp each action it stores with the person who tapped it, instead of leaving the
+   attribution to be decided by whoever happens to be signed in when the queue finally drains. That
+   matters on any device several people share in sequence, kiosk tablets above all. The server
+   re-checks the stamp against the real cookie identity on replay (OfflineActionOwnership), so a
+   stale or forged value here can only ever get an action refused, never mis-attributed.
+
+   It lives on <body> rather than in the layout because the auth-flow and home-wall pages use
+   EmptyLayout, and it is correct on every page because every identity transition in the app is a
+   real page load: the header Login/Logout links and the kiosk act-as/release forms all carry
+   data-enhance-nav="false". *@
+<body data-bw-user="@ActingUserId">
     <Routes />
 
     @* Blazor sets components-reconnect-* classes and raises components-reconnect-state-changed on
@@ -81,3 +97,23 @@
     <script src="js/pwa.js"></script>
 </body>
 </html>
+
+@code {
+    private string? ActingUserId;
+
+    // Empty for anonymous pages, which is exactly right: an action queued with no known user stays
+    // unstamped and keeps the pre-existing behaviour. GetCurrentUserAsync throws for anonymous
+    // callers and is cached per request scope, so this costs nothing the page was not already paying.
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var user = await CurrentUserService.GetCurrentUserAsync();
+            ActingUserId = user?.Id.ToString();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            ActingUserId = null;
+        }
+    }
+}

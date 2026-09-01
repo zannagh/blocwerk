@@ -18,12 +18,18 @@
         <div class="bw-topbar-title"><SectionOutlet SectionName="TopBarTitle" /></div>
         <div class="header-actions">
             <TopBarActions />
+            @* data-enhance-nav="false" on BOTH identity links. Enhanced navigation keeps the current
+               circuit alive and only patches the DOM, so a logout handled that way leaves the previous
+               user's scoped state behind — CurrentUserService's cached User, the
+               CookieAuthenticationStateProvider's cached AuthenticationState, and SessionState's active
+               climbing session all survive into whatever the next person does on this browser. Forcing a
+               real navigation tears the circuit down, so the next page builds a brand-new scope. *@
             <AuthorizeView>
                 <Authorized>
-                    <a href="/account/logout" class="header-link">Logout</a>
+                    <a href="/account/logout" class="header-link" data-enhance-nav="false">Logout</a>
                 </Authorized>
                 <NotAuthorized>
-                    <a href="/account/login" class="header-link">Login</a>
+                    <a href="/account/login" class="header-link" data-enhance-nav="false">Login</a>
                 </NotAuthorized>
             </AuthorizeView>
         </div>

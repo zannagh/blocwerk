@@ -34,6 +34,7 @@ public sealed class KioskController : Controller
     private readonly KioskDeviceCookie deviceCookie;
     private readonly KioskKeyValidator keyValidator;
     private readonly KioskThrottleRegistry throttle;
+    private readonly KioskPairingRegistry pairings;
     private readonly ILogger<KioskController> logger;
 
     public KioskController(
@@ -44,8 +45,10 @@ public sealed class KioskController : Controller
         KioskDeviceCookie deviceCookie,
         KioskKeyValidator keyValidator,
         KioskThrottleRegistry throttle,
+        KioskPairingRegistry pairings,
         ILogger<KioskController> logger)
     {
+        this.pairings = pairings;
         this.apiKeyService = apiKeyService;
         this.kioskService = kioskService;
         this.currentUserService = currentUserService;
@@ -104,6 +107,69 @@ public sealed class KioskController : Controller
             apiKey.Id);
 
         return LocalRedirect($"/walls/{wallId}");
+    }
+
+    /// <summary>
+    /// Finishes a device pairing: redeems the approved pairing with the tablet's claim ticket and
+    /// writes the device registration. The tail of <see cref="Register"/>, reached without anybody
+    /// having typed a key.
+    /// </summary>
+    /// <remarks>
+    /// <b>Why the tablet has to make this request at all.</b> Everything up to here happened in the
+    /// tablet's Blazor circuit, and a circuit cannot write a cookie — there is no response to write
+    /// it onto. So the circuit auto-submits a server-rendered form and the registration is written
+    /// on the tablet's own connection, which is also what pins the cookie to the right device.
+    /// <para>
+    /// <b>Why a POST and not a completion GET.</b> The claim ticket is a credential for the two or
+    /// three seconds it lives, and a GET would put it in the address bar, in browser history, in the
+    /// <c>Referer</c> of whatever loads next, and in the request log of every proxy on the way. It
+    /// would also be replayable by anything that speculatively fetches a URL. A form POST keeps it in
+    /// a body nobody logs, carries the antiforgery token the rest of this controller already
+    /// requires, and matches how every other identity transition in this app works. Replay is
+    /// additionally impossible on its own terms: <see cref="KioskPairingRegistry.TryRedeem"/> removes
+    /// the entry inside a lock, so the second attempt — whoever makes it — finds nothing.
+    /// </para>
+    /// </remarks>
+    [HttpPost("/kiosk/pair/complete")]
+    [AllowAnonymous]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CompletePairing([FromForm] Guid pairingId, [FromForm] string? ticket)
+    {
+        // Not throttled, and deliberately so. The ticket is 256 random bits, which is not a guessing
+        // target, and the two counters that matter are already upstream: creating the pairing and
+        // typing the code. A cap here would only give a stranger a way to lock a tablet out of the
+        // pairing it is legitimately holding.
+        var redemption = pairings.TryRedeem(pairingId, ticket);
+        if (redemption is null)
+        {
+            // Unknown, expired, still unapproved, wrong ticket, already redeemed — one outcome. The
+            // tablet lands back on the pairing page and can ask for a fresh code.
+            logger.LogInformation("Kiosk pairing {PairingId} could not be redeemed", pairingId);
+            return LocalRedirect("/kiosk/pair?perror=1");
+        }
+
+        // Re-check the key before writing the cookie, exactly as Register does with the typed token.
+        // The key was minted moments ago, but "moments" is enough: an admin who approves and then
+        // immediately revokes from the API key panel would otherwise leave this tablet holding a
+        // cookie for a dead key, landing it on a wall page in a broken half-state.
+        if (!await keyValidator.IsKeyValidAsync(redemption.ApiKeyId, redemption.WallId))
+        {
+            logger.LogWarning(
+                "Kiosk pairing {PairingId} redeemed key {ApiKeyId} for wall {WallId}, but the key is no longer valid",
+                pairingId,
+                redemption.ApiKeyId,
+                redemption.WallId);
+            return LocalRedirect("/kiosk/pair?perror=1");
+        }
+
+        var registered = deviceCookie.Write(HttpContext, redemption.ApiKeyId, redemption.WallId);
+        logger.LogInformation(
+            "Kiosk device {DeviceId} paired to wall {WallId} with key {ApiKeyId}",
+            registered.DeviceId,
+            redemption.WallId,
+            redemption.ApiKeyId);
+
+        return LocalRedirect($"/walls/{redemption.WallId}");
     }
 
     /// <summary>

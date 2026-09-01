@@ -1,0 +1,129 @@
+@* The typed half of kiosk device pairing: an admin reads the six digits off the tablet and enters
+   them here, scoped to THIS wall. The other half is the QR code on the tablet, which lands on
+   /kiosk/approve/{code}; both go through the same KioskPairingApprover, so the wall-admin check and
+   the minting happen in exactly one place. *@
+@inject KioskPairingApprover Approver
+@inject KioskPairingRegistry Pairings
+@inject KioskThrottleRegistry Throttle
+
+<div class="settings-panel wall-kiosk-pair-panel">
+    <p class="apikey-blurb">
+        Register a wall-mounted tablet without typing a key into it. On the tablet, open the sign-in
+        page and choose <strong>Register this device as a wall kiosk &rarr; pair with a code</strong>.
+        It shows six digits and a QR code; either scan the QR with your phone or type the digits
+        here. Codes last @((int)KioskPairingRegistry.Lifetime.TotalMinutes) minutes.
+    </p>
+
+    <p class="apikey-blurb">
+        Approving mints this wall its own kiosk key for that one tablet, so it can be revoked on its
+        own later from the API key panel above. You never see or handle the key.
+    </p>
+
+    @if (_message is not null)
+    {
+        <div class="@(_succeeded ? "wall-kiosk-pair-ok" : "error-msg")" role="@(_succeeded ? "status" : "alert")">
+            @_message
+        </div>
+    }
+
+    <div class="form-group">
+        <label for="wall-kiosk-pair-code">Code from the tablet</label>
+        <input id="wall-kiosk-pair-code" class="form-input" type="text" inputmode="numeric"
+               autocomplete="off" maxlength="7" placeholder="000000"
+               @bind="_code" @bind:event="oninput" />
+    </div>
+
+    <button type="button" class="btn-submit" disabled="@(_busy || string.IsNullOrWhiteSpace(_code))"
+            @onclick="ApproveAsync">
+        @(_busy ? "Working..." : "Approve tablet")
+    </button>
+</div>
+
+@code {
+    /// <summary>The wall being administered. The ONLY wall this card can ever approve a tablet for.</summary>
+    [Parameter]
+    public Guid WallId { get; set; }
+
+    /// <summary>
+    /// The signed-in admin, as the wall page already resolved them. Used only to key the guess
+    /// throttle; nothing is authorised on it — <see cref="KioskPairingApprover"/> resolves the acting
+    /// user itself and the key service re-checks the wall against the database.
+    /// </summary>
+    [Parameter]
+    public Guid CurrentUserId { get; set; }
+
+    private string? _code;
+    private string? _message;
+    private bool _succeeded;
+    private bool _busy;
+
+    private async Task ApproveAsync()
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        _message = null;
+        _succeeded = false;
+
+        try
+        {
+            var code = _code?.Trim() ?? string.Empty;
+
+            // Six digits is a 10^6 space, small enough that an unthrottled field here would be a
+            // real attack. Counted against this admin AND this code — see PairingGuessScopes for
+            // why the per-user half is the one that actually binds.
+            var scopes = KioskThrottleRegistry.PairingGuessScopes(CurrentUserId, code);
+            if (Throttle.IsLocked(scopes))
+            {
+                _message = "Too many attempts. Wait a moment and try again.";
+                return;
+            }
+
+            var pairing = Pairings.TryFindByCode(code);
+            if (pairing is not { Status: KioskPairingStatus.Pending })
+            {
+                Throttle.RegisterFailure(scopes);
+                _message = GenericFailure;
+                return;
+            }
+
+            // The wall is THIS wall, from the route the admin is already standing on — never
+            // anything the tablet asked for, and never anything in the code. The admin check runs
+            // inside the approver, against the database.
+            var result = await Approver.ApproveAsync(pairing.Id, WallId);
+
+            switch (result)
+            {
+                case KioskPairingApprovalResult.Approved:
+                    Throttle.Reset(scopes);
+                    _code = null;
+                    _succeeded = true;
+                    _message = "Approved. The tablet is setting itself up now.";
+                    break;
+
+                case KioskPairingApprovalResult.NotAuthorised:
+                    _message = "You can't register a tablet to this wall.";
+                    break;
+
+                default:
+                    Throttle.RegisterFailure(scopes);
+                    _message = GenericFailure;
+                    break;
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>
+    /// One string for "no such code", "it expired" and "somebody already approved it". Saying which
+    /// would let this field be used to probe whether a given six digits is a live pairing.
+    /// </summary>
+    private const string GenericFailure =
+        "That code didn't work. Check the digits on the tablet, or ask it for a fresh code.";
+}

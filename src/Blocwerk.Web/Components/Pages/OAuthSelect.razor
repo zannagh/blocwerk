@@ -122,6 +122,17 @@
         {
             <div class="oauth-error" role="alert">That kiosk key isn't valid. Check the key and try again.</div>
         }
+        @* The preferred path, first: pairing needs nothing typed on the tablet at all. A plain link,
+           because the pairing page is its own interactive route. The key form stays below it,
+           unchanged, for anyone who already has a key or whose admin isn't in the building. *@
+        <a href="/kiosk/pair" class="provider-button kiosk-pair-link">Pair with a code</a>
+        <p class="kiosk-register-note">
+            Shows a QR code and six digits. A wall admin approves it from their phone or from the
+            wall's settings &mdash; no key to type here.
+        </p>
+
+        <div class="password-divider"><span>or paste a kiosk key</span></div>
+
         <form method="post" action="/kiosk/register" data-enhance-nav="false">
             <AntiforgeryToken />
             <label class="field-label" for="kiosk-key">Kiosk key</label>

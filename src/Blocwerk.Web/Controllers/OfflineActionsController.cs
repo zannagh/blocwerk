@@ -1,3 +1,4 @@
+using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -26,15 +27,18 @@ public sealed class OfflineActionsController : ControllerBase
     private readonly IAttemptService attemptService;
     private readonly IBoulderFeedbackService feedbackService;
     private readonly ICommentService commentService;
+    private readonly ICurrentUserService currentUser;
 
     public OfflineActionsController(
         IAttemptService attemptService,
         IBoulderFeedbackService feedbackService,
-        ICommentService commentService)
+        ICommentService commentService,
+        ICurrentUserService currentUser)
     {
         this.attemptService = attemptService;
         this.feedbackService = feedbackService;
         this.commentService = commentService;
+        this.currentUser = currentUser;
     }
 
     /// <summary>
@@ -121,6 +125,16 @@ public sealed class OfflineActionsController : ControllerBase
 
         try
         {
+            // Before anything is written: the person this action was queued FOR has to be the person
+            // the request is authenticated AS. 409 rather than a 4xx the client treats as permanent,
+            // because the action is still perfectly valid — just not for whoever is signed in now.
+            if (!await OfflineActionOwnership.MatchesCallerAsync(currentUser, request.QueuedForUserId))
+            {
+                return StatusCode(
+                    StatusCodes.Status409Conflict,
+                    new OfflineActionError(OfflineActionOwnership.MismatchMessage, false));
+            }
+
             var result = await action();
             return Ok(new OfflineActionResponse(true, request.ClientRequestId, result));
         }

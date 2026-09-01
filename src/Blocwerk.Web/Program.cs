@@ -187,6 +187,16 @@ public static class Program
         // it spans circuits and requests; deliberately not the user-row login lockout (see the type).
         builder.Services.AddSingleton<KioskThrottleRegistry>();
 
+        // Device pairings in flight: the tablet's circuit, the approving admin's circuit and the
+        // completion HTTP request are three different scopes that must see the same entry, so this
+        // is a singleton for the same reason the throttle is. Entries live three minutes and losing
+        // them on restart costs a re-tap of "get a new code".
+        builder.Services.AddSingleton<KioskPairingRegistry>();
+
+        // The one routine both approval entry points go through. Scoped, because it resolves the
+        // acting user from the ambient session rather than being handed a user id.
+        builder.Services.AddScoped<KioskPairingApprover>();
+
         // App-wide, in-memory "busy" signal: the singleton registry tracks unsaved in-flight edits
         // across every circuit; the scoped wrapper is injected into the editing components and
         // releases its leases on circuit teardown (backstop against an abrupt disconnect).

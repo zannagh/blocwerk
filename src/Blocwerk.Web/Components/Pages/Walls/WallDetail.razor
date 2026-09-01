@@ -264,6 +264,19 @@ else
                             <WallApiKeyPanel WallId="WallId" CurrentUserId="_currentUserId" />
                         </div>
                     </details>
+
+                    @* Pairing a tablet by code, so nobody has to type a bwk_ key on an on-screen
+                       keyboard. Admin-only, and scoped to this wall: the card can never approve a
+                       tablet for anything else. *@
+                    @if (_isAdmin)
+                    {
+                        <details class="settings-panel settings-card">
+                            <summary class="settings-card-summary"><h2>Kiosk Registration</h2></summary>
+                            <div class="settings-card-body">
+                                <WallKioskPairingPanel WallId="WallId" CurrentUserId="_currentUserId" />
+                            </div>
+                        </details>
+                    }
                 }
             }
         </Page1>

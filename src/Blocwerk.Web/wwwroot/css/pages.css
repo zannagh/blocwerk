@@ -2572,3 +2572,50 @@ html.bw-fullscreen .wall-main .photo-viewport {
 .kiosk-register .text-input:focus { outline: none; border-color: var(--accent); }
 .kiosk-register-submit { justify-content: center; }
 .kiosk-register-note { margin-top: 10px; color: var(--text-secondary); font-size: 0.8rem; line-height: 1.5; }
+
+/* ============================================================================
+   Kiosk device pairing
+   The tablet's /kiosk/pair page is read from a couple of metres away and its QR
+   is photographed off a glossy screen, so the code and the QR are both large and
+   both deliberately high-contrast rather than themed.
+   ============================================================================ */
+
+.kiosk-pair { max-width: 560px; margin: 0 auto; padding: 20px 16px 32px; text-align: center; }
+
+/* The QR keeps its own white ground (the SVG paints one) so it stays scannable in the dark theme;
+   the padding and radius stop it looking like an unstyled image dropped on the page. */
+.kiosk-pair-qr {
+    width: min(320px, 70vw); margin: 20px auto 16px; padding: 12px;
+    background: #ffffff; border-radius: var(--r-md);
+}
+.kiosk-pair-qr .kiosk-pair-qr-svg { display: block; width: 100%; height: auto; }
+
+/* Two groups of three, spaced, tabular so the digits do not shuffle as the page redraws. */
+.kiosk-pair-code {
+    display: flex; justify-content: center; gap: 18px;
+    font-size: clamp(2rem, 12vw, 3rem); font-weight: 700; letter-spacing: 0.12em;
+    font-variant-numeric: tabular-nums; color: var(--text-heading);
+}
+
+.kiosk-pair-countdown {
+    margin-top: 10px; color: var(--text-secondary); font-size: 0.9rem;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Present from the first paint so its antiforgery token is server-rendered, but only visible once
+   the approval has landed — at which point it is the manual fallback behind the scripted submit. */
+.kiosk-pair-complete-form { display: none; }
+.kiosk-pair-complete-form.is-ready { display: block; margin-top: 20px; }
+
+/* The pair-with-a-code link inside the register-kiosk disclosure: the primary of the two paths. */
+.kiosk-pair-link { justify-content: center; }
+
+.kiosk-approve { max-width: 560px; margin: 0 auto; padding: 20px 16px 32px; }
+.kiosk-approve-blurb { color: var(--text-secondary); font-size: 0.95rem; margin-bottom: 16px; }
+.kiosk-approve .form-group { margin-bottom: 16px; }
+
+.wall-kiosk-pair-ok {
+    padding: 10px 14px; margin-bottom: 12px; border-radius: var(--r-md);
+    background: rgba(46, 160, 67, 0.15); color: var(--text);
+    border: 1px solid rgba(46, 160, 67, 0.4); font-size: 0.9rem;
+}

@@ -36,6 +36,12 @@ public sealed class CreateBoulderRequest
 
     public Guid? ClientRequestId { get; set; }
 
+    /// <summary>
+    /// The user who was signed in when the snapshot was queued. See <see cref="OfflineActionOwnership"/>:
+    /// a create replayed under someone else would credit them as the boulder's setter.
+    /// </summary>
+    public Guid? QueuedForUserId { get; set; }
+
     public string Name { get; set; } = string.Empty;
 
     public string? Grade { get; set; }
@@ -69,6 +75,13 @@ public sealed class CreateBoulderRequest
 public sealed class ReviseBoulderRequest
 {
     public Guid? ClientRequestId { get; set; }
+
+    /// <summary>
+    /// The user who was signed in when the snapshot was queued. See <see cref="OfflineActionOwnership"/>:
+    /// revise is permission-checked against the caller, so replaying it under the wrong person is
+    /// both a wrong-attribution and a wrong-permission decision.
+    /// </summary>
+    public Guid? QueuedForUserId { get; set; }
 
     public string? Name { get; set; }
 

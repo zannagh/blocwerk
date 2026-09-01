@@ -1,0 +1,19 @@
+@* The AUTHENTICATED half of the router's NotAuthorized branch.
+
+   Somebody is signed in and the page still said no: an ordinary user on a page their account cannot
+   reach, or — the case this exists for — a kiosk tablet bounced off one of
+   KioskRestrictions.RefusedPageTypes. Redirecting either of them to /account/login would be wrong
+   and, for the tablet, circular: it is already signed in, so the login page hands it straight back
+   to the page that refused it. This is the terminal state instead. *@
+
+<PageTitle>Not available - Blocwerk</PageTitle>
+
+<div class="not-authorized-notice">
+    <h1>You can't open this page</h1>
+    <p>
+        Your account doesn't have access to it. If you're at a wall-mounted tablet, this is one of the
+        pages a kiosk device is never allowed to reach — open it on your own phone or computer
+        instead.
+    </p>
+    <a href="/" class="btn-submit">Back to Blocwerk</a>
+</div>

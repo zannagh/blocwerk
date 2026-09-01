@@ -1,3 +1,4 @@
+using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -38,10 +39,12 @@ public sealed class OfflineBouldersController : ControllerBase
     };
 
     private readonly IBoulderService boulderService;
+    private readonly ICurrentUserService currentUser;
 
-    public OfflineBouldersController(IBoulderService boulderService)
+    public OfflineBouldersController(IBoulderService boulderService, ICurrentUserService currentUser)
     {
         this.boulderService = boulderService;
+        this.currentUser = currentUser;
     }
 
     /// <summary>
@@ -61,7 +64,7 @@ public sealed class OfflineBouldersController : ControllerBase
             return Task.FromResult<IActionResult>(Permanent("A boulder name is required."));
         }
 
-        return ExecuteAsync(request.ClientRequestId, async () =>
+        return ExecuteAsync(request.ClientRequestId, request.QueuedForUserId, async () =>
         {
             var boulder = await boulderService.CreateBoulderAsync(
                 request.WallId,
@@ -92,7 +95,7 @@ public sealed class OfflineBouldersController : ControllerBase
             return Task.FromResult<IActionResult>(Permanent("A boulder id is required."));
         }
 
-        return ExecuteAsync(request.ClientRequestId, async () =>
+        return ExecuteAsync(request.ClientRequestId, request.QueuedForUserId, async () =>
         {
             var boulder = await boulderService.ReviseBoulderAsync(
                 id,
@@ -125,10 +128,22 @@ public sealed class OfflineBouldersController : ControllerBase
     /// returns the stored boulder rather than throwing), so it answers 200 and the queue clears
     /// the entry.
     /// </summary>
-    private async Task<IActionResult> ExecuteAsync(Guid? clientRequestId, Func<Task<object>> action)
+    private async Task<IActionResult> ExecuteAsync(
+        Guid? clientRequestId,
+        Guid? queuedForUserId,
+        Func<Task<object>> action)
     {
         try
         {
+            // See OfflineActionOwnership: never write a queued snapshot under whoever happens to be
+            // signed in at replay time. 409 keeps the entry queued for its real owner.
+            if (!await OfflineActionOwnership.MatchesCallerAsync(currentUser, queuedForUserId))
+            {
+                return StatusCode(
+                    StatusCodes.Status409Conflict,
+                    new OfflineActionError(OfflineActionOwnership.MismatchMessage, false));
+            }
+
             var result = await action();
             return Ok(new OfflineActionResponse(true, clientRequestId, result));
         }

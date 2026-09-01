@@ -11,6 +11,9 @@
     <PackageReference Include="Serilog.Sinks.OpenTelemetry" />
     <!-- Serves a Prometheus /metrics scrape endpoint so metrics are readable over HTTP. -->
     <PackageReference Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" />
+    <!-- Renders the kiosk pairing QR code. Already in the solution for the TOTP enrolment code
+         (Blocwerk.Authentication); this project walks its module matrix into inline SVG. -->
+    <PackageReference Include="QRCoder" />
   </ItemGroup>
 
   <ItemGroup>

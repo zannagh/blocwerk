@@ -4,8 +4,21 @@
     <Router AppAssembly="typeof(WebServices).Assembly">
         <Found Context="routeData">
             <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(MainLayout)">
-                <NotAuthorized>
-                    <RedirectToLogin />
+                @* Two very different situations arrive here and they must not share an answer.
+                   A signed-OUT visitor is sent to sign in, carrying where they were headed. A
+                   signed-IN one has already done that, so sending them to the login page is at best
+                   useless and at worst a loop: a kiosk tablet refused a page by
+                   KioskRestrictions.RefusedPageTypes is authenticated, would be handed back by the
+                   login controller, and would be refused again. It gets a terminal notice. *@
+                <NotAuthorized Context="authenticationState">
+                    @if (authenticationState.User.Identity?.IsAuthenticated == true)
+                    {
+                        <NotAuthorizedNotice />
+                    }
+                    else
+                    {
+                        <RedirectToLogin />
+                    }
                 </NotAuthorized>
             </AuthorizeRouteView>
             <FocusOnNavigate RouteData="routeData" Selector="h1" />

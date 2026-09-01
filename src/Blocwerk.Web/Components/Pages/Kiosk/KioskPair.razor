@@ -1,0 +1,285 @@
+@page "/kiosk/pair"
+@rendermode InteractiveServer
+@attribute [AllowAnonymous]
+@layout EmptyLayout
+@inject KioskPairingRegistry Pairings
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@implements IDisposable
+@using Microsoft.AspNetCore.Authorization
+
+@* Interactive by design, and anonymous — the two together are already proven on Home and Guides.
+   It has to be interactive because the whole page is a wait: the approval happens on somebody
+   else's phone, on another circuit, and this one has to notice. And it has to be anonymous because
+   the entire point is that nobody types a credential into a tablet to get started.
+
+   Prerendering is left ON so the completion form below (and the antiforgery token inside it) is
+   server-rendered, exactly as kiosk-idle.js's release form is. The pairing itself is created in
+   OnAfterRenderAsync, which only ever runs in the live circuit — creating it in OnInitializedAsync
+   would mint one pairing during prerender and a second one on connect. *@
+
+<PageTitle>Register this tablet - Blocwerk</PageTitle>
+
+<div class="kiosk-pair">
+    @if (PairError is not null && _state != PageState.Approved)
+    {
+        @* One message for every way a redemption can fail — expired, already used, not approved,
+           wrong ticket. Which one it was is not the tablet's business and not a stranger's either. *@
+        <div class="kiosk-banner-error" role="alert">
+            That didn't finish. Ask for a fresh code and have an admin approve it again.
+        </div>
+    }
+
+    @if (_state == PageState.Throttled)
+    {
+        <div class="kiosk-picker-head">
+            <h1>No code available</h1>
+            <p>Too many tablets are waiting to be paired right now. Codes last
+               @((int)KioskPairingRegistry.Lifetime.TotalMinutes) minutes, so try again shortly.</p>
+        </div>
+        <button type="button" class="kiosk-row kiosk-row-primary" @onclick="Restart">Try again</button>
+        <a href="/oauth-select" class="kiosk-row kiosk-row-secondary">Back to sign in</a>
+    }
+    else if (_state == PageState.Expired)
+    {
+        <div class="kiosk-picker-head">
+            <h1>That code expired</h1>
+            <p>Codes last @((int)KioskPairingRegistry.Lifetime.TotalMinutes) minutes. Get a fresh one and try again.</p>
+        </div>
+        <button type="button" class="kiosk-row kiosk-row-primary" @onclick="Restart">Get a new code</button>
+        <a href="/oauth-select" class="kiosk-row kiosk-row-secondary">Back to sign in</a>
+    }
+    else if (_state == PageState.Approved)
+    {
+        <div class="kiosk-picker-head">
+            <h1>Approved</h1>
+            <p>Setting this tablet up&hellip;</p>
+        </div>
+    }
+    else if (_pairing is null)
+    {
+        <div class="kiosk-picker-head">
+            <h1>Register this tablet</h1>
+            <p class="loading-small">Getting a code&hellip;</p>
+        </div>
+    }
+    else
+    {
+        <div class="kiosk-picker-head">
+            <h1>Register this tablet</h1>
+            <p>Scan this with your phone, or type the code into the wall's settings. You need to be
+               an admin of the wall.</p>
+        </div>
+
+        <div class="kiosk-pair-qr">@((MarkupString)_qrSvg)</div>
+
+        <div class="kiosk-pair-code" aria-label="Pairing code">
+            @* Split so somebody reading it off a screen across the room does not lose their place. *@
+            <span>@_pairing.Code.Substring(0, 3)</span><span>@_pairing.Code.Substring(3, 3)</span>
+        </div>
+
+        <p class="kiosk-pair-countdown" role="status">
+            Expires in @FormatRemaining(_remaining)
+        </p>
+
+        <p class="kiosk-note">
+            This tablet gets no access until an admin approves it, and it only ever gets the one wall
+            they choose. Nothing is typed in here.
+        </p>
+
+        <a href="/oauth-select" class="kiosk-row kiosk-row-secondary">Cancel</a>
+    }
+
+    @* The only part of this flow that can write the device cookie, and it must run on the TABLET'S
+       OWN connection — a circuit has no response to append a cookie to. Rendered from the first
+       (prerendered) paint so the antiforgery token is server-rendered, and submitted by JS once the
+       approval lands. Same contract as kiosk-idle.js: this file never has to know about the token.
+
+       The two hidden fields stay EMPTY until the pairing is approved. The claim ticket is a
+       credential for the couple of seconds it lives, so it enters the DOM at the last possible
+       moment and leaves with the navigation. *@
+    <form id="bw-kiosk-pair-complete" method="post" action="/kiosk/pair/complete"
+          data-enhance-nav="false"
+          class="kiosk-pair-complete-form @(_state == PageState.Approved ? "is-ready" : string.Empty)">
+        <AntiforgeryToken />
+        <input type="hidden" name="pairingId" value="@_completionPairingId" />
+        <input type="hidden" name="ticket" value="@_completionTicket" />
+        @* Normally invisible: the JS submit fires the moment the approval lands. It becomes visible
+           only in the approved state, so a tablet where the scripted submit somehow did not run
+           still has a way forward instead of a page that just sits there. *@
+        <button type="submit" class="kiosk-row kiosk-row-primary">Finish setup</button>
+    </form>
+</div>
+
+@code {
+    /// <summary>Set by the completion endpoint when a redemption did not work out.</summary>
+    [SupplyParameterFromQuery(Name = "perror")]
+    public string? PairError { get; set; }
+
+    private KioskPairingEntry? _pairing;
+    private string _qrSvg = string.Empty;
+    private PageState _state = PageState.Waiting;
+    private TimeSpan _remaining = KioskPairingRegistry.Lifetime;
+
+    // Empty until approval, then the two values the completion POST carries.
+    private string _completionPairingId = string.Empty;
+    private string _completionTicket = string.Empty;
+
+    private Timer? _countdown;
+    private bool _submitted;
+
+    protected override void OnInitialized()
+    {
+        // Subscribed before any pairing exists, so an approval that lands in the same instant the
+        // code is created cannot slip between the two.
+        Pairings.Changed += OnPairingChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Only ever reached in the live circuit, never during prerender.
+            StartPairing();
+            StateHasChanged();
+            return;
+        }
+
+        // The approval arrived and the hidden fields have been rendered with it. Submitting is a
+        // real navigation away from this circuit, so it happens exactly once.
+        if (_state == PageState.Approved && !_submitted && _completionTicket.Length > 0)
+        {
+            _submitted = true;
+            await JS.InvokeVoidAsync("bwKioskPair.complete");
+        }
+    }
+
+    private void StartPairing()
+    {
+        // Null when the installation is already holding KioskPairingRegistry.MaxLivePairings codes
+        // open, or (unreachably) when no free code could be drawn. Both are momentary — every entry
+        // releases itself inside three minutes — so this is a "try again", never a lockout, and it
+        // is a landing rather than an unhandled exception in the middle of a circuit.
+        _pairing = Pairings.Create();
+        if (_pairing is null)
+        {
+            _state = PageState.Throttled;
+            return;
+        }
+
+        _state = PageState.Waiting;
+        _remaining = _pairing.ExpiresAt - DateTimeOffset.UtcNow;
+
+        // An absolute URL, because it is read by a phone that has no idea where this tablet is
+        // pointed. BaseUri already carries the scheme and host the tablet itself reached.
+        _qrSvg = KioskPairingQrCode.ToSvg($"{Navigation.BaseUri}kiosk/approve/{_pairing.Code}");
+
+        _countdown?.Dispose();
+        _countdown = new Timer(_ => Tick(), state: null, TimeSpan.Zero, TimeSpan.FromSeconds(1));
+    }
+
+    private void Tick()
+    {
+        if (_pairing is null || _state is PageState.Approved or PageState.Throttled)
+        {
+            return;
+        }
+
+        var remaining = _pairing.ExpiresAt - DateTimeOffset.UtcNow;
+        if (remaining <= TimeSpan.Zero)
+        {
+            _state = PageState.Expired;
+            _countdown?.Dispose();
+            _countdown = null;
+        }
+
+        _remaining = remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
+        SafeRefresh();
+    }
+
+    /// <summary>
+    /// Marshals a redraw onto the circuit, tolerating one that has already gone away. Both callers
+    /// run off the circuit's thread — a timer tick and another circuit's approval event — and a
+    /// tablet that was unplugged mid-wait must not turn either into an unobserved exception.
+    /// </summary>
+    private void SafeRefresh()
+    {
+        try
+        {
+            _ = InvokeAsync(StateHasChanged);
+        }
+        catch (ObjectDisposedException)
+        {
+            // The circuit is gone. Dispose has already let go of everything this page owned.
+        }
+    }
+
+    /// <summary>
+    /// Raised from whichever circuit approved the pairing (or from the wall settings card, on a
+    /// completely different device), so everything here is marshalled back onto this one.
+    /// </summary>
+    private void OnPairingChanged(Guid pairingId)
+    {
+        if (_pairing is not { } pairing || pairingId != pairing.Id || _state == PageState.Approved)
+        {
+            return;
+        }
+
+        // Re-read rather than trusting the event: the event carries an id, and the authority for
+        // "approved, for that wall, with that key" is the registry.
+        if (Pairings.Find(pairing.Id) is not { Status: KioskPairingStatus.Approved })
+        {
+            return;
+        }
+
+        _state = PageState.Approved;
+        _completionPairingId = pairing.Id.ToString();
+        _completionTicket = pairing.ClaimTicket;
+        _countdown?.Dispose();
+        _countdown = null;
+
+        // OnAfterRenderAsync does the submit, once these two fields are actually in the DOM.
+        SafeRefresh();
+    }
+
+    private void Restart()
+    {
+        if (_pairing is { } previous)
+        {
+            Pairings.Remove(previous.Id);
+        }
+
+        _pairing = null;
+        _qrSvg = string.Empty;
+        _completionPairingId = string.Empty;
+        _completionTicket = string.Empty;
+        PairError = null;
+        StartPairing();
+    }
+
+    private static string FormatRemaining(TimeSpan remaining)
+    {
+        return remaining <= TimeSpan.Zero ? "0:00" : $"{(int)remaining.TotalMinutes}:{remaining.Seconds:D2}";
+    }
+
+    public void Dispose()
+    {
+        Pairings.Changed -= OnPairingChanged;
+        _countdown?.Dispose();
+
+        // A pairing whose tablet walked away is dead weight holding a code; the registry would drop
+        // it in three minutes anyway, but there is no reason to make somebody wait for that.
+        if (_pairing is { } pairing && _state != PageState.Approved)
+        {
+            Pairings.Remove(pairing.Id);
+        }
+    }
+
+    private enum PageState
+    {
+        Waiting,
+        Approved,
+        Expired,
+        Throttled,
+    }
+}

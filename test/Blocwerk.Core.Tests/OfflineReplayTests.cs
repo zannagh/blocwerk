@@ -1,3 +1,4 @@
+using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
@@ -88,7 +89,8 @@ public class OfflineReplayTests
         var controller = new OfflineActionsController(
             attemptService,
             Substitute.For<IBoulderFeedbackService>(),
-            Substitute.For<ICommentService>());
+            Substitute.For<ICommentService>(),
+            Substitute.For<ICurrentUserService>());
 
         var request = new LogAttemptRequest
         {

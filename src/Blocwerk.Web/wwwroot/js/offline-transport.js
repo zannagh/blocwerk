@@ -74,6 +74,10 @@
          *   'sent'   2xx, including a replay the server had already applied. Delete the entry.
          *   'pause'  401. The session is gone. Stop the queue and prompt for sign-in; the entry
          *            keeps its clientRequestId so it replays safely after logging back in.
+         *   'hold'   409. The entry was queued by a DIFFERENT user than the one signed in now
+         *            (shared tablet, shared laptop). Writing it would credit the wrong person, so
+         *            the server refused. Keep the entry, skip it, and let it replay if its owner
+         *            comes back — the 7-day expiry is the backstop if they never do.
          *   'retry'  408 / 429 / 5xx. Transient. Keep the entry and back off.
          *   'drop'   any other 4xx. The action can never succeed (deleted boulder, not a wall
          *            member, malformed payload). Delete it and tell the user.
@@ -85,6 +89,9 @@
             }
             if (response.status === 401) {
                 return 'pause';
+            }
+            if (response.status === 409) {
+                return 'hold';
             }
             if (response.status === 408 || response.status === 429) {
                 return 'retry';

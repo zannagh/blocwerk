@@ -388,6 +388,58 @@ public class KioskAuthTests
     }
 
     [Fact]
+    public void EveryRefusedPageIsActuallyRefusedByAGateAtRuntime()
+    {
+        // Being on RefusedPageTypes does not, by itself, refuse anything: IsBlockedPageType is
+        // consulted only by the route gate, and the route gate runs as part of the DEFAULT
+        // authorization policy, which AuthorizeRouteView evaluates only for a page carrying
+        // IAuthorizeData — there is no FallbackPolicy, on purpose. So a listed page is genuinely
+        // unreachable from a tablet only if at least one of the two runtime gates can see it:
+        //
+        //   [Authorize] on the page  -> the route gate evaluates, in-circuit navigation included, or
+        //   every route on DeniedPaths -> the middleware refuses the request before any page runs.
+        //
+        // Pages that must stay reachable while signed OUT (signup, password reset, redeeming a share
+        // link) cannot take the first and are covered by the second. The classification test above
+        // cannot tell either apart from a page that is merely listed, which is how KioskApprove sat
+        // on this list while a registered tablet could open it.
+        var assembly = typeof(Blocwerk.Web.Program).Assembly;
+
+        var ungated = new List<string>();
+        foreach (var name in KioskRestrictions.RefusedPageTypes)
+        {
+            var type = assembly.GetType(name);
+            Assert.NotNull(type);
+
+            var authorized = type
+                .GetCustomAttributes(inherit: true)
+                .OfType<Microsoft.AspNetCore.Authorization.IAuthorizeData>()
+                .Any();
+
+            var routes = type
+                .GetCustomAttributes(typeof(Microsoft.AspNetCore.Components.RouteAttribute), inherit: true)
+                .Cast<Microsoft.AspNetCore.Components.RouteAttribute>()
+                .Select(r => r.Template)
+                .ToList();
+
+            var denied = routes.Count > 0
+                && routes.TrueForAll(template => KioskRestrictions.IsBlockedPath(new PathString(template)));
+
+            if (!authorized && !denied)
+            {
+                ungated.Add(name);
+            }
+        }
+
+        Assert.True(
+            ungated.Count == 0,
+            "These pages are on KioskRestrictions.RefusedPageTypes but nothing refuses them at "
+            + "runtime — they carry no [Authorize]-derived attribute (so the kiosk route gate never "
+            + "evaluates) and their routes are not on DeniedPaths (so the middleware waves them "
+            + "through). A kiosk tablet can open them: " + string.Join(", ", ungated));
+    }
+
+    [Fact]
     public async Task RouteRequirement_BlocksBlockedPagesForAKiosk_AndNothingElse()
     {
         var kiosk = KioskPrincipal(KeyA, WallA, DateTimeOffset.UtcNow);

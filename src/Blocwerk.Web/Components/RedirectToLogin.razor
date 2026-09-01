@@ -1,8 +1,28 @@
 @inject NavigationManager Navigation
 
+@* The ANONYMOUS half of the router's NotAuthorized branch. Carries the page the visitor was trying
+   to reach so the sign-in round trip lands them back on it — an admin who scanned a tablet's QR code
+   while signed out would otherwise sign in and be dropped on the home page with no idea what they
+   were meant to do. The controller at /account/login validates the value with Url.IsLocalUrl and the
+   return leg goes through LocalRedirect, so a crafted value cannot become an open redirect.
+
+   Only ever rendered for a signed-OUT visitor. An authenticated-but-unauthorised one gets
+   NotAuthorizedNotice instead: sending them to a login page they are already past is how a kiosk
+   tablet bounced off a refused page would spin. *@
+
 @code {
     protected override void OnInitialized()
     {
-        Navigation.NavigateTo("/account/login", forceLoad: true);
+        var returnUrl = Navigation.ToBaseRelativePath(Navigation.Uri);
+        if (!returnUrl.StartsWith('/'))
+        {
+            returnUrl = "/" + returnUrl;
+        }
+
+        var target = returnUrl is "/"
+            ? "/account/login"
+            : $"/account/login?returnUrl={Uri.EscapeDataString(returnUrl)}";
+
+        Navigation.NavigateTo(target, forceLoad: true);
     }
 }

@@ -1,0 +1,242 @@
+@page "/kiosk/approve/{Code}"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject KioskPairingApprover Approver
+@inject KioskPairingRegistry Pairings
+@inject KioskThrottleRegistry Throttle
+@using Blocwerk.Core.Entities
+@using Microsoft.AspNetCore.Authorization
+
+@* Where the QR code on the tablet lands: an admin's own phone, signed in as themselves.
+
+   [Authorize], like every other page on KioskRestrictions.RefusedPageTypes — and not incidentally.
+   The route gate that enforces that list (KioskRouteRequirement/KioskRouteHandler) is only ever
+   consulted for a page carrying IAuthorizeData, because there is no FallbackPolicy; without this
+   attribute the RefusedPageTypes entry for this page is inert and a registered tablet can open the
+   approval UI. KioskAuthTests asserts the attribute is present on every refused page.
+
+   A signed-out admin who scanned the QR is not lost by this: the router's NotAuthorized branch sends
+   an anonymous visitor through RedirectToLogin, which now carries a returnUrl, and /account/login
+   validates it with Url.IsLocalUrl and returns them here. A signed-in visitor the gate refuses — a
+   kiosk tablet — gets a terminal notice instead, so nothing loops. *@
+
+<PageTitle>Approve a tablet - Blocwerk</PageTitle>
+
+<div class="kiosk-approve">
+    @if (_state == PageState.Loading)
+    {
+        <p class="loading-small">Loading&hellip;</p>
+    }
+    else if (_state == PageState.Unavailable)
+    {
+        @* One message for unknown, expired and already-approved. Telling them apart would turn this
+           page into an oracle for whether a given six digits is a live pairing. *@
+        <div class="kiosk-picker-head">
+            <h1>That code isn't usable</h1>
+            <p>It may have expired or already been used. Ask the tablet for a fresh code.</p>
+        </div>
+        <a href="/" class="kiosk-row kiosk-row-secondary">Back to Blocwerk</a>
+    }
+    else if (_state == PageState.Throttled)
+    {
+        <div class="kiosk-picker-head">
+            <h1>Too many attempts</h1>
+            <p>Too many codes have been tried from this account just now. Wait a moment, then scan
+               the tablet's code again.</p>
+        </div>
+        <a href="/" class="kiosk-row kiosk-row-secondary">Back to Blocwerk</a>
+    }
+    else if (_state == PageState.NoWalls)
+    {
+        <div class="kiosk-picker-head">
+            <h1>No walls to choose from</h1>
+            <p>Only a wall's admin can register a tablet to it, and you don't administer any wall.
+               Ask the wall's owner to approve this tablet, or to make you an admin first.</p>
+        </div>
+        <a href="/walls" class="kiosk-row kiosk-row-secondary">Your walls</a>
+    }
+    else if (_state == PageState.Done)
+    {
+        <div class="kiosk-picker-head">
+            <h1>Tablet approved</h1>
+            <p>The tablet is setting itself up now. You can put your phone away.</p>
+        </div>
+        <a href="/walls" class="kiosk-row kiosk-row-secondary">Your walls</a>
+    }
+    else
+    {
+        <div class="kiosk-picker-head">
+            <h1>Approve this tablet</h1>
+        </div>
+
+        <p class="kiosk-approve-blurb">
+            A tablet showing code <strong>@Code</strong> is asking to become a wall kiosk. Approving
+            it gives that device its own kiosk key for the wall you pick below: it will show that
+            wall to anyone who walks up, and members who opted in can pick themselves on it. It gets
+            <strong>no access to any other wall</strong>, and nothing about your own account.
+        </p>
+
+        @if (_error is not null)
+        {
+            <div class="kiosk-banner-error" role="alert">@_error</div>
+        }
+
+        <div class="form-group">
+            <label for="kiosk-approve-wall">Wall</label>
+            <select id="kiosk-approve-wall" class="form-input" @bind="_selectedWallId">
+                @foreach (var wall in _walls)
+                {
+                    <option value="@wall.Id">@wall.Name</option>
+                }
+            </select>
+            @if (_walls.Count == 1)
+            {
+                <p class="hint">The only wall you administer, so it's already selected.</p>
+            }
+        </div>
+
+        <button type="button" class="kiosk-row kiosk-row-primary"
+                disabled="@(_busy || _selectedWallId == Guid.Empty)" @onclick="ApproveAsync">
+            @(_busy ? "Working..." : "Approve this tablet")
+        </button>
+        <a href="/" class="kiosk-row kiosk-row-secondary">Cancel</a>
+    }
+</div>
+
+@code {
+    /// <summary>The six digits from the QR code. Never trusted beyond a lookup.</summary>
+    [Parameter]
+    public string? Code { get; set; }
+
+    private IReadOnlyList<Wall> _walls = [];
+    private KioskPairingState? _pairing;
+    private Guid _selectedWallId;
+    private PageState _state = PageState.Loading;
+    private string? _error;
+    private bool _busy;
+    private IReadOnlyList<KioskThrottleScope> _throttleScopes = [];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _state = PageState.Loading;
+        _error = null;
+
+        // Nothing is looked up during PRERENDER. The lookup is throttled per acting user, and
+        // counting the same scan twice — once on the prerender pass, once when the circuit connects
+        // — would spend an honest admin's budget at double rate. The interactive pass, a moment
+        // later, does the whole thing.
+        if (!RendererInfo.IsInteractive)
+        {
+            return;
+        }
+
+        // Who is asking. [Authorize] means this is normally set; a session that lapsed between the
+        // route gate and here gets the same generic answer as a bad code.
+        var actingUserId = await Approver.TryGetActingUserIdAsync();
+        if (actingUserId is not { } userId)
+        {
+            _state = PageState.Unavailable;
+            return;
+        }
+
+        // Throttled exactly like the typed path in the wall settings, and for the same reason: six
+        // digits is a 10^6 space and the outcomes here are distinguishable (a miss renders "isn't
+        // usable", a hit renders a wall picker), so an unthrottled lookup is an existence oracle
+        // over the live codes. Behind [Authorize] the per-user scope is the one that binds — a
+        // guesser needs an account per bucket and every bucket they burn is attributable.
+        _throttleScopes = KioskThrottleRegistry.PairingGuessScopes(userId, Code);
+        if (Throttle.IsLocked(_throttleScopes))
+        {
+            _state = PageState.Throttled;
+            return;
+        }
+
+        _pairing = Pairings.TryFindByCode(Code);
+        if (_pairing is not { Status: KioskPairingStatus.Pending })
+        {
+            // One message for unknown, expired and already-approved, and one failure counted for all
+            // three: which of them it was is exactly what must not leak.
+            Throttle.RegisterFailure(_throttleScopes);
+            _state = PageState.Unavailable;
+            return;
+        }
+
+        try
+        {
+            _walls = await Approver.GetAdministeredWallsAsync();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // The session went away between the route gate and this call. Nothing to show, and no
+            // hint about the code that got this far.
+            _state = PageState.Unavailable;
+            return;
+        }
+
+        if (_walls.Count == 0)
+        {
+            _state = PageState.NoWalls;
+            return;
+        }
+
+        // One wall is the overwhelmingly common case — a home wall — and making somebody pick from a
+        // list of one on a phone is friction for nothing.
+        _selectedWallId = _walls.Count == 1 ? _walls[0].Id : _selectedWallId;
+        _state = PageState.Choosing;
+    }
+
+    private async Task ApproveAsync()
+    {
+        if (_busy || _pairing is not { } pairing)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+
+        try
+        {
+            // The chosen wall is re-checked against the database inside this call, so a wall id that
+            // was tampered with between render and click gets nothing.
+            var result = await Approver.ApproveAsync(pairing.Id, _selectedWallId);
+
+            switch (result)
+            {
+                case KioskPairingApprovalResult.Approved:
+                    // A real pairing, really approved: this account was not guessing, so give the
+                    // budget back rather than making an admin who pairs several tablets in a row
+                    // wait on a counter meant for a guesser.
+                    Throttle.Reset(_throttleScopes);
+                    _state = PageState.Done;
+                    break;
+
+                case KioskPairingApprovalResult.PairingUnavailable:
+                    _state = PageState.Unavailable;
+                    break;
+
+                case KioskPairingApprovalResult.NotAuthorised:
+                    _error = "You can't register a tablet to that wall.";
+                    break;
+
+                default:
+                    _error = "Pick a wall first.";
+                    break;
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private enum PageState
+    {
+        Loading,
+        Choosing,
+        Unavailable,
+        Throttled,
+        NoWalls,
+        Done,
+    }
+}

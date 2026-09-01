@@ -107,6 +107,48 @@ public sealed class KioskThrottleRegistry
         ];
     }
 
+    // There is deliberately NO scope here for CREATING a pairing code, and this registry is the
+    // wrong tool for that job. Nothing is guessed when a tablet asks for a code, so there is nothing
+    // for an exponential backoff to bound — while the damage of getting it wrong is total, because
+    // the only scope available is a global one (a pairing is created inside the tablet's circuit,
+    // where there is no client address to key on) and a global counter that escalates and is never
+    // reset locks every tablet in the installation out at the rate of one request per lockout. That
+    // is exactly what it used to do. The cap that belongs there is on how many pairings are LIVE at
+    // once, which cannot accumulate and expires by itself: KioskPairingRegistry.MaxLivePairings.
+
+    /// <summary>
+    /// The scopes a TYPED six-digit pairing code counts against, in the wall-settings card. The
+    /// space is 10^6 — small enough that an unbounded form field would be a real attack — and this
+    /// is what bounds it.
+    /// </summary>
+    /// <remarks>
+    /// The per-USER scope is the cap that actually holds, and it is stronger than anything the
+    /// registration path can manage: typing a code requires being signed in, so the key is an
+    /// authenticated user id rather than a header the caller writes for themselves. A determined
+    /// guesser needs an account per bucket, and every bucket they burn is attributable.
+    /// <para>
+    /// The per-CODE scope covers the other shape: not "find any pairing" but "grind at the ONE code
+    /// I saw on the screen across the gym". It keys on the guessed code, which the caller does
+    /// control, so it cannot bound a guesser walking the space — that is the per-user scope's job —
+    /// but it does stop a specific waiting tablet being targeted, and it costs nothing.
+    /// </para>
+    /// <para>
+    /// The per-code scope is FLAT, and the per-user one is not. Its key is attacker-controlled —
+    /// anybody who can read the six digits off the tablet can spend that code's five attempts — so
+    /// letting it escalate would hand a bystander a half-hour denial of service against the tablet
+    /// legitimately waiting, from a code they were always able to see. A flat minute still stops the
+    /// grinding it exists to stop, and a code only lives three of them.
+    /// </para>
+    /// </remarks>
+    public static IReadOnlyList<KioskThrottleScope> PairingGuessScopes(Guid actingUserId, string? code)
+    {
+        return
+        [
+            new KioskThrottleScope($"pairguess:{actingUserId:N}", MaxAttempts, Window, Lockout),
+            new KioskThrottleScope($"pairguess:code:{code ?? "empty"}", MaxAttempts, Window, Lockout, Flat: true),
+        ];
+    }
+
     /// <summary>True while ANY of the scopes is locked out and the secret must not be checked.</summary>
     public bool IsLocked(IReadOnlyList<KioskThrottleScope> scopes, DateTimeOffset? nowOverride = null)
     {
@@ -224,7 +266,9 @@ public sealed class KioskThrottleRegistry
     /// </summary>
     public static TimeSpan BackoffFor(KioskThrottleScope scope, int bursts)
     {
-        if (bursts <= 1)
+        // A flat scope never escalates: see PairingGuessScopes for why a scope keyed on something
+        // the caller controls must not be able to lock anything out for half an hour.
+        if (bursts <= 1 || scope.Flat)
         {
             return scope.BaseLockout;
         }
@@ -268,4 +312,14 @@ public sealed class KioskThrottleRegistry
 /// <param name="MaxAttempts">Failures tolerated inside <paramref name="Window"/>.</param>
 /// <param name="Window">How long failures accumulate for.</param>
 /// <param name="BaseLockout">The first lockout; each further consecutive burst doubles it.</param>
-public sealed record KioskThrottleScope(string Key, int MaxAttempts, TimeSpan Window, TimeSpan BaseLockout);
+/// <param name="Flat">
+/// True to disable the doubling, so every lockout on this scope lasts <paramref name="BaseLockout"/>.
+/// For scopes whose KEY is attacker-controlled, where escalation is a denial of service rather than
+/// a guessing bound.
+/// </param>
+public sealed record KioskThrottleScope(
+    string Key,
+    int MaxAttempts,
+    TimeSpan Window,
+    TimeSpan BaseLockout,
+    bool Flat = false);

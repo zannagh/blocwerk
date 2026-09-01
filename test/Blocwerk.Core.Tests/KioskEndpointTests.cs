@@ -212,6 +212,95 @@ public class KioskEndpointTests
         Assert.False(fixture.HasDeviceCookie());
     }
 
+    [Fact]
+    public async Task CompletePairing_WritesTheDeviceRegistrationAndLandsOnTheWall()
+    {
+        using var fixture = await KioskFixture.CreateAsync();
+        var (key, _) = await fixture.CreateKioskKeyAsync();
+
+        // The tail of the pairing flow: an admin has already approved on some other device, and the
+        // tablet now makes this one request on its OWN connection because a Blazor circuit has no
+        // response to append a cookie to.
+        var pairing = fixture.Pairings.Create()!;
+        Assert.True(fixture.Pairings.TryApprove(pairing.Id, fixture.Harness.WallId, key.Id));
+
+        var result = await fixture.Controller.CompletePairing(pairing.Id, pairing.ClaimTicket);
+
+        Assert.Equal($"/walls/{fixture.Harness.WallId}", Assert.IsType<LocalRedirectResult>(result).Url);
+
+        var registration = fixture.ReadWrittenRegistration();
+        Assert.NotNull(registration);
+        Assert.Equal(key.Id, registration.ApiKeyId);
+        Assert.Equal(fixture.Harness.WallId, registration.WallId);
+    }
+
+    [Fact]
+    public async Task CompletePairing_RefusesAKeyThatWasRevokedBetweenApprovalAndRedemption()
+    {
+        using var fixture = await KioskFixture.CreateAsync();
+        var (key, _) = await fixture.CreateKioskKeyAsync();
+
+        var pairing = fixture.Pairings.Create()!;
+        Assert.True(fixture.Pairings.TryApprove(pairing.Id, fixture.Harness.WallId, key.Id));
+
+        // An admin who approves and then thinks better of it. Without the re-check the tablet would
+        // be handed a device cookie for a dead key and land on a wall page in a broken half-state —
+        // Register has always re-read the key before writing the cookie, and this path must too.
+        await fixture.Harness.ApiKeyService.RevokeAsync(key.Id, fixture.Harness.Owner.Id);
+
+        AssertGenericPairingFailure(await fixture.Controller.CompletePairing(pairing.Id, pairing.ClaimTicket));
+        Assert.False(fixture.HasDeviceCookie());
+    }
+
+    [Fact]
+    public async Task CompletePairing_CannotBeReplayed()
+    {
+        using var fixture = await KioskFixture.CreateAsync();
+        var (key, _) = await fixture.CreateKioskKeyAsync();
+
+        var pairing = fixture.Pairings.Create()!;
+        Assert.True(fixture.Pairings.TryApprove(pairing.Id, fixture.Harness.WallId, key.Id));
+
+        Assert.IsType<LocalRedirectResult>(await fixture.Controller.CompletePairing(pairing.Id, pairing.ClaimTicket));
+
+        // Redemption removes the entry inside a lock, so a resubmitted POST — or anything that
+        // captured the body — gets the same nothing as an invented ticket.
+        AssertGenericPairingFailure(await fixture.Controller.CompletePairing(pairing.Id, pairing.ClaimTicket));
+    }
+
+    [Fact]
+    public async Task CompletePairing_RefusesAWrongTicketAnUnknownPairingAndAnUnapprovedOne()
+    {
+        using var fixture = await KioskFixture.CreateAsync();
+        var (key, _) = await fixture.CreateKioskKeyAsync();
+
+        var approved = fixture.Pairings.Create()!;
+        Assert.True(fixture.Pairings.TryApprove(approved.Id, fixture.Harness.WallId, key.Id));
+
+        // Somebody who watched the code being approved, but never held the tablet's claim ticket.
+        AssertGenericPairingFailure(await fixture.Controller.CompletePairing(approved.Id, "not-the-ticket"));
+        AssertGenericPairingFailure(await fixture.Controller.CompletePairing(approved.Id, null));
+        AssertGenericPairingFailure(await fixture.Controller.CompletePairing(Guid.NewGuid(), approved.ClaimTicket));
+
+        var pending = fixture.Pairings.Create()!;
+        AssertGenericPairingFailure(await fixture.Controller.CompletePairing(pending.Id, pending.ClaimTicket));
+
+        // None of that registered the device.
+        Assert.False(fixture.HasDeviceCookie());
+
+        // And the real tablet is still able to finish, so a failed guess is not a denial of service.
+        Assert.IsType<LocalRedirectResult>(await fixture.Controller.CompletePairing(approved.Id, approved.ClaimTicket));
+    }
+
+    /// <summary>
+    /// Every way a redemption can fail lands on the same place with the same marker: expired,
+    /// unknown, unapproved, wrong ticket, already used. Nothing distinguishes them.
+    /// </summary>
+    private static void AssertGenericPairingFailure(IActionResult result)
+    {
+        Assert.Equal("/kiosk/pair?perror=1", Assert.IsType<LocalRedirectResult>(result).Url);
+    }
+
     public enum KeyKind
     {
         Unknown,
@@ -231,6 +320,9 @@ public class KioskEndpointTests
         public WallTestHarness Harness { get; private set; } = null!;
 
         public KioskController Controller { get; private set; } = null!;
+
+        /// <summary>The pairing store the controller's completion endpoint redeems out of.</summary>
+        public KioskPairingRegistry Pairings { get; } = new();
 
         public DefaultHttpContext HttpContext { get; private set; } = null!;
 
@@ -280,6 +372,7 @@ public class KioskEndpointTests
                 fixture.deviceCookie,
                 new KioskKeyValidator(fixture.Harness.DbContextFactory),
                 new KioskThrottleRegistry(),
+                fixture.Pairings,
                 NullLogger<KioskController>.Instance)
             {
                 ControllerContext = new ControllerContext { HttpContext = fixture.HttpContext },
