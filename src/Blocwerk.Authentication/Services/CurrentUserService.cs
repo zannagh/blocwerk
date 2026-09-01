@@ -70,6 +70,18 @@ public class CurrentUserService : ICurrentUserService
         InvalidateCache();
     }
 
+    public async Task SetPreferFontGradesAsync(bool preferFont)
+    {
+        var user = await GetCurrentUserAsync();
+
+        await using var dbContext = await _dbContextFactory.CreateDbContextAsync();
+        var dbUser = await dbContext.Users.FirstAsync(u => u.Id == user.Id);
+        dbUser.PreferFontGrades = preferFont;
+        await dbContext.SaveChangesAsync();
+
+        InvalidateCache();
+    }
+
     private const int MaxDisplayNameLength = 256;
 
     // Blazor Server streams the upload over SignalR, so a generous ceiling is fine here — the image is

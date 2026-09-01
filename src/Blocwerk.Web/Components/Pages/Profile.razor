@@ -132,6 +132,19 @@
                 </p>
             </div>
 
+            <div class="section profile-section-card">
+                <h2>Preferred grading system</h2>
+                <select class="window-select" value="@(_viewer?.PreferFontGrades == false ? "v" : "font")" @onchange="OnPreferFontChange">
+                    <option value="font">Fontainebleau</option>
+                    <option value="v">V-Scale</option>
+                </select>
+                <p class="member-since">The scale new and revised boulders open on when you enter a grade.</p>
+                @if (_preferFontError != null)
+                {
+                    <p class="field-error">@_preferFontError</p>
+                }
+            </div>
+
             <details class="section profile-collapsible" id="email-section">
                 <summary>@(_target.EmailVerified ? "Email (verified)" : "Email")</summary>
 
@@ -662,6 +675,7 @@
     private int _boulderGradeSpan = 5;
     private List<Wall> _myWalls = [];
     private string? _homeWallError;
+    private string? _preferFontError;
 
     // Client-only rendering preference (stored in a cookie via bwPrefs, no server persistence): the
     // magnification of the long-press zoom lens. Default 8×; read once the circuit can call JS.
@@ -927,6 +941,25 @@
         catch (Exception)
         {
             _homeWallError = "Couldn't update your main wall. Please try again.";
+        }
+    }
+
+    private async Task OnPreferFontChange(ChangeEventArgs e)
+    {
+        bool preferFont = e.Value?.ToString() != "v";
+
+        try
+        {
+            await CurrentUserService.SetPreferFontGradesAsync(preferFont);
+            _preferFontError = null;
+            if (_viewer != null)
+            {
+                _viewer.PreferFontGrades = preferFont;
+            }
+        }
+        catch (Exception)
+        {
+            _preferFontError = "Couldn't update your preferred grading system. Please try again.";
         }
     }
 

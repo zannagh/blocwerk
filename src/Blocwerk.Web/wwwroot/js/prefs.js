@@ -1,15 +1,13 @@
 /*
  * bwPrefs — tiny cookie-backed client preferences the server can also read.
  *
- * Only the boulder-setting experience toggle lives here for now. The value is written as a
- * plain cookie (not localStorage) so the server can read it on the initial page load and pick
- * the right experience with no client-side flash. Path=/ + a one-year max-age + SameSite=Lax
+ * Values are written as plain cookies (not localStorage) so the server can read them on the
+ * initial page load with no client-side flash. Path=/ + a one-year max-age + SameSite=Lax
  * mirrors cookie-consent.js.
  */
 window.bwPrefs = (function () {
     'use strict';
 
-    const EXPERIENCE_KEY = 'blocwerk-boulder-experience';
     const LAST_PAGE_KEY = 'blocwerk-last-page';
     const ZOOM_LENS_MAG_KEY = 'blocwerk-zoom-lens-mag';
     const ZOOM_LENS_MAG_DEFAULT = 2;
@@ -115,15 +113,6 @@ window.bwPrefs = (function () {
     }
 
     return {
-        getExperience: function () {
-            const v = readCookie(EXPERIENCE_KEY);
-            return v === 'new' || v === 'old' ? v : null;
-        },
-        setExperience: function (value) {
-            const v = value === 'new' ? 'new' : 'old';
-            writeCookie(EXPERIENCE_KEY, v);
-            return v;
-        },
         // Zoom-lens magnification: the long-press magnifier shows the wall photo at this multiple
         // of its ORIGINAL resolution. Stored as a plain integer cookie, clamped to a sane range.
         // Read defensively — an unset/garbage/out-of-range cookie falls back to the default.

@@ -6,11 +6,9 @@
 @inject IBoulderService BoulderService
 @inject ICurrentUserService CurrentUserService
 @inject NavigationManager Navigation
-@inject IJSRuntime JS
-@inject IHttpContextAccessor HttpContextAccessor
-@inject PersistentComponentState ApplicationState
 @inject CircuitEditActivity EditActivity
 @implements IDisposable
+@using Blocwerk.Core.Helpers
 @using Blocwerk.Web.Components.Shared
 @using Blocwerk.Web.State
 
@@ -37,14 +35,6 @@
     }
     else
     {
-        @if (!_useNew)
-        {
-            <button class="experience-banner" @onclick="UseNewExperienceAsync">
-                <span class="experience-banner-title">Try the new boulder setting experience</span>
-                <span class="experience-banner-sub">A faster, tap-to-classify way to set your holds.</span>
-            </button>
-        }
-
         @if (_boulder.IsHistoric)
         {
             <p class="revision-hint">Some holds from the original boulder may no longer exist on the wall.
@@ -101,14 +91,42 @@
 
             <div class="form-group">
                 <label>Grade</label>
-                <GradePicker @bind-Value="_grade" />
+                <GradePicker @bind-Value="_grade" DefaultUseFont="_preferFont" />
             </div>
 
-            @if (_members.Count > 0)
-            {
-                <div class="form-group">
-                    <label>Setter(s)</label>
-                    <p class="hint">Who set this boulder? Leave empty if it's just the person who added it.</p>
+            <div class="rules-block">
+                <span class="rules-title">Rules</span>
+                <label class="checkbox-label">
+                    <input type="checkbox" checked="@_allKickboardOn"
+                           @onchange="e => _allKickboardOn = e.Value is true" />
+                    All kickboard holds are on
+                </label>
+            </div>
+        </div>
+
+        @if (_wall.UsesMultipleImages && _currentPanel is not null)
+        {
+            <BoulderPanelSwitcher Panels="_panels" Current="_currentPanel" CurrentChanged="OnPanelChanged" />
+        }
+
+        <HoldPicker WallId="WallId"
+                    PhotoUrl="@PickerPhotoUrl"
+                    AllHolds="_pickerHolds"
+                    WallAngle="_wall.Angle"
+                    HandsFollowFeet="_handsFollowFeet"
+                    FootColorOnly="_footColorOnly"
+                    @bind-SelectedHolds="_selectedHolds" />
+
+        <BoulderNewRules @bind-FootColorOnly="_footColorOnly"
+                         @bind-NoMatch="_noMatch"
+                         WallHolds="_displayHolds" />
+
+        @if (_members.Count > 0)
+        {
+            <details class="settings-panel settings-card">
+                <summary class="settings-card-summary"><h2>Setter(s)</h2></summary>
+                <div class="settings-card-body">
+                    <p class="hint">Who set this boulder? Ticking these replaces the current setter list.</p>
                     <div class="setter-select">
                         @foreach (var member in _members)
                         {
@@ -121,49 +139,7 @@
                         }
                     </div>
                 </div>
-            }
-
-            @if (_useNew)
-            {
-                <div class="rules-block">
-                    <span class="rules-title">Rules</span>
-                    <label class="checkbox-label">
-                        <input type="checkbox" checked="@_allKickboardOn"
-                               @onchange="e => _allKickboardOn = e.Value is true" />
-                        All kickboard holds are on
-                    </label>
-                </div>
-            }
-            else
-            {
-                <BoulderRulesEditor @bind-KickboardFootholdsOn="_allKickboardOn"
-                                    @bind-HandsFollowFeet="_handsFollowFeet"
-                                    @bind-FootColorOnly="_footColorOnly"
-                                    @bind-NoMatch="_noMatch"
-                                    WallHolds="_displayHolds"
-                                    @bind-SelectedHolds="_selectedHolds" />
-            }
-        </div>
-
-        @if (_wall.UsesMultipleImages && _currentPanel is not null)
-        {
-            <BoulderPanelSwitcher Panels="_panels" Current="_currentPanel" CurrentChanged="OnPanelChanged" />
-        }
-
-        <HoldPicker WallId="WallId"
-                    PhotoUrl="@PickerPhotoUrl"
-                    AllHolds="_pickerHolds"
-                    WallAngle="_wall.Angle"
-                    RadialMode="_useNew"
-                    HandsFollowFeet="_handsFollowFeet"
-                    FootColorOnly="_footColorOnly"
-                    @bind-SelectedHolds="_selectedHolds" />
-
-        @if (_useNew)
-        {
-            <BoulderNewRules @bind-FootColorOnly="_footColorOnly"
-                             @bind-NoMatch="_noMatch"
-                             WallHolds="_displayHolds" />
+            </details>
         }
 
         @* Live form snapshot for the offline submit path (offline-boulder.js). *@
@@ -183,13 +159,6 @@
         @if (!string.IsNullOrEmpty(_error))
         {
             <div class="error-msg">@_error</div>
-        }
-
-        @if (_useNew)
-        {
-            <div class="experience-footer">
-                <button class="btn-link" @onclick="UseOldExperienceAsync">Use the old boulder setting experience</button>
-            </div>
         }
     }
 </div>
@@ -222,9 +191,11 @@
     private bool _allKickboardOn = true;
     private bool _handsFollowFeet = true;
     private string? _footColorOnly;
-    // Editable in the classic revise via the "No match" checkbox in BoulderRulesEditor. Revise keeps
-    // the classic full-edit UI; the radial experience is create-only.
+    // Editable via the "No match" checkbox in the below-image rules (BoulderNewRules).
     private bool _noMatch;
+    // The current user's preferred grade scale, seeded into the GradePicker so the grade input opens
+    // on Fontainebleau or V-Scale to match their profile setting.
+    private bool _preferFont = true;
     private bool _isCreator;
     private bool _isAdmin;
     private bool _isSetter;
@@ -236,15 +207,6 @@
     private bool _isSubmitting;
     private string? _error;
 
-    // "new" | "old"; default "new" (unset cookie resolves to the new experience). Shared with the
-    // create page via the same cookie/pref. Read server-side on the prerender pass, persisted across
-    // the interactive re-render, then reconciled from the cookie via JS on first interactive render.
-    private string _experience = "new";
-    private bool _useNew => _experience == "new";
-
-    private const string ExperienceStateKey = "boulder-revise-experience";
-    private PersistingComponentStateSubscription _persistingSubscription;
-
     private string DetailUrl => $"/walls/{WallId}/boulders/{BoulderId}";
 
     // The whole page is revise mode: hold a busy lease for its mounted lifetime so a deploy never
@@ -252,20 +214,18 @@
     // circuit-teardown backstop behind it.
     private IDisposable? _editLease;
 
-    // A dedicated foothold in the new (radial) experience is either a per-hold "Foot" mark or a
-    // foot-colour rule.
+    // A dedicated foothold in the radial experience is either a per-hold "Foot" mark or a foot-colour rule.
     private bool HasDedicatedFeet =>
         _selectedHolds.Any(h => h.Usage == HoldUsage.FootOnly) || !string.IsNullOrEmpty(_footColorOnly);
 
     // The radial experience has no hands-follow-feet toggle: hand holds always double as feet, and a
     // dedicated foothold is an explicit "Foot" radial mark. The server coerces every FootOnly mark to
     // HandAndFoot while HandsFollowFeet is true, which would silently discard the radial footholds and
-    // the foot-colour rule. So in the new experience persist HandsFollowFeet=false the moment a
-    // dedicated foothold exists, letting it survive. When there are NONE, keep the boulder's LOADED
-    // value untouched — unlike create (which always forces true), revise must never flip an existing
-    // hands-follow-feet=false boulder to true on a no-op save. The classic experience persists the
-    // edited value directly.
-    private bool EffectiveHandsFollowFeet => _useNew && HasDedicatedFeet ? false : _handsFollowFeet;
+    // the foot-colour rule. So persist HandsFollowFeet=false the moment a dedicated foothold exists,
+    // letting it survive. When there are NONE, keep the boulder's LOADED value untouched — unlike
+    // create (which always forces true), revise must never flip an existing hands-follow-feet=false
+    // boulder to true on a no-op save.
+    private bool EffectiveHandsFollowFeet => HasDedicatedFeet ? false : _handsFollowFeet;
 
     /// <summary>The whole revise form as the JSON the offline queue replays. See offline-boulder.js.</summary>
     private string SnapshotJson => System.Text.Json.JsonSerializer.Serialize(new
@@ -287,30 +247,6 @@
         // Acquire before any await so the page is marked busy for its whole lifetime. No current-user
         // id is resolved yet here, so userId is left null (the deploy gate only needs the count).
         _editLease = EditActivity.BeginBoulderRevise(WallId, userId: null);
-
-        // Resolve the boulder-setting experience (shared cookie/pref with create). On the prerender
-        // pass HttpContext is live, so read the cookie server-side (no flash) and persist it; on the
-        // interactive re-render HttpContext is null, so restore the persisted value instead of letting
-        // it snap back to the default. The JS reconcile in OnAfterRenderAsync then confirms it.
-        if (ApplicationState.TryTakeFromJson<string>(ExperienceStateKey, out var restored)
-            && (restored == "new" || restored == "old"))
-        {
-            _experience = restored;
-        }
-        else
-        {
-            var cookie = HttpContextAccessor.HttpContext?.Request.Cookies["blocwerk-boulder-experience"];
-            if (cookie == "new" || cookie == "old")
-            {
-                _experience = cookie;
-            }
-        }
-
-        _persistingSubscription = ApplicationState.RegisterOnPersisting(() =>
-        {
-            ApplicationState.PersistAsJson(ExperienceStateKey, _experience);
-            return Task.CompletedTask;
-        });
 
         _wall = await WallService.GetWallAsync(WallId);
         _boulder = await BoulderService.GetBoulderAsync(BoulderId);
@@ -336,6 +272,11 @@
             return;
         }
 
+        // Seed the grade scale from the boulder's EXISTING grade so it displays correctly; only fall
+        // back to the reviser's personal preference when the boulder has no grade yet.
+        _preferFont = string.IsNullOrWhiteSpace(_boulder.Grade)
+            ? user.PreferFontGrades
+            : GradeScale.FontGrades.Contains(_boulder.Grade);
         _isDraft = _boulder.IsDraft;
         _name = _boulder.Name;
         _grade = _boulder.Grade;
@@ -464,34 +405,6 @@
         return best;
     }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (!firstRender)
-        {
-            return;
-        }
-
-        try
-        {
-            var stored = await JS.InvokeAsync<string?>("bwPrefs.getExperience");
-            // Only an explicit "old" cookie opts out; an unset/null pref keeps the new default.
-            var resolved = stored == "old" ? "old" : "new";
-            if (resolved != _experience)
-            {
-                _experience = resolved;
-                StateHasChanged();
-            }
-        }
-        catch (JSException)
-        {
-            // Prefs helper unavailable: keep whatever the server read decided.
-        }
-        catch (JSDisconnectedException)
-        {
-            // Circuit went away; nothing to reconcile.
-        }
-    }
-
     private void ShowOriginal()
     {
         _showOriginal = true;
@@ -511,29 +424,6 @@
         else
         {
             _selectedSetters.Remove(userId);
-        }
-    }
-
-    private async Task UseNewExperienceAsync()
-    {
-        await SetExperienceAsync("new");
-    }
-
-    private async Task UseOldExperienceAsync()
-    {
-        await SetExperienceAsync("old");
-    }
-
-    private async Task SetExperienceAsync(string value)
-    {
-        _experience = value == "new" ? "new" : "old";
-        try
-        {
-            await JS.InvokeVoidAsync("bwPrefs.setExperience", _experience);
-        }
-        catch (JSException)
-        {
-            // The choice still applies for this render even if the cookie write failed.
         }
     }
 
@@ -568,7 +458,6 @@
 
     public void Dispose()
     {
-        _persistingSubscription.Dispose();
         _editLease?.Dispose();
     }
 }

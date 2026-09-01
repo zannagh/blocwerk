@@ -35,6 +35,13 @@ public interface ICurrentUserService
     Task SetHomeWallAsync(Guid? wallId);
 
     /// <summary>
+    /// Sets the current user's preferred grade scale: true seeds grade inputs with the Fontainebleau
+    /// scale, false with the V-Scale. Persisted on the user row and read back via
+    /// <see cref="Entities.User.PreferFontGrades"/>. Invalidates the cached user.
+    /// </summary>
+    Task SetPreferFontGradesAsync(bool preferFont);
+
+    /// <summary>
     /// Sets the current user's chosen display name. A null/whitespace value clears it, so the UI
     /// falls back to the OAuth-provided name. The value is trimmed and capped at 256 characters.
     /// Invalidates the cached user.

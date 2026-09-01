@@ -104,6 +104,13 @@ public class User : IEquatable<User>
     public Guid? HomeWallId { get; set; }
 
     /// <summary>
+    /// The user's preferred bouldering grade scale. True (the default) seeds grade inputs with the
+    /// Fontainebleau scale; false seeds them with the V-Scale. Only a UI default — a boulder's grade
+    /// is still stored as a free string and can be entered on either scale.
+    /// </summary>
+    public bool PreferFontGrades { get; set; } = true;
+
+    /// <summary>
     /// The OAuth provider identities linked to this user. A user is born from one OAuth login and may
     /// later own several (account linking). Legacy users and dev logins may have none until their next
     /// login attaches one lazily.

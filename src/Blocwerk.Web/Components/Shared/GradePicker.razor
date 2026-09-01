@@ -18,7 +18,21 @@
     [Parameter] public string? Value { get; set; }
     [Parameter] public EventCallback<string?> ValueChanged { get; set; }
 
+    /// <summary>
+    /// The scale the picker opens on: true seeds the Fontainebleau scale, false the V-Scale. Only the
+    /// initial seed — once the user taps the V/Font toggle their choice sticks. When null (the default)
+    /// the picker keeps its built-in default, so callers that don't pass it are unaffected.
+    /// </summary>
+    [Parameter] public bool? DefaultUseFont { get; set; }
+
     private bool _useFont;
+
+    protected override void OnInitialized()
+    {
+        // Seed once from the caller's preferred scale (e.g. the user's saved setting). Runs only on
+        // first init, so a later SetScale interaction is never overwritten by a parent re-render.
+        _useFont = DefaultUseFont ?? _useFont;
+    }
 
     private void SetScale(bool font)
     {

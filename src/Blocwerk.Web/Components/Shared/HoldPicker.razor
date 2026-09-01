@@ -5,55 +5,6 @@
 @using Blocwerk.Core.Helpers
 @using Blocwerk.Core.Geometry
 
-@if (!RadialMode)
-{
-<div class="picker-toolbar">
-    <span class="pick-count">@SelectedHolds.Count selected</span>
-    <div class="pick-legend">
-        <span class="legend-item"><span class="dot start"></span> Start</span>
-        <span class="legend-item"><span class="dot normal"></span> Normal</span>
-        <span class="legend-item"><span class="dot top"></span> Top</span>
-        @if (!HandsFollowFeet)
-        {
-            <span class="legend-item"><span class="dot foot"></span> Foot</span>
-        }
-    </div>
-    <div class="pick-controls">
-        <button class="mode-btn @(_placeType == HoldType.Start ? "active start-active" : string.Empty)" @onclick="() => _placeType = HoldType.Start">Start</button>
-        <button class="mode-btn @(_placeType == HoldType.Normal ? "active" : string.Empty)" @onclick="() => _placeType = HoldType.Normal">Normal</button>
-        <button class="mode-btn @(_placeType == HoldType.Top ? "active top-active" : string.Empty)" @onclick="() => _placeType = HoldType.Top">Top</button>
-        <span class="separator"></span>
-        <button class="mode-btn @(_placingVirtual ? "active" : string.Empty)"
-                @onclick="() => _placingVirtual = !_placingVirtual"
-                title="Add a virtual hold at a spot that isn't in the wall photo yet. It'll be a dotted placeholder, mergeable with a real hold on the next wall update.">
-            + Virtual
-        </button>
-        <span class="separator"></span>
-        <button class="mode-btn @(_viewMode == ViewMode.Photo ? "view-active" : string.Empty)" @onclick="() => _viewMode = ViewMode.Photo">Photo</button>
-        <button class="mode-btn @(_viewMode == ViewMode.Schematic ? "view-active" : string.Empty)" @onclick="() => _viewMode = ViewMode.Schematic">Map</button>
-    </div>
-</div>
-
-<div class="zoom-bar">
-    @* All zoom entry points go through the JS engine so every one of them is
-       anchored on the viewport centre instead of the top-left corner. *@
-    <button class="zoom-btn" @onclick="() => ZoomByAsync(1.25)">+</button>
-    <button class="zoom-btn" @onclick="() => ZoomByAsync(0.8)">&minus;</button>
-    <button class="zoom-btn" @onclick="ResetZoomAsync">Reset</button>
-    @if (_zoom != 1.0) { <span class="zoom-label">@F(_zoom * 100)%</span> }
-    <span class="zoom-sep"></span>
-    @* Pan mode is honoured by the JS engine through data-pan-mode below: while it is
-       on you can drag from anywhere, holds included, and taps never select. *@
-    <button class="zoom-btn @(_isPanning ? "pan-active" : string.Empty)" @onclick="() => _isPanning = !_isPanning"
-            title="@(_isPanning ? "Pan mode on — drag anywhere, taps ignored" : "Pan mode off — tap holds to select")">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
-            <path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 9.5V5a2 2 0 0 0-4 0v9" />
-            <path d="M18 11a2 2 0 0 1 4 0v6a8 8 0 0 1-8 8h-2c-2.5 0-4-1-6-4l-3.3-5.1a2 2 0 0 1 3.3-2.3L6 14" />
-        </svg>
-    </button>
-</div>
-}
-
 <WallDimControl />
 
 @* The viewport carries no zoom geometry: JS owns `--zoom` on the content element
@@ -156,28 +107,21 @@ else
 }
 </div>
 
-@if (RadialMode)
-{
-    @* The "+ Virtual" tool moves below the image in the radial experience. Everything else in the
-       classic toolbar (zoom, pan, mode/usage/view selectors) is gone — a tap opens the radial menu. *@
-    <div class="radial-controls">
-        <span class="pick-count">@SelectedHolds.Count selected</span>
-        <button class="mode-btn @(_placingVirtual ? "active" : string.Empty)"
-                @onclick="() => _placingVirtual = !_placingVirtual"
-                title="Add a virtual hold at a spot that isn't in the wall photo yet. Tap it afterwards to classify it.">
-            + Virtual
-        </button>
-    </div>
+@* The "+ Virtual" tool sits below the image; everything else classifies through a tap that opens
+   the radial menu. *@
+<div class="radial-controls">
+    <span class="pick-count">@SelectedHolds.Count selected</span>
+    <button class="mode-btn @(_placingVirtual ? "active" : string.Empty)"
+            @onclick="() => _placingVirtual = !_placingVirtual"
+            title="Add a virtual hold at a spot that isn't in the wall photo yet. Tap it afterwards to classify it.">
+        + Virtual
+    </button>
+</div>
 
-    @if (_overlayHold != null)
-    {
-        <HoldClassifyOverlay Left="_overlayX" Top="_overlayY" Current="OverlayCurrent"
-                             Chosen="OnOverlayChosen" Remove="OnOverlayRemove" Cancel="CloseOverlay" />
-    }
-}
-else
+@if (_overlayHold != null)
 {
-    <HoldUsageToolbar @bind-Value="_placeUsage" HandsFollowFeet="HandsFollowFeet" />
+    <HoldClassifyOverlay Left="_overlayX" Top="_overlayY" Current="OverlayCurrent"
+                         Chosen="OnOverlayChosen" Remove="OnOverlayRemove" Cancel="CloseOverlay" />
 }
 
 @code {
@@ -211,13 +155,6 @@ else
     /// <summary>The wall's segments; loaded from the id when the caller doesn't supply them.</summary>
     [Parameter] public List<WallSegment>? Segments { get; set; }
 
-    /// <summary>
-    /// The new boulder-setting experience. When on, all classic toolbars are hidden, pinch/tap zoom
-    /// stays live, the "+ Virtual" tool moves below the image, and tapping a hold opens the radial
-    /// classify overlay instead of toggling it with the active tool. Defaults off (classic path).
-    /// </summary>
-    [Parameter] public bool RadialMode { get; set; }
-
     private List<WallSegment>? _loaded;
     private List<WallSegment> _segments = [];
     private WallSchematicLayout _layout = WallProjection.BuildLayout(null, 0);
@@ -228,11 +165,10 @@ else
     private HoldType _placeType = HoldType.Normal;
     private HoldUsage _placeUsage = HoldUsage.HandAndFoot;
     private ViewMode _viewMode = ViewMode.Photo;
-    private double _zoom => _zoomState.Zoom;
     private bool _isPanning;
     private bool _placingVirtual;
 
-    // Radial classify overlay state (RadialMode only). Positioned at the tapped hold's on-screen
+    // Radial classify overlay state. Positioned at the tapped hold's on-screen
     // pixel via the click's client coordinates, so it lives outside the zoomed viewport and never
     // scales with pinch zoom.
     private Hold? _overlayHold;
@@ -318,16 +254,6 @@ else
         }
     }
 
-    private async Task ZoomByAsync(double factor)
-    {
-        await JS.InvokeVoidAsync("bwViewport.zoomBy", _viewportRef, factor);
-    }
-
-    private async Task ResetZoomAsync()
-    {
-        await JS.InvokeVoidAsync("bwViewport.zoomTo", _viewportRef, 1.0);
-    }
-
     public void Dispose() => _zoomState.Dispose();
 
     private async Task OnSvgClick(MouseEventArgs e)
@@ -353,19 +279,12 @@ else
 
     private record RelativePos(double X, double Y);
 
-    /// <summary>A tap on a hold: classic mode toggles it with the active tool; radial mode opens
-    /// the classify overlay centred on the tap point.</summary>
+    /// <summary>A tap on a hold opens the radial classify overlay centred on the tap point.</summary>
     private void OnHoldClicked(Hold hold, MouseEventArgs e)
     {
-        if (RadialMode)
-        {
-            _overlayHold = hold;
-            _overlayX = e.ClientX;
-            _overlayY = e.ClientY;
-            return;
-        }
-
-        ToggleHold(hold);
+        _overlayHold = hold;
+        _overlayX = e.ClientX;
+        _overlayY = e.ClientY;
     }
 
     /// <summary>The quadrant the overlay's hold currently sits in, or null when it isn't set.</summary>

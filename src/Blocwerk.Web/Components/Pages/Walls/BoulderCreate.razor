@@ -4,10 +4,8 @@
 @inject IWallService WallService
 @inject IWallPanelService WallPanelService
 @inject IBoulderService BoulderService
+@inject ICurrentUserService CurrentUserService
 @inject NavigationManager Navigation
-@inject IJSRuntime JS
-@inject IHttpContextAccessor HttpContextAccessor
-@inject PersistentComponentState ApplicationState
 @inject CircuitEditActivity EditActivity
 @implements IDisposable
 @using Blocwerk.Web.Components.Shared
@@ -27,14 +25,6 @@
     }
     else
     {
-        @if (!_useNew)
-        {
-            <button class="experience-banner" @onclick="UseNewExperienceAsync">
-                <span class="experience-banner-title">Try the new boulder setting experience</span>
-                <span class="experience-banner-sub">A faster, tap-to-classify way to set your holds.</span>
-            </button>
-        }
-
         <div class="form-section">
             <div class="form-group">
                 <label>Name</label>
@@ -43,14 +33,42 @@
 
             <div class="form-group">
                 <label>Proposed Grade</label>
-                <GradePicker @bind-Value="_grade" />
+                <GradePicker @bind-Value="_grade" DefaultUseFont="_preferFont" />
             </div>
 
-            @if (_members.Count > 0)
-            {
-                <div class="form-group">
-                    <label>Setter(s)</label>
-                    <p class="hint">Who set this boulder? Leave empty if it's just you adding it.</p>
+            <div class="rules-block">
+                <span class="rules-title">Rules</span>
+                <label class="checkbox-label">
+                    <input type="checkbox" checked="@_allKickboardOn"
+                           @onchange="e => _allKickboardOn = e.Value is true" />
+                    All kickboard holds are on
+                </label>
+            </div>
+        </div>
+
+        @if (_wall.UsesMultipleImages && _currentPanel is not null)
+        {
+            <BoulderPanelSwitcher Panels="_panels" Current="_currentPanel" CurrentChanged="OnPanelChanged" />
+        }
+
+        <HoldPicker WallId="WallId"
+                    PhotoUrl="@PickerPhotoUrl"
+                    AllHolds="_pickerHolds"
+                    WallAngle="_wall.Angle"
+                    HandsFollowFeet="_handsFollowFeet"
+                    FootColorOnly="_footColorOnly"
+                    @bind-SelectedHolds="_selectedHolds" />
+
+        <BoulderNewRules @bind-FootColorOnly="_footColorOnly"
+                         @bind-NoMatch="_noMatch"
+                         WallHolds="_holds" />
+
+        @if (_members.Count > 0)
+        {
+            <details class="settings-panel settings-card">
+                <summary class="settings-card-summary"><h2>Setter(s)</h2></summary>
+                <div class="settings-card-body">
+                    <p class="hint">You're added as a setter by default. Add anyone else who set this boulder with you.</p>
                     <div class="setter-select">
                         @foreach (var member in _members)
                         {
@@ -63,49 +81,7 @@
                         }
                     </div>
                 </div>
-            }
-
-            @if (_useNew)
-            {
-                <div class="rules-block">
-                    <span class="rules-title">Rules</span>
-                    <label class="checkbox-label">
-                        <input type="checkbox" checked="@_allKickboardOn"
-                               @onchange="e => _allKickboardOn = e.Value is true" />
-                        All kickboard holds are on
-                    </label>
-                </div>
-            }
-            else
-            {
-                <BoulderRulesEditor @bind-KickboardFootholdsOn="_allKickboardOn"
-                                    @bind-HandsFollowFeet="_handsFollowFeet"
-                                    @bind-FootColorOnly="_footColorOnly"
-                                    @bind-NoMatch="_noMatch"
-                                    WallHolds="_holds"
-                                    @bind-SelectedHolds="_selectedHolds" />
-            }
-        </div>
-
-        @if (_wall.UsesMultipleImages && _currentPanel is not null)
-        {
-            <BoulderPanelSwitcher Panels="_panels" Current="_currentPanel" CurrentChanged="OnPanelChanged" />
-        }
-
-        <HoldPicker WallId="WallId"
-                    PhotoUrl="@PickerPhotoUrl"
-                    AllHolds="_pickerHolds"
-                    WallAngle="_wall.Angle"
-                    RadialMode="_useNew"
-                    HandsFollowFeet="_handsFollowFeet"
-                    FootColorOnly="_footColorOnly"
-                    @bind-SelectedHolds="_selectedHolds" />
-
-        @if (_useNew)
-        {
-            <BoulderNewRules @bind-FootColorOnly="_footColorOnly"
-                             @bind-NoMatch="_noMatch"
-                             WallHolds="_holds" />
+            </details>
         }
 
         @* Live form snapshot, recomputed every render so the offline submit path (offline-boulder.js)
@@ -126,18 +102,11 @@
                 @(_isSubmitting ? "Publishing..." : $"Publish ({_selectedHolds.Count} holds)")
             </button>
         </div>
-        <p class="hint">A draft is only visible to you until you publish it.</p>
+        <p class="hint">A draft is visible to the wall's members and any setter can edit it, but it can't be attempted or flashed until you publish it.</p>
 
         @if (!string.IsNullOrEmpty(_error))
         {
             <div class="error-msg">@_error</div>
-        }
-
-        @if (_useNew)
-        {
-            <div class="experience-footer">
-                <button class="btn-link" @onclick="UseOldExperienceAsync">Use the old boulder setting experience</button>
-            </div>
         }
     }
 </div>
@@ -160,10 +129,15 @@
 
     private List<BoulderHoldInput> _selectedHolds = [];
 
-    // The wall's members, offered as selectable setters, and the ids the user picked. The creator is
-    // deliberately NOT auto-selected: the setter may differ from whoever adds the boulder in the app.
+    // The wall's members, offered as selectable setters, and the ids the user picked. The current user
+    // is pre-selected as a default setter (the common case is you setting your own boulder); adding
+    // anyone else stays a conscious choice, and the current user can be unticked.
     private List<WallMember> _members = [];
     private readonly HashSet<Guid> _selectedSetters = [];
+
+    // The current user's preferred grade scale, seeded into the GradePicker so a new boulder's grade
+    // input opens on Fontainebleau or V-Scale to match their profile setting.
+    private bool _preferFont = true;
 
     // Minted once, offline-safe. Both the online (CreateBoulderAsync) and the queued offline path
     // key on this id, so a create is an idempotent upsert no matter which path (or a replay) runs.
@@ -179,22 +153,16 @@
     private bool _isSubmitting;
     private string? _error;
 
-    // "new" | "old"; default "new" (unset cookie resolves to the new experience). Read server-side
-    // (no flash) on the prerender pass, then reconciled from the cookie via JS on first interactive render.
-    private string _experience = "new";
-    private bool _useNew => _experience == "new";
-
     private string DetailUrl => $"/walls/{WallId}/boulders/{_clientId}";
 
-    // The new experience presents "feet follow hands" as always-on (no radio). At the storage layer,
+    // The radial experience presents "feet follow hands" as always-on (no radio). At the storage layer,
     // the server's mutual-exclusivity invariant coerces every FootOnly mark to HandAndFoot whenever
     // HandsFollowFeet is true — which would silently discard the radial "Foot" footholds and the foot
     // colour rule. So persist HandsFollowFeet=true only while there are NO dedicated feet; the moment a
     // dedicated foothold (per-hold FootOnly or a colour rule) exists, persist false so it survives.
     // Hand holds stay HandAndFoot either way, so feet can always use them: "feet follow hands" holds.
-    private bool EffectiveHandsFollowFeet => _useNew
-        ? !(_selectedHolds.Any(h => h.Usage == HoldUsage.FootOnly) || !string.IsNullOrEmpty(_footColorOnly))
-        : _handsFollowFeet;
+    private bool EffectiveHandsFollowFeet =>
+        !(_selectedHolds.Any(h => h.Usage == HoldUsage.FootOnly) || !string.IsNullOrEmpty(_footColorOnly));
 
     /// <summary>The whole boulder form as the JSON the offline queue replays. See offline-boulder.js.</summary>
     private string SnapshotJson => System.Text.Json.JsonSerializer.Serialize(new
@@ -211,43 +179,19 @@
         setters = _selectedSetters.ToList(),
     });
 
-    private const string ExperienceStateKey = "boulder-create-experience";
-    private PersistingComponentStateSubscription _persistingSubscription;
-
     // Marks the app "busy" for the duration this create page is mounted (see EditActivityRegistry).
     // Released in Dispose, and as a backstop when the circuit's scope is torn down.
     private IDisposable? _editLease;
 
     protected override async Task OnInitializedAsync()
     {
-        // The whole page is "create mode": hold a busy lease while it's mounted. No current-user
-        // service is injected here, so userId is left null (the deploy gate only needs the count).
-        _editLease = EditActivity.BeginBoulderCreate(WallId, userId: null);
+        // Resolve the current user first: it seeds the preferred grade scale and the default setter,
+        // and stamps the busy lease so the deploy gate knows who is mid-edit.
+        var currentUser = await CurrentUserService.GetCurrentUserAsync();
+        _preferFont = currentUser.PreferFontGrades;
 
-        // The experience is read server-side from the cookie on the prerender pass (HttpContext is
-        // live there) and persisted via PersistentComponentState. On the interactive re-render
-        // HttpContext is null, so without this the value would snap back to the "old" default and
-        // flash the old UI before the JS reconcile flips it back. Restoring the persisted value
-        // keeps the interactive render on the same experience the server already chose.
-        if (ApplicationState.TryTakeFromJson<string>(ExperienceStateKey, out var restored)
-            && (restored == "new" || restored == "old"))
-        {
-            _experience = restored;
-        }
-        else
-        {
-            var cookie = HttpContextAccessor.HttpContext?.Request.Cookies["blocwerk-boulder-experience"];
-            if (cookie == "new" || cookie == "old")
-            {
-                _experience = cookie;
-            }
-        }
-
-        _persistingSubscription = ApplicationState.RegisterOnPersisting(() =>
-        {
-            ApplicationState.PersistAsJson(ExperienceStateKey, _experience);
-            return Task.CompletedTask;
-        });
+        // The whole page is "create mode": hold a busy lease while it's mounted.
+        _editLease = EditActivity.BeginBoulderCreate(WallId, currentUser.Id);
 
         _wall = await WallService.GetWallAsync(WallId);
         if (_wall != null)
@@ -256,6 +200,14 @@
             // is now marked per hold from the picker.
             _holds = _wall.Holds.ToList();
             _members = await WallService.GetMembersAsync(WallId);
+
+            // Pre-select the current user as the default setter, but only when they're actually a
+            // member offered in the list (so the checkbox reflects the selection). Adding others stays
+            // a conscious choice made in the collapsed setter card.
+            if (_members.Any(m => m.UserId == currentUser.Id))
+            {
+                _selectedSetters.Add(currentUser.Id);
+            }
 
             // Big walls carry their holds across several panel images, each in its own panel-local
             // coordinate space. Load the live panels and open on the centre (0,0) so the picker can
@@ -315,60 +267,8 @@
         }
     }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (!firstRender)
-        {
-            return;
-        }
-
-        try
-        {
-            var stored = await JS.InvokeAsync<string?>("bwPrefs.getExperience");
-            // Only an explicit "old" cookie opts out; an unset/null pref keeps the new default.
-            var resolved = stored == "old" ? "old" : "new";
-            if (resolved != _experience)
-            {
-                _experience = resolved;
-                StateHasChanged();
-            }
-        }
-        catch (JSException)
-        {
-            // Prefs helper unavailable: keep whatever the server read decided.
-        }
-        catch (JSDisconnectedException)
-        {
-            // Circuit went away; nothing to reconcile.
-        }
-    }
-
-    private async Task UseNewExperienceAsync()
-    {
-        await SetExperienceAsync("new");
-    }
-
-    private async Task UseOldExperienceAsync()
-    {
-        await SetExperienceAsync("old");
-    }
-
-    private async Task SetExperienceAsync(string value)
-    {
-        _experience = value == "new" ? "new" : "old";
-        try
-        {
-            await JS.InvokeVoidAsync("bwPrefs.setExperience", _experience);
-        }
-        catch (JSException)
-        {
-            // The choice still applies for this render even if the cookie write failed.
-        }
-    }
-
     public void Dispose()
     {
-        _persistingSubscription.Dispose();
         _editLease?.Dispose();
     }
 
