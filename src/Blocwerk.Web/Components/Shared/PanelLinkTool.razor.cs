@@ -172,6 +172,35 @@ public partial class PanelLinkTool
         }
     }
 
+    // Green outline for holds that already participate in ANY link, so the user can see at a glance
+    // what's already linked (vs the default blue outline). PanelImageView only applies HoldColors when
+    // a hold isn't the current selection/preview, so those states still win.
+    private const string LinkedOutlineColor = "#2ecc71";
+
+    private IReadOnlyDictionary<Guid, string>? LeftHoldColors => BuildLinkedColors(_leftHolds);
+    private IReadOnlyDictionary<Guid, string>? RightHoldColors => BuildLinkedColors(_rightHolds);
+
+    private IReadOnlyDictionary<Guid, string>? BuildLinkedColors(IReadOnlyList<PanelHold> holds)
+    {
+        var linked = new HashSet<Guid>();
+        foreach (var l in _links)
+        {
+            linked.Add(l.HoldAId);
+            linked.Add(l.HoldBId);
+        }
+
+        var map = new Dictionary<Guid, string>();
+        foreach (var h in holds)
+        {
+            if (linked.Contains(h.Id))
+            {
+                map[h.Id] = LinkedOutlineColor;
+            }
+        }
+
+        return map.Count == 0 ? null : map;
+    }
+
     // The wall links whose two endpoints fall one on each of the two shown panels (either order).
     private List<HoldLinkPair> ExistingLinksBetween()
     {
