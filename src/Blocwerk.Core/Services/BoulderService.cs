@@ -440,28 +440,71 @@ public class BoulderService : IBoulderService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
-            var links = await db.BoulderHolds
+            var rows = await db.BoulderHolds
                 .AsNoTracking()
                 .Where(bh => bh.Boulder.WallId == wallId && !bh.Boulder.IsArchived)
 
                 // Drafts are visible to every wall member, so no creator-only draft filter here.
                 .Select(bh => new
                 {
+                    bh.BoulderId,
                     bh.HoldId,
-                    Ref = new HoldUsageRef(
-                        bh.BoulderId,
-                        bh.Boulder.Name,
-                        bh.Boulder.Grade,
-                        bh.Type,
-                        bh.Usage,
-                        bh.Boulder.IsDraft,
-                        bh.Boulder.IsHistoric),
+                    bh.Type,
+                    bh.Usage,
+                    bh.Boulder.Name,
+                    bh.Boulder.Grade,
+                    bh.Boulder.IsDraft,
+                    bh.Boulder.IsHistoric,
                 })
                 .ToListAsync();
 
-            return links
-                .GroupBy(x => x.HoldId)
-                .ToDictionary(g => g.Key, g => g.Select(x => x.Ref).OrderBy(r => r.Name).ToList());
+            // Load the wall's twin links once so membership can be expanded per boulder: a hold used
+            // on one panel counts for every twin of that physical hold, and a boulder that saved both
+            // twins is resolved to a single most-prominent entry (mirrors the detail viewer). A
+            // single-panel wall has no links, so this collapses to the old per-hold-id grouping.
+            var links = await db.HoldLinks
+                .AsNoTracking()
+                .Where(l => l.WallId == wallId)
+                .Select(l => new HoldLinkPair(l.HoldAId, l.HoldBId))
+                .ToListAsync();
+
+            var usage = new Dictionary<Guid, List<HoldUsageRef>>();
+            foreach (var boulder in rows.GroupBy(r => r.BoulderId))
+            {
+                var first = boulder.First();
+                var reconciled = BoulderHoldReconciler.Reconcile(
+                    boulder.Select(r => new ReconcilableHold(r.HoldId, r.Type, r.Usage)),
+                    links);
+
+                foreach (var physical in reconciled)
+                {
+                    var reference = new HoldUsageRef(
+                        first.BoulderId,
+                        first.Name,
+                        first.Grade,
+                        physical.Type,
+                        physical.Usage,
+                        first.IsDraft,
+                        first.IsHistoric);
+
+                    // Emit the boulder under every twin of the physical hold, so a one-sided boulder
+                    // reports on the un-saved twin too and both twins show the same resolved Type/Usage.
+                    foreach (var holdId in physical.HoldIds)
+                    {
+                        if (!usage.TryGetValue(holdId, out var refs))
+                        {
+                            refs = [];
+                            usage[holdId] = refs;
+                        }
+
+                        refs.Add(reference);
+                    }
+                }
+            }
+
+            return usage.ToDictionary(
+                kv => kv.Key,
+                kv => kv.Value.OrderBy(r => r.Name).ToList());
         }
         catch (Exception ex)
         {

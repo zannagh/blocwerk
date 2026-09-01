@@ -546,7 +546,7 @@ else
                     {
                         <BoulderCard Item="item" WallId="WallId" ShareToken="@ShareToken"
                                      CurrentUserId="_currentUserId" IsAnonymous="_isAnonymous"
-                                     ShowArchiveAction="true"
+                                     ShowArchiveAction="true" ReconciledHoldCount="ReconciledHoldCount(item.Boulder)"
                                      OnPublish="PublishBoulder" OnArchive="ArchiveBoulder" OnUnarchive="UnarchiveBoulder" />
                     }
 
@@ -558,6 +558,7 @@ else
                             {
                                 <BoulderCard Item="item" WallId="WallId" ShareToken="@ShareToken"
                                              CurrentUserId="_currentUserId" IsAnonymous="_isAnonymous"
+                                             ReconciledHoldCount="ReconciledHoldCount(item.Boulder)"
                                              OnPublish="PublishBoulder" OnArchive="ArchiveBoulder" OnUnarchive="UnarchiveBoulder" />
                             }
                         </details>
@@ -607,6 +608,10 @@ else
     private int _pendingPanelStepDelta;
     private List<Boulder> _boulders = [];
     private List<BoulderListItem> _items = [];
+
+    // Twin-reconciled hold count per boulder id, computed once from the wall's links after each load.
+    // Empty on single-panel walls (no links), where a card's raw BoulderHolds.Count is already right.
+    private Dictionary<Guid, int> _reconciledHoldCounts = [];
     private bool _isAdmin;
     private bool _isModerator;
     private bool _isMember;
@@ -880,6 +885,7 @@ else
             }
 
             _boulders = _items.Select(i => i.Boulder).ToList();
+            await LoadReconciledHoldCounts();
 
             if (!string.IsNullOrEmpty(_wall.ShareToken))
             {
@@ -1231,6 +1237,41 @@ else
 
     private Task<Dictionary<Guid, List<HoldUsageRef>>> LoadHoldUsage() =>
         BoulderService.GetHoldUsageAsync(WallId);
+
+    /// <summary>
+    /// Loads the wall's twin links once and reconciles every boulder's holds to a per-physical-hold
+    /// count, so a boulder that saved both twins of a hold is not double-counted on its card. A wall
+    /// with no links (single-panel) yields an empty map and the cards fall back to the raw count.
+    /// </summary>
+    private async Task LoadReconciledHoldCounts()
+    {
+        _reconciledHoldCounts = [];
+        try
+        {
+            var links = await WallPanelService.GetHoldLinksAsync(WallId);
+            if (links.Count == 0)
+            {
+                return;
+            }
+
+            var linkPairs = links.ToList();
+            foreach (var boulder in _boulders)
+            {
+                var reconciled = BoulderHoldReconciler.Reconcile(
+                    boulder.BoulderHolds.Select(bh => new ReconcilableHold(bh.HoldId, bh.Type, bh.Usage)),
+                    linkPairs);
+                _reconciledHoldCounts[boulder.Id] = reconciled.Count;
+            }
+        }
+        catch (Exception)
+        {
+            // A failed link read just leaves cards on their raw count — never blocks the wall page.
+            _reconciledHoldCounts = [];
+        }
+    }
+
+    private int? ReconciledHoldCount(Boulder boulder) =>
+        _reconciledHoldCounts.TryGetValue(boulder.Id, out var count) ? count : null;
 
     private async Task PublishBoulder(Boulder boulder)
     {

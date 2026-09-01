@@ -9,7 +9,7 @@
             @if (Boulder.NeedsReview) { <span class="review-badge" title="A hold on this boulder changed — review needed">review</span> }
         </span>
         <span class="boulder-meta">
-            @Boulder.BoulderHolds.Count holds &middot; by
+            @DisplayHoldCount holds &middot; by
             <UserAvatar UserId="Boulder.CreatedBy.Id" Name="@Boulder.CreatedBy.Name"
                         HasAvatar="Boulder.CreatedBy.HasAvatar" CssClass="avatar-sm" />
             @Boulder.CreatedBy.Name
@@ -86,6 +86,13 @@
 
     [Parameter] public bool IsAnonymous { get; set; }
 
+    /// <summary>
+    /// The twin-reconciled hold count (one entry per physical hold), when the list page has computed
+    /// it from the wall's links. Null falls back to the raw <see cref="Boulder.BoulderHolds"/> count,
+    /// which already matches on single-panel walls and one-sided boulders.
+    /// </summary>
+    [Parameter] public int? ReconciledHoldCount { get; set; }
+
     [Parameter] public bool ShowArchiveAction { get; set; }
 
     [Parameter] public EventCallback<Boulder> OnPublish { get; set; }
@@ -95,6 +102,8 @@
     [Parameter] public EventCallback<Boulder> OnUnarchive { get; set; }
 
     private Boulder Boulder => Item.Boulder;
+
+    private int DisplayHoldCount => ReconciledHoldCount ?? Boulder.BoulderHolds.Count;
 
     // A draft can be published by its creator or any of its setters (co-setters), mirroring the
     // server gate in PublishBoulderAsync. Plain viewers get no publish button.
