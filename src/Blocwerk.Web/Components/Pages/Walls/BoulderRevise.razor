@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @attribute [Authorize]
 @inject IWallService WallService
+@inject IWallPanelService WallPanelService
 @inject IBoulderService BoulderService
 @inject ICurrentUserService CurrentUserService
 @inject NavigationManager Navigation
@@ -144,8 +145,14 @@
             }
         </div>
 
+        @if (_wall.UsesMultipleImages && _currentPanel is not null)
+        {
+            <BoulderPanelSwitcher Panels="_panels" Current="_currentPanel" CurrentChanged="OnPanelChanged" />
+        }
+
         <HoldPicker WallId="WallId"
-                    AllHolds="_displayHolds"
+                    PhotoUrl="@PickerPhotoUrl"
+                    AllHolds="_pickerHolds"
                     WallAngle="_wall.Angle"
                     RadialMode="_useNew"
                     HandsFollowFeet="_handsFollowFeet"
@@ -194,6 +201,16 @@
     private Wall? _wall;
     private Boulder? _boulder;
     private List<Hold> _displayHolds = [];
+
+    // The holds actually handed to the picker: the whole current-generation set on a single-image
+    // wall (same reference as _displayHolds), or the current panel's holds on a multi-image wall.
+    // A stable field so a virtual hold placed inside the picker stays visible on the current panel.
+    private List<Hold> _pickerHolds = [];
+
+    // Big-wall (multi-image) panel switcher state; empty / null on a normal single-image wall.
+    private List<WallPanelInfo> _panels = [];
+    private WallPanelInfo? _currentPanel;
+
     private List<BoulderHoldInput> _selectedHolds = [];
 
     // The wall's members, offered as selectable setters, pre-selected from the boulder's existing
@@ -328,6 +345,25 @@
         _noMatch = _boulder.NoMatch;
         _displayHolds = _wall.Holds.ToList();
 
+        // Big walls carry their holds across several panel images, each in its own panel-local
+        // coordinate space. Load the live panels and open on the centre (0,0) so the picker can show
+        // one panel's photo + that panel's holds at a time. A single-image wall skips this entirely.
+        if (_wall.UsesMultipleImages)
+        {
+            try
+            {
+                _panels = (await WallPanelService.GetPanelsAsync(WallId)).Where(p => p.IsLive).ToList();
+            }
+            catch (Exception)
+            {
+                _panels = [];
+            }
+
+            _currentPanel = _panels.FirstOrDefault(p => p is { Col: 0, Row: 0 }) ?? _panels.FirstOrDefault();
+        }
+
+        RefreshPickerHolds();
+
         // Offer the wall's members as setters and pre-check the boulder's existing ones.
         _members = await WallService.GetMembersAsync(WallId);
         foreach (var setter in _boulder.Setters)
@@ -375,6 +411,31 @@
         }
 
         _selectedHolds = preselected;
+    }
+
+    // The photo behind the picker: a specific panel on a multi-image wall, else null so the picker
+    // falls back to the wall's centre-photo default (unchanged single-image behaviour).
+    private string? PickerPhotoUrl =>
+        _wall is { UsesMultipleImages: true } && _currentPanel is not null
+            ? $"/api/walls/{WallId}/panels/{_currentPanel.Id}/photo"
+            : null;
+
+    // Recomputes the picker's hold set for the current view. Single-image: the whole set (same
+    // reference as _displayHolds). Multi-image: only the current panel's holds, so they draw at their
+    // panel-local coordinates on that panel's photo. Runs on load and on every panel switch.
+    private void RefreshPickerHolds()
+    {
+        _pickerHolds = _wall is { UsesMultipleImages: true } && _currentPanel is not null
+            ? _displayHolds.Where(h => h.WallPanelId == _currentPanel.Id).ToList()
+            : _displayHolds;
+    }
+
+    // Switching panels preserves the accumulated selection (it is holdId-based in _selectedHolds, so
+    // already-picked holds on the new panel stay highlighted); only the visible photo + hold set change.
+    private void OnPanelChanged(WallPanelInfo panel)
+    {
+        _currentPanel = panel;
+        RefreshPickerHolds();
     }
 
     // Max Euclidean distance in the normalized [0,1] coordinate space for the orphaned-hold re-match.

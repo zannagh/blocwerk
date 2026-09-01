@@ -66,7 +66,7 @@
 @if (_viewMode == ViewMode.Photo)
 {
     <div class="photo-picker" @ref="_photoPickerRef">
-        <img src="/api/walls/@WallId/photo" alt="Wall" class="wall-photo" />
+        <img src="@(PhotoUrl ?? $"/api/walls/{WallId}/photo")" alt="Wall" class="wall-photo" />
         <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none"
              @onclick="OnSvgClick"
              style="cursor: @(_placingVirtual ? "crosshair" : "default");">
@@ -182,6 +182,15 @@ else
 
 @code {
     [Parameter] public Guid WallId { get; set; }
+
+    /// <summary>
+    /// The background photo behind the holds. When null (the single-image default) the picker falls
+    /// back to the wall's centre photo endpoint. Multi-image callers pass a specific panel's photo
+    /// (<c>/api/walls/{WallId}/panels/{panelId}/photo</c>) so the holds — which are stored in that
+    /// panel's own normalized image space — land in the right spot.
+    /// </summary>
+    [Parameter] public string? PhotoUrl { get; set; }
+
     [Parameter] public List<Hold> AllHolds { get; set; } = [];
     [Parameter] public List<BoulderHoldInput> SelectedHolds { get; set; } = [];
     [Parameter] public EventCallback<List<BoulderHoldInput>> SelectedHoldsChanged { get; set; }

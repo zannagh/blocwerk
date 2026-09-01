@@ -1,0 +1,61 @@
+@* A compact panel switcher for the boulder create/revise flow on big (multi-image) walls: a
+   labelled position indicator flanked by prev/next chevrons, mirroring the wall editor's per-panel
+   selector (WallDetail edit mode) so stepping between panels feels the same across the app. Purely
+   presentational — the parent owns which panel is current and reloads the picker's photo + holds on
+   change. Renders nothing for a single live panel (nothing to switch to). *@
+
+@if (Panels.Count > 1 && Current is not null)
+{
+    <div class="panel-selector">
+        <button type="button" class="btn-icon" @onclick="() => StepAsync(-1)" title="Previous panel">‹</button>
+        <span class="panel-selector-label">Panel @(CurrentIndex + 1)/@Panels.Count</span>
+        <button type="button" class="btn-icon" @onclick="() => StepAsync(1)" title="Next panel">›</button>
+    </div>
+}
+
+@code {
+    /// <summary>The wall's live panels, in display order.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<WallPanelInfo> Panels { get; set; } = [];
+
+    /// <summary>The currently shown panel.</summary>
+    [Parameter, EditorRequired] public WallPanelInfo? Current { get; set; }
+
+    /// <summary>Raised with the panel the user stepped to.</summary>
+    [Parameter] public EventCallback<WallPanelInfo> CurrentChanged { get; set; }
+
+    private int CurrentIndex => Current is null ? -1 : IndexOf(Current);
+
+    private int IndexOf(WallPanelInfo panel)
+    {
+        for (var index = 0; index < Panels.Count; index++)
+        {
+            if (Panels[index].Id == panel.Id)
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    // Wrap-around step, matching WallDetail.StepEditingPanel so the two selectors behave identically.
+    private async Task StepAsync(int delta)
+    {
+        if (Panels.Count == 0 || Current is null)
+        {
+            return;
+        }
+
+        var index = IndexOf(Current);
+        if (index < 0)
+        {
+            index = 0;
+        }
+
+        var next = (((index + delta) % Panels.Count) + Panels.Count) % Panels.Count;
+        if (Panels[next].Id != Current.Id)
+        {
+            await CurrentChanged.InvokeAsync(Panels[next]);
+        }
+    }
+}
