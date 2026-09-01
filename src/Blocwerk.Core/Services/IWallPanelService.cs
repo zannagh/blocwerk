@@ -119,4 +119,21 @@ public interface IWallPanelService
         List<ShapePoint>? shapePoints = null,
         HoldMaterial? material = null,
         HoldHandType? handType = null);
+
+    /// <summary>
+    /// Records that two holds on different panels of the same wall are the one physical hold seen
+    /// across an overlapping seam — the standalone counterpart to the links created during the
+    /// add-panel confirmation flow. Validates that both holds exist on <paramref name="wallId"/> and
+    /// sit on two different panels, rejects a self-link, and dedupes on the unordered pair so
+    /// re-linking is a no-op. Always creates a <see cref="HoldLinkKind.Same"/> link. Gated by
+    /// <see cref="WallAdminGuard.EnsureWallEditorAsync"/>.
+    /// </summary>
+    Task CreateHoldLinkAsync(Guid wallId, Guid holdAId, Guid holdBId);
+
+    /// <summary>
+    /// Breaks the link between two holds on <paramref name="wallId"/>, matching the unordered pair.
+    /// Idempotent: a no-op when no such link exists. Gated by
+    /// <see cref="WallAdminGuard.EnsureWallEditorAsync"/>.
+    /// </summary>
+    Task DeleteHoldLinkAsync(Guid wallId, Guid holdAId, Guid holdBId);
 }

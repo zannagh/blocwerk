@@ -71,4 +71,88 @@ public partial class WallPanelService
             hold.Id, panelId, wallId, user.Id);
         return hold.Id;
     }
+
+    /// <inheritdoc/>
+    public async Task CreateHoldLinkAsync(Guid wallId, Guid holdAId, Guid holdBId)
+    {
+        if (holdAId == holdBId)
+        {
+            throw new InvalidOperationException("A hold cannot be linked to itself.");
+        }
+
+        var user = await currentUserService.GetCurrentUserAsync();
+        await using var db = await dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = user.Id;
+        await WallAdminGuard.EnsureWallEditorAsync(db, wallId, user.Id, CancellationToken.None);
+
+        // Both holds must exist on this wall — and, to be a cross-panel seam link, sit on two
+        // different panels. One query, then validate before touching anything.
+        var holds = await db.Holds
+            .Where(h => (h.Id == holdAId || h.Id == holdBId) && h.WallId == wallId)
+            .Select(h => new { h.Id, h.WallPanelId })
+            .ToListAsync();
+        if (holds.Count != 2)
+        {
+            throw new InvalidOperationException("Both holds must exist on this wall.");
+        }
+
+        if (holds[0].WallPanelId is null
+            || holds[1].WallPanelId is null
+            || holds[0].WallPanelId == holds[1].WallPanelId)
+        {
+            throw new InvalidOperationException("Linked holds must sit on two different panels.");
+        }
+
+        // Dedupe on the unordered pair (mirrors ConfirmPanelAsync): re-linking is a no-op.
+        var existing = await db.HoldLinks
+            .Where(l => l.WallId == wallId)
+            .Select(l => new { l.HoldAId, l.HoldBId })
+            .ToListAsync();
+        var key = Unordered(holdAId, holdBId);
+        if (existing.Any(e => Unordered(e.HoldAId, e.HoldBId) == key))
+        {
+            return;
+        }
+
+        db.HoldLinks.Add(new HoldLink
+        {
+            WallId = wallId,
+            HoldAId = holdAId,
+            HoldBId = holdBId,
+            Kind = HoldLinkKind.Same,
+            CreatedByUserId = user.Id,
+        });
+        await db.SaveChangesAsync();
+
+        logger.LogInformation(
+            "Hold link {HoldA} <-> {HoldB} created on wall {WallId} by {UserId}",
+            holdAId, holdBId, wallId, user.Id);
+    }
+
+    /// <inheritdoc/>
+    public async Task DeleteHoldLinkAsync(Guid wallId, Guid holdAId, Guid holdBId)
+    {
+        var user = await currentUserService.GetCurrentUserAsync();
+        await using var db = await dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = user.Id;
+        await WallAdminGuard.EnsureWallEditorAsync(db, wallId, user.Id, CancellationToken.None);
+
+        // Match the unordered pair within this wall; a no-op when absent keeps breaking idempotent.
+        var links = await db.HoldLinks
+            .Where(l => l.WallId == wallId
+                && ((l.HoldAId == holdAId && l.HoldBId == holdBId)
+                    || (l.HoldAId == holdBId && l.HoldBId == holdAId)))
+            .ToListAsync();
+        if (links.Count == 0)
+        {
+            return;
+        }
+
+        db.HoldLinks.RemoveRange(links);
+        await db.SaveChangesAsync();
+
+        logger.LogInformation(
+            "Hold link {HoldA} <-> {HoldB} removed on wall {WallId} by {UserId}",
+            holdAId, holdBId, wallId, user.Id);
+    }
 }

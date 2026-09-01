@@ -1,0 +1,108 @@
+@* Standalone "link holds across panels" tool for big walls. Two live panels are shown side by
+   side, each an independently zoom/pannable PanelImageView; tapping a hold on each and pressing
+   "Link hold" records them as the one physical hold across the seam (HoldLink, Kind=Same). Existing
+   cross-panel links between the two shown panels can be previewed and broken. Modelled on the manual
+   link mode of PanelOverlapStepper.razor, but standalone, with panel selection and unlinking. *@
+
+<div class="panel-link-overlay" style="position: fixed; inset: 0; z-index: 1000; background: var(--overlay-bg, rgba(0,0,0,0.6)); display: flex; align-items: flex-start; justify-content: center; overflow-y: auto; padding: 16px;">
+    <div style="width: 100%; max-width: 1100px; background: var(--bg-surface); border-radius: 14px; padding: 16px; box-shadow: 0 10px 40px var(--shadow-lg);">
+        <div class="panel-stepper-head">
+            <div>
+                <h3 class="panel-overlap-title">Link holds across panels</h3>
+                <p class="hint">Where two panels overlap, a hold appears once on each image. Tap it on the left and on the right, then link them so boulders and edits treat them as one physical hold.</p>
+            </div>
+            <button class="btn-secondary" @onclick="Close" title="Close this tool">Close</button>
+        </div>
+
+        @if (_loading)
+        {
+            <p class="loading-small">Loading panels…</p>
+        }
+        else if (_livePanels.Count < 2)
+        {
+            <p class="staged-hint">This tool needs at least two live panels. Add another panel to the wall first.</p>
+        }
+        else
+        {
+            var pairLinks = ExistingLinksBetween();
+
+            @if (_livePanels.Count > 2)
+            {
+                <div class="panel-stepper-bar">
+                    <span class="panel-stepper-progress">Compare</span>
+                    <label class="panel-link-pick">Left
+                        <select class="color-select" value="@_leftPanelId" @onchange="OnLeftPanelChange">
+                            @foreach (var p in _livePanels)
+                            {
+                                <option value="@p.Id" disabled="@(p.Id == _rightPanelId)">(@p.Col, @p.Row)</option>
+                            }
+                        </select>
+                    </label>
+                    <label class="panel-link-pick">Right
+                        <select class="color-select" value="@_rightPanelId" @onchange="OnRightPanelChange">
+                            @foreach (var p in _livePanels)
+                            {
+                                <option value="@p.Id" disabled="@(p.Id == _leftPanelId)">(@p.Col, @p.Row)</option>
+                            }
+                        </select>
+                    </label>
+                </div>
+            }
+
+            <div class="panel-stepper-pair">
+                <PanelImageView WallId="WallId" Caption="@LeftCaption"
+                                PhotoUrl="@PhotoUrl(_leftPanelId)"
+                                Holds="_leftHolds"
+                                SelectedHoldId="_leftHoldId"
+                                HighlightHoldId="_previewLeftId"
+                                BadgeNumber="_previewNumber"
+                                Interactive="true"
+                                FocusKey="_focusKey"
+                                OnHoldTap="OnLeftTap" />
+
+                <PanelImageView WallId="WallId" Caption="@RightCaption"
+                                PhotoUrl="@PhotoUrl(_rightPanelId)"
+                                Holds="_rightHolds"
+                                SelectedHoldId="_rightHoldId"
+                                HighlightHoldId="_previewRightId"
+                                BadgeNumber="_previewNumber"
+                                Interactive="true"
+                                FocusKey="_focusKey"
+                                OnHoldTap="OnRightTap" />
+            </div>
+
+            @if (!string.IsNullOrEmpty(_error))
+            {
+                <p class="staged-hint danger">@_error</p>
+            }
+
+            <div class="panel-stepper-actions">
+                <span class="panel-stepper-hint">@_createdCount hold@(_createdCount == 1 ? "" : "s") linked this session.</span>
+                <button class="btn-primary" @onclick="LinkHolds"
+                        disabled="@(_leftHoldId is null || _rightHoldId is null || _busy)"
+                        title="Mark the two selected holds as the same physical hold">Link hold</button>
+                <button class="btn-secondary" @onclick="ClearSelection"
+                        disabled="@(_leftHoldId is null && _rightHoldId is null)">Clear selection</button>
+            </div>
+
+            <div class="panel-stepper-foot" style="flex-direction: column; align-items: stretch; gap: 6px;">
+                <span class="panel-stepper-legend">
+                    @pairLinks.Count existing link@(pairLinks.Count == 1 ? "" : "s") between these two panels@(pairLinks.Count == 0 ? "." : " — hover to see the pair, or break a wrong one:")
+                </span>
+                @for (var i = 0; i < pairLinks.Count; i++)
+                {
+                    var link = pairLinks[i];
+                    var n = i + 1;
+                    <div class="panel-link-row" style="display: flex; align-items: center; gap: 8px;"
+                         @onmouseover="() => PreviewLink(link, n)" @onmouseout="ClearPreview">
+                        <span class="panel-stepper-legend">Link @n</span>
+                        <button class="btn-link" @onclick="() => PreviewLink(link, n)"
+                                title="Highlight this link's holds on both images">Show</button>
+                        <button class="btn-danger-soft" @onclick="() => BreakLink(link)" disabled="@_busy"
+                                title="Unlink these two holds — they are no longer the same physical hold">Break link</button>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>

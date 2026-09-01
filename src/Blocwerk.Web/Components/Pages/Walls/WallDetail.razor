@@ -338,21 +338,16 @@ else
                         <p class="description">@_wall.Description</p>
                     }
 
-                    <div class="wall-top-row">
-                        @if (_wall.PhotoContentType != null)
-                        {
-                            <div class="view-toggle">
-                                <button class="toggle-btn @(_viewMode == ViewMode.Photo ? "active" : string.Empty)" @onclick="() => _viewMode = ViewMode.Photo">Photo</button>
-                                <button class="toggle-btn @(_viewMode == ViewMode.Schematic ? "active" : string.Empty)" @onclick="() => _viewMode = ViewMode.Schematic">Schematic</button>
-                            </div>
-                        }
-                        else
-                        {
-                            <div></div>
-                        }
+                    <div class="wall-photo-container">
+                        @* Edit pencil overlaid on the image's top-right, co-located with the editor's
+                           usage "lens" button — not in a separate row above. Rendered at the WallDetail
+                           level (not inside WallPhotoEditor) so it covers every view path uniformly:
+                           the single-image editor, the multi-panel viewer, and the schematic view,
+                           where WallPhotoEditor isn't the renderer. Shows an X while editing. The
+                           Photo/Schematic toggle was removed; _viewMode stays and defaults to Photo. *@
                         @if (_canEditHolds)
                         {
-                            <button class="btn-icon @(_isEditing ? "editing" : "")" @onclick="ToggleEditing" title="@(_isEditing ? "Exit edit mode" : "Edit wall")">
+                            <button class="btn-icon wall-edit-fab @(_isEditing ? "editing" : "")" @onclick="ToggleEditing" title="@(_isEditing ? "Exit edit mode" : "Edit wall")">
                                 @if (_isEditing)
                                 {
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" width="22" height="22" stroke-linecap="round">
@@ -369,9 +364,6 @@ else
                                 }
                             </button>
                         }
-                    </div>
-
-                    <div class="wall-photo-container">
                         @if (_wall.UsesMultipleImages && _viewMode == ViewMode.Photo && _livePanels.Count > 0 && _canEditHolds && _isEditing && _editingPanel != null)
                         {
                             @* Big wall in edit mode: scope the single-image editor to one live panel
@@ -410,6 +402,8 @@ else
                                              OnMakeHoldActual="OnMakeHoldActual"
                                              OnMergeVirtualHold="OnMergeVirtualHold"
                                              OnRestoreUnchangedHold="OnRestoreUnchangedHold"
+                                             HasMultiplePanels="_livePanels.Count >= 2"
+                                             OnLinkPanels="OpenLinkTool"
                                              OnRequestHoldUsage="@(_isAnonymous ? null : LoadHoldUsage)" />
                         }
                         else if (_wall.UsesMultipleImages && _viewMode == ViewMode.Photo && _livePanels.Count > 0)
@@ -463,6 +457,11 @@ else
                         }
                     </div>
                 </div>
+
+                @if (_showLinkTool && _canEditHolds && _wall.UsesMultipleImages)
+                {
+                    <PanelLinkTool WallId="_wall.Id" ActingUserId="_currentUserId" OnClose="CloseLinkTool" />
+                }
 
                 @if (!_isEditing)
                 {
@@ -626,6 +625,7 @@ else
     private bool _confirmingEnableMulti;
     private bool _confirmingDisableMulti;
     private bool _showBigUpdate;
+    private bool _showLinkTool;
     private string? _shareLink;
     private string? _toast;
     private string _searchText = string.Empty;
@@ -1308,6 +1308,21 @@ else
     {
         _showBigUpdate = false;
         await LoadWall();
+    }
+
+    // Opens the standalone cross-panel hold-linking tool over the big-wall editor. Editor-gated the
+    // same way hold editing is; the tool itself also re-checks the editor role on the server.
+    private void OpenLinkTool()
+    {
+        if (_canEditHolds)
+        {
+            _showLinkTool = true;
+        }
+    }
+
+    private void CloseLinkTool()
+    {
+        _showLinkTool = false;
     }
 
     private async Task OnBigUpdatePromoted()

@@ -855,3 +855,67 @@ body.bw-tabbar-collapsed .tabbar-restore { display: flex; }
 }
 
 .bw-error-ui-dismiss { text-decoration: none; font-size: 1.3rem; line-height: 1; }
+
+/* ===========================================================================
+   Wall-detail layout: fit-to-viewport photo + overlaid edit pencil + nav reclaim
+   These live here (app.css) as intentional overrides of the base wall rules in
+   pages.css / components.css. app.css loads FIRST, so every selector below is
+   specificity-bumped (e.g. :root:root, .wall-main prefixes) to win the cascade.
+   =========================================================================== */
+
+/* TASK 3 — Re-budget the wall photo chrome so the image AND the three stat cards
+   fit one viewport with no scroll. The Photo/Schematic toggle row is gone, which
+   frees ~40px above the image; the stat-card block below the photo (card height +
+   its margin + the wall-main column gap) must now share the same viewport slice,
+   so fold it into the chrome the photo box subtracts from 100dvh. Deliberately
+   generous so the image is guaranteed contained on a phone; desktop is width-
+   bounded by the content column, so a slightly smaller cap looks fine there too.
+   Only wall photo boxes read --wall-photo-chrome (see pages.css), so this is scoped. */
+:root:root {
+    --wall-stats-h: 96px;                                    /* ~64px stat card + 20px margin + 12px column gap */
+    --wall-photo-chrome: calc(140px + var(--wall-stats-h));  /* carousel padding + card padding + dim bar + dots + gaps (toggle row removed) + stats */
+}
+
+/* TASK 2 — Edit pencil overlaid on the image's top-right, co-located with the
+   editor's usage "lens" button. Absolutely positioned inside the photo container
+   so it floats over whatever renderer is inside (single-image editor, multi-panel
+   viewer, or schematic) and shows whenever _canEditHolds, independent of the lens. */
+.wall-main .wall-photo-container { position: relative; }
+.btn-icon.wall-edit-fab {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 20;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    background: var(--bg-surface);
+    color: var(--text);
+    box-shadow: 0 2px 10px var(--shadow-md);
+}
+.btn-icon.wall-edit-fab:hover { color: var(--text-heading); }
+.btn-icon.wall-edit-fab.editing { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+
+/* Keep the FAB from covering the editor's own top toolbar buttons (the lens sits at
+   its right edge in the read-only view): reserve room on the right of the non-docked
+   toolbar so the lens/name toggles shift clear of the floated pencil. The docked
+   (bottom) editing toolbar is untouched — the FAB then floats over the image alone. */
+.wall-main .wall-photo-container .editor-toolbar:not(.docked-bottom) { padding-right: 54px; }
+
+/* TASK 4 — Reclaim the space freed when the bottom nav is hidden. Mirrors the
+   docked-editor precedent above: zero the .content reservation and collapse the
+   bottom-nav height token so every dvh-based view (incl. the Task 3 photo cap)
+   reclaims the ~72px. The token is inherited from :root, so redefining it on
+   <body> wins for the whole subtree without a specificity fight. */
+body.bw-tabbar-collapsed { --bottomnav-h: max(8px, env(safe-area-inset-bottom)); }
+body.bw-tabbar-collapsed .content { padding-bottom: 0; }
+
+/* Drop the connection pill/panel down to where the (now-hidden) tab bar used to sit
+   so they don't float in a dead gap. Their +74/112px offsets cleared the tab bar. */
+body.bw-tabbar-collapsed .bw-conn-pill { bottom: calc(16px + env(safe-area-inset-bottom)); }
+body.bw-tabbar-collapsed .bw-conn-panel { bottom: calc(54px + env(safe-area-inset-bottom)); }

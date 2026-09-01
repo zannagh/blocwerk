@@ -122,6 +122,18 @@
                     </svg>
                 </button>
             }
+            @if (HasMultiplePanels && OnLinkPanels.HasDelegate)
+            {
+                <span class="toolbar-sep"></span>
+                <button class="tool-btn" @onclick="() => OnLinkPanels.InvokeAsync()"
+                        title="Link holds across panels: mark a hold on one panel and a hold on another as the same physical hold">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                        <path d="M9 12h6" />
+                        <path d="M10.5 8H7a4 4 0 0 0 0 8h3.5" />
+                        <path d="M13.5 8H17a4 4 0 0 1 0 8h-3.5" />
+                    </svg>
+                </button>
+            }
             <span class="toolbar-sep"></span>
             <button class="tool-btn @A(EditMode.MarkUnchanged)" @onclick="() => SetMode(EditMode.MarkUnchanged)"
                     title="This hold didn't physically change: reset a falsely-moved staged hold, and pull its boulders back out of historic state">
@@ -793,6 +805,16 @@
     /// but whose holds all still exist. Passes the tapped hold's id. Works in any editor mode.
     /// </summary>
     [Parameter] public EventCallback<Guid> OnRestoreUnchangedHold { get; set; }
+
+    /// <summary>
+    /// Opens the standalone "link holds across panels" tool (see PanelLinkTool). The toolbar button is
+    /// only shown when this has a delegate and <see cref="HasMultiplePanels"/> is set.
+    /// </summary>
+    [Parameter] public EventCallback OnLinkPanels { get; set; }
+
+    /// <summary>True when the wall has two or more panels, so cross-panel hold linking is meaningful.</summary>
+    [Parameter] public bool HasMultiplePanels { get; set; }
+
     [Parameter] public bool IsStaging { get; set; }
     [Parameter] public int LiveGeneration { get; set; }
     [Parameter] public bool BottomToolbar { get; set; }
