@@ -228,35 +228,14 @@ else
                                 {
                                     <polygon @key="bh.HoldId" points="@ShapePolygon(bh.Hold)"
                                              fill="@BoulderHoldColors.FillFor(bh.Type, bh.Usage)"
-                                             stroke="@BoulderHoldColors.Stroke(bh.Type)" stroke-width="0.5"
-                                             style="cursor: pointer"
-                                             @onclick="() => ToggleInfoBubble(bh.HoldId)" @onclick:stopPropagation="true" />
+                                             stroke="@BoulderHoldColors.Stroke(bh.Type)" stroke-width="0.5" />
                                 }
                                 else
                                 {
                                     <circle @key="bh.HoldId" cx="@F(bh.Hold.X * 100)" cy="@F(bh.Hold.Y * 100)"
                                             r="@F(bh.Hold.Radius * 100)"
                                             fill="@BoulderHoldColors.FillFor(bh.Type, bh.Usage)"
-                                            stroke="@BoulderHoldColors.Stroke(bh.Type)" stroke-width="0.5"
-                                            style="cursor: pointer"
-                                            @onclick="() => ToggleInfoBubble(bh.HoldId)" @onclick:stopPropagation="true" />
-                                }
-
-                                @if (_infoBubbleHoldId == bh.HoldId)
-                                {
-                                    var lines = HoldInfoLines(bh.Hold);
-                                    var text = lines.Count > 0 ? lines : new List<string> { "No details" };
-                                    <foreignObject x="@F((bh.Hold.X - 0.12) * 100)" y="@F((bh.Hold.Y - bh.Hold.Radius - 0.01) * 100 - text.Count * 2.4)"
-                                                   width="24" height="@F(text.Count * 2.4 + 1)" style="pointer-events: none; overflow: visible;">
-                                        <div style="display: inline-block; background: rgba(0,0,0,0.82); border-radius: 0.6px;
-                                                    padding: 0.4px 0.8px; font-family: sans-serif;">
-                                            @foreach (var line in text)
-                                            {
-                                                <span style="display: block; font-size: 1.7px; color: white; white-space: nowrap;
-                                                             line-height: 2.2px; font-weight: 500;">@line</span>
-                                            }
-                                        </div>
-                                    </foreignObject>
+                                            stroke="@BoulderHoldColors.Stroke(bh.Type)" stroke-width="0.5" />
                                 }
                             }
                         </svg>
@@ -408,11 +387,6 @@ else
     private BoulderBetaVideos? _betaVideos;
     private ViewMode _viewMode = ViewMode.Photo;
     private List<Hold>? _wallHolds;
-
-    // Transient info bubble shown when a viewer taps one of the boulder's holds in the single-image
-    // photo view. Holds the tapped hold's id; a second tap on the same hold (or a tap elsewhere)
-    // dismisses it.
-    private Guid? _infoBubbleHoldId;
 
     // Normalized wall-region rectangle the photo view is framed to (null = show the whole photo).
     private double[]? _frame;
@@ -854,7 +828,7 @@ else
             .GroupBy(bh => bh.Hold.WallPanelId!.Value)
             .ToDictionary(
                 g => g.Key,
-                g => g.Select(bh => new PanelHold(bh.HoldId, bh.Hold.X, bh.Hold.Y, bh.Hold.Radius, bh.Hold.Color, bh.Hold.ShapePoints, bh.Hold.Name, bh.Hold.Material, bh.Hold.Category, bh.Hold.HandType)).ToList());
+                g => g.Select(bh => new PanelHold(bh.HoldId, bh.Hold.X, bh.Hold.Y, bh.Hold.Radius, bh.Hold.Color, bh.Hold.ShapePoints)).ToList());
         foreach (var bh in onPanels)
         {
             _highlightedHoldIds.Add(bh.HoldId);
@@ -1255,18 +1229,6 @@ else
     // their real shape instead of a plain circle.
     private static string ShapePolygon(Blocwerk.Core.Entities.Hold h) =>
         string.Join(" ", h.ShapePoints!.Select(sp => F((h.X + sp.Dx) * 100) + "," + F((h.Y + sp.Dy) * 100)));
-
-    // A tap toggles the hold's info bubble; tapping a different hold moves it there.
-    private void ToggleInfoBubble(Guid holdId)
-    {
-        _infoBubbleHoldId = _infoBubbleHoldId == holdId ? null : holdId;
-    }
-
-    // The set fields to show in the info bubble (Color, Material, Sub-type, Name), skipping any
-    // that are unset. Delegates to the shared helper so the single-image and multi-image bubbles
-    // stay in lockstep.
-    private static IReadOnlyList<string> HoldInfoLines(Hold h) =>
-        HoldInfoText.Lines(h.Color, h.Material, h.Category, h.HandType, h.Name);
 
     /// <summary>
     /// An upload writes an activity entry, so the feed below the strip is stale until it re-reads.

@@ -23,43 +23,58 @@ else
                     @foreach (var h in _holds)
                     {
                         var isHi = HighlightedHoldIds?.Contains(h.Id) == true;
+                        @* Usage toggle overrides every other styling: used holds light green with a
+                           count badge, unused ones recede — mirroring WallPhotoEditor's usage tool. *@
+                        var usageCount = _showUsage ? UsageCount(h.Id) : -1;
+                        var fill = _showUsage
+                            ? (usageCount > 0 ? "rgba(76,175,80,0.55)" : "rgba(120,120,120,0.15)")
+                            : FillOf(h, isHi);
+                        var stroke = _showUsage
+                            ? (usageCount > 0 ? "#4CAF50" : "rgba(255,255,255,0.35)")
+                            : StrokeOf(h, isHi);
+                        var sw = _showUsage
+                            ? (usageCount > 0 ? "0.4" : "0.2")
+                            : (isHi ? "0.5" : "0.25");
                         @if (h.ShapePoints is { Count: >= 3 })
                         {
                             <polygon @key="h.Id" points="@ShapePolygon(h)"
-                                     fill="@FillOf(h, isHi)" stroke="@StrokeOf(h, isHi)"
-                                     stroke-width="@(isHi ? "0.5" : "0.25")"
-                                     style="cursor: pointer"
-                                     @onclick="() => ToggleInfoBubble(h.Id)" @onclick:stopPropagation="true" />
+                                     fill="@fill" stroke="@stroke" stroke-width="@sw" />
                         }
                         else
                         {
                             <circle @key="h.Id" cx="@F(h.X * 100)" cy="@F(h.Y * 100)" r="@F(h.Radius * 100)"
-                                    fill="@FillOf(h, isHi)" stroke="@StrokeOf(h, isHi)"
-                                    stroke-width="@(isHi ? "0.5" : "0.25")"
-                                    style="cursor: pointer"
-                                    @onclick="() => ToggleInfoBubble(h.Id)" @onclick:stopPropagation="true" />
+                                    fill="@fill" stroke="@stroke" stroke-width="@sw" />
                         }
 
-                        @if (_infoBubbleHoldId == h.Id)
+                        @if (_showUsage && usageCount > 0)
                         {
-                            var lines = BubbleLines(h);
-                            var text = lines.Count > 0 ? lines : new List<string> { "No details" };
-                            <foreignObject x="@F((h.X - 0.12) * 100)" y="@F((h.Y - h.Radius - 0.01) * 100 - text.Count * 2.4)"
-                                           width="24" height="@F(text.Count * 2.4 + 1)" style="pointer-events: none; overflow: visible;">
-                                <div style="display: inline-block; background: rgba(0,0,0,0.82); border-radius: 0.6px;
-                                            padding: 0.4px 0.8px; font-family: sans-serif;">
-                                    @foreach (var line in text)
-                                    {
-                                        <span style="display: block; font-size: 1.7px; color: white; white-space: nowrap;
-                                                     line-height: 2.2px; font-weight: 500;">@line</span>
-                                    }
-                                </div>
-                            </foreignObject>
+                            var r = h.Radius * 100;
+                            <g pointer-events="none">
+                                <circle cx="@F(h.X * 100 + r * 0.85)" cy="@F(h.Y * 100 - r * 0.85)" r="1.4"
+                                        fill="#4CAF50" stroke="white" stroke-width="0.25" />
+                                <text x="@F(h.X * 100 + r * 0.85)" y="@F(h.Y * 100 - r * 0.85)"
+                                      text-anchor="middle" dominant-baseline="central"
+                                      font-size="1.7" font-weight="700" fill="white">@usageCount</text>
+                            </g>
                         }
                     }
                 </svg>
             </div>
         </div>
+
+        @if (OnRequestHoldUsage is not null)
+        {
+            @* Magnifier toggle — same icon/idea as WallPhotoEditor's usage tool. When active every
+               hold is drawn green with a boulder-count badge. Hidden for anonymous/share viewers
+               (null callback). *@
+            <button class="panel-usage-toggle @(_showUsage ? "active" : "")" @onclick="ToggleUsageAsync"
+                    title="Show which holds are used by a boulder">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                    <circle cx="11" cy="11" r="7" /><line x1="16.5" y1="16.5" x2="21" y2="21" />
+                    <path d="M8 11h6M11 8v6" />
+                </svg>
+            </button>
+        }
 
         @if (_showArrows)
         {
@@ -125,9 +140,10 @@ else
 
     /// <summary>
     /// Optional source for the wall's hold-usage map ("which boulders use this hold"), mirroring
-    /// <c>WallPhotoEditor.OnRequestHoldUsage</c>. When supplied, a tapped hold's info bubble also
-    /// shows the boulder-usage count; left null for anonymous/share viewers, whose bubble stays
-    /// info-only. Fetched once (lazily) on the first tap and cached for the viewer's session.
+    /// <c>WallPhotoEditor.OnRequestHoldUsage</c>. When supplied, a magnifier toggle appears that
+    /// draws every hold green with a boulder-count badge; left null for anonymous/share viewers,
+    /// so no toggle is shown. Fetched once (lazily) when the toggle is first switched on and
+    /// cached for the viewer's session.
     /// </summary>
     [Parameter] public Func<Task<Dictionary<Guid, List<HoldUsageRef>>>>? OnRequestHoldUsage { get; set; }
 
@@ -154,11 +170,9 @@ else
     private Guid? _fitBoxForPanelId;
     private bool _recenterPending;
 
-    // The hold whose read-only info bubble is currently open (a tap toggles it). Cleared on a
-    // panel change so a bubble never lingers over the wrong image.
-    private Guid? _infoBubbleHoldId;
-
-    // The wall's hold-usage map, fetched once on the first tap when OnRequestHoldUsage is supplied.
+    // Usage-toggle state: when on, every hold is drawn green with a boulder-count badge. The wall's
+    // hold-usage map is fetched once (lazily) when the toggle is first switched on and cached.
+    private bool _showUsage;
     private Dictionary<Guid, List<HoldUsageRef>>? _holdUsage;
 
     private List<WallPanelInfo> LivePanels => Panels.Where(p => p.IsLive).ToList();
@@ -206,7 +220,6 @@ else
         }
 
         _panel = target;
-        _infoBubbleHoldId = null;
         await LoadHoldsAsync();
         _recenterPending = true;
         StateHasChanged();
@@ -357,63 +370,18 @@ else
     private static string ShapePolygon(Blocwerk.Core.Services.PanelHold h) =>
         string.Join(" ", h.ShapePoints!.Select(sp => F((h.X + sp.Dx) * 100) + "," + F((h.Y + sp.Dy) * 100)));
 
-    // A tap toggles the tapped hold's info bubble; tapping a different hold moves it there. On the
-    // first tap (when a usage source is wired) the wall's hold-usage map is fetched once and cached.
-    private async Task ToggleInfoBubble(Guid holdId)
+    // Flips the usage overlay. On first switch-on (when a usage source is wired) the wall's
+    // hold-usage map is fetched once and cached for the viewer's session.
+    private async Task ToggleUsageAsync()
     {
-        if (_infoBubbleHoldId == holdId)
+        _showUsage = !_showUsage;
+        if (_showUsage && OnRequestHoldUsage is not null && _holdUsage is null)
         {
-            _infoBubbleHoldId = null;
-            return;
-        }
-
-        _infoBubbleHoldId = holdId;
-        if (OnRequestHoldUsage is not null && _holdUsage is null)
-        {
-            // Show the bubble with a "Loading…" usage line while the map is fetched, then re-render.
-            StateHasChanged();
             _holdUsage = await OnRequestHoldUsage();
         }
     }
 
-    // The bubble's lines: the hold's set info fields (shared with BoulderDetail) plus, when a usage
-    // source is wired, "used in N boulders" and the boulders' names.
-    private IReadOnlyList<string> BubbleLines(PanelHold h)
-    {
-        var lines = new List<string>(HoldInfoText.Lines(h.Color, h.Material, h.Category, h.HandType, h.Name));
-        lines.AddRange(UsageLines(h.Id));
-        return lines;
-    }
-
-    private IReadOnlyList<string> UsageLines(Guid holdId)
-    {
-        if (OnRequestHoldUsage is null)
-        {
-            return [];
-        }
-
-        if (_holdUsage is null)
-        {
-            return ["Loading usage…"];
-        }
-
-        var refs = _holdUsage.TryGetValue(holdId, out var r) ? r : [];
-        if (refs.Count == 0)
-        {
-            return ["Used in no boulders"];
-        }
-
-        var lines = new List<string> { $"Used in {refs.Count} boulder{(refs.Count == 1 ? "" : "s")}:" };
-        foreach (var b in refs.Take(4))
-        {
-            lines.Add($"• {b.Name}");
-        }
-
-        if (refs.Count > 4)
-        {
-            lines.Add($"+{refs.Count - 4} more");
-        }
-
-        return lines;
-    }
+    // How many boulders use a hold (0 until the usage map has loaded), used for the green badge.
+    private int UsageCount(Guid holdId) =>
+        _holdUsage is not null && _holdUsage.TryGetValue(holdId, out var refs) ? refs.Count : 0;
 }

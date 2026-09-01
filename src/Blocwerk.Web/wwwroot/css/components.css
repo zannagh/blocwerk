@@ -143,15 +143,11 @@
 .photo-editor[data-hold-drag] .hold-overlay circle,
 .photo-editor[data-hold-drag] .hold-overlay polygon,
 .photo-editor[data-hold-drag] .hold-overlay rect { touch-action: none; }
-/* Boulder viewer only: the SVG overlay itself stays pass-through so a pan/double-tap that starts
-   over empty image falls through to the viewport. The hold SHAPES, however, carry a tap handler
-   (ToggleInfoBubble), so they opt back into pointer events — a stationary tap hits @onclick and
-   opens the info bubble, while a drag on empty space still pans (viewport-gestures.js hands a
-   stationary touch on an interactive shape back as a tap and treats travel as a pan). Editors,
-   which DO drag holds, are unaffected. */
+/* Boulder viewer only: the overlay holds are display-only (no tap/click handlers), so let
+   pointer/touch events fall through to the viewport. Otherwise a mouse drag or double-tap that
+   happens to start on a hold is treated as landing on an interactive shape and neither pans nor
+   zooms (viewport-gestures.js isInteractiveTarget). Editors, which DO drag holds, are unaffected. */
 .boulder-detail .hold-overlay { pointer-events: none; }
-.boulder-detail .hold-overlay circle,
-.boulder-detail .hold-overlay polygon { pointer-events: auto; }
 .detecting-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--overlay-bg); display: flex; align-items: center; justify-content: center; color: white; font-size: 1.1rem; font-weight: 600; }
 
 /* ========== WallSchematicView ========== */
