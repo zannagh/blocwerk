@@ -210,6 +210,19 @@ public static class CoreServices
             logger.LogError(ex, "Activity backfill failed; existing events remain ungrouped until the next start.");
         }
 
+        // Propagate appearance (Color/Material/Category/HandType) across linked holds so every copy of
+        // one physical hold matches its most-central source. Idempotent (write-if-changed), so it is
+        // safe to run on every start and no-ops once all components are converged.
+        try
+        {
+            var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<BlocwerkDbContext>>();
+            HoldPropertyBackfill.RunIfNeededAsync(factory, logger).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Hold appearance backfill failed; linked holds may stay out of sync until the next start.");
+        }
+
         return app;
     }
 

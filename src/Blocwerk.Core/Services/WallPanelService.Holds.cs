@@ -1,3 +1,4 @@
+using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -124,9 +125,81 @@ public partial class WallPanelService
         });
         await db.SaveChangesAsync();
 
+        // Best-effort: the link itself is committed above; a failure copying appearance must not surface
+        // link creation as failed — the startup backfill reconciles it.
+        try
+        {
+            await CopyAppearanceFromMoreCentralAsync(db, wallId, holdAId, holdBId);
+        }
+        catch (Exception copyEx)
+        {
+            logger.LogWarning(copyEx, "Failed to copy appearance across new hold link {HoldA} <-> {HoldB}; the backfill will reconcile it.", holdAId, holdBId);
+        }
+
         logger.LogInformation(
             "Hold link {HoldA} <-> {HoldB} created on wall {WallId} by {UserId}",
             holdAId, holdBId, wallId, user.Id);
+    }
+
+    // A freshly linked hold inherits the more-central endpoint's appearance immediately, so the two
+    // copies of the physical hold match without waiting for the backfill. Centre wins (deterministic
+    // centrality → Col → Row → Id). Pairwise from the more-central endpoint is enough at link time;
+    // the backfill and live-edit sync converge anything transitive. Appearance fields only.
+    private static async Task CopyAppearanceFromMoreCentralAsync(
+        BlocwerkDbContext db,
+        Guid wallId,
+        Guid holdAId,
+        Guid holdBId)
+    {
+        var linked = await db.Holds
+            .Where(h => (h.Id == holdAId || h.Id == holdBId) && h.WallId == wallId)
+            .ToListAsync();
+        if (linked.Count != 2)
+        {
+            return;
+        }
+
+        var panelById = await LoadPanelPositionsAsync(db, linked);
+
+        HoldCentrality Rank(Hold hold)
+        {
+            if (hold.WallPanelId is { } panelId && panelById.TryGetValue(panelId, out var pos))
+            {
+                return new HoldCentrality(hold.Id, pos.Col, pos.Row);
+            }
+
+            return new HoldCentrality(hold.Id, null, null);
+        }
+
+        var sourceId = HoldPropertySync.MostCentral(linked.Select(Rank)).HoldId;
+        var source = linked.First(h => h.Id == sourceId);
+        var target = linked.First(h => h.Id != sourceId);
+
+        if (HoldPropertySync.CopyAppearance(source, target))
+        {
+            await db.SaveChangesAsync();
+        }
+    }
+
+    private static async Task<Dictionary<Guid, (int Col, int Row)>> LoadPanelPositionsAsync(
+        BlocwerkDbContext db,
+        IEnumerable<Hold> holds)
+    {
+        var panelIds = holds
+            .Where(h => h.WallPanelId is not null)
+            .Select(h => h.WallPanelId!.Value)
+            .Distinct()
+            .ToList();
+        if (panelIds.Count == 0)
+        {
+            return new Dictionary<Guid, (int, int)>();
+        }
+
+        var panels = await db.WallPanels
+            .Where(p => panelIds.Contains(p.Id))
+            .Select(p => new { p.Id, p.Col, p.Row })
+            .ToListAsync();
+        return panels.ToDictionary(p => p.Id, p => (p.Col, p.Row));
     }
 
     /// <inheritdoc/>

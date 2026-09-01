@@ -1526,6 +1526,22 @@ public class WallService : IWallService
             }
 
             await db.SaveChangesAsync();
+
+            // The edited hold is now authoritative: every hold transitively linked to it (the same
+            // physical hold seen on other panels) inherits its appearance verbatim. Runs alongside the
+            // existing move/name/cascade logic above — it only touches appearance fields and re-saves
+            // when a twin actually changed. Best-effort: the edit itself is already committed above, so a
+            // failure here (transient DB error / concurrency) must NOT surface the edit as failed — the
+            // startup backfill reconciles linked twins on the next start.
+            try
+            {
+                await SyncLinkedAppearanceAsync(db, hold);
+            }
+            catch (Exception syncEx)
+            {
+                _logger.LogWarning(syncEx, "Failed to sync appearance to linked twins of hold {HoldId}; the backfill will reconcile it.", holdId);
+            }
+
             _logger.LogInformation("Hold {HoldId} on wall {WallId} updated by {UserId} (moved: {Moved}, renamed: {Renamed}, recolored: {Recolored}, reshaped: {Reshaped})", holdId, hold.WallId, user.Id, positionChanged, nameChanged, colorChanged, shapeChanged);
             return hold;
         }
@@ -1533,6 +1549,54 @@ public class WallService : IWallService
         {
             op.Fail(ex);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// After a live edit, propagates the edited hold's appearance (Color/Material/Category/HandType)
+    /// to every hold transitively linked to it on the same wall — the same physical hold seen on other
+    /// panels. The EDITED hold is the source here (its new values win, regardless of centrality). Only
+    /// appearance fields, verbatim; write-if-changed, so it re-saves only when a twin actually differs.
+    /// </summary>
+    private static async Task SyncLinkedAppearanceAsync(BlocwerkDbContext db, Hold source)
+    {
+        var links = await db.HoldLinks
+            .Where(l => l.WallId == source.WallId)
+            .Select(l => new HoldLinkPair(l.HoldAId, l.HoldBId))
+            .ToListAsync();
+        if (links.Count == 0)
+        {
+            return;
+        }
+
+        var holdIds = links.SelectMany(l => new[] { l.HoldAId, l.HoldBId }).Distinct().ToList();
+        if (!holdIds.Contains(source.Id))
+        {
+            return;
+        }
+
+        var component = HoldPropertySync.ConnectedComponents(holdIds, links)
+            .FirstOrDefault(c => c.Contains(source.Id));
+        if (component is null || component.Count < 2)
+        {
+            return;
+        }
+
+        var twinIds = component.Where(id => id != source.Id).ToList();
+        var twins = await db.Holds.Where(h => twinIds.Contains(h.Id)).ToListAsync();
+
+        var changed = false;
+        foreach (var twin in twins)
+        {
+            if (HoldPropertySync.CopyAppearance(source, twin))
+            {
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
+            await db.SaveChangesAsync();
         }
     }
 
