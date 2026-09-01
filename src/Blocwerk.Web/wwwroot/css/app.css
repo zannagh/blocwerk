@@ -874,6 +874,23 @@ body.bw-tabbar-collapsed .tabbar-restore { display: flex; }
 :root:root {
     --wall-stats-h: 96px;                                    /* ~64px stat card + 20px margin + 12px column gap */
     --wall-photo-chrome: calc(140px + var(--wall-stats-h));  /* carousel padding + card padding + dim bar + dots + gaps (toggle row removed) + stats */
+
+    /* Re-budget the boulder photo chrome so the whole top of the boulder detail page — title
+       row, view/historic toggle, the image, the tags/rule chips, AND the Attempt/Send/Flash
+       buttons — fits one viewport with no scroll (the base 96px in components.css only covered
+       the bits ABOVE the image). Everything the photo box must leave room for, summed:
+         32  .boulder-detail padding (16 top + 16 bottom)
+         98  page-header: back link (~24) + title row (~40) + setter/date meta (~22) + margin (12)
+         40  WallDimControl dim bar
+         12  photo-section margin-bottom
+         36  legend-bar chips (~28) + margin (8)
+         44  rules-bar chips (~28) + margin (16)
+         68  attempt buttons (~52) + attempt-section margin (16)
+       ≈ 330px, kept generous so the image is guaranteed contained. THIS is the knob to tune:
+       nudge it DOWN if the image ends up too small on your device, UP if the buttons ever get
+       pushed off-screen. Only boulder photo boxes read the token, so nothing else is affected;
+       --bottomnav-h collapses when the tab bar hides, reclaiming that space automatically. */
+    --boulder-photo-chrome: 330px;
 }
 
 /* TASK 2 — Edit pencil overlaid on the image's top-right, co-located with the

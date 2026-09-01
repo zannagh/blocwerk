@@ -1468,6 +1468,25 @@ html.bw-fullscreen .wall-main {
  * `min(container width, availableHeight * aspect)`, so the box uses as much width as it can while
  * its height stays within the window. Purely CSS + `100dvh`, so it re-fits on resize on its own.
  * Mobile/narrow (no .bw-fullscreen) is untouched. */
+/* Scale the boulder image so the header + view + tags + Attempt/Send/Flash buttons all fit one
+ * screen (mobile/normal, non-fullscreen). bwViewport.fitBox pins this box's aspect-ratio inline
+ * and publishes it as --fit-aspect, so capping the HEIGHT (and the matching WIDTH via that aspect)
+ * shrinks the image to make room for the rows below instead of pushing the buttons off-screen —
+ * the same trick the wall photo uses. --boulder-photo-chrome (app.css) budgets everything else in
+ * the slice; --bottomnav-h collapses when the tab bar hides, reclaiming that space automatically.
+ * --fit-h floors the box so a very short window shrinks it gracefully instead of to nothing; the
+ * description/lower sections then become the scrollable overflow. Scoped to .boulder-detail so no
+ * other page is touched; fullscreen/desktop re-caps just below. */
+.boulder-detail .photo-viewport.photo-section {
+    --avail-h: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - var(--boulder-photo-chrome));
+    --fit-h: max(180px, var(--avail-h));
+    width: auto;
+    height: auto;
+    max-height: var(--fit-h);
+    max-width: min(100%, calc(var(--fit-h) * var(--fit-aspect, 1)));
+    margin-inline: auto;
+}
+
 html.bw-fullscreen .boulder-detail .photo-viewport.photo-section {
     --avail-h: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - var(--boulder-photo-chrome));
     width: auto;
