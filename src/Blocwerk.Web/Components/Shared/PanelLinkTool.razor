@@ -59,7 +59,9 @@
                                 BadgeNumber="_previewNumber"
                                 Interactive="true"
                                 FocusKey="_focusKey"
-                                OnHoldTap="OnLeftTap" />
+                                OnHoldTap="OnLeftTap"
+                                OnHoldHover="OnHoldHover"
+                                OnHoldHoverEnd="OnHoldHoverEnd" />
 
                 <PanelImageView WallId="WallId" Caption="@RightCaption"
                                 PhotoUrl="@PhotoUrl(_rightPanelId)"
@@ -70,7 +72,9 @@
                                 BadgeNumber="_previewNumber"
                                 Interactive="true"
                                 FocusKey="_focusKey"
-                                OnHoldTap="OnRightTap" />
+                                OnHoldTap="OnRightTap"
+                                OnHoldHover="OnHoldHover"
+                                OnHoldHoverEnd="OnHoldHoverEnd" />
             </div>
 
             @if (!string.IsNullOrEmpty(_error))

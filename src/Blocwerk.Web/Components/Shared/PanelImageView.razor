@@ -45,14 +45,16 @@
                             <polygon @key="h.Id" points="@ShapePolygon(h)"
                                      fill="@fill" stroke="@stroke" stroke-width="@sw"
                                      style="cursor: @(Interactive ? "pointer" : "inherit"); pointer-events: @(Interactive ? "auto" : "none");"
-                                     @onclick="() => OnHoldTap.InvokeAsync(h.Id)" @onclick:stopPropagation="true" />
+                                     @onclick="() => OnHoldTap.InvokeAsync(h.Id)" @onclick:stopPropagation="true"
+                                     @onmouseover="() => OnHoldHover.InvokeAsync(h.Id)" @onmouseout="() => OnHoldHoverEnd.InvokeAsync()" />
                         }
                         else
                         {
                             <circle @key="h.Id" cx="@F(h.X * 100)" cy="@F(h.Y * 100)" r="@F(h.Radius * 100)"
                                     fill="@fill" stroke="@stroke" stroke-width="@sw"
                                     style="cursor: @(Interactive ? "pointer" : "inherit"); pointer-events: @(Interactive ? "auto" : "none");"
-                                    @onclick="() => OnHoldTap.InvokeAsync(h.Id)" @onclick:stopPropagation="true" />
+                                    @onclick="() => OnHoldTap.InvokeAsync(h.Id)" @onclick:stopPropagation="true"
+                                    @onmouseover="() => OnHoldHover.InvokeAsync(h.Id)" @onmouseout="() => OnHoldHoverEnd.InvokeAsync()" />
                         }
                     }
 
@@ -108,6 +110,10 @@
 
     [Parameter] public EventCallback<Guid> OnHoldTap { get; set; }
     [Parameter] public EventCallback<(double X, double Y)> OnEmptyTap { get; set; }
+
+    /// <summary>Fired when the pointer enters a hold (interactive mode); the end callback when it leaves.</summary>
+    [Parameter] public EventCallback<Guid> OnHoldHover { get; set; }
+    [Parameter] public EventCallback OnHoldHoverEnd { get; set; }
 
     /// <summary>Bumped by the parent each step; a change re-centres the view on <see cref="FocusPoint"/>.</summary>
     [Parameter] public int FocusKey { get; set; }

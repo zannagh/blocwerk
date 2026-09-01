@@ -235,6 +235,24 @@ public partial class PanelLinkTool
         _previewNumber = 0;
     }
 
+    // Hovering an already-linked hold on either image previews its link — both endpoints get the same
+    // number badge, matching the numbering of the break-link list. A hold that isn't in a link between
+    // the two shown panels is a no-op (its partner is on a panel we're not showing).
+    private void OnHoldHover(Guid holdId)
+    {
+        var between = ExistingLinksBetween();
+        for (var i = 0; i < between.Count; i++)
+        {
+            if (between[i].HoldAId == holdId || between[i].HoldBId == holdId)
+            {
+                PreviewLink(between[i], i + 1);
+                return;
+            }
+        }
+    }
+
+    private void OnHoldHoverEnd() => ClearPreview();
+
     private string LeftCaption => PanelLabel(_leftPanelId, "Left panel");
     private string RightCaption => PanelLabel(_rightPanelId, "Right panel");
 
