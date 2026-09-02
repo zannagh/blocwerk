@@ -65,6 +65,10 @@
     /// <summary>Re-reads from the first page, dropping any accumulated "load more" pages.</summary>
     public Task ReloadAsync() => LoadAsync(0);
 
+    // Renders itself at the end. ReloadAsync is called from outside this component's own event
+    // dispatch (BoulderDetail's [JSInvokable] queue-flush callback), where nothing re-renders it
+    // automatically; depending on the caller to do it meant a failure anywhere else in that
+    // callback left a freshly loaded list sitting unrendered until the next navigation.
     private async Task LoadAsync(int page)
     {
         try
@@ -88,6 +92,8 @@
             _error = $"Comments could not be loaded: {ex.Message}";
             _comments ??= [];
         }
+
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task DeleteAsync(Guid commentId)

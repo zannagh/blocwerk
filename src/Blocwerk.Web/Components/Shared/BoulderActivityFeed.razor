@@ -55,6 +55,8 @@
     /// <summary>Re-reads the newest page. Called after the offline queue delivered something.</summary>
     public Task ReloadAsync() => LoadAsync(0);
 
+    // Renders itself for the same reason BoulderComments does: ReloadAsync is driven by
+    // BoulderDetail's queue-flush callback, not by an event on this component.
     private async Task LoadAsync(int page)
     {
         try
@@ -70,6 +72,8 @@
             // above it are the point of this screen and keep working regardless.
             _items ??= [];
         }
+
+        await InvokeAsync(StateHasChanged);
     }
 
     /// <summary>

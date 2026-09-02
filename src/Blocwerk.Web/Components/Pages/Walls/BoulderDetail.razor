@@ -534,42 +534,34 @@ else
     [JSInvokable]
     public async Task OnOfflineQueueFlushed()
     {
-        try
-        {
-            await LoadBoulder();
-            if (!_isAnonymous)
-            {
-                _isFavorite = await FeedbackService.IsFavoritedAsync(BoulderId);
-                _rating = await FeedbackService.GetRatingAsync(BoulderId);
-            }
+        // Each read-back is independent: the four queued actions land in four different places, and
+        // one of them failing says nothing about the other three. Running them under a single
+        // try/catch meant a failed favourite read skipped the comment and activity reloads
+        // entirely, so a comment that HAD reached the server never appeared until the next
+        // navigation.
+        Func<Task>? activity = _activityFeed is { } feed ? feed.ReloadAsync : null;
+        Func<Task>? comments = _commentList is { } list ? list.ReloadAsync : null;
+        Func<Task>? videos = _betaVideos is { } clips ? clips.ReloadAsync : null;
 
-            if (_activityFeed != null)
+        var failure = await ReloadSequence.RunAsync(
+            async () =>
             {
-                await _activityFeed.ReloadAsync();
-            }
+                await LoadBoulder();
+                if (!_isAnonymous)
+                {
+                    _isFavorite = await FeedbackService.IsFavoritedAsync(BoulderId);
+                    _rating = await FeedbackService.GetRatingAsync(BoulderId);
+                }
+            },
+            activity,
+            comments,
+            videos);
 
-            if (_commentList != null)
-            {
-                await _commentList.ReloadAsync();
-            }
-
-            if (_betaVideos != null)
-            {
-                await _betaVideos.ReloadAsync();
-            }
-        }
-        catch (UnauthorizedAccessException)
-        {
-            // Session expired while the queue was draining. The queue pauses itself and the
-            // status pill prompts a re-login; there is nothing useful to render here.
-            return;
-        }
-        catch (Exception ex)
+        if (failure != null)
         {
             // The action itself is already saved server-side; only the read-back failed.
             // Say so instead of leaving a stale page that looks like nothing happened.
-            await InvokeAsync(() => ShowToast($"Synced, but the page could not refresh: {ex.Message}"));
-            return;
+            await InvokeAsync(() => ShowToast($"Synced, but the page could not refresh: {failure}"));
         }
 
         await InvokeAsync(StateHasChanged);
