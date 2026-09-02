@@ -4,8 +4,9 @@
  * HONEST SCOPE — this is a Blazor *Server* app. A service worker CANNOT render server pages
  * offline: every interactive page is produced by the server over SignalR, so there is nothing to
  * cache for them. What it does buy us:
- *   1. The static shell (CSS/JS/manifest/icons) is precached, so an installed PWA opens instantly
- *      and its chrome renders even with no network.
+ *   1. The static shell (CSS/JS/manifest/icons) is cached, so an installed PWA opens instantly and
+ *      its chrome renders even with no network. Only the stable-path files are precached on
+ *      install; the fingerprinted CSS/JS join the cache on the first online load (see below).
  *   2. The queued /api/offline/* POSTs can be attempted the moment the SW is up, independent of
  *      the SignalR circuit — though those requests are ALWAYS network-only here; the queue owns
  *      their retry/idempotency, and a cached POST would be meaningless.
@@ -20,25 +21,17 @@
  * offline-queue.js / blazor-boot.js, which covers the tab-open case; Background Sync would only add
  * closed-tab flushing and needs its own IndexedDB replay in the SW, so it is deferred.
  */
-const CACHE = 'blocwerk-shell-v2';
+const CACHE = 'blocwerk-shell-v3';
 
-// Own static assets only. Fingerprinted framework files are handled at runtime (cache-first),
-// never precached by exact name, because their hashes change on every build.
+// Stable-path assets only. The app's own CSS/JS are referenced from BlocwerkApp.razor through
+// @Assets[...], so the page requests them under a build-specific fingerprinted name that this file
+// cannot know. They are picked up by the runtime cache below on the first online load instead, and
+// listing their unfingerprinted names here would only cache copies nothing ever asks for.
 const PRECACHE = [
     '/offline.html',
     '/manifest.webmanifest',
     '/icons/icon-192.png',
-    '/icons/icon-512.png',
-    '/css/app.css',
-    '/css/pages.css',
-    '/css/components.css',
-    '/js/theme.js',
-    '/js/offline-db.js',
-    '/js/offline-transport.js',
-    '/js/offline-queue.js',
-    '/js/offline-actions.js',
-    '/js/offline-boulder.js',
-    '/js/offline-status.js'
+    '/icons/icon-512.png'
 ];
 
 self.addEventListener('install', event => {
@@ -66,9 +59,11 @@ function isBypassed(url, request) {
     return url.pathname.startsWith('/api/') || url.pathname.startsWith('/_blazor');
 }
 
-// Our own CSS/JS/icons change on every deploy but keep a stable path (no fingerprint). These MUST
-// be network-first, or a stale cache silently masks a fresh deploy — the exact trap that made a
-// re-composed image still serve the old front-end.
+// Our own CSS/JS/icons. The fingerprinted ones are immutable under a given name, and the ones that
+// keep a stable path (icons, the manifest) change on every deploy, so network-first is right for
+// both: it can never let a stale cache mask a fresh deploy — the exact trap that made a re-composed
+// image still serve the old front-end — and for a fingerprinted URL the `immutable` response is
+// already in the browser's HTTP cache, so the "network" leg costs no round trip.
 function isOwnAsset(url) {
     return url.pathname.startsWith('/css/')
         || url.pathname.startsWith('/js/')
@@ -111,8 +106,9 @@ self.addEventListener('fetch', event => {
     }
 
     // Own shell assets: network-first so a deploy takes effect immediately, cache is the offline
-    // fallback only. The app is online-first (Blazor Server needs the circuit anyway), so the
-    // extra round-trip costs nothing users notice while online.
+    // fallback only. This is also what populates the offline shell — every fingerprinted CSS/JS
+    // file the page loads is cached here on the first online visit, in place of the precache list
+    // that used to name them.
     if (isOwnAsset(url)) {
         event.respondWith(
             fetchAndCache(request).catch(() => caches.match(request))

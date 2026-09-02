@@ -20,22 +20,22 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&family=Manrope:wght@400;500;600;700&display=swap" />
-    <link rel="stylesheet" href="css/app.css" />
-    <link rel="stylesheet" href="css/pages.css" />
-    <link rel="stylesheet" href="css/components.css" />
-    <link rel="stylesheet" href="css/training.css" />
-    <link rel="stylesheet" href="css/guides.css" />
-    <script src="js/theme.js"></script>
-    <script src="js/nav.js"></script>
-    <script src="js/prefs.js"></script>
-    <script src="js/localtime.js"></script>
-    <script src="js/wall-dim.js"></script>
+    <link rel="stylesheet" href="@Assets["css/app.css"]" />
+    <link rel="stylesheet" href="@Assets["css/pages.css"]" />
+    <link rel="stylesheet" href="@Assets["css/components.css"]" />
+    <link rel="stylesheet" href="@Assets["css/training.css"]" />
+    <link rel="stylesheet" href="@Assets["css/guides.css"]" />
+    <script src="@Assets["js/theme.js"]"></script>
+    <script src="@Assets["js/nav.js"]"></script>
+    <script src="@Assets["js/prefs.js"]"></script>
+    <script src="@Assets["js/localtime.js"]"></script>
+    <script src="@Assets["js/wall-dim.js"]"></script>
     @* Inert unless the page renders the kiosk release form; the real idle gate is server-side. *@
-    <script src="js/kiosk-idle.js"></script>
+    <script src="@Assets["js/kiosk-idle.js"]"></script>
     @* Defines bwKioskPair; does nothing until /kiosk/pair calls it to submit its completion form. *@
-    <script src="js/kiosk-pair.js"></script>
+    <script src="@Assets["js/kiosk-pair.js"]"></script>
     @* Inert unless the page renders the kiosk PIN form; it only types into that form and submits it. *@
-    <script src="js/kiosk-numpad.js"></script>
+    <script src="@Assets["js/kiosk-numpad.js"]"></script>
     <HeadOutlet />
     <title>Blocwerk</title>
 </head>
@@ -74,30 +74,30 @@
         </div>
     </div>
 
-    <script src="_framework/blazor.web.js" autostart="false"></script>
-    <script src="js/image-res.js"></script>
-    <script src="js/viewport-gestures.js"></script>
-    <script src="js/viewport.js"></script>
-    <script src="js/wall-editor.js"></script>
-    <script src="js/wall-carousel.js"></script>
-    <script src="js/progression-chart.js"></script>
-    <script src="js/image-stitcher.js"></script>
-    <script src="js/file-download.js"></script>
-    <script src="js/beta-video.js"></script>
+    <script src="@Assets["_framework/blazor.web.js"]" autostart="false"></script>
+    <script src="@Assets["js/image-res.js"]"></script>
+    <script src="@Assets["js/viewport-gestures.js"]"></script>
+    <script src="@Assets["js/viewport.js"]"></script>
+    <script src="@Assets["js/wall-editor.js"]"></script>
+    <script src="@Assets["js/wall-carousel.js"]"></script>
+    <script src="@Assets["js/progression-chart.js"]"></script>
+    <script src="@Assets["js/image-stitcher.js"]"></script>
+    <script src="@Assets["js/file-download.js"]"></script>
+    <script src="@Assets["js/beta-video.js"]"></script>
     <script>window.bwViewport && window.bwViewport.blockPageZoom();</script>
-    <script src="js/cookie-consent.js"></script>
+    <script src="@Assets["js/cookie-consent.js"]"></script>
 
     @* Order matters: the queue needs its store, the delegated click handler needs the queue, and
        blazor-boot.js starts the circuit last so the offline path is live even if the circuit
        never comes up. *@
-    <script src="js/offline-db.js"></script>
-    <script src="js/offline-transport.js"></script>
-    <script src="js/offline-queue.js"></script>
-    <script src="js/offline-actions.js"></script>
-    <script src="js/offline-boulder.js"></script>
-    <script src="js/blazor-boot.js"></script>
-    <script src="js/offline-status.js"></script>
-    <script src="js/pwa.js"></script>
+    <script src="@Assets["js/offline-db.js"]"></script>
+    <script src="@Assets["js/offline-transport.js"]"></script>
+    <script src="@Assets["js/offline-queue.js"]"></script>
+    <script src="@Assets["js/offline-actions.js"]"></script>
+    <script src="@Assets["js/offline-boulder.js"]"></script>
+    <script src="@Assets["js/blazor-boot.js"]"></script>
+    <script src="@Assets["js/offline-status.js"]"></script>
+    <script src="@Assets["js/pwa.js"]"></script>
 </body>
 </html>
 
