@@ -46,10 +46,15 @@
     <PackageVersion Include="SkiaSharp" Version="3.119.1" />
     <PackageVersion Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="3.119.1" />
 
-    <!-- OpenCvSharp for cross-image hold matching (big wall). osx_arm64 and linux-arm64
-         native runtimes ship at different versions, so the csproj conditions by build OS. -->
+    <!-- OpenCvSharp for cross-image hold matching (big wall). The native runtime is picked
+         per target OS *and* architecture in Blocwerk.HoldDetection.csproj: osx_arm64 ships
+         at a different version line than the linux runtimes, so the csproj conditions on it.
+         The linux x64 runtime only exists as the "official" (portable RID, statically linked)
+         package — OpenCvSharp4.runtime.linux-x64 stalled at 4.10 and the ubuntu.*-x64 ones
+         at 4.6, so "official" is the only x64 build on the pinned 4.13 line. -->
     <PackageVersion Include="OpenCvSharp4" Version="4.13.0.20260526" />
     <PackageVersion Include="OpenCvSharp4.runtime.linux-arm64" Version="4.13.0.20260526" />
+    <PackageVersion Include="OpenCvSharp4.official.runtime.linux-x64" Version="4.13.0.20260526" />
     <PackageVersion Include="OpenCvSharp4.runtime.osx_arm64" Version="4.8.1" />
 
     <!-- Testing packages -->
