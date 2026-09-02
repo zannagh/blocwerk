@@ -24,13 +24,8 @@
     }
     else
     {
-        @if (PinError is not null)
-        {
-            <div class="kiosk-banner-error" role="alert">
-                That didn't work. Check the PIN and try again — too many wrong tries lock the pick for a while.
-            </div>
-        }
-
+        @* No error banner here: MainLayout already renders one for ?kiosk_pin_error=1 on every kiosk
+           page, and act-as now redirects failures back to this route — two banners on one screen. *@
         @if (_current is not null)
         {
             <div class="kiosk-picker-head">
@@ -51,27 +46,73 @@
         }
         else if (_pinTarget is not null)
         {
-            @* Second step: one user, one PIN field, one button. A per-row inline PIN input would put a
-               keypad-sized target next to every name on a list that can run long; a dedicated step
-               keeps the rows finger-sized and the keyboard unambiguous. *@
+            @* Second step: one user, one PIN, entered on the on-screen numpad. A per-row inline PIN
+               input would put a keypad-sized target next to every name on a list that can run long;
+               a dedicated step keeps the rows finger-sized.
+
+               The tablet is touch-only, so nothing here may summon the OS keyboard: the field that
+               actually posts is readonly + inputmode="none" and visually hidden, and the numpad
+               below drives it from wwwroot/js/kiosk-numpad.js. Same contract as kiosk-idle.js and
+               kiosk-pair.js — the form, its antiforgery token and its hidden userId are all
+               SERVER-rendered, and the script only ever appends digits and calls submit(). It never
+               reads, moves or reconstructs the token, and there is no fetch anywhere near it. *@
             <div class="kiosk-picker-head">
                 <h1>Enter PIN</h1>
-                <p>Confirm it's you before the tablet starts logging climbs.</p>
             </div>
-            <div class="kiosk-current">
+            <div class="kiosk-current kiosk-current-compact">
                 <UserAvatar UserId="_pinTarget.UserId" Name="@_pinTarget.Name"
                             HasAvatar="_pinTarget.HasAvatar" CssClass="kiosk-avatar" />
                 <span class="kiosk-current-name">@_pinTarget.Name</span>
             </div>
-            <form method="post" action="/kiosk/act-as" data-enhance-nav="false" class="kiosk-pin-form">
+            <form method="post" action="/kiosk/act-as" data-enhance-nav="false" class="kiosk-pin-form"
+                  id="bw-kiosk-pin-form" data-pin-length="@_pinTarget.PinLength">
                 <AntiforgeryToken />
                 <input type="hidden" name="userId" value="@_pinTarget.UserId" />
-                <label class="field-label" for="kiosk-pin">PIN</label>
-                <input id="kiosk-pin" class="text-input kiosk-pin-input" type="password" name="pin"
-                       inputmode="numeric" autocomplete="off" maxlength="8" required />
-                <button type="submit" class="kiosk-row kiosk-row-primary">Start climbing</button>
+
+                @* The real field. Off-screen rather than display:none so it still counts as a form
+                   control; readonly and inputmode="none" together keep every mobile browser from
+                   raising a soft keyboard if it is somehow focused. *@
+                <input id="kiosk-pin" class="kiosk-pin-value" type="password" name="pin"
+                       inputmode="none" autocomplete="off" maxlength="8" readonly required
+                       tabindex="-1" aria-hidden="true" />
+
+                @* Masked read-out: one dot per entered digit, so a bystander sees the count and
+                   nothing else. Pre-rendered at the known length when we have one. *@
+                <div class="kiosk-pin-display" id="bw-kiosk-pin-display" aria-hidden="true">
+                    @for (var i = 0; i < DotCount; i++)
+                    {
+                        <span class="kiosk-pin-dot"></span>
+                    }
+                </div>
+                <p class="kiosk-pin-count" id="bw-kiosk-pin-count" role="status" aria-live="polite">
+                    @(_pinTarget.PinLength > 0 ? $"0 of {_pinTarget.PinLength} digits" : "No digits yet")
+                </p>
+
+                <div class="kiosk-numpad">
+                    @for (var digit = 1; digit <= 9; digit++)
+                    {
+                        var value = digit.ToString();
+                        <button type="button" class="kiosk-numpad-key" data-bw-pin-key="@value"
+                                aria-label="@value">@value</button>
+                    }
+                    <span class="kiosk-numpad-gap" aria-hidden="true"></span>
+                    <button type="button" class="kiosk-numpad-key" data-bw-pin-key="0" aria-label="0">0</button>
+                    <button type="button" class="kiosk-numpad-key kiosk-numpad-back"
+                            data-bw-pin-key="back" aria-label="Delete last digit">⌫</button>
+                </div>
+
+                @if (_pinTarget.PinLength <= 0)
+                {
+                    @* Fallback for members who set their PIN before the length was recorded: without
+                       a length there is nothing to auto-submit on, so they get the old button back
+                       rather than a numpad that never finishes. It disappears the next time they
+                       re-set their PIN from their own device. *@
+                    <button type="submit" class="kiosk-row kiosk-row-primary kiosk-pin-submit">Start climbing</button>
+                }
             </form>
-            <a href="/kiosk/users" class="kiosk-row kiosk-row-secondary">Cancel</a>
+            @* Deliberately small: a mistap must not strand somebody on this screen until the idle
+               timer fires, but it is not a second primary action competing with the pad. *@
+            <a href="/kiosk/users" class="kiosk-pin-back">Not you? Pick someone else</a>
         }
         else
         {
@@ -135,8 +176,11 @@
     [Parameter]
     public Guid? UserId { get; set; }
 
-    [SupplyParameterFromQuery(Name = "kiosk_pin_error")]
-    public string? PinError { get; set; }
+    /// <summary>
+    /// How many masked slots the PIN read-out starts with: one per expected digit when the length is
+    /// known, otherwise none — the script appends them as digits are tapped.
+    /// </summary>
+    private int DotCount => _pinTarget is { PinLength: > 0 } target ? target.PinLength : 0;
 
     private IReadOnlyList<KioskUserInfo> _users = [];
     private KioskUserInfo? _pinTarget;

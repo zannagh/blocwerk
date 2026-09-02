@@ -71,6 +71,11 @@ public partial class KioskService : IKioskService
 
         member.KioskConsentedAt = DateTimeOffset.UtcNow;
         member.KioskPinHash = hasPin ? passwordService.Hash(pin!.Trim()) : null;
+
+        // Length only, never the digits: the kiosk picker needs to know when an entry is complete so
+        // it submits exactly once, and 0 keeps a PIN-less member indistinguishable from one who has
+        // never set one.
+        member.KioskPinLength = hasPin ? pin!.Trim().Length : 0;
         await db.SaveChangesAsync();
 
         // Never log the PIN itself, nor whether one was set — that is the member's business.
@@ -97,6 +102,7 @@ public partial class KioskService : IKioskService
 
         member.KioskConsentedAt = null;
         member.KioskPinHash = null;
+        member.KioskPinLength = 0;
         await db.SaveChangesAsync();
 
         logger.LogInformation("User {UserId} revoked kiosk consent for wall {WallId}", user.Id, wallId);
@@ -136,7 +142,8 @@ public partial class KioskService : IKioskService
                 m.UserId,
                 m.User.Name,
                 m.User.HasAvatar,
-                m.KioskPinHash is not null))
+                m.KioskPinHash is not null,
+                m.KioskPinHash is not null ? m.KioskPinLength : 0))
             .OrderBy(u => u.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
     }

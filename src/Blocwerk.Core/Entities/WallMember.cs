@@ -33,4 +33,12 @@ public class WallMember
     /// </summary>
     [MaxLength(256)]
     public string? KioskPinHash { get; set; }
+
+    /// <summary>
+    /// How many digits the kiosk PIN has, or 0 when there is no PIN. The tablet needs this — and only
+    /// this — to know when an entry is complete, so it can submit once instead of guessing at every
+    /// keystroke and burning throttle attempts. The PIN itself stays in the hash and never leaves the
+    /// server.
+    /// </summary>
+    public int KioskPinLength { get; set; }
 }

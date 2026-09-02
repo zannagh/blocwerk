@@ -203,7 +203,7 @@ public sealed class KioskController : Controller
             userId);
         if (throttle.IsLocked(throttleScopes))
         {
-            return ActAsFailure(registration.WallId, throttleScopes, countFailure: false);
+            return ActAsFailure(userId, throttleScopes, countFailure: false);
         }
 
         // VerifyPinAsync does no authorisation of its own — it trusts its caller to have proven kiosk
@@ -212,13 +212,13 @@ public sealed class KioskController : Controller
         // wall cannot be picked here.
         if (!await kioskService.VerifyPinAsync(registration.WallId, userId, pin))
         {
-            return ActAsFailure(registration.WallId, throttleScopes);
+            return ActAsFailure(userId, throttleScopes);
         }
 
         var user = await currentUserService.GetUserByIdAsync(userId);
         if (user is null)
         {
-            return ActAsFailure(registration.WallId, throttleScopes);
+            return ActAsFailure(userId, throttleScopes);
         }
 
         throttle.Reset(throttleScopes);
@@ -312,7 +312,7 @@ public sealed class KioskController : Controller
     }
 
     private IActionResult ActAsFailure(
-        Guid wallId,
+        Guid userId,
         IReadOnlyList<KioskThrottleScope> throttleScopes,
         bool countFailure = true)
     {
@@ -321,8 +321,13 @@ public sealed class KioskController : Controller
             throttle.RegisterFailure(throttleScopes);
         }
 
-        // One generic outcome for "no such member", "never consented" and "wrong PIN", matching the
-        // timing equalisation KioskService.VerifyPinAsync already does.
-        return LocalRedirect($"/walls/{wallId}?kiosk_pin_error=1");
+        // Back to the pick that failed, not to the wall: the numpad has no submit button, so a
+        // climber who mistyped would otherwise land on the wall page with no obvious way back into
+        // the PIN step. The picker re-resolves the id against the consenting list, so an id that is
+        // not pickable here simply renders the plain list — the redirect target reveals nothing the
+        // list did not already show.
+        // Still ONE generic outcome for "no such member", "never consented", "wrong PIN" and
+        // "throttled", matching the timing equalisation KioskService.VerifyPinAsync already does.
+        return LocalRedirect($"/kiosk/users/{userId}?kiosk_pin_error=1");
     }
 }

@@ -162,6 +162,58 @@ public class KioskTests
     }
 
     [Fact]
+    public async Task GetConsentingUsers_ReportsPinLength_AndNeverThePinItself()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync();
+        var shortPin = await h.AddMemberAsync("short@test", WallRole.Member);
+        var longPin = await h.AddMemberAsync("long@test", WallRole.Member);
+        var withoutPin = await h.AddMemberAsync("nopin@test", WallRole.Member);
+
+        h.ActingUser = shortPin;
+        await h.KioskService.ConsentAsync(h.WallId, "4321");
+        h.ActingUser = longPin;
+        await h.KioskService.ConsentAsync(h.WallId, "13570246");
+        h.ActingUser = withoutPin;
+        await h.KioskService.ConsentAsync(h.WallId, null);
+
+        var picker = await h.KioskService.GetConsentingUsersAsync(h.WallId);
+
+        Assert.Equal(4, picker.Single(u => u.UserId == shortPin.Id).PinLength);
+        Assert.Equal(8, picker.Single(u => u.UserId == longPin.Id).PinLength);
+
+        // A member who consented without a PIN is indistinguishable from one who never set one.
+        var open = picker.Single(u => u.UserId == withoutPin.Id);
+        Assert.False(open.RequiresPin);
+        Assert.Equal(0, open.PinLength);
+
+        // The length is the ONLY thing about the PIN that may leave the server: nothing the picker
+        // hands the tablet contains the digits, in any field.
+        var rendered = string.Join(' ', picker.Select(u => $"{u.UserId}|{u.Name}|{u.HasAvatar}|{u.RequiresPin}|{u.PinLength}"));
+        Assert.DoesNotContain("4321", rendered, StringComparison.Ordinal);
+        Assert.DoesNotContain("13570246", rendered, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RevokingConsent_ClearsTheRecordedPinLength()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync();
+        var member = await h.AddMemberAsync("pin@test", WallRole.Member);
+
+        h.ActingUser = member;
+        await h.KioskService.ConsentAsync(h.WallId, "4321");
+        await h.KioskService.RevokeConsentAsync(h.WallId);
+
+        // Re-consenting without a PIN must not leave the old length behind either.
+        await h.KioskService.ConsentAsync(h.WallId, null);
+
+        var entry = Assert.Single(await h.KioskService.GetConsentingUsersAsync(h.WallId), u => u.UserId == member.Id);
+        Assert.False(entry.RequiresPin);
+        Assert.Equal(0, entry.PinLength);
+    }
+
+    [Fact]
     public async Task VerifyPin_AcceptsTheRightPin_AndRefusesEverythingElse()
     {
         using var h = new WallTestHarness();

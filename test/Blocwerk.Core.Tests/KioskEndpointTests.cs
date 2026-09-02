@@ -460,8 +460,10 @@ public class KioskEndpointTests
 
             var result = await Controller.ActAs(userId, pin);
 
+            // Back to the pick that failed, so the numpad can simply be retyped. Still one generic
+            // marker for every failure reason.
             Assert.Equal(
-                $"/walls/{Harness.WallId}?kiosk_pin_error=1",
+                $"/kiosk/users/{userId}?kiosk_pin_error=1",
                 Assert.IsType<LocalRedirectResult>(result).Url);
             Assert.Null(SignedInPrincipal);
         }

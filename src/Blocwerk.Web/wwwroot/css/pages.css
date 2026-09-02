@@ -2534,14 +2534,72 @@ html.bw-fullscreen .wall-main .photo-viewport {
 .kiosk-current-name { font-size: 1.25rem; font-weight: 700; color: var(--text-heading); }
 
 .kiosk-pin-form { display: block; margin: 0; }
-.kiosk-pin-form .field-label { color: var(--text); }
-.kiosk-pin-input {
-    width: 100%; box-sizing: border-box; margin-bottom: 16px;
-    padding: 14px 16px; font-size: 1.6rem; letter-spacing: 0.4em; text-align: center;
-    background: var(--bg-surface); color: var(--text-heading);
-    border: 1px solid var(--border); border-radius: var(--r-md);
+
+/* The field that actually posts. Off-screen rather than display:none so it stays a real form control
+   and the browser still submits it; readonly + inputmode="none" in the markup are what keep the OS
+   keyboard down on a touch-only tablet. */
+.kiosk-pin-value {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
 }
-.kiosk-pin-input:focus { outline: none; border-color: var(--accent); }
+
+/* Masked read-out: one dot per expected digit, filled as they are tapped. The count of entered
+   digits is the ONLY thing visible from a couple of metres away. */
+.kiosk-pin-display {
+    display: flex; justify-content: center; align-items: center; gap: 14px;
+    min-height: 28px; margin-bottom: 6px;
+}
+.kiosk-pin-dot {
+    width: 16px; height: 16px; border-radius: 50%;
+    border: 2px solid var(--border); background: transparent;
+    transition: background-color 0.1s ease, border-color 0.1s ease;
+}
+.kiosk-pin-dot.is-filled { background: var(--accent); border-color: var(--accent); }
+.kiosk-pin-count {
+    text-align: center; color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 14px;
+}
+
+/* Wall-mounted tablet, used at arm's length with a whole hand: keys are sized for a thumb, not a
+   cursor. 72px is the floor; the grid grows the keys on anything roomier. */
+.kiosk-numpad {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+}
+.kiosk-numpad-key {
+    min-height: 72px; padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.75rem; font-weight: 600; font-variant-numeric: tabular-nums;
+    color: var(--text-heading); background: var(--bg-surface);
+    border: 1px solid var(--border); border-radius: var(--r-md);
+    cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+}
+.kiosk-numpad-key:active { background: var(--accent-soft); border-color: var(--accent); }
+.kiosk-numpad-key:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.kiosk-numpad-key:disabled { opacity: 0.5; cursor: default; }
+.kiosk-numpad-back { font-size: 1.5rem; color: var(--text-secondary); }
+.kiosk-numpad-gap { display: block; }
+
+/* Only rendered for a PIN whose length predates the stored length, so there is nothing to
+   auto-submit on. */
+.kiosk-pin-submit { margin-top: 14px; }
+
+/* Subordinate on purpose: an escape hatch from a mistap, not a second primary action. */
+.kiosk-pin-back {
+    display: block; margin-top: 18px; text-align: center;
+    color: var(--text-secondary); font-size: 0.9rem; text-decoration: underline;
+}
+
+/* The PIN step has to fit without scrolling on a tablet in either orientation, so the header block
+   above the pad shrinks before the keys do. */
+.kiosk-current-compact { padding: 10px; margin-bottom: 14px; gap: 10px; }
+@media (max-height: 700px) {
+    .kiosk-picker { padding-top: 10px; padding-bottom: 16px; }
+    .kiosk-picker-head { margin-bottom: 10px; }
+    .kiosk-current-compact { padding: 6px; margin-bottom: 10px; }
+    .kiosk-current-compact .kiosk-avatar { width: 36px; height: 36px; font-size: 1rem; }
+    .kiosk-numpad { gap: 10px; }
+    .kiosk-numpad-key { min-height: 60px; font-size: 1.5rem; }
+}
 
 .kiosk-note { margin-top: 20px; text-align: center; color: var(--text-secondary); font-size: 0.85rem; }
 .kiosk-empty { text-align: center; color: var(--text-secondary); font-size: 0.95rem; padding: 24px 8px; }
