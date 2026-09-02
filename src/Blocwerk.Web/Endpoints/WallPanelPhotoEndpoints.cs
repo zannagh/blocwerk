@@ -32,9 +32,10 @@ public static class WallPanelPhotoEndpoints
             [FromServices] IWallPanelService panelService,
             [FromServices] ICurrentUserService currentUserService,
             [FromServices] IDbContextFactory<BlocwerkDbContext> dbContextFactory,
+            [FromServices] IKioskContext kioskContext,
             CancellationToken ct) =>
                 ServeAsync(
-                    wallId, panelId, token, user, currentUserService, dbContextFactory,
+                    wallId, panelId, token, user, currentUserService, dbContextFactory, kioskContext,
                     () => panelService.GetPanelPhotoAsync(wallId, panelId), ct))
             .RequireAuthorization(BlocwerkPolicies.WallGalleryImage)
             .DenyApiKeyPrincipals();
@@ -47,9 +48,10 @@ public static class WallPanelPhotoEndpoints
             [FromServices] IWallPanelService panelService,
             [FromServices] ICurrentUserService currentUserService,
             [FromServices] IDbContextFactory<BlocwerkDbContext> dbContextFactory,
+            [FromServices] IKioskContext kioskContext,
             CancellationToken ct) =>
                 ServeAsync(
-                    wallId, panelId, token, user, currentUserService, dbContextFactory,
+                    wallId, panelId, token, user, currentUserService, dbContextFactory, kioskContext,
                     () => panelService.GetPanelStagedPhotoAsync(wallId, panelId), ct))
             .RequireAuthorization(BlocwerkPolicies.WallGalleryImage)
             .DenyApiKeyPrincipals();
@@ -62,6 +64,7 @@ public static class WallPanelPhotoEndpoints
         ClaimsPrincipal user,
         ICurrentUserService currentUserService,
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
+        IKioskContext kioskContext,
         Func<Task<WallPhoto?>> load,
         CancellationToken ct)
     {
@@ -70,7 +73,7 @@ public static class WallPanelPhotoEndpoints
             return Results.NotFound();
         }
 
-        if (!await HasWallAccessAsync(wallId, token, currentUserService, dbContextFactory, ct))
+        if (!await HasWallAccessAsync(wallId, token, currentUserService, dbContextFactory, kioskContext, ct))
         {
             return Results.NotFound();
         }
@@ -95,6 +98,7 @@ public static class WallPanelPhotoEndpoints
         string? token,
         ICurrentUserService currentUserService,
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
+        IKioskContext kioskContext,
         CancellationToken ct)
     {
         if (!string.IsNullOrEmpty(token))
@@ -115,9 +119,12 @@ public static class WallPanelPhotoEndpoints
         catch (UnauthorizedAccessException)
         {
             // Nobody is signed in. With a token that just means it did not match; without one the
-            // caller is anonymous on a non-shared wall. Either way there is nothing more to check,
-            // and a 404 says less than a challenge would.
-            return false;
+            // caller is anonymous on a non-shared wall — EXCEPT for a registered kiosk tablet asking
+            // for the wall it is bolted to, which is the state it sits in for most of the day. A big
+            // (multi-image) wall is drawn entirely out of these panel bytes, so refusing them leaves
+            // the tablet showing an empty frame. Any other wall is still refused, and a 404 says
+            // less than a challenge would.
+            return KioskViewing.AllowsAnonymousViewOf(kioskContext, wallId);
         }
 
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);

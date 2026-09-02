@@ -8,6 +8,7 @@
 @inject IWallPanelService WallPanelService
 @inject WallCacheState Cache
 @inject ICurrentUserService CurrentUserService
+@inject IKioskContext KioskContext
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 @inject CircuitEditActivity EditActivity
@@ -323,9 +324,21 @@ else
         }
         else
         {
-            <div class="bw-anon-notice">
-                <a href="/account/login">Log in</a> to log attempts and comment.
-            </div>
+            @* Two different anonymous viewers, two different next steps. On a tablet nobody logs IN;
+               they tap their own name on the kiosk picker, and pointing them at a login page they are
+               not meant to complete is what this whole fix is about. *@
+            @if (KioskContext.IsKiosk)
+            {
+                <div class="bw-anon-notice">
+                    <a href="/kiosk/users">Pick yourself</a> to log attempts and comment.
+                </div>
+            }
+            else
+            {
+                <div class="bw-anon-notice">
+                    <a href="/account/login">Log in</a> to log attempts and comment.
+                </div>
+            }
         }
 
         <BoulderBetaVideos @ref="_betaVideos" BoulderId="BoulderId" CurrentUserId="_currentUserId"
@@ -667,8 +680,19 @@ else
             }
             catch (UnauthorizedAccessException)
             {
-                Navigation.NavigateTo("/account/login", replace: true);
-                return;
+                // Same rule as the wall page, and for the same reason: a registered tablet with
+                // nobody picked reads its own wall's boulders read-only rather than being sent to a
+                // login it cannot complete. Opening a boulder IS what the tablet is for. Everyone
+                // else anonymous — and a kiosk aimed at another wall — still goes to sign in.
+                if (!KioskViewing.AllowsAnonymousViewOf(KioskContext, WallId))
+                {
+                    Navigation.NavigateTo("/account/login", replace: true);
+                    return;
+                }
+
+                _isAnonymous = true;
+                _currentUserId = Guid.Empty;
+                await LoadBoulder();
             }
         }
 

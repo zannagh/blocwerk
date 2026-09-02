@@ -244,12 +244,9 @@ public class KioskAuthTests
     [Theory]
 
     // Account takeover, credential minting and app-wide administration.
-    [InlineData("/profile", true)]
-    [InlineData("/profile/11111111-1111-1111-1111-111111111111", true)]
     [InlineData("/settings/api-keys", true)]
     [InlineData("/administration", true)]
     [InlineData("/account/link", true)]
-    [InlineData("/PROFILE", true)]
 
     // The gaps the allow-list closed: /account/link was blocked but the OAuth link actually
     // EXECUTES on /account/external; the password can be set by two more routes; and an account
@@ -289,6 +286,13 @@ public class KioskAuthTests
     [InlineData("/guides/homewalls/volumes", false)]
     [InlineData("/activity", false)]
     [InlineData("/training/hangboard", false)]
+
+    // Profiles. Denying this path denied another member's PUBLIC profile too, so every tap on a name
+    // in the members list or the leaderboard bounced to ?kiosk_blocked=1. The account-security half
+    // of the page is refused at the services beneath it, not by the path.
+    [InlineData("/profile", false)]
+    [InlineData("/profile/11111111-1111-1111-1111-111111111111", false)]
+    [InlineData("/PROFILE", false)]
 
     // Static assets and framework plumbing, which the middleware also sees.
     [InlineData("/_blazor", false)]
@@ -341,7 +345,11 @@ public class KioskAuthTests
         }
 
         Assert.False(KioskRestrictions.IsBlockedPageType(typeof(Blocwerk.Web.Components.Pages.Walls.WallDetail)));
-        Assert.True(KioskRestrictions.IsBlockedPageType(typeof(Blocwerk.Web.Components.Pages.Profile)));
+
+        // Profile is ALLOWED, for /profile/{userId}: a member's public profile behind their name.
+        // Nothing about that allows an account-security change — see KioskCannotChangeAccountSecurity.
+        Assert.False(KioskRestrictions.IsBlockedPageType(typeof(Blocwerk.Web.Components.Pages.Profile)));
+        Assert.True(KioskRestrictions.IsBlockedPageType(typeof(Blocwerk.Web.Components.Pages.Settings.ApiKeys)));
         Assert.True(KioskRestrictions.IsBlockedPageType(typeof(Blocwerk.Web.Components.Pages.Signup)));
         Assert.True(KioskRestrictions.IsBlockedPageType(typeof(Blocwerk.Web.Components.Pages.Join)));
         Assert.True(KioskRestrictions.IsBlockedPageType(typeof(Blocwerk.Web.Components.Pages.Walls.WallCreate)));
@@ -446,8 +454,11 @@ public class KioskAuthTests
         var ordinary = OrdinaryPrincipal();
 
         // A kiosk session routing to a deny-listed page in-circuit, where no middleware ever runs.
-        Assert.False(await EvaluateRouteAsync(kiosk, typeof(Blocwerk.Web.Components.Pages.Profile)));
         Assert.False(await EvaluateRouteAsync(kiosk, typeof(Blocwerk.Web.Components.Pages.Settings.ApiKeys)));
+        Assert.False(await EvaluateRouteAsync(kiosk, typeof(Blocwerk.Web.Components.Pages.Administration.Dashboard)));
+
+        // The profile page routes in-circuit now, which is what makes tapping a member's name work.
+        Assert.True(await EvaluateRouteAsync(kiosk, typeof(Blocwerk.Web.Components.Pages.Profile)));
 
         // The wall itself stays fully open — a kiosk session keeps the picked user's wall authority.
         Assert.True(await EvaluateRouteAsync(kiosk, typeof(Blocwerk.Web.Components.Pages.Walls.WallDetail)));

@@ -146,184 +146,209 @@
                 }
             </div>
 
-            <details class="section profile-collapsible" id="email-section">
-                <summary>@(_target.EmailVerified ? "Email (verified)" : "Email")</summary>
-
-                @if (_target.EmailVerified && !string.IsNullOrEmpty(_target.Email))
-                {
+            @* Account security lives on your OWN device, never on a wall tablet. These writes are
+               refused at the service (CurrentUserService.EnsureNotKiosk) and, for the e-mail, inline
+               at the write below; hiding the widgets is defence in depth, not the gate. *@
+            @if (KioskContext.IsKiosk)
+            {
+                <div class="section profile-section-card">
                     <p class="member-since">
-                        Your email <strong>@_target.Email</strong> is verified. Enter a new address and
-                        verify it below to change it.
+                        Your email, password, two-factor authentication and linked accounts are
+                        managed from your own device — not from this wall tablet.
                     </p>
-                }
-                else if (!string.IsNullOrEmpty(_target.Email))
-                {
-                    <p class="member-since">Your email <strong>@_target.Email</strong> isn't verified yet.</p>
-                }
-                else
-                {
-                    <p class="member-since">Add an email address and confirm it with a code we send you.</p>
-                }
+                </div>
+            }
+            else
+            {
+                <details class="section profile-collapsible" id="email-section">
+                    <summary>@(_target.EmailVerified ? "Email (verified)" : "Email")</summary>
 
-                @if (!Settings.Smtp.IsConfigured)
-                {
-                    <p class="member-since">Email sending isn't configured on this server, so email can't be verified right now.</p>
-                }
-                else
-                {
-                    <div class="field-group">
-                        <label class="field-label" for="verify-email">Email address</label>
-                        <input id="verify-email" class="text-input" type="email" maxlength="256" autocomplete="email"
-                               @bind="_emailInput" @bind:event="oninput" />
-                        <div class="field-actions">
-                            <button class="btn-primary" @onclick="SendEmailCodeAsync" disabled="@_emailBusy">Send code</button>
-                        </div>
+                    @if (_target.EmailVerified && !string.IsNullOrEmpty(_target.Email))
+                    {
+                        <p class="member-since">
+                            Your email <strong>@_target.Email</strong> is verified. Enter a new address and
+                            verify it below to change it.
+                        </p>
+                    }
+                    else if (!string.IsNullOrEmpty(_target.Email))
+                    {
+                        <p class="member-since">Your email <strong>@_target.Email</strong> isn't verified yet.</p>
+                    }
+                    else
+                    {
+                        <p class="member-since">Add an email address and confirm it with a code we send you.</p>
+                    }
 
-                        @if (_emailCodeSent)
-                        {
-                            <label class="field-label" for="verify-email-code">6-digit code</label>
-                            <input id="verify-email-code" class="text-input" inputmode="numeric" maxlength="6"
-                                   autocomplete="one-time-code" @bind="_emailCode" @bind:event="oninput" />
+                    @if (!Settings.Smtp.IsConfigured)
+                    {
+                        <p class="member-since">Email sending isn't configured on this server, so email can't be verified right now.</p>
+                    }
+                    else
+                    {
+                        <div class="field-group">
+                            <label class="field-label" for="verify-email">Email address</label>
+                            <input id="verify-email" class="text-input" type="email" maxlength="256" autocomplete="email"
+                                   @bind="_emailInput" @bind:event="oninput" />
                             <div class="field-actions">
-                                <button class="btn-primary" @onclick="VerifyEmailCodeAsync" disabled="@_emailBusy">Verify</button>
+                                <button class="btn-primary" @onclick="SendEmailCodeAsync" disabled="@_emailBusy">Send code</button>
                             </div>
-                        }
 
-                        @if (_emailError != null)
-                        {
-                            <p class="field-error">@_emailError</p>
-                        }
-                        @if (_emailInfo != null)
-                        {
-                            <p class="field-label">@_emailInfo</p>
-                        }
-                    </div>
-                }
-            </details>
+                            @if (_emailCodeSent)
+                            {
+                                <label class="field-label" for="verify-email-code">6-digit code</label>
+                                <input id="verify-email-code" class="text-input" inputmode="numeric" maxlength="6"
+                                       autocomplete="one-time-code" @bind="_emailCode" @bind:event="oninput" />
+                                <div class="field-actions">
+                                    <button class="btn-primary" @onclick="VerifyEmailCodeAsync" disabled="@_emailBusy">Verify</button>
+                                </div>
+                            }
 
-            <details class="section profile-collapsible" id="password-section">
-                <summary>@(_target.HasPassword ? "Password sign-in (all set)" : "Password sign-in")</summary>
-                @if (_target.HasPassword)
-                {
-                    <p class="member-since">
-                        A password is set for username <strong>@_target.LoginUsername</strong>.
-                        You can sign in without a provider. Enter a new username and password below to change it.
-                    </p>
-                }
-                else
-                {
-                    <p class="member-since">
-                        Set a username and password to sign in without an OAuth provider. This never
-                        replaces your linked accounts — it's an additional way in.
-                    </p>
-                }
+                            @if (_emailError != null)
+                            {
+                                <p class="field-error">@_emailError</p>
+                            }
+                            @if (_emailInfo != null)
+                            {
+                                <p class="field-label">@_emailInfo</p>
+                            }
+                        </div>
+                    }
+                </details>
 
-                <div class="field-group">
-                    <label class="field-label" for="login-username">Username</label>
-                    <input id="login-username" class="text-input" maxlength="64" autocomplete="off"
-                           @bind="_pwUsername" @bind:event="oninput" />
-
+                <details class="section profile-collapsible" id="password-section">
+                    <summary>@(_target.HasPassword ? "Password sign-in (all set)" : "Password sign-in")</summary>
                     @if (_target.HasPassword)
                     {
-                        <label class="field-label" for="login-current-password">Current password</label>
-                        <input id="login-current-password" class="text-input" type="password" autocomplete="current-password"
-                               @bind="_pwCurrent" @bind:event="oninput" />
+                        <p class="member-since">
+                            A password is set for username <strong>@_target.LoginUsername</strong>.
+                            You can sign in without a provider. Enter a new username and password below to change it.
+                        </p>
                     }
-
-                    <label class="field-label" for="login-password">Password</label>
-                    <input id="login-password" class="text-input" type="password" autocomplete="new-password"
-                           @bind="_pwPassword" @bind:event="oninput" />
-
-                    <label class="field-label" for="login-password-confirm">Confirm password</label>
-                    <input id="login-password-confirm" class="text-input" type="password" autocomplete="new-password"
-                           @bind="_pwConfirm" @bind:event="oninput" />
-
-                    <div class="field-actions">
-                        <button class="btn-primary" @onclick="SavePasswordAsync" disabled="@_savingPassword">
-                            @(_target.HasPassword ? "Change password" : "Set password")
-                        </button>
-                    </div>
-                    <p class="member-since">Username 3–64 characters (letters, digits, dot, underscore, hyphen); password at least 8 characters.</p>
-                    @if (_passwordError != null)
-                    {
-                        <p class="field-error">@_passwordError</p>
-                    }
-                    @if (_passwordSuccess)
-                    {
-                        <p class="field-label">Password saved.</p>
-                    }
-                </div>
-            </details>
-
-            @if (_target.HasPassword)
-            {
-                <details class="section profile-collapsible">
-                    <summary>@(_target.HasTotp ? "Two-factor authentication (all set)" : "Two-factor authentication")</summary>
-                    @if (_target.HasTotp)
+                    else
                     {
                         <p class="member-since">
-                            Two-factor authentication is <strong>on</strong>. It is required <strong>only when
-                            you sign in with your username &amp; password</strong> — signing in through a linked
-                            OAuth provider is not affected. Enter a current code to turn it off.
+                            Set a username and password to sign in without an OAuth provider. This never
+                            replaces your linked accounts — it's an additional way in.
                         </p>
-                        <div class="field-group">
-                            <label class="field-label" for="totp-disable">6-digit code</label>
-                            <input id="totp-disable" class="text-input" inputmode="numeric" maxlength="8"
-                                   autocomplete="one-time-code" @bind="_totpCode" @bind:event="oninput" />
-                            <div class="field-actions">
-                                <button class="btn-secondary" @onclick="DisableTotpAsync" disabled="@_totpBusy">Disable 2FA</button>
-                            </div>
-                        </div>
-                        @if (_totpError != null)
+                    }
+
+                    <div class="field-group">
+                        <label class="field-label" for="login-username">Username</label>
+                        <input id="login-username" class="text-input" maxlength="64" autocomplete="off"
+                               @bind="_pwUsername" @bind:event="oninput" />
+
+                        @if (_target.HasPassword)
                         {
-                            <p class="field-error">@_totpError</p>
+                            <label class="field-label" for="login-current-password">Current password</label>
+                            <input id="login-current-password" class="text-input" type="password" autocomplete="current-password"
+                                   @bind="_pwCurrent" @bind:event="oninput" />
                         }
-                    }
-                    else if (_totpEnrollment != null)
-                    {
-                        <p class="member-since">
-                            Scan this QR code with your authenticator app (or enter the secret manually),
-                            then enter a code below to finish enabling 2FA.
-                        </p>
-                        <img class="totp-qr" width="220" height="220" alt="TOTP QR code"
-                             src="data:image/png;base64,@Convert.ToBase64String(_totpEnrollment.QrPng)" />
-                        <p class="member-since">Secret: <code>@_totpEnrollment.Secret</code></p>
 
-                        <div class="field-group">
-                            <label class="field-label" for="totp-confirm">6-digit code</label>
-                            <input id="totp-confirm" class="text-input" inputmode="numeric" maxlength="8"
-                                   autocomplete="one-time-code" @bind="_totpCode" @bind:event="oninput" />
-                            <div class="field-actions">
-                                <button class="btn-primary" @onclick="ConfirmTotpAsync" disabled="@_totpBusy">Confirm &amp; enable</button>
-                                <button class="btn-secondary" @onclick="CancelTotpEnrollment" disabled="@_totpBusy">Cancel</button>
+                        <label class="field-label" for="login-password">Password</label>
+                        <input id="login-password" class="text-input" type="password" autocomplete="new-password"
+                               @bind="_pwPassword" @bind:event="oninput" />
+
+                        <label class="field-label" for="login-password-confirm">Confirm password</label>
+                        <input id="login-password-confirm" class="text-input" type="password" autocomplete="new-password"
+                               @bind="_pwConfirm" @bind:event="oninput" />
+
+                        <div class="field-actions">
+                            <button class="btn-primary" @onclick="SavePasswordAsync" disabled="@_savingPassword">
+                                @(_target.HasPassword ? "Change password" : "Set password")
+                            </button>
+                        </div>
+                        <p class="member-since">Username 3–64 characters (letters, digits, dot, underscore, hyphen); password at least 8 characters.</p>
+                        @if (_passwordError != null)
+                        {
+                            <p class="field-error">@_passwordError</p>
+                        }
+                        @if (_passwordSuccess)
+                        {
+                            <p class="field-label">Password saved.</p>
+                        }
+                    </div>
+                </details>
+
+                @if (_target.HasPassword)
+                {
+                    <details class="section profile-collapsible">
+                        <summary>@(_target.HasTotp ? "Two-factor authentication (all set)" : "Two-factor authentication")</summary>
+                        @if (_target.HasTotp)
+                        {
+                            <p class="member-since">
+                                Two-factor authentication is <strong>on</strong>. It is required <strong>only when
+                                you sign in with your username &amp; password</strong> — signing in through a linked
+                                OAuth provider is not affected. Enter a current code to turn it off.
+                            </p>
+                            <div class="field-group">
+                                <label class="field-label" for="totp-disable">6-digit code</label>
+                                <input id="totp-disable" class="text-input" inputmode="numeric" maxlength="8"
+                                       autocomplete="one-time-code" @bind="_totpCode" @bind:event="oninput" />
+                                <div class="field-actions">
+                                    <button class="btn-secondary" @onclick="DisableTotpAsync" disabled="@_totpBusy">Disable 2FA</button>
+                                </div>
                             </div>
                             @if (_totpError != null)
                             {
                                 <p class="field-error">@_totpError</p>
                             }
-                        </div>
-                    }
-                    else
-                    {
-                        <p class="member-since">
-                            Add a second factor: after your password, sign-in will ask for a rotating
-                            6-digit code from an authenticator app (Google Authenticator, Aegis, 1Password…).
-                        </p>
-                        <div class="field-actions">
-                            <button class="btn-primary" @onclick="EnableTotpAsync" disabled="@_totpBusy">Enable 2FA</button>
-                        </div>
-                        @if (_totpError != null)
-                        {
-                            <p class="field-error">@_totpError</p>
                         }
-                    }
-                </details>
+                        else if (_totpEnrollment != null)
+                        {
+                            <p class="member-since">
+                                Scan this QR code with your authenticator app (or enter the secret manually),
+                                then enter a code below to finish enabling 2FA.
+                            </p>
+                            <img class="totp-qr" width="220" height="220" alt="TOTP QR code"
+                                 src="data:image/png;base64,@Convert.ToBase64String(_totpEnrollment.QrPng)" />
+                            <p class="member-since">Secret: <code>@_totpEnrollment.Secret</code></p>
+
+                            <div class="field-group">
+                                <label class="field-label" for="totp-confirm">6-digit code</label>
+                                <input id="totp-confirm" class="text-input" inputmode="numeric" maxlength="8"
+                                       autocomplete="one-time-code" @bind="_totpCode" @bind:event="oninput" />
+                                <div class="field-actions">
+                                    <button class="btn-primary" @onclick="ConfirmTotpAsync" disabled="@_totpBusy">Confirm &amp; enable</button>
+                                    <button class="btn-secondary" @onclick="CancelTotpEnrollment" disabled="@_totpBusy">Cancel</button>
+                                </div>
+                                @if (_totpError != null)
+                                {
+                                    <p class="field-error">@_totpError</p>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <p class="member-since">
+                                Add a second factor: after your password, sign-in will ask for a rotating
+                                6-digit code from an authenticator app (Google Authenticator, Aegis, 1Password…).
+                            </p>
+                            <div class="field-actions">
+                                <button class="btn-primary" @onclick="EnableTotpAsync" disabled="@_totpBusy">Enable 2FA</button>
+                            </div>
+                            @if (_totpError != null)
+                            {
+                                <p class="field-error">@_totpError</p>
+                            }
+                        }
+                    </details>
+                }
             }
 
             <div class="section tl-card profile-section-card">
                 <h2>TopLogger import</h2>
 
-                @if (!_target.HasPassword)
+                @* Pasting TopLogger tokens is third-party credential entry, so it belongs on your own
+                   device and never on a public wall tablet — same rule as the password, 2FA and
+                   e-mail widgets above. Only the token entry goes; the connection status and the
+                   sync of an already-connected account stay usable at the wall. *@
+                @if (KioskContext.IsKiosk && !_target.HasPassword)
+                {
+                    <p class="member-since">
+                        TopLogger is connected from your own device — not from this wall tablet.
+                    </p>
+                }
+                else if (!_target.HasPassword)
                 {
                     <p class="member-since">
                         Set a password first to connect TopLogger — your tokens are stored encrypted.
@@ -363,9 +388,19 @@
 
                     @if (_tlStatus?.NeedsReauth == true)
                     {
-                        <p class="tl-reauth">
-                            Reset TopLogger Tokens — your saved session was rejected. Paste fresh tokens below to reconnect.
-                        </p>
+                        @if (KioskContext.IsKiosk)
+                        {
+                            <p class="tl-reauth">
+                                Reset TopLogger Tokens — your saved session was rejected. Reconnect from your
+                                own device, not from this wall tablet.
+                            </p>
+                        }
+                        else
+                        {
+                            <p class="tl-reauth">
+                                Reset TopLogger Tokens — your saved session was rejected. Paste fresh tokens below to reconnect.
+                            </p>
+                        }
                         @if (!string.IsNullOrEmpty(_tlStatus.LastError))
                         {
                             <p class="field-error">@_tlStatus.LastError</p>
@@ -529,10 +564,25 @@
                             </div>
                         }
 
-                        <details class="tl-token-edit">
-                            <summary>Update tokens</summary>
-                            @tokenForm
-                        </details>
+                        @if (KioskContext.IsKiosk)
+                        {
+                            <p class="member-since">
+                                TopLogger tokens are updated from your own device — not from this wall tablet.
+                            </p>
+                        }
+                        else
+                        {
+                            <details class="tl-token-edit">
+                                <summary>Update tokens</summary>
+                                @tokenForm
+                            </details>
+                        }
+                    }
+                    else if (KioskContext.IsKiosk)
+                    {
+                        <p class="member-since">
+                            TopLogger is connected from your own device — not from this wall tablet.
+                        </p>
                     }
                     else
                     {
@@ -554,52 +604,58 @@
                 }
             </div>
 
-            <div class="profile-links">
-                <a class="btn-secondary" href="/settings/api-keys">API keys</a>
-            </div>
-
-            @if (_allProviders.Count > 0)
+            @* Both of these dead-end on a tablet: /settings/api-keys and /account/link are on the
+               kiosk deny-list, and the mint and the link are refused at the service and in the
+               /account/callback branch anyway. Hidden so nothing offers a tap that only fails. *@
+            @if (!KioskContext.IsKiosk)
             {
-                // Only providers the user hasn't linked yet can be linked; already-linked ones are listed
-                // read-only below so the section still shows what's connected.
-                var unlinkedProviders = _allProviders.Where(p => !IsProviderLinked(p.Key)).ToList();
-                var linkedLabels = _allProviders.Where(p => IsProviderLinked(p.Key)).Select(p => p.Label).ToList();
+                <div class="profile-links">
+                    <a class="btn-secondary" href="/settings/api-keys">API keys</a>
+                </div>
 
-                <details class="section profile-collapsible">
-                    <summary>Linked accounts</summary>
-                    @if (_linkMessage != null)
-                    {
-                        <p class="field-label">@_linkMessage</p>
-                    }
-                    <p class="member-since">Sign in with any linked provider to reach this account. Linking a provider that already belongs to another account merges that account into this one.</p>
+                @if (_allProviders.Count > 0)
+                {
+                    // Only providers the user hasn't linked yet can be linked; already-linked ones are listed
+                    // read-only below so the section still shows what's connected.
+                    var unlinkedProviders = _allProviders.Where(p => !IsProviderLinked(p.Key)).ToList();
+                    var linkedLabels = _allProviders.Where(p => IsProviderLinked(p.Key)).Select(p => p.Label).ToList();
 
-                    @if (linkedLabels.Count > 0)
-                    {
-                        <div class="field-group">
-                            @foreach (var label in linkedLabels)
-                            {
-                                <div class="field-actions">
-                                    <span class="field-label">@label</span>
-                                    <span class="role-badge">Linked</span>
-                                </div>
-                            }
-                        </div>
-                    }
+                    <details class="section profile-collapsible">
+                        <summary>Linked accounts</summary>
+                        @if (_linkMessage != null)
+                        {
+                            <p class="field-label">@_linkMessage</p>
+                        }
+                        <p class="member-since">Sign in with any linked provider to reach this account. Linking a provider that already belongs to another account merges that account into this one.</p>
 
-                    @if (unlinkedProviders.Count > 0)
-                    {
-                        <div class="field-group">
-                            @foreach (var provider in unlinkedProviders)
-                            {
-                                <div class="field-actions">
-                                    <span class="field-label">@provider.Label</span>
-                                    <button class="btn-secondary" @onclick="() => StartLink(provider.Key)">Link @provider.Label</button>
-                                </div>
-                            }
-                        </div>
-                    }
-                    <p class="member-since">Unlinking a provider isn't supported yet.</p>
-                </details>
+                        @if (linkedLabels.Count > 0)
+                        {
+                            <div class="field-group">
+                                @foreach (var label in linkedLabels)
+                                {
+                                    <div class="field-actions">
+                                        <span class="field-label">@label</span>
+                                        <span class="role-badge">Linked</span>
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        @if (unlinkedProviders.Count > 0)
+                        {
+                            <div class="field-group">
+                                @foreach (var provider in unlinkedProviders)
+                                {
+                                    <div class="field-actions">
+                                        <span class="field-label">@provider.Label</span>
+                                        <button class="btn-secondary" @onclick="() => StartLink(provider.Key)">Link @provider.Label</button>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        <p class="member-since">Unlinking a provider isn't supported yet.</p>
+                    </details>
+                }
             }
 
         }

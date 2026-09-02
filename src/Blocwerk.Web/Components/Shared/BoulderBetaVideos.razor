@@ -169,6 +169,18 @@
 
     private async Task LoadAsync()
     {
+        // An anonymous viewer with no share token has no read path here at all. That is the resting
+        // state of a kiosk tablet — registered to a wall, nobody picked — and attempting the load
+        // anyway only paints "Beta videos could not be loaded: … unauthorized …" onto a screen
+        // bolted to a gym wall, on every boulder. Show the empty state instead; picking a user on
+        // the tablet reloads the page with a real identity and the clips come back.
+        if (IsAnonymous && string.IsNullOrEmpty(ShareToken))
+        {
+            _videos = [];
+            _error = null;
+            return;
+        }
+
         try
         {
             // The share-token query (restricted to the wall's share token, drafts excluded) is

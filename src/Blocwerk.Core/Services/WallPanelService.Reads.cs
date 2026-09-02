@@ -10,12 +10,32 @@ namespace Blocwerk.Core.Services;
 /// </summary>
 public partial class WallPanelService
 {
+    /// <summary>
+    /// The id to filter a read by: the signed-in user, or <see cref="Guid.Empty"/> for a registered
+    /// kiosk browsing its OWN wall with nobody picked. A big wall is drawn entirely out of these
+    /// panel reads, so without the allowance the tablet's resting state shows an empty frame. Every
+    /// other anonymous caller still throws, and the kiosk stamp on the context keeps even this one
+    /// pinned to the single wall the device is registered to.
+    /// </summary>
+    private async Task<Guid> ResolveViewerIdAsync(Guid wallId)
+    {
+        try
+        {
+            var user = await currentUserService.GetCurrentUserAsync();
+            return user.Id;
+        }
+        catch (UnauthorizedAccessException) when (KioskViewing.AllowsAnonymousViewOf(kioskContext, wallId))
+        {
+            return Guid.Empty;
+        }
+    }
+
     /// <inheritdoc/>
     public async Task<IReadOnlyList<WallPanelInfo>> GetPanelsAsync(Guid wallId)
     {
-        var user = await currentUserService.GetCurrentUserAsync();
+        var viewerId = await ResolveViewerIdAsync(wallId);
         await using var db = await dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
+        db.CurrentUserId = viewerId;
 
         // A centre/neighbour update adds a NEW panel row at the next generation and promotes it, but the
         // superseded row keeps its Photo. Without deduping we'd surface two live panels at the same
@@ -71,9 +91,9 @@ public partial class WallPanelService
     /// <inheritdoc/>
     public async Task<IReadOnlyList<HoldLinkPair>> GetHoldLinksAsync(Guid wallId)
     {
-        var user = await currentUserService.GetCurrentUserAsync();
+        var viewerId = await ResolveViewerIdAsync(wallId);
         await using var db = await dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
+        db.CurrentUserId = viewerId;
 
         // Setting CurrentUserId applies the same visibility filters the other reads rely on: a
         // wall the caller cannot see yields no link rows.
@@ -87,9 +107,9 @@ public partial class WallPanelService
     /// <inheritdoc/>
     public async Task<IReadOnlyList<PanelHold>> GetPanelHoldsAsync(Guid wallId, Guid panelId, bool includeStaged)
     {
-        var user = await currentUserService.GetCurrentUserAsync();
+        var viewerId = await ResolveViewerIdAsync(wallId);
         await using var db = await dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
+        db.CurrentUserId = viewerId;
 
         // Setting CurrentUserId applies the same visibility filters the other reads rely on: a
         // wall the caller cannot see yields no panel row and therefore no holds.

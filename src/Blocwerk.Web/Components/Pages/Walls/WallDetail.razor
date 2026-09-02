@@ -10,6 +10,7 @@
 @inject IActivityLogService ActivityLogService
 @inject ICurrentUserService CurrentUserService
 @inject IKioskService KioskService
+@inject Blocwerk.Core.Abstractions.IKioskContext KioskContext
 @inject CircuitEditActivity EditActivity
 @inject NavigationManager Navigation
 @implements IDisposable
@@ -205,7 +206,14 @@ else
                     </div>
                     }
 
-                    @if (string.IsNullOrEmpty(_shareLink))
+                    @* A share link is membership that outlives the 30-minute session, so WallService
+                       refuses to mint one from a tablet. Hiding the button keeps it from rendering a
+                       control whose only outcome is an error; the service guard is still the gate. *@
+                    @if (KioskContext.IsKiosk)
+                    {
+                        <p class="hint">Share links are generated from your own device, not from this wall tablet.</p>
+                    }
+                    else if (string.IsNullOrEmpty(_shareLink))
                     {
                         <button class="btn-secondary" @onclick="GenerateShareLink">Generate Share Link</button>
                     }
@@ -258,24 +266,42 @@ else
 
                 @if (_currentUserId != Guid.Empty)
                 {
-                    <details class="settings-panel settings-card">
-                        <summary class="settings-card-summary"><h2>API key</h2></summary>
-                        <div class="settings-card-body">
-                            <WallApiKeyPanel WallId="WallId" CurrentUserId="_currentUserId" />
-                        </div>
-                    </details>
+                    @* KioskGuardedApiKeyService refuses every key mint from a tablet, so this card
+                       could only render controls that fail on tap. Hidden here; the service guard
+                       is still the gate. *@
+                    @if (KioskContext.IsKiosk)
+                    {
+                        <p class="hint">API keys are managed from your own device, not from this wall tablet.</p>
+                    }
+                    else
+                    {
+                        <details class="settings-panel settings-card">
+                            <summary class="settings-card-summary"><h2>API key</h2></summary>
+                            <div class="settings-card-body">
+                                <WallApiKeyPanel WallId="WallId" CurrentUserId="_currentUserId" />
+                            </div>
+                        </details>
+                    }
 
                     @* Pairing a tablet by code, so nobody has to type a bwk_ key on an on-screen
                        keyboard. Admin-only, and scoped to this wall: the card can never approve a
-                       tablet for anything else. *@
+                       tablet for anything else. A kiosk approver is refused at the service, so on a
+                       tablet the card is hidden rather than left to fail. *@
                     @if (_isAdmin)
                     {
-                        <details class="settings-panel settings-card">
-                            <summary class="settings-card-summary"><h2>Kiosk Registration</h2></summary>
-                            <div class="settings-card-body">
-                                <WallKioskPairingPanel WallId="WallId" CurrentUserId="_currentUserId" />
-                            </div>
-                        </details>
+                        @if (KioskContext.IsKiosk)
+                        {
+                            <p class="hint">Kiosk registration is approved from your own device, not from this wall tablet.</p>
+                        }
+                        else
+                        {
+                            <details class="settings-panel settings-card">
+                                <summary class="settings-card-summary"><h2>Kiosk Registration</h2></summary>
+                                <div class="settings-card-body">
+                                    <WallKioskPairingPanel WallId="WallId" CurrentUserId="_currentUserId" />
+                                </div>
+                            </details>
+                        }
                     }
                 }
             }
@@ -320,7 +346,18 @@ else
                                     <span class="member-role">@member.Role</span>
                                 }
                             </div>
-                            @if (member.UserId == _currentUserId)
+                            @* Consent to appear on the tablet is granted and withdrawn from your own
+                               device — KioskService refuses both from a kiosk session, so on a tablet
+                               these controls only ever produced an error line. *@
+                            @if (member.UserId == _currentUserId && KioskContext.IsKiosk)
+                            {
+                                <div class="kiosk-consent-line">
+                                    <span class="kiosk-consent-state">
+                                        Kiosk consent is managed from your own device, not from this tablet.
+                                    </span>
+                                </div>
+                            }
+                            else if (member.UserId == _currentUserId)
                             {
                                 <div class="kiosk-consent-line">
                                     @if (_kioskConsented)
@@ -372,7 +409,16 @@ else
             @* Overview (centre page — the wall itself) *@
             <div class="wall-main">
                 <div class="wall-detail-card">
-                    @if (_isAnonymous)
+                    @if (_isAnonymous && KioskContext.IsKiosk)
+                    {
+                        @* The tablet's resting state, and the ONLY next step that works on it: the
+                           picker, not a login page. See the anonymous-kiosk branch in LoadWall. *@
+                        <div class="bw-anon-notice">
+                            <span>Nobody's climbing yet.</span>
+                            <a href="/kiosk/users">Pick yourself</a> to log attempts and set boulders.
+                        </div>
+                    }
+                    else if (_isAnonymous)
                     {
                         <div class="bw-anon-notice">
                             <span>Viewing as guest.</span>
@@ -624,7 +670,9 @@ else
     </WallCarousel>
 }
 
-@if (_kioskDialogOpen)
+@* Nothing opens this dialog on a tablet any more (the consent line that did is hidden above), but
+   the flag is state and state can be set; the submit behind it is refused by KioskService either way. *@
+@if (_kioskDialogOpen && !KioskContext.IsKiosk)
 {
     <div class="bw-modal-backdrop" @onclick="CloseKioskDialog">
         <div class="bw-modal" @onclick:stopPropagation="true">
@@ -1089,8 +1137,24 @@ else
             }
             catch (UnauthorizedAccessException)
             {
-                Navigation.NavigateTo("/account/login", replace: true);
-                return;
+                // A registered tablet with nobody picked yet is the kiosk's RESTING state, not a
+                // signed-out visitor, and bouncing it to a login page it is not meant to complete is
+                // what made a freshly paired tablet spin: /account/login sent it to /oauth-select and
+                // every way back here threw again. It views its own wall read-only instead, on the
+                // same _isAnonymous machinery a share-token viewer uses — writes still need a picked
+                // user. EVERY other anonymous caller, including a kiosk pointed at somebody else's
+                // wall, still goes to sign in exactly as before.
+                if (!KioskViewing.AllowsAnonymousViewOf(KioskContext, WallId))
+                {
+                    Navigation.NavigateTo("/account/login", replace: true);
+                    return;
+                }
+
+                _isAnonymous = true;
+                _currentUserId = Guid.Empty;
+                _isMember = false;
+                _isAdmin = false;
+                _isModerator = false;
             }
         }
 

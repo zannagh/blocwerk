@@ -553,7 +553,7 @@ public class ProgressionService : IProgressionService
                 boulderCounts.GetValueOrDefault(a.Id) + ascentCounts.GetValueOrDefault(a.Id),
                 hangboardCounts.GetValueOrDefault(a.Id),
                 pullupCounts.GetValueOrDefault(a.Id),
-                a.Wall?.Name,
+                WallLabel(a),
                 a.ExternalGym?.Name)).ToList();
         }
         catch (Exception ex)
@@ -619,7 +619,7 @@ public class ProgressionService : IProgressionService
                 boulders,
                 hangboard,
                 pullups,
-                activity.Wall?.Name,
+                WallLabel(activity),
                 activity.ExternalGym?.Name);
         }
         catch (Exception ex)
@@ -868,6 +868,31 @@ public class ProgressionService : IProgressionService
         ?? (a.ExternalGymId is not null
             ? DefaultExternalSessionMinutes
             : Math.Max(0, (int)Math.Round((a.LastEventAt - a.StartedAt).TotalMinutes)));
+
+    /// <summary>
+    /// The label for an activity's wall, which is not always the wall's name.
+    /// </summary>
+    /// <remarks>
+    /// The activity rows are the user's own and are never filtered by wall, but the WALL behind one
+    /// can be invisible in this context — a kiosk session sees only the tablet's wall, and a user who
+    /// has left a wall no longer passes its membership filter — so <c>Include(a =&gt; a.Wall)</c>
+    /// yields null while <see cref="Activity.WallId"/> is still set. Rendering that as nothing made
+    /// the row read as a training-only activity, which it is not. Naming the wall is not an option
+    /// (the whole point of the filter is that this context may not see it), so it is named as what it
+    /// is: some other wall. An activity with no wall at all still gets null, unchanged.
+    /// </remarks>
+    private static string? WallLabel(Activity a)
+    {
+        if (a.Wall?.Name is { } name)
+        {
+            return name;
+        }
+
+        return a.WallId is not null ? OtherWallLabel : null;
+    }
+
+    /// <summary>Stands in for a wall this session may not see. Deliberately names no wall.</summary>
+    private const string OtherWallLabel = "another wall";
 
     private static List<ProgressionBucket> BuildBuckets(
         ProgressionGroupBy groupBy,

@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Blocwerk.Authentication;
 using Blocwerk.Authentication.Authorization;
 using Blocwerk.Authentication.Kiosk;
+using Blocwerk.Authentication.Services;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
@@ -10,6 +11,7 @@ using Blocwerk.Core.Services;
 using Blocwerk.Web.State;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -468,6 +470,156 @@ public class KioskEscalationTests
 
         // Per-address counters are still per address, so one bad client is not the reason.
         Assert.False(registry.IsLocked(KioskThrottleRegistry.RegistrationScopes("203.0.113.7")[0], now));
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // 7b. The profile page is REACHABLE again; the account security behind it still is not.
+    // ---------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// /profile used to be denied wholesale, which also denied /profile/{userId} — another member's
+    /// public profile, i.e. every tap on a name in the members list or the leaderboard. The page is
+    /// allowed now, so this pins down that allowing it moved NOTHING on the deliberate-exception
+    /// list: the password, the second factor and API-key minting are refused by the services the
+    /// page calls, and the pages that exist only to escalate are still refused by path and by type.
+    /// </summary>
+    [Fact]
+    public async Task TheProfilePageIsReachableFromAKiosk_ButNoneOfItsAccountSecurityIs()
+    {
+        // Reachable: both routes, and the page type the in-circuit route gate sees.
+        Assert.False(KioskRestrictions.IsBlockedPath(new PathString("/profile")));
+        Assert.False(KioskRestrictions.IsBlockedPath(
+            new PathString("/profile/11111111-1111-1111-1111-111111111111")));
+        Assert.False(KioskRestrictions.IsBlockedPageType(typeof(Blocwerk.Web.Components.Pages.Profile)));
+
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync();
+
+        var users = new CurrentUserService(
+            new Blocwerk.Core.Configuration.BlocwerkSettings(),
+            KioskFactory(h, h.WallId),
+            Substitute.For<IPasswordLoginService>(),
+            Substitute.For<ITotpService>(),
+            kioskContext: StubKiosk(isKiosk: true, h.WallId));
+
+        // The three account-security writes that live on that page. Each guard runs BEFORE the
+        // service resolves a user or touches the database, which is why no session is needed here.
+        await Assert.ThrowsAsync<KioskRestrictedException>(
+            () => users.SetPasswordAsync("climber", "hunter2hunter2", null));
+        await Assert.ThrowsAsync<KioskRestrictedException>(() => users.BeginTotpEnrollmentAsync());
+        await Assert.ThrowsAsync<KioskRestrictedException>(() => users.DisableTotpAsync("123456"));
+
+        // And the fourth thing the page links to: minting a key. The inner service must not even be
+        // reached — the refusal is the wrapper's, not a permission check that could go the other way.
+        var inner = Substitute.For<IApiKeyService>();
+        var keys = new KioskGuardedApiKeyService(inner, StubKiosk(isKiosk: true, h.WallId));
+
+        await Assert.ThrowsAsync<KioskRestrictedException>(
+            () => keys.CreateUserKeyAsync(h.Owner.Id, h.Owner.Id, "tablet key", null));
+        await Assert.ThrowsAsync<KioskRestrictedException>(
+            () => keys.CreateWallKeyAsync(h.WallId, h.Owner.Id, "tablet key", null));
+        await inner.DidNotReceiveWithAnyArgs().CreateUserKeyAsync(default, default, null!, null);
+        await inner.DidNotReceiveWithAnyArgs().CreateWallKeyAsync(default, default, null!, null);
+
+        // The escalation-only surfaces the profile page used to hide behind its own refusal are
+        // still refused in their own right, by path and by page type.
+        Assert.True(KioskRestrictions.IsBlockedPath(new PathString("/settings/api-keys")));
+        Assert.True(KioskRestrictions.IsBlockedPath(new PathString("/account/link")));
+        Assert.True(KioskRestrictions.IsBlockedPath(new PathString("/account/password")));
+        Assert.True(KioskRestrictions.IsBlockedPageType(
+            typeof(Blocwerk.Web.Components.Pages.Settings.ApiKeys)));
+    }
+
+    /// <summary>
+    /// The e-mail change is the one account-security write on that page with no service seam — it is
+    /// written inline by the component — so its only gate is the inline check, and the widgets around
+    /// it are hidden for a kiosk session. Both live in the .razor, where no runtime reflection can
+    /// see them, so this reads the source. It exists because the page is reachable from a tablet now:
+    /// deleting either line would silently restore exactly the hole /profile's denial used to cover.
+    /// </summary>
+    [Fact]
+    public void TheProfilePageStillRefusesAnEmailChangeFromAKiosk()
+    {
+        var profile = Path.Combine(
+            RepositoryRoot(), "src", "Blocwerk.Web", "Components", "Pages", "Profile.razor");
+        Assert.True(File.Exists(profile), $"Profile.razor not found at '{profile}'.");
+
+        var source = File.ReadAllText(profile);
+
+        // The inline refusal at the write itself.
+        Assert.Contains("private async Task SaveVerifiedEmailAsync", source, StringComparison.Ordinal);
+        var write = source[source.IndexOf("private async Task SaveVerifiedEmailAsync", StringComparison.Ordinal)..];
+        Assert.Contains("KioskContext.IsKiosk", write[..Math.Min(write.Length, 1200)], StringComparison.Ordinal);
+
+        // And the defence in depth: the e-mail, password, second-factor and linked-account widgets
+        // are not rendered at all for a kiosk session.
+        Assert.Contains("@if (KioskContext.IsKiosk)", source, StringComparison.Ordinal);
+        Assert.Contains("@if (!KioskContext.IsKiosk)", source, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Pasting TopLogger tokens is third-party credential entry, so it belongs on the member's own
+    /// device rather than a public tablet. The token textareas live in one RenderFragment rendered
+    /// from exactly two places — the "Update tokens" disclosure once connected, and the bare form
+    /// when not — and both are behind a kiosk branch. Reading the source is the only way to see it:
+    /// the gate is markup, not a service seam.
+    /// </summary>
+    [Fact]
+    public void TheProfilePageDoesNotOfferTopLoggerTokenEntryFromAKiosk()
+    {
+        var profile = Path.Combine(
+            RepositoryRoot(), "src", "Blocwerk.Web", "Components", "Pages", "Profile.razor");
+        Assert.True(File.Exists(profile), $"Profile.razor not found at '{profile}'.");
+
+        var source = File.ReadAllText(profile);
+        Assert.Contains("<textarea id=\"tl-access\"", source, StringComparison.Ordinal);
+
+        var disclosure = source.IndexOf("<details class=\"tl-token-edit\">", StringComparison.Ordinal);
+        Assert.True(disclosure > 0, "The 'Update tokens' disclosure moved; re-check its kiosk gate.");
+        Assert.Contains(
+            "KioskContext.IsKiosk",
+            source[Math.Max(0, disclosure - 400)..disclosure],
+            StringComparison.Ordinal);
+
+        // The not-yet-connected branch renders the bare form, and is gated the same way.
+        Assert.Contains("else if (KioskContext.IsKiosk)", source, StringComparison.Ordinal);
+
+        // Nothing on the page can leak a stored token either: the status record it renders holds none.
+        foreach (var property in typeof(Blocwerk.Core.Services.TopLogger.TopLoggerStatus).GetProperties())
+        {
+            Assert.DoesNotContain("token", property.Name, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("secret", property.Name, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    /// <summary>
+    /// Minting a wall API key and approving a kiosk pairing are both refused for a kiosk session at
+    /// the service, so rendering their cards on a tablet only offers taps that fail. The cards are
+    /// markup, so this reads the source like the checks above.
+    /// </summary>
+    [Fact]
+    public void TheWallPageHidesTheApiKeyAndPairingCardsFromAKiosk()
+    {
+        var wall = Path.Combine(
+            RepositoryRoot(), "src", "Blocwerk.Web", "Components", "Pages", "Walls", "WallDetail.razor");
+        Assert.True(File.Exists(wall), $"WallDetail.razor not found at '{wall}'.");
+
+        var source = File.ReadAllText(wall);
+        foreach (var card in new[] { "<WallApiKeyPanel", "<WallKioskPairingPanel" })
+        {
+            var at = source.IndexOf(card, StringComparison.Ordinal);
+            Assert.True(at > 0, $"{card} not found in WallDetail.razor.");
+            Assert.Contains(
+                "KioskContext.IsKiosk",
+                source[Math.Max(0, at - 600)..at],
+                StringComparison.Ordinal);
+        }
+    }
+
+    private static string RepositoryRoot([System.Runtime.CompilerServices.CallerFilePath] string here = "")
+    {
+        // <root>/test/Blocwerk.Core.Tests/KioskEscalationTests.cs
+        return Path.GetFullPath(Path.Combine(Path.GetDirectoryName(here)!, "..", ".."));
     }
 
     // ---------------------------------------------------------------------------------------

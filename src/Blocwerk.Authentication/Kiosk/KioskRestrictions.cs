@@ -45,10 +45,15 @@ public static class KioskRestrictions
     /// </summary>
     public static readonly IReadOnlyList<string> DeniedPaths =
     [
-        // Account security. The password/TOTP pages live under /profile, and there is no separate
-        // endpoint for the e-mail change — it is written inline by the profile page — so the whole
-        // profile surface is off limits from a tablet.
-        "/profile",
+        // /profile is deliberately NOT here, and was. That path serves TWO things: the acting user's
+        // own settings and — on /profile/{userId} — another member's PUBLIC profile, which is what a
+        // name on the leaderboard or a setter's byline links to. Denying the path denied both, so
+        // every such tap on the tablet bounced to ?kiosk_blocked=1, and it also took the zoom-lens
+        // preference, the progression window and the whole TopLogger surface with it. None of those
+        // are account security. The account-security half is refused where it actually happens: the
+        // password and second factor at CurrentUserService.EnsureNotKiosk, the e-mail inline at the
+        // write in Profile.razor, and the API-key mint at KioskGuardedApiKeyService — and the widgets
+        // for all of them are hidden on the page for a kiosk session, as defence in depth.
 
         // Attaching another OAuth identity to the acting user's account: a permanent takeover that
         // would outlive the session by years. /account/link starts the flow and /account/external
@@ -113,6 +118,11 @@ public static class KioskRestrictions
         "/activity",
         "/home",
         "/training",
+
+        // Profiles: the acting user's own, and — the point of allowing it — another member's public
+        // profile behind a name on the members list or the leaderboard. The account-security widgets
+        // are hidden here for a kiosk session and refused at the service beneath them either way.
+        "/profile",
 
         // Calculators and guides. No account surface at all, and genuinely useful at the wall.
         "/tools",
@@ -183,6 +193,15 @@ public static class KioskRestrictions
         "Blocwerk.Web.Components.Pages.Guides.HomewallsVolumes",
         "Blocwerk.Web.Components.Pages.Kiosk.KioskUsers",
 
+        // Profiles — one page serving /profile and /profile/{userId}. Allowed for the SECOND route:
+        // refusing the page refused every tap on a member's name, which made the tablet look broken.
+        // The page type cannot be routed on, so the own-settings half is handled inside the page: it
+        // hides the e-mail, password, second-factor, linked-account and API-key widgets for a kiosk
+        // session. That hiding is cosmetic — the gates are CurrentUserService.EnsureNotKiosk, the
+        // inline check at the e-mail write, KioskGuardedApiKeyService, and /settings/api-keys and
+        // /account/link still sitting on DeniedPaths above.
+        "Blocwerk.Web.Components.Pages.Profile",
+
         // The pairing page a tablet shows before it is anything. Allowed for a reason that only
         // shows up AFTER pairing succeeds: the device is a kiosk from that moment on, so a refresh,
         // a back button, or somebody re-pairing the tablet to a different wall would land a kiosk
@@ -209,9 +228,6 @@ public static class KioskRestrictions
     /// </summary>
     public static readonly IReadOnlyList<string> RefusedPageTypes =
     [
-        // Account takeover, in one page: password, TOTP, e-mail, display name.
-        "Blocwerk.Web.Components.Pages.Profile",
-
         // Credentials that outlive the session.
         "Blocwerk.Web.Components.Pages.Settings.ApiKeys",
 

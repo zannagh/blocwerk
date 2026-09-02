@@ -44,14 +44,24 @@ public class WallSegmentService : IWallSegmentService
     private readonly ICurrentUserService _currentUserService;
     private readonly ILogger<WallSegmentService> _logger;
 
+    private readonly IKioskContext? _kioskContext;
+
+    /// <summary>Creates the service.</summary>
+    /// <remarks>
+    /// <c>kioskContext</c> is optional, as on <c>WallService</c>. It is read only by
+    /// <see cref="GetSegmentsAsync"/>, to let a registered kiosk browsing its own wall with nobody
+    /// picked read the geometry its schematic is drawn from. No write path consults it.
+    /// </remarks>
     public WallSegmentService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         ICurrentUserService currentUserService,
-        ILogger<WallSegmentService> logger)
+        ILogger<WallSegmentService> logger,
+        IKioskContext? kioskContext = null)
     {
         _dbContextFactory = dbContextFactory;
         _currentUserService = currentUserService;
         _logger = logger;
+        _kioskContext = kioskContext;
     }
 
     public async Task<List<WallSegment>> GetSegmentsAsync(Guid wallId)
@@ -59,9 +69,20 @@ public class WallSegmentService : IWallSegmentService
         using var op = BlocwerkMetrics.TimeOperation("WallSegment.Get", wallId);
         try
         {
-            var user = await _currentUserService.GetCurrentUserAsync();
+            Guid viewerId;
+            try
+            {
+                viewerId = (await _currentUserService.GetCurrentUserAsync()).Id;
+            }
+            catch (UnauthorizedAccessException) when (KioskViewing.AllowsAnonymousViewOf(_kioskContext, wallId))
+            {
+                // An anonymous kiosk on its own wall. The wall page swallows a failure here, so the
+                // cost of getting this wrong is a silently mis-drawn wall rather than an error.
+                viewerId = Guid.Empty;
+            }
+
             await using var db = await _dbContextFactory.CreateDbContextAsync();
-            db.CurrentUserId = user.Id;
+            db.CurrentUserId = viewerId;
 
             return await db.WallSegments
                 .Where(s => s.WallId == wallId)

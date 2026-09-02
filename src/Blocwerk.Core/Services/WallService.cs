@@ -88,14 +88,39 @@ public class WallService : IWallService
         }
     }
 
+    /// <summary>
+    /// The id to filter a READ of <paramref name="wallId"/> by: the signed-in user, or
+    /// <see cref="Guid.Empty"/> for the one anonymous caller that is allowed to look — a registered
+    /// kiosk tablet, on its own wall, with nobody picked yet.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Guid.Empty"/> opens the membership half of the wall query filter, exactly as a
+    /// share-token read does. It does NOT open the kiosk half: every context this service creates is
+    /// stamped with the tablet's wall by <c>KioskScopedDbContextFactory</c>, so the read stays pinned
+    /// to that one wall whatever id is passed in here. Any other anonymous caller still throws, and
+    /// the page above still sends them to sign in.
+    /// </remarks>
+    private async Task<Guid> ResolveViewerIdAsync(Guid wallId)
+    {
+        try
+        {
+            var user = await _currentUserService.GetCurrentUserAsync();
+            return user.Id;
+        }
+        catch (UnauthorizedAccessException) when (KioskViewing.AllowsAnonymousViewOf(_kioskContext, wallId))
+        {
+            return Guid.Empty;
+        }
+    }
+
     public async Task<Wall?> GetWallAsync(Guid wallId)
     {
         using var op = BlocwerkMetrics.TimeOperation("Wall.Get", wallId);
         try
         {
-            var user = await _currentUserService.GetCurrentUserAsync();
+            var viewerId = await ResolveViewerIdAsync(wallId);
             await using var db = await _dbContextFactory.CreateDbContextAsync();
-            db.CurrentUserId = user.Id;
+            db.CurrentUserId = viewerId;
             // Project just the column (async, no blob load, no tracking) rather than materialising
             // the whole Wall entity just to read the generation.
             var currentGeneration = await db.Walls
@@ -1285,9 +1310,13 @@ public class WallService : IWallService
         using var op = BlocwerkMetrics.TimeOperation("Wall.GetPhoto", wallId);
         try
         {
-            var user = await _currentUserService.GetCurrentUserAsync();
+            // The photo IS the wall page. Without the same anonymous-kiosk allowance the page below
+            // renders and every <img> 500s, which on a tablet looks exactly like the wall being
+            // broken. This is a separate HTTP request, so the kiosk context is primed by the kiosk
+            // middleware from the device cookie, not from a circuit.
+            var viewerId = await ResolveViewerIdAsync(wallId);
             await using var db = await _dbContextFactory.CreateDbContextAsync();
-            db.CurrentUserId = user.Id;
+            db.CurrentUserId = viewerId;
 
             var wall = await db.Walls
                 .AsNoTracking()
@@ -1332,9 +1361,13 @@ public class WallService : IWallService
         using var op = BlocwerkMetrics.TimeOperation("Wall.GetHoldsForGeneration", wallId);
         try
         {
-            var user = await _currentUserService.GetCurrentUserAsync();
+            // Same anonymous-kiosk allowance as GetWallAsync: a boulder set on an older generation
+            // renders its schematic from that generation's holds, and the tablet must be able to
+            // open such a boulder. The membership-filtered wall lookup below is what enforces
+            // access, and it stays pinned to the kiosk's own wall.
+            var viewerId = await ResolveViewerIdAsync(wallId);
             await using var db = await _dbContextFactory.CreateDbContextAsync();
-            db.CurrentUserId = user.Id;
+            db.CurrentUserId = viewerId;
 
             // Holds carry no query filter of their own, so the membership-filtered wall
             // lookup is what enforces access here.
@@ -1360,9 +1393,11 @@ public class WallService : IWallService
         using var op = BlocwerkMetrics.TimeOperation("Wall.GetPhotoForGeneration", wallId);
         try
         {
-            var user = await _currentUserService.GetCurrentUserAsync();
+            // As GetPhotoAsync: a historic boulder opened on the tablet renders against the photo of
+            // the generation it was set on.
+            var viewerId = await ResolveViewerIdAsync(wallId);
             await using var db = await _dbContextFactory.CreateDbContextAsync();
-            db.CurrentUserId = user.Id;
+            db.CurrentUserId = viewerId;
 
             return await ResolveGenerationPhotoAsync(db, db.Walls.Where(w => w.Id == wallId), wallId, generation);
         }

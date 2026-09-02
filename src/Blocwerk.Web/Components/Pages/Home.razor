@@ -6,6 +6,7 @@
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IHttpContextAccessor HttpContextAccessor
 @inject Blocwerk.Core.Abstractions.ICurrentUserService CurrentUser
+@inject Blocwerk.Core.Abstractions.IKioskContext KioskContext
 
 <PageTitle>Blocwerk</PageTitle>
 
@@ -48,6 +49,21 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // A registered tablet WAKES UP into kiosk mode. It has no business on the marketing landing
+        // page, and — the bug this fixes — must not fall through to the "returning device" branch
+        // below, which sent every paired tablet to a login nobody is meant to complete on it. The
+        // wall comes from the validated kiosk context, never from a cookie or the URL, and the page
+        // it lands on renders anonymously, so this cannot become a redirect loop. Note this does NOT
+        // sign anyone in: the tablet arrives anonymous and a human still picks themselves at
+        // /kiosk/users. It also applies to an acting kiosk session, whose home wall may be a wall
+        // this device is not allowed to see at all.
+        if (Blocwerk.Core.Abstractions.KioskViewing.ViewableWallId(KioskContext) is { } kioskWallId)
+        {
+            _redirecting = true;
+            Navigation.NavigateTo($"/walls/{kioskWallId}", replace: true);
+            return;
+        }
+
         var authState = await AuthStateProvider.GetAuthenticationStateAsync();
         if (authState.User.Identity?.IsAuthenticated == true)
         {

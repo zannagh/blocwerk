@@ -6,14 +6,31 @@
 @inject IHttpContextAccessor HttpContextAccessor
 @inject ICurrentUserService CurrentUserService
 @inject IWallService WallService
+@inject Blocwerk.Core.Abstractions.IKioskContext KioskContext
 
 <PageTitle>Blocwerk</PageTitle>
 
 <div class="home-redirect">
-    <p>Taking you home…</p>
+    @if (_kioskPinnedElsewhere)
+    {
+        <p>This tablet is fixed to its own wall, so it can't take you to your home wall.</p>
+        <p><a class="btn-primary" href="@_kioskWallHref">Go to this wall</a></p>
+    }
+    else
+    {
+        <p>Taking you home…</p>
+    }
 </div>
 
 @code {
+    // A kiosk tablet is registered to exactly one wall and the wall query filter hides every other,
+    // so an acting user whose own home wall is a DIFFERENT wall resolves nothing here. Redirecting to
+    // /walls for that was a tap that appeared to do nothing; say what happened instead. The kiosk tab
+    // bar points Home at the tablet's wall and never comes through here, so this is reached by a
+    // typed URL, a bookmark, or a restored tab.
+    private bool _kioskPinnedElsewhere;
+    private string _kioskWallHref = "/walls";
+
     protected override async Task OnInitializedAsync()
     {
         // Resolve the current user's home wall. This page is [Authorize], but GetCurrentUserAsync
@@ -27,6 +44,20 @@
         catch (UnauthorizedAccessException)
         {
             homeWallId = null;
+        }
+
+        // On a kiosk, anything other than the tablet's own wall is unreachable by construction. Only
+        // the mismatch is explained: a home wall that IS this tablet's wall resolves normally below,
+        // and an ordinary session never enters here at all.
+        if (KioskContext.IsKiosk && homeWallId != KioskContext.KioskWallId)
+        {
+            _kioskPinnedElsewhere = true;
+            if (KioskContext.KioskWallId is { } kioskWallId)
+            {
+                _kioskWallHref = $"/walls/{kioskWallId}";
+            }
+
+            return;
         }
 
         if (homeWallId is null)

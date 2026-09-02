@@ -19,19 +19,29 @@ public partial class WallPanelService : IWallPanelService
     private readonly IHoldDetectionService holdDetectionService;
     private readonly IHoldOverlapMatcher overlapMatcher;
     private readonly ILogger<WallPanelService> logger;
+    private readonly IKioskContext? kioskContext;
 
+    /// <summary>Creates the service.</summary>
+    /// <remarks>
+    /// <c>kioskContext</c> is optional, as on <c>WallService</c>: hosts with no HTTP layer never
+    /// register one, which means "never a kiosk". It only ever LOOSENS the read-only queries in
+    /// <c>WallPanelService.Reads</c> for an anonymous kiosk on its own wall, so its absence fails
+    /// closed and no write path consults it at all.
+    /// </remarks>
     public WallPanelService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         ICurrentUserService currentUserService,
         IHoldDetectionService holdDetectionService,
         IHoldOverlapMatcher overlapMatcher,
-        ILogger<WallPanelService> logger)
+        ILogger<WallPanelService> logger,
+        IKioskContext? kioskContext = null)
     {
         this.dbContextFactory = dbContextFactory;
         this.currentUserService = currentUserService;
         this.holdDetectionService = holdDetectionService;
         this.overlapMatcher = overlapMatcher;
         this.logger = logger;
+        this.kioskContext = kioskContext;
     }
 
     /// <inheritdoc/>

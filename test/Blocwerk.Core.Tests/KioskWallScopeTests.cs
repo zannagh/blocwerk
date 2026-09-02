@@ -4,6 +4,7 @@ using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace Blocwerk.Core.Tests;
@@ -157,6 +158,66 @@ public class KioskWallScopeTests
 
         var (key, _) = await guarded.CreateWallKeyAsync(h.WallId, h.Owner.Id, "Sensor", null);
         Assert.Equal(ApiKeyScope.Wall, key.Scope);
+    }
+
+    /// <summary>
+    /// An activity list is the user's OWN record and is never filtered by wall, but the wall behind a
+    /// row can be invisible here — that is exactly what the kiosk gate on the Wall filter does. The
+    /// row therefore survives with a null <c>Wall</c> navigation, and rendering that as nothing made
+    /// a session at another gym read as a training-only one. It is labelled instead, without naming
+    /// the wall the tablet may not see.
+    /// </summary>
+    [Fact]
+    public async Task ActivityList_LabelsAWallThisSessionCannotSee_WithoutNamingIt()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync();
+        var otherWallId = await SeedSecondWallAsync(h, h.Owner.Id);
+
+        await SeedActivityAsync(h, h.WallId);
+        await SeedActivityAsync(h, otherWallId);
+        await SeedActivityAsync(h, wallId: null);
+
+        var kiosk = new ProgressionService(
+            new KioskScopedDbContextFactory(new StubRootFactory(h.DbContextFactory), StubKiosk(isKiosk: true, h.WallId)),
+            h.CurrentUser,
+            h.WallService,
+            NullLogger<ProgressionService>.Instance);
+
+        var labels = (await kiosk.GetActivitiesAsync()).Select(a => a.WallName).ToList();
+
+        // Every row is still there, and none of them is blank-but-not-null.
+        Assert.Equal(3, labels.Count);
+        Assert.Contains("Test Wall", labels);
+        Assert.Contains("another wall", labels);
+        Assert.Contains(null, labels);
+
+        // The other wall's name is never handed to the tablet.
+        Assert.DoesNotContain("Second Wall", labels);
+
+        // An ordinary session is untouched: it sees both walls, so both are named.
+        var ordinary = new ProgressionService(
+            h.DbContextFactory, h.CurrentUser, h.WallService, NullLogger<ProgressionService>.Instance);
+
+        var ordinaryLabels = (await ordinary.GetActivitiesAsync()).Select(a => a.WallName).ToList();
+        Assert.Contains("Test Wall", ordinaryLabels);
+        Assert.Contains("Second Wall", ordinaryLabels);
+        Assert.Contains(null, ordinaryLabels);
+        Assert.DoesNotContain("another wall", ordinaryLabels);
+    }
+
+    private static async Task SeedActivityAsync(WallTestHarness h, Guid? wallId)
+    {
+        await using var db = h.CreateContext();
+        var started = DateTimeOffset.UtcNow.AddDays(-1);
+        db.Activities.Add(new Activity
+        {
+            UserId = h.Owner.Id,
+            WallId = wallId,
+            StartedAt = started,
+            LastEventAt = started.AddHours(1),
+        });
+        await db.SaveChangesAsync();
     }
 
     private static IKioskContext StubKiosk(bool isKiosk, Guid? wallId)

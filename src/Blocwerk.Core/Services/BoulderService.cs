@@ -152,17 +152,27 @@ public class BoulderService : IBoulderService
     private readonly ICurrentUserService _currentUserService;
     private readonly IActivityLogService _activityLogService;
     private readonly ILogger<BoulderService> _logger;
+    private readonly IKioskContext? _kioskContext;
 
+    /// <summary>Creates the service.</summary>
+    /// <remarks>
+    /// <c>kioskContext</c> is optional, like <c>WallService</c>'s: hosts without an HTTP layer
+    /// (tests, tooling) never register one, which simply means "never a kiosk". It is used here only
+    /// to LOOSEN a read for an anonymous kiosk browsing its own wall — never to grant a write — and
+    /// its absence therefore fails closed.
+    /// </remarks>
     public BoulderService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         ICurrentUserService currentUserService,
         IActivityLogService activityLogService,
-        ILogger<BoulderService> logger)
+        ILogger<BoulderService> logger,
+        IKioskContext? kioskContext = null)
     {
         _dbContextFactory = dbContextFactory;
         _currentUserService = currentUserService;
         _activityLogService = activityLogService;
         _logger = logger;
+        _kioskContext = kioskContext;
     }
 
     public async Task<Boulder> CreateBoulderAsync(
@@ -337,14 +347,37 @@ public class BoulderService : IBoulderService
         }
     }
 
+    /// <summary>
+    /// The id to filter a boulder READ by: the signed-in user, or <see cref="Guid.Empty"/> when the
+    /// caller is a registered kiosk with nobody picked. The wall is not named here because it does
+    /// not have to be — the stamped kiosk wall on the context pins the read either way.
+    /// </summary>
+    private async Task<Guid> ResolveViewerIdAsync()
+    {
+        try
+        {
+            var user = await _currentUserService.GetCurrentUserAsync();
+            return user.Id;
+        }
+        catch (UnauthorizedAccessException) when (KioskViewing.ViewableWallId(_kioskContext) is not null)
+        {
+            return Guid.Empty;
+        }
+    }
+
     public async Task<Boulder?> GetBoulderAsync(Guid boulderId)
     {
         using var op = BlocwerkMetrics.TimeOperation("Boulder.Get");
         try
         {
-            var user = await _currentUserService.GetCurrentUserAsync();
+            // Browsing boulders is the whole job of a wall-mounted tablet, and it does that with
+            // nobody picked for most of the day. An anonymous kiosk therefore reads like a
+            // share-token viewer — Guid.Empty opens the membership half of the wall filter — while
+            // the reach-through to db.Walls below keeps it inside the kiosk's OWN wall, because
+            // every context is stamped with that wall id. Any other anonymous caller still throws.
+            var viewerId = await ResolveViewerIdAsync();
             await using var db = await _dbContextFactory.CreateDbContextAsync();
-            db.CurrentUserId = user.Id;
+            db.CurrentUserId = viewerId;
 
             return await db.Boulders
 
