@@ -1,0 +1,152 @@
+@inject IKioskContext KioskContext
+@inject IKioskService KioskService
+@inject ILogger<KioskAttemptPicker> Logger
+
+@*
+    The ascent buttons for an ANONYMOUS viewer on a registered tablet.
+
+    This deliberately duplicates BoulderAttemptBar's markup instead of reusing it. That component
+    carries no @onclick by design — its buttons are dispatched by wwwroot/js/offline-actions.js so
+    they keep working with the circuit down — and there is no acting user here for the offline queue
+    to attribute anything to. So these buttons are ordinary interactive ones: they only open the
+    picker, and the actual logging happens server-side after the PIN sign-in
+    (KioskController.ActAs), attributed to whoever was picked.
+*@
+
+<div class="attempt-section">
+    <div class="attempt-buttons">
+        <button type="button" class="attempt-btn try" @onclick="() => Open(AttemptType.Attempt)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
+                <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
+                <path d="M8 12h8" />
+            </svg>
+            <span>Attempt</span>
+        </button>
+        <button type="button" class="attempt-btn send" @onclick="() => Open(AttemptType.Send)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                <polyline points="22 4 12 14.01 9 11.01" />
+            </svg>
+            <span>Send</span>
+        </button>
+        <button type="button" class="attempt-btn flash" @onclick="() => Open(AttemptType.Flash)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+            </svg>
+            <span>Flash</span>
+        </button>
+    </div>
+</div>
+
+@if (_pending is { } pendingType)
+{
+    <div class="bw-modal-backdrop" @onclick="Close">
+        <div class="bw-modal" @onclick:stopPropagation="true">
+            <h3>@Title(pendingType)</h3>
+
+            @if (_loading)
+            {
+                <p class="hint">Loading&hellip;</p>
+            }
+            else if (_users.Count == 0)
+            {
+                <p class="hint">
+                    Nobody on this wall has turned on kiosk sign-in yet.
+                    <a href="/kiosk/users">Pick yourself</a> to see how.
+                </p>
+            }
+            else
+            {
+                @* Plain links, not a form post: no antiforgery token is needed, and the identity
+                   switch still happens as a real navigation the way the kiosk picker requires. The
+                   boulder and the type ride along as query parameters and are re-checked against
+                   the device cookie's wall server-side before anything is logged. *@
+                <div class="kiosk-pick-list">
+                    @foreach (var user in _users)
+                    {
+                        <a href="@PickUrl(user, pendingType)" class="kiosk-row">
+                            <UserAvatar UserId="user.UserId" Name="@user.Name"
+                                        HasAvatar="user.HasAvatar" CssClass="kiosk-avatar" />
+                            <span class="kiosk-row-name">@user.Name</span>
+                            @if (user.RequiresPin)
+                            {
+                                <span class="kiosk-row-hint">PIN</span>
+                            }
+                        </a>
+                    }
+                </div>
+            }
+
+            <div class="kiosk-modal-actions">
+                <button type="button" class="kiosk-consent-btn" @onclick="Close">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid BoulderId { get; set; }
+
+    private IReadOnlyList<KioskUserInfo> _users = [];
+    private AttemptType? _pending;
+    private bool _loading;
+    private bool _loaded;
+
+    private static string Title(AttemptType type) => type switch
+    {
+        AttemptType.Send => "Who sent it?",
+        AttemptType.Flash => "Who flashed it?",
+        _ => "Who tried it?",
+    };
+
+    private string PickUrl(KioskUserInfo user, AttemptType type)
+    {
+        // pendingUserId binds the ascent to the person who was picked HERE. Without it the pending
+        // action would simply ride the URL and be applied to whoever eventually completed a sign-in
+        // — so a mistyped PIN followed by somebody else picking themselves would credit them.
+        // KioskController.ActAs drops the attempt when this does not match who actually signed in.
+        return $"/kiosk/users/{user.UserId}"
+             + $"?pendingBoulderId={BoulderId}&pendingType={type}&pendingUserId={user.UserId}";
+    }
+
+    private async Task Open(AttemptType type)
+    {
+        _pending = type;
+
+        // Lazily: most tablet visitors browse without ever tapping one of these, and the consenting
+        // list is a database read per boulder page otherwise.
+        if (_loaded)
+        {
+            return;
+        }
+
+        if (KioskContext.KioskWallId is not { } wallId || wallId == Guid.Empty)
+        {
+            _loaded = true;
+            return;
+        }
+
+        _loading = true;
+        try
+        {
+            // GetConsentingUsersAsync does NO authorisation of its own; the wall id must come from
+            // the validated kiosk context and nowhere else.
+            _users = await KioskService.GetConsentingUsersAsync(wallId);
+            _loaded = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Could not load the kiosk picker for wall {WallId}", wallId);
+            _users = [];
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void Close()
+    {
+        _pending = null;
+    }
+}

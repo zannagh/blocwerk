@@ -8,6 +8,7 @@
 @inject NavigationManager Navigation
 @inject CircuitEditActivity EditActivity
 @implements IDisposable
+@using Blocwerk.Core.Helpers
 @using Blocwerk.Web.Components.Shared
 @using Blocwerk.Web.State
 
@@ -26,9 +27,14 @@
     else
     {
         <div class="form-section">
-            <div class="form-group">
-                <label>Name</label>
-                <input @bind="_name" class="form-input" placeholder="e.g. Crimpy Traverse" />
+            @* The name is pre-filled with a generated, wall-unique name so a kiosk tablet with no
+               keyboard can publish straight away. The shuffle button re-rolls it. *@
+            <div class="input-row" style="align-items: flex-end;">
+                <div class="form-group">
+                    <label>Name</label>
+                    <input @bind="_name" class="form-input" placeholder="e.g. Crimpy Traverse" />
+                </div>
+                <button type="button" class="btn-icon" @onclick="ShuffleName" title="Suggest another name">&#x21bb;</button>
             </div>
 
             <div class="form-group">
@@ -148,6 +154,9 @@
     // key on this id, so a create is an idempotent upsert no matter which path (or a replay) runs.
     private readonly Guid _clientId = Guid.NewGuid();
     private string _name = string.Empty;
+
+    // The names already taken on this wall, kept so the shuffle button can keep suggesting unique ones.
+    private List<string> _existingNames = [];
     private string? _grade;
     private bool _allKickboardOn = true;
     // The new experience always runs "hands follow feet": hand holds implicitly serve as feet and a
@@ -205,6 +214,11 @@
             // is now marked per hold from the picker.
             _holds = _wall.Holds.ToList();
             _members = await WallService.GetMembersAsync(WallId);
+
+            // The wall's boulders already came back with the wall, so the suggested name costs no
+            // extra round-trip. Pre-filling it means a kiosk tablet without a keyboard can publish.
+            _existingNames = _wall.Boulders.Select(b => b.Name).ToList();
+            _name = BoulderNameGenerator.Generate(_existingNames);
 
             // Pre-select the current user as the default setter, but only when they're actually a
             // member offered in the list (so the checkbox reflects the selection). Adding others stays
@@ -288,6 +302,12 @@
     {
         _currentPanel = panel;
         RefreshPickerHolds();
+    }
+
+    // Re-rolls the suggested name, treating the current one as taken so shuffling always visibly changes.
+    private void ShuffleName()
+    {
+        _name = BoulderNameGenerator.Generate(_existingNames.Append(_name));
     }
 
     private void ToggleSetter(Guid userId, bool selected)

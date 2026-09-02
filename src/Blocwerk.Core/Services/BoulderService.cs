@@ -233,7 +233,7 @@ public class BoulderService : IBoulderService
             {
                 Id = id ?? Guid.NewGuid(),
                 WallId = wallId,
-                Name = name,
+                Name = name.Trim(),
                 Grade = grade,
                 CreatedByUserId = user.Id,
                 Generation = wall.CurrentGeneration,

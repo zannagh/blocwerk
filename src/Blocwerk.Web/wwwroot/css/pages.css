@@ -1201,6 +1201,10 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
 }
 .wall-pick-item:hover { border-color: var(--accent); background: var(--accent-soft); }
 
+/* Consenting-member list inside the kiosk "who did this?" dialog. Rows reuse .kiosk-row from the
+   kiosk picker further down, so only the scroll container is new here. */
+.kiosk-pick-list { display: flex; flex-direction: column; gap: 8px; max-height: 50vh; overflow-y: auto; }
+
 /* GitHub-style contribution graph: fixed-metric cells that can be wider than the viewport, with the
    grid area scrolling horizontally (swipe / trackpad / overflow) so the page body never scrolls sideways.
    A vertical year selector sits to its left; it is omitted entirely when only one year has data. */
@@ -2604,6 +2608,15 @@ html.bw-fullscreen .wall-main .photo-viewport {
     .kiosk-numpad { gap: 10px; }
     .kiosk-numpad-key { min-height: 60px; font-size: 1.5rem; }
 }
+
+/* Says what the tablet is about to log. Informational, not an alert: it must be obvious without
+   competing with the pick itself. */
+.kiosk-pending-note {
+    max-width: 560px; margin: 0 auto 14px; padding: 10px 14px; text-align: center;
+    background: var(--surface-2, var(--surface)); color: var(--text-secondary);
+    border: 1px solid var(--border); border-radius: var(--r-md); font-size: 0.95rem;
+}
+.kiosk-pending-note strong { color: var(--text-primary); }
 
 .kiosk-note { margin-top: 20px; text-align: center; color: var(--text-secondary); font-size: 0.85rem; }
 .kiosk-empty { text-align: center; color: var(--text-secondary); font-size: 0.95rem; padding: 24px 8px; }

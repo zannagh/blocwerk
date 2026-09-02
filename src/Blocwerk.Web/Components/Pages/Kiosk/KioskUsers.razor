@@ -3,6 +3,8 @@
 @inject IKioskContext KioskContext
 @inject IKioskService KioskService
 @inject ICurrentUserService CurrentUserService
+@inject IBoulderService BoulderService
+@inject ILogger<KioskUsers> Logger
 
 @* Static SSR by design, exactly like OAuthSelect: no @rendermode, no @onclick anywhere. Picking a
    user changes the auth COOKIE, and CookieAuthenticationStateProvider never raises a change
@@ -64,10 +66,22 @@
                             HasAvatar="_pinTarget.HasAvatar" CssClass="kiosk-avatar" />
                 <span class="kiosk-current-name">@_pinTarget.Name</span>
             </div>
+            <KioskPendingBanner Type="_pendingType" BoulderName="@_pendingBoulderName" />
             <form method="post" action="/kiosk/act-as" data-enhance-nav="false" class="kiosk-pin-form"
                   id="bw-kiosk-pin-form" data-pin-length="@_pinTarget.PinLength">
                 <AntiforgeryToken />
                 <input type="hidden" name="userId" value="@_pinTarget.UserId" />
+                @* A pending ascent tapped on a boulder page, carried through the sign-in so it can be
+                   logged. It is BOUND to the member who was picked when it was tapped: ActAs drops
+                   it unless pendingUserId matches whoever actually signs in, so a mistyped PIN
+                   followed by somebody else picking themselves cannot credit them. The boulder is
+                   re-checked against the device cookie's wall before anything is written. *@
+                @if (HasPendingAction)
+                {
+                    <input type="hidden" name="pendingBoulderId" value="@PendingBoulderId" />
+                    <input type="hidden" name="pendingType" value="@PendingType" />
+                    <input type="hidden" name="pendingUserId" value="@PendingUserId" />
+                }
 
                 @* The real field. Off-screen rather than display:none so it still counts as a form
                    control; readonly and inputmode="none" together keep every mobile browser from
@@ -112,7 +126,36 @@
             </form>
             @* Deliberately small: a mistap must not strand somebody on this screen until the idle
                timer fires, but it is not a second primary action competing with the pad. *@
-            <a href="/kiosk/users" class="kiosk-pin-back">Not you? Pick someone else</a>
+            <a href="@ListUrl" class="kiosk-pin-back">Not you? Pick someone else</a>
+        }
+        else if (_confirmTarget is not null)
+        {
+            @* Deep-linked at a member who has no PIN. Falling through to the full list here would
+               make them tap their own name a second time, on a list they were already routed past.
+               One confirmation instead: who it is, what is about to be logged, one button. The form
+               is the same real POST the no-PIN rows below use — same action, same antiforgery
+               token, same hidden fields — so nothing about the identity switch changes. *@
+            <div class="kiosk-picker-head">
+                <h1>Ready?</h1>
+            </div>
+            <div class="kiosk-current kiosk-current-compact">
+                <UserAvatar UserId="_confirmTarget.UserId" Name="@_confirmTarget.Name"
+                            HasAvatar="_confirmTarget.HasAvatar" CssClass="kiosk-avatar" />
+                <span class="kiosk-current-name">@_confirmTarget.Name</span>
+            </div>
+            <KioskPendingBanner Type="_pendingType" BoulderName="@_pendingBoulderName" />
+            <form method="post" action="/kiosk/act-as" data-enhance-nav="false">
+                <AntiforgeryToken />
+                <input type="hidden" name="userId" value="@_confirmTarget.UserId" />
+                @if (HasPendingAction)
+                {
+                    <input type="hidden" name="pendingBoulderId" value="@PendingBoulderId" />
+                    <input type="hidden" name="pendingType" value="@PendingType" />
+                    <input type="hidden" name="pendingUserId" value="@PendingUserId" />
+                }
+                <button type="submit" class="kiosk-row kiosk-row-primary">Start climbing</button>
+            </form>
+            <a href="@ListUrl" class="kiosk-pin-back">Not you? Pick someone else</a>
         }
         else
         {
@@ -120,6 +163,8 @@
                 <h1>Who's climbing?</h1>
                 <p>Pick yourself to log attempts on this wall. Browsing works without picking anyone.</p>
             </div>
+
+            <KioskPendingBanner Type="_pendingType" BoulderName="@_pendingBoulderName" />
 
             @if (_users.Count == 0)
             {
@@ -138,7 +183,7 @@
                             {
                                 @* PIN users go to the second step; the id in that URL is only ever
                                    re-checked against this same consenting list. *@
-                                <a href="@($"/kiosk/users/{user.UserId}")" class="kiosk-row">
+                                <a href="@PinStepUrl(user.UserId)" class="kiosk-row">
                                     <UserAvatar UserId="user.UserId" Name="@user.Name"
                                                 HasAvatar="user.HasAvatar" CssClass="kiosk-avatar" />
                                     <span class="kiosk-row-name">@user.Name</span>
@@ -152,6 +197,12 @@
                                 <form method="post" action="/kiosk/act-as" data-enhance-nav="false">
                                     <AntiforgeryToken />
                                     <input type="hidden" name="userId" value="@user.UserId" />
+                                    @if (HasPendingAction)
+                                    {
+                                        <input type="hidden" name="pendingBoulderId" value="@PendingBoulderId" />
+                                        <input type="hidden" name="pendingType" value="@PendingType" />
+                                        <input type="hidden" name="pendingUserId" value="@PendingUserId" />
+                                    }
                                     <button type="submit" class="kiosk-row">
                                         <UserAvatar UserId="user.UserId" Name="@user.Name"
                                                     HasAvatar="user.HasAvatar" CssClass="kiosk-avatar" />
@@ -177,6 +228,50 @@
     public Guid? UserId { get; set; }
 
     /// <summary>
+    /// A boulder whose ascent was tapped anonymously on the tablet before anybody was picked. It is
+    /// only ever passed through to <c>/kiosk/act-as</c>, which re-checks it against the wall in the
+    /// device cookie — nothing here treats it as authority for anything.
+    /// </summary>
+    [SupplyParameterFromQuery(Name = "pendingBoulderId")]
+    public Guid? PendingBoulderId { get; set; }
+
+    /// <summary>The ascent type that goes with <see cref="PendingBoulderId"/>; parsed server-side.</summary>
+    [SupplyParameterFromQuery(Name = "pendingType")]
+    public string? PendingType { get; set; }
+
+    /// <summary>
+    /// The member the ascent was picked FOR. <c>/kiosk/act-as</c> drops the pending action unless
+    /// this matches whoever actually signs in, so a pending ascent can never be re-attributed by
+    /// somebody else reaching this screen. Passed straight through; never trusted here.
+    /// </summary>
+    [SupplyParameterFromQuery(Name = "pendingUserId")]
+    public Guid? PendingUserId { get; set; }
+
+    private bool HasPendingAction => PendingBoulderId is not null && !string.IsNullOrWhiteSpace(PendingType);
+
+    /// <summary>The pending query tail, shared by every link that has to keep the ascent alive.</summary>
+    private string PendingQuery
+    {
+        get
+        {
+            if (!HasPendingAction)
+            {
+                return string.Empty;
+            }
+
+            var query = $"pendingBoulderId={PendingBoulderId}&pendingType={Uri.EscapeDataString(PendingType!)}";
+            return PendingUserId is { } pendingUserId ? $"{query}&pendingUserId={pendingUserId}" : query;
+        }
+    }
+
+    /// <summary>The plain user list, keeping any pending ascent alive across the "pick someone else" link.</summary>
+    private string ListUrl => HasPendingAction ? $"/kiosk/users?{PendingQuery}" : "/kiosk/users";
+
+    private string PinStepUrl(Guid userId) => HasPendingAction
+        ? $"/kiosk/users/{userId}?{PendingQuery}"
+        : $"/kiosk/users/{userId}";
+
+    /// <summary>
     /// How many masked slots the PIN read-out starts with: one per expected digit when the length is
     /// known, otherwise none — the script appends them as digits are tapped.
     /// </summary>
@@ -184,13 +279,19 @@
 
     private IReadOnlyList<KioskUserInfo> _users = [];
     private KioskUserInfo? _pinTarget;
+    private KioskUserInfo? _confirmTarget;
     private User? _current;
+    private AttemptType? _pendingType;
+    private string? _pendingBoulderName;
 
     protected override async Task OnParametersSetAsync()
     {
         _users = [];
         _pinTarget = null;
+        _confirmTarget = null;
         _current = null;
+        _pendingType = null;
+        _pendingBoulderName = null;
 
         if (!KioskContext.IsKiosk || KioskContext.KioskWallId is not { } wallId)
         {
@@ -215,9 +316,51 @@
 
         if (UserId is { } targetId)
         {
-            // Re-resolve the routed id against the consenting list, so the PIN step can only ever be
-            // shown for someone who is actually pickable on this wall.
-            _pinTarget = _users.FirstOrDefault(u => u.UserId == targetId && u.RequiresPin);
+            // Re-resolve the routed id against the consenting list, so neither second step can ever
+            // be shown for someone who is not actually pickable on this wall.
+            var target = _users.FirstOrDefault(u => u.UserId == targetId);
+            _pinTarget = target is { RequiresPin: true } ? target : null;
+            _confirmTarget = target is { RequiresPin: false } ? target : null;
+        }
+
+        await ResolvePendingAsync(wallId);
+    }
+
+    /// <summary>
+    /// Works out what the banner should say. Best-effort throughout: an unresolvable boulder or an
+    /// unparsable type costs the name or the whole banner, never the picker.
+    /// </summary>
+    private async Task ResolvePendingAsync(Guid wallId)
+    {
+        if (!HasPendingAction
+            || !Enum.TryParse<AttemptType>(PendingType, ignoreCase: true, out var type)
+            || !Enum.IsDefined(type))
+        {
+            return;
+        }
+
+        _pendingType = type;
+
+        if (PendingBoulderId is not { } boulderId)
+        {
+            return;
+        }
+
+        try
+        {
+            // GetBoulderAsync reads as the anonymous kiosk, which is already confined to this
+            // tablet's own wall; the explicit comparison is the second lock, so a guessed id from
+            // another wall cannot turn this banner into a name oracle.
+            var boulder = await BoulderService.GetBoulderAsync(boulderId);
+            if (boulder is not null && boulder.WallId == wallId)
+            {
+                _pendingBoulderName = boulder.Name;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(
+                ex, "Could not resolve the pending kiosk boulder {BoulderId} for the banner", boulderId);
         }
     }
 }

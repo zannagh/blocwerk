@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Blocwerk.Authentication.Kiosk;
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
 using Blocwerk.Web.State;
 using Microsoft.AspNetCore.Authentication;
@@ -30,6 +31,7 @@ public sealed class KioskController : Controller
     private readonly IApiKeyService apiKeyService;
     private readonly IKioskService kioskService;
     private readonly ICurrentUserService currentUserService;
+    private readonly KioskPendingAttemptLogger pendingAttempts;
     private readonly IKioskContext kioskContext;
     private readonly KioskDeviceCookie deviceCookie;
     private readonly KioskKeyValidator keyValidator;
@@ -41,6 +43,7 @@ public sealed class KioskController : Controller
         IApiKeyService apiKeyService,
         IKioskService kioskService,
         ICurrentUserService currentUserService,
+        KioskPendingAttemptLogger pendingAttempts,
         IKioskContext kioskContext,
         KioskDeviceCookie deviceCookie,
         KioskKeyValidator keyValidator,
@@ -52,6 +55,7 @@ public sealed class KioskController : Controller
         this.apiKeyService = apiKeyService;
         this.kioskService = kioskService;
         this.currentUserService = currentUserService;
+        this.pendingAttempts = pendingAttempts;
         this.kioskContext = kioskContext;
         this.deviceCookie = deviceCookie;
         this.keyValidator = keyValidator;
@@ -93,7 +97,7 @@ public sealed class KioskController : Controller
         // The cookie has to carry the key's ID so later requests can re-check it without the token,
         // which is never stored. Re-read the same token and insist the two agree.
         var apiKey = await apiKeyService.ValidateAsync(key.Trim());
-        if (apiKey is null || apiKey.Scope != Core.Enums.ApiKeyScope.Kiosk || apiKey.WallId != wallId)
+        if (apiKey is null || apiKey.Scope != ApiKeyScope.Kiosk || apiKey.WallId != wallId)
         {
             return RegistrationFailure(throttleScopes);
         }
@@ -173,13 +177,27 @@ public sealed class KioskController : Controller
     }
 
     /// <summary>
-    /// Starts a session acting as a consenting member of the kiosk's wall.
+    /// Starts a session acting as a consenting member of the kiosk's wall, optionally logging an
+    /// ascent that was tapped on a boulder page before anybody was picked.
     /// </summary>
+    /// <remarks>
+    /// The three <c>pending*</c> fields arrive from a link the anonymous tablet rendered, so they
+    /// are pure user input: the boulder is re-checked against the wall in the DEVICE COOKIE before
+    /// anything is logged, <paramref name="pendingUserId"/> must match the member who actually
+    /// signed in, and any mismatch drops the pending action rather than failing the sign-in.
+    /// </remarks>
     [HttpPost("/kiosk/act-as")]
     [AllowAnonymous]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> ActAs([FromForm] Guid userId, [FromForm] string? pin)
+    public async Task<IActionResult> ActAs(
+        [FromForm] Guid userId,
+        [FromForm] string? pin,
+        [FromForm] Guid? pendingBoulderId = null,
+        [FromForm] string? pendingType = null,
+        [FromForm] Guid? pendingUserId = null)
     {
+        var pending = new KioskPendingAction(pendingBoulderId, pendingUserId, pendingType);
+
         // The wall comes from the validated device cookie and NOWHERE else. A wall id in the form
         // would let anyone reachable at this endpoint pick a user on any wall they can name.
         var registration = deviceCookie.Read(HttpContext);
@@ -203,7 +221,7 @@ public sealed class KioskController : Controller
             userId);
         if (throttle.IsLocked(throttleScopes))
         {
-            return ActAsFailure(userId, throttleScopes, countFailure: false);
+            return ActAsFailure(userId, throttleScopes, pending, countFailure: false);
         }
 
         // VerifyPinAsync does no authorisation of its own — it trusts its caller to have proven kiosk
@@ -212,13 +230,13 @@ public sealed class KioskController : Controller
         // wall cannot be picked here.
         if (!await kioskService.VerifyPinAsync(registration.WallId, userId, pin))
         {
-            return ActAsFailure(userId, throttleScopes);
+            return ActAsFailure(userId, throttleScopes, pending);
         }
 
         var user = await currentUserService.GetUserByIdAsync(userId);
         if (user is null)
         {
-            return ActAsFailure(userId, throttleScopes);
+            return ActAsFailure(userId, throttleScopes, pending);
         }
 
         throttle.Reset(throttleScopes);
@@ -261,7 +279,14 @@ public sealed class KioskController : Controller
             registration.WallId,
             registration.ApiKeyId);
 
-        return LocalRedirect($"/walls/{registration.WallId}");
+        var pendingRedirect = await pendingAttempts.TryLogAsync(
+            HttpContext,
+            principal,
+            registration.WallId,
+            user.Id,
+            pending);
+
+        return LocalRedirect(pendingRedirect ?? $"/walls/{registration.WallId}");
     }
 
     /// <summary>
@@ -314,6 +339,7 @@ public sealed class KioskController : Controller
     private IActionResult ActAsFailure(
         Guid userId,
         IReadOnlyList<KioskThrottleScope> throttleScopes,
+        KioskPendingAction pending,
         bool countFailure = true)
     {
         if (countFailure)
@@ -328,6 +354,8 @@ public sealed class KioskController : Controller
         // list did not already show.
         // Still ONE generic outcome for "no such member", "never consented", "wrong PIN" and
         // "throttled", matching the timing equalisation KioskService.VerifyPinAsync already does.
-        return LocalRedirect($"/kiosk/users/{userId}?kiosk_pin_error=1");
+        // A mistyped PIN must not silently throw away the ascent the climber tapped, so the pending
+        // action is echoed back into the retry URL. It is re-validated from scratch on the next post.
+        return LocalRedirect($"/kiosk/users/{userId}?kiosk_pin_error=1{pending.QueryTail()}");
     }
 }

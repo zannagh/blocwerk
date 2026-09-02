@@ -198,6 +198,11 @@ public static class Program
         // acting user from the ambient session rather than being handed a user id.
         builder.Services.AddScoped<KioskPairingApprover>();
 
+        // Logs the ascent tapped on a kiosk boulder page before anybody was picked. Scoped: it
+        // mutates the CURRENT request's principal so the attempt resolves as the member who just
+        // signed in.
+        builder.Services.AddScoped<KioskPendingAttemptLogger>();
+
         // App-wide, in-memory "busy" signal: the singleton registry tracks unsaved in-flight edits
         // across every circuit; the scoped wrapper is injected into the editing components and
         // releases its leases on circuit teardown (backstop against an abrupt disconnect).

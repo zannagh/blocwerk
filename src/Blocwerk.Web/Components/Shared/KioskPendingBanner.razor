@@ -1,0 +1,42 @@
+@*
+    Says out loud what the tablet is about to log once somebody is picked.
+
+    Without it the pending ascent is completely invisible: a climber who tapped Send, mistyped a PIN
+    and walked off leaves the action alive in the URL, and the next person to reach this screen has
+    no way of knowing anything is queued at all. KioskController drops an ascent whose picked member
+    is not the one who signs in, so the banner is not a safety control — it is the honesty half of
+    that fix, and it also tells the RIGHT climber that a second tap is not needed.
+*@
+
+@if (Type is { } type)
+{
+    <div class="kiosk-pending-note" role="status">
+        @if (string.IsNullOrWhiteSpace(BoulderName))
+        {
+            @* The boulder could not be resolved on this wall — say the type alone rather than
+               inventing a name or dropping the banner entirely. *@
+            <span>Logging @Label(type) once you're picked</span>
+        }
+        else
+        {
+            <span>Logging @Label(type) on <strong>@BoulderName</strong></span>
+        }
+    </div>
+}
+
+@code {
+    /// <summary>The ascent about to be logged, or null when nothing is pending.</summary>
+    [Parameter]
+    public AttemptType? Type { get; set; }
+
+    /// <summary>The boulder's name, when it could be resolved on the kiosk's own wall.</summary>
+    [Parameter]
+    public string? BoulderName { get; set; }
+
+    private static string Label(AttemptType type) => type switch
+    {
+        AttemptType.Send => "a Send",
+        AttemptType.Flash => "a Flash",
+        _ => "an Attempt",
+    };
+}

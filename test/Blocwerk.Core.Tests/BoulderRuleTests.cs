@@ -1,4 +1,5 @@
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Helpers;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
@@ -156,4 +157,35 @@ public class BoulderRuleTests
         Assert.Null(saved.FootColorOnly);
         Assert.Equal(FootholdMode.AllKickboard, saved.FootholdMode);
     }
+
+    /// <summary>
+    /// The generated-name fallback must terminate and stay unique. With a rigged draw every random
+    /// composition collides, so the numeric-suffix loop is the only way out — and that loop only
+    /// terminates because the BASE is truncated before the suffix is appended. Truncating the
+    /// joined string would clip the suffix off once the base hit the 256-character cap and propose
+    /// the same taken name forever.
+    /// </summary>
+    [Fact]
+    public void GenerateBoulderName_FallsBackToASuffixWhenEveryDrawCollides()
+    {
+        var rigged = new AlwaysFirstRandom();
+        var collidingName = BoulderNameGenerator.Generate([], rigged);
+
+        var taken = new List<string> { collidingName };
+        for (var suffix = 2; suffix < 40; suffix++)
+        {
+            taken.Add($"{collidingName} {suffix}");
+        }
+
+        var generated = BoulderNameGenerator.Generate(taken, rigged);
+
+        Assert.Equal($"{collidingName} 40", generated);
+        Assert.True(generated.Length <= 256);
+    }
+}
+
+/// <summary>A draw that always picks the first word, so every composition is the same name.</summary>
+internal sealed class AlwaysFirstRandom : Random
+{
+    public override int Next(int maxValue) => 0;
 }

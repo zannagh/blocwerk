@@ -1,15 +1,21 @@
 using System.Security.Claims;
 using Blocwerk.Authentication.Kiosk;
+using Blocwerk.Authentication.Providers;
+using Blocwerk.Authentication.Services;
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Services;
 using Blocwerk.Web.Controllers;
 using Blocwerk.Web.State;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -188,6 +194,121 @@ public class KioskEndpointTests
     }
 
     [Fact]
+    public async Task ActAs_LogsAPendingAscentForThePickedMemberAndLandsOnTheBoulder()
+    {
+        using var fixture = await KioskFixture.CreateAsync();
+        var (_, token) = await fixture.CreateKioskKeyAsync();
+        await fixture.RegisterAsync(token);
+        var member = await fixture.AddConsentingMemberAsync("pending@test", pin: null);
+        var boulder = await fixture.CreateBoulderAsync("Pending Problem");
+
+        var result = await fixture.Controller.ActAs(member.Id, null, boulder.Id, "Send", member.Id);
+
+        Assert.Equal(
+            $"/walls/{fixture.Harness.WallId}/boulders/{boulder.Id}",
+            Assert.IsType<LocalRedirectResult>(result).Url);
+
+        // The whole point of the feature: the ascent belongs to the person who was picked, not to
+        // whoever the tablet happened to resolve to. Resolved through the real identity chain, so
+        // this fails if the attribution ever regresses to the wall owner.
+        var attempt = Assert.Single(await fixture.Harness.AttemptService.GetAttemptsForBoulderAsync(boulder.Id));
+        Assert.Equal(member.Id, attempt.UserId);
+        Assert.NotEqual(fixture.Harness.Owner.Id, attempt.UserId);
+        Assert.Equal(AttemptType.Send, attempt.Type);
+    }
+
+    [Fact]
+    public async Task ActAs_DropsAPendingAscentPickedForSomebodyElse()
+    {
+        using var fixture = await KioskFixture.CreateAsync();
+        var (_, token) = await fixture.CreateKioskKeyAsync();
+        await fixture.RegisterAsync(token);
+        var alice = await fixture.AddConsentingMemberAsync("alice@test", pin: null);
+        var bob = await fixture.AddConsentingMemberAsync("bob@test", pin: null);
+        var boulder = await fixture.CreateBoulderAsync("Contested Problem");
+
+        // Alice tapped Send and never got through; Bob picks himself while her pending action is
+        // still riding the URL. It must NOT become his send.
+        var result = await fixture.Controller.ActAs(bob.Id, null, boulder.Id, "Send", alice.Id);
+
+        Assert.Equal($"/walls/{fixture.Harness.WallId}", Assert.IsType<LocalRedirectResult>(result).Url);
+        Assert.NotNull(fixture.SignedInPrincipal);
+        Assert.Empty(await fixture.Harness.AttemptService.GetAttemptsForBoulderAsync(boulder.Id));
+    }
+
+    [Fact]
+    public async Task ActAs_DropsAPendingAscentThatNamesNobody()
+    {
+        using var fixture = await KioskFixture.CreateAsync();
+        var (_, token) = await fixture.CreateKioskKeyAsync();
+        await fixture.RegisterAsync(token);
+        var member = await fixture.AddConsentingMemberAsync("nameless@test", pin: null);
+        var boulder = await fixture.CreateBoulderAsync("Unclaimed Problem");
+
+        // No intended user: there is no honest "whoever signed in" fallback, so it is dropped.
+        var result = await fixture.Controller.ActAs(member.Id, null, boulder.Id, "Send", pendingUserId: null);
+
+        Assert.Equal($"/walls/{fixture.Harness.WallId}", Assert.IsType<LocalRedirectResult>(result).Url);
+        Assert.Empty(await fixture.Harness.AttemptService.GetAttemptsForBoulderAsync(boulder.Id));
+    }
+
+    [Fact]
+    public async Task ActAs_LogsAPendingAscentOnlyOnceWhenThePostIsReplayed()
+    {
+        using var fixture = await KioskFixture.CreateAsync();
+        var (_, token) = await fixture.CreateKioskKeyAsync();
+        await fixture.RegisterAsync(token);
+        var member = await fixture.AddConsentingMemberAsync("double@test", pin: null);
+        var boulder = await fixture.CreateBoulderAsync("Double Tapped");
+
+        await fixture.Controller.ActAs(member.Id, null, boulder.Id, "Send", member.Id);
+        await fixture.Controller.ActAs(member.Id, null, boulder.Id, "Send", member.Id);
+
+        // Same boulder, member, type and time bucket derive the same clientRequestId, so the second
+        // POST returns the stored attempt instead of logging a second one.
+        Assert.Single(await fixture.Harness.AttemptService.GetAttemptsForBoulderAsync(boulder.Id));
+    }
+
+    [Fact]
+    public async Task ActAs_DropsAPendingAscentOnABoulderOfAnotherWall()
+    {
+        using var fixture = await KioskFixture.CreateAsync();
+        var (_, token) = await fixture.CreateKioskKeyAsync();
+        await fixture.RegisterAsync(token);
+        var member = await fixture.AddConsentingMemberAsync("elsewhere@test", pin: null);
+
+        // Readable by the acting user, but not on the wall in the device cookie: the wall a tablet
+        // may log against is that one and no other.
+        var foreignBoulderId = await fixture.CreateBoulderOnOtherWallAsync();
+
+        var result = await fixture.Controller.ActAs(member.Id, null, foreignBoulderId, "Send", member.Id);
+
+        // The sign-in still succeeds; only the pending action is dropped.
+        Assert.Equal($"/walls/{fixture.Harness.WallId}", Assert.IsType<LocalRedirectResult>(result).Url);
+        Assert.NotNull(fixture.SignedInPrincipal);
+        Assert.Empty(await fixture.Harness.AttemptService.GetAttemptsForBoulderAsync(foreignBoulderId));
+    }
+
+    [Fact]
+    public async Task ActAs_DropsAPendingAscentWithAnUnknownTypeOrADraft()
+    {
+        using var fixture = await KioskFixture.CreateAsync();
+        var (_, token) = await fixture.CreateKioskKeyAsync();
+        await fixture.RegisterAsync(token);
+        var member = await fixture.AddConsentingMemberAsync("bogus@test", pin: null);
+        var boulder = await fixture.CreateBoulderAsync("Real Problem");
+        var draft = await fixture.CreateBoulderAsync("Draft Problem", isDraft: true);
+
+        var bogus = await fixture.Controller.ActAs(member.Id, null, boulder.Id, "Levitated", member.Id);
+        Assert.Equal($"/walls/{fixture.Harness.WallId}", Assert.IsType<LocalRedirectResult>(bogus).Url);
+        Assert.Empty(await fixture.Harness.AttemptService.GetAttemptsForBoulderAsync(boulder.Id));
+
+        var drafted = await fixture.Controller.ActAs(member.Id, null, draft.Id, "Send", member.Id);
+        Assert.Equal($"/walls/{fixture.Harness.WallId}", Assert.IsType<LocalRedirectResult>(drafted).Url);
+        Assert.Empty(await fixture.Harness.AttemptService.GetAttemptsForBoulderAsync(draft.Id));
+    }
+
+    [Fact]
     public async Task Release_EndsTheSessionButLeavesTheTabletRegistered()
     {
         using var fixture = await KioskFixture.CreateAsync();
@@ -332,6 +453,15 @@ public class KioskEndpointTests
 
         public bool SignedOut { get; private set; }
 
+        /// <summary>The provider the controller adopts the signed-in principal into.</summary>
+        public CookieAuthenticationStateProvider StateProvider { get; private set; } = null!;
+
+        /// <summary>
+        /// The attempt service the pending-attempt path actually writes through — the one backed by
+        /// a real CurrentUserService, so what it stores reflects real attribution.
+        /// </summary>
+        public IAttemptService ResolvedAttempts { get; private set; } = null!;
+
         public static async Task<KioskFixture> CreateAsync()
         {
             var fixture = new KioskFixture();
@@ -364,10 +494,50 @@ public class KioskEndpointTests
             var kioskContext = Substitute.For<IKioskContext>();
             kioskContext.IsKiosk.Returns(_ => fixture.HasDeviceCookie());
 
+            // The pending-attempt collaborator is wired with a REAL identity chain, not the
+            // harness's ICurrentUserService stub: a real CookieAuthenticationStateProvider and a
+            // real CurrentUserService behind a real AttemptService. That is what makes attribution
+            // observable — the attempt's UserId is whatever the "uid" claim on the principal the
+            // controller signed in resolves to, exactly as in production. With the stub in place
+            // every attempt would silently be credited to the harness's ActingUser (the wall owner)
+            // and an attribution test could not fail.
+            var accessor = Substitute.For<IHttpContextAccessor>();
+            accessor.HttpContext.Returns(_ => fixture.HttpContext);
+
+            fixture.StateProvider = new CookieAuthenticationStateProvider(accessor, fixture.dataProtection);
+            var realCurrentUser = new CurrentUserService(
+                new BlocwerkSettings(),
+                fixture.Harness.DbContextFactory,
+                Substitute.For<IPasswordLoginService>(),
+                Substitute.For<ITotpService>(),
+                fixture.StateProvider,
+                accessor,
+                kioskContext);
+
+            fixture.ResolvedAttempts = new AttemptService(
+                fixture.Harness.DbContextFactory,
+                realCurrentUser,
+                fixture.Harness.ActivityLog,
+                NullLogger<AttemptService>.Instance);
+
+            var resolvedBoulders = new BoulderService(
+                fixture.Harness.DbContextFactory,
+                realCurrentUser,
+                fixture.Harness.ActivityLog,
+                NullLogger<BoulderService>.Instance,
+                kioskContext);
+
+            var pendingAttempts = new KioskPendingAttemptLogger(
+                resolvedBoulders,
+                fixture.ResolvedAttempts,
+                fixture.StateProvider,
+                NullLogger<KioskPendingAttemptLogger>.Instance);
+
             fixture.Controller = new KioskController(
                 fixture.Harness.ApiKeyService,
                 fixture.Harness.KioskService,
                 fixture.Harness.CurrentUser,
+                pendingAttempts,
                 kioskContext,
                 fixture.deviceCookie,
                 new KioskKeyValidator(fixture.Harness.DbContextFactory),
@@ -452,6 +622,48 @@ public class KioskEndpointTests
             await ConsentAsync(user, otherWallId, pin);
             Harness.CurrentUser.GetUserByIdAsync(user.Id).Returns(user);
             return user;
+        }
+
+        /// <summary>Publishes a boulder on the tablet's own wall, on the first seeded hold.</summary>
+        public async Task<Boulder> CreateBoulderAsync(string name, bool isDraft = false)
+        {
+            Guid holdId;
+            await using (var db = Harness.CreateContext())
+            {
+                holdId = (await db.Holds.Where(h => h.WallId == Harness.WallId).FirstAsync()).Id;
+            }
+
+            return await Harness.BoulderService.CreateBoulderAsync(
+                Harness.WallId, name, null, [new BoulderHoldInput(holdId)], isDraft: isDraft);
+        }
+
+        /// <summary>
+        /// A boulder on a DIFFERENT wall that the acting user can nonetheless read, so the test
+        /// exercises the explicit wall comparison rather than the membership filter.
+        /// </summary>
+        public async Task<Guid> CreateBoulderOnOtherWallAsync()
+        {
+            await using var db = Harness.CreateContext();
+
+            var wall = new Wall
+            {
+                Name = "Neighbour Wall",
+                OwnerId = Harness.Owner.Id,
+                Photo = [1],
+                PhotoContentType = "image/jpeg",
+            };
+            db.Walls.Add(wall);
+            db.WallMembers.Add(new WallMember
+            {
+                WallId = wall.Id,
+                UserId = Harness.Owner.Id,
+                Role = WallRole.Admin,
+            });
+
+            var boulder = new Boulder { WallId = wall.Id, Name = "Next Door", CreatedByUserId = Harness.Owner.Id };
+            db.Boulders.Add(boulder);
+            await db.SaveChangesAsync();
+            return boulder.Id;
         }
 
         public async Task AssertRefusedAsync(Guid userId, string? pin)

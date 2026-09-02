@@ -330,6 +330,13 @@ else
                not meant to complete is what this whole fix is about. *@
             @if (KioskContext.IsKiosk)
             {
+                @* A draft can't be logged, so don't offer the buttons for one — same rule as the
+                   signed-in bar above. *@
+                @if (!_boulder.IsDraft)
+                {
+                    <KioskAttemptPicker BoulderId="_boulder.Id" />
+                }
+
                 <div class="bw-anon-notice">
                     <a href="/kiosk/users">Pick yourself</a> to log attempts and comment.
                 </div>

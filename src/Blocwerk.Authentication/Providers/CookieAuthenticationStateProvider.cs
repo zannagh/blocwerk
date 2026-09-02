@@ -23,6 +23,29 @@ public class CookieAuthenticationStateProvider : AuthenticationStateProvider
         _httpContextAccessor = httpContextAccessor;
     }
 
+    /// <summary>
+    /// Adopts a principal that was signed in during the CURRENT request, so the rest of that request
+    /// resolves as the new identity.
+    /// </summary>
+    /// <remarks>
+    /// <c>SignInAsync</c> only writes a Set-Cookie header; it does not retroactively change
+    /// <c>HttpContext.User</c>, and this provider resolves from the request it can see — the
+    /// unauthenticated one that arrived. So without this call the rest of the request keeps
+    /// resolving as whoever it was before the sign-in (anonymous, or the previous member), and a
+    /// pending attempt would be attributed accordingly.
+    /// <para>
+    /// This makes the new principal explicit for the remainder of the request, and marks it as
+    /// settled so no later resolve re-reads the stale request state. It is a within-request fix
+    /// only: the next request carries the cookie and resolves normally. Only ever call it with a
+    /// principal that has just been signed in on this same request.
+    /// </para>
+    /// </remarks>
+    public void AdoptSignedInPrincipal(ClaimsPrincipal principal)
+    {
+        _cachedState = new AuthenticationState(principal);
+        _isInitialized = true;
+    }
+
     public override Task<AuthenticationState> GetAuthenticationStateAsync()
     {
         if (_isInitialized && _cachedState != null)
