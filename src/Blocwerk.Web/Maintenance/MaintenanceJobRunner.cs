@@ -128,27 +128,34 @@ public sealed class MaintenanceJobRunner
         IEditLease lease)
     {
         var log = new MaintenanceJobLog(Report, Append);
+        string? result = null;
+        string? failure = null;
 
         try
         {
             using var scope = scopes.CreateScope();
-            var result = await work(scope.ServiceProvider, log, source.Token);
-            Finish(result, null);
+            result = await work(scope.ServiceProvider, log, source.Token);
         }
         catch (OperationCanceledException)
         {
-            Finish("Stopped before finishing.", null);
+            result = "Stopped before finishing.";
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Maintenance job {Job} failed", jobName);
-            Finish(null, ex.Message);
+            failure = ex.Message;
         }
         finally
         {
             lease.Dispose();
             source.Dispose();
         }
+
+        // AFTER the lease has gone back, never before: the slot going free is what every caller
+        // reads as "the job is over", and a runner that reported idle while still holding the
+        // deploy gate would leave the admin page and /health/ready-to-deploy disagreeing. TryStart
+        // acquires the lease before it returns for the mirror-image reason.
+        Finish(result, failure);
     }
 
     private void Report(string message)

@@ -31,9 +31,10 @@ public sealed class ApiKeyAuthenticationHandlerTests : IDisposable
 
     public ApiKeyAuthenticationHandlerTests()
     {
-        connection = new SqliteConnection("DataSource=:memory:");
+        var connectionString = TestDbContextFactory.IsolatedDatabase();
+        connection = new SqliteConnection(connectionString);
         connection.Open();
-        dbContextFactory = new TestDbContextFactory(connection);
+        dbContextFactory = new TestDbContextFactory(connectionString);
 
         user = new User { Identifier = "Some Climber__gh|4711", DisplayName = "Some Climber" };
         using var db = dbContextFactory.CreateDbContext();

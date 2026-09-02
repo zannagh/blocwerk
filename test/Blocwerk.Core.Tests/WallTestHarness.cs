@@ -24,14 +24,21 @@ public sealed class WallTestHarness : IDisposable
 
     public WallTestHarness()
     {
-        connection = new SqliteConnection("DataSource=:memory:");
+        // A NAMED shared-cache database rather than a plain ":memory:" one, so every context the
+        // factory hands out opens its OWN connection to it — which is what IDbContextFactory means
+        // in production. Handing several contexts the SAME SqliteConnection makes creating them
+        // concurrently a race: EF registers its user functions on the connection as each context
+        // initialises, and doing that while another thread is querying fails with SQLITE_BUSY.
+        // This connection is held open only to keep the database alive for the harness's lifetime.
+        var connectionString = TestDbContextFactory.IsolatedDatabase();
+        connection = new SqliteConnection(connectionString);
         connection.Open();
 
         betaVideoDir = Path.Combine(Path.GetTempPath(), "blocwerk-beta-tests", Guid.NewGuid().ToString("N"));
         wallImageDir = Path.Combine(Path.GetTempPath(), "blocwerk-wall-image-tests", Guid.NewGuid().ToString("N"));
 
         Owner = new User { Identifier = "owner@test", DisplayName = "Owner" };
-        DbContextFactory = new TestDbContextFactory(connection);
+        DbContextFactory = new TestDbContextFactory(connectionString);
 
         using (var db = DbContextFactory.CreateDbContext())
         {
@@ -190,22 +197,38 @@ public sealed class WallTestHarness : IDisposable
 }
 
 /// <summary>
-/// Hands out contexts bound to one shared in-memory SQLite connection, mirroring the
-/// production <see cref="IDbContextFactory{TContext}"/> usage in the services.
+/// Hands out contexts over their own connections to one shared in-memory SQLite database,
+/// mirroring the production <see cref="IDbContextFactory{TContext}"/> usage in the services.
 /// </summary>
+/// <remarks>
+/// A connection STRING rather than a connection, deliberately. Production callers are free to
+/// create contexts from more than one thread — the variant cache warmer does exactly that — and a
+/// factory that handed every context the same <see cref="SqliteConnection"/> could not honour it:
+/// two contexts initialising at once register user functions on that one connection while the
+/// other thread is mid-query, which SQLite answers with SQLITE_BUSY. Independent connections to a
+/// named shared-cache database behave the way independent Postgres connections do.
+/// </remarks>
 public sealed class TestDbContextFactory : IDbContextFactory<BlocwerkDbContext>
 {
-    private readonly SqliteConnection connection;
+    private readonly string connectionString;
 
-    public TestDbContextFactory(SqliteConnection connection)
+    public TestDbContextFactory(string connectionString)
     {
-        this.connection = connection;
+        this.connectionString = connectionString;
     }
+
+    /// <summary>
+    /// A connection string for a private in-memory database. Named uniquely so tests running in
+    /// parallel cannot see each other's rows, and shared-cache so that several connections to it
+    /// address the same database. It lives only as long as a connection to it stays open.
+    /// </summary>
+    public static string IsolatedDatabase() =>
+        $"Data Source={Guid.NewGuid():N};Mode=Memory;Cache=Shared";
 
     public BlocwerkDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<BlocwerkDbContext>()
-            .UseSqlite(connection)
+            .UseSqlite(connectionString)
             .Options;
 
         return new SqliteBlocwerkDbContext(options);
