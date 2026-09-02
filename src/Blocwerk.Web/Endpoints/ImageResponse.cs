@@ -163,15 +163,13 @@ public static class ImageResponse
         Func<Task<byte[]?>> load,
         params object?[] identity)
     {
-        object?[] versionParts = [tag.Version, tag.Length, tag.ContentType];
-
         if (width is not { } w)
         {
             return ConditionalAsync(
-                http, Etag([.. identity, .. versionParts]), tag.ContentType, tag.Length, immutable, load);
+                http, Etag([.. identity, .. VersionParts(tag)]), tag.ContentType, tag.Length, immutable, load);
         }
 
-        var key = new ImageVariantKey(Key(identity), Key(versionParts));
+        var key = VariantKey(tag, identity);
 
         return VariantAsync(
             http,
@@ -180,6 +178,29 @@ public static class ImageResponse
             immutable,
             () => variants.GetOrCreateAsync(key, w, load, http.RequestAborted));
     }
+
+    /// <summary>
+    /// The cache key a variant request for this image would resolve to. The one derivation both the
+    /// byte routes and the cache warmer use — a warmed entry addressed by anything else would never
+    /// be found by a real request.
+    /// </summary>
+    public static ImageVariantKey VariantKey(WallPhotoTag tag, params object?[] identity) =>
+        new(Key(identity), Key(VersionParts(tag)));
+
+    /// <summary>
+    /// The cache key for an uploaded gallery image, whose bytes live in the file store rather than
+    /// in a blob column and so has no <see cref="WallPhotoTag"/>. Written once and never rewritten,
+    /// so its size and capture time identify it for good.
+    /// </summary>
+    public static ImageVariantKey UploadedGalleryKey(
+        Guid imageId, long sizeBytes, DateTimeOffset capturedAt, string? contentType) =>
+        new(Key(ImageIdentity.UploadedGalleryImage(imageId)), Key(sizeBytes, capturedAt.UtcTicks, contentType));
+
+    /// <summary>
+    /// The parts of <paramref name="tag"/> that say which bytes are stored. Shared by the plain
+    /// ETag and the variant key so the two can never drift apart.
+    /// </summary>
+    private static object?[] VersionParts(WallPhotoTag tag) => [tag.Version, tag.Length, tag.ContentType];
 
     /// <summary>
     /// Rejects a width that is not on <see cref="ImageVariants.Widths"/>. An open width parameter is

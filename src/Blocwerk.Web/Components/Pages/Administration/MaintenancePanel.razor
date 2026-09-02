@@ -1,0 +1,177 @@
+@using Blocwerk.Authentication.Services
+@using Blocwerk.Web.Maintenance
+@using Microsoft.Extensions.DependencyInjection
+@implements IDisposable
+@inject MaintenanceJobRunner Runner
+
+@*
+    Admin-triggered maintenance. Authorization is the page's: MaintenancePanel is only ever rendered
+    inside Dashboard.razor, which carries [Authorize(Policy = BlocwerkPolicies.AppAdmin)] — decided
+    against the database by AppAdminHandler. No new gate is introduced here.
+*@
+
+<div class="maintenance">
+    <h2>Maintenance</h2>
+
+    <div class="maintenance-job">
+        <div class="maintenance-job-text">
+            <strong>Warm the image cache</strong>
+            <p>
+                Pre-generates every downscaled rendition of every wall photo, panel photo and gallery
+                image, so no visitor pays the first render. Safe to re-run: already-cached
+                renditions are skipped.
+            </p>
+        </div>
+        <button type="button" class="btn-secondary" disabled="@_state.IsRunning" @onclick="WarmVariants">
+            Warm cache
+        </button>
+    </div>
+
+    <div class="maintenance-job">
+        <div class="maintenance-job-text">
+            <strong>Normalise oversized avatars</strong>
+            <p>
+                Re-encodes avatars over @(AvatarNormalizer.MaxStoredBytes / 1024) kB through the
+                current upload pipeline (@(AvatarImageEncoder.MaxEdge) px WebP). This replaces the
+                stored bytes and the original is not kept — run the dry run first.
+            </p>
+        </div>
+        <div class="maintenance-job-actions">
+            <button type="button" class="btn-secondary" disabled="@_state.IsRunning" @onclick="() => NormalizeAvatars(true)">
+                Dry run
+            </button>
+            @if (_confirmAvatars)
+            {
+                <button type="button" class="btn-danger" disabled="@_state.IsRunning" @onclick="() => NormalizeAvatars(false)">
+                    Yes, replace them
+                </button>
+            }
+            else
+            {
+                <button type="button" class="btn-danger" disabled="@_state.IsRunning" @onclick="() => _confirmAvatars = true">
+                    Rewrite for real
+                </button>
+            }
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_state.Name))
+    {
+        <div class="maintenance-status">
+            <div class="maintenance-status-line">
+                <strong>@_state.Name</strong>
+                <span>@_state.Progress</span>
+                <span class="maintenance-elapsed">@($"{_state.Elapsed.TotalSeconds:F0}s")</span>
+                @if (_state.IsRunning && !_state.CancellationRequested)
+                {
+                    <button type="button" class="maintenance-stop" @onclick="Runner.Cancel">Stop</button>
+                }
+            </div>
+
+            @if (_state.Error is { } error)
+            {
+                <p class="error-msg">@error</p>
+            }
+
+            @if (_state.Lines.Count > 0)
+            {
+                <pre class="maintenance-log">@string.Join('\n', _state.Lines)</pre>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private MaintenanceJobState _state = null!;
+    private bool _confirmAvatars;
+    private bool _polling;
+    private bool _disposed;
+
+    protected override void OnInitialized()
+    {
+        _state = Runner.Snapshot();
+        StartPolling();
+    }
+
+    private void WarmVariants()
+    {
+        Start("Warm image variant cache", async (services, log, ct) =>
+        {
+            var warmer = services.GetRequiredService<ImageVariantWarmer>();
+            return (await warmer.WarmAsync(log, ct)).ToString();
+        });
+    }
+
+    private void NormalizeAvatars(bool dryRun)
+    {
+        _confirmAvatars = false;
+
+        Start(dryRun ? "Normalise avatars (dry run)" : "Normalise avatars", async (services, log, ct) =>
+        {
+            var normalizer = services.GetRequiredService<AvatarNormalizer>();
+            return (await normalizer.NormalizeAsync(dryRun, log, ct)).ToString();
+        });
+    }
+
+    private void Start(string name, Func<IServiceProvider, MaintenanceJobLog, CancellationToken, Task<string>> work)
+    {
+        Runner.TryStart(name, work);
+        _state = Runner.Snapshot();
+        StartPolling();
+    }
+
+    // The job runs on a background thread with no circuit of its own, so the panel polls the
+    // runner's snapshot rather than being pushed to. Polling stops as soon as the job does.
+    private void StartPolling()
+    {
+        if (_polling || !Runner.IsRunning)
+        {
+            return;
+        }
+
+        _polling = true;
+        _ = PollAsync();
+    }
+
+    private async Task PollAsync()
+    {
+        try
+        {
+            while (Runner.IsRunning && !_disposed)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(1));
+                await RefreshAsync();
+            }
+
+            await RefreshAsync();
+        }
+        finally
+        {
+            _polling = false;
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _state = Runner.Snapshot();
+
+        try
+        {
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (ObjectDisposedException)
+        {
+            // The circuit went away mid-poll; the job carries on regardless.
+        }
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+    }
+}

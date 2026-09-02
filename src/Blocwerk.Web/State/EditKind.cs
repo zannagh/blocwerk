@@ -19,4 +19,11 @@ public enum EditKind
 
     /// <summary>A user has a wall in edit/alignment mode.</summary>
     WallEdit,
+
+    /// <summary>
+    /// An admin-triggered maintenance job is running (cache warming, avatar normalisation). Not an
+    /// unsaved edit, but it holds the same lease for the same reason: recreating the container
+    /// underneath it would abort the run.
+    /// </summary>
+    Maintenance,
 }

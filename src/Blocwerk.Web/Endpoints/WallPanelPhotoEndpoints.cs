@@ -39,7 +39,7 @@ public static class WallPanelPhotoEndpoints
             CancellationToken ct) =>
                 ServeAsync(
                     wallId, panelId, token, w, user, http, currentUserService, dbContextFactory, kioskContext,
-                    variants, "live",
+                    variants, ImageIdentity.LiveSlot,
                     () => panelService.GetPanelPhotoTagAsync(wallId, panelId),
                     () => panelService.GetPanelPhotoAsync(wallId, panelId), ct))
             .RequireAuthorization(BlocwerkPolicies.WallGalleryImage)
@@ -60,7 +60,7 @@ public static class WallPanelPhotoEndpoints
             CancellationToken ct) =>
                 ServeAsync(
                     wallId, panelId, token, w, user, http, currentUserService, dbContextFactory, kioskContext,
-                    variants, "staged",
+                    variants, ImageIdentity.StagedSlot,
                     () => panelService.GetPanelStagedPhotoTagAsync(wallId, panelId),
                     () => panelService.GetPanelStagedPhotoAsync(wallId, panelId), ct))
             .RequireAuthorization(BlocwerkPolicies.WallGalleryImage)
@@ -114,7 +114,7 @@ public static class WallPanelPhotoEndpoints
             tag,
             immutable: false,
             async () => (await load())?.Photo,
-            panelId, slot);
+            ImageIdentity.PanelPhoto(panelId, slot));
     }
 
     /// <summary>

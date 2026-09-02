@@ -57,7 +57,7 @@ public static class WallPhotoEndpoints
                 () => string.IsNullOrEmpty(token)
                     ? wallService.GetPhotoAsync(wallId)
                     : wallService.GetPhotoByShareTokenAsync(wallId, token),
-                wallId, "live");
+                ImageIdentity.WallPhoto(wallId));
         }).DenyApiKeyPrincipals();
 
         app.MapMethods("/api/walls/{wallId:guid}/photo/{generation:int}", [HttpMethods.Get, HttpMethods.Head], async (
@@ -98,7 +98,7 @@ public static class WallPhotoEndpoints
                         : await wallService.GetPhotoForGenerationByShareTokenAsync(wallId, token, generation);
                     return photo?.Photo;
                 },
-                wallId, generation);
+                ImageIdentity.WallGenerationPhoto(wallId, generation));
         }).DenyApiKeyPrincipals();
 
         app.MapMethods("/api/walls/{wallId:guid}/staged-photo", [HttpMethods.Get, HttpMethods.Head], async (
@@ -127,7 +127,7 @@ public static class WallPhotoEndpoints
                 tag,
                 immutable: false,
                 () => wallService.GetStagedPhotoAsync(wallId),
-                wallId, "staged");
+                ImageIdentity.StagedWallPhoto(wallId));
         }).DenyApiKeyPrincipals();
     }
 }

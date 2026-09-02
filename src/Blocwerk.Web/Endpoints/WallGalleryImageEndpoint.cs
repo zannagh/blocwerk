@@ -95,14 +95,13 @@ public static class WallGalleryImageEndpoint
                 return Results.NotFound();
             }
 
-            var uploadedVersion = ImageResponse.Key(image.SizeBytes, image.CapturedAt.UtcTicks, image.ContentType);
-
             // A rendition has to be buffered — it is produced in memory — so it takes the variant
             // path; without a width the file is still streamed, conditional and range handling
             // included, exactly as before.
             if (w is { } uploadedWidth)
             {
-                var uploadedKey = new ImageVariantKey(ImageResponse.Key(id), uploadedVersion);
+                var uploadedKey = ImageResponse.UploadedGalleryKey(
+                    id, image.SizeBytes, image.CapturedAt, image.ContentType);
 
                 return await ImageResponse.VariantAsync(
                     http,

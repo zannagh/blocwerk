@@ -11,6 +11,7 @@ using Blocwerk.Web.Components;
 using Blocwerk.Web.Controllers;
 using Blocwerk.Web.Endpoints;
 using Blocwerk.Web.HealthChecks;
+using Blocwerk.Web.Maintenance;
 using Blocwerk.Web.State;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Components.Server.Circuits;
@@ -202,6 +203,14 @@ public static class Program
         // releases its leases on circuit teardown (backstop against an abrupt disconnect).
         builder.Services.AddSingleton<EditActivityRegistry>();
         builder.Services.AddScoped<CircuitEditActivity>();
+
+        // Admin-triggered maintenance. The runner is a singleton because a job outlives the circuit
+        // that started it; it takes an EditActivityRegistry lease for its duration, so a run holds
+        // /health/ready-to-deploy at 503 and the autodeploy hook waits instead of recreating the
+        // container underneath it. Nothing here runs on its own — there is no hosted service.
+        builder.Services.AddSingleton<MaintenanceJobRunner>();
+        builder.Services.AddScoped<ImageVariantWarmer>();
+        builder.Services.AddScoped<AvatarNormalizer>();
 
         // Health checks: "busy" (Degraded while editing, not Unhealthy) gates deploys; "database"
         // probes PostgreSQL. Both are surfaced anonymously via MapHealthChecks below.

@@ -10,7 +10,6 @@ using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
-using SkiaSharp;
 
 namespace Blocwerk.Authentication.Services;
 
@@ -89,12 +88,9 @@ public class CurrentUserService : ICurrentUserService
     private const int MaxDisplayNameLength = 256;
 
     // Blazor Server streams the upload over SignalR, so a generous ceiling is fine here — the image is
-    // downscaled to at most AvatarMaxEdge px before it is ever persisted, so the stored bytes stay tiny.
+    // downscaled to at most AvatarImageEncoder.MaxEdge px before it is ever persisted, so the stored
+    // bytes stay tiny.
     private const long MaxAvatarBytes = 30L * 1024 * 1024;
-    private const int AvatarMaxEdge = 512;
-
-    /// <summary>Encoder quality for the stored avatar; visually indistinguishable at 512 px.</summary>
-    private const int AvatarQuality = 80;
 
     private static readonly HashSet<string> AllowedAvatarContentTypes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -146,8 +142,8 @@ public class CurrentUserService : ICurrentUserService
 
             // Downscale + re-encode server-side so avatars are stored small regardless of the source
             // resolution. Original bytes may be many MB from a phone camera; the stored copy is a
-            // <=512px PNG. A decode failure surfaces to the caller's error field.
-            (storedImage, storedContentType) = ScaleAvatar(image);
+            // <=512px WebP. A decode failure surfaces to the caller's error field.
+            (storedImage, storedContentType) = AvatarImageEncoder.Scale(image);
         }
 
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync();
@@ -159,73 +155,6 @@ public class CurrentUserService : ICurrentUserService
         await dbContext.SaveChangesAsync();
 
         InvalidateCache();
-    }
-
-    // Decodes the uploaded image, scales it so its longest edge is at most AvatarMaxEdge (preserving
-    // aspect ratio; smaller images are left at their pixel size), and re-encodes it. Throws
-    // InvalidOperationException when the bytes can't be decoded so the UI can show its avatar error.
-    //
-    // WebP, not PNG. An avatar is a photograph, and PNG is a lossless codec for it: scaled 512px
-    // avatars still came out at 300-900 kB, which is then rendered beside every name on a page.
-    // WebP keeps the alpha channel a cropped avatar may carry and lands the same image around
-    // 20-60 kB. JPEG is the fallback for a Skia build without the WebP encoder (Encode returns
-    // null), which costs the alpha channel but is still an order of magnitude off the PNG.
-    private static (byte[] Image, string ContentType) ScaleAvatar(byte[] image)
-    {
-        // Skia throws rather than returning null when it cannot build a codec for the bytes, so the
-        // friendly error below needs the catch to fire at all.
-        SKBitmap? decoded;
-        try
-        {
-            decoded = SKBitmap.Decode(image);
-        }
-        catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
-        {
-            decoded = null;
-        }
-
-        if (decoded == null)
-        {
-            throw new InvalidOperationException("Couldn't read that image. Please try a JPEG, PNG or WebP file.");
-        }
-
-        using (decoded)
-        {
-            return EncodeAvatar(decoded);
-        }
-    }
-
-    /// <summary>Scales the decoded avatar down and encodes it, preferring WebP.</summary>
-    private static (byte[] Image, string ContentType) EncodeAvatar(SKBitmap decoded)
-    {
-        var longEdge = Math.Max(decoded.Width, decoded.Height);
-        using SKBitmap? scaled = longEdge > AvatarMaxEdge ? ScaleToLongEdge(decoded, AvatarMaxEdge) : null;
-
-        using var pixmapImage = SKImage.FromBitmap(scaled ?? decoded);
-
-        using var webp = pixmapImage.Encode(SKEncodedImageFormat.Webp, AvatarQuality);
-        if (webp is not null)
-        {
-            return (webp.ToArray(), "image/webp");
-        }
-
-        using var jpeg = pixmapImage.Encode(SKEncodedImageFormat.Jpeg, AvatarQuality);
-        if (jpeg is not null)
-        {
-            return (jpeg.ToArray(), "image/jpeg");
-        }
-
-        throw new InvalidOperationException("Couldn't re-encode that image. Please try a JPEG, PNG or WebP file.");
-    }
-
-    private static SKBitmap ScaleToLongEdge(SKBitmap decoded, int maxEdge)
-    {
-        var scale = (double)maxEdge / Math.Max(decoded.Width, decoded.Height);
-        var w = Math.Max(1, (int)Math.Round(decoded.Width * scale));
-        var h = Math.Max(1, (int)Math.Round(decoded.Height * scale));
-        var scaled = new SKBitmap(new SKImageInfo(w, h, SKColorType.Bgra8888, SKAlphaType.Premul));
-        decoded.ScalePixels(scaled, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None));
-        return scaled;
     }
 
     public async Task SetPasswordAsync(string loginUsername, string password, string? currentPassword)
