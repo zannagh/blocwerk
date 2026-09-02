@@ -38,6 +38,12 @@
     private bool _initialized;
     private int _fragCount;
 
+    // The InitialPage value the carousel is actually sitting on. Only a CHANGE of the supplied value
+    // repositions; ordinary re-renders (a toast, a reload, an edit) must never yank a user who has
+    // swiped somewhere else back to the initial page.
+    private int _appliedInitialPage;
+    private bool _repositionPending;
+
     private IEnumerable<(RenderFragment Fragment, int Index)> Pages()
     {
         var list = new List<RenderFragment?> { Page1, Page2, Page3, Page4, Page5, Page6 };
@@ -63,12 +69,21 @@
     {
         _fragCount = Pages().Count();
         if (_currentPage >= _fragCount) _currentPage = Math.Max(0, _fragCount - 1);
+
+        // A navigation that only changes the query (?view=boulders) reuses this component instead of
+        // recreating it, so the new deep-link target arrives as a changed parameter and nothing else
+        // would move the scroll offset.
+        if (_initialized && InitialPage != _appliedInitialPage)
+        {
+            _repositionPending = true;
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender && _fragCount > 0)
         {
+            _appliedInitialPage = InitialPage;
             _currentPage = Math.Clamp(InitialPage, 0, _fragCount - 1);
             // Position the scroll offset instantly while the carousel is still hidden
             // (.carousel-pending), so the first painted frame is already the target page — no
@@ -76,6 +91,15 @@
             await JS.InvokeVoidAsync("wallCarousel.initPage", _ref, _currentPage);
             _initialized = true;
             StateHasChanged();
+            return;
+        }
+
+        if (_repositionPending)
+        {
+            _repositionPending = false;
+            _appliedInitialPage = InitialPage;
+            // Instant: this is a deep link resolving, not a swipe the user asked for.
+            await GoToPageAsync(InitialPage, smooth: false);
         }
     }
 

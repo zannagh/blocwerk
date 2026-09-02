@@ -53,8 +53,13 @@ public sealed class WallTemperatureController : WallScopedApiController
     /// and deliberately stored as-is: de-duplicating would silently drop genuine samples that
     /// happen to repeat a value.
     /// </summary>
+    /// <remarks>
+    /// Antiforgery is not applicable: the caller is a machine holding a bearer key, never a browser
+    /// form, and no cookie can authorize this route (the scheme is pinned on the controller).
+    /// </remarks>
     [HttpPost]
     [Consumes("application/json")]
+    [IgnoreAntiforgeryToken]
     public async Task<IActionResult> Record(
         Guid wallId,
         [FromBody] JsonElement body,

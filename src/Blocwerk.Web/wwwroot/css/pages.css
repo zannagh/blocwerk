@@ -319,7 +319,9 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     overflow-x: auto;
     overflow-y: hidden;
     scroll-snap-type: x mandatory;
-    scroll-behavior: smooth;
+    /* No scroll-behavior here on purpose: a CSS-level "smooth" makes every scrollLeft assignment
+       animate, including the initial positioning. wall-carousel.js asks for smooth or instant per
+       call instead, so user-driven page changes glide and programmatic ones jump. */
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
 }

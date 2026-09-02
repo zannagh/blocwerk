@@ -279,6 +279,9 @@ public class WallService : IWallService
 
     public async Task<Wall> UploadPhotoAsync(Guid wallId, byte[] photo, string contentType, bool autoDetect = true)
     {
+        // The upload is stored byte-for-byte: hold detection below, and every later alignment or
+        // re-detection pass, must see the camera's full resolution. Browsers are served downscaled
+        // variants derived from this original instead (see IImageVariantCache).
         using var op = BlocwerkMetrics.TimeOperation("Wall.UploadPhoto", wallId);
         try
         {
@@ -341,6 +344,7 @@ public class WallService : IWallService
 
     public async Task<Wall> StageManualAlignmentAsync(Guid wallId, byte[] photo, string contentType)
     {
+        // Stored unmodified — detection and alignment run on the camera original.
         using var op = BlocwerkMetrics.TimeOperation("Wall.StageManual", wallId);
         try
         {
@@ -830,6 +834,33 @@ public class WallService : IWallService
                 .FirstOrDefaultAsync();
 
             return wall?.StagedPhoto;
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
+    }
+
+    public async Task<WallPhotoTag?> GetStagedPhotoTagAsync(Guid wallId)
+    {
+        using var op = BlocwerkMetrics.TimeOperation("Wall.GetStagedPhotoTag", wallId);
+        try
+        {
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
+
+            // Projection only: Length is a server-side length(bytea), so the blob stays in Postgres.
+            var wall = await db.Walls
+                .AsNoTracking()
+                .Where(w => w.Id == wallId && w.StagedPhoto != null)
+                .Select(w => new { Length = w.StagedPhoto!.Length, w.StagedPhotoContentType, w.StagedAt })
+                .FirstOrDefaultAsync();
+
+            return wall is null
+                ? null
+                : new WallPhotoTag(wall.Length, wall.StagedPhotoContentType, wall.StagedAt?.UtcTicks ?? 0L, IsArchived: false);
         }
         catch (Exception ex)
         {
@@ -1356,6 +1387,35 @@ public class WallService : IWallService
         }
     }
 
+    public async Task<WallPhotoTag?> GetPhotoTagAsync(Guid wallId, string? shareToken)
+    {
+        using var op = BlocwerkMetrics.TimeOperation("Wall.GetPhotoTag", wallId);
+        try
+        {
+            // Same two gates as GetPhotoAsync/GetPhotoByShareTokenAsync, in the same order: a share
+            // token reads anonymously, otherwise the membership filter (with the anonymous-kiosk
+            // allowance) decides. Only the projection differs — metadata instead of the bytes.
+            var viewerId = string.IsNullOrEmpty(shareToken) ? await ResolveViewerIdAsync(wallId) : Guid.Empty;
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = viewerId;
+
+            var wall = await AccessibleWall(db, wallId, shareToken)
+                .AsNoTracking()
+                .Where(w => w.Photo != null)
+                .Select(w => new { Length = w.Photo!.Length, w.PhotoContentType, w.CurrentGeneration })
+                .FirstOrDefaultAsync();
+
+            return wall is null
+                ? null
+                : new WallPhotoTag(wall.Length, wall.PhotoContentType, wall.CurrentGeneration, IsArchived: false);
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
+    }
+
     public async Task<List<Hold>> GetHoldsForGenerationAsync(Guid wallId, int generation)
     {
         using var op = BlocwerkMetrics.TimeOperation("Wall.GetHoldsForGeneration", wallId);
@@ -1421,6 +1481,59 @@ public class WallService : IWallService
                 db.Walls.Where(w => w.Id == wallId && w.ShareToken == shareToken),
                 wallId,
                 generation);
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
+    }
+
+    public async Task<WallPhotoTag?> GetPhotoTagForGenerationAsync(Guid wallId, string? shareToken, int generation)
+    {
+        using var op = BlocwerkMetrics.TimeOperation("Wall.GetPhotoTagForGeneration", wallId);
+        try
+        {
+            var viewerId = string.IsNullOrEmpty(shareToken) ? await ResolveViewerIdAsync(wallId) : Guid.Empty;
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = viewerId;
+
+            // Mirrors ResolveGenerationPhotoAsync's fallback exactly (current-or-newer generation
+            // resolves to the live photo, older to the archived reset row) so the tag always
+            // describes the bytes the byte route would return.
+            var wall = await AccessibleWall(db, wallId, shareToken)
+                .AsNoTracking()
+                .Select(w => new
+                {
+                    Length = w.Photo == null ? 0 : w.Photo.Length,
+                    w.PhotoContentType,
+                    w.CurrentGeneration,
+                })
+                .FirstOrDefaultAsync();
+
+            if (wall is null)
+            {
+                return null;
+            }
+
+            if (generation >= wall.CurrentGeneration)
+            {
+                return wall.Length == 0
+                    ? null
+                    : new WallPhotoTag(wall.Length, wall.PhotoContentType, wall.CurrentGeneration, IsArchived: false);
+            }
+
+            var reset = await db.WallResets
+                .AsNoTracking()
+                .Where(r => r.WallId == wallId && r.Generation == generation && r.PreviousPhoto != null)
+                .Select(r => new { Length = r.PreviousPhoto!.Length, r.PreviousPhotoContentType })
+                .FirstOrDefaultAsync();
+
+            // A retired generation is content-addressed by its number and is never rewritten, so the
+            // browser may hold it without revalidating.
+            return reset is null
+                ? null
+                : new WallPhotoTag(reset.Length, reset.PreviousPhotoContentType, generation, IsArchived: true);
         }
         catch (Exception ex)
         {
@@ -2092,6 +2205,7 @@ public class WallService : IWallService
     /// </summary>
     private async Task<Wall> StageDetectedAsync(Guid wallId, byte[] photo, string contentType, WallStagingMode mode)
     {
+        // Stored unmodified — detection and alignment run on the camera original.
         using var op = BlocwerkMetrics.TimeOperation("Wall.Stage", wallId);
         try
         {
@@ -2158,6 +2272,15 @@ public class WallService : IWallService
     /// Resolves a generation to a photo: the live photo for the current generation and
     /// beyond, otherwise the archived photo of the reset that retired it.
     /// </summary>
+    /// <summary>
+    /// The wall as this caller may see it: filtered by the share token when one was supplied,
+    /// otherwise left to the context's membership query filter.
+    /// </summary>
+    private static IQueryable<Wall> AccessibleWall(BlocwerkDbContext db, Guid wallId, string? shareToken) =>
+        string.IsNullOrEmpty(shareToken)
+            ? db.Walls.Where(w => w.Id == wallId)
+            : db.Walls.Where(w => w.Id == wallId && w.ShareToken == shareToken);
+
     private static async Task<WallPhoto?> ResolveGenerationPhotoAsync(
         BlocwerkDbContext db,
         IQueryable<Wall> accessibleWall,

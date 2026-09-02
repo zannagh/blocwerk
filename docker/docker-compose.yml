@@ -38,6 +38,14 @@ services:
       POSTGRES__PASSWORD: blocwerk_dev
       # Beta clips live on disk (not the database); this is where they land inside the container.
       BETAVIDEO__STORAGEPATH: /data/beta-videos
+      # Wall gallery uploads AND the derived image-variant cache (see IImageVariantCache). This has
+      # to point at a mounted volume: the default is a relative path, which lands in the container's
+      # writable layer, grows unbounded and is thrown away on every redeploy. Nothing here is
+      # authoritative — the variants are regenerated from the stored originals on demand — but
+      # losing it costs a re-render of every photo somebody looks at.
+      # NOTE: this env var only takes effect while appsettings.json has no Blocwerk:WallImage
+      # section. If you add one there it wins (see BlocwerkSettings), and the mount below is dead.
+      WALLIMAGE__STORAGEPATH: /data/wall-images
       # Outgoing SMTP mail. Empty by default => email features are disabled. Fill these (ideally via
       # docker/.env, e.g. ${SMTP__HOST}) to enable. Security: StartTls | ForceTls | Off.
       # Do NOT hardcode real credentials here.
@@ -55,6 +63,8 @@ services:
       - ./dpkeys:/app/keys
       # Beta video clips, kept out of the image so they survive redeploys.
       - ./beta-videos:/data/beta-videos
+      # Wall gallery uploads + the image-variant cache (WALLIMAGE__STORAGEPATH above).
+      - ./wall-images:/data/wall-images
     depends_on:
       - postgres
       - otel-dashboard

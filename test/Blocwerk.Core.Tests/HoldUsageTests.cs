@@ -57,8 +57,8 @@ public class HoldUsageTests
             h.WallId, "My draft", null, [new BoulderHoldInput(holds[0].Id)], isDraft: true);
 
         var mine = await h.BoulderService.GetHoldUsageAsync(h.WallId);
-        Assert.True(mine.ContainsKey(holds[0].Id));
-        Assert.True(Assert.Single(mine[holds[0].Id]).IsDraft);
+        Assert.True(mine.TryGetValue(holds[0].Id, out var mineUsage));
+        Assert.True(Assert.Single(mineUsage!).IsDraft);
 
         var other = new User { Identifier = "other@test", DisplayName = "Other" };
         await using (var db = h.CreateContext())
@@ -73,8 +73,8 @@ public class HoldUsageTests
 
         // Drafts are visible to every wall member now, so the hold shows as spoken-for (still
         // flagged as a draft) to a second member.
-        Assert.True(theirs.ContainsKey(holds[0].Id));
-        Assert.True(Assert.Single(theirs[holds[0].Id]).IsDraft);
+        Assert.True(theirs.TryGetValue(holds[0].Id, out var theirsUsage));
+        Assert.True(Assert.Single(theirsUsage!).IsDraft);
     }
 
     [Fact]

@@ -22,7 +22,7 @@ public class JwtTokenHandler : ISecurityTokenHandler
     public async Task<VerificationResult> VerifyMicrosoftAuthentication(BlocwerkSettings settings, string clientId, string clientSecret,
         string code, string redirectUri, string grantType = "", string codeVerifier = "")
     {
-        HttpRequestMessage request = new(HttpMethod.Post, "https://login.microsoftonline.com/consumers/oauth2/v2.0/token");
+        using HttpRequestMessage request = new(HttpMethod.Post, "https://login.microsoftonline.com/consumers/oauth2/v2.0/token");
         Dictionary<string, string> parameters = new()
         {
             { "client_id", clientId },
@@ -48,7 +48,7 @@ public class JwtTokenHandler : ISecurityTokenHandler
         JsonDocument payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         string? accessToken = payload.RootElement.GetProperty("access_token").GetString();
 
-        HttpRequestMessage userRequest = new(HttpMethod.Get, "https://graph.microsoft.com/v1.0/me");
+        using HttpRequestMessage userRequest = new(HttpMethod.Get, "https://graph.microsoft.com/v1.0/me");
         userRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
         userRequest.Headers.UserAgent.ParseAdd("blocwerk-auth");
 
@@ -72,7 +72,7 @@ public class JwtTokenHandler : ISecurityTokenHandler
     public async Task<VerificationResult> VerifyGoogleAuthentication(BlocwerkSettings settings, string clientId, string clientSecret,
         string code, string redirectUri, string grantType = "", string codeVerifier = "")
     {
-        HttpRequestMessage request = new(HttpMethod.Post, "https://oauth2.googleapis.com/token");
+        using HttpRequestMessage request = new(HttpMethod.Post, "https://oauth2.googleapis.com/token");
         Dictionary<string, string> parameters = new()
         {
             { "client_id", clientId },
@@ -98,7 +98,7 @@ public class JwtTokenHandler : ISecurityTokenHandler
         JsonDocument payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         string? accessToken = payload.RootElement.GetProperty("access_token").GetString();
 
-        HttpRequestMessage userRequest = new(HttpMethod.Get, "https://www.googleapis.com/oauth2/v1/userinfo?alt=json");
+        using HttpRequestMessage userRequest = new(HttpMethod.Get, "https://www.googleapis.com/oauth2/v1/userinfo?alt=json");
         userRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
         userRequest.Headers.UserAgent.ParseAdd("blocwerk-auth");
 
@@ -122,7 +122,7 @@ public class JwtTokenHandler : ISecurityTokenHandler
     public async Task<VerificationResult> VerifyGitHubAuthentication(BlocwerkSettings settings, string clientId, string clientSecret,
         string code, string grantType = "", string codeVerifier = "")
     {
-        HttpRequestMessage request = new(HttpMethod.Post, "https://github.com/login/oauth/access_token");
+        using HttpRequestMessage request = new(HttpMethod.Post, "https://github.com/login/oauth/access_token");
         Dictionary<string, string> parameters = new()
         {
             { "client_id", clientId },
@@ -147,7 +147,7 @@ public class JwtTokenHandler : ISecurityTokenHandler
         JsonDocument payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         string? accessToken = payload.RootElement.GetProperty("access_token").GetString();
 
-        HttpRequestMessage userRequest = new(HttpMethod.Get, "https://api.github.com/user");
+        using HttpRequestMessage userRequest = new(HttpMethod.Get, "https://api.github.com/user");
         userRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
         userRequest.Headers.UserAgent.ParseAdd("blocwerk-auth");
 

@@ -154,15 +154,7 @@ public sealed class KioskThrottleRegistry
     {
         var now = nowOverride ?? DateTimeOffset.UtcNow;
 
-        foreach (var scope in scopes)
-        {
-            if (IsLocked(scope, now))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return scopes.Any(scope => IsLocked(scope, now));
     }
 
     /// <summary>True while this scope is locked out and must be refused without checking the secret.</summary>
@@ -287,12 +279,9 @@ public sealed class KioskThrottleRegistry
             return;
         }
 
-        foreach (var pair in entries)
+        foreach (var pair in entries.Where(pair => now - pair.Value.LastFailure > BurstMemory && pair.Value.LockedUntil <= now))
         {
-            if (now - pair.Value.LastFailure > BurstMemory && pair.Value.LockedUntil <= now)
-            {
-                entries.TryRemove(pair.Key, out _);
-            }
+            entries.TryRemove(pair.Key, out _);
         }
     }
 

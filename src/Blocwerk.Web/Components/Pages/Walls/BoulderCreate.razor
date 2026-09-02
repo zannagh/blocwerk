@@ -146,13 +146,13 @@
 
     // Minted once, offline-safe. Both the online (CreateBoulderAsync) and the queued offline path
     // key on this id, so a create is an idempotent upsert no matter which path (or a replay) runs.
-    private Guid _clientId = Guid.NewGuid();
+    private readonly Guid _clientId = Guid.NewGuid();
     private string _name = string.Empty;
     private string? _grade;
     private bool _allKickboardOn = true;
     // The new experience always runs "hands follow feet": hand holds implicitly serve as feet and a
     // dedicated foothold is the explicit "Foot" choice in the radial menu. Never toggled there.
-    private bool _handsFollowFeet = true;
+    private readonly bool _handsFollowFeet = true;
     private string? _footColorOnly;
     private bool _noMatch;
     private bool _isSubmitting;

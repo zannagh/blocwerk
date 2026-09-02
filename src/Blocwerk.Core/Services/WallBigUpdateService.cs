@@ -1,6 +1,7 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Helpers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -71,14 +72,20 @@ public partial class WallBigUpdateService : IWallBigUpdateService
         Guid centerPanelId = Guid.Empty;
         foreach (var photo in photos)
         {
+            // Stored exactly as uploaded: hold detection and the panel matcher below must see the
+            // camera's full resolution. The browser is served downscaled variants instead, generated
+            // on demand from these originals (see IImageVariantCache).
+            var image = photo.Image;
+            var contentType = photo.ContentType;
+
             var panel = new WallPanel
             {
                 WallId = wallId,
                 Col = photo.Col,
                 Row = photo.Row,
                 Photo = null,
-                StagedPhoto = photo.Image,
-                StagedPhotoContentType = photo.ContentType,
+                StagedPhoto = image,
+                StagedPhotoContentType = contentType,
                 StagedAt = DateTimeOffset.UtcNow,
                 StagedByUserId = user.Id,
                 Generation = stagedGen,
@@ -89,7 +96,7 @@ public partial class WallBigUpdateService : IWallBigUpdateService
                 centerPanelId = panel.Id;
             }
 
-            var detected = await holdDetectionService.DetectHoldsAsync(photo.Image);
+            var detected = await holdDetectionService.DetectHoldsAsync(image);
             foreach (var d in detected)
             {
                 db.Holds.Add(new Hold

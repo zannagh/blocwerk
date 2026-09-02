@@ -151,7 +151,7 @@
      style="cursor: @CursorForMode();">
 <div class="photo-editor" @ref="_containerRef"
      data-hold-drag="@(CanEdit && _mode == EditMode.Move ? "true" : null)">
-    <img src="@EffectivePhotoUrl" alt="Wall" class="wall-photo" />
+    <img src="@ResponsiveImage.Initial(EffectivePhotoUrl)" data-bw-res alt="Wall" class="wall-photo" />
     @* Hold drag uses POINTER events so mouse, touch and pen share one path. PointerEventArgs
        derives from MouseEventArgs, so OnSvgMouseMove/OnSvgMouseUp bind unchanged. *@
     <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none"
@@ -206,9 +206,9 @@
             {
                 strokeColor = IsStagedHold(hold) ? "#33dd66" : "#ff9933";
             }
-            var isMergePick = _mode == EditMode.Merge && (
-                _mergeFirstPickId == hold.Id ||
-                (_pendingMerge.HasValue && (_pendingMerge.Value.stagedId == hold.Id || _pendingMerge.Value.liveId == hold.Id)));
+            var isPendingMergeHold = _pendingMerge is { } pending
+                && (pending.stagedId == hold.Id || pending.liveId == hold.Id);
+            var isMergePick = _mode == EditMode.Merge && (_mergeFirstPickId == hold.Id || isPendingMergeHold);
             if (isMergePick)
             {
                 strokeColor = "#ffd700";
@@ -979,9 +979,9 @@
     private EditMode _modeBeforeUsage = EditMode.Add;
     private double _shapePointRadius = 0.8;
 
-    private List<Hold> _addedHolds = [];
-    private HashSet<Guid> _updatedHoldIds = [];
-    private HashSet<Guid> _deletedHoldIds = [];
+    private readonly List<Hold> _addedHolds = [];
+    private readonly HashSet<Guid> _updatedHoldIds = [];
+    private readonly HashSet<Guid> _deletedHoldIds = [];
     private List<Hold>? _snapshotHolds;
     private int _pendingChanges => _addedHolds.Count + _updatedHoldIds.Count + _deletedHoldIds.Count;
 
@@ -1275,8 +1275,7 @@
             var match = FindUnderlyingOpposite(hold);
             if (match != null)
             {
-                if (isStaged) _pendingMerge = (hold.Id, match.Id);
-                else _pendingMerge = (match.Id, hold.Id);
+                _pendingMerge = isStaged ? (hold.Id, match.Id) : (match.Id, hold.Id);
                 return;
             }
             _mergeFirstPickId = hold.Id;
@@ -1416,7 +1415,7 @@
     /// counted in <see cref="_pendingChanges"/>, so realigning the overlay doesn't
     /// look like the user manually moved every hold.
     /// </summary>
-    private HashSet<Guid> _alignmentChangedIds = [];
+    private readonly HashSet<Guid> _alignmentChangedIds = [];
 
     private void CaptureAlignSnapshot()
     {

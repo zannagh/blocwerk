@@ -7,10 +7,16 @@ using Microsoft.AspNetCore.Mvc;
 namespace Blocwerk.Web.Controllers;
 
 /// <summary>The caller's hangboard and pull-up work.</summary>
+/// <remarks>
+/// Antiforgery does not apply: the <c>[Authorize]</c> below pins the API-key scheme and nothing
+/// else, so a browser cookie can never authorize these routes and there is no ambient credential to
+/// forge with. <c>[IgnoreAntiforgeryToken]</c> states that in code rather than in a comment.
+/// </remarks>
 [ApiController]
 [Route("api/v1/me/training")]
 [Authorize(Policy = BlocwerkPolicies.UserApiKey, AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName)]
 [Produces("application/json")]
+[IgnoreAntiforgeryToken]
 public sealed class MeTrainingController : ControllerBase
 {
     private const int MaxActivities = 100;

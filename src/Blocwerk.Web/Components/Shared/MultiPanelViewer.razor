@@ -18,7 +18,8 @@ else
             @* data-lens-overlay (boulder detail only) makes the long-press magnifier bake the
                marked-hold overlay into the lens; omitted in the wall view. *@
             <div class="photo-editor" data-lens-overlay="@(LensOverlay ? "true" : null)">
-                <img src="@PhotoUrl(_panel.Id)" alt="Wall panel @_panel.Col,@_panel.Row" class="wall-photo" />
+                <img src="@ResponsiveImage.Initial(PhotoUrl(_panel.Id))" data-bw-res
+                     alt="Wall panel @_panel.Col,@_panel.Row" class="wall-photo" />
                 <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
                     @foreach (var h in _holds)
                     {

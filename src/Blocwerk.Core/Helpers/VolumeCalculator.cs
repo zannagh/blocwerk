@@ -133,9 +133,6 @@ public static partial class VolumeCalculator
         var bevelW = Rad2Deg(Math.Atan2(h, halfL));
         var bevelL = Rad2Deg(Math.Atan2(h, halfW));
 
-        var diagonalHalf = Math.Sqrt(halfW * halfW + halfL * halfL);
-        var edgeSlant = Math.Sqrt(h * h + diagonalHalf * diagonalHalf);
-
         var faceNormalW = CrossProduct(
             Sub(new Point3D(halfW, 0, 0), new Point3D(-halfW, 0, 0)),
             Sub(new Point3D(0, h, 0), new Point3D(-halfW, 0, 0)));

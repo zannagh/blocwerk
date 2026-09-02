@@ -53,6 +53,7 @@ public sealed class OfflineActionsController : ControllerBase
     }
 
     [HttpPost("attempts")]
+    [ValidateAntiForgeryToken]
     public Task<IActionResult> LogAttempt([FromBody] LogAttemptRequest request)
     {
         return ExecuteAsync(request, async () =>
@@ -69,6 +70,7 @@ public sealed class OfflineActionsController : ControllerBase
     }
 
     [HttpPost("ratings")]
+    [ValidateAntiForgeryToken]
     public Task<IActionResult> SetRating([FromBody] SetRatingRequest request)
     {
         return ExecuteAsync(request, async () =>
@@ -79,6 +81,7 @@ public sealed class OfflineActionsController : ControllerBase
     }
 
     [HttpPost("favorites")]
+    [ValidateAntiForgeryToken]
     public Task<IActionResult> SetFavorite([FromBody] SetFavoriteRequest request)
     {
         // Deliberately absolute, never a toggle: a toggle replayed twice flips back.
@@ -90,6 +93,7 @@ public sealed class OfflineActionsController : ControllerBase
     }
 
     [HttpPost("comments")]
+    [ValidateAntiForgeryToken]
     public Task<IActionResult> AddComment([FromBody] AddCommentRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Text))

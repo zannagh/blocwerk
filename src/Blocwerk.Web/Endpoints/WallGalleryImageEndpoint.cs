@@ -6,6 +6,7 @@ using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Net.Http.Headers;
 
 namespace Blocwerk.Web.Endpoints;
 
@@ -29,7 +30,10 @@ public static class WallGalleryImageEndpoint
         // API-key principal outright: machine callers read gallery bytes through
         // /api/walls/{wallId}/images/{source}/{id}/content, which checks the wall against the
         // key's own wall claim instead of against everything the key's owner may see.
-        app.MapGet(RoutePrefix + "/{wallId:guid}/gallery/{source}/{id:guid}", HandleAsync)
+        app.MapMethods(
+                RoutePrefix + "/{wallId:guid}/gallery/{source}/{id:guid}",
+                [HttpMethods.Get, HttpMethods.Head],
+                HandleAsync)
             .RequireAuthorization(BlocwerkPolicies.WallGalleryImage);
     }
 
@@ -38,15 +42,18 @@ public static class WallGalleryImageEndpoint
         string source,
         Guid id,
         [FromQuery] string? token,
+        [FromQuery(Name = "w")] int? w,
         ClaimsPrincipal user,
+        HttpContext http,
         IWallService wallService,
         IWallImageService imageService,
         IWallImageStorage storage,
         ICurrentUserService currentUserService,
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
+        [FromServices] IImageVariantCache variants,
         CancellationToken ct)
     {
-        if (user.IsApiKeyPrincipal())
+        if (user.IsApiKeyPrincipal() || !ImageResponse.IsRenderableWidth(w))
         {
             return Results.NotFound();
         }
@@ -73,6 +80,9 @@ public static class WallGalleryImageEndpoint
 
         if (gallerySource == WallGallerySource.Uploaded)
         {
+            // The row IS the metadata here — the bytes live on disk — so this path never had the
+            // blob problem. It only lacked a validator: an uploaded image is written once and never
+            // rewritten, so size and capture time identify it for good.
             var image = await imageService.GetImageAsync(id, ct);
             if (image == null || image.WallId != wallId)
             {
@@ -80,13 +90,61 @@ public static class WallGalleryImageEndpoint
             }
 
             var path = storage.ResolvePhysicalPath(image.StoragePath);
-            return path == null || !File.Exists(path)
-                ? Results.NotFound()
-                : Results.File(path, image.ContentType);
+            if (path == null || !File.Exists(path))
+            {
+                return Results.NotFound();
+            }
+
+            var uploadedVersion = ImageResponse.Key(image.SizeBytes, image.CapturedAt.UtcTicks, image.ContentType);
+
+            // A rendition has to be buffered — it is produced in memory — so it takes the variant
+            // path; without a width the file is still streamed, conditional and range handling
+            // included, exactly as before.
+            if (w is { } uploadedWidth)
+            {
+                var uploadedKey = new ImageVariantKey(ImageResponse.Key(id), uploadedVersion);
+
+                return await ImageResponse.VariantAsync(
+                    http,
+                    ImageResponse.Etag(uploadedKey.Identity, uploadedKey.Version, uploadedWidth),
+                    image.ContentType,
+                    immutable: true,
+                    () => variants.GetOrCreateAsync(
+                        uploadedKey,
+                        uploadedWidth,
+                        async () => await File.ReadAllBytesAsync(path, ct),
+                        ct));
+            }
+
+            // Handed to Results.File as an entity tag rather than run through ImageResponse: the
+            // physical-file result already does conditional and range handling, and keeping it means
+            // the file is still streamed instead of buffered.
+            http.Response.Headers.CacheControl = ImageResponse.ImmutableCacheControl;
+
+            return Results.File(
+                path,
+                image.ContentType,
+                lastModified: image.CreatedAt,
+                entityTag: EntityTagHeaderValue.Parse(
+                    ImageResponse.Etag(id, image.SizeBytes, image.CapturedAt.UtcTicks, image.ContentType)),
+                enableRangeProcessing: true);
         }
 
-        var content = await imageService.GetLegacyImageContentAsync(wallId, gallerySource, id, ct);
-        return content == null ? Results.NotFound() : Results.File(content.Data, content.ContentType);
+        // The two legacy sources are blobs on the wall/reset rows. Tag first, bytes only on a miss.
+        var tag = await imageService.GetLegacyImageTagAsync(wallId, gallerySource, id, ct);
+        if (tag is null)
+        {
+            return Results.NotFound();
+        }
+
+        return await ImageResponse.ServeAsync(
+            http,
+            variants,
+            w,
+            tag,
+            tag.IsArchived,
+            async () => (await imageService.GetLegacyImageContentAsync(wallId, gallerySource, id, ct))?.Data,
+            wallId, source, id);
     }
 
     /// <summary>

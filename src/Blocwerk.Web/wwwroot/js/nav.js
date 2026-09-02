@@ -72,6 +72,10 @@
         install();
     }
 
+    // Wall overview is page index 2 in WallDetail's carousel (0 Settings, 1 Members, 2 Overview,
+    // 3 Boulders, 4 Details).
+    const WALL_OVERVIEW_PAGE = 2;
+
     window.bwNav = {
         toggleTabbar: function () {
             const next = !isCollapsed();
@@ -80,6 +84,42 @@
                 document.body.classList.toggle(CLASS, next);
             }
             return next;
+        },
+
+        // The Home tab means "the home wall's overview", but when the user is ALREADY on exactly
+        // that URL there is nothing for the browser to navigate to and no parameter for the carousel
+        // to react to — so after swiping to another page the tap would do nothing. Move the carousel
+        // here instead. Every other case (a boulder, another wall, a ?view= variant) is a real
+        // navigation that repositions the carousel by itself, so it falls through untouched, and so
+        // does anything unexpected: a dead tap is worse than a redundant navigation.
+        goHomeWall: function (event, href) {
+            try {
+                if (event && (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)) {
+                    return true;
+                }
+
+                const target = new URL(href, window.location.origin);
+                if (target.pathname !== window.location.pathname || target.search !== window.location.search) {
+                    return true;
+                }
+
+                // Scoped to the wall page by the path comparison above: the walls list has no
+                // carousel, and /activity's can never match a /walls/... href.
+                const el = document.querySelector('.wall-carousel');
+                if (!el || !window.wallCarousel) {
+                    return true;
+                }
+
+                // Smooth: this is a tap the user made, not a deep link resolving.
+                window.wallCarousel.scrollToPage(el, WALL_OVERVIEW_PAGE, true);
+                if (event) {
+                    event.preventDefault();
+                }
+
+                return false;
+            } catch (e) {
+                return true;
+            }
         }
     };
 })();

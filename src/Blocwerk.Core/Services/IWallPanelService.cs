@@ -77,6 +77,15 @@ public interface IWallPanelService
     Task<WallPhoto?> GetPanelStagedPhotoAsync(Guid wallId, Guid panelId);
 
     /// <summary>
+    /// The live panel photo's <see cref="WallPhotoTag"/>, read without touching the blob, so a
+    /// conditional request can be answered with 304 before any bytes leave Postgres.
+    /// </summary>
+    Task<WallPhotoTag?> GetPanelPhotoTagAsync(Guid wallId, Guid panelId);
+
+    /// <summary>The same for the staged panel photo.</summary>
+    Task<WallPhotoTag?> GetPanelStagedPhotoTagAsync(Guid wallId, Guid panelId);
+
+    /// <summary>
     /// The panel's holds at the wall's current generation, in the panel image's normalized
     /// coordinate space — used to draw the overlap confirmation overlay. When
     /// <paramref name="includeStaged"/> is false a panel that only carries a staged (not yet

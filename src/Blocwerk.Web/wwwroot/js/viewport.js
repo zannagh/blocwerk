@@ -80,6 +80,14 @@ window.bwViewport = (function () {
             // we write scrollLeft/scrollTop. Without this it clamps the scroll offset
             // against the old width and the zoom anchor is destroyed.
             void viewport.scrollWidth;
+
+            // The content layer just changed width, so the photo inside it is now displayed at a
+            // different pixel size. Ask for a sharper rendition if zooming in has outgrown the one
+            // on screen — debounced to one measurement per frame, and never a downgrade, so this
+            // cannot churn mid-gesture. Purely additive: the transform above is already committed.
+            if (window.bwImageRes) {
+                window.bwImageRes.refresh(viewport);
+            }
         }
 
         refreshTouchAction();
@@ -286,10 +294,20 @@ window.bwViewport = (function () {
                 }
             };
 
-            if (img.complete) {
+            // The box has its final size here, which is the first moment the displayed pixel size of
+            // the photo is known — so this is where "what does landing on this wall actually need?"
+            // gets answered, before any zoom happens.
+            const measure = function () {
                 apply();
+                if (window.bwImageRes) {
+                    window.bwImageRes.refresh(viewport);
+                }
+            };
+
+            if (img.complete) {
+                measure();
             } else {
-                img.addEventListener('load', apply, { once: true });
+                img.addEventListener('load', measure, { once: true });
             }
         },
 

@@ -11,10 +11,16 @@ namespace Blocwerk.Web.Controllers;
 /// and an API-key principal carries the same identity claims as its owner's cookie principal, so
 /// nothing here has to pass a user id.
 /// </summary>
+/// <remarks>
+/// Antiforgery does not apply: the <c>[Authorize]</c> below pins the API-key scheme and nothing
+/// else, so a browser cookie can never authorize these routes and there is no ambient credential to
+/// forge with. <c>[IgnoreAntiforgeryToken]</c> states that in code rather than in a comment.
+/// </remarks>
 [ApiController]
 [Route("api/v1/me/sessions")]
 [Authorize(Policy = BlocwerkPolicies.UserApiKey, AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName)]
 [Produces("application/json")]
+[IgnoreAntiforgeryToken]
 public sealed class MeSessionsController : ControllerBase
 {
     private readonly ISessionService sessionService;

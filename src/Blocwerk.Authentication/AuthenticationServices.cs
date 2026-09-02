@@ -24,6 +24,12 @@ namespace Blocwerk.Authentication;
 
 public static class AuthenticationServices
 {
+    /// <summary>
+    /// Request header carrying the antiforgery request token for JSON callers (the offline queue).
+    /// Shared with the client in <c>offline-transport.js</c>.
+    /// </summary>
+    public const string AntiforgeryHeaderName = "X-Blocwerk-Antiforgery";
+
     public static IHostApplicationBuilder ConfigureAuthenticationAndAuthorization(this IHostApplicationBuilder app, BlocwerkSettings configuration)
     {
         app.Services.AddHttpClient();
@@ -132,6 +138,12 @@ public static class AuthenticationServices
 
         app.Services.AddAntiforgery(options =>
         {
+            // The offline queue posts JSON, not forms, so it has no field to put the token in and
+            // sends this header instead. Setting HeaderName only ADDS the header as a source: a
+            // request with a form content type and no header still falls back to the form field, so
+            // every Blazor form keeps validating exactly as before.
+            options.HeaderName = AntiforgeryHeaderName;
+
             options.Cookie.SecurePolicy = app.Environment.IsDevelopment()
                 ? CookieSecurePolicy.SameAsRequest
                 : CookieSecurePolicy.Always;

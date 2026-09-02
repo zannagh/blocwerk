@@ -59,7 +59,7 @@ public partial class AccountController
             Provider = provider,
         });
 
-        return Redirect(BuildProviderAuthorizeUrl(provider, state) ?? "/profile?link=unavailable");
+        return RedirectToProviderOr(provider, state, "/profile?link=unavailable");
     }
 
     /// <summary>

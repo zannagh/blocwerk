@@ -141,7 +141,7 @@ public partial class PasswordLoginService : IPasswordLoginService
         // An account created at the tablet is the half of the share-link escalation that gives the
         // attacker somewhere to redeem it. Refused before any validation runs, so nothing about the
         // response distinguishes a kiosk refusal from a malformed request.
-        KioskGuard.EnsureNotKiosk(kioskContext, db: null, "Creating an account");
+        KioskGuard.EnsureNotKiosk(kioskContext, "Creating an account");
 
         var username = (loginUsername ?? string.Empty).Trim();
         if (!IsValidUsername(username))

@@ -17,7 +17,7 @@
     }
     else
     {
-        <WallCarousel @ref="_carousel" InitialPage="_initialPage">
+        <WallCarousel @ref="_carousel" InitialPage="InitialCarouselPage">
             <Page1>
                 <div class="section">
                     <div class="section-header">
@@ -311,14 +311,17 @@
     private bool _showTrainingMenu;
     private List<MonthLabel> _monthLabels = [];
     private WallCarousel? _carousel;
-    private int _initialPage;
+
+    // Computed rather than assigned once in OnInitializedAsync: a navigation that only changes
+    // ?view= reuses this component, and the carousel repositions off the changed parameter.
+    private int InitialCarouselPage =>
+        string.Equals(View, "list", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
     private int _boulderGradeSpan = 5;
 
     private record MonthLabel(string Name, double OffsetPercent);
 
     protected override async Task OnInitializedAsync()
     {
-        _initialPage = string.Equals(View, "list", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
         _years = await ProgressionService.GetActivityYearsAsync();
         var currentYear = DateTime.UtcNow.Year;
         _selectedYear = _years.Contains(currentYear) ? currentYear : _years.Max();

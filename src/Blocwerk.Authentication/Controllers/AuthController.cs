@@ -85,9 +85,17 @@ public class AuthController : ControllerBase
         return Redirect($"/signing-in?state={Uri.EscapeDataString(state)}&code={Uri.EscapeDataString(code)}");
     }
 
+    /// <summary>The OAuth token endpoint: exchanges an authorization code or a refresh token for a JWT.</summary>
+    /// <remarks>
+    /// Antiforgery does not apply and must not: Antiforgery does not apply and must not: the caller authenticates
+    /// with the code/refresh token and client secret it posts, never with an ambient cookie, so
+    /// there is nothing a third-party page could ride on — and a token endpoint that demanded a
+    /// browser-issued token would be unusable by the non-browser clients it exists for.
+    /// </remarks>
     [HttpPost("token")]
     [AllowAnonymous]
     [Produces("application/json")]
+    [IgnoreAntiforgeryToken]
     public async Task<IActionResult> Token(
         [FromForm] string code,
         [FromForm(Name = "client_id")] string clientId,

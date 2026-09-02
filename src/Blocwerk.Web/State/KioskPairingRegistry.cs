@@ -309,17 +309,7 @@ public sealed class KioskPairingRegistry
     /// <summary>Caller holds <see cref="gate"/>.</summary>
     private int CountActive(DateTimeOffset now)
     {
-        var count = 0;
-
-        foreach (var pair in pairings)
-        {
-            if (pair.Value.ExpiresAt > now)
-            {
-                count++;
-            }
-        }
-
-        return count;
+        return pairings.Count(pair => pair.Value.ExpiresAt > now);
     }
 
     /// <summary>Six digits, uniformly drawn, leading zeros kept so every code is the same length.</summary>
@@ -344,15 +334,10 @@ public sealed class KioskPairingRegistry
     /// <summary>Caller holds <see cref="gate"/>.</summary>
     private StoredPairing? FindActiveByCode(string code, DateTimeOffset now)
     {
-        foreach (var pair in pairings)
-        {
-            if (pair.Value.ExpiresAt > now && string.Equals(pair.Value.Code, code, StringComparison.Ordinal))
-            {
-                return pair.Value;
-            }
-        }
-
-        return null;
+        return pairings
+            .Where(pair => pair.Value.ExpiresAt > now && string.Equals(pair.Value.Code, code, StringComparison.Ordinal))
+            .Select(pair => pair.Value)
+            .FirstOrDefault();
     }
 
     /// <summary>
@@ -362,12 +347,9 @@ public sealed class KioskPairingRegistry
     /// </summary>
     private void Prune(DateTimeOffset now)
     {
-        foreach (var pair in pairings)
+        foreach (var pair in pairings.Where(pair => pair.Value.ExpiresAt <= now))
         {
-            if (pair.Value.ExpiresAt <= now)
-            {
-                pairings.TryRemove(pair.Key, out _);
-            }
+            pairings.TryRemove(pair.Key, out _);
         }
     }
 

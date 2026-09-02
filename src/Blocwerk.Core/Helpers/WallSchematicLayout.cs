@@ -185,7 +185,8 @@ public sealed class WallSchematicLayout
         var top = panel.Points[0];
         foreach (var p in panel.Points)
         {
-            if (p.Dy < top.Dy || (p.Dy == top.Dy && p.Dx < top.Dx))
+            if (FloatCompare.Below(p.Dy, top.Dy, FloatCompare.NormalisedEpsilon)
+                || (FloatCompare.AboutEqual(p.Dy, top.Dy, FloatCompare.NormalisedEpsilon) && p.Dx < top.Dx))
             {
                 top = p;
             }

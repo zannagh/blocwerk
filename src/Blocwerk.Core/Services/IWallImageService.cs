@@ -49,6 +49,16 @@ public interface IWallImageService
         CancellationToken ct = default);
 
     /// <summary>
+    /// The <see cref="WallPhotoTag"/> of the same database-backed gallery item, read without
+    /// touching the blob so a conditional request is answered before the bytes are selected.
+    /// </summary>
+    Task<WallPhotoTag?> GetLegacyImageTagAsync(
+        Guid wallId,
+        WallGallerySource source,
+        Guid sourceId,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Deletes an uploaded image and its stored file. The acting user must administer the wall.
     /// </summary>
     /// <exception cref="UnauthorizedAccessException">The acting user does not administer the wall.</exception>

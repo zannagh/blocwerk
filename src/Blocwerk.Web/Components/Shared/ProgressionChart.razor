@@ -2,6 +2,7 @@
 @using System.Text
 @using System.Text.Json
 @inject IJSRuntime JS
+@inject ILogger<ProgressionChart> Logger
 @implements IAsyncDisposable
 
 <div class="prog-chart">
@@ -330,8 +331,10 @@
         {
             _boundPayload = null;
         }
-        catch (JSDisconnectedException)
+        catch (JSDisconnectedException ex)
         {
+            // The circuit went away between the render and the interop call; nothing left to bind to.
+            Logger.LogDebug(ex, "Chart bind skipped: circuit disconnected");
         }
     }
 
@@ -341,9 +344,10 @@
         {
             await JS.InvokeVoidAsync("blocwerkChart.unbind", _container);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             // Circuit already gone during teardown; nothing to clean up.
+            Logger.LogDebug(ex, "Chart unbind failed during teardown");
         }
 
         _selfRef?.Dispose();

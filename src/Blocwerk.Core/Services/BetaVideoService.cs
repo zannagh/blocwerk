@@ -53,6 +53,15 @@ public interface IBetaVideoService
 
     /// <summary>Deletes a clip (row and stored file). Only its uploader may.</summary>
     Task DeleteVideoAsync(Guid videoId);
+
+    /// <summary>
+    /// Throws unless the signed-in caller is allowed to add a clip to <paramref name="boulderId"/>.
+    /// Called by the upload endpoint BEFORE a byte is written, so an unauthorized caller cannot make
+    /// the server spend disk and a transcode on a file it will then refuse.
+    /// </summary>
+    /// <exception cref="UnauthorizedAccessException">Nobody is signed in.</exception>
+    /// <exception cref="InvalidOperationException">No such boulder, or the caller is not a member of its wall.</exception>
+    Task EnsureCanUploadAsync(Guid boulderId);
 }
 
 public class BetaVideoService : IBetaVideoService
@@ -119,6 +128,10 @@ public class BetaVideoService : IBetaVideoService
                 logger.LogWarning("Cannot add beta video: boulder {BoulderId} not found for {UserId}", boulderId, user.Id);
                 throw new InvalidOperationException("Boulder not found");
             }
+
+            // Boulder has no query filter of its own (only Wall does), so membership is checked
+            // explicitly here rather than being assumed from the read having succeeded.
+            await EnsureMemberAsync(db, boulder.WallId, user.Id);
 
             var video = new BetaVideo
             {
@@ -333,6 +346,25 @@ public class BetaVideoService : IBetaVideoService
         }
     }
 
+    public async Task EnsureCanUploadAsync(Guid boulderId)
+    {
+        var user = await currentUserService.GetCurrentUserAsync();
+        await using var db = await dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = user.Id;
+
+        var wallId = await db.Boulders
+            .Where(b => b.Id == boulderId)
+            .Select(b => (Guid?)b.WallId)
+            .FirstOrDefaultAsync();
+
+        if (wallId is null)
+        {
+            throw new InvalidOperationException("Boulder not found");
+        }
+
+        await EnsureMemberAsync(db, wallId.Value, user.Id);
+    }
+
     private static Task<List<BetaVideoInfo>> ProjectAsync(IQueryable<BetaVideo> query) =>
         query
             .AsNoTracking()
@@ -415,4 +447,17 @@ public class BetaVideoService : IBetaVideoService
         string.IsNullOrWhiteSpace(value) ? null
         : value.Length <= max ? value
         : value[..max];
+
+    /// <summary>
+    /// Beta clips are for wall members. The boulder table carries no query filter, so this is the
+    /// only thing standing between a signed-in stranger and every boulder in the installation.
+    /// </summary>
+    private static async Task EnsureMemberAsync(BlocwerkDbContext db, Guid wallId, Guid userId)
+    {
+        var isMember = await db.WallMembers.AnyAsync(m => m.WallId == wallId && m.UserId == userId);
+        if (!isMember)
+        {
+            throw new InvalidOperationException("Only wall members can do this");
+        }
+    }
 }

@@ -79,6 +79,7 @@ public static class CoreServices
         builder.Services.AddSingleton<IVideoTranscoder, FfmpegVideoTranscoder>();
         builder.Services.AddScoped<IBetaVideoService, BetaVideoService>();
         builder.Services.AddSingleton<IWallImageStorage, FileSystemWallImageStorage>();
+        builder.Services.AddSingleton<IImageVariantCache, FileSystemImageVariantCache>();
         builder.Services.AddScoped<IWallImageService, WallImageService>();
         builder.Services.AddScoped<IWallTemperatureService, WallTemperatureService>();
         // API-key MINTING is blocked for kiosk sessions on the service, not just in the UI: the

@@ -2,6 +2,7 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Helpers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -115,6 +116,8 @@ public partial class WallPanelService : IWallPanelService
     /// <inheritdoc/>
     public async Task<StagePanelResult> StagePanelAsync(Guid wallId, int col, int row, byte[] image, string contentType)
     {
+        // Stored unmodified: the panel matcher and hold detection below need the full-resolution
+        // upload. The browser gets downscaled variants derived from it (see IImageVariantCache).
         var user = await currentUserService.GetCurrentUserAsync();
         await using var db = await dbContextFactory.CreateDbContextAsync();
         db.CurrentUserId = user.Id;

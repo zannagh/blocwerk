@@ -95,9 +95,9 @@ public class HoldDetectionVisualTests : IDisposable
         var textPaint = new SKPaint
         {
             Color = SKColors.White,
-            TextSize = 14,
             IsAntialias = true,
         };
+        var textFont = new SKFont { Size = 14 };
 
         var textBgPaint = new SKPaint
         {
@@ -121,10 +121,9 @@ public class HoldDetectionVisualTests : IDisposable
                 label += $" {hold.Color}";
             }
 
-            var textBounds = new SKRect();
-            textPaint.MeasureText(label, ref textBounds);
+            textFont.MeasureText(label, out var textBounds, textPaint);
             canvas.DrawRect(cx - 2, cy - r - textBounds.Height - 6, textBounds.Width + 6, textBounds.Height + 4, textBgPaint);
-            canvas.DrawText(label, cx, cy - r - 4, textPaint);
+            canvas.DrawText(label, cx, cy - r - 4, SKTextAlign.Left, textFont, textPaint);
         }
 
         using var image = surface.Snapshot();

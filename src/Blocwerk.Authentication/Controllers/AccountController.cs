@@ -104,7 +104,7 @@ public partial class AccountController : Controller
                 target += $"&returnUrl={Uri.EscapeDataString(returnUrl)}";
             }
 
-            return Redirect(target);
+            return RedirectLocalOr(target);
         }
 
         // Carry returnUrl to the selection page so the provider buttons preserve it too — the click
@@ -154,7 +154,7 @@ public partial class AccountController : Controller
             Provider = provider,
         });
 
-        return Redirect(BuildProviderAuthorizeUrl(provider, state) ?? "/oauth-select");
+        return RedirectToProviderOr(provider, state, "/oauth-select");
     }
 
     [HttpGet("/account/callback")]
@@ -239,7 +239,7 @@ public partial class AccountController : Controller
         // The OAuth state is already consumed upstream by /oauth-callback, so it is gone here. The
         // client_id/client_secret below are only placeholders: /token re-derives the real provider
         // from the code (via CodeBasedAuthProvider) and overrides these, so their value is moot.
-        FormUrlEncodedContent tokenRequest = new(
+        using FormUrlEncodedContent tokenRequest = new(
         [
             new KeyValuePair<string, string>("grant_type", "authorization_code"),
             new KeyValuePair<string, string>("code", code),

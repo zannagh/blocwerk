@@ -17,7 +17,14 @@ public static class BetaVideoUploadEndpoint
 {
     public static void MapBetaVideoUpload(this WebApplication app)
     {
-        app.MapPost("/api/beta-videos/{boulderId:guid}", HandleAsync).DisableAntiforgery();
+        // RequireAuthorization, not an in-handler check: the request must not reach the streaming
+        // code at all without a principal. Antiforgery is disabled because the body is a streamed
+        // multipart read by MultipartReader — the antiforgery middleware would have to buffer the
+        // whole form to find its token, which is exactly what this endpoint exists to avoid. The
+        // auth cookie is SameSite=Lax, so no cross-site POST carries it.
+        app.MapPost("/api/beta-videos/{boulderId:guid}", HandleAsync)
+            .RequireAuthorization()
+            .DisableAntiforgery();
     }
 
     private static async Task<IResult> HandleAsync(
@@ -32,6 +39,23 @@ public static class BetaVideoUploadEndpoint
     {
         var logger = loggerFactory.CreateLogger("BetaVideoUpload");
         var opts = settings.BetaVideo;
+
+        // Decide first, write second. Permission is resolved from the authenticated principal and a
+        // server-side lookup of the boulder's wall — nothing in the request body or its headers has a
+        // say. Previously the only check lived in AddVideoFromFileAsync, which runs after the clip has
+        // already been streamed to disk and possibly transcoded.
+        try
+        {
+            await betaVideoService.EnsureCanUploadAsync(boulderId);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Results.Unauthorized();
+        }
+        catch (InvalidOperationException)
+        {
+            return Results.Forbid();
+        }
 
         var sizeFeature = http.Features.Get<IHttpMaxRequestBodySizeFeature>();
         if (sizeFeature is { IsReadOnly: false })

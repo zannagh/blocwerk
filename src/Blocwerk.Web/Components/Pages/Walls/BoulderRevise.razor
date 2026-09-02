@@ -230,7 +230,7 @@
     // letting it survive. When there are NONE, keep the boulder's LOADED value untouched — unlike
     // create (which always forces true), revise must never flip an existing hands-follow-feet=false
     // boulder to true on a no-op save.
-    private bool EffectiveHandsFollowFeet => HasDedicatedFeet ? false : _handsFollowFeet;
+    private bool EffectiveHandsFollowFeet => !HasDedicatedFeet && _handsFollowFeet;
 
     /// <summary>The whole revise form as the JSON the offline queue replays. See offline-boulder.js.</summary>
     private string SnapshotJson => System.Text.Json.JsonSerializer.Serialize(new

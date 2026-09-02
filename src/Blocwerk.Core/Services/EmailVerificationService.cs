@@ -189,7 +189,10 @@ public class EmailVerificationService : IEmailVerificationService
             _ => "verify your email address",
         };
 
-        var subject = $"Your Blocwerk verification code: {code}";
+        // The code is in the body only. A subject line is the one part of a message that travels in
+        // clear through relay logs, lock-screen notifications and mail-client previews, so it must not
+        // carry the secret.
+        var subject = "Your Blocwerk verification code";
         var htmlBody =
             $"<p>Use this code to {action}:</p>" +
             $"<p style=\"font-size:28px;font-weight:700;letter-spacing:4px\">{code}</p>" +

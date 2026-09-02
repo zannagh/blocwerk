@@ -24,18 +24,13 @@ public static class HoldDetectionServices
 
     public static string ResolveModelPath(string configuredPath)
     {
-        if (Path.IsPathRooted(configuredPath) && File.Exists(configuredPath))
+        if (Path.IsPathRooted(configuredPath))
         {
             return configuredPath;
         }
 
         var assemblyDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? ".";
         var resolved = Path.Combine(assemblyDir, configuredPath);
-        if (File.Exists(resolved))
-        {
-            return resolved;
-        }
-
-        return configuredPath;
+        return File.Exists(resolved) ? resolved : configuredPath;
     }
 }

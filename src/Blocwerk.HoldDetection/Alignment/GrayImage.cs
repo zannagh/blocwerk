@@ -43,14 +43,15 @@ internal sealed class GrayImage
         var w = Math.Max(1, (int)Math.Round(decoded.Width / scale));
         var h = Math.Max(1, (int)Math.Round(decoded.Height / scale));
 
-        SKBitmap source = decoded;
-        SKBitmap? scaled = null;
-        if (w != decoded.Width || h != decoded.Height)
+        using SKBitmap? scaled = w != decoded.Width || h != decoded.Height
+            ? new SKBitmap(new SKImageInfo(w, h, SKColorType.Bgra8888, SKAlphaType.Premul))
+            : null;
+        if (scaled != null)
         {
-            scaled = new SKBitmap(new SKImageInfo(w, h, SKColorType.Bgra8888, SKAlphaType.Premul));
             decoded.ScalePixels(scaled, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None));
-            source = scaled;
         }
+
+        SKBitmap source = scaled ?? decoded;
 
         var pixels = source.Pixels;
         var gray = new byte[w * h];
@@ -61,8 +62,6 @@ internal sealed class GrayImage
             // Integer luma (Rec. 601-ish) matching common ORB grayscale.
             gray[i] = (byte)(((19595 * c.Red) + (38470 * c.Green) + (7471 * c.Blue)) >> 16);
         }
-
-        scaled?.Dispose();
 
         return new GrayImage
         {

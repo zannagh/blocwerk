@@ -54,6 +54,12 @@ public interface IWallService
 
     Task<byte[]?> GetStagedPhotoAsync(Guid wallId);
 
+    /// <summary>
+    /// The staged photo's <see cref="WallPhotoTag"/>, read without touching the blob, so a
+    /// conditional request can be answered with 304 before any bytes leave Postgres.
+    /// </summary>
+    Task<WallPhotoTag?> GetStagedPhotoTagAsync(Guid wallId);
+
     Task<Hold> MarkHoldModifiedAsync(Guid holdId);
 
     /// <summary>
@@ -90,6 +96,13 @@ public interface IWallService
     Task<byte[]?> GetPhotoByShareTokenAsync(Guid wallId, string shareToken);
 
     /// <summary>
+    /// The live photo's <see cref="WallPhotoTag"/> under the same gate as
+    /// <see cref="GetPhotoAsync"/> (or <see cref="GetPhotoByShareTokenAsync"/> when
+    /// <paramref name="shareToken"/> is given), read without touching the blob.
+    /// </summary>
+    Task<WallPhotoTag?> GetPhotoTagAsync(Guid wallId, string? shareToken);
+
+    /// <summary>
     /// The holds captured at a specific, possibly retired, generation. Used to render
     /// a historic boulder against the wall as it looked when it was set.
     /// </summary>
@@ -102,6 +115,13 @@ public interface IWallService
     Task<WallPhoto?> GetPhotoForGenerationAsync(Guid wallId, int generation);
 
     Task<WallPhoto?> GetPhotoForGenerationByShareTokenAsync(Guid wallId, string shareToken, int generation);
+
+    /// <summary>
+    /// The <see cref="WallPhotoTag"/> of the photo <see cref="GetPhotoForGenerationAsync"/> would
+    /// return, read without touching the blob. A retired generation comes back with
+    /// <see cref="WallPhotoTag.IsArchived"/> set, because those bytes can never change again.
+    /// </summary>
+    Task<WallPhotoTag?> GetPhotoTagForGenerationAsync(Guid wallId, string? shareToken, int generation);
 
     Task<Hold> AddHoldAsync(Guid wallId, double x, double y, double radius, string? color, HoldCategory category = HoldCategory.Hand, List<ShapePoint>? shapePoints = null, bool isVirtual = false, HoldMaterial? material = null, HoldHandType? handType = null);
 

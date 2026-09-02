@@ -38,7 +38,7 @@ public class EmailSender : IEmailSender
                 "SMTP is not configured (SMTP__HOST / SMTP__FROM are empty). Check IsConfigured before sending.");
         }
 
-        var message = new MimeMessage();
+        using var message = new MimeMessage();
         message.From.Add(new MailboxAddress(settings.FromName ?? string.Empty, settings.From));
         message.To.Add(MailboxAddress.Parse(toEmail));
         message.Subject = subject;
@@ -66,9 +66,20 @@ public class EmailSender : IEmailSender
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to send email to {Recipient} with subject {Subject}.", toEmail, subject);
+            // Neither the address nor the subject goes to the log. The recipient is personal data,
+            // and a subject line can carry the payload itself (the verification mail used to put the
+            // one-time code there), so a delivery failure would have written both into cleartext logs
+            // that ship off the box. The domain is enough to tell a broken relay from a bad address.
+            logger.LogError(ex, "Failed to send email to a {Domain} address.", RecipientDomain(toEmail));
             throw;
         }
+    }
+
+    /// <summary>The domain half of an address, for logging. Never the local part.</summary>
+    private static string RecipientDomain(string toEmail)
+    {
+        var at = toEmail.LastIndexOf('@');
+        return at >= 0 && at < toEmail.Length - 1 ? toEmail[(at + 1)..] : "unknown";
     }
 
     private static SecureSocketOptions MapSecurity(SmtpSecurity security) => security switch

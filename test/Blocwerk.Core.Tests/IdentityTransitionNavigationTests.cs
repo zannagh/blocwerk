@@ -60,13 +60,12 @@ public class IdentityTransitionNavigationTests
                      Path.Combine(RepoRoot, "src"), "*.razor", SearchOption.AllDirectories))
         {
             string markup = File.ReadAllText(file);
-            foreach (Match match in Regex.Matches(markup, "<a\\b[^>]*>", RegexOptions.Singleline))
+            bool offends = Regex.Matches(markup, "<a\\b[^>]*>", RegexOptions.Singleline)
+                .Any(match => match.Value.Contains("/account/logout", StringComparison.Ordinal)
+                    && !match.Value.Contains("data-enhance-nav=\"false\"", StringComparison.Ordinal));
+            if (offends)
             {
-                if (match.Value.Contains("/account/logout", StringComparison.Ordinal)
-                    && !match.Value.Contains("data-enhance-nav=\"false\"", StringComparison.Ordinal))
-                {
-                    offenders.Add(Path.GetRelativePath(RepoRoot, file));
-                }
+                offenders.Add(Path.GetRelativePath(RepoRoot, file));
             }
         }
 
@@ -104,15 +103,9 @@ public class IdentityTransitionNavigationTests
     /// </summary>
     private static string? FindAnchor(string markup, string href)
     {
-        foreach (Match match in Regex.Matches(markup, "<a\\b[^>]*>", RegexOptions.Singleline))
-        {
-            if (match.Value.Contains($"href=\"{href}\"", StringComparison.Ordinal))
-            {
-                return match.Value;
-            }
-        }
-
-        return null;
+        return Regex.Matches(markup, "<a\\b[^>]*>", RegexOptions.Singleline)
+            .FirstOrDefault(match => match.Value.Contains($"href=\"{href}\"", StringComparison.Ordinal))
+            ?.Value;
     }
 
     private static string ReadSource(string relativePath)

@@ -39,9 +39,12 @@ public class FileSystemBetaVideoStorage : IBetaVideoStorage
         }
 
         // Guard against traversal: only a bare file name directly under the root is valid.
-        var candidate = Path.GetFullPath(Path.Combine(root, storedName));
-        var expected = Path.Combine(root, Path.GetFileName(storedName));
-        return candidate == Path.GetFullPath(expected) ? candidate : null;
+        if (Path.IsPathRooted(storedName) || Path.GetFileName(storedName) != storedName)
+        {
+            return null;
+        }
+
+        return Path.GetFullPath(Path.Combine(root, storedName));
     }
 
     public void Delete(string? storedName)

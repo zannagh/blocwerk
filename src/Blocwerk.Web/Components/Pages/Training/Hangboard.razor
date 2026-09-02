@@ -105,7 +105,7 @@
     private bool _isRunning;
     private bool _finished;
     private bool _isSaving;
-    private List<TimeSpan> _sets = [];
+    private readonly List<TimeSpan> _sets = [];
     private DateTimeOffset _startTime;
     private TimeSpan _elapsed;
     private Timer? _timer;

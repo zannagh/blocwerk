@@ -2,6 +2,7 @@ using System.Text.Json;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace Blocwerk.Core.Data;
 
@@ -437,6 +438,37 @@ public class BlocwerkDbContext : DbContext
         });
     }
 
+    /// <summary>
+    /// Change tracking for the JSON-converted shape-point lists (<see cref="Hold.ShapePoints"/>,
+    /// <see cref="Wall.BorderPoints"/>, <see cref="WallSegment.Points"/>). Without a comparer EF
+    /// cannot tell whether a converted collection changed and rewrites the column on every
+    /// SaveChanges — real write amplification on a table with thousands of holds. Compares by
+    /// value, hashes by value, and snapshots by deep copy so the original is preserved for the
+    /// comparison rather than aliasing the list the caller is about to mutate in place.
+    /// </summary>
+    private static readonly ValueComparer<List<ShapePoint>> ShapePointsComparer = new(
+        (left, right) => left == null
+            ? right == null
+            : right != null && left.Count == right.Count
+                && left.Zip(right).All(pair => pair.First.Dx == pair.Second.Dx && pair.First.Dy == pair.Second.Dy),
+        points => points.Aggregate(
+            0,
+            (hash, point) => HashCode.Combine(hash, point.Dx, point.Dy)),
+        points => points.Select(point => new ShapePoint { Dx = point.Dx, Dy = point.Dy }).ToList());
+
+    /// <summary>The same comparer for the properties whose list is itself nullable.</summary>
+    private static readonly ValueComparer<List<ShapePoint>?> NullableShapePointsComparer = new(
+        (left, right) => left == null
+            ? right == null
+            : right != null && left.Count == right.Count
+                && left.Zip(right).All(pair => pair.First.Dx == pair.Second.Dx && pair.First.Dy == pair.Second.Dy),
+        points => points == null
+            ? 0
+            : points.Aggregate(0, (hash, point) => HashCode.Combine(hash, point.Dx, point.Dy)),
+        points => points == null
+            ? null
+            : points.Select(point => new ShapePoint { Dx = point.Dx, Dy = point.Dy }).ToList());
+
     private void ConfigureWall(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Wall>(entity =>
@@ -453,7 +485,8 @@ public class BlocwerkDbContext : DbContext
             entity.Property(w => w.BorderPoints)
                 .HasConversion(
                     v => v == null ? null : JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
-                    v => v == null ? null : JsonSerializer.Deserialize<List<ShapePoint>>(v, (JsonSerializerOptions?)null));
+                    v => v == null ? null : JsonSerializer.Deserialize<List<ShapePoint>>(v, (JsonSerializerOptions?)null),
+                    NullableShapePointsComparer);
 
             // Two independent gates, ANDed. The first is the ordinary membership gate and is
             // unchanged (Guid.Empty still disables it for anonymous/share-token reads). The second
@@ -499,7 +532,8 @@ public class BlocwerkDbContext : DbContext
             entity.Property(s => s.Points)
                 .HasConversion(
                     v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
-                    v => JsonSerializer.Deserialize<List<ShapePoint>>(v, (JsonSerializerOptions?)null) ?? new List<ShapePoint>());
+                    v => JsonSerializer.Deserialize<List<ShapePoint>>(v, (JsonSerializerOptions?)null) ?? new List<ShapePoint>(),
+                    ShapePointsComparer);
         });
     }
 
@@ -517,7 +551,8 @@ public class BlocwerkDbContext : DbContext
             entity.Property(h => h.ShapePoints)
                 .HasConversion(
                     v => v == null ? null : JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
-                    v => v == null ? null : JsonSerializer.Deserialize<List<ShapePoint>>(v, (JsonSerializerOptions?)null));
+                    v => v == null ? null : JsonSerializer.Deserialize<List<ShapePoint>>(v, (JsonSerializerOptions?)null),
+                    NullableShapePointsComparer);
         });
     }
 

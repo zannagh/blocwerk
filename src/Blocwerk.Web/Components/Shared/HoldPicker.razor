@@ -17,7 +17,8 @@
 @if (_viewMode == ViewMode.Photo)
 {
     <div class="photo-picker" @ref="_photoPickerRef">
-        <img src="@(PhotoUrl ?? $"/api/walls/{WallId}/photo")" alt="Wall" class="wall-photo" />
+        <img src="@ResponsiveImage.Initial(PhotoUrl ?? $"/api/walls/{WallId}/photo")" data-bw-res
+             alt="Wall" class="wall-photo" />
         <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none"
              @onclick="OnSvgClick"
              style="cursor: @(_placingVirtual ? "crosshair" : "default");">
@@ -171,9 +172,9 @@ else
     private ElementReference _viewportRef;
     private ElementReference _photoPickerRef;
     private readonly ViewportZoomState _zoomState;
-    private HoldType _placeType = HoldType.Normal;
+    private readonly HoldType _placeType = HoldType.Normal;
     private HoldUsage _placeUsage = HoldUsage.HandAndFoot;
-    private ViewMode _viewMode = ViewMode.Photo;
+    private readonly ViewMode _viewMode = ViewMode.Photo;
     private bool _isPanning;
     private bool _placingVirtual;
 
@@ -388,14 +389,9 @@ else
 
         if (HoldTwins != null && HoldTwins.TryGetValue(holdId, out var twins))
         {
-            foreach (var twinId in twins)
-            {
-                var twin = SelectedHolds.FirstOrDefault(s => s.HoldId == twinId);
-                if (twin != null)
-                {
-                    return twin;
-                }
-            }
+            return twins
+                .Select(twinId => SelectedHolds.FirstOrDefault(s => s.HoldId == twinId))
+                .FirstOrDefault(twin => twin != null);
         }
 
         return null;

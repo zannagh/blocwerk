@@ -45,7 +45,7 @@ public class TotpService : ITotpService
     {
         using var generator = new QRCodeGenerator();
         using var data = generator.CreateQrCode(otpAuthUri, QRCodeGenerator.ECCLevel.Q);
-        var png = new PngByteQRCode(data);
+        using var png = new PngByteQRCode(data);
         return png.GetGraphic(10);
     }
 

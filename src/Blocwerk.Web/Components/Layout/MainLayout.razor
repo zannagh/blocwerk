@@ -54,7 +54,8 @@
             @* Kiosk tablets get a deliberately tiny bar: the wall they are bolted to, the tools, and
                the user picker. Everything else either points at a route KioskRestrictions blocks or
                is meaningless on a shared device. *@
-            <a href="@KioskWallHref" class="nav-item">
+            <a href="@KioskWallHref" class="nav-item"
+               onclick="return bwNav.goHomeWall(event, this.href)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
                     <path d="M3 10 12 3l9 7" />
                     <path d="M5 9v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9" />
@@ -110,7 +111,11 @@
                 </a>
                 @if (_homeWallId is not null)
                 {
-                    <a href="/home" class="nav-item">
+                    @* Static layout, so the same-URL case is handled in JS (bwNav) rather than
+                       with a Blazor @onclick, which would never fire here. The href stays intact so
+                       middle-click, open-in-new-tab, and a no-JS load all still navigate. *@
+                    <a href="@HomeWallHref" class="nav-item"
+                       onclick="return bwNav.goHomeWall(event, this.href)">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
                             <path d="M3 10 12 3l9 7" />
                             <path d="M5 9v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9" />
@@ -342,6 +347,15 @@
             _userHasAvatar = false;
         }
     }
+
+    // The Home tab is a fixed destination: the home wall's overview. It links straight at the wall
+    // instead of at /home so there is no cookie resume and no server round-trip deciding where "home"
+    // is. The link alone only covers taps that actually change the URL — from a boulder, another
+    // wall, or a "?view=" variant; when the user is already on this exact URL and has swiped to
+    // another carousel page there is nothing to navigate to, and bwNav.goHomeWall moves the carousel
+    // instead.
+    private string HomeWallHref =>
+        _homeWallId is { } homeWallId ? $"/walls/{homeWallId}" : "/walls";
 
     // The kiosk Home tab always points at the one wall the tablet is registered to, taken from the
     // validated kiosk context — never from the URL. Falls back to /walls, which the kiosk restriction

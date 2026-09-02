@@ -190,12 +190,9 @@ public partial class PanelLinkTool
         }
 
         var map = new Dictionary<Guid, string>();
-        foreach (var h in holds)
+        foreach (var h in holds.Where(h => linked.Contains(h.Id)))
         {
-            if (linked.Contains(h.Id))
-            {
-                map[h.Id] = LinkedOutlineColor;
-            }
+            map[h.Id] = LinkedOutlineColor;
         }
 
         return map.Count == 0 ? null : map;

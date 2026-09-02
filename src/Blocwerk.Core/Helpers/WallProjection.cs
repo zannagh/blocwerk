@@ -100,15 +100,9 @@ public static class WallProjection
             return null;
         }
 
-        foreach (var segment in segments.OrderBy(s => s.SortOrder))
-        {
-            if (IsPointInPolygon(x, y, segment.Points))
-            {
-                return segment;
-            }
-        }
-
-        return null;
+        return segments
+            .OrderBy(s => s.SortOrder)
+            .FirstOrDefault(s => IsPointInPolygon(x, y, s.Points));
     }
 
     /// <summary>

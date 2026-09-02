@@ -172,9 +172,9 @@ public class ManualDetectionTest
         var textPaint = new SKPaint
         {
             Color = SKColors.White,
-            TextSize = 12,
             IsAntialias = true,
         };
+        var textFont = new SKFont { Size = 12 };
 
         var textBgPaint = new SKPaint
         {
@@ -197,10 +197,9 @@ public class ManualDetectionTest
             canvas.DrawCircle(cx, cy, r, strokePaint);
 
             var label = $"#{i + 1} {hold.Color}";
-            var textBounds = new SKRect();
-            textPaint.MeasureText(label, ref textBounds);
+            textFont.MeasureText(label, out var textBounds, textPaint);
             canvas.DrawRect(cx - 1, cy - r - textBounds.Height - 4, textBounds.Width + 4, textBounds.Height + 2, textBgPaint);
-            canvas.DrawText(label, cx + 1, cy - r - 3, textPaint);
+            canvas.DrawText(label, cx + 1, cy - r - 3, SKTextAlign.Left, textFont, textPaint);
         }
 
         using var image = surface.Snapshot();

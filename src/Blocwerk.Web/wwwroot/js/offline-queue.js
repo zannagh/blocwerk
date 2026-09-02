@@ -237,10 +237,16 @@
                     return db.put(entry).then(() => 'pause');
                 }
 
+                // 'retry' and 'defer' are the same bookkeeping — keep the entry, burn a backoff
+                // window — and differ only in whether flush() should attempt the rest of the run.
+                // 'defer' is a 400 the transport could not attribute (see offline-transport.js):
+                // possibly a bad payload, possibly a page whose JavaScript predates the antiforgery
+                // header. Guessing "permanent" there deletes real data, so it waits for the 7-day
+                // expiry instead; a reload fixes the stale-JavaScript case outright.
                 entry.lastError = message;
                 entry.nextAttemptAt = Date.now() + transport.backoffFor(entry.attempts);
                 state.lastError = message;
-                return db.put(entry).then(() => 'retry');
+                return db.put(entry).then(() => verdict);
             });
         }).catch(err => {
             // Network-level failure: offline, DNS, TLS, aborted. Always keep and retry.
@@ -291,7 +297,9 @@
 
                     // A paused queue (401) or a dead network stops the run; retrying the rest
                     // right now would just repeat the same failure. A hold does not — it is about
-                    // that one entry's owner, not about the connection.
+                    // that one entry's owner, not about the connection. Neither does a defer: it
+                    // may well be about that one entry's payload, and a deferred entry now outlives
+                    // its attempt for up to seven days, so it must never sit in front of the queue.
                     return outcome === 'pause' || outcome === 'retry';
                 });
             }), Promise.resolve(false));

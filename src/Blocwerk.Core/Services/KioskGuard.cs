@@ -29,20 +29,15 @@ internal static class KioskGuard
     /// <see cref="Guid.Empty"/> means "a kiosk whose wall could not be determined", which matches no
     /// wall and therefore refuses everything — the same fail-closed value the query filter uses.
     /// </summary>
-    internal static Guid? ScopedWallId(IKioskContext? kioskContext, BlocwerkDbContext? db)
+    internal static Guid? ScopedWallId(IKioskContext? kioskContext)
     {
-        if (kioskContext is { IsKiosk: true })
-        {
-            return kioskContext.KioskWallId ?? Guid.Empty;
-        }
-
-        return db?.KioskWallId;
+        return kioskContext is { IsKiosk: true } ? kioskContext.KioskWallId ?? Guid.Empty : null;
     }
 
-    /// <summary>True when the current session belongs to a kiosk tablet.</summary>
-    internal static bool IsKiosk(IKioskContext? kioskContext, BlocwerkDbContext? db)
+    /// <inheritdoc cref="ScopedWallId(IKioskContext?)"/>
+    internal static Guid? ScopedWallId(IKioskContext? kioskContext, BlocwerkDbContext db)
     {
-        return ScopedWallId(kioskContext, db) is not null;
+        return ScopedWallId(kioskContext) ?? db.KioskWallId;
     }
 
     /// <summary>
@@ -52,9 +47,23 @@ internal static class KioskGuard
     /// <remarks>
     /// <paramref name="action"/> is a sentence-leading description, e.g. "Generating a share link".
     /// </remarks>
-    internal static void EnsureNotKiosk(IKioskContext? kioskContext, BlocwerkDbContext? db, string action)
+    internal static void EnsureNotKiosk(IKioskContext? kioskContext, BlocwerkDbContext db, string action)
     {
-        if (IsKiosk(kioskContext, db))
+        Refuse(ScopedWallId(kioskContext, db), action);
+    }
+
+    /// <summary>
+    /// The same refusal where no <see cref="BlocwerkDbContext"/> is at hand, so only the session
+    /// state can answer. Prefer the overload taking one whenever a context exists.
+    /// </summary>
+    internal static void EnsureNotKiosk(IKioskContext? kioskContext, string action)
+    {
+        Refuse(ScopedWallId(kioskContext), action);
+    }
+
+    private static void Refuse(Guid? scopedWallId, string action)
+    {
+        if (scopedWallId is not null)
         {
             throw new KioskRestrictedException($"{action} is not available from a kiosk device.");
         }
@@ -64,7 +73,7 @@ internal static class KioskGuard
     /// Refuses authority over any wall other than the kiosk's own. A non-kiosk session passes
     /// untouched.
     /// </summary>
-    internal static void EnsureKioskWall(IKioskContext? kioskContext, BlocwerkDbContext? db, Guid wallId)
+    internal static void EnsureKioskWall(IKioskContext? kioskContext, BlocwerkDbContext db, Guid wallId)
     {
         if (ScopedWallId(kioskContext, db) is { } scoped && scoped != wallId)
         {

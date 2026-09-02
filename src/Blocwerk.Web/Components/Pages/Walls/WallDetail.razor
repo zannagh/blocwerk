@@ -13,6 +13,7 @@
 @inject Blocwerk.Core.Abstractions.IKioskContext KioskContext
 @inject CircuitEditActivity EditActivity
 @inject NavigationManager Navigation
+@inject ILogger<WallDetail> Logger
 @implements IDisposable
 @using Blocwerk.Web.Components.Shared
 @using Blocwerk.Core.Helpers
@@ -740,6 +741,11 @@ else
 
     private WallCarousel? _carousel;
     private Wall? _wall;
+
+    // The wall the loaded state belongs to, so OnParametersSetAsync can tell a real wall change from
+    // an ordinary re-render or a query-only navigation.
+    private Guid _loadedWallId;
+    private string? _loadedShareToken;
     private List<Hold> _holds = [];
     private List<ShapePoint> _borderPoints = [];
     private List<WallSegment> _segments = [];
@@ -931,6 +937,32 @@ else
     protected override async Task OnInitializedAsync()
     {
         Cache.Changed += OnCacheChanged;
+        await LoadCurrentWall();
+    }
+
+    // Navigating from one wall to another keeps this component alive — same route template, new
+    // parameters — so without this the page would keep showing the wall it first loaded. A pure
+    // ?view= change needs no reload: InitialCarouselPage recomputes and the carousel repositions on
+    // the parameter change.
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedWallId == WallId && _loadedShareToken == ShareToken)
+        {
+            return;
+        }
+
+        // Drop the old wall first: it puts the page back on its "Loading..." state, which also
+        // recreates the carousel so it opens on the new wall's initial page rather than wherever the
+        // user had swiped the previous one.
+        _wall = null;
+        StateHasChanged();
+        await LoadCurrentWall();
+    }
+
+    private async Task LoadCurrentWall()
+    {
+        _loadedWallId = WallId;
+        _loadedShareToken = ShareToken;
         await LoadWall();
         if (_wall != null && !_isAnonymous)
         {
@@ -1116,8 +1148,10 @@ else
                     _isModerator = membership?.Role == WallRole.Moderator;
                 }
             }
-            catch (UnauthorizedAccessException)
+            catch (UnauthorizedAccessException ex)
             {
+                // No signed-in user behind the share link; the viewer stays anonymous.
+                Logger.LogDebug(ex, "Share-token viewer of wall {WallId} is not signed in", WallId);
             }
         }
         else

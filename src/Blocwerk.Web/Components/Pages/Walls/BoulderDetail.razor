@@ -12,6 +12,7 @@
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 @inject CircuitEditActivity EditActivity
+@inject ILogger<BoulderDetail> Logger
 @using Blocwerk.Web.Components.Shared
 @using Blocwerk.Web.State
 @implements IAsyncDisposable
@@ -218,7 +219,7 @@ else
                     @* data-lens-overlay marks this editor so the long-press magnifier bakes the marked-hold
                        overlay into the lens — boulder detail only; the wall view's editor is never marked. *@
                     <div class="photo-editor" data-lens-overlay="true">
-                        <img src="@PhotoUrl" alt="Wall" class="wall-photo" />
+                        <img src="@ResponsiveImage.Initial(PhotoUrl)" data-bw-res alt="Wall" class="wall-photo" />
                         <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
                             @* The "feet of one colour only" rule is shown as an info banner above the
                                image, not by painting every wall hold of that colour. Only the boulder's
@@ -398,7 +399,7 @@ else
     private BoulderActivityFeed? _activityFeed;
     private BoulderComments? _commentList;
     private BoulderBetaVideos? _betaVideos;
-    private ViewMode _viewMode = ViewMode.Photo;
+    private readonly ViewMode _viewMode = ViewMode.Photo;
     private List<Hold>? _wallHolds;
 
     // Normalized wall-region rectangle the photo view is framed to (null = show the whole photo).
@@ -666,7 +667,11 @@ else
                 _currentUserId = user.Id;
                 _isAnonymous = false;
             }
-            catch (UnauthorizedAccessException) { }
+            catch (UnauthorizedAccessException ex)
+            {
+                // No signed-in user behind the share link; the viewer stays anonymous.
+                Logger.LogDebug(ex, "Share-token viewer of boulder {BoulderId} is not signed in", BoulderId);
+            }
 
             _boulder = await BoulderService.GetBoulderByShareTokenAsync(BoulderId, ShareToken);
         }
@@ -1064,15 +1069,9 @@ else
             return _boulder.BoulderHolds.Select(bh => bh.Hold).ToList();
         }
 
-        Wall? wall;
-        if (!string.IsNullOrEmpty(ShareToken))
-        {
-            wall = await WallService.GetWallByShareTokenAsync(ShareToken);
-        }
-        else
-        {
-            wall = await Cache.GetWallAsync(WallId);
-        }
+        var wall = !string.IsNullOrEmpty(ShareToken)
+            ? await WallService.GetWallByShareTokenAsync(ShareToken)
+            : await Cache.GetWallAsync(WallId);
 
         return wall?.Holds.ToList() ?? [];
     }

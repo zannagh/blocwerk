@@ -140,6 +140,6 @@ public partial class AccountController
             target += $"&returnUrl={Uri.EscapeDataString(returnUrl)}";
         }
 
-        return Redirect(target);
+        return RedirectLocalOr(target);
     }
 }

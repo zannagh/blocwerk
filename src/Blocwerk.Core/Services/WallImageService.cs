@@ -131,6 +131,50 @@ public class WallImageService : IWallImageService
         return null;
     }
 
+    /// <inheritdoc/>
+    public async Task<WallPhotoTag?> GetLegacyImageTagAsync(
+        Guid wallId,
+        WallGallerySource source,
+        Guid sourceId,
+        CancellationToken ct = default)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+        db.CurrentUserId = Guid.Empty;
+
+        // Same rows and same filters as GetLegacyImageContentAsync — the caller has already been
+        // gated by the endpoint — but projected to a server-side length(bytea) instead of the bytes.
+        if (source == WallGallerySource.WallPhoto)
+        {
+            var wall = await db.Walls
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .Where(w => w.Id == wallId && w.Id == sourceId && w.Photo != null)
+                .Select(w => new { Length = w.Photo!.Length, w.PhotoContentType, w.CurrentGeneration })
+                .FirstOrDefaultAsync(ct);
+
+            return wall is null
+                ? null
+                : new WallPhotoTag(wall.Length, wall.PhotoContentType, wall.CurrentGeneration, IsArchived: false);
+        }
+
+        if (source == WallGallerySource.ResetPhoto)
+        {
+            // A reset's archived photo is written once when the reset happens and never rewritten.
+            var reset = await db.WallResets
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .Where(r => r.Id == sourceId && r.WallId == wallId && r.PreviousPhoto != null)
+                .Select(r => new { Length = r.PreviousPhoto!.Length, r.PreviousPhotoContentType, r.Generation })
+                .FirstOrDefaultAsync(ct);
+
+            return reset is null
+                ? null
+                : new WallPhotoTag(reset.Length, reset.PreviousPhotoContentType, reset.Generation, IsArchived: true);
+        }
+
+        return null;
+    }
+
     public async Task DeleteImageAsync(Guid imageId, Guid actingUserId, CancellationToken ct = default)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);

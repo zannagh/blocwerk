@@ -52,6 +52,7 @@ public sealed class OfflineBouldersController : ControllerBase
     /// canonical boulder so the client can reconcile its optimistic state with server truth.
     /// </summary>
     [HttpPost]
+    [ValidateAntiForgeryToken]
     public Task<IActionResult> Create([FromBody] CreateBoulderRequest request)
     {
         if (request.Id == Guid.Empty || request.WallId == Guid.Empty)
@@ -88,6 +89,7 @@ public sealed class OfflineBouldersController : ControllerBase
     /// snapshot re-applies the same state and returns 200 rather than failing.
     /// </summary>
     [HttpPost("{id:guid}")]
+    [ValidateAntiForgeryToken]
     public Task<IActionResult> Revise(Guid id, [FromBody] ReviseBoulderRequest request)
     {
         if (id == Guid.Empty)
@@ -157,9 +159,9 @@ public sealed class OfflineBouldersController : ControllerBase
         {
             return Permanent(ex.Message);
         }
-        catch (InvalidOperationException ex) when (PermanentGuards.ContainsKey(ex.Message))
+        catch (InvalidOperationException ex) when (PermanentGuards.TryGetValue(ex.Message, out var guardStatus))
         {
-            return StatusCode(PermanentGuards[ex.Message], new OfflineActionError(ex.Message, true));
+            return StatusCode(guardStatus, new OfflineActionError(ex.Message, true));
         }
         catch (Exception ex)
         {

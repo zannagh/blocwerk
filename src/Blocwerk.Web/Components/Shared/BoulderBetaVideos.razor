@@ -1,6 +1,7 @@
 @inject IBetaVideoService VideoService
 @inject Blocwerk.Core.Configuration.BlocwerkSettings Settings
 @inject IJSRuntime JS
+@inject ILogger<BoulderBetaVideos> Logger
 @implements IDisposable
 
 @*
@@ -162,8 +163,10 @@
         {
             // The controls are right there; a refused autoplay is not worth a message.
         }
-        catch (JSDisconnectedException)
+        catch (JSDisconnectedException ex)
         {
+            // The viewer navigated away before autoplay could start; there is no player left.
+            Logger.LogDebug(ex, "Beta video autoplay skipped: circuit disconnected");
         }
     }
 

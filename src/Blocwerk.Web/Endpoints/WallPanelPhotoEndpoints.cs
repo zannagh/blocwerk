@@ -24,51 +24,68 @@ public static class WallPanelPhotoEndpoints
 {
     public static void MapWallPanelPhotos(this WebApplication app)
     {
-        app.MapGet("/api/walls/{wallId:guid}/panels/{panelId:guid}/photo", (
+        app.MapMethods("/api/walls/{wallId:guid}/panels/{panelId:guid}/photo", Verbs, (
             Guid wallId,
             Guid panelId,
             [FromQuery] string? token,
+            [FromQuery(Name = "w")] int? w,
             ClaimsPrincipal user,
+            HttpContext http,
             [FromServices] IWallPanelService panelService,
             [FromServices] ICurrentUserService currentUserService,
             [FromServices] IDbContextFactory<BlocwerkDbContext> dbContextFactory,
             [FromServices] IKioskContext kioskContext,
+            [FromServices] IImageVariantCache variants,
             CancellationToken ct) =>
                 ServeAsync(
-                    wallId, panelId, token, user, currentUserService, dbContextFactory, kioskContext,
+                    wallId, panelId, token, w, user, http, currentUserService, dbContextFactory, kioskContext,
+                    variants, "live",
+                    () => panelService.GetPanelPhotoTagAsync(wallId, panelId),
                     () => panelService.GetPanelPhotoAsync(wallId, panelId), ct))
             .RequireAuthorization(BlocwerkPolicies.WallGalleryImage)
             .DenyApiKeyPrincipals();
 
-        app.MapGet("/api/walls/{wallId:guid}/panels/{panelId:guid}/staged-photo", (
+        app.MapMethods("/api/walls/{wallId:guid}/panels/{panelId:guid}/staged-photo", Verbs, (
             Guid wallId,
             Guid panelId,
             [FromQuery] string? token,
+            [FromQuery(Name = "w")] int? w,
             ClaimsPrincipal user,
+            HttpContext http,
             [FromServices] IWallPanelService panelService,
             [FromServices] ICurrentUserService currentUserService,
             [FromServices] IDbContextFactory<BlocwerkDbContext> dbContextFactory,
             [FromServices] IKioskContext kioskContext,
+            [FromServices] IImageVariantCache variants,
             CancellationToken ct) =>
                 ServeAsync(
-                    wallId, panelId, token, user, currentUserService, dbContextFactory, kioskContext,
+                    wallId, panelId, token, w, user, http, currentUserService, dbContextFactory, kioskContext,
+                    variants, "staged",
+                    () => panelService.GetPanelStagedPhotoTagAsync(wallId, panelId),
                     () => panelService.GetPanelStagedPhotoAsync(wallId, panelId), ct))
             .RequireAuthorization(BlocwerkPolicies.WallGalleryImage)
             .DenyApiKeyPrincipals();
     }
 
+    private static readonly string[] Verbs = [HttpMethods.Get, HttpMethods.Head];
+
     private static async Task<IResult> ServeAsync(
         Guid wallId,
         Guid panelId,
         string? token,
+        int? width,
         ClaimsPrincipal user,
+        HttpContext http,
         ICurrentUserService currentUserService,
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         IKioskContext kioskContext,
+        IImageVariantCache variants,
+        string slot,
+        Func<Task<WallPhotoTag?>> loadTag,
         Func<Task<WallPhoto?>> load,
         CancellationToken ct)
     {
-        if (user.IsApiKeyPrincipal())
+        if (user.IsApiKeyPrincipal() || !ImageResponse.IsRenderableWidth(width))
         {
             return Results.NotFound();
         }
@@ -79,11 +96,25 @@ public static class WallPanelPhotoEndpoints
         }
 
         // The panel/wall pairing itself is already enforced by the service, which matches on both
-        // ids — so a panel of another wall cannot be pulled through an authorized wallId.
-        var photo = await load();
-        return photo == null
-            ? Results.NotFound()
-            : Results.File(photo.Photo, photo.ContentType ?? "image/jpeg");
+        // ids — so a panel of another wall cannot be pulled through an authorized wallId. That holds
+        // for the metadata read as well, which is the same row under the same pairing.
+        var tag = await loadTag();
+        if (tag is null)
+        {
+            return Results.NotFound();
+        }
+
+        // A big wall is drawn entirely out of these routes — one multi-megabyte panel per grid cell —
+        // so the 304 here is what keeps a tablet from redownloading the whole wall on every
+        // navigation. The bytes are only loaded inside the callback, on a miss.
+        return await ImageResponse.ServeAsync(
+            http,
+            variants,
+            width,
+            tag,
+            immutable: false,
+            async () => (await load())?.Photo,
+            panelId, slot);
     }
 
     /// <summary>

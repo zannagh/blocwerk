@@ -2,3 +2,9 @@ name: "Security and Quality"
 
 queries:
   - uses: security-and-quality
+
+# Build output and source-generated code are not hand-written source; alerts there
+# are not actionable and drown out the real findings.
+paths-ignore:
+  - "**/obj/**"
+  - "**/bin/**"

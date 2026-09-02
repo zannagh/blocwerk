@@ -162,7 +162,7 @@ public class HoldPropertySyncTests
         using var h = new WallTestHarness();
         await h.SeedWallAsync(holdCount: 0);
 
-        var (centre, right, _) = await SeedChainAsync(
+        var (_, right, _) = await SeedChainAsync(
             h,
             centre: new Appearance(null, null, HoldCategory.Hand, null),
             right: new Appearance("blue", HoldMaterial.PE, HoldCategory.Hand, HoldHandType.Sloper),

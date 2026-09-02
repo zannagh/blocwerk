@@ -202,7 +202,7 @@ public static class ColorBasedDetection
             stack.Push((x, y - 1));
         }
 
-        float bboxArea = (maxX - minX + 1) * (maxY - minY + 1);
+        float bboxArea = (float)(maxX - minX + 1) * (maxY - minY + 1);
         float circularity = bboxArea > 0 ? count / bboxArea : 0;
 
         return new Blob(sumX, sumY, count, minX, minY, maxX, maxY, circularity);

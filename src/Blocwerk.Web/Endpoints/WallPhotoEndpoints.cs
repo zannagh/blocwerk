@@ -18,68 +18,116 @@ namespace Blocwerk.Web.Endpoints;
 /// therefore rejected outright — otherwise a key for wall A would read the photos of every wall
 /// its owner belongs to. Machine callers use <c>/api/walls/{wallId}/images/…</c>, which compares
 /// the route's wall against the key's own wall claim.
+/// <para>
+/// Each route resolves a <see cref="WallPhotoTag"/> first — metadata only, under the same gate as
+/// the byte call it precedes — and hands the blob load to <see cref="ImageResponse"/> as a
+/// callback, so a revalidation that ends in 304 never reads the photo out of Postgres.
+/// </para>
 /// </remarks>
 public static class WallPhotoEndpoints
 {
     public static void MapWallPhotos(this WebApplication app)
     {
-        app.MapGet("/api/walls/{wallId:guid}/photo", async (
+        app.MapMethods("/api/walls/{wallId:guid}/photo", [HttpMethods.Get, HttpMethods.Head], async (
             Guid wallId,
             [FromQuery] string? token,
+            [FromQuery(Name = "w")] int? w,
             ClaimsPrincipal user,
-            [FromServices] IWallService wallService) =>
+            HttpContext http,
+            [FromServices] IWallService wallService,
+            [FromServices] IImageVariantCache variants) =>
         {
-            if (user.IsApiKeyPrincipal())
+            if (user.IsApiKeyPrincipal() || !ImageResponse.IsRenderableWidth(w))
             {
                 return Results.NotFound();
             }
 
-            byte[]? photo;
-            if (!string.IsNullOrEmpty(token))
+            var tag = await wallService.GetPhotoTagAsync(wallId, token);
+            if (tag is null)
             {
-                photo = await wallService.GetPhotoByShareTokenAsync(wallId, token);
-            }
-            else
-            {
-                photo = await wallService.GetPhotoAsync(wallId);
+                return Results.NotFound();
             }
 
-            return photo == null ? Results.NotFound() : Results.File(photo, "image/jpeg");
+            return await ImageResponse.ServeAsync(
+                http,
+                variants,
+                w,
+                tag,
+                immutable: false,
+                () => string.IsNullOrEmpty(token)
+                    ? wallService.GetPhotoAsync(wallId)
+                    : wallService.GetPhotoByShareTokenAsync(wallId, token),
+                wallId, "live");
         }).DenyApiKeyPrincipals();
 
-        app.MapGet("/api/walls/{wallId:guid}/photo/{generation:int}", async (
+        app.MapMethods("/api/walls/{wallId:guid}/photo/{generation:int}", [HttpMethods.Get, HttpMethods.Head], async (
             Guid wallId,
             int generation,
             [FromQuery] string? token,
+            [FromQuery(Name = "w")] int? w,
             ClaimsPrincipal user,
-            [FromServices] IWallService wallService) =>
+            HttpContext http,
+            [FromServices] IWallService wallService,
+            [FromServices] IImageVariantCache variants) =>
         {
-            if (user.IsApiKeyPrincipal())
+            if (user.IsApiKeyPrincipal() || !ImageResponse.IsRenderableWidth(w))
             {
                 return Results.NotFound();
             }
 
-            var photo = string.IsNullOrEmpty(token)
-                ? await wallService.GetPhotoForGenerationAsync(wallId, generation)
-                : await wallService.GetPhotoForGenerationByShareTokenAsync(wallId, token, generation);
+            var tag = await wallService.GetPhotoTagForGenerationAsync(wallId, token, generation);
+            if (tag is null)
+            {
+                return Results.NotFound();
+            }
 
-            return photo == null
-                ? Results.NotFound()
-                : Results.File(photo.Photo, photo.ContentType ?? "image/jpeg");
+            // A retired generation's photo is archived on its reset row and never rewritten, so this
+            // route is content-addressed and the browser is told it need not ask again. A generation
+            // at or above the current one resolves to the LIVE photo, which is mutable — hence the
+            // flag off the tag rather than off the route shape.
+            return await ImageResponse.ServeAsync(
+                http,
+                variants,
+                w,
+                tag,
+                tag.IsArchived,
+                async () =>
+                {
+                    var photo = string.IsNullOrEmpty(token)
+                        ? await wallService.GetPhotoForGenerationAsync(wallId, generation)
+                        : await wallService.GetPhotoForGenerationByShareTokenAsync(wallId, token, generation);
+                    return photo?.Photo;
+                },
+                wallId, generation);
         }).DenyApiKeyPrincipals();
 
-        app.MapGet("/api/walls/{wallId:guid}/staged-photo", async (
+        app.MapMethods("/api/walls/{wallId:guid}/staged-photo", [HttpMethods.Get, HttpMethods.Head], async (
             Guid wallId,
+            [FromQuery(Name = "w")] int? w,
             ClaimsPrincipal user,
-            [FromServices] IWallService wallService) =>
+            HttpContext http,
+            [FromServices] IWallService wallService,
+            [FromServices] IImageVariantCache variants) =>
         {
-            if (user.IsApiKeyPrincipal())
+            if (user.IsApiKeyPrincipal() || !ImageResponse.IsRenderableWidth(w))
             {
                 return Results.NotFound();
             }
 
-            var photo = await wallService.GetStagedPhotoAsync(wallId);
-            return photo == null ? Results.NotFound() : Results.File(photo, "image/jpeg");
+            var tag = await wallService.GetStagedPhotoTagAsync(wallId);
+            if (tag is null)
+            {
+                return Results.NotFound();
+            }
+
+            return await ImageResponse.ServeAsync(
+                http,
+                variants,
+                w,
+                tag,
+                immutable: false,
+                () => wallService.GetStagedPhotoAsync(wallId),
+                wallId, "staged");
         }).DenyApiKeyPrincipals();
     }
 }

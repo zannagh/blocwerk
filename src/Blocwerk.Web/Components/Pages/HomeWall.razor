@@ -3,7 +3,6 @@
 @attribute [Authorize]
 @layout EmptyLayout
 @inject NavigationManager Navigation
-@inject IHttpContextAccessor HttpContextAccessor
 @inject ICurrentUserService CurrentUserService
 @inject IWallService WallService
 @inject Blocwerk.Core.Abstractions.IKioskContext KioskContext
@@ -87,43 +86,11 @@
             return;
         }
 
-        var wallBase = $"/walls/{homeWallId}";
-
-        // Reading the cookie server-side on the prerender/enhanced-nav pass — HttpContext is live
-        // there, mirroring Home.razor — gives a no-flash resume. On an interactive re-render
-        // HttpContext is null, so we simply land on the wall overview without crashing.
-        var httpContext = HttpContextAccessor.HttpContext;
-        if (httpContext is null)
-        {
-            Navigation.NavigateTo(wallBase, replace: true);
-            return;
-        }
-
-        var stored = httpContext.Request.Cookies["blocwerk-last-page"];
-        if (IsWithinHomeWall(stored, wallBase))
-        {
-            Navigation.NavigateTo(stored!, replace: true);
-            return;
-        }
-
-        Navigation.NavigateTo(wallBase, replace: true);
-    }
-
-    // True only when the recorded last page is a safe, local target that lives inside the home wall
-    // (the wall overview itself, a "?view=…" variant of it, or any deeper path under it) — so /home
-    // resumes where the user was and otherwise drops them on the wall overview.
-    private static bool IsWithinHomeWall(string? stored, string wallBase)
-    {
-        if (!LastPageRedirect.IsSafeTarget(stored))
-        {
-            return false;
-        }
-
-        var cut = stored!.IndexOfAny(new[] { '?', '#' });
-        var path = cut >= 0 ? stored.Substring(0, cut) : stored;
-
-        return path == wallBase
-            || stored.StartsWith(wallBase + "?", StringComparison.Ordinal)
-            || stored.StartsWith(wallBase + "/", StringComparison.Ordinal);
+        // One unambiguous target. This page runs OnInitializedAsync twice — once on the prerender
+        // pass and again interactively — so anything that could resolve differently between the two
+        // (a cookie read that only works while HttpContext is live) would redirect to two different
+        // places. The wall overview is the whole meaning of "home"; the last-page resume stays on the
+        // landing page ("/"), where it belongs.
+        Navigation.NavigateTo($"/walls/{homeWallId}", replace: true);
     }
 }

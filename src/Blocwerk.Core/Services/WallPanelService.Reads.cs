@@ -195,6 +195,14 @@ public partial class WallPanelService
     public Task<WallPhoto?> GetPanelStagedPhotoAsync(Guid wallId, Guid panelId) =>
         GetPanelBytesAsync(wallId, panelId, staged: true);
 
+    /// <inheritdoc/>
+    public Task<WallPhotoTag?> GetPanelPhotoTagAsync(Guid wallId, Guid panelId) =>
+        GetPanelTagAsync(wallId, panelId, staged: false);
+
+    /// <inheritdoc/>
+    public Task<WallPhotoTag?> GetPanelStagedPhotoTagAsync(Guid wallId, Guid panelId) =>
+        GetPanelTagAsync(wallId, panelId, staged: true);
+
     private async Task<WallPhoto?> GetPanelBytesAsync(Guid wallId, Guid panelId, bool staged)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync();
@@ -207,6 +215,48 @@ public partial class WallPanelService
             .FirstOrDefaultAsync();
 
         return row?.Bytes is null ? null : new WallPhoto(row.Bytes, row.Type);
+    }
+
+    /// <summary>
+    /// The same row as <see cref="GetPanelBytesAsync"/> under the same wall/panel pairing, but
+    /// projected to metadata only: Length is a server-side length(bytea), so a panel image that the
+    /// browser already holds costs one small row instead of several megabytes.
+    /// </summary>
+    private async Task<WallPhotoTag?> GetPanelTagAsync(Guid wallId, Guid panelId, bool staged)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync();
+        var row = await db.WallPanels
+            .AsNoTracking()
+            .Where(p => p.Id == panelId && p.WallId == wallId)
+            .Select(p => new
+            {
+                Length = staged
+                    ? (p.StagedPhoto == null ? 0 : p.StagedPhoto.Length)
+                    : (p.Photo == null ? 0 : p.Photo.Length),
+                Type = staged ? p.StagedPhotoContentType : p.PhotoContentType,
+                p.StagedAt,
+                p.Generation,
+            })
+            .FirstOrDefaultAsync();
+
+        if (row is null || row.Length == 0)
+        {
+            return null;
+        }
+
+        // What actually makes each version token move:
+        //   staged — StagedAt is written with every StagedPhoto, so it moves on every restage.
+        //   live   — Generation does NOT move on promotion (see WallPanelService.ConfirmPanelAsync
+        //            and WallBigUpdateService, both of which assign Photo = StagedPhoto and leave
+        //            Generation alone). The token is nonetheless sound because Photo is WRITE-ONCE:
+        //            promotion is refused unless Photo is still null (the `panel.Photo is not null`
+        //            guard in StagePanelAsync/ResumePanelAsync), so a live panel photo is never
+        //            rewritten and there is nothing for a version to have to track. Length and
+        //            content type below are what would catch it if that guard ever went away.
+        // This is load-bearing for the ETag AND for the variant cache key, which is derived from
+        // exactly these parts — see FileSystemImageVariantCache.
+        var version = staged ? row.StagedAt?.UtcTicks ?? 0L : row.Generation;
+        return new WallPhotoTag(row.Length, row.Type, version, IsArchived: false);
     }
 
     private static (List<MatcherHold> Holds, Guid[] IndexToGuid) BuildMatcherHolds(IReadOnlyList<Hold> holds)

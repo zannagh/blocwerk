@@ -34,7 +34,7 @@ public static class ActivityBackfill
         // pass covers them all. The wall is only known for boulder attempts.
         var events = new List<(Guid UserId, DateTimeOffset Timestamp, Guid? WallId, Action<Guid> Assign)>();
         events.AddRange(attempts.Select(a =>
-            (a.UserId, a.Timestamp, (Guid?)a.Boulder?.WallId, new Action<Guid>(id => a.ActivityId = id))));
+            (a.UserId, a.Timestamp, a.Boulder?.WallId, new Action<Guid>(id => a.ActivityId = id))));
         events.AddRange(hangboard.Select(h =>
             (h.UserId, h.Timestamp, (Guid?)null, new Action<Guid>(id => h.ActivityId = id))));
         events.AddRange(pullups.Select(p =>

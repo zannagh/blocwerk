@@ -70,7 +70,7 @@ public class WallSegmentDraft
         for (var i = 0; i < corners; i++)
         {
             // Start at the top so a hexagon reads as a panel with a flat-ish top edge.
-            var angle = (i * 2 * Math.PI / corners) - (Math.PI / 2);
+            var angle = (i * 2.0 * Math.PI / corners) - (Math.PI / 2);
             points.Add(new ShapePoint
             {
                 Dx = Math.Round(Math.Clamp(cx + (Math.Cos(angle) * rx), 0, 1), 5),

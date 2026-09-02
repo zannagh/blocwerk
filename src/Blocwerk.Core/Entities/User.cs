@@ -144,9 +144,9 @@ public class User : IEquatable<User>
 
     public string UserAuthId => Identifier.Split("__").LastOrDefault() ?? Identifier;
 
-    public bool Equals(User? other) => other is not null && Id == other.Id;
+    public bool Equals(User? other) => other is not null && GetType() == other.GetType() && Id == other.Id;
 
-    public override bool Equals(object? obj) => Equals(obj as User);
+    public override bool Equals(object? obj) => obj is User other && Equals(other);
 
     public override int GetHashCode() => Id.GetHashCode();
 }

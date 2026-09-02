@@ -123,8 +123,8 @@ public static class CuttingPlanPdf
 
         foreach (var e in edges)
         {
-            var isTop = e.A.Z == 0 && e.B.Z == 0;
-            var isBottom = e.A.Z > 0 && e.B.Z > 0;
+            var isTop = FloatCompare.AboutZero(e.A.Z) && FloatCompare.AboutZero(e.B.Z);
+            var isBottom = FloatCompare.Above(e.A.Z, 0) && FloatCompare.Above(e.B.Z, 0);
             if (isTop)
             {
                 sheet.InkLine(fit(proj(e.A)), fit(proj(e.B)));

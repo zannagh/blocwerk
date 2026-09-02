@@ -140,22 +140,16 @@ public sealed class WallCacheState : IDisposable
 
         wallById.TryRemove(wallId, out _);
 
-        foreach (var key in holdsByGeneration.Keys)
+        foreach (var key in holdsByGeneration.Keys.Where(key => key.Wall == wallId))
         {
-            if (key.Wall == wallId)
-            {
-                holdsByGeneration.TryRemove(key, out _);
-            }
+            holdsByGeneration.TryRemove(key, out _);
         }
 
         // The wall aggregate carries its boulders, so a wall change invalidates any cached boulder
         // that belongs to it too.
-        foreach (var entry in boulderById)
+        foreach (var entry in boulderById.Where(entry => entry.Value.IsCompletedSuccessfully && entry.Value.Result?.WallId == wallId))
         {
-            if (entry.Value.IsCompletedSuccessfully && entry.Value.Result?.WallId == wallId)
-            {
-                boulderById.TryRemove(entry.Key, out _);
-            }
+            boulderById.TryRemove(entry.Key, out _);
         }
     }
 

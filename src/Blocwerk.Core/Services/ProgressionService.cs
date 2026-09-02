@@ -851,7 +851,7 @@ public class ProgressionService : IProgressionService
 
         foreach (var p in pullups)
         {
-            score += p.Sets * p.Repetitions * (1 + (p.AdditionalWeightKg / 10.0));
+            score += (double)p.Sets * p.Repetitions * (1 + (p.AdditionalWeightKg / 10.0));
         }
 
         return score;

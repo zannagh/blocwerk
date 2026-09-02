@@ -105,16 +105,7 @@ internal static class LabMath
     /// <summary>Filters a nullable colour array down to the present values.</summary>
     public static List<double[]> NonNull(double[]?[] colours)
     {
-        var list = new List<double[]>();
-        foreach (double[]? c in colours)
-        {
-            if (c is not null)
-            {
-                list.Add(c);
-            }
-        }
-
-        return list;
+        return colours.OfType<double[]>().ToList();
     }
 }
 

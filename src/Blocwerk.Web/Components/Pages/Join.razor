@@ -31,7 +31,7 @@
     {
         try
         {
-            var user = await CurrentUserService.GetCurrentUserAsync();
+            await CurrentUserService.GetCurrentUserAsync();
             var wall = await WallService.JoinWallAsync(ShareToken);
             Navigation.NavigateTo($"/walls/{wall.Id}");
         }

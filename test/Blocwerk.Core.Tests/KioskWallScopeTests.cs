@@ -20,7 +20,7 @@ public class KioskWallScopeTests
     {
         using var h = new WallTestHarness();
         await h.SeedWallAsync();
-        var otherWallId = await SeedSecondWallAsync(h, h.Owner.Id);
+        await SeedSecondWallAsync(h, h.Owner.Id);
 
         await using var db = h.DbContextFactory.CreateDbContext();
 

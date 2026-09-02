@@ -18,7 +18,7 @@
     <div class="panel-step-viewport" @ref="_viewportRef"
          style="cursor: @(AddMode ? "crosshair" : "default");">
         <div class="photo-editor" @ref="_editorRef">
-            <img src="@PhotoUrl" alt="@Caption" class="wall-photo" />
+            <img src="@ResponsiveImage.Initial(PhotoUrl)" data-bw-res alt="@Caption" class="wall-photo" />
             <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none"
                  @onclick="OnSvgClick">
                 @if (!_overlayHidden)
