@@ -1212,9 +1212,13 @@ else
             }
             else
             {
+                // Anonymous share view: no per-user data, but the rows still name the setters, so
+                // pull every setter name for the wall in one query rather than per boulder.
+                var setterNames = await WallService.GetBoulderSetterNamesAsync(WallId);
                 _items = _wall.Boulders
                     .Where(b => !b.IsDraft && !b.IsArchived)
-                    .Select(b => new BoulderListItem(b, 0, false, false, false, null, 0, null))
+                    .Select(b => new BoulderListItem(
+                        b, 0, false, false, false, null, 0, null, setterNames.GetValueOrDefault(b.Id)))
                     .ToList();
             }
 

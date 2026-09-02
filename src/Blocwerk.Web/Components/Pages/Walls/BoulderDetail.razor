@@ -600,28 +600,8 @@ else
     /// The boulder's setters as a human list: "A", "A &amp; B", or "A, B &amp; C". Empty when the
     /// boulder has no explicit setter (the creator line is shown instead).
     /// </summary>
-    private string SettersDisplay
-    {
-        get
-        {
-            var names = _boulder?.Setters
-                .Select(s => s.User.Name)
-                .Where(n => !string.IsNullOrWhiteSpace(n))
-                .ToList() ?? [];
-
-            if (names.Count == 0)
-            {
-                return string.Empty;
-            }
-
-            if (names.Count == 1)
-            {
-                return names[0];
-            }
-
-            return string.Join(", ", names.Take(names.Count - 1)) + " & " + names[^1];
-        }
-    }
+    private string SettersDisplay =>
+        BoulderSetterNames.Format(_boulder?.Setters.Select(s => s.User.Name));
 
     private string PhotoUrl
     {

@@ -185,6 +185,21 @@ public class WallService : IWallService
         }
     }
 
+    public async Task<Dictionary<Guid, List<string>>> GetBoulderSetterNamesAsync(Guid wallId)
+    {
+        using var op = BlocwerkMetrics.TimeOperation("Wall.GetBoulderSetterNames", wallId);
+        try
+        {
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            return await BoulderSetterNames.LoadForWallAsync(db, wallId);
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
+    }
+
     public async Task<List<Wall>> GetMyWallsAsync()
     {
         using var op = BlocwerkMetrics.TimeOperation("Wall.GetMyWalls");

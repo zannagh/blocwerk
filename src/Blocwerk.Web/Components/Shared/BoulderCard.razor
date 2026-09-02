@@ -9,10 +9,7 @@
             @if (Boulder.NeedsReview) { <span class="review-badge" title="A hold on this boulder changed — review needed">review</span> }
         </span>
         <span class="boulder-meta">
-            @DisplayHoldCount holds &middot; by
-            <UserAvatar UserId="Boulder.CreatedBy.Id" Name="@Boulder.CreatedBy.Name"
-                        HasAvatar="Boulder.CreatedBy.HasAvatar" CssClass="avatar-sm" />
-            @Boulder.CreatedBy.Name
+            @DisplayHoldCount holds &middot; by @Item.AuthorDisplay
         </span>
         @if (Item.RatingCount > 0)
         {

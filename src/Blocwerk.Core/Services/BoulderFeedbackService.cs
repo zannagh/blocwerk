@@ -53,11 +53,25 @@ public record BoulderListItem(
     bool IsFavorite,
     double? AverageRating,
     int RatingCount,
-    int? MyRating)
+    int? MyRating,
+    IReadOnlyList<string>? SetterNames = null)
 {
     public bool DoneByMe => HasSent || HasFlashed;
 
     public bool AttemptedByMe => MyAttemptCount > 0;
+
+    /// <summary>
+    /// Who the row attributes the boulder to: the setter(s) when any are recorded, otherwise the
+    /// creator, so the row never renders a bare "by ".
+    /// </summary>
+    public string AuthorDisplay
+    {
+        get
+        {
+            var setters = BoulderSetterNames.Format(SetterNames);
+            return string.IsNullOrEmpty(setters) ? Boulder.CreatedBy?.Name ?? string.Empty : setters;
+        }
+    }
 }
 
 public class BoulderFeedbackService : IBoulderFeedbackService
@@ -281,6 +295,10 @@ public class BoulderFeedbackService : IBoulderFeedbackService
 
             var ids = boulders.Select(b => b.Id).ToList();
 
+            // One query for every setter name on the wall (names only, not whole User rows), so the
+            // list stays a fixed number of round-trips no matter how many boulders it renders.
+            var setterNames = await BoulderSetterNames.LoadForWallAsync(db, wallId);
+
             var myAttempts = await db.Attempts
                 .Where(a => ids.Contains(a.BoulderId) && a.UserId == user.Id)
                 .Select(a => new { a.BoulderId, a.Type })
@@ -316,7 +334,8 @@ public class BoulderFeedbackService : IBoulderFeedbackService
                     IsFavorite: myFavorites.Contains(b.Id),
                     AverageRating: rs is { Count: > 0 } ? rs.Average(r => (double)r.Stars) : null,
                     RatingCount: rs?.Count ?? 0,
-                    MyRating: rs?.FirstOrDefault(r => r.UserId == user.Id)?.Stars);
+                    MyRating: rs?.FirstOrDefault(r => r.UserId == user.Id)?.Stars,
+                    SetterNames: setterNames.GetValueOrDefault(b.Id));
             }).ToList();
         }
         catch (Exception ex)

@@ -14,7 +14,7 @@ namespace Blocwerk.Web.Endpoints;
 /// <para>
 /// Deliberately anonymous, not an oversight. Two shipped features render avatars to a caller with
 /// no session: an anonymous share-token boulder page shows the activity feed's per-row avatars
-/// (<c>BoulderActivityFeed</c>, <c>BoulderCard</c>), and the kiosk user picker shows a face for
+/// (<c>BoulderActivityFeed</c>), and the kiosk user picker shows a face for
 /// every wall member BEFORE anybody has picked themselves (<c>KioskUsers</c>). Requiring
 /// authorization here would break both with broken-image icons.
 /// </para>

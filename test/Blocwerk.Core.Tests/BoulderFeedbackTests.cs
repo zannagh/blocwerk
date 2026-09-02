@@ -156,6 +156,59 @@ public class BoulderFeedbackTests
             () => h.BoulderService.ArchiveBoulderAsync(boulder.Id));
     }
 
+    /// <summary>
+    /// The wall boulder list attributes a row to its setters, comma/ampersand joined, and falls
+    /// back to the creator when a boulder has no setter recorded (older data).
+    /// </summary>
+    [Fact]
+    public async Task GetBoulderList_ShowsSetters_AndFallsBackToCreator()
+    {
+        using var h = new WallTestHarness();
+        var holds = await h.SeedWallAsync(holdCount: 3);
+        var alice = await AddMemberAsync(h, "alice@test");
+        var bob = await AddMemberAsync(h, "bob@test");
+
+        var noSetters = await h.BoulderService.CreateBoulderAsync(
+            h.WallId, "NoSetters", null, [new BoulderHoldInput(holds[0].Id)]);
+        var oneSetter = await h.BoulderService.CreateBoulderAsync(
+            h.WallId, "OneSetter", null, [new BoulderHoldInput(holds[1].Id)], setterUserIds: [alice.Id]);
+        var twoSetters = await h.BoulderService.CreateBoulderAsync(
+            h.WallId, "TwoSetters", null, [new BoulderHoldInput(holds[2].Id)], setterUserIds: [alice.Id, bob.Id]);
+
+        var items = await h.FeedbackService.GetBoulderListAsync(h.WallId);
+
+        // No setter recorded: the row still names somebody, namely the creator.
+        var fallback = items.Single(i => i.Boulder.Id == noSetters.Id);
+        Assert.Empty(fallback.SetterNames ?? []);
+        Assert.Equal(h.Owner.Name, fallback.AuthorDisplay);
+
+        var single = items.Single(i => i.Boulder.Id == oneSetter.Id);
+        Assert.Equal("alice@test", single.AuthorDisplay);
+
+        var both = items.Single(i => i.Boulder.Id == twoSetters.Id);
+        Assert.Equal(2, both.SetterNames!.Count);
+        Assert.Contains("&", both.AuthorDisplay);
+        Assert.Contains("alice@test", both.AuthorDisplay);
+        Assert.Contains("bob@test", both.AuthorDisplay);
+    }
+
+    [Theory]
+    [InlineData(new string[0], "")]
+    [InlineData(new[] { "A" }, "A")]
+    [InlineData(new[] { "A", "B" }, "A & B")]
+    [InlineData(new[] { "A", "B", "C" }, "A, B & C")]
+    public void FormatSetterNames_JoinsAsAHumanList(string[] names, string expected)
+    {
+        Assert.Equal(expected, BoulderSetterNames.Format(names));
+    }
+
+    [Fact]
+    public void FormatSetterNames_IgnoresBlankNames()
+    {
+        Assert.Equal("A", BoulderSetterNames.Format(["A", " ", null]));
+        Assert.Equal(string.Empty, BoulderSetterNames.Format([null, string.Empty]));
+    }
+
     private static async Task<User> AddMemberAsync(WallTestHarness h, string identifier)
     {
         var user = new User { Identifier = identifier, DisplayName = identifier };
