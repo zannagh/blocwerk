@@ -2477,7 +2477,9 @@ html.bw-fullscreen .wall-main .photo-viewport {
 .profile-collapsible[open] > summary::before { transform: rotate(90deg); }
 .profile-collapsible[open] > summary { padding-bottom: 8px; }
 
-/* API keys link styled to match the app's secondary buttons instead of a bare underlined link. */
+/* API keys link styled to match the app's secondary buttons instead of a bare underlined link.
+   Wraps as a row so the moved-off-the-tab-bar entries (Tools, Administration) sit side by side. */
+.profile-links { display: flex; flex-wrap: wrap; gap: 10px; }
 .profile-links a.btn-secondary {
     display: inline-block; width: auto; margin-bottom: 0;
     padding: 10px 16px; font-size: 0.95rem; text-decoration: none;

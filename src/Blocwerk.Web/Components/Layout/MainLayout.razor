@@ -48,6 +48,11 @@
         @Body
     </main>
 
+    @* Every item in the non-kiosk bar is behind AuthorizeView, so an anonymous visitor would get an
+       empty bar and a chevron that collapses nothing — Tools used to be the one tab they saw, and it
+       now lives on Profile. A kiosk keeps its bar while anonymous: the user picker is on it. *@
+    @if (KioskContext.IsKiosk || _signedIn)
+    {
     <nav class="bw-tabbar">
         @if (KioskContext.IsKiosk)
         {
@@ -98,6 +103,9 @@
         }
         else
         {
+        @* Four items at most: Walls, Home (when a home wall is set), Session-or-Activity, Profile.
+           Admin and Tools moved to the Profile page — six tabs did not fit a phone bar, and neither
+           is a place you go mid-session. Their visibility rules moved with them unchanged. *@
         <AuthorizeView>
             <Authorized>
                 <a href="/walls" class="nav-item">
@@ -143,25 +151,8 @@
                         <span>Activity</span>
                     </a>
                 }
-                @if (_isAdmin)
-                {
-                    <a href="/administration" class="nav-item">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
-                            <path d="M12 3l7 4v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V7z" />
-                            <polyline points="9 12 11 14 15 10" />
-                        </svg>
-                        <span>Admin</span>
-                    </a>
-                }
             </Authorized>
         </AuthorizeView>
-        <a href="/tools" class="nav-item">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
-                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
-                <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
-            </svg>
-            <span>Tools</span>
-        </a>
         <AuthorizeView>
             <Authorized>
                 <a href="/profile" class="nav-item">
@@ -185,12 +176,13 @@
         </button>
     </nav>
 
-    <button type="button" class="tabbar-restore" aria-label="Show navigation bar"
-            onclick="bwNav.toggleTabbar()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
-            <polyline points="6 15 12 9 18 15" />
-        </svg>
-    </button>
+        <button type="button" class="tabbar-restore" aria-label="Show navigation bar"
+                onclick="bwNav.toggleTabbar()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
+                <polyline points="6 15 12 9 18 15" />
+            </svg>
+        </button>
+    }
 
     @if (_showReauthToast && !_reauthDismissed)
     {
@@ -218,6 +210,7 @@
     }
 
     <CookieConsent />
+    <InstallPrompt />
     <ConnectionStatus />
 </div>
 
@@ -228,7 +221,7 @@
     private static readonly TimeSpan SessionSyncMinInterval = TimeSpan.FromHours(3);
 
     private Guid? _homeWallId;
-    private bool _isAdmin;
+    private bool _signedIn;
     private Guid? _userId;
     private string? _userName;
     private bool _userHasAvatar;
@@ -332,16 +325,16 @@
         try
         {
             var user = await CurrentUserService.GetCurrentUserAsync();
+            _signedIn = user is not null;
             _homeWallId = user?.HomeWallId;
-            _isAdmin = user?.Role == IdentityRole.Admin;
             _userId = user?.Id;
             _userName = user?.Name;
             _userHasAvatar = user?.HasAvatar ?? false;
         }
         catch (UnauthorizedAccessException)
         {
+            _signedIn = false;
             _homeWallId = null;
-            _isAdmin = false;
             _userId = null;
             _userName = null;
             _userHasAvatar = false;

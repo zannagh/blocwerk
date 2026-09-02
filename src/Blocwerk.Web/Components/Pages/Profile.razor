@@ -103,6 +103,26 @@
                 </div>
             </div>
 
+            @* Moved off the bottom tab bar, which was up to six items on a phone. The Admin entry
+               keeps the tab bar's condition exactly — the viewer's Admin role — and both routes keep
+               their own authorization; this is navigation only. The kiosk gate is additional:
+               /administration is on the kiosk deny-list, so offering it on a tablet is a tap that
+               only ever bounces, and Tools is already on the kiosk tab bar. *@
+            @if (!KioskContext.IsKiosk)
+            {
+                <div class="section profile-section-card">
+                    <h2>More</h2>
+                    <div class="profile-links">
+                        <a class="btn-secondary" href="/tools">Tools</a>
+                        @if (_viewer?.Role == IdentityRole.Admin)
+                        {
+                            <a class="btn-secondary" href="/administration">Administration</a>
+                        }
+                    </div>
+                    <p class="member-since">Calculators and guides@(_viewer?.Role == IdentityRole.Admin ? ", and the installation-wide administration dashboard" : string.Empty).</p>
+                </div>
+            }
+
             <div class="section profile-section-card">
                 <h2>Home wall</h2>
                 <select class="window-select home-wall-select" value="@_viewer?.HomeWallId" @onchange="OnHomeWallChange">

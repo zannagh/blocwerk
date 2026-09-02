@@ -1,0 +1,86 @@
+@rendermode InteractiveServer
+@inject IJSRuntime JS
+@inject Blocwerk.Core.Abstractions.IKioskContext KioskContext
+
+@* Never rendered on a wall tablet: a kiosk is set up deliberately, once, by somebody who is not
+   the person standing at it, so an install prompt there is pure noise. Every other reason to stay
+   hidden (already installed, not a phone, dismissed) is a client fact, so bwInstall decides it and
+   this renders nothing until it has answered — which is why the banner can never flash. *@
+@if (_show)
+{
+    <div class="bw-install" role="region" aria-label="Install Blocwerk">
+        <div class="bw-install-body">
+            <p class="bw-install-title">Blocwerk works best as an app.</p>
+            @if (_instructions != null)
+            {
+                <p class="bw-install-hint">@_instructions</p>
+            }
+        </div>
+        <div class="bw-install-actions">
+            @if (_instructions == null)
+            {
+                <button type="button" class="bw-install-accept" @onclick="InstallAsync" disabled="@_busy">Install</button>
+            }
+            <button type="button" class="bw-install-dismiss" @onclick="Snooze">No thanks</button>
+            <button type="button" class="bw-install-dismiss" @onclick="Never">Don't show again</button>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _show;
+    private bool _busy;
+
+    // Non-null once the browser has turned out to have no programmatic install (iOS Safari, or a
+    // Chromium that never fired beforeinstallprompt). The Install button is replaced by the text
+    // rather than left in place as a button that would do nothing.
+    private string? _instructions;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || KioskContext.IsKiosk)
+        {
+            return;
+        }
+
+        if (await JS.InvokeAsync<bool>("bwInstall.shouldShow"))
+        {
+            _show = true;
+            StateHasChanged();
+        }
+    }
+
+    private async Task InstallAsync()
+    {
+        _busy = true;
+        try
+        {
+            var outcome = await JS.InvokeAsync<string>("bwInstall.install");
+            if (outcome == "accepted")
+            {
+                _show = false;
+            }
+            else if (outcome == "unavailable")
+            {
+                _instructions = await JS.InvokeAsync<string>("bwInstall.instructions");
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // "No thanks" is bounded (14 days, in bwInstall); "Don't show again" is permanent.
+    private async Task Snooze()
+    {
+        await JS.InvokeVoidAsync("bwInstall.snooze");
+        _show = false;
+    }
+
+    private async Task Never()
+    {
+        await JS.InvokeVoidAsync("bwInstall.never");
+        _show = false;
+    }
+}
