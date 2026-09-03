@@ -1,5 +1,6 @@
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Helpers;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Authentication.Services;
@@ -19,6 +20,12 @@ namespace Blocwerk.Authentication.Services;
 ///
 /// Tier (b) is deliberately NOT provider-qualified: a legacy Identifier records no provider name. This
 /// is accepted as low risk because provider subject-id spaces do not overlap in practice.
+///
+/// Neither tier will ever return a SYSTEM row (see <see cref="GhostUser"/>). Those rows exist to own
+/// content nobody signed in for; handing one to a login would let that session act as the owner of
+/// every anonymously-set boulder in the installation. <see cref="GhostUser.Identifier"/> is already
+/// shaped so it cannot be reached — this check is the independent second layer, so a future system
+/// row with a careless identifier is refused here regardless.
 /// </summary>
 public static class LegacyIdentityResolver
 {
@@ -41,12 +48,18 @@ public static class LegacyIdentityResolver
                 .FirstOrDefaultAsync(i => i.Provider == provider && i.ProviderUserId == providerUserId);
             if (identity is not null)
             {
-                return identity.User;
+                return IsSystemRow(identity.User) ? null : identity.User;
             }
         }
 
         // (b) Fall back to a legacy row that only ever carried the subject in its Identifier.
         return await FindByLegacyIdentifierAsync(db, providerUserId);
+    }
+
+    /// <summary>A row no login may ever resolve onto, whichever tier found it.</summary>
+    private static bool IsSystemRow(User? user)
+    {
+        return user is not null && (GhostUser.Is(user.Id) || GhostUser.IsSystemIdentifier(user.Identifier));
     }
 
     /// <summary>
@@ -71,6 +84,6 @@ public static class LegacyIdentityResolver
             .Where(u => u.Identifier.EndsWith(suffix))
             .ToListAsync();
 
-        return candidates.FirstOrDefault(u => u.UserAuthId == providerUserId);
+        return candidates.FirstOrDefault(u => u.UserAuthId == providerUserId && !IsSystemRow(u));
     }
 }

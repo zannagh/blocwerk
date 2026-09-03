@@ -1,6 +1,7 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Helpers;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Services;
@@ -41,7 +42,11 @@ public sealed class AdminDashboardService : IAdminDashboardService
         db.CurrentUserId = Guid.Empty;
 
         var totalWalls = await db.Walls.CountAsync(cancellationToken);
-        var totalUsers = await db.Users.CountAsync(cancellationToken);
+        // People, not rows. A deletion tombstone is the scrubbed remains of somebody who left, and
+        // Ghost is a seeded system row that owns anonymously-set boulders; counting either as a
+        // "registered user" would make the number drift upwards every time somebody deletes.
+        var totalUsers = await db.Users
+            .CountAsync(u => u.DeletedAt == null && u.Id != GhostUser.Id, cancellationToken);
         var totalBoulders = await db.Boulders.CountAsync(b => !b.IsArchived, cancellationToken);
 
         var walls = await db.Walls

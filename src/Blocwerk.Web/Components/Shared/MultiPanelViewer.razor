@@ -156,9 +156,10 @@ else
     [Parameter] public Func<Task<Dictionary<Guid, List<HoldUsageRef>>>>? OnRequestHoldUsage { get; set; }
 
     /// <summary>
-    /// Enable the horizontal swipe-to-navigate enhancement. Off by default and left off when the
-    /// viewer lives inside a horizontal scroll container (the wall carousel), where a sideways
-    /// swipe already pages the carousel; the arrows are always available regardless.
+    /// Enable horizontal swipe-to-navigate (touch swipe and trackpad two-finger slide). It only
+    /// engages at full zoom-out; above that the gesture stays a pan. Inside the wall carousel it
+    /// deliberately wins over paging the carousel, so a sideways gesture over the photo always
+    /// means "next panel". The arrows are available regardless.
     /// </summary>
     [Parameter] public bool EnableSwipe { get; set; }
 
@@ -177,6 +178,10 @@ else
     private List<PanelHold> _holds = [];
     private Guid? _fitBoxForPanelId;
     private bool _recenterPending;
+
+    // Guards against a second step landing mid-swap (a fast double-tap on a chevron, or a swipe
+    // arriving while the previous one is still fetching), which would interleave two commits.
+    private bool _swapping;
 
     // Usage-toggle state: when on, every hold is drawn green with a boulder-count badge. The wall's
     // hold-usage map is fetched once (lazily) when the toggle is first switched on and cached.
@@ -198,7 +203,7 @@ else
         var live = LivePanels;
         _panel = live.FirstOrDefault(p => p.Col == StartCol && p.Row == StartRow)
                  ?? live.FirstOrDefault();
-        await LoadHoldsAsync();
+        _holds = _panel is null ? [] : await FetchHoldsAsync(_panel);
     }
 
     private WallPanelInfo? Neighbour(int dCol, int dRow)
@@ -221,41 +226,77 @@ else
             : null;
     }
 
+    // Atomic panel swap. `_panel` drives BOTH the <img src> and the hold overlay, so it must not
+    // move until everything the new render needs is in hand: the target panel's holds (a
+    // HoldsProvider call is a round-trip, and an await inside an event handler triggers an
+    // intermediate render — which is exactly how the overlay used to end up a panel behind the
+    // photo) and the photo itself, warmed into the browser cache. Only then are image and overlay
+    // committed together in one render.
     private async Task GoToAsync(int col, int row)
     {
         var target = LivePanels.FirstOrDefault(p => p.Col == col && p.Row == row);
-        if (target is null || target.Id == _panel?.Id)
+        if (target is null || target.Id == _panel?.Id || _swapping)
         {
             return;
         }
 
-        _panel = target;
-        await LoadHoldsAsync();
+        _swapping = true;
+        try
+        {
+            var holds = await FetchHoldsAsync(target);
+            await PreloadPhotoAsync(target);
+            _panel = target;
+            _holds = holds;
+        }
+        finally
+        {
+            _swapping = false;
+        }
+
         _recenterPending = true;
         StateHasChanged();
     }
 
-    private async Task LoadHoldsAsync()
+    private async Task<List<PanelHold>> FetchHoldsAsync(WallPanelInfo panel)
     {
-        if (_panel is null)
-        {
-            _holds = [];
-            return;
-        }
-
         if (HoldsByPanel is not null)
         {
-            _holds = HoldsByPanel.TryGetValue(_panel.Id, out var preset) ? [.. preset] : [];
-            return;
+            return HoldsByPanel.TryGetValue(panel.Id, out var preset) ? [.. preset] : [];
         }
 
         if (HoldsProvider is not null)
         {
-            _holds = [.. await HoldsProvider(_panel.Id)];
-            return;
+            return [.. await HoldsProvider(panel.Id)];
         }
 
-        _holds = [];
+        return [];
+    }
+
+    // Warms the target photo so the <img src> swap paints the new panel in the same frame the
+    // overlay does. Resolves on a load failure — and on a STALL, via the JS-side timeout — so a
+    // half-open connection cannot hold `_swapping` and swallow every chevron and swipe until
+    // Blazor's own ~1-minute interop timeout expires. A cold image one frame late is the worse
+    // outcome only if you have never waited a minute for a viewer to answer.
+    //
+    // Preloading the INITIAL rendition is the right variant, not an approximation: image-res.js
+    // upgrades the live <img> in the DOM, but this component's render tree still carries
+    // ResponsiveImage.Initial, so the diff of a panel swap writes exactly that url back onto src.
+    // The variant this warms is therefore precisely the one the swap frame paints; image-res then
+    // upgrades again from there, off-screen and after the swap, as it does on first load.
+    private async Task PreloadPhotoAsync(WallPanelInfo panel)
+    {
+        try
+        {
+            await JS.InvokeAsync<bool>("bwViewport.preloadImage", ResponsiveImage.Initial(PhotoUrl(panel.Id)), 4000);
+        }
+        catch (JSException)
+        {
+            // Preloading is an optimisation; the swap proceeds either way.
+        }
+        catch (JSDisconnectedException)
+        {
+            // Circuit gone; nothing left to paint.
+        }
     }
 
     [JSInvokable]
@@ -284,15 +325,26 @@ else
 
         try
         {
-            if (firstRender && EnableSwipe)
+            if (EnableSwipe)
             {
-                _selfRef = DotNetObjectReference.Create(this);
-                await JS.InvokeVoidAsync("bwViewport.attachSwipe", _viewportRef, _selfRef);
+                _selfRef ??= DotNetObjectReference.Create(this);
             }
 
-            // Idempotent in JS (a no-op once bound to this node); re-run every render so a node
-            // replaced by a re-render or reconnect gets its pan/zoom engine back.
-            await JS.InvokeVoidAsync("bwViewport.setupScroll", _viewportRef, null);
+            // ONE interop call per render, not two. Both halves are idempotent in JS (a no-op once
+            // bound to this node) and both still have to re-run every render, so that a node
+            // replaced by a re-render or a reconnect gets its pan/zoom engine and its swipe back —
+            // folding them together is what keeps that from costing a round-trip each.
+            //
+            // The two booleans tell the wheel handler whether a horizontal trackpad slide has
+            // anywhere to go. Without them it preventDefault'ed every dominant-horizontal wheel at
+            // fit, including at the last panel where it then did nothing at all — which reads as
+            // "horizontal scrolling is broken" rather than "there is no panel that way".
+            await JS.InvokeVoidAsync(
+                "bwViewport.setupPanelViewport",
+                _viewportRef,
+                EnableSwipe ? _selfRef : null,
+                Neighbour(-1, 0) is not null,
+                Neighbour(1, 0) is not null);
 
             if (_fitBoxForPanelId != _panel.Id)
             {

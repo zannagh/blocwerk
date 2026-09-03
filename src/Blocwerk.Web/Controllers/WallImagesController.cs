@@ -170,7 +170,18 @@ public sealed class WallImagesController : WallScopedApiController
             return NotFound(new ApiErrorResponse("Image not found."));
         }
 
-        var actingUser = await currentUserService.GetCurrentUserAsync();
+        // Resolution can refuse a caller the guard above let through — a key whose owner has since
+        // been deleted or merged away. That is a 401, not a 500.
+        Core.Entities.User actingUser;
+        try
+        {
+            actingUser = await currentUserService.GetCurrentUserAsync();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Unauthorized(new ApiErrorResponse("The key's owner no longer exists."));
+        }
+
         try
         {
             await imageService.DeleteImageAsync(id, actingUser.Id, cancellationToken);

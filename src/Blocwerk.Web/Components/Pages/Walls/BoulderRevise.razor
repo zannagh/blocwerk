@@ -93,15 +93,6 @@
                 <label>Grade</label>
                 <GradePicker @bind-Value="_grade" DefaultUseFont="_preferFont" />
             </div>
-
-            <div class="rules-block">
-                <span class="rules-title">Rules</span>
-                <label class="checkbox-label">
-                    <input type="checkbox" checked="@_allKickboardOn"
-                           @onchange="e => _allKickboardOn = e.Value is true" />
-                    All kickboard holds are on
-                </label>
-            </div>
         </div>
 
         @if (_wall.UsesMultipleImages && _currentPanel is not null)
@@ -118,7 +109,8 @@
                     HoldTwins="_holdTwins"
                     @bind-SelectedHolds="_selectedHolds" />
 
-        <BoulderNewRules @bind-FootColorOnly="_footColorOnly"
+        <BoulderNewRules @bind-AllKickboardOn="_allKickboardOn"
+                         @bind-FootColorOnly="_footColorOnly"
                          @bind-NoMatch="_noMatch"
                          WallHolds="_displayHolds" />
 
@@ -262,7 +254,21 @@
             return;
         }
 
-        var user = await CurrentUserService.GetCurrentUserAsync();
+        // [Authorize] proves the cookie is intact, not that the account behind it still exists: an
+        // account merged away (or deleted) on another device leaves this tab holding a valid cookie
+        // that resolves to nobody. Bounce to sign-in rather than 500 the page, same as the wall and
+        // boulder pages do.
+        User user;
+        try
+        {
+            user = await CurrentUserService.GetCurrentUserAsync();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            Navigation.NavigateTo("/account/login", replace: true);
+            return;
+        }
+
         _isCreator = _boulder.CreatedByUserId == user.Id;
         // A wall admin (a WallRole.Admin member of this wall) may revise ANY boulder on the wall,
         // not only the ones they created — same membership-role check used across the wall UI.

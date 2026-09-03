@@ -1,6 +1,7 @@
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Helpers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -29,6 +30,16 @@ public partial class AccountMergeService : IAccountMergeService
         if (sourceUserId == targetUserId)
         {
             throw new InvalidOperationException("Cannot merge a user into itself.");
+        }
+
+        // The Ghost system row is not an account and must never take part in a merge, in either
+        // direction. As the TARGET it would pull a real person's whole history onto a row nobody can
+        // sign in as; as the SOURCE it would re-point every anonymously-set boulder in the
+        // installation onto somebody's account and then delete the seeded row the FK depends on.
+        // The same refusal the deletion service already makes, made here too.
+        if (GhostUser.Is(sourceUserId) || GhostUser.Is(targetUserId))
+        {
+            throw new InvalidOperationException("The Ghost system user cannot be merged.");
         }
 
         await using var db = await dbContextFactory.CreateDbContextAsync();

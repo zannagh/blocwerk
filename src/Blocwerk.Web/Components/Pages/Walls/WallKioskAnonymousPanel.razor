@@ -1,0 +1,90 @@
+@* The opt-in behind the app's only unauthenticated write: letting a tablet bolted to THIS wall
+   create a boulder with nobody signed in. Off by default and off for every existing wall, so a gym
+   that never turns it on has no anonymous write surface at all.
+
+   Admin-only, and never rendered on a kiosk session — the wall is administered from an admin's own
+   device. That hiding is cosmetic; WallService.SetAnonymousKioskSettingAsync refuses a kiosk caller
+   and re-checks wall admin against the database. *@
+@using Blocwerk.Core.Helpers
+@inject IWallService WallService
+
+<div class="settings-panel wall-kiosk-anon-panel">
+    <p class="apikey-blurb">
+        Normally a tablet needs somebody to tap their name before anything can be set. Turn this on
+        and the wall's tablet can also publish a boulder with <em>nobody</em> picked — useful when a
+        setting crew is working and nobody wants to log in between problems.
+    </p>
+
+    <p class="apikey-blurb">
+        Boulders set that way are credited to <strong>@PlaceholderIdentity.DisplayName</strong>
+        unless a setter is picked from the list, and only people who consented to this wall's kiosk
+        can be picked. Anyone with physical access to the tablet can do this, so leave it off unless
+        the tablet is somewhere you're happy with that.
+    </p>
+
+    @if (_message is not null)
+    {
+        <div class="wall-kiosk-pair-ok" role="status">@_message</div>
+    }
+
+    <label class="checkbox-label">
+        <input type="checkbox" checked="@_allowed" disabled="@_busy"
+               @onchange="e => ToggleAsync(e.Value is true)" />
+        Let this wall's tablet set boulders without signing in
+    </label>
+</div>
+
+@code {
+    /// <summary>The wall being administered. The ONLY wall this card can ever change.</summary>
+    [Parameter]
+    public Guid WallId { get; set; }
+
+    private bool _allowed;
+    private bool _busy;
+    private string? _message;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Read the stored value so the box opens on the truth. A failure here (a wall the caller
+        // cannot read) leaves it unticked, which is the safe way to be wrong.
+        try
+        {
+            var wall = await WallService.GetWallAsync(WallId);
+            _allowed = wall?.AllowAnonymousKioskSetting ?? false;
+        }
+        catch (Exception)
+        {
+            _allowed = false;
+        }
+    }
+
+    private async Task ToggleAsync(bool allowed)
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        _message = null;
+
+        try
+        {
+            await WallService.SetAnonymousKioskSettingAsync(WallId, allowed);
+            _allowed = allowed;
+            _message = allowed
+                ? "On. The tablet can now set boulders with nobody signed in."
+                : "Off. The tablet needs somebody picked before it can set anything.";
+        }
+        catch (Exception ex)
+        {
+            // Leave the box showing the state that actually holds, not the change that failed.
+            _allowed = !allowed;
+            _message = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

@@ -2190,6 +2190,44 @@ public class WallService : IWallService
         }
     }
 
+    public async Task SetAnonymousKioskSettingAsync(Guid wallId, bool allowed)
+    {
+        using var op = BlocwerkMetrics.TimeOperation("Wall.SetAnonymousKioskSetting", wallId);
+        try
+        {
+            // A kiosk session must not be able to grant its own tablet an unauthenticated write.
+            // The service guard is the real gate; the card is also hidden on a tablet.
+            KioskGuard.EnsureNotKiosk(_kioskContext, "Changing kiosk setting permission");
+
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
+
+            // Owner or an Admin member, exactly as update mode. Filter-ignoring so an owner without
+            // an explicit member row can still administer their own wall.
+            await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
+
+            var wall = await db.Walls
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(w => w.Id == wallId);
+            if (wall == null)
+            {
+                throw new InvalidOperationException("Wall not found");
+            }
+
+            wall.AllowAnonymousKioskSetting = allowed;
+            await db.SaveChangesAsync();
+
+            _logger.LogInformation(
+                "Wall {WallId} anonymous kiosk setting set to {State} by {UserId}", wallId, allowed, user.Id);
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
+    }
+
     private static bool IsPointInPolygon(double px, double py, List<(double X, double Y)> polygon) =>
         WallProjection.IsPointInPolygon(px, py, polygon);
 

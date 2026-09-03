@@ -167,10 +167,20 @@ public partial class AccountController
         }
     }
 
+    /// <summary>
+    /// Loads the account the pending marker names, for the second leg of the password challenge.
+    /// </summary>
+    /// <remarks>
+    /// Deleted accounts are filtered out for the same reason
+    /// <c>IPasswordLoginService.FindByLoginUsernameAsync</c> filters them on the first leg: the two
+    /// legs are separate requests, and an account erased in between must not be able to finish
+    /// signing in on the strength of a marker minted moments earlier. A null here is indistinguishable
+    /// from a bad code to the caller, which is exactly what TotpFailure already guarantees.
+    /// </remarks>
     private async Task<Core.Entities.User?> LoadTotpUserAsync(Guid userId)
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync();
-        return await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);
+        return await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId && u.DeletedAt == null);
     }
 
     // On a successful TOTP verify, persist the consumed time-step (replay guard) and clear the lockout

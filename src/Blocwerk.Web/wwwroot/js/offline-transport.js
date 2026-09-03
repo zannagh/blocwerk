@@ -146,8 +146,15 @@
         /**
          * The failure matrix.
          *   'sent'   2xx, including a replay the server had already applied. Delete the entry.
-         *   'pause'  401. The session is gone. Stop the queue and prompt for sign-in; the entry
-         *            keeps its clientRequestId so it replays safely after logging back in.
+         *   'pause'  401 on an entry that was queued by a SIGNED-IN user. The session is gone.
+         *            Stop the queue and prompt for sign-in; the entry keeps its clientRequestId so
+         *            it replays safely after logging back in.
+         *            A 401 on an entry marked `payload.anonymousKiosk` is DROPPED instead. Nobody
+         *            was signed in when it was queued and nobody will be — an unattended tablet has
+         *            no one to prompt — so pausing on it would wedge every other queued action
+         *            behind an entry that can never succeed. Such entries are no longer produced at
+         *            all (BoulderCreate.razor does not wire the queue for an anonymous session);
+         *            this is the backstop for one already sitting in a tablet's IndexedDB.
          *   'hold'   409. The entry was queued by a DIFFERENT user than the one signed in now
          *            (shared tablet, shared laptop). Writing it would credit the wrong person, so
          *            the server refused. Keep the entry, skip it, and let it replay if its owner
@@ -164,12 +171,12 @@
          *            boulder, not a wall member. Delete it and tell the user.
          * Network-level errors never reach here; the queue treats a thrown fetch as 'retry'.
          */
-        classify: function (response) {
+        classify: function (response, entry) {
             if (response.ok) {
                 return 'sent';
             }
             if (response.status === 401) {
-                return 'pause';
+                return (entry && entry.payload && entry.payload.anonymousKiosk) ? 'drop' : 'pause';
             }
             if (response.status === 409) {
                 return 'hold';

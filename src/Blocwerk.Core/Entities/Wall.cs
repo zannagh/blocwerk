@@ -69,6 +69,19 @@ public class Wall
     /// <summary>The user who put the wall into update mode; they still see the real wall.</summary>
     public Guid? MaintenanceByUserId { get; set; }
 
+    /// <summary>
+    /// When true, a registered kiosk tablet bolted to THIS wall may create a boulder with nobody
+    /// signed in. <b>Default false, and deliberately opt-in per wall</b> — it is the only write in
+    /// the app an unauthenticated caller can reach, so it must be a decision a wall admin made on
+    /// purpose for one gym, not a capability every kiosk wall silently acquires.
+    /// </summary>
+    /// <remarks>
+    /// This flag alone authorises nothing. It is the last of four conditions, all of which must
+    /// hold: a valid kiosk device cookie, whose key still validates against the database, whose wall
+    /// is exactly this wall, and this flag. See <c>KioskAnonymousSetting</c>.
+    /// </remarks>
+    public bool AllowAnonymousKioskSetting { get; set; }
+
     public ICollection<WallMember> Members { get; set; } = [];
 
     public ICollection<Hold> Holds { get; set; } = [];

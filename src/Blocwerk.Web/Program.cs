@@ -229,6 +229,10 @@ public static class Program
 
         app.UseForwardedHeaders();
 
+        // A cookie that no longer names anybody who may sign in must land on a sign-in prompt, not a
+        // 500 the user cannot read their way out of. Narrow by design — see the class docs.
+        app.UseUnresolvableSessionRedirect();
+
         app.Use(async (context, next) =>
         {
             var headers = context.Response.Headers;

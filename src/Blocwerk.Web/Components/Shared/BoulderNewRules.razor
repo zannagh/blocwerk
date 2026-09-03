@@ -1,46 +1,57 @@
-@* The two rules shown BELOW the wall image in the new boulder-setting experience:
-   "all feet of a specific colour" and "no match". The kickboard rule lives at the top of the
-   page and "hands follow feet" is always on here, so neither appears. *@
+@* Every boulder rule of the new setting experience, in ONE non-collapsible card BELOW the wall
+   image: the kickboard rule (which used to sit above the image), "all feet of a specific colour"
+   and "no match". "Hands follow feet" is always on here, so it never appears. *@
 
-<div class="rules-block new-rules">
-    <div class="rule-sub">
+<div class="settings-panel new-rules">
+    <h2>Rules</h2>
+    <div class="rules-block">
         <label class="checkbox-label">
-            <input type="checkbox" checked="@_colorRuleOn" @onchange="OnColorRuleToggledAsync" />
-            All feet of a specific colour
+            <input type="checkbox" checked="@AllKickboardOn" @onchange="OnKickboardChanged" />
+            All kickboard holds are on
         </label>
 
-        @if (_colorRuleOn)
-        {
-            <div class="foot-color-swatches">
-                @foreach (var color in HoldPalette.All)
-                {
-                    var count = CountOnWall(color.Key);
-                    <button type="button"
-                            class="color-swatch foot-swatch @(FootColorOnly == color.Key ? "active" : string.Empty) @(count == 0 ? "absent" : string.Empty)"
-                            style="background: @color.Hex;"
-                            title="@color.DisplayName &mdash; @count hold@(count == 1 ? string.Empty : "s") on this wall"
-                            @onclick="() => SetFootColorAsync(color.Key)"></button>
-                }
-            </div>
-            <p class="rule-hint">
-                Every <strong>@HoldPalette.DisplayName(FootColorOnly)</strong> hold on the wall counts as a
-                foothold. You can still add other individual footholds on top of this.
-                @if (CountOnWall(FootColorOnly) == 0)
-                {
-                    <span class="rule-warn">No hold of that colour exists on this wall yet.</span>
-                }
-            </p>
-        }
-    </div>
+        <div class="rule-sub">
+            <label class="checkbox-label">
+                <input type="checkbox" checked="@_colorRuleOn" @onchange="OnColorRuleToggledAsync" />
+                All feet of a specific colour
+            </label>
 
-    <label class="checkbox-label">
-        <input type="checkbox" checked="@NoMatch" @onchange="OnNoMatchChanged" />
-        No match
-    </label>
-    <p class="rule-hint">Matching a hold is not allowed &mdash; no two hands, and no hand plus foot, on the same hold.</p>
+            @if (_colorRuleOn)
+            {
+                <div class="foot-color-swatches">
+                    @foreach (var color in HoldPalette.All)
+                    {
+                        var count = CountOnWall(color.Key);
+                        <button type="button"
+                                class="color-swatch foot-swatch @(FootColorOnly == color.Key ? "active" : string.Empty) @(count == 0 ? "absent" : string.Empty)"
+                                style="background: @color.Hex;"
+                                title="@color.DisplayName &mdash; @count hold@(count == 1 ? string.Empty : "s") on this wall"
+                                @onclick="() => SetFootColorAsync(color.Key)"></button>
+                    }
+                </div>
+                <p class="rule-hint">
+                    Every <strong>@HoldPalette.DisplayName(FootColorOnly)</strong> hold on the wall counts as a
+                    foothold. You can still add other individual footholds on top of this.
+                    @if (CountOnWall(FootColorOnly) == 0)
+                    {
+                        <span class="rule-warn">No hold of that colour exists on this wall yet.</span>
+                    }
+                </p>
+            }
+        </div>
+
+        <label class="checkbox-label">
+            <input type="checkbox" checked="@NoMatch" @onchange="OnNoMatchChanged" />
+            No match
+        </label>
+        <p class="rule-hint">Matching a hold is not allowed &mdash; no two hands, and no hand plus foot, on the same hold.</p>
+    </div>
 </div>
 
 @code {
+    [Parameter] public bool AllKickboardOn { get; set; }
+    [Parameter] public EventCallback<bool> AllKickboardOnChanged { get; set; }
+
     [Parameter] public string? FootColorOnly { get; set; }
     [Parameter] public EventCallback<string?> FootColorOnlyChanged { get; set; }
 
@@ -61,6 +72,8 @@
         string.IsNullOrEmpty(colorKey) ? 0 : WallHolds.Count(h => h.Color == colorKey);
 
     private Task OnNoMatchChanged(ChangeEventArgs e) => NoMatchChanged.InvokeAsync(e.Value is true);
+
+    private Task OnKickboardChanged(ChangeEventArgs e) => AllKickboardOnChanged.InvokeAsync(e.Value is true);
 
     private async Task OnColorRuleToggledAsync(ChangeEventArgs e)
     {

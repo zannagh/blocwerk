@@ -45,6 +45,10 @@ public class DevAuthenticationMiddleware
                 new(ClaimTypes.NameIdentifier, _id),
                 new(ClaimTypes.Name, _name),
                 new("Name", _name),
+
+                // Dev login re-authenticates on the spot every time it runs, so it is always fresh —
+                // and without the stamp the very first dev request could not create its own user.
+                Services.AuthFreshness.Stamp(),
             };
 
             var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);

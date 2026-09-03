@@ -1,11 +1,7 @@
-using System.Security.Claims;
-using Blocwerk.Authentication.Authorization;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
-using Blocwerk.Core.Enums;
-using Blocwerk.Core.Helpers;
 using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -13,7 +9,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Authentication.Services;
 
-public class CurrentUserService : ICurrentUserService
+public partial class CurrentUserService : ICurrentUserService
 {
     private readonly IHttpContextAccessor? _accessor;
     private readonly AuthenticationStateProvider? _authenticationStateProvider;
@@ -28,6 +24,12 @@ public class CurrentUserService : ICurrentUserService
     // once and reuse it. Without this a single page render fanned out to 5-6 identical Users lookups
     // (GetWall + GetSegments + GetBoulderList + GetActivity + GetHoldUsage each re-queried the user).
     private User? _cachedUser;
+
+    // The mirror image of the cache above, for the other outcome. Resolution can also end in a
+    // refusal — a tombstone, the Ghost row, a stale cookie for an account that no longer exists — and
+    // that answer is just as stable for this scope. Without it the same 5-6 lookups each re-queried,
+    // re-threw and re-signed-out, stacking a duplicate cookie-deletion header per call.
+    private bool _resolutionRefused;
 
     public CurrentUserService(
         BlocwerkSettings settings,
@@ -47,7 +49,11 @@ public class CurrentUserService : ICurrentUserService
         _settings = settings;
     }
 
-    public void InvalidateCache() => _cachedUser = null;
+    public void InvalidateCache()
+    {
+        _cachedUser = null;
+        _resolutionRefused = false;
+    }
 
     public async Task SetHomeWallAsync(Guid? wallId)
     {
@@ -302,148 +308,6 @@ public class CurrentUserService : ICurrentUserService
             .ToListAsync();
     }
 
-    public async Task<User> GetCurrentUserAsync()
-    {
-        if (_cachedUser is not null)
-        {
-            return _cachedUser;
-        }
-
-        var claimsIdentity = await TryGetClaimsIdentityFromCookie()
-                             ?? TryGetClaimsIdentityFromHttpContext();
-
-        if (claimsIdentity == null)
-        {
-            throw new UnauthorizedAccessException();
-        }
-
-        string identifier = claimsIdentity.ToUserIdentifier();
-
-        if (string.IsNullOrEmpty(identifier))
-        {
-            throw new UnauthorizedAccessException();
-        }
-
-        // The provider ("github"/"google"/"microsoft") is present for OAuth logins and absent for
-        // legacy cookies and dev login. providerUserId is the stable provider subject (nameid).
-        string provider = claimsIdentity.GetProvider();
-        string providerUserId = claimsIdentity.ToUserId();
-
-        // Password (and TOTP) sign-ins stamp the exact user id as a "uid" claim. OAuth logins carry none.
-        string uid = claimsIdentity.FindFirst("uid")?.Value ?? string.Empty;
-
-        await using var dbContext = await _dbContextFactory.CreateDbContextAsync();
-
-        var user = await ResolveUserAsync(dbContext, identifier, provider, providerUserId, uid);
-
-        // AdminIdentifiers is authoritative for the app-wide admin bit in BOTH directions: on every
-        // resolution Role == Admin IFF the identifier is configured. Promote a configured admin that
-        // isn't yet Admin, and — critically — demote an identifier that is Admin but no longer
-        // configured, so removing someone from AdminIdentifiers actually revokes their admin. Only the
-        // Admin/User toggle is touched here (Guest and other role semantics are left alone), and the
-        // branches are mutually exclusive so a single resolution never promotes and demotes.
-        bool shouldBeAdmin = _settings.AdminIdentifiers.Contains(identifier);
-        if (shouldBeAdmin && user.Role != IdentityRole.Admin)
-        {
-            user.Role = IdentityRole.Admin;
-            await dbContext.SaveChangesAsync();
-        }
-        else if (!shouldBeAdmin && user.Role == IdentityRole.Admin)
-        {
-            user.Role = IdentityRole.User;
-            await dbContext.SaveChangesAsync();
-        }
-
-        _cachedUser = user;
-        return user;
-    }
-
-    /// <summary>
-    /// Resolves the current <see cref="User"/> from the login claims, attaching a
-    /// <see cref="UserIdentity"/> lazily. This is the ONLY user-creation path: a user is only ever
-    /// born from an OAuth login. Resolution order:
-    /// (0) a "uid" claim (stamped by password/TOTP sign-in) → that exact user by id, never creating one.
-    ///     This makes password sessions resolve precisely and sidesteps the lossy "{name}__{id}"
-    ///     identifier round-trip, which misresolves (and would otherwise CREATE a blank user) when the
-    ///     name itself contains "__";
-    /// (a)/(b) for an OAuth login, resolve through the shared <see cref="LegacyIdentityResolver"/>
-    ///     (UserIdentity row → legacy Identifier subject-suffix), back-filling a
-    ///     <see cref="UserIdentity"/> when the match came from a legacy row. Sharing this resolver with
-    ///     the account-link path is what keeps login and linking from diverging on identity ownership;
-    /// (b') no provider claim (dev login / legacy cookie) → resolve purely by the full identifier;
-    /// (c) no user at all → create the user (as before) plus, for an OAuth login, its identity.
-    /// </summary>
-    private static async Task<User> ResolveUserAsync(BlocwerkDbContext dbContext, string identifier, string provider, string providerUserId, string uid)
-    {
-        // (0) Exact resolution by uid claim for password/TOTP sessions — first, and never creates a user.
-        if (!string.IsNullOrEmpty(uid) && Guid.TryParse(uid, out var uidGuid))
-        {
-            var byId = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == uidGuid);
-            if (byId is not null)
-            {
-                return byId;
-            }
-        }
-
-        bool hasProvider = !string.IsNullOrEmpty(provider) && !string.IsNullOrEmpty(providerUserId);
-
-        // (a)/(b) Resolve the OAuth identity through the ONE shared resolver, then back-fill a
-        // UserIdentity so a legacy match becomes a first-class identity row (no-op if it already exists).
-        if (hasProvider)
-        {
-            var owner = await LegacyIdentityResolver.FindByProviderIdentityAsync(dbContext, provider, providerUserId);
-            if (owner is not null)
-            {
-                await EnsureIdentityAsync(dbContext, owner.Id, provider, providerUserId);
-                return owner;
-            }
-        }
-
-        // (b') No provider claim (dev login / legacy cookie): resolve purely by the full identifier.
-        // (An OAuth login that reaches here found no identity and no legacy subject match, so the
-        // full-identifier lookup below would not match it either — it falls through to creation.)
-        var user = await dbContext.Users.FirstOrDefaultAsync(u => u.Identifier == identifier);
-        if (user is not null)
-        {
-            return user;
-        }
-
-        // (c) No user exists yet — create it (OAuth-gated signup), plus its provider identity.
-        user = new User
-        {
-            Identifier = identifier,
-            DisplayName = identifier.Split("__").FirstOrDefault() ?? identifier,
-            Role = IdentityRole.User,
-        };
-        await dbContext.Users.AddAsync(user);
-        await dbContext.SaveChangesAsync();
-
-        if (hasProvider)
-        {
-            await EnsureIdentityAsync(dbContext, user.Id, provider, providerUserId);
-        }
-
-        return user;
-    }
-
-    private static async Task EnsureIdentityAsync(BlocwerkDbContext dbContext, Guid userId, string provider, string providerUserId)
-    {
-        bool exists = await dbContext.UserIdentities
-            .AnyAsync(i => i.Provider == provider && i.ProviderUserId == providerUserId);
-        if (exists)
-        {
-            return;
-        }
-
-        await dbContext.UserIdentities.AddAsync(new UserIdentity
-        {
-            UserId = userId,
-            Provider = provider,
-            ProviderUserId = providerUserId,
-        });
-        await dbContext.SaveChangesAsync();
-    }
-
 
     /// <summary>
     /// Refuses an account-security change while the session belongs to a kiosk tablet.
@@ -461,71 +325,5 @@ public class CurrentUserService : ICurrentUserService
         {
             throw new KioskRestrictedException($"{action} is not available from a kiosk session.");
         }
-    }
-
-    private async Task<ClaimsIdentity?> TryGetClaimsIdentityFromCookie()
-    {
-        if (_authenticationStateProvider == null)
-        {
-            return null;
-        }
-
-        var cookieState = await _authenticationStateProvider.GetAuthenticationStateAsync();
-
-        if (cookieState.User is not { Identity.IsAuthenticated: true }
-            || cookieState.User.FindFirst(ClaimTypes.NameIdentifier) is not { } nameIdentifier
-            || cookieState.User.FindFirst(ClaimTypes.Name) is not { } name)
-        {
-            return null;
-        }
-
-        var cookieClaim = new ClaimsIdentity();
-        cookieClaim.AddClaim(new Claim(ClaimTypes.NameIdentifier, nameIdentifier.Value));
-        cookieClaim.AddClaim(new Claim(ClaimTypes.Name, name.Value));
-
-        // Carry the "uid" claim through when present (password/TOTP sign-ins) so resolution can look the
-        // user up by their exact id — this is what keeps a password session from misresolving (and
-        // creating a blank user) when the display name contains "__".
-        if (cookieState.User.FindFirst("uid") is { } uidClaim && !string.IsNullOrEmpty(uidClaim.Value))
-        {
-            cookieClaim.AddClaim(new Claim("uid", uidClaim.Value));
-        }
-
-        // Carry the provider claim through when present (OAuth logins) so resolution can look the user
-        // up by their provider identity. Absent for legacy cookies signed before this change and for
-        // dev login, which then fall back to identifier-based resolution.
-        if (cookieState.User.FindFirst("provider") is { } providerClaim
-            && !string.IsNullOrEmpty(providerClaim.Value))
-        {
-            cookieClaim.AddClaim(new Claim("provider", providerClaim.Value));
-        }
-
-        return cookieClaim;
-    }
-
-    private ClaimsIdentity? TryGetClaimsIdentityFromHttpContext()
-    {
-        if (_accessor?.HttpContext is not { } httpContext)
-        {
-            return null;
-        }
-
-        // An API key resolves to its OWNER, which then opens every wall that owner belongs to via
-        // the membership query filter. That is only ever acceptable on an endpoint that explicitly
-        // opted into authorization — those compare the route's wall against the key's own wall
-        // claim (WallScopedApiController.GuardWall) or are scoped to the owner by definition
-        // (/api/v1/me/*). An unguarded endpoint that merely happens to sit under /api/walls did no
-        // such check, so the key must not resolve a user there at all.
-        if (httpContext.User.IsApiKeyPrincipal() && !ApiKeySurface.HasExplicitAuthorization(httpContext))
-        {
-            return null;
-        }
-
-        if (httpContext.User.Identity is ClaimsIdentity { IsAuthenticated: true } httpClaimsIdentity)
-        {
-            return httpClaimsIdentity;
-        }
-
-        return null;
     }
 }

@@ -1,3 +1,4 @@
+using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -20,7 +21,7 @@ namespace Blocwerk.Authentication.Kiosk;
 /// cached — a revocation takes effect on the very next check.
 /// </para>
 /// </remarks>
-public sealed class KioskKeyValidator
+public sealed class KioskKeyValidator : IKioskKeyValidator
 {
     /// <summary>
     /// How long a positive result is trusted. Short enough that a revoked key stops working while

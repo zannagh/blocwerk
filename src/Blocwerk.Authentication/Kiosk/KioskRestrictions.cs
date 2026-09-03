@@ -87,6 +87,12 @@ public static class KioskRestrictions
         // API-key minting pages.
         "/settings/api-keys",
 
+        // Erasing the account. A tablet acts AS a consenting member for thirty minutes; wiping that
+        // member's identity across every wall they belong to is permanent and is the exact shape of
+        // "blast radius escapes the tablet" this list exists for. Refused at the service too
+        // (AccountDeletionService.DeleteAsync), which is the real gate.
+        "/settings/delete-account",
+
         // App-wide administration. Note this is NOT wall authority — a kiosk session keeps all of
         // that — it is authority over every wall and every user in the installation.
         "/administration",
@@ -230,6 +236,9 @@ public static class KioskRestrictions
     [
         // Credentials that outlive the session.
         "Blocwerk.Web.Components.Pages.Settings.ApiKeys",
+
+        // Permanently erasing the acting member's account from a public tablet.
+        "Blocwerk.Web.Components.Pages.Settings.DeleteAccount",
 
         // Authority over every wall in the installation.
         "Blocwerk.Web.Components.Pages.Administration.Dashboard",

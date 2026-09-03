@@ -62,11 +62,24 @@ public static class AuthenticationServices
         app.Services.AddSingleton<KioskDeviceCookie>();
         app.Services.AddScoped<IKioskContext, KioskContext>();
         app.Services.AddScoped<KioskKeyValidator>();
+
+        // The same scoped instance behind the Core-facing interface, so a Core service that must
+        // GRANT on a kiosk registration (BoulderService's anonymous create) re-checks the key
+        // through exactly the code path the kiosk endpoints do — including its 15-second
+        // positive-only cache — rather than growing a second, drift-prone copy of the query.
+        app.Services.AddScoped<IKioskKeyValidator>(sp => sp.GetRequiredService<KioskKeyValidator>());
         app.Services.AddScoped<IAuthorizationHandler, KioskRouteHandler>();
 
         // TOTP second factor: stateless, so a singleton. Uses the persisted DataProtection key ring to
         // encrypt the shared secret at rest (see the "blocwerk.totp" protector inside TotpService).
         app.Services.AddSingleton<ITotpService, TotpService>();
+        // Step-up re-authentication before an irreversible account action. The ticket store and the
+        // failure throttle are SINGLETONS: a ticket is issued in the OAuth callback's request scope
+        // and spent later from a Blazor circuit, and a failure counter that reset with the circuit
+        // would cap nothing.
+        app.Services.AddSingleton<IAccountReauthTicketStore, AccountReauthTicketStore>();
+        app.Services.AddSingleton<AccountReauthThrottle>();
+        app.Services.AddScoped<IAccountReauthService, AccountReauthService>();
         app.Services.AddSingleton<IAuthorizationHandler, WallGalleryImageHandler>();
 
         // App-wide admin gate. Scoped, not singleton, because it resolves the current user through the

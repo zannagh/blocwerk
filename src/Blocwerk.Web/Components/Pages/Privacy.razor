@@ -6,34 +6,314 @@
 <div class="legal-page">
     <h1>Privacy Policy</h1>
 
-    <p>Last updated: June 2026</p>
+    <p>Last updated: 3 September 2026</p>
 
-    <h2>What data we collect</h2>
-    <p>When you sign in via OAuth (GitHub, Google, or Microsoft), we receive and store:</p>
+    <p>
+        This policy describes what Blocwerk stores about you, why, and what you can do about it. It
+        is written against what this installation of the software actually does &mdash; not a generic
+        template.
+    </p>
+
+    <h2>Who is responsible</h2>
+    <p>
+        The controller for the processing described here (Art. 4(7) GDPR / DSGVO) is:
+    </p>
     <ul>
-        <li>Your display name</li>
-        <li>Your unique account identifier from the OAuth provider</li>
+        <li>[[CONTROLLER NAME]]</li>
+        <li>[[CONTROLLER POSTAL ADDRESS]]</li>
+        <li>E-mail: [[CONTACT EMAIL]]</li>
     </ul>
-    <p>We do not receive or store your email address or password.</p>
+    <p>
+        Data protection contact: [[DATA PROTECTION CONTACT, or "the address above"]].
+    </p>
 
-    <h2>How we use your data</h2>
-    <p>Your data is used solely to identify you within the application and associate your climbing activity (attempts, boulders created, comments) with your account.</p>
+    <h2>Where the data lives</h2>
+    <p>
+        Blocwerk is self-hosted. Your data is stored in a PostgreSQL database and in file storage on
+        servers operated by [[HOSTING PROVIDER AND LOCATION]]. Wall photos, panel photos and beta
+        video clips are held as files on that server's disk (older wall photos and clips may still
+        sit inside the database itself); avatars are stored in the database.
+    </p>
 
-    <h2>Cookies</h2>
-    <p>We use the following cookies:</p>
+    <h2>Your account and how you sign in</h2>
+    <p>Depending on how you sign in, we store some or all of:</p>
     <ul>
-        <li><strong>Authentication cookie</strong> &mdash; keeps you signed in for up to 8 hours</li>
-        <li><strong>Antiforgery cookie</strong> &mdash; protects against cross-site request forgery</li>
-        <li><strong>Cookie consent cookie</strong> &mdash; remembers that you acknowledged this notice</li>
+        <li>
+            <strong>Your display name and a provider account identifier</strong>, received from the
+            OAuth provider you signed in with. The providers this installation can offer are GitHub,
+            Google and Microsoft; only those the operator has configured are actually available.
+            Each linked login is stored as a separate record, so you can attach more than one.
+        </li>
+        <li>
+            <strong>A display name you choose yourself</strong>, which overrides the one from the
+            provider.
+        </li>
+        <li>
+            <strong>An e-mail address</strong>, if you set one. It is stored only after you confirm
+            it with a code we e-mail you, and it is used for account recovery and for the sign-up and
+            e-mail-verification flows. Verification codes are stored only as hashes, expire after ten
+            minutes, and are invalidated once used.
+        </li>
+        <li>
+            <strong>A login username and password</strong>, if you set one. The password is never
+            stored: only a salted key-derivation hash of it.
+        </li>
+        <li>
+            <strong>A two-factor (TOTP) secret</strong>, if you enable an authenticator app. It is
+            encrypted at rest and is never displayed again after enrolment.
+        </li>
+        <li>
+            <strong>A failed-attempt counter and lockout time</strong>, so that repeated wrong
+            passwords or codes lock the account for a short period. This is a security measure
+            (Art. 6(1)(f) GDPR).
+        </li>
+        <li><strong>An avatar image</strong>, if you upload one.</li>
+        <li>
+            <strong>Preferences</strong>: your home wall, preferred grade scale, progression window
+            and grouping.
+        </li>
     </ul>
-    <p>We do not use any tracking, analytics, or advertising cookies.</p>
+    <p>
+        Legal basis: performing the service you asked for (Art. 6(1)(b) GDPR) for everything needed
+        to run your account, and our legitimate interest in a secure service (Art. 6(1)(f)) for the
+        anti-brute-force counters.
+    </p>
 
-    <h2>Data storage</h2>
-    <p>All data is stored on a self-hosted PostgreSQL database. Wall photos are stored as binary data in the database. No data is shared with third parties.</p>
+    <h2>What you do in the app</h2>
+    <p>Using Blocwerk creates records tied to your account:</p>
+    <ul>
+        <li>Boulders you create, and setter credits naming you as a setter or co-setter</li>
+        <li>Attempts you log (attempt, send, flash), with time and optional notes</li>
+        <li>Comments, star ratings, grade proposals and favourites</li>
+        <li>Live climbing sessions, hangboard sessions and pull-up sessions</li>
+        <li>
+            "Activities" &mdash; clusters of the above grouped by time, used for the progression
+            charts &mdash; and their duration if you edit it
+        </li>
+        <li>Beta video clips you upload, along with a poster frame taken from them</li>
+        <li>
+            A per-wall activity log recording who created, revised, reset or re-photographed what,
+            and when
+        </li>
+        <li>Your membership of each wall and your role on it (member, moderator, admin, owner)</li>
+    </ul>
+    <p>
+        Some of this is visible to other members of the walls you belong to: your name and avatar,
+        your boulders and setter credits, your comments and ratings, your logged sends on a wall
+        leaderboard, and the wall activity log. A wall admin can also generate an anonymous share
+        link that lets someone without an account view that wall and its activity.
+    </p>
 
-    <h2>Data deletion</h2>
-    <p><!-- TODO: Add instructions for requesting data deletion --></p>
+    <h2>Photos of walls and panels</h2>
+    <p>
+        Wall and panel photos are uploaded by wall admins and processed on the server to detect
+        holds. They are pictures of a climbing wall, but people can end up in them. If you appear in
+        a wall photo and want it removed, contact the wall's admin or us at [[CONTACT EMAIL]].
+    </p>
+
+    <h2>Kiosk mode (the tablet at the wall)</h2>
+    <p>
+        A wall admin can register a shared device &mdash; typically a tablet mounted at the wall
+        &mdash; as a "kiosk". This matters for your privacy, so it works like this:
+    </p>
+    <ul>
+        <li>
+            You only appear on a kiosk's member picker if you have <strong>explicitly consented</strong>
+            for that wall. Consent is stored per wall membership, so it never carries over to your
+            other walls, and you can withdraw it at any time.
+        </li>
+        <li>
+            You may set a short <strong>PIN</strong> that must be typed before anyone can pick you at
+            the tablet. Only a salted hash of the PIN is stored, plus its length so the tablet knows
+            when an entry is complete.
+        </li>
+        <li>
+            While someone has picked you at the tablet, anything they log &mdash; attempts, sends,
+            comments, boulders &mdash; is recorded <strong>as you</strong>, exactly as if you had
+            logged it on your own phone. The session ends after 30 minutes of inactivity or when
+            released.
+        </li>
+        <li>
+            A kiosk session cannot change your password, second factor or e-mail, cannot link another
+            login to your account, cannot mint API keys, and <strong>cannot delete your account</strong>.
+        </li>
+        <li>
+            The tablet is identified by a long-lived <code>blocwerk-kiosk</code> device cookie. It
+            identifies the device, not a person.
+        </li>
+    </ul>
+    <p>
+        A wall admin can additionally allow <strong>anonymous setting</strong> at that wall's kiosk:
+        somebody standing at the tablet can then record a new boulder without anybody being signed
+        in at all. Those boulders are credited to <strong>Ghost</strong> &mdash; a placeholder
+        account that is nobody, the same name a deleted account's content is shown under &mdash; and
+        no personal data whatsoever is recorded for them. The wall admin can turn this off again at
+        any time.
+    </p>
+
+    <h2>API keys</h2>
+    <p>
+        You can create personal API keys (they begin <code>bwk_</code>) so a script or device can act
+        as you against the Blocwerk REST API. Wall admins can create wall- and kiosk-scoped keys used
+        by mounted tablets and by sensors that post wall temperature readings. Only a SHA-256 hash of
+        each key is stored, along with its name, a short display prefix, creation and expiry time,
+        and a throttled "last used" timestamp. Revoke a key you no longer need.
+    </p>
+
+    <h2>Importing from TopLogger</h2>
+    <p>
+        If you connect a TopLogger account, we store your TopLogger access and refresh tokens
+        <strong>encrypted at rest</strong>, your TopLogger user id, the time of the last sync and any
+        sync error. We then fetch and store your ascents from that service (climb name, gym, date,
+        grade, points) so they appear alongside your Blocwerk climbs. This is optional, based on your
+        consent (Art. 6(1)(a) GDPR), and disconnecting removes the connection.
+        <strong>TopLogger is a third party with its own privacy policy</strong>; connecting sends
+        requests to their servers.
+    </p>
+
+    <h2>Sending e-mail</h2>
+    <p>
+        Verification, sign-up and password-reset codes are sent through an SMTP server configured by
+        the operator: [[E-MAIL / SMTP PROVIDER]]. Your address and the message are processed by that
+        provider in the course of delivery.
+    </p>
+
+    <h2>Cookies and local storage</h2>
+    <p>
+        Blocwerk sets no advertising or tracking cookies and uses no third-party analytics. The
+        cookies it does set are:
+    </p>
+    <ul>
+        <li><strong>Authentication cookie</strong> &mdash; keeps you signed in; expires after 8 hours of inactivity</li>
+        <li><strong>Antiforgery cookie</strong> &mdash; protects form submissions against cross-site request forgery</li>
+        <li><strong><code>cookie_consent</code></strong> &mdash; remembers that you acknowledged this notice</li>
+        <li><strong><code>bw_totp_pending</code></strong> &mdash; short-lived, carries a pending two-factor challenge between steps</li>
+        <li><strong><code>bw_link_intent</code></strong> &mdash; short-lived, carries an account-linking request through the OAuth round trip</li>
+        <li>
+            <strong><code>bw_login_method</code>, <code>bw_method_counts</code>,
+            <code>bw_method_optout</code>, <code>blocwerk-returning</code></strong> &mdash; remember
+            which sign-in method you use so the login page can offer it first. You can opt out of
+            this on the sign-in page.
+        </li>
+        <li><strong><code>blocwerk-kiosk</code></strong> &mdash; marks a device as a registered kiosk tablet (see above)</li>
+        <li><strong><code>blocwerk-last-page</code>, <code>blocwerk-zoom-lens-mag</code></strong> &mdash; interface preferences the server reads on first paint</li>
+    </ul>
+    <p>
+        Your browser additionally keeps, on your device only and never sent to us: theme and layout
+        preferences, the wall-dimming and focus settings, the collapsed state of the navigation bar,
+        the app-install prompt state, and &mdash; when you are offline &mdash; an IndexedDB queue of
+        actions (logged attempts, comments, boulders) waiting to be sent when you reconnect.
+    </p>
+
+    <h2>Server logs and metrics</h2>
+    <p>
+        The application exposes operational metrics (request counts and timings, and totals such as
+        the number of walls, boulders and registered users). These are aggregate figures and are not
+        labelled with your identity. Application logs may record user and wall identifiers alongside
+        errors and administrative actions, and the web server may record IP addresses and request
+        paths in the usual way. Log retention: [[LOG RETENTION PERIOD]].
+    </p>
+
+    <h2>How long we keep things</h2>
+    <p>
+        Account data is kept for as long as your account exists. Content you contributed to a wall is
+        kept for as long as that wall exists (see the next section for what happens when you delete
+        your account). Backups: [[BACKUP RETENTION PERIOD]]. Other retention periods:
+        [[RETENTION PERIODS]].
+    </p>
+
+    <h2>Deleting your account</h2>
+    <p>
+        You can erase your account yourself, at any time, under
+        <a href="/settings/delete-account">Profile &rarr; Delete account</a>. It is irreversible and
+        it is not available from a kiosk tablet.
+    </p>
+    <p><strong>Deleting your account permanently erases:</strong></p>
+    <ul>
+        <li>Your name, chosen display name, e-mail address and avatar image</li>
+        <li>Your password, your two-factor secret and every linked GitHub / Google / Microsoft login</li>
+        <li>
+            Your sign-in tokens and your account's pending verification codes, and your personal
+            API keys. Any session still open elsewhere &mdash; another browser, another device
+            &mdash; stops working at once: an erased account can no longer be signed in as, and the
+            browser is signed out the next time it asks.
+        </li>
+        <li>Your TopLogger connection, its stored tokens and every ascent imported from it</li>
+        <li>Your hangboard, pull-up and climbing sessions, your training activities, and your favourites</li>
+        <li>Your wall memberships, and with them your kiosk consent and kiosk PIN</li>
+        <li>Beta video clips you uploaded, including the files themselves</li>
+    </ul>
+    <p><strong>It deliberately does not erase</strong> the content other people's walls are built on:</p>
+    <ul>
+        <li>Boulders you created and setter credits naming you</li>
+        <li>Comments, star ratings and grade proposals you wrote</li>
+        <li>Attempts you logged, so the send counts on shared boulders do not change</li>
+        <li>Wall history entries (resets, photo updates) on walls you helped run</li>
+        <li>
+            Wall- and kiosk-scoped API keys you created. These are <strong>transferred</strong> to
+            the wall's owner rather than deleted, because they are what the gym's tablet and sensors
+            authenticate with and deleting them would take that hardware offline. The name you gave
+            each key is replaced with a neutral one; the key itself keeps working under its new
+            owner, who can revoke it.
+        </li>
+    </ul>
+    <p>
+        Your user record is stripped of every personal field and left as an anonymous placeholder
+        shown as <strong>Ghost</strong>, and the free text you typed that was only ever about you
+        &mdash; the notes on your logged attempts, and any text you entered that was copied into the
+        wall activity log &mdash; is blanked. Deleting the rest instead would tear holes in walls
+        other members depend on.
+    </p>
+    <p>
+        <strong>Be aware of what that leaves.</strong> The words you wrote stay: the names you gave
+        your boulders, the text of your comments, your grade proposals. If any of it names you or
+        describes you, it is still there after the deletion, credited to Ghost. We cannot review it
+        for you &mdash; so if you want a specific boulder, comment or photo removed as well, ask us
+        at [[CONTACT EMAIL]] before you delete your account.
+    </p>
+    <p>
+        If you are the <strong>only owner of a wall</strong> and no other admin can take it over,
+        deletion is refused until you make somebody else an admin or delete the wall &mdash; so a
+        wall full of other people's climbing is never left ownerless or silently destroyed.
+        Otherwise the wall passes to its longest-standing remaining admin.
+    </p>
+    <p>
+        Deletion cannot reach copies that live outside the live database: <strong>backups</strong>
+        (removed on the schedule above), <strong>server and application logs</strong>, and anything
+        already sent to a third party such as your OAuth provider, the e-mail provider or TopLogger.
+        Those must be dealt with at their source.
+    </p>
+
+    <h2>Your rights</h2>
+    <p>Under the GDPR/DSGVO you have the right to:</p>
+    <ul>
+        <li><strong>Access</strong> (Art. 15) &mdash; a copy of the data we hold about you</li>
+        <li><strong>Rectification</strong> (Art. 16) &mdash; correction of inaccurate data; you can edit your name, e-mail and avatar yourself</li>
+        <li><strong>Erasure</strong> (Art. 17) &mdash; deletion, as described above and available self-service</li>
+        <li><strong>Restriction</strong> (Art. 18) and <strong>objection</strong> (Art. 21) to processing based on legitimate interests</li>
+        <li><strong>Data portability</strong> (Art. 20) &mdash; your own records in a machine-readable form; your personal API keys already give you programmatic access to your climbing data</li>
+        <li><strong>Withdraw consent</strong> (Art. 7(3)) at any time, e.g. kiosk consent or the TopLogger connection, without affecting past processing</li>
+        <li><strong>Complain to a supervisory authority</strong> (Art. 77): [[SUPERVISORY AUTHORITY]]</li>
+    </ul>
+    <p>To exercise any of these, write to [[CONTACT EMAIL]].</p>
+
+    <h2>Third parties</h2>
+    <ul>
+        <li><strong>GitHub, Google, Microsoft</strong> &mdash; whichever OAuth sign-in you use</li>
+        <li><strong>[[E-MAIL / SMTP PROVIDER]]</strong> &mdash; delivery of verification and reset e-mails</li>
+        <li><strong>TopLogger</strong> &mdash; only if you connect it</li>
+        <li><strong>[[HOSTING PROVIDER]]</strong> &mdash; the servers this installation runs on</li>
+    </ul>
+    <p>
+        No data is sold, and none is shared with advertisers or analytics services.
+    </p>
+
+    <h2>Changes to this policy</h2>
+    <p>
+        If this policy changes materially we will update the date at the top and, where the change
+        affects you, tell you in the app.
+    </p>
 
     <h2>Contact</h2>
-    <p><!-- TODO: Add contact information --></p>
+    <p>[[CONTROLLER NAME]], [[CONTROLLER POSTAL ADDRESS]], [[CONTACT EMAIL]]</p>
 </div>

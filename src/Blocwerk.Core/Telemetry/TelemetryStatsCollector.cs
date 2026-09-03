@@ -1,4 +1,5 @@
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Helpers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -56,7 +57,9 @@ public sealed class TelemetryStatsCollector : BackgroundService
 
             var walls = await db.Walls.CountAsync(cancellationToken);
             var boulders = await db.Boulders.CountAsync(b => !b.IsArchived, cancellationToken);
-            var users = await db.Users.CountAsync(cancellationToken);
+            // Live people only: deletion tombstones and the seeded Ghost row are rows, not users.
+            var users = await db.Users
+                .CountAsync(u => u.DeletedAt == null && u.Id != GhostUser.Id, cancellationToken);
             var holds = await db.Holds.CountAsync(cancellationToken);
             var sessions = await db.ClimbingSessions.CountAsync(s => s.EndedAt == null, cancellationToken);
 

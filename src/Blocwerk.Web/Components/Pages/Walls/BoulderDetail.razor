@@ -84,11 +84,11 @@ else
 
             @if (_boulder.Setters.Count > 0)
             {
-                <p class="meta">Set by @SettersDisplay &middot; added by @_boulder.CreatedBy.Name &middot; <LocalTime Value="@_boulder.CreatedAt" Format="LocalTimeFormat.Date" /></p>
+                <p class="meta">Set by @SettersDisplay &middot; added by @CreatorDisplay &middot; <LocalTime Value="@_boulder.CreatedAt" Format="LocalTimeFormat.Date" /></p>
             }
             else
             {
-                <p class="meta">by @_boulder.CreatedBy.Name &middot; <LocalTime Value="@_boulder.CreatedAt" Format="LocalTimeFormat.Date" /></p>
+                <p class="meta">by @CreatorDisplay &middot; <LocalTime Value="@_boulder.CreatedAt" Format="LocalTimeFormat.Date" /></p>
             }
 
         </div>
@@ -126,8 +126,10 @@ else
                 </p>
                 <div class="revision-actions">
                     <a href="/walls/@WallId/boulders/@BoulderId/revise" class="btn-revise">Revise Boulder</a>
-                    @* Archiving stays a creator-only action; only the revise entry point is opened to admins. *@
-                    @if (_isCreator)
+                    @* Archive follows the same rule as revise and publish: creator, any setter, or a
+                       wall admin. Creator-only left a kiosk-set boulder — whose creator is the Ghost
+                       system row, i.e. nobody — impossible to archive when the gym reset the wall. *@
+                    @if (CanManageBoulder)
                     {
                         @if (_boulder.IsArchived)
                         {
@@ -142,7 +144,9 @@ else
             </div>
         }
 
-        @if (_activeProposal != null && _isCreator)
+        @* Same rule again. On a Ghost boulder a creator-only accept/reject meant an open proposal
+           nobody in the installation could ever resolve. *@
+        @if (_activeProposal != null && CanManageBoulder)
         {
             <div class="bw-grade-proposal-notice creator">
                 <p><strong>@_activeProposal.ProposedBy.Name</strong> proposed changing the grade to <strong>@_activeProposal.ProposedGrade</strong></p>
@@ -304,6 +308,8 @@ else
                 </details>
             }
 
+            @* Proposing stays exactly as the server has it (ProposeGradeAsync refuses only your OWN
+               boulder), so a setter or wall admin who did not create it can still propose. *@
             @if (!_isCreator)
             {
                 @if (_showGradeForm)
@@ -397,6 +403,13 @@ else
     private Guid _currentUserId;
     private bool _isAnonymous;
     private bool _isCreator;
+
+    /// <summary>
+    /// The one client-side mirror of the server's "may act on this boulder" rule
+    /// (<c>BoulderService.CanManageBoulderAsync</c>): creator, any setter, or a wall admin. Anonymous
+    /// kiosk viewers are never any of those.
+    /// </summary>
+    private bool CanManageBoulder => !_isAnonymous && (_isCreator || _isSetter || _isAdmin);
     private bool _isAdmin;
     private bool _isSetter;
     private bool _showHistoric;
@@ -602,6 +615,14 @@ else
     /// </summary>
     private string SettersDisplay =>
         BoulderSetterNames.Format(_boulder?.Setters.Select(s => s.User.Name));
+
+    /// <summary>
+    /// Who added the boulder, through the SAME formatter the wall list's byline uses, so the two
+    /// pages can never disagree. It reads "Ghost" for a boulder set at an unattended kiosk (the
+    /// Ghost system row) and for one whose creator has since deleted their account — never the raw
+    /// name of a system row. Also null-safe, which the direct <c>CreatedBy.Name</c> deref was not.
+    /// </summary>
+    private string CreatorDisplay => BoulderSetterNames.Describe(null, _boulder?.CreatedBy);
 
     private string PhotoUrl
     {

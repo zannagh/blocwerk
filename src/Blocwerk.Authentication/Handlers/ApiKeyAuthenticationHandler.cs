@@ -70,9 +70,13 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<ApiKeyAuthentic
 
         await using var db = await dbContextFactory.CreateDbContextAsync(Context.RequestAborted);
         db.CurrentUserId = Guid.Empty;
+        // DeletedAt == null: a key whose owner has erased their account authenticates as nobody. The
+        // deletion drops that person's keys and hands the wall's keys to the wall's new owner, so
+        // this should never match — which is exactly why it fails loudly rather than silently
+        // acting as a tombstone.
         var identifier = await db.Users
             .IgnoreQueryFilters()
-            .Where(u => u.Id == key.UserId)
+            .Where(u => u.Id == key.UserId && u.DeletedAt == null)
             .Select(u => u.Identifier)
             .FirstOrDefaultAsync(Context.RequestAborted);
 

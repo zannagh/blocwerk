@@ -932,6 +932,9 @@ namespace Blocwerk.Core.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
 
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("DisplayName")
                         .IsRequired()
                         .HasMaxLength(256)
@@ -1002,6 +1005,22 @@ namespace Blocwerk.Core.Migrations
                         .HasFilter("\"LoginUsername\" IS NOT NULL");
 
                     b.ToTable("Users");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("00000000-0000-4000-8000-000000000001"),
+                            CreatedAt = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            DisplayName = "Ghost",
+                            EmailVerified = false,
+                            FailedAuthCount = 0,
+                            Identifier = "system:ghost",
+                            PreferFontGrades = true,
+                            ProgressionGroupBy = 1,
+                            ProgressionWindowDays = 60,
+                            Role = 1,
+                            TotpEnabled = false
+                        });
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.UserGradeMapping", b =>
@@ -1071,6 +1090,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
+
+                    b.Property<bool>("AllowAnonymousKioskSetting")
+                        .HasColumnType("boolean");
 
                     b.Property<int>("Angle")
                         .HasColumnType("integer");

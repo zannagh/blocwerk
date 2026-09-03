@@ -203,6 +203,11 @@ window.bwViewport = (function () {
         return viewport ? viewport._bwModel : null;
     }
 
+    // Every viewport node attachSwipe has bound, so detachSwipe can also unbind nodes that a
+    // re-render has already replaced. Small and bounded — one entry per live panel viewer, cleared
+    // on detach — and the page has at most a couple of those.
+    const bwSwipeBound = [];
+
     return {
         /** Attaches the scroll model. Safe to call repeatedly. */
         setupScroll: function (viewport, dotnetHelper) {
@@ -403,26 +408,77 @@ window.bwViewport = (function () {
             el._bwStepperTrap = null;
         },
 
-        // ---- Multi-panel viewer swipe: a conservative enhancement over the arrows.
-        // Only a clear, decisive HORIZONTAL one-finger swipe on an UNZOOMED scroll-model
-        // viewport navigates to the adjacent panel. Horizontal is safe because the viewport
-        // has `touch-action: pan-y` at fit — a sideways drag scrolls nothing — whereas a
-        // vertical swipe would fight the page scroll, so up/down stays arrows-only. We never
-        // preventDefault (listeners are passive), so this can never break pan/zoom or scroll.
+        // ---- Multi-panel viewer swipe: at (and only at) full zoom-out a decisive
+        // HORIZONTAL gesture steps to the adjacent panel, gallery-style. Two input paths:
+        //
+        //   touch      : a one-finger swipe. The viewport already carries `touch-action: pan-y`
+        //                at fit, so a sideways drag scrolls nothing and there is nothing to
+        //                preventDefault; a vertical drag still scrolls the page.
+        //   trackpad   : a two-finger horizontal slide arrives as wheel events with deltaX.
+        //                Those DO scroll an ancestor (the wall carousel), so a clearly
+        //                horizontal wheel at fit is preventDefault'ed — hence the non-passive
+        //                listener — and accumulated until it passes a threshold. One continuous
+        //                slide therefore advances at most one panel; the accumulator only
+        //                re-arms after the wheel stream has been quiet (measured off the event
+        //                timestamps, so no timers are involved).
+        //
+        // Above fit this does nothing at all: the gesture recogniser owns the pan exactly as
+        // before. Whether a panel actually lies that way is decided on the .NET side
+        // (OnSwipeNavigate -> the same GoToAsync the chevrons call), so a swipe into a dead
+        // direction is simply ignored rather than falling through to the carousel.
         attachSwipe: function (viewport, dotnet) {
             if (!viewport || !viewport.addEventListener || viewport._bwSwipe) {
                 return;
             }
 
-            const THRESHOLD = 70;   // px of travel before a swipe counts
-            const DOMINANCE = 1.6;  // one axis must beat the other by this factor
+            // Remember every node this call has ever bound, so detachSwipe can unbind a node that
+            // has since been replaced by a re-render rather than only the one handed to it.
+            if (!bwSwipeBound.includes(viewport)) {
+                bwSwipeBound.push(viewport);
+            }
+
+            const THRESHOLD = 70;        // px of touch travel before a swipe counts
+            // A flick is the shortcut for a deliberate quick sideways throw, not a licence to change
+            // panel on a stray thumb. 35px at 0.5px/ms is roughly a 70ms nudge — comfortably inside
+            // what a scroll or a mis-tap produces on a wall-mounted tablet, and a wrong panel change
+            // costs a full photo swap to undo. Half the main threshold, at twice the speed, keeps the
+            // gesture available while putting it clearly outside accidental travel.
+            const FLICK_DISTANCE = 55;   // a short but fast swipe still counts...
+            const FLICK_SPEED = 1.0;     // ...at this many px/ms
+            const DOMINANCE = 1.6;       // one axis must beat the other by this factor
+            const WHEEL_THRESHOLD = 90;  // accumulated horizontal wheel px before it counts
+            const WHEEL_IDLE_MS = 200;   // quiet gap that ends one continuous trackpad gesture
+            const LINE_PX = 16;          // deltaMode 1 (lines) -> approximate pixels
+
             let startX = 0;
             let startY = 0;
+            let startTime = 0;
             let armed = false;
+            let wheelDx = 0;
+            let wheelFired = false;
+            let wheelLast = 0;
 
+            // "Fully zoomed out" == the scroll model's floor (1.0 is fit; it cannot go below).
             function notZoomed() {
                 const m = viewport._bwModel;
                 return !m || !m.getZoom || m.getZoom() <= 1.02;
+            }
+
+            // Whether a step in this direction would go anywhere. .NET publishes the answer onto the
+            // viewport node on every render (see MultiPanelViewer.OnAfterRenderAsync); an absent
+            // marker means "unknown", and unknown is treated as navigable so a missing hint can only
+            // ever restore the old behaviour rather than disable the gesture.
+            function canNavigate(dx) {
+                const dir = dx < 0 ? 'right' : 'left';
+                const attr = viewport.getAttribute('data-bw-swipe-' + dir);
+                return attr !== 'false';
+            }
+
+            // dx < 0 means the content was dragged left, revealing the panel to the RIGHT.
+            function navigate(dx) {
+                try {
+                    dotnet.invokeMethodAsync('OnSwipeNavigate', dx < 0 ? 'right' : 'left');
+                } catch (_) { /* circuit gone */ }
             }
 
             function onStart(e) {
@@ -430,6 +486,7 @@ window.bwViewport = (function () {
                 if (armed) {
                     startX = e.touches[0].clientX;
                     startY = e.touches[0].clientY;
+                    startTime = e.timeStamp || Date.now();
                 }
             }
 
@@ -452,33 +509,171 @@ window.bwViewport = (function () {
                 const dy = t.clientY - startY;
                 const adx = Math.abs(dx);
                 const ady = Math.abs(dy);
-                if (Math.max(adx, ady) < THRESHOLD) {
+
+                // Horizontal only, and only when clearly dominant over any vertical travel, so
+                // a diagonal or vertical drag stays a page scroll.
+                if (adx <= ady * DOMINANCE) {
                     return;
                 }
 
-                // Horizontal only, and only when clearly dominant over any vertical travel.
-                // Swipe left reveals the panel to the right, and so on: the direction sent is
-                // the panel to move TO.
-                if (adx > ady * DOMINANCE) {
-                    try {
-                        dotnet.invokeMethodAsync('OnSwipeNavigate', dx < 0 ? 'right' : 'left');
-                    } catch (_) { /* circuit gone */ }
+                const elapsed = Math.max(1, (e.timeStamp || Date.now()) - startTime);
+                const decisive = adx >= THRESHOLD ||
+                    (adx >= FLICK_DISTANCE && adx / elapsed >= FLICK_SPEED);
+                if (decisive) {
+                    navigate(dx);
                 }
             }
 
-            viewport._bwSwipe = { onStart: onStart, onEnd: onEnd };
+            function onWheel(e) {
+                // ctrl/cmd + wheel is a pinch-zoom; above fit the gesture recogniser pans.
+                if (e.ctrlKey || e.metaKey || !notZoomed()) {
+                    wheelDx = 0;
+                    wheelFired = false;
+                    return;
+                }
+
+                // shift+wheel is the browser's own "scroll horizontally" modifier, and a tilt wheel
+                // sends deltaX on a mouse with no second axis to give. Neither is a trackpad panel
+                // swipe, and swallowing them is what makes horizontal scrolling read as broken.
+                if (e.shiftKey) {
+                    return;
+                }
+
+                const factor = e.deltaMode === 1 ? LINE_PX
+                    : e.deltaMode === 2 ? (viewport.clientWidth || LINE_PX)
+                    : 1;
+                const dx = e.deltaX * factor;
+                const dy = e.deltaY * factor;
+                if (Math.abs(dx) <= Math.abs(dy) * DOMINANCE) {
+                    // Vertical (or ambiguous): leave it to the page so scrolling still works.
+                    return;
+                }
+
+                // Only take over a gesture we actually act on. At the first/last panel in this
+                // direction there is nothing to step to, so preventDefault would swallow the slide
+                // and do nothing with it — which is precisely what "horizontal scrolling is broken"
+                // feels like. Let it through to the carousel instead.
+                if (!canNavigate(-dx)) {
+                    return;
+                }
+
+                e.preventDefault();
+
+                const now = e.timeStamp || Date.now();
+                if (now - wheelLast > WHEEL_IDLE_MS) {
+                    wheelDx = 0;
+                    wheelFired = false;
+                }
+
+                wheelLast = now;
+                if (wheelFired) {
+                    // Already stepped once; the rest of this continuous slide is swallowed.
+                    return;
+                }
+
+                wheelDx += dx;
+                if (Math.abs(wheelDx) >= WHEEL_THRESHOLD) {
+                    wheelFired = true;
+                    navigate(-wheelDx);
+                }
+            }
+
+            viewport._bwSwipe = { onStart: onStart, onEnd: onEnd, onWheel: onWheel };
             viewport.addEventListener('touchstart', onStart, { passive: true });
             viewport.addEventListener('touchend', onEnd, { passive: true });
+            viewport.addEventListener('wheel', onWheel, { passive: false });
         },
-        detachSwipe: function (viewport) {
-            const s = viewport && viewport._bwSwipe;
-            if (!s) {
+        /**
+         * One round-trip that (re)establishes everything a multi-panel viewport needs for the
+         * current render: the pan/zoom model, the swipe listeners, and the "is there a panel that
+         * way" hints the wheel handler consults before it takes a gesture over.
+         *
+         * The two setup calls have to re-run on every render anyway — a node replaced by a
+         * re-render or a reconnect would otherwise come back inert — so folding them together is
+         * what keeps that from costing two interop calls a render instead of one. Both halves stay
+         * idempotent in JS, so a repeat call on an already-bound node does nothing.
+         */
+        setupPanelViewport: function (viewport, dotnet, canLeft, canRight) {
+            if (!viewport || !viewport.setAttribute) {
                 return;
             }
 
-            viewport.removeEventListener('touchstart', s.onStart);
-            viewport.removeEventListener('touchend', s.onEnd);
-            viewport._bwSwipe = null;
+            this.setupScroll(viewport, null);
+            if (dotnet) {
+                this.attachSwipe(viewport, dotnet);
+            }
+
+            viewport.setAttribute('data-bw-swipe-left', canLeft ? 'true' : 'false');
+            viewport.setAttribute('data-bw-swipe-right', canRight ? 'true' : 'false');
+        },
+
+        detachSwipe: function (viewport) {
+            // Unbind the node asked for AND any earlier node this page bound and then discarded: a
+            // re-render can replace the viewport element, and unbinding only the current ref left
+            // the old node holding listeners (and, through them, a DotNetObjectReference) alive.
+            const targets = bwSwipeBound.slice();
+            if (viewport && targets.indexOf(viewport) === -1) {
+                targets.push(viewport);
+            }
+
+            bwSwipeBound.length = 0;
+
+            targets.forEach(function (node) {
+                const s = node && node._bwSwipe;
+                if (!s) {
+                    return;
+                }
+
+                node.removeEventListener('touchstart', s.onStart);
+                node.removeEventListener('touchend', s.onEnd);
+                node.removeEventListener('wheel', s.onWheel);
+                node._bwSwipe = null;
+            });
+        },
+
+        /**
+         * Warms the browser cache for an image and resolves once it is decodable (or has
+         * failed). The multi-panel viewer awaits this before swapping panel, so the new
+         * photo and its hold overlay land in the SAME render instead of the overlay
+         * trailing the image. Resolves on error too, so a missing panel photo can never
+         * wedge navigation.
+         *
+         * A STALLED request is the case `error` does not cover: a captive portal or a
+         * half-open connection leaves the request pending with no event ever firing, and
+         * the caller's `_swapping` latch would hold every chevron and swipe until Blazor's
+         * own ~1-minute interop timeout expired. So the promise also resolves on a timeout
+         * (default 4s) and the viewer simply shows the panel with a cold image — a photo
+         * that pops in a frame late is a far better outcome than a viewer that ignores
+         * input for a minute.
+         */
+        preloadImage: function (url, timeoutMs) {
+            return new Promise(function (resolve) {
+                if (!url) {
+                    resolve(false);
+                    return;
+                }
+
+                let settled = false;
+                function finish(ok) {
+                    if (settled) {
+                        return;
+                    }
+                    settled = true;
+                    clearTimeout(timer);
+                    resolve(ok);
+                }
+
+                const timer = setTimeout(function () { finish(false); },
+                    typeof timeoutMs === 'number' && timeoutMs > 0 ? timeoutMs : 4000);
+
+                const img = new Image();
+                img.onload = function () { finish(true); };
+                img.onerror = function () { finish(false); };
+                img.src = url;
+                if (img.complete) {
+                    finish(true);
+                }
+            });
         },
 
         /** Page-wide: stop the browser's own zoom outside our viewports. */

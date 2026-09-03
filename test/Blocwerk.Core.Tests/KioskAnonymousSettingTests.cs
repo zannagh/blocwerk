@@ -1,0 +1,704 @@
+using Blocwerk.Authentication.Kiosk;
+using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Data;
+using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
+using Blocwerk.Core.Helpers;
+using Blocwerk.Core.Services;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
+
+namespace Blocwerk.Core.Tests;
+
+/// <summary>
+/// The app's ONE unauthenticated write: a boulder set at a wall-mounted tablet with nobody signed in.
+/// </summary>
+/// <remarks>
+/// Every test here asserts BEHAVIOUR, not the absence of an exception: what got written, who it was
+/// credited to, and — for the refusals — that nothing was written at all. The four conditions in
+/// <see cref="KioskAnonymousSetting"/> are pinned one at a time, because a grant that holds only
+/// because two checks happen to overlap is a grant that breaks the moment one of them moves.
+/// </remarks>
+public class KioskAnonymousSettingTests
+{
+    [Fact]
+    public async Task GhostRow_IsSeededWithTheModel()
+    {
+        using var h = new WallTestHarness();
+        await using var db = h.CreateContext();
+
+        // Seeded through HasData, so it arrives with EnsureCreated here and with the migration in
+        // production. Boulder.CreatedByUserId is a required, restrict-deleted FK: if this row can
+        // ever be missing, an anonymous create has nothing to point at.
+        var ghost = await db.Users.FirstOrDefaultAsync(u => u.Id == GhostUser.Id);
+
+        Assert.NotNull(ghost);
+        Assert.Equal(GhostUser.Identifier, ghost!.Identifier);
+        Assert.Equal(PlaceholderIdentity.DisplayName, ghost.Name);
+        Assert.Equal(IdentityRole.User, ghost.Role);
+    }
+
+    [Fact]
+    public async Task WithNoKioskRegistration_TheCreateIsRefusedAndNothingIsWritten()
+    {
+        using var fixture = await AnonymousSettingFixture.CreateAsync();
+        await fixture.AllowAnonymousSettingAsync();
+
+        // An ordinary signed-out visitor who simply navigated to the create URL.
+        var boulders = fixture.BoulderServiceFor(KioskContextFor(isKiosk: false, wallId: null, keyId: null));
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => fixture.CreateAsync(boulders));
+        Assert.Empty(await fixture.StoredBouldersAsync());
+    }
+
+    [Fact]
+    public async Task ForAWallOtherThanTheOneInTheCookie_TheCreateIsRefused()
+    {
+        using var fixture = await AnonymousSettingFixture.CreateAsync();
+        await fixture.AllowAnonymousSettingAsync();
+        var otherWallId = await fixture.SeedSecondWallAsync(allowAnonymousSetting: true);
+
+        // The tablet is registered to the seeded wall and asks for the neighbouring one — which has
+        // the opt-in ON, so only the wall comparison can be refusing this.
+        var boulders = fixture.BoulderServiceFor(fixture.LiveKioskContext());
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(
+            () => fixture.CreateAsync(boulders, wallId: otherWallId));
+        Assert.Empty(await fixture.StoredBouldersAsync(otherWallId));
+    }
+
+    [Fact]
+    public async Task WhenTheKioskKeyHasBeenRevoked_TheCreateIsRefused()
+    {
+        using var fixture = await AnonymousSettingFixture.CreateAsync();
+        await fixture.AllowAnonymousSettingAsync();
+
+        // It works right up until the admin revokes, and stops afterwards: the device cookie is
+        // unchanged throughout, so only the database re-check can be the difference.
+        await fixture.CreateAsync(
+            fixture.BoulderServiceFor(fixture.LiveKioskContext()), name: "Before Revocation");
+        Assert.Single(await fixture.StoredBouldersAsync());
+
+        await fixture.Harness.ApiKeyService.RevokeAsync(fixture.KioskKey.Id, fixture.Harness.Owner.Id);
+
+        // A FRESH service, i.e. the next request or circuit — which is the scope KioskKeyValidator
+        // is registered at, and therefore the scope its 15-second positive cache lives in. A tablet
+        // that already validated this second keeps working for at most that long; the next one does
+        // not, and that window is the documented trade in KioskKeyValidator.
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(
+            () => fixture.CreateAsync(
+                fixture.BoulderServiceFor(fixture.LiveKioskContext()), name: "After Revocation"));
+        Assert.Single(await fixture.StoredBouldersAsync());
+    }
+
+    [Fact]
+    public async Task WhenTheWallHasNotOptedIn_TheCreateIsRefused()
+    {
+        using var fixture = await AnonymousSettingFixture.CreateAsync();
+        var boulders = fixture.BoulderServiceFor(fixture.LiveKioskContext());
+
+        // The default. A paired tablet on a wall nobody switched this on for is a read-only tablet,
+        // which is the whole point of making it opt-in.
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => fixture.CreateAsync(boulders));
+        Assert.Empty(await fixture.StoredBouldersAsync());
+
+        // And it starts working the moment an admin does switch it on, so the refusal above is the
+        // toggle and not something incidental.
+        await fixture.AllowAnonymousSettingAsync();
+        await fixture.CreateAsync(boulders);
+        Assert.Single(await fixture.StoredBouldersAsync());
+    }
+
+    [Fact]
+    public async Task WithNoKeyValidator_TheCreateFailsClosed()
+    {
+        using var fixture = await AnonymousSettingFixture.CreateAsync();
+        await fixture.AllowAnonymousSettingAsync();
+
+        // A host with no auth stack cannot re-check the key against the database, so it must not be
+        // able to grant on the cookie's word alone.
+        var boulders = fixture.BoulderServiceFor(fixture.LiveKioskContext(), withKeyValidator: false);
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => fixture.CreateAsync(boulders));
+        Assert.Empty(await fixture.StoredBouldersAsync());
+    }
+
+    [Fact]
+    public async Task WithNobodyPicked_TheBoulderIsStoredAndReadsAsGhost()
+    {
+        using var fixture = await AnonymousSettingFixture.CreateAsync();
+        await fixture.AllowAnonymousSettingAsync();
+        var boulders = fixture.BoulderServiceFor(fixture.LiveKioskContext());
+
+        var created = await fixture.CreateAsync(boulders, name: "Unclaimed Line");
+
+        var stored = Assert.Single(await fixture.StoredBouldersAsync());
+        Assert.Equal(created.Id, stored.Id);
+        Assert.Equal("Unclaimed Line", stored.Name);
+        Assert.False(stored.IsDraft);
+
+        // Credited to the Ghost system row — nobody's user id, so every "is this mine?" check in the
+        // app (archive, grade proposals, the mine-only filter) still answers false for everyone.
+        Assert.Equal(GhostUser.Id, stored.CreatedByUserId);
+        Assert.Empty(stored.Setters);
+
+        // And it RENDERS as Ghost, through the one shared formatter both the wall list and the
+        // boulder detail page use — never the system row's raw name by some other route.
+        await using var db = fixture.Harness.CreateContext();
+        var creator = await db.Users.FirstAsync(u => u.Id == stored.CreatedByUserId);
+        Assert.Equal(PlaceholderIdentity.DisplayName, BoulderSetterNames.Describe(null, creator));
+    }
+
+    [Fact]
+    public async Task WithAConsentingSetterPicked_TheBoulderIsCreditedToThem()
+    {
+        using var fixture = await AnonymousSettingFixture.CreateAsync();
+        await fixture.AllowAnonymousSettingAsync();
+        var setter = await fixture.AddConsentingMemberAsync("setter@test");
+        var boulders = fixture.BoulderServiceFor(fixture.LiveKioskContext());
+
+        await fixture.CreateAsync(boulders, setterUserIds: [setter.Id]);
+
+        var stored = Assert.Single(await fixture.StoredBouldersAsync());
+
+        // The creator stays Ghost — nobody signed in — but the CREDIT goes to the person who was
+        // ticked, which is what the wall shows.
+        Assert.Equal(GhostUser.Id, stored.CreatedByUserId);
+        var recorded = Assert.Single(stored.Setters);
+        Assert.Equal(setter.Id, recorded.UserId);
+        Assert.Equal(setter.Name, BoulderSetterNames.Describe([setter.Name], null));
+    }
+
+    [Fact]
+    public async Task AMemberWhoNeverConsented_CannotBeCredited()
+    {
+        using var fixture = await AnonymousSettingFixture.CreateAsync();
+        await fixture.AllowAnonymousSettingAsync();
+
+        // A member of this very wall, so the ordinary create path's member check would have let this
+        // through. Consent is the extra gate an anonymous caller has to clear.
+        var silent = await fixture.Harness.AddMemberAsync("silent@test", WallRole.Member);
+        var boulders = fixture.BoulderServiceFor(fixture.LiveKioskContext());
+
+        var error = await Assert.ThrowsAsync<UnauthorizedAccessException>(
+            () => fixture.CreateAsync(boulders, setterUserIds: [silent.Id]));
+
+        Assert.Equal(KioskAnonymousSetting.UnconsentingSetterMessage, error.Message);
+
+        // Refused outright, not silently dropped: no boulder at all rather than one credited to
+        // nobody the setter meant.
+        Assert.Empty(await fixture.StoredBouldersAsync());
+    }
+
+    [Fact]
+    public async Task AConsentingUserOfAnotherWall_CannotBeCredited()
+    {
+        using var fixture = await AnonymousSettingFixture.CreateAsync();
+        await fixture.AllowAnonymousSettingAsync();
+        var otherWallId = await fixture.SeedSecondWallAsync(allowAnonymousSetting: false);
+        var stranger = await fixture.AddConsentingMemberAsync("stranger@test", otherWallId);
+        var boulders = fixture.BoulderServiceFor(fixture.LiveKioskContext());
+
+        // Consenting — but at a different wall's kiosk. Consent is per membership row, so naming the
+        // user is not enough.
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(
+            () => fixture.CreateAsync(boulders, setterUserIds: [stranger.Id]));
+        Assert.Empty(await fixture.StoredBouldersAsync());
+    }
+
+    [Fact]
+    public async Task OneGoodSetterDoesNotSmuggleInABadOne()
+    {
+        using var fixture = await AnonymousSettingFixture.CreateAsync();
+        await fixture.AllowAnonymousSettingAsync();
+        var good = await fixture.AddConsentingMemberAsync("good@test");
+        var boulders = fixture.BoulderServiceFor(fixture.LiveKioskContext());
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(
+            () => fixture.CreateAsync(boulders, setterUserIds: [good.Id, Guid.NewGuid()]));
+
+        Assert.Empty(await fixture.StoredBouldersAsync());
+    }
+
+    [Fact]
+    public async Task TheTabletIsCappedOnVolume()
+    {
+        using var fixture = await AnonymousSettingFixture.CreateAsync();
+        await fixture.AllowAnonymousSettingAsync();
+        var boulders = fixture.BoulderServiceFor(fixture.LiveKioskContext());
+
+        for (var i = 0; i < KioskAnonymousSettingThrottle.MaxPerKey; i++)
+        {
+            await fixture.CreateAsync(boulders, name: $"Problem {i}");
+        }
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(
+            () => fixture.CreateAsync(boulders, name: "One Too Many"));
+
+        Assert.Equal(
+            KioskAnonymousSettingThrottle.MaxPerKey,
+            (await fixture.StoredBouldersAsync()).Count);
+    }
+
+    [Fact]
+    public void TheThrottleFreesUpOnceTheWindowHasPassed()
+    {
+        var throttle = new KioskAnonymousSettingThrottle();
+        var key = Guid.NewGuid();
+        var wall = Guid.NewGuid();
+        var start = DateTimeOffset.UtcNow;
+
+        for (var i = 0; i < KioskAnonymousSettingThrottle.MaxPerKey; i++)
+        {
+            Assert.True(throttle.TryRecord(key, wall, start));
+        }
+
+        Assert.False(throttle.TryRecord(key, wall, start));
+
+        // A cap, not a ban: a setting crew that comes back an hour later can keep working.
+        Assert.True(throttle.TryRecord(key, wall, start.Add(KioskAnonymousSettingThrottle.Window).AddSeconds(1)));
+    }
+
+    [Fact]
+    public void TheThrottleIsPerKey()
+    {
+        var throttle = new KioskAnonymousSettingThrottle();
+        var wall = Guid.NewGuid();
+        var busy = Guid.NewGuid();
+        var quiet = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+
+        for (var i = 0; i < KioskAnonymousSettingThrottle.MaxPerKey; i++)
+        {
+            throttle.TryRecord(busy, wall, now);
+        }
+
+        Assert.False(throttle.TryRecord(busy, wall, now));
+
+        // A second tablet in the same gym is unaffected — one spammed tablet must not stop the crew
+        // working on the other one.
+        Assert.True(throttle.TryRecord(quiet, wall, now));
+    }
+
+    [Fact]
+    public async Task TheSignedInPathIsUnchanged()
+    {
+        using var fixture = await AnonymousSettingFixture.CreateAsync();
+
+        // No opt-in, no kiosk anything: the ordinary create still works and is still credited to the
+        // person who made it. The anonymous branch must not have taken anything away.
+        var boulder = await fixture.CreateAsync(fixture.Harness.BoulderService, name: "Ordinary");
+
+        var stored = Assert.Single(await fixture.StoredBouldersAsync());
+        Assert.Equal(boulder.Id, stored.Id);
+        Assert.Equal(fixture.Harness.Owner.Id, stored.CreatedByUserId);
+        Assert.NotEqual(GhostUser.Id, stored.CreatedByUserId);
+    }
+
+    [Fact]
+    public void TheBylineFormatterPrefersSettersThenCreatorThenGhost()
+    {
+        var creator = new User { Identifier = "real@test", DisplayName = "Ana" };
+
+        Assert.Equal("Bo & Cy", BoulderSetterNames.Describe(["Bo", "Cy"], creator));
+        Assert.Equal("Ana", BoulderSetterNames.Describe(null, creator));
+        Assert.Equal(PlaceholderIdentity.DisplayName, BoulderSetterNames.Describe(null, null));
+        Assert.Equal(PlaceholderIdentity.DisplayName, BoulderSetterNames.Describe([], GhostUser.Create()));
+
+        // A creator whose name has been scrubbed (a deleted account's tombstone) reads as the
+        // placeholder rather than as an empty byline.
+        var scrubbed = new User { Identifier = "gone", DisplayName = string.Empty };
+        Assert.Equal(PlaceholderIdentity.DisplayName, BoulderSetterNames.Describe(null, scrubbed));
+    }
+
+    /// <summary>
+    /// Gate condition 1 on its own: the session is not a kiosk at all. Every OTHER condition is made
+    /// to pass — the wall has opted in, the api key id is real and the validator says yes — so
+    /// nothing but <c>KioskViewing.AllowsAnonymousViewOf</c> can be producing the refusal. Deleting
+    /// that check breaks this test and nothing else.
+    /// </summary>
+    [Fact]
+    public async Task WithoutTheKioskRegistration_TheGrantIsRefusedOnItsOwn()
+    {
+        using var fixture = await AnonymousSettingFixture.CreateAsync();
+        await fixture.AllowAnonymousSettingAsync();
+
+        var alwaysValid = Substitute.For<IKioskKeyValidator>();
+        alwaysValid.IsKeyValidAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(true));
+
+        await using var db = fixture.Harness.CreateContext();
+
+        // Same key, same wall, same opt-in — only IsKiosk differs.
+        Assert.True(await KioskAnonymousSetting.IsAllowedAsync(
+            db, KioskContextFor(isKiosk: true, fixture.Harness.WallId, fixture.KioskKey.Id),
+            alwaysValid, fixture.Harness.WallId));
+
+        Assert.False(await KioskAnonymousSetting.IsAllowedAsync(
+            db, KioskContextFor(isKiosk: false, fixture.Harness.WallId, fixture.KioskKey.Id),
+            alwaysValid, fixture.Harness.WallId));
+    }
+
+    /// <summary>
+    /// Gate condition 2 on its own: a kiosk registration that names NO api key. The validator here
+    /// says yes to everything, so the key re-validation cannot be what refuses this — only the
+    /// non-empty check can.
+    /// </summary>
+    [Fact]
+    public async Task WithNoApiKeyOnTheRegistration_TheGrantIsRefusedOnItsOwn()
+    {
+        using var fixture = await AnonymousSettingFixture.CreateAsync();
+        await fixture.AllowAnonymousSettingAsync();
+
+        var alwaysValid = Substitute.For<IKioskKeyValidator>();
+        alwaysValid.IsKeyValidAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(true));
+
+        await using var db = fixture.Harness.CreateContext();
+
+        Assert.False(await KioskAnonymousSetting.IsAllowedAsync(
+            db, KioskContextFor(isKiosk: true, fixture.Harness.WallId, Guid.Empty),
+            alwaysValid, fixture.Harness.WallId));
+
+        Assert.False(await KioskAnonymousSetting.IsAllowedAsync(
+            db, KioskContextFor(isKiosk: true, fixture.Harness.WallId, keyId: null),
+            alwaysValid, fixture.Harness.WallId));
+    }
+
+    /// <summary>
+    /// Gate condition 4 on its own, at the same isolated level as the two above: with the key
+    /// re-validation forced to pass, the wall's opt-in is the only thing left that can refuse.
+    /// </summary>
+    [Fact]
+    public async Task WithoutTheWallOptIn_TheGrantIsRefusedOnItsOwn()
+    {
+        using var fixture = await AnonymousSettingFixture.CreateAsync();
+
+        var alwaysValid = Substitute.For<IKioskKeyValidator>();
+        alwaysValid.IsKeyValidAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(true));
+
+        var kiosk = fixture.LiveKioskContext();
+
+        await using (var db = fixture.Harness.CreateContext())
+        {
+            Assert.False(await KioskAnonymousSetting.IsAllowedAsync(
+                db, kiosk, alwaysValid, fixture.Harness.WallId));
+        }
+
+        await fixture.AllowAnonymousSettingAsync();
+
+        await using (var db = fixture.Harness.CreateContext())
+        {
+            Assert.True(await KioskAnonymousSetting.IsAllowedAsync(
+                db, kiosk, alwaysValid, fixture.Harness.WallId));
+        }
+    }
+
+    /// <summary>
+    /// The missing-throttle branch, which the key-validator test does not reach: a host wired with a
+    /// real validator but NO volume cap must refuse. An unattended write surface with no cap is not
+    /// something to default into.
+    /// </summary>
+    [Fact]
+    public async Task WithNoThrottle_TheCreateFailsClosed()
+    {
+        using var fixture = await AnonymousSettingFixture.CreateAsync();
+        await fixture.AllowAnonymousSettingAsync();
+
+        var boulders = fixture.BoulderServiceFor(fixture.LiveKioskContext(), withThrottle: false);
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => fixture.CreateAsync(boulders));
+        Assert.Empty(await fixture.StoredBouldersAsync());
+    }
+
+    /// <summary>
+    /// A refused create must not cost budget. The setter allow-list refuses this one AFTER the gate
+    /// has run, and the tablet's whole allowance is still there afterwards.
+    /// </summary>
+    [Fact]
+    public async Task ARefusedCreateDoesNotSpendTheBudget()
+    {
+        using var fixture = await AnonymousSettingFixture.CreateAsync();
+        await fixture.AllowAnonymousSettingAsync();
+
+        var throttle = new KioskAnonymousSettingThrottle();
+        var boulders = fixture.BoulderServiceFor(fixture.LiveKioskContext(), throttle: throttle);
+
+        for (var i = 0; i < 5; i++)
+        {
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(
+                () => fixture.CreateAsync(boulders, name: $"Refused {i}", setterUserIds: [Guid.NewGuid()]));
+        }
+
+        Assert.Empty(await fixture.StoredBouldersAsync());
+
+        // The full allowance, not five short of it.
+        for (var i = 0; i < KioskAnonymousSettingThrottle.MaxPerKey; i++)
+        {
+            await fixture.CreateAsync(boulders, name: $"Problem {i}");
+        }
+
+        Assert.Equal(
+            KioskAnonymousSettingThrottle.MaxPerKey,
+            (await fixture.StoredBouldersAsync()).Count);
+    }
+
+    /// <summary>
+    /// The cross-tenant denial cliff. The old shape shared ONE 200/hour counter across the whole
+    /// installation, so seven saturated tablets in one gym switched anonymous setting off for every
+    /// other gym. Saturating wall A must leave wall B untouched.
+    /// </summary>
+    [Fact]
+    public void SaturatingOneWallDoesNotRefuseAnother()
+    {
+        var throttle = new KioskAnonymousSettingThrottle();
+        var quietWall = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+
+        // THREE busy gyms, each spent to its own ceiling across as many tablets as that takes. Three
+        // walls' worth is far past the 200 the old single shared counter allowed the entire
+        // installation, so a run that got this far under the old shape had already switched the
+        // feature off for everybody else.
+        for (var wall = 0; wall < 3; wall++)
+        {
+            var busyWall = Guid.NewGuid();
+            var recorded = 0;
+            while (recorded < KioskAnonymousSettingThrottle.MaxPerWall)
+            {
+                var key = Guid.NewGuid();
+                for (var i = 0; i < KioskAnonymousSettingThrottle.MaxPerKey
+                                && recorded < KioskAnonymousSettingThrottle.MaxPerWall; i++)
+                {
+                    Assert.True(throttle.TryRecord(key, busyWall, now));
+                    recorded++;
+                }
+            }
+
+            // Saturated: even a brand-new tablet on that wall is now refused, by the WALL cap.
+            Assert.Equal(
+                KioskAnonymousSettingBudget.WallCapReached,
+                throttle.Check(Guid.NewGuid(), busyWall, now));
+        }
+
+        // The gym next door is untouched — which is the whole point.
+        Assert.Equal(KioskAnonymousSettingBudget.Allowed, throttle.Check(Guid.NewGuid(), quietWall, now));
+        Assert.True(throttle.TryRecord(Guid.NewGuid(), quietWall, now));
+    }
+
+    /// <summary>
+    /// The installation-wide backstop still exists and still bites — it is just set far above any
+    /// plausible real load, and it reports itself distinctly so it can be logged as the incident it
+    /// is rather than as ordinary throttling.
+    /// </summary>
+    [Fact]
+    public void TheInstallationBackstopStillTrips()
+    {
+        var throttle = new KioskAnonymousSettingThrottle();
+        var now = DateTimeOffset.UtcNow;
+
+        // A fresh wall and key every time, so neither of the tenant caps can be what refuses.
+        for (var i = 0; i < KioskAnonymousSettingThrottle.MaxGlobal; i++)
+        {
+            Assert.True(throttle.TryRecord(Guid.NewGuid(), Guid.NewGuid(), now));
+        }
+
+        Assert.Equal(
+            KioskAnonymousSettingBudget.InstallationCapReached,
+            throttle.Check(Guid.NewGuid(), Guid.NewGuid(), now));
+    }
+
+    private static IKioskContext KioskContextFor(bool isKiosk, Guid? wallId, Guid? keyId)
+    {
+        var kiosk = Substitute.For<IKioskContext>();
+        kiosk.IsKiosk.Returns(isKiosk);
+        kiosk.KioskWallId.Returns(wallId);
+        kiosk.KioskApiKeyId.Returns(keyId);
+        return kiosk;
+    }
+
+    /// <summary>
+    /// A seeded wall with a real kiosk API key, an anonymous current-user service, and a
+    /// <see cref="BoulderService"/> wired the way production wires it for a tablet.
+    /// </summary>
+    private sealed class AnonymousSettingFixture : IDisposable
+    {
+        public WallTestHarness Harness { get; private set; } = null!;
+
+        public ApiKey KioskKey { get; private set; } = null!;
+
+        public Guid FirstHoldId { get; private set; }
+
+        public static async Task<AnonymousSettingFixture> CreateAsync()
+        {
+            var fixture = new AnonymousSettingFixture { Harness = new WallTestHarness() };
+            var holds = await fixture.Harness.SeedWallAsync();
+            fixture.FirstHoldId = holds[0].Id;
+
+            var (key, _) = await fixture.Harness.ApiKeyService.CreateKioskKeyAsync(
+                fixture.Harness.WallId, fixture.Harness.Owner.Id, "Tablet", null);
+            fixture.KioskKey = key;
+
+            return fixture;
+        }
+
+        /// <summary>The context a correctly registered tablet on the seeded wall resolves to.</summary>
+        public IKioskContext LiveKioskContext()
+        {
+            return KioskContextFor(isKiosk: true, Harness.WallId, KioskKey.Id);
+        }
+
+        /// <summary>
+        /// A boulder service for an ANONYMOUS session on that tablet: the current-user service
+        /// throws, and the context factory stamps the kiosk wall exactly as
+        /// <c>KioskScopedDbContextFactory</c> does in production.
+        /// </summary>
+        public IBoulderService BoulderServiceFor(
+            IKioskContext kioskContext,
+            bool withKeyValidator = true,
+            KioskAnonymousSettingThrottle? throttle = null,
+            bool withThrottle = true)
+        {
+            Harness.CurrentUser.GetCurrentUserAsync()
+                .Returns(_ => Task.FromException<User>(new UnauthorizedAccessException()));
+
+            return new BoulderService(
+                new KioskStampingFactory(Harness.DbContextFactory, kioskContext),
+                Harness.CurrentUser,
+                Harness.ActivityLog,
+                NullLogger<BoulderService>.Instance,
+                kioskContext,
+                withKeyValidator ? new KioskKeyValidator(Harness.DbContextFactory) : null,
+                withThrottle ? throttle ?? new KioskAnonymousSettingThrottle() : null);
+        }
+
+        public Task<Boulder> CreateAsync(
+            IBoulderService boulders,
+            Guid? wallId = null,
+            string name = "Kiosk Problem",
+            IReadOnlyList<Guid>? setterUserIds = null)
+        {
+            return boulders.CreateBoulderAsync(
+                wallId ?? Harness.WallId,
+                name,
+                null,
+                [new BoulderHoldInput(FirstHoldId)],
+                setterUserIds: setterUserIds);
+        }
+
+        /// <summary>Flips the wall's opt-in on, directly, so the test is not also testing the UI.</summary>
+        public async Task AllowAnonymousSettingAsync()
+        {
+            await using var db = Harness.CreateContext();
+            var wall = await db.Walls.IgnoreQueryFilters().FirstAsync(w => w.Id == Harness.WallId);
+            wall.AllowAnonymousKioskSetting = true;
+            await db.SaveChangesAsync();
+        }
+
+        public async Task<List<Boulder>> StoredBouldersAsync(Guid? wallId = null)
+        {
+            await using var db = Harness.CreateContext();
+            return await db.Boulders
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .Include(b => b.Setters)
+                .Where(b => b.WallId == (wallId ?? Harness.WallId))
+                .ToListAsync();
+        }
+
+        public async Task<Guid> SeedSecondWallAsync(bool allowAnonymousSetting)
+        {
+            await using var db = Harness.CreateContext();
+            var wall = new Wall
+            {
+                Name = "Other Wall",
+                OwnerId = Harness.Owner.Id,
+                Photo = [1],
+                PhotoContentType = "image/jpeg",
+                AllowAnonymousKioskSetting = allowAnonymousSetting,
+            };
+            db.Walls.Add(wall);
+            db.WallMembers.Add(new WallMember
+            {
+                WallId = wall.Id,
+                UserId = Harness.Owner.Id,
+                Role = WallRole.Admin,
+            });
+            db.Holds.Add(new Hold { WallId = wall.Id, X = 0.5, Y = 0.5, Radius = 0.02 });
+            await db.SaveChangesAsync();
+            return wall.Id;
+        }
+
+        /// <summary>Adds a member of <paramref name="wallId"/> who consents to that wall's kiosk.</summary>
+        public async Task<User> AddConsentingMemberAsync(string identifier, Guid? wallId = null)
+        {
+            var targetWallId = wallId ?? Harness.WallId;
+            User user;
+
+            if (wallId is null)
+            {
+                user = await Harness.AddMemberAsync(identifier, WallRole.Member);
+            }
+            else
+            {
+                await using var db = Harness.CreateContext();
+                user = new User { Identifier = identifier, DisplayName = identifier };
+                db.Users.Add(user);
+                db.WallMembers.Add(new WallMember
+                {
+                    WallId = targetWallId,
+                    UserId = user.Id,
+                    Role = WallRole.Member,
+                });
+                await db.SaveChangesAsync();
+            }
+
+            var previous = Harness.ActingUser;
+            Harness.ActingUser = user;
+            try
+            {
+                await Harness.KioskService.ConsentAsync(targetWallId, null);
+            }
+            finally
+            {
+                Harness.ActingUser = previous;
+            }
+
+            return user;
+        }
+
+        public void Dispose()
+        {
+            Harness.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// The test stand-in for <c>KioskScopedDbContextFactory</c>: stamps every context with the
+    /// tablet's wall, exactly as production does. Without it these tests would exercise the
+    /// anonymous branch with no wall gate behind it at all.
+    /// </summary>
+    private sealed class KioskStampingFactory : IDbContextFactory<BlocwerkDbContext>
+    {
+        private readonly IDbContextFactory<BlocwerkDbContext> inner;
+        private readonly IKioskContext kioskContext;
+
+        public KioskStampingFactory(IDbContextFactory<BlocwerkDbContext> inner, IKioskContext kioskContext)
+        {
+            this.inner = inner;
+            this.kioskContext = kioskContext;
+        }
+
+        public BlocwerkDbContext CreateDbContext()
+        {
+            var db = inner.CreateDbContext();
+            if (kioskContext.IsKiosk)
+            {
+                db.KioskWallId = kioskContext.KioskWallId ?? Guid.Empty;
+            }
+
+            return db;
+        }
+    }
+}

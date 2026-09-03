@@ -508,6 +508,7 @@ else
                                               StartCol="0" StartRow="0"
                                               ArrowMode="MultiPanelViewer.ArrowDisplayMode.AllNeighbours"
                                               HoldsProvider="LoadPanelHolds"
+                                              EnableSwipe="true"
                                               OnRequestHoldUsage="@(_isAnonymous ? null : LoadHoldUsage)" />
                         }
                         else if (_wall.PhotoContentType != null && _viewMode == ViewMode.Photo)
@@ -640,6 +641,7 @@ else
                     {
                         <BoulderCard Item="item" WallId="WallId" ShareToken="@ShareToken"
                                      CurrentUserId="_currentUserId" IsAnonymous="_isAnonymous"
+                                     IsWallAdmin="_isAdmin"
                                      ShowArchiveAction="true" ReconciledHoldCount="ReconciledHoldCount(item.Boulder)"
                                      OnPublish="PublishBoulder" OnArchive="ArchiveBoulder" OnUnarchive="UnarchiveBoulder" />
                     }
@@ -652,6 +654,7 @@ else
                             {
                                 <BoulderCard Item="item" WallId="WallId" ShareToken="@ShareToken"
                                              CurrentUserId="_currentUserId" IsAnonymous="_isAnonymous"
+                                             IsWallAdmin="_isAdmin"
                                              ReconciledHoldCount="ReconciledHoldCount(item.Boulder)"
                                              OnPublish="PublishBoulder" OnArchive="ArchiveBoulder" OnUnarchive="UnarchiveBoulder" />
                             }

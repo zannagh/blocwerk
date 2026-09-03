@@ -93,6 +93,16 @@ public class User : IEquatable<User>
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
+    /// <summary>
+    /// When the person behind this account erased it, or null for a live account. A deleted account
+    /// is NOT removed from the table: every personal column above is scrubbed and the row stays
+    /// behind as a tombstone so the content the person contributed to shared walls (boulders, setter
+    /// credits, comments, ascents) keeps rendering — credited to
+    /// <see cref="Helpers.PlaceholderIdentity.DisplayName"/>. The timestamp is the audit record that
+    /// a deletion happened; it retains none of what was deleted.
+    /// </summary>
+    public DateTimeOffset? DeletedAt { get; set; }
+
     public int ProgressionWindowDays { get; set; } = 60;
 
     public ProgressionGroupBy ProgressionGroupBy { get; set; } = ProgressionGroupBy.Week;
@@ -130,6 +140,9 @@ public class User : IEquatable<User>
     /// otherwise the OAuth-provided <see cref="DisplayName"/> fallback.
     /// </summary>
     public string Name => string.IsNullOrWhiteSpace(CustomDisplayName) ? DisplayName : CustomDisplayName;
+
+    /// <summary>True when this row is a deletion tombstone rather than a live account.</summary>
+    public bool IsDeleted => DeletedAt is not null;
 
     /// <summary>True when the user has an avatar image stored (drives the avatar rendering path).</summary>
     public bool HasAvatar => AvatarImage is { Length: > 0 };

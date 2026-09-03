@@ -2,6 +2,7 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Helpers;
 using Blocwerk.Core.Telemetry;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -97,6 +98,10 @@ public interface IBoulderService
     /// </summary>
     Task<Boulder> RenameBoulderAsync(Guid boulderId, string name, string? grade);
 
+    /// <summary>
+    /// Permanently removes a boulder. Only its creator, one of its setters, or an admin of its
+    /// wall may do so; anybody else is refused with an <see cref="InvalidOperationException"/>.
+    /// </summary>
     Task DeleteBoulderAsync(Guid boulderId);
 
     /// <summary>
@@ -153,26 +158,39 @@ public class BoulderService : IBoulderService
     private readonly IActivityLogService _activityLogService;
     private readonly ILogger<BoulderService> _logger;
     private readonly IKioskContext? _kioskContext;
+    private readonly IKioskKeyValidator? _kioskKeyValidator;
+    private readonly KioskAnonymousSettingThrottle? _kioskThrottle;
 
     /// <summary>Creates the service.</summary>
     /// <remarks>
     /// <c>kioskContext</c> is optional, like <c>WallService</c>'s: hosts without an HTTP layer
-    /// (tests, tooling) never register one, which simply means "never a kiosk". It is used here only
-    /// to LOOSEN a read for an anonymous kiosk browsing its own wall — never to grant a write — and
-    /// its absence therefore fails closed.
+    /// (tests, tooling) never register one, which simply means "never a kiosk". It LOOSENS reads for
+    /// an anonymous kiosk browsing its own wall, and — only together with the two collaborators
+    /// below — the ONE anonymous write in the app: setting a boulder at an unattended tablet.
+    /// <para>
+    /// <c>kioskKeyValidator</c> and <c>kioskThrottle</c> are optional for the same hosting reason and
+    /// fail CLOSED: without the validator a kiosk key cannot be re-checked against the database, and
+    /// without the throttle an unattended write surface would be unbounded, so either one missing
+    /// means no anonymous create at all. Nothing about the ORDINARY signed-in path changes when they
+    /// are absent.
+    /// </para>
     /// </remarks>
     public BoulderService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         ICurrentUserService currentUserService,
         IActivityLogService activityLogService,
         ILogger<BoulderService> logger,
-        IKioskContext? kioskContext = null)
+        IKioskContext? kioskContext = null,
+        IKioskKeyValidator? kioskKeyValidator = null,
+        KioskAnonymousSettingThrottle? kioskThrottle = null)
     {
         _dbContextFactory = dbContextFactory;
         _currentUserService = currentUserService;
         _activityLogService = activityLogService;
         _logger = logger;
         _kioskContext = kioskContext;
+        _kioskKeyValidator = kioskKeyValidator;
+        _kioskThrottle = kioskThrottle;
     }
 
     public async Task<Boulder> CreateBoulderAsync(
@@ -193,9 +211,34 @@ public class BoulderService : IBoulderService
         {
             holds = EnforceHandsFollowFeet(holds, handsFollowFeet);
 
-            var user = await _currentUserService.GetCurrentUserAsync();
+            // Resolve WHO is setting this before anything else. Almost always a signed-in user; the
+            // one exception is an unattended kiosk tablet, which is credited to the Ghost system row
+            // and has to earn that with the four checks in KioskAnonymousSetting.
+            User? user = null;
+            var anonymousKiosk = false;
+            try
+            {
+                user = await _currentUserService.GetCurrentUserAsync();
+            }
+            catch (UnauthorizedAccessException)
+            {
+                anonymousKiosk = true;
+            }
+
             await using var db = await _dbContextFactory.CreateDbContextAsync();
-            db.CurrentUserId = user.Id;
+
+            // Guid.Empty opens the membership half of the wall query filter, exactly as it does for
+            // an anonymous kiosk READ (see GetBoulderAsync). It is safe here for the same reason and
+            // only for that reason: every context this session creates is stamped with the tablet's
+            // own wall id, and the grant below has already pinned wallId to that same wall.
+            db.CurrentUserId = anonymousKiosk ? Guid.Empty : user!.Id;
+
+            if (anonymousKiosk)
+            {
+                await EnsureAnonymousKioskCreateAllowedAsync(db, wallId);
+            }
+
+            var creatorId = anonymousKiosk ? GhostUser.Id : user!.Id;
 
             // Idempotent replay: a queued offline create that reaches the server twice must not
             // insert a second boulder. The client mints the id, so an existing row under that id is
@@ -208,13 +251,13 @@ public class BoulderService : IBoulderService
 
                 if (existing != null)
                 {
-                    if (existing.CreatedByUserId != user.Id)
+                    if (existing.CreatedByUserId != creatorId)
                     {
                         // A client id colliding with another user's boulder is astronomically
                         // unlikely; surface it as not-found so the queue drops it permanently.
                         _logger.LogWarning(
                             "Create replay rejected: boulder {BoulderId} belongs to {OwnerUserId}, not caller {UserId}",
-                            id.Value, existing.CreatedByUserId, user.Id);
+                            id.Value, existing.CreatedByUserId, creatorId);
                         throw new InvalidOperationException("Boulder not found");
                     }
 
@@ -225,7 +268,7 @@ public class BoulderService : IBoulderService
             var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId);
             if (wall == null)
             {
-                _logger.LogWarning("Create boulder failed: wall {WallId} not found for user {UserId}", wallId, user.Id);
+                _logger.LogWarning("Create boulder failed: wall {WallId} not found for user {UserId}", wallId, creatorId);
                 throw new InvalidOperationException("Wall not found");
             }
 
@@ -235,7 +278,7 @@ public class BoulderService : IBoulderService
                 WallId = wallId,
                 Name = name.Trim(),
                 Grade = grade,
-                CreatedByUserId = user.Id,
+                CreatedByUserId = creatorId,
                 Generation = wall.CurrentGeneration,
                 KickboardFootholdsOn = kickboardFootholdsOn,
                 HandsFollowFeet = handsFollowFeet,
@@ -258,18 +301,45 @@ public class BoulderService : IBoulderService
                 });
             }
 
-            await AddSettersAsync(db, boulder.Id, wallId, setterUserIds);
+            if (anonymousKiosk)
+            {
+                // An id in an anonymous request is pure user input, so it is validated against the
+                // kiosk CONSENT allow-list and refused outright rather than quietly dropped.
+                foreach (var setterId in await KioskAnonymousSetting.ValidateSettersAsync(db, wallId, setterUserIds))
+                {
+                    db.BoulderSetters.Add(new BoulderSetter { BoulderId = boulder.Id, UserId = setterId });
+                }
+            }
+            else
+            {
+                await AddSettersAsync(db, boulder.Id, wallId, setterUserIds);
+            }
 
             await db.SaveChangesAsync();
+
+            // The write landed, so now it costs budget. Everything that could still have refused it
+            // — the setter allow-list, the wall lookup, the save itself — is behind us.
+            if (anonymousKiosk)
+            {
+                RecordAnonymousKioskCreate(wallId);
+            }
+
             BlocwerkMetrics.RecordBoulderCreated(wallId, isDraft);
             _logger.LogInformation(
-                "Boulder {BoulderId} created on wall {WallId} by {UserId} (isDraft={IsDraft}, holds={HoldCount})",
-                boulder.Id, wallId, user.Id, isDraft, holds.Count);
+                "Boulder {BoulderId} created on wall {WallId} by {UserId} (isDraft={IsDraft}, holds={HoldCount}, anonymousKiosk={AnonymousKiosk})",
+                boulder.Id, wallId, creatorId, isDraft, holds.Count, anonymousKiosk);
 
             // Drafts stay out of the activity feed until they are published.
             if (!isDraft)
             {
-                await _activityLogService.LogAsync(wallId, boulder.Id, ActivityType.BoulderCreated, name);
+                if (anonymousKiosk)
+                {
+                    await _activityLogService.LogAsGhostAsync(wallId, boulder.Id, ActivityType.BoulderCreated, name);
+                }
+                else
+                {
+                    await _activityLogService.LogAsync(wallId, boulder.Id, ActivityType.BoulderCreated, name);
+                }
             }
 
             return boulder;
@@ -352,6 +422,76 @@ public class BoulderService : IBoulderService
     /// caller is a registered kiosk with nobody picked. The wall is not named here because it does
     /// not have to be — the stamped kiosk wall on the context pins the read either way.
     /// </summary>
+    /// <summary>
+    /// The gate on the app's ONE unauthenticated write. Throws unless every condition in
+    /// <see cref="KioskAnonymousSetting"/> holds AND the tablet is inside its volume budget.
+    /// </summary>
+    /// <remarks>
+    /// Note what is NOT read here: <paramref name="wallId"/> is only ever COMPARED against the wall
+    /// in the protected device cookie, never trusted from the caller. A form or route naming another
+    /// wall fails the comparison and is refused, so there is no way to aim an anonymous write at a
+    /// wall the tablet is not bolted to.
+    /// </remarks>
+    /// <exception cref="UnauthorizedAccessException">This session may not create anonymously.</exception>
+    private async Task EnsureAnonymousKioskCreateAllowedAsync(BlocwerkDbContext db, Guid wallId)
+    {
+        if (!await KioskAnonymousSetting.IsAllowedAsync(db, _kioskContext, _kioskKeyValidator, wallId))
+        {
+            // Deliberately the same exception an ordinary signed-out caller already got from
+            // GetCurrentUserAsync, so nothing downstream has to learn a new failure mode and the
+            // page above keeps sending them to sign in.
+            throw new UnauthorizedAccessException(
+                "Creating a boulder requires a signed-in user, or a kiosk tablet on a wall that allows it");
+        }
+
+        // The tablet is entitled; is it inside its budget? Missing throttle fails closed — an
+        // unattended write surface with no cap is not something to default into.
+        var apiKeyId = _kioskContext?.KioskApiKeyId ?? Guid.Empty;
+        if (_kioskThrottle is null)
+        {
+            _logger.LogWarning(
+                "Anonymous kiosk create refused on wall {WallId} with key {ApiKeyId}: no volume throttle is wired",
+                wallId, apiKeyId);
+            throw new UnauthorizedAccessException(
+                "This tablet has created too many boulders recently. Sign in to keep setting.");
+        }
+
+        // CHECK only — the create is counted in RecordAnonymousKioskCreate once it has actually
+        // landed, so a refused or failed write does not spend the tablet's or the wall's budget.
+        // Checking here rather than only at the end still means a caller that is already at its cap
+        // is turned away before any work is done.
+        var budget = _kioskThrottle.Check(apiKeyId, wallId, DateTimeOffset.UtcNow);
+        if (budget == KioskAnonymousSettingBudget.InstallationCapReached)
+        {
+            // Not routine throttling: the installation-wide backstop sits far above real load, so
+            // reaching it is an incident. Logged at Error, and distinctly, so it is findable.
+            _logger.LogError(
+                "Anonymous kiosk create refused on wall {WallId} with key {ApiKeyId}: the INSTALLATION-WIDE "
+                + "anonymous setting backstop of {MaxGlobal} per {Window} tripped — this is not ordinary load",
+                wallId, apiKeyId, KioskAnonymousSettingThrottle.MaxGlobal, KioskAnonymousSettingThrottle.Window);
+            throw new UnauthorizedAccessException(
+                "Anonymous setting is temporarily unavailable. Sign in to keep setting.");
+        }
+
+        if (budget != KioskAnonymousSettingBudget.Allowed)
+        {
+            _logger.LogWarning(
+                "Anonymous kiosk create refused on wall {WallId} with key {ApiKeyId}: {Budget}",
+                wallId, apiKeyId, budget);
+            throw new UnauthorizedAccessException(
+                "This tablet has created too many boulders recently. Sign in to keep setting.");
+        }
+    }
+
+    /// <summary>
+    /// Counts one anonymous kiosk create that actually reached the database. Separate from the gate
+    /// above on purpose: budget is spent by writes that happened, not by attempts.
+    /// </summary>
+    private void RecordAnonymousKioskCreate(Guid wallId)
+    {
+        _kioskThrottle?.Record(_kioskContext?.KioskApiKeyId ?? Guid.Empty, wallId, DateTimeOffset.UtcNow);
+    }
+
     private async Task<Guid> ResolveViewerIdAsync()
     {
         try
@@ -832,11 +972,24 @@ public class BoulderService : IBoulderService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
-            var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId);
+            var boulder = await db.Boulders
+                .Include(b => b.Setters)
+                .FirstOrDefaultAsync(b => b.Id == boulderId);
             if (boulder == null)
             {
                 _logger.LogWarning("Delete failed: boulder {BoulderId} not found for user {UserId}", boulderId, user.Id);
                 throw new InvalidOperationException("Boulder not found");
+            }
+
+            // Same authority as archive and grade-proposal accept/reject: creator, any setter, or a
+            // wall admin. Deleting is the one irreversible member of that family, so it may not be
+            // the one action every signed-in account in the installation can reach by guessing an id.
+            if (!await CanManageBoulderAsync(db, boulder, user.Id))
+            {
+                _logger.LogWarning(
+                    "Delete rejected: user {UserId} may not delete boulder {BoulderId} on wall {WallId}",
+                    user.Id, boulderId, boulder.WallId);
+                throw new InvalidOperationException("Only the creator, a setter, or a wall admin can delete a boulder");
             }
 
             db.Boulders.Remove(boulder);
@@ -976,6 +1129,7 @@ public class BoulderService : IBoulderService
 
             var proposal = await db.GradeProposals
                 .Include(gp => gp.Boulder)
+                .ThenInclude(b => b.Setters)
                 .FirstOrDefaultAsync(gp => gp.Id == proposalId && !gp.IsResolved);
             if (proposal == null)
             {
@@ -983,12 +1137,12 @@ public class BoulderService : IBoulderService
                 throw new InvalidOperationException("Proposal not found");
             }
 
-            if (proposal.Boulder.CreatedByUserId != user.Id)
+            if (!await CanManageBoulderAsync(db, proposal.Boulder, user.Id))
             {
                 _logger.LogWarning(
-                    "Accept grade denied: user {UserId} is not creator {OwnerUserId} of boulder {BoulderId} (proposal {ProposalId})",
+                    "Accept grade denied: user {UserId} is neither creator {OwnerUserId}, a setter, nor an admin of boulder {BoulderId} (proposal {ProposalId})",
                     user.Id, proposal.Boulder.CreatedByUserId, proposal.BoulderId, proposalId);
-                throw new InvalidOperationException("Only the creator can accept a grade proposal");
+                throw new InvalidOperationException("Only the creator, a setter, or a wall admin can accept a grade proposal");
             }
 
             proposal.Boulder.Grade = proposal.ProposedGrade;
@@ -1016,6 +1170,7 @@ public class BoulderService : IBoulderService
 
             var proposal = await db.GradeProposals
                 .Include(gp => gp.Boulder)
+                .ThenInclude(b => b.Setters)
                 .FirstOrDefaultAsync(gp => gp.Id == proposalId && !gp.IsResolved);
             if (proposal == null)
             {
@@ -1023,12 +1178,12 @@ public class BoulderService : IBoulderService
                 throw new InvalidOperationException("Proposal not found");
             }
 
-            if (proposal.Boulder.CreatedByUserId != user.Id)
+            if (!await CanManageBoulderAsync(db, proposal.Boulder, user.Id))
             {
                 _logger.LogWarning(
-                    "Reject grade denied: user {UserId} is not creator {OwnerUserId} of boulder {BoulderId} (proposal {ProposalId})",
+                    "Reject grade denied: user {UserId} is neither creator {OwnerUserId}, a setter, nor an admin of boulder {BoulderId} (proposal {ProposalId})",
                     user.Id, proposal.Boulder.CreatedByUserId, proposal.BoulderId, proposalId);
-                throw new InvalidOperationException("Only the creator can reject a grade proposal");
+                throw new InvalidOperationException("Only the creator, a setter, or a wall admin can reject a grade proposal");
             }
 
             proposal.IsResolved = true;
@@ -1182,12 +1337,14 @@ public class BoulderService : IBoulderService
         await using var db = await _dbContextFactory.CreateDbContextAsync();
         db.CurrentUserId = user.Id;
 
-        var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId)
+        var boulder = await db.Boulders
+                          .Include(b => b.Setters)
+                          .FirstOrDefaultAsync(b => b.Id == boulderId)
                       ?? throw new InvalidOperationException("Boulder not found");
 
-        if (boulder.CreatedByUserId != user.Id)
+        if (!await CanManageBoulderAsync(db, boulder, user.Id))
         {
-            throw new InvalidOperationException("Only the creator can archive a boulder");
+            throw new InvalidOperationException("Only the creator, a setter, or a wall admin can archive a boulder");
         }
 
         if (archived && !boulder.IsHistoric)
@@ -1197,5 +1354,36 @@ public class BoulderService : IBoulderService
 
         boulder.IsArchived = archived;
         await db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// The ONE authority rule for acting on somebody else's boulder: its creator, any of its
+    /// setters, or an admin of its wall. Publish, rename, revise, grade-proposal accept/reject,
+    /// archive and delete all use it, so a boulder can never end up with an action only one of those roles can
+    /// reach.
+    /// </summary>
+    /// <remarks>
+    /// A creator-only rule wedges permanently on a Ghost boulder: nobody signs in as the Ghost row,
+    /// so the creator branch is false for every human being. That left an open grade proposal that
+    /// no setter, wall admin or app admin could resolve — and, before this, an unattended-kiosk
+    /// boulder that could never be archived when the gym reset the wall.
+    /// <para>
+    /// <paramref name="boulder"/> must have its <see cref="Boulder.Setters"/> loaded; the wall-admin
+    /// branch runs against the DB and carries the kiosk foreign-wall check with it.
+    /// </para>
+    /// </remarks>
+    private static async Task<bool> CanManageBoulderAsync(BlocwerkDbContext db, Boulder boulder, Guid userId)
+    {
+        if (boulder.CreatedByUserId == userId)
+        {
+            return true;
+        }
+
+        if (boulder.Setters.Any(s => s.UserId == userId))
+        {
+            return true;
+        }
+
+        return await WallAdminGuard.IsWallAdminAsync(db, boulder.WallId, userId, CancellationToken.None);
     }
 }

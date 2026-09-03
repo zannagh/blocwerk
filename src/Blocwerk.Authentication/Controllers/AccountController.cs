@@ -36,6 +36,8 @@ public partial class AccountController : Controller
     private readonly IKioskContext _kioskContext;
     private readonly IDataProtector _linkProtector;
     private readonly IDataProtector _totpPendingProtector;
+    private readonly IDataProtector _reauthProtector;
+    private readonly Services.IAccountReauthTicketStore _reauthTicketStore;
 
     public AccountController(
         BlocwerkSettings settings,
@@ -49,6 +51,7 @@ public partial class AccountController : Controller
         ILoginLockoutService loginLockout,
         Services.ITotpService totpService,
         IKioskContext kioskContext,
+        Services.IAccountReauthTicketStore reauthTicketStore,
         IDataProtectionProvider dataProtectionProvider)
     {
         _configuration = settings;
@@ -62,8 +65,10 @@ public partial class AccountController : Controller
         _loginLockout = loginLockout;
         _totpService = totpService;
         _kioskContext = kioskContext;
+        _reauthTicketStore = reauthTicketStore;
         _linkProtector = dataProtectionProvider.CreateProtector(LinkIntentPurpose);
         _totpPendingProtector = dataProtectionProvider.CreateProtector(TotpPendingPurpose);
+        _reauthProtector = dataProtectionProvider.CreateProtector(ReauthIntentPurpose);
     }
 
     private string BaseUrl => $"{Request.Scheme}://{Request.Host}";
@@ -168,6 +173,16 @@ public partial class AccountController : Controller
             return Redirect("/account/login?error=cancelled");
         }
 
+        // A signed-in user re-proving themselves carries a step-up intent cookie BOUND TO THIS
+        // CALLBACK'S STATE. Like the link branch below it never signs anybody in — it only answers
+        // "is this identity yours" and hands the waiting page a single-use ticket. The state binding
+        // is what keeps an abandoned step-up from swallowing an unrelated callback; without it any
+        // account-link started in another tab came back as a step-up mismatch and was lost.
+        if (TryReadReauthIntent(state, out var reauthUserId))
+        {
+            return await HandleReauthCallbackAsync(code, reauthUserId);
+        }
+
         // A signed-in user attaching a provider carries a link-intent cookie: branch into linking
         // BEFORE any sign-in so the normal login path stays entirely unchanged for everyone else.
         if (TryReadLinkIntent(out var linkUserId, out var linkProvider))
@@ -198,6 +213,11 @@ public partial class AccountController : Controller
             {
                 claims.Add(new Claim("provider", info.Value.Provider));
             }
+
+            // Stamp WHEN this sign-in happened. CurrentUserService only lets a login that just
+            // happened create an account, which is what stops a still-valid cookie for a deleted
+            // account from silently minting a new one (see AuthFreshness).
+            claims.Add(Services.AuthFreshness.Stamp());
 
             var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
             var principal = new ClaimsPrincipal(identity);

@@ -3,6 +3,7 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Helpers;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Services;
@@ -10,6 +11,20 @@ namespace Blocwerk.Core.Services;
 public interface IActivityLogService
 {
     Task LogAsync(Guid wallId, Guid? boulderId, ActivityType type, string? details = null);
+
+    /// <summary>
+    /// Logs an entry attributed to the Ghost system row instead of to a session user.
+    /// </summary>
+    /// <remarks>
+    /// Exists for the one caller that has no session user to resolve: a boulder set at an unattended
+    /// kiosk tablet. It takes NO user id — an earlier draft did, which put "attribute this entry to
+    /// any user id you like, no authorisation performed" on an interface injected into a dozen
+    /// components for the sake of a single call site. The attribution is baked in instead, so the
+    /// primitive that exists is exactly the one that is needed and there is nothing here to misuse.
+    /// It performs no authorisation of its own — the caller must already have proven it may write to
+    /// the wall (see <c>BoulderService.EnsureAnonymousKioskCreateAllowedAsync</c>).
+    /// </remarks>
+    Task LogAsGhostAsync(Guid wallId, Guid? boulderId, ActivityType type, string? details = null);
 
     /// <summary>
     /// A wall's activity, newest first. The caller must be a member of the wall, or pass the
@@ -48,13 +63,27 @@ public class ActivityLogService : IActivityLogService
     public async Task LogAsync(Guid wallId, Guid? boulderId, ActivityType type, string? details = null)
     {
         var user = await _currentUserService.GetCurrentUserAsync();
+        await WriteAsync(wallId, boulderId, type, user.Id, details);
+    }
+
+    public Task LogAsGhostAsync(Guid wallId, Guid? boulderId, ActivityType type, string? details = null)
+    {
+        return WriteAsync(wallId, boulderId, type, GhostUser.Id, details);
+    }
+
+    /// <summary>
+    /// The single insert both public entry points funnel through. Private on purpose: the arbitrary
+    /// user id lives here, where nothing outside this class can reach it.
+    /// </summary>
+    private async Task WriteAsync(Guid wallId, Guid? boulderId, ActivityType type, Guid userId, string? details)
+    {
         await using var db = await _dbContextFactory.CreateDbContextAsync();
 
         db.ActivityLog.Add(new ActivityLogEntry
         {
             WallId = wallId,
             BoulderId = boulderId,
-            UserId = user.Id,
+            UserId = userId,
             Type = type,
             Details = details,
         });

@@ -71,6 +71,10 @@ public static class CoreServices
         });
 
         builder.Services.AddScoped<IActivityLogService, ActivityLogService>();
+        // The volume cap on the app's one unauthenticated write. A SINGLETON, because the counters
+        // have to outlive the circuit that made the writes — a per-circuit one would reset every
+        // time the tablet reloaded, which is exactly the thing a spammer would do.
+        builder.Services.AddSingleton<KioskAnonymousSettingThrottle>();
         builder.Services.AddScoped<IBoulderService, BoulderService>();
         builder.Services.AddScoped<IBoulderFeedbackService, BoulderFeedbackService>();
         builder.Services.AddScoped<IAttemptService, AttemptService>();
@@ -99,6 +103,7 @@ public static class CoreServices
         builder.Services.AddScoped<ITrainingService, TrainingService>();
         builder.Services.AddScoped<ISessionService, SessionService>();
         builder.Services.AddScoped<IAccountMergeService, AccountMergeService>();
+        builder.Services.AddScoped<IAccountDeletionService, AccountDeletionService>();
         builder.Services.AddScoped<IAdminDashboardService, AdminDashboardService>();
 
         // Password login: the hasher is stateless (singleton); the credential/lookup service is scoped

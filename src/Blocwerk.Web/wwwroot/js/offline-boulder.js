@@ -52,6 +52,13 @@
  *
  * The @onclick MUST use the same client-minted id (pass it to CreateBoulderAsync) so the online
  * and offline paths converge on one boulder even if both somehow run.
+ *
+ *   NOT QUEUEABLE
+ *     data-bw-offline-unavailable="<message>"   instead of the attributes above, for an action the
+ *                                     queue must never carry (an anonymous kiosk create: the
+ *                                     endpoint is [Authorize], so the entry would 401 and pause the
+ *                                     whole queue). Offline the click shows <message>; online it is
+ *                                     inert and the @onclick runs as usual.
  */
 (function () {
     const queue = window.blocwerkOfflineQueue;
@@ -142,5 +149,41 @@
         });
     }
 
+    /**
+     * An action that is explicitly NOT queueable while offline (today: a boulder create on an
+     * ANONYMOUS kiosk tablet — see BoulderCreate.razor). The endpoint behind the queue is
+     * [Authorize], so such an entry would flush to a 401, and a 401 pauses the whole queue awaiting
+     * a sign-in nobody is going to perform on an unattended tablet. Rather than enqueue a poison
+     * entry, say plainly that the action needs a connection.
+     *
+     * Marked with `data-bw-offline-unavailable="<message>"`. Online this does nothing at all and the
+     * element's own Blazor @onclick runs the normal path, exactly as before.
+     */
+    function handleUnavailable(event) {
+        const element = event.target instanceof Element
+            ? event.target.closest('[data-bw-offline-unavailable]')
+            : null;
+
+        if (!element || element.hasAttribute('disabled')) {
+            return;
+        }
+
+        if (window.blocwerkConnection && window.blocwerkConnection.isUp()) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const message = element.getAttribute('data-bw-offline-unavailable')
+            || 'This action needs a connection.';
+        if (window.blocwerkStatus && window.blocwerkStatus.flash) {
+            window.blocwerkStatus.flash(message, 'error', 6000);
+        } else {
+            window.dispatchEvent(new CustomEvent('bw:offline-error', { detail: { message: message } }));
+        }
+    }
+
+    document.addEventListener('click', handleUnavailable, true);
     document.addEventListener('click', handle, true);
 })();

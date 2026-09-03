@@ -1102,6 +1102,18 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
 
 .form-section { margin-bottom: 12px; }
 
+/* Name + "Random" name generator. The generator is the point of the field on a keyboard-less kiosk
+   tablet, so it is a full-height, comfortably tappable button sitting LEFT of the input, not a
+   tiny icon. align-items: stretch keeps it exactly as tall as the input at any font size. */
+.name-row { display: flex; align-items: stretch; gap: 8px; }
+.name-row > .form-input { flex: 1 1 auto; min-width: 0; }
+.name-row > .name-shuffle {
+    flex: 0 0 auto; width: auto; margin-bottom: 0;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 0 16px; min-height: 44px; font-size: 0.9rem; white-space: nowrap;
+}
+.name-shuffle-icon { font-size: 1.15rem; line-height: 1; }
+
 .checkbox-label, .toggle-label {
     display: flex; align-items: center; gap: 8px; padding: 10px 14px;
     background: var(--bg-surface); border: 2px solid var(--border); border-radius: 8px;
@@ -2694,3 +2706,40 @@ html.bw-fullscreen .wall-main .photo-viewport {
     background: rgba(46, 160, 67, 0.15); color: var(--text);
     border: 1px solid rgba(46, 160, 67, 0.4); font-size: 0.9rem;
 }
+
+/* ========== Delete account ========== */
+
+/* Reuses the .profile-page shell (same max-width, same .section cards) so the settings pages read
+   as one family; only the pieces this page needs that no other page has are defined here. */
+.delete-account-page .delete-account-subhead {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-heading);
+    margin: 14px 0 6px;
+}
+
+.delete-account-page .delete-account-list {
+    margin: 0 0 6px 18px;
+    padding: 0;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    line-height: 1.55;
+}
+
+.delete-account-page .delete-account-list li { margin-bottom: 4px; }
+
+.delete-account-page .delete-account-warning {
+    margin-top: 14px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--danger-bg);
+    color: var(--danger-text);
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+.delete-account-page .field-label { display: block; margin-bottom: 6px; font-size: 0.9rem; }
+
+/* Each step-up provider is its own POST form (a GET link here was CSRF-able), so the forms have to
+   sit side by side the way the links they replaced did. */
+.delete-account-page .reauth-start-form { display: inline-block; margin: 0 8px 8px 0; }

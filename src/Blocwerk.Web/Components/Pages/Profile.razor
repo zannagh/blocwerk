@@ -121,6 +121,22 @@
                     </div>
                     <p class="member-since">Calculators and guides@(_viewer?.Role == IdentityRole.Admin ? ", and the installation-wide administration dashboard" : string.Empty).</p>
                 </div>
+
+                @* Deliberately its own card at the bottom, not a button among the links above: it is
+                   the one irreversible action on this page. Inside the !IsKiosk branch so a tablet
+                   never even offers it; /settings/delete-account is on the kiosk deny-list and the
+                   deletion service refuses a kiosk session outright. *@
+                <div class="section profile-section-card">
+                    <h2>Delete account</h2>
+                    <p class="member-since">
+                        Erases your name, e-mail, photo, logins and training history for good. The
+                        boulders you set and the comments you wrote stay on their walls, credited to
+                        @Blocwerk.Core.Helpers.PlaceholderIdentity.DisplayName.
+                    </p>
+                    <div class="profile-links">
+                        <a class="btn-secondary" href="/settings/delete-account">Delete my account</a>
+                    </div>
+                </div>
             }
 
             <div class="section profile-section-card">
@@ -878,7 +894,13 @@
         _target = null;
         _progression = null;
 
-        _viewer = await CurrentUserService.GetCurrentUserAsync();
+        if (await TryResolveViewerAsync() is not { } viewer)
+        {
+            _loading = false;
+            return;
+        }
+
+        _viewer = viewer;
 
         if (UserId == null || UserId == _viewer.Id)
         {
@@ -1252,9 +1274,37 @@
 
     private async Task ReloadSelfAsync()
     {
-        _viewer = await CurrentUserService.GetCurrentUserAsync();
+        if (await TryResolveViewerAsync() is not { } viewer)
+        {
+            return;
+        }
+
+        _viewer = viewer;
         _target = _viewer;
         _nameInput = _viewer.CustomDisplayName ?? string.Empty;
+    }
+
+    /// <summary>
+    /// Resolves the viewer, or sends the browser to a clean sign-in prompt and returns null.
+    /// </summary>
+    /// <remarks>
+    /// <c>[Authorize]</c> only proves the cookie is intact; it says nothing about the account behind
+    /// it still existing. An account merged away (or deleted) on another device leaves this tab with
+    /// a perfectly valid cookie that resolves to nobody — and an unguarded call there did not fail
+    /// gracefully, it 500ed the page on every reload with no hint that signing in again would fix it.
+    /// Same bounce MainLayout, Home, Join, WallDetail and BoulderDetail already make.
+    /// </remarks>
+    private async Task<User?> TryResolveViewerAsync()
+    {
+        try
+        {
+            return await CurrentUserService.GetCurrentUserAsync();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            Navigation.NavigateTo("/account/login", replace: true);
+            return null;
+        }
     }
 
     // ---- Verify email ----

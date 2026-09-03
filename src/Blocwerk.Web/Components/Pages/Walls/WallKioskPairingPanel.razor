@@ -39,6 +39,11 @@
     </button>
 </div>
 
+@* What a registered tablet is allowed to do without anybody signed in. Lives inside the same
+   Kiosk card because it is the same decision an admin makes when they bolt a tablet to a wall,
+   and because that card is already admin-only and already hidden on a kiosk session. *@
+<WallKioskAnonymousPanel WallId="WallId" />
+
 @code {
     /// <summary>The wall being administered. The ONLY wall this card can ever approve a tablet for.</summary>
     [Parameter]

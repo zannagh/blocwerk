@@ -159,4 +159,16 @@ public interface IWallService
     /// be the wall owner or an Admin member.
     /// </summary>
     Task SetMaintenanceAsync(Guid wallId, bool underMaintenance);
+
+    /// <summary>
+    /// Turns anonymous kiosk setting on or off for this wall (<c>Wall.AllowAnonymousKioskSetting</c>).
+    /// Requires the caller to be the wall owner or an Admin member.
+    /// </summary>
+    /// <remarks>
+    /// Off by default and off for every existing wall: this is the opt-in behind the app's only
+    /// unauthenticated write, so it must be a decision somebody made rather than one they inherited.
+    /// A kiosk session cannot call it — the wall is administered from an admin's own device — which
+    /// keeps a tablet from granting itself the capability.
+    /// </remarks>
+    Task SetAnonymousKioskSettingAsync(Guid wallId, bool allowed);
 }

@@ -62,16 +62,10 @@ public record BoulderListItem(
 
     /// <summary>
     /// Who the row attributes the boulder to: the setter(s) when any are recorded, otherwise the
-    /// creator, so the row never renders a bare "by ".
+    /// creator, otherwise the placeholder — so the row never renders a bare "by ", and never the raw
+    /// name of the Ghost system row either.
     /// </summary>
-    public string AuthorDisplay
-    {
-        get
-        {
-            var setters = BoulderSetterNames.Format(SetterNames);
-            return string.IsNullOrEmpty(setters) ? Boulder.CreatedBy?.Name ?? string.Empty : setters;
-        }
-    }
+    public string AuthorDisplay => BoulderSetterNames.Describe(SetterNames, Boulder.CreatedBy);
 }
 
 public class BoulderFeedbackService : IBoulderFeedbackService

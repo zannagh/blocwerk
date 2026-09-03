@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Helpers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 
@@ -408,6 +409,12 @@ public class BlocwerkDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(u => u.HomeWallId)
                 .OnDelete(DeleteBehavior.SetNull);
+
+            // The Ghost system row. Seeded through the MODEL rather than by startup code so it
+            // arrives with the migration in production AND with EnsureCreated in tests: every
+            // Boulder.CreatedByUserId is a required, restrict-deleted FK, so a boulder set at an
+            // unattended kiosk has nothing to point at if this row can ever be missing.
+            entity.HasData(GhostUser.Create());
         });
     }
 

@@ -1,10 +1,11 @@
 namespace Blocwerk.Core.Helpers;
 
 /// <summary>
-/// Mints a throwaway but climbing-flavoured name for a new boulder. A gym tablet in kiosk mode has
-/// no on-screen keyboard worth typing on, so a required Name field is the one thing that can stop a
-/// setter from saving. Pre-filling the field with a name that is already unique on the wall means
-/// "create and publish" never needs the keyboard; the setter can still overwrite it.
+/// Mints a throwaway name for a new boulder, somewhere between climbing-flavoured and faintly
+/// ridiculous. A gym tablet in kiosk mode has no on-screen keyboard worth typing on, so a required
+/// Name field is the one thing that can stop a setter from saving. Pre-filling the field with a name
+/// that is already unique on the wall means "create and publish" never needs the keyboard; the
+/// setter can still overwrite it.
 /// </summary>
 public static class BoulderNameGenerator
 {
@@ -23,6 +24,15 @@ public static class BoulderNameGenerator
         "Powerful", "Reachy", "Rounded", "Sandbagged", "Scrappy", "Shouldery", "Silky", "Slabby",
         "Sloping", "Spicy", "Stubborn", "Sustained", "Technical", "Thuggish", "Tricky", "Wandering",
         "Weary", "Windy", "Grippy", "Frosty", "Bouncy", "Steady", "Tidy",
+
+        // Playful additions: the point is that a generated name can be funny enough to keep. Mixed
+        // into the climbing vocabulary above, so a draw ranges from plainly descriptive to absurd.
+        "Angry", "Bewildered", "Bureaucratic", "Caffeinated", "Confused", "Cosmic", "Cranky", "Cursed",
+        "Disgruntled", "Dramatic", "Emotional", "Existential", "Feral", "Forgetful", "Frantic", "Grumpy",
+        "Haunted", "Hopeful", "Illegal", "Immortal", "Interstellar", "Jazzy", "Majestic", "Nocturnal",
+        "Optimistic", "Overqualified", "Philosophical", "Radioactive", "Rebellious", "Reluctant",
+        "Sarcastic", "Sentimental", "Skeptical", "Sleepy", "Sneaky", "Soggy", "Spectral", "Spontaneous",
+        "Suspicious", "Turbo", "Unhinged", "Untamed", "Vengeful", "Whimsical", "Wobbly", "Zesty",
     ];
 
     private static readonly string[] Nouns =
@@ -34,6 +44,15 @@ public static class BoulderNameGenerator
         "Problem", "Rail", "Rockover", "Runout", "Scoop", "Send", "Sit Start", "Slab",
         "Sloth", "Smear", "Spanner", "Sting", "Tension", "Toe Hook", "Topout", "Traversal",
         "Tufa", "Wobbler", "Crozzle", "Deadpoint", "Flag", "Jam", "Bump",
+
+        // Animals and other cheerful nonsense, so "Angry Capybara" is a possible draw.
+        "Capybara", "Alpaca", "Armadillo", "Axolotl", "Badger", "Beluga", "Chinchilla", "Ferret",
+        "Flamingo", "Gecko", "Gibbon", "Goose", "Hamster", "Hedgehog", "Iguana", "Kangaroo",
+        "Lemur", "Llama", "Manatee", "Marmot", "Meerkat", "Moose", "Narwhal", "Ocelot",
+        "Octopus", "Otter", "Pangolin", "Parrot", "Pelican", "Penguin", "Platypus", "Pufferfish",
+        "Quokka", "Raccoon", "Salamander", "Seagull", "Squirrel", "Tapir", "Toucan", "Walrus",
+        "Wombat", "Yak", "Baguette", "Bagpipe", "Casserole", "Kazoo", "Pancake", "Sandwich",
+        "Spreadsheet", "Toaster", "Waffle", "Wheelbarrow",
     ];
 
     /// <summary>

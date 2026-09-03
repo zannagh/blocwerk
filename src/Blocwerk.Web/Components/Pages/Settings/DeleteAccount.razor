@@ -1,0 +1,387 @@
+@page "/settings/delete-account"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject ICurrentUserService CurrentUserService
+@inject IAccountDeletionService AccountDeletion
+@inject IAccountReauthService Reauth
+@inject NavigationManager Navigation
+@using Blocwerk.Authentication.Services
+@using Microsoft.AspNetCore.WebUtilities
+
+<PageTitle>Delete account - Blocwerk</PageTitle>
+
+<div class="profile-page delete-account-page">
+    <h1>Delete your account</h1>
+
+    @if (loading)
+    {
+        <p class="loading">Loading...</p>
+    }
+    else if (loadFailed)
+    {
+        @* A transient failure is not the same answer as "there is nothing here for you", and the
+           page used to give both the same wording. *@
+        <p class="member-since">
+            Your account couldn't be loaded just now. Please reload the page and try again.
+        </p>
+    }
+    else if (unavailable || user is null || preview is null)
+    {
+        <p class="member-since">This page isn't available.</p>
+    }
+    else
+    {
+        <div class="section">
+            <h2>What this does</h2>
+            <p class="member-since">
+                Deleting your account erases <strong>you</strong> from Blocwerk, but it does
+                <strong>not</strong> tear the routes you set out of other people's walls. Your
+                content stays where it is and is credited to
+                <strong>@PlaceholderIdentity.DisplayName</strong> from then on.
+            </p>
+
+            <h3 class="delete-account-subhead">Erased for good</h3>
+            <ul class="delete-account-list">
+                <li>Your name, e-mail address and profile photo</li>
+                <li>Your password, your authenticator (two-factor) and your linked GitHub / Google / Microsoft logins</li>
+                <li>Your personal API keys</li>
+                <li>Your hangboard, pull-up and climbing sessions (@preview.TrainingSessionsRemoved in total)</li>
+                <li>Your favourites, your TopLogger connection and every ascent imported from it</li>
+                <li>Your membership of every wall, along with your kiosk PIN and kiosk consent (@preview.MembershipsRemoved membership(s))</li>
+                <li>Beta clips you uploaded (@preview.BetaVideosRemoved) &mdash; those show you climbing</li>
+            </ul>
+
+            <h3 class="delete-account-subhead">Kept, credited to @PlaceholderIdentity.DisplayName</h3>
+            <ul class="delete-account-list">
+                <li>@preview.BouldersKept boulder(s) you created, and any setter credits on them</li>
+                <li>@preview.CommentsKept comment(s) and your grade proposals and star ratings</li>
+                <li>@preview.AttemptsKept logged attempt(s), so the send counts on those boulders don't change</li>
+                <li>Wall history entries (resets, photo updates) on walls you helped run</li>
+            </ul>
+
+            <p class="delete-account-warning">
+                This cannot be undone. There is no restore, and signing in again later creates a
+                brand-new, empty account.
+            </p>
+        </div>
+
+        @if (preview.WallTransfers.Count > 0)
+        {
+            <div class="section">
+                <h2>Walls that change hands</h2>
+                <ul class="delete-account-list">
+                    @foreach (var transfer in preview.WallTransfers)
+                    {
+                        <li><strong>@transfer.WallName</strong> &rarr; @transfer.NewOwnerName</li>
+                    }
+                </ul>
+                <p class="member-since">
+                    You own these walls. They go to their longest-standing remaining admin so nobody
+                    loses their boulders.
+                </p>
+            </div>
+        }
+
+        @if (!preview.CanDelete)
+        {
+            <div class="section">
+                <h2>You have to hand over a wall first</h2>
+                <p class="delete-account-warning">
+                    You are the only owner of the following wall(s), and no other admin can take
+                    over:
+                </p>
+                <ul class="delete-account-list">
+                    @foreach (var name in preview.BlockingWallNames)
+                    {
+                        <li><strong>@name</strong></li>
+                    }
+                </ul>
+                <p class="member-since">
+                    Deleting your account would leave them with nobody to run them, so it is refused.
+                    Make somebody else an admin of each wall, or delete the wall yourself, and then
+                    come back here.
+                </p>
+                <a class="btn-secondary" href="/walls">Go to my walls</a>
+            </div>
+        }
+        else
+        {
+            <div class="section">
+                <h2>Confirm</h2>
+
+                <div class="field-group">
+                    <label class="field-label" for="delete-confirm">
+                        Type <strong>@ConfirmationPhrase</strong> to confirm
+                    </label>
+                    <input id="delete-confirm" class="text-input" autocomplete="off" maxlength="256"
+                           @bind="confirmInput" @bind:event="oninput" />
+                </div>
+
+                @if (requirements?.RequiresProviderReauth == true)
+                {
+                    <div class="field-group">
+                        <label class="field-label">Prove it is still you</label>
+                        @if (providerReauthDone)
+                        {
+                            <p class="member-since">
+                                Re-authenticated. Delete your account below within the next
+                                @ReauthWindowMinutes minute(s) &mdash; after that, or in a new tab,
+                                you have to sign in with your provider once more.
+                            </p>
+                        }
+                        else if (requirements.ProviderOptions.Count == 0)
+                        {
+                            <p class="field-error">
+                                This installation has no sign-in provider configured, so there is no
+                                way to re-confirm who you are. Set a password on your profile first,
+                                then come back.
+                            </p>
+                        }
+                        else
+                        {
+                            <p class="member-since">
+                                Your account has no password, so sign in with your provider once more
+                                before deleting. This stops somebody who finds your browser open from
+                                erasing you.
+                            </p>
+                            @* A real POST, not a link: a plain GET here could be triggered by any
+                               cross-site page and would plant a step-up intent on a signed-in
+                               victim's browser. data-enhance-nav="false" so the browser follows the
+                               302 out to the provider for real. *@
+                            @foreach (var provider in requirements.ProviderOptions)
+                            {
+                                <form method="post" action="@AccountReauthRoutes.StartPath"
+                                      data-enhance-nav="false" class="reauth-start-form">
+                                    <AntiforgeryToken />
+                                    <input type="hidden" name="@AccountReauthRoutes.ProviderField" value="@provider" />
+                                    <button type="submit" class="btn-secondary">
+                                        Re-authenticate with @ProviderLabel(provider)
+                                    </button>
+                                </form>
+                            }
+                        }
+                    </div>
+                }
+
+                @if (requirements?.RequiresPassword == true)
+                {
+                    <div class="field-group">
+                        <label class="field-label" for="delete-password">Your password</label>
+                        <input id="delete-password" class="text-input" type="password"
+                               autocomplete="current-password" @bind="passwordInput" @bind:event="oninput" />
+                    </div>
+                }
+
+                @if (requirements?.RequiresTotp == true)
+                {
+                    <div class="field-group">
+                        <label class="field-label" for="delete-totp">Code from your authenticator</label>
+                        <input id="delete-totp" class="text-input" inputmode="numeric" maxlength="6"
+                               autocomplete="one-time-code" @bind="totpInput" @bind:event="oninput" />
+                    </div>
+                }
+
+                @if (error is not null)
+                {
+                    <p class="field-error">@error</p>
+                }
+
+                <button type="button" class="btn-danger" disabled="@(!CanSubmit)" @onclick="DeleteAsync">
+                    @(busy ? "Deleting..." : "Delete my account permanently")
+                </button>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private User? user;
+    private AccountDeletionPreview? preview;
+    private AccountReauthRequirements? requirements;
+    private bool loading = true;
+    private bool unavailable;
+    private bool loadFailed;
+    private bool busy;
+    private string? error;
+    private bool providerReauthDone;
+    private bool reauthRedeemed;
+
+    private string confirmInput = string.Empty;
+    private string passwordInput = string.Empty;
+    private string totpInput = string.Empty;
+
+    /// <summary>
+    /// What the person has to type out. Their confirmed e-mail when they have one (it is the value
+    /// they are least likely to type by muscle memory into the wrong page), otherwise their name.
+    /// </summary>
+    private string ConfirmationPhrase =>
+        string.IsNullOrWhiteSpace(user?.Email) ? user?.Name ?? string.Empty : user.Email;
+
+    private bool ConfirmationMatches =>
+        !string.IsNullOrWhiteSpace(ConfirmationPhrase)
+        && string.Equals(confirmInput.Trim(), ConfirmationPhrase, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The step-up the account can actually present. Typing the phrase is a guard against a misclick,
+    /// never the barrier: it is the user's own e-mail address, printed a few lines above.
+    /// </summary>
+    private bool StepUpReady =>
+        requirements is { CanStepUp: true }
+        && (!requirements.RequiresProviderReauth || providerReauthDone);
+
+    private bool CanSubmit => !busy && ConfirmationMatches && StepUpReady && preview?.CanDelete == true;
+
+    private static int ReauthWindowMinutes => (int)Math.Max(1, AccountReauthService.ProviderReauthWindow.TotalMinutes);
+
+    private static string ProviderLabel(string provider) => provider switch
+    {
+        "github" => "GitHub",
+        "google" => "Google",
+        "microsoft" => "Microsoft",
+        _ => provider,
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            user = await CurrentUserService.GetCurrentUserAsync();
+            preview = await AccountDeletion.PreviewAsync(user.Id);
+            requirements = await Reauth.GetRequirementsAsync();
+
+            // A step-up already redeemed on this circuit survives the re-render that strips the
+            // ticket out of the address bar.
+            providerReauthDone = await Reauth.HasProviderReauthAsync();
+
+            if (!providerReauthDone && ReadQuery("reauth_error") is { Length: > 0 } reauthError)
+            {
+                error = reauthError switch
+                {
+                    "not_yours" => "That sign-in belongs to a different account. Sign in with the provider linked to THIS account.",
+                    "unavailable" => "That sign-in provider isn't available on this installation.",
+                    _ => "That didn't complete. Please try re-authenticating again.",
+                };
+            }
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Nobody the page can act for — a signed-out tab, or a session whose account is gone.
+            unavailable = true;
+        }
+        catch (Exception)
+        {
+            // A transient failure (the database, the preview query) is a different message: the page
+            // exists, it just could not be assembled this time.
+            loadFailed = true;
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    /// <summary>
+    /// Redeems the step-up ticket the provider round trip came back with, ONCE, and takes it out of
+    /// the address bar.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately here rather than in <c>OnInitializedAsync</c>: this runs only on the interactive
+    /// circuit, never on the prerender pass, so the single use is spent by the circuit that will
+    /// actually delete. Redeeming destroys the ticket, so the copy the browser keeps in history — and
+    /// the one a reload or a second tab would re-present — is dead on arrival. What is left is a
+    /// step-up bound to THIS circuit and good for ProviderReauthWindow; anything else has to walk
+    /// through the provider again, which is what the message below says.
+    /// </remarks>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || reauthRedeemed || unavailable || loadFailed)
+        {
+            return;
+        }
+
+        if (ReadQuery(AccountReauthRoutes.TicketQueryParameter) is not { Length: > 0 } ticket)
+        {
+            return;
+        }
+
+        reauthRedeemed = true;
+
+        try
+        {
+            providerReauthDone = await Reauth.RedeemProviderReauthAsync(ticket);
+        }
+        catch (Exception)
+        {
+            providerReauthDone = false;
+        }
+
+        if (!providerReauthDone)
+        {
+            error = "That confirmation was already used or has expired. Re-authenticate with your "
+                    + "provider and try again.";
+        }
+
+        // Replace, never push: the back button must not be able to bring the ticket back into the
+        // address bar, and there is nothing left in it worth returning to anyway.
+        Navigation.NavigateTo(AccountReauthRoutes.DeleteAccountPath, forceLoad: false, replace: true);
+        StateHasChanged();
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (user is null || !CanSubmit)
+        {
+            return;
+        }
+
+        busy = true;
+        error = null;
+        var deleted = false;
+
+        try
+        {
+            if (!await Reauth.VerifyAsync(passwordInput, totpInput))
+            {
+                providerReauthDone = false;
+                error = requirements?.RequiresProviderReauth == true
+                    ? "That confirmation is no longer valid. Re-authenticate with your provider and try again."
+                    : "That didn't match. Check your password and authenticator code and try again.";
+                return;
+            }
+
+            deleted = await AccountDeletion.DeleteAsync(user.Id);
+        }
+        catch (AccountDeletionBlockedException ex)
+        {
+            error = $"A wall still needs an owner: {string.Join(", ", ex.WallNames)}. Hand it over first.";
+            preview = await AccountDeletion.PreviewAsync(user.Id);
+            return;
+        }
+        catch (Exception)
+        {
+            // Reachable only BEFORE the deletion's transaction commits: the service treats the commit
+            // as the point of no return and swallows (logging) anything that fails after it, so a
+            // failure here really does mean nothing was deleted.
+            error = "Something went wrong and nothing was deleted. Please try again.";
+            return;
+        }
+        finally
+        {
+            busy = false;
+        }
+
+        // Whether the row was erased just now or was already gone (a double submit, or a second tab
+        // that got there first), the ending is the same: there is nothing left to stay signed in to.
+        // Sign out with a real page load rather than in-circuit navigation: the account behind this
+        // circuit no longer exists, and /account/logout is what actually drops the auth cookie and
+        // the remembered-login-method cookie.
+        Navigation.NavigateTo("/account/logout", forceLoad: true);
+    }
+
+    /// <summary>Reads one value out of the query string the step-up round trip came back on.</summary>
+    private string? ReadQuery(string name)
+    {
+        var query = QueryHelpers.ParseQuery(new Uri(Navigation.Uri).Query);
+        return query.TryGetValue(name, out var values) ? values.ToString() : null;
+    }
+}

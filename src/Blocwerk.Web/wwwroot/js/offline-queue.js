@@ -207,7 +207,7 @@
         entry.attempts += 1;
 
         return transport.send(entry).then(response => {
-            const verdict = transport.classify(response);
+            const verdict = transport.classify(response, entry);
 
             if (verdict === 'sent') {
                 return db.remove(entry.id).then(() => 'sent');

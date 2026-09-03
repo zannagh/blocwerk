@@ -30,7 +30,7 @@
                 Publish
             </button>
         }
-        @if (ShowArchiveAction && Boulder.IsHistoric && Boulder.CreatedByUserId == CurrentUserId && !Boulder.IsArchived)
+        @if (ShowArchiveAction && Boulder.IsHistoric && CanManage && !Boulder.IsArchived)
         {
             <button class="card-archive" title="Move to archive"
                     @onclick="() => OnArchive.InvokeAsync(Boulder)"
@@ -38,7 +38,7 @@
                 Archive
             </button>
         }
-        @if (Boulder.IsArchived && Boulder.CreatedByUserId == CurrentUserId)
+        @if (Boulder.IsArchived && CanManage)
         {
             <button class="card-archive" title="Restore from archive"
                     @onclick="() => OnUnarchive.InvokeAsync(Boulder)"
@@ -92,6 +92,14 @@
 
     [Parameter] public bool ShowArchiveAction { get; set; }
 
+    /// <summary>
+    /// True when <see cref="CurrentUserId"/> administers this card's wall. Feeds
+    /// <see cref="CanManage"/>, which mirrors the server's archive gate — a wall admin can archive a
+    /// boulder they did not set, and (the case this exists for) a boulder set anonymously at the
+    /// kiosk, which has no human creator at all.
+    /// </summary>
+    [Parameter] public bool IsWallAdmin { get; set; }
+
     [Parameter] public EventCallback<Boulder> OnPublish { get; set; }
 
     [Parameter] public EventCallback<Boulder> OnArchive { get; set; }
@@ -107,6 +115,15 @@
     private bool CanPublish =>
         Boulder.CreatedByUserId == CurrentUserId
         || Boulder.Setters.Any(s => s.UserId == CurrentUserId);
+
+    // Exactly the server's rule in BoulderService.SetArchivedAsync: creator, any setter, or a wall
+    // admin. Shown and refused must agree — no button that leads to "Only the creator...", and no
+    // hidden button for somebody the server would now let through.
+    private bool CanManage =>
+        CurrentUserId != Guid.Empty
+        && (Boulder.CreatedByUserId == CurrentUserId
+            || Boulder.Setters.Any(s => s.UserId == CurrentUserId)
+            || IsWallAdmin);
 
     private string BoulderUrl => !string.IsNullOrEmpty(ShareToken)
         ? $"/walls/{WallId}/boulders/{Boulder.Id}/shared/{ShareToken}"

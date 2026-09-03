@@ -1,10 +1,17 @@
 @page "/walls/{WallId:guid}/boulders/create"
 @rendermode InteractiveServer
-@attribute [Authorize]
+@* No [Authorize], deliberately, and for the same reason BoulderDetail carries none: a registered
+   kiosk tablet spends most of its day with NOBODY picked, and on a wall that opted in, setting a
+   boulder is exactly what somebody walks up to it to do. The attribute would bounce that session to
+   a login it cannot complete. Every OTHER anonymous visitor is still sent to sign in, explicitly, in
+   OnInitializedAsync — and the real gate is not here at all: BoulderService.CreateBoulderAsync
+   re-validates the kiosk key against the database and refuses the write. *@
 @inject IWallService WallService
 @inject IWallPanelService WallPanelService
 @inject IBoulderService BoulderService
 @inject ICurrentUserService CurrentUserService
+@inject IKioskContext KioskContext
+@inject IKioskService KioskService
 @inject NavigationManager Navigation
 @inject CircuitEditActivity EditActivity
 @implements IDisposable
@@ -24,31 +31,38 @@
     {
         <p class="loading">Loading...</p>
     }
+    else if (_anonymousSettingNotAllowed)
+    {
+        @* The wall's opt-in is OFF (the default), so the server would refuse Publish. Say so here
+           rather than handing a walk-up user the whole form and a raw UnauthorizedAccessException
+           at the end of it. The gate itself is still the service's — this only decides the screen. *@
+        <div class="empty-msg">
+            <p>Setting from this tablet is turned off for this wall.</p>
+            <p class="hint">
+                A wall admin can allow it in the wall's kiosk settings. Until then, sign in on your
+                own device to add a boulder.
+            </p>
+        </div>
+    }
     else
     {
         <div class="form-section">
             @* The name is pre-filled with a generated, wall-unique name so a kiosk tablet with no
                keyboard can publish straight away. The shuffle button re-rolls it. *@
-            <div class="input-row" style="align-items: flex-end;">
-                <div class="form-group">
-                    <label>Name</label>
-                    <input @bind="_name" class="form-input" placeholder="e.g. Crimpy Traverse" />
+            <div class="form-group">
+                <label for="bw-boulder-name">Name</label>
+                <div class="name-row">
+                    <button type="button" class="btn-secondary name-shuffle" @onclick="ShuffleName"
+                            title="Suggest another name">
+                        <span class="name-shuffle-icon" aria-hidden="true">&#x21bb;</span> Random
+                    </button>
+                    <input id="bw-boulder-name" @bind="_name" class="form-input" placeholder="e.g. Crimpy Traverse" />
                 </div>
-                <button type="button" class="btn-icon" @onclick="ShuffleName" title="Suggest another name">&#x21bb;</button>
             </div>
 
             <div class="form-group">
                 <label>Proposed Grade</label>
                 <GradePicker @bind-Value="_grade" DefaultUseFont="_preferFont" />
-            </div>
-
-            <div class="rules-block">
-                <span class="rules-title">Rules</span>
-                <label class="checkbox-label">
-                    <input type="checkbox" checked="@_allKickboardOn"
-                           @onchange="e => _allKickboardOn = e.Value is true" />
-                    All kickboard holds are on
-                </label>
             </div>
         </div>
 
@@ -66,24 +80,36 @@
                     HoldTwins="_holdTwins"
                     @bind-SelectedHolds="_selectedHolds" />
 
-        <BoulderNewRules @bind-FootColorOnly="_footColorOnly"
+        <BoulderNewRules @bind-AllKickboardOn="_allKickboardOn"
+                         @bind-FootColorOnly="_footColorOnly"
                          @bind-NoMatch="_noMatch"
                          WallHolds="_holds" />
 
-        @if (_members.Count > 0)
+        @if (_setterOptions.Count > 0)
         {
-            <details class="settings-panel settings-card">
+            <details class="settings-panel settings-card" open="@_isAnonymous">
                 <summary class="settings-card-summary"><h2>Setter(s)</h2></summary>
                 <div class="settings-card-body">
-                    <p class="hint">You're added as a setter by default. Add anyone else who set this boulder with you.</p>
+                    @if (_isAnonymous)
+                    {
+                        <p class="hint">
+                            Nobody is signed in, so this is credited to @PlaceholderIdentity.DisplayName
+                            unless you tick whoever set it. Only people who set up kiosk access on this
+                            wall are listed.
+                        </p>
+                    }
+                    else
+                    {
+                        <p class="hint">You're added as a setter by default. Add anyone else who set this boulder with you.</p>
+                    }
                     <div class="setter-select">
-                        @foreach (var member in _members)
+                        @foreach (var option in _setterOptions)
                         {
-                            var uid = member.UserId;
+                            var uid = option.UserId;
                             <label class="checkbox-label">
                                 <input type="checkbox" checked="@_selectedSetters.Contains(uid)"
                                        @onchange="e => ToggleSetter(uid, e.Value is true)" />
-                                @member.User.Name
+                                @option.Name
                             </label>
                         }
                     </div>
@@ -96,19 +122,19 @@
         <div id="bw-boulder-form" hidden aria-hidden="true" data-bw-boulder-snapshot="@SnapshotJson"></div>
 
         <div class="submit-row">
-            <button class="btn-secondary" @onclick="SaveDraft"
-                    data-bw-boulder-action="create" data-bw-boulder-form="#bw-boulder-form"
-                    data-bw-boulder-draft="true" data-bw-boulder-nav="@DetailUrl" data-bw-mode="offline-only"
+            <button class="btn-secondary" @onclick="SaveDraft" @attributes="SubmitAttributes(isDraft: true)"
                     disabled="@(string.IsNullOrWhiteSpace(_name) || _isSubmitting)">
                 @(_isSubmitting ? "Saving..." : "Save as Draft")
             </button>
-            <button class="btn-submit" @onclick="Publish"
-                    data-bw-boulder-action="create" data-bw-boulder-form="#bw-boulder-form"
-                    data-bw-boulder-draft="false" data-bw-boulder-nav="@DetailUrl" data-bw-mode="offline-only"
+            <button class="btn-submit" @onclick="Publish" @attributes="SubmitAttributes(isDraft: false)"
                     disabled="@(string.IsNullOrWhiteSpace(_name) || _selectedHolds.Count == 0 || _isSubmitting)">
                 @(_isSubmitting ? "Publishing..." : $"Publish ({_selectedHolds.Count} holds)")
             </button>
         </div>
+        @if (_isAnonymous)
+        {
+            <p class="hint">Nobody is signed in, so this boulder has to be saved while the tablet is online.</p>
+        }
         <p class="hint">A draft is visible to the wall's members and any setter can edit it, but it can't be attempted or flashed until you publish it.</p>
 
         @if (!string.IsNullOrEmpty(_error))
@@ -140,11 +166,61 @@
 
     private List<BoulderHoldInput> _selectedHolds = [];
 
-    // The wall's members, offered as selectable setters, and the ids the user picked. The current user
-    // is pre-selected as a default setter (the common case is you setting your own boulder); adding
-    // anyone else stays a conscious choice, and the current user can be unticked.
-    private List<WallMember> _members = [];
+    // Who may be credited, and who was ticked. For a signed-in setter that is the wall's members,
+    // with themselves pre-selected (the common case is you setting your own boulder). For an
+    // anonymous kiosk it is the CONSENTING members only — the same allow-list the tablet's own
+    // picker is built from — and nobody is pre-selected, because the tablet does not know who is
+    // standing in front of it. The server re-validates the ids either way; this list is only what
+    // the screen offers.
+    private List<SetterOption> _setterOptions = [];
     private readonly HashSet<Guid> _selectedSetters = [];
+
+    // True when nobody is signed in: a registered kiosk tablet on a wall that opted in. Every other
+    // anonymous visitor is redirected to sign in before this can be observed.
+    private bool _isAnonymous;
+
+    // True when this is an anonymous tablet on a wall that has NOT opted in. The service would refuse
+    // the Publish, so the form is never shown at all.
+    private bool _anonymousSettingNotAllowed;
+
+    /// <summary>The message the offline path shows an anonymous tablet instead of queueing a create.</summary>
+    private const string AnonymousOfflineMessage =
+        "This tablet is offline. Nobody is signed in, so this boulder can't be queued — reconnect and publish it again.";
+
+    /// <summary>
+    /// The offline-queue wiring for a submit button — for a SIGNED-IN setter only.
+    /// </summary>
+    /// <remarks>
+    /// An anonymous kiosk create must never be enqueued. <c>OfflineBouldersController</c> is
+    /// <c>[Authorize]</c>, so the flush of such an entry answers 401, and offline-transport.js
+    /// classifies a 401 as 'pause' — which stops the WHOLE queue awaiting a sign-in that will never
+    /// happen on an unattended tablet. That is the poison-queue shape this repo has already had to
+    /// fix once. So the anonymous branch omits the queue attributes entirely and carries
+    /// data-bw-offline-unavailable instead, which offline-boulder.js turns into a plain "you are
+    /// offline" message. The signed-in wiring below is unchanged.
+    /// </remarks>
+    private Dictionary<string, object> SubmitAttributes(bool isDraft)
+    {
+        if (_isAnonymous)
+        {
+            return new Dictionary<string, object>
+            {
+                ["data-bw-offline-unavailable"] = AnonymousOfflineMessage,
+            };
+        }
+
+        return new Dictionary<string, object>
+        {
+            ["data-bw-boulder-action"] = "create",
+            ["data-bw-boulder-form"] = "#bw-boulder-form",
+            ["data-bw-boulder-draft"] = isDraft ? "true" : "false",
+            ["data-bw-boulder-nav"] = DetailUrl,
+            ["data-bw-mode"] = "offline-only",
+        };
+    }
+
+    /// <summary>One tickable setter, from either source.</summary>
+    private readonly record struct SetterOption(Guid UserId, string Name);
 
     // The current user's preferred grade scale, seeded into the GradePicker so a new boulder's grade
     // input opens on Fontainebleau or V-Scale to match their profile setting.
@@ -201,19 +277,49 @@
     {
         // Resolve the current user first: it seeds the preferred grade scale and the default setter,
         // and stamps the busy lease so the deploy gate knows who is mid-edit.
-        var currentUser = await CurrentUserService.GetCurrentUserAsync();
-        _preferFont = currentUser.PreferFontGrades;
+        User? currentUser = null;
+        try
+        {
+            currentUser = await CurrentUserService.GetCurrentUserAsync();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Nobody is signed in. A registered tablet on ITS OWN wall stays and sets a boulder; the
+            // wall's opt-in and the kiosk key are re-checked at the service when Publish is tapped,
+            // so this check is only about which screen to show. Every other anonymous visitor goes
+            // to sign in, exactly as the removed [Authorize] attribute would have sent them.
+            if (!KioskViewing.AllowsAnonymousViewOf(KioskContext, WallId))
+            {
+                Navigation.NavigateTo("/account/login", replace: true);
+                return;
+            }
 
-        // The whole page is "create mode": hold a busy lease while it's mounted.
-        _editLease = EditActivity.BeginBoulderCreate(WallId, currentUser.Id);
+            _isAnonymous = true;
+        }
+
+        _preferFont = currentUser?.PreferFontGrades ?? true;
+
+        // The whole page is "create mode": hold a busy lease while it's mounted. An anonymous kiosk
+        // edit is stamped to the Ghost row, so the deploy gate still sees the tablet as busy.
+        _editLease = EditActivity.BeginBoulderCreate(WallId, currentUser?.Id ?? GhostUser.Id);
 
         _wall = await WallService.GetWallAsync(WallId);
+
+        // The wall's opt-in, checked BEFORE any of the form is built. KioskViewing above only says
+        // the tablet may look at this wall; setting on it is a separate, opt-in permission that
+        // defaults to off, and finding that out at Publish time is finding it out too late.
+        if (_wall != null && _isAnonymous && !_wall.AllowAnonymousKioskSetting)
+        {
+            _anonymousSettingNotAllowed = true;
+            return;
+        }
+
         if (_wall != null)
         {
             // Foot holds are always selectable; whether a hold is hand, foot or both
             // is now marked per hold from the picker.
             _holds = _wall.Holds.ToList();
-            _members = await WallService.GetMembersAsync(WallId);
+            await LoadSetterOptionsAsync();
 
             // The wall's boulders already came back with the wall, so the suggested name costs no
             // extra round-trip. Pre-filling it means a kiosk tablet without a keyboard can publish.
@@ -222,8 +328,10 @@
 
             // Pre-select the current user as the default setter, but only when they're actually a
             // member offered in the list (so the checkbox reflects the selection). Adding others stays
-            // a conscious choice made in the collapsed setter card.
-            if (_members.Any(m => m.UserId == currentUser.Id))
+            // a conscious choice made in the collapsed setter card. Nothing is pre-selected for an
+            // anonymous tablet — it has no idea who is holding it, and guessing would credit the
+            // wrong person.
+            if (currentUser is not null && _setterOptions.Any(o => o.UserId == currentUser.Id))
             {
                 _selectedSetters.Add(currentUser.Id);
             }
@@ -302,6 +410,27 @@
     {
         _currentPanel = panel;
         RefreshPickerHolds();
+    }
+
+    /// <summary>
+    /// Fills the tickable setter list. Wall members for a signed-in setter; for an anonymous kiosk,
+    /// only members who CONSENTED to this wall's kiosk — the same allow-list the tablet's own member
+    /// picker uses, and the same one the server re-validates against, so the screen cannot offer
+    /// somebody the write would then refuse.
+    /// </summary>
+    private async Task LoadSetterOptionsAsync()
+    {
+        if (_isAnonymous)
+        {
+            var consenting = await KioskService.GetConsentingUsersAsync(WallId);
+            _setterOptions = consenting.Select(u => new SetterOption(u.UserId, u.Name)).ToList();
+            return;
+        }
+
+        var members = await WallService.GetMembersAsync(WallId);
+        _setterOptions = members
+            .Select(m => new SetterOption(m.UserId, m.User.Name))
+            .ToList();
     }
 
     // Re-rolls the suggested name, treating the current one as taken so shuffling always visibly changes.

@@ -1,4 +1,6 @@
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Entities;
+using Blocwerk.Core.Helpers;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Services;
@@ -64,5 +66,32 @@ public static class BoulderSetterNames
         }
 
         return string.Join(", ", usable.Take(usable.Count - 1)) + " & " + usable[^1];
+    }
+
+    /// <summary>
+    /// Who a boulder is credited to, everywhere it is shown: the setter(s) when any are recorded,
+    /// otherwise whoever added it, otherwise <see cref="PlaceholderIdentity.DisplayName"/>.
+    /// </summary>
+    /// <remarks>
+    /// The ONE formatter for a byline — the wall list's <c>AuthorDisplay</c> and the boulder detail
+    /// page both call it, so "by X" and "set by X" can never disagree. It also never leaks a system
+    /// row's raw name: a boulder set at an unattended kiosk has the Ghost row as its creator and
+    /// renders as the placeholder, exactly like a boulder whose setter later deleted their account
+    /// and like one that never recorded a setter at all. Three different situations, one word.
+    /// </remarks>
+    public static string Describe(IEnumerable<string?>? setterNames, User? creator)
+    {
+        var setters = Format(setterNames);
+        if (!string.IsNullOrEmpty(setters))
+        {
+            return setters;
+        }
+
+        if (creator is null || GhostUser.Is(creator.Id) || string.IsNullOrWhiteSpace(creator.Name))
+        {
+            return PlaceholderIdentity.DisplayName;
+        }
+
+        return creator.Name;
     }
 }

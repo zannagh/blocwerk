@@ -99,7 +99,8 @@ public partial class PasswordLoginService : IPasswordLoginService
         await using var dbContext = await dbContextFactory.CreateDbContextAsync();
         return await dbContext.Users
             .AsNoTracking()
-            .FirstOrDefaultAsync(u => u.LoginUsername != null
+            .FirstOrDefaultAsync(u => u.DeletedAt == null
+                                      && u.LoginUsername != null
                                       && u.PasswordHash != null
                                       && u.LoginUsername.ToLower() == normalized);
     }
@@ -133,7 +134,10 @@ public partial class PasswordLoginService : IPasswordLoginService
         await using var dbContext = await dbContextFactory.CreateDbContextAsync();
         return await dbContext.Users
             .AsNoTracking()
-            .FirstOrDefaultAsync(u => u.Email != null && u.EmailVerified && u.Email == normalized);
+            .FirstOrDefaultAsync(u => u.DeletedAt == null
+                                      && u.Email != null
+                                      && u.EmailVerified
+                                      && u.Email == normalized);
     }
 
     public async Task<LocalUserCreateResult> CreateLocalUserAsync(string loginUsername, string password, string email)
