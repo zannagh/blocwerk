@@ -74,19 +74,22 @@ public class BetaVideoService : IBetaVideoService
     private readonly IActivityLogService activityLogService;
     private readonly IBetaVideoStorage storage;
     private readonly ILogger<BetaVideoService> logger;
+    private readonly IPushNotificationService? pushNotificationService;
 
     public BetaVideoService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         ICurrentUserService currentUserService,
         IActivityLogService activityLogService,
         IBetaVideoStorage storage,
-        ILogger<BetaVideoService> logger)
+        ILogger<BetaVideoService> logger,
+        IPushNotificationService? pushNotificationService = null)
     {
         this.dbContextFactory = dbContextFactory;
         this.currentUserService = currentUserService;
         this.activityLogService = activityLogService;
         this.storage = storage;
         this.logger = logger;
+        this.pushNotificationService = pushNotificationService;
     }
 
     public async Task<BetaVideoInfo> AddVideoFromFileAsync(
@@ -154,6 +157,13 @@ public class BetaVideoService : IBetaVideoService
                 video.Id, sizeBytes, boulderId, user.Id);
 
             await activityLogService.LogAsync(boulder.WallId, boulderId, ActivityType.BetaVideoUploaded);
+
+            // After the commit: tell the boulder's setters + creator. Guarded internally, so it can
+            // never break or block the upload.
+            if (pushNotificationService is not null)
+            {
+                await pushNotificationService.NotifyBetaAsync(boulderId, user.Id);
+            }
 
             return new BetaVideoInfo(
                 video.Id,

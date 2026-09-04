@@ -121,6 +121,19 @@ public class User : IEquatable<User>
     public bool PreferFontGrades { get; set; } = true;
 
     /// <summary>
+    /// Whether the Tools/Guides button is shown in the bottom navigation bar for this user. True (the
+    /// default) restores it; false hides it. Kiosk tablets always show Tools regardless of this flag.
+    /// </summary>
+    public bool ShowToolsInNav { get; set; } = true;
+
+    /// <summary>
+    /// The notification types this user has opted OUT of, stored as a <see cref="NotificationType"/>
+    /// bitmask. <see cref="NotificationType.None"/> (0, the default) means every type is on, so any
+    /// type added later is on-by-default for existing users. A set bit means that type is disabled.
+    /// </summary>
+    public NotificationType DisabledNotifications { get; set; } = NotificationType.None;
+
+    /// <summary>
     /// The OAuth provider identities linked to this user. A user is born from one OAuth login and may
     /// later own several (account linking). Legacy users and dev logins may have none until their next
     /// login attaches one lazily.
@@ -134,6 +147,9 @@ public class User : IEquatable<User>
     public ICollection<HangboardSession> HangboardSessions { get; set; } = [];
 
     public ICollection<PullupSession> PullupSessions { get; set; } = [];
+
+    /// <summary>The user's active Web Push subscriptions, one per device/browser.</summary>
+    public ICollection<PushSubscription> PushSubscriptions { get; set; } = [];
 
     /// <summary>
     /// The effective display name: the user-chosen <see cref="CustomDisplayName"/> when set,

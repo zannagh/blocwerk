@@ -1,4 +1,5 @@
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
 
 namespace Blocwerk.Core.Abstractions;
 
@@ -40,6 +41,20 @@ public interface ICurrentUserService
     /// <see cref="Entities.User.PreferFontGrades"/>. Invalidates the cached user.
     /// </summary>
     Task SetPreferFontGradesAsync(bool preferFont);
+
+    /// <summary>
+    /// Sets whether the current user sees the Tools/Guides button in the bottom navigation bar.
+    /// Persisted on the user row (<see cref="Entities.User.ShowToolsInNav"/>) and invalidates the
+    /// cached user. Kiosk tablets always show Tools regardless of this setting.
+    /// </summary>
+    Task SetShowToolsInNavAsync(bool show);
+
+    /// <summary>
+    /// Enables or disables a single notification type for the current user. The stored value is an
+    /// opt-OUT bitmask (<see cref="Entities.User.DisabledNotifications"/>): <paramref name="disabled"/>
+    /// true sets the type's bit (opts out), false clears it (opts back in). Invalidates the cached user.
+    /// </summary>
+    Task SetNotificationDisabledAsync(NotificationType type, bool disabled);
 
     /// <summary>
     /// Sets the current user's chosen display name. A null/whitespace value clears it, so the UI

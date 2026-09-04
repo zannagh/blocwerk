@@ -97,6 +97,8 @@ public class BlocwerkDbContext : DbContext
 
     public DbSet<UserIdentity> UserIdentities => Set<UserIdentity>();
 
+    public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
+
     public DbSet<EmailVerificationCode> EmailVerificationCodes => Set<EmailVerificationCode>();
 
     public DbSet<TopLoggerConnection> TopLoggerConnections => Set<TopLoggerConnection>();
@@ -133,6 +135,7 @@ public class BlocwerkDbContext : DbContext
 
         ConfigureUser(modelBuilder);
         ConfigureUserIdentity(modelBuilder);
+        ConfigurePushSubscription(modelBuilder);
         ConfigureEmailVerificationCode(modelBuilder);
         ConfigureWall(modelBuilder);
         ConfigureWallMember(modelBuilder);
@@ -438,6 +441,25 @@ public class BlocwerkDbContext : DbContext
             entity.HasIndex(i => new { i.Provider, i.ProviderUserId }).IsUnique();
 
             entity.HasIndex(i => i.UserId);
+        });
+    }
+
+    private static void ConfigurePushSubscription(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<PushSubscription>(entity =>
+        {
+            // A push subscription belongs to the user aggregate; deleting the user takes their
+            // subscriptions with it.
+            entity.HasOne(s => s.User)
+                .WithMany(u => u.PushSubscriptions)
+                .HasForeignKey(s => s.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Delivery + upsert key: one row per push endpoint.
+            entity.HasIndex(s => s.Endpoint).IsUnique();
+
+            // Recipient fan-out loads "all subscriptions for these user ids".
+            entity.HasIndex(s => s.UserId);
         });
     }
 

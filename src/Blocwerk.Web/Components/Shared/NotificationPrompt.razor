@@ -1,0 +1,215 @@
+@rendermode InteractiveServer
+@implements IDisposable
+@inject IJSRuntime JS
+@inject Blocwerk.Core.Abstractions.IKioskContext KioskContext
+@inject Blocwerk.Core.Services.IPushNotificationService Push
+@inject Blocwerk.Core.Abstractions.ICurrentUserService CurrentUserService
+
+@* Twin of InstallPrompt, one step downstream of it: an installed PWA is where a browser will deliver
+   push at all, so this only ever surfaces once the app is installed. Every other reason to stay hidden
+   (unsupported, permission already answered, dismissed, already subscribed) is a client fact, so
+   bwPush decides it and this renders nothing until it has — which is why the banner can never flash.
+   Never on a kiosk (set up for someone who isn't standing at it) and never for a signed-out visitor
+   (there is no user row to attach a subscription to). Dormant with no error when VAPID is unconfigured.
+
+   iOS gotcha: Notification.requestPermission() must run inside the native click gesture. A Blazor
+   @onclick would round-trip to the server first and lose the user-activation, so the Enable button is
+   NOT a Blazor handler — bwPush.bindEnable wires permission+subscribe straight onto its DOM click and
+   calls back into OnDeviceSubscribed / OnEnableFailed. "Not now"/"Don't ask again" need no gesture, so
+   they stay ordinary Blazor handlers. *@
+@if (_show)
+{
+    <div class="bw-install" role="region" aria-label="Enable notifications">
+        <div class="bw-install-body">
+            <p class="bw-install-title">Get notified about your walls.</p>
+            @if (_error != null)
+            {
+                <p class="bw-install-hint">@_error</p>
+            }
+        </div>
+        <div class="bw-install-actions">
+            <button type="button" class="bw-install-accept" @ref="_enableButton">Enable notifications</button>
+            <button type="button" class="bw-install-dismiss" @onclick="Snooze">Not now</button>
+            <button type="button" class="bw-install-dismiss" @onclick="Never">Don't ask again</button>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _show;
+    private bool _bound;
+
+    // Non-null once a subscribe attempt failed after permission was granted (e.g. the browser refused
+    // the subscription). Shown as a hint in place of a silent no-op.
+    private string? _error;
+
+    private ElementReference _enableButton;
+    private DotNetObjectReference<NotificationPrompt>? _dotNetRef;
+
+    protected override void OnInitialized()
+    {
+        _dotNetRef = DotNetObjectReference.Create(this);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            if (KioskContext.IsKiosk)
+            {
+                return;
+            }
+
+            await InitializeAsync();
+            return;
+        }
+
+        // The Enable button only exists in the DOM once the banner is shown; bind its native click the
+        // render after _show flips true. Idempotent: bwPush.bindEnable guards against double-binding too.
+        if (_show && !_bound)
+        {
+            _bound = true;
+            try
+            {
+                await JS.InvokeVoidAsync("bwPush.bindEnable", _enableButton, _dotNetRef, Push.PublicKey);
+            }
+            catch (Exception)
+            {
+                /* interop gone — nothing to bind, the banner just won't act. */
+            }
+        }
+    }
+
+    private async Task InitializeAsync()
+    {
+        // No VAPID keys → the feature is dormant. Nothing to offer, no error to show.
+        if (Push.PublicKey is null)
+        {
+            return;
+        }
+
+        var user = await GetCurrentUserOrNullAsync();
+        if (user is null)
+        {
+            return;
+        }
+
+        // Silent refresh first: if this device already has a subscription, re-save it (endpoints
+        // rotate, and the server row can be stale) and never show the banner. Wrapped so a JS or
+        // persist failure never throws into the circuit — it just falls through to maybe showing it.
+        try
+        {
+            var existing = await JS.InvokeAsync<PushSubscriptionDto?>("bwPush.getExisting");
+            if (existing is not null && existing.IsComplete)
+            {
+                await SaveAsync(user.Id, existing);
+                return;
+            }
+        }
+        catch (Exception)
+        {
+            /* getExisting/persist failed — fall through and let shouldShow decide. */
+        }
+
+        try
+        {
+            if (await JS.InvokeAsync<bool>("bwPush.shouldShow"))
+            {
+                _show = true;
+                StateHasChanged();
+            }
+        }
+        catch (Exception)
+        {
+            /* interop gone — leave the banner hidden. */
+        }
+    }
+
+    // Called from bwPush.bindEnable's gesture handler on a successful subscribe. Persists the device's
+    // subscription, then retires the banner.
+    [JSInvokable]
+    public async Task OnDeviceSubscribed(string endpoint, string p256dh, string auth, string userAgent)
+    {
+        _error = null;
+        try
+        {
+            var user = await GetCurrentUserOrNullAsync();
+            if (user is not null)
+            {
+                await Push.SaveSubscriptionAsync(user.Id, endpoint, p256dh, auth, userAgent);
+            }
+
+            _show = false;
+        }
+        catch (Exception)
+        {
+            _error = "Couldn't enable notifications. You can try again from your profile.";
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    // Called from the gesture handler when permission wasn't granted or the subscribe failed.
+    [JSInvokable]
+    public async Task OnEnableFailed(string permission)
+    {
+        if (permission == "denied")
+        {
+            // The browser will not re-prompt once denied, so retiring the banner is the honest move.
+            _show = false;
+        }
+        else
+        {
+            _error = "Couldn't enable notifications. You can try again from your profile.";
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    // "Not now" is bounded (14 days, in bwPush); "Don't ask again" is permanent.
+    private async Task Snooze()
+    {
+        await JS.InvokeVoidAsync("bwPush.snooze");
+        _show = false;
+    }
+
+    private async Task Never()
+    {
+        await JS.InvokeVoidAsync("bwPush.never");
+        _show = false;
+    }
+
+    private async Task SaveAsync(Guid userId, PushSubscriptionDto sub)
+    {
+        var userAgent = await JS.InvokeAsync<string>("bwPush.userAgent");
+        await Push.SaveSubscriptionAsync(userId, sub.Endpoint!, sub.P256dh!, sub.Auth!, userAgent);
+    }
+
+    // GetCurrentUserAsync throws for anonymous callers; a signed-out visitor gets no banner.
+    private async Task<Blocwerk.Core.Entities.User?> GetCurrentUserOrNullAsync()
+    {
+        try
+        {
+            return await CurrentUserService.GetCurrentUserAsync();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    public void Dispose()
+    {
+        _dotNetRef?.Dispose();
+    }
+
+    private class PushSubscriptionDto
+    {
+        public string? Endpoint { get; set; }
+        public string? P256dh { get; set; }
+        public string? Auth { get; set; }
+
+        public bool IsComplete =>
+            !string.IsNullOrEmpty(Endpoint) && !string.IsNullOrEmpty(P256dh) && !string.IsNullOrEmpty(Auth);
+    }
+}

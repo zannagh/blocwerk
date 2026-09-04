@@ -175,6 +175,7 @@ public class BoulderService : IBoulderService
     private readonly IKioskContext? _kioskContext;
     private readonly IKioskKeyValidator? _kioskKeyValidator;
     private readonly KioskAnonymousSettingThrottle? _kioskThrottle;
+    private readonly IPushNotificationService? _pushNotificationService;
 
     /// <summary>Creates the service.</summary>
     /// <remarks>
@@ -197,7 +198,8 @@ public class BoulderService : IBoulderService
         ILogger<BoulderService> logger,
         IKioskContext? kioskContext = null,
         IKioskKeyValidator? kioskKeyValidator = null,
-        KioskAnonymousSettingThrottle? kioskThrottle = null)
+        KioskAnonymousSettingThrottle? kioskThrottle = null,
+        IPushNotificationService? pushNotificationService = null)
     {
         _dbContextFactory = dbContextFactory;
         _currentUserService = currentUserService;
@@ -206,6 +208,7 @@ public class BoulderService : IBoulderService
         _kioskContext = kioskContext;
         _kioskKeyValidator = kioskKeyValidator;
         _kioskThrottle = kioskThrottle;
+        _pushNotificationService = pushNotificationService;
     }
 
     public async Task<Boulder> CreateBoulderAsync(
@@ -355,6 +358,14 @@ public class BoulderService : IBoulderService
                 {
                     await _activityLogService.LogAsync(wallId, boulder.Id, ActivityType.BoulderCreated, name);
                 }
+
+                // Notify at the SAME gate as the BoulderCreated activity: only when the boulder goes
+                // live, never for a draft (a draft that is published later notifies in PublishBoulderAsync).
+                // creatorId is the Ghost id for an anonymous-kiosk create, passed through as-is.
+                if (_pushNotificationService is not null)
+                {
+                    await _pushNotificationService.NotifyBoulderAddedAsync(wallId, boulder.Id, creatorId);
+                }
             }
 
             return boulder;
@@ -423,6 +434,15 @@ public class BoulderService : IBoulderService
                 boulderId, boulder.WallId, user.Id);
 
             await _activityLogService.LogAsync(boulder.WallId, boulderId, ActivityType.BoulderCreated, boulder.Name);
+
+            // The draft has just gone live (the !IsDraft early return above means we only reach here
+            // on the draft->live transition), so this is the single notify for a boulder that was
+            // created as a draft and published later.
+            if (_pushNotificationService is not null)
+            {
+                await _pushNotificationService.NotifyBoulderAddedAsync(boulder.WallId, boulderId, user.Id);
+            }
+
             return boulder;
         }
         catch (Exception ex)

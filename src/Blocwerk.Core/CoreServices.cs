@@ -51,6 +51,23 @@ public static class CoreServices
         builder.Services.AddSingleton<IMaintenanceAnnouncer, MaintenanceAnnouncer>();
         builder.Services.AddSingleton<DomainChangeInterceptor>();
 
+        // Web Push. VAPID credentials are bound from the top-level "Vapid" section (env VAPID__SUBJECT,
+        // VAPID__PUBLICKEY, VAPID__PRIVATEKEY). Missing/empty keys are NOT an error: the service becomes
+        // a no-op and PushSenderBackgroundService logs one warning at startup. The service is a singleton
+        // because it feeds a shared bounded channel that the background sender drains off the request
+        // thread — recipient resolution stays inline, the outbound HTTP does not.
+        var vapidOptions = builder.Configuration.GetSection("Vapid").Get<VapidOptions>() ?? new VapidOptions();
+        builder.Services.AddSingleton(vapidOptions);
+        builder.Services.AddSingleton<PushSendQueue>();
+        builder.Services.AddSingleton<IPushNotificationService, PushNotificationService>();
+        builder.Services.AddHostedService<PushSenderBackgroundService>();
+
+        // Fires deploy notifications once, and ONLY on a genuine new build (entry-assembly MVID vs a
+        // persisted marker — a restart notifies no one). A routine deploy notifies site admins only; a
+        // maintenance deploy (Deploy:MaintenanceWindow flag OR a touched keys/maintenance-window marker)
+        // broadcasts "app back online" to all subscribers instead. See DeployNotificationService.
+        builder.Services.AddHostedService<DeployNotificationService>();
+
         // Registers DbContextOptions<BlocwerkDbContext> (singleton) and EF's own factory. The
         // IDbContextFactory<BlocwerkDbContext> registration is then REPLACED below, so nothing
         // resolves EF's unstamped factory by accident.

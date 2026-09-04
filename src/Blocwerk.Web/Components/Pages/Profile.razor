@@ -2,7 +2,9 @@
 @page "/profile/{UserId:guid}"
 @rendermode InteractiveServer
 @attribute [Authorize]
+@implements IDisposable
 @inject ICurrentUserService CurrentUserService
+@inject Blocwerk.Core.Services.IPushNotificationService Push
 @inject IProgressionService ProgressionService
 @inject IWallService WallService
 @inject Blocwerk.Core.Configuration.BlocwerkSettings Settings
@@ -181,6 +183,76 @@
                     <p class="field-error">@_preferFontError</p>
                 }
             </div>
+
+            <div class="section profile-section-card">
+                <h2>Tools button</h2>
+                <label class="toggle-label">
+                    @* @key re-syncs the native checkbox to the bound value: on a failed save we bump
+                       _settingsRev so Blazor recreates the input (its recorded value is unchanged, so a
+                       plain diff would leave it visually flipped). *@
+                    <input type="checkbox" checked="@(_viewer?.ShowToolsInNav ?? true)"
+                           @onchange="OnShowToolsInNavChange" @key="(_settingsRev, 0)" />
+                    Show Tools in navigation bar
+                </label>
+                <p class="member-since">
+                    Puts the Tools &amp; guides button back in the bottom bar. Wall tablets always show
+                    it regardless of this setting.
+                </p>
+                @if (_showToolsError != null)
+                {
+                    <p class="field-error">@_showToolsError</p>
+                }
+            </div>
+
+            @* Self-only (inside the _isSelf block) but deliberately NOT hidden on kiosk: which push
+               notifications a member wants is a per-person choice they can make from any device. The
+               device-level permission prompt is handled elsewhere (NotificationPrompt). *@
+            <details class="section profile-collapsible">
+                <summary>Notifications</summary>
+                <p class="member-since">
+                    These apply once notifications are enabled on this device. Turn a type off to stop
+                    being notified about it.
+                </p>
+                @* Device-level entry point, independent of the transient NotificationPrompt banner:
+                   shown when this device is installed + supported but not actually subscribed (permission
+                   not granted, or the PushManager subscription was dropped — storage clear, rotation, a
+                   prior unsubscribe — which the banner's permission==='default' gate would never re-offer).
+                   Wired through the SAME gesture-bound path as the banner (bwPush.bindEnable →
+                   OnDeviceSubscribed/OnEnableFailed) so iOS keeps the user-activation. Hidden once VAPID
+                   is unconfigured or the device is already subscribed. *@
+                @if (_showEnablePush)
+                {
+                    <div class="field-actions">
+                        <button type="button" class="btn-primary" @ref="_pushEnableButton">Enable notifications on this device</button>
+                    </div>
+                    <p class="member-since">This device isn't receiving notifications yet. Turn them on here.</p>
+                }
+                @if (_pushEnableInfo != null)
+                {
+                    <p class="field-label">@_pushEnableInfo</p>
+                }
+                @if (_pushEnableError != null)
+                {
+                    <p class="field-error">@_pushEnableError</p>
+                }
+                <div class="rules-block">
+                    @foreach (var option in NotificationOptions)
+                    {
+                        <label class="checkbox-label">
+                            @* @key re-syncs the native checkbox after a failed save (see Tools toggle). *@
+                            <input type="checkbox"
+                                   checked="@(!(_viewer?.DisabledNotifications.HasFlag(option.Type) ?? false))"
+                                   @onchange="e => OnNotificationToggle(option.Type, e)"
+                                   @key="(_settingsRev, option.Type)" />
+                            @option.Label
+                        </label>
+                    }
+                </div>
+                @if (_notificationError != null)
+                {
+                    <p class="field-error">@_notificationError</p>
+                }
+            </details>
 
             @* Account security lives on your OWN device, never on a wall tablet. These writes are
                refused at the service (CurrentUserService.EnsureNotKiosk) and, for the e-mail, inline
@@ -769,6 +841,35 @@
     private List<Wall> _myWalls = [];
     private string? _homeWallError;
     private string? _preferFontError;
+    private string? _showToolsError;
+    private string? _notificationError;
+
+    // Bumped in a failed-save catch so the settings checkboxes' @key changes and Blazor recreates them
+    // bound to the true server value — a native checkbox left visually flipped isn't patched back by a
+    // plain diff, because the recorded value never changed.
+    private int _settingsRev;
+
+    // "Enable notifications on this device" control in the Notifications card. Detected once the circuit
+    // can call JS; its button is bound to a native click gesture (bwPush.bindEnable) exactly like the
+    // NotificationPrompt banner, so iOS keeps the user-activation across requestPermission.
+    private bool _showEnablePush;
+    private bool _pushEnableBound;
+    private ElementReference _pushEnableButton;
+    private DotNetObjectReference<Profile>? _pushDotNetRef;
+    private string? _pushEnableInfo;
+    private string? _pushEnableError;
+
+    // Friendly labels for the per-type notification opt-out checkboxes. Order mirrors the enum.
+    private static readonly (NotificationType Type, string Label)[] NotificationOptions =
+    [
+        (NotificationType.SessionStarted, "Someone starts a session on your wall"),
+        (NotificationType.AppOnline, "App is back online after an update"),
+        (NotificationType.BoulderAdded, "A boulder is added to your wall"),
+        (NotificationType.CommentOnYourBoulder, "Someone comments on a boulder you set"),
+        (NotificationType.SendOnYourBoulder, "Someone sends/flashes a boulder you set"),
+        (NotificationType.BetaOnYourBoulder, "Someone adds a beta video to a boulder you set"),
+        (NotificationType.MemberJoined, "Someone joins your wall"),
+    ];
 
     // Client-only rendering preference (stored in a cookie via bwPrefs, no server persistence): the
     // magnification of the long-press zoom lens. Default 8×; read once the circuit can call JS.
@@ -853,7 +954,128 @@
             {
                 /* JS unavailable (prerender/circuit gone) — keep the default. */
             }
+
+            if (_isSelf)
+            {
+                await DetectPushEnableAsync();
+            }
         }
+
+        // Bind the native click on the "enable on this device" button the render after it appears.
+        if (_isSelf && _showEnablePush && !_pushEnableBound)
+        {
+            _pushEnableBound = true;
+            try
+            {
+                _pushDotNetRef ??= DotNetObjectReference.Create(this);
+                await JS.InvokeVoidAsync("bwPush.bindEnable", _pushEnableButton, _pushDotNetRef, Push.PublicKey);
+            }
+            catch (Exception)
+            {
+                /* interop gone — leave the button inert. */
+            }
+        }
+    }
+
+    // Decides whether to offer the device-level "enable notifications" control: installed + supported,
+    // VAPID configured, and this device not already subscribed (permission not granted, or the
+    // PushManager subscription is gone — a state the transient banner's default-permission gate never
+    // re-offers). Silent on any interop failure.
+    private async Task DetectPushEnableAsync()
+    {
+        if (Push.PublicKey is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (!await JS.InvokeAsync<bool>("bwPush.isSupported")
+                || !await JS.InvokeAsync<bool>("bwPush.isInstalled"))
+            {
+                return;
+            }
+
+            bool needsEnable;
+            var permission = await JS.InvokeAsync<string>("bwPush.permission");
+            if (permission != "granted")
+            {
+                needsEnable = true;
+            }
+            else
+            {
+                var existing = await JS.InvokeAsync<PushSub?>("bwPush.getExisting");
+                needsEnable = existing is null || !existing.IsComplete;
+            }
+
+            if (needsEnable)
+            {
+                _showEnablePush = true;
+                StateHasChanged();
+            }
+        }
+        catch (Exception)
+        {
+            /* interop gone — leave the control hidden. */
+        }
+    }
+
+    // Called from bwPush.bindEnable's gesture handler on a successful subscribe. Persists the device's
+    // subscription and hides the control.
+    [JSInvokable]
+    public async Task OnDeviceSubscribed(string endpoint, string p256dh, string auth, string userAgent)
+    {
+        _pushEnableError = null;
+        try
+        {
+            if (_viewer != null)
+            {
+                await Push.SaveSubscriptionAsync(_viewer.Id, endpoint, p256dh, auth, userAgent);
+            }
+
+            _showEnablePush = false;
+            _pushEnableInfo = "Notifications are on for this device.";
+        }
+        catch (Exception)
+        {
+            _pushEnableError = "Couldn't enable notifications on this device. Please try again.";
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    // Called from the gesture handler when permission wasn't granted or the subscribe failed.
+    [JSInvokable]
+    public async Task OnEnableFailed(string permission)
+    {
+        if (permission == "denied")
+        {
+            _pushEnableError = "This device has blocked notifications. Turn them on in your browser settings.";
+            _showEnablePush = false;
+        }
+        else
+        {
+            _pushEnableError = "Couldn't enable notifications on this device. Please try again.";
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        _pushDotNetRef?.Dispose();
+    }
+
+    // The plain shape bwPush.getExisting returns, so DetectPushEnableAsync can tell a live subscription
+    // from a dropped one.
+    private sealed class PushSub
+    {
+        public string? Endpoint { get; set; }
+        public string? P256dh { get; set; }
+        public string? Auth { get; set; }
+
+        public bool IsComplete =>
+            !string.IsNullOrEmpty(Endpoint) && !string.IsNullOrEmpty(P256dh) && !string.IsNullOrEmpty(Auth);
     }
 
     private async Task OnZoomLensMagChange(ChangeEventArgs e)
@@ -1059,6 +1281,58 @@
         catch (Exception)
         {
             _preferFontError = "Couldn't update your preferred grading system. Please try again.";
+        }
+    }
+
+    private async Task OnShowToolsInNavChange(ChangeEventArgs e)
+    {
+        bool show = e.Value is true;
+
+        try
+        {
+            await CurrentUserService.SetShowToolsInNavAsync(show);
+            _showToolsError = null;
+            if (_viewer != null)
+            {
+                _viewer.ShowToolsInNav = show;
+            }
+        }
+        catch (Exception)
+        {
+            _showToolsError = "Couldn't update your Tools button setting. Please try again.";
+            // Save failed: _viewer still holds the true value, but the native checkbox flipped. Force a
+            // fresh input (new @key) so it re-renders to the real state instead of staying flipped.
+            _settingsRev++;
+        }
+    }
+
+    // Opt-OUT semantics: a checked box means the type is ENABLED (its bit is NOT set). Persist the
+    // inverse and mirror it into the local mask so the box reflects the change without a reload.
+    private async Task OnNotificationToggle(NotificationType type, ChangeEventArgs e)
+    {
+        bool isChecked = e.Value is true;
+
+        try
+        {
+            await CurrentUserService.SetNotificationDisabledAsync(type, disabled: !isChecked);
+            _notificationError = null;
+            if (_viewer != null)
+            {
+                if (isChecked)
+                {
+                    _viewer.DisabledNotifications &= ~type;
+                }
+                else
+                {
+                    _viewer.DisabledNotifications |= type;
+                }
+            }
+        }
+        catch (Exception)
+        {
+            _notificationError = "Couldn't update your notification settings. Please try again.";
+            // See OnShowToolsInNavChange: re-key the checkboxes so the failed one snaps back.
+            _settingsRev++;
         }
     }
 

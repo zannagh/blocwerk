@@ -28,17 +28,20 @@ public class CommentService : ICommentService
     private readonly ICurrentUserService _currentUserService;
     private readonly IActivityLogService _activityLogService;
     private readonly ILogger<CommentService> _logger;
+    private readonly IPushNotificationService? _pushNotificationService;
 
     public CommentService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         ICurrentUserService currentUserService,
         IActivityLogService activityLogService,
-        ILogger<CommentService> logger)
+        ILogger<CommentService> logger,
+        IPushNotificationService? pushNotificationService = null)
     {
         _dbContextFactory = dbContextFactory;
         _currentUserService = currentUserService;
         _activityLogService = activityLogService;
         _logger = logger;
+        _pushNotificationService = pushNotificationService;
     }
 
     public async Task<BoulderComment> AddCommentAsync(Guid boulderId, string text, Guid? clientRequestId = null)
@@ -85,6 +88,13 @@ public class CommentService : ICommentService
             _logger.LogInformation("Comment {CommentId} added on boulder {BoulderId} by {UserId}", comment.Id, boulderId, user.Id);
 
             await _activityLogService.LogAsync(boulder.WallId, boulderId, ActivityType.CommentAdded);
+
+            // After the commit: tell the boulder's setters + creator. Guarded internally, so it can
+            // never break or block adding the comment.
+            if (_pushNotificationService is not null)
+            {
+                await _pushNotificationService.NotifyCommentAsync(boulderId, user.Id);
+            }
 
             comment.User = user;
             return comment;

@@ -30,15 +30,18 @@ public class SessionService : ISessionService
     private readonly IDbContextFactory<BlocwerkDbContext> _dbContextFactory;
     private readonly ICurrentUserService _currentUserService;
     private readonly ILogger<SessionService> _logger;
+    private readonly IPushNotificationService? _pushNotificationService;
 
     public SessionService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         ICurrentUserService currentUserService,
-        ILogger<SessionService> logger)
+        ILogger<SessionService> logger,
+        IPushNotificationService? pushNotificationService = null)
     {
         _dbContextFactory = dbContextFactory;
         _currentUserService = currentUserService;
         _logger = logger;
+        _pushNotificationService = pushNotificationService;
     }
 
     public async Task<ClimbingSession> StartSessionAsync(Guid wallId)
@@ -73,6 +76,13 @@ public class SessionService : ISessionService
             BlocwerkMetrics.RecordSessionStarted(wallId);
 
             _logger.LogInformation("Session {SessionId} started on wall {WallId} by {UserId}", session.Id, wallId, user.Id);
+
+            // After the commit: tell the wall's other members. Internally guarded, so a push failure
+            // never surfaces here and can never break or block starting the session.
+            if (_pushNotificationService is not null)
+            {
+                await _pushNotificationService.NotifySessionStartedAsync(wallId, user.Id);
+            }
 
             session.Wall = await db.Walls.FirstAsync(w => w.Id == wallId);
             return session;

@@ -19,6 +19,7 @@ public class WallService : IWallService
     private readonly IActivityLogService _activityLogService;
     private readonly ILogger<WallService> _logger;
     private readonly IKioskContext? _kioskContext;
+    private readonly IPushNotificationService? _pushNotificationService;
 
     /// <summary>Creates the service.</summary>
     /// <remarks>
@@ -34,7 +35,8 @@ public class WallService : IWallService
         IImageAlignmentService imageAlignmentService,
         IActivityLogService activityLogService,
         ILogger<WallService> logger,
-        IKioskContext? kioskContext = null)
+        IKioskContext? kioskContext = null,
+        IPushNotificationService? pushNotificationService = null)
     {
         _dbContextFactory = dbContextFactory;
         _currentUserService = currentUserService;
@@ -43,6 +45,7 @@ public class WallService : IWallService
         _activityLogService = activityLogService;
         _logger = logger;
         _kioskContext = kioskContext;
+        _pushNotificationService = pushNotificationService;
     }
 
     public async Task<Wall> CreateWallAsync(string name, string? description, int angle = 0)
@@ -1303,6 +1306,60 @@ public class WallService : IWallService
         }
     }
 
+    public async Task<string> GetOrCreateShareTokenAsync(Guid wallId)
+    {
+        using var op = BlocwerkMetrics.TimeOperation("Wall.GetOrCreateShareToken", wallId);
+        try
+        {
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
+
+            // A share link outlives any session, so kiosks never mint one — same reasoning as
+            // GenerateShareTokenAsync. Below this, the member gate is enough: unlike regeneration,
+            // handing out the existing link is something any member of the wall may do.
+            KioskGuard.EnsureNotKiosk(_kioskContext, db, "Sharing an invite link");
+
+            // IgnoreQueryFilters so a bare-owner (no member row) can still be found: the Wall filter
+            // gates on membership only, not ownership, so a filtered read would hide a legacy owner's
+            // own wall. Authorization is enforced explicitly just below, matching the owner branches of
+            // WallAdminGuard.
+            var wall = await db.Walls.IgnoreQueryFilters().FirstOrDefaultAsync(w => w.Id == wallId);
+            if (wall == null)
+            {
+                _logger.LogWarning("Wall {WallId} not found for share token lookup by {UserId}", wallId, user.Id);
+                throw new InvalidOperationException("Wall not found");
+            }
+
+            // Member gate with an owner fallback: any WallMember may share the link, but so may the
+            // wall owner even on a legacy wall where they have no explicit member row (mirrors the
+            // owner-aware admin check in GenerateShareTokenAsync — an owner is never denied their own
+            // wall's existing link).
+            var isMember = await db.WallMembers.AnyAsync(m => m.WallId == wallId && m.UserId == user.Id);
+            if (!isMember && wall.OwnerId != user.Id)
+            {
+                throw new UnauthorizedAccessException($"User {user.Id} is not a member of wall {wallId}.");
+            }
+
+            // Non-destructive: reuse an existing link so members do not silently invalidate one
+            // another's invites. Only mint (and save) when the wall has never had a token.
+            if (!string.IsNullOrEmpty(wall.ShareToken))
+            {
+                return wall.ShareToken;
+            }
+
+            wall.ShareToken = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
+            await db.SaveChangesAsync();
+            _logger.LogInformation("Share token minted for wall {WallId} by member {UserId}", wallId, user.Id);
+            return wall.ShareToken;
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
+    }
+
     public async Task<Wall> JoinWallAsync(string shareToken)
     {
         using var op = BlocwerkMetrics.TimeOperation("Wall.Join");
@@ -1340,6 +1397,13 @@ public class WallService : IWallService
                 BlocwerkMetrics.RecordMemberJoined(wall.Id);
                 await _activityLogService.LogAsync(wall.Id, null, ActivityType.MemberJoined);
                 _logger.LogInformation("User {UserId} joined wall {WallId}", user.Id, wall.Id);
+
+                // Only on the path that actually inserted a new membership (the already-a-member case
+                // skips this block). Guarded internally, so it never breaks or blocks the join.
+                if (_pushNotificationService is not null)
+                {
+                    await _pushNotificationService.NotifyMemberJoinedAsync(wall.Id, user.Id);
+                }
             }
 
             return wall;

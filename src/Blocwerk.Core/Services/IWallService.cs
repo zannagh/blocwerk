@@ -95,6 +95,13 @@ public interface IWallService
 
     Task<string> GenerateShareTokenAsync(Guid wallId);
 
+    /// <summary>
+    /// Returns the wall's share token so any member can invite others, minting one only when the
+    /// wall has none yet. Non-destructive: an existing token is returned unchanged (unlike
+    /// <see cref="GenerateShareTokenAsync"/>, which regenerates). Refused for kiosk sessions.
+    /// </summary>
+    Task<string> GetOrCreateShareTokenAsync(Guid wallId);
+
     Task<Wall> JoinWallAsync(string shareToken);
 
     Task<byte[]?> GetPhotoAsync(Guid wallId);

@@ -56,6 +56,21 @@ services:
       # SMTP__FROM: ""
       # SMTP__FROMNAME: "Blocwerk"
       # SMTP__SECURITY: "StartTls"
+      # Web Push (PWA notifications). Empty by default => push cleanly no-ops (feature dormant).
+      # Set these via the deploy .env (e.g. ${VAPID__PUBLICKEY}). Env vars override appsettings here
+      # (AddEnvironmentVariables() runs last), and the Vapid section is intentionally absent from
+      # appsettings so these env keys are the authoritative source. Mint a keypair with WebPush's
+      # VapidHelper.
+      # Do NOT hardcode the private key here.
+      VAPID__SUBJECT: ${VAPID__SUBJECT:-}
+      VAPID__PUBLICKEY: ${VAPID__PUBLICKEY:-}
+      VAPID__PRIVATEKEY: ${VAPID__PRIVATEKEY:-}
+      # Deploy notices fire only on a genuine new build (MVID vs a persisted marker), so a crash/reboot
+      # restart is silent. Routine deploys ping site admins only. Set this to "true" ONLY for a genuine
+      # maintenance/downtime deploy, so ALL subscribed users get an "app is back online" push instead;
+      # clear it again afterward. Alternative without editing env: `touch dpkeys/maintenance-window`
+      # before the deploy — that one-shot marker triggers the all-users broadcast once and self-deletes.
+      DEPLOY__MAINTENANCEWINDOW: ${DEPLOY__MAINTENANCEWINDOW:-}
     volumes:
       - ./appsettings.json:/app/appsettings.json:ro
       # Persist the DataProtection key ring across redeploys (see AuthenticationServices.cs) so a

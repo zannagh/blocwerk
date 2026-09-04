@@ -104,6 +104,9 @@
     <script src="@Assets["js/maintenance.js"]"></script>
     <script src="@Assets["js/offline-status.js"]"></script>
     <script src="@Assets["js/pwa.js"]"></script>
+    @* Defines bwPush; inert until NotificationPrompt.razor / the profile notification card calls it.
+       No parse-time event to catch (unlike install-prompt.js), so it loads with the deferred bundle. *@
+    <script src="@Assets["js/push.js"]"></script>
 </body>
 </html>
 

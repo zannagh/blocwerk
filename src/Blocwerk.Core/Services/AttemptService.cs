@@ -57,17 +57,20 @@ public class AttemptService : IAttemptService
     private readonly ICurrentUserService _currentUserService;
     private readonly IActivityLogService _activityLogService;
     private readonly ILogger<AttemptService> _logger;
+    private readonly IPushNotificationService? _pushNotificationService;
 
     public AttemptService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         ICurrentUserService currentUserService,
         IActivityLogService activityLogService,
-        ILogger<AttemptService> logger)
+        ILogger<AttemptService> logger,
+        IPushNotificationService? pushNotificationService = null)
     {
         _dbContextFactory = dbContextFactory;
         _currentUserService = currentUserService;
         _activityLogService = activityLogService;
         _logger = logger;
+        _pushNotificationService = pushNotificationService;
     }
 
     public async Task<Attempt> LogAttemptAsync(
@@ -160,6 +163,15 @@ public class AttemptService : IAttemptService
             _logger.LogInformation("Attempt logged on boulder {BoulderId} of type {AttemptType} by {UserId}", boulder.Id, type, user.Id);
 
             await _activityLogService.LogAsync(boulder.WallId, boulderId, ActivityType.AttemptLogged, type.ToString());
+
+            // Notify the boulder's setters + creator ONLY for a genuinely new send or flash — never a
+            // plain attempt, and only here, past the draft/replay/debounce early-returns, so a replayed
+            // or debounced call never re-notifies. Flash vs send is taken from the AttemptType.
+            if (_pushNotificationService is not null && type is AttemptType.Send or AttemptType.Flash)
+            {
+                await _pushNotificationService.NotifyAscentAsync(boulderId, user.Id, type == AttemptType.Flash);
+            }
+
             return attempt;
         }
         catch (Exception ex)

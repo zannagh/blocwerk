@@ -13,6 +13,7 @@
 @inject Blocwerk.Core.Abstractions.IKioskContext KioskContext
 @inject CircuitEditActivity EditActivity
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
 @inject ILogger<WallDetail> Logger
 @implements IDisposable
 @using Blocwerk.Web.Components.Shared
@@ -573,7 +574,31 @@ else
                             <span class="stat-value">@_wall.Members.Count</span>
                             <span class="stat-label">Members</span>
                         </div>
+                        @* Any member can hand out the wall's invite link, not just admins. Hidden for
+                           non-members (kiosks and never-joined viewers); the service guard is the gate. *@
+                        @if (_isMember)
+                        {
+                            <div class="stat clickable" @onclick="InviteAsync">
+                                <svg class="stat-value" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                                     stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="18" cy="5" r="3"></circle>
+                                    <circle cx="6" cy="12" r="3"></circle>
+                                    <circle cx="18" cy="19" r="3"></circle>
+                                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+                                    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+                                </svg>
+                                <span class="stat-label">Invite</span>
+                            </div>
+                        }
                     </div>
+
+                    @if (_showInviteLink && !string.IsNullOrEmpty(_shareLink))
+                    {
+                        <div class="share-link">
+                            <input value="@_shareLink" readonly class="form-input" />
+                            <p class="hint">@_inviteCopyLabel</p>
+                        </div>
+                    }
                 }
             </div>
         </Page3>
@@ -794,6 +819,8 @@ else
     private bool _showBigUpdate;
     private bool _showLinkTool;
     private string? _shareLink;
+    private bool _showInviteLink;
+    private string _inviteCopyLabel = string.Empty;
     private string? _toast;
     private string _searchText = string.Empty;
     private string? _gradeMin;
@@ -1558,6 +1585,25 @@ else
     {
         var token = await WallService.GenerateShareTokenAsync(WallId);
         _shareLink = $"{Navigation.BaseUri}join/{token}";
+    }
+
+    private async Task InviteAsync()
+    {
+        var token = await WallService.GetOrCreateShareTokenAsync(WallId);
+        _shareLink = $"{Navigation.BaseUri}join/{token}";
+        _showInviteLink = true;
+
+        // Reveal the link regardless of clipboard success: Safari can block writeText outside a
+        // trusted gesture, and the read-only input above is the manual-copy fallback.
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", _shareLink);
+            _inviteCopyLabel = "Copied to clipboard";
+        }
+        catch (Exception)
+        {
+            _inviteCopyLabel = "Copy failed - select the link above and copy it manually";
+        }
     }
 
     private async Task DeleteWall()

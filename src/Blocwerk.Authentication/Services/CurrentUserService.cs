@@ -2,6 +2,7 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -86,6 +87,40 @@ public partial class CurrentUserService : ICurrentUserService
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync();
         var dbUser = await dbContext.Users.FirstAsync(u => u.Id == user.Id);
         dbUser.PreferFontGrades = preferFont;
+        await dbContext.SaveChangesAsync();
+
+        InvalidateCache();
+    }
+
+    public async Task SetShowToolsInNavAsync(bool show)
+    {
+        var user = await GetCurrentUserAsync();
+
+        await using var dbContext = await _dbContextFactory.CreateDbContextAsync();
+        var dbUser = await dbContext.Users.FirstAsync(u => u.Id == user.Id);
+        dbUser.ShowToolsInNav = show;
+        await dbContext.SaveChangesAsync();
+
+        InvalidateCache();
+    }
+
+    public async Task SetNotificationDisabledAsync(NotificationType type, bool disabled)
+    {
+        var user = await GetCurrentUserAsync();
+
+        await using var dbContext = await _dbContextFactory.CreateDbContextAsync();
+        var dbUser = await dbContext.Users.FirstAsync(u => u.Id == user.Id);
+
+        // The stored mask is opt-OUT: set the bit to disable the type, clear it to re-enable.
+        if (disabled)
+        {
+            dbUser.DisabledNotifications |= type;
+        }
+        else
+        {
+            dbUser.DisabledNotifications &= ~type;
+        }
+
         await dbContext.SaveChangesAsync();
 
         InvalidateCache();

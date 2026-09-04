@@ -29,6 +29,9 @@
     <!-- Email (SMTP): MailKit is the send-side client used by EmailSender. -->
     <PackageVersion Include="MailKit" Version="4.16.0" />
 
+    <!-- Web Push (RFC 8291 / VAPID): the send-side library used by PushNotificationService. -->
+    <PackageVersion Include="WebPush" Version="1.0.13" />
+
     <!-- OTel -->
     <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.3" />
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.15.3" />
