@@ -29,13 +29,17 @@ else
             @if (p.IsLive)
             {
                 <div class="panel-cell panel-thumb" style="@CellStyle(p.Col, p.Row)">
-                    <img src="/api/walls/@WallId/panels/@p.Id/photo" alt="Panel @p.Col,@p.Row" />
+                    @* Management grid: a modest thumbnail rendition, lazily loaded. This is not a
+                       precision surface, so it never needs the full-res original. *@
+                    <img src="@ResponsiveImage.AtWidth($"/api/walls/{WallId}/panels/{p.Id}/photo", 640)"
+                         loading="lazy" alt="Panel @p.Col,@p.Row" />
                 </div>
             }
             else
             {
                 <div class="panel-cell panel-staged-card" style="@CellStyle(p.Col, p.Row)">
-                    <img src="/api/walls/@WallId/panels/@p.Id/staged-photo" alt="Staged panel @p.Col,@p.Row" />
+                    <img src="@ResponsiveImage.AtWidth($"/api/walls/{WallId}/panels/{p.Id}/staged-photo", 640)"
+                         loading="lazy" alt="Staged panel @p.Col,@p.Row" />
                     <span class="panel-staged-badge">In progress</span>
                     <div class="panel-staged-actions">
                         <button class="btn-primary" @onclick="() => ResumeStaged(p.Id, p.Col, p.Row)" disabled="@_uploading">Resume</button>

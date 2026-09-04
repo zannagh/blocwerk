@@ -86,7 +86,7 @@ window.bwViewport = (function () {
             // on screen — debounced to one measurement per frame, and never a downgrade, so this
             // cannot churn mid-gesture. Purely additive: the transform above is already committed.
             if (window.bwImageRes) {
-                window.bwImageRes.refresh(viewport);
+                window.bwImageRes.refresh(viewport, zoom);
             }
         }
 
@@ -305,7 +305,10 @@ window.bwViewport = (function () {
             const measure = function () {
                 apply();
                 if (window.bwImageRes) {
-                    window.bwImageRes.refresh(viewport);
+                    // This runs the moment the box has its fit size, before any zoom — so this is fit
+                    // (zoom 1), the conservative cap. A large/retina display therefore lands on 1920
+                    // here instead of the multi-megabyte original, and zooming in unlocks more.
+                    window.bwImageRes.refresh(viewport, 1);
                 }
             };
 

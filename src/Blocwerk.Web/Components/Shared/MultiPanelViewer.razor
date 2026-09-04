@@ -172,11 +172,16 @@ else
 
     public enum ArrowDisplayMode { AllNeighbours, HoldsOnly }
 
+    // Adjacent panels are warmed at this small rendition so stepping to a neighbour paints something
+    // immediately instead of a cold load; image-res.js upgrades from there once the panel is shown.
+    private const int NeighbourPrefetchWidth = 640;
+
     private ElementReference _viewportRef;
     private DotNetObjectReference<MultiPanelViewer>? _selfRef;
     private WallPanelInfo? _panel;
     private List<PanelHold> _holds = [];
     private Guid? _fitBoxForPanelId;
+    private Guid? _prefetchedForPanelId;
     private bool _recenterPending;
 
     // Guards against a second step landing mid-swap (a fast double-tap on a chevron, or a swipe
@@ -299,6 +304,40 @@ else
         }
     }
 
+    // Best-effort warm of the current panel's up-to-4 neighbours, so stepping to one is not a cold
+    // load. Deliberately fire-and-forget (never awaited by the render path) and small (640px): just
+    // enough for the swap frame to paint immediately, with image-res.js upgrading once the panel is
+    // actually shown. Bails if the current panel has moved on, and swallows every failure — a
+    // prefetch that does not land simply falls back to the old cold-load behaviour.
+    private async Task PrefetchNeighboursAsync(Guid forPanelId)
+    {
+        var neighbours = new[] { Neighbour(-1, 0), Neighbour(1, 0), Neighbour(0, -1), Neighbour(0, 1) };
+        foreach (var n in neighbours)
+        {
+            if (n is null || forPanelId != _panel?.Id)
+            {
+                continue;
+            }
+
+            try
+            {
+                await JS.InvokeAsync<bool>(
+                    "bwViewport.preloadImage",
+                    ResponsiveImage.AtWidth(PhotoUrl(n.Id), NeighbourPrefetchWidth),
+                    4000);
+            }
+            catch (JSException)
+            {
+                // Prefetch is an optimisation; a failure just leaves that neighbour cold.
+            }
+            catch (JSDisconnectedException)
+            {
+                // Circuit gone; stop warming.
+                return;
+            }
+        }
+    }
+
     [JSInvokable]
     public Task OnSwipeNavigate(string direction)
     {
@@ -350,6 +389,15 @@ else
             {
                 _fitBoxForPanelId = _panel.Id;
                 await JS.InvokeVoidAsync("bwViewport.fitBox", _viewportRef);
+            }
+
+            // Once the current panel is shown, warm its up-to-4 neighbours at a small width so a step
+            // in any direction is not a cold load. Fire-and-forget: it must never block this render,
+            // and every failure is swallowed. Runs once per shown panel.
+            if (_prefetchedForPanelId != _panel.Id)
+            {
+                _prefetchedForPanelId = _panel.Id;
+                _ = PrefetchNeighboursAsync(_panel.Id);
             }
 
             if (_recenterPending)
