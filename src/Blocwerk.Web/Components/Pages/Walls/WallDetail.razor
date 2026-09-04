@@ -583,7 +583,11 @@ else
             <div class="boulder-section">
                 <div class="section-header">
                     <h2>Boulders</h2>
-                    @if (_holds.Count > 0 && !_isAnonymous)
+                    @* Anonymous kiosk setting is opt-in per wall, so the button mirrors exactly what
+                       BoulderCreate and BoulderService.EnsureAnonymousKioskCreateAllowedAsync accept:
+                       this tablet's own wall, with the setting on. Without the kiosk branch a tablet
+                       with nobody picked could never reach the create flow the server already allows. *@
+                    @if (_holds.Count > 0 && (!_isAnonymous || CanCreateAnonymously))
                     {
                         <a href="/walls/@WallId/boulders/create" class="btn-add-boulder">+ New</a>
                     }
@@ -744,6 +748,13 @@ else
 
     private WallCarousel? _carousel;
     private Wall? _wall;
+
+    // Viewing rights alone are not enough: the wall owner has to have turned the setting on. The
+    // server re-checks this (plus the kiosk key's validity) before it will credit a boulder to Ghost,
+    // so this predicate only decides whether the button is worth showing.
+    private bool CanCreateAnonymously =>
+        _wall?.AllowAnonymousKioskSetting == true
+        && KioskViewing.AllowsAnonymousViewOf(KioskContext, WallId);
 
     // The wall the loaded state belongs to, so OnParametersSetAsync can tell a real wall change from
     // an ordinary re-render or a query-only navigation.

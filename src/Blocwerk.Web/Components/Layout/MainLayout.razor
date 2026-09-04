@@ -14,7 +14,7 @@
 
 <div class="app-shell">
     <header class="bw-topbar">
-        <a href="/walls" class="app-title">Blocwerk</a>
+        <a href="@BrandHref" class="app-title">Blocwerk</a>
         <div class="bw-topbar-title"><SectionOutlet SectionName="TopBarTitle" /></div>
         <div class="header-actions">
             <TopBarActions />
@@ -349,6 +349,16 @@
     // instead.
     private string HomeWallHref =>
         _homeWallId is { } homeWallId ? $"/walls/{homeWallId}" : "/walls";
+
+    // The brand text is the one always-visible way "home", so on a kiosk it has to land somewhere a
+    // resting tablet can actually render. The old hard-coded /walls is [Authorize]: with nobody picked
+    // the tablet is anonymous, so it was bounced to a login nobody is meant to complete there and the
+    // only way out was re-registering the device. ViewableWallId — not KioskWallId — so a kiosk whose
+    // wall is unknown falls back to the normal target rather than linking at a wall it may not read.
+    private string BrandHref =>
+        Blocwerk.Core.Abstractions.KioskViewing.ViewableWallId(KioskContext) is { } brandWallId
+            ? $"/walls/{brandWallId}"
+            : "/walls";
 
     // The kiosk Home tab always points at the one wall the tablet is registered to, taken from the
     // validated kiosk context — never from the URL. Falls back to /walls, which the kiosk restriction
