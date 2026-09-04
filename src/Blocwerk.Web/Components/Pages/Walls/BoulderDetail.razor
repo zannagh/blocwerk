@@ -460,6 +460,16 @@ else
     // the edit flags via SyncBoulderEditLease(), released there when both close and in DisposeAsync.
     private IDisposable? _editLease;
 
+    // Mirrors _editLease onto the browser bwEditGuard so the maintenance watchdog holds back an
+    // auto-reload while an inline meta/grade editor is open with unsaved changes. Synced every render
+    // (the lease toggles on open/close) via EditGuardInterop.
+    private bool _editGuardActive;
+
+    private async Task SyncEditGuardAsync()
+    {
+        _editGuardActive = await EditGuardInterop.SyncAsync(JS, "boulder-edit", _editLease is not null, _editGuardActive);
+    }
+
     private ElementReference _photoViewportRef;
     private string? _fitBoxForUrl;
     private DotNetObjectReference<BoulderDetail>? _selfRef;
@@ -519,12 +529,21 @@ else
                 _fitBoxForUrl = null;
             }
         }
+
+        // Every render, not just the first: the lease toggles when an inline editor opens or closes.
+        await SyncEditGuardAsync();
     }
 
     public async ValueTask DisposeAsync()
     {
         Cache.Changed -= OnCacheChanged;
         _editLease?.Dispose();
+
+        if (_editGuardActive)
+        {
+            // Best-effort clear on navigate-away; a torn-down circuit no-ops (the safe failure).
+            _ = EditGuardInterop.SyncAsync(JS, "boulder-edit", editing: false, active: _editGuardActive);
+        }
 
         if (_selfRef != null)
         {

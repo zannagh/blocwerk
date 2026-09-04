@@ -2,6 +2,7 @@ using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
 using Blocwerk.Web.State;
 using Microsoft.AspNetCore.Components;
+using Microsoft.JSInterop;
 
 namespace Blocwerk.Web.Components.Shared;
 
@@ -18,6 +19,13 @@ public partial class BigWallUpdate : IDisposable
 
     [Inject]
     private CircuitEditActivity EditActivity { get; set; } = default!;
+
+    [Inject]
+    private IJSRuntime JS { get; set; } = default!;
+
+    // Mirrors _editLease onto the browser bwEditGuard so the maintenance watchdog holds back an
+    // auto-reload while this unsaved big-wall update flow is open. See EditGuardInterop.
+    private bool _editGuardActive;
 
     // The whole carryover flow is unsaved, in-flight wall work (staged panels, carryover decisions,
     // overlap links) until Apply promotes it. Hold a wall-edit busy lease for the component's mounted
@@ -200,8 +208,19 @@ public partial class BigWallUpdate : IDisposable
 
     private Task Close() => OnClose.InvokeAsync();
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        _editGuardActive = await EditGuardInterop.SyncAsync(JS, "wall-bigupdate", _editLease is not null, _editGuardActive);
+    }
+
     public void Dispose()
     {
         _editLease?.Dispose();
+
+        if (_editGuardActive)
+        {
+            // Best-effort clear on close; a torn-down circuit no-ops (the safe failure).
+            _ = EditGuardInterop.SyncAsync(JS, "wall-bigupdate", editing: false, active: _editGuardActive);
+        }
     }
 }

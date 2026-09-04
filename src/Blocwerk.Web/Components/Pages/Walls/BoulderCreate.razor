@@ -14,6 +14,7 @@
 @inject IKioskService KioskService
 @inject NavigationManager Navigation
 @inject CircuitEditActivity EditActivity
+@inject IJSRuntime JS
 @implements IDisposable
 @using Blocwerk.Core.Helpers
 @using Blocwerk.Web.Components.Shared
@@ -274,6 +275,20 @@
     // Released in Dispose, and as a backstop when the circuit's scope is torn down.
     private IDisposable? _editLease;
 
+    // Mirrors _editLease onto the browser bwEditGuard so the maintenance watchdog holds back an
+    // auto-reload while this unsaved create page is open. See EditGuardInterop / SyncEditGuardAsync.
+    private bool _editGuardActive;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await SyncEditGuardAsync();
+    }
+
+    private async Task SyncEditGuardAsync()
+    {
+        _editGuardActive = await EditGuardInterop.SyncAsync(JS, "boulder-create", _editLease is not null, _editGuardActive);
+    }
+
     protected override async Task OnInitializedAsync()
     {
         // Resolve the current user first: it seeds the preferred grade scale and the default setter,
@@ -457,6 +472,14 @@
     public void Dispose()
     {
         _editLease?.Dispose();
+
+        // Best-effort: clears the guard on navigate-away while the circuit is still up. On a circuit
+        // teardown this no-ops (interop gone), which is the safe failure — the browser drops the whole
+        // guard on the next real page load.
+        if (_editGuardActive)
+        {
+            _ = EditGuardInterop.SyncAsync(JS, "boulder-create", editing: false, active: _editGuardActive);
+        }
     }
 
     private Task SaveDraft() => Submit(isDraft: true);

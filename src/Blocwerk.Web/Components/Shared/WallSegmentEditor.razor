@@ -143,6 +143,11 @@
         }
     }
 
+    // Mirrors _editLease onto the browser bwEditGuard so the maintenance watchdog holds back an
+    // auto-reload while unsaved segment drafts exist. Ref-counted by key, so several segment editors
+    // on one page compose. Synced every render (the lease toggles with _dirty) via EditGuardInterop.
+    private bool _editGuardActive;
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
@@ -161,12 +166,21 @@
                 // Circuit went away mid-call; nothing to attach to.
             }
         }
+
+        // Every render, not just the first: the lease toggles when drafts become dirty or clean.
+        _editGuardActive = await EditGuardInterop.SyncAsync(JS, "wall-segment", _editLease is not null, _editGuardActive);
     }
 
     public void Dispose()
     {
         _editLease?.Dispose();
         _zoomState.Dispose();
+
+        if (_editGuardActive)
+        {
+            // Best-effort clear on navigate-away; a torn-down circuit no-ops (the safe failure).
+            _ = EditGuardInterop.SyncAsync(JS, "wall-segment", editing: false, active: _editGuardActive);
+        }
     }
 
     private async Task ReloadAsync()

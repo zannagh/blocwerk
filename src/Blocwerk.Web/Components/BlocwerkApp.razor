@@ -3,6 +3,7 @@
 @using Blocwerk.Web.Components.Layout
 @using Blocwerk.Core.Abstractions
 @inject ICurrentUserService CurrentUserService
+@inject IKioskContext KioskContext
 
 <!DOCTYPE html>
 <html lang="en">
@@ -54,7 +55,13 @@
    EmptyLayout, and it is correct on every page because every identity transition in the app is a
    real page load: the header Login/Logout links and the kiosk act-as/release forms all carry
    data-enhance-nav="false". *@
-<body data-bw-user="@ActingUserId">
+
+   @* data-bw-kiosk marks a kiosk tablet so the client can tell one apart — the kiosk cookie itself
+      is HttpOnly and unreadable from JS. It gates ONE thing: the maintenance watchdog's new
+      auto-reconnect reload, which reloads a kiosk off a rejected circuit once the server is reachable
+      again (maintenance.js isKiosk()). It grants nothing and is only ever emitted when true, so a
+      regular device simply never carries it. *@
+<body data-bw-user="@ActingUserId" data-bw-kiosk="@(KioskContext.IsKiosk ? "true" : null)">
     <Routes />
 
     @* Blazor sets components-reconnect-* classes and raises components-reconnect-state-changed on
@@ -101,6 +108,10 @@
     <script src="@Assets["js/offline-actions.js"]"></script>
     <script src="@Assets["js/offline-boulder.js"]"></script>
     <script src="@Assets["js/blazor-boot.js"]"></script>
+    @* Defines bwEditGuard before any editor component (which loads with the circuit, later) can call
+       it, and before maintenance.js reads it in safeToReload(). Order is otherwise not load-bearing:
+       both sides read window.bwEditGuard lazily, inside functions. *@
+    <script src="@Assets["js/edit-guard.js"]"></script>
     <script src="@Assets["js/maintenance.js"]"></script>
     <script src="@Assets["js/offline-status.js"]"></script>
     <script src="@Assets["js/pwa.js"]"></script>

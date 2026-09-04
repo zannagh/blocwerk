@@ -7,6 +7,7 @@
 @inject ICurrentUserService CurrentUserService
 @inject NavigationManager Navigation
 @inject CircuitEditActivity EditActivity
+@inject IJSRuntime JS
 @implements IDisposable
 @using Blocwerk.Core.Helpers
 @using Blocwerk.Web.Components.Shared
@@ -210,6 +211,20 @@
     // recreates the container while unsaved hold/rule edits are open. Released in Dispose, with the
     // circuit-teardown backstop behind it.
     private IDisposable? _editLease;
+
+    // Mirrors _editLease onto the browser bwEditGuard so the maintenance watchdog holds back an
+    // auto-reload while this unsaved revise page is open. See EditGuardInterop / SyncEditGuardAsync.
+    private bool _editGuardActive;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await SyncEditGuardAsync();
+    }
+
+    private async Task SyncEditGuardAsync()
+    {
+        _editGuardActive = await EditGuardInterop.SyncAsync(JS, "boulder-revise", _editLease is not null, _editGuardActive);
+    }
 
     // A dedicated foothold in the radial experience is either a per-hold "Foot" mark or a foot-colour rule.
     private bool HasDedicatedFeet =>
@@ -500,5 +515,10 @@
     public void Dispose()
     {
         _editLease?.Dispose();
+
+        if (_editGuardActive)
+        {
+            _ = EditGuardInterop.SyncAsync(JS, "boulder-revise", editing: false, active: _editGuardActive);
+        }
     }
 }

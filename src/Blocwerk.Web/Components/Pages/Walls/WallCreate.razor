@@ -4,6 +4,7 @@
 @inject IWallService WallService
 @inject NavigationManager Navigation
 @inject CircuitEditActivity EditActivity
+@inject IJSRuntime JS
 @implements IDisposable
 @using Blocwerk.Web.Components.Shared
 @using Blocwerk.Web.State
@@ -99,14 +100,33 @@
     // circuit-teardown backstop behind it.
     private IDisposable? _editLease;
 
+    // Mirrors _editLease onto the browser bwEditGuard so the maintenance watchdog holds back an
+    // auto-reload while this unsaved new-wall draft is open. See EditGuardInterop / SyncEditGuardAsync.
+    private bool _editGuardActive;
+
     protected override void OnInitialized()
     {
         _editLease = EditActivity.BeginWallCreate(userId: null);
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await SyncEditGuardAsync();
+    }
+
+    private async Task SyncEditGuardAsync()
+    {
+        _editGuardActive = await EditGuardInterop.SyncAsync(JS, "wall-create", _editLease is not null, _editGuardActive);
+    }
+
     public void Dispose()
     {
         _editLease?.Dispose();
+
+        if (_editGuardActive)
+        {
+            _ = EditGuardInterop.SyncAsync(JS, "wall-create", editing: false, active: _editGuardActive);
+        }
     }
 
     private async Task OnFileSelected(InputFileChangeEventArgs e)
