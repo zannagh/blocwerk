@@ -92,13 +92,16 @@
 
     @* Order matters: the queue needs its store, the delegated click handler needs the queue, and
        blazor-boot.js starts the circuit last so the offline path is live even if the circuit
-       never comes up. *@
+       never comes up. maintenance.js goes after it because it subscribes to
+       window.blocwerkConnection, and before offline-status.js only for readability — the two read
+       each other lazily off window, inside functions, so neither order can break the other. *@
     <script src="@Assets["js/offline-db.js"]"></script>
     <script src="@Assets["js/offline-transport.js"]"></script>
     <script src="@Assets["js/offline-queue.js"]"></script>
     <script src="@Assets["js/offline-actions.js"]"></script>
     <script src="@Assets["js/offline-boulder.js"]"></script>
     <script src="@Assets["js/blazor-boot.js"]"></script>
+    <script src="@Assets["js/maintenance.js"]"></script>
     <script src="@Assets["js/offline-status.js"]"></script>
     <script src="@Assets["js/pwa.js"]"></script>
 </body>

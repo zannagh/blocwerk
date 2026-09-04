@@ -1,0 +1,193 @@
+@using Blocwerk.Core.Entities
+@inject IApiKeyService ApiKeyService
+@inject ICurrentUserService CurrentUserService
+@inject IJSRuntime JS
+
+@*
+    Installation-scoped API keys. Authorization is the page's: this panel is only ever rendered
+    inside Dashboard.razor, which carries [Authorize(Policy = BlocwerkPolicies.AppAdmin)] — and the
+    service refuses every call here for anyone who is not an app administrator anyway, so a
+    hypothetical second render site could not turn it into a mint button.
+*@
+
+<div class="settings-panel installation-apikey-panel">
+    <h2>Installation API Keys</h2>
+
+    <p class="apikey-blurb">
+        An installation key belongs to the <strong>server</strong>, not to a wall or a person. Its
+        only use today is the autodeploy hook: it posts to
+        <code>/api/v1/maintenance/announce</code> just before the container is recreated, so
+        everyone connected sees "the server is updating" instead of a reconnect spinner. It grants
+        nothing else &mdash; no wall data, no account, no writes.
+    </p>
+
+    <p class="apikey-blurb">
+        Put the token in the deploy host's <code>BLOCWERK_DEPLOY_API_KEY</code> environment
+        variable. Never commit it.
+    </p>
+
+    @if (newToken != null)
+    {
+        <div class="apikey-reveal">
+            <h2>Copy your new token now</h2>
+            <p class="apikey-reveal-warning">
+                This is the only time the full token is shown. It cannot be retrieved later &mdash;
+                if you lose it, revoke the key and create a new one.
+            </p>
+            <code class="apikey-token">@newToken</code>
+            <div class="apikey-reveal-actions">
+                <button type="button" class="apikey-btn primary" @onclick="CopyToken">@copyLabel</button>
+                <button type="button" class="apikey-btn" @onclick="DismissToken">I have stored it</button>
+            </div>
+        </div>
+    }
+
+    @if (error != null)
+    {
+        <div class="error-msg">@error</div>
+    }
+
+    <div class="form-group">
+        <label for="installation-apikey-name">Name</label>
+        <input id="installation-apikey-name" class="form-input" maxlength="100"
+               placeholder="e.g. IONOS deploy hook" @bind="name" @bind:event="oninput" />
+    </div>
+
+    <button type="button" class="btn-submit" disabled="@(busy || string.IsNullOrWhiteSpace(name))" @onclick="Create">
+        @(busy ? "Working..." : "Create key")
+    </button>
+
+    <section class="apikey-list">
+        <h3>Existing keys</h3>
+        @if (keys == null)
+        {
+            <p class="loading">Loading...</p>
+        }
+        else if (keys.Count == 0)
+        {
+            <p class="apikey-empty">No installation keys yet.</p>
+        }
+        else
+        {
+            @foreach (var key in keys)
+            {
+                <ApiKeyRow @key="key.Id" Key="key" Busy="busy" OnRevoke="Revoke" />
+            }
+        }
+    </section>
+</div>
+
+@code {
+    private IReadOnlyList<ApiKey>? keys;
+    private Guid userId;
+    private string name = string.Empty;
+    private string? newToken;
+    private string? error;
+    private string copyLabel = "Copy to clipboard";
+    private bool busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var user = await CurrentUserService.GetCurrentUserAsync();
+            userId = user.Id;
+            keys = await ApiKeyService.GetInstallationKeysAsync(userId);
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "Loading the installation API keys failed");
+            error = "The installation keys could not be loaded. Please try again.";
+            keys = Array.Empty<ApiKey>();
+        }
+    }
+
+    private async Task Create()
+    {
+        if (busy || string.IsNullOrWhiteSpace(name))
+        {
+            return;
+        }
+
+        error = null;
+        busy = true;
+        try
+        {
+            var (_, token) = await ApiKeyService.CreateInstallationKeyAsync(userId, name.Trim(), null);
+            newToken = token;
+            copyLabel = "Copy to clipboard";
+            name = string.Empty;
+            keys = await ApiKeyService.GetInstallationKeysAsync(userId);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            error = "Only an administrator can create an installation key.";
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "Creating an installation API key failed");
+            error = "The key could not be created. Please try again.";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task Revoke(Guid keyId)
+    {
+        if (busy)
+        {
+            return;
+        }
+
+        error = null;
+        busy = true;
+        try
+        {
+            await ApiKeyService.RevokeAsync(keyId, userId);
+            keys = await ApiKeyService.GetInstallationKeysAsync(userId);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            error = "Only an administrator can revoke an installation key.";
+        }
+        catch (InvalidOperationException)
+        {
+            error = "That key no longer exists.";
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "Revoking installation API key {ApiKeyId} failed", keyId);
+            error = "The key could not be revoked. Please try again.";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task CopyToken()
+    {
+        if (newToken == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", newToken);
+            copyLabel = "Copied";
+        }
+        catch (Exception)
+        {
+            copyLabel = "Copy failed - select the token and copy it manually";
+        }
+    }
+
+    private void DismissToken()
+    {
+        newToken = null;
+        copyLabel = "Copy to clipboard";
+    }
+}

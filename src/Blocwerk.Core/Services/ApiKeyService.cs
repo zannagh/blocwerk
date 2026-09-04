@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 namespace Blocwerk.Core.Services;
 
 /// <inheritdoc cref="IApiKeyService"/>
-public class ApiKeyService : IApiKeyService
+public partial class ApiKeyService : IApiKeyService
 {
     /// <summary>
     /// A sensor may post once a second; stamping LastUsedAt on every call would turn every read
@@ -77,6 +77,25 @@ public class ApiKeyService : IApiKeyService
         return key;
     }
 
+    public async Task<(ApiKey Key, string Token)> CreateInstallationKeyAsync(
+        Guid actingUserId,
+        string name,
+        DateTimeOffset? expiresAt,
+        CancellationToken ct = default)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+        db.CurrentUserId = Guid.Empty;
+
+        // There is no wall to hang this authority on, so it is the installation's own admin role
+        // that gates it — read from the database here, not taken from the caller, for the same
+        // reason WallAdminGuard is consulted above rather than trusted from the UI.
+        await AppAdminGuard.EnsureAppAdminAsync(db, actingUserId, ct);
+
+        var key = await PersistAsync(db, ApiKeyScope.Installation, actingUserId, null, name, expiresAt, ct);
+        logger.LogInformation("Installation API key {ApiKeyId} issued by {UserId}", key.Key.Id, actingUserId);
+        return key;
+    }
+
     public async Task<IReadOnlyList<ApiKey>> GetWallKeysAsync(
         Guid wallId,
         Guid actingUserId,
@@ -113,6 +132,23 @@ public class ApiKeyService : IApiKeyService
             .ToListAsync(ct);
     }
 
+    public async Task<IReadOnlyList<ApiKey>> GetInstallationKeysAsync(
+        Guid actingUserId,
+        CancellationToken ct = default)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+        db.CurrentUserId = Guid.Empty;
+
+        await AppAdminGuard.EnsureAppAdminAsync(db, actingUserId, ct);
+
+        return await db.ApiKeys
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(k => k.Scope == ApiKeyScope.Installation)
+            .OrderByDescending(k => k.CreatedAt)
+            .ToListAsync(ct);
+    }
+
     public async Task RevokeAsync(Guid apiKeyId, Guid actingUserId, CancellationToken ct = default)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);
@@ -124,11 +160,22 @@ public class ApiKeyService : IApiKeyService
             throw new InvalidOperationException("API key not found");
         }
 
-        // Wall and kiosk keys both belong to a wall, so its admins govern them; a user key is the
-        // creator's own business.
-        var allowed = (key.Scope is ApiKeyScope.Wall or ApiKeyScope.Kiosk) && key.WallId.HasValue
-            ? await WallAdminGuard.IsWallAdminAsync(db, key.WallId.Value, actingUserId, ct)
-            : key.UserId == actingUserId;
+        // Wall and kiosk keys both belong to a wall, so its admins govern them; an installation key
+        // belongs to nobody in particular, so the installation's admins govern it — and its minter
+        // alone must not be the one who can retire it; a user key is the creator's own business.
+        bool allowed;
+        if ((key.Scope is ApiKeyScope.Wall or ApiKeyScope.Kiosk) && key.WallId.HasValue)
+        {
+            allowed = await WallAdminGuard.IsWallAdminAsync(db, key.WallId.Value, actingUserId, ct);
+        }
+        else if (key.Scope == ApiKeyScope.Installation)
+        {
+            allowed = await AppAdminGuard.IsAppAdminAsync(db, actingUserId, ct);
+        }
+        else
+        {
+            allowed = key.UserId == actingUserId;
+        }
 
         if (!allowed)
         {
@@ -180,51 +227,6 @@ public class ApiKeyService : IApiKeyService
                 "API key {ApiKeyId} anonymous kiosk setting set to {State} by {UserId}",
                 apiKeyId, allowed, actingUserId);
         }
-    }
-
-    public async Task<ApiKey?> ValidateAsync(string token, CancellationToken ct = default)
-    {
-        if (!ApiKeyTokens.LooksLikeApiKey(token))
-        {
-            return null;
-        }
-
-        var hash = ApiKeyTokens.Hash(token.Trim());
-
-        // Validation runs before any user context exists, so the wall filter must not apply.
-        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
-        db.CurrentUserId = Guid.Empty;
-
-        var key = await db.ApiKeys.IgnoreQueryFilters().FirstOrDefaultAsync(k => k.KeyHash == hash, ct);
-        if (key is null)
-        {
-            return null;
-        }
-
-        var now = DateTimeOffset.UtcNow;
-        if (key.RevokedAt is not null || (key.ExpiresAt is not null && key.ExpiresAt <= now))
-        {
-            return null;
-        }
-
-        if (key.LastUsedAt is null || now - key.LastUsedAt.Value > LastUsedWriteInterval)
-        {
-            key.LastUsedAt = now;
-            await db.SaveChangesAsync(ct);
-        }
-
-        return key;
-    }
-
-    public async Task<Guid?> ValidateKioskAsync(string token, CancellationToken ct = default)
-    {
-        var key = await ValidateAsync(token, ct);
-        if (key is null || key.Scope != ApiKeyScope.Kiosk)
-        {
-            return null;
-        }
-
-        return key.WallId;
     }
 
     /// <summary>

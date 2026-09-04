@@ -300,6 +300,12 @@ public static class Program
             },
         });
 
+        // Liveness beacon for the "server is updating" overlay: anonymous, no database, and it
+        // carries the id of THIS process so a client can tell a dropped socket from a replaced
+        // container. Mapped next to the health endpoints and outside /api for the same reason they
+        // are — see AliveEndpoints.
+        app.MapAlive();
+
         app.MapRazorComponents<BlocwerkApp>()
             .AddInteractiveServerRenderMode();
 

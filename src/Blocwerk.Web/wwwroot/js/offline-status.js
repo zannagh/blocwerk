@@ -52,8 +52,53 @@
         return host;
     }
 
+    // The default wording when the server announced an update without a message of its own.
+    const MAINTENANCE_LABEL = 'Blocwerk is updating\u2026';
+    const MAINTENANCE_DETAIL = 'The server is being updated. This page reloads itself as soon as the new version is ready \u2014 nothing you have queued is lost.';
+    const MAINTENANCE_READY_LABEL = 'Update ready';
+    const MAINTENANCE_READY_DETAIL = 'The new version is live. Reload when you are ready \u2014 the reload is held back because you were typing.';
+
+    /**
+     * The maintenance notice, or null. Read lazily off window so this file keeps working with or
+     * without maintenance.js, in either load order.
+     */
+    function maintenance() {
+        const api = window.bwMaintenance;
+        if (!api || !api.active()) {
+            return null;
+        }
+
+        const state = api.state();
+        if (state.phase === 'ready') {
+            return { tone: 'info', label: MAINTENANCE_READY_LABEL, detail: MAINTENANCE_READY_DETAIL };
+        }
+
+        return {
+            tone: 'warn',
+            label: state.message || MAINTENANCE_LABEL,
+            detail: state.message ? state.message + ' ' + MAINTENANCE_DETAIL : MAINTENANCE_DETAIL
+        };
+    }
+
     function summarise(queueState, connection) {
         const count = queueState.count;
+
+        // Above 'paused' and 'rejected', and below exactly one thing: a device with no network at
+        // all. During a deploy the circuit is down and the socket is dead, so every rung below
+        // would fire — and every one would be a worse sentence than the true one: 'Session ended'
+        // invites a reload straight onto offline.html, and 'Sign in to sync' asks for an action the
+        // server cannot serve. The notice is transient and self-clearing, so nothing below is
+        // suppressed for long.
+        //
+        // The queueState.online guard is the exception, and it is about honesty. A tablet with its
+        // wifi off is not waiting for an update — it cannot even reach /alive to find out whether
+        // one is happening, and the notice it is holding may be minutes stale. Telling that user
+        // 'Blocwerk is updating…' explains their stuck queue with the wrong cause and hides the one
+        // thing they can actually act on. Offline outranks maintenance; everything else does not.
+        const updating = queueState.online ? maintenance() : null;
+        if (updating) {
+            return updating;
+        }
 
         if (queueState.paused) {
             return { tone: 'warn', label: 'Sign in to sync', detail: 'Your session expired. ' + count + ' action(s) are saved on this device.' };
@@ -100,7 +145,11 @@
             actions.appendChild(login);
         }
 
-        if (window.blocwerkConnection && window.blocwerkConnection.status() === 'rejected') {
+        // A held-back maintenance reload is offered explicitly; the automatic one waits for the
+        // text field to be empty, and the user may well want it sooner.
+        if (window.bwMaintenance && window.bwMaintenance.active() && window.bwMaintenance.state().phase === 'ready') {
+            actions.appendChild(button('Reload now', () => window.bwMaintenance.reloadNow()));
+        } else if (window.blocwerkConnection && window.blocwerkConnection.status() === 'rejected') {
             actions.appendChild(button('Reload', () => window.blocwerkConnection.reload()));
         }
 

@@ -1,0 +1,88 @@
+@rendermode InteractiveServer
+@implements IDisposable
+@inject IMaintenanceAnnouncer Announcer
+@inject IJSRuntime JS
+
+@*
+    The push half of the "server is updating" notice.
+
+    Renders nothing. MainLayout is a STATIC component, so a banner rendered in the layout could
+    never update; this is an interactive island inside it whose only job is to carry the
+    announcement from IMaintenanceAnnouncer across the circuit into wwwroot/js/maintenance.js,
+    which owns the notice, the /alive polling and the reload. Everything visible is client-side on
+    purpose — the circuit is about to die, which is exactly when a server-rendered banner stops
+    being able to say anything.
+
+    The JS side also learns about an announcement from /alive on load and from a 'rejected'
+    circuit, so this component failing (prerender, a circuit that never comes up) costs the user
+    only the few seconds of advance warning, never the reload itself.
+*@
+
+@code {
+    // JS interop is illegal during prerender and pointless before the circuit exists, so nothing is
+    // pushed — and nothing is even subscribed — until the interactive instance has rendered once.
+    private bool _interactive;
+    private bool _subscribed;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        _interactive = true;
+        Announcer.Announced += OnAnnounced;
+        _subscribed = true;
+
+        // A client that connected mid-window never sees the event: it was raised before this
+        // circuit existed. Current is expiry-evaluated on read, so a stale one is already gone.
+        var current = Announcer.Current;
+        if (current is not null)
+        {
+            await PushAsync(current);
+        }
+    }
+
+    // Raised on whatever thread called Announce (the deploy hook's request thread), so hop onto the
+    // renderer's synchronisation context before touching the circuit.
+    private void OnAnnounced(MaintenanceAnnouncement announcement)
+    {
+        if (!_interactive)
+        {
+            return;
+        }
+
+        _ = InvokeAsync(() => PushAsync(announcement));
+    }
+
+    private async Task PushAsync(MaintenanceAnnouncement announcement)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("bwMaintenance.begin", new { message = announcement.Message });
+        }
+        catch (JSDisconnectedException)
+        {
+            // The circuit went away between the announcement and the call — which is the very
+            // event being announced. The client's own /alive polling covers it from here.
+        }
+        catch (InvalidOperationException)
+        {
+            // Prerendering, or a renderer that is already tearing down. Same fallback.
+        }
+        catch (OperationCanceledException)
+        {
+            // Circuit disposal cancels in-flight interop.
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_subscribed)
+        {
+            Announcer.Announced -= OnAnnounced;
+            _subscribed = false;
+        }
+    }
+}

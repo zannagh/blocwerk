@@ -44,6 +44,11 @@ public static class CoreServices
         // Singletons so a mutation on any circuit invalidates every circuit's cache (see
         // IDomainChangeNotifier / DomainChangeInterceptor).
         builder.Services.AddSingleton<IDomainChangeNotifier, DomainChangeNotifier>();
+
+        // The "this server is about to be replaced" notice. A singleton for the same reason and with
+        // the same single-instance caveat: it is one fact about this process, read by every circuit
+        // and by the anonymous /alive beacon.
+        builder.Services.AddSingleton<IMaintenanceAnnouncer, MaintenanceAnnouncer>();
         builder.Services.AddSingleton<DomainChangeInterceptor>();
 
         // Registers DbContextOptions<BlocwerkDbContext> (singleton) and EF's own factory. The

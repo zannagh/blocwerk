@@ -165,6 +165,39 @@ public class ApiSurfaceAuthorizationTests
         }
     }
 
+    /// <summary>
+    /// The deploy hook's announce route has to live under an <see cref="ApiKeySurface"/> prefix,
+    /// or the bearer would be forwarded to the cookie scheme and arrive anonymous — and it must be
+    /// gated by the installation policy specifically, not by "any key".
+    /// </summary>
+    [Fact]
+    public void TheMaintenanceAnnounceRoute_IsCovered_AndInstallationScoped()
+    {
+        var announce = Assert.Single(
+            AllEndpoints().Where(e => e.RoutePattern.RawText == "api/v1/maintenance/announce"));
+
+        Assert.True(ApiKeySurface.Covers(ToPath(announce.RoutePattern.RawText)));
+
+        var authorize = announce.Metadata.GetMetadata<IAuthorizeData>();
+        Assert.NotNull(authorize);
+        Assert.Equal(BlocwerkPolicies.InstallationApiKey, authorize!.Policy);
+    }
+
+    /// <summary>
+    /// The beacon a disconnected browser polls. It must answer identically to everyone — no
+    /// authorization metadata to challenge, and outside the API-key prefixes so a bearer presented
+    /// there resolves nobody.
+    /// </summary>
+    [Fact]
+    public void TheAliveBeacon_IsAnonymous_AndOutsideTheApiKeySurface()
+    {
+        var alive = Assert.Single(AllEndpoints().Where(e => e.RoutePattern.RawText == "/alive"));
+
+        Assert.Null(alive.Metadata.GetMetadata<IAuthorizeData>());
+        Assert.NotNull(alive.Metadata.GetMetadata<IAllowAnonymous>());
+        Assert.False(ApiKeySurface.Covers(ToPath(alive.RoutePattern.RawText)));
+    }
+
     /// <summary>Every endpoint the registration calls under test produce.</summary>
     private static IReadOnlyList<RouteEndpoint> AllEndpoints()
     {
@@ -203,6 +236,7 @@ public class ApiSurfaceAuthorizationTests
         builder.Services.AddSingleton(Substitute.For<IWallImageStorage>());
         builder.Services.AddSingleton(Substitute.For<ICurrentUserService>());
         builder.Services.AddSingleton(Substitute.For<IWallPanelService>());
+        builder.Services.AddSingleton(Substitute.For<IMaintenanceAnnouncer>());
         builder.Services.AddSingleton(Substitute.For<IDbContextFactory<BlocwerkDbContext>>());
 
         var app = builder.Build();
@@ -213,6 +247,10 @@ public class ApiSurfaceAuthorizationTests
         // The panel photo routes were missing here, which is precisely how they came to sit under
         // /api/walls with no authorization at all: the guard test below could not see them.
         app.MapWallPanelPhotos();
+
+        // The liveness beacon: mapped here so the anonymity assertion below sees the real route
+        // rather than a copy of it.
+        app.MapAlive();
         return app;
     }
 

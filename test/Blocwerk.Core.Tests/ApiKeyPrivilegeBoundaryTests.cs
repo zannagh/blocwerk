@@ -6,6 +6,7 @@ using Blocwerk.Authentication.Providers;
 using Blocwerk.Authentication.Services;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
@@ -201,6 +202,85 @@ public class ApiKeyPrivilegeBoundaryTests
         Assert.Equal(keyOwner.Id, user.Id);
     }
 
+    /// <summary>
+    /// The whole reason the scopes exist. A key is a long-lived secret on a device somebody else
+    /// can reach, so "it is a valid key" must never be the same question as "it may do this": the
+    /// deploy hook's key must not post temperatures, and the Raspberry Pi's must not announce
+    /// maintenance to every browser in the gym.
+    /// </summary>
+    [Theory]
+    [InlineData(ApiKeyScope.Wall)]
+    [InlineData(ApiKeyScope.User)]
+    [InlineData(ApiKeyScope.Kiosk)]
+    [InlineData(ApiKeyScope.Installation)]
+    public async Task ApiKeyPolicies_AreSatisfiedOnlyByTheirOwnScope(ApiKeyScope scope)
+    {
+        var authorization = AuthorizationService();
+        var principal = ApiKeyPrincipal(scope);
+
+        foreach (var policyScope in new[]
+                 {
+                     ApiKeyScope.Wall, ApiKeyScope.User, ApiKeyScope.Kiosk, ApiKeyScope.Installation,
+                 })
+        {
+            var policy = AuthenticationServices.BuildApiKeyPolicy(new AuthorizationPolicyBuilder(), policyScope);
+            var result = await authorization.AuthorizeAsync(principal, resource: null, policy);
+
+            Assert.Equal(scope == policyScope, result.Succeeded);
+        }
+    }
+
+    /// <summary>
+    /// "Any key" means the ordinary wall/user API surface. A kiosk key is excluded because a tablet
+    /// in a public gym must not inherit the wall's write endpoints, and an installation key because
+    /// it is the deploy hook's and answers to exactly one route.
+    /// </summary>
+    [Fact]
+    public async Task AnyApiKeyPolicy_ExcludesKioskAndInstallationKeys()
+    {
+        var authorization = AuthorizationService();
+        var policy = AuthenticationServices.BuildApiKeyPolicy(new AuthorizationPolicyBuilder(), scope: null);
+
+        Assert.True((await authorization.AuthorizeAsync(ApiKeyPrincipal(ApiKeyScope.Wall), null, policy)).Succeeded);
+        Assert.True((await authorization.AuthorizeAsync(ApiKeyPrincipal(ApiKeyScope.User), null, policy)).Succeeded);
+        Assert.False((await authorization.AuthorizeAsync(ApiKeyPrincipal(ApiKeyScope.Kiosk), null, policy)).Succeeded);
+        Assert.False((await authorization.AuthorizeAsync(ApiKeyPrincipal(ApiKeyScope.Installation), null, policy)).Succeeded);
+    }
+
+    /// <summary>
+    /// The installation key is the widest one the app mints, so the locks that hold for every other
+    /// key have to hold for it too: it is not a login, not a browser session, and not a human.
+    /// </summary>
+    [Fact]
+    public async Task AnInstallationKey_IsStillNotAHuman()
+    {
+        var authorization = AuthorizationService();
+        var human = AuthenticationServices.BuildHumanPolicy(new AuthorizationPolicyBuilder());
+        var installation = ApiKeyPrincipal(ApiKeyScope.Installation);
+
+        Assert.False((await authorization.AuthorizeAsync(installation, resource: null, human)).Succeeded);
+
+        var state = await StateProvider(installation).GetAuthenticationStateAsync();
+        Assert.NotEqual(true, state.User.Identity?.IsAuthenticated);
+    }
+
+    /// <summary>
+    /// The announce route sits under /api/v1 because that is one of the only two prefixes on which
+    /// an API key authenticates at all — anywhere else the bearer is forwarded to the cookie scheme
+    /// and the deploy hook would arrive anonymous.
+    /// </summary>
+    [Fact]
+    public void SelectScheme_CoversTheMaintenanceAnnounceRoute()
+    {
+        Assert.Equal(
+            ApiKeyAuthenticationHandler.SchemeName,
+            SelectScheme("/api/v1/maintenance/announce", WallKey));
+
+        // ...but /alive is not an API-key surface at all: it is anonymous, and a key presented there
+        // must stay anonymous rather than resolve its owner.
+        Assert.Equal(CookieAuthenticationDefaults.AuthenticationScheme, SelectScheme("/alive", WallKey));
+    }
+
     private static async Task<object?> Invoke(IEndpointFilter filter, ClaimsPrincipal user, object sentinel)
     {
         var context = EndpointFilterInvocationContext.Create(new DefaultHttpContext { User = user });
@@ -252,13 +332,13 @@ public class ApiKeyPrivilegeBoundaryTests
         return services.BuildServiceProvider().GetRequiredService<IAuthorizationService>();
     }
 
-    private static ClaimsPrincipal ApiKeyPrincipal()
+    private static ClaimsPrincipal ApiKeyPrincipal(ApiKeyScope scope = ApiKeyScope.Wall)
     {
         var claims = new List<Claim>
         {
             new(ClaimTypes.Name, "Some Climber"),
             new(ClaimTypes.NameIdentifier, "gh|4711"),
-            new(ApiKeyClaimTypes.Scope, "Wall"),
+            new(ApiKeyClaimTypes.Scope, scope.ToString()),
             new(ApiKeyClaimTypes.ApiKeyId, Guid.NewGuid().ToString()),
         };
 

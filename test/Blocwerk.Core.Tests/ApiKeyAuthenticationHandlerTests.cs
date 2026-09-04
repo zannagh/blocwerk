@@ -125,6 +125,31 @@ public sealed class ApiKeyAuthenticationHandlerTests : IDisposable
     }
 
     [Fact]
+    public async Task ValidInstallationKey_CarriesInstallationScopeAndNoWallClaim()
+    {
+        var key = new ApiKey
+        {
+            Name = "Deploy hook",
+            Scope = ApiKeyScope.Installation,
+            UserId = user.Id,
+            KeyHash = "hash",
+            Prefix = "bwk_0123",
+        };
+        apiKeyService.ValidateAsync(ValidToken, Arg.Any<CancellationToken>()).Returns(key);
+
+        var result = await AuthenticateAsync($"Bearer {ValidToken}");
+
+        Assert.True(result.Succeeded);
+        var principal = result.Principal!;
+
+        // The scope claim is what the InstallationApiKey policy matches on, and there is no wall to
+        // claim: this key belongs to the installation, not to a place in it.
+        Assert.Equal(ApiKeyScope.Installation, principal.GetApiKeyScope());
+        Assert.Equal("Installation", principal.FindFirstValue(ApiKeyClaimTypes.Scope));
+        Assert.Null(principal.GetApiKeyWallId());
+    }
+
+    [Fact]
     public async Task ChallengeWritesPlain401()
     {
         var context = new DefaultHttpContext();

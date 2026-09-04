@@ -145,6 +145,9 @@ public static class AuthenticationServices
             options.AddPolicy(BlocwerkPolicies.WallApiKey, policy => BuildApiKeyPolicy(policy, ApiKeyScope.Wall));
             options.AddPolicy(BlocwerkPolicies.UserApiKey, policy => BuildApiKeyPolicy(policy, ApiKeyScope.User));
             options.AddPolicy(BlocwerkPolicies.AnyApiKey, policy => BuildApiKeyPolicy(policy, null));
+            options.AddPolicy(
+                BlocwerkPolicies.InstallationApiKey,
+                policy => BuildApiKeyPolicy(policy, ApiKeyScope.Installation));
             options.AddPolicy(BlocwerkPolicies.WallGalleryImage, BuildGalleryImagePolicy(new AuthorizationPolicyBuilder()));
             options.AddPolicy(BlocwerkPolicies.AppAdmin, BuildAppAdminPolicy(new AuthorizationPolicyBuilder()));
         });
@@ -258,7 +261,13 @@ public static class AuthenticationServices
             .Build();
     }
 
-    private static void BuildApiKeyPolicy(AuthorizationPolicyBuilder policy, ApiKeyScope? scope)
+    /// <summary>
+    /// Builds the policy for one API-key scope, or — with <paramref name="scope"/> null — the
+    /// "any ordinary key" policy, which spans Wall and User and deliberately neither Kiosk nor
+    /// Installation. Public so the privilege-boundary tests can assert that no scope satisfies
+    /// another's policy, exactly as <see cref="BuildHumanPolicy"/> is.
+    /// </summary>
+    public static AuthorizationPolicy BuildApiKeyPolicy(AuthorizationPolicyBuilder policy, ApiKeyScope? scope)
     {
         policy.AddAuthenticationSchemes(ApiKeyAuthenticationHandler.SchemeName);
         policy.RequireAuthenticatedUser();
@@ -266,5 +275,6 @@ public static class AuthenticationServices
             ? [ApiKeyScope.Wall.ToString(), ApiKeyScope.User.ToString()]
             : [scope.Value.ToString()];
         policy.RequireClaim(ApiKeyClaimTypes.Scope, allowedScopes);
+        return policy.Build();
     }
 }

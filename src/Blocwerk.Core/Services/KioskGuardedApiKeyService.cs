@@ -5,8 +5,9 @@ namespace Blocwerk.Core.Services;
 
 /// <summary>
 /// Wraps <see cref="IApiKeyService"/> and refuses to MINT a key — or to WIDEN a kiosk key's
-/// anonymous-setting permission — while the session belongs to a kiosk tablet, whatever authority
-/// the acting user otherwise has. Narrowing that permission stays allowed.
+/// anonymous-setting permission, or to touch an INSTALLATION key at all — while the session belongs
+/// to a kiosk tablet, whatever authority the acting user otherwise has. Narrowing that permission
+/// stays allowed.
 /// </summary>
 /// <remarks>
 /// A kiosk session keeps the picked user's full authority over the wall (that is a locked product
@@ -16,9 +17,21 @@ namespace Blocwerk.Core.Services;
 /// mint keys are interactive Blazor components that call straight into this service inside the
 /// circuit, where no route middleware ever runs.
 /// <para>
-/// Reads and de-escalations are left alone: revoking a key, and switching a key's anonymous-setting
-/// flag OFF, only ever take permission away, and a kiosk key panel that could not list keys would be
-/// confusing without being any safer.
+/// Reads and de-escalations are left alone FOR WALL, KIOSK AND USER KEYS: revoking one, and
+/// switching a key's anonymous-setting flag OFF, only ever take permission away, and a kiosk key
+/// panel that could not list keys would be confusing without being any safer.
+/// </para>
+/// <para>
+/// <b>Installation keys are the exception, on both counts.</b> They are the app-admin surface, not
+/// the wall's, and the policy that fronts that surface —
+/// <c>BlocwerkPolicies.AppAdmin</c> — is <c>AppAdminRequirement</c> AND <c>KioskRouteRequirement</c>,
+/// while <see cref="AppAdminGuard"/> underneath is the role half only. Leaving listing and revoking
+/// unguarded here meant the service and the policy disagreed about the kiosk axis: an app admin
+/// acting through a gym tablet could enumerate the installation's credentials and retire the deploy
+/// hook's key, silently killing the "server is updating" notice for everybody. Not reachable today
+/// (<c>/administration</c> is on the kiosk denied list), which is exactly why it had to be closed
+/// here rather than relied on there — the whole point of a service guard is that it does not trust
+/// the page in front of it.
 /// </para>
 /// </remarks>
 public sealed class KioskGuardedApiKeyService : IApiKeyService
@@ -65,6 +78,19 @@ public sealed class KioskGuardedApiKeyService : IApiKeyService
         return inner.CreateUserKeyAsync(userId, actingUserId, name, expiresAt, ct);
     }
 
+    public Task<(ApiKey Key, string Token)> CreateInstallationKeyAsync(
+        Guid actingUserId,
+        string name,
+        DateTimeOffset? expiresAt,
+        CancellationToken ct = default)
+    {
+        // The widest key the app can mint, from the least trusted screen it owns. Guarded for the
+        // same reason as every other mint, only more so: this one is not scoped to the wall the
+        // tablet is bolted to, so it would survive walking out of the gym with it.
+        EnsureNotKiosk();
+        return inner.CreateInstallationKeyAsync(actingUserId, name, expiresAt, ct);
+    }
+
     public Task<IReadOnlyList<ApiKey>> GetWallKeysAsync(Guid wallId, Guid actingUserId, CancellationToken ct = default)
     {
         return inner.GetWallKeysAsync(wallId, actingUserId, ct);
@@ -75,9 +101,55 @@ public sealed class KioskGuardedApiKeyService : IApiKeyService
         return inner.GetUserKeysAsync(userId, actingUserId, ct);
     }
 
-    public Task RevokeAsync(Guid apiKeyId, Guid actingUserId, CancellationToken ct = default)
+    public Task<IReadOnlyList<ApiKey>> GetInstallationKeysAsync(Guid actingUserId, CancellationToken ct = default)
     {
-        return inner.RevokeAsync(apiKeyId, actingUserId, ct);
+        // Guarded, unlike the wall and user listings, because this is not a listing of the kiosk's
+        // own surface: it enumerates the credentials that act for the WHOLE installation, and it
+        // belongs to the app-admin dashboard whose policy already refuses a kiosk session. Matching
+        // that here is what stops the service being the weaker of the two.
+        EnsureNotKiosk("Installation API keys cannot be listed from a kiosk session.");
+        return inner.GetInstallationKeysAsync(actingUserId, ct);
+    }
+
+    public async Task RevokeAsync(Guid apiKeyId, Guid actingUserId, CancellationToken ct = default)
+    {
+        // Revoking stays unguarded for wall, kiosk and user keys — it is de-escalation, and an
+        // admin standing at the tablet has to be able to switch that very tablet off. An
+        // INSTALLATION key is not that: the only one in production is the deploy hook's, retiring it
+        // takes a capability away from the SERVER rather than from the tablet, and it would leave
+        // nothing on screen to explain why deploys stopped announcing themselves.
+        if (kioskContext.IsKiosk && await IsInstallationKeyAsync(apiKeyId, actingUserId, ct))
+        {
+            throw new KioskRestrictedException("Installation API keys cannot be revoked from a kiosk session.");
+        }
+
+        await inner.RevokeAsync(apiKeyId, actingUserId, ct);
+    }
+
+    /// <summary>
+    /// Whether <paramref name="apiKeyId"/> is installation-scoped, answered through the listing the
+    /// acting user is already entitled to.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately no new <see cref="IApiKeyService"/> member for this. Only an app administrator
+    /// may list — or revoke — an installation key at all, so a caller the listing refuses is a
+    /// caller <see cref="IApiKeyService.RevokeAsync"/> is about to refuse anyway, and answering
+    /// "not an installation key" for them changes nothing except which exception they see. The
+    /// extra query costs one read, and only inside a kiosk session.
+    /// </remarks>
+    private async Task<bool> IsInstallationKeyAsync(Guid apiKeyId, Guid actingUserId, CancellationToken ct)
+    {
+        IReadOnlyList<ApiKey> installationKeys;
+        try
+        {
+            installationKeys = await inner.GetInstallationKeysAsync(actingUserId, ct);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+
+        return installationKeys.Any(k => k.Id == apiKeyId);
     }
 
     public Task SetAnonymousKioskSettingAsync(

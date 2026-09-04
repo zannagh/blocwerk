@@ -3,3 +3,8 @@
 
 @Body
 <CookieConsent />
+
+@* No chrome here, but these pages are long-lived — HomeWall is what a kiosk tablet sits on all
+   day, and the signup/OAuth flow is where a reload costs the most. The watcher renders nothing, so
+   the only cost is one subscription; the notice itself is drawn by the pill's body fallback. *@
+<MaintenanceWatcher />

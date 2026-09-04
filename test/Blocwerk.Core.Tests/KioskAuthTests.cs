@@ -306,6 +306,32 @@ public class KioskAuthTests
         Assert.Equal(blocked, KioskRestrictions.IsBlockedPath(new PathString(path)));
     }
 
+    /// <summary>
+    /// The operational surface — the things that keep the app deployable and observable — must be
+    /// reachable from a kiosk tablet, because a tablet is just another browser and these routes
+    /// carry no identity at all.
+    /// </summary>
+    /// <remarks>
+    /// Nothing guarded this before, and <c>/alive</c> is why it needed to. That endpoint worked from
+    /// a tablet only because <c>maintenance.js</c> sends <c>credentials: 'omit'</c>, so the kiosk
+    /// cookie never arrived for the middleware to judge — an accident of the fetch options, not a
+    /// decision. Had anyone changed that one word to <c>'same-origin'</c>, every tablet's poll would
+    /// have become a 302 to a full wall-page render every two seconds, <c>.json()</c> would have
+    /// thrown on the HTML, and the tablets would never have reloaded — the exact failure the whole
+    /// feature exists to prevent, with a green suite behind it.
+    /// </remarks>
+    [Theory]
+    [InlineData("/health")]
+    [InlineData("/health/ready-to-deploy")]
+    [InlineData("/alive")]
+    [InlineData("/metrics")]
+    public void AllowList_PermitsTheOperationalEndpoints(string path)
+    {
+        Assert.False(
+            KioskRestrictions.IsBlockedPath(new PathString(path)),
+            $"Operational path '{path}' is refused for a kiosk session.");
+    }
+
     [Fact]
     public void AllowList_RefusesEveryDeniedPath_EvenUnderAnAllowedPrefix()
     {

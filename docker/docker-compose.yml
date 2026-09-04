@@ -91,6 +91,24 @@ services:
       # if you make the package public.
       GHCR_USER: ${GHCR_USER:-zannagh}
       GHCR_TOKEN: ${GHCR_TOKEN:-}
+      # Installation-scoped API key (bwk_…) used only to announce "the server is updating" to the
+      # still-live container just before it is recreated. Optional: unset simply skips the notice.
+      # Mint it on /administration; never commit the value.
+      BLOCWERK_DEPLOY_API_KEY: ${BLOCWERK_DEPLOY_API_KEY:-}
+      # Where to post that announcement. Must be the CURRENT domain — a redirecting host drops the
+      # Authorization header.
+      ANNOUNCE_URL: ${ANNOUNCE_URL:-https://blocwerk.app/api/v1/maintenance/announce}
+      # How long the notice survives if the deploy never finishes, and how long the hook pauses
+      # after announcing so the notice reaches the circuits. These MUST be passed through: the
+      # operator sets them in the deploy host's .env, and without them here run-deploy.sh only ever
+      # sees its own built-in defaults. An ETA shorter than the deploy is the failure that matters —
+      # the notice expires mid-deploy and the pill drops back to "Session ended".
+      ANNOUNCE_ETA: ${ANNOUNCE_ETA:-600}
+      ANNOUNCE_GRACE: ${ANNOUNCE_GRACE:-5}
+      # The busy gate the hook polls before any of this. Same domain as ANNOUNCE_URL on purpose:
+      # the two disagreeing about which host is production is how the announcement ends up aimed at
+      # a redirector that strips its bearer token.
+      HEALTH_URL: ${HEALTH_URL:-https://blocwerk.app/health/ready-to-deploy}
     volumes:
       # Drive the host docker daemon.
       - /var/run/docker.sock:/var/run/docker.sock

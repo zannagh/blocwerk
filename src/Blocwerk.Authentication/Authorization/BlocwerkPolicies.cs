@@ -17,6 +17,12 @@ public static class BlocwerkPolicies
     public const string AnyApiKey = "AnyApiKey";
 
     /// <summary>
+    /// Requires an API-key principal minted for the whole installation — the deploy hook, not a
+    /// wall device and not a person's script. Never satisfied by a wall, user or kiosk key.
+    /// </summary>
+    public const string InstallationApiKey = "InstallationApiKey";
+
+    /// <summary>
     /// Guards the browser's gallery byte route: a signed-in human or an anonymous share-token
     /// viewer, never an API key.
     /// </summary>

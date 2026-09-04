@@ -176,6 +176,15 @@ public static class KioskRestrictions
         "/favicon.ico",
         "/health",
         "/metrics",
+
+        // The liveness beacon the "server is updating" overlay polls. It works today only because
+        // maintenance.js sends `credentials: 'omit'`, which makes the request arrive with no kiosk
+        // cookie for the middleware to judge — a coincidence, not a design. The moment anyone
+        // changes that to 'same-origin' the omission turns every poll on every tablet into a 302 to
+        // a full wall-page render, every two seconds, and `.json()` then throws on the HTML so the
+        // tablets never reload at all. Listed here so the beacon is allowed on its own merits: it
+        // carries no identity, reads no database and answers the same bytes to everyone.
+        "/alive",
     ];
 
     /// <summary>

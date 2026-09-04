@@ -62,5 +62,17 @@ expose `/ci/released` without it. TLS terminates at Caddy.
 
 - The GHCR package is private, so the receiver runs `docker login ghcr.io` with `GHCR_TOKEN` before
   pulling (the host's keychain login can't be reused inside a Linux container).
+- Just before the pull — after the busy gate clears — the hook POSTs to
+  `/api/v1/maintenance/announce` so the still-live container can tell connected browsers and kiosk
+  tablets that it is about to be replaced. The token comes from `BLOCWERK_DEPLOY_API_KEY`
+  (an installation-scoped key minted at `/administration`); it is **optional** and best-effort: if
+  it is unset or the POST fails, the hook logs a warning and deploys anyway. `ANNOUNCE_URL` must
+  point at the current domain, because a redirecting host strips the `Authorization` header —
+  as must `HEALTH_URL`, so the gate and the announcement never disagree about which host is
+  production.
+- `ANNOUNCE_ETA` (default 600s) is how long the notice survives if the deploy never finishes. Set it
+  LONGER than a deploy actually takes: it is what a browser is looking at while the container is
+  gone, and if it expires first the pill drops back to "Session ended" mid-deploy. Overshooting is
+  harmless — clients reload when the instance id changes, not when the notice expires.
 - A release fires both a `release` and a `package` delivery; `run-deploy.sh` takes a `flock` so the
   two don't race. Pulling `:latest` when nothing changed is a no-op and won't recreate the container.

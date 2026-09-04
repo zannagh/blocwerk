@@ -45,6 +45,31 @@ public interface IApiKeyService
         CancellationToken ct = default);
 
     /// <summary>
+    /// Issues a key that acts for the whole installation rather than for a wall or a person — the
+    /// autodeploy hook is the only intended holder. Restricted to app administrators.
+    /// </summary>
+    /// <remarks>
+    /// The key carries no wall and grants nothing beyond the endpoints written for
+    /// <see cref="Enums.ApiKeyScope.Installation"/>. <paramref name="actingUserId"/> is stored as
+    /// its owner purely so a key can always be traced back to the person who minted it; it does
+    /// NOT stand in for that person's own access the way a
+    /// <see cref="Enums.ApiKeyScope.User"/> key does.
+    /// </remarks>
+    /// <exception cref="UnauthorizedAccessException">The acting user is not an app administrator.</exception>
+    Task<(ApiKey Key, string Token)> CreateInstallationKeyAsync(
+        Guid actingUserId,
+        string name,
+        DateTimeOffset? expiresAt,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Every <see cref="Enums.ApiKeyScope.Installation"/> key, newest first, revoked and expired
+    /// ones included. Restricted to app administrators, exactly as minting one is.
+    /// </summary>
+    /// <exception cref="UnauthorizedAccessException">The acting user is not an app administrator.</exception>
+    Task<IReadOnlyList<ApiKey>> GetInstallationKeysAsync(Guid actingUserId, CancellationToken ct = default);
+
+    /// <summary>
     /// All keys of a wall, newest first — both <see cref="Enums.ApiKeyScope.Wall"/> and
     /// <see cref="Enums.ApiKeyScope.Kiosk"/> keys, since both carry the wall's id. Revoked and expired
     /// keys are included.
@@ -60,7 +85,8 @@ public interface IApiKeyService
     Task<IReadOnlyList<ApiKey>> GetUserKeysAsync(Guid userId, Guid actingUserId, CancellationToken ct = default);
 
     /// <summary>
-    /// Revokes a key. The acting user must own it (user scope) or administer its wall (wall scope).
+    /// Revokes a key. The acting user must own it (user scope), administer its wall (wall and
+    /// kiosk scope) or administer the installation (installation scope).
     /// Revoking an already revoked key is a no-op.
     /// </summary>
     /// <exception cref="UnauthorizedAccessException">The acting user may not revoke the key.</exception>
