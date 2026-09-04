@@ -9,9 +9,11 @@ namespace Blocwerk.Web.Endpoints;
 
 /// <summary>
 /// Streaming upload for beta clips. The file is written straight to a temp file on the store's
-/// volume (never held whole in memory), transcoded down toward the target when it is over the
-/// store-as-is threshold, then committed and recorded. This replaces the old SignalR path, which
-/// could not carry clips beyond the circuit's 64 MB message limit.
+/// volume (never held whole in memory), committed verbatim, and recorded as
+/// <c>Pending</c> — the background normalizer then turns it into a universally playable MP4 without
+/// blocking this request. This replaces the old SignalR path, which could not carry clips beyond the
+/// circuit's 64 MB message limit, and the old inline transcode, which held the request open for the
+/// whole encode and only ran for clips over a size threshold.
 /// </summary>
 public static class BetaVideoUploadEndpoint
 {
@@ -32,7 +34,6 @@ public static class BetaVideoUploadEndpoint
         HttpContext http,
         IBetaVideoService betaVideoService,
         IBetaVideoStorage storage,
-        IVideoTranscoder transcoder,
         BlocwerkSettings settings,
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
@@ -133,19 +134,8 @@ public static class BetaVideoUploadEndpoint
 
             var extension = Path.GetExtension(fileName ?? string.Empty);
 
-            // Over the store-as-is threshold: re-encode down toward the target size.
-            if (size > opts.StoreAsIsMaxBytes)
-            {
-                var outPath = storage.CreateTempPath(".mp4");
-                var result = await transcoder.ShrinkAsync(tempPath, outPath, opts.TargetBytes, cancellationToken);
-                File.Delete(tempPath);
-                tempPath = outPath;
-                contentType = result.ContentType;
-                size = result.SizeBytes;
-                extension = ".mp4";
-                logger.LogInformation("Beta clip scaled down to {Bytes} bytes for boulder {BoulderId}", size, boulderId);
-            }
-
+            // Store the original verbatim and return promptly. The background normalizer re-encodes it
+            // to a web-safe MP4 (or fast-remuxes one that is already H.264/AAC) off the request thread.
             var storedName = storage.Commit(tempPath, extension);
             tempPath = null; // ownership moved into the store
 

@@ -795,6 +795,10 @@ public class BlocwerkDbContext : DbContext
 
             // The carousel query is always "this boulder, newest first".
             entity.HasIndex(v => new { v.BoulderId, v.CreatedAt });
+
+            // The normalizer's hot query is "the oldest clip still waiting to be encoded", so the
+            // status column is indexed to keep that a cheap lookup even with a large backlog.
+            entity.HasIndex(v => v.EncodingStatus);
         });
     }
 }

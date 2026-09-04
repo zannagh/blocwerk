@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using Blocwerk.Core.Enums;
 
 namespace Blocwerk.Core.Entities;
 
@@ -53,4 +54,18 @@ public class BetaVideo
     public byte[]? Thumbnail { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    /// <summary>
+    /// Where this clip is in the normalize-to-web-safe pipeline. New uploads start at
+    /// <see cref="BetaVideoEncodingStatus.Pending"/> and the background normalizer drives them to
+    /// <see cref="BetaVideoEncodingStatus.Ready"/>; the player only renders a &lt;video&gt; once ready.
+    /// </summary>
+    public BetaVideoEncodingStatus EncodingStatus { get; set; } = BetaVideoEncodingStatus.Pending;
+
+    /// <summary>When the normalizer last produced a web-safe rendition of this clip. Null until it has.</summary>
+    public DateTimeOffset? LastEncodedUtc { get; set; }
+
+    /// <summary>The last ffmpeg failure for this clip, if any. Cleared on a successful encode.</summary>
+    [MaxLength(1024)]
+    public string? EncodingError { get; set; }
 }

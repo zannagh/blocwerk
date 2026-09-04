@@ -124,9 +124,9 @@ public class BlocwerkSettings
             StoragePath = section["BetaVideo:StoragePath"]
                           ?? Environment.GetEnvironmentVariable("BETAVIDEO__STORAGEPATH")
                           ?? "beta-videos",
-            StoreAsIsMaxBytes = ParseBytes(section["BetaVideo:StoreAsIsMaxBytes"], "BETAVIDEO__STOREASISMAXBYTES", 800L * 1024 * 1024),
-            TargetBytes = ParseBytes(section["BetaVideo:TargetBytes"], "BETAVIDEO__TARGETBYTES", 500L * 1024 * 1024),
+            TargetVideoBitsPerSecond = ParseBytes(section["BetaVideo:TargetVideoBitsPerSecond"], "BETAVIDEO__TARGETVIDEOBITSPERSECOND", 3_000_000),
             MaxUploadBytes = ParseBytes(section["BetaVideo:MaxUploadBytes"], "BETAVIDEO__MAXUPLOADBYTES", 4L * 1024 * 1024 * 1024),
+            MaxEncodeSeconds = (int)ParseBytes(section["BetaVideo:MaxEncodeSeconds"], "BETAVIDEO__MAXENCODESECONDS", 600),
             FfmpegPath = section["BetaVideo:FfmpegPath"] ?? Environment.GetEnvironmentVariable("BETAVIDEO__FFMPEGPATH") ?? "ffmpeg",
             FfprobePath = section["BetaVideo:FfprobePath"] ?? Environment.GetEnvironmentVariable("BETAVIDEO__FFPROBEPATH") ?? "ffprobe",
         };
@@ -247,19 +247,35 @@ public class HoldDetectionSettings
 }
 
 /// <summary>
-/// Beta clip storage. Clips are stored on disk (not the database) so large uploads are possible.
-/// Anything up to <see cref="StoreAsIsMaxBytes"/> is stored verbatim; larger clips are re-encoded
-/// with ffmpeg down toward <see cref="TargetBytes"/>. <see cref="MaxUploadBytes"/> is a hard ceiling.
+/// Beta clip storage and normalization. Clips are stored on disk (not the database) so large
+/// uploads are possible. Every upload is stored verbatim first, then the background normalizer
+/// re-encodes it to a universally playable H.264/AAC MP4 (already-web-safe clips are only remuxed).
 /// </summary>
 public class BetaVideoSettings
 {
     public string StoragePath { get; set; } = "beta-videos";
 
-    public long StoreAsIsMaxBytes { get; set; } = 800L * 1024 * 1024;
+    /// <summary>
+    /// Target video bitrate (bits/s) for a full re-encode. ~3 Mbps keeps a typical short clip to a
+    /// few MB while staying visually clean at the 720p cap; env <c>BETAVIDEO__TARGETVIDEOBITSPERSECOND</c>.
+    /// The encoder caps the peak at 1.5x this, so file size scales with clip length, not the source.
+    /// </summary>
+    public long TargetVideoBitsPerSecond { get; set; } = 3_000_000;
 
-    public long TargetBytes { get; set; } = 500L * 1024 * 1024;
-
+    /// <summary>Hard upload ceiling; env <c>BETAVIDEO__MAXUPLOADBYTES</c>. The original is stored, then normalized.</summary>
     public long MaxUploadBytes { get; set; } = 4L * 1024 * 1024 * 1024;
+
+    /// <summary>
+    /// Hard per-ffmpeg-invocation ceiling (seconds); env <c>BETAVIDEO__MAXENCODESECONDS</c>. A clip that
+    /// makes ffmpeg hang would otherwise block the single normalizer worker forever (a poison pill that
+    /// survives reboot via the stale-Processing reset). On timeout the process is killed and the clip is
+    /// marked Failed. 0 or negative disables the cap (not recommended). Default 10 minutes.
+    /// </summary>
+    public int MaxEncodeSeconds { get; set; } = 600;
+
+    /// <summary>The <see cref="MaxEncodeSeconds"/> ceiling as a <see cref="TimeSpan"/>; infinite when disabled.</summary>
+    public TimeSpan EncodeTimeout =>
+        MaxEncodeSeconds > 0 ? TimeSpan.FromSeconds(MaxEncodeSeconds) : Timeout.InfiniteTimeSpan;
 
     public string FfmpegPath { get; set; } = "ffmpeg";
 

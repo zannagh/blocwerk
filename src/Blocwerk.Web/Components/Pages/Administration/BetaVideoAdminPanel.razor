@@ -1,0 +1,91 @@
+@using Blocwerk.Core.Services
+@inject IBetaVideoService BetaVideoService
+@inject ILogger<BetaVideoAdminPanel> Logger
+
+@*
+    Admin-triggered beta-video re-encode. Authorization is the page's: this panel is only ever
+    rendered inside Dashboard.razor, which carries [Authorize(Policy = BlocwerkPolicies.AppAdmin)] —
+    decided against the database by AppAdminHandler. No new gate is introduced here (mirrors
+    MaintenancePanel). The work itself is done by the background normalizer; these buttons only mark
+    clips Pending and wake it, so they return immediately with a count.
+*@
+
+<div class="maintenance">
+    <h2>Beta videos</h2>
+
+    <div class="maintenance-job">
+        <div class="maintenance-job-text">
+            <strong>Re-encode beta clips</strong>
+            <p>
+                Queues clips for the background normalizer, which turns every clip into a universally
+                playable H.264/AAC MP4 (clips that are already web-safe are only remuxed, which is
+                near-instant). "Not ready" re-queues anything not already playable; "Re-encode all"
+                forces a fresh pass over every clip. Encoding runs one at a time in the background.
+            </p>
+        </div>
+        <div class="maintenance-job-actions">
+            <button type="button" class="btn-secondary" disabled="@_busy" @onclick="() => QueueAsync(false)">
+                Re-encode not-ready
+            </button>
+            @if (_confirmAll)
+            {
+                <button type="button" class="btn-danger" disabled="@_busy" @onclick="() => QueueAsync(true)">
+                    Yes, re-encode all
+                </button>
+            }
+            else
+            {
+                <button type="button" class="btn-danger" disabled="@_busy" @onclick="() => _confirmAll = true">
+                    Re-encode all
+                </button>
+            }
+        </div>
+    </div>
+
+    @if (_status is { } status)
+    {
+        <div class="maintenance-status">
+            <div class="maintenance-status-line">
+                <span>@status</span>
+            </div>
+        </div>
+    }
+
+    @if (_error is { } error)
+    {
+        <p class="error-msg">@error</p>
+    }
+</div>
+
+@code {
+    private bool _busy;
+    private bool _confirmAll;
+    private string? _status;
+    private string? _error;
+
+    private async Task QueueAsync(bool all)
+    {
+        _confirmAll = false;
+        _busy = true;
+        _error = null;
+        _status = null;
+        StateHasChanged();
+
+        try
+        {
+            var queued = await BetaVideoService.RequestReencodeAsync(all);
+            _status = queued == 0
+                ? "Nothing to queue — every clip is already ready."
+                : $"Queued {queued} clip{(queued == 1 ? string.Empty : "s")} for re-encoding. They will process in the background.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Beta re-encode request failed");
+            _error = $"Could not queue re-encoding: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

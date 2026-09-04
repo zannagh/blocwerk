@@ -4,6 +4,7 @@ using System.Reflection;
 using Blocwerk.Authentication;
 using Blocwerk.Authentication.Controllers;
 using Blocwerk.Core;
+using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
 using Blocwerk.Core.Telemetry;
 using Blocwerk.HoldDetection;
@@ -333,6 +334,15 @@ public static class Program
             {
                 var video = await betaVideoService.GetVideoFileAsync(videoId, token);
                 if (video is null)
+                {
+                    return Results.NotFound();
+                }
+
+                // Withhold a clip that has not been verified web-safe yet: Pending is a brand-new,
+                // un-normalized upload and Processing may be mid-swap. Ready serves the normalized
+                // rendition; Failed serves the ORIGINAL as a fallback so a clip that played before is
+                // never made unplayable (the player renders it with a "couldn't optimize" note).
+                if (video.EncodingStatus is BetaVideoEncodingStatus.Pending or BetaVideoEncodingStatus.Processing)
                 {
                     return Results.NotFound();
                 }

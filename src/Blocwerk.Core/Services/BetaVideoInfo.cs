@@ -1,3 +1,5 @@
+using Blocwerk.Core.Enums;
+
 namespace Blocwerk.Core.Services;
 
 /// <summary>
@@ -12,4 +14,5 @@ public record BetaVideoInfo(
     DateTimeOffset CreatedAt,
     string ContentType,
     long SizeBytes,
-    bool HasThumbnail);
+    bool HasThumbnail,
+    BetaVideoEncodingStatus EncodingStatus);

@@ -104,6 +104,15 @@ public static class CoreServices
         builder.Services.AddSingleton<IBetaVideoStorage, FileSystemBetaVideoStorage>();
         builder.Services.AddSingleton<IVideoTranscoder, FfmpegVideoTranscoder>();
         builder.Services.AddScoped<IBetaVideoService, BetaVideoService>();
+
+        // Beta-video normalization: every upload is stored verbatim and then re-encoded to a
+        // universally playable MP4 off the request thread. The signal is the "work is waiting" nudge
+        // (a singleton, produced by uploads and the admin re-encode); the normalizer is the shared
+        // unit of work; the hosted service is the single, low-priority consumer that drains Pending
+        // clips one at a time. All singletons, so the worker takes RootDbContextFactory (no session).
+        builder.Services.AddSingleton<BetaVideoNormalizationSignal>();
+        builder.Services.AddSingleton<BetaVideoNormalizer>();
+        builder.Services.AddHostedService<BetaVideoNormalizationService>();
         builder.Services.AddSingleton<IWallImageStorage, FileSystemWallImageStorage>();
         builder.Services.AddSingleton<IImageVariantCache, FileSystemImageVariantCache>();
         builder.Services.AddScoped<IWallImageService, WallImageService>();

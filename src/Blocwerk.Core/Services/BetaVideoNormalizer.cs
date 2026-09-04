@@ -1,0 +1,221 @@
+using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Data;
+using Blocwerk.Core.Enums;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+
+namespace Blocwerk.Core.Services;
+
+/// <summary>The outcome of normalizing one clip, for the worker's log.</summary>
+public enum BetaVideoNormalizeOutcome
+{
+    Ready,
+    Failed,
+    Skipped,
+}
+
+/// <summary>
+/// Normalizes a single beta clip to a web-safe rendition and replaces the served file atomically.
+/// This is the ONE path both new uploads and the admin backfill funnel through: they only set a
+/// clip to <see cref="BetaVideoEncodingStatus.Pending"/>; the worker calls this to do the work.
+/// </summary>
+/// <remarks>
+/// A singleton (its dependencies all are), so it takes <see cref="RootDbContextFactory"/> — a hosted
+/// worker has no session — and opens a short-lived context per step. Every failure is contained and
+/// recorded as <see cref="BetaVideoEncodingStatus.Failed"/>; a bad clip never throws out of here.
+/// </remarks>
+public sealed class BetaVideoNormalizer
+{
+    private const int MaxErrorLength = 1024;
+
+    private readonly RootDbContextFactory dbContextFactory;
+    private readonly IBetaVideoStorage storage;
+    private readonly IVideoTranscoder transcoder;
+    private readonly ILogger<BetaVideoNormalizer> logger;
+
+    public BetaVideoNormalizer(
+        RootDbContextFactory dbContextFactory,
+        IBetaVideoStorage storage,
+        IVideoTranscoder transcoder,
+        ILogger<BetaVideoNormalizer> logger)
+    {
+        this.dbContextFactory = dbContextFactory;
+        this.storage = storage;
+        this.transcoder = transcoder;
+        this.logger = logger;
+    }
+
+    /// <summary>Processes one clip end to end. Returns the outcome; never throws for a bad clip.</summary>
+    public async Task<BetaVideoNormalizeOutcome> ProcessAsync(Guid videoId, CancellationToken cancellationToken)
+    {
+        string? legacyTemp = null;
+        string? outPath = null;
+        try
+        {
+            // The metadata read and the Processing flip are INSIDE the try so a transient DB error on
+            // either degrades to a logged failure (below) rather than throwing out of here — the whole
+            // point of this method is that a bad clip or DB blip never propagates to the worker loop.
+            var meta = await LoadMetaAsync(videoId, cancellationToken);
+            if (meta is null)
+            {
+                return BetaVideoNormalizeOutcome.Skipped;
+            }
+
+            await SetStatusAsync(videoId, BetaVideoEncodingStatus.Processing, cancellationToken);
+
+            var source = await ResolveSourceAsync(videoId, meta, cancellationToken);
+            legacyTemp = source.LegacyTemp;
+
+            var probe = await transcoder.ProbeAsync(source.Path, cancellationToken);
+            outPath = storage.CreateTempPath(".mp4");
+            var result = FfmpegVideoTranscoder.IsWebSafe(probe)
+                ? await transcoder.RemuxAsync(source.Path, outPath, cancellationToken)
+                : await transcoder.TranscodeAsync(source.Path, outPath, cancellationToken);
+
+            var storedName = storage.Commit(outPath, ".mp4");
+            outPath = null; // ownership moved into the store
+
+            await MarkReadyAsync(videoId, storedName, result, cancellationToken);
+
+            // The row now points at the fresh file, so the previous disk rendition (if any) is safe to
+            // drop. Legacy clips had their bytes in the row, cleared by MarkReadyAsync.
+            if (!string.IsNullOrEmpty(meta.StoragePath) && meta.StoragePath != storedName)
+            {
+                storage.Delete(meta.StoragePath);
+            }
+
+            logger.LogInformation("Beta clip {VideoId} normalized ({Bytes} bytes)", videoId, result.SizeBytes);
+            return BetaVideoNormalizeOutcome.Ready;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Shutdown: leave the clip Processing so the next start re-picks it (the worker resets
+            // stale Processing rows on boot). Do not record a failure.
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Beta clip {VideoId} could not be normalized; leaving the original in place.", videoId);
+            await MarkFailedAsync(videoId, ex.Message, cancellationToken);
+            return BetaVideoNormalizeOutcome.Failed;
+        }
+        finally
+        {
+            // Both are full temp paths under the store's tmp/ folder (not stored names), so delete
+            // them directly rather than through the store's name-based Delete.
+            DeleteIfExists(legacyTemp);
+            DeleteIfExists(outPath);
+        }
+    }
+
+    private async Task<BetaVideoMeta?> LoadMetaAsync(Guid videoId, CancellationToken ct)
+    {
+        await using var db = dbContextFactory.CreateDbContext();
+        return await db.BetaVideos
+            .AsNoTracking()
+            .Where(v => v.Id == videoId)
+            .Select(v => new BetaVideoMeta(v.StoragePath, v.FileName, v.Data != null))
+            .FirstOrDefaultAsync(ct);
+    }
+
+    /// <summary>Resolves the bytes to encode: the stored file, or a temp file written from legacy bytea.</summary>
+    private async Task<BetaVideoSource> ResolveSourceAsync(Guid videoId, BetaVideoMeta meta, CancellationToken ct)
+    {
+        if (!string.IsNullOrEmpty(meta.StoragePath))
+        {
+            var path = storage.ResolvePhysicalPath(meta.StoragePath);
+            if (path is null || !File.Exists(path))
+            {
+                throw new InvalidOperationException("The stored clip file is missing.");
+            }
+
+            return new BetaVideoSource(path, null);
+        }
+
+        if (!meta.HasData)
+        {
+            throw new InvalidOperationException("The clip has neither a stored file nor legacy bytes.");
+        }
+
+        await using var db = dbContextFactory.CreateDbContext();
+        var bytes = await db.BetaVideos.AsNoTracking().Where(v => v.Id == videoId).Select(v => v.Data).FirstOrDefaultAsync(ct);
+        if (bytes is not { Length: > 0 })
+        {
+            throw new InvalidOperationException("The legacy clip bytes could not be read.");
+        }
+
+        var extension = Path.GetExtension(meta.FileName ?? string.Empty);
+        var temp = storage.CreateTempPath(string.IsNullOrEmpty(extension) ? ".bin" : extension);
+        await File.WriteAllBytesAsync(temp, bytes, ct);
+        return new BetaVideoSource(temp, temp);
+    }
+
+    private async Task SetStatusAsync(Guid videoId, BetaVideoEncodingStatus status, CancellationToken ct)
+    {
+        await using var db = dbContextFactory.CreateDbContext();
+        await db.BetaVideos
+            .Where(v => v.Id == videoId)
+            .ExecuteUpdateAsync(s => s.SetProperty(v => v.EncodingStatus, status), ct);
+    }
+
+    private async Task MarkReadyAsync(Guid videoId, string storedName, VideoTranscodeResult result, CancellationToken ct)
+    {
+        await using var db = dbContextFactory.CreateDbContext();
+        await db.BetaVideos
+            .Where(v => v.Id == videoId)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(v => v.StoragePath, storedName)
+                .SetProperty(v => v.ContentType, result.ContentType)
+                .SetProperty(v => v.SizeBytes, result.SizeBytes)
+                .SetProperty(v => v.Data, (byte[]?)null)
+                .SetProperty(v => v.EncodingStatus, BetaVideoEncodingStatus.Ready)
+                .SetProperty(v => v.LastEncodedUtc, DateTimeOffset.UtcNow)
+                .SetProperty(v => v.EncodingError, (string?)null), ct);
+    }
+
+    private async Task MarkFailedAsync(Guid videoId, string error, CancellationToken ct)
+    {
+        try
+        {
+            await using var db = dbContextFactory.CreateDbContext();
+            await db.BetaVideos
+                .Where(v => v.Id == videoId)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(v => v.EncodingStatus, BetaVideoEncodingStatus.Failed)
+                    .SetProperty(v => v.EncodingError, Truncate(error)), CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Could not record the normalize failure for beta clip {VideoId}.", videoId);
+        }
+    }
+
+    private void DeleteIfExists(string? path)
+    {
+        if (string.IsNullOrEmpty(path))
+        {
+            return;
+        }
+
+        // The finally must not throw: an IOException from a locked/vanished temp file cannot be
+        // allowed to mask the real outcome or escape the method.
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not delete beta normalize temp file {Path}.", path);
+        }
+    }
+
+    private static string Truncate(string value) =>
+        value.Length <= MaxErrorLength ? value : value[..MaxErrorLength];
+
+    private sealed record BetaVideoMeta(string? StoragePath, string? FileName, bool HasData);
+
+    private sealed record BetaVideoSource(string Path, string? LegacyTemp);
+}

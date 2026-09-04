@@ -1,3 +1,4 @@
+@using Blocwerk.Core.Enums
 @inject IBetaVideoService VideoService
 @inject Blocwerk.Core.Configuration.BlocwerkSettings Settings
 @inject IJSRuntime JS
@@ -55,11 +56,23 @@
                             {
                                 <span class="beta-thumb-fallback" aria-hidden="true"></span>
                             }
-                            <span class="beta-play" aria-hidden="true">
-                                <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
-                                    <path d="M8 5v14l11-7z" />
-                                </svg>
-                            </span>
+                            @if (IsPlayable(video.EncodingStatus))
+                            {
+                                @* Ready plays the normalized rendition; Failed plays the ORIGINAL as a
+                                   fallback (it played before this feature, so it must still play). *@
+                                <span class="beta-play" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                                        <path d="M8 5v14l11-7z" />
+                                    </svg>
+                                </span>
+                            }
+                            else
+                            {
+                                @* Pending/Processing: not yet a verified file, so show an "optimizing"
+                                   badge rather than a play button that would open a not-yet-served clip. *@
+                                <span class="beta-play beta-processing" aria-hidden="true"
+                                      title="@ProcessingTitle()">…</span>
+                            }
                         </span>
                         <span class="beta-uploader">@video.UploaderName</span>
                     </button>
@@ -101,8 +114,36 @@
                 }
                 <button type="button" class="beta-lightbox-close" @onclick="Close" aria-label="Close">&times;</button>
             </div>
-            <video @ref="_playerRef" class="beta-player" src="@VideoUrl(_playing)" controls playsinline
-                   preload="metadata"></video>
+            @if (IsPlayable(_playing.EncodingStatus))
+            {
+                @* Ready is a normalized web-safe MP4; Failed serves the ORIGINAL as a fallback so a
+                   clip that played before is never made unplayable. A Failed clip may be any format,
+                   so it deliberately carries no <source type> hint for the browser to reject on. *@
+                <video @ref="_playerRef" class="beta-player" controls playsinline preload="metadata">
+                    @if (_playing.EncodingStatus == BetaVideoEncodingStatus.Ready)
+                    {
+                        <source src="@VideoUrl(_playing)" type="video/mp4" />
+                    }
+                    else
+                    {
+                        <source src="@VideoUrl(_playing)" />
+                    }
+                </video>
+                @if (_playing.EncodingStatus == BetaVideoEncodingStatus.Failed)
+                {
+                    <p class="beta-player-note">Couldn't optimize this clip — playing the original.</p>
+                }
+            }
+            else
+            {
+                <div class="beta-player beta-player-processing">
+                    @if (_playing.HasThumbnail)
+                    {
+                        <img src="@ThumbnailUrl(_playing)" alt="" />
+                    }
+                    <p>@ProcessingMessage()</p>
+                </div>
+            }
         </div>
     </div>
 }
@@ -273,8 +314,19 @@
     private void OpenVideo(BetaVideoInfo video)
     {
         _playing = video;
-        _autoplayPending = true;
+
+        // Ready and Failed both render a <video> (Failed falls back to the original), so both autoplay.
+        _autoplayPending = IsPlayable(video.EncodingStatus);
     }
+
+    /// <summary>Whether this clip renders a playable &lt;video&gt;: Ready (normalized) or Failed (original fallback).</summary>
+    private static bool IsPlayable(BetaVideoEncodingStatus status) =>
+        status is BetaVideoEncodingStatus.Ready or BetaVideoEncodingStatus.Failed;
+
+    private static string ProcessingTitle() => "This clip is still being optimized";
+
+    private static string ProcessingMessage() =>
+        "This clip is still being optimized. Check back in a moment.";
 
     private void Close()
     {

@@ -34,6 +34,9 @@ public sealed class WallTestHarness : IDisposable
         connection = new SqliteConnection(connectionString);
         connection.Open();
 
+        // A root (session-less) factory over the SAME database, as the background normalizer takes.
+        RootContextFactory = new TestRootDbContextFactory(connectionString);
+
         betaVideoDir = Path.Combine(Path.GetTempPath(), "blocwerk-beta-tests", Guid.NewGuid().ToString("N"));
         wallImageDir = Path.Combine(Path.GetTempPath(), "blocwerk-wall-image-tests", Guid.NewGuid().ToString("N"));
 
@@ -61,8 +64,11 @@ public sealed class WallTestHarness : IDisposable
         SessionService = new Blocwerk.Core.Services.SessionService(DbContextFactory, CurrentUser, NullLogger<Blocwerk.Core.Services.SessionService>.Instance);
         var betaSettings = new BlocwerkSettings();
         betaSettings.BetaVideo.StoragePath = betaVideoDir;
-        var betaStorage = new FileSystemBetaVideoStorage(betaSettings);
-        BetaVideoService = new BetaVideoService(DbContextFactory, CurrentUser, ActivityLog, betaStorage, NullLogger<BetaVideoService>.Instance);
+        BetaStorage = new FileSystemBetaVideoStorage(betaSettings);
+        NormalizationSignal = new BetaVideoNormalizationSignal();
+        BetaVideoService = new BetaVideoService(
+            DbContextFactory, CurrentUser, ActivityLog, BetaStorage, NullLogger<BetaVideoService>.Instance,
+            normalizationSignal: NormalizationSignal);
 
         var imageSettings = new BlocwerkSettings();
         imageSettings.WallImage.StoragePath = wallImageDir;
@@ -85,6 +91,15 @@ public sealed class WallTestHarness : IDisposable
     public Guid WallId { get; private set; }
 
     public TestDbContextFactory DbContextFactory { get; }
+
+    /// <summary>A session-less factory over the same database, as the background normalizer takes.</summary>
+    public RootDbContextFactory RootContextFactory { get; }
+
+    /// <summary>The beta-clip disk store the <see cref="BetaVideoService"/> writes to.</summary>
+    public IBetaVideoStorage BetaStorage { get; }
+
+    /// <summary>The wake signal the service raises on new uploads / re-encode requests.</summary>
+    public BetaVideoNormalizationSignal NormalizationSignal { get; }
 
     public ICurrentUserService CurrentUser { get; }
 
@@ -226,6 +241,32 @@ public sealed class TestDbContextFactory : IDbContextFactory<BlocwerkDbContext>
         $"Data Source={Guid.NewGuid():N};Mode=Memory;Cache=Shared";
 
     public BlocwerkDbContext CreateDbContext()
+    {
+        var options = new DbContextOptionsBuilder<BlocwerkDbContext>()
+            .UseSqlite(connectionString)
+            .Options;
+
+        return new SqliteBlocwerkDbContext(options);
+    }
+}
+
+/// <summary>
+/// The session-less <see cref="RootDbContextFactory"/> the background normalizer takes, backed by the
+/// same SQLite database as the harness (and the same ticks-based <see cref="DateTimeOffset"/> mapping,
+/// so its OrderBy(CreatedAt) translates). <see cref="RootDbContextFactory.CreateDbContext"/> is virtual
+/// precisely so tests can substitute a SQLite context for the Postgres one.
+/// </summary>
+public sealed class TestRootDbContextFactory : RootDbContextFactory
+{
+    private readonly string connectionString;
+
+    public TestRootDbContextFactory(string connectionString)
+        : base(new DbContextOptionsBuilder<BlocwerkDbContext>().UseSqlite(connectionString).Options)
+    {
+        this.connectionString = connectionString;
+    }
+
+    public override BlocwerkDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<BlocwerkDbContext>()
             .UseSqlite(connectionString)

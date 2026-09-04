@@ -62,6 +62,17 @@ public interface IBetaVideoService
     /// <exception cref="UnauthorizedAccessException">Nobody is signed in.</exception>
     /// <exception cref="InvalidOperationException">No such boulder, or the caller is not a member of its wall.</exception>
     Task EnsureCanUploadAsync(Guid boulderId);
+
+    /// <summary>
+    /// Queues clips for the background normalizer by marking them <see cref="BetaVideoEncodingStatus.Pending"/>
+    /// and waking the worker. <paramref name="all"/> forces every clip to be re-encoded; otherwise only
+    /// clips that are not already <see cref="BetaVideoEncodingStatus.Ready"/> are re-queued. A clip
+    /// currently <see cref="BetaVideoEncodingStatus.Processing"/> is left alone in both cases so the
+    /// re-queue cannot race the worker. Returns how many rows were queued. Asserts the app-admin role
+    /// internally (installation-wide write), so it is safe even without the admin page's gate.
+    /// </summary>
+    /// <exception cref="UnauthorizedAccessException">The caller is not an administrator of the installation.</exception>
+    Task<int> RequestReencodeAsync(bool all);
 }
 
 public class BetaVideoService : IBetaVideoService
@@ -75,6 +86,7 @@ public class BetaVideoService : IBetaVideoService
     private readonly IBetaVideoStorage storage;
     private readonly ILogger<BetaVideoService> logger;
     private readonly IPushNotificationService? pushNotificationService;
+    private readonly BetaVideoNormalizationSignal? normalizationSignal;
 
     public BetaVideoService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
@@ -82,7 +94,8 @@ public class BetaVideoService : IBetaVideoService
         IActivityLogService activityLogService,
         IBetaVideoStorage storage,
         ILogger<BetaVideoService> logger,
-        IPushNotificationService? pushNotificationService = null)
+        IPushNotificationService? pushNotificationService = null,
+        BetaVideoNormalizationSignal? normalizationSignal = null)
     {
         this.dbContextFactory = dbContextFactory;
         this.currentUserService = currentUserService;
@@ -90,6 +103,7 @@ public class BetaVideoService : IBetaVideoService
         this.storage = storage;
         this.logger = logger;
         this.pushNotificationService = pushNotificationService;
+        this.normalizationSignal = normalizationSignal;
     }
 
     public async Task<BetaVideoInfo> AddVideoFromFileAsync(
@@ -145,10 +159,17 @@ public class BetaVideoService : IBetaVideoService
                 SizeBytes = sizeBytes,
                 StoragePath = storedName,
                 Thumbnail = thumbnail,
+
+                // Every new upload is stored verbatim and normalized to a web-safe MP4 asynchronously,
+                // so the request never blocks on ffmpeg. The player shows a "processing" state until
+                // the background worker (woken by the signal below) flips this to Ready.
+                EncodingStatus = BetaVideoEncodingStatus.Pending,
             };
 
             db.BetaVideos.Add(video);
             await db.SaveChangesAsync();
+
+            normalizationSignal?.Signal();
 
             BlocwerkMetrics.RecordBetaVideoUploaded(boulder.WallId, sizeBytes);
 
@@ -173,7 +194,8 @@ public class BetaVideoService : IBetaVideoService
                 video.CreatedAt,
                 video.ContentType,
                 video.SizeBytes,
-                thumbnail is { Length: > 0 });
+                thumbnail is { Length: > 0 },
+                video.EncodingStatus);
         }
         catch (Exception ex)
         {
@@ -270,7 +292,7 @@ public class BetaVideoService : IBetaVideoService
         {
             await using var db = await OpenReadableAsync(shareToken);
             var meta = await AccessibleVideos(db, videoId, shareToken)
-                .Select(v => new { v.StoragePath, v.ContentType, v.FileName, HasData = v.Data != null })
+                .Select(v => new { v.StoragePath, v.ContentType, v.FileName, v.EncodingStatus, HasData = v.Data != null })
                 .FirstOrDefaultAsync();
 
             if (meta is null)
@@ -282,7 +304,7 @@ public class BetaVideoService : IBetaVideoService
             {
                 var path = storage.ResolvePhysicalPath(meta.StoragePath);
                 return path is not null && File.Exists(path)
-                    ? new BetaVideoFile(path, null, meta.ContentType, meta.FileName)
+                    ? new BetaVideoFile(path, null, meta.ContentType, meta.FileName, meta.EncodingStatus)
                     : null;
             }
 
@@ -293,7 +315,7 @@ public class BetaVideoService : IBetaVideoService
 
             var bytes = await AccessibleVideos(db, videoId, shareToken).Select(v => v.Data).FirstOrDefaultAsync();
             return bytes is { Length: > 0 }
-                ? new BetaVideoFile(null, bytes, meta.ContentType, meta.FileName)
+                ? new BetaVideoFile(null, bytes, meta.ContentType, meta.FileName, meta.EncodingStatus)
                 : null;
         }
         catch (Exception ex)
@@ -375,6 +397,47 @@ public class BetaVideoService : IBetaVideoService
         await EnsureMemberAsync(db, wallId.Value, user.Id);
     }
 
+    public async Task<int> RequestReencodeAsync(bool all)
+    {
+        using var op = BlocwerkMetrics.TimeOperation("BetaVideo.RequestReencode");
+        try
+        {
+            var user = await currentUserService.GetCurrentUserAsync();
+            await using var db = await dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = Guid.Empty;
+
+            // Defense in depth: this ExecuteUpdate reaches every clip in the installation (BetaVideo
+            // carries no query filter of its own), so it must not be reachable without the app-admin
+            // role even if a future caller forgets the page gate. Decided against the database exactly
+            // as AppAdminHandler decides the AppAdmin policy — never taken from the caller/UI.
+            await AppAdminGuard.EnsureAppAdminAsync(db, user.Id, CancellationToken.None);
+
+            // A Processing row is being written by the worker right now; flipping it to Pending would
+            // race the worker's MarkReady, so it is excluded from BOTH paths. A genuinely stranded
+            // Processing row is re-picked by the boot-time stale-Processing reset instead.
+            var query = all
+                ? db.BetaVideos.Where(v => v.EncodingStatus != BetaVideoEncodingStatus.Processing)
+                : db.BetaVideos.Where(v => v.EncodingStatus != BetaVideoEncodingStatus.Ready
+                                           && v.EncodingStatus != BetaVideoEncodingStatus.Processing);
+
+            var queued = await query.ExecuteUpdateAsync(s => s
+                .SetProperty(v => v.EncodingStatus, BetaVideoEncodingStatus.Pending));
+
+            if (queued > 0)
+            {
+                normalizationSignal?.Signal();
+            }
+
+            logger.LogInformation("Queued {Count} beta clip(s) for re-encode (all={All})", queued, all);
+            return queued;
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
+    }
+
     private static Task<List<BetaVideoInfo>> ProjectAsync(IQueryable<BetaVideo> query) =>
         query
             .AsNoTracking()
@@ -393,7 +456,8 @@ public class BetaVideoService : IBetaVideoService
                 v.CreatedAt,
                 v.ContentType,
                 v.SizeBytes,
-                v.Thumbnail != null && v.Thumbnail.Length > 0))
+                v.Thumbnail != null && v.Thumbnail.Length > 0,
+                v.EncodingStatus))
             .ToListAsync();
 
     /// <summary>
