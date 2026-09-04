@@ -13,7 +13,7 @@ namespace Blocwerk.Core.Services;
 /// viewing and nothing else — that stays true. This is a separate, narrower allowance with a
 /// separate name, so widening one can never silently widen the other.
 /// <para>
-/// FOUR conditions, all required, and each of them closes a different hole:
+/// FIVE conditions, all required, and each of them closes a different hole:
 /// </para>
 /// <list type="number">
 /// <item><description>The session is a registered kiosk whose wall is exactly the wall being
@@ -26,6 +26,9 @@ namespace Blocwerk.Core.Services;
 /// grant has to re-check, exactly as <c>KioskController</c> does before every act-as.</description></item>
 /// <item><description>The wall opted in (<c>Wall.AllowAnonymousKioskSetting</c>), which defaults to
 /// false. A gym that never turns this on has no unauthenticated write surface at all.</description></item>
+/// <item><description>THIS key opted in (<c>ApiKey.AllowAnonymousKioskSetting</c>), which defaults
+/// to true and can only narrow the wall's grant. It is read fresh here rather than carried in the
+/// device cookie, so clearing it excludes one already-registered tablet without re-pairing it.</description></item>
 /// </list>
 /// <para>
 /// A missing <paramref name="keyValidator"/> (hosts with no auth stack — tests, tooling) fails
@@ -37,7 +40,8 @@ public static class KioskAnonymousSetting
     /// <summary>
     /// True when an anonymous caller on this session may create a boulder on
     /// <paramref name="wallId"/>. False for every other anonymous caller, including a kiosk aimed at
-    /// a different wall, one whose key has been revoked, and one whose wall has not opted in.
+    /// a different wall, one whose key has been revoked, one whose wall has not opted in, and one
+    /// whose key has been opted back out.
     /// </summary>
     public static async Task<bool> IsAllowedAsync(
         BlocwerkDbContext db,
@@ -69,11 +73,27 @@ public static class KioskAnonymousSetting
         // Filter-ignoring on purpose: the opt-in is read for an anonymous caller, who by definition
         // passes no membership check, and the wall identity was already pinned by the device cookie
         // above. Reading a single boolean of the one named wall widens nothing.
-        return await db.Walls
+        var wallAllows = await db.Walls
             .IgnoreQueryFilters()
             .AsNoTracking()
             .Where(w => w.Id == wallId)
             .Select(w => w.AllowAnonymousKioskSetting)
+            .FirstOrDefaultAsync(ct);
+
+        if (!wallAllows)
+        {
+            return false;
+        }
+
+        // The per-key narrowing, AND-ed with the wall's grant and never widening it. Read fresh on
+        // every attempt, same discipline as the wall read, and missing rows resolve to false — the
+        // key was already proven to exist by the validator above, so a miss here means it vanished
+        // mid-call and the answer is still no.
+        return await db.ApiKeys
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(k => k.Id == apiKeyId)
+            .Select(k => k.AllowAnonymousKioskSetting)
             .FirstOrDefaultAsync(ct);
     }
 

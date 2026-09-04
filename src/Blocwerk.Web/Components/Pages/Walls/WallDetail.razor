@@ -587,7 +587,7 @@ else
                        BoulderCreate and BoulderService.EnsureAnonymousKioskCreateAllowedAsync accept:
                        this tablet's own wall, with the setting on. Without the kiosk branch a tablet
                        with nobody picked could never reach the create flow the server already allows. *@
-                    @if (_holds.Count > 0 && (!_isAnonymous || CanCreateAnonymously))
+                    @if (_holds.Count > 0 && (!_isAnonymous || _canCreateAnonymously))
                     {
                         <a href="/walls/@WallId/boulders/create" class="btn-add-boulder">+ New</a>
                     }
@@ -749,12 +749,11 @@ else
     private WallCarousel? _carousel;
     private Wall? _wall;
 
-    // Viewing rights alone are not enough: the wall owner has to have turned the setting on. The
-    // server re-checks this (plus the kiosk key's validity) before it will credit a boulder to Ghost,
-    // so this predicate only decides whether the button is worth showing.
-    private bool CanCreateAnonymously =>
-        _wall?.AllowAnonymousKioskSetting == true
-        && KioskViewing.AllowsAnonymousViewOf(KioskContext, WallId);
+    // Answered by the SAME helper the server gate runs (via IBoulderService), so the button and the
+    // create can never disagree: viewing rights, a live kiosk key, the wall's opt-in AND this
+    // tablet's own per-key flag all have to hold. Refreshed by every LoadWall, which is also what
+    // the wall-cache change handler re-runs.
+    private bool _canCreateAnonymously;
 
     // The wall the loaded state belongs to, so OnParametersSetAsync can tell a real wall change from
     // an ordinary re-render or a query-only navigation.
@@ -1140,6 +1139,12 @@ else
 
     private async Task LoadWall()
     {
+        // Cleared before ANY branch that can return, so no path out of this method can leave last
+        // wall's answer standing while _wall already points at the next one. The early return on the
+        // login redirect is such a path: a render still happens before the navigation completes, and
+        // a stale true would offer "+ New" for a wall this tablet may not even write to.
+        _canCreateAnonymously = false;
+
         if (!string.IsNullOrEmpty(ShareToken))
         {
             _wall = await WallService.GetWallByShareTokenAsync(ShareToken);
@@ -1205,6 +1210,14 @@ else
                 _isModerator = false;
             }
         }
+
+        // The one place the anonymous "+ New" button is decided, and it asks the server's own gate.
+        // Only worth a round-trip for a session that has no signed-in user; anybody else creates on
+        // their own authority. Reset to false at the top of this method, so this is the only place
+        // that can turn it back on.
+        _canCreateAnonymously = _isAnonymous
+            && _wall != null
+            && await BoulderService.CanCreateAnonymouslyAsync(WallId);
 
         if (_wall != null)
         {

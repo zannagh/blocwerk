@@ -1581,6 +1581,12 @@ html.bw-fullscreen .wall-main .photo-viewport {
 .apikey-row-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .apikey-confirm-text { font-size: 0.78rem; font-weight: 600; color: var(--text-heading); }
 
+/* Per-tablet anonymous-setting opt-out; only kiosk keys in the wall panel render it. Own full-width
+   line inside the wrapping row, so the checkbox and its hint never squeeze the name or the actions. */
+.apikey-row-option { flex: 1 1 100%; order: 3; margin-top: 2px; }
+.apikey-option-label { display: flex; align-items: center; gap: 7px; font-size: 0.8rem; cursor: pointer; }
+.apikey-row-option .hint { margin: 3px 0 0 22px; font-size: 0.72rem; }
+
 /* Scope badge next to a key's name; only kiosk keys carry one today. */
 .apikey-scope {
     font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;

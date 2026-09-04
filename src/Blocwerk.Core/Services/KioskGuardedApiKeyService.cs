@@ -4,8 +4,9 @@ using Blocwerk.Core.Entities;
 namespace Blocwerk.Core.Services;
 
 /// <summary>
-/// Wraps <see cref="IApiKeyService"/> and refuses to MINT a key while the session belongs to a kiosk
-/// tablet, whatever authority the acting user otherwise has.
+/// Wraps <see cref="IApiKeyService"/> and refuses to MINT a key — or to WIDEN a kiosk key's
+/// anonymous-setting permission — while the session belongs to a kiosk tablet, whatever authority
+/// the acting user otherwise has. Narrowing that permission stays allowed.
 /// </summary>
 /// <remarks>
 /// A kiosk session keeps the picked user's full authority over the wall (that is a locked product
@@ -15,8 +16,9 @@ namespace Blocwerk.Core.Services;
 /// mint keys are interactive Blazor components that call straight into this service inside the
 /// circuit, where no route middleware ever runs.
 /// <para>
-/// Reads and revocations are left alone. Revoking is a de-escalation, and a kiosk key panel that
-/// could not list keys would be confusing without being any safer.
+/// Reads and de-escalations are left alone: revoking a key, and switching a key's anonymous-setting
+/// flag OFF, only ever take permission away, and a kiosk key panel that could not list keys would be
+/// confusing without being any safer.
 /// </para>
 /// </remarks>
 public sealed class KioskGuardedApiKeyService : IApiKeyService
@@ -78,6 +80,27 @@ public sealed class KioskGuardedApiKeyService : IApiKeyService
         return inner.RevokeAsync(apiKeyId, actingUserId, ct);
     }
 
+    public Task SetAnonymousKioskSettingAsync(
+        Guid apiKeyId,
+        Guid actingUserId,
+        bool allowed,
+        CancellationToken ct = default)
+    {
+        // Asymmetric on purpose, and the direction is the whole point. Turning the flag ON widens
+        // what a tablet may do without anybody signed in, so a kiosk session must not be able to do
+        // it — that is self-escalation, exactly the thing minting is blocked for. Turning it OFF
+        // only takes permission away, so it is allowed from a kiosk for the same reason
+        // <see cref="RevokeAsync"/> is left unguarded: an admin standing at the tablet has to be
+        // able to switch that very tablet off, and refusing them would be security theatre that
+        // hands them a generic error banner instead.
+        if (allowed)
+        {
+            EnsureNotKiosk("Anonymous setting cannot be switched on from a kiosk session.");
+        }
+
+        return inner.SetAnonymousKioskSettingAsync(apiKeyId, actingUserId, allowed, ct);
+    }
+
     public Task<ApiKey?> ValidateAsync(string token, CancellationToken ct = default)
     {
         return inner.ValidateAsync(token, ct);
@@ -90,11 +113,12 @@ public sealed class KioskGuardedApiKeyService : IApiKeyService
         return inner.ValidateKioskAsync(token, ct);
     }
 
-    private void EnsureNotKiosk()
+    private void EnsureNotKiosk(
+        string message = "API keys cannot be created from a kiosk session.")
     {
         if (kioskContext.IsKiosk)
         {
-            throw new KioskRestrictedException("API keys cannot be created from a kiosk session.");
+            throw new KioskRestrictedException(message);
         }
     }
 }

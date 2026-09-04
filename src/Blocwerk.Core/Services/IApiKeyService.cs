@@ -67,6 +67,23 @@ public interface IApiKeyService
     Task RevokeAsync(Guid apiKeyId, Guid actingUserId, CancellationToken ct = default);
 
     /// <summary>
+    /// Turns the per-key anonymous-setting flag of a <see cref="Enums.ApiKeyScope.Kiosk"/> key on or
+    /// off. The acting user must administer the key's wall, exactly as revoking it requires.
+    /// </summary>
+    /// <remarks>
+    /// This only ever NARROWS <c>Wall.AllowAnonymousKioskSetting</c>: with the wall's own switch off
+    /// the tablet cannot set anonymously whatever this says. It takes effect on the next attempt of
+    /// an already-registered tablet — nothing has to be re-paired.
+    /// </remarks>
+    /// <exception cref="UnauthorizedAccessException">The acting user does not administer the wall.</exception>
+    /// <exception cref="InvalidOperationException">No such key, or it is not kiosk-scoped.</exception>
+    Task SetAnonymousKioskSettingAsync(
+        Guid apiKeyId,
+        Guid actingUserId,
+        bool allowed,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Resolves a bearer token to its key, or null when it is unknown, revoked or expired.
     /// Stamps <see cref="ApiKey.LastUsedAt"/>, throttled to at most one write per minute.
     /// </summary>

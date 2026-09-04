@@ -26,6 +26,21 @@
         </span>
     </div>
 
+    @if (ShowAnonymousSetting && Key.Scope == ApiKeyScope.Kiosk)
+    {
+        <div class="apikey-row-option">
+            <label class="apikey-option-label">
+                <input type="checkbox" @key="anonymousRenderNonce" disabled="@Busy"
+                       checked="@Key.AllowAnonymousKioskSetting" @onchange="ToggleAnonymousSetting" />
+                <span>Allow anonymous setting from this tablet</span>
+            </label>
+            <p class="hint">
+                Has no effect unless the wall's own "anonymous setting" is switched on &mdash; this
+                only narrows it, so you can exclude a single tablet.
+            </p>
+        </div>
+    }
+
     <div class="apikey-row-actions">
         @if (StateLabel != null)
         {
@@ -57,6 +72,17 @@
 
     [Parameter]
     public EventCallback<Guid> OnRevoke { get; set; }
+
+    /// <summary>
+    /// Shows the per-tablet anonymous-setting checkbox. Only the wall panel sets it, and only kiosk
+    /// keys render it: the flag means nothing on a wall or personal key.
+    /// </summary>
+    [Parameter]
+    public bool ShowAnonymousSetting { get; set; }
+
+    /// <summary>Raised with the key's id and the requested state when the checkbox is flipped.</summary>
+    [Parameter]
+    public EventCallback<(Guid KeyId, bool Allowed)> OnAnonymousSettingChanged { get; set; }
 
     private bool IsRevoked => Key.RevokedAt.HasValue;
 
@@ -101,6 +127,34 @@
     /// <summary>The word before the expiry date: past expiries read "Expired", future ones "Expires".
     /// Only chooses the word; the date itself is localized client-side by the LocalTime component.</summary>
     private string ExpiryWord => Key.ExpiresAt is { } expires && expires <= DateTimeOffset.UtcNow ? "Expired" : "Expires";
+
+    /// <summary>
+    /// Bumped after every toggle attempt so the checkbox is a NEW element in the next render tree.
+    /// </summary>
+    /// <remarks>
+    /// The checkbox is bound one way, from <see cref="ApiKey.AllowAnonymousKioskSetting"/> only. When
+    /// the write fails, the reloaded row still carries the old value, Blazor diffs an UNCHANGED
+    /// <c>checked</c> attribute and emits no DOM update at all — so the browser would keep showing
+    /// the user's click on a permission the server never granted, and in the permissive direction.
+    /// Changing the element's key makes the diff discard and recreate the input from the reloaded
+    /// row instead of comparing attributes, so what is rendered is always what the database says.
+    /// </remarks>
+    private int anonymousRenderNonce;
+
+    private async Task ToggleAnonymousSetting(ChangeEventArgs args)
+    {
+        var allowed = args.Value is true;
+        try
+        {
+            await OnAnonymousSettingChanged.InvokeAsync((Key.Id, allowed));
+        }
+        finally
+        {
+            // After the attempt, so the recreated element renders the state the parent just reloaded
+            // — on the failure path that is the unchanged database value, not the click.
+            anonymousRenderNonce++;
+        }
+    }
 
     private async Task Confirm()
     {

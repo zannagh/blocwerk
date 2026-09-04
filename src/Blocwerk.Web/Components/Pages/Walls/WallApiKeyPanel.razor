@@ -76,7 +76,8 @@
         {
             @foreach (var key in keys)
             {
-                <ApiKeyRow @key="key.Id" Key="key" Busy="busy" OnRevoke="Revoke" />
+                <ApiKeyRow @key="key.Id" Key="key" Busy="busy" OnRevoke="Revoke"
+                           ShowAnonymousSetting="true" OnAnonymousSettingChanged="SetAnonymousSetting" />
             }
         }
     </div>
@@ -202,6 +203,49 @@
         }
         finally
         {
+            busy = false;
+        }
+    }
+
+    /// <summary>
+    /// Narrows (or restores) one tablet's permission to set with nobody signed in. The wall-level
+    /// switch still decides whether any tablet may; this only takes a single key out of that grant.
+    /// </summary>
+    private async Task SetAnonymousSetting((Guid KeyId, bool Allowed) change)
+    {
+        if (busy)
+        {
+            return;
+        }
+
+        error = null;
+        busy = true;
+        try
+        {
+            await ApiKeyService.SetAnonymousKioskSettingAsync(change.KeyId, CurrentUserId, change.Allowed);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            error = "Only wall admins can change this wall's keys.";
+        }
+        catch (InvalidOperationException)
+        {
+            error = "That key no longer exists.";
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(
+                ex, "Setting the anonymous kiosk flag of API key {ApiKeyId} on wall {WallId} failed",
+                change.KeyId, WallId);
+            error = "The setting could not be changed. Please try again.";
+        }
+        finally
+        {
+            // ALWAYS, not only when the write succeeded: the checkbox is a security control, and a
+            // refused or failed write must leave it showing what the database actually says rather
+            // than the click that did not take. ReloadAsync swallows its own failures, so this
+            // cannot mask the error above with a second exception.
+            await ReloadAsync();
             busy = false;
         }
     }

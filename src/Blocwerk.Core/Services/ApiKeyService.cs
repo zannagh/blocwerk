@@ -143,6 +143,45 @@ public class ApiKeyService : IApiKeyService
         }
     }
 
+    public async Task SetAnonymousKioskSettingAsync(
+        Guid apiKeyId,
+        Guid actingUserId,
+        bool allowed,
+        CancellationToken ct = default)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+        db.CurrentUserId = Guid.Empty;
+
+        var key = await db.ApiKeys.IgnoreQueryFilters().FirstOrDefaultAsync(k => k.Id == apiKeyId, ct);
+        if (key is null)
+        {
+            throw new InvalidOperationException("API key not found");
+        }
+
+        if (key.Scope != ApiKeyScope.Kiosk || !key.WallId.HasValue)
+        {
+            throw new InvalidOperationException("Only a kiosk key has an anonymous setting flag.");
+        }
+
+        // Same authority as revoking the key: the wall's admins govern the wall's keys. Checked here
+        // and not merely hidden in the panel, because the panel is an interactive component calling
+        // straight into this service.
+        if (!await WallAdminGuard.IsWallAdminAsync(db, key.WallId.Value, actingUserId, ct))
+        {
+            throw new UnauthorizedAccessException(
+                $"User {actingUserId} may not change API key {apiKeyId}.");
+        }
+
+        if (key.AllowAnonymousKioskSetting != allowed)
+        {
+            key.AllowAnonymousKioskSetting = allowed;
+            await db.SaveChangesAsync(ct);
+            logger.LogInformation(
+                "API key {ApiKeyId} anonymous kiosk setting set to {State} by {UserId}",
+                apiKeyId, allowed, actingUserId);
+        }
+    }
+
     public async Task<ApiKey?> ValidateAsync(string token, CancellationToken ct = default)
     {
         if (!ApiKeyTokens.LooksLikeApiKey(token))

@@ -40,6 +40,21 @@ public interface IBoulderService
         IReadOnlyList<Guid>? setterUserIds = null);
 
     /// <summary>
+    /// Whether THIS session — a registered kiosk tablet with nobody signed in — satisfies every
+    /// PERMISSION condition in <see cref="KioskAnonymousSetting"/> for creating a boulder on
+    /// <paramref name="wallId"/>: a live kiosk key aimed at this very wall, the wall's opt-in, and
+    /// that key's own flag. Exposed so a page can decide whether to offer the button without
+    /// disagreeing with the server about who is allowed.
+    /// </summary>
+    /// <remarks>
+    /// It is NOT the whole of what <see cref="CreateBoulderAsync"/> asks: the create ALSO consults
+    /// the volume throttle, which this deliberately does not touch — a predicate a page may call on
+    /// every render must not consume or advance throttle state. So a true here means "permitted",
+    /// not "will succeed": a create can still be refused because the tablet is over its budget.
+    /// </remarks>
+    Task<bool> CanCreateAnonymouslyAsync(Guid wallId, CancellationToken ct = default);
+
+    /// <summary>
     /// Makes a draft visible to everyone on the wall.
     /// </summary>
     Task<Boulder> PublishBoulderAsync(Guid boulderId);
@@ -213,7 +228,7 @@ public class BoulderService : IBoulderService
 
             // Resolve WHO is setting this before anything else. Almost always a signed-in user; the
             // one exception is an unattended kiosk tablet, which is credited to the Ghost system row
-            // and has to earn that with the four checks in KioskAnonymousSetting.
+            // and has to earn that with the five checks in KioskAnonymousSetting.
             User? user = null;
             var anonymousKiosk = false;
             try
@@ -417,11 +432,13 @@ public class BoulderService : IBoulderService
         }
     }
 
-    /// <summary>
-    /// The id to filter a boulder READ by: the signed-in user, or <see cref="Guid.Empty"/> when the
-    /// caller is a registered kiosk with nobody picked. The wall is not named here because it does
-    /// not have to be — the stamped kiosk wall on the context pins the read either way.
-    /// </summary>
+    /// <inheritdoc />
+    public async Task<bool> CanCreateAnonymouslyAsync(Guid wallId, CancellationToken ct = default)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
+        return await KioskAnonymousSetting.IsAllowedAsync(db, _kioskContext, _kioskKeyValidator, wallId, ct);
+    }
+
     /// <summary>
     /// The gate on the app's ONE unauthenticated write. Throws unless every condition in
     /// <see cref="KioskAnonymousSetting"/> holds AND the tablet is inside its volume budget.

@@ -294,6 +294,11 @@ public class BlocwerkDbContext : DbContext
             // Validation is a hash lookup on every machine request, so it has to be an index hit.
             entity.HasIndex(k => k.KeyHash).IsUnique();
 
+            // Defaulted in the database as well as on the entity, so the migration backfills every
+            // key that existed before the column did — those tablets were governed by the wall flag
+            // alone, and must keep being governed by it alone.
+            entity.Property(k => k.AllowAnonymousKioskSetting).HasDefaultValue(true);
+
             entity.HasOne(k => k.User)
                 .WithMany()
                 .HasForeignKey(k => k.UserId)

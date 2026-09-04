@@ -33,7 +33,8 @@
     }
     else if (_anonymousSettingNotAllowed)
     {
-        @* The wall's opt-in is OFF (the default), so the server would refuse Publish. Say so here
+        @* The wall's opt-in is OFF (the default), or this tablet's own key has been opted back out,
+           so the server would refuse Publish. Say so here
            rather than handing a walk-up user the whole form and a raw UnauthorizedAccessException
            at the end of it. The gate itself is still the service's — this only decides the screen. *@
         <div class="empty-msg">
@@ -179,8 +180,8 @@
     // anonymous visitor is redirected to sign in before this can be observed.
     private bool _isAnonymous;
 
-    // True when this is an anonymous tablet on a wall that has NOT opted in. The service would refuse
-    // the Publish, so the form is never shown at all.
+    // True when this anonymous tablet may not set here — the wall has not opted in, or this tablet's
+    // own key has been opted out. The service would refuse the Publish, so the form is never shown.
     private bool _anonymousSettingNotAllowed;
 
     /// <summary>The message the offline path shows an anonymous tablet instead of queueing a create.</summary>
@@ -305,10 +306,12 @@
 
         _wall = await WallService.GetWallAsync(WallId);
 
-        // The wall's opt-in, checked BEFORE any of the form is built. KioskViewing above only says
-        // the tablet may look at this wall; setting on it is a separate, opt-in permission that
-        // defaults to off, and finding that out at Publish time is finding it out too late.
-        if (_wall != null && _isAnonymous && !_wall.AllowAnonymousKioskSetting)
+        // The gate's OWN answer, checked BEFORE any of the form is built. KioskViewing above only
+        // says the tablet may look at this wall; setting on it is a separate permission that the
+        // wall AND this tablet's own key both have to grant, and finding that out at Publish time is
+        // finding it out too late. Asking the service rather than re-reading the wall flag is what
+        // keeps this page from disagreeing with the server that will refuse the create.
+        if (_wall != null && _isAnonymous && !await BoulderService.CanCreateAnonymouslyAsync(WallId))
         {
             _anonymousSettingNotAllowed = true;
             return;

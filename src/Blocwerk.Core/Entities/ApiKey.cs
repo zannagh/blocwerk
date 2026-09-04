@@ -60,4 +60,23 @@ public class ApiKey
     public DateTimeOffset? ExpiresAt { get; set; }
 
     public DateTimeOffset? RevokedAt { get; set; }
+
+    /// <summary>
+    /// For <see cref="ApiKeyScope.Kiosk"/> keys: may the tablet this key registered create boulders
+    /// with NOBODY signed in? Meaningless on any other scope.
+    /// </summary>
+    /// <remarks>
+    /// This ANDs with <c>Wall.AllowAnonymousKioskSetting</c> and can only narrow it: the wall flag
+    /// stays the master switch, and a tablet may set anonymously only when both are true. It is read
+    /// fresh from this row on every attempt rather than baked into the kiosk device cookie, so
+    /// clearing it stops an already-registered tablet without re-pairing it.
+    /// <para>
+    /// Defaults to <c>true</c>, for existing rows and new keys alike, because the wall flag alone
+    /// decided this before the column existed — so the default preserves that behaviour exactly and
+    /// makes the per-key flag an opt-OUT for excluding one tablet. It deliberately does NOT inherit
+    /// the wall's value at creation time: a plain <c>true</c> is predictable regardless of what the
+    /// wall happened to be set to that day.
+    /// </para>
+    /// </remarks>
+    public bool AllowAnonymousKioskSetting { get; set; } = true;
 }
