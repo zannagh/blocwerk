@@ -233,20 +233,11 @@ public partial class CurrentUserService
 
     private static async Task EnsureIdentityAsync(BlocwerkDbContext dbContext, Guid userId, string provider, string providerUserId)
     {
-        bool exists = await dbContext.UserIdentities
-            .AnyAsync(i => i.Provider == provider && i.ProviderUserId == providerUserId);
-        if (exists)
-        {
-            return;
-        }
-
-        await dbContext.UserIdentities.AddAsync(new UserIdentity
-        {
-            UserId = userId,
-            Provider = provider,
-            ProviderUserId = providerUserId,
-        });
-        await dbContext.SaveChangesAsync();
+        // The resolver reached this user THROUGH this provider subject, so any existing row for it is
+        // already this user's — back-filling is a no-op. Route through the shared idempotent linker so a
+        // concurrent back-fill (two /walls requests racing the first login) resolves to a unique-violation
+        // that is swallowed as a no-op instead of a 500, rather than losing the check-then-insert race.
+        await UserIdentityLinker.EnsureLinkedAsync(dbContext, userId, provider, providerUserId);
     }
 
     private async Task<ClaimsIdentity?> TryGetClaimsIdentityFromCookie()

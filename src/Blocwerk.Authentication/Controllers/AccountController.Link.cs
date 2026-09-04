@@ -155,14 +155,24 @@ public partial class AccountController
                 currentUser.Id,
                 provider);
 
-            await InsertUserIdentityAsync(db, currentUser.Id, provider, providerUserId);
+            // The merge already moved the legacy account onto the survivor, so recording the identity is
+            // the tail of a "merged" outcome regardless of whether a concurrent request beat us to the row.
+            await UserIdentityLinker.EnsureLinkedAsync(db, currentUser.Id, provider, providerUserId);
             return Redirect("/profile?link=merged");
         }
 
         // Either the provider subject is truly new, or the legacy owner IS the current user (back-fill
-        // the missing identity row). Both simply record the identity on the current account.
-        await InsertUserIdentityAsync(db, currentUser.Id, provider, providerUserId);
-        return Redirect("/profile?link=linked");
+        // the missing identity row). Both simply record the identity on the current account. The pre-check
+        // above already handled a row that existed at check time; EnsureLinkedAsync additionally closes the
+        // window where a concurrent link inserts between that check and this write (unique-violation 23505),
+        // resolving it to a clean outcome instead of a 500.
+        var result = await UserIdentityLinker.EnsureLinkedAsync(db, currentUser.Id, provider, providerUserId);
+        return result switch
+        {
+            IdentityLinkResult.LinkedToDifferentUser => Redirect("/profile?link=error"),
+            IdentityLinkResult.AlreadyLinkedToUser => Redirect("/profile?link=already"),
+            _ => Redirect("/profile?link=linked"),
+        };
     }
 
     /// <summary>
@@ -177,17 +187,6 @@ public partial class AccountController
         }
 
         return Redirect("/walls?kiosk_blocked=1");
-    }
-
-    private static async Task InsertUserIdentityAsync(BlocwerkDbContext db, Guid userId, string provider, string providerUserId)
-    {
-        await db.UserIdentities.AddAsync(new UserIdentity
-        {
-            UserId = userId,
-            Provider = provider,
-            ProviderUserId = providerUserId,
-        });
-        await db.SaveChangesAsync();
     }
 
     /// <summary>
