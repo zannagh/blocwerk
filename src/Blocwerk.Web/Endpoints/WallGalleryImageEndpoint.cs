@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Blocwerk.Authentication.Authorization;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -50,6 +51,7 @@ public static class WallGalleryImageEndpoint
         IWallImageStorage storage,
         ICurrentUserService currentUserService,
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
+        [FromServices] IKioskContext kioskContext,
         [FromServices] IImageVariantCache variants,
         CancellationToken ct)
     {
@@ -63,17 +65,8 @@ public static class WallGalleryImageEndpoint
             return Results.NotFound();
         }
 
-        bool allowed;
-        try
-        {
-            allowed = await HasWallAccessAsync(wallId, token, wallService, currentUserService, dbContextFactory, ct);
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return Results.Unauthorized();
-        }
-
-        if (!allowed)
+        if (!await HasWallAccessAsync(
+                wallId, token, wallService, currentUserService, dbContextFactory, kioskContext, ct))
         {
             return Results.NotFound();
         }
@@ -147,15 +140,17 @@ public static class WallGalleryImageEndpoint
     }
 
     /// <summary>
-    /// Same gate as the wall photo: a share token grants the anonymous path, otherwise the caller
-    /// must be signed in and the wall must survive the membership query filter.
+    /// Same gate as the panel photo: a share token grants the anonymous path, a registered kiosk
+    /// tablet may view the one wall it is bolted to, otherwise the caller must be signed in and the
+    /// wall must survive the membership query filter.
     /// </summary>
-    private static async Task<bool> HasWallAccessAsync(
+    internal static async Task<bool> HasWallAccessAsync(
         Guid wallId,
         string? token,
         IWallService wallService,
         ICurrentUserService currentUserService,
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
+        IKioskContext kioskContext,
         CancellationToken ct)
     {
         if (!string.IsNullOrEmpty(token))
@@ -164,9 +159,22 @@ public static class WallGalleryImageEndpoint
             return shared != null && shared.Id == wallId;
         }
 
+        User user;
+        try
+        {
+            user = await currentUserService.GetCurrentUserAsync();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Nobody is signed in and no token was offered. That is a spurious 401 for a registered
+            // kiosk tablet asking for the gallery thumbnails of the wall it is bolted to — the same
+            // resting state the panel-photo route already allows. Grant it viewing of that ONE wall;
+            // every other anonymous caller is refused with a 404 that says less than a challenge.
+            return KioskViewing.AllowsAnonymousViewOf(kioskContext, wallId);
+        }
+
         // Deliberately not IWallService.GetWallAsync: a gallery page fires one request per
         // thumbnail and that call drags holds/boulders along. The query filter is the whole check.
-        var user = await currentUserService.GetCurrentUserAsync();
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);
         db.CurrentUserId = user.Id;
 

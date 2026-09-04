@@ -17,6 +17,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Blocwerk.Core.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Blocwerk.Core\Blocwerk.Core.csproj" />
     <ProjectReference Include="..\Blocwerk.Authentication\Blocwerk.Authentication.csproj" />
     <ProjectReference Include="..\Blocwerk.HoldDetection\Blocwerk.HoldDetection.csproj" />

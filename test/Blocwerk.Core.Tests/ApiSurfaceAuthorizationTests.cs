@@ -237,6 +237,7 @@ public class ApiSurfaceAuthorizationTests
         builder.Services.AddSingleton(Substitute.For<ICurrentUserService>());
         builder.Services.AddSingleton(Substitute.For<IWallPanelService>());
         builder.Services.AddSingleton(Substitute.For<IMaintenanceAnnouncer>());
+        builder.Services.AddSingleton(Substitute.For<IKioskContext>());
         builder.Services.AddSingleton(Substitute.For<IDbContextFactory<BlocwerkDbContext>>());
 
         var app = builder.Build();
