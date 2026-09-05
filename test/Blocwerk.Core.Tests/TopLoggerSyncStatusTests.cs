@@ -52,8 +52,8 @@ public class TopLoggerSyncStatusTests
 
         // No climb-days at all -> the re-sync pre-check skips the full pull as "nothing new".
         apiClient
-            .GetLatestClimbDayAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
-            .Returns((DateTimeOffset?)null);
+            .GetLatestSessionAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns((TopLoggerSessionSummary?)null);
 
         var service = CreateService(harness, apiClient);
 
@@ -71,9 +71,12 @@ public class TopLoggerSyncStatusTests
         Assert.NotNull(connection.LastSyncAt);
         Assert.True(connection.LastSyncAt > previousSync);
 
-        // The full pull was never attempted, since the pre-check short-circuited.
+        // The full pull was never attempted, since the pre-check short-circuited. With no session at all
+        // there is nothing to reconcile either.
         await apiClient.DidNotReceive()
             .GetTicksAsync(Arg.Any<Guid>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>());
+        await apiClient.DidNotReceive()
+            .GetSessionTicksAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     private static TopLoggerImportService CreateService(WallTestHarness harness, ITopLoggerApiClient apiClient) =>

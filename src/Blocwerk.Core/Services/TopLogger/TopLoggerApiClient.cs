@@ -83,7 +83,7 @@ public sealed class TopLoggerApiClient : ITopLoggerApiClient
     }
 
     /// <inheritdoc />
-    public async Task<DateTimeOffset?> GetLatestClimbDayAsync(
+    public async Task<TopLoggerSessionSummary?> GetLatestSessionAsync(
         Guid userId,
         CancellationToken cancellationToken = default)
     {
@@ -102,16 +102,36 @@ public sealed class TopLoggerApiClient : ITopLoggerApiClient
         GraphQlResponse<JsonElement> response = await client
             .SendAsync<JsonElement>(userId, "climbDaysStravaList", SessionsQuery, variables, cancellationToken)
             .ConfigureAwait(false);
+        EnsureNoErrors(response, "climbDaysStravaList");
 
         if (response.Data.TryObj("climbDaysPaginated", out JsonElement feed))
         {
             foreach (JsonElement day in feed.EnumerateArrayOrEmpty("data"))
             {
-                return day.GetDateTimeOffsetOrNull("statsAtDate");
+                DateTimeOffset? date = day.GetDateTimeOffsetOrNull("statsAtDate");
+                if (date is { } d)
+                {
+                    return new TopLoggerSessionSummary(d, BuildDateKey(day));
+                }
             }
         }
 
         return null;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<TopLoggerTick>> GetSessionTicksAsync(
+        Guid userId,
+        string sessionDateKey,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(sessionDateKey))
+        {
+            return Array.Empty<TopLoggerTick>();
+        }
+
+        string tlUserId = await ResolveUserIdAsync(userId, cancellationToken).ConfigureAwait(false);
+        return await LoadDayTicksAsync(userId, tlUserId, sessionDateKey, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<bool> AppendDayTicksAsync(
