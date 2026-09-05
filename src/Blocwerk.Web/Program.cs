@@ -246,7 +246,14 @@ public static class Program
                 "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
                 "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
                 "img-src 'self' data: blob:; " +
-                "connect-src 'self' ws: wss:; " +
+
+                // hls.js plays HLS through Media Source Extensions: the <video> src is a blob: URL for the
+                // MediaSource (media-src blob:) and hls.js may run its demuxer in a blob-sourced web worker
+                // (worker-src blob:, connect-src blob: for that worker's same-origin segment fetches).
+                // Segments themselves are same-origin, already covered by 'self'. script-src is untouched.
+                "media-src 'self' blob:; " +
+                "connect-src 'self' blob: ws: wss:; " +
+                "worker-src 'self' blob:; " +
                 "font-src 'self' https://fonts.gstatic.com; " +
                 "frame-ancestors 'none'";
 
@@ -360,6 +367,11 @@ public static class Program
         });
 
         app.MapBetaVideoUpload();
+
+        // HLS adaptive-bitrate ladder for a Ready clip that has one. Same wall/share-token gate as the
+        // byte route above (see BetaVideoHlsEndpoints); a denial or an MP4-only clip is a 404 and the
+        // player falls back to the byte route.
+        app.MapBetaVideoHls();
 
         // Gallery item bytes for the signed-in browser (uploads, the wall photo, retired
         // generation photos). Lives outside /api because /api is the API-key surface.

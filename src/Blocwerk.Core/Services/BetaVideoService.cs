@@ -51,6 +51,15 @@ public interface IBetaVideoService
     /// <summary>The poster frame, or null when this clip has none.</summary>
     Task<BetaVideoContent?> GetThumbnailAsync(Guid videoId, string? shareToken = null);
 
+    /// <summary>
+    /// The physical directory of a clip's HLS ladder when the caller may have it AND the clip is
+    /// <see cref="BetaVideoEncodingStatus.Ready"/> with a ladder on disk; otherwise null. Access is
+    /// decided by exactly the same gate as <see cref="GetVideoFileAsync"/> (wall membership, or a
+    /// matching share token on the anonymous path), so the HLS route inherits the byte route's model.
+    /// The returned directory is a serving root only — the caller resolves the requested file within it.
+    /// </summary>
+    Task<string?> GetHlsDirectoryAsync(Guid videoId, string? shareToken = null);
+
     /// <summary>Deletes a clip (row and stored file). Only its uploader may.</summary>
     Task DeleteVideoAsync(Guid videoId);
 
@@ -195,6 +204,7 @@ public class BetaVideoService : IBetaVideoService
                 video.ContentType,
                 video.SizeBytes,
                 thumbnail is { Length: > 0 },
+                video.HasHls,
                 video.EncodingStatus);
         }
         catch (Exception ex)
@@ -340,6 +350,34 @@ public class BetaVideoService : IBetaVideoService
     public Task<BetaVideoContent?> GetThumbnailAsync(Guid videoId, string? shareToken = null) =>
         LoadContentAsync(videoId, shareToken, thumbnail: true);
 
+    public async Task<string?> GetHlsDirectoryAsync(Guid videoId, string? shareToken = null)
+    {
+        using var op = BlocwerkMetrics.TimeOperation("BetaVideo.GetHls");
+        try
+        {
+            await using var db = await OpenReadableAsync(shareToken);
+            var meta = await AccessibleVideos(db, videoId, shareToken)
+                .Select(v => new { v.EncodingStatus, v.HasHls })
+                .FirstOrDefaultAsync();
+
+            // Serve HLS only for a Ready clip that actually has a ladder; anything else (denied by the
+            // wall/token gate above → null meta, still Pending/Processing/Failed, or MP4-only) 404s so
+            // the player falls back to the progressive MP4 route.
+            if (meta is null || meta.EncodingStatus != BetaVideoEncodingStatus.Ready || !meta.HasHls)
+            {
+                return null;
+            }
+
+            var directory = storage.GetHlsDirectory(videoId);
+            return Directory.Exists(directory) ? directory : null;
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
+    }
+
     public async Task DeleteVideoAsync(Guid videoId)
     {
         using var op = BlocwerkMetrics.TimeOperation("BetaVideo.Delete");
@@ -369,6 +407,7 @@ public class BetaVideoService : IBetaVideoService
             }
 
             storage.Delete(storedName);
+            storage.DeleteHlsDirectory(videoId);
             logger.LogInformation("Beta video {VideoId} deleted by {UserId}", videoId, user.Id);
         }
         catch (Exception ex)
@@ -457,6 +496,7 @@ public class BetaVideoService : IBetaVideoService
                 v.ContentType,
                 v.SizeBytes,
                 v.Thumbnail != null && v.Thumbnail.Length > 0,
+                v.HasHls,
                 v.EncodingStatus))
             .ToListAsync();
 

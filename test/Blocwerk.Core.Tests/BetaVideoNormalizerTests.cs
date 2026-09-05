@@ -224,6 +224,68 @@ public class BetaVideoNormalizerTests
         Assert.Equal(BetaVideoEncodingStatus.Pending, (await RowAsync(h, two.Id)).EncodingStatus);
     }
 
+    [Fact]
+    public async Task Normalize_BuildsHls_AlongsideTheMp4_AndCommitsTheLadder()
+    {
+        using var h = new WallTestHarness();
+        var boulder = await SeedBoulderAsync(h);
+        var info = await h.BetaVideoService.AddVideoAsync(boulder.Id, Clip, "video/quicktime", null, "clip.mov");
+
+        var transcoder = new FakeTranscoder { Probe = new VideoProbeResult(5, "hevc", "aac", "yuv420p", true, 1080) };
+        var outcome = await NewNormalizer(h, transcoder).ProcessAsync(info.Id, default);
+
+        Assert.Equal(BetaVideoNormalizeOutcome.Ready, outcome);
+        Assert.Equal(1, transcoder.HlsCalls);
+
+        var row = await RowAsync(h, info.Id);
+        Assert.True(row.HasHls);
+
+        // The committed ladder is served through the SAME access gate as the byte route.
+        var dir = await h.BetaVideoService.GetHlsDirectoryAsync(info.Id);
+        Assert.NotNull(dir);
+        Assert.True(File.Exists(Path.Combine(dir!, "master.m3u8")));
+    }
+
+    [Fact]
+    public async Task Normalize_KeepsTheMp4Ready_WhenTheHlsLadderFails_WithoutSettingHasHls()
+    {
+        using var h = new WallTestHarness();
+        var boulder = await SeedBoulderAsync(h);
+        var info = await h.BetaVideoService.AddVideoAsync(boulder.Id, Clip, "video/quicktime", null, "clip.mov");
+
+        var transcoder = new FakeTranscoder { ThrowOnHls = true, Probe = new VideoProbeResult(5, "hevc", "aac", "yuv420p", true, 720) };
+        var outcome = await NewNormalizer(h, transcoder).ProcessAsync(info.Id, default);
+
+        // A failed ladder is no regression: the clip is still Ready on the MP4, HasHls stays false, and
+        // no half-written ladder is committed — so the HLS route 404s and the player uses the MP4.
+        Assert.Equal(BetaVideoNormalizeOutcome.Ready, outcome);
+        var row = await RowAsync(h, info.Id);
+        Assert.Equal(BetaVideoEncodingStatus.Ready, row.EncodingStatus);
+        Assert.False(row.HasHls);
+        Assert.Null(await h.BetaVideoService.GetHlsDirectoryAsync(info.Id));
+        Assert.False(Directory.Exists(h.BetaStorage.GetHlsDirectory(info.Id)));
+
+        // The MP4 fallback still serves.
+        var served = await h.BetaVideoService.GetVideoContentAsync(info.Id);
+        Assert.Equal(Encoded, served!.Data);
+    }
+
+    [Fact]
+    public async Task GetHlsDirectory_IsWithheld_UntilReadyAndHasHls()
+    {
+        using var h = new WallTestHarness();
+        var boulder = await SeedBoulderAsync(h);
+        var info = await h.BetaVideoService.AddVideoAsync(boulder.Id, Clip, "video/mp4", null, "a.mp4");
+
+        // Pending upload: no HLS even though nothing is wrong yet.
+        Assert.Null(await h.BetaVideoService.GetHlsDirectoryAsync(info.Id));
+
+        var transcoder = new FakeTranscoder { Probe = new VideoProbeResult(5, "h264", "aac", "yuv420p", true, 720) };
+        await NewNormalizer(h, transcoder).ProcessAsync(info.Id, default);
+
+        Assert.NotNull(await h.BetaVideoService.GetHlsDirectoryAsync(info.Id));
+    }
+
     private static BetaVideoNormalizer NewNormalizer(WallTestHarness h, IVideoTranscoder transcoder) =>
         new(h.RootContextFactory, h.BetaStorage, transcoder, NullLogger<BetaVideoNormalizer>.Instance);
 
@@ -264,9 +326,13 @@ public class BetaVideoNormalizerTests
 
         public bool ThrowOnEncode { get; set; }
 
+        public bool ThrowOnHls { get; set; }
+
         public int RemuxCalls { get; private set; }
 
         public int TranscodeCalls { get; private set; }
+
+        public int HlsCalls { get; private set; }
 
         public Task<VideoProbeResult> ProbeAsync(string inputPath, CancellationToken cancellationToken) =>
             Task.FromResult(Probe);
@@ -286,6 +352,22 @@ public class BetaVideoNormalizerTests
             }
 
             return await WriteAsync(outputPath, cancellationToken);
+        }
+
+        public async Task TranscodeHlsAsync(string inputPath, string outputDirectory, VideoProbeResult probe, CancellationToken cancellationToken)
+        {
+            HlsCalls++;
+            if (ThrowOnHls)
+            {
+                throw new InvalidOperationException("ffmpeg HLS failed (fake).");
+            }
+
+            // Stand in for a real ladder: a master + one variant playlist + one segment so the commit and
+            // the serving path have real files to move and resolve.
+            Directory.CreateDirectory(outputDirectory);
+            await File.WriteAllTextAsync(Path.Combine(outputDirectory, "master.m3u8"), "#EXTM3U\nv0.m3u8\n", cancellationToken);
+            await File.WriteAllTextAsync(Path.Combine(outputDirectory, "v0.m3u8"), "#EXTM3U\nv0_000.ts\n", cancellationToken);
+            await File.WriteAllBytesAsync(Path.Combine(outputDirectory, "v0_000.ts"), Encoded, cancellationToken);
         }
 
         private static async Task<VideoTranscodeResult> WriteAsync(string outputPath, CancellationToken ct)

@@ -61,6 +61,86 @@ public class FileSystemBetaVideoStorage : IBetaVideoStorage
         }
     }
 
+    public string CreateHlsBuildDirectory(Guid videoId)
+    {
+        var build = BuildDirectory(videoId);
+        if (Directory.Exists(build))
+        {
+            Directory.Delete(build, recursive: true);
+        }
+
+        Directory.CreateDirectory(build);
+        return build;
+    }
+
+    public void CommitHlsDirectory(Guid videoId)
+    {
+        var build = BuildDirectory(videoId);
+        if (!Directory.Exists(build))
+        {
+            throw new InvalidOperationException("No HLS build directory to commit.");
+        }
+
+        var final = GetHlsDirectory(videoId);
+        if (Directory.Exists(final))
+        {
+            Directory.Delete(final, recursive: true);
+        }
+
+        // Same-volume rename: the swap from a fully-written build directory to the live one is atomic,
+        // so a reader never sees a half-written ladder under the live path.
+        Directory.Move(build, final);
+    }
+
+    public string GetHlsDirectory(Guid videoId) => Path.Combine(root, videoId.ToString("N"));
+
+    public string? ResolveHlsFile(Guid videoId, string requestPath)
+    {
+        var directory = GetHlsDirectory(videoId);
+        var resolved = HlsPathResolver.Resolve(directory, requestPath);
+        if (resolved is null || !File.Exists(resolved))
+        {
+            return null;
+        }
+
+        // Defence against a symlink inside the directory that points back out of the store: compare the
+        // real (link-resolved) path against the store root. GetFullPath alone does not follow links.
+        var realRoot = Path.GetFullPath(root);
+        var rootWithSeparator = realRoot.EndsWith(Path.DirectorySeparatorChar)
+            ? realRoot
+            : realRoot + Path.DirectorySeparatorChar;
+        var real = ResolveRealPath(resolved);
+        return real.StartsWith(rootWithSeparator, StringComparison.Ordinal) ? resolved : null;
+    }
+
+    public void DeleteHlsDirectory(Guid videoId)
+    {
+        foreach (var path in new[] { GetHlsDirectory(videoId), BuildDirectory(videoId) })
+        {
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path, recursive: true);
+            }
+        }
+    }
+
+    private string BuildDirectory(Guid videoId) => GetHlsDirectory(videoId) + ".tmp";
+
+    private static string ResolveRealPath(string path)
+    {
+        try
+        {
+            var target = File.ResolveLinkTarget(path, returnFinalTarget: true);
+            return target is null ? Path.GetFullPath(path) : Path.GetFullPath(target.FullName);
+        }
+        catch (Exception)
+        {
+            // A path we cannot inspect for links is treated as itself; the caller's containment check
+            // still runs against the canonical (non-link-resolved) path.
+            return Path.GetFullPath(path);
+        }
+    }
+
     private static string Normalize(string extension)
     {
         if (string.IsNullOrWhiteSpace(extension))

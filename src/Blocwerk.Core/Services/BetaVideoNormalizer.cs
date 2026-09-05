@@ -72,10 +72,14 @@ public sealed class BetaVideoNormalizer
                 ? await transcoder.RemuxAsync(source.Path, outPath, cancellationToken)
                 : await transcoder.TranscodeAsync(source.Path, outPath, cancellationToken);
 
+            // The HLS ladder is additive on top of the progressive MP4 fallback: build it best-effort,
+            // and if it fails the clip is still Ready on the MP4 (HasHls stays false — no regression).
+            var hasHls = await TryBuildHlsAsync(videoId, source.Path, probe, cancellationToken);
+
             var storedName = storage.Commit(outPath, ".mp4");
             outPath = null; // ownership moved into the store
 
-            await MarkReadyAsync(videoId, storedName, result, cancellationToken);
+            await MarkReadyAsync(videoId, storedName, result, hasHls, cancellationToken);
 
             // The row now points at the fresh file, so the previous disk rendition (if any) is safe to
             // drop. Legacy clips had their bytes in the row, cleared by MarkReadyAsync.
@@ -105,6 +109,45 @@ public sealed class BetaVideoNormalizer
             // them directly rather than through the store's name-based Delete.
             DeleteIfExists(legacyTemp);
             DeleteIfExists(outPath);
+        }
+    }
+
+    /// <summary>
+    /// Builds the HLS ladder into a fresh build directory and atomically commits it, returning whether
+    /// it succeeded. A shutdown cancel propagates (the clip stays Processing and is re-picked); any other
+    /// failure — a killed/timed-out ffmpeg included — is swallowed to false, with the build and any prior
+    /// ladder cleaned up so a half-written ladder is never left behind or served.
+    /// </summary>
+    private async Task<bool> TryBuildHlsAsync(Guid videoId, string sourcePath, VideoProbeResult probe, CancellationToken ct)
+    {
+        try
+        {
+            var buildDir = storage.CreateHlsBuildDirectory(videoId);
+            await transcoder.TranscodeHlsAsync(sourcePath, buildDir, probe, ct);
+            storage.CommitHlsDirectory(videoId);
+            return true;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "HLS ladder for beta clip {VideoId} failed; serving the MP4 fallback only.", videoId);
+            TryDeleteHls(videoId);
+            return false;
+        }
+    }
+
+    private void TryDeleteHls(Guid videoId)
+    {
+        try
+        {
+            storage.DeleteHlsDirectory(videoId);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not clean up the HLS output for beta clip {VideoId}.", videoId);
         }
     }
 
@@ -158,7 +201,7 @@ public sealed class BetaVideoNormalizer
             .ExecuteUpdateAsync(s => s.SetProperty(v => v.EncodingStatus, status), ct);
     }
 
-    private async Task MarkReadyAsync(Guid videoId, string storedName, VideoTranscodeResult result, CancellationToken ct)
+    private async Task MarkReadyAsync(Guid videoId, string storedName, VideoTranscodeResult result, bool hasHls, CancellationToken ct)
     {
         await using var db = dbContextFactory.CreateDbContext();
         await db.BetaVideos
@@ -168,6 +211,7 @@ public sealed class BetaVideoNormalizer
                 .SetProperty(v => v.ContentType, result.ContentType)
                 .SetProperty(v => v.SizeBytes, result.SizeBytes)
                 .SetProperty(v => v.Data, (byte[]?)null)
+                .SetProperty(v => v.HasHls, hasHls)
                 .SetProperty(v => v.EncodingStatus, BetaVideoEncodingStatus.Ready)
                 .SetProperty(v => v.LastEncodedUtc, DateTimeOffset.UtcNow)
                 .SetProperty(v => v.EncodingError, (string?)null), ct);

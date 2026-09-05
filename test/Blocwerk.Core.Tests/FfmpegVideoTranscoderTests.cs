@@ -70,6 +70,81 @@ public class FfmpegVideoTranscoderTests
     }
 
     [Fact]
+    public void ParseProbe_ReadsWidthAndNoRotation_WhenNoneIsPresent()
+    {
+        const string json = """
+        {
+            "streams": [ { "codec_type": "video", "codec_name": "h264", "pix_fmt": "yuv420p", "width": 1920, "height": 1080 } ],
+            "format": { "duration": "3.0" }
+        }
+        """;
+
+        var probe = FfmpegVideoTranscoder.ParseProbe(json);
+
+        Assert.Equal(1920, probe.Width);
+        Assert.Equal(1080, probe.Height);
+        Assert.Equal(0, probe.RotationDegrees);
+    }
+
+    [Fact]
+    public void ParseProbe_NegatesTheDisplayMatrixRotation_ToTheUprightConvention()
+    {
+        // A typical portrait phone clip: coded 1920x1080, display-matrix rotation -90 (== rotate tag 90).
+        // The upright angle we store is +90 (negated), which maps to transpose=1 on the ladder.
+        const string json = """
+        {
+            "streams": [ {
+                "codec_type": "video", "codec_name": "hevc", "pix_fmt": "yuv420p", "width": 1920, "height": 1080,
+                "side_data_list": [ { "side_data_type": "Display Matrix", "rotation": -90 } ]
+            } ],
+            "format": { "duration": "3.0" }
+        }
+        """;
+
+        var probe = FfmpegVideoTranscoder.ParseProbe(json);
+
+        Assert.Equal(90, probe.RotationDegrees);
+        Assert.True(HlsLadderPlanner.IsSupportedRotation(probe.RotationDegrees));
+    }
+
+    [Fact]
+    public void ParseProbe_FallsBackToTheRotateTag_WhenNoSideData()
+    {
+        const string json = """
+        {
+            "streams": [ {
+                "codec_type": "video", "codec_name": "h264", "pix_fmt": "yuv420p", "width": 1080, "height": 1920,
+                "tags": { "rotate": "270" }
+            } ],
+            "format": { "duration": "3.0" }
+        }
+        """;
+
+        var probe = FfmpegVideoTranscoder.ParseProbe(json);
+
+        Assert.Equal(270, probe.RotationDegrees);
+    }
+
+    [Fact]
+    public void ParseProbe_MarksAnOddRotationUnhandled_SoTheLadderIsSkipped()
+    {
+        const string json = """
+        {
+            "streams": [ {
+                "codec_type": "video", "codec_name": "h264", "pix_fmt": "yuv420p", "width": 1920, "height": 1080,
+                "side_data_list": [ { "side_data_type": "Display Matrix", "rotation": 45 } ]
+            } ],
+            "format": { "duration": "3.0" }
+        }
+        """;
+
+        var probe = FfmpegVideoTranscoder.ParseProbe(json);
+
+        Assert.Equal(HlsLadderPlanner.UnhandledRotation, probe.RotationDegrees);
+        Assert.False(HlsLadderPlanner.IsSupportedRotation(probe.RotationDegrees));
+    }
+
+    [Fact]
     public void ParseProbe_VideoOnly_ReportsNoAudio()
     {
         const string json = """

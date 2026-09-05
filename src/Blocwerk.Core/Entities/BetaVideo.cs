@@ -62,6 +62,14 @@ public class BetaVideo
     /// </summary>
     public BetaVideoEncodingStatus EncodingStatus { get; set; } = BetaVideoEncodingStatus.Pending;
 
+    /// <summary>
+    /// Whether an HLS adaptive-bitrate ladder (master.m3u8 + variant playlists + segments) has been
+    /// produced for this clip and lives in the beta-video store under this clip's id. True only once a
+    /// <see cref="BetaVideoEncodingStatus.Ready"/> normalize also succeeded at building the ladder;
+    /// existing rows and clips whose ladder failed stay false and fall back to the progressive MP4.
+    /// </summary>
+    public bool HasHls { get; set; }
+
     /// <summary>When the normalizer last produced a web-safe rendition of this clip. Null until it has.</summary>
     public DateTimeOffset? LastEncodedUtc { get; set; }
 

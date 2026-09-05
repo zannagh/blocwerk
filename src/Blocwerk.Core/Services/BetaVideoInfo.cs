@@ -15,4 +15,5 @@ public record BetaVideoInfo(
     string ContentType,
     long SizeBytes,
     bool HasThumbnail,
+    bool HasHls,
     BetaVideoEncodingStatus EncodingStatus);

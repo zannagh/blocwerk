@@ -8,12 +8,22 @@ public record VideoTranscodeResult(long SizeBytes, string ContentType);
 /// remux will do) or must be fully re-encoded. Codec/pixel-format strings are ffmpeg's own names,
 /// lower-cased; null when the clip has no such stream.
 /// </summary>
+/// <remarks>
+/// <paramref name="Height"/>/<paramref name="Width"/> are the CODED frame dimensions (before display
+/// rotation). <paramref name="RotationDegrees"/> is the upright display rotation in the legacy
+/// <c>rotate</c>-tag convention — 0/90/180/270 for a handled clip, or
+/// <see cref="Services.HlsLadderPlanner.UnhandledRotation"/> when a rotation is present but not a clean
+/// multiple of 90 (the ladder is then skipped in favour of the auto-rotated MP4).
+/// </remarks>
 public record VideoProbeResult(
     double DurationSeconds,
     string? VideoCodec,
     string? AudioCodec,
     string? PixelFormat,
-    bool HasAudio);
+    bool HasAudio,
+    int Height = 0,
+    int Width = 0,
+    int RotationDegrees = 0);
 
 /// <summary>
 /// Normalizes beta clips to a universally playable rendition. Implemented with ffmpeg/ffprobe, which
@@ -38,4 +48,13 @@ public interface IVideoTranscoder
     /// bitrate. Throws if the tool is missing or the encode fails.
     /// </summary>
     Task<VideoTranscodeResult> TranscodeAsync(string inputPath, string outputPath, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Builds an HLS adaptive-bitrate ladder (master.m3u8 + one variant playlist and MPEG-TS segment set
+    /// per rung) into <paramref name="outputDirectory"/> in a single ffmpeg invocation. The ladder is
+    /// capped to the source height (from <paramref name="probe"/>) so no rung upscales, keyframes are
+    /// aligned to the segment length, and every rung is H.264 High/yuv420p + AAC. Throws (leaving nothing
+    /// worth committing) if the tool is missing, the encode fails, or it exceeds the encode timeout.
+    /// </summary>
+    Task TranscodeHlsAsync(string inputPath, string outputDirectory, VideoProbeResult probe, CancellationToken cancellationToken);
 }

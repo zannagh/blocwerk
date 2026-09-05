@@ -3,7 +3,7 @@
 @inject Blocwerk.Core.Configuration.BlocwerkSettings Settings
 @inject IJSRuntime JS
 @inject ILogger<BoulderBetaVideos> Logger
-@implements IDisposable
+@implements IAsyncDisposable
 
 @*
     The "Beta Videos" strip on the boulder page: a horizontally scrolling row of poster frames with
@@ -120,7 +120,12 @@
                    clip that played before is never made unplayable. A Failed clip may be any format,
                    so it deliberately carries no <source type> hint for the browser to reject on. *@
                 <video @ref="_playerRef" class="beta-player" controls playsinline preload="metadata">
-                    @if (_playing.EncodingStatus == BetaVideoEncodingStatus.Ready)
+                    @if (_playing.EncodingStatus == BetaVideoEncodingStatus.Ready && _playing.HasHls)
+                    {
+                        @* Adaptive HLS: no static src/<source>. bwBetaHls.attach wires the master
+                           playlist (hls.js or native) after render, with the MP4 as its fallback. *@
+                    }
+                    else if (_playing.EncodingStatus == BetaVideoEncodingStatus.Ready)
                     {
                         <source src="@VideoUrl(_playing)" type="video/mp4" />
                     }
@@ -170,6 +175,13 @@
     private BetaVideoInfo? _playing;
     private ElementReference _playerRef;
     private DotNetObjectReference<BoulderBetaVideos>? _selfRef;
+    private IJSObjectReference? _hlsHandle;
+
+    // Bumped by every HLS teardown (DestroyHlsAsync). OnAfterRenderAsync captures it before the
+    // attach interop round-trip and re-checks it after: if the lightbox closed or switched clips
+    // while attach was in flight, the token has moved and the just-returned handle is torn down
+    // instead of stored, so no hls.js instance outlives the clip that nothing can reach.
+    private int _hlsGeneration;
     private bool _autoplayPending;
     private bool _uploading;
     private int _uploadPercent;
@@ -196,18 +208,51 @@
 
         // Only once the <video> is actually in the DOM, i.e. the render after OpenVideo() ran.
         _autoplayPending = false;
+        var clip = _playing;
+        if (clip is null)
+        {
+            return;
+        }
+
         try
         {
-            await JS.InvokeVoidAsync("blocwerkBetaVideo.play", _playerRef);
+            if (clip.EncodingStatus == BetaVideoEncodingStatus.Ready && clip.HasHls)
+            {
+                // Adaptive HLS. attach hands back a handle we destroy on close (see DestroyHlsAsync)
+                // so no hls.js instance or background segment fetch outlives the lightbox — matters
+                // on a kiosk that stays open for hours. attach also starts playback once the manifest
+                // parses, so autoplay still fires; the MP4 URL is its fallback.
+                var generation = _hlsGeneration;
+                var handle = await JS.InvokeAsync<IJSObjectReference>(
+                    "bwBetaHls.attach", _playerRef, HlsUrl(clip), VideoUrl(clip));
+
+                // Guard the close-during-attach race: if a teardown (Close, a switch to another clip,
+                // delete, or dispose) ran while this interop round-trip was in flight, DestroyHlsAsync
+                // already bumped the generation and read _hlsHandle as null, so it tore down nothing.
+                // Tear this just-returned handle down NOW rather than storing a live hls.js instance
+                // that no teardown path can ever reach.
+                if (_hlsGeneration != generation)
+                {
+                    await DestroyHandleAsync(handle);
+                }
+                else
+                {
+                    _hlsHandle = handle;
+                }
+            }
+            else
+            {
+                await JS.InvokeVoidAsync("blocwerkBetaVideo.play", _playerRef);
+            }
         }
         catch (JSException)
         {
-            // The controls are right there; a refused autoplay is not worth a message.
+            // The controls are right there; a refused autoplay / attach hiccup is not worth a message.
         }
         catch (JSDisconnectedException ex)
         {
-            // The viewer navigated away before autoplay could start; there is no player left.
-            Logger.LogDebug(ex, "Beta video autoplay skipped: circuit disconnected");
+            // The viewer navigated away before playback could start; there is no player left.
+            Logger.LogDebug(ex, "Beta video attach/autoplay skipped: circuit disconnected");
         }
     }
 
@@ -307,12 +352,71 @@
         return Task.CompletedTask;
     }
 
-    public void Dispose() => _selfRef?.Dispose();
+    public async ValueTask DisposeAsync()
+    {
+        await DestroyHlsAsync();
+        _selfRef?.Dispose();
+    }
+
+    /// <summary>
+    /// Tears down the current HLS player, if any: destroy() disposes the hls.js instance and clears
+    /// the &lt;video&gt; source so no segment fetch keeps running after the clip is gone. There is only
+    /// ever one open clip, so a single handle is all that needs tracking.
+    /// </summary>
+    private async Task DestroyHlsAsync()
+    {
+        // Bump first, unconditionally: this is the single signal every teardown path shares, so an
+        // attach still in flight (OnAfterRenderAsync) sees the token move and discards its handle
+        // even in the race where _hlsHandle is still null here because attach hasn't returned yet.
+        _hlsGeneration++;
+        var handle = _hlsHandle;
+        _hlsHandle = null;
+        if (handle is null)
+        {
+            return;
+        }
+
+        await DestroyHandleAsync(handle);
+    }
+
+    /// <summary>
+    /// Best-effort teardown of one hls.js handle: destroy() disposes the hls.js instance and clears
+    /// the &lt;video&gt; source, then the JS reference itself is released. Used both for the stored
+    /// handle and for a handle that attach returned after a close/switch (which is never stored).
+    /// destroy() is idempotent on the JS side, so calling it here is always safe.
+    /// </summary>
+    private async Task DestroyHandleAsync(IJSObjectReference handle)
+    {
+        try
+        {
+            await handle.InvokeVoidAsync("destroy");
+        }
+        catch (JSException)
+        {
+            // Best-effort cleanup; a torn-down player is not worth surfacing.
+        }
+        catch (JSDisconnectedException)
+        {
+            // Circuit already gone — the browser dropped the player with the page.
+        }
+
+        try
+        {
+            await handle.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+            // Same as above.
+        }
+    }
 
     private record UploadResult(bool Ok, string? Error);
 
-    private void OpenVideo(BetaVideoInfo video)
+    private async Task OpenVideo(BetaVideoInfo video)
     {
+        // Defensive: the lightbox is modal so a prior clip is normally closed first, but never leak a
+        // handle if two opens race.
+        await DestroyHlsAsync();
         _playing = video;
 
         // Ready and Failed both render a <video> (Failed falls back to the original), so both autoplay.
@@ -328,8 +432,9 @@
     private static string ProcessingMessage() =>
         "This clip is still being optimized. Check back in a moment.";
 
-    private void Close()
+    private async Task Close()
     {
+        await DestroyHlsAsync();
         _playing = null;
         _autoplayPending = false;
     }
@@ -370,7 +475,7 @@
             await VideoService.DeleteVideoAsync(video.Id);
             if (_playing?.Id == video.Id)
             {
-                Close();
+                await Close();
             }
 
             // Reload rather than a local remove so a concurrently uploaded/deleted clip is reflected
@@ -404,6 +509,13 @@
     }
 
     private string VideoUrl(BetaVideoInfo video) => WithToken($"/api/beta-videos/{video.Id}");
+
+    /// <summary>
+    /// The HLS master playlist URL, carrying the same <c>?token=</c> as the byte URL so an anonymous
+    /// share viewer's playlist/variant/segment requests stay authorized (the endpoint rewrites child
+    /// URIs to keep the token on them).
+    /// </summary>
+    private string HlsUrl(BetaVideoInfo video) => WithToken($"/api/beta-videos/{video.Id}/hls/master.m3u8");
 
     private string ThumbnailUrl(BetaVideoInfo video) => WithToken($"/api/beta-videos/{video.Id}/thumbnail");
 

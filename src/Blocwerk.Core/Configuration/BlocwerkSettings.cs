@@ -129,6 +129,9 @@ public class BlocwerkSettings
             MaxEncodeSeconds = (int)ParseBytes(section["BetaVideo:MaxEncodeSeconds"], "BETAVIDEO__MAXENCODESECONDS", 600),
             FfmpegPath = section["BetaVideo:FfmpegPath"] ?? Environment.GetEnvironmentVariable("BETAVIDEO__FFMPEGPATH") ?? "ffmpeg",
             FfprobePath = section["BetaVideo:FfprobePath"] ?? Environment.GetEnvironmentVariable("BETAVIDEO__FFPROBEPATH") ?? "ffprobe",
+            HlsSegmentSeconds = (int)ParseBytes(section["BetaVideo:HlsSegmentSeconds"], "BETAVIDEO__HLSSEGMENTSECONDS", 4),
+            HlsLadder = BetaVideoSettings.ParseLadder(
+                section["BetaVideo:HlsLadder"] ?? Environment.GetEnvironmentVariable("BETAVIDEO__HLSLADDER")),
         };
 
         WallImage = new WallImageSettings
@@ -280,6 +283,57 @@ public class BetaVideoSettings
     public string FfmpegPath { get; set; } = "ffmpeg";
 
     public string FfprobePath { get; set; } = "ffprobe";
+
+    /// <summary>
+    /// HLS segment length (seconds); env <c>BETAVIDEO__HLSSEGMENTSECONDS</c>. Also drives the encoder's
+    /// keyframe interval so every segment starts on an IDR frame (seamless bitrate switching). Default 4.
+    /// </summary>
+    public int HlsSegmentSeconds { get; set; } = 4;
+
+    /// <summary>
+    /// The HLS adaptive-bitrate ladder (highest last). The transcoder includes only rungs whose height is
+    /// at or below the source (never upscales) and always keeps the smallest. Env <c>BETAVIDEO__HLSLADDER</c>
+    /// overrides it as a comma-separated <c>height:videoKbps:audioKbps</c> list, e.g.
+    /// <c>360:800:96,480:1400:128,720:3000:128,1080:6000:192</c>.
+    /// </summary>
+    public IReadOnlyList<HlsRung> HlsLadder { get; set; } = DefaultLadder;
+
+    private static readonly HlsRung[] DefaultLadder =
+    [
+        new(360, 800, 96),
+        new(480, 1400, 128),
+        new(720, 3000, 128),
+        new(1080, 6000, 192),
+    ];
+
+    /// <summary>
+    /// Parses a <c>height:videoKbps:audioKbps</c> comma-separated ladder, falling back to the default when
+    /// the string is empty or nothing parses. Rungs are sorted ascending by height so the smallest is first.
+    /// </summary>
+    public static IReadOnlyList<HlsRung> ParseLadder(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return DefaultLadder;
+        }
+
+        var rungs = new List<HlsRung>();
+        foreach (var entry in value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var parts = entry.Split(':', StringSplitOptions.TrimEntries);
+            if (parts.Length == 3
+                && int.TryParse(parts[0], out var h) && h > 0
+                && int.TryParse(parts[1], out var v) && v > 0
+                && int.TryParse(parts[2], out var a) && a > 0)
+            {
+                rungs.Add(new HlsRung(h, v, a));
+            }
+        }
+
+        return rungs.Count > 0
+            ? rungs.OrderBy(r => r.Height).ToArray()
+            : DefaultLadder;
+    }
 }
 
 /// <summary>

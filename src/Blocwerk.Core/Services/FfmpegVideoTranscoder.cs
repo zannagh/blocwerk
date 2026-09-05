@@ -73,6 +73,9 @@ public class FfmpegVideoTranscoder : IVideoTranscoder
         string? videoCodec = null;
         string? audioCodec = null;
         string? pixelFormat = null;
+        var height = 0;
+        var width = 0;
+        var rotation = 0;
 
         if (root.TryGetProperty("streams", out var streams) && streams.ValueKind == JsonValueKind.Array)
         {
@@ -83,6 +86,9 @@ public class FfmpegVideoTranscoder : IVideoTranscoder
                 {
                     videoCodec = Lower(stream, "codec_name");
                     pixelFormat = Lower(stream, "pix_fmt");
+                    height = ReadInt(stream, "height");
+                    width = ReadInt(stream, "width");
+                    rotation = ReadRotation(stream);
                 }
                 else if (type == "audio" && audioCodec is null)
                 {
@@ -99,7 +105,62 @@ public class FfmpegVideoTranscoder : IVideoTranscoder
             duration = seconds;
         }
 
-        return new VideoProbeResult(duration, videoCodec, audioCodec, pixelFormat, audioCodec is not null);
+        return new VideoProbeResult(
+            duration, videoCodec, audioCodec, pixelFormat, audioCodec is not null, height, width, rotation);
+    }
+
+    /// <summary>
+    /// The clip's upright display rotation, normalized to 0/90/180/270 (in the legacy <c>rotate</c>-tag
+    /// convention: the degrees to rotate the coded frame to display it right-side up), or
+    /// <see cref="HlsLadderPlanner.UnhandledRotation"/> when a rotation is present but not a clean
+    /// multiple of 90 (or unparseable). Prefers the display-matrix <c>side_data_list[].rotation</c>,
+    /// whose sign is the OPPOSITE of the rotate tag (it reports <c>av_display_rotation_get</c>, and
+    /// autorotate rotates by the negative of that), so it is negated; falls back to <c>tags.rotate</c>,
+    /// which is already in the upright convention.
+    /// </summary>
+    private static int ReadRotation(JsonElement stream)
+    {
+        if (stream.TryGetProperty("side_data_list", out var list) && list.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var sideData in list.EnumerateArray())
+            {
+                if (!sideData.TryGetProperty("rotation", out var r))
+                {
+                    continue;
+                }
+
+                return r.ValueKind == JsonValueKind.Number && r.TryGetDouble(out var deg)
+                    ? NormalizeRotation(-deg)
+                    : HlsLadderPlanner.UnhandledRotation;
+            }
+        }
+
+        if (stream.TryGetProperty("tags", out var tags) && tags.ValueKind == JsonValueKind.Object
+            && tags.TryGetProperty("rotate", out var rotate))
+        {
+            var raw = rotate.ValueKind == JsonValueKind.String ? rotate.GetString() : rotate.GetRawText();
+            return double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var deg)
+                ? NormalizeRotation(deg)
+                : HlsLadderPlanner.UnhandledRotation;
+        }
+
+        return 0;
+    }
+
+    /// <summary>
+    /// Reduces a display-rotation angle (degrees) to 0/90/180/270, or
+    /// <see cref="HlsLadderPlanner.UnhandledRotation"/> when it is not a clean multiple of 90.
+    /// </summary>
+    private static int NormalizeRotation(double theta)
+    {
+        var rounded = Math.Round(theta);
+        if (Math.Abs(theta - rounded) > 0.5)
+        {
+            return HlsLadderPlanner.UnhandledRotation;
+        }
+
+        var normalized = ((int)rounded % 360 + 360) % 360;
+        return normalized is 0 or 90 or 180 or 270 ? normalized : HlsLadderPlanner.UnhandledRotation;
     }
 
     public async Task<VideoTranscodeResult> RemuxAsync(string inputPath, string outputPath, CancellationToken cancellationToken)
@@ -137,6 +198,48 @@ public class FfmpegVideoTranscoder : IVideoTranscoder
         await RunAsync(settings.BetaVideo.FfmpegPath, args, cancellationToken);
         return Result(outputPath);
     }
+
+    public async Task TranscodeHlsAsync(string inputPath, string outputDirectory, VideoProbeResult probe, CancellationToken cancellationToken)
+    {
+        // Safety net: a rotation we cannot confidently make upright must not become a sideways ladder.
+        // Skipping HLS (throwing so the normalizer keeps HasHls false) leaves the clip on the correctly
+        // auto-rotated MP4 fallback.
+        if (!HlsLadderPlanner.IsSupportedRotation(probe.RotationDegrees))
+        {
+            logger.LogInformation(
+                "Skipping the HLS ladder for a beta clip with an unhandled display rotation ({Rotation}); the auto-rotated MP4 is served instead.",
+                probe.RotationDegrees);
+            throw new InvalidOperationException(
+                $"Unhandled display rotation ({probe.RotationDegrees}); HLS skipped in favour of the auto-rotated MP4.");
+        }
+
+        // The ladder caps to the DISPLAYED height (a 90/270 clip swaps the coded axes) and the pre-split
+        // rotation puts the frame in that displayed orientation before scale=-2:H runs.
+        var displayedHeight = HlsLadderPlanner.DisplayedHeight(probe.Width, probe.Height, probe.RotationDegrees);
+        var rungs = HlsLadderPlanner.SelectRungs(settings.BetaVideo.HlsLadder, displayedHeight);
+        if (rungs.Count == 0)
+        {
+            throw new InvalidOperationException("No HLS ladder rungs are configured.");
+        }
+
+        Directory.CreateDirectory(outputDirectory);
+        var args = HlsLadderPlanner.BuildArguments(
+            inputPath, outputDirectory, rungs, settings.BetaVideo.HlsSegmentSeconds, probe.HasAudio, probe.RotationDegrees);
+
+        logger.LogInformation(
+            "Building HLS ladder ({Rungs} rung(s), displayed {Height}p, rotation {Rotation}) for a beta clip",
+            rungs.Count, displayedHeight, probe.RotationDegrees);
+        await RunAsync(settings.BetaVideo.FfmpegPath, args, cancellationToken);
+
+        var master = Path.Combine(outputDirectory, HlsLadderPlanner.MasterPlaylistName);
+        if (!File.Exists(master))
+        {
+            throw new InvalidOperationException("ffmpeg produced no HLS master playlist.");
+        }
+    }
+
+    private static int ReadInt(JsonElement element, string property) =>
+        element.TryGetProperty(property, out var value) && value.TryGetInt32(out var parsed) ? parsed : 0;
 
     private static VideoTranscodeResult Result(string outputPath)
     {
