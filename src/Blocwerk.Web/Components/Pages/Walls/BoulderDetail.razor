@@ -397,6 +397,13 @@ else
     [Parameter] public Guid BoulderId { get; set; }
     [Parameter] public string? ShareToken { get; set; }
 
+    // Route params of the boulder currently loaded. Under enhanced navigation, boulder→boulder
+    // navigation keeps this component alive (same route template, new parameters), so these guard a
+    // reload against unchanged params — see OnParametersSetAsync, mirroring WallDetail.
+    private Guid _loadedWallId;
+    private Guid _loadedBoulderId;
+    private string? _loadedShareToken;
+
     private Boulder? _boulder;
     private List<Attempt> _attempts = [];
     private AttemptSummary _summary = new(0, false, false);
@@ -673,10 +680,50 @@ else
         }
     }
 
-    protected override async Task OnInitializedAsync()
+    // Only the once-per-instance cache subscription lives here. The route-dependent boulder load runs
+    // in OnParametersSetAsync so boulder→boulder navigation, which keeps this component alive under
+    // enhanced navigation, actually reloads instead of showing the first boulder. See WallDetail.
+    protected override void OnInitialized()
     {
         Cache.Changed += OnCacheChanged;
+    }
 
+    // Reloads whenever the route names a different boulder (or wall, or share token). On a retained
+    // component the parameters change without OnInitialized re-running, so without this the page would
+    // keep showing the boulder it first loaded — the "wrong boulder after sort/click" bug.
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedWallId == WallId && _loadedBoulderId == BoulderId && _loadedShareToken == ShareToken)
+        {
+            return;
+        }
+
+        _loadedWallId = WallId;
+        _loadedBoulderId = BoulderId;
+        _loadedShareToken = ShareToken;
+
+        // Blank the previous boulder (and everything derived from it) before the new load so a
+        // retained component can never flash the wrong boulder, and stale permissions/holds can't
+        // survive a load that ends not-found.
+        _boulder = null;
+        _isAnonymous = false;
+        _currentUserId = Guid.Empty;
+        _isCreator = false;
+        _isSetter = false;
+        _isAdmin = false;
+        _showHistoric = false;
+        _boulderHoldIds = [];
+        _activeProposal = null;
+        _isFavorite = false;
+        _rating = new(null, 0, null);
+        _publishError = null;
+        StateHasChanged();
+
+        await LoadForCurrentRouteAsync();
+    }
+
+    private async Task LoadForCurrentRouteAsync()
+    {
         if (!string.IsNullOrEmpty(ShareToken))
         {
             _isAnonymous = true;
@@ -734,44 +781,48 @@ else
 
         if (_boulder != null)
         {
-            _isCreator = _boulder.CreatedByUserId == _currentUserId;
+            await LoadBoulderContextAsync();
+        }
+    }
 
-            // A setter (or co-setter) of this boulder may edit/revise/publish it just like the
-            // creator — the server enforces the same rule. Meaningless for an anonymous viewer.
-            _isSetter = !_isAnonymous && _boulder.Setters.Any(s => s.UserId == _currentUserId);
+    private async Task LoadBoulderContextAsync()
+    {
+        _isCreator = _boulder!.CreatedByUserId == _currentUserId;
 
-            // A wall admin (a WallRole.Admin member of this wall) may revise ANY boulder on the
-            // wall, not only the ones they created — same membership-role check used across the
-            // wall UI. Only meaningful for a signed-in viewer on the normal (non-share) path; the
-            // boulder's own Wall include carries no Members, so read the wall from the cache.
-            if (!_isAnonymous && string.IsNullOrEmpty(ShareToken))
-            {
-                var wall = await Cache.GetWallAsync(WallId);
-                var membership = wall?.Members.FirstOrDefault(m => m.UserId == _currentUserId);
-                // The wall owner counts as an admin even without an explicit Admin member row, matching
-                // WallAdminGuard on the server — otherwise an owner would be offered no revise entry
-                // point yet the server would accept the revise.
-                _isAdmin = membership?.Role == WallRole.Admin || wall?.OwnerId == _currentUserId;
-            }
+        // A setter (or co-setter) of this boulder may edit/revise/publish it just like the
+        // creator — the server enforces the same rule. Meaningless for an anonymous viewer.
+        _isSetter = !_isAnonymous && _boulder.Setters.Any(s => s.UserId == _currentUserId);
 
-            _boulderHoldIds = _boulder.BoulderHolds.Select(bh => bh.HoldId).ToHashSet();
-
-            // A live boulder may now be fully re-edited by the creator or a wall admin even after
-            // others have sent it, so there is no longer a "sent by others" gate to pre-compute here.
-
-            // A stale boulder only makes sense against the wall it was set on.
-            _showHistoric = CanViewHistoric;
-            await LoadWallHolds();
-            await LoadPanelData();
-            _activeProposal = await BoulderService.GetActiveProposalAsync(BoulderId);
-
-            if (!_isAnonymous)
-            {
-                _isFavorite = await FeedbackService.IsFavoritedAsync(BoulderId);
-                _rating = await FeedbackService.GetRatingAsync(BoulderId);
-            }
+        // A wall admin (a WallRole.Admin member of this wall) may revise ANY boulder on the
+        // wall, not only the ones they created — same membership-role check used across the
+        // wall UI. Only meaningful for a signed-in viewer on the normal (non-share) path; the
+        // boulder's own Wall include carries no Members, so read the wall from the cache.
+        if (!_isAnonymous && string.IsNullOrEmpty(ShareToken))
+        {
+            var wall = await Cache.GetWallAsync(WallId);
+            var membership = wall?.Members.FirstOrDefault(m => m.UserId == _currentUserId);
+            // The wall owner counts as an admin even without an explicit Admin member row, matching
+            // WallAdminGuard on the server — otherwise an owner would be offered no revise entry
+            // point yet the server would accept the revise.
+            _isAdmin = membership?.Role == WallRole.Admin || wall?.OwnerId == _currentUserId;
         }
 
+        _boulderHoldIds = _boulder.BoulderHolds.Select(bh => bh.HoldId).ToHashSet();
+
+        // A live boulder may now be fully re-edited by the creator or a wall admin even after
+        // others have sent it, so there is no longer a "sent by others" gate to pre-compute here.
+
+        // A stale boulder only makes sense against the wall it was set on.
+        _showHistoric = CanViewHistoric;
+        await LoadWallHolds();
+        await LoadPanelData();
+        _activeProposal = await BoulderService.GetActiveProposalAsync(BoulderId);
+
+        if (!_isAnonymous)
+        {
+            _isFavorite = await FeedbackService.IsFavoritedAsync(BoulderId);
+            _rating = await FeedbackService.GetRatingAsync(BoulderId);
+        }
     }
 
     /// <summary>
