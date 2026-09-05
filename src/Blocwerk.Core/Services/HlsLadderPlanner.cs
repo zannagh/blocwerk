@@ -111,6 +111,13 @@ public static class HlsLadderPlanner
 
         var sb = new StringBuilder();
         sb.Append("-y -hide_banner -loglevel error ");
+
+        // Disable ffmpeg's implicit auto-rotation of the decoded stream. Modern ffmpeg (6.x) DOES
+        // auto-rotate a [0:v] stream feeding a complex graph, so without this the display matrix would
+        // rotate the frame AND our explicit transpose below would rotate it again → a sideways ladder.
+        // With -noautorotate the frame reaches the graph in its coded orientation and the transpose is
+        // the single, deterministic rotation, matching the auto-rotated MP4 exactly (verified by PSNR).
+        sb.Append("-noautorotate ");
         sb.Append("-i ").Append(Quote(inputPath)).Append(' ');
         sb.Append("-filter_complex ").Append(Quote(BuildFilter(rungs, rotationDegrees))).Append(' ');
 
@@ -147,10 +154,11 @@ public static class HlsLadderPlanner
     {
         var sb = new StringBuilder();
 
-        // Rotate ONCE up front (cheaper and consistent across rungs), then split. ffmpeg does not
-        // auto-rotate a stream consumed by a complex graph via [0:v], so without this the ladder would
-        // come out sideways relative to the auto-rotated MP4. After rotation the frame is already in its
-        // displayed orientation, so the scale below targets the displayed height directly.
+        // Rotate ONCE up front (cheaper and consistent across rungs), then split. The invocation passes
+        // -noautorotate, so [0:v] arrives in its CODED orientation and this transpose is the only
+        // rotation applied — it puts the frame into its displayed orientation, matching the auto-rotated
+        // MP4. After rotation the frame is already displayed-oriented, so the scale below targets the
+        // displayed height directly.
         sb.Append("[0:v]");
         var rotation = RotationFilter(rotationDegrees);
         if (rotation.Length > 0)

@@ -72,6 +72,22 @@ public class HlsBackendTests
     }
 
     [Fact]
+    public void BuildArguments_DisablesAutoRotation_BeforeTheInput()
+    {
+        // Modern ffmpeg auto-rotates a [0:v] stream feeding a complex graph, which would double-rotate
+        // on top of our explicit transpose (verified on prod ffmpeg 6.1.1: a portrait clip came out
+        // sideways without this). -noautorotate must be an INPUT option, i.e. sit before -i.
+        var rungs = HlsLadderPlanner.SelectRungs(Ladder, sourceHeight: 480);
+        var args = HlsLadderPlanner.BuildArguments(
+            "/in.mp4", "/out", rungs, segmentSeconds: 4, hasAudio: true, rotationDegrees: 90);
+
+        Assert.Contains("-noautorotate", args);
+        Assert.True(
+            args.IndexOf("-noautorotate", StringComparison.Ordinal) < args.IndexOf("-i ", StringComparison.Ordinal),
+            "-noautorotate must precede -i so it is applied as an input option.");
+    }
+
+    [Fact]
     public void DisplayedHeight_ForA90DegPortrait_SwapsToTheCodedWidth()
     {
         // A phone clip coded 1920x1080 but shot in portrait displays as 1080x1920: the displayed height
