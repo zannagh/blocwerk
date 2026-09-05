@@ -40,6 +40,14 @@ public static class HlsLadderPlanner
         rotationDegrees is 90 or 270 ? codedWidth : codedHeight;
 
     /// <summary>
+    /// The DISPLAYED width, the companion to <see cref="DisplayedHeight"/>. A 90/270 rotation swaps the
+    /// axes, so the displayed width is the source's coded HEIGHT (a 1920×1080 clip shot in portrait
+    /// displays 1080 wide); 0/180 keep the coded width.
+    /// </summary>
+    public static int DisplayedWidth(int codedWidth, int codedHeight, int rotationDegrees) =>
+        rotationDegrees is 90 or 270 ? codedHeight : codedWidth;
+
+    /// <summary>
     /// The ffmpeg filter that rotates a decoded frame upright, replicating what <c>-autorotate</c> does
     /// on the MP4 path (which rotates by the negative of the display-matrix angle). Empty for 0. The
     /// angle is in the upright <c>rotate</c>-tag convention: 90 → clockwise, 270 → counter-clockwise.

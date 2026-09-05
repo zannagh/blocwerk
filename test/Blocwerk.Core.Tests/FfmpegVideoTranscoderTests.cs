@@ -47,6 +47,55 @@ public class FfmpegVideoTranscoderTests
         Assert.False(FfmpegVideoTranscoder.IsWebSafe(probe));
     }
 
+    // The remux fast-path (-c copy) is gated on size, not just codec, so a 4K/high-bitrate clip that
+    // merely happens to be H.264 is still transcoded down to the 720p MP4 fallback. Default target is
+    // 3 Mbps, so the 1.25x margin threshold is 3.75 Mbps.
+    private const long Target = 3_000_000;
+
+    [Fact]
+    public void CanRemux_AlreadyH264But4KHighBitrate_MustTranscode()
+    {
+        // 3840x2160, ~25 Mbps (88 MB / ~28 s). Web-safe codec, but far past the 720p cap → transcode.
+        var probe = new VideoProbeResult(28, "h264", "aac", "yuv420p", HasAudio: true, Height: 2160, Width: 3840);
+        Assert.False(FfmpegVideoTranscoder.CanRemux(probe, sourceFileBytes: 88L * 1024 * 1024, Target));
+    }
+
+    [Fact]
+    public void CanRemux_H264720pWithinTargetBitrate_IsRemuxable()
+    {
+        // 1280x720, ~2 Mbps (2.5 MB / 10 s): web-safe, within the dimension cap and under 1.25x target.
+        var probe = new VideoProbeResult(10, "h264", "aac", "yuv420p", HasAudio: true, Height: 720, Width: 1280);
+        Assert.True(FfmpegVideoTranscoder.CanRemux(probe, sourceFileBytes: 2_500_000, Target));
+    }
+
+    [Fact]
+    public void CanRemux_H264720pOverBitrate_MustTranscode()
+    {
+        // 1280x720 but ~4.8 Mbps (6 MB / 10 s), over the 3.75 Mbps margin → transcode to shrink it.
+        var probe = new VideoProbeResult(10, "h264", "aac", "yuv420p", HasAudio: true, Height: 720, Width: 1280);
+        Assert.False(FfmpegVideoTranscoder.CanRemux(probe, sourceFileBytes: 6_000_000, Target));
+    }
+
+    [Fact]
+    public void CanRemux_MissingDurationOrSize_MustTranscode()
+    {
+        // The bitrate cannot be estimated without both, so the safe default is a (size-capping) transcode.
+        var probe = new VideoProbeResult(0, "h264", "aac", "yuv420p", HasAudio: true, Height: 720, Width: 1280);
+        Assert.False(FfmpegVideoTranscoder.CanRemux(probe, sourceFileBytes: 2_500_000, Target));
+
+        var sized = new VideoProbeResult(10, "h264", "aac", "yuv420p", HasAudio: true, Height: 720, Width: 1280);
+        Assert.False(FfmpegVideoTranscoder.CanRemux(sized, sourceFileBytes: 0, Target));
+    }
+
+    [Fact]
+    public void CanRemux_RotatedPortraitH264_DisplayedMaxDimOver1280_MustTranscode()
+    {
+        // Coded 1920x1080 rotated 90°: displayed 1080x1920, so the displayed long edge is 1920 > 1280.
+        // Web-safe and low bitrate, yet the displayed size alone forces a transcode.
+        var probe = new VideoProbeResult(10, "h264", "aac", "yuv420p", HasAudio: true, Height: 1080, Width: 1920, RotationDegrees: 90);
+        Assert.False(FfmpegVideoTranscoder.CanRemux(probe, sourceFileBytes: 2_500_000, Target));
+    }
+
     [Fact]
     public void ParseProbe_ReadsCodecsPixelFormatAndDuration()
     {

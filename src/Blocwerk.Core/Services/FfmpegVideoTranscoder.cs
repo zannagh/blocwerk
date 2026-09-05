@@ -23,6 +23,20 @@ public class FfmpegVideoTranscoder : IVideoTranscoder
     /// <summary>8-bit 4:2:0 pixel formats. A 10-bit H.264 clip still needs a re-encode to yuv420p.</summary>
     private static readonly HashSet<string> WebSafePixelFormats = new(StringComparer.OrdinalIgnoreCase) { "yuv420p", "yuvj420p" };
 
+    /// <summary>
+    /// The largest DISPLAYED dimension (px) a clip may have and still qualify for the cheap <c>-c copy</c>
+    /// remux. Anything bigger is transcoded down to the 720p fallback profile even when already H.264, so a
+    /// 4K clip never rides through at source resolution. Matches the 720p (long-edge 1280) transcode cap.
+    /// </summary>
+    public const int MaxRemuxDisplayedDimension = 1280;
+
+    /// <summary>
+    /// Head-room over <see cref="Configuration.BetaVideoSettings.TargetVideoBitsPerSecond"/> the remux
+    /// fast-path tolerates: a source estimated within 1.25× target is close enough to leave untouched;
+    /// anything fatter is transcoded so the flaky-network MP4 fallback stays small.
+    /// </summary>
+    public const double RemuxBitrateMargin = 1.25;
+
     private readonly BlocwerkSettings settings;
     private readonly ILogger<FfmpegVideoTranscoder> logger;
 
@@ -50,6 +64,40 @@ public class FfmpegVideoTranscoder : IVideoTranscoder
         }
 
         return !probe.HasAudio || (probe.AudioCodec is not null && WebSafeAudioCodecs.Contains(probe.AudioCodec));
+    }
+
+    /// <summary>
+    /// Whether a probed clip qualifies for the cheap <c>-c copy</c> remux instead of a full transcode.
+    /// True only when it is <see cref="IsWebSafe">web-safe</see> AND already small enough to serve as the
+    /// flaky-network MP4 fallback: its max DISPLAYED dimension (rotation-aware, so a rotated portrait
+    /// clip's displayed height is its coded width) is ≤ <see cref="MaxRemuxDisplayedDimension"/>, AND its
+    /// estimated total bitrate (<paramref name="sourceFileBytes"/> × 8 ÷ duration) is within
+    /// <see cref="RemuxBitrateMargin"/>× <paramref name="targetVideoBitsPerSecond"/>. A missing/zero
+    /// duration or unknown size makes the bitrate untrustworthy, so it is treated as OUT of bounds →
+    /// transcode, the safe default that guarantees a capped fallback. Pure and static for ffmpeg-free
+    /// testing, mirroring <see cref="IsWebSafe"/>.
+    /// </summary>
+    public static bool CanRemux(VideoProbeResult probe, long sourceFileBytes, long targetVideoBitsPerSecond)
+    {
+        if (!IsWebSafe(probe))
+        {
+            return false;
+        }
+
+        var displayedWidth = HlsLadderPlanner.DisplayedWidth(probe.Width, probe.Height, probe.RotationDegrees);
+        var displayedHeight = HlsLadderPlanner.DisplayedHeight(probe.Width, probe.Height, probe.RotationDegrees);
+        if (Math.Max(displayedWidth, displayedHeight) > MaxRemuxDisplayedDimension)
+        {
+            return false;
+        }
+
+        if (sourceFileBytes <= 0 || probe.DurationSeconds <= 0)
+        {
+            return false;
+        }
+
+        var estimatedBitsPerSecond = sourceFileBytes * 8.0 / probe.DurationSeconds;
+        return estimatedBitsPerSecond <= targetVideoBitsPerSecond * RemuxBitrateMargin;
     }
 
     public async Task<VideoProbeResult> ProbeAsync(string inputPath, CancellationToken cancellationToken)
@@ -236,6 +284,70 @@ public class FfmpegVideoTranscoder : IVideoTranscoder
         {
             throw new InvalidOperationException("ffmpeg produced no HLS master playlist.");
         }
+    }
+
+    public async Task<byte[]?> ExtractPosterAsync(string normalizedMp4Path, double durationSeconds, CancellationToken cancellationToken)
+    {
+        // The poster is best-effort: any failure (missing ffmpeg, a killed/timed-out grab, an unreadable
+        // frame) returns null so the normalizer keeps the clip Ready with whatever thumbnail it already had.
+        var posterPath = normalizedMp4Path + ".poster.jpg";
+        try
+        {
+            var seek = PosterSeekSeconds(durationSeconds).ToString("0.###", CultureInfo.InvariantCulture);
+
+            // Seek BEFORE -i (fast keyframe seek), one frame, scale to a 640px long edge preserving aspect
+            // with even dims, JPEG at q:v 3. The source is the already-upright MP4, so no rotation handling.
+            var args = string.Join(' ',
+                "-y", "-hide_banner", "-loglevel", "error",
+                "-ss", seek, "-i", Quote(normalizedMp4Path),
+                "-frames:v", "1",
+                "-vf", "scale=w=640:h=640:force_original_aspect_ratio=decrease:force_divisible_by=2",
+                "-q:v", "3", "-f", "image2",
+                Quote(posterPath));
+
+            await RunAsync(settings.BetaVideo.FfmpegPath, args, cancellationToken);
+            if (!File.Exists(posterPath))
+            {
+                return null;
+            }
+
+            var bytes = await File.ReadAllBytesAsync(posterPath, cancellationToken);
+            return bytes.Length > 0 ? bytes : null;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not extract a poster frame for a beta clip; leaving the existing thumbnail.");
+            return null;
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(posterPath))
+                {
+                    File.Delete(posterPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogDebug(ex, "Could not delete the temporary poster file {Path}.", posterPath);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The seek time for the poster grab: ~10% of duration, clamped to ≥1s and strictly &lt; duration, or 1s
+    /// when the duration is unknown/zero. Pure so the clamp is testable without ffmpeg on the box.
+    /// </summary>
+    public static double PosterSeekSeconds(double durationSeconds)
+    {
+        if (durationSeconds <= 0)
+        {
+            return 1.0;
+        }
+
+        var upper = Math.Max(1.0, durationSeconds - 0.1);
+        return Math.Clamp(durationSeconds * 0.10, 1.0, upper);
     }
 
     private static int ReadInt(JsonElement element, string property) =>

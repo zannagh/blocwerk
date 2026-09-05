@@ -1,4 +1,5 @@
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -31,17 +32,20 @@ public sealed class BetaVideoNormalizer
     private readonly RootDbContextFactory dbContextFactory;
     private readonly IBetaVideoStorage storage;
     private readonly IVideoTranscoder transcoder;
+    private readonly BlocwerkSettings settings;
     private readonly ILogger<BetaVideoNormalizer> logger;
 
     public BetaVideoNormalizer(
         RootDbContextFactory dbContextFactory,
         IBetaVideoStorage storage,
         IVideoTranscoder transcoder,
+        BlocwerkSettings settings,
         ILogger<BetaVideoNormalizer> logger)
     {
         this.dbContextFactory = dbContextFactory;
         this.storage = storage;
         this.transcoder = transcoder;
+        this.settings = settings;
         this.logger = logger;
     }
 
@@ -68,7 +72,13 @@ public sealed class BetaVideoNormalizer
 
             var probe = await transcoder.ProbeAsync(source.Path, cancellationToken);
             outPath = storage.CreateTempPath(".mp4");
-            var result = FfmpegVideoTranscoder.IsWebSafe(probe)
+
+            // Only take the cheap remux for a clip that is BOTH web-safe AND already small enough (≤720p,
+            // near the target bitrate) to serve as the flaky-network MP4 fallback; an already-H.264 4K clip
+            // is otherwise routed to the size-capping transcode. GetSourceBytes never throws (see below), so
+            // an unreadable size falls through to CanRemux's safe default (transcode).
+            var sourceBytes = GetSourceBytes(source.Path);
+            var result = FfmpegVideoTranscoder.CanRemux(probe, sourceBytes, settings.BetaVideo.TargetVideoBitsPerSecond)
                 ? await transcoder.RemuxAsync(source.Path, outPath, cancellationToken)
                 : await transcoder.TranscodeAsync(source.Path, outPath, cancellationToken);
 
@@ -76,10 +86,16 @@ public sealed class BetaVideoNormalizer
             // and if it fails the clip is still Ready on the MP4 (HasHls stays false — no regression).
             var hasHls = await TryBuildHlsAsync(videoId, source.Path, probe, cancellationToken);
 
+            // Poster frame from the NORMALIZED MP4 (already H.264 + auto-rotated upright), never the
+            // possibly-HEVC/rotated original. Best-effort and non-throwing: a null poster leaves any
+            // existing thumbnail untouched and never fails normalization. Grab it while outPath still
+            // exists — Commit moves the file into the store below.
+            var poster = await transcoder.ExtractPosterAsync(outPath, probe.DurationSeconds, cancellationToken);
+
             var storedName = storage.Commit(outPath, ".mp4");
             outPath = null; // ownership moved into the store
 
-            await MarkReadyAsync(videoId, storedName, result, hasHls, cancellationToken);
+            await MarkReadyAsync(videoId, storedName, result, hasHls, poster, cancellationToken);
 
             // The row now points at the fresh file, so the previous disk rendition (if any) is safe to
             // drop. Legacy clips had their bytes in the row, cleared by MarkReadyAsync.
@@ -201,7 +217,8 @@ public sealed class BetaVideoNormalizer
             .ExecuteUpdateAsync(s => s.SetProperty(v => v.EncodingStatus, status), ct);
     }
 
-    private async Task MarkReadyAsync(Guid videoId, string storedName, VideoTranscodeResult result, bool hasHls, CancellationToken ct)
+    private async Task MarkReadyAsync(
+        Guid videoId, string storedName, VideoTranscodeResult result, bool hasHls, byte[]? poster, CancellationToken ct)
     {
         await using var db = dbContextFactory.CreateDbContext();
         await db.BetaVideos
@@ -215,6 +232,16 @@ public sealed class BetaVideoNormalizer
                 .SetProperty(v => v.EncodingStatus, BetaVideoEncodingStatus.Ready)
                 .SetProperty(v => v.LastEncodedUtc, DateTimeOffset.UtcNow)
                 .SetProperty(v => v.EncodingError, (string?)null), ct);
+
+        // Server-side poster is the source of truth: overwrite on every re-encode when we produced one.
+        // A null poster (generation failed) must NOT wipe a thumbnail the clip already had, so it is a
+        // separate, conditional write rather than part of the update above.
+        if (poster is { Length: > 0 })
+        {
+            await db.BetaVideos
+                .Where(v => v.Id == videoId)
+                .ExecuteUpdateAsync(s => s.SetProperty(v => v.Thumbnail, poster), ct);
+        }
     }
 
     private async Task MarkFailedAsync(Guid videoId, string error, CancellationToken ct)
@@ -231,6 +258,25 @@ public sealed class BetaVideoNormalizer
         catch (Exception ex)
         {
             logger.LogError(ex, "Could not record the normalize failure for beta clip {VideoId}.", videoId);
+        }
+    }
+
+    /// <summary>
+    /// The source file's length in bytes for the remux-vs-transcode bitrate estimate — the on-disk clip,
+    /// or the temp file written from legacy bytea. Returns 0 (never throws) when the size cannot be read,
+    /// which <see cref="FfmpegVideoTranscoder.CanRemux"/> treats as out of bounds → transcode.
+    /// </summary>
+    private long GetSourceBytes(string path)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            return info.Exists ? info.Length : 0;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not read the source size for a beta clip; transcoding to be safe.");
+            return 0;
         }
     }
 

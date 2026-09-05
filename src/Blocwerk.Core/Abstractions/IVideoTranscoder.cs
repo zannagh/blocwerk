@@ -57,4 +57,14 @@ public interface IVideoTranscoder
     /// worth committing) if the tool is missing, the encode fails, or it exceeds the encode timeout.
     /// </summary>
     Task TranscodeHlsAsync(string inputPath, string outputDirectory, VideoProbeResult probe, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Grabs a single JPEG poster frame from the ALREADY-NORMALIZED MP4 at <paramref name="normalizedMp4Path"/>
+    /// (H.264, auto-rotated upright — never the possibly-HEVC/rotated original), seeking to ~10% of
+    /// <paramref name="durationSeconds"/> (clamped to ≥1s and &lt; duration; 1s when the duration is unknown),
+    /// scaled to a modest poster size and returned as JPEG bytes. Best-effort and NON-throwing: returns
+    /// <c>null</c> on any failure (missing tool, encode error, timeout) so a missing thumbnail never fails
+    /// normalization.
+    /// </summary>
+    Task<byte[]?> ExtractPosterAsync(string normalizedMp4Path, double durationSeconds, CancellationToken cancellationToken);
 }

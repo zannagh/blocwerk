@@ -1,4 +1,5 @@
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
@@ -16,6 +17,7 @@ public class BetaVideoNormalizerTests
 {
     private static readonly byte[] Clip = [0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70];
     private static readonly byte[] Encoded = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
+    private static readonly byte[] Poster = [0xFF, 0xD8, 0xFF, 0xE0, 0x10, 0x20];
 
     [Fact]
     public async Task Normalize_TranscodesANonWebSafeClip_IntoAReadyMp4()
@@ -62,6 +64,23 @@ public class BetaVideoNormalizerTests
         Assert.Equal(1, transcoder.RemuxCalls);
         Assert.Equal(0, transcoder.TranscodeCalls);
         Assert.Equal(BetaVideoEncodingStatus.Ready, (await RowAsync(h, info.Id)).EncodingStatus);
+    }
+
+    [Fact]
+    public async Task Normalize_Transcodes_AnAlreadyWebSafeButOversizedClip()
+    {
+        using var h = new WallTestHarness();
+        var boulder = await SeedBoulderAsync(h);
+        var info = await h.BetaVideoService.AddVideoAsync(boulder.Id, Clip, "video/mp4", null, "clip.mp4");
+
+        // Already H.264/AAC, but a 4K frame (3840x2160): past the 720p remux cap, so the MP4 fallback
+        // must be re-encoded down rather than copied through at source resolution.
+        var transcoder = new FakeTranscoder { Probe = new VideoProbeResult(5, "h264", "aac", "yuv420p", true, 2160, 3840) };
+        var outcome = await NewNormalizer(h, transcoder).ProcessAsync(info.Id, default);
+
+        Assert.Equal(BetaVideoNormalizeOutcome.Ready, outcome);
+        Assert.Equal(1, transcoder.TranscodeCalls);
+        Assert.Equal(0, transcoder.RemuxCalls);
     }
 
     [Fact]
@@ -120,6 +139,56 @@ public class BetaVideoNormalizerTests
         Assert.Null(row.Data);
         Assert.NotNull(row.StoragePath);
         Assert.True(File.Exists(h.BetaStorage.ResolvePhysicalPath(row.StoragePath!)));
+    }
+
+    [Fact]
+    public async Task Normalize_StoresTheServerSidePoster_IntoTheThumbnail()
+    {
+        using var h = new WallTestHarness();
+        var boulder = await SeedBoulderAsync(h);
+        var info = await h.BetaVideoService.AddVideoAsync(boulder.Id, Clip, "video/quicktime", null, "clip.mov");
+
+        var transcoder = new FakeTranscoder { Probe = new VideoProbeResult(5, "hevc", "aac", "yuv420p", true), Poster = Poster };
+        var outcome = await NewNormalizer(h, transcoder).ProcessAsync(info.Id, default);
+
+        Assert.Equal(BetaVideoNormalizeOutcome.Ready, outcome);
+        Assert.Equal(1, transcoder.PosterCalls);
+
+        var row = await RowAsync(h, info.Id);
+        Assert.Equal(Poster, row.Thumbnail);
+    }
+
+    [Fact]
+    public async Task Normalize_LeavesAnExistingThumbnailUntouched_WhenPosterGenerationReturnsNull()
+    {
+        using var h = new WallTestHarness();
+        var boulder = await SeedBoulderAsync(h);
+        // Uploaded with a browser-side poster; the server-side grab then fails (returns null).
+        var info = await h.BetaVideoService.AddVideoAsync(boulder.Id, Clip, "video/quicktime", Poster, "clip.mov");
+
+        var transcoder = new FakeTranscoder { Probe = new VideoProbeResult(5, "hevc", "aac", "yuv420p", true), Poster = null };
+        var outcome = await NewNormalizer(h, transcoder).ProcessAsync(info.Id, default);
+
+        Assert.Equal(BetaVideoNormalizeOutcome.Ready, outcome);
+        var row = await RowAsync(h, info.Id);
+        Assert.Equal(Poster, row.Thumbnail);
+    }
+
+    [Fact]
+    public async Task Normalize_StillReady_WhenPosterGenerationFails_AndNoThumbnailExisted()
+    {
+        using var h = new WallTestHarness();
+        var boulder = await SeedBoulderAsync(h);
+        var info = await h.BetaVideoService.AddVideoAsync(boulder.Id, Clip, "video/quicktime", null, "clip.mov");
+
+        var transcoder = new FakeTranscoder { Probe = new VideoProbeResult(5, "hevc", "aac", "yuv420p", true), Poster = null };
+        var outcome = await NewNormalizer(h, transcoder).ProcessAsync(info.Id, default);
+
+        // A missing poster never fails normalization; the clip is Ready and simply carries no thumbnail.
+        Assert.Equal(BetaVideoNormalizeOutcome.Ready, outcome);
+        var row = await RowAsync(h, info.Id);
+        Assert.Equal(BetaVideoEncodingStatus.Ready, row.EncodingStatus);
+        Assert.Null(row.Thumbnail);
     }
 
     [Fact]
@@ -286,8 +355,10 @@ public class BetaVideoNormalizerTests
         Assert.NotNull(await h.BetaVideoService.GetHlsDirectoryAsync(info.Id));
     }
 
-    private static BetaVideoNormalizer NewNormalizer(WallTestHarness h, IVideoTranscoder transcoder) =>
-        new(h.RootContextFactory, h.BetaStorage, transcoder, NullLogger<BetaVideoNormalizer>.Instance);
+    private static BetaVideoNormalizer NewNormalizer(
+        WallTestHarness h, IVideoTranscoder transcoder, BlocwerkSettings? settings = null) =>
+        new(h.RootContextFactory, h.BetaStorage, transcoder, settings ?? new BlocwerkSettings(),
+            NullLogger<BetaVideoNormalizer>.Instance);
 
     private static async Task<Boulder> SeedBoulderAsync(WallTestHarness h)
     {
@@ -328,11 +399,16 @@ public class BetaVideoNormalizerTests
 
         public bool ThrowOnHls { get; set; }
 
+        /// <summary>Poster bytes the fake returns; null models a failed (non-throwing) poster grab.</summary>
+        public byte[]? Poster { get; set; } = [0x0A, 0x0B, 0x0C];
+
         public int RemuxCalls { get; private set; }
 
         public int TranscodeCalls { get; private set; }
 
         public int HlsCalls { get; private set; }
+
+        public int PosterCalls { get; private set; }
 
         public Task<VideoProbeResult> ProbeAsync(string inputPath, CancellationToken cancellationToken) =>
             Task.FromResult(Probe);
@@ -368,6 +444,12 @@ public class BetaVideoNormalizerTests
             await File.WriteAllTextAsync(Path.Combine(outputDirectory, "master.m3u8"), "#EXTM3U\nv0.m3u8\n", cancellationToken);
             await File.WriteAllTextAsync(Path.Combine(outputDirectory, "v0.m3u8"), "#EXTM3U\nv0_000.ts\n", cancellationToken);
             await File.WriteAllBytesAsync(Path.Combine(outputDirectory, "v0_000.ts"), Encoded, cancellationToken);
+        }
+
+        public Task<byte[]?> ExtractPosterAsync(string normalizedMp4Path, double durationSeconds, CancellationToken cancellationToken)
+        {
+            PosterCalls++;
+            return Task.FromResult(Poster);
         }
 
         private static async Task<VideoTranscodeResult> WriteAsync(string outputPath, CancellationToken ct)
