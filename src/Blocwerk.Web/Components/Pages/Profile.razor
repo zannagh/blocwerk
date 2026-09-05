@@ -14,6 +14,7 @@
 @inject Blocwerk.Core.Abstractions.IKioskContext KioskContext
 @inject IJSRuntime JS
 @inject IDbContextFactory<Blocwerk.Core.Data.BlocwerkDbContext> DbContextFactory
+@using Blocwerk.Core.Enums
 @using Blocwerk.Core.Helpers
 @using Blocwerk.Core.Services.TopLogger
 @using Microsoft.EntityFrameworkCore
@@ -518,8 +519,29 @@
                     @if (tlConnected)
                     {
                         <p class="tl-meta">
-                            Last sync:
-                            @if (_tlStatus!.LastSyncAt != null)
+                            Last sync attempt:
+                            @if (_tlStatus!.LastSyncAttemptedAt != null)
+                            {
+                                <LocalTime Value="@_tlStatus.LastSyncAttemptedAt" Format="LocalTimeFormat.DateTime" />
+                                @if (_tlStatus.LastSyncOutcome == TopLoggerSyncOutcome.Failed)
+                                {
+                                    <span class="tl-outcome tl-outcome-failed">
+                                        — Failed@(string.IsNullOrEmpty(_tlStatus.LastError) ? string.Empty : $": {_tlStatus.LastError}")
+                                    </span>
+                                }
+                                else if (_tlStatus.LastSyncOutcome == TopLoggerSyncOutcome.Success)
+                                {
+                                    <span class="tl-outcome tl-outcome-ok">— Success</span>
+                                }
+                            }
+                            else
+                            {
+                                <span>never</span>
+                            }
+                        </p>
+                        <p class="tl-meta">
+                            Last successful sync:
+                            @if (_tlStatus.LastSyncAt != null)
                             {
                                 <LocalTime Value="@_tlStatus.LastSyncAt" Format="LocalTimeFormat.DateTime" />
                             }
@@ -634,11 +656,6 @@
                                 }
                             }
                         </details>
-
-                        @if (!string.IsNullOrEmpty(_tlStatus.LastError))
-                        {
-                            <p class="field-error">@_tlStatus.LastError</p>
-                        }
 
                         <div class="tl-actions">
                             <button class="btn-primary" @onclick="SyncTopLoggerAsync" disabled="@tlBusy">

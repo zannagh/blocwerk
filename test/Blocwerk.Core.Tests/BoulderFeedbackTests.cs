@@ -144,6 +144,39 @@ public class BoulderFeedbackTests
         Assert.Null(archivedItem.AverageRating);
     }
 
+    /// <summary>
+    /// The boulder list flags which boulders have at least one beta video, so the overview's
+    /// "has beta video" filter never needs a per-row query.
+    /// </summary>
+    [Fact]
+    public async Task GetBoulderList_FlagsBouldersWithBetaVideo()
+    {
+        using var h = new WallTestHarness();
+        var holds = await h.SeedWallAsync(holdCount: 2);
+
+        var withBeta = await h.BoulderService.CreateBoulderAsync(
+            h.WallId, "WithBeta", null, [new BoulderHoldInput(holds[0].Id)]);
+        var withoutBeta = await h.BoulderService.CreateBoulderAsync(
+            h.WallId, "NoBeta", null, [new BoulderHoldInput(holds[1].Id)]);
+
+        await using (var db = h.CreateContext())
+        {
+            db.BetaVideos.Add(new BetaVideo
+            {
+                BoulderId = withBeta.Id,
+                UploadedByUserId = h.Owner.Id,
+                ContentType = "video/mp4",
+                EncodingStatus = BetaVideoEncodingStatus.Ready,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var items = await h.FeedbackService.GetBoulderListAsync(h.WallId);
+
+        Assert.True(items.Single(i => i.Boulder.Id == withBeta.Id).HasBetaVideo);
+        Assert.False(items.Single(i => i.Boulder.Id == withoutBeta.Id).HasBetaVideo);
+    }
+
     [Fact]
     public async Task ArchiveBoulder_Throws_WhenNotHistoric()
     {

@@ -115,14 +115,18 @@ public sealed partial class TopLoggerImportService : ITopLoggerImportService
             // Rate-limited (429) after backoff — not an auth problem. Record a clear, calm message and
             // stop; the user (or the next app-open) can retry later. Never hammer.
             logger.LogWarning(ex, "TopLogger rate-limited the sync for user {UserId}.", userId);
-            connection.LastError = "TopLogger is rate-limiting us right now — please try again in a little while.";
+            MarkAttempt(
+                connection,
+                TopLoggerSyncOutcome.Failed,
+                "TopLogger is rate-limiting us right now — please try again in a little while.");
             await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            return TopLoggerSyncResult.Failed(connection.LastError);
+            return TopLoggerSyncResult.Failed(connection.LastError!);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "TopLogger sync for user {UserId} failed.", userId);
-            connection.LastError = TopLoggerImportHelpers.Truncate(ex.Message, MaxErrorLength);
+            MarkAttempt(
+                connection, TopLoggerSyncOutcome.Failed, TopLoggerImportHelpers.Truncate(ex.Message, MaxErrorLength));
             await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             return TopLoggerSyncResult.Failed(connection.LastError ?? "Sync failed.");
         }
@@ -134,7 +138,7 @@ public sealed partial class TopLoggerImportService : ITopLoggerImportService
 
             connection.LastSyncAt = DateTimeOffset.UtcNow;
             connection.NeedsReauth = false;
-            connection.LastError = null;
+            MarkAttempt(connection, TopLoggerSyncOutcome.Success, null);
             await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
             logger.LogInformation(
@@ -185,7 +189,7 @@ public sealed partial class TopLoggerImportService : ITopLoggerImportService
 
         connection.LastSyncAt = DateTimeOffset.UtcNow;
         connection.NeedsReauth = false;
-        connection.LastError = null;
+        MarkAttempt(connection, TopLoggerSyncOutcome.Success, null);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         logger.LogInformation(
@@ -202,9 +206,23 @@ public sealed partial class TopLoggerImportService : ITopLoggerImportService
             .ConfigureAwait(false);
         if (connection is not null)
         {
-            connection.LastError = TopLoggerImportHelpers.Truncate(ex.Message, MaxErrorLength);
+            MarkAttempt(
+                connection, TopLoggerSyncOutcome.Failed, TopLoggerImportHelpers.Truncate(ex.Message, MaxErrorLength));
             await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Stamps the outcome of a sync attempt onto the connection: the attempt time (always now), the
+    /// outcome, and the error (the failure reason, or null to clear it on success). Called on EVERY
+    /// terminal path — success with data, success with nothing new, and every failure — so the profile
+    /// card can always show when a sync was last attempted and whether it worked.
+    /// </summary>
+    private static void MarkAttempt(TopLoggerConnection connection, TopLoggerSyncOutcome outcome, string? error)
+    {
+        connection.LastSyncAttemptedAt = DateTimeOffset.UtcNow;
+        connection.LastSyncOutcome = outcome;
+        connection.LastError = error;
     }
 
     /// <inheritdoc />
@@ -255,7 +273,14 @@ public sealed partial class TopLoggerImportService : ITopLoggerImportService
 
         bool connected = !string.IsNullOrWhiteSpace(connection.RefreshTokenProtected) && !connection.NeedsReauth;
         return new TopLoggerStatus(
-            connected, connection.NeedsReauth, connection.LastSyncAt, connection.LastError, ascentCount, unmapped);
+            connected,
+            connection.NeedsReauth,
+            connection.LastSyncAt,
+            connection.LastSyncAttemptedAt,
+            connection.LastSyncOutcome,
+            connection.LastError,
+            ascentCount,
+            unmapped);
     }
 
     /// <inheritdoc />
@@ -372,7 +397,7 @@ public sealed partial class TopLoggerImportService : ITopLoggerImportService
         // the wiped token columns are never resurrected from this context's stale snapshot.
         logger.LogWarning(ex, "TopLogger session for user {UserId} needs reconnect.", connection.UserId);
         connection.NeedsReauth = true;
-        connection.LastError = TopLoggerImportHelpers.Truncate(ex.Message, MaxErrorLength);
+        MarkAttempt(connection, TopLoggerSyncOutcome.Failed, TopLoggerImportHelpers.Truncate(ex.Message, MaxErrorLength));
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return TopLoggerSyncResult.ReauthRequired(connection.LastError ?? "Reconnect required.");
     }

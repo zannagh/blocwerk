@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using Blocwerk.Core.Enums;
 
 namespace Blocwerk.Core.Entities;
 
@@ -34,7 +35,17 @@ public class TopLoggerConnection
     [MaxLength(64)]
     public string? TopLoggerUserId { get; set; }
 
+    /// <summary>When the last SUCCESSFUL sync completed (data pulled or nothing new), or null if never.</summary>
     public DateTimeOffset? LastSyncAt { get; set; }
+
+    /// <summary>
+    /// When a sync was last ATTEMPTED, regardless of outcome — set on success (with or without new
+    /// data) and on failure alike. Null until the first attempt.
+    /// </summary>
+    public DateTimeOffset? LastSyncAttemptedAt { get; set; }
+
+    /// <summary>The outcome of the most recent sync attempt, or null when no sync has ever been attempted.</summary>
+    public TopLoggerSyncOutcome? LastSyncOutcome { get; set; }
 
     /// <summary>Last sync error (e.g. an auth failure), surfaced in the UI. Null when healthy.</summary>
     [MaxLength(1024)]

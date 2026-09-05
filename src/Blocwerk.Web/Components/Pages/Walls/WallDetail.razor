@@ -620,36 +620,63 @@ else
 
                 @if (_items.Count > 0)
                 {
-                    <div class="filter-bar">
-                        <input @bind="_searchText" @bind:event="oninput" placeholder="Search..." class="filter-input" />
-                        <div class="sort-row">
-                            <label class="sort-label">Sort</label>
-                            <select @bind="_sort" class="filter-select">
-                                <option value="@SortMode.Newest">Newest</option>
-                                <option value="@SortMode.Oldest">Oldest</option>
-                                <option value="@SortMode.GradeAsc">Grade ↑ (easy first)</option>
-                                <option value="@SortMode.GradeDesc">Grade ↓ (hard first)</option>
-                                <option value="@SortMode.Rating">Rating</option>
+                    @* All boulder filters live in one collapsible card (collapsed by default), reusing
+                       the page's settings-card/summary chrome. The summary carries a filter icon, a
+                       "Filters" label and — when any filter is active — a count badge, so a collapsed
+                       card still signals that the list below is filtered. *@
+                    <details class="settings-panel settings-card filter-card">
+                        <summary class="settings-card-summary">
+                            <span class="filter-card-title">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                     stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
+                                    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+                                </svg>
+                                Filters
+                                @if (ActiveFilterCount > 0)
+                                {
+                                    <span class="filter-count">@ActiveFilterCount</span>
+                                }
+                            </span>
+                        </summary>
+                        <div class="settings-card-body">
+                            <div class="filter-bar">
+                                <input @bind="_searchText" @bind:event="oninput" placeholder="Search..." class="filter-input" />
+                                <div class="sort-row">
+                                    <label class="sort-label">Sort</label>
+                                    <select @bind="_sort" class="filter-select">
+                                        <option value="@SortMode.Newest">Newest</option>
+                                        <option value="@SortMode.Oldest">Oldest</option>
+                                        <option value="@SortMode.GradeAsc">Grade ↑ (easy first)</option>
+                                        <option value="@SortMode.GradeDesc">Grade ↓ (hard first)</option>
+                                        <option value="@SortMode.Rating">Rating</option>
+                                        @if (!_isAnonymous)
+                                        {
+                                            <option value="@SortMode.MyAttempts">Most attempts by me</option>
+                                        }
+                                    </select>
+                                </div>
+                                <div class="grade-range-row">
+                                    <label class="sort-label">Grade</label>
+                                    <GradeRangePicker @bind-Min="_gradeMin" @bind-Max="_gradeMax" />
+                                </div>
+                                @* Every checkbox filter needs per-user or beta data that only the
+                                   signed-in boulder list carries; the anonymous/kiosk share view builds
+                                   its rows without it, so these stay hidden there (search/sort/grade
+                                   remain). "Not done by me" also needs a "me" to be meaningful. *@
                                 @if (!_isAnonymous)
                                 {
-                                    <option value="@SortMode.MyAttempts">Most attempts by me</option>
+                                    <div class="filter-checks">
+                                        <label class="filter-check"><input type="checkbox" @bind="_fAttempted" /> Attempted by me</label>
+                                        <label class="filter-check"><input type="checkbox" @bind="_fDone" /> Done by me</label>
+                                        <label class="filter-check"><input type="checkbox" @bind="_fNotDone" /> Not done by me</label>
+                                        <label class="filter-check"><input type="checkbox" @bind="_fFavorites" /> My favourites</label>
+                                        <label class="filter-check"><input type="checkbox" @bind="_fCreated" /> Created by me</label>
+                                        <label class="filter-check"><input type="checkbox" @bind="_fBeta" /> Has beta video</label>
+                                    </div>
                                 }
-                            </select>
-                        </div>
-                        <div class="grade-range-row">
-                            <label class="sort-label">Grade</label>
-                            <GradeRangePicker @bind-Min="_gradeMin" @bind-Max="_gradeMax" />
-                        </div>
-                        @if (!_isAnonymous)
-                        {
-                            <div class="filter-checks">
-                                <label class="filter-check"><input type="checkbox" @bind="_fAttempted" /> Attempted by me</label>
-                                <label class="filter-check"><input type="checkbox" @bind="_fDone" /> Done by me</label>
-                                <label class="filter-check"><input type="checkbox" @bind="_fFavorites" /> My favourites</label>
-                                <label class="filter-check"><input type="checkbox" @bind="_fCreated" /> Created by me</label>
                             </div>
-                        }
-                    </div>
+                        </div>
+                    </details>
                 }
 
                 @if (_items.Count == 0)
@@ -668,7 +695,7 @@ else
                 {
                     @foreach (var item in ActiveBoulders)
                     {
-                        <BoulderCard Item="item" WallId="WallId" ShareToken="@ShareToken"
+                        <BoulderCard @key="item.Boulder.Id" Item="item" WallId="WallId" ShareToken="@ShareToken"
                                      CurrentUserId="_currentUserId" IsAnonymous="_isAnonymous"
                                      IsWallAdmin="_isAdmin"
                                      ShowArchiveAction="true" ReconciledHoldCount="ReconciledHoldCount(item.Boulder)"
@@ -681,7 +708,7 @@ else
                             <summary class="archive-summary">Archive (@ArchivedBoulders.Count)</summary>
                             @foreach (var item in ArchivedBoulders)
                             {
-                                <BoulderCard Item="item" WallId="WallId" ShareToken="@ShareToken"
+                                <BoulderCard @key="item.Boulder.Id" Item="item" WallId="WallId" ShareToken="@ShareToken"
                                              CurrentUserId="_currentUserId" IsAnonymous="_isAnonymous"
                                              IsWallAdmin="_isAdmin"
                                              ReconciledHoldCount="ReconciledHoldCount(item.Boulder)"
@@ -839,12 +866,33 @@ else
     private string? _gradeMax;
     private bool _fAttempted;
     private bool _fDone;
+    private bool _fNotDone;
     private bool _fFavorites;
     private bool _fCreated;
+    private bool _fBeta;
     private SortMode _sort = SortMode.Newest;
     private ViewMode _viewMode = ViewMode.Photo;
 
     private enum SortMode { Newest, Oldest, GradeAsc, GradeDesc, Rating, MyAttempts }
+
+    // Active-filter badge for the collapsed filter card: search text, a grade bound, and each
+    // checked box count once. Sort is an ordering, not a filter, so it is deliberately excluded.
+    private int ActiveFilterCount
+    {
+        get
+        {
+            var count = 0;
+            if (!string.IsNullOrWhiteSpace(_searchText)) { count++; }
+            if (!string.IsNullOrEmpty(_gradeMin) || !string.IsNullOrEmpty(_gradeMax)) { count++; }
+            if (_fAttempted) { count++; }
+            if (_fDone) { count++; }
+            if (_fNotDone) { count++; }
+            if (_fFavorites) { count++; }
+            if (_fCreated) { count++; }
+            if (_fBeta) { count++; }
+            return count;
+        }
+    }
 
     private List<WallMember>? _members;
 
@@ -877,11 +925,11 @@ else
     private List<BoulderListItem>? _activeCache;
     private List<BoulderListItem>? _archivedCache;
     private object? _boulderCacheItemsRef;
-    private (string?, bool, bool, bool, bool, string?, string?, SortMode, Guid?) _boulderCacheKey;
+    private (string?, bool, bool, bool, bool, bool, bool, string?, string?, SortMode, Guid?) _boulderCacheKey;
 
     private void EnsureBoulderLists()
     {
-        var key = (_searchText, _fAttempted, _fDone, _fFavorites, _fCreated, _gradeMin, _gradeMax, _sort, _currentUserId);
+        var key = (_searchText, _fAttempted, _fDone, _fNotDone, _fFavorites, _fCreated, _fBeta, _gradeMin, _gradeMax, _sort, _currentUserId);
         if (_activeCache is not null && _archivedCache is not null
             && ReferenceEquals(_boulderCacheItemsRef, _items) && key.Equals(_boulderCacheKey))
         {
@@ -924,6 +972,16 @@ else
         if (_fDone)
         {
             src = src.Where(i => i.DoneByMe);
+        }
+
+        if (_fNotDone)
+        {
+            src = src.Where(i => !i.DoneByMe);
+        }
+
+        if (_fBeta)
+        {
+            src = src.Where(i => i.HasBetaVideo);
         }
 
         if (_fFavorites)

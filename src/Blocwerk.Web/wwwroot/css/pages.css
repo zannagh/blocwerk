@@ -503,6 +503,23 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     color: var(--text-secondary);
 }
 
+/* Collapsible boulder-filter card: reuses the settings-card chrome; the summary is its header. */
+.filter-card { margin-top: 0; margin-bottom: 12px; padding: 14px 16px; }
+.filter-card .filter-card-title {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--text-secondary);
+}
+.filter-card .filter-card-title svg { color: var(--text-secondary); }
+.filter-card .filter-count {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+    background: var(--accent); color: #fff; font-size: 0.68rem; font-weight: 700;
+    letter-spacing: 0;
+}
+.filter-card > .settings-card-body { margin-top: 12px; }
+.filter-card .filter-bar { margin-bottom: 0; }
+
 .filter-bar { display: flex; flex-direction: column; gap: 9px; margin-bottom: 12px; }
 .filter-input {
     flex: 1; padding: 8px 12px; border: 2px solid var(--border);
@@ -1277,6 +1294,24 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
 
 .progression-header { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center; margin-bottom: 10px; }
 .progression-header h2 { margin-bottom: 0; }
+.progression-title { display: flex; align-items: center; gap: 6px; }
+
+/* Small round "(i)" button that opens the score-explanation dialog. */
+.info-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px; padding: 0; border: none; border-radius: 50%;
+    background: transparent; color: var(--text-secondary); cursor: pointer;
+}
+.info-btn:hover { background: var(--bg-surface-alt); color: var(--accent); }
+
+/* Score-explanation dialog (reuses .bw-modal / .bw-modal-backdrop). */
+.score-info-modal { max-width: 440px; max-height: 85vh; }
+.score-info-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.score-info-head h3 { margin: 0; }
+.score-info-body { overflow-y: auto; }
+.score-info-body h4 { font-size: 0.9rem; color: var(--text-heading); margin: 12px 0 4px; }
+.score-info-body h4:first-child { margin-top: 0; }
+.score-info-body p { font-size: 0.88rem; line-height: 1.55; color: var(--text-secondary); margin-bottom: 8px; }
 .window-select {
     padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px;
     font-size: 0.8rem; background: var(--input-bg); color: var(--text);
@@ -2390,6 +2425,9 @@ html.bw-fullscreen .wall-main .photo-viewport {
 
 /* TopLogger import section */
 .tl-card .tl-meta { font-size: 0.85rem; color: var(--text-secondary); margin-top: 2px; }
+.tl-outcome { font-weight: 600; }
+.tl-outcome-ok { color: var(--success-text, #2e9e6b); }
+.tl-outcome-failed { color: var(--danger-text); }
 .tl-reauth {
     font-size: 0.88rem;
     font-weight: 600;

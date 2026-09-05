@@ -171,7 +171,16 @@
                 {
                     <div class="section">
                         <div class="progression-header">
-                            <h2>Progression</h2>
+                            <div class="progression-title">
+                                <h2>Progression</h2>
+                                <button type="button" class="info-btn" @onclick="() => _showScoreInfo = true"
+                                        aria-label="How the boulder score and progression are calculated"
+                                        title="How is this calculated?">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true">
+                                        <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
+                                    </svg>
+                                </button>
+                            </div>
                             <div class="window-control">
                                 <select class="window-select" value="@_progression.WindowDays" @onchange="OnWindowChange">
                                     <option value="14">14 days</option>
@@ -267,6 +276,52 @@
         </WallCarousel>
     }
 
+    @if (_showScoreInfo)
+    {
+        <div class="bw-modal-backdrop" @onclick="() => _showScoreInfo = false">
+            <div class="bw-modal score-info-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true" aria-label="How the score is calculated">
+                <div class="score-info-head">
+                    <h3>How the score works</h3>
+                    <button type="button" class="close-btn" @onclick="() => _showScoreInfo = false" aria-label="Close">x</button>
+                </div>
+                <div class="score-info-body">
+                    <h4>Boulder score</h4>
+                    <p>
+                        Your boulder score is a <strong>rolling 60-day rating</strong>: only sends from the
+                        last 60 days count, and older sends gradually drop out. Projects and failed attempts
+                        don't count &mdash; only climbs you've sent.
+                    </p>
+                    <p>
+                        Each climb counts <strong>once</strong> (its best result), and every send is worth
+                        points based on its <strong>grade</strong> &mdash; harder grades are worth more. A
+                        <strong>flash</strong> (sent first try) adds a small bonus on top. Your score is the
+                        <strong>average of your ten highest-scoring sends</strong> in the window; with fewer
+                        than ten, it averages what you have. The <em>~grade</em> beside the number is that
+                        score translated back to the nearest grade.
+                    </p>
+                    <p>Both climbs logged here and ascents imported from TopLogger feed into the score.</p>
+
+                    <h4>Progression</h4>
+                    <p>
+                        The boulder chart plots that same rolling rating over time. Each point is your rating
+                        <strong>as of the end of that day, week, or month</strong> (its trailing 60-day
+                        window), so the line moves smoothly rather than spiking on a single big session.
+                    </p>
+                    <p>
+                        The two selectors control the view: one sets how far back the chart reaches
+                        (14 days up to a year), the other the bucket size (day, week, or month).
+                    </p>
+                    <p>
+                        <strong>Training</strong> and <strong>Volume</strong> work differently &mdash; each
+                        bar totals only that period's own hangboard/pull-up work and minutes trained, rather
+                        than rolling forward.
+                    </p>
+                </div>
+                <button class="btn-primary" @onclick="() => _showScoreInfo = false">Got it</button>
+            </div>
+        </div>
+    }
+
     @if (_showWallPicker)
     {
         <div class="bw-modal-backdrop" @onclick="() => _showWallPicker = false">
@@ -303,6 +358,7 @@
     private List<int> _years = [];
     private int _selectedYear;
     private bool _showWallPicker;
+    private bool _showScoreInfo;
     private List<Wall>? _myWalls;
     private int _weekCount;
     private UserProgression? _progression;

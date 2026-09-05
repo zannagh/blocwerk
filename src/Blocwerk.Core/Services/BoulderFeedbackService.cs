@@ -54,7 +54,8 @@ public record BoulderListItem(
     double? AverageRating,
     int RatingCount,
     int? MyRating,
-    IReadOnlyList<string>? SetterNames = null)
+    IReadOnlyList<string>? SetterNames = null,
+    bool HasBetaVideo = false)
 {
     public bool DoneByMe => HasSent || HasFlashed;
 
@@ -309,6 +310,15 @@ public class BoulderFeedbackService : IBoulderFeedbackService
                 .Select(r => new { r.BoulderId, r.UserId, r.Stars })
                 .ToListAsync();
 
+            // One existence query for every boulder that has at least one beta video, so the
+            // "has beta video" flag stays a single round-trip instead of a count per row.
+            var bouldersWithBeta = (await db.BetaVideos
+                    .Where(v => ids.Contains(v.BoulderId))
+                    .Select(v => v.BoulderId)
+                    .Distinct()
+                    .ToListAsync())
+                .ToHashSet();
+
             var attemptsByBoulder = myAttempts
                 .GroupBy(a => a.BoulderId)
                 .ToDictionary(g => g.Key, g => g.ToList());
@@ -329,7 +339,8 @@ public class BoulderFeedbackService : IBoulderFeedbackService
                     AverageRating: rs is { Count: > 0 } ? rs.Average(r => (double)r.Stars) : null,
                     RatingCount: rs?.Count ?? 0,
                     MyRating: rs?.FirstOrDefault(r => r.UserId == user.Id)?.Stars,
-                    SetterNames: setterNames.GetValueOrDefault(b.Id));
+                    SetterNames: setterNames.GetValueOrDefault(b.Id),
+                    HasBetaVideo: bouldersWithBeta.Contains(b.Id));
             }).ToList();
         }
         catch (Exception ex)

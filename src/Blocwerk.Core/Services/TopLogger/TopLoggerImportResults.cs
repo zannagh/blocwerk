@@ -61,6 +61,8 @@ public sealed record TopLoggerSyncResult(
 /// <param name="Connected">Whether a connection row with usable tokens exists.</param>
 /// <param name="NeedsReauth">Whether the stored session was rejected and must be reconnected.</param>
 /// <param name="LastSyncAt">When the last successful sync ran, or null if never.</param>
+/// <param name="LastSyncAttemptedAt">When a sync was last attempted (success or failure), or null if never.</param>
+/// <param name="LastSyncOutcome">The outcome of that last attempt, or null when never attempted.</param>
 /// <param name="LastError">The last sync error, or null when healthy.</param>
 /// <param name="AscentCount">How many ascents have been imported for this user.</param>
 /// <param name="UnmappedGradeCount">How many imported ascents still need a grade mapping.</param>
@@ -68,12 +70,14 @@ public sealed record TopLoggerStatus(
     bool Connected,
     bool NeedsReauth,
     DateTimeOffset? LastSyncAt,
+    DateTimeOffset? LastSyncAttemptedAt,
+    Enums.TopLoggerSyncOutcome? LastSyncOutcome,
     string? LastError,
     int AscentCount,
     int UnmappedGradeCount)
 {
     public static TopLoggerStatus Disconnected { get; } =
-        new(false, false, null, null, 0, 0);
+        new(false, false, null, null, null, null, 0, 0);
 }
 
 /// <summary>
