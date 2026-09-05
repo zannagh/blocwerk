@@ -32,14 +32,21 @@
     @* Must be in <head>: it listens for beforeinstallprompt, which fires once and is not replayed
        for a listener attached later. Everything else it does is driven by InstallPrompt.razor. *@
     <script src="@Assets["js/install-prompt.js"]"></script>
-    <script src="@Assets["js/localtime.js"]"></script>
+    @* Deferred: its own work already waits for DOMContentLoaded, and nothing reads bwTime at parse,
+       so deferring costs no earlier behaviour and frees first paint. *@
+    <script defer src="@Assets["js/localtime.js"]"></script>
+    @* NOT deferred: like theme.js this applies a stored visual pref (--wall-dim on <html>) at parse
+       to avoid a flash of the undimmed wall on first paint. *@
     <script src="@Assets["js/wall-dim.js"]"></script>
-    @* Inert unless the page renders the kiosk release form; the real idle gate is server-side. *@
-    <script src="@Assets["js/kiosk-idle.js"]"></script>
-    @* Defines bwKioskPair; does nothing until /kiosk/pair calls it to submit its completion form. *@
-    <script src="@Assets["js/kiosk-pair.js"]"></script>
-    @* Inert unless the page renders the kiosk PIN form; it only types into that form and submits it. *@
-    <script src="@Assets["js/kiosk-numpad.js"]"></script>
+    @* Inert unless the page renders the kiosk release form; the real idle gate is server-side.
+       Deferred: it only arms after the DOM exists and defines no parse-time global. *@
+    <script defer src="@Assets["js/kiosk-idle.js"]"></script>
+    @* Defines bwKioskPair; does nothing until /kiosk/pair calls it to submit its completion form.
+       Deferred: that call is a user action, never at parse. *@
+    <script defer src="@Assets["js/kiosk-pair.js"]"></script>
+    @* Inert unless the page renders the kiosk PIN form; it only types into that form and submits it.
+       Deferred: its listeners bind on/after DOM-ready and it defines no parse-time global. *@
+    <script defer src="@Assets["js/kiosk-numpad.js"]"></script>
     <HeadOutlet />
     <title>Blocwerk</title>
 </head>

@@ -38,7 +38,11 @@
                     <div class="wall-card-photo">
                         @if (wall.PhotoContentType != null)
                         {
-                            <img src="/api/walls/@wall.Id/photo" alt="@wall.Name" />
+                            @* Card thumbnail on the PWA start page: a modest rendition, lazily
+                               loaded. Never the stored camera original, which a width-less request
+                               would serve. *@
+                            <img src="@ResponsiveImage.AtWidth($"/api/walls/{wall.Id}/photo", 640)"
+                                 loading="lazy" decoding="async" alt="@wall.Name" />
                         }
                         else
                         {

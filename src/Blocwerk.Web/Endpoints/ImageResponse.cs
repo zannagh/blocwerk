@@ -33,6 +33,18 @@ public static class ImageResponse
     /// </summary>
     public const string ImmutableCacheControl = "private, max-age=31536000, immutable";
 
+    /// <summary>
+    /// A downscaled rendition of a MUTABLE image (a live wall photo, a staged photo, a panel photo).
+    /// Unlike the width-less original — which is <c>no-cache</c> because a wall update rewrites its
+    /// bytes in place under the same URL, and stale would mean showing the wrong wall — a sized
+    /// variant is content-stable per photo version and only ever a thumbnail, so it tolerates a few
+    /// minutes of staleness. A bounded <c>max-age</c> removes the per-request revalidation round-trip
+    /// that <c>no-cache</c> forces on every use of a cached variant, while a re-composition still
+    /// takes effect within five minutes (and the ETag still ends the staleness on the next
+    /// revalidation). <c>private</c> for the same reason as the others: authenticated content.
+    /// </summary>
+    public const string VariantCacheControl = "private, max-age=300";
+
     /// <summary>The unit separator, used only to keep the hashed parts from running together.</summary>
     private const char PartSeparator = '\u001f';
 
@@ -113,7 +125,7 @@ public static class ImageResponse
         Func<Task<ImageVariant?>> load)
     {
         http.Response.Headers.ETag = etag;
-        http.Response.Headers.CacheControl = immutable ? ImmutableCacheControl : MutableCacheControl;
+        http.Response.Headers.CacheControl = immutable ? ImmutableCacheControl : VariantCacheControl;
 
         if (Matches(http.Request, etag))
         {

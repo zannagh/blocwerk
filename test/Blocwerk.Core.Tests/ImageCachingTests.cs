@@ -122,8 +122,68 @@ public class ImageCachingTests
     {
         Assert.StartsWith("private", ImageResponse.MutableCacheControl, StringComparison.Ordinal);
         Assert.StartsWith("private", ImageResponse.ImmutableCacheControl, StringComparison.Ordinal);
+        Assert.StartsWith("private", ImageResponse.VariantCacheControl, StringComparison.Ordinal);
         Assert.DoesNotContain("public", ImageResponse.MutableCacheControl, StringComparison.Ordinal);
         Assert.DoesNotContain("public", ImageResponse.ImmutableCacheControl, StringComparison.Ordinal);
+        Assert.DoesNotContain("public", ImageResponse.VariantCacheControl, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A width variant of a mutable image (a live wall photo) is content-stable per photo version
+    /// and only ever a thumbnail, so it is served with a bounded <c>max-age</c> rather than the
+    /// width-less original's <c>no-cache</c> — the browser reuses a cached rendition for a few
+    /// minutes without a revalidation round-trip. The width-LESS original stays <c>no-cache</c> so a
+    /// re-composition under the same URL is never shown stale.
+    /// </summary>
+    [Fact]
+    public async Task MutableWidthVariant_IsCachedWithBoundedMaxAge_WhileTheOriginalStaysNoCache()
+    {
+        var original = TestImages.Noise(3000, 2000, SKEncodedImageFormat.Jpeg, 90);
+        var wallId = Guid.NewGuid();
+        var tag = Tag(original);
+        var cache = NewCache(out _);
+
+        var variantHttp = NewContext();
+        variantHttp.Request.Method = HttpMethods.Get;
+        variantHttp.Response.Body = new MemoryStream();
+        var variantResult = await ImageResponse.ServeAsync(
+            variantHttp, cache, width: 640, tag, immutable: false,
+            () => Task.FromResult<byte[]?>(original), wallId, "live");
+        await variantResult.ExecuteAsync(variantHttp);
+
+        Assert.Equal(ImageResponse.VariantCacheControl, variantHttp.Response.Headers.CacheControl);
+        Assert.Contains("max-age=300", variantHttp.Response.Headers.CacheControl.ToString());
+        Assert.DoesNotContain("no-cache", variantHttp.Response.Headers.CacheControl.ToString());
+
+        var originalHttp = NewContext();
+        originalHttp.Request.Method = HttpMethods.Get;
+        originalHttp.Response.Body = new MemoryStream();
+        var originalResult = await ImageResponse.ServeAsync(
+            originalHttp, cache, width: null, tag, immutable: false,
+            () => Task.FromResult<byte[]?>(original), wallId, "live");
+        await originalResult.ExecuteAsync(originalHttp);
+
+        Assert.Equal(ImageResponse.MutableCacheControl, originalHttp.Response.Headers.CacheControl);
+    }
+
+    /// <summary>
+    /// A width variant of an archived generation can never change again, so it keeps the year-long
+    /// immutable policy — the bounded variant policy is only for mutable images.
+    /// </summary>
+    [Fact]
+    public async Task ArchivedWidthVariant_StaysImmutable()
+    {
+        var original = TestImages.Noise(3000, 2000, SKEncodedImageFormat.Jpeg, 90);
+        var http = NewContext();
+        http.Request.Method = HttpMethods.Get;
+        http.Response.Body = new MemoryStream();
+
+        var result = await ImageResponse.ServeAsync(
+            http, NewCache(out _), width: 640, Tag(original), immutable: true,
+            () => Task.FromResult<byte[]?>(original), Guid.NewGuid(), 2);
+        await result.ExecuteAsync(http);
+
+        Assert.Equal(ImageResponse.ImmutableCacheControl, http.Response.Headers.CacheControl);
     }
 
     [Fact]
