@@ -283,6 +283,21 @@ public static class CoreServices
             logger.LogError(ex, "Hold appearance backfill failed; linked holds may stay out of sync until the next start.");
         }
 
+        // Converge every wall onto the big-wall model: seed a (0,0) center panel from Wall.Photo,
+        // re-parent current-generation unassigned holds onto it, set UsesMultipleImages=true for any
+        // wall with a panel, and discard any in-flight single-image staged edit. Idempotent, so it is
+        // safe to run on every start and no-ops once converged. Replaces the removed EnableMultiImage
+        // toggle for existing walls (the upload path handles new walls inline).
+        try
+        {
+            var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<BlocwerkDbContext>>();
+            WallCenterPanelConvergence.RunIfNeededAsync(factory, logger).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Wall center-panel converge failed; walls remain on the pre-converge shape until the next start.");
+        }
+
         return app;
     }
 

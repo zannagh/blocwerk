@@ -4,24 +4,13 @@ using Blocwerk.Core.Enums;
 namespace Blocwerk.Core.Services;
 
 /// <summary>
-/// The big-wall multi-image topology: enabling/disabling the feature per wall, reading the
-/// live panel grid and its addable "+" frontier, and the stage → confirm → discard lifecycle
-/// of adding a neighbouring panel (with cross-panel hold re-recognition).
+/// The big-wall multi-image topology: reading the live panel grid and its addable "+" frontier,
+/// and the stage → confirm → discard lifecycle of adding a neighbouring panel (with cross-panel
+/// hold re-recognition). Every wall is a big wall with a center (0,0) panel; the center panel is
+/// seeded by the photo-upload path and the startup converge, not a per-wall toggle.
 /// </summary>
 public interface IWallPanelService
 {
-    /// <summary>
-    /// Turns on multi-image mode. Idempotent: a no-op when already enabled. On first enable it
-    /// creates the center panel (0,0) mirroring <c>Wall.Photo</c> and re-parents every
-    /// current-generation, unassigned hold onto that center panel.
-    /// </summary>
-    Task EnableMultiImageAsync(Guid wallId);
-
-    /// <summary>
-    /// Turns off multi-image mode without destroying anything (panels, holds and links are kept).
-    /// </summary>
-    Task DisableMultiImageAsync(Guid wallId);
-
     /// <summary>
     /// The wall's panels, placement only — no photo bytes. Includes both live panels (promoted
     /// photo) and staged-only panels still mid-confirmation; distinguish via
@@ -65,6 +54,21 @@ public interface IWallPanelService
     /// Discards a staged panel: deletes its detected holds first, then the panel itself.
     /// </summary>
     Task DiscardPanelAsync(Guid wallId, Guid panelId);
+
+    /// <summary>
+    /// Re-runs auto hold detection on a live panel's own image, replacing only the panel's
+    /// auto-detected holds at the current generation that no boulder uses; manual and
+    /// boulder-referenced holds are kept, so a redetect can never orphan a boulder. A panel with no
+    /// live photo is a no-op. Returns the number of freshly detected holds.
+    /// </summary>
+    Task<int> RedetectPanelHoldsAsync(Guid wallId, Guid panelId);
+
+    /// <summary>
+    /// Purges spurious auto-detected holds from a panel: removes the panel's auto-detected holds at
+    /// the current generation that no boulder uses. Manual and boulder-referenced holds are kept, so
+    /// cleaning can never orphan a boulder. Returns the number of holds removed.
+    /// </summary>
+    Task<int> CleanPanelArtifactsAsync(Guid wallId, Guid panelId);
 
     /// <summary>
     /// The live photo bytes of a panel, or null when the panel has none / is not on this wall.
@@ -128,6 +132,50 @@ public interface IWallPanelService
         List<ShapePoint>? shapePoints = null,
         HoldMaterial? material = null,
         HoldHandType? handType = null);
+
+    /// <summary>
+    /// Adds a user-placed hold to the in-flight big-update staged set, in the panel image's
+    /// normalized coordinate space. Structurally scoped to the staged generation (N+1): the hold is
+    /// created at generation N+1 on the given staged panel, so this can never add a row to the live
+    /// current generation. Throws when there is no in-flight update or <paramref name="panelId"/> is
+    /// not a staged panel of it (any staged panel — centre or neighbour — is accepted, so the
+    /// touch-up step can add missed holds on every panel). Returns the new hold's id. Gated by
+    /// <see cref="WallAdminGuard.EnsureWallEditorAsync"/>.
+    /// </summary>
+    /// <param name="needsReview">
+    /// Whether the added hold is flagged as needing review. Defaults to <c>true</c> for the review
+    /// pane's ad-hoc additions; the manual touch-up step passes <c>false</c> because those additions
+    /// are corrections of the model's detection, not physical changes, and must not flag anything.
+    /// </param>
+    Task<Guid> AddStagedHoldAsync(
+        Guid wallId,
+        Guid panelId,
+        double x,
+        double y,
+        double radius,
+        string? color = null,
+        HoldCategory? category = null,
+        List<ShapePoint>? shapePoints = null,
+        HoldMaterial? material = null,
+        HoldHandType? handType = null,
+        bool needsReview = true);
+
+    /// <summary>
+    /// Moves and resizes an existing staged hold. The hold is looked up filtered to the staged
+    /// generation (N+1) of the in-flight update, so a live current-generation hold can never be
+    /// matched and is therefore structurally impossible to mutate; a non-staged id throws. Touches
+    /// only X/Y/Radius — it never sets any review/changed flag, so a touch-up reposition is a pure
+    /// correction. Gated by <see cref="WallAdminGuard.EnsureWallEditorAsync"/>.
+    /// </summary>
+    Task UpdateStagedHoldAsync(Guid wallId, Guid holdId, double x, double y, double radius);
+
+    /// <summary>
+    /// Deletes a staged hold. Scoped identically to <see cref="UpdateStagedHoldAsync"/> — only a
+    /// staged-generation hold of the in-flight update can be matched, so a live hold can never be
+    /// deleted. Staged holds carry no boulders, so no boulder rescue is needed. Gated by
+    /// <see cref="WallAdminGuard.EnsureWallEditorAsync"/>.
+    /// </summary>
+    Task DeleteStagedHoldAsync(Guid wallId, Guid holdId);
 
     /// <summary>
     /// Records that two holds on different panels of the same wall are the one physical hold seen

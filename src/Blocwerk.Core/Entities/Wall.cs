@@ -53,9 +53,12 @@ public class Wall
     public int CurrentGeneration { get; set; }
 
     /// <summary>
-    /// When true the wall is a "big wall" made of multiple images arranged on a grid (see
-    /// <see cref="Panels"/>). When false (the default) the wall is a single image held on
-    /// <see cref="Photo"/> and behaves exactly as before.
+    /// DEPRECATED — effectively always <c>true</c>. Every wall is now a "big wall" made of one or more
+    /// images on a grid (see <see cref="Panels"/>), with a center (0,0) panel seeded from
+    /// <see cref="Photo"/> by the upload path and the startup converge
+    /// (<c>WallCenterPanelConvergence</c>). The single-image branch has been removed and no code should
+    /// branch on this flag; it is kept only so the column can be dropped in a later, separately-tested
+    /// migration. The one remaining writer converges it to <c>true</c>.
     /// </summary>
     public bool UsesMultipleImages { get; set; }
 

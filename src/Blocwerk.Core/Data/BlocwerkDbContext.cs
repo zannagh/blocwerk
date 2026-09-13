@@ -95,6 +95,8 @@ public class BlocwerkDbContext : DbContext
 
     public DbSet<HoldLink> HoldLinks => Set<HoldLink>();
 
+    public DbSet<HoldGenerationLink> HoldGenerationLinks => Set<HoldGenerationLink>();
+
     public DbSet<UserIdentity> UserIdentities => Set<UserIdentity>();
 
     public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
@@ -158,6 +160,7 @@ public class BlocwerkDbContext : DbContext
         ConfigureWallImage(modelBuilder);
         ConfigureWallPanel(modelBuilder);
         ConfigureHoldLink(modelBuilder);
+        ConfigureHoldGenerationLink(modelBuilder);
         ConfigureTopLogger(modelBuilder);
     }
 
@@ -287,6 +290,34 @@ public class BlocwerkDbContext : DbContext
 
             entity.HasIndex(l => l.WallId);
             entity.HasIndex(l => new { l.HoldAId, l.HoldBId }).IsUnique();
+        });
+    }
+
+    private static void ConfigureHoldGenerationLink(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<HoldGenerationLink>(entity =>
+        {
+            // Lineage belongs to the wall aggregate; the wall delete cascades it away.
+            entity.HasOne(l => l.Wall)
+                .WithMany()
+                .HasForeignKey(l => l.WallId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Restrict + WithMany() on both hold ends: the wall cascade already covers cleanup,
+            // and two cascade paths from the same holds would be rejected on Postgres.
+            entity.HasOne(l => l.OldHold)
+                .WithMany()
+                .HasForeignKey(l => l.OldHoldId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(l => l.NewHold)
+                .WithMany()
+                .HasForeignKey(l => l.NewHoldId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(l => l.WallId);
+            entity.HasIndex(l => new { l.OldHoldId, l.NewHoldId }).IsUnique();
+            entity.HasIndex(l => new { l.WallId, l.ToGeneration });
         });
     }
 

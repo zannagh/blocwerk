@@ -10,12 +10,18 @@ namespace Blocwerk.Core.Abstractions;
 /// <param name="Y">Normalized centre Y (0..1).</param>
 /// <param name="SizeNorm">Optional normalized max(width,height) / max(imgW,imgH) of the hold box.</param>
 /// <param name="Color">Optional colour sampled from the hold blob (CIE Lab).</param>
+/// <param name="Shape">
+/// Optional custom outline as ABSOLUTE normalized (0..1) image-space vertices (not centre-relative
+/// offsets). Only set for a hold that carries a hand-drawn polygon; null keeps the plain-circle
+/// behaviour. Used purely so the carryover can warp the polygon onto the new image — it never gates.
+/// </param>
 public sealed record MatcherHold(
     int Id,
     double X,
     double Y,
     double? SizeNorm = null,
-    MatcherColor? Color = null);
+    MatcherColor? Color = null,
+    IReadOnlyList<(double X, double Y)>? Shape = null);
 
 /// <summary>
 /// A colour in CIE Lab space (OpenCV 8-bit convention: L,a,b each 0..255) sampled from
@@ -50,7 +56,24 @@ public sealed record HoldOverlapProposal(
 /// <param name="Proposals">Proposed correspondences, sorted by descending confidence.</param>
 /// <param name="UnmatchedLeft">Left-hold ids in band with no proposed twin.</param>
 /// <param name="UnmatchedRight">Right-hold ids in band with no proposed twin.</param>
+/// <param name="WarpedLeftPositions">
+/// The warp-field-predicted new-image position of EVERY left hold, in new-image NORMALIZED (0..1)
+/// coordinates, aligned 1:1 (same length and order) with the input <c>leftHolds</c>. An entry is
+/// null where the local warp field could not predict (no anchors, or a non-finite fit). Lets the
+/// carryover reposition UNMATCHED old holds into the new image instead of leaving them at stale
+/// coordinates; matched holds still snap to their detected staged twin. Null when not supplied.
+/// </param>
+/// <param name="WarpedLeftShapes">
+/// The warp-field-predicted new-image OUTLINE of every left hold that had a custom <see cref="MatcherHold.Shape"/>,
+/// as ABSOLUTE new-image normalized (0..1) vertices, aligned 1:1 (same length and order) with the input
+/// <c>leftHolds</c>. An entry is null where the hold had no custom shape or the warp field could not
+/// predict a vertex (no anchors, or a non-finite fit). Lets the carryover transform a hand-drawn polygon
+/// (e.g. a triangular volume) onto the new photo instead of leaving the old outline at old coordinates.
+/// Null when not supplied.
+/// </param>
 public sealed record HoldOverlapResult(
     IReadOnlyList<HoldOverlapProposal> Proposals,
     IReadOnlyList<int> UnmatchedLeft,
-    IReadOnlyList<int> UnmatchedRight);
+    IReadOnlyList<int> UnmatchedRight,
+    IReadOnlyList<(double X, double Y)?>? WarpedLeftPositions = null,
+    IReadOnlyList<IReadOnlyList<(double X, double Y)>?>? WarpedLeftShapes = null);

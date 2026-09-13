@@ -10,4 +10,11 @@ namespace Blocwerk.Core.Services;
 /// <param name="Row">Grid row; 0 is the center panel.</param>
 /// <param name="IsLive">True when the panel has a promoted (live) photo.</param>
 /// <param name="HasStaged">True when the panel carries an unpromoted staged photo.</param>
-public record WallPanelInfo(Guid Id, int Col, int Row, bool IsLive, bool HasStaged);
+/// <param name="Generation">The generation this panel's photo/holds live at.</param>
+/// <param name="IsOutdated">
+/// True when the panel lags the wall's current generation (<see cref="Generation"/> is below
+/// <c>Wall.CurrentGeneration</c>). Purely derived from existing per-panel generations — a wall
+/// whose panels all sit at the same generation has none outdated. Surfaces the "needs update"
+/// state once a subset of panels has been promoted ahead of the rest.
+/// </param>
+public record WallPanelInfo(Guid Id, int Col, int Row, bool IsLive, bool HasStaged, int Generation, bool IsOutdated);

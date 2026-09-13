@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+
 namespace Blocwerk.Core.Abstractions;
 
 /// <summary>
@@ -36,11 +38,17 @@ public interface IHoldOverlapMatcher
     /// <param name="rightImage">Encoded bytes (JPEG/PNG) of the right photo.</param>
     /// <param name="rightHolds">Detected holds on the right photo (normalized centres).</param>
     /// <param name="direction">Advisory overlap direction; the geometry is recovered regardless.</param>
+    /// <param name="diag">
+    /// Optional diagnostics sink. When supplied, the matcher emits one structured summary line
+    /// per run at Information level explaining why holds matched or not. Instrumentation only —
+    /// it never affects the matching behaviour or the returned result.
+    /// </param>
     /// <returns>One-to-one proposals plus the unmatched-in-band buckets.</returns>
     HoldOverlapResult Match(
         byte[] leftImage,
         IReadOnlyList<MatcherHold> leftHolds,
         byte[] rightImage,
         IReadOnlyList<MatcherHold> rightHolds,
-        HoldOverlapDirection direction);
+        HoldOverlapDirection direction,
+        ILogger? diag = null);
 }
