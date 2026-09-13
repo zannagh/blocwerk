@@ -10,9 +10,13 @@ namespace Blocwerk.HoldDetection.Matching;
 /// </summary>
 internal static class HomographyHelper
 {
-    /// <summary>Estimates the coarse L→R homography as a 3x3 matrix, with the RANSAC inlier count.</summary>
-    /// <returns>(H, inliers) or (null, 0) when too few matches were found.</returns>
-    public static (double[,]? H, int Inliers) Coarse(
+    /// <summary>Estimates the coarse L→R homography as a 3x3 matrix, with diagnostic counts.</summary>
+    /// <returns>
+    /// (H, keypoint counts, ratio-match count, RANSAC inlier count). H is null when too few
+    /// matches were found; the counts are still populated as far as the run got, so a failed
+    /// run stays diagnosable.
+    /// </returns>
+    public static (double[,]? H, int KaKeypoints, int KbKeypoints, int RatioMatches, int Inliers) Coarse(
         Mat imgL, Mat imgR, double s = 0.35, double ratio = 0.75)
     {
         using var a = new Mat();
@@ -31,7 +35,7 @@ internal static class HomographyHelper
         akaze.DetectAndCompute(gb, null, out KeyPoint[] kb, db);
         if (ka.Length == 0 || kb.Length == 0 || da.Rows == 0 || db.Rows == 0)
         {
-            return (null, 0);
+            return (null, ka.Length, kb.Length, 0, 0);
         }
 
         using var bf = new BFMatcher(NormTypes.Hamming);
@@ -54,20 +58,21 @@ internal static class HomographyHelper
             }
         }
 
+        int ratioMatches = src.Count;
         if (src.Count < 8)
         {
-            return (null, 0);
+            return (null, ka.Length, kb.Length, ratioMatches, 0);
         }
 
         using var mask = new Mat();
         using Mat h = Cv2.FindHomography(src, dst, HomographyMethods.Ransac, 5.0, mask);
         if (h.Empty())
         {
-            return (null, 0);
+            return (null, ka.Length, kb.Length, ratioMatches, 0);
         }
 
         int inliers = Cv2.CountNonZero(mask);
-        return (ToArray(h), inliers);
+        return (ToArray(h), ka.Length, kb.Length, ratioMatches, inliers);
     }
 
     /// <summary>Applies a 3x3 homography to a pixel point.</summary>
