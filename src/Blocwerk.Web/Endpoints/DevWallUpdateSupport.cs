@@ -51,7 +51,8 @@ internal static class DevWallUpdateSupport
             new DevOwnerCurrentUserService(owner),
             services.GetRequiredService<IHoldDetectionService>(),
             services.GetRequiredService<IHoldOverlapMatcher>(),
-            services.GetRequiredService<ILogger<WallBigUpdateService>>());
+            services.GetRequiredService<ILogger<WallBigUpdateService>>(),
+            services.GetRequiredService<IChangeJournal>());
         return new DevRunContext(service, owner.Id, factory);
     }
 

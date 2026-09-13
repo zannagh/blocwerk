@@ -19,6 +19,12 @@ public partial class WallBigUpdateService
     /// <inheritdoc/>
     public async Task PromoteAsync(Guid wallId, BigUpdateConfirmation confirmation)
     {
+        // Resume the SAME open wall-update batch the run (StartAsync) opened, so the staged-hold INSERTs
+        // and this promote's carry writes are ONE self-contained, revertible/replayable unit — reverting
+        // it undoes the staged-hold creations too, and replaying it recreates them. Null when the journal
+        // isn't wired (e.g. unit tests); capture then falls back to per-SaveChanges adhoc batches.
+        using var journalBatch = changeJournal?.BeginWallUpdateBatch(wallId);
+
         var user = await currentUserService.GetCurrentUserAsync();
         await using var db = await dbContextFactory.CreateDbContextAsync();
         db.CurrentUserId = user.Id;
@@ -56,6 +62,29 @@ public partial class WallBigUpdateService
             .Where(h => h.WallPanelId == centerPanel.Id && h.Generation == stagedGen)
             .ToDictionaryAsync(h => h.Id);
 
+        // Map each updated grid position to its NEW-generation staged panel row, so a carried old hold on
+        // ANY re-shot panel (the centre OR a co-updated neighbour) advances/clones onto the new-generation
+        // row of ITS OWN position — never onto the centre. Without this, an updated neighbour's old holds
+        // (which land in oldHolds via IsOnUpdatedPanel but have no twin in the centre-only centerStaged)
+        // fell to the clone branch and were cloned onto the CENTRE panel. Built before ClearStaged and the
+        // neighbour promote, while every staged row still carries its StagedPhoto at stagedGen.
+        var newGenPanelByPosition = (await db.WallPanels
+                .Where(p => p.WallId == wallId && p.Generation == stagedGen && p.StagedPhoto != null)
+                .Select(p => new { p.Id, p.Col, p.Row })
+                .ToListAsync())
+            .ToDictionary(p => (p.Col, p.Row), p => p.Id);
+
+        // Twin lookup spanning EVERY updated panel's staged detections, not just the centre: a co-updated
+        // neighbour's old hold twin-matches a fresh detection on ITS OWN panel (the per-panel pass in
+        // BuildSessionAsync produces that proposal), so it promotes that twin IN PLACE instead of cloning.
+        // Paired with PromoteNeighboursAsync keeping the fresh detections, the centre-only lookup used to
+        // clone every neighbour old AND keep its detection — doubling every co-updated neighbour hold.
+        var updatedPanelIds = newGenPanelByPosition.Values.ToHashSet();
+        var stagedTwins = await db.Holds
+            .Where(h => h.Generation == stagedGen && h.WallPanelId != null
+                && updatedPanelIds.Contains(h.WallPanelId.Value))
+            .ToDictionaryAsync(h => h.Id);
+
         // Archive the outgoing photo before the generation is bumped.
         if (wall.Photo is not null)
         {
@@ -74,8 +103,9 @@ public partial class WallBigUpdateService
         // Returns the staged centre holds that went live — now an identity set, since a promoted twin
         // keeps its own id.
         var survivingCenterStaged = await CarryCentreHoldsAsync(
-            db, wallId, centerPanel, oldGen, newGen, oldHolds, centerStaged, confirmation,
-            confirmation.CarriedWarpPositions, confirmation.CarriedWarpShapes, user.Id);
+            db, wallId, centerPanel, oldGen, newGen, oldHolds, stagedTwins, centerStaged, confirmation,
+            confirmation.CarriedWarpPositions, confirmation.CarriedWarpShapes, panelPositions,
+            newGenPanelByPosition, user.Id);
 
         // Centre panel goes live at (0,0).
         centerPanel.Photo = centerPanel.StagedPhoto;
@@ -91,6 +121,15 @@ public partial class WallBigUpdateService
         wall.LastResetAt = DateTimeOffset.UtcNow;
 
         await db.SaveChangesAsync();
+
+        // Seal the batch now that the update is a complete, closed unit: the next update on this wall opens
+        // a fresh batch instead of appending to this one. Sealing after the successful SaveChanges means a
+        // failed promote leaves the batch OPEN, so a retry resumes it rather than orphaning the staging.
+        if (changeJournal is not null)
+        {
+            await changeJournal.SealWallUpdateBatchAsync(wallId);
+        }
+
         logger.LogInformation(
             "Big update promoted on wall {WallId} by {UserId}: generation {Old}->{New}", wallId, user.Id, oldGen, newGen);
     }
@@ -125,6 +164,16 @@ public partial class WallBigUpdateService
                 .ToListAsync();
             foreach (var hold in stagedHolds)
             {
+                // A staged detection the carry already consumed as an old hold's twin is live in place
+                // (promoted by AdvanceCarriedHoldAsync). Promote only the NON-twin fresh detections here —
+                // mirroring how ReconcileNewCentreHolds skips consumed centre twins — so a neighbour hold
+                // is never both carried (in place) and independently re-promoted. Every gen-N+1 hold on the
+                // panel appears exactly once.
+                if (survivingCenterStaged.Contains(hold.Id))
+                {
+                    continue;
+                }
+
                 hold.Generation = newGen;
             }
 
@@ -177,8 +226,21 @@ public partial class WallBigUpdateService
         var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId)
             ?? throw new InvalidOperationException("Wall not found");
 
-        await DiscardStagedAsync(db, wallId, wall.CurrentGeneration + 1);
-        await db.SaveChangesAsync();
+        // Record the staged-row DELETEs into (and then seal) the same open wall-update batch the run
+        // opened, so a discarded staging is a closed, net-zero unit — its staging INSERTs and these
+        // DELETEs cancel out — that cannot be resumed and leaves no dangling open batch or orphan staged
+        // holds in the journal. Null in unit tests; the delete behaviour below is unchanged either way.
+        using (var journalBatch = changeJournal?.BeginWallUpdateBatch(wallId))
+        {
+            await DiscardStagedAsync(db, wallId, wall.CurrentGeneration + 1);
+            await db.SaveChangesAsync();
+        }
+
+        if (changeJournal is not null)
+        {
+            await changeJournal.SealWallUpdateBatchAsync(wallId);
+        }
+
         logger.LogInformation("Big update discarded on wall {WallId} by {UserId}", wallId, user.Id);
     }
 
