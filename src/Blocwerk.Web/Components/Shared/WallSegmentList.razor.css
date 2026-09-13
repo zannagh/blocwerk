@@ -1,0 +1,11 @@
+/* The numbered segment badge is a real <button> so the "select this segment" action is keyboard- and
+   AT-reachable (the whole row keeps its pointer @onclick for mouse users). The circle's size, colour
+   and typography come from the global .segment-badge rule; this only strips the button chrome. */
+button.segment-badge {
+    padding: 0;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    appearance: none;
+    -webkit-appearance: none;
+}

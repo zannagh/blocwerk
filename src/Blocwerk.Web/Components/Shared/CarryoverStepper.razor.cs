@@ -6,10 +6,13 @@ using Microsoft.AspNetCore.Components.Web;
 namespace Blocwerk.Web.Components.Shared;
 
 /// <summary>
-/// A focused, one-at-a-time review of the carryover decisions that actually matter (moved holds,
-/// removal candidates, or new detections), reusing <see cref="PanelImageView"/> for the old (left)
-/// and new-centre (right) images. State and navigation live here; the markup is in the .razor.
-/// Every action defaults towards KEEP — the user must explicitly choose to remove or discard.
+/// A focused, one-at-a-time review of the carryover decisions that actually matter, reusing
+/// <see cref="PanelImageView"/> for the old (left) and new-centre (right) images. State and
+/// navigation live here; the markup is in the .razor.
+/// Every old hold is CARRIED unchanged by default. The primary control is a per-hold
+/// "has physically changed" toggle (off => <see cref="CarryKind.Carried"/>, on =>
+/// <see cref="CarryKind.Changed"/>); manual re-target (click old -> click new) is always available
+/// and only sets the new-hold association; Remove is the distinct "physically gone" action.
 /// </summary>
 public partial class CarryoverStepper
 {
@@ -34,6 +37,14 @@ public partial class CarryoverStepper
     private Dictionary<Guid, PanelHold> _oldById = [];
     private Dictionary<Guid, PanelHold> _newById = [];
 
+    // Per-hold state, keyed by the OLD hold id so it survives back/forward navigation.
+    // "changed" is 100% manual — never seeded from the matcher.
+    private readonly HashSet<Guid> _changed = [];
+
+    // Manual re-target result: old hold id -> chosen new hold id. Overrides the matcher's suggestion
+    // carried on the item. Independent of the "changed" toggle.
+    private readonly Dictionary<Guid, Guid> _retargeted = [];
+
     private string OldPhotoUrl => $"/api/walls/{WallId}/photo";
     private string NewPhotoUrl => $"/api/walls/{WallId}/panels/{CenterPanelId}/staged-photo";
 
@@ -41,6 +52,30 @@ public partial class CarryoverStepper
     {
         _oldById = OldHolds.ToDictionary(h => h.Id);
         _newById = NewHolds.ToDictionary(h => h.Id);
+
+        // Seed the per-hold state from the PERSISTED decisions carried on each item. The parent's
+        // _decisions are the single source of truth, so a reopened stepper reflects earlier choices
+        // instead of resetting every hold to a blank "carried" — otherwise Accept-walking a second
+        // time would re-emit Carried and silently drop previously-set "physically changed" flags.
+        _changed.Clear();
+        _retargeted.Clear();
+        foreach (var item in Items)
+        {
+            if (item.OldHoldId is not { } old)
+            {
+                continue;
+            }
+
+            if (item.Kind == CarryKind.Changed)
+            {
+                _changed.Add(old);
+            }
+
+            if (item.NewHoldId is { } nid)
+            {
+                _retargeted[old] = nid;
+            }
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -62,24 +97,47 @@ public partial class CarryoverStepper
     private CarryReviewItem? Current => _index >= 0 && _index < Items.Count ? Items[_index] : null;
 
     private PanelHold? OldHold => Current?.OldHoldId is { } id ? _oldById.GetValueOrDefault(id) : null;
-    private PanelHold? NewHold => Current?.NewHoldId is { } id ? _newById.GetValueOrDefault(id) : null;
+
+    // The new hold this old hold maps to: a manual re-target wins over the item's matcher suggestion.
+    private Guid? EffectiveNewHoldId
+    {
+        get
+        {
+            if (Current?.OldHoldId is { } old && _retargeted.TryGetValue(old, out var chosen))
+            {
+                return chosen;
+            }
+
+            return Current?.NewHoldId;
+        }
+    }
+
+    private PanelHold? NewHold => EffectiveNewHoldId is { } id ? _newById.GetValueOrDefault(id) : null;
+
+    private bool IsChanged => Current?.OldHoldId is { } old && _changed.Contains(old);
+
+    private CarryKind CurrentKind => IsChanged ? CarryKind.Changed : CarryKind.Carried;
+
+    // An old hold that maps to a new hold (matcher suggestion or manual re-target) is a linked pair —
+    // badge both green so they read as one link across the two images (the R&D green-dot cue).
+    // Otherwise the old hold is amber and the new-centre image is neutral blue.
+    private bool HasLink => Mode != CarryReviewMode.New && EffectiveNewHoldId is not null;
 
     private static (double X, double Y)? Point(PanelHold? h) => h is null ? null : (h.X, h.Y);
 
-    // A moved hold and its detected new position form a linked pair — badge both green so they read
-    // as one link across the two images (the R&D green-dot cue). Other modes keep old=amber/new=blue.
     private const string LinkGreen = "#33dd66";
-    private string LeftBadgeColor => Mode == CarryReviewMode.Moved ? LinkGreen : "#ffb020";
-    private string RightBadgeColor => Mode == CarryReviewMode.Moved ? LinkGreen : "#4aa8ff";
+    private string LeftBadgeColor => HasLink ? LinkGreen : "#ffb020";
+    private string RightBadgeColor => HasLink ? LinkGreen : "#4aa8ff";
 
     private string RightCaption =>
         _interactive ? "New centre — tap the matching hold"
-        : Mode == CarryReviewMode.Moved && Current?.NewHoldId is not null ? "New centre — detected new position"
+        : HasLink ? "New centre — mapped hold"
         : "New centre (after)";
 
     private string ModeTitle => Mode switch
     {
-        CarryReviewMode.Moved => "Review moved holds",
+        CarryReviewMode.Uncertain => "Confirm the holds that changed or moved",
+        CarryReviewMode.Carried => "Review carried-over holds",
         CarryReviewMode.Removal => "Review holds we could not re-find",
         CarryReviewMode.New => "Spot-check new holds",
         _ => "Review",
@@ -87,33 +145,63 @@ public partial class CarryoverStepper
 
     private string ModeHint => Mode switch
     {
-        CarryReviewMode.Moved => "The matcher thinks this hold moved. Confirm it, re-target it, or remove it.",
-        CarryReviewMode.Removal => "We could not find this old hold on the new photo. It is KEPT by default — only remove it if it is really gone.",
+        CarryReviewMode.Uncertain => "These are the only holds the matcher was unsure about, most-moved first. Accept to keep it as carried, flag it as physically changed, re-target it, or remove it if it is gone. Walk past the rest — everything else already carried cleanly.",
+        CarryReviewMode.Carried => "Each hold is carried over unchanged by default. Flag it as physically changed, re-target it to the right hold, or remove it if it is gone.",
+        CarryReviewMode.Removal => "We could not confidently map this old hold. It is CARRIED by default — re-target it, flag it as changed, or only remove it if it is really gone.",
         CarryReviewMode.New => "This hold was detected only on the new photo. Keep it, or discard an obvious false detection.",
         _ => string.Empty,
     };
 
     // ---- Actions ---------------------------------------------------------------
-    private async Task KeepMoved()
+
+    // Records the current per-hold decision: Carried by default, Changed when the toggle is on,
+    // always with the effective (possibly re-targeted) new-hold association.
+    private async Task EmitCarry()
     {
         if (Current?.OldHoldId is { } old)
         {
-            await OnCarryDecision.InvokeAsync(new CarryDecisionChange(old, CarryKind.Moved, Current.NewHoldId));
+            await OnCarryDecision.InvokeAsync(new CarryDecisionChange(old, CurrentKind, EffectiveNewHoldId));
         }
+    }
 
+    private async Task AcceptCarry()
+    {
+        await EmitCarry();
         Next();
     }
 
-    private async Task KeepInPlace()
+    private async Task ToggleChanged(ChangeEventArgs e)
     {
-        if (Current?.OldHoldId is { } old)
+        if (Current?.OldHoldId is not { } old)
         {
-            // Not moved: keep the identity, seated on the matched position when there is one.
-            var kind = CarryKind.Carried;
-            await OnCarryDecision.InvokeAsync(new CarryDecisionChange(old, kind, Current.NewHoldId));
+            return;
         }
 
-        Next();
+        if (e.Value is true)
+        {
+            _changed.Add(old);
+        }
+        else
+        {
+            _changed.Remove(old);
+        }
+
+        await EmitCarry();
+    }
+
+    private async Task ToggleChangedKey()
+    {
+        if (Current?.OldHoldId is not { } old)
+        {
+            return;
+        }
+
+        if (!_changed.Add(old))
+        {
+            _changed.Remove(old);
+        }
+
+        await EmitCarry();
     }
 
     private async Task RemoveOld()
@@ -149,7 +237,7 @@ public partial class CarryoverStepper
     private void EnterInteractive()
     {
         _interactive = true;
-        _selectedNewId = Current?.NewHoldId;
+        _selectedNewId = EffectiveNewHoldId;
         _refocus = true;
     }
 
@@ -162,14 +250,17 @@ public partial class CarryoverStepper
 
     private void OnNewHoldTap(Guid holdId) => _selectedNewId = holdId;
 
+    // Manual re-target only records "this old hold is this new hold". It is independent of the
+    // "changed" toggle, and it does NOT advance — the user may still toggle changed or remove.
     private async Task UseInteractive()
     {
         if (Current?.OldHoldId is { } old && _selectedNewId is { } chosen)
         {
-            // Re-targeting/re-finding gives the old hold a new position, so record it as Moved.
-            await OnCarryDecision.InvokeAsync(new CarryDecisionChange(old, CarryKind.Moved, chosen));
-            CancelInteractive();
-            Next();
+            _retargeted[old] = chosen;
+            _interactive = false;
+            _selectedNewId = null;
+            _refocus = true;
+            await EmitCarry();
         }
     }
 
@@ -190,6 +281,8 @@ public partial class CarryoverStepper
 
     private void Back()
     {
+        _interactive = false;
+        _selectedNewId = null;
         _refocus = true;
         if (_index > 0)
         {
@@ -222,7 +315,15 @@ public partial class CarryoverStepper
         switch (e.Key)
         {
             case "Enter":
-                await PrimaryKeep();
+                await Primary();
+                break;
+            case "c":
+            case "C":
+                if (Mode != CarryReviewMode.New)
+                {
+                    await ToggleChangedKey();
+                }
+
                 break;
             case "x":
             case "X":
@@ -246,11 +347,5 @@ public partial class CarryoverStepper
         }
     }
 
-    private Task PrimaryKeep() => Mode switch
-    {
-        CarryReviewMode.Moved => KeepMoved(),
-        CarryReviewMode.Removal => KeepInPlace(),
-        CarryReviewMode.New => KeepNew(),
-        _ => Task.CompletedTask,
-    };
+    private Task Primary() => Mode == CarryReviewMode.New ? KeepNew() : AcceptCarry();
 }

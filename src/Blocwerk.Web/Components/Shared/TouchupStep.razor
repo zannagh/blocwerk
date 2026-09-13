@@ -1,0 +1,69 @@
+@* The final manual touch-up step: correct the model's detection across every staged panel before
+   confirming. Add missed holds, drag/resize holds into place, delete strays. These are detection
+   corrections, so nothing here flags a hold or boulder for review. See TouchupStep.razor.cs. *@
+
+@if (_loading)
+{
+    <p class="loading-small">Loading the staged holds…</p>
+}
+else
+{
+    <div class="bigupdate-phase">
+        <div class="bigupdate-step-label">Touch up the detected holds</div>
+
+        <div class="bigupdate-attention clear" role="status">
+            <strong class="bigupdate-attention-head">Fix anything the detector got wrong.</strong>
+            <span class="bigupdate-attention-sub">
+                These are corrections of the automatic detection — they will <strong>not</strong> flag any
+                hold or boulder as changed or for review. Only holds you explicitly mark elsewhere are.
+            </span>
+        </div>
+
+        @if (_panels.Count > 1)
+        {
+            <div class="bigupdate-primary-actions" role="tablist" aria-label="Staged panels">
+                @for (var i = 0; i < _panels.Count; i++)
+                {
+                    var index = i;
+                    <button class="btn-secondary @(index == _panelIndex ? "active" : "")"
+                            role="tab" aria-selected="@(index == _panelIndex)"
+                            @onclick="() => SelectPanel(index)">
+                        @_panels[index].Label
+                    </button>
+                }
+            </div>
+        }
+
+        @if (CurrentPanel is { } panel)
+        {
+            <div class="panel-step-solo">
+                <PanelImageView @key="panel.PanelId" WallId="WallId" Caption="@panel.Label"
+                                PhotoUrl="@StagedPhotoUrl(panel.PanelId)"
+                                Holds="_holds"
+                                Editable="true" AddMode="_addMode"
+                                SelectedHoldId="_selectedHoldId"
+                                OnHoldTap="SelectHold"
+                                OnEmptyTap="OnEmptyTap"
+                                OnHoldGeometryChanged="OnHoldGeometryChanged" />
+            </div>
+
+            <div class="bigupdate-edit-tools">
+                <span class="hint">
+                    <strong>+ Add</strong> a hold the detector missed, drag a hold to reposition it, drag its
+                    corner handle to resize, or select one and <strong>Remove</strong> a false detection.
+                </span>
+                <button class="btn-secondary @(_addMode ? "active" : "")" @onclick="ToggleAddMode">
+                    @(_addMode ? "Adding — tap the photo (cancel)" : "+ Add hold")
+                </button>
+                <button class="btn-danger-soft" @onclick="RemoveSelectedHold" disabled="@(_selectedHoldId is null)">
+                    Remove selected
+                </button>
+            </div>
+        }
+
+        <div class="staged-actions">
+            <button class="btn-primary" @onclick="() => OnContinue.InvokeAsync()">Continue →</button>
+            <button class="btn-secondary" @onclick="() => OnSkip.InvokeAsync()">Skip touch-up</button>
+        </div>
+    </div>
+}

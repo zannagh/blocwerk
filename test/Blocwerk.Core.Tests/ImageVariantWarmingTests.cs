@@ -1,5 +1,6 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Configuration;
+using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
@@ -8,6 +9,7 @@ using Blocwerk.Web.Maintenance;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -39,7 +41,7 @@ public class ImageVariantWarmingTests
         Assert.True(summary.Generated > 0, "warming a 2000 px photo must produce renditions");
         Assert.Equal(0, summary.Failed);
 
-        var (invoke, wallService) = Route(harness.WallId, photo, cache);
+        var (invoke, panelService) = Route(harness, photo, cache);
 
         var http = Request(harness.WallId, "?w=640");
         await invoke(http);
@@ -47,9 +49,9 @@ public class ImageVariantWarmingTests
         Assert.Equal(StatusCodes.Status200OK, http.Response.StatusCode);
         Assert.NotEmpty(Body(http));
 
-        // The cache answered from disk: the endpoint's loader — the only path to the stored
-        // original — was never called, so nothing was re-rendered.
-        await wallService.DidNotReceive().GetPhotoAsync(harness.WallId);
+        // The cache answered from disk: the endpoint's loader — the only path to the stored panel
+        // bytes — was never called, so nothing was re-rendered.
+        await panelService.DidNotReceive().GetPanelPhotoAsync(harness.WallId, Arg.Any<Guid>());
 
         // And the bytes it served are the very file warming wrote.
         var warmed = Directory.GetFiles(Path.Combine(storageRoot, "variants"), "*-640.*", SearchOption.AllDirectories)
@@ -130,6 +132,19 @@ public class ImageVariantWarmingTests
         var wall = db.Walls.Single(w => w.Id == harness.WallId);
         wall.Photo = photo;
         wall.PhotoContentType = "image/jpeg";
+
+        // Every wall is now a big wall: the live (0,0) centre panel is the canonical image the
+        // /photo route serves, seeded here with the same bytes at the wall's current generation
+        // (which the panel tag's live version reports), exactly as the upload path does.
+        db.WallPanels.Add(new WallPanel
+        {
+            WallId = harness.WallId,
+            Col = 0,
+            Row = 0,
+            Photo = photo,
+            PhotoContentType = "image/jpeg",
+            Generation = wall.CurrentGeneration,
+        });
         await db.SaveChangesAsync();
     }
 
@@ -148,20 +163,29 @@ public class ImageVariantWarmingTests
     }
 
     /// <summary>
-    /// The production wall-photo endpoint over the SAME cache the warmer filled, with a substituted
-    /// wall service so a read of the stored original is observable.
+    /// The production wall-photo endpoint over the SAME cache the warmer filled. The centre panel is
+    /// resolved and wall access gated through the harness's real SQLite context; only the panel
+    /// byte/tag service is substituted, so a read of the stored panel bytes is observable — proving
+    /// the cache, not the loader, answered.
     /// </summary>
-    private static (Func<HttpContext, Task> Invoke, IWallService Service) Route(
-        Guid wallId, byte[] photo, IImageVariantCache cache)
+    private static (Func<HttpContext, Task> Invoke, IWallPanelService Service) Route(
+        WallTestHarness harness, byte[] photo, IImageVariantCache cache)
     {
-        var wallService = Substitute.For<IWallService>();
-        wallService.GetPhotoTagAsync(wallId, Arg.Any<string?>())
+        var panelService = Substitute.For<IWallPanelService>();
+        panelService.GetPanelPhotoTagAsync(harness.WallId, Arg.Any<Guid>())
             .Returns(new WallPhotoTag(photo.Length, "image/jpeg", 0, IsArchived: false));
-        wallService.GetPhotoAsync(wallId).Returns(photo);
+        panelService.GetPanelPhotoAsync(harness.WallId, Arg.Any<Guid>())
+            .Returns(new WallPhoto(photo, "image/jpeg"));
 
         var builder = WebApplication.CreateBuilder();
         builder.Services.AddAuthorization();
-        builder.Services.AddSingleton(wallService);
+        builder.Services.AddSingleton(panelService);
+        // The /photo route resolves IWallService for its Wall.Photo fallback (unused here — a centre
+        // panel is seeded — but DI must resolve the type).
+        builder.Services.AddSingleton(Substitute.For<IWallService>());
+        builder.Services.AddSingleton(harness.CurrentUser);
+        builder.Services.AddSingleton<IDbContextFactory<BlocwerkDbContext>>(harness.DbContextFactory);
+        builder.Services.AddSingleton(Substitute.For<IKioskContext>());
         builder.Services.AddSingleton(cache);
 
         var app = builder.Build();
@@ -177,7 +201,7 @@ public class ImageVariantWarmingTests
         {
             http.RequestServices = services;
             return endpoint.RequestDelegate!(http);
-        }, wallService);
+        }, panelService);
     }
 
     private static DefaultHttpContext Request(Guid wallId, string query)

@@ -73,9 +73,10 @@
                                                 if (idx < _grid.Count)
                                                 {
                                                     var item = _grid[idx];
-                                                    <div class="grid-cell intensity-@item.Intensity"
-                                                         title="@item.Date.ToString("MMM d") — @IntensityLabel(item.Intensity)"
-                                                         @onclick="() => SelectDay(item.Date)"></div>
+                                                    <button type="button" class="grid-cell intensity-@item.Intensity"
+                                                            title="@item.Date.ToString("MMM d") — @IntensityLabel(item.Intensity)"
+                                                            aria-label="@item.Date.ToString("MMM d") — @IntensityLabel(item.Intensity)"
+                                                            @onclick="() => SelectDay(item.Date)"></button>
                                                 }
                                             }
                                         </div>
@@ -278,8 +279,7 @@
 
     @if (_showScoreInfo)
     {
-        <div class="bw-modal-backdrop" @onclick="() => _showScoreInfo = false">
-            <div class="bw-modal score-info-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true" aria-label="How the score is calculated">
+        <Modal PanelClass="score-info-modal" AriaLabel="How the score is calculated" OnClose="() => _showScoreInfo = false">
                 <div class="score-info-head">
                     <h3>How the score works</h3>
                     <button type="button" class="close-btn" @onclick="() => _showScoreInfo = false" aria-label="Close">x</button>
@@ -318,15 +318,12 @@
                     </p>
                 </div>
                 <button class="btn-primary" @onclick="() => _showScoreInfo = false">Got it</button>
-            </div>
-        </div>
+        </Modal>
     }
 
     @if (_showWallPicker)
     {
-        <div class="bw-modal-backdrop" @onclick="() => _showWallPicker = false">
-            <div class="bw-modal" @onclick:stopPropagation="true">
-                <h3>Which wall are you on?</h3>
+        <Modal Title="Which wall are you on?" OnClose="() => _showWallPicker = false">
                 @if (_myWalls == null)
                 {
                     <p class="loading">Loading walls…</p>
@@ -345,8 +342,7 @@
                     </div>
                 }
                 <button class="btn-secondary" @onclick="() => _showWallPicker = false">Cancel</button>
-            </div>
-        </div>
+        </Modal>
     }
 </div>
 

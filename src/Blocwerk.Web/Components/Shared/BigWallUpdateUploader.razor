@@ -1,6 +1,11 @@
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
 @* Entry to the big-wall update: pick the new CENTRE photo (required, grid 0,0) and any neighbour
    photos, each dropped into its direction slot (right = col+1, left = col-1, up = row-1, down = row+1).
-   "Upload all wall-piece photos at once", then Start hands the assembled set to StartAsync. *@
+   "Upload all wall-piece photos at once", then Start hands the assembled set to StartAsync.
+   Large phone photos are downscaled client-side (image-downscale.js) so nothing is silently dropped;
+   if a pick fails, its slot is flagged and Start stays disabled until it is fixed or removed. *@
 
 <div class="bigupdate-uploader">
     <p class="hint">
@@ -12,7 +17,7 @@
     <div class="bigupdate-slots">
         @foreach (var slot in _slots)
         {
-            <div class="bigupdate-slot @(slot.Required ? "required" : "") @(slot.HasFile ? "filled" : "")">
+            <div class="bigupdate-slot @(slot.Required ? "required" : "") @(slot.HasFile ? "filled" : "") @(slot.Invalid ? "invalid" : "")">
                 <div class="bigupdate-slot-head">
                     <span class="bigupdate-slot-label">@slot.Label</span>
                     @if (slot.Required)
@@ -29,9 +34,17 @@
                 {
                     <label class="bigupdate-slot-pick">
                         <span class="panel-add-plus">+</span>
-                        <InputFile OnChange="e => OnSlotFile(e, slot)" accept="image/*"
-                                   class="panel-add-input" disabled="@_busy" />
+                        <InputFile id="@slot.InputId" OnChange="e => OnSlotFile(e, slot)" accept="image/*"
+                                   class="panel-add-input" disabled="@(_busy || slot.Working)" />
                     </label>
+                    @if (slot.Working)
+                    {
+                        <span class="bigupdate-slot-file">Preparing…</span>
+                    }
+                    else if (slot.Invalid)
+                    {
+                        <span class="bigupdate-slot-error">@(slot.Error ?? "Could not use this photo — pick another.")</span>
+                    }
                 }
             </div>
         }
@@ -41,9 +54,17 @@
     {
         <p class="staged-hint danger">@_error</p>
     }
+    else if (AnyInvalid)
+    {
+        <p class="staged-hint danger">One of your photos could not be used. Pick another for the flagged slot, or remove it, before starting.</p>
+    }
+    else if (AnyWorking)
+    {
+        <p class="staged-hint">A photo is still being prepared — large images take a moment. Start will enable once it is ready.</p>
+    }
 
     <div class="staged-actions">
-        <button class="btn-primary" @onclick="Start" disabled="@(_busy || !CentreReady)">
+        <button class="btn-primary" @onclick="Start" disabled="@(_busy || !CentreReady || AnyInvalid || AnyWorking)">
             @(_busy ? "Preparing…" : "Start update")
         </button>
         <button class="btn-secondary" @onclick="() => OnCancel.InvokeAsync()" disabled="@_busy">Cancel</button>
@@ -54,10 +75,18 @@
     [Parameter] public EventCallback<IReadOnlyList<BigUpdatePhoto>> OnStart { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
 
+    // The server upload cap. A file at or under it is staged as-is; a larger one is downscaled
+    // client-side to fit, so a big phone photo works instead of being silently dropped.
     private const long MaxBytes = 10 * 1024 * 1024;
+
+    // Downscale target: long edge in pixels and JPEG quality. 2560px keeps ample detail for hold
+    // detection while bringing a 15-20 MP photo comfortably under the cap.
+    private const int MaxLongEdge = 2560;
+    private const double JpegQuality = 0.85;
 
     private bool _busy;
     private string? _error;
+    private IJSObjectReference? _module;
 
     private readonly List<Slot> _slots =
     [
@@ -70,41 +99,140 @@
 
     private bool CentreReady => _slots[0].HasFile;
 
+    // Safety net: any slot whose last pick failed keeps Start disabled so an update can never begin
+    // with a missing / failed panel.
+    private bool AnyInvalid => _slots.Any(s => s.Invalid);
+
+    private bool AnyWorking => _slots.Any(s => s.Working);
+
     private sealed class Slot(string label, int col, int row, bool Required)
     {
         public string Label { get; } = label;
         public int Col { get; } = col;
         public int Row { get; } = row;
         public bool Required { get; } = Required;
+        public string InputId { get; } = $"bigupdate-slot-{label.ToLowerInvariant()}";
         public byte[]? Bytes { get; set; }
         public string? ContentType { get; set; }
         public string? FileName { get; set; }
+        public bool Working { get; set; }
+        public bool Invalid { get; set; }
+        public string? Error { get; set; }
         public bool HasFile => Bytes is not null;
+    }
+
+    private async Task<IJSObjectReference?> EnsureModuleAsync()
+    {
+        if (_module is not null)
+        {
+            return _module;
+        }
+
+        try
+        {
+            _module = await JS.InvokeAsync<IJSObjectReference>("import", "/js/image-downscale.js");
+        }
+        catch (JSException)
+        {
+            // Module could not load; the direct-read + safety-net path below still applies.
+        }
+        catch (JSDisconnectedException)
+        {
+            // Circuit went away; nothing to attach to.
+        }
+
+        return _module;
     }
 
     private async Task OnSlotFile(InputFileChangeEventArgs e, Slot slot)
     {
         _error = null;
+        slot.Invalid = false;
+        slot.Error = null;
+        slot.Working = true;
+
         var file = e.File;
-        if (file.Size > MaxBytes)
+        try
         {
-            _error = $"{slot.Label} photo too large (max 10 MB)";
-            return;
+            if (file.Size <= MaxBytes)
+            {
+                // Already within the cap: stage the original bytes, no re-encode, best quality.
+                using var stream = file.OpenReadStream(MaxBytes);
+                using var ms = new MemoryStream();
+                await stream.CopyToAsync(ms);
+                slot.Bytes = ms.ToArray();
+                slot.ContentType = string.IsNullOrEmpty(file.ContentType) ? "image/jpeg" : file.ContentType;
+                slot.FileName = file.Name;
+                return;
+            }
+
+            // Too large for a direct upload: downscale it client-side so it just works.
+            var bytes = await TryDownscaleAsync(slot);
+            if (bytes is { Length: > 0 } && bytes.Length <= MaxBytes)
+            {
+                slot.Bytes = bytes;
+                slot.ContentType = "image/jpeg";
+                slot.FileName = DownscaledName(file.Name);
+                return;
+            }
+
+            // Downscale failed / unsupported: flag the slot so Start stays disabled.
+            slot.Bytes = null;
+            slot.ContentType = null;
+            slot.FileName = null;
+            slot.Invalid = true;
+            slot.Error = $"{slot.Label} photo is too large and could not be resized here — try a smaller photo.";
+        }
+        catch (Exception ex)
+        {
+            slot.Bytes = null;
+            slot.ContentType = null;
+            slot.FileName = null;
+            slot.Invalid = true;
+            slot.Error = $"Could not read {slot.Label} photo: {ex.Message}";
+        }
+        finally
+        {
+            slot.Working = false;
+        }
+    }
+
+    private async Task<byte[]?> TryDownscaleAsync(Slot slot)
+    {
+        var module = await EnsureModuleAsync();
+        if (module is null)
+        {
+            return null;
         }
 
         try
         {
-            using var stream = file.OpenReadStream(MaxBytes);
+            var streamRef = await module.InvokeAsync<IJSStreamReference?>(
+                "downscaleFromInput", slot.InputId, MaxLongEdge, JpegQuality);
+            if (streamRef is null)
+            {
+                return null;
+            }
+
+            await using var stream = await streamRef.OpenReadStreamAsync(MaxBytes);
             using var ms = new MemoryStream();
             await stream.CopyToAsync(ms);
-            slot.Bytes = ms.ToArray();
-            slot.ContentType = string.IsNullOrEmpty(file.ContentType) ? "image/jpeg" : file.ContentType;
-            slot.FileName = file.Name;
+            return ms.ToArray();
         }
-        catch (Exception ex)
+        catch (JSException)
         {
-            _error = $"Could not read {slot.Label} photo: {ex.Message}";
+            return null;
         }
+        catch (JSDisconnectedException)
+        {
+            return null;
+        }
+    }
+
+    private static string DownscaledName(string original)
+    {
+        var baseName = Path.GetFileNameWithoutExtension(original);
+        return string.IsNullOrEmpty(baseName) ? "photo.jpg" : $"{baseName}.jpg";
     }
 
     private void Clear(Slot slot)
@@ -112,6 +240,8 @@
         slot.Bytes = null;
         slot.ContentType = null;
         slot.FileName = null;
+        slot.Invalid = false;
+        slot.Error = null;
     }
 
     private async Task Start()
@@ -119,6 +249,11 @@
         if (!CentreReady)
         {
             _error = "A centre photo is required.";
+            return;
+        }
+
+        if (AnyInvalid || AnyWorking)
+        {
             return;
         }
 
@@ -130,5 +265,22 @@
 
         await OnStart.InvokeAsync(photos);
         _busy = false;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_module is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _module.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+            // Circuit already gone.
+        }
     }
 }

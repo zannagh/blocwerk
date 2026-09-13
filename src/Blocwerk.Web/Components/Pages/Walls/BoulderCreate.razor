@@ -68,7 +68,7 @@
             </div>
         </div>
 
-        @if (_wall.UsesMultipleImages && _currentPanel is not null)
+        @if (_currentPanel is not null)
         {
             <BoulderPanelSwitcher Panels="_panels" Current="_currentPanel" CurrentChanged="OnPanelChanged" />
         }
@@ -354,44 +354,52 @@
                 _selectedSetters.Add(currentUser.Id);
             }
 
-            // Big walls carry their holds across several panel images, each in its own panel-local
+            // Every wall carries its holds across several panel images, each in its own panel-local
             // coordinate space. Load the live panels and open on the centre (0,0) so the picker can
-            // show one panel's photo + that panel's holds at a time. A single-image wall skips this.
-            if (_wall.UsesMultipleImages)
+            // show one panel's photo + that panel's holds at a time. A failed read leaves _panels
+            // empty and _currentPanel null, and the picker falls back to the wall's centre photo.
+            try
             {
-                try
-                {
-                    _panels = (await WallPanelService.GetPanelsAsync(WallId)).Where(p => p.IsLive).ToList();
-                }
-                catch (Exception)
-                {
-                    _panels = [];
-                }
-
-                _currentPanel = _panels.FirstOrDefault(p => p is { Col: 0, Row: 0 }) ?? _panels.FirstOrDefault();
-
-                await BuildTwinMapAsync();
+                _panels = (await WallPanelService.GetPanelsAsync(WallId)).Where(p => p.IsLive).ToList();
             }
+            catch (Exception)
+            {
+                _panels = [];
+            }
+
+            _currentPanel = _panels.FirstOrDefault(p => p is { Col: 0, Row: 0 }) ?? _panels.FirstOrDefault();
+
+            await BuildTwinMapAsync();
 
             RefreshPickerHolds();
         }
     }
 
-    // The photo behind the picker: a specific panel on a multi-image wall, else null so the picker
-    // falls back to the wall's centre-photo default (unchanged single-image behaviour).
+    // The photo behind the picker: the current panel's image, else null so the picker falls back to
+    // the wall's centre-photo default when no panel loaded (a failed panel read).
     private string? PickerPhotoUrl =>
-        _wall is { UsesMultipleImages: true } && _currentPanel is not null
+        _currentPanel is not null
             ? $"/api/walls/{WallId}/panels/{_currentPanel.Id}/photo"
             : null;
 
-    // Recomputes the picker's hold set for the current view. Single-image: the whole set (same
-    // reference as _holds). Multi-image: only the current panel's holds, so they draw at their
-    // panel-local coordinates on that panel's photo. Runs on load and on every panel switch.
+    // Recomputes the picker's hold set for the current view: only the current panel's holds, so they
+    // draw at their panel-local coordinates on that panel's photo. Falls back to the whole set when no
+    // panel loaded. Runs on load and on every panel switch.
+    // On the wall's CENTRE panel (0,0) also include holds with no panel id: a converge gap or a
+    // legacy null-panel hold would otherwise vanish from the picker with no way to select it, and the
+    // centre photo is where they render. Non-centre panels are unaffected.
     private void RefreshPickerHolds()
     {
-        _pickerHolds = _wall is { UsesMultipleImages: true } && _currentPanel is not null
-            ? _holds.Where(h => h.WallPanelId == _currentPanel.Id).ToList()
-            : _holds;
+        if (_currentPanel is null)
+        {
+            _pickerHolds = _holds;
+            return;
+        }
+
+        var isCentre = _currentPanel is { Col: 0, Row: 0 };
+        _pickerHolds = _holds
+            .Where(h => h.WallPanelId == _currentPanel.Id || (isCentre && h.WallPanelId is null))
+            .ToList();
     }
 
     // Builds the cross-panel twin map for the picker: each wall hold id → the OTHER hold ids in its

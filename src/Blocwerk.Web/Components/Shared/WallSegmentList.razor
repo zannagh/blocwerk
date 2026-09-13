@@ -28,7 +28,9 @@
         var isActive = ActiveIndex == idx;
         <div class="segment-row @(isActive ? "active" : string.Empty)" @key="draft.Key" @onclick="() => OnSelect.InvokeAsync(idx)">
             <div class="segment-row-head">
-                <span class="segment-badge" style="background: @WallSegmentPalette.Stroke(idx);">@(idx + 1)</span>
+                <button type="button" class="segment-badge" style="background: @WallSegmentPalette.Stroke(idx);"
+                        aria-label="Select segment @(idx + 1)" aria-pressed="@isActive"
+                        @onclick="() => OnSelect.InvokeAsync(idx)" @onclick:stopPropagation="true">@(idx + 1)</button>
                 <input class="segment-name" maxlength="64" value="@draft.Name"
                        @onchange="e => Rename(draft, e)" @onclick:stopPropagation="true" />
                 <div class="segment-order">

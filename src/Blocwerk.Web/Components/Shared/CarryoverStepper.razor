@@ -1,6 +1,7 @@
 @* Focused, one-at-a-time carryover review. Old photo (left) and new centre (right) side by side,
-   each independently zoom/pannable via PanelImageView, the subject hold highlighted. Actions default
-   to KEEP; removing/discarding is always an explicit choice. See CarryoverStepper.razor.cs. *@
+   each independently zoom/pannable via PanelImageView, the subject hold highlighted. Every old hold
+   is CARRIED unchanged by default; the primary control is a per-hold "has physically changed" toggle,
+   with an always-available manual re-target and a distinct Remove. See CarryoverStepper.razor.cs. *@
 
 <div class="panel-stepper" tabindex="0" @ref="_rootRef" @onkeydown="OnKeyDown">
     <div class="panel-stepper-head">
@@ -22,9 +23,9 @@
         </div>
 
         <div class="panel-stepper-pair">
-            @* In the Moved review a hold and its detected new position are a linked pair: badge both
-               green (echoing the R&D green-dot ↔ green-dot link cue) so the eye pairs them across the
-               two images. Other modes keep their old=amber / new=blue colours. *@
+            @* When an old hold maps to a new hold (matcher suggestion or manual re-target) badge both
+               green so the eye pairs them across the two images (the R&D green-dot ↔ green-dot link
+               cue). Unmapped old holds stay amber / new-centre stays blue. *@
             <PanelImageView WallId="WallId" Caption="Old wall (before)"
                             PhotoUrl="@OldPhotoUrl"
                             Holds="OldHolds"
@@ -35,7 +36,7 @@
             <PanelImageView WallId="WallId" Caption="@RightCaption"
                             PhotoUrl="@NewPhotoUrl"
                             Holds="NewHolds"
-                            HighlightHoldId="@(_interactive ? null : Current?.NewHoldId)"
+                            HighlightHoldId="@(_interactive ? null : EffectiveNewHoldId)"
                             SelectedHoldId="_selectedNewId"
                             HintPoint="@(_interactive ? Point(NewHold) : null)"
                             Interactive="_interactive"
@@ -52,34 +53,7 @@
                 <button class="btn-secondary" @onclick="CancelInteractive">Cancel</button>
             </div>
         }
-        else if (Mode == CarryReviewMode.Moved)
-        {
-            <div class="panel-stepper-actions">
-                <button class="btn-secondary" @onclick="Back" disabled="@(_index == 0)" title="Previous (←)">←</button>
-                <button class="btn-primary" @onclick="KeepMoved" title="Keep, flagged as moved (Enter)">Keep — moved ✓</button>
-                <button class="btn-secondary" @onclick="KeepInPlace" title="Same spot after all">Not moved</button>
-                <button class="btn-secondary" @onclick="EnterInteractive" title="Point at the real hold">Re-target</button>
-                <button class="btn-danger-soft" @onclick="RemoveOld" title="This hold is gone (X)">Remove</button>
-                <button class="btn-secondary" @onclick="Next" title="Skip (→)">→</button>
-            </div>
-            <div class="panel-stepper-foot">
-                <span class="panel-stepper-legend"><kbd>Enter</kbd> keep · <kbd>X</kbd> remove · <kbd>←</kbd>/<kbd>→</kbd> step</span>
-            </div>
-        }
-        else if (Mode == CarryReviewMode.Removal)
-        {
-            <div class="panel-stepper-actions">
-                <button class="btn-secondary" @onclick="Back" disabled="@(_index == 0)" title="Previous (←)">←</button>
-                <button class="btn-primary" @onclick="KeepInPlace" title="Keep at its old position (Enter)">Keep in place ✓</button>
-                <button class="btn-secondary" @onclick="EnterInteractive" title="Find it on the new photo">Re-find</button>
-                <button class="btn-danger-soft" @onclick="RemoveOld" title="It is really gone (X)">Remove — it's gone</button>
-                <button class="btn-secondary" @onclick="Next" title="Skip (→)">→</button>
-            </div>
-            <div class="panel-stepper-foot">
-                <span class="panel-stepper-legend"><kbd>Enter</kbd> keep · <kbd>X</kbd> remove · <kbd>←</kbd>/<kbd>→</kbd> step</span>
-            </div>
-        }
-        else
+        else if (Mode == CarryReviewMode.New)
         {
             <div class="panel-stepper-actions">
                 <button class="btn-secondary" @onclick="Back" disabled="@(_index == 0)" title="Previous (←)">←</button>
@@ -89,6 +63,25 @@
             </div>
             <div class="panel-stepper-foot">
                 <span class="panel-stepper-legend"><kbd>Enter</kbd> keep · <kbd>X</kbd> discard · <kbd>←</kbd>/<kbd>→</kbd> step</span>
+            </div>
+        }
+        else
+        {
+            @* Old-hold carryover: carried unchanged by default. The toggle is the only thing that
+               makes it "changed"; re-target just fixes the mapping; Remove is physically gone. *@
+            <div class="panel-stepper-actions">
+                <button class="btn-secondary" @onclick="Back" disabled="@(_index == 0)" title="Previous (←)">←</button>
+                <label class="panel-stepper-toggle" title="Marks affected boulders for review">
+                    <input type="checkbox" checked="@IsChanged" @onchange="ToggleChanged" />
+                    <span>Has physically changed — marks affected boulders for review</span>
+                </label>
+                <button class="btn-secondary" @onclick="EnterInteractive" title="Point at the matching hold on the new photo">Re-target</button>
+                <button class="btn-danger-soft" @onclick="RemoveOld" title="This hold is gone (X)">Remove</button>
+                <button class="btn-primary" @onclick="AcceptCarry" title="Accept and continue (Enter)">Accept ✓</button>
+                <button class="btn-secondary" @onclick="Next" title="Skip (→)">→</button>
+            </div>
+            <div class="panel-stepper-foot">
+                <span class="panel-stepper-legend"><kbd>Enter</kbd> accept · <kbd>C</kbd> changed · <kbd>X</kbd> remove · <kbd>←</kbd>/<kbd>→</kbd> step</span>
             </div>
         }
     }

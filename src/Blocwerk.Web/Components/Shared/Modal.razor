@@ -1,0 +1,109 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+@*
+    Shared accessible modal dialog. It renders the app's existing bw-modal backdrop/panel so it looks
+    identical to the hand-rolled modals it replaces, and adds the a11y wiring they lacked: role="dialog",
+    aria-modal, an optional labelled title, Escape-to-close, and a focus trap that moves focus into the
+    dialog on open, cycles Tab within it, and restores focus to the trigger on close. Backdrop clicks
+    close (via OnClose); clicks on the panel itself do not.
+*@
+
+<div class="bw-modal-backdrop" @onclick="CloseAsync">
+    <div class="bw-modal @PanelClass" @ref="panel" tabindex="-1" role="dialog" aria-modal="true"
+         aria-labelledby="@(Title is not null ? titleId : null)"
+         aria-label="@(Title is null ? AriaLabel : null)"
+         @onclick:stopPropagation="true" @onkeydown="OnKeyDown">
+        @if (Title is not null)
+        {
+            <h3 id="@titleId" class="bw-modal-title">@Title</h3>
+        }
+        @ChildContent
+    </div>
+</div>
+
+@code {
+    /// <summary>Optional heading text. When set, it is rendered as the dialog's title and wired as aria-labelledby.</summary>
+    [Parameter] public string? Title { get; set; }
+
+    /// <summary>Accessible name used when the dialog has no visible <see cref="Title"/> (aria-label).</summary>
+    [Parameter] public string? AriaLabel { get; set; }
+
+    /// <summary>Extra CSS classes appended to the bw-modal panel (e.g. a width variant).</summary>
+    [Parameter] public string? PanelClass { get; set; }
+
+    /// <summary>The dialog body.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>Raised on a backdrop click or the Escape key. The owner clears its open flag here.</summary>
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private readonly string id = $"bw-modal-{Guid.NewGuid():N}";
+    private readonly string titleId = $"bw-modal-title-{Guid.NewGuid():N}";
+    private ElementReference panel;
+    private IJSObjectReference? module;
+    private bool trapped;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || trapped)
+        {
+            return;
+        }
+
+        trapped = true;
+        try
+        {
+            module = await JS.InvokeAsync<IJSObjectReference>("import", "/js/modal-focus.js");
+            await module.InvokeVoidAsync("activate", id, panel);
+        }
+        catch (Exception)
+        {
+            // The trap is a progressive enhancement. If the module cannot load, at least move focus onto
+            // the dialog so Escape reaches it and keyboard users are not left stranded on the page behind.
+            try
+            {
+                await panel.FocusAsync();
+            }
+            catch (Exception)
+            {
+                // A detached element during a rapid open/close must not throw here.
+            }
+        }
+    }
+
+    private Task CloseAsync()
+    {
+        return OnClose.InvokeAsync();
+    }
+
+    private Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            return OnClose.InvokeAsync();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (module is null)
+        {
+            return;
+        }
+
+        try
+        {
+            // deactivate() is keyed by id, not the element, so it still restores focus to the trigger
+            // even though the panel has already been removed from the DOM by the time we get here.
+            await module.InvokeVoidAsync("deactivate", id);
+            await module.DisposeAsync();
+        }
+        catch (Exception)
+        {
+            // The circuit may already be tearing down; nothing left to restore in that case.
+        }
+    }
+}

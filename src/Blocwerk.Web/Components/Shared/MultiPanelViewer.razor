@@ -63,6 +63,21 @@ else
             </div>
         </div>
 
+        @if (_panel.IsOutdated)
+        {
+            @* Corner chip: this panel lags the wall's current generation (a sibling panel was updated
+               ahead of it). Text-labelled, not colour-only. Pinned outside the scrolling viewport so
+               it stays put while the panel pans/zooms. *@
+            <div class="panel-outdated-badge" role="status">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" width="14" height="14" aria-hidden="true">
+                    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                    <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+                <span>Last generation · needs update</span>
+            </div>
+        }
+
         @if (OnRequestHoldUsage is not null)
         {
             @* Magnifier toggle — same icon/idea as WallPhotoEditor's usage tool. When active every

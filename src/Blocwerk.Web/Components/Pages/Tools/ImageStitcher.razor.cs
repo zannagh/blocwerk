@@ -491,22 +491,18 @@ public partial class ImageStitcher : IDisposable
                 return;
             }
 
-            if (wall.PhotoContentType != null)
-            {
-                await WallService.StagePhotoAsync(_targetWallId, bytes, "image/png");
-                await ShowToast("Photo staged — go to the wall to align holds");
-            }
-            else
-            {
-                await WallService.UploadPhotoAsync(_targetWallId, bytes, "image/png");
-                await ShowToast("Photo uploaded");
-            }
+            // Single-image staging is gone: every wall is a big wall whose canonical image is the
+            // centre panel, and UploadPhotoAsync now seeds that panel directly. There is no separate
+            // "align holds" confirm step any more — the stitched image simply becomes the wall's photo,
+            // whether or not the wall already had one.
+            await WallService.UploadPhotoAsync(_targetWallId, bytes, "image/png");
+            await ShowToast("Photo uploaded");
 
             Navigation.NavigateTo($"/walls/{_targetWallId}");
         }
         catch (Exception ex)
         {
-            await ShowToast($"Stage failed: {ex.Message}");
+            await ShowToast($"Upload failed: {ex.Message}");
         }
         finally
         {

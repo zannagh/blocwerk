@@ -203,6 +203,12 @@ else
             <WallDimControl />
             @if (UsingMultiPanel)
             {
+                @if (BoulderOnOutdatedPanel)
+                {
+                    <p class="boulder-outdated-note" role="status">
+                        Some of this boulder's holds are on a panel awaiting update.
+                    </p>
+                }
                 @* Big wall: show the panel holding most of the boulder's holds and let the user
                    step to the neighbouring panels that carry its other holds. *@
                 <MultiPanelViewer WallId="WallId" ShareToken="@ShareToken" Panels="_livePanels"
@@ -449,7 +455,10 @@ else
     private int _startPanelCol;
     private int _startPanelRow;
 
-    private bool UsingMultiPanel => _boulder is { Wall.UsesMultipleImages: true } && _livePanels.Count > 0;
+    // Every wall is a big wall now; the panel viewer is used whenever live panels are present. A
+    // failed panel read leaves _livePanels empty, and the single-image arm below is kept as the
+    // fallback renderer for that case (the centre-panel photo is still served by /photo).
+    private bool UsingMultiPanel => _boulder is not null && _livePanels.Count > 0;
 
     private GradeProposal? _activeProposal;
     private bool _showGradeForm;
@@ -624,6 +633,14 @@ else
 
     private bool CanViewHistoric =>
         _boulder != null && BoulderHoldGeneration is { } g && g < _boulder.Wall.CurrentGeneration;
+
+    /// <summary>
+    /// True when one of the panels carrying this boulder's holds lags the wall's current generation
+    /// (a sibling panel was updated ahead of it). Derived from the same per-panel outdated flag the
+    /// wall view badges; drives a subtle "awaiting update" note on the boulder's photo.
+    /// </summary>
+    private bool BoulderOnOutdatedPanel =>
+        _livePanels.Any(p => p.IsOutdated && _highlightedPanelIds.Contains(p.Id));
 
     /// <summary>
     /// A live/published boulder the creator, a setter, OR a wall admin may still fully re-edit (holds
@@ -901,8 +918,8 @@ else
     /// Builds the data the multi-image viewer needs: the wall's live panels, the boulder's holds
     /// grouped per panel (so they render regardless of who can enumerate panel holds), the panels
     /// that carry a boulder hold (the only ones an arrow points to), and the start panel — the one
-    /// holding the most of the boulder's holds. A single-image wall (or a failed panel read) leaves
-    /// everything empty, so <see cref="UsingMultiPanel"/> is false and nothing here is used.
+    /// holding the most of the boulder's holds. A failed panel read leaves everything empty, so
+    /// <see cref="UsingMultiPanel"/> is false and the single-image fallback arm renders instead.
     /// </summary>
     private async Task LoadPanelData()
     {
@@ -912,7 +929,7 @@ else
         _highlightedHoldIds = [];
         _highlightedHoldTypes = new();
 
-        if (_boulder is not { Wall.UsesMultipleImages: true })
+        if (_boulder is null)
         {
             return;
         }

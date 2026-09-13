@@ -1,0 +1,10 @@
+/* Contribution-graph day cells are real <button>s so they are keyboard- and screen-reader-reachable.
+   Their size, radius, cursor and intensity colour come from the global .grid-cell rules; this only
+   strips the user-agent button chrome so a button cell stays the same 11px square as the old <div>. */
+button.grid-cell {
+    padding: 0;
+    border: none;
+    font: inherit;
+    appearance: none;
+    -webkit-appearance: none;
+}

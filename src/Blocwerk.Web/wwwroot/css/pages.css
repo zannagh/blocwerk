@@ -1944,6 +1944,43 @@ html.bw-fullscreen .wall-main .photo-viewport {
     min-width: 84px;
 }
 
+/* Per-panel "needs update" chip: a panel lags the wall's current generation (a sibling was updated
+   ahead of it). Used by the read-only MultiPanelViewer and the admin panel grid. Amber, with a dark
+   label so the meaning survives without colour. Pinned top-left, above the panel image. */
+.panel-outdated-badge {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: calc(100% - 12px);
+    padding: 3px 8px;
+    border-radius: var(--r-sm);
+    font-size: 0.7rem;
+    font-weight: 600;
+    line-height: 1.2;
+    color: #241a00;
+    background: var(--status-warning);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+    pointer-events: none;
+}
+.panel-outdated-badge svg {
+    flex: none;
+}
+
+/* Subtle in-context note on the boulder photo when one of its holds sits on an outdated panel. */
+.boulder-outdated-note {
+    margin: 0 0 6px;
+    padding: 6px 10px;
+    border-left: 3px solid var(--status-warning);
+    border-radius: var(--r-sm);
+    background: color-mix(in srgb, var(--status-warning) 14%, transparent);
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+}
+
 /* Multi-image read-only viewer: one live panel at a time, with directional step arrows
    overlaid at the edges. The arrows sit OUTSIDE the scrolling .photo-viewport so they stay
    pinned on screen while the panel image pans/zooms inside it. */
@@ -2136,6 +2173,16 @@ html.bw-fullscreen .wall-main .photo-viewport {
 .panel-stepper-band.mid { color: var(--warning-text); }
 .panel-stepper-band.low { color: var(--text-secondary); }
 .panel-stepper-decided { font-size: 0.8rem; color: var(--success-text); font-weight: 600; }
+.panel-stepper-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+}
+.panel-stepper-toggle input[type="checkbox"] { width: auto; margin: 0; cursor: pointer; }
 
 .maintenance-notice {
     display: flex;
@@ -2177,6 +2224,10 @@ html.bw-fullscreen .wall-main .photo-viewport {
     grid-template-columns: 1fr 1fr;
     gap: 10px;
 }
+/* Single full-width panel (the touch-up step): the lone PanelImageView spans the whole width
+   instead of sitting half-width in the left column of the side-by-side comparison grid. */
+.panel-step-solo { display: block; width: 100%; }
+.panel-step-solo .panel-step-view { width: 100%; }
 .panel-step-view { margin: 0; }
 .panel-step-cap {
     display: flex;
@@ -2207,18 +2258,23 @@ html.bw-fullscreen .wall-main .photo-viewport {
 .panel-step-toggle:hover { color: var(--text-primary); border-color: var(--accent, #4aa8ff); }
 .panel-step-toggle.off { background: transparent; color: var(--text-tertiary, var(--text-secondary)); }
 /* A scroll-model viewport (see viewport.js): the .photo-editor child is widened by --zoom
-   and scrolls inside this fixed box. touch-action mirrors the other viewports. */
+   and scrolls inside this box. The box is sized to the image's aspect ratio — bwViewport.fitBox
+   publishes --fit-aspect and pins an inline aspect-ratio once the photo loads — so a landscape
+   wall photo leaves NO black letterbox band, while a portrait one is capped by max-height and
+   scrolls. Background is a theme surface (not #000) so any sliver stays theme-aware.
+   touch-action mirrors the other viewports. */
 .panel-step-viewport {
     position: relative;
-    height: 44vh;
-    max-height: 460px;
+    height: auto;
+    aspect-ratio: var(--fit-aspect, 1.4);
+    max-height: 70vh;
     overflow: auto;
     -webkit-overflow-scrolling: touch;
     touch-action: pan-y;
     overscroll-behavior: contain;
     border: 1px solid var(--border);
     border-radius: var(--r-sm);
-    background: #000;
+    background: var(--bg-surface-alt);
 }
 /* HTML number badge pinned to the highlighted hold; lives inside the zoomed .photo-editor
    so it tracks the image on pan/zoom, but keeps a constant pixel size (no SVG stretch). */
@@ -2258,6 +2314,10 @@ html.bw-fullscreen .wall-main .photo-viewport {
 .panel-stepper-actions .btn-secondary[disabled] { opacity: 0.45; cursor: not-allowed; }
 .panel-stepper-actions .btn-primary[disabled] { opacity: 0.5; cursor: not-allowed; }
 .btn-danger-soft {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 16px;
     font-family: var(--font-body);
     font-weight: 600;
     border-radius: var(--r-md);
@@ -2265,9 +2325,18 @@ html.bw-fullscreen .wall-main .photo-viewport {
     color: var(--warning-text, #b3541e);
     border: 1px solid var(--border);
     cursor: pointer;
-    transition: background 0.18s ease, border-color 0.18s ease;
+    transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, opacity 0.18s ease;
 }
-.btn-danger-soft:hover { background: var(--warning-bg, #fbeee4); border-color: var(--warning-text, #b3541e); }
+.btn-danger-soft:hover:not(:disabled) { background: var(--warning-bg, #fbeee4); border-color: var(--warning-text, #b3541e); }
+/* Disabled: read as a greyed-out button, not the bare orange text it fell back to without padding. */
+.btn-danger-soft:disabled,
+.btn-danger-soft[disabled] {
+    opacity: 0.5;
+    cursor: not-allowed;
+    color: var(--text-muted, var(--text-secondary));
+    background: var(--bg-surface);
+    border-color: var(--border);
+}
 .panel-stepper-hint { flex: 1 1 100%; font-size: 0.82rem; color: var(--text-secondary); }
 
 .panel-stepper-foot {
@@ -2303,7 +2372,9 @@ html.bw-fullscreen .wall-main .photo-viewport {
 
 @media (max-width: 560px) {
     .panel-stepper-pair { grid-template-columns: 1fr; }
-    .panel-step-viewport { height: 38vh; }
+    /* Keep the aspect-fit sizing on mobile; just tighten the portrait cap so a tall photo
+       does not eat the whole screen. No fixed height, so landscape still hugs the image. */
+    .panel-step-viewport { max-height: 60vh; }
 }
 
 /* ── Big-wall update flow (upload → carryover → overlaps → apply) ──────────── */
@@ -2376,6 +2447,27 @@ html.bw-fullscreen .wall-main .photo-viewport {
     transition: border-color 0.15s, color 0.15s;
 }
 .bigupdate-slot-pick:hover { border-color: var(--accent); color: var(--accent); }
+/* A slot whose pick failed (e.g. too large and could not be resized): flagged so the safety-net
+   Start-disable has a visible cause. */
+.bigupdate-slot.invalid { border-color: var(--danger-text, #c0392b); }
+.bigupdate-slot-error {
+    font-size: 0.76rem;
+    color: var(--danger-text, #c0392b);
+    word-break: break-word;
+}
+
+/* Touch-up editing tools: a wrapping row under the single panel — the hint spans, the buttons
+   sit auto-width beside each other instead of the full-width default. */
+.bigupdate-edit-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin: 10px 0;
+}
+.bigupdate-edit-tools .hint { flex: 1 1 100%; margin: 0; }
+.bigupdate-edit-tools .btn-secondary,
+.bigupdate-edit-tools .btn-danger-soft { width: auto; margin-bottom: 0; flex: 0 1 auto; }
 
 /* Phase overview: summary chips + colour legend */
 .bigupdate-phase { margin: 4px 0; }
@@ -2395,7 +2487,7 @@ html.bw-fullscreen .wall-main .photo-viewport {
     color: var(--text-secondary);
 }
 .bigupdate-chip.carry { color: var(--success-text, #2f8f4e); }
-.bigupdate-chip.moved { color: var(--warning-text, #b3541e); }
+.bigupdate-chip.changed { color: var(--warning-text, #b3541e); }
 .bigupdate-chip.remove { color: var(--danger-text, #c0392b); }
 .bigupdate-chip.new { color: var(--accent); }
 .bigupdate-chip.link { color: var(--text-secondary); }
@@ -2423,6 +2515,61 @@ html.bw-fullscreen .wall-main .photo-viewport {
     margin: 10px 0;
 }
 .bigupdate-review-actions .btn-secondary { width: auto; margin-bottom: 0; flex: 1 1 auto; }
+
+/* Attention-focused headline: "N of {total} need review", the rest auto-carried. */
+.bigupdate-attention {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 12px 14px;
+    margin: 6px 0 10px;
+    border-radius: var(--r-sm);
+    border: 1px solid var(--status-warning);
+    background: color-mix(in srgb, var(--status-warning) 12%, var(--bg-surface));
+}
+.bigupdate-attention.clear {
+    border-color: var(--status-success);
+    background: color-mix(in srgb, var(--status-success) 12%, var(--bg-surface));
+}
+.bigupdate-attention-head { font-size: 1.02rem; color: var(--text-primary); }
+.bigupdate-attention-sub { font-size: 0.85rem; color: var(--text-secondary); }
+
+.bigupdate-primary-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0 0 10px;
+}
+.bigupdate-primary-actions .btn-primary,
+.bigupdate-primary-actions .btn-secondary { width: auto; margin-bottom: 0; flex: 1 1 auto; }
+
+.bigupdate-more-review { margin: 10px 0; }
+.bigupdate-more-review > summary {
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    padding: 4px 0;
+}
+.bigupdate-more-review[open] > summary { margin-bottom: 6px; }
+
+/* Cross-gen side-by-side confirm tool */
+.crossgen-tool { margin: 4px 0; }
+.crossgen-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 6px 0 10px;
+}
+.crossgen-focusbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+}
+.crossgen-focusbar .btn-secondary { width: auto; margin-bottom: 0; }
+.crossgen-focus-state { font-size: 0.85rem; font-weight: 600; }
+.crossgen-focus-state.linked { color: var(--status-success); }
+.crossgen-focus-state.unlinked { color: var(--status-warning); }
 
 /* TopLogger import section */
 .tl-card .tl-meta { font-size: 0.85rem; color: var(--text-secondary); margin-top: 2px; }

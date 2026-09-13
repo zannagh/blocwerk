@@ -32,6 +32,7 @@ public static class WallPanelPhotoEndpoints
             ClaimsPrincipal user,
             HttpContext http,
             [FromServices] IWallPanelService panelService,
+            [FromServices] IWallService wallService,
             [FromServices] ICurrentUserService currentUserService,
             [FromServices] IDbContextFactory<BlocwerkDbContext> dbContextFactory,
             [FromServices] IKioskContext kioskContext,
@@ -41,7 +42,15 @@ public static class WallPanelPhotoEndpoints
                     wallId, panelId, token, w, user, http, currentUserService, dbContextFactory, kioskContext,
                     variants, ImageIdentity.LiveSlot,
                     () => panelService.GetPanelPhotoTagAsync(wallId, panelId),
-                    () => panelService.GetPanelPhotoAsync(wallId, panelId), ct))
+                    () => panelService.GetPanelPhotoAsync(wallId, panelId),
+                    // A panel with no committed blob of its own — a staged next-generation row, or a
+                    // single-image-migrated wall's origin — falls back to the image it is replacing: the
+                    // latest committed panel at the SAME (Col,Row) from an earlier generation, and only for
+                    // the (0,0) origin with none of those, the legacy Wall.Photo. So the overlap stepper's
+                    // "existing neighbour" resolves instead of rendering a 404 box.
+                    () => ServeReplacedPanelPhotoFallbackAsync(
+                        wallId, panelId, token, w, http, panelService, wallService, dbContextFactory, variants, ct),
+                    ct))
             .RequireAuthorization(BlocwerkPolicies.WallGalleryImage)
             .DenyApiKeyPrincipals();
 
@@ -62,7 +71,9 @@ public static class WallPanelPhotoEndpoints
                     wallId, panelId, token, w, user, http, currentUserService, dbContextFactory, kioskContext,
                     variants, ImageIdentity.StagedSlot,
                     () => panelService.GetPanelStagedPhotoTagAsync(wallId, panelId),
-                    () => panelService.GetPanelStagedPhotoAsync(wallId, panelId), ct))
+                    () => panelService.GetPanelStagedPhotoAsync(wallId, panelId),
+                    // A staged photo that is genuinely absent must 404 — no Wall.Photo fallback here.
+                    notFoundFallback: null, ct))
             .RequireAuthorization(BlocwerkPolicies.WallGalleryImage)
             .DenyApiKeyPrincipals();
     }
@@ -83,6 +94,7 @@ public static class WallPanelPhotoEndpoints
         string slot,
         Func<Task<WallPhotoTag?>> loadTag,
         Func<Task<WallPhoto?>> load,
+        Func<Task<IResult>>? notFoundFallback,
         CancellationToken ct)
     {
         if (user.IsApiKeyPrincipal() || !ImageResponse.IsRenderableWidth(width))
@@ -101,7 +113,11 @@ public static class WallPanelPhotoEndpoints
         var tag = await loadTag();
         if (tag is null)
         {
-            return Results.NotFound();
+            // No committed blob on this panel. The live route hands us a fallback that serves the image
+            // this panel is replacing — the latest committed panel at the same (Col,Row), or Wall.Photo
+            // for the (0,0) origin — and 404s otherwise; the staged route passes none, so an absent staged
+            // photo still 404s.
+            return notFoundFallback is null ? Results.NotFound() : await notFoundFallback();
         }
 
         // A big wall is drawn entirely out of these routes — one multi-megabyte panel per grid cell —
@@ -162,5 +178,95 @@ public static class WallPanelPhotoEndpoints
         db.CurrentUserId = user.Id;
 
         return await db.Walls.AnyAsync(w => w.Id == wallId, ct);
+    }
+
+    /// <summary>
+    /// Fallback for a panel with NO committed photo blob of its own — a staged next-generation row that
+    /// has not been promoted, or a single-image-migrated wall's origin panel. Serves, in order:
+    /// <list type="number">
+    /// <item>the latest COMMITTED panel at the SAME <c>(Col,Row)</c> from an earlier generation — the
+    /// image this panel is replacing (immutable-generation model keeps the superseded row's photo);</item>
+    /// <item>for the <c>(0,0)</c> origin with no such prior panel, the legacy <see cref="Wall.Photo"/>.</item>
+    /// </list>
+    /// Any other position with neither still 404s. The replacement is always chosen by an exact
+    /// <c>(Col,Row)</c> match, so one grid position's photo is never served for a different one. Caller
+    /// has already passed the wall-access gate; the prior panel's bytes go through the same
+    /// <see cref="IWallPanelService"/> read the primary path uses and the Wall.Photo tier is gated AGAIN
+    /// through the wall service (token/membership). Each tier keys under the identity of the row whose
+    /// bytes it serves, so variants dedupe with that row's own <c>/photo</c> and the wall-level fallback.
+    /// </summary>
+    private static async Task<IResult> ServeReplacedPanelPhotoFallbackAsync(
+        Guid wallId,
+        Guid panelId,
+        string? token,
+        int? width,
+        HttpContext http,
+        IWallPanelService panelService,
+        IWallService wallService,
+        IDbContextFactory<BlocwerkDbContext> dbContextFactory,
+        IImageVariantCache variants,
+        CancellationToken ct)
+    {
+        // WallPanels carries no query filter; the wall-access gate ran already. Locate the requested
+        // panel's grid position (scoped to this wall), then find the image it is replacing.
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+        var position = await db.WallPanels
+            .AsNoTracking()
+            .Where(p => p.Id == panelId && p.WallId == wallId)
+            .Select(p => new { p.Col, p.Row })
+            .FirstOrDefaultAsync(ct);
+        if (position is null)
+        {
+            return Results.NotFound();
+        }
+
+        // The latest COMMITTED panel at the exact same (Col,Row) — never a different position, and never
+        // the requested row itself. This is the previous generation's live image being replaced.
+        var replacedPanelId = await db.WallPanels
+            .AsNoTracking()
+            .Where(p => p.WallId == wallId && p.Col == position.Col && p.Row == position.Row
+                && p.Id != panelId && p.Photo != null)
+            .OrderByDescending(p => p.Generation)
+            .Select(p => (Guid?)p.Id)
+            .FirstOrDefaultAsync(ct);
+        if (replacedPanelId is { } priorId)
+        {
+            var priorTag = await panelService.GetPanelPhotoTagAsync(wallId, priorId);
+            if (priorTag is not null)
+            {
+                return await ImageResponse.ServeAsync(
+                    http,
+                    variants,
+                    width,
+                    priorTag,
+                    immutable: false,
+                    async () => (await panelService.GetPanelPhotoAsync(wallId, priorId))?.Photo,
+                    ImageIdentity.PanelPhoto(priorId, ImageIdentity.LiveSlot));
+            }
+        }
+
+        // No prior committed panel at this position. Only the (0,0) origin of a single-image-migrated
+        // wall falls back to the legacy Wall.Photo; any other position 404s.
+        if (position.Col != 0 || position.Row != 0)
+        {
+            return Results.NotFound();
+        }
+
+        var tag = await wallService.GetPhotoTagAsync(wallId, token);
+        if (tag is null)
+        {
+            return Results.NotFound();
+        }
+
+        return await ImageResponse.ServeAsync(
+            http,
+            variants,
+            width,
+            tag,
+            immutable: false,
+            () => string.IsNullOrEmpty(token)
+                ? wallService.GetPhotoAsync(wallId)
+                : wallService.GetPhotoByShareTokenAsync(wallId, token),
+            ImageIdentity.WallPhoto(wallId));
     }
 }

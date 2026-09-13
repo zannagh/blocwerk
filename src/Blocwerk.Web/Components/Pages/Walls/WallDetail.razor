@@ -89,36 +89,6 @@ else
                     <div class="settings-card-body">
 
                     <div class="form-group">
-                        <label class="filter-check multi-image-toggle">
-                            <input type="checkbox" checked="@_wall.UsesMultipleImages" @onchange="OnToggleMultiImage" />
-                            Use multiple images for this wall
-                        </label>
-                        @if (_confirmingEnableMulti)
-                        {
-                            <p class="staged-hint">
-                                Big-wall mode lets you stitch several photos into one wall. Your current
-                                photo becomes the centre panel; you then add neighbouring images around it,
-                                confirming which holds overlap. You can turn this off again anytime.
-                            </p>
-                            <div class="staged-actions">
-                                <button class="btn-primary" @onclick="ConfirmEnableMultiImage">Enable multi-image</button>
-                                <button class="btn-secondary" @onclick="() => _confirmingEnableMulti = false">Cancel</button>
-                            </div>
-                        }
-                        else if (_confirmingDisableMulti)
-                        {
-                            <p class="staged-hint">
-                                Turn multi-image off? Your panels, holds and links are kept — the wall just
-                                stops showing the panel grid here.
-                            </p>
-                            <div class="staged-actions">
-                                <button class="btn-danger" @onclick="ConfirmDisableMultiImage">Turn off</button>
-                                <button class="btn-secondary" @onclick="() => _confirmingDisableMulti = false">Cancel</button>
-                            </div>
-                        }
-                    </div>
-
-                    <div class="form-group">
                         <label class="filter-check">
                             <input type="checkbox" checked="@_wall.UnderMaintenance" @onchange="OnToggleMaintenance" />
                             Update mode — hide this wall from others while you work on it
@@ -131,105 +101,47 @@ else
                         <BigWallUpdate WallId="WallId" CurrentGeneration="_wall.CurrentGeneration"
                                        OnClose="CloseBigUpdate" OnPromoted="OnBigUpdatePromoted" />
                     }
-                    else if (_wall.UsesMultipleImages)
+                    else
                     {
                         <div class="form-group">
                             <WallPanelGrid WallId="WallId" />
                             <button class="btn-secondary bigupdate-entry" @onclick="OpenBigUpdate">Update wall with new photos</button>
                         </div>
                     }
-                    else
+
+                    @* While the big-wall update wizard is open, hide the rest of the settings so its
+                       Continue/Done buttons don't sit one tap above the destructive Delete Wall control.
+                       _showBigUpdate is the parent's own "in the flow" flag (set in OpenBigUpdate, cleared
+                       by every wizard exit through CloseBigUpdate), so these restore on discard/Not now/Done. *@
+                    @if (!_showBigUpdate)
                     {
-                    <div class="form-group">
-                        @if (!_wall.StagedAt.HasValue)
+                        @* A share link is membership that outlives the 30-minute session, so WallService
+                           refuses to mint one from a tablet. Hiding the button keeps it from rendering a
+                           control whose only outcome is an error; the service guard is still the gate. *@
+                        @if (KioskContext.IsKiosk)
                         {
-                            <label>Upload New Photo (auto-detect holds)</label>
-                            <InputFile OnChange="OnPhotoSelected" accept="image/*" class="form-input" />
-                            <label>Upload for Manual Alignment (no detection)</label>
-                            <InputFile OnChange="OnManualPhotoSelected" accept="image/*" class="form-input" />
-                            <label>Recreate Wall (start the hold model from scratch)</label>
-                            <InputFile OnChange="OnRecreatePhotoSelected" accept="image/*" class="form-input" />
-                            <p class="staged-hint danger">
-                                After a full reset. Holds are detected fresh and every boulder is marked
-                                historic for remapping. Ascents, comments and grades are kept.
-                            </p>
-                            @if (_wall.PhotoContentType != null)
-                            {
-                                <button class="btn-secondary bigupdate-entry" @onclick="OpenBigUpdate">Update wall with new photos</button>
-                                <p class="hint">
-                                    Replace the whole wall from a fresh multi-photo capture while keeping your
-                                    boulders — old holds are re-matched onto the new photos.
-                                </p>
-                            }
+                            <p class="hint">Share links are generated from your own device, not from this wall tablet.</p>
                         }
-                        else if (_wall.StagingMode == WallStagingMode.Recreate)
+                        else if (string.IsNullOrEmpty(_shareLink))
                         {
-                            <label>Replace Staged Photo</label>
-                            <InputFile OnChange="OnRecreatePhotoSelected" accept="image/*" class="form-input" />
-                            <p class="staged-hint">A recreated wall is staged. Adjust the newly detected holds in the editor, then confirm or discard.</p>
-                            @if (_confirmingRecreate)
-                            {
-                                <p class="staged-hint danger">
-                                    @_boulders.Count(b => !b.IsArchived && !b.IsHistoric) boulder(s) will be marked historic
-                                    and need remapping onto the new holds. This cannot be undone.
-                                </p>
-                                <div class="staged-actions">
-                                    <button class="btn-danger" @onclick="ConfirmRecreate">Yes, recreate wall</button>
-                                    <button class="btn-secondary" @onclick="() => _confirmingRecreate = false">Cancel</button>
-                                </div>
-                            }
-                            else
-                            {
-                                <div class="staged-actions">
-                                    <button class="btn-primary" @onclick="() => _confirmingRecreate = true">Confirm recreation</button>
-                                    <button class="btn-secondary" @onclick="DiscardStagedPhoto">Discard</button>
-                                </div>
-                            }
-                        }
-                        else if (_wall.StagingMode == WallStagingMode.Manual)
-                        {
-                            <p class="staged-hint">A new photo is staged for manual alignment. Drag each hold to its new position and confirm inside the editor.</p>
-                            <div class="staged-actions">
-                                <button class="btn-secondary" @onclick="StartAlignmentFlow">Align Holds Manually</button>
-                                <button class="btn-secondary" @onclick="DiscardStagedPhoto">Discard</button>
-                            </div>
+                            <button class="btn-secondary" @onclick="GenerateShareLink">Generate Share Link</button>
                         }
                         else
                         {
-                            <label>Replace Staged Photo</label>
-                            <InputFile OnChange="OnPhotoSelected" accept="image/*" class="form-input" />
-                            <p class="staged-hint">A new photo is staged. Adjust holds in the editor, then confirm or discard.</p>
-                            <div class="staged-actions">
-                                <button class="btn-secondary" @onclick="StartAlignmentFlow">Align</button>
-                                <button class="btn-primary" @onclick="ConfirmStagedPhoto">Confirm new photo</button>
-                                <button class="btn-secondary" @onclick="DiscardStagedPhoto">Discard</button>
+                            <div class="share-link">
+                                <input value="@_shareLink" readonly class="form-input" />
                             </div>
                         }
-                    </div>
-                    }
 
-                    @* A share link is membership that outlives the 30-minute session, so WallService
-                       refuses to mint one from a tablet. Hiding the button keeps it from rendering a
-                       control whose only outcome is an error; the service guard is still the gate. *@
-                    @if (KioskContext.IsKiosk)
-                    {
-                        <p class="hint">Share links are generated from your own device, not from this wall tablet.</p>
+                        <button class="btn-danger" @onclick="DeleteWall">Delete Wall</button>
                     }
-                    else if (string.IsNullOrEmpty(_shareLink))
-                    {
-                        <button class="btn-secondary" @onclick="GenerateShareLink">Generate Share Link</button>
-                    }
-                    else
-                    {
-                        <div class="share-link">
-                            <input value="@_shareLink" readonly class="form-input" />
-                        </div>
-                    }
-
-                    <button class="btn-danger" @onclick="DeleteWall">Delete Wall</button>
                     </div>
                 </details>
 
+                @* Hidden alongside the controls above while the big-wall update wizard is open;
+                   restored when it closes. See the note on the guard inside the Wall Settings card. *@
+                @if (!_showBigUpdate)
+                {
                 <details class="settings-panel settings-card">
                     <summary class="settings-card-summary"><h2>Wall Shape</h2></summary>
                     <div class="settings-card-body">
@@ -246,6 +158,27 @@ else
 
                     @if (_wall.PhotoContentType != null)
                     {
+                        @* The wall border is one polygon per wall, drawn over the centre-panel image
+                           (/api/walls/{id}/photo). It feeds the schematic/projection views and is
+                           separate from the per-panel hold editing on the overview page. *@
+                        <details class="segment-settings">
+                            <summary>
+                                Wall border &amp; shape
+                                @if (_borderPoints.Count >= 3)
+                                {
+                                    <span class="segment-settings-count">@_borderPoints.Count</span>
+                                }
+                            </summary>
+                            <WallPhotoEditor WallId="_wall.Id"
+                                             Holds="_holds"
+                                             BorderPoints="_borderPoints"
+                                             Segments="_segments"
+                                             CanEdit="false"
+                                             CanEditShape="_isAdmin"
+                                             BorderOnly="true"
+                                             OnBorderChanged="OnBorderChanged" />
+                        </details>
+
                         <details class="segment-settings">
                             <summary>
                                 Wall segments &amp; projection
@@ -261,7 +194,7 @@ else
                     }
                     else
                     {
-                        <p class="empty-msg">Upload a wall photo to draw segments on it.</p>
+                        <p class="empty-msg">Upload a wall photo to draw the border and segments on it.</p>
                     }
                     </div>
                 </details>
@@ -305,6 +238,7 @@ else
                             </details>
                         }
                     }
+                }
                 }
             }
         </Page1>
@@ -459,7 +393,7 @@ else
                                 }
                             </button>
                         }
-                        @if (_wall.UsesMultipleImages && _viewMode == ViewMode.Photo && _livePanels.Count > 0 && _canEditHolds && _isEditing && _editingPanel != null)
+                        @if (_viewMode == ViewMode.Photo && _livePanels.Count > 0 && _canEditHolds && _isEditing && _editingPanel != null)
                         {
                             @* Big wall in edit mode: scope the single-image editor to one live panel
                                (its own photo + holds) and let the admin step between panels. Wall-level
@@ -493,6 +427,8 @@ else
                                              ManualAlignment="false"
                                              ChangeReview="true"
                                              OnBatchSave="OnPanelBatchSave"
+                                             OnRedetectRequested="OnRedetectPanel"
+                                             OnCleanArtifactsRequested="OnCleanPanelArtifacts"
                                              OnMarkHoldModified="OnMarkHoldModified"
                                              OnMakeHoldActual="OnMakeHoldActual"
                                              OnMergeVirtualHold="OnMergeVirtualHold"
@@ -501,7 +437,7 @@ else
                                              OnLinkPanels="OpenLinkTool"
                                              OnRequestHoldUsage="@(_isAnonymous ? null : LoadHoldUsage)" />
                         }
-                        else if (_wall.UsesMultipleImages && _viewMode == ViewMode.Photo && _livePanels.Count > 0)
+                        else if (_viewMode == ViewMode.Photo && _livePanels.Count > 0)
                         {
                             @* Big wall: step between the live panel images instead of one flat photo.
                                Editing the panel grid lives in the wall settings, never here. *@
@@ -514,6 +450,12 @@ else
                         }
                         else if (_wall.PhotoContentType != null && _viewMode == ViewMode.Photo)
                         {
+                            @* Fallback flat-photo view for when no live panels are enumerable — in
+                               practice an anonymous share viewer who can't list panels, so it renders
+                               read-only. Wall-level border/shape now lives in the Wall Shape settings
+                               card and per-panel redetect/clean-artifacts on the per-panel editor above,
+                               so this arm no longer carries them. Border stays wired for the rare admin
+                               who reaches it with zero live panels; virtual-hold tools stay too. *@
                             <WallPhotoEditor WallId="_wall.Id"
                                              Holds="_holds"
                                              BorderPoints="_borderPoints"
@@ -522,21 +464,13 @@ else
                                              CanEditShape="_isAdmin"
                                              BottomToolbar="_isEditing"
                                              ShareToken="@ShareToken"
-                                             IsStaging="@_wall.StagedAt.HasValue"
                                              LiveGeneration="_wall.CurrentGeneration"
-                                             ManualAlignment="@(_wall.StagingMode == WallStagingMode.Manual)"
                                              OnBatchSave="OnBatchSave"
-                                             OnRedetectRequested="OnRedetect"
                                              OnBorderChanged="OnBorderChanged"
-                                             OnCleanArtifactsRequested="OnCleanArtifacts"
                                              OnMarkHoldModified="OnMarkHoldModified"
-                                             OnMergeHolds="OnMergeHolds"
                                              OnMakeHoldActual="OnMakeHoldActual"
                                              OnMergeVirtualHold="OnMergeVirtualHold"
                                              OnRestoreUnchangedHold="OnRestoreUnchangedHold"
-                                             OnConfirmManualAlignment="OnConfirmManualAlignment"
-                                             OnDiscardManualAlignment="DiscardStagedPhoto"
-                                             OnRequestAutoAlign="EstimateStagingAlignment"
                                              OnRequestHoldUsage="@(_isAnonymous ? null : LoadHoldUsage)" />
                         }
                         else if (_wall.PhotoContentType != null && _viewMode == ViewMode.Schematic)
@@ -554,7 +488,7 @@ else
                     </div>
                 </div>
 
-                @if (_showLinkTool && _canEditHolds && _wall.UsesMultipleImages)
+                @if (_showLinkTool && _canEditHolds)
                 {
                     <PanelLinkTool WallId="_wall.Id" ActingUserId="_currentUserId" OnClose="CloseLinkTool" />
                 }
@@ -563,22 +497,27 @@ else
                 {
                     <div class="stats-bar">
                         <div class="stat">
-                            <span class="stat-value">@_holds.Count</span>
+                            @* Count the LIVE holds only. GetWallAsync returns the live holds per panel
+                               (which span generations after a subset promote — an untouched panel keeps
+                               its old generation) plus, during an in-flight big update, the staged
+                               (gen+1) holds. Everything at or below the wall generation is live; the
+                               staged gen+1 rows must not inflate the stat. *@
+                            <span class="stat-value">@_holds.Count(h => h.Generation <= _wall.CurrentGeneration)</span>
                             <span class="stat-label">Holds</span>
                         </div>
-                        <div class="stat clickable" @onclick="GoToBoulders">
+                        <button type="button" class="stat clickable" @onclick="GoToBoulders">
                             <span class="stat-value">@_wall.Boulders.Count</span>
                             <span class="stat-label">Boulders</span>
-                        </div>
-                        <div class="stat clickable" @onclick="GoToMembers">
+                        </button>
+                        <button type="button" class="stat clickable" @onclick="GoToMembers">
                             <span class="stat-value">@_wall.Members.Count</span>
                             <span class="stat-label">Members</span>
-                        </div>
+                        </button>
                         @* Any member can hand out the wall's invite link, not just admins. Hidden for
                            non-members (kiosks and never-joined viewers); the service guard is the gate. *@
                         @if (_isMember)
                         {
-                            <div class="stat clickable" @onclick="InviteAsync">
+                            <button type="button" class="stat clickable" @onclick="InviteAsync">
                                 <svg class="stat-value" width="24" height="24" viewBox="0 0 24 24" fill="none"
                                      stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <circle cx="18" cy="5" r="3"></circle>
@@ -588,7 +527,7 @@ else
                                     <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
                                 </svg>
                                 <span class="stat-label">Invite</span>
-                            </div>
+                            </button>
                         }
                     </div>
 
@@ -734,9 +673,7 @@ else
    the flag is state and state can be set; the submit behind it is refused by KioskService either way. *@
 @if (_kioskDialogOpen && !KioskContext.IsKiosk)
 {
-    <div class="bw-modal-backdrop" @onclick="CloseKioskDialog">
-        <div class="bw-modal" @onclick:stopPropagation="true">
-            <h3>Use Kiosk mode on this wall</h3>
+    <Modal Title="Use Kiosk mode on this wall" OnClose="CloseKioskDialog">
             <p class="kiosk-modal-text">
                 This wall's kiosk tablet will list your name. Anyone standing at it can pick you and act
                 as you &mdash; logging climbs, commenting, editing &mdash; until the kiosk session ends.
@@ -776,8 +713,7 @@ else
                     @(_kioskBusy ? "Working..." : _kioskConsented ? "Save" : "Add me to the kiosk")
                 </button>
             </div>
-        </div>
-    </div>
+    </Modal>
 }
 
 @if (!string.IsNullOrEmpty(_toast))
@@ -852,9 +788,6 @@ else
         _editGuardActive = await EditGuardInterop.SyncAsync(JS, "wall-edit", _editLease is not null, _editGuardActive);
     }
 
-    private bool _confirmingRecreate;
-    private bool _confirmingEnableMulti;
-    private bool _confirmingDisableMulti;
     private bool _showBigUpdate;
     private bool _showLinkTool;
     private string? _shareLink;
@@ -1327,12 +1260,7 @@ else
             // Clone the holds/border points: _wall now comes from the shared per-circuit cache and
             // the photo editor mutates these in place while dragging. Editing the cached instances
             // directly would leak uncommitted edits back into the cache on discard/navigate-away.
-            // A recreation edits only the new hold model, like manual alignment does.
-            _holds = (_wall.StagingMode is WallStagingMode.Manual or WallStagingMode.Recreate
-                    ? _wall.Holds.Where(h => h.Generation == _wall.CurrentGeneration + 1)
-                    : _wall.Holds)
-                .Select(h => h.Clone())
-                .ToList();
+            _holds = _wall.Holds.Select(h => h.Clone()).ToList();
             _borderPoints = _wall.BorderPoints?.Select(p => new ShapePoint { Dx = p.Dx, Dy = p.Dy }).ToList() ?? [];
             await LoadSegments();
             await LoadPanels();
@@ -1403,13 +1331,13 @@ else
     }
 
     /// <summary>
-    /// Loads the wall's live panels for the multi-image viewer. Only relevant to big walls; a
-    /// single-image wall keeps an empty list and renders exactly as before. A failed read (e.g. an
-    /// anonymous share viewer who can't enumerate panels) falls back to the single-photo view.
+    /// Loads the wall's live panels for the multi-image viewer. Every wall is a big wall now (a
+    /// centre panel at 0,0). A failed read (e.g. an anonymous share viewer who can't enumerate
+    /// panels) leaves an empty list and falls back to the flat-photo view.
     /// </summary>
     private async Task LoadPanels()
     {
-        if (_wall is not { UsesMultipleImages: true })
+        if (_wall is null)
         {
             _livePanels = [];
             _editingPanel = null;
@@ -1576,21 +1504,47 @@ else
         await WallService.SetBorderPointsAsync(WallId, points);
     }
 
-    private async Task OnCleanArtifacts()
+    // Redetect and clean operate on the panel currently being edited: its own image and its own
+    // holds, in that panel's coordinate space. The Core methods only ever remove auto-detected holds
+    // no boulder depends on, so neither can orphan a boulder.
+    private async Task OnRedetectPanel()
     {
-        var usedSegments = _segments.Count > 0;
-        var count = await WallService.CleanOutsideBorderAsync(WallId);
-        await LoadWall();
-        await ShowToast(usedSegments
-            ? $"Removed {count} holds outside all {_segments.Count} segments"
-            : $"Removed {count} holds outside border");
+        if (_editingPanel is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var count = await WallPanelService.RedetectPanelHoldsAsync(WallId, _editingPanel.Id);
+            await LoadEditingPanelHolds();
+            await ShowToast($"Detected {count} holds on this panel");
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"Redetect failed: {ex.Message}");
+        }
     }
 
-    private async Task OnRedetect()
+    private async Task OnCleanPanelArtifacts()
     {
-        var count = await WallService.RedetectHoldsAsync(WallId);
-        await LoadWall();
-        await ShowToast($"Detected {count} holds");
+        if (_editingPanel is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var count = await WallPanelService.CleanPanelArtifactsAsync(WallId, _editingPanel.Id);
+            await LoadEditingPanelHolds();
+            await ShowToast(count > 0
+                ? $"Removed {count} spurious hold(s) on this panel"
+                : "No spurious holds to remove");
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"Clean failed: {ex.Message}");
+        }
     }
 
     private async Task ToggleEditing()
@@ -1600,7 +1554,7 @@ else
 
         // Entering edit mode on a big wall: default to the first live panel and load its editable
         // holds so the per-panel editor branch has a non-null selection to render.
-        if (_isEditing && _wall is { UsesMultipleImages: true } && _livePanels.Count > 0)
+        if (_isEditing && _livePanels.Count > 0)
         {
             _editingPanel ??= _livePanels[0];
             await LoadEditingPanelHolds();
@@ -1625,17 +1579,6 @@ else
 
     private Task GoToBoulders() => _carousel?.GoToPageAsync(3) ?? Task.CompletedTask;
     private Task GoToMembers() => _carousel?.GoToPageAsync(1) ?? Task.CompletedTask;
-
-    private async Task StartAlignmentFlow()
-    {
-        if (_carousel != null)
-        {
-            await _carousel.GoToPageAsync(2, smooth: false);
-        }
-
-        _isEditing = true;
-        SyncEditLease();
-    }
 
     private async Task LoadActivity(int page)
     {
@@ -1703,18 +1646,9 @@ else
             using var ms = new MemoryStream();
             await stream.CopyToAsync(ms);
 
-            if (_wall?.PhotoContentType != null)
-            {
-                await WallService.StagePhotoAsync(WallId, ms.ToArray(), file.ContentType);
-                await LoadWall();
-                await ShowToast($"Photo staged — review holds and click Confirm");
-            }
-            else
-            {
-                await WallService.UploadPhotoAsync(WallId, ms.ToArray(), file.ContentType);
-                await LoadWall();
-                await ShowToast($"Photo uploaded — {_holds.Count} holds detected");
-            }
+            await WallService.UploadPhotoAsync(WallId, ms.ToArray(), file.ContentType);
+            await LoadWall();
+            await ShowToast($"Photo uploaded — {_holds.Count} holds detected");
         }
         catch (Exception ex)
         {
@@ -1802,31 +1736,6 @@ else
         }
     }
 
-    private async Task OnRecreatePhotoSelected(InputFileChangeEventArgs e)
-    {
-        var file = e.File;
-        if (file.Size > 10 * 1024 * 1024)
-        {
-            await ShowToast("Photo too large (max 10 MB)");
-            return;
-        }
-
-        try
-        {
-            using var stream = file.OpenReadStream(10 * 1024 * 1024);
-            using var ms = new MemoryStream();
-            await stream.CopyToAsync(ms);
-
-            await WallService.StageRecreateAsync(WallId, ms.ToArray(), file.ContentType);
-            await LoadWall();
-            await ShowToast($"Wall recreation staged — {_holds.Count} holds detected");
-        }
-        catch (Exception ex)
-        {
-            await ShowToast($"Upload failed: {ex.Message}");
-        }
-    }
-
     private void OpenBigUpdate()
     {
         _showBigUpdate = true;
@@ -1859,50 +1768,6 @@ else
         await ShowToast("Wall updated from new photos");
     }
 
-    private void OnToggleMultiImage(ChangeEventArgs e)
-    {
-        // The checkbox reflects the wall flag; the actual switch is gated behind an inline confirm,
-        // so we only stage which confirm to show and let the flag change on confirm.
-        var wantsOn = e.Value is true;
-        if (_wall is null || wantsOn == _wall.UsesMultipleImages)
-        {
-            return;
-        }
-
-        _confirmingEnableMulti = wantsOn;
-        _confirmingDisableMulti = !wantsOn;
-    }
-
-    private async Task ConfirmEnableMultiImage()
-    {
-        _confirmingEnableMulti = false;
-        try
-        {
-            await WallPanelService.EnableMultiImageAsync(WallId);
-            await LoadWall();
-            await ShowToast("Multi-image enabled — add neighbouring photos around the centre panel");
-        }
-        catch (Exception ex)
-        {
-            await ShowToast($"Enable failed: {ex.Message}");
-        }
-    }
-
-    private async Task ConfirmDisableMultiImage()
-    {
-        _confirmingDisableMulti = false;
-        try
-        {
-            await WallPanelService.DisableMultiImageAsync(WallId);
-            await LoadWall();
-            await ShowToast("Multi-image turned off");
-        }
-        catch (Exception ex)
-        {
-            await ShowToast($"Disable failed: {ex.Message}");
-        }
-    }
-
     private async Task OnToggleMaintenance(ChangeEventArgs e)
     {
         var on = e.Value is bool b && b;
@@ -1917,98 +1782,6 @@ else
         catch (Exception ex)
         {
             await ShowToast($"Update mode change failed: {ex.Message}");
-        }
-    }
-
-    private async Task ConfirmRecreate()
-    {
-        try
-        {
-            var result = await WallService.ConfirmRecreateAsync(WallId);
-            _confirmingRecreate = false;
-            await LoadWall();
-            await ShowToast($"Wall recreated — {result.BouldersMadeHistoric} boulder(s) need remapping");
-        }
-        catch (Exception ex)
-        {
-            await ShowToast($"Recreate failed: {ex.Message}");
-        }
-    }
-
-    private async Task OnManualPhotoSelected(InputFileChangeEventArgs e)
-    {
-        var file = e.File;
-        if (file.Size > 10 * 1024 * 1024)
-        {
-            await ShowToast("Photo too large (max 10 MB)");
-            return;
-        }
-
-        try
-        {
-            using var stream = file.OpenReadStream(10 * 1024 * 1024);
-            using var ms = new MemoryStream();
-            await stream.CopyToAsync(ms);
-
-            await WallService.StageManualAlignmentAsync(WallId, ms.ToArray(), file.ContentType);
-            await LoadWall();
-            await ShowToast("Photo staged for manual alignment");
-        }
-        catch (Exception ex)
-        {
-            await ShowToast($"Upload failed: {ex.Message}");
-        }
-    }
-
-    private async Task OnConfirmManualAlignment(WallPhotoEditor.ManualAlignmentResult r)
-    {
-        try
-        {
-            var holds = r.Holds.Select(h => new ManualAlignHold(
-                h.Id, h.X, h.Y, h.Radius, h.ShapePoints, h.Color, h.Material, h.Category, h.IsOnKickboard,
-                r.ChangedHoldIds.Contains(h.Id), r.AddedHoldIds.Contains(h.Id))).ToList();
-            await WallService.ConfirmManualAlignmentAsync(WallId, holds, r.DeletedHoldIds);
-            await LoadWall();
-            _isEditing = false;
-            SyncEditLease();
-            await ShowToast("Wall updated");
-        }
-        catch (Exception ex)
-        {
-            await ShowToast($"Update failed: {ex.Message}");
-        }
-    }
-
-    private async Task<Homography?> EstimateStagingAlignment()
-    {
-        return await WallService.EstimateStagingAlignmentAsync(WallId);
-    }
-
-    private async Task ConfirmStagedPhoto()
-    {
-        try
-        {
-            await WallService.ConfirmStagedPhotoAsync(WallId);
-            await LoadWall();
-            await ShowToast("New photo confirmed");
-        }
-        catch (Exception ex)
-        {
-            await ShowToast($"Confirm failed: {ex.Message}");
-        }
-    }
-
-    private async Task OnMergeHolds((Guid stagedHoldId, Guid liveHoldId) pair)
-    {
-        try
-        {
-            await WallService.MergeHoldsAsync(pair.stagedHoldId, pair.liveHoldId);
-            await LoadWall();
-            await ShowToast("Holds merged");
-        }
-        catch (Exception ex)
-        {
-            await ShowToast($"Merge failed: {ex.Message}");
         }
     }
 
@@ -2100,22 +1873,6 @@ else
         catch (Exception ex)
         {
             await ShowToast($"Restore failed: {ex.Message}");
-        }
-    }
-
-    private async Task DiscardStagedPhoto()
-    {
-        try
-        {
-            await WallService.DiscardStagedPhotoAsync(WallId);
-            await LoadWall();
-            _isEditing = false;
-            SyncEditLease();
-            await ShowToast("Staged photo discarded");
-        }
-        catch (Exception ex)
-        {
-            await ShowToast($"Discard failed: {ex.Message}");
         }
     }
 
