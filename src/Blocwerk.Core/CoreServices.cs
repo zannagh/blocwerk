@@ -51,6 +51,28 @@ public static class CoreServices
         builder.Services.AddSingleton<IMaintenanceAnnouncer, MaintenanceAnnouncer>();
         builder.Services.AddSingleton<DomainChangeInterceptor>();
 
+        // The persisting mutation log (Phase A: capture only). The ambient batch tracker is a
+        // singleton because its "current batch" lives in an AsyncLocal that flows with the call
+        // chain; the interceptor reads it and writes journal rows into the same SaveChanges as the
+        // effect. Registered as both the concrete type (the interceptor takes it) and IChangeJournal
+        // (callers open batches through it). Runs alongside DomainChangeInterceptor — both fire.
+        // The registry factory is a LAZY delegate (resolved only when a wall-update batch is opened/sealed),
+        // so building the singleton never resolves RootDbContextFactory — which would otherwise cycle back
+        // through the DbContextOptions → ChangeJournalInterceptor → ChangeJournal. RootDbContextFactory is
+        // session-less (no kiosk scoping) and safe for a singleton to use; its contexts still carry the
+        // capture interceptor, but the registry writes touch only ChangeJournalBatch, which is not journalled.
+        builder.Services.AddSingleton<ChangeJournal>(sp =>
+            new ChangeJournal(() => sp.GetRequiredService<RootDbContextFactory>().CreateDbContext()));
+        builder.Services.AddSingleton<IChangeJournal>(sp => sp.GetRequiredService<ChangeJournal>());
+        builder.Services.AddSingleton<ChangeJournalInterceptor>();
+
+        // Phase B/C of the mutation log: revert a captured batch (inverse apply + precondition guard),
+        // and export/replay batches to another environment (dev-gated endpoint). Scoped, since they
+        // resolve the scoped context factory; the revert/replay writes are themselves journalled.
+        builder.Services.AddScoped<ChangeJournalReverter>();
+        builder.Services.AddScoped<ChangeJournalExporter>();
+        builder.Services.AddScoped<ChangeJournalReplayer>();
+
         // Web Push. VAPID credentials are bound from the top-level "Vapid" section (env VAPID__SUBJECT,
         // VAPID__PUBLICKEY, VAPID__PRIVATEKEY). Missing/empty keys are NOT an error: the service becomes
         // a no-op and PushSenderBackgroundService logs one warning at startup. The service is a singleton
@@ -75,6 +97,7 @@ public static class CoreServices
         {
             options.UseNpgsql(config.Postgres.ConnectionString);
             options.AddInterceptors(sp.GetRequiredService<DomainChangeInterceptor>());
+            options.AddInterceptors(sp.GetRequiredService<ChangeJournalInterceptor>());
         });
 
         // Kiosk wall scoping is stamped on EVERY context, centrally, at creation — see
