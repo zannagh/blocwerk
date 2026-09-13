@@ -82,7 +82,6 @@ public class KioskAnonymousViewingTests
             h.DbContextFactory,
             h.CurrentUser,
             h.HoldDetection,
-            h.ImageAlignment,
             h.ActivityLog,
             NullLogger<WallService>.Instance);
 
@@ -201,7 +200,6 @@ public class KioskAnonymousViewingTests
             new KioskStampingFactory(h.DbContextFactory, kiosk),
             h.CurrentUser,
             h.HoldDetection,
-            h.ImageAlignment,
             h.ActivityLog,
             NullLogger<WallService>.Instance,
             kiosk);

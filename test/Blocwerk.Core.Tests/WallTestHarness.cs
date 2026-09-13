@@ -56,7 +56,7 @@ public sealed class WallTestHarness : IDisposable
         HoldDetection = Substitute.For<IHoldDetectionService>();
         ImageAlignment = Substitute.For<IImageAlignmentService>();
 
-        WallService = new WallService(DbContextFactory, CurrentUser, HoldDetection, ImageAlignment, ActivityLog, NullLogger<WallService>.Instance);
+        WallService = new WallService(DbContextFactory, CurrentUser, HoldDetection, ActivityLog, NullLogger<WallService>.Instance);
         BoulderService = new BoulderService(DbContextFactory, CurrentUser, ActivityLog, NullLogger<BoulderService>.Instance);
         AttemptService = new AttemptService(DbContextFactory, CurrentUser, ActivityLog, NullLogger<AttemptService>.Instance);
         FeedbackService = new BoulderFeedbackService(DbContextFactory, CurrentUser, NullLogger<BoulderFeedbackService>.Instance);
