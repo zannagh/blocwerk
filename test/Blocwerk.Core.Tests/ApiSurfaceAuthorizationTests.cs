@@ -98,7 +98,6 @@ public class ApiSurfaceAuthorizationTests
             .ToList();
 
         Assert.Contains("/api/walls/{wallId:guid}/photo", routes);
-        Assert.Contains("/api/walls/{wallId:guid}/staged-photo", routes);
         Assert.Contains("/api/walls/{wallId:guid}/temperature", routes);
         Assert.Contains("/api/walls/{wallId:guid}/panels/{panelId:guid}/photo", routes);
         Assert.Contains("/api/walls/{wallId:guid}/panels/{panelId:guid}/staged-photo", routes);

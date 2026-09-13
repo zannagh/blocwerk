@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Detection;
 using Blocwerk.Core.Telemetry;
 using Serilog;
 using SkiaSharp;
@@ -56,10 +57,15 @@ public sealed class YoloHoldDetectionService : IHoldDetectionService, IDisposabl
                 .Where(h => h.X is >= 0 and <= 1 && h.Y is >= 0 and <= 1)
                 .ToList();
 
+            int beforeMatFilter = holds.Count;
+            var matFiltered = MatFalseDetectionFilter.Classify(holds);
+            holds = matFiltered.Kept.ToList();
+
             Log.Information(
-                "[Hold Detection] YOLO detected {Count} valid holds ({Filtered} filtered out-of-bounds)",
+                "[Hold Detection] YOLO detected {Count} valid holds ({Filtered} filtered out-of-bounds, {Mats} rejected as mat/floor false-positives)",
                 holds.Count,
-                results.Count - holds.Count);
+                results.Count - beforeMatFilter,
+                matFiltered.Dropped.Count);
 
             var successMs = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
             activity?.SetTag("detector", "yolo");

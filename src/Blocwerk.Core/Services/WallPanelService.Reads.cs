@@ -37,6 +37,15 @@ public partial class WallPanelService
         await using var db = await dbContextFactory.CreateDbContextAsync();
         db.CurrentUserId = viewerId;
 
+        // The wall's target/max generation. A panel below it lags a partial (subset) promote and is
+        // flagged outdated; with every panel at the same generation nothing is outdated. Cheap
+        // projection, and the CurrentUserId visibility filter above still applies.
+        var currentGeneration = await db.Walls
+            .AsNoTracking()
+            .Where(w => w.Id == wallId)
+            .Select(w => (int?)w.CurrentGeneration)
+            .FirstOrDefaultAsync() ?? 0;
+
         // A centre/neighbour update adds a NEW panel row at the next generation and promotes it, but the
         // superseded row keeps its Photo. Without deduping we'd surface two live panels at the same
         // (Col,Row) — the stale one can win and show the old image with no holds. Keep only the latest
@@ -55,7 +64,7 @@ public partial class WallPanelService
             // the cell. Only when a cell has no live panel at all does the latest staged row stand in.
             .Select(g => g.OrderByDescending(p => p.HasLive).ThenByDescending(p => p.Generation).First())
             .OrderBy(p => p.Row).ThenBy(p => p.Col)
-            .Select(p => new WallPanelInfo(p.Id, p.Col, p.Row, p.HasLive, p.HasStaged))
+            .Select(p => new WallPanelInfo(p.Id, p.Col, p.Row, p.HasLive, p.HasStaged, p.Generation, p.Generation < currentGeneration))
             .ToList();
     }
 
@@ -123,24 +132,19 @@ public partial class WallPanelService
             return [];
         }
 
-        var generation = await db.Walls
-            .AsNoTracking()
-            .Where(w => w.Id == wallId)
-            .Select(w => (int?)w.CurrentGeneration)
-            .FirstOrDefaultAsync();
-        if (generation is null)
-        {
-            return [];
-        }
-
-        // A staged panel's holds live at the panel's OWN Generation, which differs by flow: the
-        // big-wall update stages panel + holds one generation ahead (WallBigUpdateService:
-        // stagedGen = CurrentGeneration + 1), while adding a single adjacent panel stages them AT the
-        // live generation (WallPanelService.StagePanelAsync: Generation = CurrentGeneration). Reading
-        // the panel's own Generation covers both — a blind CurrentGeneration + 1 would miss the
-        // add-panel holds and leave the overlap stepper's new-panel image with no overlay. The live
-        // view (includeStaged:false) always reads the current live generation.
-        var effectiveGeneration = includeStaged ? panel.Generation : generation.Value;
+        // A panel's holds live at the panel's OWN Generation, for BOTH the live and the staged view —
+        // it is a per-panel fact, never the wall's target generation. After a subset (per-panel) promote
+        // the wall bumps but an un-updated panel and its holds stay at the old generation; keying the
+        // live read on wall.CurrentGeneration would then return zero holds and render the panel photo
+        // with no overlay (the bug this replaces). The panel row carries the right number either way:
+        //   live   — the latest live panel for the position sits at its own generation (== the wall's for
+        //            a re-shot panel, lower for one left untouched by a subset promote).
+        //   staged — the big-wall update stages panel + holds one generation ahead
+        //            (WallBigUpdateService: stagedGen = CurrentGeneration + 1), while adding a single
+        //            adjacent panel stages them AT the live generation (StagePanelAsync:
+        //            Generation = CurrentGeneration). panel.Generation covers both; a blind
+        //            CurrentGeneration + 1 would miss the add-panel holds.
+        var effectiveGeneration = panel.Generation;
 
         return await db.Holds
             .AsNoTracking()
@@ -161,29 +165,20 @@ public partial class WallPanelService
         var panel = await db.WallPanels
             .AsNoTracking()
             .Where(p => p.Id == panelId && p.WallId == wallId)
-            .Select(p => new { HasLive = p.Photo != null })
+            .Select(p => new { HasLive = p.Photo != null, p.Generation })
             .FirstOrDefaultAsync();
         if (panel is null || !panel.HasLive)
         {
             return [];
         }
 
-        var generation = await db.Walls
-            .AsNoTracking()
-            .Where(w => w.Id == wallId)
-            .Select(w => (int?)w.CurrentGeneration)
-            .FirstOrDefaultAsync();
-        if (generation is null)
-        {
-            return [];
-        }
-
-        // The live generation only (includeStaged:false semantics): per-panel editing works on the
-        // live wall, not an in-flight staged update. Full entities, no projection — the editor needs
-        // the complete Hold (shape points, colour, category, material) to hand out editable clones.
+        // The panel's OWN generation is its live generation (see GetPanelHoldsAsync): per-panel editing
+        // works on the live wall, and keying on wall.CurrentGeneration would drop the holds of a panel
+        // left untouched by a subset promote. Full entities, no projection — the editor needs the
+        // complete Hold (shape points, colour, category, material) to hand out editable clones.
         return await db.Holds
             .AsNoTracking()
-            .Where(h => h.WallPanelId == panelId && h.Generation == generation.Value)
+            .Where(h => h.WallPanelId == panelId && h.Generation == panel.Generation)
             .ToListAsync();
     }
 

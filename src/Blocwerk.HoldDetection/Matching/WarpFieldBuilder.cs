@@ -24,7 +24,7 @@ internal static class WarpFieldBuilder
     /// to full-resolution pixel coordinates.
     /// </summary>
     public static (List<Pt> Src, List<Pt> Dst) TextureCorrespondences(
-        Mat imgL, Mat imgR, double s = 0.6, double ratio = 0.8, float akazeThreshold = 0.0004f)
+        Mat imgL, Mat imgR, double s = 0.6, double ratio = 0.8, float akazeThreshold = 0.0002f)
     {
         using var a = new Mat();
         using var b = new Mat();
@@ -122,7 +122,7 @@ internal static class WarpFieldBuilder
         Mat imgL, Mat imgR,
         IReadOnlyList<Pt> cLb, IReadOnlyList<Pt> cRb,
         IReadOnlyList<float[]?> descL, IReadOnlyList<float[]?> descR,
-        int bootIters = 4, double bootGate = 28.0, double bootNcc = 0.35)
+        int bootIters = 4, double bootGate = 40.0, double bootNcc = 0.25)
     {
         // Defaults are adapted from the reference (bootIters 2, gate 22, ncc 0.45): AKAZE's
         // initial texture field is coarser than SIFT's, so more bootstrap iterations and a

@@ -1,0 +1,7 @@
+/* The panel is programmatically focused (tabindex="-1") so the focus trap can land on it; suppress the
+   container's focus ring while leaving the real controls inside it to show their own. Visual styling of
+   the backdrop and panel comes from the global .bw-modal-backdrop / .bw-modal rules, so the migrated
+   modals keep looking exactly as they did. */
+.bw-modal:focus {
+    outline: none;
+}

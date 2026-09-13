@@ -19,9 +19,6 @@ public static partial class BlocwerkMetrics
     public static readonly Counter<long> WallsCreated = Otel.Meter.CreateCounter<long>(
         "blocwerk.walls.created", unit: "{wall}", description: "Walls created.");
 
-    public static readonly Counter<long> WallsRecreated = Otel.Meter.CreateCounter<long>(
-        "blocwerk.walls.recreated", unit: "{wall}", description: "Wall recreations confirmed (full re-make).");
-
     public static readonly Counter<long> WallPhotosStaged = Otel.Meter.CreateCounter<long>(
         "blocwerk.walls.photos_staged", unit: "{photo}", description: "Wall photos staged (any staging mode).");
 

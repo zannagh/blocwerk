@@ -53,8 +53,16 @@
                     Overlaps — neighbour @(_neighbourIndex + 1) of @_session!.Neighbours.Count
                 </div>
                 <PanelOverlapStepper @key="n.PanelId" WallId="WallId" PanelId="n.PanelId"
-                                     Col="n.Col" Row="n.Row" Proposals="n.Proposals"
+                                     Col="n.Col" Row="n.Row" Proposals="n.Proposals" NeighbourStaged="true"
                                      OnConfirm="OnNeighbourConfirm" OnDiscard="OnNeighbourSkip" />
+            }
+            break;
+
+        case Phase.Touchup:
+            @if (_session is not null)
+            {
+                <TouchupStep WallId="WallId" Session="_session"
+                             OnContinue="OnTouchupContinue" OnSkip="OnTouchupSkip" />
             }
             break;
 
@@ -62,7 +70,7 @@
             <p class="hint">Ready to apply. Nothing changes on the live wall until you confirm.</p>
             <div class="bigupdate-summary">
                 <span class="bigupdate-chip carry">Carrying @CarriedCount</span>
-                <span class="bigupdate-chip moved">@MovedCount moved</span>
+                <span class="bigupdate-chip changed">@ChangedCount changed</span>
                 <span class="bigupdate-chip remove">@RemovedCount removed</span>
                 <span class="bigupdate-chip new">@NewKeptCount new</span>
                 <span class="bigupdate-chip link">@LinkCount links</span>
@@ -79,7 +87,7 @@
 
         case Phase.Done:
             <p class="staged-hint">
-                Update applied. Carried @CarriedCount · moved @MovedCount · removed @RemovedCount ·
+                Update applied. Carried @CarriedCount · changed @ChangedCount · removed @RemovedCount ·
                 new @NewKeptCount · @LinkCount overlap link(s).
             </p>
             <div class="staged-actions">

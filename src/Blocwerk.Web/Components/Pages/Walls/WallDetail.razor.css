@@ -1,0 +1,11 @@
+/* The clickable stat tiles (Boulders / Members / Invite) are real <button>s for keyboard and AT
+   access. Their box, hover and typography come from the global .stat / .stat.clickable rules; these
+   only strip the user-agent button chrome so a button tile is pixel-identical to the old <div>. */
+button.stat {
+    margin: 0;
+    font: inherit;
+    color: inherit;
+    text-align: center;
+    appearance: none;
+    -webkit-appearance: none;
+}

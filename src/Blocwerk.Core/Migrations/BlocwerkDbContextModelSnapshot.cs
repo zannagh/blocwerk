@@ -781,6 +781,50 @@ namespace Blocwerk.Core.Migrations
                     b.ToTable("Holds");
                 });
 
+            modelBuilder.Entity("Blocwerk.Core.Entities.HoldGenerationLink", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("FromGeneration")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("NewHoldId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("OldHoldId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("ToGeneration")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("WallId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NewHoldId");
+
+                    b.HasIndex("WallId");
+
+                    b.HasIndex("OldHoldId", "NewHoldId")
+                        .IsUnique();
+
+                    b.HasIndex("WallId", "ToGeneration");
+
+                    b.ToTable("HoldGenerationLinks");
+                });
+
             modelBuilder.Entity("Blocwerk.Core.Entities.HoldLink", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1798,6 +1842,33 @@ namespace Blocwerk.Core.Migrations
                     b.Navigation("Wall");
 
                     b.Navigation("WallPanel");
+                });
+
+            modelBuilder.Entity("Blocwerk.Core.Entities.HoldGenerationLink", b =>
+                {
+                    b.HasOne("Blocwerk.Core.Entities.Hold", "NewHold")
+                        .WithMany()
+                        .HasForeignKey("NewHoldId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Blocwerk.Core.Entities.Hold", "OldHold")
+                        .WithMany()
+                        .HasForeignKey("OldHoldId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Blocwerk.Core.Entities.Wall", "Wall")
+                        .WithMany()
+                        .HasForeignKey("WallId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("NewHold");
+
+                    b.Navigation("OldHold");
+
+                    b.Navigation("Wall");
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.HoldLink", b =>

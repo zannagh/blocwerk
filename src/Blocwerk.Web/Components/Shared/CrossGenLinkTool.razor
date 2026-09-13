@@ -1,0 +1,98 @@
+@* Side-by-side CROSS-GEN confirm. LEFT = previous-gen holds, RIGHT = new staged holds. Matcher
+   matches show pre-linked (green rings); the attention queue (the few uncertain holds) is a focusable
+   stepper so the user only looks at what matters. Tap an unlinked left hold then a right hold to map
+   them; break a mapping to fall back to safe blind warp-carry. In-memory over the parent's decisions —
+   nothing persists here. See CrossGenLinkTool.razor.cs. *@
+
+<div class="crossgen-tool">
+    <div class="panel-stepper-head">
+        <div>
+            <h3 class="panel-overlap-title">Confirm the matches</h3>
+            <p class="hint">
+                Green holds were matched automatically across the two photos — no action needed.
+                Step through the few uncertain ones below, or tap any hold on the left and its real
+                counterpart on the right to link them yourself.
+            </p>
+        </div>
+        <button class="btn-secondary" @onclick="() => OnClose.InvokeAsync()">Done — back to overview</button>
+    </div>
+
+    <div class="crossgen-summary">
+        <span class="bigupdate-chip carry">@LinkedCount matched</span>
+        @if (HasQueue)
+        {
+            <span class="bigupdate-chip changed">@AttentionOldIds.Count need a look</span>
+        }
+        else
+        {
+            <span class="bigupdate-chip">Nothing uncertain — every old hold matched</span>
+        }
+    </div>
+
+    @if (HasQueue)
+    {
+        <div class="panel-stepper-bar crossgen-focusbar">
+            <button class="btn-secondary" @onclick="FocusPrev" disabled="@(_queueIndex == 0)" title="Previous uncertain hold">←</button>
+            <span class="panel-stepper-progress">Uncertain @(_queueIndex + 1) / @AttentionOldIds.Count</span>
+            <button class="btn-secondary" @onclick="FocusNext" disabled="@(_queueIndex >= AttentionOldIds.Count - 1)" title="Next uncertain hold">→</button>
+            <span class="crossgen-focus-state @(FocusIsLinked ? "linked" : "unlinked")">
+                @(FocusIsLinked ? "matched — verify or break it" : "unmatched — tap its hold on the right")
+            </span>
+        </div>
+    }
+
+    <div class="panel-stepper-pair">
+        <PanelImageView WallId="WallId" Caption="Previous wall (current holds)"
+                        PhotoUrl="@OldPhotoUrl"
+                        Holds="OldHolds"
+                        HoldColors="LeftHoldColors()"
+                        SelectedHoldId="_leftHoldId"
+                        HighlightHoldId="FocusOldId"
+                        BadgeNumber="_queueIndex + 1"
+                        BadgeColor="@(FocusIsLinked ? LinkGreen : AttentionAmber)"
+                        Interactive="true"
+                        FocusKey="_focusKey" FocusPoint="Point(FocusOldHold)"
+                        OnHoldTap="OnLeftTap" />
+
+        <PanelImageView WallId="WallId" Caption="New wall (staged holds)"
+                        PhotoUrl="@NewPhotoUrl"
+                        Holds="NewHolds"
+                        HoldColors="RightHoldColors()"
+                        SelectedHoldId="_rightHoldId"
+                        HighlightHoldId="FocusNewId"
+                        BadgeNumber="_queueIndex + 1"
+                        BadgeColor="@LinkGreen"
+                        Interactive="true"
+                        FocusKey="_focusKey" FocusPoint="Point(FocusNewHold ?? FocusOldHold)"
+                        OnHoldTap="OnRightTap" />
+    </div>
+
+    <div class="panel-stepper-actions">
+        <span class="panel-stepper-hint">
+            @if (_leftHoldId is not null && _rightHoldId is not null)
+            {
+                <text>Link the selected old hold to the selected new hold.</text>
+            }
+            else
+            {
+                <text>Tap a hold on the left, then its match on the right.</text>
+            }
+        </span>
+        <button class="btn-primary" @onclick="LinkSelected" disabled="@(!CanLink)"
+                title="Map the selected old hold onto the selected new hold">Link these</button>
+        <button class="btn-danger-soft" @onclick="BreakSelected" disabled="@(BreakableOldId is null)"
+                title="Break this match — the hold falls back to a safe blind carry">Break match</button>
+    </div>
+
+    <div class="panel-stepper-foot">
+        <span class="panel-stepper-legend">
+            <i class="bigupdate-dot" style="background:var(--status-success)"></i> matched ·
+            <i class="bigupdate-dot" style="background:var(--status-warning)"></i> needs a look ·
+            <i class="bigupdate-dot" style="background:var(--status-info)"></i> new hold
+        </span>
+    </div>
+
+    <div class="staged-actions">
+        <button class="btn-primary" @onclick="() => OnAdvance.InvokeAsync()">Review changed &amp; moved →</button>
+    </div>
+</div>

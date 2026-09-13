@@ -1,6 +1,7 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
 using Blocwerk.Core.Helpers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -47,15 +48,38 @@ public partial class WallBigUpdateService : IWallBigUpdateService
         var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId)
             ?? throw new InvalidOperationException("Wall not found");
 
-        var centerCount = photos.Count(p => p.Col == 0 && p.Row == 0);
-        if (centerCount != 1)
+        if (photos.Count == 0)
         {
-            throw new InvalidOperationException("Exactly one centre photo at (0,0) is required.");
+            throw new InvalidOperationException("At least one photo is required.");
         }
 
-        if (photos.Select(p => (p.Col, p.Row)).Distinct().Count() != photos.Count)
+        var stagedPositions = photos.Select(p => (p.Col, p.Row)).ToHashSet();
+        if (stagedPositions.Count != photos.Count)
         {
             throw new InvalidOperationException("Two photos share the same grid position.");
+        }
+
+        // Center-first (decision D-D): a non-centre panel may be re-photographed only together with the
+        // panel one step toward the centre, so an outer panel never advances past a more-central one and
+        // strands it a generation behind (a "hole"). Because every subset promote bumps the wall's
+        // generation and no live panel is ever ahead of it, the inner neighbour can only reach the new
+        // target generation by being part of THIS update — a live neighbour is at most the old generation.
+        // So the staged set must be closed toward (0,0), which also guarantees the centre is always
+        // present as the carryover anchor the rest of the flow relies on.
+        foreach (var (col, row) in stagedPositions)
+        {
+            if (col == 0 && row == 0)
+            {
+                continue;
+            }
+
+            var toward = StepTowardCentre(col, row);
+            if (!stagedPositions.Contains(toward))
+            {
+                throw new InvalidOperationException(
+                    $"Center-first update: panel ({col},{row}) can only be updated together with its more-central "
+                    + $"neighbour ({toward.Col},{toward.Row}). Re-photograph outward from the centre.");
+            }
         }
 
         if (wall.Photo is null)
@@ -158,9 +182,21 @@ public partial class WallBigUpdateService : IWallBigUpdateService
     private async Task<BigUpdateSession> BuildSessionAsync(
         BlocwerkDbContext db, Wall wall, Guid centerPanelId, int stagedGen)
     {
-        var oldHolds = await db.Holds
-            .Where(h => h.WallId == wall.Id && h.Generation == wall.CurrentGeneration)
-            .ToListAsync();
+        // Panel-scoped carryover: match only the OLD holds that live on a re-photographed panel against
+        // the new centre. A centre-only update therefore never pulls (and never warp-carries) the holds
+        // on a non-updated panel onto the centre — they are left entirely alone. Null-panel legacy holds
+        // count as centre, which is always updated.
+        var updatedPositions = await LoadUpdatedPositionsAsync(db, wall.Id, stagedGen);
+        var panelPositions = await LoadPanelPositionsAsync(db, wall.Id);
+        var oldHolds = (await db.Holds
+                .Where(h => h.WallId == wall.Id && h.Generation == wall.CurrentGeneration)
+                .ToListAsync())
+            .Where(h => IsOnUpdatedPanel(h.WallPanelId, panelPositions, updatedPositions))
+            .ToList();
+
+        // Keep crash-mat / floor false holds out of the matcher entirely so they are never offered as a
+        // carryover proposal — mirrors the drop the promote carry applies, so the review matches the commit.
+        oldHolds = await FilterCarriedMatFalseHoldsAsync(db, oldHolds);
         var centerHolds = await db.Holds
             .Where(h => h.WallPanelId == centerPanelId && h.Generation == stagedGen)
             .ToListAsync();
@@ -176,22 +212,76 @@ public partial class WallBigUpdateService : IWallBigUpdateService
         var carryover = new List<CarryoverProposal>();
         var removedCandidates = new List<Guid>();
         var newCenter = new List<Guid>();
+        var carriedWarp = new Dictionary<Guid, HoldPositionNorm>();
+        var carriedShapes = new Dictionary<Guid, IReadOnlyList<HoldPositionNorm>>();
+        var autoMatchStatus = AutoMatchStatus.Ok;
+        string? autoMatchMessage = null;
         try
         {
             var carry = overlapMatcher.Match(
-                wall.Photo!, oldMatcher, centerImage, centerMatcher, HoldOverlapDirection.Right);
+                wall.Photo!, oldMatcher, centerImage, centerMatcher, HoldOverlapDirection.Right, logger);
+
+            // Suggestion only: pre-fill the NewHoldId mapping the review layer will offer. The matcher
+            // never asserts a hold has changed — "changed" is a purely manual decision in the UI, so
+            // no Moved/Changed flag is carried out of here. Old holds with no proposal stay carried by
+            // default (the review layer seeds carry-all), so an empty list is a valid, working session.
             foreach (var p in carry.Proposals)
             {
                 carryover.Add(new CarryoverProposal(
-                    oldIndex[p.LeftHoldId], centerIndex[p.RightHoldId], p.Confidence, p.Moved, p.ResidualPx));
+                    oldIndex[p.LeftHoldId], centerIndex[p.RightHoldId], p.Confidence, p.ResidualPx));
             }
 
             removedCandidates.AddRange(carry.UnmatchedLeft.Select(i => oldIndex[i]));
             newCenter.AddRange(carry.UnmatchedRight.Select(i => centerIndex[i]));
+
+            // Warp-carry: for every old hold with NO proposal, record the matcher's warp-predicted
+            // new-image position (indices align 1:1 with oldMatcher/oldIndex, i.e. the leftHolds order
+            // BuildMatcherHolds produced). Promote repositions those unmatched carried holds there
+            // instead of cloning them at stale old coordinates. Only valid predictions are kept.
+            var matchedLeft = carry.Proposals.Select(p => p.LeftHoldId).ToHashSet();
+            var warped = carry.WarpedLeftPositions;
+            if (warped is not null)
+            {
+                for (var i = 0; i < oldIndex.Length; i++)
+                {
+                    if (matchedLeft.Contains(i) || i >= warped.Count || warped[i] is not { } pos)
+                    {
+                        continue;
+                    }
+
+                    carriedWarp[oldIndex[i]] = new HoldPositionNorm(pos.X, pos.Y);
+                }
+            }
+
+            // Warp-carry (shapes): for EVERY old hold that had a custom outline the matcher could warp
+            // (matched AND unmatched — a hand-drawn polygon must carry regardless of whether the hold
+            // also matched, since a detection never carries the custom outline), record the warped
+            // new-image polygon. Promote sets the successor's ShapePoints to it. Indices align 1:1 with
+            // oldMatcher/oldIndex. Holds with no custom outline (null entries) are simply skipped.
+            var warpedShapes = carry.WarpedLeftShapes;
+            if (warpedShapes is not null)
+            {
+                for (var i = 0; i < oldIndex.Length; i++)
+                {
+                    if (i >= warpedShapes.Count || warpedShapes[i] is not { } shape)
+                    {
+                        continue;
+                    }
+
+                    carriedShapes[oldIndex[i]] = shape.Select(v => new HoldPositionNorm(v.X, v.Y)).ToList();
+                }
+            }
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Carryover match failed on wall {WallId}; treating all old holds as undecided", wall.Id);
+            // Fail soft: never silently seed nothing. Record WHY so the review layer can show a banner
+            // ("map changed holds manually") instead of a mute 0/0/0/0. The session still returns the
+            // full old-hold data below, so carry-all works with zero proposals.
+            autoMatchStatus = ClassifyAutoMatchFailure(ex);
+            autoMatchMessage = ex.Message;
+            logger.LogWarning(
+                ex, "Carryover auto-match {Status} on wall {WallId}; carrying all old holds by default",
+                autoMatchStatus, wall.Id);
         }
 
         var neighbours = new List<NeighbourOverlap>();
@@ -216,8 +306,13 @@ public partial class WallBigUpdateService : IWallBigUpdateService
                     centerImage, centerMatcher, panel.StagedPhoto!, neighbourMatcher, direction);
                 foreach (var p in result.Proposals)
                 {
+                    // NeighborPanelId is the panel HoldAId belongs to — here the staged CENTRE panel,
+                    // NOT this non-centre panel. HoldAId is a staged centre hold (centerIndex) and the
+                    // stepper draws the "existing neighbour" (left) image + its holds from NeighborPanelId,
+                    // so it must resolve to the centre. Passing panel.Id made the left request this
+                    // staged-only panel's committed /photo, which 404s, and overlaid a foreign hold.
                     proposals.Add(new OverlapProposalDto(
-                        panel.Id, centerIndex[p.LeftHoldId], neighbourIndex[p.RightHoldId],
+                        centerPanelId, centerIndex[p.LeftHoldId], neighbourIndex[p.RightHoldId],
                         p.Confidence, p.Moved, p.ResidualPx));
                 }
             }
@@ -229,6 +324,27 @@ public partial class WallBigUpdateService : IWallBigUpdateService
             neighbours.Add(new NeighbourOverlap(panel.Id, panel.Col, panel.Row, proposals));
         }
 
-        return new BigUpdateSession(wall.Id, centerPanelId, carryover, removedCandidates, newCenter, neighbours);
+        return new BigUpdateSession(
+            wall.Id, centerPanelId, carryover, removedCandidates, newCenter, neighbours,
+            autoMatchStatus, autoMatchMessage, carriedWarp, carriedShapes);
+    }
+
+    /// <summary>
+    /// Classifies a carryover auto-match exception into a fail-soft status: a native/library-load
+    /// failure means the matcher could not run at all (<see cref="AutoMatchStatus.Unavailable"/>);
+    /// anything else is a matching failure the matcher itself raised (<see cref="AutoMatchStatus.Failed"/>),
+    /// e.g. the "too few texture matches" homography path or an undecodable image.
+    /// </summary>
+    private static AutoMatchStatus ClassifyAutoMatchFailure(Exception ex)
+    {
+        for (Exception? current = ex; current is not null; current = current.InnerException)
+        {
+            if (current is DllNotFoundException or TypeInitializationException or BadImageFormatException)
+            {
+                return AutoMatchStatus.Unavailable;
+            }
+        }
+
+        return AutoMatchStatus.Failed;
     }
 }

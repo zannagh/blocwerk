@@ -49,6 +49,7 @@
             @foreach (var layer in _layers)
             {
                 <img class="stitcher-layer @(layer.Id == _selectedId ? "selected" : "")" src="@layer.DataUrl"
+                     alt="Stitch layer"
                      draggable="false"
                      style="position:absolute; left:0; top:0; width:@Px(layer.Width); height:@Px(layer.Height); transform-origin:0 0; opacity:@N(layer.Opacity); transform:@StitcherMath.Matrix3d(layer.Width, layer.Height, layer.Corners);"
                      @onmousedown="(e) => StartLayerMove(e, layer)" @onmousedown:stopPropagation="true"

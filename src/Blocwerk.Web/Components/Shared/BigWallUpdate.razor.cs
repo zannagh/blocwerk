@@ -49,6 +49,7 @@ public partial class BigWallUpdate : IDisposable
         Upload,
         Carryover,
         Neighbours,
+        Touchup,
         Confirm,
         Working,
         Done,
@@ -116,7 +117,7 @@ public partial class BigWallUpdate : IDisposable
         _linkSets.Clear();
         _neighbourIndex = 0;
 
-        _phase = (_session?.Neighbours.Count ?? 0) == 0 ? Phase.Confirm : Phase.Neighbours;
+        _phase = (_session?.Neighbours.Count ?? 0) == 0 ? Phase.Touchup : Phase.Neighbours;
     }
 
     // ---- Phase 2: one neighbour overlap at a time ------------------------------
@@ -150,13 +151,20 @@ public partial class BigWallUpdate : IDisposable
         }
         else
         {
-            _phase = Phase.Confirm;
+            _phase = Phase.Touchup;
         }
     }
 
+    // ---- Phase 3: manual touch-up across every staged panel --------------------
+    // Both continue and skip land on Confirm; touch-up only edits staged-hold geometry and never
+    // emits a carryover decision, so there is nothing to fold back into the outcome here.
+    private void OnTouchupContinue() => _phase = Phase.Confirm;
+
+    private void OnTouchupSkip() => _phase = Phase.Confirm;
+
     // ---- Finish ----------------------------------------------------------------
     private int CarriedCount => _outcome?.Carryover.Count(d => d.Kind == CarryKind.Carried) ?? 0;
-    private int MovedCount => _outcome?.Carryover.Count(d => d.Kind == CarryKind.Moved) ?? 0;
+    private int ChangedCount => _outcome?.Carryover.Count(d => d.Kind == CarryKind.Changed) ?? 0;
     private int RemovedCount => _outcome?.Carryover.Count(d => d.Kind == CarryKind.Removed) ?? 0;
     private int NewKeptCount => _outcome?.AcceptedNewCenterHoldIds.Count ?? 0;
     private int LinkCount => _linkSets.Sum(l => l.Links.Count);
@@ -176,7 +184,9 @@ public partial class BigWallUpdate : IDisposable
                 _outcome.Carryover,
                 _outcome.AcceptedNewCenterHoldIds,
                 _outcome.RemovedNewCenterHoldIds,
-                _linkSets);
+                _linkSets,
+                _session?.CarriedWarpPositions,
+                _session?.CarriedWarpShapes);
             await BigUpdate.PromoteAsync(WallId, confirmation);
             _phase = Phase.Done;
             await OnPromoted.InvokeAsync();

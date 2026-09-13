@@ -462,3 +462,10 @@ dotnet-install.sh
 
 # Dev-only wall editor snapshot (BLOCWERK_DEV_WALL_SNAPSHOT)
 dev-wall-snapshot/
+
+# Runtime image storage + variant cache (WallImageSettings.StoragePath default)
+src/Blocwerk.Web/wall-images/
+
+# Stray Node scaffolding (this is a .NET repo; browser scripts are plain files under wwwroot/js)
+/package.json
+/node_modules/

@@ -41,7 +41,7 @@
         {
             <div class="panel-stepper-pair">
                 <PanelImageView WallId="WallId" Caption="Existing neighbour — pick a hold"
-                                PhotoUrl="@PhotoUrl(neighborId, staged: false)"
+                                PhotoUrl="@PhotoUrl(neighborId, staged: NeighbourStaged)"
                                 Holds="NeighborHolds(neighborId)"
                                 SelectedHoldId="_manualLeftId"
                                 Interactive="true"
@@ -104,7 +104,7 @@
 
         <div class="panel-stepper-pair">
             <PanelImageView WallId="WallId" Caption="Existing neighbour"
-                            PhotoUrl="@PhotoUrl(step.NeighborPanelId, staged: false)"
+                            PhotoUrl="@PhotoUrl(step.NeighborPanelId, staged: NeighbourStaged)"
                             Holds="NeighborHolds(step.NeighborPanelId)"
                             HighlightHoldId="step.HoldAId" BadgeNumber="_index + 1" BadgeColor="@color"
                             FocusKey="_index" FocusPoint="Point(neighborHold)" />

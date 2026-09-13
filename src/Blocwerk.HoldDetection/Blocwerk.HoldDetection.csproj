@@ -53,4 +53,9 @@
     <ProjectReference Include="..\Blocwerk.Core\Blocwerk.Core.csproj" />
   </ItemGroup>
 
+  <!-- Expose internal matching helpers (e.g. the colour sanity-gate) to the unit tests. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Blocwerk.HoldDetection.Tests" />
+  </ItemGroup>
+
 </Project>

@@ -40,11 +40,8 @@
 
 @if (_pending is { } pendingType)
 {
-    <div class="bw-modal-backdrop" @onclick="Close">
-        <div class="bw-modal" @onclick:stopPropagation="true">
-            <h3>@Title(pendingType)</h3>
-
-            @if (_loading)
+    <Modal Title="@Title(pendingType)" OnClose="Close">
+        @if (_loading)
             {
                 <p class="hint">Loading&hellip;</p>
             }
@@ -80,8 +77,7 @@
             <div class="kiosk-modal-actions">
                 <button type="button" class="kiosk-consent-btn" @onclick="Close">Cancel</button>
             </div>
-        </div>
-    </div>
+    </Modal>
 }
 
 @code {

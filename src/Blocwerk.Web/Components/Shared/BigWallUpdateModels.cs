@@ -6,18 +6,31 @@ namespace Blocwerk.Web.Components.Shared;
 /// <summary>Which slice of the carryover the focused <see cref="CarryoverStepper"/> is walking.</summary>
 public enum CarryReviewMode
 {
-    /// <summary>Old holds whose match moved — confirm or re-target.</summary>
-    Moved = 0,
+    /// <summary>Carried-over old holds — accept, flag as physically changed, re-target, or remove.</summary>
+    Carried = 0,
 
     /// <summary>Old holds the matcher could not re-find — keep (default) or mark removed.</summary>
     Removal = 1,
 
     /// <summary>Staged new-centre holds with no old twin — keep (default) or discard a false detection.</summary>
     New = 2,
+
+    /// <summary>
+    /// The attention queue: only the FEW old holds the matcher was not confident it re-found
+    /// (no proposal, low confidence, or a high warp residual), residual-ranked. This is the default
+    /// focused queue — the user confirms the exceptions and walks past the rest. Everything not in
+    /// this queue is auto-carried. Behaves like <see cref="Carried"/> in the stepper (accept, flag
+    /// changed, re-target, remove).
+    /// </summary>
+    Uncertain = 3,
 }
 
-/// <summary>One item in a focused carryover review: an old hold and/or its proposed new-centre twin.</summary>
-public record CarryReviewItem(Guid? OldHoldId, Guid? NewHoldId);
+/// <summary>
+/// One item in a focused carryover review: an old hold and/or its proposed new-centre twin, plus the
+/// persisted <see cref="CarryKind"/> so a reopened stepper can seed its per-hold state from the parent
+/// decisions (the single source of truth) instead of starting blank.
+/// </summary>
+public record CarryReviewItem(Guid? OldHoldId, Guid? NewHoldId, CarryKind Kind = CarryKind.Carried);
 
 /// <summary>A carryover decision the stepper wants the review to record for one old hold.</summary>
 public record CarryDecisionChange(Guid OldHoldId, CarryKind Kind, Guid? NewHoldId);

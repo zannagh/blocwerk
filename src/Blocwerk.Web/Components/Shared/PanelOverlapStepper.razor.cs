@@ -15,6 +15,16 @@ public partial class PanelOverlapStepper
     [Parameter] public int Col { get; set; }
     [Parameter] public int Row { get; set; }
     [Parameter] public IReadOnlyList<OverlapProposalDto> Proposals { get; set; } = [];
+
+    /// <summary>
+    /// Whether the "existing neighbour" (left) panel is itself STAGED rather than live-committed.
+    /// The add-panel flow links a new panel to an already-live neighbour (committed <c>/photo</c>,
+    /// committed holds) — the default, false. The big-wall update links every staged panel to the
+    /// staged CENTRE panel, which has no committed photo of its own yet (its bytes live on
+    /// <c>/staged-photo</c> at generation N+1); passing true makes the left side read the staged photo
+    /// and the staged holds so it resolves instead of 404ing on a nonexistent committed blob.
+    /// </summary>
+    [Parameter] public bool NeighbourStaged { get; set; }
     [Parameter] public EventCallback<PanelConfirmation> OnConfirm { get; set; }
     [Parameter] public EventCallback OnDiscard { get; set; }
 
@@ -83,7 +93,7 @@ public partial class PanelOverlapStepper
             .Distinct();
         foreach (var neighborId in neighborIds)
         {
-            _neighborHolds[neighborId] = await WallPanelService.GetPanelHoldsAsync(WallId, neighborId, includeStaged: false);
+            _neighborHolds[neighborId] = await WallPanelService.GetPanelHoldsAsync(WallId, neighborId, includeStaged: NeighbourStaged);
         }
 
         _loading = false;

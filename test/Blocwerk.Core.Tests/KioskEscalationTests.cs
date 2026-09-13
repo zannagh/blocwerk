@@ -680,7 +680,6 @@ public class KioskEscalationTests
             KioskFactory(h, kioskWallId),
             h.CurrentUser,
             h.HoldDetection,
-            h.ImageAlignment,
             h.ActivityLog,
             NullLogger<WallService>.Instance,
             StubKiosk(isKiosk: true, kioskWallId));

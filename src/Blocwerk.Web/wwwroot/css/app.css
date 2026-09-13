@@ -29,6 +29,13 @@
     --info-text: #0D47A1;
     --danger-bg: #FFEBEE;
     --danger-text: #C62828;
+    /* Solid status/indicator colors for dots, strokes and legend swatches —
+       distinct from the soft --*-bg / --*-text pairs above. */
+    --status-success: #33cc66;
+    --status-warning: #ffb020;
+    --status-danger: #ff5555;
+    --status-info: #4aa8ff;
+    --status-review: #ff3db4;
     --overlay-bg: rgba(0, 0, 0, 0.5);
 
     /* Typography */
@@ -81,6 +88,11 @@
         --info-text: #64B5F6;
         --danger-bg: #3d1a1a;
         --danger-text: #EF9A9A;
+        --status-success: #3ddc84;
+        --status-warning: #ffc04d;
+        --status-danger: #ff6b6b;
+        --status-info: #6ab4ff;
+        --status-review: #ff66c4;
         --overlay-bg: rgba(0, 0, 0, 0.7);
     }
 }
@@ -115,6 +127,11 @@
     --info-text: #64B5F6;
     --danger-bg: #3d1a1a;
     --danger-text: #EF9A9A;
+    --status-success: #3ddc84;
+    --status-warning: #ffc04d;
+    --status-danger: #ff6b6b;
+    --status-info: #6ab4ff;
+    --status-review: #ff66c4;
     --overlay-bg: rgba(0, 0, 0, 0.7);
 }
 

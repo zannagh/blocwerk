@@ -11,17 +11,6 @@ public static partial class BlocwerkMetrics
     public static void RecordWallCreated(Guid wallId) =>
         WallsCreated.Add(1, WallTag(wallId));
 
-    public static void RecordWallRecreated(Guid wallId, int bouldersMadeHistoric, int holdsPruned)
-    {
-        var tags = new TagList
-        {
-            WallTag(wallId),
-            { "boulders_made_historic", bouldersMadeHistoric },
-            { "holds_pruned", holdsPruned },
-        };
-        WallsRecreated.Add(1, tags);
-    }
-
     public static void RecordWallPhotoStaged(Guid wallId, string mode) =>
         WallPhotosStaged.Add(1, WallTag(wallId), new("mode", mode));
 

@@ -12,7 +12,9 @@ public interface IWallBigUpdateService
     /// Begins an update: discards any prior in-flight update for this wall (idempotent restart),
     /// stages a centre panel plus one panel per neighbour photo, detects holds on each, matches the
     /// old live holds onto the staged centre (carryover) and every neighbour onto the centre (overlap),
-    /// and returns the reviewable session. Requires exactly one (0,0) centre photo.
+    /// and returns the reviewable session. The staged set must be closed toward the centre (0,0) — a
+    /// non-centre panel may only be re-photographed together with the panel one step toward the centre
+    /// (center-first, decision D-D) — which also means a valid update always includes the centre.
     /// </summary>
     Task<BigUpdateSession> StartAsync(Guid wallId, IReadOnlyList<BigUpdatePhoto> photos);
 

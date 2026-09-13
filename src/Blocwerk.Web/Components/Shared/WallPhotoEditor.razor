@@ -33,7 +33,7 @@
                 <span class="toolbar-sep"></span>
             }
         }
-        @if (CanEdit)
+        @if (CanEdit && !BorderOnly)
         {
             <button class="tool-btn @A(EditMode.Add)" @onclick="() => SetMode(EditMode.Add)" title="Add hold">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
@@ -82,11 +82,22 @@
                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
                 </svg>
             </button>
-            <button class="tool-btn" @onclick="OnRedetect" title="Re-detect" disabled="@_isDetecting">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                    <path d="M23 4v6h-6M1 20v-6h6" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-                </svg>
-            </button>
+            @if (OnRedetectRequested.HasDelegate)
+            {
+                <button class="tool-btn" @onclick="OnRedetect" title="Re-detect holds on this panel" disabled="@_isDetecting">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                        <path d="M23 4v6h-6M1 20v-6h6" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                    </svg>
+                </button>
+            }
+            @if (OnCleanArtifactsRequested.HasDelegate)
+            {
+                <button class="tool-btn" @onclick="CleanArtifacts" title="Remove spurious auto-detected holds on this panel">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                        <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                    </svg>
+                </button>
+            }
             <button class="tool-btn @A(EditMode.ShapeTilt)" @onclick="() => SetMode(EditMode.ShapeTilt)" title="Tilt hold shape: click a hold, then drag the handle to rotate the polygon in X/Y">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
                     <ellipse cx="12" cy="12" rx="9" ry="4" />
@@ -139,6 +150,19 @@
                     title="This hold didn't physically change: reset a falsely-moved staged hold, and pull its boulders back out of historic state">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
                     <path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><polyline points="3 3 3 8 8 8" /><polyline points="9 12 11.4 14.4 15.5 10" />
+                </svg>
+            </button>
+        }
+        @if (BorderOnly && CanEditShape)
+        {
+            <button class="tool-btn @A(EditMode.Border)" @onclick="() => SetMode(EditMode.Border)" title="Edit wall border">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                    <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2" />
+                </svg>
+            </button>
+            <button class="tool-btn" @onclick="() => _showBorder = !_showBorder" title="@(_showBorder ? "Hide" : "Show") border &amp; segments">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="@(_showBorder ? "2" : "1")" width="20" height="20" opacity="@(_showBorder ? "1" : "0.4")">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
                 </svg>
             </button>
         }
@@ -301,9 +325,9 @@
             {
                 <g pointer-events="none">
                     <circle cx="@F(hold.X * 100)" cy="@F(hold.Y * 100)" r="@F(r + 1.3)"
-                            fill="none" stroke="#ff3db4" stroke-width="0.4" stroke-dasharray="0.9 0.5" opacity="0.95" />
+                            fill="none" stroke="var(--status-review)" stroke-width="0.4" stroke-dasharray="0.9 0.5" opacity="0.95" />
                     <circle cx="@F(hold.X * 100 + r * 0.9)" cy="@F(hold.Y * 100 - r * 0.9)" r="1.1"
-                            fill="#ff3db4" stroke="white" stroke-width="0.2" />
+                            fill="var(--status-review)" stroke="white" stroke-width="0.2" />
                 </g>
             }
 
@@ -486,7 +510,11 @@
         <div class="option-bar">
             <div class="option-group"><label>Border:</label>
                 @if (BorderPoints.Count == 0) { <button class="opt-btn" @onclick="InitBorder">Create</button> }
-                else { <button class="opt-btn" @onclick="CleanArtifacts">Clean outside</button> <button class="opt-btn danger" @onclick="ClearBorder">Remove</button> }
+                else
+                {
+                    @if (OnCleanArtifactsRequested.HasDelegate) { <button class="opt-btn" @onclick="CleanArtifacts">Clean outside</button> }
+                    <button class="opt-btn danger" @onclick="ClearBorder">Remove</button>
+                }
             </div>
             <span class="option-hint">
                 Drag points to define wall area.
@@ -612,7 +640,7 @@
                         title="Highlight the holds you've marked as changed — the ones whose boulders get flagged for review on confirm."
                         @onclick="() => _showChanges = !_showChanges">Marked changed (@ChangedCount)</button>
                 <span style="display:inline-flex;align-items:center;gap:0.3rem;font-size:0.8rem;opacity:0.85;">
-                    <span style="width:0.7rem;height:0.7rem;border-radius:50%;background:#ff3db4;display:inline-block;"></span>
+                    <span style="width:0.7rem;height:0.7rem;border-radius:50%;background:var(--status-review);display:inline-block;"></span>
                     moved vs last photo
                 </span>
             </div>
@@ -631,7 +659,7 @@
                         title="Highlight the holds marked as changed on this panel — their boulders are flagged for review."
                         @onclick="() => _showChanges = !_showChanges">Marked changed (@ReviewChangedCount)</button>
                 <span style="display:inline-flex;align-items:center;gap:0.3rem;font-size:0.8rem;opacity:0.85;">
-                    <span style="width:0.7rem;height:0.7rem;border-radius:50%;background:#ff3db4;display:inline-block;"></span>
+                    <span style="width:0.7rem;height:0.7rem;border-radius:50%;background:var(--status-review);display:inline-block;"></span>
                     needs review
                 </span>
             </div>
@@ -771,6 +799,14 @@
     /// so hold-only editors never expose the border tool.
     /// </summary>
     [Parameter] public bool CanEditShape { get; set; }
+
+    /// <summary>
+    /// Restricts the toolbar to the wall-border tool only (no hold-editing tools, redetect or clean).
+    /// Used by the wall-shape settings card to edit the one per-wall border over the centre image
+    /// without exposing per-panel hold editing. Requires <see cref="CanEditShape"/>; the canvas stays
+    /// uncropped and opens straight in border mode.
+    /// </summary>
+    [Parameter] public bool BorderOnly { get; set; }
     [Parameter] public string? ShareToken { get; set; }
 
     /// <summary>
@@ -1065,7 +1101,14 @@
         // the photo isn't mostly floor/ceiling. Editing stays uncropped: the editor needs the whole
         // canvas (adding holds outside the border, editing the border itself) and its flex/fullscreen
         // layout doesn't cleanly adopt the region aspect. A null frame renders exactly as before.
-        _frame = CanEdit ? null : WallFraming.TryComputeFrame(BorderPoints, Holds);
+        // Border-only editing is uncropped for the same reason — you shape the border over the whole photo.
+        _frame = CanEdit || BorderOnly ? null : WallFraming.TryComputeFrame(BorderPoints, Holds);
+
+        // Border-only mode has no tool but the border tool, so open straight in border mode.
+        if (BorderOnly)
+        {
+            _mode = EditMode.Border;
+        }
 
         // Reset all editing state whenever we enter or leave manual alignment so
         // stale hold ids from a prior staging session never bleed into the next one.
