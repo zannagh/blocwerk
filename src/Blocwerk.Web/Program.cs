@@ -395,6 +395,20 @@ public static class Program
             }
         });
 
+        // DEVELOPMENT-ONLY: an unauthenticated HTTP harness that drives and visualises the whole
+        // big-wall update (stage photos → run the OpenCV/YOLO carryover matcher → promote / discard)
+        // over the API, so the matcher can be iterated on without the Blazor UI. The mutating routes
+        // impersonate the wall's owner so the real service's wall-admin guard still passes.
+        if (app.Environment.IsDevelopment())
+        {
+            app.MapDevWallUpdate();
+
+            // DEVELOPMENT-ONLY: sign-in shortcut so Playwright can authenticate as an existing wall
+            // owner without real credentials, issuing the same auth cookie as a normal login. Never
+            // mapped outside Development. See DevAuthEndpoints.
+            app.MapDevAuth();
+        }
+
         app.Run();
     }
 
