@@ -407,6 +407,10 @@ public static class Program
             // owner without real credentials, issuing the same auth cookie as a normal login. Never
             // mapped outside Development. See DevAuthEndpoints.
             app.MapDevAuth();
+
+            // DEVELOPMENT-ONLY: change-journal revert / export / replay admin harness. Never mapped
+            // outside Development; each handler re-checks the environment. See ChangeJournalDevEndpoints.
+            app.MapDevJournal();
         }
 
         app.Run();

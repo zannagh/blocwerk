@@ -24,10 +24,14 @@ namespace Blocwerk.Core.Services;
 public partial class WallBigUpdateService
 {
     /// <summary>
-    /// Reconciles the old live centre holds against the staged centre detections per the user's
-    /// carryover decisions, then keeps or discards the remaining staged detections as new holds.
-    /// Returns the ids of the staged centre holds that went live (an identity set now that a promoted
-    /// staged twin keeps its own id), so the neighbour step can resolve links whose centre end survived.
+    /// Reconciles the carried old holds against the staged detections per the user's carryover decisions,
+    /// then keeps or discards the remaining staged CENTRE detections as new holds. Twin lookup spans EVERY
+    /// updated panel (<paramref name="stagedTwins"/>), so a co-updated neighbour's old hold promotes its
+    /// SAME-panel twin in place exactly as a centre hold does — never cloning a duplicate alongside the
+    /// kept detection; only <paramref name="centerStaged"/> (centre-only) drives the new-centre reconcile.
+    /// Returns the ids of the staged holds that went live (an identity set now that a promoted staged twin
+    /// keeps its own id) — centre twins AND neighbour twins — so the neighbour step can resolve links whose
+    /// centre end survived and skip re-promoting a consumed twin.
     /// </summary>
     private async Task<HashSet<Guid>> CarryCentreHoldsAsync(
         BlocwerkDbContext db,
@@ -36,10 +40,13 @@ public partial class WallBigUpdateService
         int oldGen,
         int newGen,
         IReadOnlyDictionary<Guid, Hold> oldHolds,
+        IReadOnlyDictionary<Guid, Hold> stagedTwins,
         IReadOnlyDictionary<Guid, Hold> centerStaged,
         BigUpdateConfirmation confirmation,
         IReadOnlyDictionary<Guid, HoldPositionNorm>? warpPositions,
         IReadOnlyDictionary<Guid, IReadOnlyList<HoldPositionNorm>>? warpShapes,
+        IReadOnlyDictionary<Guid, (int Col, int Row)> panelPositions,
+        IReadOnlyDictionary<(int Col, int Row), Guid> newGenPanelByPosition,
         Guid userId)
     {
         var survivingCenterStaged = new HashSet<Guid>();
@@ -69,9 +76,11 @@ public partial class WallBigUpdateService
                 continue;
             }
 
+            var destinationPanelId = ResolveDestinationPanelId(
+                oldHold, centerPanel.Id, panelPositions, newGenPanelByPosition);
             await AdvanceCarriedHoldAsync(
-                db, wallId, centerPanel, oldGen, newGen, oldHold, decision.Kind, decision.NewHoldId,
-                centerStaged, claimedTwins, survivingCenterStaged, warpPositions, warpShapes, userId);
+                db, wallId, destinationPanelId, oldGen, newGen, oldHold, decision.Kind, decision.NewHoldId,
+                stagedTwins, claimedTwins, survivingCenterStaged, warpPositions, warpShapes, userId);
         }
 
         // Reconcile: any gen-N hold the outcome never mentions is default-carried (clone forward, link
@@ -83,9 +92,11 @@ public partial class WallBigUpdateService
                 continue;
             }
 
+            var destinationPanelId = ResolveDestinationPanelId(
+                oldHold, centerPanel.Id, panelPositions, newGenPanelByPosition);
             await AdvanceCarriedHoldAsync(
-                db, wallId, centerPanel, oldGen, newGen, oldHold, CarryKind.Carried, null,
-                centerStaged, claimedTwins, survivingCenterStaged, warpPositions, warpShapes, userId);
+                db, wallId, destinationPanelId, oldGen, newGen, oldHold, CarryKind.Carried, null,
+                stagedTwins, claimedTwins, survivingCenterStaged, warpPositions, warpShapes, userId);
         }
 
         ReconcileNewCentreHolds(db, centerStaged, confirmation, newGen, survivingCenterStaged);
@@ -102,13 +113,13 @@ public partial class WallBigUpdateService
     private async Task AdvanceCarriedHoldAsync(
         BlocwerkDbContext db,
         Guid wallId,
-        WallPanel centerPanel,
+        Guid destinationPanelId,
         int oldGen,
         int newGen,
         Hold oldHold,
         CarryKind kind,
         Guid? newHoldId,
-        IReadOnlyDictionary<Guid, Hold> centerStaged,
+        IReadOnlyDictionary<Guid, Hold> stagedTwins,
         HashSet<Guid> claimedTwins,
         HashSet<Guid> survivingCenterStaged,
         IReadOnlyDictionary<Guid, HoldPositionNorm>? warpPositions,
@@ -118,7 +129,7 @@ public partial class WallBigUpdateService
         var changed = kind == CarryKind.Changed;
         var linkKind = changed ? HoldGenerationLinkKind.Changed : HoldGenerationLinkKind.Same;
 
-        if (newHoldId is { } twinId && centerStaged.TryGetValue(twinId, out var staged))
+        if (newHoldId is { } twinId && stagedTwins.TryGetValue(twinId, out var staged))
         {
             if (claimedTwins.Add(twinId))
             {
@@ -143,7 +154,7 @@ public partial class WallBigUpdateService
         }
         else
         {
-            var clone = CloneToNewGeneration(oldHold, centerPanel.Id, newGen, changed);
+            var clone = CloneToNewGeneration(oldHold, destinationPanelId, newGen, changed);
 
             // Warp-carry: an unmatched old hold has no staged twin to snap to, so instead of keeping
             // its stale old coordinates, reposition it to the matcher's warp-predicted new-image
@@ -332,18 +343,39 @@ public partial class WallBigUpdateService
     }
 
     /// <summary>
-    /// Deep-copies an old hold into a fresh next-generation row on the centre panel, keeping its
+    /// Deep-copies an old hold into a fresh next-generation row on its destination panel, keeping its
     /// position (the hold fell outside the new capture, so there is no better one) and a new identity.
     /// </summary>
-    private static Hold CloneToNewGeneration(Hold oldHold, Guid centerPanelId, int newGen, bool changed)
+    private static Hold CloneToNewGeneration(Hold oldHold, Guid destinationPanelId, int newGen, bool changed)
     {
         var clone = oldHold.Clone();
         clone.Id = Guid.NewGuid();
-        clone.WallPanelId = centerPanelId;
+        clone.WallPanelId = destinationPanelId;
         clone.Generation = newGen;
         clone.NeedsReview = changed;
         clone.AlignmentSourceHoldId = null;
         return clone;
+    }
+
+    /// <summary>
+    /// The NEW-generation panel row a carried old hold's successor must live on: the staged panel at the
+    /// old hold's OWN grid position (Col,Row). A centre old hold resolves to the new centre panel; a
+    /// co-updated NEIGHBOUR's old hold resolves to that neighbour's new-generation panel — never the
+    /// centre — which is the bug fix (immutable-generation invariant: the successor stays at the same
+    /// position). A null panel id is a legacy centre-photo hold, which the centre (0,0) subsumes. Falls
+    /// back to <paramref name="centerPanelId"/> only if the position has no staged row (never in practice,
+    /// since the hold is on a re-photographed panel).
+    /// </summary>
+    private static Guid ResolveDestinationPanelId(
+        Hold oldHold,
+        Guid centerPanelId,
+        IReadOnlyDictionary<Guid, (int Col, int Row)> panelPositions,
+        IReadOnlyDictionary<(int Col, int Row), Guid> newGenPanelByPosition)
+    {
+        var position = oldHold.WallPanelId is { } id && panelPositions.TryGetValue(id, out var pos)
+            ? pos
+            : (0, 0);
+        return newGenPanelByPosition.TryGetValue(position, out var panelId) ? panelId : centerPanelId;
     }
 
     /// <summary>

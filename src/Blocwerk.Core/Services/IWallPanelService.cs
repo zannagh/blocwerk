@@ -142,6 +142,16 @@ public interface IWallPanelService
     /// touch-up step can add missed holds on every panel). Returns the new hold's id. Gated by
     /// <see cref="WallAdminGuard.EnsureWallEditorAsync"/>.
     /// </summary>
+    /// <param name="wallId">The wall that has the in-flight big update.</param>
+    /// <param name="panelId">The staged panel (centre or neighbour) to add the hold to.</param>
+    /// <param name="x">Normalized X (0-1) in the panel image's coordinate space.</param>
+    /// <param name="y">Normalized Y (0-1) in the panel image's coordinate space.</param>
+    /// <param name="radius">Normalized hold radius in the panel image's coordinate space.</param>
+    /// <param name="color">Optional colour label or hex for the hold; null leaves it unset.</param>
+    /// <param name="category">Optional hold category; null leaves it unset.</param>
+    /// <param name="shapePoints">Optional custom outline points (centre-relative offsets); null for a circular hold.</param>
+    /// <param name="material">Optional hold material; null leaves it unset.</param>
+    /// <param name="handType">Optional hand-type classification; null leaves it unset.</param>
     /// <param name="needsReview">
     /// Whether the added hold is flagged as needing review. Defaults to <c>true</c> for the review
     /// pane's ad-hoc additions; the manual touch-up step passes <c>false</c> because those additions

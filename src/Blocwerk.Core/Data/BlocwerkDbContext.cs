@@ -113,6 +113,12 @@ public class BlocwerkDbContext : DbContext
 
     public DbSet<GymGradePoint> GymGradePoints => Set<GymGradePoint>();
 
+    public DbSet<ChangeJournalBatch> ChangeJournalBatches => Set<ChangeJournalBatch>();
+
+    public DbSet<ChangeJournalEntry> ChangeJournalEntries => Set<ChangeJournalEntry>();
+
+    public DbSet<JournalBlob> JournalBlobs => Set<JournalBlob>();
+
     public BlocwerkDbContext(DbContextOptions<BlocwerkDbContext> options)
         : base(options)
     {
@@ -161,7 +167,37 @@ public class BlocwerkDbContext : DbContext
         ConfigureWallPanel(modelBuilder);
         ConfigureHoldLink(modelBuilder);
         ConfigureHoldGenerationLink(modelBuilder);
+        ConfigureChangeJournal(modelBuilder);
         ConfigureTopLogger(modelBuilder);
+    }
+
+    private static void ConfigureChangeJournal(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<ChangeJournalBatch>(entity =>
+        {
+            // Two read paths: newest-first browsing, and "everything for this aggregate".
+            entity.HasIndex(b => b.CreatedAt);
+            entity.HasIndex(b => new { b.ScopeKind, b.ScopeId });
+        });
+
+        modelBuilder.Entity<ChangeJournalEntry>(entity =>
+        {
+            // Scalar FK only (no navigation): a batch can span several SaveChanges on different
+            // contexts, so entries are inserted referencing a batch row that this context need not
+            // be tracking. Deleting a batch takes its entries with it.
+            entity.HasOne<ChangeJournalBatch>()
+                .WithMany()
+                .HasForeignKey(e => e.BatchId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Replay reads a batch's entries strictly in order; Seq is unique within a batch.
+            entity.HasIndex(e => new { e.BatchId, e.Seq }).IsUnique();
+        });
+
+        modelBuilder.Entity<JournalBlob>(entity =>
+        {
+            entity.HasKey(b => b.Sha256);
+        });
     }
 
     private static void ConfigureTopLogger(ModelBuilder modelBuilder)

@@ -3,6 +3,7 @@ using System;
 using Blocwerk.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blocwerk.Core.Migrations
 {
     [DbContext(typeof(BlocwerkDbContext))]
-    partial class BlocwerkDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260913090444_AddChangeJournal")]
+    partial class AddChangeJournal
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -460,9 +463,6 @@ namespace Blocwerk.Core.Migrations
 
                     b.Property<int>("ScopeKind")
                         .HasColumnType("integer");
-
-                    b.Property<DateTimeOffset?>("SealedAt")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("SourceInstanceId")
                         .HasMaxLength(128)
