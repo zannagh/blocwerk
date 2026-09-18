@@ -1,5 +1,6 @@
-@* The big-wall update surface: upload → carryover → per-neighbour overlaps → apply. A dedicated flow
-   that replaces the normal settings body while it runs. See BigWallUpdate.razor.cs. *@
+@* The big-wall update surface: upload → review the raw detection → carryover → per-neighbour
+   overlaps → apply. A dedicated flow that replaces the normal settings body while it runs.
+   See BigWallUpdate.razor.cs. *@
 
 <div class="bigupdate">
     <div class="bigupdate-head">
@@ -36,6 +37,22 @@
 
         case Phase.Upload:
             <BigWallUpdateUploader OnStart="OnUpload" OnCancel="Close" />
+            break;
+
+        case Phase.Detected:
+            @if (_session is not null)
+            {
+                <TouchupStep WallId="WallId" Session="_session"
+                             Heading="Check the detected holds"
+                             Lead="Fix the detection before we match it against the old wall."
+                             OnContinue="OnDetectedContinue" OnSkip="OnDetectedContinue">
+                    <LeadDetail>
+                        Add holds the detector missed, drag or resize the ones it got wrong, and delete
+                        false ones. Continuing matches these holds against the current wall — the better
+                        they are now, the better the carryover and overlap proposals.
+                    </LeadDetail>
+                </TouchupStep>
+            }
             break;
 
         case Phase.Carryover:

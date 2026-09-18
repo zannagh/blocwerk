@@ -209,16 +209,22 @@ public partial class WallBigUpdateService
     /// <summary>
     /// After the carryover, every staged centre hold that a carry did not consume is either kept (goes
     /// live at the new generation, no lineage link) or an unreviewed detection that is hard-deleted.
-    /// Consumed twins are already in <paramref name="survivingCenterStaged"/> and skipped. A staged hold
-    /// is kept when it is in <see cref="BigUpdateConfirmation.AcceptedNewCenterHoldIds"/> OR when it is a
-    /// MANUAL (non-auto-detected) addition: the confirmation's accepted list is computed in the carryover
-    /// step, so a hold the user adds LATER in the manual touch-up step is not in it, yet must never be
-    /// silently dropped. Only auto-detected staged holds are ever discard candidates (the carryover
-    /// "discard" only targets auto-detected new-centre detections), so keeping every manual addition can
-    /// never resurrect something the user discarded.
-    /// <see cref="BigUpdateConfirmation.RemovedNewCenterHoldIds"/> is intentionally not read: for an
-    /// auto-detected hold "not accepted == discarded", so listing it removed or simply not accepting it
-    /// are equivalent.
+    /// Consumed twins are already in <paramref name="survivingCenterStaged"/> and skipped. The rule, in
+    /// order:
+    /// <list type="number">
+    /// <item>An EXPLICIT discard wins: a hold in <see cref="BigUpdateConfirmation.RemovedNewCenterHoldIds"/>
+    /// is deleted, auto-detected or not. Since the pre-match (<c>Detected</c>) review lets the user ADD
+    /// holds before matching, a manual addition can now be shown in — and discarded from — the new-holds
+    /// review queue, and that decision must be honoured.</item>
+    /// <item>A hold in <see cref="BigUpdateConfirmation.AcceptedNewCenterHoldIds"/> is kept.</item>
+    /// <item>A hold the confirmation mentions NEITHER way was outside the review's scope. A MANUAL
+    /// (non-auto-detected) one is kept — the user added it late (the touch-up step, after the carryover
+    /// review computed its lists) and it must never be silently dropped. An auto-detected one is an
+    /// unreviewed detection and is deleted ("not accepted == discarded").</item>
+    /// </list>
+    /// So the discriminator is membership of the reviewed set (accepted ∪ removed), not
+    /// <see cref="Hold.IsAutoDetected"/>; the auto-detected flag only decides the fate of holds the
+    /// review never saw.
     /// </summary>
     private static void ReconcileNewCentreHolds(
         BlocwerkDbContext db,
@@ -228,6 +234,7 @@ public partial class WallBigUpdateService
         HashSet<Guid> survivingCenterStaged)
     {
         var accepted = confirmation.AcceptedNewCenterHoldIds.ToHashSet();
+        var removed = confirmation.RemovedNewCenterHoldIds.ToHashSet();
         foreach (var (stagedId, staged) in centerStaged)
         {
             if (survivingCenterStaged.Contains(stagedId))
@@ -235,7 +242,11 @@ public partial class WallBigUpdateService
                 continue;
             }
 
-            if (accepted.Contains(stagedId) || !staged.IsAutoDetected)
+            // Explicitly discarded beats everything; otherwise accepted keeps it, and a hold the review
+            // never saw (in neither list) survives only if the user created it by hand.
+            var keep = !removed.Contains(stagedId)
+                && (accepted.Contains(stagedId) || !staged.IsAutoDetected);
+            if (keep)
             {
                 staged.Generation = newGen;
                 survivingCenterStaged.Add(stagedId);

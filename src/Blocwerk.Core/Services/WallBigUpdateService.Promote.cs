@@ -19,7 +19,7 @@ public partial class WallBigUpdateService
     /// <inheritdoc/>
     public async Task PromoteAsync(Guid wallId, BigUpdateConfirmation confirmation)
     {
-        // Resume the SAME open wall-update batch the run (StartAsync) opened, so the staged-hold INSERTs
+        // Resume the SAME open wall-update batch the staging run (StageAsync) opened, so the staged-hold INSERTs
         // and this promote's carry writes are ONE self-contained, revertible/replayable unit — reverting
         // it undoes the staged-hold creations too, and replaying it recreates them. Null when the journal
         // isn't wired (e.g. unit tests); capture then falls back to per-SaveChanges adhoc batches.
@@ -388,7 +388,7 @@ public partial class WallBigUpdateService
     /// The grid positions re-photographed in THIS update: the staged panels at <paramref name="stagedGen"/>.
     /// A subset promote touches only holds and boulders on these positions; panels not re-shot are left
     /// entirely at their current generation. The centre (0,0) is always among them (the center-first rule
-    /// in <see cref="StartAsync"/> guarantees it), so the carryover always has a centre anchor.
+    /// in <see cref="StageAsync"/> guarantees it), so the carryover always has a centre anchor.
     /// </summary>
     private static async Task<HashSet<(int Col, int Row)>> LoadUpdatedPositionsAsync(
         BlocwerkDbContext db, Guid wallId, int stagedGen)

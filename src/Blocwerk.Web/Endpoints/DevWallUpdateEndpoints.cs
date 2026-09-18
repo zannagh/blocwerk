@@ -24,8 +24,9 @@ internal static class DevWallUpdateEndpoints
         group.MapGet("/metrics", MetricsAsync);
     }
 
-    // 1. Stage the uploaded photos onto their (col,row) panels and build the carryover session
-    //    (this runs the matcher) — replicating BigWallUpdate.razor.cs OnUpload → BigUpdate.StartAsync.
+    // 1. Stage the uploaded photos onto their (col,row) panels and build the carryover session — the
+    //    two calls the UI makes around its pre-match hold review (StageAsync → touch-up → ResumeAsync).
+    //    The harness has no review step, so it runs them back to back.
     private static async Task<IResult> RunAsync(Guid wallId, HttpContext http)
     {
         var ctx = await DevWallUpdateSupport.BuildServiceAsync(http, wallId);
@@ -65,9 +66,11 @@ internal static class DevWallUpdateEndpoints
 
         try
         {
-            // StartAsync itself discards any prior in-flight staged update for the wall (idempotent
-            // restart), stages every panel, detects holds, and runs the carryover matcher.
-            var session = await service.StartAsync(wallId, photos);
+            // StageAsync itself discards any prior in-flight staged update for the wall (idempotent
+            // restart), stages every panel and detects holds; ResumeAsync then runs the matcher over
+            // the staged rows — in the UI the user corrects the detection in between.
+            await service.StageAsync(wallId, photos);
+            var session = await service.ResumeAsync(wallId);
             DevBigUpdateStore.Set(wallId, session);
             return Results.Json(await DevWallUpdateSupport.BuildRunResponseAsync(factory, wallId, session));
         }
