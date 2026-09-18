@@ -4,8 +4,11 @@ using Microsoft.AspNetCore.Components;
 namespace Blocwerk.Web.Components.Shared;
 
 /// <summary>
-/// The final manual touch-up step of the big-wall update, after the neighbour overlaps and before
-/// the confirm/apply step. Lets the user walk EVERY staged panel of the new generation and correct
+/// The manual hold touch-up surface of the big-wall update. It is used twice: once right after
+/// detection and BEFORE any matching runs (so corrections feed the carryover/overlap proposals), and
+/// once as the final pass after the neighbour overlaps, before the confirm/apply step. The behaviour
+/// is identical in both — only the copy differs, via <see cref="Heading"/> and the lead parameters.
+/// Lets the user walk EVERY staged panel of the new generation and correct
 /// the model's detection: add a missed hold, drag/resize a hold into place, or delete a stray one.
 /// These are corrections, not physical changes — added holds are staged with <c>needsReview:false</c>
 /// and repositions only touch geometry, so nothing here flags a hold or boulder for review. All
@@ -27,6 +30,18 @@ public partial class TouchupStep
 
     /// <summary>Raised when the user skips the touch-up entirely; the parent also lands on confirm.</summary>
     [Parameter] public EventCallback OnSkip { get; set; }
+
+    /// <summary>The step label above the editor; defaults to the final-pass wording.</summary>
+    [Parameter] public string Heading { get; set; } = "Touch up the detected holds";
+
+    /// <summary>The bold lead line of the explanatory box; defaults to the final-pass wording.</summary>
+    [Parameter] public string Lead { get; set; } = "Fix anything the detector got wrong.";
+
+    /// <summary>
+    /// The sub-line of the explanatory box. Null renders the default "these are corrections, nothing
+    /// gets flagged for review" note that applies to both passes.
+    /// </summary>
+    [Parameter] public RenderFragment? LeadDetail { get; set; }
 
     // Normalized default radius for a user-added hold (~2% of the panel), matching the review pane.
     private const double DefaultNewHoldRadius = 0.02;

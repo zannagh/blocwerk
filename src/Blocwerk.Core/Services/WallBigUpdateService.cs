@@ -41,124 +41,6 @@ public partial class WallBigUpdateService : IWallBigUpdateService
     }
 
     /// <inheritdoc/>
-    public async Task<BigUpdateSession> StartAsync(Guid wallId, IReadOnlyList<BigUpdatePhoto> photos)
-    {
-        var user = await currentUserService.GetCurrentUserAsync();
-        await using var db = await dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
-        await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
-
-        var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId)
-            ?? throw new InvalidOperationException("Wall not found");
-
-        if (photos.Count == 0)
-        {
-            throw new InvalidOperationException("At least one photo is required.");
-        }
-
-        var stagedPositions = photos.Select(p => (p.Col, p.Row)).ToHashSet();
-        if (stagedPositions.Count != photos.Count)
-        {
-            throw new InvalidOperationException("Two photos share the same grid position.");
-        }
-
-        // Center-first (decision D-D): a non-centre panel may be re-photographed only together with the
-        // panel one step toward the centre, so an outer panel never advances past a more-central one and
-        // strands it a generation behind (a "hole"). Because every subset promote bumps the wall's
-        // generation and no live panel is ever ahead of it, the inner neighbour can only reach the new
-        // target generation by being part of THIS update — a live neighbour is at most the old generation.
-        // So the staged set must be closed toward (0,0), which also guarantees the centre is always
-        // present as the carryover anchor the rest of the flow relies on.
-        foreach (var (col, row) in stagedPositions)
-        {
-            if (col == 0 && row == 0)
-            {
-                continue;
-            }
-
-            var toward = StepTowardCentre(col, row);
-            if (!stagedPositions.Contains(toward))
-            {
-                throw new InvalidOperationException(
-                    $"Center-first update: panel ({col},{row}) can only be updated together with its more-central "
-                    + $"neighbour ({toward.Col},{toward.Row}). Re-photograph outward from the centre.");
-            }
-        }
-
-        if (wall.Photo is null)
-        {
-            throw new InvalidOperationException("Wall has no live photo to carry holds over from.");
-        }
-
-        var stagedGen = wall.CurrentGeneration + 1;
-
-        // Open the wall-update batch here (after validation, so a rejected start records nothing) and hold
-        // it for the whole method: the restart-discard and the staging INSERTs below both land in it, and
-        // PromoteAsync later RESUMES this same open batch. That makes the staged-hold creations part of the
-        // one unit the promote seals — so reverting/replaying the update is self-contained. Null in tests.
-        using var journalBatch = changeJournal?.BeginWallUpdateBatch(wallId);
-
-        // Idempotent restart: drop any previous in-flight update-staged panels + holds first.
-        await DiscardStagedAsync(db, wallId, stagedGen);
-        await db.SaveChangesAsync();
-
-        Guid centerPanelId = Guid.Empty;
-        foreach (var photo in photos)
-        {
-            // Stored exactly as uploaded: hold detection and the panel matcher below must see the
-            // camera's full resolution. The browser is served downscaled variants instead, generated
-            // on demand from these originals (see IImageVariantCache).
-            var image = photo.Image;
-            var contentType = photo.ContentType;
-
-            var panel = new WallPanel
-            {
-                WallId = wallId,
-                Col = photo.Col,
-                Row = photo.Row,
-                Photo = null,
-                StagedPhoto = image,
-                StagedPhotoContentType = contentType,
-                StagedAt = DateTimeOffset.UtcNow,
-                StagedByUserId = user.Id,
-                Generation = stagedGen,
-            };
-            db.WallPanels.Add(panel);
-            if (photo.Col == 0 && photo.Row == 0)
-            {
-                centerPanelId = panel.Id;
-            }
-
-            var detected = await holdDetectionService.DetectHoldsAsync(image);
-            foreach (var d in detected)
-            {
-                db.Holds.Add(new Hold
-                {
-                    WallId = wallId,
-                    WallPanelId = panel.Id,
-                    X = d.X,
-                    Y = d.Y,
-                    Radius = d.Radius,
-                    Color = d.Color,
-                    Confidence = d.Confidence,
-                    IsAutoDetected = true,
-                    NeedsReview = true,
-                    Generation = stagedGen,
-                });
-            }
-        }
-
-        await db.SaveChangesAsync();
-
-        var session = await BuildSessionAsync(db, wall, centerPanelId, stagedGen);
-        logger.LogInformation(
-            "Big update started on wall {WallId} by {UserId}: {Carry} carryover, {Removed} removal candidates, {New} new-centre, {Panels} neighbour panels",
-            wallId, user.Id, session.Carryover.Count, session.RemovedCandidateHoldIds.Count,
-            session.NewCenterHoldIds.Count, session.Neighbours.Count);
-        return session;
-    }
-
-    /// <inheritdoc/>
     public async Task<BigUpdateSession> ResumeAsync(Guid wallId)
     {
         var user = await currentUserService.GetCurrentUserAsync();
@@ -185,8 +67,9 @@ public partial class WallBigUpdateService : IWallBigUpdateService
     /// <summary>
     /// Runs the two matcher passes over the already-persisted staged panels and holds: the old live
     /// holds against the staged centre (carryover), and every non-centre staged panel against the
-    /// staged centre (overlap). Shared by <see cref="StartAsync"/> and <see cref="ResumeAsync"/> so
-    /// both yield an identical session for the same DB state. No detection, no mutation.
+    /// staged centre (overlap). The sole caller is <see cref="ResumeAsync"/>, which runs it after
+    /// <see cref="StageAsync"/> has persisted (and the user has corrected) the staged detections, so the
+    /// session always reflects the current DB state. No detection, no mutation.
     /// </summary>
     private async Task<BigUpdateSession> BuildSessionAsync(
         BlocwerkDbContext db, Wall wall, Guid centerPanelId, int stagedGen)

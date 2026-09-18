@@ -1,6 +1,7 @@
-@* The final manual touch-up step: correct the model's detection across every staged panel before
-   confirming. Add missed holds, drag/resize holds into place, delete strays. These are detection
-   corrections, so nothing here flags a hold or boulder for review. See TouchupStep.razor.cs. *@
+@* The manual hold touch-up surface, used twice: pre-match (right after detection) and as the final
+   pass before confirm — same behaviour, only the copy differs. Correct the model's detection across
+   every staged panel: add missed holds, drag/resize holds into place, delete strays. These are
+   detection corrections, so nothing here flags a hold or boulder for review. See TouchupStep.razor.cs. *@
 
 @if (_loading)
 {
@@ -9,13 +10,22 @@
 else
 {
     <div class="bigupdate-phase">
-        <div class="bigupdate-step-label">Touch up the detected holds</div>
+        <div class="bigupdate-step-label">@Heading</div>
 
         <div class="bigupdate-attention clear" role="status">
-            <strong class="bigupdate-attention-head">Fix anything the detector got wrong.</strong>
+            <strong class="bigupdate-attention-head">@Lead</strong>
             <span class="bigupdate-attention-sub">
-                These are corrections of the automatic detection — they will <strong>not</strong> flag any
-                hold or boulder as changed or for review. Only holds you explicitly mark elsewhere are.
+                @if (LeadDetail is not null)
+                {
+                    @LeadDetail
+                }
+                else
+                {
+                    <text>
+                        These are corrections of the automatic detection — they will <strong>not</strong> flag any
+                        hold or boulder as changed or for review. Only holds you explicitly mark elsewhere are.
+                    </text>
+                }
             </span>
         </div>
 

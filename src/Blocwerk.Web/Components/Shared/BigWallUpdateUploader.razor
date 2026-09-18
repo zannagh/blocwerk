@@ -3,7 +3,7 @@
 
 @* Entry to the big-wall update: pick the new CENTRE photo (required, grid 0,0) and any neighbour
    photos, each dropped into its direction slot (right = col+1, left = col-1, up = row-1, down = row+1).
-   "Upload all wall-piece photos at once", then Start hands the assembled set to StartAsync.
+   "Upload all wall-piece photos at once", then Start hands the assembled set to StageAsync.
    Large phone photos are downscaled client-side (image-downscale.js) so nothing is silently dropped;
    if a pick fails, its slot is flagged and Start stays disabled until it is fixed or removed. *@
 

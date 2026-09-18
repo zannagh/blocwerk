@@ -7,7 +7,8 @@ using Microsoft.JSInterop;
 namespace Blocwerk.Web.Components.Shared;
 
 /// <summary>
-/// The dedicated big-wall update surface: upload a fresh multi-photo capture, carry the old curated
+/// The dedicated big-wall update surface: upload a fresh multi-photo capture, review the fresh
+/// detection before anything is matched, carry the old curated
 /// holds (and their boulders) onto the new centre, confirm the overlaps of each neighbour panel, then
 /// promote it all live in one go. Orchestrates the phases and the <see cref="IWallBigUpdateService"/>
 /// calls; each phase's UI lives in its own component. State here, markup in the .razor.
@@ -47,6 +48,7 @@ public partial class BigWallUpdate : IDisposable
         Loading,
         ResumePrompt,
         Upload,
+        Detected,
         Carryover,
         Neighbours,
         Touchup,
@@ -67,10 +69,12 @@ public partial class BigWallUpdate : IDisposable
     {
         _editLease = EditActivity.BeginWallEdit(WallId, userId: null);
 
-        // A prior update may still be in flight (staged panels persisted); offer to resume it.
+        // A prior update may still be in flight (staged panels persisted); offer to resume it. The probe
+        // reads the staged state only — the matcher runs when the user actually resumes, after the
+        // pre-match review, so a resumed update matches the corrected holds exactly like a fresh one.
         try
         {
-            _session = await BigUpdate.ResumeAsync(WallId);
+            _session = await BigUpdate.GetStagedAsync(WallId);
             _phase = Phase.ResumePrompt;
         }
         catch (Exception)
@@ -85,7 +89,9 @@ public partial class BigWallUpdate : IDisposable
             : null;
 
     // ---- Resume / start --------------------------------------------------------
-    private void ResumeExisting() => _phase = Phase.Carryover;
+    // Resuming lands on the same pre-match review a fresh upload does: the staged holds are all that
+    // exists at this point, and running the matcher is exactly what leaving that phase does.
+    private void ResumeExisting() => _phase = Phase.Detected;
 
     private async Task DiscardAndRestart()
     {
@@ -100,8 +106,8 @@ public partial class BigWallUpdate : IDisposable
         _phase = Phase.Working;
         try
         {
-            _session = await BigUpdate.StartAsync(WallId, photos);
-            _phase = Phase.Carryover;
+            _session = await BigUpdate.StageAsync(WallId, photos);
+            _phase = Phase.Detected;
         }
         catch (Exception ex)
         {
@@ -110,7 +116,27 @@ public partial class BigWallUpdate : IDisposable
         }
     }
 
-    // ---- Phase 1 → Phase 2 -----------------------------------------------------
+    // ---- Phase 1: review the raw detection BEFORE any matching runs ------------
+    // Leaving this phase is what triggers the matcher: ResumeAsync re-reads the staged holds as the
+    // user left them, so an added, moved or deleted hold feeds the carryover and overlap proposals
+    // instead of being corrected after the proposals were already computed.
+    private async Task OnDetectedContinue()
+    {
+        _error = null;
+        _phase = Phase.Working;
+        try
+        {
+            _session = await BigUpdate.ResumeAsync(WallId);
+            _phase = Phase.Carryover;
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not match the detected holds: {ex.Message}";
+            _phase = Phase.Detected;
+        }
+    }
+
+    // ---- Carryover → neighbours ------------------------------------------------
     private void OnCarryoverContinue(CarryoverOutcome outcome)
     {
         _outcome = outcome;

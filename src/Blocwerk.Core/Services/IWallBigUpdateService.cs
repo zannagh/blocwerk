@@ -3,24 +3,34 @@ namespace Blocwerk.Core.Services;
 /// <summary>
 /// The "big wall update" lifecycle: replacing a wall's photo with a fresh multi-image capture while
 /// carrying the old, curated holds over onto the new centre photo so their boulders survive, and
-/// linking the overlaps between the new panels. Start → (Resume) → Promote / Discard. Every mutation
+/// linking the overlaps between the new panels. Stage → Resume (match) → Promote / Discard. Every mutation
 /// is gated by <see cref="WallAdminGuard"/>.
 /// </summary>
 public interface IWallBigUpdateService
 {
     /// <summary>
-    /// Begins an update: discards any prior in-flight update for this wall (idempotent restart),
-    /// stages a centre panel plus one panel per neighbour photo, detects holds on each, matches the
-    /// old live holds onto the staged centre (carryover) and every neighbour onto the centre (overlap),
-    /// and returns the reviewable session. The staged set must be closed toward the centre (0,0) — a
-    /// non-centre panel may only be re-photographed together with the panel one step toward the centre
-    /// (center-first, decision D-D) — which also means a valid update always includes the centre.
+    /// Begins an update: discards any prior in-flight update for this wall (idempotent restart), stages
+    /// a centre panel plus one panel per neighbour photo and detects holds on each — and stops there.
+    /// NO matching runs yet: the returned session is the pre-match staged state (centre + neighbour
+    /// panel ids, no proposals), so the user can correct the detection first; <see cref="ResumeAsync"/>
+    /// then runs the matcher over the corrected rows. The staged set must be closed toward the centre
+    /// (0,0) — a non-centre panel may only be re-photographed together with the panel one step toward
+    /// the centre (center-first, decision D-D) — which also means a valid update always includes the centre.
     /// </summary>
-    Task<BigUpdateSession> StartAsync(Guid wallId, IReadOnlyList<BigUpdatePhoto> photos);
+    Task<BigUpdateSession> StageAsync(Guid wallId, IReadOnlyList<BigUpdatePhoto> photos);
 
     /// <summary>
-    /// Rebuilds the session from the already-persisted staged panels and holds (no new detection):
-    /// re-runs the old-vs-centre carryover and the neighbour overlaps. Throws when no update is staged.
+    /// The pre-match staged state of an in-flight update, read back from the DB without detecting or
+    /// matching anything: the staged centre plus every staged neighbour panel, with no proposals.
+    /// Throws when no update is staged, so it doubles as the cheap "is an update in flight?" probe.
+    /// </summary>
+    Task<BigUpdateSession> GetStagedAsync(Guid wallId);
+
+    /// <summary>
+    /// Runs the matching over the already-persisted staged panels and holds (no new detection): the
+    /// old-vs-centre carryover and the neighbour overlaps. Called once after staging to move from the
+    /// pre-match review into the carryover review, and again to pick up an interrupted update — both
+    /// see whatever hold corrections have been made since. Throws when no update is staged.
     /// </summary>
     Task<BigUpdateSession> ResumeAsync(Guid wallId);
 

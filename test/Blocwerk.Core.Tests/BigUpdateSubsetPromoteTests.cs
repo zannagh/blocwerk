@@ -132,10 +132,63 @@ public class BigUpdateSubsetPromoteTests
         }
     }
 
+    // The mirror case: a MANUAL hold the user added in the pre-match "check the detected holds" phase is
+    // offered in the new-holds review queue, so an explicit Discard there lands it in the confirmation's
+    // REMOVED list — and that must be honoured even though the hold is not auto-detected. The reviewed
+    // set (accepted ∪ removed), not IsAutoDetected, decides; IsAutoDetected only covers holds the review
+    // never saw (see Promote_ManualTouchupCentreHold_NotInAcceptedList_SurvivesLive above).
+    [Fact]
+    public async Task Promote_ManualPreMatchCentreHold_ExplicitlyDiscarded_IsDeleted()
+    {
+        using var h = new WallTestHarness();
+        var w = await SeedTwoPanelWallAsync(h);
+        var (panelId, stagedHoldId) = await StageCentreUpdateAsync(h, w.WallId);
+
+        Guid manualId;
+        await using (var db = h.CreateContext())
+        {
+            var manual = new Hold
+            {
+                WallId = w.WallId,
+                WallPanelId = panelId,
+                X = 0.5,
+                Y = 0.5,
+                Radius = 0.02,
+                Generation = 3,
+                IsAutoDetected = false,
+                NeedsReview = false,
+            };
+            db.Holds.Add(manual);
+            await db.SaveChangesAsync();
+            manualId = manual.Id;
+        }
+
+        var service = NewService(h);
+
+        // Discarded in the new-holds review: out of accepted, in removed.
+        var confirmation = new BigUpdateConfirmation(
+            [new CarryoverDecision(w.CentreHoldId, CarryKind.Carried, stagedHoldId)],
+            [],
+            [manualId],
+            []);
+        await service.PromoteAsync(w.WallId, confirmation);
+
+        await using (var db = h.CreateContext())
+        {
+            Assert.False(
+                await db.Holds.AnyAsync(x => x.Id == manualId),
+                "an explicitly discarded manual hold must not go live");
+
+            // The rest of the promote is unaffected: the carried centre twin still advanced.
+            var twin = await db.Holds.SingleAsync(x => x.Id == stagedHoldId);
+            Assert.Equal(3, twin.Generation);
+        }
+    }
+
     // Center-first (D-D): re-photographing the right panel while the centre is not part of the update is
     // rejected up front — an outer panel may never be advanced past its more-central neighbour.
     [Fact]
-    public async Task StartAsync_StagingRightPanelWithoutCentre_Rejected()
+    public async Task StageAsync_StagingRightPanelWithoutCentre_Rejected()
     {
         using var h = new WallTestHarness();
         var w = await SeedTwoPanelWallAsync(h);
@@ -144,7 +197,7 @@ public class BigUpdateSubsetPromoteTests
         var photos = new List<BigUpdatePhoto> { new([9, 9, 9], "image/jpeg", 1, 0) };
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => service.StartAsync(w.WallId, photos));
+            () => service.StageAsync(w.WallId, photos));
         Assert.Contains("Center-first", ex.Message);
 
         // Nothing was staged — the check throws before any panel/hold is written.
