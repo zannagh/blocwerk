@@ -1,0 +1,289 @@
+@page "/help/keyboard"
+@attribute [AllowAnonymous]
+
+@* Pure static content: no interactivity, so this stays static SSR (no @rendermode) and renders
+   instantly for the `?` shortcut, which opens it in a new tab from anywhere in the app. *@
+
+<PageTitle>Keyboard Shortcuts - Blocwerk</PageTitle>
+
+<div class="keyshort-page">
+    <div class="page-header">
+        <a href="/" class="back-link">&larr; Home</a>
+        <h1>Keyboard Shortcuts</h1>
+        <p class="description">
+            These are desktop shortcuts &mdash; they need a physical keyboard. While you are typing in a
+            text field, shortcuts never fire, so you can name a hold &ldquo;amber&rdquo; without triggering
+            the Add, Move, Border and Paint tools. <kbd>Enter</kbd> and <kbd>Space</kbd> also stay with a
+            button, link or label that currently has focus, so tabbing to a button and pressing it still
+            does exactly what the button says &mdash; even where the page lists another action for
+            <kbd>Enter</kbd>.
+        </p>
+        <p class="description">
+            Some surfaces take the keyboard over completely: while a review stepper, an image lightbox or
+            a modal dialog is on screen, the shared shortcuts below (including the wall carousel arrows)
+            are all inactive and only that surface's own keys apply.
+        </p>
+    </div>
+
+    <section class="keyshort-section">
+        <h2>Kiosk tablets</h2>
+        <p class="keyshort-note">
+            On a wall-mounted kiosk tablet, keyboard shortcuts are <strong>off by default</strong> and
+            none of the keys below do anything. A kiosk is a shared, unattended device, so a keyboard
+            plugged into it could otherwise drive the editing shortcuts &mdash; including
+            <kbd>d</kbd>, which deletes a hold.
+        </p>
+        <p class="keyshort-note">
+            A wall admin can turn them on for one wall at a time, from their own device, under that
+            wall's <strong>Kiosk Registration</strong> settings.
+        </p>
+    </section>
+
+    @* One <dl> per surface, one <div class="keyshort-row"> per binding: adding or editing a
+       binding later means touching exactly one markup block. *@
+
+    <section class="keyshort-section">
+        <h2>Global</h2>
+        <p class="keyshort-note">Handled in JavaScript, so it works on every page, including pages with no interactivity.</p>
+        <dl class="keyshort-list">
+            <div class="keyshort-row">
+                <dt><kbd>?</kbd></dt>
+                <dd>
+                    Open this keyboard shortcuts page <strong>in a new tab</strong>, so looking a key up
+                    never leaves the page you are on or throws away staged edits
+                </dd>
+            </div>
+        </dl>
+    </section>
+
+    <section class="keyshort-section">
+        <h2>Wall page</h2>
+        <p class="keyshort-note">Paging through the wall carousel. Disabled while the carousel is locked for editing.</p>
+        <dl class="keyshort-list">
+            <div class="keyshort-row">
+                <dt><kbd>&larr;</kbd></dt>
+                <dd>Previous pane</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>&rarr;</kbd></dt>
+                <dd>Next pane</dd>
+            </div>
+        </dl>
+        <p class="keyshort-note">
+            The arrows also stand down whenever a review stepper, an image lightbox or a modal dialog is
+            open. In the gallery lightbox that means <kbd>&larr;</kbd>/<kbd>&rarr;</kbd> page through the
+            images (and <kbd>Esc</kbd> closes it) instead of moving the carousel behind it.
+        </p>
+    </section>
+
+    <section class="keyshort-section">
+        <h2>Wall editor</h2>
+        <p class="keyshort-note">
+            The editor only claims these keys while you have edit rights on the wall and the editor is in
+            edit mode. Each key repeats the gate of the button it mirrors, so a key whose tool is not on
+            the toolbar in this configuration simply does nothing.
+        </p>
+
+        <h3>Tools</h3>
+        <dl class="keyshort-list">
+            <div class="keyshort-row">
+                <dt><kbd>a</kbd></dt>
+                <dd>Add hold</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>m</kbd></dt>
+                <dd>Select / move</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>s</kbd></dt>
+                <dd>Shape</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>p</kbd></dt>
+                <dd>Paint</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>n</kbd></dt>
+                <dd>Name</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>d</kbd></dt>
+                <dd>Delete</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>b</kbd></dt>
+                <dd>Border (only where the wall border/shape may be edited)</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>t</kbd></dt>
+                <dd>Tilt (shape tilt)</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>u</kbd></dt>
+                <dd>Hold usage (only where the page offers the usage view)</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>g</kbd></dt>
+                <dd>Merge (staged wall updates only, and not during manual alignment)</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>k</kbd></dt>
+                <dd>Make actual (outside a staged wall update)</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>c</kbd></dt>
+                <dd>Mark unchanged</dd>
+            </div>
+        </dl>
+
+        <h3>View and actions</h3>
+        <dl class="keyshort-list">
+            <div class="keyshort-row">
+                <dt><kbd>l</kbd></dt>
+                <dd>Toggle hold labels</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>o</kbd></dt>
+                <dd>Toggle border / segment outlines</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>r</kbd></dt>
+                <dd>Re-detect holds (where re-detection is offered, and not while one is running)</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>1</kbd>&ndash;<kbd>9</kbd></dt>
+                <dd>Pick paint colour N from the palette &mdash; <strong>Paint tool only</strong></dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>[</kbd> <kbd>]</kbd></dt>
+                <dd>Previous / next paint colour (wraps around) &mdash; <strong>Paint tool only</strong></dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>+</kbd> <kbd>-</kbd></dt>
+                <dd>Zoom in / out</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>0</kbd></dt>
+                <dd>Reset zoom</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>Ctrl</kbd> <span class="keyshort-plus">+</span> <kbd>S</kbd></dt>
+                <dd>
+                    Save changes (<kbd>Cmd</kbd> <span class="keyshort-plus">+</span> <kbd>S</kbd> on
+                    macOS) &mdash; claimed only while there is actually something to save, and never
+                    during a manual alignment. With nothing staged the browser's own Save is left alone.
+                </dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>Esc</kbd></dt>
+                <dd>
+                    Cancel the active sub-mode and nothing else: naming, a pending merge, a pending
+                    &ldquo;make actual&rdquo;, a pending &ldquo;mark unchanged&rdquo; or a shape tilt, in
+                    that order. With no sub-mode pending the editor does not claim <kbd>Esc</kbd> at all.
+                </dd>
+            </div>
+        </dl>
+        <p class="keyshort-note">
+            <kbd>Esc</kbd> never discards your unsaved changes. Discarding is a deliberate click on the
+            labelled button, because a stray keystroke must not throw away staged hold edits.
+        </p>
+    </section>
+
+    <section class="keyshort-section">
+        <h2>Wall update wizard</h2>
+        <p class="keyshort-note">The wizard declares a different set of keys on each step.</p>
+        <dl class="keyshort-list">
+            <div class="keyshort-row">
+                <dt><kbd>Enter</kbd></dt>
+                <dd>
+                    The primary button of the current step: <em>Resume update</em> on the resume prompt,
+                    <em>Start update</em> on the upload step, <em>Continue</em> on the detected-holds step,
+                    <em>Continue to overlaps</em> on the carry-over step, <em>Continue</em> on the touch-up
+                    step, <em>Apply update</em> on the confirm step, and <em>Done</em> on the final step.
+                    It respects the button's own disabled state, so a premature <kbd>Enter</kbd> does
+                    nothing. If you have tabbed or clicked onto some other button, that button keeps
+                    <kbd>Enter</kbd> and is what gets pressed.
+                </dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>s</kbd></dt>
+                <dd>
+                    Skip touch-up &mdash; on the detected-holds and touch-up steps only. On the
+                    detected-holds step skipping and continuing are the same action.
+                </dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>a</kbd></dt>
+                <dd>Toggle &ldquo;+ Add hold&rdquo; &mdash; on the detected-holds, touch-up and carry-over steps</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>x</kbd></dt>
+                <dd>Remove the selected hold &mdash; same three steps; does nothing when nothing is selected</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>Esc</kbd></dt>
+                <dd>
+                    Close the flow &mdash; only on the resume prompt (<em>Not now</em>), the upload step
+                    (<em>Cancel</em>) and the final step (<em>Done</em>)
+                </dd>
+            </div>
+        </dl>
+        <p class="keyshort-note">
+            <kbd>Esc</kbd> never discards a staged update. It is bound only where closing throws nothing
+            away, and is deliberately unbound on the detected-holds, carry-over, neighbour-overlap,
+            touch-up and confirm steps, because discarding is irreversible and would go unconfirmed.
+            The neighbour-overlap step declares no wizard keys at all &mdash; it is driven entirely by the
+            overlap stepper below. The carry-over step also goes quiet while one of its review sub-views
+            is open.
+        </p>
+
+        <h3>Review steppers</h3>
+        <p class="keyshort-note">
+            Used while reviewing matched or carried-over holds. While a stepper is on screen it owns the
+            keyboard: every shortcut above &mdash; the wizard's own keys and the wall carousel arrows
+            included &mdash; is inactive, and only the keys below apply.
+        </p>
+        <p class="keyshort-note">
+            They are the stepper's own keys, so they go to whatever has focus. The stepper takes focus
+            itself when it opens and again after every decision, so you can normally just start typing;
+            if you clicked something else in between, click the stepper once to hand focus back.
+        </p>
+        <dl class="keyshort-list">
+            <div class="keyshort-row">
+                <dt><kbd>Enter</kbd></dt>
+                <dd>Confirm the match / accept the carried hold (keep, for new holds)</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>c</kbd></dt>
+                <dd>Confirm match (neighbour overlaps) / toggle &ldquo;changed&rdquo; (carry-over, except the new-hold list)</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>d</kbd></dt>
+                <dd>Discard match &mdash; neighbour-overlap stepper only</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>m</kbd></dt>
+                <dd>Mark hold as moved &mdash; neighbour-overlap stepper only</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>x</kbd> <span class="keyshort-plus">or</span> <kbd>Del</kbd></dt>
+                <dd>
+                    Remove the hold / discard the new hold. <kbd>Del</kbd> works here only &mdash; outside
+                    a stepper it is not bound at all, and the wizard's own remove key is <kbd>x</kbd>.
+                </dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>&larr;</kbd> <kbd>&rarr;</kbd></dt>
+                <dd>Previous / next item</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>Esc</kbd></dt>
+                <dd>Cancel the current sub-mode (manual pairing, &ldquo;moved&rdquo; pick, interactive pick)</dd>
+            </div>
+        </dl>
+        <p class="keyshort-note">
+            While a sub-mode is open the stepper only listens for <kbd>Enter</kbd> (confirm the pick, and
+            <kbd>c</kbd> does the same in the &ldquo;moved&rdquo; pick) and <kbd>Esc</kbd> (cancel it).
+        </p>
+    </section>
+</div>

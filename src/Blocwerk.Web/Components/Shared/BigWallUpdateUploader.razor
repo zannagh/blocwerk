@@ -244,6 +244,22 @@
         slot.Error = null;
     }
 
+    /// <summary>
+    /// Keyboard entry point for the wizard's Enter binding. It mirrors the Start button's own
+    /// disabled state so a shortcut can never begin an update the button would refuse to — a key
+    /// pressed while a photo is still being prepared has to be a silent no-op, not an early start.
+    /// </summary>
+    public async Task TryStartAsync()
+    {
+        if (_busy || !CentreReady || AnyInvalid || AnyWorking)
+        {
+            return;
+        }
+
+        await Start();
+        StateHasChanged();
+    }
+
     private async Task Start()
     {
         if (!CentreReady)

@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using Blocwerk.Core.Enums;
 
@@ -84,6 +84,18 @@ public class Wall
     /// is exactly this wall, and this flag. See <c>KioskAnonymousSetting</c>.
     /// </remarks>
     public bool AllowAnonymousKioskSetting { get; set; }
+
+    /// <summary>
+    /// When true, the kiosk tablet bolted to THIS wall may act on keyboard shortcuts.
+    /// <b>Default false, and deliberately opt-in per wall</b> — a kiosk is a shared, unattended
+    /// tablet, so any passer-by (or a stray bluetooth keyboard left on the bench) could otherwise
+    /// drive destructive editor shortcuts without ever touching the screen.
+    /// </summary>
+    /// <remarks>
+    /// Only a wall admin, from their own device, can turn this on: a kiosk session must never be
+    /// able to grant itself the capability. See <c>IWallService.SetKioskKeyboardShortcutsAsync</c>.
+    /// </remarks>
+    public bool AllowKioskKeyboardShortcuts { get; set; }
 
     public ICollection<WallMember> Members { get; set; } = [];
 

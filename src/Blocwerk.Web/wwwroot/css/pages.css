@@ -2935,3 +2935,97 @@ html.bw-fullscreen .wall-main .photo-viewport {
 /* Each step-up provider is its own POST form (a GET link here was CSRF-able), so the forms have to
    sit side by side the way the links they replaced did. */
 .delete-account-page .reauth-start-form { display: inline-block; margin: 0 8px 8px 0; }
+
+/* ── Keyboard shortcuts help (/help/keyboard) ─────────────────────────────────
+   A `kbd` style already existed but was scoped to `.panel-stepper-legend kbd`;
+   this page needs a slightly larger, page-level variant. Everything is expressed
+   in theme custom properties so light and dark both read correctly. Note that
+   --text-muted / --font-mono are NOT defined in app.css, so the fallbacks here
+   are what actually apply — keep them. */
+.keyshort-page {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 0 16px 32px;
+}
+
+.keyshort-section { margin-top: 28px; }
+
+.keyshort-section h2 {
+    font-size: 1.15rem;
+    margin: 0 0 6px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-heading);
+}
+
+.keyshort-section h3 {
+    font-size: 0.95rem;
+    margin: 18px 0 6px;
+    color: var(--text-heading);
+}
+
+.keyshort-note {
+    margin: 0 0 10px;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+
+.keyshort-list { margin: 0; }
+
+/* Two columns on desktop; the row collapses to a stacked block on narrow phones
+   so long descriptions are not squeezed into a sliver of width. */
+.keyshort-row {
+    display: grid;
+    grid-template-columns: 170px 1fr;
+    gap: 4px 14px;
+    align-items: baseline;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.keyshort-row:last-child { border-bottom: none; }
+
+.keyshort-row dt {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    margin: 0;
+}
+
+.keyshort-row dd {
+    margin: 0;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: var(--text);
+}
+
+.keyshort-plus {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}
+
+.keyshort-page kbd {
+    display: inline-block;
+    min-width: 1.5em;
+    padding: 2px 7px;
+    border-radius: var(--r-sm, 6px);
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    background: var(--bg-surface-alt);
+    box-shadow: 0 1px 1px var(--shadow-sm);
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+    font-size: 0.8rem;
+    line-height: 1.4;
+    text-align: center;
+    white-space: nowrap;
+    color: var(--text);
+}
+
+@media (max-width: 560px) {
+    .keyshort-row {
+        grid-template-columns: 1fr;
+        gap: 5px;
+    }
+}

@@ -24,6 +24,9 @@ public partial class BigWallUpdate : IDisposable
     [Inject]
     private IJSRuntime JS { get; set; } = default!;
 
+    [Inject]
+    private KeyboardShortcutGate KeyGate { get; set; } = default!;
+
     // Mirrors _editLease onto the browser bwEditGuard so the maintenance watchdog holds back an
     // auto-reload while this unsaved big-wall update flow is open. See EditGuardInterop.
     private bool _editGuardActive;
@@ -247,11 +250,16 @@ public partial class BigWallUpdate : IDisposable
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         _editGuardActive = await EditGuardInterop.SyncAsync(JS, "wall-bigupdate", _editLease is not null, _editGuardActive);
+
+        // The keyboard layer lives in BigWallUpdate.Keys.cs; it reconciles itself against the phase.
+        await ReconcileShortcutsAsync(firstRender);
     }
 
     public void Dispose()
     {
         _editLease?.Dispose();
+
+        DisposeShortcuts();
 
         if (_editGuardActive)
         {

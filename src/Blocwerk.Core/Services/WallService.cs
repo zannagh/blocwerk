@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
@@ -565,6 +565,9 @@ public class WallService : IWallService
             virtualHold.IsVirtual = false;
             virtualHold.NeedsReview = true;
 
+            // Geometry moved, so the panel the geometry belongs to must move with it.
+            await AdoptMergedPanelStampAsync(db, virtualHold, actualHold, ct);
+
             // Re-point any BoulderHold rows off the consumed actual hold onto the survivor so no
             // boulder loses a hold. Detected holds normally have none, but handle it correctly.
             // HoldId is part of the composite key and can't be mutated in place, so we drop the
@@ -638,6 +641,15 @@ public class WallService : IWallService
 
             // Promote in place: the hold keeps its Id, geometry and boulder links untouched.
             hold.IsVirtual = false;
+
+            // Virtual holds created before AddHoldAsync stamped panels carry no panel id; their
+            // coordinates are the center photo's, which is exactly where the viewer draws them. Make
+            // that explicit now the hold is a real one so the panel-keyed reads can see it too. A hold
+            // that already has a panel keeps it, and Generation is left alone (see the helper).
+            if (hold.WallPanelId is null)
+            {
+                hold.WallPanelId = await ResolveCenterPanelStampAsync(db, hold.WallId, ct);
+            }
 
             await db.SaveChangesAsync(ct);
             BlocwerkMetrics.RecordHoldUpdated(hold.WallId, "modified");
@@ -1009,7 +1021,7 @@ public class WallService : IWallService
         }
     }
 
-    public async Task<Hold> AddHoldAsync(Guid wallId, double x, double y, double radius, string? color, HoldCategory category = HoldCategory.Hand, List<ShapePoint>? shapePoints = null, bool isVirtual = false, HoldMaterial? material = null, HoldHandType? handType = null)
+    public async Task<Hold> AddHoldAsync(Guid wallId, double x, double y, double radius, string? color, HoldCategory category = HoldCategory.Hand, List<ShapePoint>? shapePoints = null, bool isVirtual = false, HoldMaterial? material = null, HoldHandType? handType = null, Guid? wallPanelId = null)
     {
         using var op = BlocwerkMetrics.TimeOperation("Wall.AddHold", wallId);
         try
@@ -1036,9 +1048,16 @@ public class WallService : IWallService
             }
 
             var targetGen = wall.StagedAt != null ? wall.CurrentGeneration + 1 : wall.CurrentGeneration;
+            var stamp = await ResolvePanelStampAsync(db, wall, wallPanelId);
+            if (stamp is { } panelStamp)
+            {
+                targetGen = panelStamp.Generation;
+            }
+
             var hold = new Hold
             {
                 WallId = wallId,
+                WallPanelId = stamp?.PanelId,
                 X = x,
                 Y = y,
                 Radius = radius,
@@ -1064,6 +1083,104 @@ public class WallService : IWallService
         {
             op.Fail(ex);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Resolves the panel stamp for a hold placed while a specific panel was on screen: the panel
+    /// row plus the generation that panel's own reads key on. Returns null — meaning "no panel, keep
+    /// the wall-level generation", exactly as before — when no panel was given, the panel doesn't
+    /// belong to this wall, or a wall update is currently staged.
+    /// </summary>
+    /// <remarks>
+    /// Two things this must not get wrong.
+    /// Generation: panel reads filter on <c>panel.Generation</c> (WallPanelService.Reads), never on
+    /// <c>wall.CurrentGeneration</c> — after a subset promote a panel left untouched stays on an
+    /// older generation, so stamping the wall's number would hide the hold from that panel's overlay.
+    /// Staging: while <c>wall.StagedAt</c> is set the hold belongs to the staged set at
+    /// <c>CurrentGeneration + 1</c>, whose panels don't exist yet under these ids; pinning it to a
+    /// live panel would make it disappear at promotion. In that case no stamp is taken and the hold
+    /// behaves exactly as it did before (null panel, rendered on the centre panel by the viewer).
+    /// </remarks>
+    private static async Task<(Guid PanelId, int Generation)?> ResolvePanelStampAsync(
+        BlocwerkDbContext db,
+        Wall wall,
+        Guid? wallPanelId)
+    {
+        if (wallPanelId is not { } panelId || wall.StagedAt != null)
+        {
+            return null;
+        }
+
+        var panel = await db.WallPanels
+            .AsNoTracking()
+            .Where(p => p.Id == panelId && p.WallId == wall.Id && p.Photo != null)
+            .Select(p => new { p.Id, p.Generation })
+            .FirstOrDefaultAsync();
+
+        return panel is null ? null : (panel.Id, panel.Generation);
+    }
+
+    /// <summary>
+    /// The wall's live CENTER panel (Col 0, Row 0, latest generation carrying bytes), or null when the
+    /// wall has none. This is the panel the viewer already draws a panel-less hold on
+    /// (BoulderDetail/BoulderCreate/BoulderRevise all fall back to the center), so stamping it is a
+    /// data-only clarification and never moves a hold that renders today.
+    /// </summary>
+    /// <remarks>
+    /// Same staging rule as <see cref="ResolvePanelStampAsync"/>: while <c>wall.StagedAt</c> is set the
+    /// hold belongs to the staged set at <c>CurrentGeneration + 1</c>, and pinning it to a live panel
+    /// would make it vanish at promotion — so no stamp is taken and the null-panel center fallback
+    /// keeps rendering it. <c>Hold.Generation</c> is deliberately NOT touched by this stamp: it keys
+    /// cross-generation lineage (<see cref="HoldGenerationLink"/>), the outdated-panel flag and the
+    /// change journal, while every read that shows such a hold today resolves it by panel id alone.
+    /// </remarks>
+    private static async Task<Guid?> ResolveCenterPanelStampAsync(BlocwerkDbContext db, Guid wallId, CancellationToken ct)
+    {
+        var stagedAt = await db.Walls
+            .AsNoTracking()
+            .Where(w => w.Id == wallId)
+            .Select(w => w.StagedAt)
+            .FirstOrDefaultAsync(ct);
+        if (stagedAt != null)
+        {
+            return null;
+        }
+
+        return await db.WallPanels
+            .AsNoTracking()
+            .Where(p => p.WallId == wallId && p.Col == 0 && p.Row == 0 && p.Photo != null)
+            .OrderByDescending(p => p.Generation)
+            .Select(p => (Guid?)p.Id)
+            .FirstOrDefaultAsync(ct);
+    }
+
+    /// <summary>
+    /// Moves the merge survivor onto the panel its new geometry belongs to. The survivor has just
+    /// adopted the detected hold's coordinates, and those are panel-LOCAL — kept on another panel they
+    /// would be drawn against the wrong image — so it takes the target's panel AND that target's
+    /// generation, the pair the panel overlay reads key on together. Only a LIVE target panel is
+    /// adopted: inheriting a superseded panel row would drop the survivor out of the live-panel window.
+    /// A target with no panel (legacy single-image row) leaves the survivor's own stamp alone, and a
+    /// survivor that still has none falls back to the live center panel it already renders on.
+    /// </summary>
+    private static async Task AdoptMergedPanelStampAsync(
+        BlocwerkDbContext db,
+        Hold survivor,
+        Hold target,
+        CancellationToken ct)
+    {
+        if (target.WallPanelId is { } targetPanelId
+            && await db.WallPanels.AnyAsync(p => p.Id == targetPanelId && p.Photo != null, ct))
+        {
+            survivor.WallPanelId = targetPanelId;
+            survivor.Generation = target.Generation;
+            return;
+        }
+
+        if (survivor.WallPanelId is null)
+        {
+            survivor.WallPanelId = await ResolveCenterPanelStampAsync(db, survivor.WallId, ct);
         }
     }
 
@@ -1616,6 +1733,44 @@ public class WallService : IWallService
 
             _logger.LogInformation(
                 "Wall {WallId} anonymous kiosk setting set to {State} by {UserId}", wallId, allowed, user.Id);
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
+    }
+
+    public async Task SetKioskKeyboardShortcutsAsync(Guid wallId, bool allowed)
+    {
+        using var op = BlocwerkMetrics.TimeOperation("Wall.SetKioskKeyboardShortcuts", wallId);
+        try
+        {
+            // A kiosk session must not be able to grant its own tablet keyboard shortcuts.
+            // The service guard is the real gate; the card is also hidden on a tablet.
+            KioskGuard.EnsureNotKiosk(_kioskContext, "Changing kiosk keyboard shortcut permission");
+
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync();
+            db.CurrentUserId = user.Id;
+
+            // Owner or an Admin member, exactly as update mode. Filter-ignoring so an owner without
+            // an explicit member row can still administer their own wall.
+            await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
+
+            var wall = await db.Walls
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(w => w.Id == wallId);
+            if (wall == null)
+            {
+                throw new InvalidOperationException("Wall not found");
+            }
+
+            wall.AllowKioskKeyboardShortcuts = allowed;
+            await db.SaveChangesAsync();
+
+            _logger.LogInformation(
+                "Wall {WallId} kiosk keyboard shortcuts set to {State} by {UserId}", wallId, allowed, user.Id);
         }
         catch (Exception ex)
         {

@@ -1,5 +1,7 @@
 @inject IJSRuntime JS
+@inject KeyboardShortcutGate KeyGate
 @implements IDisposable
+@implements IAsyncDisposable
 @using Microsoft.AspNetCore.Components.Routing
 
 @* Warn before navigating away with unsaved manual-alignment drag work: all of it lives in
@@ -13,7 +15,7 @@
     </div>
     <div class="toolbar-right">
         <button class="tool-btn @(_showNames ? "active" : "")" @onclick="() => _showNames = !_showNames"
-                title="@(_showNames ? "Hide hold names" : "Show hold names")">
+                title="@(_showNames ? "Hide hold names (L)" : "Show hold names (L)")">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20" opacity="@(_showNames ? "1" : "0.5")">
                 <path d="M4 7V4h16v3M9 20h6M12 4v16" />
             </svg>
@@ -22,7 +24,7 @@
         @if (OnRequestHoldUsage != null)
         {
             <button class="tool-btn @A(EditMode.Usage)" @onclick="ToggleUsageMode"
-                    title="Show which holds are used by a boulder">
+                    title="Show which holds are used by a boulder (U)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
                     <circle cx="11" cy="11" r="7" /><line x1="16.5" y1="16.5" x2="21" y2="21" />
                     <path d="M8 11h6M11 8v6" />
@@ -35,35 +37,35 @@
         }
         @if (CanEdit && !BorderOnly)
         {
-            <button class="tool-btn @A(EditMode.Add)" @onclick="() => SetMode(EditMode.Add)" title="Add hold">
+            <button class="tool-btn @A(EditMode.Add)" @onclick="() => SetMode(EditMode.Add)" title="Add hold (A)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
                     <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" />
                 </svg>
             </button>
-            <button class="tool-btn @A(EditMode.Move)" @onclick="() => SetMode(EditMode.Move)" title="Select / Move">
+            <button class="tool-btn @A(EditMode.Move)" @onclick="() => SetMode(EditMode.Move)" title="Select / Move (M)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
                     <path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20" />
                 </svg>
             </button>
-            <button class="tool-btn @A(EditMode.Shape)" @onclick="() => SetMode(EditMode.Shape)" title="Edit hold shape">
+            <button class="tool-btn @A(EditMode.Shape)" @onclick="() => SetMode(EditMode.Shape)" title="Edit hold shape (S)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
                     <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5" />
                     <circle cx="12" cy="2" r="1.5" fill="currentColor" /><circle cx="22" cy="8.5" r="1.5" fill="currentColor" />
                 </svg>
             </button>
-            <button class="tool-btn @A(EditMode.Paint)" @onclick="() => SetMode(EditMode.Paint)" title="Paint color"
+            <button class="tool-btn @A(EditMode.Paint)" @onclick="() => SetMode(EditMode.Paint)" title="Paint color (P)"
                     style="@(_mode == EditMode.Paint ? $"background: {GetCssColor(_paintColor)};" : "")">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
                     <path d="M19 3H5a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2z" />
                     <path d="M12 11v6a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-1" />
                 </svg>
             </button>
-            <button class="tool-btn @A(EditMode.Name)" @onclick="() => SetMode(EditMode.Name)" title="Name hold">
+            <button class="tool-btn @A(EditMode.Name)" @onclick="() => SetMode(EditMode.Name)" title="Name hold (N)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
                     <path d="M4 7V4h16v3M9 20h6M12 4v16" />
                 </svg>
             </button>
-            <button class="tool-btn @(_mode == EditMode.Delete ? "active danger" : "")" @onclick="() => SetMode(EditMode.Delete)" title="Delete hold">
+            <button class="tool-btn @(_mode == EditMode.Delete ? "active danger" : "")" @onclick="() => SetMode(EditMode.Delete)" title="Delete hold (D)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
                     <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                 </svg>
@@ -71,20 +73,20 @@
             <span class="toolbar-sep"></span>
             @if (CanEditShape)
             {
-                <button class="tool-btn @A(EditMode.Border)" @onclick="() => SetMode(EditMode.Border)" title="Edit wall border">
+                <button class="tool-btn @A(EditMode.Border)" @onclick="() => SetMode(EditMode.Border)" title="Edit wall border (B)">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
                         <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2" />
                     </svg>
                 </button>
             }
-            <button class="tool-btn" @onclick="() => _showBorder = !_showBorder" title="@(_showBorder ? "Hide" : "Show") border &amp; segments">
+            <button class="tool-btn" @onclick="() => _showBorder = !_showBorder" title="@(_showBorder ? "Hide" : "Show") border &amp; segments (O)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="@(_showBorder ? "2" : "1")" width="20" height="20" opacity="@(_showBorder ? "1" : "0.4")">
                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
                 </svg>
             </button>
             @if (OnRedetectRequested.HasDelegate)
             {
-                <button class="tool-btn" @onclick="OnRedetect" title="Re-detect holds on this panel" disabled="@_isDetecting">
+                <button class="tool-btn" @onclick="OnRedetect" title="Re-detect holds on this panel (R)" disabled="@_isDetecting">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
                         <path d="M23 4v6h-6M1 20v-6h6" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
                     </svg>
@@ -98,7 +100,7 @@
                     </svg>
                 </button>
             }
-            <button class="tool-btn @A(EditMode.ShapeTilt)" @onclick="() => SetMode(EditMode.ShapeTilt)" title="Tilt hold shape: click a hold, then drag the handle to rotate the polygon in X/Y">
+            <button class="tool-btn @A(EditMode.ShapeTilt)" @onclick="() => SetMode(EditMode.ShapeTilt)" title="Tilt hold shape (T): click a hold, then drag the handle to rotate the polygon in X/Y">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
                     <ellipse cx="12" cy="12" rx="9" ry="4" />
                     <ellipse cx="12" cy="12" rx="4" ry="9" />
@@ -117,7 +119,7 @@
             @if (IsStaging && !ManualAlignment)
             {
                 <span class="toolbar-sep"></span>
-                <button class="tool-btn @A(EditMode.Merge)" @onclick="() => SetMode(EditMode.Merge)" title="Merge: click a new hold then the matching old hold">
+                <button class="tool-btn @A(EditMode.Merge)" @onclick="() => SetMode(EditMode.Merge)" title="Merge (G): click a new hold then the matching old hold">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
                         <circle cx="7" cy="12" r="4" /><circle cx="17" cy="12" r="4" /><line x1="11" y1="12" x2="13" y2="12" />
                     </svg>
@@ -127,7 +129,7 @@
             {
                 <span class="toolbar-sep"></span>
                 <button class="tool-btn @A(EditMode.MakeActual)" @onclick="() => SetMode(EditMode.MakeActual)"
-                        title="Make a virtual (placeholder) hold actual: promote it as-is or merge it into a detected hold">
+                        title="Make actual (K): promote a virtual (placeholder) hold as-is or merge it into a detected hold">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
                         <circle cx="12" cy="12" r="9" stroke-dasharray="2.2 1.6" /><polyline points="8.5 12 11 14.5 15.5 9.5" />
                     </svg>
@@ -147,7 +149,7 @@
             }
             <span class="toolbar-sep"></span>
             <button class="tool-btn @A(EditMode.MarkUnchanged)" @onclick="() => SetMode(EditMode.MarkUnchanged)"
-                    title="This hold didn't physically change: reset a falsely-moved staged hold, and pull its boulders back out of historic state">
+                    title="Mark unchanged (C): this hold didn't physically change — reset a falsely-moved staged hold, and pull its boulders back out of historic state">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
                     <path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><polyline points="3 3 3 8 8 8" /><polyline points="9 12 11.4 14.4 15.5 10" />
                 </svg>
@@ -155,12 +157,12 @@
         }
         @if (BorderOnly && CanEditShape)
         {
-            <button class="tool-btn @A(EditMode.Border)" @onclick="() => SetMode(EditMode.Border)" title="Edit wall border">
+            <button class="tool-btn @A(EditMode.Border)" @onclick="() => SetMode(EditMode.Border)" title="Edit wall border (B)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
                     <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2" />
                 </svg>
             </button>
-            <button class="tool-btn" @onclick="() => _showBorder = !_showBorder" title="@(_showBorder ? "Hide" : "Show") border &amp; segments">
+            <button class="tool-btn" @onclick="() => _showBorder = !_showBorder" title="@(_showBorder ? "Hide" : "Show") border &amp; segments (O)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="@(_showBorder ? "2" : "1")" width="20" height="20" opacity="@(_showBorder ? "1" : "0.4")">
                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
                 </svg>
@@ -500,8 +502,13 @@
     {
         <div class="option-bar">
             <div class="option-group swatches"><label>Paint:</label>
-                @foreach (var c in HoldPalette.All)
-                { <button class="color-swatch @(_paintColor == c.Key ? "active" : "")" style="background: @c.Hex;" @onclick="() => _paintColor = c.Key" title="@c.DisplayName"></button> }
+                @for (var i = 0; i < HoldPalette.All.Count; i++)
+                {
+                    var c = HoldPalette.All[i];
+                    @* Only the first nine are reachable by digit; the rest stay mouse-only. *@
+                    var swatchKey = i < 9 ? $" ({i + 1})" : string.Empty;
+                    <button class="color-swatch @(_paintColor == c.Key ? "active" : "")" style="background: @c.Hex;" @onclick="() => _paintColor = c.Key" title="@(c.DisplayName + swatchKey)"></button>
+                }
             </div>
         </div>
     }
@@ -1052,6 +1059,39 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // The dispatcher is global and last-registered wins, so only an editable instance may claim
+        // these letters: WallDetail renders a read-only border-only editor alongside the editing one,
+        // and CanEdit flips at runtime when the page enters/leaves edit mode. Hence this lives here
+        // rather than behind firstRender.
+        if (CanEdit && _keys == null)
+        {
+            // Left unregistered on purpose: the reconcile below registers it on its first pass,
+            // because SetKeysAsync falls back to RegisterAsync while the scope has no token yet.
+            _keys = new KeyboardShortcutScope(JS, OnShortcut, KeyGate);
+            _keysDeclared = null;
+        }
+        else if (!CanEdit && _keys != null)
+        {
+            await _keys.DisposeAsync();
+            _keys = null;
+            _keysDeclared = null;
+        }
+
+        // The conditional keys (ctrl+s, Escape) turn on and off from a dozen places, including async
+        // continuations, so the set is reconciled here after every render instead of at each call
+        // site — one place, no drift. Guarded on the joined declaration so an unchanged set costs no
+        // interop round-trip.
+        if (_keys != null)
+        {
+            var keys = CurrentShortcutKeys();
+            var declared = string.Join(',', keys);
+            if (declared != _keysDeclared)
+            {
+                _keysDeclared = declared;
+                await _keys.SetKeysAsync(keys);
+            }
+        }
+
         // Re-attach every render, unconditionally. setupScroll is idempotent in JS (a no-op once
         // bound to this exact node), so the common case is cheap — but attaching on firstRender
         // ONLY meant a stale ref at that moment (the reconnect / fast re-render race), or a node
@@ -1086,6 +1126,22 @@
     }
 
     public void Dispose() => _zoomState.Dispose();
+
+    /// <remarks>
+    /// The renderer prefers <see cref="IAsyncDisposable"/> over <see cref="IDisposable"/>, so this
+    /// path must release the zoom state too; <see cref="Dispose"/> stays for any other caller.
+    /// </remarks>
+    public async ValueTask DisposeAsync()
+    {
+        if (_keys != null)
+        {
+            await _keys.DisposeAsync();
+            _keys = null;
+        }
+
+        _zoomState.Dispose();
+    }
+
 
     private List<WallSegmentDraft> _segmentDrafts = [];
 
@@ -2075,5 +2131,255 @@
 
     private static string GetHoldStrokeColor(Hold h) => HoldPalette.Hex(h.Color);
     private record RelativePos(double X, double Y);
+
+    // ---- keyboard shortcuts (canonical keymap: Components/Pages/Help/KeyboardShortcuts.razor) ----
+    private KeyboardShortcutScope? _keys;
+
+    // The comma-joined key set last handed to JS, so the reconcile below only pays for an interop
+    // round-trip when the declaration actually changed.
+    private string? _keysDeclared;
+
+    // Always declared: the dispatcher preventDefaults a key the moment a scope DECLARES it, and
+    // none of these has a browser default worth preserving (letters, digits, brackets and the zoom
+    // keys do nothing in an unfocused document), so swallowing them unconditionally is harmless and
+    // cheaper than churning the declaration per tool. Availability is still decided per keystroke
+    // below, mirroring each button's own gate.
+    private static readonly string[] AlwaysShortcutKeys =
+    [
+        "a", "m", "s", "p", "n", "d", "b", "t", "u", "g", "k", "c",
+        "l", "o", "r",
+        "1", "2", "3", "4", "5", "6", "7", "8", "9", "[", "]",
+        "+", "-", "0",
+    ];
+
+    /// <summary>
+    /// The keys live right now. Ctrl/Cmd+S and Escape are conditional because declaring them is
+    /// what suppresses the browser's own behaviour: an always-declared Ctrl+S would block the
+    /// browser's Save even with nothing staged and during ManualAlignment, and an always-declared
+    /// Escape would swallow the reflex that dismisses prompts elsewhere on the page.
+    /// </summary>
+    private string[] CurrentShortcutKeys()
+    {
+        var keys = new List<string>(AlwaysShortcutKeys.Length + 2);
+        keys.AddRange(AlwaysShortcutKeys);
+
+        // Exactly the gate the save button uses, so the key is claimed only while that button
+        // is on screen and would act.
+        if (!ManualAlignment && (_pendingChanges > 0 || _alignmentChangedIds.Count > 0))
+        {
+            keys.Add("ctrl+s");
+        }
+
+        // After the discard removal below, cancelling a sub-mode is the ONLY thing Escape does.
+        if (HasCancellableSubMode())
+        {
+            keys.Add("Escape");
+        }
+
+        return [.. keys];
+    }
+
+    private async Task OnShortcut(string key)
+    {
+        if (!TryToolShortcut(key) && !TryPaintShortcut(key) && !TryEscape(key))
+        {
+            await HandleAsyncShortcut(key);
+        }
+
+        // The callback arrives from JS, outside any Blazor UI event, so nothing renders for us.
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Mode switches. Every case repeats the visibility gate of the button it mirrors, so a key
+    /// whose tool is not on the toolbar in this configuration falls through as a no-op.
+    /// </summary>
+    private bool TryToolShortcut(string key)
+    {
+        var tools = CanEdit && !BorderOnly;
+        switch (key)
+        {
+            case "a" when tools: SetMode(EditMode.Add); return true;
+            case "m" when tools: SetMode(EditMode.Move); return true;
+            case "s" when tools: SetMode(EditMode.Shape); return true;
+            case "p" when tools: SetMode(EditMode.Paint); return true;
+            case "n" when tools: SetMode(EditMode.Name); return true;
+            case "d" when tools: SetMode(EditMode.Delete); return true;
+            case "t" when tools: SetMode(EditMode.ShapeTilt); return true;
+            case "c" when tools: SetMode(EditMode.MarkUnchanged); return true;
+            case "g" when tools && IsStaging && !ManualAlignment: SetMode(EditMode.Merge); return true;
+            case "k" when tools && !IsStaging: SetMode(EditMode.MakeActual); return true;
+            case "b" when CanEdit && CanEditShape: SetMode(EditMode.Border); return true;
+            case "l": _showNames = !_showNames; return true;
+            case "o" when tools || (BorderOnly && CanEditShape): _showBorder = !_showBorder; return true;
+            default: return false;
+        }
+    }
+
+    /// <summary>
+    /// Paint-colour picking. Bound to the swatch bar, which only exists in Paint mode, so the keys
+    /// stay inert elsewhere instead of silently changing a colour the user cannot see.
+    /// </summary>
+    private bool TryPaintShortcut(string key)
+    {
+        if (!CanEdit || _mode != EditMode.Paint)
+        {
+            return false;
+        }
+
+        var palette = HoldPalette.All;
+        if (key.Length == 1 && key[0] >= '1' && key[0] <= '9')
+        {
+            var idx = key[0] - '1';
+            if (idx < palette.Count)
+            {
+                _paintColor = palette[idx].Key;
+            }
+
+            return true;
+        }
+
+        if (key != "[" && key != "]")
+        {
+            return false;
+        }
+
+        var current = 0;
+        for (var i = 0; i < palette.Count; i++)
+        {
+            if (palette[i].Key == _paintColor)
+            {
+                current = i;
+                break;
+            }
+        }
+
+        var step = key == "]" ? 1 : -1;
+        _paintColor = palette[(current + step + palette.Count) % palette.Count].Key;
+        return true;
+    }
+
+    /// <summary>
+    /// True while Escape has something to unwind. Kept next to <see cref="CancelSubMode"/> so the
+    /// declaration and the action can never drift apart.
+    /// </summary>
+    private bool HasCancellableSubMode()
+        => CanEdit
+           && (_namingHoldId.HasValue
+               || _pendingMerge != null
+               || _mergeFirstPickId.HasValue
+               || _makeActualVirtualId != null
+               || _makeActualTargetId != null
+               || _markUnchangedHoldId.HasValue
+               || (_mode == EditMode.ShapeTilt && _shapeTiltHoldId.HasValue));
+
+    /// <summary>
+    /// Escape cancels the active sub-mode and NOTHING else.
+    /// </summary>
+    /// <remarks>
+    /// It deliberately never discards staged work. This scope is registered globally for the whole
+    /// page whenever <see cref="CanEdit"/> is set, so Escape fires wherever the user happens to be
+    /// — including on WallDetail's plain-markup "switch anyway?" prompt, which is not a Modal and
+    /// therefore not covered by the dispatcher's takeover guard. Dismissing a prompt with Escape is
+    /// a universal reflex; making that reflex throw away every pending hold edit is indefensible.
+    /// Discarding stays a deliberate click on the labelled button, exactly as the wall-update wizard
+    /// refused the same binding for the same reason.
+    /// </remarks>
+    private bool TryEscape(string key)
+    {
+        if (key != "Escape" || !CanEdit)
+        {
+            return false;
+        }
+
+        // Swallowed either way, so a stray Escape never falls through to another scope.
+        CancelSubMode();
+        return true;
+    }
+
+    /// <summary>
+    /// Unwinds one level: the innermost pending sub-mode, in the order they can be entered.
+    /// </summary>
+    private void CancelSubMode()
+    {
+        if (_namingHoldId.HasValue)
+        {
+            _namingHoldId = null;
+            return;
+        }
+
+        if (_pendingMerge != null || _mergeFirstPickId.HasValue)
+        {
+            CancelMerge();
+            return;
+        }
+
+        if (_makeActualVirtualId != null || _makeActualTargetId != null)
+        {
+            CancelMakeActual();
+            return;
+        }
+
+        if (_markUnchangedHoldId.HasValue)
+        {
+            _markUnchangedHoldId = null;
+            return;
+        }
+
+        if (_mode == EditMode.ShapeTilt && _shapeTiltHoldId.HasValue)
+        {
+            ResetShapeTilt();
+            _shapeTiltHoldId = null;
+            ClearShapeTiltSnapshot();
+        }
+    }
+
+    private async Task HandleAsyncShortcut(string key)
+    {
+        switch (key)
+        {
+            case "u" when OnRequestHoldUsage != null:
+                await ToggleUsageMode();
+                break;
+            case "r" when CanEdit && !BorderOnly && OnRedetectRequested.HasDelegate && !_isDetecting:
+                await OnRedetect();
+                break;
+            case "ctrl+s" when CanEdit && !ManualAlignment && (_pendingChanges > 0 || _alignmentChangedIds.Count > 0):
+                await SaveChanges();
+                break;
+            case "+":
+            case "-":
+            case "0":
+                await ZoomByKey(key);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Zoom goes straight back out to JS: viewport.js is the sole authority for the transform, and
+    /// mirroring the level into Blazor state would let a late render stomp what JS already applied.
+    /// </summary>
+    private async Task ZoomByKey(string key)
+    {
+        try
+        {
+            if (key == "0")
+            {
+                await JS.InvokeVoidAsync("bwViewport.zoomTo", _viewportRef, 1.0);
+            }
+            else
+            {
+                await JS.InvokeVoidAsync("bwViewport.zoomBy", _viewportRef, key == "+" ? 1.25 : 1 / 1.25);
+            }
+        }
+        catch (JSException)
+        {
+            // Stale element reference (re-render/reconnect race): the next keystroke retries.
+        }
+        catch (JSDisconnectedException)
+        {
+            // Circuit gone; there is no viewport left to zoom.
+        }
+    }
 }
 

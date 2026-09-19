@@ -44,6 +44,10 @@
    and because that card is already admin-only and already hidden on a kiosk session. *@
 <WallKioskAnonymousPanel WallId="WallId" />
 
+@* The other kiosk capability an admin grants per wall: whether a keyboard attached to the tablet
+   may drive the editing shortcuts. Same card, same gates, same reasoning. *@
+<WallKioskShortcutPanel WallId="WallId" />
+
 @code {
     /// <summary>The wall being administered. The ONLY wall this card can ever approve a tablet for.</summary>
     [Parameter]

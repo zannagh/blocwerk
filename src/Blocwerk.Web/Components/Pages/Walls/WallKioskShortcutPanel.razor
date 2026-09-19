@@ -1,0 +1,111 @@
+@* Whether a keyboard plugged into this wall's tablet may drive the app's editing shortcuts. Off by
+   default and off for every existing wall, because a kiosk is a shared, unattended device.
+
+   Admin-only, and never rendered on a kiosk session — the wall is administered from an admin's own
+   device. That hiding is cosmetic; WallService.SetKioskKeyboardShortcutsAsync refuses a kiosk caller
+   and re-checks wall admin against the database, so a tablet cannot grant itself the capability. *@
+@inject IWallService WallService
+@inject ILogger<WallKioskShortcutPanel> Logger
+
+<div class="settings-panel wall-kiosk-shortcut-panel">
+    <p class="apikey-blurb">
+        @if (_allowed)
+        {
+            <text>
+                Keyboard shortcuts are on for this wall's tablet. A kiosk is a shared, unattended
+                device, so anyone who walks up with a keyboard &mdash; or leans on one that is
+                already plugged in &mdash; can drive the editing shortcuts, including the key that
+                <strong>deletes a hold</strong>.
+            </text>
+        }
+        else
+        {
+            <text>
+                Keyboard shortcuts are off on this wall's tablet. A kiosk is a shared, unattended
+                device, so anyone who walks up with a keyboard &mdash; or leans on one that is
+                already plugged in &mdash; could otherwise drive the editing shortcuts, including
+                the key that <strong>deletes a hold</strong>.
+            </text>
+        }
+    </p>
+
+    <p class="apikey-blurb">
+        Turn this on only where the tablet has a keyboard you actually want used, such as a setting
+        desk somebody is standing at. It changes nothing about what the tablet is allowed to do
+        &mdash; only whether keys can trigger the actions its buttons already offer.
+    </p>
+
+    <p class="apikey-blurb">
+        A tablet that is already running reads this setting once, when the page loads. Whichever way
+        you change it, the tablet keeps behaving as before until it is reloaded or reconnects
+        &mdash; so if you are switching it off to stop a keyboard being misused right now, go and
+        reload the tablet.
+    </p>
+
+    @if (_message is not null)
+    {
+        <div class="wall-kiosk-pair-ok" role="status">@_message</div>
+    }
+
+    <label class="checkbox-label">
+        <input type="checkbox" checked="@_allowed" disabled="@_busy"
+               @onchange="e => ToggleAsync(e.Value is true)" />
+        Allow keyboard shortcuts on this wall's tablet
+    </label>
+</div>
+
+@code {
+    /// <summary>The wall being administered. The ONLY wall this card can ever change.</summary>
+    [Parameter]
+    public Guid WallId { get; set; }
+
+    private bool _allowed;
+    private bool _busy;
+    private string? _message;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Read the stored value so the box opens on the truth. A failure here (a wall the caller
+        // cannot read) leaves it unticked, which is the safe way to be wrong.
+        try
+        {
+            var wall = await WallService.GetWallAsync(WallId);
+            _allowed = wall?.AllowKioskKeyboardShortcuts ?? false;
+        }
+        catch (Exception)
+        {
+            _allowed = false;
+        }
+    }
+
+    private async Task ToggleAsync(bool allowed)
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        _message = null;
+
+        try
+        {
+            await WallService.SetKioskKeyboardShortcutsAsync(WallId, allowed);
+            _allowed = allowed;
+            _message = allowed
+                ? "Saved: on. A keyboard on this wall's tablet can use the shortcuts once the tablet is reloaded or reconnects."
+                : "Saved: off. A tablet that is already running keeps its shortcuts until you reload it — reload it now if a keyboard is being misused.";
+        }
+        catch (Exception ex)
+        {
+            // Leave the box showing the state that actually holds, not the change that failed.
+            _allowed = !allowed;
+            Logger.LogError(ex, "Could not change the kiosk keyboard-shortcut setting for wall {WallId}.", WallId);
+            _message = "Could not change this setting. Nothing was saved — please try again.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

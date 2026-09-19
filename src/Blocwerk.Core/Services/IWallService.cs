@@ -1,4 +1,4 @@
-using Blocwerk.Core.Abstractions;
+﻿using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 
@@ -94,7 +94,13 @@ public interface IWallService
     /// </summary>
     Task<WallPhotoTag?> GetPhotoTagForGenerationAsync(Guid wallId, string? shareToken, int generation);
 
-    Task<Hold> AddHoldAsync(Guid wallId, double x, double y, double radius, string? color, HoldCategory category = HoldCategory.Hand, List<ShapePoint>? shapePoints = null, bool isVirtual = false, HoldMaterial? material = null, HoldHandType? handType = null);
+    /// <summary>
+    /// Adds a hold to the wall. <paramref name="wallPanelId"/> is the panel the user was looking at
+    /// when placing it (big walls); the hold is then stamped with that panel and the PANEL's own
+    /// generation, so it renders on the right photo. Omit it — or place while an update is staged —
+    /// and the hold keeps its historical shape: no panel, wall-level generation.
+    /// </summary>
+    Task<Hold> AddHoldAsync(Guid wallId, double x, double y, double radius, string? color, HoldCategory category = HoldCategory.Hand, List<ShapePoint>? shapePoints = null, bool isVirtual = false, HoldMaterial? material = null, HoldHandType? handType = null, Guid? wallPanelId = null);
 
     Task<Hold> UpdateHoldAsync(Guid holdId, double x, double y, double radius, string? color = null, HoldCategory? category = null, bool? isOnKickboard = null, List<ShapePoint>? shapePoints = null, string? name = null, HoldMaterial? material = null, bool flagBouldersOnMove = true, HoldHandType? handType = null);
 
@@ -134,4 +140,17 @@ public interface IWallService
     /// keeps a tablet from granting itself the capability.
     /// </remarks>
     Task SetAnonymousKioskSettingAsync(Guid wallId, bool allowed);
+
+    /// <summary>
+    /// Turns keyboard shortcuts on or off for this wall's kiosk tablet
+    /// (<c>Wall.AllowKioskKeyboardShortcuts</c>). Requires the caller to be the wall owner or an
+    /// Admin member.
+    /// </summary>
+    /// <remarks>
+    /// Off by default and off for every existing wall: a kiosk is a shared, unattended tablet, and a
+    /// keyboard within reach of anyone walking past should not be able to drive destructive editor
+    /// shortcuts. A kiosk session cannot call it — the wall is administered from an admin's own
+    /// device — which keeps a tablet from granting itself the capability.
+    /// </remarks>
+    Task SetKioskKeyboardShortcutsAsync(Guid wallId, bool allowed);
 }

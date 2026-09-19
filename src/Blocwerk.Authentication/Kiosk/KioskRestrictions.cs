@@ -138,6 +138,12 @@ public static class KioskRestrictions
         "/about",
         "/privacy",
 
+        // The keyboard-shortcut reference. Needed as a PREFIX, not just as an allowed page type:
+        // the `?` key opens /help/keyboard in a NEW TAB, which is a fresh HTTP GET that hits the
+        // middleware and never the in-circuit route gate. Without this the page entry below would
+        // be inert for the only way anyone actually reaches the page.
+        "/help",
+
         // Signing in and out on the tablet. The sign-in surface must stay reachable: kiosk
         // registration itself posts from /oauth-select, and its failure redirect lands back there.
         // The account-TAKEOVER halves of this surface (/account/link, /account/external,
@@ -206,6 +212,21 @@ public static class KioskRestrictions
         "Blocwerk.Web.Components.Pages.Guides.Guides",
         "Blocwerk.Web.Components.Pages.Guides.AngleWedge",
         "Blocwerk.Web.Components.Pages.Guides.HomewallsVolumes",
+
+        // The keyboard-shortcut reference at /help/keyboard. Allowed on the same footing as About,
+        // Privacy and the guides: static SSR content, [AllowAnonymous], no data access, no actions,
+        // nothing to hand out. Refusing it would be a new policy, not this list's policy — nothing
+        // is refused here for being merely unhelpful on a tablet, only for a blast radius that
+        // escapes the session, and documentation of key bindings has none.
+        //
+        // The new-tab worry cuts the other way. A wall that has opted in via
+        // Wall.AllowKioskKeyboardShortcuts is a wall whose admin WANTS a keyboard at the tablet, and
+        // `?` is the one binding that tells a user what the other keys do; refusing it turns that
+        // key into a bounce to ?kiosk_blocked=1 — the same "looks like the tablet is broken" failure
+        // that put Profile and KioskPair on this list. The tab it opens carries a "← Home" link and
+        // the page is otherwise a dead end by construction, so the worst case is a second tab
+        // showing static text. On a wall that has NOT opted in the key never fires at all.
+        "Blocwerk.Web.Components.Pages.Help.KeyboardShortcuts",
         "Blocwerk.Web.Components.Pages.Kiosk.KioskUsers",
 
         // Profiles — one page serving /profile and /profile/{userId}. Allowed for the SECOND route:

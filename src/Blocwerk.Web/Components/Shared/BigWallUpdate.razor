@@ -36,13 +36,13 @@
             break;
 
         case Phase.Upload:
-            <BigWallUpdateUploader OnStart="OnUpload" OnCancel="Close" />
+            <BigWallUpdateUploader @ref="_uploader" OnStart="OnUpload" OnCancel="Close" />
             break;
 
         case Phase.Detected:
             @if (_session is not null)
             {
-                <TouchupStep WallId="WallId" Session="_session"
+                <TouchupStep @ref="_detectedStep" WallId="WallId" Session="_session"
                              Heading="Check the detected holds"
                              Lead="Fix the detection before we match it against the old wall."
                              OnContinue="OnDetectedContinue" OnSkip="OnDetectedContinue">
@@ -58,8 +58,9 @@
         case Phase.Carryover:
             @if (_session is not null)
             {
-                <CarryoverReview WallId="WallId" CurrentGeneration="CurrentGeneration" Session="_session"
-                                 OnContinue="OnCarryoverContinue" OnDiscard="Discard" />
+                <CarryoverReview @ref="_carryover" WallId="WallId" CurrentGeneration="CurrentGeneration" Session="_session"
+                                 OnContinue="OnCarryoverContinue" OnDiscard="Discard"
+                                 OnSubViewOpenChanged="OnCarryoverSubViewOpenChanged" />
             }
             break;
 
@@ -78,7 +79,7 @@
         case Phase.Touchup:
             @if (_session is not null)
             {
-                <TouchupStep WallId="WallId" Session="_session"
+                <TouchupStep @ref="_touchupStep" WallId="WallId" Session="_session"
                              OnContinue="OnTouchupContinue" OnSkip="OnTouchupSkip" />
             }
             break;

@@ -178,6 +178,10 @@ public static class Program
         // domain-change notifier so revisits are served from memory and edits live-refresh.
         builder.Services.AddScoped<WallCacheState>();
 
+        // Per-circuit answer to "may this session drive the global keyboard shortcuts?". Scoped so
+        // the kiosk wall's opt-in flag is read once per circuit, whichever component asks first.
+        builder.Services.AddScoped<KeyboardShortcutGate>();
+
         // Counts live circuits into the "connected users" gauge.
         builder.Services.AddScoped<CircuitHandler, TelemetryCircuitHandler>();
 

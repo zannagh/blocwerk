@@ -1,4 +1,5 @@
 @inject IJSRuntime JS
+@inject KeyboardShortcutGate KeyGate
 @implements IAsyncDisposable
 
 <div class="wall-carousel-root @(Locked ? "editing" : string.Empty)">
@@ -43,6 +44,8 @@
     // swiped somewhere else back to the initial page.
     private int _appliedInitialPage;
     private bool _repositionPending;
+
+    private KeyboardShortcutScope? _keys;
 
     private IEnumerable<(RenderFragment Fragment, int Index)> Pages()
     {
@@ -90,8 +93,18 @@
             // visible swipe from page 1. Revealing happens on the StateHasChanged re-render below.
             await JS.InvokeVoidAsync("wallCarousel.initPage", _ref, _currentPage);
             _initialized = true;
+            // Registered after positioning so the first paint is never held up by an extra
+            // round-trip. This scope lands low on the dispatcher stack: anything rendered inside a
+            // pane (the panel viewer, the photo editor) registers later and therefore wins the
+            // arrows while it is alive.
+            await RegisterShortcutsAsync();
             StateHasChanged();
             return;
+        }
+
+        if (firstRender)
+        {
+            await RegisterShortcutsAsync();
         }
 
         if (_repositionPending)
@@ -101,6 +114,63 @@
             // Instant: this is a deep link resolving, not a swipe the user asked for.
             await GoToPageAsync(InitialPage, smooth: false);
         }
+    }
+
+    private async Task RegisterShortcutsAsync()
+    {
+        _keys = new KeyboardShortcutScope(JS, OnShortcutAsync, KeyGate);
+        await _keys.RegisterAsync("ArrowLeft", "ArrowRight");
+    }
+
+    private async Task OnShortcutAsync(string key)
+    {
+        switch (key)
+        {
+            case "ArrowLeft":
+                await PreviousAsync();
+                break;
+            case "ArrowRight":
+                await NextAsync();
+                break;
+        }
+
+        // The dispatcher callback arrives outside a Blazor UI event, so nothing would re-render the
+        // dots on its own.
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Moves one page forward. Mirrors the dot buttons, including their <see cref="Locked"/> guard.
+    /// </summary>
+    public async Task NextAsync()
+    {
+        await StepAsync(1);
+    }
+
+    /// <summary>
+    /// Moves one page back. Mirrors the dot buttons, including their <see cref="Locked"/> guard.
+    /// </summary>
+    public async Task PreviousAsync()
+    {
+        await StepAsync(-1);
+    }
+
+    private async Task StepAsync(int delta)
+    {
+        // Locked is set while a pane is being edited: a stray arrow must not scroll the edit surface
+        // out from under the user, exactly as a dot click must not.
+        if (Locked || _fragCount == 0)
+        {
+            return;
+        }
+
+        var target = Math.Clamp(_currentPage + delta, 0, _fragCount - 1);
+        if (target == _currentPage)
+        {
+            return;
+        }
+
+        await GoToPageAsync(target);
     }
 
     private async Task GoTo(int idx)
@@ -151,5 +221,12 @@
         }
     }
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    public async ValueTask DisposeAsync()
+    {
+        if (_keys is not null)
+        {
+            await _keys.DisposeAsync();
+            _keys = null;
+        }
+    }
 }

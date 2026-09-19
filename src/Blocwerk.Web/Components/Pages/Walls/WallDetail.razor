@@ -408,11 +408,18 @@ else
                             </div>
                             @if (_confirmingPanelStep)
                             {
-                                <p class="staged-hint">Unsaved hold changes on this panel will be discarded. Switch anyway?</p>
-                                <div class="staged-actions">
-                                    <button class="btn-primary" @onclick="ConfirmPanelStep">Discard &amp; switch</button>
-                                    <button class="btn-secondary" @onclick="CancelPanelStep">Cancel</button>
-                                </div>
+                                @* Uses the shared Modal rather than inline markup so it renders the
+                                   .bw-modal-backdrop the global keyboard dispatcher stands down on, and
+                                   so it gets Escape-to-close plus a focus trap. Escape and backdrop
+                                   clicks map to Cancel — the non-destructive action, which keeps the
+                                   unsaved hold edits and stays on the current panel. *@
+                                <Modal AriaLabel="Discard unsaved hold changes?" OnClose="CancelPanelStep">
+                                    <p class="staged-hint">Unsaved hold changes on this panel will be discarded. Switch anyway?</p>
+                                    <div class="staged-actions">
+                                        <button class="btn-primary" @onclick="ConfirmPanelStep">Discard &amp; switch</button>
+                                        <button class="btn-secondary" @onclick="CancelPanelStep">Cancel</button>
+                                    </div>
+                                </Modal>
                             }
                             <WallPhotoEditor WallId="_wall.Id"
                                              @ref="_panelEditor"

@@ -136,6 +136,13 @@ else
     /// </summary>
     [Parameter] public string? PhotoUrl { get; set; }
 
+    /// <summary>
+    /// The big-wall panel currently shown (the one <see cref="PhotoUrl"/> points at), or null on a
+    /// single-image wall. A virtual hold placed here is stamped with it, so it is stored in that
+    /// panel's coordinate space AND knows which photo it belongs to.
+    /// </summary>
+    [Parameter] public Guid? PanelId { get; set; }
+
     [Parameter] public List<Hold> AllHolds { get; set; } = [];
     [Parameter] public List<BoulderHoldInput> SelectedHolds { get; set; } = [];
     [Parameter] public EventCallback<List<BoulderHoldInput>> SelectedHoldsChanged { get; set; }
@@ -280,7 +287,8 @@ else
             color: null,
             category: cat,
             shapePoints: null,
-            isVirtual: true);
+            isVirtual: true,
+            wallPanelId: PanelId);
         AllHolds.Add(hold);
         SelectedHolds.Add(new BoulderHoldInput(hold.Id, _placeType, usage));
         await SelectedHoldsChanged.InvokeAsync(SelectedHolds);

@@ -33,6 +33,9 @@
     @if (_showInfoPopover)
     {
         <div class="info-popover">
+            @* The `?` shortcut also opens this page, but that only helps people who already know
+               about the keymap — the popover is the discoverable entry point. *@
+            <a href="/help/keyboard" @onclick="() => _showInfoPopover = false">Keyboard shortcuts</a>
             <a href="/about" @onclick="() => _showInfoPopover = false">Impressum</a>
             <a href="/privacy" @onclick="() => _showInfoPopover = false">Privacy Policy</a>
             <span class="info-version" title="Deployed image version">v@(Version)</span>

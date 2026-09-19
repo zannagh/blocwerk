@@ -17,9 +17,6 @@ namespace Blocwerk.Web.Components.Shared;
 /// </summary>
 public partial class TouchupStep
 {
-    [Inject]
-    private IWallPanelService WallPanelService { get; set; } = default!;
-
     [Parameter] public Guid WallId { get; set; }
 
     /// <summary>The in-flight update session: its centre + neighbour panel ids are the staged panels.</summary>
@@ -43,6 +40,9 @@ public partial class TouchupStep
     /// </summary>
     [Parameter] public RenderFragment? LeadDetail { get; set; }
 
+    [Inject]
+    private IWallPanelService WallPanelService { get; set; } = default!;
+
     // Normalized default radius for a user-added hold (~2% of the panel), matching the review pane.
     private const double DefaultNewHoldRadius = 0.02;
 
@@ -56,7 +56,36 @@ public partial class TouchupStep
     private StagedPanelRef? CurrentPanel =>
         _panelIndex >= 0 && _panelIndex < _panels.Count ? _panels[_panelIndex] : null;
 
-    private string StagedPhotoUrl(Guid panelId) => $"/api/walls/{WallId}/panels/{panelId}/staged-photo";
+    /// <summary>
+    /// Keyboard entry point for the wizard's "a" binding (toggle add-hold mode). The wizard owns the
+    /// single shortcut scope, so the key arrives here from outside a Blazor event and this step has
+    /// to ask for its own re-render.
+    /// </summary>
+    public void TryToggleAddMode()
+    {
+        if (_loading || CurrentPanel is null)
+        {
+            return;
+        }
+
+        ToggleAddMode();
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Keyboard entry point for the wizard's "x" binding (remove the selected hold). Mirrors the
+    /// Remove button's disabled state: with nothing selected the key does nothing at all.
+    /// </summary>
+    public async Task TryRemoveSelectedHoldAsync()
+    {
+        if (_loading || _selectedHoldId is null)
+        {
+            return;
+        }
+
+        await RemoveSelectedHold();
+        StateHasChanged();
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -72,6 +101,8 @@ public partial class TouchupStep
         await ReloadHoldsAsync();
         _loading = false;
     }
+
+    private string StagedPhotoUrl(Guid panelId) => $"/api/walls/{WallId}/panels/{panelId}/staged-photo";
 
     private async Task ReloadHoldsAsync()
     {

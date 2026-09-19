@@ -36,15 +36,19 @@ else
                         var sw = _showUsage
                             ? (usageCount > 0 ? "0.4" : "0.2")
                             : (isHi ? "0.5" : "0.25");
+                        @* A virtual hold isn't on the photo at all — dash its outline (the same
+                           convention the pickers and the wall editor use) so it never reads as a
+                           real hold. The boulder-type fill/stroke above is kept either way. *@
+                        var dash = h.IsVirtual ? "0.6 0.4" : null;
                         @if (h.ShapePoints is { Count: >= 3 })
                         {
                             <polygon @key="h.Id" points="@ShapePolygon(h)"
-                                     fill="@fill" stroke="@stroke" stroke-width="@sw" />
+                                     fill="@fill" stroke="@stroke" stroke-width="@sw" stroke-dasharray="@dash" />
                         }
                         else
                         {
                             <circle @key="h.Id" cx="@F(h.X * 100)" cy="@F(h.Y * 100)" r="@F(h.Radius * 100)"
-                                    fill="@fill" stroke="@stroke" stroke-width="@sw" />
+                                    fill="@fill" stroke="@stroke" stroke-width="@sw" stroke-dasharray="@dash" />
                         }
 
                         @if (_showUsage && usageCount > 0)

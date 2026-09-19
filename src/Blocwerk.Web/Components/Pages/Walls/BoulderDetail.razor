@@ -236,18 +236,23 @@ else
                                own holds (including dedicated orange footholds) are drawn here. *@
                             @foreach (var bh in _boulder.BoulderHolds)
                             {
+                                @* A virtual hold isn't visible on the photo: dash its outline, as the
+                                   pickers and MultiPanelViewer do, so it doesn't read as a real hold. *@
+                                var dash = bh.Hold.IsVirtual ? "0.6 0.4" : null;
                                 @if (bh.Hold.ShapePoints is { Count: >= 3 })
                                 {
                                     <polygon @key="bh.HoldId" points="@ShapePolygon(bh.Hold)"
                                              fill="@BoulderHoldColors.FillFor(bh.Type, bh.Usage)"
-                                             stroke="@BoulderHoldColors.Stroke(bh.Type)" stroke-width="0.5" />
+                                             stroke="@BoulderHoldColors.Stroke(bh.Type)" stroke-width="0.5"
+                                             stroke-dasharray="@dash" />
                                 }
                                 else
                                 {
                                     <circle @key="bh.HoldId" cx="@F(bh.Hold.X * 100)" cy="@F(bh.Hold.Y * 100)"
                                             r="@F(bh.Hold.Radius * 100)"
                                             fill="@BoulderHoldColors.FillFor(bh.Type, bh.Usage)"
-                                            stroke="@BoulderHoldColors.Stroke(bh.Type)" stroke-width="0.5" />
+                                            stroke="@BoulderHoldColors.Stroke(bh.Type)" stroke-width="0.5"
+                                            stroke-dasharray="@dash" />
                                 }
                             }
                         </svg>
@@ -946,17 +951,19 @@ else
         }
 
         var livePanelIds = _livePanels.Select(p => p.Id).ToHashSet();
+        var centrePanelId = _livePanels.FirstOrDefault(p => p is { Col: 0, Row: 0 })?.Id;
         var onPanels = _boulder.BoulderHolds
-            .Where(bh => bh.Hold.WallPanelId is { } pid && livePanelIds.Contains(pid))
+            .Where(bh => RenderPanelId(bh.Hold, livePanelIds, centrePanelId) is not null)
             .ToList();
 
         // Start from the boulder's own holds on their home panels — the pre-expansion baseline that
         // renders exactly as before. Twins linked across overlaps are added on top below.
         var holdsByPanel = onPanels
-            .GroupBy(bh => bh.Hold.WallPanelId!.Value)
+            .GroupBy(bh => RenderPanelId(bh.Hold, livePanelIds, centrePanelId)!.Value)
             .ToDictionary(
                 g => g.Key,
-                g => g.Select(bh => new PanelHold(bh.HoldId, bh.Hold.X, bh.Hold.Y, bh.Hold.Radius, bh.Hold.Color, bh.Hold.ShapePoints)).ToList());
+                g => g.Select(bh => new PanelHold(
+                    bh.HoldId, bh.Hold.X, bh.Hold.Y, bh.Hold.Radius, bh.Hold.Color, bh.Hold.ShapePoints, bh.Hold.IsVirtual)).ToList());
         foreach (var bh in onPanels)
         {
             _highlightedHoldIds.Add(bh.HoldId);
@@ -980,6 +987,24 @@ else
             _startPanelCol = start.Col;
             _startPanelRow = start.Row;
         }
+    }
+
+    /// <summary>
+    /// The live panel a boulder hold renders on: its own home panel when that panel is live, or —
+    /// for a hold with no panel id at all — the live CENTRE panel (Col 0, Row 0). Virtual holds are
+    /// created through <c>WallService.AddHoldAsync</c>, which historically never stamped a panel, so
+    /// without this fallback an existing virtual TOP silently vanishes from a multi-panel wall. Mirrors the editors'
+    /// rule in BoulderCreate/BoulderRevise (<c>RefreshPickerHolds</c>) so viewer and editor agree.
+    /// Null when the home panel isn't live and there is no centre panel — the hold is dropped, as before.
+    /// </summary>
+    private static Guid? RenderPanelId(Hold hold, HashSet<Guid> livePanelIds, Guid? centrePanelId)
+    {
+        if (hold.WallPanelId is { } pid)
+        {
+            return livePanelIds.Contains(pid) ? pid : null;
+        }
+
+        return centrePanelId;
     }
 
     /// <summary>

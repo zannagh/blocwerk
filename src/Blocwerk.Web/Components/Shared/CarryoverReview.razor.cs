@@ -26,6 +26,12 @@ public partial class CarryoverReview
     [Parameter] public EventCallback<CarryoverOutcome> OnContinue { get; set; }
     [Parameter] public EventCallback OnDiscard { get; set; }
 
+    /// <summary>
+    /// Raised when a sub-view (the focused stepper or the cross-gen link tool) opens or closes, so the
+    /// wizard can drop its own key bindings while another surface owns the screen.
+    /// </summary>
+    [Parameter] public EventCallback<bool> OnSubViewOpenChanged { get; set; }
+
     private const string Green = "var(--status-success)";
     private const string Amber = "var(--status-warning)";
     private const string Red = "var(--status-danger)";
