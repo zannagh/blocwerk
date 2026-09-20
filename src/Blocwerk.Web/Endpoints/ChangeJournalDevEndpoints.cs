@@ -85,7 +85,8 @@ internal static class ChangeJournalDevEndpoints
             return Results.NotFound();
         }
 
-        var result = await reverter.RevertBatchAsync(batchId, force ?? false, http.RequestAborted);
+        var result = await reverter.RevertBatchAsync(
+            batchId, force: force ?? false, cancellationToken: http.RequestAborted);
         return Results.Json(result);
     }
 }

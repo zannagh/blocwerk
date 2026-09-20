@@ -1,0 +1,219 @@
+@*
+    Operator-facing change journal: recent batches, and a guarded revert for the ones that can safely
+    take one. Authorization is the page's: this panel is only ever rendered inside Dashboard.razor,
+    which carries [Authorize(Policy = BlocwerkPolicies.AppAdmin)] — decided against the database by
+    AppAdminHandler. No new gate, no route and no wall-admin path is introduced here (mirrors
+    MaintenancePanel and BetaVideoAdminPanel); app-admin only is the deliberate v1 scope.
+
+    The reverter's `force` flag is never surfaced: it bypasses both the status claim and the
+    divergence guard at once, which is precisely what makes this panel safe to hand to an operator.
+    Logic is in ChangeJournalPanel.razor.cs.
+*@
+
+<div class="maintenance">
+    <h2>Change journal</h2>
+
+    <div class="maintenance-job">
+        <div class="maintenance-job-text">
+            <strong>Recent changes</strong>
+            <p>
+                Every write the app journals, newest first, grouped into the batch that made it. Use
+                this to find a bulk change that went wrong and put it back. A revert is itself
+                journalled, so it can be undone in turn.
+            </p>
+            <div class="cj-filter">
+                <label class="field-label" for="cj-wall">Wall</label>
+                <select id="cj-wall" class="text-input" value="@WallFilterValue"
+                        @onchange="OnWallFilterChangedAsync">
+                    <option value="">All walls</option>
+                    @foreach (var wall in walls)
+                    {
+                        <option value="@wall.WallId">@wall.WallName</option>
+                    }
+                </select>
+            </div>
+        </div>
+        <div class="maintenance-job-actions">
+            <button type="button" class="btn-secondary" disabled="@busy" @onclick="() => ReloadAsync(0)">
+                Refresh
+            </button>
+        </div>
+    </div>
+
+    @if (loadFailed)
+    {
+        <p class="error-msg">The change journal couldn't be read just now. Try Refresh.</p>
+    }
+    else if (page is null)
+    {
+        <p class="loading">Loading...</p>
+    }
+    else if (page.Items.Count == 0)
+    {
+        <p class="member-since">No journalled changes@(wallFilter is null ? string.Empty : " on this wall") yet.</p>
+    }
+    else
+    {
+        @foreach (var batch in page.Items)
+        {
+            <div class="maintenance-job cj-batch">
+                <div class="maintenance-job-text">
+                    <strong>@SummaryLine(batch)</strong>
+
+                    @if (IsRevertOfSomething(batch))
+                    {
+                        <p class="cj-badge">Undo of an earlier <strong>@RevertedLabel(batch)</strong> batch.</p>
+                    }
+
+                    @if (batch.Status != ChangeJournalStatus.Recorded)
+                    {
+                        <p class="cj-blocked">@StatusReason(batch)</p>
+                    }
+                    else if (batch.SealedAt is null)
+                    {
+                        <p class="cj-blocked">
+                            Still open &mdash; this batch hasn't been closed yet and more changes can
+                            still land in it. It can't be reverted until it is sealed.
+                        </p>
+                    }
+                    else if (batch.IsWallUpdateBatch)
+                    {
+                        <p class="cj-blocked">
+                            Wall update promote &mdash; not revertable from here. Undoing one deletes
+                            the panels and holds it wrote, but the wall's update session header isn't
+                            journalled, so it would be left behind empty and block the next wall
+                            update on this wall. This is a known gap in the reverter, not a bug in
+                            this batch. Check below for what exactly would be left over.
+                        </p>
+                    }
+
+                    @if (batch.NewerBatchesOnScope > 0 && batch.Status == ChangeJournalStatus.Recorded)
+                    {
+                        <p class="cj-warn">
+                            @batch.NewerBatchesOnScope newer batch(es) exist on
+                            @(batch.ScopeName ?? "this scope"). Revert newest first, or this one will
+                            reach back under changes made since.
+                        </p>
+                    }
+                </div>
+
+                <div class="maintenance-job-actions">
+                    <button type="button" class="btn-secondary" disabled="@busy"
+                            @onclick="() => CheckAsync(batch)">
+                        Check
+                    </button>
+                </div>
+            </div>
+
+            @if (selectedBatchId == batch.BatchId)
+            {
+                <div class="maintenance-status cj-detail">
+                    @if (preview is null)
+                    {
+                        <p class="loading">Checking...</p>
+                    }
+                    else if (!preview.Found)
+                    {
+                        <p class="cj-blocked">That batch is no longer in the journal. Refresh the list.</p>
+                    }
+                    else
+                    {
+                        <p class="member-since">
+                            <strong>@preview.EntryCount</strong> journalled row change(s) would be put back.
+                        </p>
+
+                        @if (preview.RequiresWallUpdateSessionCleanup)
+                        {
+                            <p class="cj-warn">
+                                This wall still has an open update session
+                                (@FormatShortId(preview.WallUpdateSessionId)). Reverting would empty it
+                                and leave it open, and the next wall update would then refuse to start
+                                until someone runs "Discard theirs &amp; start over" in the update
+                                wizard &mdash; which, in that state, destroys nothing.
+                            </p>
+                        }
+
+                        @if (preview.Conflicts.Count > 0)
+                        {
+                            <p class="cj-blocked">
+                                The live data no longer matches what this batch recorded, so a revert
+                                would refuse and change nothing:
+                            </p>
+                            <ul class="delete-account-list">
+                                @foreach (var conflict in preview.Conflicts)
+                                {
+                                    <li>@conflict.Description &mdash; @conflict.Conflict.Reason</li>
+                                }
+                            </ul>
+                        }
+                        else if (preview.CanRevert)
+                        {
+                            <p class="member-since">No conflicts &mdash; this batch can be put back.</p>
+                        }
+
+                        @if (CanOfferRevert(batch, preview))
+                        {
+                            @if (!armed)
+                            {
+                                <button type="button" class="btn-danger" disabled="@busy" @onclick="Arm">
+                                    Revert this batch
+                                </button>
+                            }
+                            else
+                            {
+                                <div class="field-group">
+                                    <label class="field-label" for="cj-confirm">
+                                        Type <strong>@ConfirmationPhrase</strong> to confirm
+                                    </label>
+                                    <input id="cj-confirm" class="text-input" autocomplete="off" maxlength="256"
+                                           @bind="confirmInput" @bind:event="oninput" />
+                                    <p class="delete-account-warning">
+                                        This writes the inverse of every change in the batch, as you.
+                                        Anything done to those rows since is judged against the
+                                        journal first, and the whole revert is rolled back if it
+                                        doesn't line up.
+                                    </p>
+                                </div>
+                                <div class="maintenance-job-actions">
+                                    <button type="button" class="btn-danger" disabled="@(!CanSubmit)"
+                                            @onclick="() => RevertAsync(batch)">
+                                        @(busy ? "Reverting..." : "Yes, revert it")
+                                    </button>
+                                    <button type="button" class="btn-secondary" disabled="@busy" @onclick="Disarm">
+                                        Cancel
+                                    </button>
+                                </div>
+                            }
+                        }
+
+                        @if (outcomeMessage is not null)
+                        {
+                            <p class="@(outcomeIsFailure ? "cj-blocked" : "member-since")">@outcomeMessage</p>
+                        }
+
+                        @if (outcomeConflicts.Count > 0)
+                        {
+                            <ul class="delete-account-list">
+                                @foreach (var conflict in outcomeConflicts)
+                                {
+                                    <li>@conflict.EntityType &mdash; @conflict.Reason</li>
+                                }
+                            </ul>
+                        }
+                    }
+                </div>
+            }
+        }
+
+        <div class="maintenance-job-actions cj-paging">
+            <button type="button" class="btn-secondary" disabled="@(busy || page.Skip == 0)"
+                    @onclick="() => ReloadAsync(Math.Max(0, page.Skip - page.Take))">
+                Newer
+            </button>
+            <button type="button" class="btn-secondary" disabled="@(busy || !page.HasMore)"
+                    @onclick="() => ReloadAsync(page.Skip + page.Take)">
+                Older
+            </button>
+        </div>
+    }
+</div>

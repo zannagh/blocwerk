@@ -70,6 +70,10 @@ public static class CoreServices
         // and export/replay batches to another environment (dev-gated endpoint). Scoped, since they
         // resolve the scoped context factory; the revert/replay writes are themselves journalled.
         builder.Services.AddScoped<ChangeJournalReverter>();
+
+        // The operator-facing READ side of the journal: paged batch listings with resolved scope/actor
+        // names and GROUP BY counts, for the admin revert panel. Scoped for the same reason.
+        builder.Services.AddScoped<ChangeJournalBrowser>();
         builder.Services.AddScoped<ChangeJournalExporter>();
         builder.Services.AddScoped<ChangeJournalReplayer>();
 

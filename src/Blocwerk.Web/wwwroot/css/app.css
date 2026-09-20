@@ -1037,3 +1037,16 @@ body.bw-tabbar-collapsed .app-shell:has(.carousel-dots) .bw-install { bottom: ca
     background: var(--bg-surface-alt); border-radius: var(--r-md); padding: 10px;
     font-size: 0.78rem; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
 }
+
+/* Admin change-journal panel: batch rows and the guarded revert detail block. */
+.cj-filter { margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cj-filter .text-input { width: auto; min-width: 180px; margin: 0; }
+.cj-batch .maintenance-job-text > strong { font-weight: 600; line-height: 1.45; }
+.cj-badge,
+.cj-warn,
+.cj-blocked { margin: 6px 0 0; font-size: 0.85rem; }
+.cj-badge { color: var(--text-secondary); }
+.cj-warn { color: var(--warning-text); }
+.cj-blocked { color: var(--danger-text); }
+.cj-detail { border-top: none; }
+.cj-paging { flex-direction: row; gap: 8px; margin-top: 14px; }

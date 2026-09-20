@@ -2,17 +2,24 @@ using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace Blocwerk.Core.Services;
 
 /// <summary>
 /// Reverts a whole <see cref="Entities.ChangeJournalBatch"/> by applying the INVERSE of each entry in
 /// reverse <c>Seq</c> order, inside one transaction. A precondition guard first verifies the current
-/// row state still matches what the batch RECORDED WE WROTE (the after-image for Insert/Update; the
-/// row's absence for Delete); on any mismatch the whole revert is rolled back and the conflicts are
-/// reported — it never clobbers divergent state. The revert's own inverse writes flow back through
-/// the capture interceptor as a NEW batch, so a revert is itself journalled and replayable.
+/// row state still matches what the batch RECORDED WE WROTE (see <see cref="ChangeJournalRevertGuard"/>,
+/// which <see cref="PreviewRevertAsync"/> and <see cref="RevertBatchAsync"/> share); on any mismatch the
+/// whole revert is rolled back and the conflicts are reported — it never clobbers divergent state. The
+/// revert's own inverse writes flow back through the capture interceptor as a NEW batch, so a revert is
+/// itself journalled and replayable.
+/// <para>
+/// A revert CLAIMS its batch first: a conditional <c>UPDATE … WHERE Status = Recorded</c> inside the
+/// transaction. That is the whole concurrency story — an already-reverted batch and a second operator
+/// racing the first both lose the claim and come back as
+/// <see cref="ChangeJournalRevertOutcome.AlreadyReverted"/> with nothing written, instead of applying a
+/// second inverse over the first one's result.
+/// </para>
 /// <para>
 /// KNOWN GAP — reverting a wall-update batch leaves its session header behind. The batch journals the
 /// <see cref="Hold"/> and <see cref="WallPanel"/> rows the update wrote, so reverting deletes them, and
@@ -23,7 +30,8 @@ namespace Blocwerk.Core.Services;
 /// a <see cref="WallUpdateSessionConflictException"/> naming a session that has nothing left in it, and
 /// the way out is the wizard's destructive-looking "Discard theirs &amp; start over" — which in this
 /// state actually destroys nothing. Deliberately not fixed here: teaching the reverter about a
-/// non-journalled header would make it aggregate-aware, which is exactly what it is not.
+/// non-journalled header would make it aggregate-aware, which is exactly what it is not. It IS surfaced:
+/// see <see cref="ChangeJournalRevertPreview.RequiresWallUpdateSessionCleanup"/>.
 /// </para>
 /// </summary>
 public sealed class ChangeJournalReverter
@@ -37,151 +45,152 @@ public sealed class ChangeJournalReverter
         this.journal = journal;
     }
 
-    public async Task<ChangeJournalRevertResult> RevertBatchAsync(
-        Guid batchId, bool force = false, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Runs BOTH precondition guards against the live rows and reports what a revert would hit —
+    /// without opening a transaction and without writing anything. Uses the same
+    /// <see cref="ChangeJournalRevertGuard"/> the real revert does, so the two cannot diverge.
+    /// </summary>
+    public async Task<ChangeJournalRevertPreview> PreviewRevertAsync(
+        Guid batchId, CancellationToken cancellationToken = default)
     {
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
-        db.CurrentUserId = Guid.Empty;
-
-        var batch = await db.ChangeJournalBatches.FirstOrDefaultAsync(b => b.Id == batchId, cancellationToken);
+        var batch = await db.ChangeJournalBatches
+            .AsNoTracking()
+            .FirstOrDefaultAsync(b => b.Id == batchId, cancellationToken);
         if (batch is null)
         {
-            return new ChangeJournalRevertResult(false, batchId, null, [], "Batch not found.");
+            return new ChangeJournalRevertPreview(
+                batchId, false, string.Empty, ChangeJournalStatus.Recorded,
+                ChangeJournalScopeKind.None, null, 0, [], false, false, null);
         }
 
-        // Reverse Seq is the inverse of the recorded save order, which is FK-safe; EF still reorders
-        // the physical writes within the single SaveChanges to respect foreign keys.
-        var entries = await db.ChangeJournalEntries
-            .Where(e => e.BatchId == batchId)
-            .OrderByDescending(e => e.Seq)
-            .ToListAsync(cancellationToken);
+        // A batch that is no longer Recorded cannot be reverted at all, and running the divergence guard
+        // over an already-reverted batch would report a conflict for every single key — a wall of noise
+        // that says nothing beyond "already reverted". Answer that directly instead.
+        var entryCount = await db.ChangeJournalEntries.CountAsync(e => e.BatchId == batchId, cancellationToken);
+        var orphanSession = await OpenWallUpdateSessionAsync(db, batch, cancellationToken);
+        if (batch.Status != ChangeJournalStatus.Recorded)
+        {
+            return new ChangeJournalRevertPreview(
+                batchId, true, batch.Label, batch.Status, batch.ScopeKind, batch.ScopeId,
+                entryCount, [], false, orphanSession is not null, orphanSession);
+        }
 
-        var resolveBlob = await LoadBlobResolverAsync(db, entries, cancellationToken);
+        var plan = await ChangeJournalRevertGuard.BuildAsync(db, batchId, cancellationToken);
+        var conflicts = await ChangeJournalKeyDescriber.DescribeAsync(db, plan.Conflicts, cancellationToken);
 
-        // Reverting an Insert deletes the row, so those keys are the ones this revert removes; the
-        // cascade guard uses them to tell a batch-known dependent from a prod-only one.
-        var deletedByBatch = entries
-            .Where(e => e.Op == ChangeJournalOp.Insert)
-            .Select(e => (e.EntityType, e.KeyJson))
-            .ToHashSet();
+        return new ChangeJournalRevertPreview(
+            batchId,
+            true,
+            batch.Label,
+            batch.Status,
+            batch.ScopeKind,
+            batch.ScopeId,
+            plan.Entries.Count,
+            conflicts,
+            conflicts.Count == 0,
+            orphanSession is not null,
+            orphanSession);
+    }
+
+    /// <param name="actingUserId">
+    /// The operator performing the revert. Stamped onto the context so the capture interceptor records
+    /// it as the revert batch's <c>Actor</c> — a destructive operator action must say who did it. Null
+    /// (the default, used by the dev harness) leaves the revert batch unattributed, as before.
+    /// </param>
+    public async Task<ChangeJournalRevertResult> RevertBatchAsync(
+        Guid batchId,
+        Guid? actingUserId = null,
+        bool force = false,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await factory.CreateDbContextAsync(cancellationToken);
+        db.CurrentUserId = actingUserId ?? Guid.Empty;
+
+        var batch = await db.ChangeJournalBatches
+            .AsNoTracking()
+            .FirstOrDefaultAsync(b => b.Id == batchId, cancellationToken);
+        if (batch is null)
+        {
+            return new ChangeJournalRevertResult(
+                false, batchId, null, [], "Batch not found.", ChangeJournalRevertOutcome.BatchNotFound);
+        }
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
-        var conflicts = new List<ChangeJournalConflict>();
-
-        // Divergence is checked per KEY against the batch's full NET-FINAL image — every property the
-        // batch set across ALL its entries, not just the last update's touched props. A key written more
-        // than once in this batch (the run→promote wall update INSERTs a staged panel then UPDATEs it)
-        // therefore catches an out-of-band edit to a property an earlier entry set but a later one never
-        // touched, which a last-entry-only check would silently miss and then delete.
-        foreach (var group in entries.GroupBy(e => (e.EntityType, e.KeyJson)))
-        {
-            var ordered = group.OrderBy(e => e.Seq).ToList();
-            var conflict = await CheckKeyDivergenceAsync(db, ordered, resolveBlob, cancellationToken);
-            if (conflict is not null)
-            {
-                conflicts.Add(conflict);
-            }
-        }
-
-        // Reverting an Insert deletes the row, so each Insert (even a superseded one) is guarded against
-        // silently cascading over prod-only dependents. An Update's inverse only restores scalars.
-        foreach (var entry in entries.Where(e => e.Op == ChangeJournalOp.Insert))
-        {
-            var conflict = await CheckInsertCascadeAsync(db, entry, deletedByBatch, cancellationToken);
-            if (conflict is not null)
-            {
-                conflicts.Add(conflict);
-            }
-        }
-
-        if (conflicts.Count > 0 && !force)
+        if (!await ClaimAsync(db, batchId, cancellationToken))
         {
             await transaction.RollbackAsync(cancellationToken);
-            return new ChangeJournalRevertResult(false, batchId, null, conflicts, null);
+            return new ChangeJournalRevertResult(
+                false, batchId, null, [], "Batch is already reverted or is being reverted right now.",
+                ChangeJournalRevertOutcome.AlreadyReverted);
+        }
+
+        var plan = await ChangeJournalRevertGuard.BuildAsync(db, batchId, cancellationToken);
+        if (plan.Conflicts.Count > 0 && !force)
+        {
+            // Rolls the claim back with everything else, so the batch stays Recorded and revertable.
+            await transaction.RollbackAsync(cancellationToken);
+            return new ChangeJournalRevertResult(
+                false, batchId, null, plan.Conflicts, null, ChangeJournalRevertOutcome.Blocked);
         }
 
         Guid? revertBatchId;
         using (journal.BeginBatch($"revert:{batch.Label}", batch.ScopeKind, batch.ScopeId))
         {
-            foreach (var entry in entries)
+            foreach (var entry in plan.Entries)
             {
-                await ApplyInverseAsync(db, entry, resolveBlob, cancellationToken);
+                await ApplyInverseAsync(db, entry, plan.ResolveBlob, cancellationToken);
             }
 
-            // Not allow-listed, so this status flip is not itself journalled.
-            batch.Status = ChangeJournalStatus.Reverted;
             await db.SaveChangesAsync(cancellationToken);
             revertBatchId = journal.Current?.BatchId;
         }
 
         await transaction.CommitAsync(cancellationToken);
-        return new ChangeJournalRevertResult(true, batchId, revertBatchId, conflicts, null);
+        return new ChangeJournalRevertResult(
+            true, batchId, revertBatchId, plan.Conflicts, null, ChangeJournalRevertOutcome.Reverted);
     }
 
     /// <summary>
-    /// Verifies the current row still matches the batch's NET effect on this key (its full net-final
-    /// image, or absence when the net effect is a delete). Attributes any conflict to the last entry.
+    /// Claims the batch for this revert: a conditional update that flips Recorded → Reverted and returns
+    /// whether it won. Running inside the caller's transaction is what makes it a lock as well as a test —
+    /// a concurrent revert of the same batch blocks on the row until this transaction ends, then finds
+    /// zero rows to claim. Not allow-listed, and an ExecuteUpdate besides, so the flip is not journalled.
     /// </summary>
-    private static async Task<ChangeJournalConflict?> CheckKeyDivergenceAsync(
-        BlocwerkDbContext db, IReadOnlyList<ChangeJournalEntry> ordered, Func<string, byte[]?> resolveBlob, CancellationToken ct)
+    private static async Task<bool> ClaimAsync(BlocwerkDbContext db, Guid batchId, CancellationToken ct)
     {
-        var netFinal = ordered[^1];
-        var (clrType, entityType) = ResolveOrNull(db, netFinal);
-        if (clrType is null || entityType is null)
-        {
-            return Conflict(netFinal, $"Unknown entity type '{netFinal.EntityType}'.");
-        }
-
-        var effect = ChangeJournalKeyNetEffect.Reduce(
-            entityType, ordered.Select(e => (e.Op, e.BeforeJson, e.AfterJson)).ToList(), resolveBlob);
-        var found = await ChangeJournalEntityAccessor.FindAsync(db, clrType, entityType, netFinal.KeyJson, ct);
-
-        if (effect.NetIsAbsent)
-        {
-            return found is null
-                ? null
-                : Conflict(netFinal, "Row expected absent (the batch's net effect is a delete) but is present.");
-        }
-
-        if (found is null)
-        {
-            return Conflict(netFinal, "Row expected present (journal recorded a write) but is absent.");
-        }
-
-        return ChangeJournalEntityAccessor.CurrentMatches(db.Entry(found), effect.NetFinalImage!, out var detail)
-            ? null
-            : Conflict(netFinal, $"Current state no longer matches the batch's net effect: {detail}.");
+        var claimed = await db.ChangeJournalBatches
+            .Where(b => b.Id == batchId && b.Status == ChangeJournalStatus.Recorded)
+            .ExecuteUpdateAsync(s => s.SetProperty(b => b.Status, ChangeJournalStatus.Reverted), ct);
+        return claimed > 0;
     }
 
-    private static async Task<ChangeJournalConflict?> CheckInsertCascadeAsync(
-        BlocwerkDbContext db, ChangeJournalEntry entry,
-        IReadOnlySet<(string EntityType, string KeyJson)> deletedByBatch, CancellationToken ct)
+    /// <summary>
+    /// The Open <see cref="WallUpdateSession"/> a revert of this batch would orphan, or null. See the
+    /// KNOWN GAP note on the class: the header is not journalled, so the revert cannot clean it up.
+    /// </summary>
+    private static async Task<Guid?> OpenWallUpdateSessionAsync(
+        BlocwerkDbContext db, ChangeJournalBatch batch, CancellationToken ct)
     {
-        var (clrType, entityType) = ResolveOrNull(db, entry);
-        if (clrType is null || entityType is null)
-        {
-            // The divergence pass already reports the unknown type; nothing to guard here.
-            return null;
-        }
-
-        var found = await ChangeJournalEntityAccessor.FindAsync(db, clrType, entityType, entry.KeyJson, ct);
-        if (found is null)
+        if (batch.Label != ChangeJournal.WallUpdateBatchLabel
+            || batch.ScopeKind != ChangeJournalScopeKind.Wall
+            || batch.ScopeId is null)
         {
             return null;
         }
 
-        var blocking = await ChangeJournalCascadeGuard.FindBlockingDependentsAsync(db, db.Entry(found), deletedByBatch, ct);
-        return blocking.Count > 0
-            ? Conflict(entry,
-                $"Reverting this insert would cascade to {blocking.Count} dependent row(s) not in this batch: {string.Join(", ", blocking.Take(5))}.")
-            : null;
+        return await db.WallUpdateSessions
+            .AsNoTracking()
+            .Where(s => s.WallId == batch.ScopeId && s.Status == WallUpdateSessionStatus.Open)
+            .Select(s => (Guid?)s.Id)
+            .FirstOrDefaultAsync(ct);
     }
 
     private static async Task ApplyInverseAsync(
         BlocwerkDbContext db, ChangeJournalEntry entry, Func<string, byte[]?> resolveBlob, CancellationToken ct)
     {
-        var (clrType, entityType) = ResolveOrNull(db, entry);
+        var (clrType, entityType) = ChangeJournalRevertGuard.ResolveOrNull(db, entry);
         if (clrType is null || entityType is null)
         {
             return;
@@ -216,30 +225,5 @@ public sealed class ChangeJournalReverter
 
                 break;
         }
-    }
-
-    private static (Type? Clr, IEntityType? Meta) ResolveOrNull(BlocwerkDbContext db, ChangeJournalEntry entry)
-    {
-        var clrType = ChangeJournalEntityAccessor.ResolveType(db, entry.EntityType);
-        return clrType is null ? (null, null) : (clrType, db.Model.FindEntityType(clrType));
-    }
-
-    private static ChangeJournalConflict Conflict(ChangeJournalEntry entry, string reason) =>
-        new(entry.Seq, entry.EntityType, entry.KeyJson, reason);
-
-    private static async Task<Func<string, byte[]?>> LoadBlobResolverAsync(
-        BlocwerkDbContext db, IEnumerable<ChangeJournalEntry> entries, CancellationToken ct)
-    {
-        var shas = entries
-            .SelectMany(e => ChangeJournalValueWriter.BlobShas(e.BeforeJson)
-                .Concat(ChangeJournalValueWriter.BlobShas(e.AfterJson)))
-            .Distinct()
-            .ToList();
-
-        var blobs = shas.Count == 0
-            ? []
-            : await db.JournalBlobs.Where(b => shas.Contains(b.Sha256)).ToDictionaryAsync(b => b.Sha256, b => b.Bytes, ct);
-
-        return sha => blobs.TryGetValue(sha, out var bytes) ? bytes : null;
     }
 }
