@@ -439,6 +439,7 @@ else
                                              OnMarkHoldModified="OnMarkHoldModified"
                                              OnMakeHoldActual="OnMakeHoldActual"
                                              OnMergeVirtualHold="OnMergeVirtualHold"
+                                             OnJoinVirtualHolds="OnJoinVirtualHolds"
                                              OnRestoreUnchangedHold="OnRestoreUnchangedHold"
                                              HasMultiplePanels="_livePanels.Count >= 2"
                                              OnLinkPanels="OpenLinkTool"
@@ -477,6 +478,7 @@ else
                                              OnMarkHoldModified="OnMarkHoldModified"
                                              OnMakeHoldActual="OnMakeHoldActual"
                                              OnMergeVirtualHold="OnMergeVirtualHold"
+                                             OnJoinVirtualHolds="OnJoinVirtualHolds"
                                              OnRestoreUnchangedHold="OnRestoreUnchangedHold"
                                              OnRequestHoldUsage="@(_isAnonymous ? null : LoadHoldUsage)" />
                         }
@@ -1838,6 +1840,29 @@ else
                 await LoadEditingPanelHolds();
             }
             await ShowToast("Virtual hold merged into detected hold");
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"Merge failed: {ex.Message}");
+        }
+    }
+
+    private async Task OnJoinVirtualHolds((Guid survivorHoldId, Guid duplicateHoldId) pair)
+    {
+        try
+        {
+            await WallService.MergeDuplicateVirtualHoldsAsync(pair.survivorHoldId, pair.duplicateHoldId);
+            // The survivor stays virtual and keeps its geometry; only the absorbed duplicate goes away.
+            // Drop it from the in-memory list so the editor repaints before the wall reload.
+            _holds.RemoveAll(h => h.Id == pair.duplicateHoldId);
+            await LoadWall();
+            // On multi-image walls the tool operates on the per-panel editor list, which LoadWall
+            // never touches; reload it so the absorbed hold disappears from the overlay.
+            if (_editingPanel is not null)
+            {
+                await LoadEditingPanelHolds();
+            }
+            await ShowToast("Duplicate virtual hold merged");
         }
         catch (Exception ex)
         {

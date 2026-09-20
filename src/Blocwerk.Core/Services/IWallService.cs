@@ -46,6 +46,15 @@ public interface IWallService
     Task MergeVirtualHoldAsync(Guid virtualHoldId, Guid actualHoldId, CancellationToken ct = default);
 
     /// <summary>
+    /// Merges two VIRTUAL holds that stand for the same physical hold. The survivor keeps its own
+    /// geometry, colour, category and virtual flag — this is a dedupe, not a promotion. Every
+    /// BoulderHold on the duplicate is re-pointed onto the survivor (Type/Usage reconciled when a
+    /// boulder used both), so no boulder is lost and none is marked historic; the duplicate hold
+    /// row and any HoldLink touching it are then deleted.
+    /// </summary>
+    Task MergeDuplicateVirtualHoldsAsync(Guid survivorHoldId, Guid duplicateHoldId, CancellationToken ct = default);
+
+    /// <summary>
     /// Promotes a virtual (placeholder) hold to an actual hold in place, clearing its virtual
     /// flag while leaving its Id, geometry and boulder links untouched. Not gated to staging.
     /// </summary>

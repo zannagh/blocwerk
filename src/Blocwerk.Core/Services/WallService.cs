@@ -616,6 +616,276 @@ public class WallService : IWallService
         }
     }
 
+    public async Task MergeDuplicateVirtualHoldsAsync(Guid survivorHoldId, Guid duplicateHoldId, CancellationToken ct = default)
+    {
+        using var op = BlocwerkMetrics.TimeOperation("Wall.MergeDuplicateVirtualHolds");
+        try
+        {
+            var user = await _currentUserService.GetCurrentUserAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
+            db.CurrentUserId = user.Id;
+
+            var (survivor, duplicate) = await LoadDuplicateVirtualPairAsync(db, survivorHoldId, duplicateHoldId, user.Id, ct);
+
+            // Deliberately NO geometry, colour, category or IsVirtual change on the survivor: this is a
+            // dedupe of two placeholders for one physical hold, not a promotion to a real hold.
+            await AbsorbDuplicateVirtualLinksAsync(db, survivorHoldId, duplicateHoldId, ct);
+
+            // BOTH hold-to-hold relations carry Restrict FKs on BOTH ends, so every row touching the
+            // duplicate has to be dealt with before the delete: HoldLink (same physical hold across two
+            // panels) and HoldGenerationLink (cross-generation lineage). Neither is dropped — both are
+            // curated facts about the physical hold, so they are re-pointed onto the survivor.
+            await RepointDuplicateHoldLinksAsync(db, survivorHoldId, duplicateHoldId, ct);
+            await RepointDuplicateGenerationLinksAsync(db, survivorHoldId, duplicateHoldId, ct);
+
+            db.Holds.Remove(duplicate);
+
+            await db.SaveChangesAsync(ct);
+            BlocwerkMetrics.RecordHoldUpdated(survivor.WallId, "merged");
+            await _activityLogService.LogAsync(survivor.WallId, null, ActivityType.HoldMerged,
+                "duplicate virtual hold merged into another virtual hold");
+            _logger.LogInformation(
+                "Duplicate virtual hold {DuplicateHoldId} merged into virtual hold {SurvivorHoldId} on wall {WallId} by {UserId}",
+                duplicateHoldId, survivorHoldId, survivor.WallId, user.Id);
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Loads and validates the survivor/duplicate pair for a duplicate-virtual merge: both must
+    /// exist, both must be virtual and both must live on the same wall, with the caller an editor.
+    /// </summary>
+    private static async Task<(Hold Survivor, Hold Duplicate)> LoadDuplicateVirtualPairAsync(
+        BlocwerkDbContext db, Guid survivorHoldId, Guid duplicateHoldId, Guid userId, CancellationToken ct)
+    {
+        if (survivorHoldId == duplicateHoldId)
+        {
+            throw new InvalidOperationException("A hold cannot be merged into itself");
+        }
+
+        var survivor = await db.Holds.FirstOrDefaultAsync(h => h.Id == survivorHoldId, ct);
+        if (survivor == null)
+        {
+            throw new InvalidOperationException("Hold to keep not found");
+        }
+
+        await WallAdminGuard.EnsureWallEditorAsync(db, survivor.WallId, userId, ct);
+
+        var duplicate = await db.Holds.FirstOrDefaultAsync(h => h.Id == duplicateHoldId, ct);
+        if (duplicate == null)
+        {
+            throw new InvalidOperationException("Duplicate hold not found");
+        }
+
+        if (!survivor.IsVirtual || !duplicate.IsVirtual)
+        {
+            throw new InvalidOperationException("Both holds must be virtual");
+        }
+
+        if (survivor.WallId != duplicate.WallId)
+        {
+            throw new InvalidOperationException("Holds belong to different walls");
+        }
+
+        // Generations are immutable: re-pointing a BoulderHold from a hold on one generation onto a
+        // hold on another would silently move a boulder through time. Two rows can only be duplicate
+        // placeholders for one physical hold if they stand on the same generation.
+        if (survivor.Generation != duplicate.Generation)
+        {
+            throw new InvalidOperationException("Holds belong to different generations");
+        }
+
+        return (survivor, duplicate);
+    }
+
+    /// <summary>
+    /// Moves every BoulderHold off the duplicate onto the survivor. No boulder may be lost and none
+    /// is marked historic: a boulder that only knew the duplicate ends up on the survivor, and a
+    /// boulder that knew both keeps a single link whose Type/Usage are reconciled rather than
+    /// silently taking the survivor's row.
+    /// </summary>
+    private static async Task AbsorbDuplicateVirtualLinksAsync(
+        BlocwerkDbContext db, Guid survivorHoldId, Guid duplicateHoldId, CancellationToken ct)
+    {
+        var duplicateLinks = await db.BoulderHolds.Where(bh => bh.HoldId == duplicateHoldId).ToListAsync(ct);
+        var survivorLinks = await db.BoulderHolds.Where(bh => bh.HoldId == survivorHoldId).ToListAsync(ct);
+        var survivorByBoulder = survivorLinks.ToDictionary(bh => bh.BoulderId);
+
+        foreach (var link in duplicateLinks)
+        {
+            // (BoulderId, HoldId) is the composite PK, so HoldId can't be mutated in place: the
+            // duplicate's row is dropped and an equivalent added on the survivor when it has none.
+            if (survivorByBoulder.TryGetValue(link.BoulderId, out var existing))
+            {
+                var (type, usage) = ReconcileMergedMembership(existing, link);
+                existing.Type = type;
+                existing.Usage = usage;
+            }
+            else
+            {
+                db.BoulderHolds.Add(new BoulderHold
+                {
+                    BoulderId = link.BoulderId,
+                    HoldId = survivorHoldId,
+                    Type = link.Type,
+                    Usage = link.Usage,
+                });
+            }
+
+            db.BoulderHolds.Remove(link);
+        }
+    }
+
+    /// <summary>
+    /// Resolves the Type/Usage one boulder keeps when it referenced BOTH merged holds. "Two rows stand
+    /// for one physical hold" already has exactly one answer in this codebase —
+    /// <see cref="BoulderHoldReconciler"/>, which mirrors <c>BoulderDetail.razor</c>'s twin expansion
+    /// (Top &gt; Start &gt; Normal, HandAndFoot &gt; HandOnly &gt; FootOnly) — so the merge asks that
+    /// function rather than carrying a second, contradicting precedence of its own. The two rows are
+    /// handed over as a linked pair, which is precisely the shape the reconciler collapses.
+    /// </summary>
+    private static (HoldType Type, HoldUsage Usage) ReconcileMergedMembership(
+        BoulderHold survivor, BoulderHold duplicate)
+    {
+        var reconciled = BoulderHoldReconciler.Reconcile(
+            [
+                new ReconcilableHold(survivor.HoldId, survivor.Type, survivor.Usage),
+                new ReconcilableHold(duplicate.HoldId, duplicate.Type, duplicate.Usage),
+            ],
+            [new HoldLinkPair(survivor.HoldId, duplicate.HoldId)])[0];
+
+        return (reconciled.Type, ReconcileHoldUsage(survivor.Usage, duplicate.Usage, reconciled.Usage));
+    }
+
+    /// <summary>
+    /// Usage needs one correction the reconciler cannot make: HandAndFoot is the ENTITY DEFAULT
+    /// (<see cref="BoulderHold.Usage"/>) as well as the broadest value, so a row sitting at it is as
+    /// likely "never chosen" as "chosen". Taking it as the more prominent value would widen a
+    /// deliberately narrowed survivor and hand the boulder a foothold the setter never gave (see
+    /// <see cref="Boulder.FootholdMode"/>). A default therefore yields to the other side's deliberate
+    /// value; a genuine conflict between two deliberate values falls through to
+    /// <paramref name="reconciled"/>, the single repo-wide rule.
+    /// </summary>
+    private static HoldUsage ReconcileHoldUsage(HoldUsage survivor, HoldUsage duplicate, HoldUsage reconciled)
+    {
+        if (survivor == duplicate)
+        {
+            return survivor;
+        }
+
+        if (survivor == HoldUsage.HandAndFoot)
+        {
+            return duplicate;
+        }
+
+        if (duplicate == HoldUsage.HandAndFoot)
+        {
+            return survivor;
+        }
+
+        return reconciled;
+    }
+
+    /// <summary>
+    /// Re-points every <see cref="HoldLink"/> off the duplicate onto the survivor. A HoldLink is the
+    /// curated "same physical hold on two adjacent panels" fact (PanelLinkTool), not an alignment
+    /// artifact: dropping it would silently unlink the twin on the neighbouring panel and stop
+    /// <see cref="BoulderHoldReconciler"/> expanding boulder membership to it. A link between the two
+    /// merged holds would collapse into a self-link, and a link the survivor already has (unordered,
+    /// as the unique index on <c>(HoldAId, HoldBId)</c> demands) would collide — both are dropped.
+    /// </summary>
+    private static async Task RepointDuplicateHoldLinksAsync(
+        BlocwerkDbContext db, Guid survivorHoldId, Guid duplicateHoldId, CancellationToken ct)
+    {
+        var links = await db.HoldLinks
+            .Where(l => l.HoldAId == duplicateHoldId || l.HoldBId == duplicateHoldId
+                || l.HoldAId == survivorHoldId || l.HoldBId == survivorHoldId)
+            .ToListAsync(ct);
+
+        var touchesDuplicate = links
+            .Where(l => l.HoldAId == duplicateHoldId || l.HoldBId == duplicateHoldId)
+            .ToList();
+        var taken = links
+            .Except(touchesDuplicate)
+            .Select(l => UnorderedPair(l.HoldAId, l.HoldBId))
+            .ToHashSet();
+
+        foreach (var link in touchesDuplicate)
+        {
+            var other = link.HoldAId == duplicateHoldId ? link.HoldBId : link.HoldAId;
+            if (other == survivorHoldId || other == duplicateHoldId
+                || !taken.Add(UnorderedPair(survivorHoldId, other)))
+            {
+                db.HoldLinks.Remove(link);
+                continue;
+            }
+
+            if (link.HoldAId == duplicateHoldId)
+            {
+                link.HoldAId = survivorHoldId;
+            }
+            else
+            {
+                link.HoldBId = survivorHoldId;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Re-points every <see cref="HoldGenerationLink"/> off the duplicate onto the survivor. These rows
+    /// are cross-generation lineage ("this gen-N hold became that gen-N+1 hold"), the only record of
+    /// where a carried-forward hold came from, so they are preserved rather than deleted: a predecessor
+    /// whose successor was the duplicate now points at the survivor, and a successor descended from the
+    /// duplicate now descends from the survivor. Both holds sit on the SAME generation (guarded on
+    /// load), so the stored From/To generations stay truthful. A row that would collapse onto a single
+    /// hold, or duplicate one the survivor already has — the unique index on
+    /// <c>(OldHoldId, NewHoldId)</c> forbids that — is dropped instead.
+    /// </summary>
+    private static async Task RepointDuplicateGenerationLinksAsync(
+        BlocwerkDbContext db, Guid survivorHoldId, Guid duplicateHoldId, CancellationToken ct)
+    {
+        var links = await db.HoldGenerationLinks
+            .Where(l => l.OldHoldId == duplicateHoldId || l.NewHoldId == duplicateHoldId
+                || l.OldHoldId == survivorHoldId || l.NewHoldId == survivorHoldId)
+            .ToListAsync(ct);
+
+        var touchesDuplicate = links
+            .Where(l => l.OldHoldId == duplicateHoldId || l.NewHoldId == duplicateHoldId)
+            .ToList();
+        var taken = links
+            .Except(touchesDuplicate)
+            .Select(l => (l.OldHoldId, l.NewHoldId))
+            .ToHashSet();
+
+        foreach (var link in touchesDuplicate)
+        {
+            var oldHoldId = link.OldHoldId == duplicateHoldId ? survivorHoldId : link.OldHoldId;
+            var newHoldId = link.NewHoldId == duplicateHoldId ? survivorHoldId : link.NewHoldId;
+
+            if (oldHoldId == newHoldId || !taken.Add((oldHoldId, newHoldId)))
+            {
+                db.HoldGenerationLinks.Remove(link);
+                continue;
+            }
+
+            link.OldHoldId = oldHoldId;
+            link.NewHoldId = newHoldId;
+        }
+    }
+
+    /// <summary>
+    /// Orders a hold pair so the unordered pair (A,B) and (B,A) share one key, matching how the panel
+    /// link tool dedupes links.
+    /// </summary>
+    private static (Guid First, Guid Second) UnorderedPair(Guid a, Guid b)
+    {
+        return a.CompareTo(b) <= 0 ? (a, b) : (b, a);
+    }
+
     public async Task PromoteVirtualHoldAsync(Guid virtualHoldId, CancellationToken ct = default)
     {
         using var op = BlocwerkMetrics.TimeOperation("Wall.PromoteVirtualHold");

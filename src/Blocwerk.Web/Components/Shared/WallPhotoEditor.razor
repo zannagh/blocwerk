@@ -134,6 +134,14 @@
                         <circle cx="12" cy="12" r="9" stroke-dasharray="2.2 1.6" /><polyline points="8.5 12 11 14.5 15.5 9.5" />
                     </svg>
                 </button>
+                <button class="tool-btn @A(EditMode.JoinVirtual)" @onclick="() => SetMode(EditMode.JoinVirtual)"
+                        title="Join duplicate virtual holds (J): click the virtual hold to KEEP, then the duplicate virtual hold to absorb into it">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                        <circle cx="8" cy="12" r="4.5" stroke-dasharray="2.2 1.6" />
+                        <circle cx="16" cy="12" r="4.5" stroke-dasharray="2.2 1.6" />
+                        <path d="M10.5 9.5 13.5 14.5M13.5 9.5 10.5 14.5" />
+                    </svg>
+                </button>
             }
             @if (HasMultiplePanels && OnLinkPanels.HasDelegate)
             {
@@ -245,6 +253,17 @@
             {
                 strokeColor = "#ffd700";
             }
+            // Survivor and absorbed pick read differently on purpose: green "kept", red "absorbed".
+            var isJoinSurvivor = _mode == EditMode.JoinVirtual && _joinSurvivorId == hold.Id;
+            var isJoinDuplicate = _mode == EditMode.JoinVirtual && _joinDuplicateId == hold.Id;
+            if (isJoinSurvivor)
+            {
+                strokeColor = "#33dd66";
+            }
+            else if (isJoinDuplicate)
+            {
+                strokeColor = "#ff5566";
+            }
             var isMarkUnchangedPick = _mode == EditMode.MarkUnchanged && _markUnchangedHoldId == hold.Id;
             if (isMarkUnchangedPick)
             {
@@ -260,7 +279,8 @@
             {
                 dash = IsStagedHold(hold) ? "0.6 0.3" : "0.3 0.3";
             }
-            if (hold.IsVirtual && !(isSelected || isShapeEditing || isNaming) && !isMakeActualPick && !isMarkUnchangedPick)
+            if (hold.IsVirtual && !(isSelected || isShapeEditing || isNaming) && !isMakeActualPick && !isMarkUnchangedPick
+                && !isJoinSurvivor && !isJoinDuplicate)
             {
                 strokeColor = "#c86dff";
                 dash = "0.6 0.4";
@@ -736,6 +756,38 @@
             }
         </div>
     }
+    @if (CanEdit && _mode == EditMode.JoinVirtual)
+    {
+        <div class="option-bar">
+            @if (_joinSurvivorId is { } keepId)
+            {
+                var keep = Holds.FirstOrDefault(h => h.Id == keepId);
+                @if (_joinDuplicateId is { } dropId)
+                {
+                    var drop = Holds.FirstOrDefault(h => h.Id == dropId);
+                    <span class="option-hint">
+                        Keep <strong style="color:#33dd66">@(keep?.Name ?? "hold")</strong> and absorb
+                        <strong style="color:#ff5566">@(drop?.Name ?? "hold")</strong> into it? Boulders on the absorbed
+                        hold move over; nothing is flagged historic.
+                    </span>
+                    <button class="opt-btn active" @onclick="ConfirmJoinVirtual">Confirm join</button>
+                    <button class="opt-btn" @onclick="CancelJoinVirtual">Cancel</button>
+                }
+                else
+                {
+                    <span class="option-hint">
+                        Keeping <strong style="color:#33dd66">@(keep?.Name ?? "hold")</strong>. Tap the duplicate
+                        <strong style="color:#c86dff">virtual</strong> hold to absorb into it.
+                    </span>
+                    <button class="opt-btn" @onclick="CancelJoinVirtual">Cancel</button>
+                }
+            }
+            else
+            {
+                <span class="option-hint">Tap the <strong style="color:#c86dff">virtual</strong> hold to KEEP, then the duplicate virtual hold to absorb.</span>
+            }
+        </div>
+    }
     @if (CanEdit && _mode == EditMode.MarkUnchanged)
     {
         <div class="option-bar">
@@ -842,6 +894,12 @@
     /// Passes the virtual hold id and the target actual hold id.
     /// </summary>
     [Parameter] public EventCallback<(Guid virtualHoldId, Guid actualHoldId)> OnMergeVirtualHold { get; set; }
+
+    /// <summary>
+    /// Merges two VIRTUAL holds that stand for the same physical hold ("join" tool). Passes the
+    /// survivor (kept) hold id and the duplicate hold id that is absorbed into it.
+    /// </summary>
+    [Parameter] public EventCallback<(Guid survivorHoldId, Guid duplicateHoldId)> OnJoinVirtualHolds { get; set; }
 
     /// <summary>
     /// "This hold didn't physically change": restores boulders that went historic in a past update
@@ -1048,7 +1106,7 @@
     // ballooning when zoomed in.
     private double HandleScale => 1.0 / Math.Clamp(_zoom, 0.5, 6.0);
 
-    private enum EditMode { Add, Move, Shape, Paint, Delete, Border, Name, Merge, ShapeTilt, Usage, MakeActual, MarkUnchanged }
+    private enum EditMode { Add, Move, Shape, Paint, Delete, Border, Name, Merge, ShapeTilt, Usage, MakeActual, JoinVirtual, MarkUnchanged }
 
     public record BatchChanges(List<Hold> Added, List<Hold> Updated, List<Guid> Deleted);
 
@@ -1217,6 +1275,7 @@
         EditMode.ShapeTilt => "pointer",
         EditMode.Merge => "pointer",
         EditMode.MakeActual => "pointer",
+        EditMode.JoinVirtual => "pointer",
         EditMode.MarkUnchanged => "pointer",
         EditMode.Usage => "pointer",
         _ => "default"
@@ -1238,6 +1297,11 @@
         {
             _makeActualVirtualId = null;
             _makeActualTargetId = null;
+        }
+        if (mode != EditMode.JoinVirtual)
+        {
+            _joinSurvivorId = null;
+            _joinDuplicateId = null;
         }
         if (mode != EditMode.MarkUnchanged)
         {
@@ -1344,6 +1408,9 @@
                 return;
             case EditMode.MakeActual:
                 HandleMakeActualClick(hold);
+                return;
+            case EditMode.JoinVirtual:
+                HandleJoinVirtualClick(hold);
                 return;
             case EditMode.MarkUnchanged:
                 _markUnchangedHoldId = _markUnchangedHoldId == hold.Id ? null : hold.Id;
@@ -1480,6 +1547,49 @@
     {
         _makeActualVirtualId = null;
         _makeActualTargetId = null;
+    }
+
+    // ---- Join tool (non-staging): absorb a duplicate VIRTUAL hold into another virtual hold ----
+    private Guid? _joinSurvivorId;
+    private Guid? _joinDuplicateId;
+
+    private void HandleJoinVirtualClick(Hold hold)
+    {
+        // Both picks must be virtual. A non-virtual tap re-selects nothing silently: it restarts the
+        // pick so the hint tells the user what the tool wants, mirroring the make-actual tool.
+        if (!hold.IsVirtual)
+        {
+            _joinSurvivorId = null;
+            _joinDuplicateId = null;
+            return;
+        }
+
+        if (_joinSurvivorId == null || _joinSurvivorId == hold.Id)
+        {
+            _joinSurvivorId = hold.Id;
+            _joinDuplicateId = null;
+            return;
+        }
+
+        _joinDuplicateId = hold.Id;
+    }
+
+    private async Task ConfirmJoinVirtual()
+    {
+        if (_joinSurvivorId is not { } survivorId || _joinDuplicateId is not { } duplicateId)
+        {
+            return;
+        }
+
+        _joinSurvivorId = null;
+        _joinDuplicateId = null;
+        await OnJoinVirtualHolds.InvokeAsync((survivorId, duplicateId));
+    }
+
+    private void CancelJoinVirtual()
+    {
+        _joinSurvivorId = null;
+        _joinDuplicateId = null;
     }
 
     private (double X, double Y) LiveCentroid()
@@ -2146,7 +2256,7 @@
     // below, mirroring each button's own gate.
     private static readonly string[] AlwaysShortcutKeys =
     [
-        "a", "m", "s", "p", "n", "d", "b", "t", "u", "g", "k", "c",
+        "a", "m", "s", "p", "n", "d", "b", "t", "u", "g", "k", "j", "c",
         "l", "o", "r",
         "1", "2", "3", "4", "5", "6", "7", "8", "9", "[", "]",
         "+", "-", "0",
@@ -2209,6 +2319,7 @@
             case "c" when tools: SetMode(EditMode.MarkUnchanged); return true;
             case "g" when tools && IsStaging && !ManualAlignment: SetMode(EditMode.Merge); return true;
             case "k" when tools && !IsStaging: SetMode(EditMode.MakeActual); return true;
+            case "j" when tools && !IsStaging: SetMode(EditMode.JoinVirtual); return true;
             case "b" when CanEdit && CanEditShape: SetMode(EditMode.Border); return true;
             case "l": _showNames = !_showNames; return true;
             case "o" when tools || (BorderOnly && CanEditShape): _showBorder = !_showBorder; return true;
@@ -2270,6 +2381,8 @@
                || _mergeFirstPickId.HasValue
                || _makeActualVirtualId != null
                || _makeActualTargetId != null
+               || _joinSurvivorId != null
+               || _joinDuplicateId != null
                || _markUnchangedHoldId.HasValue
                || (_mode == EditMode.ShapeTilt && _shapeTiltHoldId.HasValue));
 
@@ -2317,6 +2430,12 @@
         if (_makeActualVirtualId != null || _makeActualTargetId != null)
         {
             CancelMakeActual();
+            return;
+        }
+
+        if (_joinSurvivorId != null || _joinDuplicateId != null)
+        {
+            CancelJoinVirtual();
             return;
         }
 
