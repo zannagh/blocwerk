@@ -1,0 +1,37 @@
+@* The shared tool row of the big-wall hold touch-up surfaces (TouchupStep and CarryoverReview's
+   right-hand pane). Modelled on the wall editor's toolbar: mutually exclusive tools you click to
+   enter, plus the size slider that replaced PanelImageView's old corner resize handle.
+   State is owned by the consumer and bound through the parameters — see HoldTouchupToolbar.razor.cs. *@
+
+<div class="editor-toolbar hold-touchup-toolbar">
+    <div class="toolbar-left">
+        <span class="hold-count">@ToolHint</span>
+    </div>
+    <div class="toolbar-right">
+        <button type="button" class="tool-btn @(Tool == HoldTouchupTool.Add ? "active" : "")"
+                @onclick="() => PickAsync(HoldTouchupTool.Add)" title="Add hold — tap the photo (A)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" />
+            </svg>
+        </button>
+        <button type="button" class="tool-btn @(Tool == HoldTouchupTool.Pipette ? "active" : "")"
+                @onclick="() => PickAsync(HoldTouchupTool.Pipette)" title="Pipette — tap a hold to copy its size (P)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                <path d="M15 3l6 6M18 6l-9 9-4 1 1-4 9-9a2.1 2.1 0 0 1 3 3z" /><path d="M4 20h6" />
+            </svg>
+        </button>
+        <button type="button" class="tool-btn @(Tool == HoldTouchupTool.Delete ? "active danger" : "")"
+                @onclick="() => PickAsync(HoldTouchupTool.Delete)" title="Delete hold — tap a hold (D)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+            </svg>
+        </button>
+        <span class="toolbar-sep"></span>
+        <div class="option-group">
+            <label for="@_sliderId">@SizeLabel</label>
+            <input id="@_sliderId" type="range" min="@SliderMin" max="@SliderMax" value="@SliderValue"
+                   title="@SizeLabel" @oninput="OnSizeInput" @onchange="OnSizeCommit" />
+            <span class="hold-count">@SizeText</span>
+        </div>
+    </div>
+</div>

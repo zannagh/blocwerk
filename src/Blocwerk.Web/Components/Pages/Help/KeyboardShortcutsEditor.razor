@@ -1,0 +1,120 @@
+@* The wall editor's key bindings, lifted out of KeyboardShortcuts.razor so that page stays under
+   the project's file-size rule. Static markup only — content is identical to what the page rendered
+   before; the page composes this and KeyboardShortcutsWizard in place of the two sections. *@
+
+    <section class="keyshort-section">
+        <h2>Wall editor</h2>
+        <p class="keyshort-note">
+            The editor only claims these keys while you have edit rights on the wall and the editor is in
+            edit mode. Each key repeats the gate of the button it mirrors, so a key whose tool is not on
+            the toolbar in this configuration simply does nothing.
+        </p>
+
+        <h3>Tools</h3>
+        <dl class="keyshort-list">
+            <div class="keyshort-row">
+                <dt><kbd>a</kbd></dt>
+                <dd>Add hold</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>m</kbd></dt>
+                <dd>Select / move</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>s</kbd></dt>
+                <dd>Shape</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>p</kbd></dt>
+                <dd>Paint</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>n</kbd></dt>
+                <dd>Name</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>d</kbd></dt>
+                <dd>Delete</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>b</kbd></dt>
+                <dd>Border (only where the wall border/shape may be edited)</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>t</kbd></dt>
+                <dd>Tilt (shape tilt)</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>u</kbd></dt>
+                <dd>Hold usage (only where the page offers the usage view)</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>g</kbd></dt>
+                <dd>Merge (staged wall updates only, and not during manual alignment)</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>k</kbd></dt>
+                <dd>Make actual (outside a staged wall update)</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>j</kbd></dt>
+                <dd>Join duplicate virtual holds — keep one, absorb the other (outside a staged wall update)</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>c</kbd></dt>
+                <dd>Mark unchanged</dd>
+            </div>
+        </dl>
+
+        <h3>View and actions</h3>
+        <dl class="keyshort-list">
+            <div class="keyshort-row">
+                <dt><kbd>l</kbd></dt>
+                <dd>Toggle hold labels</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>o</kbd></dt>
+                <dd>Toggle border / segment outlines</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>r</kbd></dt>
+                <dd>Re-detect holds (where re-detection is offered, and not while one is running)</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>1</kbd>&ndash;<kbd>9</kbd></dt>
+                <dd>Pick paint colour N from the palette &mdash; <strong>Paint tool only</strong></dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>[</kbd> <kbd>]</kbd></dt>
+                <dd>Previous / next paint colour (wraps around) &mdash; <strong>Paint tool only</strong></dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>+</kbd> <kbd>-</kbd></dt>
+                <dd>Zoom in / out</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>0</kbd></dt>
+                <dd>Reset zoom</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>Ctrl</kbd> <span class="keyshort-plus">+</span> <kbd>S</kbd></dt>
+                <dd>
+                    Save changes (<kbd>Cmd</kbd> <span class="keyshort-plus">+</span> <kbd>S</kbd> on
+                    macOS) &mdash; claimed only while there is actually something to save, and never
+                    during a manual alignment. With nothing staged the browser's own Save is left alone.
+                </dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>Esc</kbd></dt>
+                <dd>
+                    Cancel the active sub-mode and nothing else: naming, a pending merge, a pending
+                    &ldquo;make actual&rdquo;, a pending &ldquo;mark unchanged&rdquo; or a shape tilt, in
+                    that order. With no sub-mode pending the editor does not claim <kbd>Esc</kbd> at all.
+                </dd>
+            </div>
+        </dl>
+        <p class="keyshort-note">
+            <kbd>Esc</kbd> never discards your unsaved changes. Discarding is a deliberate click on the
+            labelled button, because a stray keystroke must not throw away staged hold edits.
+        </p>
+    </section>

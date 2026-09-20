@@ -38,7 +38,14 @@ public partial class CarryoverReview
             return;
         }
 
-        foreach (var decision in restored.Carryover)
+        // A verdict recorded about a hold this pane cannot draw (a co-updated NEIGHBOUR panel's hold,
+        // reachable in an older build that drew the whole old generation on the centre photo) is reset
+        // to the matcher default before it is laid back: it would otherwise sit in _decisions invisible
+        // — not drawn, not counted, in no stepper — and still ship to the promote, where a Removed
+        // freezes its boulders. The reset ones are surfaced to the user rather than dropped silently.
+        var reconciled = CarryoverScope.Reconcile(Session, restored.Carryover);
+        _ownScopeResets = reconciled.Reset;
+        foreach (var decision in reconciled.Decisions)
         {
             if (_decisions.ContainsKey(decision.OldHoldId))
             {
@@ -117,4 +124,38 @@ public partial class CarryoverReview
     }
 
     private string? _saveError;
+
+    // ---- Out-of-scope verdicts (see CarryoverScope) -----------------------------
+
+    /// <summary>
+    /// The verdicts the WIZARD already reset on this session, so the notice appears on the step where
+    /// the holds would have been reviewed and not only on the confirm step. The wizard resets them the
+    /// moment it restores a session, which is why this step rarely finds any of its own.
+    /// </summary>
+    [Parameter] public IReadOnlyList<CarryoverDecision> ScopeResets { get; set; } = [];
+
+    /// <summary>Raised when the user acknowledges the notice, so the wizard stops holding the promote.</summary>
+    [Parameter] public EventCallback OnScopeResetsAcknowledged { get; set; }
+
+    /// <summary>
+    /// Verdicts THIS step reset while seeding. Normally empty (the wizard got there first); kept because
+    /// the seed must reconcile whatever it is handed rather than trust that someone else already did.
+    /// </summary>
+    private IReadOnlyList<CarryoverDecision> _ownScopeResets = [];
+
+    private bool _scopeResetsAcknowledged;
+
+    private int ScopeResetCount => ScopeResets
+        .Concat(_ownScopeResets)
+        .Select(d => d.OldHoldId)
+        .Distinct()
+        .Count();
+
+    private bool ScopeResetsPending => ScopeResetCount > 0 && !_scopeResetsAcknowledged;
+
+    private async Task AcknowledgeScopeResetsAsync()
+    {
+        _scopeResetsAcknowledged = true;
+        await OnScopeResetsAcknowledged.InvokeAsync();
+    }
 }

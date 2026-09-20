@@ -110,8 +110,10 @@
         case WallUpdatePhase.Carryover:
             @if (_session is not null)
             {
-                <CarryoverReview @ref="_carryover" WallId="WallId" CurrentGeneration="CurrentGeneration" Session="_session"
+                <CarryoverReview @ref="_carryover" WallId="WallId" Session="_session"
                                  Restored="_restored"
+                                 ScopeResets="_scopeResets"
+                                 OnScopeResetsAcknowledged="AcknowledgeScopeResets"
                                  OnContinue="OnCarryoverContinue" OnDiscard="Discard"
                                  OnSubViewOpenChanged="OnCarryoverSubViewOpenChanged" />
             }
@@ -140,6 +142,26 @@
             break;
 
         case WallUpdatePhase.Confirm:
+            @* Verdicts recorded against holds on panels no review surface can display. They are already
+               reset to "carry in place" in the payload below; the promote waits until that has been
+               read, because resuming straight to this step never re-walks the carryover review. *@
+            @if (_scopeResets.Count > 0)
+            {
+                <div class="bigupdate-banner" role="alert">
+                    <strong>@_scopeResets.Count earlier hold decision(s) were reset to "carry in place".</strong>
+                    <span>
+                        They were recorded against holds on re-photographed panels other than the centre,
+                        which the carryover review cannot show — so they could be neither seen nor undone.
+                        A "remove" among them would have retired real boulders to history with nothing on
+                        screen saying so. Those holds are carried over instead; nothing else changes.
+                    </span>
+                    @if (!_scopeResetsAcknowledged)
+                    {
+                        <button class="btn-secondary" @onclick="AcknowledgeScopeResets">I understand</button>
+                    }
+                </div>
+            }
+
             <p class="hint">Ready to apply. Nothing changes on the live wall until you confirm.</p>
             <div class="bigupdate-summary">
                 <span class="bigupdate-chip carry">Carrying @CarriedCount</span>
@@ -153,7 +175,7 @@
                 This replaces the wall photo and cannot be undone.
             </p>
             <div class="staged-actions">
-                <button class="btn-primary" @onclick="Apply">Apply update</button>
+                <button class="btn-primary" @onclick="Apply" disabled="@ScopeResetsPending">Apply update</button>
                 <button class="btn-danger-soft" @onclick="Discard">Discard update</button>
             </div>
             break;

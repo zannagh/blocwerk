@@ -201,7 +201,9 @@ public partial class WallBigUpdateService : IWallBigUpdateService
 
         return new BigUpdateSession(
             wall.Id, centerPanelId, carryover, removedCandidates, newCenter, neighbours,
-            autoMatchStatus, autoMatchMessage, carriedWarp, carriedShapes);
+            autoMatchStatus, autoMatchMessage, carriedWarp, carriedShapes,
+            await BuildCarriedPanelsAsync(db, wall.Id, stagedGen, oldByPosition),
+            oldHolds.Select(h => h.Id).ToList());
     }
 
     /// <summary>

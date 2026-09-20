@@ -22,7 +22,7 @@
             @{
                 // The overlay body is shared verbatim between the two <svg> variants below so the
                 // non-editable svg keeps EXACTLY today's attributes (no pointer handlers) while the
-                // editable svg gains drag/resize pointer handling. Everything gated on Editable is inert
+                // editable svg gains move-drag pointer handling. Everything gated on Editable is inert
                 // for the PanelLinkTool / overlap-stepper reuse sites, which never set Editable.
                 RenderFragment overlay = @<text>
                     @if (!_overlayHidden)
@@ -92,26 +92,13 @@
                                 }
                                 else
                                 {
-                                    <circle @key="@($"drag-{h.Id}")" cx="@F(g.X * 100)" cy="@F(g.Y * 100)" r="@F(Math.Max(g.Radius, 0.012) * 100)"
+                                    <circle @key="@($"drag-{h.Id}")" cx="@F(g.X * 100)" cy="@F(g.Y * 100)"
+                                            r="@F((ExactHitTargets ? g.Radius : Math.Max(g.Radius, 0.012)) * 100)"
                                             fill="transparent" stroke="transparent" stroke-width="1"
                                             style="cursor: move; pointer-events: auto;"
                                             @onpointerdown="() => StartMove(h)" @onpointerdown:stopPropagation="true"
                                             @onclick="() => HandleHoldTap(h.Id)" @onclick:stopPropagation="true" />
                                 }
-                            }
-
-                            @if (ResizeHandleHold is { } rh)
-                            {
-                                var rg = Geo(rh);
-                                // Handle sits on the hold's upper-right edge; dragging it sets the radius to the
-                                // pointer's distance from the centre.
-                                var hx = rg.X + (rg.Radius * 0.7071);
-                                var hy = rg.Y - (rg.Radius * 0.7071);
-                                <circle cx="@F(hx * 100)" cy="@F(hy * 100)" r="1.6"
-                                        fill="#f5a623" stroke="#fff" stroke-width="0.3"
-                                        style="cursor: nwse-resize; pointer-events: auto;"
-                                        @onpointerdown="() => StartResize(rh)" @onpointerdown:stopPropagation="true"
-                                        @onclick:stopPropagation="true" />
                             }
                         }
                     }
@@ -179,15 +166,25 @@
     [Parameter] public EventCallback<(double X, double Y)> OnEmptyTap { get; set; }
 
     /// <summary>
-    /// When true, holds can be moved by dragging and resized via a handle on the selected hold; each
-    /// completed gesture reports the new normalized geometry through <see cref="OnHoldGeometryChanged"/>.
+    /// When true, holds can be moved by dragging; each completed drag reports the new normalized
+    /// geometry through <see cref="OnHoldGeometryChanged"/>. Resizing is NOT done here — the touch-up
+    /// toolbar's size slider commits through the same callback — so no handle covers a small hold.
     /// Opt-in: when false the component behaves exactly as before, so the non-editable reuse sites
     /// (PanelLinkTool, the overlap stepper) are unaffected. Add (<see cref="OnEmptyTap"/>) and select
     /// (<see cref="OnHoldTap"/>) keep working alongside it.
     /// </summary>
     [Parameter] public bool Editable { get; set; }
 
-    /// <summary>Fired after a move or resize with the hold's id and its new normalized X/Y/Radius.</summary>
+    /// <summary>
+    /// When true the editable hit proxies are drawn at each hold's TRUE radius instead of the inflated
+    /// minimum that makes a tiny hold draggable. Set it for a tool whose tap is destructive and
+    /// unrecoverable — the delete tool — where the inflation turns a near-miss on a small hold into a
+    /// deletion of it. Off by default, so moving and selecting keep the forgiving target.
+    /// </summary>
+    [Parameter] public bool ExactHitTargets { get; set; }
+
+    /// <summary>Fired after a move with the hold's id and its new normalized X/Y/Radius. The touch-up
+    /// size slider reports a resize through the same callback, so persistence has one path.</summary>
     [Parameter] public EventCallback<HoldGeometry> OnHoldGeometryChanged { get; set; }
 
     /// <summary>Fired when the pointer enters a hold (interactive mode); the end callback when it leaves.</summary>
@@ -207,10 +204,8 @@
     // Per-image, local: temporarily hide the overlay so tiny holds under it are visible.
     private bool _overlayHidden;
 
-    // In-place editing (Editable only). A draft holds the in-progress geometry so the immutable
+    // In-place editing (Editable only). A draft holds the in-progress drag geometry so the immutable
     // PanelHold records need not be mutated; the committed value round-trips through the parent.
-    private const double MinRadius = 0.004;
-    private const double MaxRadius = 0.2;
     private EditDrag _editDrag = EditDrag.None;
     private Guid _editHoldId;
     private bool _editMoved;
@@ -224,10 +219,6 @@
     private (double X, double Y, double Radius) Geo(PanelHold h) =>
         _geometryDrafts.TryGetValue(h.Id, out var g) ? g : (h.X, h.Y, h.Radius);
 
-    // The hold that shows a resize handle: the selected one, in Editable mode only.
-    private PanelHold? ResizeHandleHold =>
-        Editable && SelectedHoldId is { } id ? Holds.FirstOrDefault(h => h.Id == id) : null;
-
     private void StartMove(PanelHold h)
     {
         if (!Editable)
@@ -236,19 +227,6 @@
         }
 
         _editDrag = EditDrag.Move;
-        _editHoldId = h.Id;
-        _editMoved = false;
-        _geometryDrafts[h.Id] = Geo(h);
-    }
-
-    private void StartResize(PanelHold h)
-    {
-        if (!Editable)
-        {
-            return;
-        }
-
-        _editDrag = EditDrag.Resize;
         _editHoldId = h.Id;
         _editMoved = false;
         _geometryDrafts[h.Id] = Geo(h);
@@ -269,17 +247,7 @@
 
         var px = Math.Clamp(pos.X, 0, 1);
         var py = Math.Clamp(pos.Y, 0, 1);
-        if (_editDrag == EditDrag.Move)
-        {
-            _geometryDrafts[_editHoldId] = (px, py, g.Radius);
-        }
-        else
-        {
-            var dx = px - g.X;
-            var dy = py - g.Y;
-            var r = Math.Sqrt((dx * dx) + (dy * dy));
-            _geometryDrafts[_editHoldId] = (g.X, g.Y, Math.Clamp(r, MinRadius, MaxRadius));
-        }
+        _geometryDrafts[_editHoldId] = (px, py, g.Radius);
 
         _editMoved = true;
         StateHasChanged();
@@ -400,7 +368,6 @@
     {
         None,
         Move,
-        Resize,
     }
 
     private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);

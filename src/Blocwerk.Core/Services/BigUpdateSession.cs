@@ -32,6 +32,20 @@ namespace Blocwerk.Core.Services;
 /// to this warped polygon so a custom shape (e.g. a triangular volume) lands correctly on the new photo.
 /// Empty when the matcher did not run or no hold had a custom shape.
 /// </param>
+/// <param name="CarriedPanels">
+/// Per RE-PHOTOGRAPHED panel, the old live holds the carryover matcher ran against on that panel — after the
+/// updated-panel scope and the crash-mat false-positive drop. Hold coordinates are PANEL-normalized, so a
+/// review pane may only ever draw the set belonging to the panel whose photo it is showing. Exposed (rather
+/// than re-derived in the UI from a wall-wide read) so the review can never drift from the matcher and the
+/// promote again. Cross-generation carryover is per panel throughout — the centre is just the panel the
+/// review currently displays. Null on the pre-match staged session.
+/// </param>
+/// <param name="CarriedOldHoldIds">
+/// Every old live hold the promote will carry, flattened across <see cref="CarriedPanels"/>. The review seeds
+/// a decision for each of these (so a hold on a panel it does not currently display keeps the matcher's
+/// same-panel twin and promotes in place instead of cloning a duplicate alongside it). Null on the pre-match
+/// staged session.
+/// </param>
 public record BigUpdateSession(
     Guid WallId,
     Guid CenterPanelId,
@@ -42,4 +56,6 @@ public record BigUpdateSession(
     AutoMatchStatus AutoMatchStatus = AutoMatchStatus.Ok,
     string? AutoMatchMessage = null,
     IReadOnlyDictionary<Guid, HoldPositionNorm>? CarriedWarpPositions = null,
-    IReadOnlyDictionary<Guid, IReadOnlyList<HoldPositionNorm>>? CarriedWarpShapes = null);
+    IReadOnlyDictionary<Guid, IReadOnlyList<HoldPositionNorm>>? CarriedWarpShapes = null,
+    IReadOnlyList<CarriedPanelOldHolds>? CarriedPanels = null,
+    IReadOnlyList<Guid>? CarriedOldHoldIds = null);

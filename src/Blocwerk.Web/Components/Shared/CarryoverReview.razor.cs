@@ -9,19 +9,15 @@ namespace Blocwerk.Web.Components.Shared;
 /// Shows the old (left) and new (right) photos colour-coded, a live summary, and focused review
 /// steppers for the decisions that matter. EVERY old hold is carried by default; the matcher only
 /// overlays mapping suggestions, so a matcher miss can never silently destroy a boulder. The new
-/// image is directly editable (add / move / resize / remove staged holds) to fix detection errors.
-/// State lives here; markup is in the .razor.
+/// image is directly editable (add / move / resize / remove staged holds) to fix detection errors —
+/// that right-pane editing lives in CarryoverReview.Tools.cs. State lives here; markup in the .razor.
 /// </summary>
 public partial class CarryoverReview
 {
     [Inject]
-    private IWallService WallService { get; set; } = default!;
-
-    [Inject]
     private IWallPanelService WallPanelService { get; set; } = default!;
 
     [Parameter] public Guid WallId { get; set; }
-    [Parameter] public int CurrentGeneration { get; set; }
     [Parameter] public BigUpdateSession Session { get; set; } = default!;
     [Parameter] public EventCallback<CarryoverOutcome> OnContinue { get; set; }
     [Parameter] public EventCallback OnDiscard { get; set; }
@@ -38,40 +34,61 @@ public partial class CarryoverReview
     private const string Blue = "var(--status-info)";
     private const string Grey = "rgba(150,150,160,0.5)";
 
-    // Normalized default radius for a user-added hold on the new image (~2% of the panel).
-    private const double DefaultNewHoldRadius = 0.02;
-
     private bool _loading = true;
     private CarryReviewMode? _reviewMode;
-
-    // Right-pane (new image) editing state.
-    private bool _addMode;
-    private Guid? _selectedNewHoldId;
 
     // Every old live hold starts carried in place (default-KEEP); the new-centre holds are all
     // accepted unless the user explicitly discards one.
     private readonly Dictionary<Guid, CarryoverDecision> _decisions = [];
     private readonly HashSet<Guid> _newDiscarded = [];
 
+    // The re-photographed panel this review DISPLAYS, and the old holds carried on it. Hold coordinates
+    // are PANEL-normalized, so a pane may only draw the old set of the panel whose photo it is showing:
+    // drawing the wall's whole old generation here put every side-panel hold on the centre image as a
+    // circle floating over the mats, and a Removed verdict on one of those phantoms froze real boulders.
+    // The session supplies the set per panel (Session.CarriedPanels) so this can never drift from the
+    // matcher. It is deliberately STATE rather than a hardcoded centre lookup: a panel selector (as the
+    // touch-up step already has) only needs to reassign _displayedPanel and the "before" photo URL.
+    private CarriedPanelOldHolds? _displayedPanel;
+
     private List<PanelHold> _oldHolds = [];
     private List<PanelHold> _newHolds = [];
 
+    // The ids of _oldHolds, for scoping every UI derivation off the all-panel decision map below.
+    private HashSet<Guid> _displayedOldIds = [];
+
     private Guid CenterPanelId => Session.CenterPanelId;
+
+    // The "before" image: the LIVE panel of whichever panel is displayed, so the old-hold overlay and the
+    // photo underneath it always describe the same panel. Falls back to the wall photo route (which serves
+    // the live centre panel, with its own legacy fallback) when the session predates the per-panel shape.
+    private string OldPhotoUrl => _displayedPanel?.LivePanelId is { } livePanelId
+        ? $"/api/walls/{WallId}/panels/{livePanelId}/photo"
+        : $"/api/walls/{WallId}/photo";
 
     private bool AutoMatchDegraded => Session.AutoMatchStatus != AutoMatchStatus.Ok;
 
     protected override async Task OnInitializedAsync()
     {
-        var old = await WallService.GetHoldsForGenerationAsync(WallId, CurrentGeneration);
-        _oldHolds = old.Select(h => new PanelHold(h.Id, h.X, h.Y, h.Radius, h.Color)).ToList();
+        // Today the review displays the CENTRE panel: its "before" image is /api/walls/{id}/photo, which
+        // serves the live centre panel, and its editable "after" pane is the staged centre. The other
+        // re-photographed panels are carried and matched all the same (the service matches each panel's
+        // old holds against its OWN staged detections) — they are simply not drawn here.
+        _displayedPanel = (Session.CarriedPanels ?? []).FirstOrDefault(p => p is { Col: 0, Row: 0 });
+        _oldHolds = (_displayedPanel?.OldHolds ?? []).ToList();
+        _displayedOldIds = _oldHolds.Select(h => h.Id).ToHashSet();
         await ReloadNewHoldsAsync();
 
-        // Carry-all default: EVERY old hold gets a Carried, no-twin decision. This is where the
+        // Carry-all default: EVERY carried old hold gets a Carried, no-twin decision. This is where the
         // "never silently lose a hold" invariant lives — even a total matcher failure leaves every
-        // old hold carried, so nothing is ever dropped.
-        foreach (var h in _oldHolds)
+        // old hold carried, so nothing is ever dropped. Deliberately seeded over the session's FULL
+        // carried set (centre AND every co-updated neighbour panel), not just the drawn centre set: the
+        // promote's reconcile would otherwise default an undecided neighbour hold to a twin-less carry
+        // and clone it forward alongside the staged detection it should have promoted in place.
+        // Only the displayed panel's subset is ever drawn or stepped through — see _displayedOldIds.
+        foreach (var id in Session.CarriedOldHoldIds ?? [])
         {
-            _decisions[h.Id] = new CarryoverDecision(h.Id, CarryKind.Carried, null);
+            _decisions[id] = new CarryoverDecision(id, CarryKind.Carried, null);
         }
 
         // Overlay the matcher's proposals as SUGGESTIONS only: set the new-centre twin where a
@@ -105,14 +122,25 @@ public partial class CarryoverReview
     }
 
     // ---- Live summary ----------------------------------------------------------
-    private int CarryingCount => _decisions.Values.Count(d => d.Kind == CarryKind.Carried);
-    private int ChangedCount => _decisions.Values.Count(d => d.Kind == CarryKind.Changed);
-    private int RemovingCount => _decisions.Values.Count(d => d.Kind == CarryKind.Removed);
+    // Every count and list below reads DisplayedDecisions, never _decisions: the pane speaks about the
+    // panel it draws. Holds on the other re-photographed panels keep their carry decision (so the
+    // promote still twins them in place) but they are NOT reviewable anywhere: _displayedPanel is
+    // pinned to the centre (0,0) and there is no panel selector yet, so their decision can only ever be
+    // the matcher default. That is a real capability gap — a neighbour panel's old hold cannot be
+    // marked Removed at all — whose fix is the panel selector, deliberately a separate change.
+    // CarryoverScope is what keeps a verdict recorded on one of them (by an older build that drew them
+    // all on this photo) from taking effect where nobody can see it.
+    private IEnumerable<CarryoverDecision> DisplayedDecisions =>
+        _decisions.Values.Where(d => _displayedOldIds.Contains(d.OldHoldId));
+
+    private int CarryingCount => DisplayedDecisions.Count(d => d.Kind == CarryKind.Carried);
+    private int ChangedCount => DisplayedDecisions.Count(d => d.Kind == CarryKind.Changed);
+    private int RemovingCount => DisplayedDecisions.Count(d => d.Kind == CarryKind.Removed);
 
     // Staged holds that no old hold consumed as a twin — the genuinely new holds (user additions
     // included, deletions naturally excluded since they leave _newHolds).
     private HashSet<Guid> ConsumedNewIds =>
-        _decisions.Values.Where(d => d.NewHoldId is not null).Select(d => d.NewHoldId!.Value).ToHashSet();
+        DisplayedDecisions.Where(d => d.NewHoldId is not null).Select(d => d.NewHoldId!.Value).ToHashSet();
 
     private int NewCount =>
         _newHolds.Count(h => !_newDiscarded.Contains(h.Id) && !ConsumedNewIds.Contains(h.Id));
@@ -121,8 +149,8 @@ public partial class CarryoverReview
     // changed" on any of them — deterministic and matcher-independent (the matcher no longer flags
     // moves). The button is labelled "Review carried" because this is the count it walks; the amber
     // "changed" chip reports how many of them are flagged, via ChangedCount above.
-    private int CarriedToReview => _decisions.Values.Count(d => d.Kind is CarryKind.Carried or CarryKind.Changed);
-    private int RemovalToReview => Session.RemovedCandidateHoldIds.Count;
+    private int CarriedToReview => DisplayedDecisions.Count(d => d.Kind is CarryKind.Carried or CarryKind.Changed);
+    private int RemovalToReview => DisplayedRemovedCandidates.Count;
     private int NewToReview => Session.NewCenterHoldIds.Count(id => _newHolds.Any(h => h.Id == id));
 
     // ---- Review item lists (walked one at a time) ------------------------------
@@ -135,11 +163,16 @@ public partial class CarryoverReview
     }
 
     private List<CarryReviewItem> CarriedItems =>
-        _decisions.Where(kv => kv.Value.Kind is CarryKind.Carried or CarryKind.Changed)
-            .Select(kv => new CarryReviewItem(kv.Key, kv.Value.NewHoldId, kv.Value.Kind)).ToList();
+        DisplayedDecisions.Where(d => d.Kind is CarryKind.Carried or CarryKind.Changed)
+            .Select(d => new CarryReviewItem(d.OldHoldId, d.NewHoldId, d.Kind)).ToList();
+
+    // The matcher reports removal candidates for EVERY re-photographed panel (its per-panel carryover
+    // pass). Only the displayed panel's can be drawn over this photo, so only those are offered here.
+    private List<Guid> DisplayedRemovedCandidates =>
+        Session.RemovedCandidateHoldIds.Where(_displayedOldIds.Contains).ToList();
 
     private List<CarryReviewItem> RemovalItems =>
-        Session.RemovedCandidateHoldIds.Select(ItemForOld).ToList();
+        DisplayedRemovedCandidates.Select(ItemForOld).ToList();
 
     private List<CarryReviewItem> NewItems =>
         Session.NewCenterHoldIds.Where(id => _newHolds.Any(h => h.Id == id))
@@ -158,7 +191,7 @@ public partial class CarryoverReview
     private Dictionary<Guid, string> OldColors()
     {
         var map = new Dictionary<Guid, string>();
-        foreach (var d in _decisions.Values)
+        foreach (var d in DisplayedDecisions)
         {
             map[d.OldHoldId] = d.Kind switch
             {
@@ -178,7 +211,7 @@ public partial class CarryoverReview
         var map = new Dictionary<Guid, string>();
         var consumed = ConsumedNewIds;
 
-        foreach (var d in _decisions.Values)
+        foreach (var d in DisplayedDecisions)
         {
             if (d.NewHoldId is { } nid)
             {
@@ -198,58 +231,6 @@ public partial class CarryoverReview
         }
 
         return map;
-    }
-
-    // ---- Right-pane (new image) staged edits -----------------------------------
-    private void SelectNewHold(Guid id) => _selectedNewHoldId = id;
-
-    private async Task OnNewHoldGeometryChanged(PanelImageView.HoldGeometry g)
-    {
-        await WallPanelService.UpdateStagedHoldAsync(WallId, g.HoldId, g.X, g.Y, g.Radius);
-        await ReloadNewHoldsAsync();
-    }
-
-    private async Task OnNewEmptyTap((double X, double Y) at)
-    {
-        var id = await WallPanelService.AddStagedHoldAsync(WallId, CenterPanelId, at.X, at.Y, DefaultNewHoldRadius);
-        _addMode = false;
-        _selectedNewHoldId = id;
-        await ReloadNewHoldsAsync();
-    }
-
-    private async Task RemoveSelectedNewHold()
-    {
-        if (_selectedNewHoldId is not { } id)
-        {
-            return;
-        }
-
-        await WallPanelService.DeleteStagedHoldAsync(WallId, id);
-
-        // Any carry decision that pointed at this now-deleted staged twin falls back to a carry in
-        // place (no twin), so no decision references a hold that no longer exists. The fallbacks are
-        // written through too, or a resume would restore a twin that has been deleted.
-        var orphaned = new List<CarryoverDecision>();
-        foreach (var (oldId, d) in _decisions.Where(kv => kv.Value.NewHoldId == id).ToList())
-        {
-            var fallback = d with { NewHoldId = null };
-            _decisions[oldId] = fallback;
-            orphaned.Add(fallback);
-        }
-
-        await SaveCarryAllAsync(orphaned);
-
-        _selectedNewHoldId = null;
-        await ReloadNewHoldsAsync();
-    }
-
-    private void ToggleAddMode()
-    {
-        _addMode = !_addMode;
-        if (_addMode)
-        {
-            _selectedNewHoldId = null;
-        }
     }
 
     // The decision handlers and the as-you-go saves live in CarryoverReview.Persistence.cs.

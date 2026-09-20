@@ -43,7 +43,6 @@ public partial class BigWallUpdate : IDisposable
     private IDisposable? _editLease;
 
     [Parameter] public Guid WallId { get; set; }
-    [Parameter] public int CurrentGeneration { get; set; }
 
     /// <summary>Raised when the user leaves the flow (discarded or finished) so the parent can reload.</summary>
     [Parameter] public EventCallback OnClose { get; set; }

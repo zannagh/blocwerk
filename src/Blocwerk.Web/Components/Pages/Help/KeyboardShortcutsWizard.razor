@@ -1,0 +1,119 @@
+@* The wall update wizard's key bindings (including the review steppers), lifted out of
+   KeyboardShortcuts.razor so that page stays under the project's file-size rule. Static markup only —
+   content is identical to what the page rendered before. *@
+
+    <section class="keyshort-section">
+        <h2>Wall update wizard</h2>
+        <p class="keyshort-note">The wizard declares a different set of keys on each step.</p>
+        <dl class="keyshort-list">
+            <div class="keyshort-row">
+                <dt><kbd>Enter</kbd></dt>
+                <dd>
+                    The primary button of the current step: <em>Resume update</em> on the resume prompt,
+                    <em>Start update</em> on the upload step, <em>Continue</em> on the detected-holds step,
+                    <em>Continue to overlaps</em> on the carry-over step, <em>Continue</em> on the touch-up
+                    step, <em>Apply update</em> on the confirm step, and <em>Done</em> on the final step.
+                    It respects the button's own disabled state, so a premature <kbd>Enter</kbd> does
+                    nothing. If you have tabbed or clicked onto some other button, that button keeps
+                    <kbd>Enter</kbd> and is what gets pressed.
+                </dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>s</kbd></dt>
+                <dd>
+                    Skip touch-up &mdash; on the detected-holds and touch-up steps only. On the
+                    detected-holds step skipping and continuing are the same action.
+                </dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>a</kbd></dt>
+                <dd>
+                    The <em>add hold</em> tool &mdash; on the detected-holds, touch-up and carry-over steps.
+                    Tap the photo to place a hold at the toolbar's current size. Press <kbd>a</kbd> again
+                    to leave the tool.
+                </dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>d</kbd></dt>
+                <dd>
+                    The <em>delete hold</em> tool &mdash; same three steps. Tap a hold to delete it; press
+                    <kbd>d</kbd> again to leave the tool.
+                </dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>p</kbd></dt>
+                <dd>
+                    The <em>pipette</em> tool &mdash; same three steps. Tap a hold to copy its size onto the
+                    holds you add next; you land back in the add tool.
+                </dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>x</kbd></dt>
+                <dd>Remove the selected hold &mdash; same three steps; does nothing when nothing is selected</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>Esc</kbd></dt>
+                <dd>
+                    Close the flow &mdash; only on the resume prompt (<em>Not now</em>), the upload step
+                    (<em>Cancel</em>) and the final step (<em>Done</em>)
+                </dd>
+            </div>
+        </dl>
+        <p class="keyshort-note">
+            <kbd>Esc</kbd> never discards a staged update. It is bound only where closing throws nothing
+            away, and is deliberately unbound on the detected-holds, carry-over, neighbour-overlap,
+            touch-up and confirm steps, because discarding is irreversible and would go unconfirmed.
+            The neighbour-overlap step declares no wizard keys at all &mdash; it is driven entirely by the
+            overlap stepper below. The carry-over step also goes quiet while one of its review sub-views
+            is open.
+        </p>
+
+        <h3>Review steppers</h3>
+        <p class="keyshort-note">
+            Used while reviewing matched or carried-over holds. While a stepper is on screen it owns the
+            keyboard: every shortcut above &mdash; the wizard's own keys and the wall carousel arrows
+            included &mdash; is inactive, and only the keys below apply.
+        </p>
+        <p class="keyshort-note">
+            They are the stepper's own keys, so they go to whatever has focus. The stepper takes focus
+            itself when it opens and again after every decision, so you can normally just start typing;
+            if you clicked something else in between, click the stepper once to hand focus back.
+        </p>
+        <dl class="keyshort-list">
+            <div class="keyshort-row">
+                <dt><kbd>Enter</kbd></dt>
+                <dd>Confirm the match / accept the carried hold (keep, for new holds)</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>c</kbd></dt>
+                <dd>Confirm match (neighbour overlaps) / toggle &ldquo;changed&rdquo; (carry-over, except the new-hold list)</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>d</kbd></dt>
+                <dd>Discard match &mdash; neighbour-overlap stepper only</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>m</kbd></dt>
+                <dd>Mark hold as moved &mdash; neighbour-overlap stepper only</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>x</kbd> <span class="keyshort-plus">or</span> <kbd>Del</kbd></dt>
+                <dd>
+                    Remove the hold / discard the new hold. <kbd>Del</kbd> works here only &mdash; outside
+                    a stepper it is not bound at all, and the wizard's own remove key is <kbd>x</kbd>.
+                </dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>&larr;</kbd> <kbd>&rarr;</kbd></dt>
+                <dd>Previous / next item</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>Esc</kbd></dt>
+                <dd>Cancel the current sub-mode (manual pairing, &ldquo;moved&rdquo; pick, interactive pick)</dd>
+            </div>
+        </dl>
+        <p class="keyshort-note">
+            While a sub-mode is open the stepper only listens for <kbd>Enter</kbd> (confirm the pick, and
+            <kbd>c</kbd> does the same in the &ldquo;moved&rdquo; pick) and <kbd>Esc</kbd> (cancel it).
+        </p>
+    </section>

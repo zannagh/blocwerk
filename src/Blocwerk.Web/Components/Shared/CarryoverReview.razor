@@ -38,6 +38,26 @@ else
             </div>
         }
 
+        @* Verdicts recorded against holds this pane cannot draw (an older build drew every panel's old
+           holds on the centre photo). They were reset to "carry in place" so they cannot freeze a
+           boulder unseen — said out loud, and not dismissable until the user acknowledges it. *@
+        @if (ScopeResetCount > 0)
+        {
+            <div class="bigupdate-banner" role="alert">
+                <strong>@ScopeResetCount earlier hold decision(s) were reset to "carry in place".</strong>
+                <span>
+                    They were recorded against holds on other re-photographed panels, which this step
+                    cannot show — so you could neither see nor undo them here. Left as they were, a
+                    "remove" among them would have retired real boulders to history without appearing
+                    anywhere on this screen. Every one of those holds is now simply carried over.
+                </span>
+                @if (!_scopeResetsAcknowledged)
+                {
+                    <button class="btn-secondary" @onclick="AcknowledgeScopeResetsAsync">I understand</button>
+                }
+            </div>
+        }
+
         @* Attention-focused headline: the matcher auto-carried nearly everything, so surface only the
            few holds that need the user's eyes and frame the rest as done. *@
         <div class="bigupdate-attention @(NeedsReviewCount == 0 ? "clear" : "")" role="status">
@@ -76,29 +96,29 @@ else
 
         <div class="panel-stepper-pair">
             <PanelImageView WallId="WallId" Caption="Old wall (before)"
-                            PhotoUrl="@($"/api/walls/{WallId}/photo")"
+                            PhotoUrl="@OldPhotoUrl"
                             Holds="_oldHolds" HoldColors="OldColors()" />
             <PanelImageView WallId="WallId" Caption="New centre (after)"
                             PhotoUrl="@($"/api/walls/{WallId}/panels/{CenterPanelId}/staged-photo")"
                             Holds="_newHolds" HoldColors="NewColors()"
-                            Editable="true" AddMode="_addMode"
+                            Editable="true" AddMode="@(_tool == HoldTouchupTool.Add)"
                             SelectedHoldId="_selectedNewHoldId"
-                            OnHoldTap="SelectNewHold"
+                            ExactHitTargets="@(_tool == HoldTouchupTool.Delete)"
+                            OnHoldTap="OnNewHoldTapAsync"
                             OnEmptyTap="OnNewEmptyTap"
                             OnHoldGeometryChanged="OnNewHoldGeometryChanged" />
         </div>
 
         <div class="bigupdate-edit-tools">
             <span class="hint">
-                Fix the new photo: <strong>+ Add</strong> a missed hold, drag a hold to reposition it,
-                drag its corner handle to resize, or select one and <strong>Remove</strong> a false detection.
+                Fix the new photo: pick <strong>+</strong> to add a missed hold, the <strong>pipette</strong> to copy
+                an existing hold's size onto the ones you add next, or the <strong>bin</strong> to delete a false
+                detection. Drag a hold to reposition it; the <strong>size slider</strong> resizes the selected hold.
             </span>
-            <button class="btn-secondary @(_addMode ? "active" : "")" @onclick="ToggleAddMode">
-                @(_addMode ? "Adding — tap the photo (cancel)" : "+ Add hold")
-            </button>
-            <button class="btn-danger-soft" @onclick="RemoveSelectedNewHold" disabled="@(_selectedNewHoldId is null)">
-                Remove selected
-            </button>
+            <HoldTouchupToolbar Tool="_tool" ToolChanged="SetTool"
+                                Size="_newHoldRadius" SizeChanged="OnSizeChanged"
+                                OnSizeCommitted="OnSizeCommittedAsync"
+                                HasSelection="@(_selectedNewHoldId is not null)" />
         </div>
 
         <div class="bigupdate-legend">
@@ -129,7 +149,7 @@ else
         </details>
 
         <div class="staged-actions">
-            <button class="btn-primary" @onclick="Continue">Continue to overlaps →</button>
+            <button class="btn-primary" @onclick="Continue" disabled="@ScopeResetsPending">Continue to overlaps →</button>
             <button class="btn-danger-soft" @onclick="() => OnDiscard.InvokeAsync()">Discard update</button>
         </div>
     </div>

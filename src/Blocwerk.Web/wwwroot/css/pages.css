@@ -2475,6 +2475,9 @@ html.bw-fullscreen .wall-main .photo-viewport {
 .bigupdate-edit-tools .hint { flex: 1 1 100%; margin: 0; }
 .bigupdate-edit-tools .btn-secondary,
 .bigupdate-edit-tools .btn-danger-soft { width: auto; margin-bottom: 0; flex: 0 1 auto; }
+/* The shared HoldTouchupToolbar reuses the wall editor's toolbar chrome; here it is a standalone row
+   rather than the top edge of an editor, so it gets all four corners rounded. */
+.bigupdate-edit-tools .hold-touchup-toolbar { flex: 1 1 100%; border-radius: 10px; }
 
 /* Phase overview: summary chips + colour legend */
 .bigupdate-phase { margin: 4px 0; }

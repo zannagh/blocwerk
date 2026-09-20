@@ -50,24 +50,24 @@ else
                 <PanelImageView @key="panel.PanelId" WallId="WallId" Caption="@panel.Label"
                                 PhotoUrl="@StagedPhotoUrl(panel.PanelId)"
                                 Holds="_holds"
-                                Editable="true" AddMode="_addMode"
+                                Editable="true" AddMode="@(_tool == HoldTouchupTool.Add)"
                                 SelectedHoldId="_selectedHoldId"
-                                OnHoldTap="SelectHold"
+                                ExactHitTargets="@(_tool == HoldTouchupTool.Delete)"
+                                OnHoldTap="OnHoldTapAsync"
                                 OnEmptyTap="OnEmptyTap"
                                 OnHoldGeometryChanged="OnHoldGeometryChanged" />
             </div>
 
             <div class="bigupdate-edit-tools">
                 <span class="hint">
-                    <strong>+ Add</strong> a hold the detector missed, drag a hold to reposition it, drag its
-                    corner handle to resize, or select one and <strong>Remove</strong> a false detection.
+                    Pick <strong>+</strong> to add a hold the detector missed, the <strong>pipette</strong> to copy
+                    an existing hold's size onto the ones you add next, or the <strong>bin</strong> to delete a false
+                    detection. Drag a hold to reposition it; the <strong>size slider</strong> resizes the selected hold.
                 </span>
-                <button class="btn-secondary @(_addMode ? "active" : "")" @onclick="ToggleAddMode">
-                    @(_addMode ? "Adding — tap the photo (cancel)" : "+ Add hold")
-                </button>
-                <button class="btn-danger-soft" @onclick="RemoveSelectedHold" disabled="@(_selectedHoldId is null)">
-                    Remove selected
-                </button>
+                <HoldTouchupToolbar Tool="_tool" ToolChanged="SetTool"
+                                    Size="_newHoldRadius" SizeChanged="OnSizeChanged"
+                                    OnSizeCommitted="OnSizeCommittedAsync"
+                                    HasSelection="@(_selectedHoldId is not null)" />
             </div>
         }
 

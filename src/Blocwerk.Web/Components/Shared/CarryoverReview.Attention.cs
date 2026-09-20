@@ -76,10 +76,14 @@ public partial class CarryoverReview
     // ---- Cross-gen linking seam (in-memory over _decisions) ------------------------
     // The current old→new mapping the side-by-side renders as pre-linked (green). Only carried holds
     // with a twin appear; a removed hold has no cross-gen link.
+    // Scoped to the DISPLAYED panel, like every other derivation off _decisions: CrossGenLinkTool's
+    // OldHolds/NewHolds are the centre sets, so a co-updated neighbour's link could only ever be a
+    // lookup miss there. Reading DisplayedDecisions keeps the two scopes from meeting at all rather
+    // than relying on that miss staying harmless.
     private IReadOnlyDictionary<Guid, Guid> CrossGenLinks()
     {
         var map = new Dictionary<Guid, Guid>();
-        foreach (var d in _decisions.Values)
+        foreach (var d in DisplayedDecisions)
         {
             if (d.Kind != CarryKind.Removed && d.NewHoldId is { } nid)
             {

@@ -146,6 +146,15 @@ public partial class BigWallUpdate
     private async Task RestoreDecisionsAsync()
     {
         _restored = await Sessions.GetDecisionsAsync(WallId);
+
+        // Resuming at Neighbours, Touchup or Confirm never re-walks the carryover, so nothing else
+        // would ever look at these rows again before the promote reads them straight out of the
+        // session. Neutralise the ones about holds no surface can show HERE, so the reset is in effect
+        // (and its notice is armed) on every resume target, not only when the carryover is re-walked.
+        var reconciled = ReconcileCarryScope(_restored.Carryover);
+        RecordScopeResets(reconciled.Reset);
+        _restored = _restored with { Carryover = reconciled.Decisions.ToList() };
+
         _outcome = new CarryoverOutcome(
             _restored.Carryover,
             _restored.AcceptedNewCenterHoldIds,

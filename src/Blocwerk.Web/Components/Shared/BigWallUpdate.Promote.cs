@@ -31,11 +31,30 @@ public partial class BigWallUpdate
     /// </summary>
     private async Task Apply()
     {
+        // The Apply button is disabled while a reset notice is unread; the Enter binding is not, so the
+        // gate lives here too rather than only on the markup.
+        if (ScopeResetsPending)
+        {
+            _phase = WallUpdatePhase.Confirm;
+            return;
+        }
+
         _error = null;
         _phase = WallUpdatePhase.Working;
         try
         {
             var confirmation = await BuildConfirmationAsync();
+
+            // BuildConfirmationAsync re-reads the session rows, so it can surface out-of-scope verdicts
+            // this circuit had not seen yet (another admin's decisions, or a resume that skipped the
+            // carryover). They are already neutralised in the payload — but "not silently" is the whole
+            // rule, so the promote waits one round trip for the user to read the notice.
+            if (ScopeResetsPending)
+            {
+                _phase = WallUpdatePhase.Confirm;
+                return;
+            }
+
             await BigUpdate.PromoteAsync(WallId, confirmation, _sessionInfo?.Id);
             _outcome = new CarryoverOutcome(
                 confirmation.Carryover, confirmation.AcceptedNewCenterHoldIds, confirmation.RemovedNewCenterHoldIds);
@@ -96,20 +115,75 @@ public partial class BigWallUpdate
             persisted = await Sessions.GetDecisionsAsync(WallId);
         }
 
-        // The warp dictionaries come from the matcher, never from the session. _session was produced by
-        // ResumeAsync on the way into the carryover (fresh run) or on resume (re-run), so it has them;
-        // re-run only if this circuit somehow has no session.
-        var matched = _session;
-        if (matched?.CarriedWarpPositions is null)
-        {
-            matched = await BigUpdate.ResumeAsync(WallId);
-            _session = matched;
-        }
+        var matched = await MatchedSessionAsync();
+
+        // The promote boundary is the last place a verdict about an unshowable hold can be stopped, and
+        // the only one every path passes through — a resume straight to Confirm never re-walks the
+        // carryover, so the rows reach here exactly as they were recorded. Neutralising them here as
+        // well as on restore means no ordering of resume, take-over or re-read can let one through.
+        var scoped = CarryoverScope.Reconcile(matched, persisted.Carryover);
+        RecordScopeResets(scoped.Reset);
 
         return persisted with
         {
+            Carryover = scoped.Decisions.ToList(),
             CarriedWarpPositions = matched.CarriedWarpPositions,
             CarriedWarpShapes = matched.CarriedWarpShapes,
         };
     }
+
+    /// <summary>
+    /// The session carrying the matcher's warp dictionaries, which come from the matcher and are never
+    /// persisted. <c>ResumeAsync</c> produced them on the way into the carryover (fresh run) or on
+    /// resume (re-run), so this circuit normally already has them; the matcher is only re-run when it
+    /// somehow does not. The result is also what the scope reconcile reads the reviewable panel from.
+    /// </summary>
+    private async Task<BigUpdateSession> MatchedSessionAsync()
+    {
+        if (_session is { CarriedWarpPositions: not null } current)
+        {
+            return current;
+        }
+
+        _session = await BigUpdate.ResumeAsync(WallId);
+        return _session;
+    }
+
+    // ---- Out-of-scope carry verdicts (see CarryoverScope) ----------------------
+
+    /// <summary>
+    /// The recorded verdicts that were reset because they are about old holds on a panel no review
+    /// surface displays, and whether the user has acknowledged them. Kept on the wizard (not on the
+    /// carryover step) because the resume paths that skip that step are exactly the dangerous ones.
+    /// </summary>
+    private readonly List<CarryoverDecision> _scopeResets = [];
+
+    private bool _scopeResetsAcknowledged;
+
+    private bool ScopeResetsPending => _scopeResets.Count > 0 && !_scopeResetsAcknowledged;
+
+    private CarryoverScopeResult ReconcileCarryScope(IReadOnlyList<CarryoverDecision> decisions) =>
+        _session is { } session
+            ? CarryoverScope.Reconcile(session, decisions)
+            : new CarryoverScopeResult(decisions, []);
+
+    /// <summary>
+    /// Folds newly-found resets in. Anything not already listed re-arms the acknowledgement, so a
+    /// verdict discovered on a later read cannot ride out on an acknowledgement of earlier ones.
+    /// </summary>
+    private void RecordScopeResets(IReadOnlyList<CarryoverDecision> reset)
+    {
+        foreach (var decision in reset)
+        {
+            if (_scopeResets.Any(r => r.OldHoldId == decision.OldHoldId))
+            {
+                continue;
+            }
+
+            _scopeResets.Add(decision);
+            _scopeResetsAcknowledged = false;
+        }
+    }
+
+    private void AcknowledgeScopeResets() => _scopeResetsAcknowledged = true;
 }

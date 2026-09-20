@@ -9,7 +9,8 @@ namespace Blocwerk.Web.Components.Shared;
 /// once as the final pass after the neighbour overlaps, before the confirm/apply step. The behaviour
 /// is identical in both — only the copy differs, via <see cref="Heading"/> and the lead parameters.
 /// Lets the user walk EVERY staged panel of the new generation and correct
-/// the model's detection: add a missed hold, drag/resize a hold into place, or delete a stray one.
+/// the model's detection: add a missed hold, drag one into place, resize it from the toolbar, or
+/// delete a stray one.
 /// These are corrections, not physical changes — added holds are staged with <c>needsReview:false</c>
 /// and repositions only touch geometry, so nothing here flags a hold or boulder for review. All
 /// edits go straight to the staged rows via <see cref="IWallPanelService"/>; the physical-change flag
@@ -48,7 +49,12 @@ public partial class TouchupStep
 
     private bool _loading = true;
     private int _panelIndex;
-    private bool _addMode;
+
+    // The active toolbar tool, and the size newly added holds get. The size starts at the default and
+    // is then whatever the pipette sampled or the slider last set, so a run of adds no longer has to be
+    // resized one hold at a time.
+    private HoldTouchupTool _tool;
+    private double _newHoldRadius = DefaultNewHoldRadius;
     private Guid? _selectedHoldId;
     private List<PanelHold> _holds = [];
     private List<StagedPanelRef> _panels = [];
@@ -57,24 +63,25 @@ public partial class TouchupStep
         _panelIndex >= 0 && _panelIndex < _panels.Count ? _panels[_panelIndex] : null;
 
     /// <summary>
-    /// Keyboard entry point for the wizard's "a" binding (toggle add-hold mode). The wizard owns the
-    /// single shortcut scope, so the key arrives here from outside a Blazor event and this step has
-    /// to ask for its own re-render.
+    /// Keyboard entry point for the wizard's tool bindings (a / d / p). Picking the tool that is
+    /// already active drops back out of it, exactly like clicking its toolbar button. The wizard owns
+    /// the single shortcut scope, so the key arrives here from outside a Blazor event and this step
+    /// has to ask for its own re-render.
     /// </summary>
-    public void TryToggleAddMode()
+    public void TrySelectTool(HoldTouchupTool tool)
     {
         if (_loading || CurrentPanel is null)
         {
             return;
         }
 
-        ToggleAddMode();
+        SetTool(_tool == tool ? HoldTouchupTool.None : tool);
         StateHasChanged();
     }
 
     /// <summary>
-    /// Keyboard entry point for the wizard's "x" binding (remove the selected hold). Mirrors the
-    /// Remove button's disabled state: with nothing selected the key does nothing at all.
+    /// Keyboard entry point for the wizard's "x" binding (remove the selected hold). With nothing
+    /// selected the key does nothing at all — the bin TOOL deletes by tapping a hold instead.
     /// </summary>
     public async Task TryRemoveSelectedHoldAsync()
     {
@@ -123,20 +130,86 @@ public partial class TouchupStep
         }
 
         _panelIndex = index;
-        _addMode = false;
+        _tool = HoldTouchupTool.None;
         _selectedHoldId = null;
         await ReloadHoldsAsync();
     }
 
-    private void SelectHold(Guid id) => _selectedHoldId = id;
-
-    private void ToggleAddMode()
+    /// <summary>
+    /// A tap on a hold, routed by the active tool: the bin deletes it outright (editor semantics), the
+    /// pipette adopts its size for the next adds, and otherwise it is simply selected.
+    /// </summary>
+    private async Task OnHoldTapAsync(Guid id)
     {
-        _addMode = !_addMode;
-        if (_addMode)
+        switch (_tool)
+        {
+            case HoldTouchupTool.Delete:
+                await RemoveHoldAsync(id);
+                break;
+
+            case HoldTouchupTool.Pipette:
+                SampleSize(id);
+                break;
+
+            default:
+                SelectHold(id);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Selects a hold AND adopts its radius as the toolbar's size, exactly as the wall editor does on
+    /// select and on drag-start. Without this the slider still showed the last add-size while its label
+    /// read "Size (selected):", so one nudge resized the selected hold to a value the user never chose —
+    /// a 40% shrink on a hold larger than the default.
+    /// </summary>
+    private void SelectHold(Guid id)
+    {
+        _selectedHoldId = id;
+        if (_holds.FirstOrDefault(h => h.Id == id) is { } hold)
+        {
+            _newHoldRadius = hold.Radius;
+        }
+    }
+
+    // Pipette: take the tapped hold's radius as the current size and drop straight into Add mode, which
+    // is what the sample is for. The selection is cleared so the slider unambiguously describes the size
+    // of the NEXT hold rather than silently resizing the hold that was just sampled.
+    private void SampleSize(Guid id)
+    {
+        if (_holds.FirstOrDefault(h => h.Id == id) is { } hold)
+        {
+            _newHoldRadius = hold.Radius;
+        }
+
+        _selectedHoldId = null;
+        _tool = HoldTouchupTool.Add;
+    }
+
+    // Mutually exclusive tools, mirroring the wall editor's SetMode: leaving a tool clears the transient
+    // state that only made sense inside it.
+    private void SetTool(HoldTouchupTool tool)
+    {
+        _tool = tool;
+        if (tool is HoldTouchupTool.Add or HoldTouchupTool.Pipette)
         {
             _selectedHoldId = null;
         }
+    }
+
+    // Live slider feedback: the size a new hold gets always follows the slider.
+    private void OnSizeChanged(double radius) => _newHoldRadius = radius;
+
+    // Slider released: with a hold selected that hold is resized, through the same geometry/persistence
+    // path a drag uses. With nothing selected the slider only set the size for the next add.
+    private async Task OnSizeCommittedAsync(double radius)
+    {
+        if (_selectedHoldId is not { } id || _holds.FirstOrDefault(h => h.Id == id) is not { } hold)
+        {
+            return;
+        }
+
+        await OnHoldGeometryChanged(new PanelImageView.HoldGeometry(id, hold.X, hold.Y, radius));
     }
 
     private async Task OnHoldGeometryChanged(PanelImageView.HoldGeometry g)
@@ -156,8 +229,10 @@ public partial class TouchupStep
         // needsReview:false — a hold the user adds here is a correction of a model miss, not a
         // physical change, so it must not be flagged for review.
         var id = await WallPanelService.AddStagedHoldAsync(
-            WallId, panel.PanelId, at.X, at.Y, DefaultNewHoldRadius, needsReview: false);
-        _addMode = false;
+            WallId, panel.PanelId, at.X, at.Y, _newHoldRadius, needsReview: false);
+
+        // The Add tool stays active so a run of misses can be fixed in one go; the fresh hold is
+        // selected so the slider can fine-tune it straight away.
         _selectedHoldId = id;
         await ReloadHoldsAsync();
     }
@@ -169,8 +244,17 @@ public partial class TouchupStep
             return;
         }
 
+        await RemoveHoldAsync(id);
+    }
+
+    private async Task RemoveHoldAsync(Guid id)
+    {
         await WallPanelService.DeleteStagedHoldAsync(WallId, id);
-        _selectedHoldId = null;
+        if (_selectedHoldId == id)
+        {
+            _selectedHoldId = null;
+        }
+
         await ReloadHoldsAsync();
     }
 
