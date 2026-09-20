@@ -14,6 +14,12 @@
                 <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" />
             </svg>
         </button>
+        <button type="button" class="tool-btn @(Tool == HoldTouchupTool.Move ? "active" : "")"
+                @onclick="() => PickAsync(HoldTouchupTool.Move)" title="Select / Move — drag a hold (M)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                <path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20" />
+            </svg>
+        </button>
         <button type="button" class="tool-btn @(Tool == HoldTouchupTool.Pipette ? "active" : "")"
                 @onclick="() => PickAsync(HoldTouchupTool.Pipette)" title="Pipette — tap a hold to copy its size (P)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
@@ -29,8 +35,29 @@
         <span class="toolbar-sep"></span>
         <div class="option-group">
             <label for="@_sliderId">@SizeLabel</label>
+            @* Steppers flank the slider for touch: press-and-hold repeats, and release commits through
+               the same SizeChanged/OnSizeCommitted pair the slider uses. The @onclick alongside is the
+               KEYBOARD path only (see OnStepClickAsync) — a pointer press never reaches it. *@
+            <button type="button" class="tool-btn size-step @(SliderValue <= SliderMin ? "at-limit" : "")"
+                    title="Smaller (hold to repeat)" aria-label="Smaller"
+                    @onpointerdown="() => BeginRepeatAsync(-1)" @onpointerup="EndRepeatAsync"
+                    @onpointerleave="EndRepeatAsync" @onpointercancel="EndRepeatAsync"
+                    @onclick="e => OnStepClickAsync(e, -1)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+            </button>
             <input id="@_sliderId" type="range" min="@SliderMin" max="@SliderMax" value="@SliderValue"
                    title="@SizeLabel" @oninput="OnSizeInput" @onchange="OnSizeCommit" />
+            <button type="button" class="tool-btn size-step @(SliderValue >= SliderMax ? "at-limit" : "")"
+                    title="Bigger (hold to repeat)" aria-label="Bigger"
+                    @onpointerdown="() => BeginRepeatAsync(1)" @onpointerup="EndRepeatAsync"
+                    @onpointerleave="EndRepeatAsync" @onpointercancel="EndRepeatAsync"
+                    @onclick="e => OnStepClickAsync(e, 1)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                    <line x1="5" y1="12" x2="19" y2="12" /><line x1="12" y1="5" x2="12" y2="19" />
+                </svg>
+            </button>
             <span class="hold-count">@SizeText</span>
         </div>
     </div>

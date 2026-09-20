@@ -31,13 +31,13 @@ public class MaintenanceJobRunnerTests
         }));
 
         // TryStart has returned, so the gate must ALREADY be closed — no window in between.
-        Assert.True(registry.IsBusy);
+        Assert.True(registry.IsBusy());
         Assert.Equal(HealthStatus.Degraded, await StatusAsync(registry));
 
         release.SetResult();
         await WaitForIdleAsync(runner);
 
-        Assert.False(registry.IsBusy);
+        Assert.False(registry.IsBusy());
         Assert.Equal(HealthStatus.Healthy, await StatusAsync(registry));
         Assert.Equal("done", runner.Snapshot().Summary);
     }
@@ -72,7 +72,7 @@ public class MaintenanceJobRunnerTests
         Assert.True(runner.TryStart("boom", (_, _, _) => Task.FromException<string>(new InvalidOperationException("boom"))));
         await WaitForIdleAsync(runner);
 
-        Assert.False(registry.IsBusy);
+        Assert.False(registry.IsBusy());
         Assert.Equal("boom", runner.Snapshot().Error);
     }
 

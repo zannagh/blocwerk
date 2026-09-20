@@ -144,7 +144,10 @@ public static class Program
                 // forced to reload (losing in-page state). The client retries for minutes
                 // (see blazor-boot.js), so hold the disconnected circuit's state longer to match —
                 // a walk-out-of-signal-and-back-in recovers in place instead of hitting "Reload".
-                options.DisconnectedCircuitRetentionPeriod = TimeSpan.FromMinutes(5);
+                // Read from EditActivityPolicy, not written twice: the busy-lease TTL is DERIVED
+                // from this period (a lease must outlive every window in which its circuit could
+                // still resume in place), so the two numbers must not be able to drift.
+                options.DisconnectedCircuitRetentionPeriod = EditActivityPolicy.DisconnectedCircuitRetention;
                 options.DisconnectedCircuitMaxRetained = 200;
             })
             .AddHubOptions(o =>
@@ -160,7 +163,7 @@ public static class Program
                 // wrong" UI. Server pings every 15s; a client has 60s (up from the 30s default) of
                 // silence before it's considered gone.
                 o.KeepAliveInterval = TimeSpan.FromSeconds(15);
-                o.ClientTimeoutInterval = TimeSpan.FromSeconds(60);
+                o.ClientTimeoutInterval = EditActivityPolicy.ClientTimeout;
             });
 
         builder.Services.AddRazorPages();
@@ -213,6 +216,12 @@ public static class Program
         // releases its leases on circuit teardown (backstop against an abrupt disconnect).
         builder.Services.AddSingleton<EditActivityRegistry>();
         builder.Services.AddScoped<CircuitEditActivity>();
+
+        // Heartbeats this circuit's leases while its connection is UP, so a lease whose client has
+        // gone silent (a sleeping tablet behind a NAT) expires on its TTL instead of holding
+        // /health/ready-to-deploy at 503 until the process restarts — which used to block the very
+        // deploy that would have cleared it.
+        builder.Services.AddScoped<CircuitHandler, EditActivityCircuitHandler>();
 
         // Admin-triggered maintenance. The runner is a singleton because a job outlives the circuit
         // that started it; it takes an EditActivityRegistry lease for its duration, so a run holds

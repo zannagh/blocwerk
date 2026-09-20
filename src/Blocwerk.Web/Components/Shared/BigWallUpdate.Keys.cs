@@ -16,7 +16,7 @@ namespace Blocwerk.Web.Components.Shared;
 public partial class BigWallUpdate
 {
     // ---- Keyboard shortcuts -----------------------------------------------------
-    // The wizard is a keyboard-heavy flow (Enter to step forward, s to skip a touch-up, a/d/p for
+    // The wizard is a keyboard-heavy flow (Enter to step forward, s to skip a touch-up, a/m/d/p for
     // the touch-up tools) but its
     // available actions change completely from phase to phase, so the key set is re-declared per
     // phase rather than declared once: a key whose button is not on screen must not exist at all.
@@ -46,9 +46,9 @@ public partial class BigWallUpdate
         // Nothing is staged yet, so Escape is the plain Cancel button — it discards nothing.
         WallUpdatePhase.Upload => ["Enter", "Escape"],
 
-        WallUpdatePhase.Detected => ["Enter", "s", "a", "d", "p", "x"],
-        WallUpdatePhase.Carryover => _carryoverSubViewOpen ? [] : ["Enter", "a", "d", "p", "x"],
-        WallUpdatePhase.Touchup => ["Enter", "s", "a", "d", "p", "x"],
+        WallUpdatePhase.Detected => ["Enter", "s", "a", "m", "d", "p", "x"],
+        WallUpdatePhase.Carryover => _carryoverSubViewOpen ? [] : ["Enter", "a", "m", "d", "p", "x"],
+        WallUpdatePhase.Touchup => ["Enter", "s", "a", "m", "d", "p", "x"],
         WallUpdatePhase.Confirm => ["Enter"],
 
         // The update is already applied; Enter/Escape both just close the finished flow.
@@ -79,6 +79,10 @@ public partial class BigWallUpdate
 
             case "a":
                 ToolShortcut(HoldTouchupTool.Add);
+                break;
+
+            case "m":
+                ToolShortcut(HoldTouchupTool.Move);
                 break;
 
             case "d":
@@ -115,8 +119,9 @@ public partial class BigWallUpdate
         }
     }
 
-    // The touch-up toolbar's tools (a = add, d = delete, p = pipette), matching the wall editor's
-    // letters where they exist there. Pressing the active tool's key again leaves that tool.
+    // The touch-up toolbar's tools (a = add, m = select/move, d = delete, p = pipette), matching the
+    // wall editor's letters where they exist there — m is the editor's Move key. Pressing the active
+    // tool's key again leaves that tool.
     private void ToolShortcut(HoldTouchupTool tool)
     {
         if (_phase is WallUpdatePhase.Detected or WallUpdatePhase.Touchup)

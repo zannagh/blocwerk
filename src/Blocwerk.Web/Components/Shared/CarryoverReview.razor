@@ -104,6 +104,7 @@ else
                             Editable="true" AddMode="@(_tool == HoldTouchupTool.Add)"
                             SelectedHoldId="_selectedNewHoldId"
                             ExactHitTargets="@(_tool == HoldTouchupTool.Delete)"
+                            DragToMove="@(_tool == HoldTouchupTool.Move)"
                             OnHoldTap="OnNewHoldTapAsync"
                             OnEmptyTap="OnNewEmptyTap"
                             OnHoldGeometryChanged="OnNewHoldGeometryChanged" />
@@ -113,7 +114,8 @@ else
             <span class="hint">
                 Fix the new photo: pick <strong>+</strong> to add a missed hold, the <strong>pipette</strong> to copy
                 an existing hold's size onto the ones you add next, or the <strong>bin</strong> to delete a false
-                detection. Drag a hold to reposition it; the <strong>size slider</strong> resizes the selected hold.
+                detection. Pick the <strong>move</strong> tool to drag holds into place; the <strong>size slider</strong>
+                resizes the selected hold.
             </span>
             <HoldTouchupToolbar Tool="_tool" ToolChanged="SetTool"
                                 Size="_newHoldRadius" SizeChanged="OnSizeChanged"

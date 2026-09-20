@@ -17,7 +17,8 @@
     </figcaption>
     <div class="panel-step-viewport" @ref="_viewportRef"
          style="cursor: @(AddMode ? "crosshair" : "default");">
-        <div class="photo-editor" @ref="_editorRef">
+        <div class="photo-editor" @ref="_editorRef"
+             data-hold-drag="@(Editable && DragToMove ? "true" : null)">
             <img src="@ResponsiveImage.Initial(PhotoUrl)" data-bw-res alt="@Caption" class="wall-photo" />
             @{
                 // The overlay body is shared verbatim between the two <svg> variants below so the
@@ -42,9 +43,11 @@
                             var fill = isSelected ? "rgba(51,221,102,0.25)"
                                 : isHighlight ? BadgeFill
                                 : custom is null && Interactive ? "rgba(120,190,255,0.15)" : "transparent";
-                            var sw = isSelected || isHighlight ? "0.9"
-                                : custom is not null ? "0.6"
-                                : Interactive ? "0.7" : "0.35";
+                            // Outline widths thin out as the user magnifies (see StrokeScale) so the
+                            // gaps between densely packed holds stay visible at high zoom.
+                            var sw = F3((isSelected || isHighlight ? 0.9
+                                : custom is not null ? 0.6
+                                : Interactive ? 0.7 : 0.35) * StrokeScale);
                             // When Editable, the transparent drag proxies below own the pointer, so the drawn
                             // shapes go pointer-events:none; otherwise this is byte-for-byte today's behaviour.
                             var interact = Interactive && !Editable;
@@ -70,7 +73,7 @@
                         {
                             @* Moved-mode: the matcher's proposed position, as a hint to pick the real hold near it. *@
                             <circle cx="@F(hint.X * 100)" cy="@F(hint.Y * 100)" r="2"
-                                    fill="none" stroke="var(--status-warning)" stroke-width="0.6" stroke-dasharray="1 0.7"
+                                    fill="none" stroke="var(--status-warning)" stroke-width="@F3(0.6 * StrokeScale)" stroke-dasharray="1 0.7"
                                     style="pointer-events: none" />
                         }
 
@@ -85,7 +88,7 @@
                                 @if (h.ShapePoints is { Count: >= 3 })
                                 {
                                     <polygon @key="@($"drag-{h.Id}")" points="@ShapePolygon(h, g)"
-                                             fill="transparent" stroke="transparent" stroke-width="1"
+                                             fill="transparent" stroke="transparent" stroke-width="@HitStroke"
                                              style="cursor: move; pointer-events: auto;"
                                              @onpointerdown="() => StartMove(h)" @onpointerdown:stopPropagation="true"
                                              @onclick="() => HandleHoldTap(h.Id)" @onclick:stopPropagation="true" />
@@ -93,8 +96,8 @@
                                 else
                                 {
                                     <circle @key="@($"drag-{h.Id}")" cx="@F(g.X * 100)" cy="@F(g.Y * 100)"
-                                            r="@F((ExactHitTargets ? g.Radius : Math.Max(g.Radius, 0.012)) * 100)"
-                                            fill="transparent" stroke="transparent" stroke-width="1"
+                                            r="@F((ExactHitTargets ? g.Radius : Math.Max(g.Radius, HitFloor)) * 100)"
+                                            fill="transparent" stroke="transparent" stroke-width="@HitStroke"
                                             style="cursor: move; pointer-events: auto;"
                                             @onpointerdown="() => StartMove(h)" @onpointerdown:stopPropagation="true"
                                             @onclick="() => HandleHoldTap(h.Id)" @onclick:stopPropagation="true" />
@@ -182,6 +185,17 @@
     /// deletion of it. Off by default, so moving and selecting keep the forgiving target.
     /// </summary>
     [Parameter] public bool ExactHitTargets { get; set; }
+
+    /// <summary>
+    /// When true (with <see cref="Editable"/>) the <c>.photo-editor</c> claims one-finger touch drags for
+    /// the hold move, via the same <c>data-hold-drag</c> protocol the wall editor uses in Move mode:
+    /// viewport-gestures.js then neither pans nor <c>preventDefault</c>s, so Blazor's pointer drag gets
+    /// the gesture, and components.css gives the shapes <c>touch-action: none</c> so the browser does not
+    /// scroll and cancel it. Set it ONLY while a one-finger drag should move a hold — i.e. the
+    /// select/move tool. With Add/Delete/Pipette it must stay false: there the tap is the whole
+    /// interaction and a drag has to keep panning the zoomed image.
+    /// </summary>
+    [Parameter] public bool DragToMove { get; set; }
 
     /// <summary>Fired after a move with the hold's id and its new normalized X/Y/Radius. The touch-up
     /// size slider reports a resize through the same callback, so persistence has one path.</summary>
@@ -371,6 +385,36 @@
     }
 
     private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+
+    // Stroke widths need finer quantisation than positions: at high zoom a hairline is well under 0.01
+    // viewBox units and F2 would round it away.
+    private static string F3(double v) => v.ToString("F3", System.Globalization.CultureInfo.InvariantCulture);
+
+    // The JS viewport's live zoom, floored at "fit". Read-only: this is presentation sizing inside the
+    // 0-100 viewBox, never written back into the transform — JS stays the sole authority for that
+    // (see ViewportZoomState). At zoom 1 every expression below reduces to the former literal, so the
+    // fit-zoom appearance and hit targets are byte-for-byte unchanged.
+    private double EffectiveZoom => Math.Max(_zoomState.Zoom, 1.0);
+
+    /// <summary>
+    /// Outline width multiplier: <c>1 / zoom^1.25</c>. The <c>1/zoom</c> part holds the on-screen
+    /// thickness constant as the image magnifies; the extra quarter power thins it further, so at the
+    /// 12x ceiling an outline is roughly half its fit-zoom apparent weight — a hairline that stops the
+    /// rings from occluding the very gaps the user is aiming at between densely packed holds.
+    /// </summary>
+    private double StrokeScale => 1.0 / Math.Pow(EffectiveZoom, 1.25);
+
+    /// <summary>
+    /// Fat-finger floor for the drag/tap proxies, shrinking as <c>0.012 / zoom</c>. At fit this is the
+    /// original 1.2%-of-width minimum that makes a tiny hold grabbable; magnify and the targets converge
+    /// on each hold's true size, so zooming in genuinely buys you the gap between two neighbours.
+    /// <see cref="ExactHitTargets"/> still bypasses the floor entirely.
+    /// </summary>
+    private double HitFloor => 0.012 / EffectiveZoom;
+
+    // The proxies' transparent stroke inflates the target by half its width all round, so it shrinks
+    // with zoom too (1 viewBox unit at fit, as before).
+    private string HitStroke => F3(1.0 / EffectiveZoom);
 
     // A hold's custom shape as SVG polygon points (0-100 space), centred on its effective position so a
     // drag moves the outline too. Shaped holds render as their real shape here (matching the single-image

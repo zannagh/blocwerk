@@ -26,7 +26,13 @@ window.bwViewport = (function () {
     // The content has `min-width: 100%`, so anything below 1.0 cannot shrink it —
     // a smaller floor would be a dead range. 1.0 *is* "fit".
     const SCROLL_ZOOM_MIN = 1.0;
-    const SCROLL_ZOOM_MAX = 6.0;
+    // 12x, raised from 6x so densely packed holds can actually be separated enough to tap
+    // between them. Not unbounded: the responsive image ladder tops out around 4000px, so past
+    // ~12x on a phone-width viewport you are magnifying JPEG artefacts, and the content layer
+    // (width: calc(var(--zoom) * 100%)) starts costing real compositor memory.
+    // NOTE: WallPhotoEditor.HandleScale clamps to the same ceiling — keep the two in step or the
+    // editor's drag handles stop shrinking past the old cap.
+    const SCROLL_ZOOM_MAX = 12.0;
     const DOUBLE_TAP_ZOOM = 2.5;
     const TRANSFORM_ZOOM_MIN = 0.02;
     const TRANSFORM_ZOOM_MAX = 20.0;

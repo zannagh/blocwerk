@@ -63,7 +63,7 @@ public partial class TouchupStep
         _panelIndex >= 0 && _panelIndex < _panels.Count ? _panels[_panelIndex] : null;
 
     /// <summary>
-    /// Keyboard entry point for the wizard's tool bindings (a / d / p). Picking the tool that is
+    /// Keyboard entry point for the wizard's tool bindings (a / m / d / p). Picking the tool that is
     /// already active drops back out of it, exactly like clicking its toolbar button. The wizard owns
     /// the single shortcut scope, so the key arrives here from outside a Blazor event and this step
     /// has to ask for its own re-render.

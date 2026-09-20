@@ -6,4 +6,9 @@ namespace Blocwerk.Web.State;
 /// </summary>
 public interface IEditLease : IDisposable
 {
+    /// <summary>
+    /// The registry key of this session, so the owning circuit's heartbeat can keep it alive (see
+    /// <see cref="EditActivityRegistry.Touch"/>).
+    /// </summary>
+    Guid Id { get; }
 }

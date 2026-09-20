@@ -19,6 +19,12 @@
 .option-group.swatches { flex-wrap: wrap; max-width: 100%; }
 .option-group label { color: rgba(255,255,255,0.6); font-size: 0.75rem; }
 .option-group input[type=range] { width: 60px; accent-color: var(--accent); }
+/* Hold-size steppers flanking the touch-up slider: same tool-btn language, tighter padding, and a
+   touch-sized hit box. `at-limit` greys the button at the slider's bound WITHOUT disabling it — a
+   disabled button swallows the pointerup that ends the press-and-hold repeat. touch-action: none
+   keeps a held press from being stolen by the browser's scroll. */
+.tool-btn.size-step { padding: 4px 6px; min-width: 32px; min-height: 32px; touch-action: none; }
+.tool-btn.size-step.at-limit { opacity: 0.35; }
 .option-hint { color: rgba(255,255,255,0.4); font-size: 0.7rem; font-style: italic; }
 .opt-btn { padding: 3px 10px; border: 1px solid rgba(255,255,255,0.3); background: none; color: white; border-radius: 4px; font-size: 0.75rem; cursor: pointer; }
 .opt-btn.active { background: #2196F3; border-color: #2196F3; }

@@ -39,7 +39,7 @@ public partial class CarryoverReview
     }
 
     /// <summary>
-    /// Keyboard entry point for the wizard's tool bindings (a / d / p). Picking the active tool again
+    /// Keyboard entry point for the wizard's tool bindings (a / m / d / p). Picking the active tool again
     /// drops back out of it, exactly like clicking its toolbar button.
     /// </summary>
     public void TrySelectTool(HoldTouchupTool tool)

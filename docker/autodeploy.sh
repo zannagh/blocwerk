@@ -21,6 +21,9 @@ SERVICE=blocwerk
 # this defers a redeploy for at most half an hour.
 MAX_DEFER=30
 STATE=$DIR/.autodeploy-deferrals
+# The image a deferral is waiting on, so a pending target is logged once rather than
+# once a minute while the busy gate holds it back.
+TARGET=$DIR/.autodeploy-target
 # How long the "updating" notice survives if this deploy never completes, and how long to pause
 # after announcing so it actually reaches the circuits. Set the ETA LONGER than a deploy takes:
 # it is the lifetime of the notice someone is staring at while the container is gone. Overshooting
@@ -49,12 +52,25 @@ if ! docker compose pull -q "$SERVICE" >/dev/null 2>&1; then
   fi
 fi
 
-after=$(docker image inspect --format '{{.Id}}' "$IMAGE" 2>/dev/null || echo none)
-if [ "$before" = "$after" ]; then
+# Compare what the container is RUNNING against what we now hold locally, rather than asking
+# "did this pull change anything". The old check did the latter, which made a deferral
+# permanent: once the new image was on disk every later pull changed nothing and the script
+# exited here, before ever reaching the busy gate below - so a deferred deploy never retried
+# and MAX_DEFER could never fire. $before survives only for the pull-failure message above.
+latest=$(docker image inspect --format '{{.Id}}' "$IMAGE" 2>/dev/null || echo none)
+running=$(docker inspect --format '{{.Image}}' "$(docker compose ps -q "$SERVICE" 2>/dev/null)" 2>/dev/null || echo none)
+
+if [ "$latest" = "none" ] || [ "$running" = "$latest" ]; then
+  rm -f "$STATE" "$TARGET"
   exit 0
 fi
 
-echo "new image $after (was $before)"
+last_target=$(cat "$TARGET" 2>/dev/null || echo none)
+if [ "$last_target" != "$latest" ]; then
+  echo "new image $latest (was $running)"
+  printf "%s" "$latest" > "$TARGET"
+  rm -f "$STATE"
+fi
 
 # Busy gate: avoid recreating the container out from under someone mid-edit. Reached over the
 # shared edge network because the app publishes no host port.
@@ -68,7 +84,7 @@ if [ "$ready" = "busy" ] && [ "$deferrals" -lt "$MAX_DEFER" ]; then
   exit 0
 fi
 
-rm -f "$STATE"
+rm -f "$STATE" "$TARGET"
 
 # Tell the still-live container it is about to be recreated, so connected browsers and kiosk
 # tablets show "Blocwerk is updating" instead of a bare reconnect spinner, and reload themselves

@@ -1083,7 +1083,9 @@
     // Handles are drawn in SVG user units, which the zoom scales up with the photo.
     // Divide their size by the zoom so they stay a constant on-screen size instead of
     // ballooning when zoomed in.
-    private double HandleScale => 1.0 / Math.Clamp(_zoom, 0.5, 6.0);
+    // The upper clamp must track SCROLL_ZOOM_MAX in wwwroot/js/viewport.js (12.0); otherwise the
+    // handles stop shrinking at the old 6x cap and are oversized for the rest of the range.
+    private double HandleScale => 1.0 / Math.Clamp(_zoom, 0.5, 12.0);
 
     private enum EditMode { Add, Move, Shape, Paint, Delete, Border, Name, Merge, ShapeTilt, Usage, MakeActual, JoinVirtual, MarkUnchanged }
 
