@@ -457,7 +457,6 @@ else
                                              ChangeReview="true"
                                              OnBatchSave="OnPanelBatchSave"
                                              OnRedetectRequested="OnRedetectPanel"
-                                             OnCleanArtifactsRequested="OnCleanPanelArtifacts"
                                              OnMarkHoldModified="OnMarkHoldModified"
                                              OnMakeHoldActual="OnMakeHoldActual"
                                              OnMergeVirtualHold="OnMergeVirtualHold"
@@ -1559,27 +1558,6 @@ else
         catch (Exception ex)
         {
             await ShowToast($"Redetect failed: {ex.Message}");
-        }
-    }
-
-    private async Task OnCleanPanelArtifacts()
-    {
-        if (_editingPanel is null)
-        {
-            return;
-        }
-
-        try
-        {
-            var count = await WallPanelService.CleanPanelArtifactsAsync(WallId, _editingPanel.Id);
-            await LoadEditingPanelHolds();
-            await ShowToast(count > 0
-                ? $"Removed {count} spurious hold(s) on this panel"
-                : "No spurious holds to remove");
-        }
-        catch (Exception ex)
-        {
-            await ShowToast($"Clean failed: {ex.Message}");
         }
     }
 

@@ -64,13 +64,6 @@ public interface IWallPanelService
     Task<int> RedetectPanelHoldsAsync(Guid wallId, Guid panelId);
 
     /// <summary>
-    /// Purges spurious auto-detected holds from a panel: removes the panel's auto-detected holds at
-    /// the current generation that no boulder uses. Manual and boulder-referenced holds are kept, so
-    /// cleaning can never orphan a boulder. Returns the number of holds removed.
-    /// </summary>
-    Task<int> CleanPanelArtifactsAsync(Guid wallId, Guid panelId);
-
-    /// <summary>
     /// The live photo bytes of a panel, or null when the panel has none / is not on this wall.
     /// </summary>
     Task<WallPhoto?> GetPanelPhotoAsync(Guid wallId, Guid panelId);

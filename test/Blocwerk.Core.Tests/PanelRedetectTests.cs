@@ -9,9 +9,9 @@ using NSubstitute;
 namespace Blocwerk.Core.Tests;
 
 /// <summary>
-/// Per-panel redetect and clean-artifacts must operate only on the panel's own auto-detected holds
-/// and must never orphan a boulder: manual holds and any hold a boulder depends on survive both
-/// operations. These tests pin that boulder-safety contract.
+/// Per-panel redetect must operate only on the panel's own auto-detected holds and must never orphan
+/// a boulder: manual holds and any hold a boulder depends on survive it. These tests pin that
+/// boulder-safety contract.
 /// </summary>
 public class PanelRedetectTests
 {
@@ -54,30 +54,6 @@ public class PanelRedetectTests
         var boulder = await db.Boulders.Include(b => b.BoulderHolds).SingleAsync();
         Assert.False(boulder.IsHistoric);
         Assert.Contains(boulder.BoulderHolds, bh => bh.HoldId == autoRefId);
-    }
-
-    [Fact]
-    public async Task CleanPanelArtifacts_RemovesOnlyUnreferencedAutoHolds()
-    {
-        using var h = new WallTestHarness();
-        await h.SeedWallAsync(holdCount: 0, generation: 0);
-
-        var (panelId, autoUnrefId, autoRefId, manualId) = await SeedPanelWithBoulderAsync(h);
-
-        var service = CreateService(h);
-        var removed = await service.CleanPanelArtifactsAsync(h.WallId, panelId);
-
-        Assert.Equal(1, removed);
-
-        await using var db = h.CreateContext();
-        var holds = await db.Holds.Where(x => x.WallPanelId == panelId).ToListAsync();
-
-        Assert.DoesNotContain(holds, x => x.Id == autoUnrefId);
-        Assert.Contains(holds, x => x.Id == autoRefId);
-        Assert.Contains(holds, x => x.Id == manualId);
-
-        var boulder = await db.Boulders.Include(b => b.BoulderHolds).SingleAsync();
-        Assert.False(boulder.IsHistoric);
     }
 
     [Fact]

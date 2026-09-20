@@ -92,14 +92,6 @@
                     </svg>
                 </button>
             }
-            @if (OnCleanArtifactsRequested.HasDelegate)
-            {
-                <button class="tool-btn" @onclick="CleanArtifacts" title="Remove spurious auto-detected holds on this panel">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                        <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                    </svg>
-                </button>
-            }
             <button class="tool-btn @A(EditMode.ShapeTilt)" @onclick="() => SetMode(EditMode.ShapeTilt)" title="Tilt hold shape (T): click a hold, then drag the handle to rotate the polygon in X/Y">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
                     <ellipse cx="12" cy="12" rx="9" ry="4" />
@@ -539,23 +531,11 @@
                 @if (BorderPoints.Count == 0) { <button class="opt-btn" @onclick="InitBorder">Create</button> }
                 else
                 {
-                    @if (OnCleanArtifactsRequested.HasDelegate) { <button class="opt-btn" @onclick="CleanArtifacts">Clean outside</button> }
                     <button class="opt-btn danger" @onclick="ClearBorder">Remove</button>
                 }
             </div>
             <span class="option-hint">
                 Drag points to define wall area.
-                @if (_segmentDrafts.Count > 0)
-                {
-                    <text>
-                        This wall has @_segmentDrafts.Count segments, so <strong>Clean outside</strong>
-                        keeps every hold inside <em>any</em> segment and ignores this border.
-                    </text>
-                }
-                else
-                {
-                    <text><strong>Clean outside</strong> removes holds outside this border.</text>
-                }
             </span>
         </div>
     }
@@ -878,7 +858,6 @@
     [Parameter] public EventCallback<Guid> OnHoldDeleted { get; set; }
     [Parameter] public EventCallback OnRedetectRequested { get; set; }
     [Parameter] public EventCallback<List<ShapePoint>> OnBorderChanged { get; set; }
-    [Parameter] public EventCallback OnCleanArtifactsRequested { get; set; }
     [Parameter] public EventCallback<BatchChanges> OnBatchSave { get; set; }
     [Parameter] public EventCallback<Guid> OnMarkHoldModified { get; set; }
     [Parameter] public EventCallback<(Guid stagedHoldId, Guid liveHoldId)> OnMergeHolds { get; set; }
@@ -2228,7 +2207,6 @@
     }
 
     private async Task ClearBorder() { BorderPoints.Clear(); await OnBorderChanged.InvokeAsync(BorderPoints); }
-    private async Task CleanArtifacts() { await OnCleanArtifactsRequested.InvokeAsync(); }
 
     private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
     private static string Pts(IEnumerable<(double X, double Y)> pts) =>

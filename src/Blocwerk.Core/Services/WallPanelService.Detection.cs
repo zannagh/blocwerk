@@ -7,11 +7,19 @@ using Microsoft.Extensions.Logging;
 namespace Blocwerk.Core.Services;
 
 /// <summary>
-/// Per-panel hold re-detection and artifact cleanup. Both operate on a single panel's own image and
-/// holds in that panel's coordinate space, so they never touch a neighbour panel. Boulder safety is
-/// shared: only a panel's auto-detected holds that no boulder depends on may be removed, so neither
-/// operation can orphan a boulder. Mutations are gated by <see cref="WallAdminGuard"/> (editor).
+/// Per-panel hold re-detection. It operates on a single panel's own image and holds in that panel's
+/// coordinate space, so it never touches a neighbour panel. Only a panel's auto-detected holds that
+/// no boulder depends on may be removed, so a redetect can never orphan a boulder. Mutations are
+/// gated by <see cref="WallAdminGuard"/> (editor).
 /// </summary>
+/// <remarks>
+/// A "clean panel artifacts" tool used to live here: one toolbar button that deleted every
+/// unreferenced auto-detected hold on the panel at the current generation, with no confidence
+/// threshold, no size filter, no preview and no confirmation. On 2026-09-20 an admin hit it by
+/// accident on a live wall and it destroyed 181 real holds (restored from the change journal). It
+/// was removed end to end. Any future "clean up detections" feature must show what it would delete
+/// and take an explicit confirmation — never a single unguarded toolbar button.
+/// </remarks>
 public partial class WallPanelService
 {
     /// <summary>
@@ -74,43 +82,9 @@ public partial class WallPanelService
     }
 
     /// <summary>
-    /// Purges spurious auto-detected holds from a panel: removes the panel's auto-detected holds at the
-    /// current generation that no boulder uses. Manual holds and any boulder-referenced hold are always
-    /// kept, so cleaning can never orphan a boulder. Returns the number of holds removed.
-    /// </summary>
-    public async Task<int> CleanPanelArtifactsAsync(Guid wallId, Guid panelId)
-    {
-        var user = await currentUserService.GetCurrentUserAsync();
-        await using var db = await dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
-        await WallAdminGuard.EnsureWallEditorAsync(db, wallId, user.Id, CancellationToken.None);
-
-        var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId);
-        if (wall is null)
-        {
-            throw new InvalidOperationException("Wall not found");
-        }
-
-        var panel = await db.WallPanels.FirstOrDefaultAsync(p => p.Id == panelId && p.WallId == wallId);
-        if (panel is null)
-        {
-            throw new InvalidOperationException("Panel not found");
-        }
-
-        var removable = await CollectRemovableAutoHoldsAsync(db, wallId, panelId, wall.CurrentGeneration);
-        await PrepareRemovableAsync(db, removable);
-        db.Holds.RemoveRange(removable);
-        await db.SaveChangesAsync();
-        logger.LogInformation(
-            "Panel {PanelId} artifacts cleaned on wall {WallId} by {UserId}: {RemovedCount} hold(s) removed",
-            panelId, wallId, user.Id, removable.Count);
-        return removable.Count;
-    }
-
-    /// <summary>
     /// The panel's auto-detected holds at <paramref name="generation"/> that no boulder references —
-    /// the only holds a redetect or clean may delete. Boulder-referenced and manual holds are excluded
-    /// so neither operation can orphan a boulder (the Hold→BoulderHold FK is Restrict regardless).
+    /// the only holds a redetect may delete. Boulder-referenced and manual holds are excluded so a
+    /// redetect can never orphan a boulder (the Hold→BoulderHold FK is Restrict regardless).
     /// </summary>
     private static async Task<List<Hold>> CollectRemovableAutoHoldsAsync(
         BlocwerkDbContext db, Guid wallId, Guid panelId, int generation)
