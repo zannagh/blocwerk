@@ -90,31 +90,43 @@ public partial class CarryoverReview
         return map;
     }
 
-    private void LinkCrossGen((Guid OldHoldId, Guid NewHoldId) e)
+    // A link (and the claims it releases) is a real decision, so it is written through as it is made
+    // — the side-by-side tool is where most of the manual mapping happens, and losing it to a closed
+    // browser is exactly what the session exists to prevent.
+    private async Task LinkCrossGen((Guid OldHoldId, Guid NewHoldId) e)
     {
         // A staged new hold is the twin of at most ONE old hold — release any prior claim on it so we
         // never carry two old holds onto the same new position.
         var stealers = _decisions
             .Where(kv => kv.Value.NewHoldId == e.NewHoldId && kv.Key != e.OldHoldId)
             .ToList();
+        var changed = new List<CarryoverDecision>();
         foreach (var (oldId, d) in stealers)
         {
-            _decisions[oldId] = d with { NewHoldId = null };
+            var released = d with { NewHoldId = null };
+            _decisions[oldId] = released;
+            changed.Add(released);
         }
 
         var cur = _decisions.GetValueOrDefault(e.OldHoldId);
         // Linking a hold asserts it is present, so a stray "removed" reverts to carried.
         var kind = cur is null || cur.Kind == CarryKind.Removed ? CarryKind.Carried : cur.Kind;
-        _decisions[e.OldHoldId] = new CarryoverDecision(e.OldHoldId, kind, e.NewHoldId);
+        var linked = new CarryoverDecision(e.OldHoldId, kind, e.NewHoldId);
+        _decisions[e.OldHoldId] = linked;
+        changed.Add(linked);
+
+        await SaveCarryAllAsync(changed);
     }
 
-    private void UnlinkCrossGen(Guid oldId)
+    private async Task UnlinkCrossGen(Guid oldId)
     {
         // Breaking a mapping is always safe: the hold falls back to blind warp-carry (still carried,
         // never lost) — the "never lose a hold" invariant is preserved.
         if (_decisions.TryGetValue(oldId, out var d))
         {
-            _decisions[oldId] = d with { NewHoldId = null };
+            var unlinked = d with { NewHoldId = null };
+            _decisions[oldId] = unlinked;
+            await SaveCarryAsync(unlinked);
         }
     }
 

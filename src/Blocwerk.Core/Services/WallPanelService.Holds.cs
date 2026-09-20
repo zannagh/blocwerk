@@ -39,11 +39,20 @@ public partial class WallPanelService
             throw new InvalidOperationException("Wall not found");
         }
 
-        var panelExists = await db.WallPanels.AnyAsync(p => p.Id == panelId && p.WallId == wallId);
-        if (!panelExists)
+        var panel = await db.WallPanels.FirstOrDefaultAsync(p => p.Id == panelId && p.WallId == wallId);
+        if (panel is null)
         {
             throw new InvalidOperationException("Panel not found");
         }
+
+        // A STAGED panel gets a STAGED hold. The neighbour-overlap step's "moved → add the missing hold"
+        // action runs against the in-flight update's staged panels and lands here; stamping the LIVE
+        // generation there produced a hold that promote then saw as an old gen-N hold on an updated panel,
+        // gave a successor clone and a lineage link to — a phantom duplicate of a hold the user had just
+        // placed. Matching AddStagedHoldAsync's generation is the whole fix: the row is then promoted in
+        // place with the rest of the panel's staged detections, exactly once.
+        var stagedPanel = panel.StagedPhoto is not null && panel.Generation == wall.CurrentGeneration + 1;
+        var generation = stagedPanel ? panel.Generation : wall.CurrentGeneration;
 
         var hold = new Hold
         {
@@ -56,7 +65,7 @@ public partial class WallPanelService
             ShapePoints = shapePoints,
             Material = material,
             HandType = handType,
-            Generation = wall.CurrentGeneration,
+            Generation = generation,
             IsAutoDetected = false,
             NeedsReview = true,
         };
@@ -68,8 +77,8 @@ public partial class WallPanelService
         await db.SaveChangesAsync();
 
         logger.LogInformation(
-            "Hold {HoldId} manually added to panel {PanelId} on wall {WallId} by {UserId}",
-            hold.Id, panelId, wallId, user.Id);
+            "Hold {HoldId} manually added to panel {PanelId} on wall {WallId} (gen {Gen}, staged {Staged}) by {UserId}",
+            hold.Id, panelId, wallId, generation, stagedPanel, user.Id);
         return hold.Id;
     }
 

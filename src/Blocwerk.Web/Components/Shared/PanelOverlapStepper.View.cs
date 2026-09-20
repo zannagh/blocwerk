@@ -73,7 +73,7 @@ public partial class PanelOverlapStepper : IAsyncDisposable
     private static string Band(double c) => c >= HighConfidence ? "high" : c >= 0.45 ? "mid" : "low";
     private static string BandLabel(double c) => c >= HighConfidence ? "very likely" : c >= 0.45 ? "likely — check" : "unlikely — check";
 
-    private void OnKeyDown(KeyboardEventArgs e)
+    private async Task OnKeyDown(KeyboardEventArgs e)
     {
         if (_loading || _finishing)
         {
@@ -85,7 +85,7 @@ public partial class PanelOverlapStepper : IAsyncDisposable
             switch (e.Key)
             {
                 case "Enter":
-                    MarkManualOverlap();
+                    await MarkManualOverlap();
                     break;
                 case "Escape":
                     CancelManual();
@@ -107,7 +107,7 @@ public partial class PanelOverlapStepper : IAsyncDisposable
                 case "Enter":
                 case "c":
                 case "C":
-                    UseMovedHold();
+                    await UseMovedHold();
                     break;
                 case "Escape":
                     CancelMoved();
@@ -122,11 +122,11 @@ public partial class PanelOverlapStepper : IAsyncDisposable
             case "Enter":
             case "c":
             case "C":
-                ConfirmMatch();
+                await ConfirmMatch();
                 break;
             case "d":
             case "D":
-                DiscardMatch();
+                await DiscardMatch();
                 break;
             case "m":
             case "M":
@@ -135,10 +135,10 @@ public partial class PanelOverlapStepper : IAsyncDisposable
             case "x":
             case "X":
             case "Delete":
-                DeleteHold();
+                await DeleteHold();
                 break;
             case "ArrowRight":
-                Next();
+                await Next();
                 break;
             case "ArrowLeft":
                 Back();

@@ -62,6 +62,11 @@ else
             </button>
         </div>
 
+        @if (!string.IsNullOrEmpty(_saveError))
+        {
+            <p class="staged-hint danger">@_saveError</p>
+        }
+
         <div class="bigupdate-summary">
             <span class="bigupdate-chip carry">Carrying @CarryingCount</span>
             <span class="bigupdate-chip changed">@ChangedCount changed</span>

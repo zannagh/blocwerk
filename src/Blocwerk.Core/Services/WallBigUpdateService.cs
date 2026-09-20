@@ -252,16 +252,27 @@ public partial class WallBigUpdateService : IWallBigUpdateService
 
         removedCandidates.AddRange(carry.UnmatchedLeft.Select(i => oldIndex[i]));
 
-        // Warp-carry: for every old hold with NO proposal, record the matcher's warp-predicted new-image
-        // position (indices align 1:1 with oldIndex). Promote repositions those unmatched carried holds
-        // there instead of cloning them at stale old coordinates. Only valid predictions are kept.
-        var matchedLeft = carry.Proposals.Select(p => p.LeftHoldId).ToHashSet();
+        // Warp-carry: record the matcher's warp-predicted new-image position for EVERY old hold the field
+        // could predict — matched and unmatched alike (indices align 1:1 with oldIndex) — exactly as the
+        // shapes pass below does. Promote consults this dictionary ONLY in the clone branch (an old hold
+        // whose decision names no staged twin), so an entry for a matched hold is inert; what it buys is
+        // that the dictionary no longer depends on WHICH holds this particular matcher pass happened to
+        // match.
+        //
+        // That dependence was a real hazard. The matcher runs once before the pre-match touch-up on an
+        // uninterrupted run, and again over the touched-up staged geometry when an update is RESUMED, so
+        // the two passes legitimately produce different proposal sets. Recording only the unmatched ones
+        // meant an old hold the user blind-carried (no proposal, warp position recorded, decision
+        // persisted with no twin) could be MATCHED by the re-run, lose its warp entry, and then be cloned
+        // at its stale gen-N coordinates — the decision says "no twin", so the twin is never used either.
+        // Recording every prediction removes the coupling: the persisted decision decides what happens,
+        // and the warp position is simply available whenever a clone needs one.
         var warped = carry.WarpedLeftPositions;
         if (warped is not null)
         {
             for (var i = 0; i < oldIndex.Length; i++)
             {
-                if (matchedLeft.Contains(i) || i >= warped.Count || warped[i] is not { } pos)
+                if (i >= warped.Count || warped[i] is not { } pos)
                 {
                     continue;
                 }

@@ -1,5 +1,6 @@
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -14,7 +15,8 @@ namespace Blocwerk.Core.Services;
 public partial class WallBigUpdateService
 {
     /// <inheritdoc/>
-    public async Task<BigUpdateSession> StageAsync(Guid wallId, IReadOnlyList<BigUpdatePhoto> photos)
+    public async Task<BigUpdateSession> StageAsync(
+        Guid wallId, IReadOnlyList<BigUpdatePhoto> photos, bool takeOverExisting = false)
     {
         var user = await currentUserService.GetCurrentUserAsync();
         await using var db = await dbContextFactory.CreateDbContextAsync();
@@ -28,18 +30,21 @@ public partial class WallBigUpdateService
 
         var stagedGen = wall.CurrentGeneration + 1;
 
-        // Open the wall-update batch here (after validation, so a rejected start records nothing) and hold
-        // it for the whole method: the restart-discard and the staging INSERTs below both land in it, and
-        // PromoteAsync later RESUMES this same open batch. That makes the staged-hold creations part of the
-        // one unit the promote seals — so reverting/replaying the update is self-contained. Null in tests.
+        // Refuse by default rather than silently destroying an in-flight update. The old unconditional
+        // restart-discard was scoped by wall+generation, not by user, so a second admin opening the wizard
+        // wiped the first admin's staged photos and every decision. An explicit takeover is still possible
+        // (the caller offers resume-or-discard first), and it records the supersession properly below.
+        await ClearForStagingAsync(db, wallId, stagedGen, user.Id, takeOverExisting);
+
+        // Open the wall-update batch here (after validation and any takeover, so a rejected start records
+        // nothing) and hold it for the whole method: the staging INSERTs below land in it, and PromoteAsync
+        // later RESUMES this same open batch. That makes the staged-hold creations part of the one unit the
+        // promote seals — so reverting/replaying the update is self-contained. Null in tests.
         using var journalBatch = changeJournal?.BeginWallUpdateBatch(wallId);
 
-        // Idempotent restart: drop any previous in-flight update-staged panels + holds first.
-        await DiscardStagedAsync(db, wallId, stagedGen);
-        await db.SaveChangesAsync();
-
         var centerPanelId = await StageAndDetectAsync(db, wallId, photos, stagedGen, user.Id);
-        await db.SaveChangesAsync();
+        WallUpdateSessions.Open(db, wallId, stagedGen, user.Id);
+        await SaveStagedOrReportRaceAsync(db, wallId, user.Id);
 
         // Stop at the staged state: the detections are persisted but NOT yet matched. The user reviews
         // and corrects them first (pre-match touch-up), and the matcher runs afterwards over the
@@ -50,6 +55,116 @@ public partial class WallBigUpdateService
             "Big update staged on wall {WallId} by {UserId}: {Panels} staged panel(s), matching deferred",
             wallId, user.Id, session.Neighbours.Count + 1);
         return session;
+    }
+
+    /// <summary>
+    /// Commits the staging, turning the lost half of a start race into the ordinary conflict.
+    /// <para>
+    /// The open-session check in <see cref="ClearForStagingAsync"/> is a read with no lock behind it, so
+    /// two admins tapping "Update wall" in the same window both get past it. The STORE settles it: the
+    /// partial unique index on the wall's open session — and, independently, the unique index on the
+    /// staged panel's (WallId, Col, Row, Generation) — rejects the loser, and because this is one
+    /// SaveChanges the whole staging rolls back rather than leaving half an update behind. Reported as
+    /// the same <see cref="WallUpdateSessionConflictException"/> the read path raises, so the wizard
+    /// offers resume-or-discard instead of surfacing a database error.
+    /// </para>
+    /// </summary>
+    private async Task SaveStagedOrReportRaceAsync(BlocwerkDbContext db, Guid wallId, Guid userId)
+    {
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex)
+        {
+            // A fresh context: the failed one's change tracker still holds the rejected rows.
+            await using var probe = await dbContextFactory.CreateDbContextAsync();
+            var winner = await WallUpdateSessions.FindOpenAsync(probe, wallId);
+            if (winner is null)
+            {
+                // Not the race this guards — some other write failure. Let it surface as itself.
+                throw;
+            }
+
+            logger.LogInformation(
+                ex, "Concurrent big update start on wall {WallId} by {UserId} lost the race", wallId, userId);
+            throw new WallUpdateSessionConflictException(
+                await WallUpdateSessionDescriptor.DescribeAsync(probe, winner));
+        }
+    }
+
+    /// <summary>
+    /// Makes the wall ready to be staged into: refuses when another update is already open (unless the
+    /// caller explicitly takes it over), and otherwise clears whatever staged residue is there.
+    /// <para>
+    /// A takeover is a real abandonment, so it is recorded as one: the superseded session is marked
+    /// <see cref="WallUpdateSessionStatus.Discarded"/> and its open change-journal batch is SEALED, in the
+    /// same shape <see cref="DiscardAsync"/> uses. Without the seal, the new update would append its
+    /// staging into the abandoned update's batch and the two could never be reverted apart.
+    /// </para>
+    /// <para>
+    /// The unconditional clear still runs when no session row exists: an update staged before sessions
+    /// existed leaves staged panels with nothing to detect them by, and dropping that residue is the old
+    /// idempotent-restart behaviour, which stays correct because nobody can be resuming it.
+    /// </para>
+    /// <para>
+    /// A wall-update batch still open on this wall is SEALED first, on every path — not only on takeover.
+    /// An open batch is otherwise resumed by the staging that follows, so a promote that crashed between
+    /// its SaveChanges and its seal, or a legacy residue cleared with no session, would have the NEXT,
+    /// unrelated update appended to it and the two could never be reverted apart.
+    /// </para>
+    /// </summary>
+    private async Task ClearForStagingAsync(
+        BlocwerkDbContext db, Guid wallId, int stagedGen, Guid userId, bool takeOverExisting)
+    {
+        var existing = await WallUpdateSessions.FindOpenAsync(db, wallId);
+        if (existing is not null && !takeOverExisting)
+        {
+            throw new WallUpdateSessionConflictException(
+                await WallUpdateSessionDescriptor.DescribeAsync(db, existing));
+        }
+
+        // Seal whatever was left open BEFORE recording anything, so the new update never inherits it.
+        await SealOpenWallUpdateBatchAsync(wallId);
+
+        if (existing is null && !await HasStagedResidueAsync(db, wallId, stagedGen))
+        {
+            // Nothing to abandon: don't open (and immediately seal) an empty batch on every clean start.
+            return;
+        }
+
+        using (var supersedeBatch = changeJournal?.BeginWallUpdateBatch(wallId))
+        {
+            await DiscardStagedAsync(db, wallId, stagedGen);
+            await WallUpdateSessions.CloseOpenAsync(db, wallId, WallUpdateSessionStatus.Discarded, userId);
+            await db.SaveChangesAsync();
+        }
+
+        // The abandonment is a complete unit of its own — its staging INSERTs and these DELETEs cancel
+        // out — so seal it here too rather than letting the fresh staging append to it.
+        await SealOpenWallUpdateBatchAsync(wallId);
+
+        if (existing is not null)
+        {
+            logger.LogInformation(
+                "Big update session {SessionId} on wall {WallId} superseded by {UserId}", existing.Id, wallId, userId);
+        }
+    }
+
+    /// <summary>Seals any open wall-update batch on the wall. A no-op without a journal, or with none open.</summary>
+    private async Task SealOpenWallUpdateBatchAsync(Guid wallId)
+    {
+        if (changeJournal is not null)
+        {
+            await changeJournal.SealWallUpdateBatchAsync(wallId);
+        }
+    }
+
+    /// <summary>Whether update-staged panels are sitting on the wall at the target generation.</summary>
+    private static Task<bool> HasStagedResidueAsync(BlocwerkDbContext db, Guid wallId, int stagedGen)
+    {
+        return db.WallPanels.AnyAsync(p =>
+            p.WallId == wallId && p.Generation == stagedGen && p.StagedPhoto != null);
     }
 
     /// <summary>

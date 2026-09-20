@@ -17,18 +17,26 @@ namespace Blocwerk.Core.Services;
 public partial class WallBigUpdateService
 {
     /// <inheritdoc/>
-    public async Task PromoteAsync(Guid wallId, BigUpdateConfirmation confirmation)
+    public async Task PromoteAsync(
+        Guid wallId, BigUpdateConfirmation confirmation, Guid? expectedSessionId = null)
     {
+        var user = await currentUserService.GetCurrentUserAsync();
+        await using var db = await dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = user.Id;
+        await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
+
+        // Identity first, before a single row or journal entry is written: the staged panels this promote
+        // is about to bring live belong to whatever session is open NOW, while the confirmation was built
+        // against the caller's. When those differ the caller is a stale circuit — its decisions describe
+        // holds that no longer exist and its warp geometry is for a photo that was thrown away — so the
+        // only safe answer is to refuse rather than to apply them to somebody else's capture.
+        await WallUpdateSessions.EnsureCurrentAsync(db, wallId, expectedSessionId);
+
         // Resume the SAME open wall-update batch the staging run (StageAsync) opened, so the staged-hold INSERTs
         // and this promote's carry writes are ONE self-contained, revertible/replayable unit — reverting
         // it undoes the staged-hold creations too, and replaying it recreates them. Null when the journal
         // isn't wired (e.g. unit tests); capture then falls back to per-SaveChanges adhoc batches.
         using var journalBatch = changeJournal?.BeginWallUpdateBatch(wallId);
-
-        var user = await currentUserService.GetCurrentUserAsync();
-        await using var db = await dbContextFactory.CreateDbContextAsync();
-        db.CurrentUserId = user.Id;
-        await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
 
         var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId)
             ?? throw new InvalidOperationException("Wall not found");
@@ -119,6 +127,11 @@ public partial class WallBigUpdateService
         wall.UsesMultipleImages = true;
         wall.CurrentGeneration = newGen;
         wall.LastResetAt = DateTimeOffset.UtcNow;
+
+        // The session becomes history in the SAME transaction as the promote: a committed update must
+        // never leave an open session behind, or the wall would look permanently "in progress" and the
+        // next StageAsync would refuse. Its decision rows stay as the record of what was applied.
+        await WallUpdateSessions.CloseOpenAsync(db, wallId, WallUpdateSessionStatus.Promoted, user.Id);
 
         await db.SaveChangesAsync();
 
@@ -216,12 +229,16 @@ public partial class WallBigUpdateService
     }
 
     /// <inheritdoc/>
-    public async Task DiscardAsync(Guid wallId)
+    public async Task DiscardAsync(Guid wallId, Guid? expectedSessionId = null)
     {
         var user = await currentUserService.GetCurrentUserAsync();
         await using var db = await dbContextFactory.CreateDbContextAsync();
         db.CurrentUserId = user.Id;
         await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
+
+        // Same identity rule as the promote, for the same reason in reverse: a stale circuit's Discard
+        // would delete the staged panels of the update that REPLACED the one it is looking at.
+        await WallUpdateSessions.EnsureCurrentAsync(db, wallId, expectedSessionId);
 
         var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId)
             ?? throw new InvalidOperationException("Wall not found");
@@ -233,6 +250,7 @@ public partial class WallBigUpdateService
         using (var journalBatch = changeJournal?.BeginWallUpdateBatch(wallId))
         {
             await DiscardStagedAsync(db, wallId, wall.CurrentGeneration + 1);
+            await WallUpdateSessions.CloseOpenAsync(db, wallId, WallUpdateSessionStatus.Discarded, user.Id);
             await db.SaveChangesAsync();
         }
 

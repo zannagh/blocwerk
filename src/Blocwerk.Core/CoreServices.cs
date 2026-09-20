@@ -182,6 +182,7 @@ public static class CoreServices
         builder.Services.AddScoped<IWallService, WallService>();
         builder.Services.AddScoped<IWallPanelService, WallPanelService>();
         builder.Services.AddScoped<IWallBigUpdateService, WallBigUpdateService>();
+        builder.Services.AddScoped<IWallUpdateSessionService, WallUpdateSessionService>();
 
         ConfigureTopLogger(builder);
 

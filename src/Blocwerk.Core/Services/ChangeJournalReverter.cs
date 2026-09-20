@@ -13,6 +13,18 @@ namespace Blocwerk.Core.Services;
 /// row's absence for Delete); on any mismatch the whole revert is rolled back and the conflicts are
 /// reported — it never clobbers divergent state. The revert's own inverse writes flow back through
 /// the capture interceptor as a NEW batch, so a revert is itself journalled and replayable.
+/// <para>
+/// KNOWN GAP — reverting a wall-update batch leaves its session header behind. The batch journals the
+/// <see cref="Hold"/> and <see cref="WallPanel"/> rows the update wrote, so reverting deletes them, and
+/// the <see cref="WallUpdateHoldDecision"/>/<see cref="WallUpdateNeighbourDecision"/> rows cascade away
+/// with their holds. The <see cref="WallUpdateSession"/> row itself is NOT journalled (it is working
+/// state, not wall content), so it survives — still <see cref="WallUpdateSessionStatus.Open"/>, now with
+/// no staged panels and no decisions under it. The next <c>StageAsync</c> on that wall then refuses with
+/// a <see cref="WallUpdateSessionConflictException"/> naming a session that has nothing left in it, and
+/// the way out is the wizard's destructive-looking "Discard theirs &amp; start over" — which in this
+/// state actually destroys nothing. Deliberately not fixed here: teaching the reverter about a
+/// non-journalled header would make it aggregate-aware, which is exactly what it is not.
+/// </para>
 /// </summary>
 public sealed class ChangeJournalReverter
 {

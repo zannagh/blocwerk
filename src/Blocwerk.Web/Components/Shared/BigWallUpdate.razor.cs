@@ -12,6 +12,11 @@ namespace Blocwerk.Web.Components.Shared;
 /// holds (and their boulders) onto the new centre, confirm the overlaps of each neighbour panel, then
 /// promote it all live in one go. Orchestrates the phases and the <see cref="IWallBigUpdateService"/>
 /// calls; each phase's UI lives in its own component. State here, markup in the .razor.
+/// <para>
+/// Every decision is written through to the wall's update session as it is made (see
+/// BigWallUpdate.Session.cs), so closing the browser mid-flow loses nothing and reopening lands on the
+/// step that was left rather than at the start.
+/// </para>
 /// </summary>
 public partial class BigWallUpdate : IDisposable
 {
@@ -46,21 +51,7 @@ public partial class BigWallUpdate : IDisposable
     /// <summary>Raised after a successful promote so the parent can refresh the now-updated wall.</summary>
     [Parameter] public EventCallback OnPromoted { get; set; }
 
-    private enum Phase
-    {
-        Loading,
-        ResumePrompt,
-        Upload,
-        Detected,
-        Carryover,
-        Neighbours,
-        Touchup,
-        Confirm,
-        Working,
-        Done,
-    }
-
-    private Phase _phase = Phase.Loading;
+    private WallUpdatePhase _phase = WallUpdatePhase.Loading;
     private string? _error;
 
     private BigUpdateSession? _session;
@@ -75,15 +66,7 @@ public partial class BigWallUpdate : IDisposable
         // A prior update may still be in flight (staged panels persisted); offer to resume it. The probe
         // reads the staged state only — the matcher runs when the user actually resumes, after the
         // pre-match review, so a resumed update matches the corrected holds exactly like a fresh one.
-        try
-        {
-            _session = await BigUpdate.GetStagedAsync(WallId);
-            _phase = Phase.ResumePrompt;
-        }
-        catch (Exception)
-        {
-            _phase = Phase.Upload;
-        }
+        await ProbeAsync();
     }
 
     private NeighbourOverlap? CurrentNeighbour =>
@@ -91,31 +74,54 @@ public partial class BigWallUpdate : IDisposable
             ? _session.Neighbours[_neighbourIndex]
             : null;
 
-    // ---- Resume / start --------------------------------------------------------
-    // Resuming lands on the same pre-match review a fresh upload does: the staged holds are all that
-    // exists at this point, and running the matcher is exactly what leaving that phase does.
-    private void ResumeExisting() => _phase = Phase.Detected;
-
+    // ---- Start -----------------------------------------------------------------
     private async Task DiscardAndRestart()
     {
         await SafeDiscard();
+        if (_superseded)
+        {
+            return;
+        }
+
         _session = null;
-        _phase = Phase.Upload;
+        _sessionInfo = null;
+        _restored = null;
+        _phase = WallUpdatePhase.Upload;
     }
 
-    private async Task OnUpload(IReadOnlyList<BigUpdatePhoto> photos)
+    private Task OnUpload(IReadOnlyList<BigUpdatePhoto> photos) =>
+        StartUpdateAsync(photos, takeOverExisting: false);
+
+    /// <summary>
+    /// Stages a fresh capture. A refusal (another admin already has an update open on this wall) is NOT
+    /// an error to shrug off: it parks on the conflict prompt so the user chooses between continuing
+    /// that update and explicitly throwing it away.
+    /// </summary>
+    private async Task StartUpdateAsync(IReadOnlyList<BigUpdatePhoto> photos, bool takeOverExisting)
     {
         _error = null;
-        _phase = Phase.Working;
+        _phase = WallUpdatePhase.Working;
         try
         {
-            _session = await BigUpdate.StageAsync(WallId, photos);
-            _phase = Phase.Detected;
+            _session = await BigUpdate.StageAsync(WallId, photos, takeOverExisting);
+            _restored = null;
+            _outcome = null;
+            _linkSets.Clear();
+            _neighbourIndex = 0;
+            _pendingPhotos = null;
+            _sessionInfo = await Sessions.GetOpenSessionAsync(WallId);
+            _phase = WallUpdatePhase.Detected;
+        }
+        catch (WallUpdateSessionConflictException ex)
+        {
+            _pendingPhotos = photos;
+            _conflict = ex.Existing;
+            _phase = WallUpdatePhase.Upload;
         }
         catch (Exception ex)
         {
             _error = $"Could not start the update: {ex.Message}";
-            _phase = Phase.Upload;
+            _phase = WallUpdatePhase.Upload;
         }
     }
 
@@ -126,110 +132,156 @@ public partial class BigWallUpdate : IDisposable
     private async Task OnDetectedContinue()
     {
         _error = null;
-        _phase = Phase.Working;
+        _phase = WallUpdatePhase.Working;
         try
         {
             _session = await BigUpdate.ResumeAsync(WallId);
-            _phase = Phase.Carryover;
+            await GoToPhaseAsync(WallUpdatePhase.Carryover);
         }
         catch (Exception ex)
         {
             _error = $"Could not match the detected holds: {ex.Message}";
-            _phase = Phase.Detected;
+            _phase = WallUpdatePhase.Detected;
         }
     }
 
     // ---- Carryover → neighbours ------------------------------------------------
-    private void OnCarryoverContinue(CarryoverOutcome outcome)
+    // The bulk save: the per-hold upserts already wrote every decision as it was made, but the
+    // accepted/discarded new-hold split is only knowable here (it is derived from the CURRENT staged
+    // set), so the whole carryover half is rewritten in one go on the way out.
+    private async Task OnCarryoverContinue(CarryoverOutcome outcome)
     {
         _outcome = outcome;
+
+        try
+        {
+            await Sessions.SaveCarryOutcomeAsync(
+                WallId, outcome.Carryover, outcome.AcceptedNewCenterHoldIds, outcome.RemovedNewCenterHoldIds);
+        }
+        catch (Exception ex)
+        {
+            // STAY on the step. The phase cursor is its own tiny write and would almost certainly have
+            // succeeded, leaving a resumed session parked at Neighbours with only the per-hold upserts
+            // persisted — and the carry defaults then invert every unsaved verdict (a Removed hold comes
+            // back and un-freezes its boulder, a Changed one loses its flag). Advancing past a failed
+            // save is exactly how that silent inversion happens, so the error has to block the step.
+            _error = $"Your carryover decisions could not be saved, so this step is not finished yet: {ex.Message}";
+            _phase = WallUpdatePhase.Carryover;
+            return;
+        }
+
+        // Only once the carryover is safely recorded does the neighbour walk start from the beginning.
         _linkSets.Clear();
         _neighbourIndex = 0;
 
-        _phase = (_session?.Neighbours.Count ?? 0) == 0 ? Phase.Touchup : Phase.Neighbours;
+        var next = (_session?.Neighbours.Count ?? 0) == 0 ? WallUpdatePhase.Touchup : WallUpdatePhase.Neighbours;
+        await GoToPhaseAsync(next);
     }
 
     // ---- Phase 2: one neighbour overlap at a time ------------------------------
-    private void OnNeighbourConfirm(PanelConfirmation confirmation)
+    private async Task OnNeighbourConfirm(PanelConfirmation confirmation)
     {
         if (CurrentNeighbour is { } n)
         {
-            _linkSets.Add(new NeighbourLinkSet(n.PanelId, confirmation.Links.ToList(), confirmation.RemovedNeighborHoldIds.ToList()));
+            var set = new NeighbourLinkSet(
+                n.PanelId, confirmation.Links.ToList(), confirmation.RemovedNeighborHoldIds.ToList());
+            RecordLinkSet(set);
+            await SaveNeighbourAsync(set);
         }
 
-        AdvanceNeighbour();
+        await AdvanceNeighbourAsync();
     }
 
-    // Skipping a neighbour keeps its panel (it is promoted with the rest) but records no links —
-    // it never deletes the staged panel, so no holds are lost.
-    private void OnNeighbourSkip()
+    /// <summary>
+    /// The stepper's as-you-go save: the panel's outcome so far, written before it is finished, so an
+    /// interrupted walk through one panel's proposals comes back with the confirmations already made.
+    /// The set replaces the panel's rows whole, exactly as the final confirm does.
+    /// </summary>
+    private async Task OnNeighbourProgress(PanelConfirmation confirmation)
+    {
+        if (CurrentNeighbour is not { } n)
+        {
+            return;
+        }
+
+        await SaveNeighbourAsync(new NeighbourLinkSet(
+            n.PanelId, confirmation.Links.ToList(), confirmation.RemovedNeighborHoldIds.ToList()));
+    }
+
+    /// <summary>
+    /// Skipping a neighbour keeps its panel (it is promoted with the rest) but records no links — it
+    /// never deletes the staged panel, so no holds are lost.
+    /// <para>
+    /// Skip means "not now", never "throw away what I already decided". A panel confirmed in an EARLIER
+    /// session keeps its rows: clearing them here destroyed real, already-confirmed work with no prompt,
+    /// and because the in-memory set was emptied to match, the screen agreed and the loss was invisible.
+    /// Preserving beats confirming-first because the destructive reading of Skip has no use case — a user
+    /// who wants a panel's links gone re-walks it and confirms an empty set, which rewrites its rows.
+    /// </para>
+    /// </summary>
+    private async Task OnNeighbourSkip()
     {
         if (CurrentNeighbour is { } n)
         {
-            _linkSets.Add(new NeighbourLinkSet(n.PanelId, [], []));
+            // Only a panel with NOTHING recorded gets an empty set; anything already decided is left
+            // exactly as it stands, in memory and in the session.
+            var existing = _linkSets.FirstOrDefault(l => l.PanelId == n.PanelId) ?? RestoredFor(n.PanelId);
+            RecordLinkSet(existing ?? new NeighbourLinkSet(n.PanelId, [], []));
         }
 
-        AdvanceNeighbour();
+        await AdvanceNeighbourAsync();
     }
 
-    private void AdvanceNeighbour()
+    // A panel is always decided WHOLE, so a re-walk replaces its set rather than appending a second one.
+    private void RecordLinkSet(NeighbourLinkSet set)
+    {
+        _linkSets.RemoveAll(l => l.PanelId == set.PanelId);
+        _linkSets.Add(set);
+    }
+
+    private async Task SaveNeighbourAsync(NeighbourLinkSet set)
+    {
+        try
+        {
+            await Sessions.SaveNeighbourLinkSetAsync(WallId, set);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not save this panel's overlaps: {ex.Message}";
+        }
+    }
+
+    private async Task AdvanceNeighbourAsync()
     {
         if (_session is not null && _neighbourIndex < _session.Neighbours.Count - 1)
         {
             _neighbourIndex++;
+            await GoToPhaseAsync(WallUpdatePhase.Neighbours, _neighbourIndex);
         }
         else
         {
-            _phase = Phase.Touchup;
+            await GoToPhaseAsync(WallUpdatePhase.Touchup);
         }
     }
 
     // ---- Phase 3: manual touch-up across every staged panel --------------------
     // Both continue and skip land on Confirm; touch-up only edits staged-hold geometry and never
     // emits a carryover decision, so there is nothing to fold back into the outcome here.
-    private void OnTouchupContinue() => _phase = Phase.Confirm;
+    private Task OnTouchupContinue() => GoToPhaseAsync(WallUpdatePhase.Confirm);
 
-    private void OnTouchupSkip() => _phase = Phase.Confirm;
+    private Task OnTouchupSkip() => GoToPhaseAsync(WallUpdatePhase.Confirm);
 
-    // ---- Finish ----------------------------------------------------------------
-    private int CarriedCount => _outcome?.Carryover.Count(d => d.Kind == CarryKind.Carried) ?? 0;
-    private int ChangedCount => _outcome?.Carryover.Count(d => d.Kind == CarryKind.Changed) ?? 0;
-    private int RemovedCount => _outcome?.Carryover.Count(d => d.Kind == CarryKind.Removed) ?? 0;
-    private int NewKeptCount => _outcome?.AcceptedNewCenterHoldIds.Count ?? 0;
-    private int LinkCount => _linkSets.Sum(l => l.Links.Count);
-
-    private async Task Apply()
-    {
-        if (_outcome is null)
-        {
-            return;
-        }
-
-        _error = null;
-        _phase = Phase.Working;
-        try
-        {
-            var confirmation = new BigUpdateConfirmation(
-                _outcome.Carryover,
-                _outcome.AcceptedNewCenterHoldIds,
-                _outcome.RemovedNewCenterHoldIds,
-                _linkSets,
-                _session?.CarriedWarpPositions,
-                _session?.CarriedWarpShapes);
-            await BigUpdate.PromoteAsync(WallId, confirmation);
-            _phase = Phase.Done;
-            await OnPromoted.InvokeAsync();
-        }
-        catch (Exception ex)
-        {
-            _error = $"Could not apply the update: {ex.Message}";
-            _phase = Phase.Confirm;
-        }
-    }
+    // The confirm-step summary and the promote itself live in BigWallUpdate.Promote.cs.
 
     private async Task Discard()
     {
         await SafeDiscard();
+        if (_superseded)
+        {
+            // The notice replaces the flow; closing here would hide the reason the discard was refused.
+            return;
+        }
+
         await OnClose.InvokeAsync();
     }
 
@@ -237,7 +289,13 @@ public partial class BigWallUpdate : IDisposable
     {
         try
         {
-            await BigUpdate.DiscardAsync(WallId);
+            // Scoped to the session this circuit is looking at: a stale Discard must not delete the
+            // staged panels of the update that replaced it.
+            await BigUpdate.DiscardAsync(WallId, _sessionInfo?.Id);
+        }
+        catch (WallUpdateSessionSupersededException)
+        {
+            MarkSuperseded();
         }
         catch (Exception ex)
         {

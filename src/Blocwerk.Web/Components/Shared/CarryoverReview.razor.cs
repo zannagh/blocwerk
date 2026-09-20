@@ -86,6 +86,11 @@ public partial class CarryoverReview
             }
         }
 
+        // Finally, lay back anything already decided on the session (a resumed update): the user's own
+        // verdicts outrank both the carry-all seed and the matcher's suggestions. See the Persistence
+        // partial.
+        SeedFromRestored();
+
         // Derive the FEW old holds that actually need the user's eyes (no proposal / low confidence /
         // high residual), residual-ranked. Static per session, so compute once here.
         _attentionQueue = BuildAttentionQueue();
@@ -222,11 +227,17 @@ public partial class CarryoverReview
         await WallPanelService.DeleteStagedHoldAsync(WallId, id);
 
         // Any carry decision that pointed at this now-deleted staged twin falls back to a carry in
-        // place (no twin), so no decision references a hold that no longer exists.
+        // place (no twin), so no decision references a hold that no longer exists. The fallbacks are
+        // written through too, or a resume would restore a twin that has been deleted.
+        var orphaned = new List<CarryoverDecision>();
         foreach (var (oldId, d) in _decisions.Where(kv => kv.Value.NewHoldId == id).ToList())
         {
-            _decisions[oldId] = d with { NewHoldId = null };
+            var fallback = d with { NewHoldId = null };
+            _decisions[oldId] = fallback;
+            orphaned.Add(fallback);
         }
+
+        await SaveCarryAllAsync(orphaned);
 
         _selectedNewHoldId = null;
         await ReloadNewHoldsAsync();
@@ -241,22 +252,7 @@ public partial class CarryoverReview
         }
     }
 
-    // ---- Decision handlers (from the focused stepper) --------------------------
-    private void ApplyCarryDecision(CarryDecisionChange change) =>
-        _decisions[change.OldHoldId] = new CarryoverDecision(change.OldHoldId, change.Kind, change.NewHoldId);
-
-    private void ApplyNewDecision(NewDecisionChange change)
-    {
-        if (change.Discarded)
-        {
-            _newDiscarded.Add(change.NewHoldId);
-        }
-        else
-        {
-            _newDiscarded.Remove(change.NewHoldId);
-        }
-    }
-
+    // The decision handlers and the as-you-go saves live in CarryoverReview.Persistence.cs.
     private void OpenReview(CarryReviewMode mode) => _reviewMode = mode;
 
     private void CloseReview() => _reviewMode = null;

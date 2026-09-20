@@ -2396,6 +2396,13 @@ html.bw-fullscreen .wall-main .photo-viewport {
     margin-bottom: 8px;
 }
 
+/* An update session belongs to the wall, so the flow names who started it and who touched it last. */
+.bigupdate-owner {
+    margin: 0 0 10px;
+    font-size: 0.85rem;
+}
+.bigupdate-owner-last { opacity: 0.8; }
+
 /* Uploader: one centre slot + four direction slots */
 .bigupdate-slots {
     display: grid;

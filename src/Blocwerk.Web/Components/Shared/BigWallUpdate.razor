@@ -5,41 +5,93 @@
 <div class="bigupdate">
     <div class="bigupdate-head">
         <h2>Update wall with new photos</h2>
-        @if (_phase is not Phase.Done and not Phase.Working)
+        @if (!_superseded && _phase is not WallUpdatePhase.Done and not WallUpdatePhase.Working)
         {
             <button class="btn-link" @onclick="Discard">Discard update</button>
         }
     </div>
+
+    @* A session belongs to the WALL, so the person working it may not be the person who started it.
+       Say so plainly wherever the flow is live, so a second moderator joins rather than collides. *@
+    @if (HasOwnerInfo && !_superseded && _phase is not WallUpdatePhase.Upload and not WallUpdatePhase.Done)
+    {
+        <p class="hint bigupdate-owner">
+            @StartedByLine
+            @if (LastActiveLine is { } lastLine)
+            {
+                <span class="bigupdate-owner-last"> · @lastLine</span>
+            }
+        </p>
+    }
 
     @if (!string.IsNullOrEmpty(_error))
     {
         <p class="staged-hint danger">@_error</p>
     }
 
+    @if (_superseded)
+    {
+        @* Terminal: another admin replaced this update, so every staged photo and decision on this
+           screen is gone. Say that plainly instead of letting Apply or Discard act on someone else's
+           capture — the service refuses either way, but the user deserves the reason, not the stack. *@
+        <p class="staged-hint danger">
+            This update was replaced by a newer one on this wall, so it can no longer be applied.
+            Nothing you did here was written to the live wall.
+        </p>
+        <p class="staged-hint">
+            Close and reopen the wall to see the update that is in progress now.
+        </p>
+        <div class="staged-actions">
+            <button class="btn-primary" @onclick="Close">Close</button>
+        </div>
+    }
+    else
+    {
     @switch (_phase)
     {
-        case Phase.Loading:
-        case Phase.Working:
+        case WallUpdatePhase.Loading:
+        case WallUpdatePhase.Working:
             <p class="loading-small">Working…</p>
             break;
 
-        case Phase.ResumePrompt:
+        case WallUpdatePhase.ResumePrompt:
             <p class="staged-hint">
-                An update to this wall is already in progress. You can pick up where you left off, or
-                discard it and start over. Discarding leaves the live wall untouched.
+                An update to this wall is already in progress, with every decision made so far saved.
+                You can pick up exactly where it was left, or discard it and start over. Discarding
+                leaves the live wall untouched.
             </p>
             <div class="staged-actions">
-                <button class="btn-primary" @onclick="ResumeExisting">Resume update</button>
-                <button class="btn-secondary" @onclick="DiscardAndRestart">Discard &amp; start over</button>
+                <button class="btn-primary" @onclick="ResumeExistingAsync">@ResumeLabel</button>
                 <button class="btn-secondary" @onclick="Close">Not now</button>
+                <button class="btn-danger-soft" @onclick="DiscardAndRestart">Discard &amp; start over</button>
             </div>
             break;
 
-        case Phase.Upload:
-            <BigWallUpdateUploader @ref="_uploader" OnStart="OnUpload" OnCancel="Close" />
+        case WallUpdatePhase.Upload:
+            @if (_conflict is not null)
+            {
+                @* Never a silent takeover: another admin's staged photos and decisions are on this
+                   wall, so the user chooses — and the destructive choice is the secondary one. *@
+                <p class="staged-hint danger">
+                    This wall already has an update in progress, so your photos were not staged.
+                </p>
+                <p class="staged-hint">
+                    Continuing picks that update up where it was left, with every decision intact.
+                    Starting over throws away its photos and decisions permanently.
+                </p>
+                <div class="staged-actions">
+                    <button class="btn-primary" @onclick="ResumeConflictingAsync">Resume their update</button>
+                    <button class="btn-secondary" @onclick="CancelConflict">Back to my photos</button>
+                    <button class="btn-danger-soft" @onclick="TakeOverAsync">Discard theirs &amp; start over</button>
+                </div>
+            }
+            else
+            {
+                <BigWallUpdateUploader @ref="_uploader" OnStart="OnUpload" OnCancel="Close" />
+            }
             break;
 
-        case Phase.Detected:
+        case WallUpdatePhase.Detected:
             @if (_session is not null)
             {
                 <TouchupStep @ref="_detectedStep" WallId="WallId" Session="_session"
@@ -55,16 +107,17 @@
             }
             break;
 
-        case Phase.Carryover:
+        case WallUpdatePhase.Carryover:
             @if (_session is not null)
             {
                 <CarryoverReview @ref="_carryover" WallId="WallId" CurrentGeneration="CurrentGeneration" Session="_session"
+                                 Restored="_restored"
                                  OnContinue="OnCarryoverContinue" OnDiscard="Discard"
                                  OnSubViewOpenChanged="OnCarryoverSubViewOpenChanged" />
             }
             break;
 
-        case Phase.Neighbours:
+        case WallUpdatePhase.Neighbours:
             @if (CurrentNeighbour is { } n)
             {
                 <div class="bigupdate-step-label">
@@ -72,11 +125,13 @@
                 </div>
                 <PanelOverlapStepper @key="n.PanelId" WallId="WallId" PanelId="n.PanelId"
                                      Col="n.Col" Row="n.Row" Proposals="n.Proposals" NeighbourStaged="true"
-                                     OnConfirm="OnNeighbourConfirm" OnDiscard="OnNeighbourSkip" />
+                                     Restored="RestoredFor(n.PanelId)"
+                                     OnConfirm="OnNeighbourConfirm" OnProgress="OnNeighbourProgress"
+                                     OnDiscard="OnNeighbourSkip" />
             }
             break;
 
-        case Phase.Touchup:
+        case WallUpdatePhase.Touchup:
             @if (_session is not null)
             {
                 <TouchupStep @ref="_touchupStep" WallId="WallId" Session="_session"
@@ -84,7 +139,7 @@
             }
             break;
 
-        case Phase.Confirm:
+        case WallUpdatePhase.Confirm:
             <p class="hint">Ready to apply. Nothing changes on the live wall until you confirm.</p>
             <div class="bigupdate-summary">
                 <span class="bigupdate-chip carry">Carrying @CarriedCount</span>
@@ -103,7 +158,7 @@
             </div>
             break;
 
-        case Phase.Done:
+        case WallUpdatePhase.Done:
             <p class="staged-hint">
                 Update applied. Carried @CarriedCount · changed @ChangedCount · removed @RemovedCount ·
                 new @NewKeptCount · @LinkCount overlap link(s).
@@ -112,5 +167,6 @@
                 <button class="btn-primary" @onclick="Close">Done</button>
             </div>
             break;
+    }
     }
 </div>

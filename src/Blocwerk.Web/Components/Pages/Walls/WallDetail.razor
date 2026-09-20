@@ -12,6 +12,7 @@
 @inject IKioskService KioskService
 @inject Blocwerk.Core.Abstractions.IKioskContext KioskContext
 @inject CircuitEditActivity EditActivity
+@inject IWallUpdateSessionService WallUpdateSessions
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 @inject ILogger<WallDetail> Logger
@@ -105,7 +106,28 @@ else
                     {
                         <div class="form-group">
                             <WallPanelGrid WallId="WallId" />
-                            <button class="btn-secondary bigupdate-entry" @onclick="OpenBigUpdate">Update wall with new photos</button>
+                            @* An update session belongs to the wall, so a second moderator should JOIN
+                               it rather than collide with it — say who has it open and since when. *@
+                            @if (_openUpdate is { } openUpdate)
+                            {
+                                <p class="staged-hint">
+                                    An update is already in progress, started by
+                                    @(openUpdate.CreatedByName ?? "another admin") on
+                                    @openUpdate.CreatedAt.ToLocalTime().ToString("d MMM yyyy, HH:mm").
+                                    @if (openUpdate.LastActiveByUserId is not null
+                                         && openUpdate.LastActiveByUserId != openUpdate.CreatedByUserId)
+                                    {
+                                        <span>
+                                            Last continued by @(openUpdate.LastActiveByName ?? "another admin")
+                                            on @openUpdate.UpdatedAt.ToLocalTime().ToString("d MMM yyyy, HH:mm").
+                                        </span>
+                                    }
+                                    <span>Opening it continues where they left off.</span>
+                                </p>
+                            }
+                            <button class="btn-secondary bigupdate-entry" @onclick="OpenBigUpdate">
+                                @(_openUpdate is null ? "Update wall with new photos" : "Continue the wall update")
+                            </button>
                         </div>
                     }
 
@@ -798,6 +820,9 @@ else
     }
 
     private bool _showBigUpdate;
+
+    // The wall's in-flight update, if any — surfaced at the entry point so a second admin joins it.
+    private WallUpdateSessionInfo? _openUpdate;
     private bool _showLinkTool;
     private string? _shareLink;
     private bool _showInviteLink;
@@ -1263,6 +1288,8 @@ else
         _canCreateAnonymously = _isAnonymous
             && _wall != null
             && await BoulderService.CanCreateAnonymouslyAsync(WallId);
+
+        await LoadOpenUpdateAsync();
 
         if (_wall != null)
         {
@@ -1754,6 +1781,31 @@ else
     {
         _showBigUpdate = false;
         await LoadWall();
+        await LoadOpenUpdateAsync();
+    }
+
+    /// <summary>
+    /// Probes for an in-flight wall update so the entry point can say one is open and by whom. Admins
+    /// only (the probe is admin-gated anyway), and a failure is silent: the button still works, it
+    /// just stops advertising the session.
+    /// </summary>
+    private async Task LoadOpenUpdateAsync()
+    {
+        if (!_isAdmin)
+        {
+            _openUpdate = null;
+            return;
+        }
+
+        try
+        {
+            _openUpdate = await WallUpdateSessions.GetOpenSessionAsync(WallId);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Could not probe the update session of wall {WallId}", WallId);
+            _openUpdate = null;
+        }
     }
 
     // Opens the standalone cross-panel hold-linking tool over the big-wall editor. Editor-gated the

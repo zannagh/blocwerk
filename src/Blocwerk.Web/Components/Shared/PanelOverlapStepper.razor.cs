@@ -96,6 +96,9 @@ public partial class PanelOverlapStepper
             _neighborHolds[neighborId] = await WallPanelService.GetPanelHoldsAsync(WallId, neighborId, includeStaged: NeighbourStaged);
         }
 
+        // Lay any already-confirmed outcome for this panel back over the fresh walk. See the Resume partial.
+        SeedFromRestored();
+
         _loading = false;
     }
 
@@ -122,7 +125,7 @@ public partial class PanelOverlapStepper
     }
 
     // ---- Decisions -------------------------------------------------------------
-    private void ConfirmMatch()
+    private async Task ConfirmMatch()
     {
         var step = _steps[_index];
         if (!TryRecord(new ConfirmedLink(step.HoldAId, step.HoldBId, Moved: false)))
@@ -130,20 +133,20 @@ public partial class PanelOverlapStepper
             return;
         }
 
-        Next();
+        await Next();
     }
 
-    private void DiscardMatch()
+    private async Task DiscardMatch()
     {
         _decisions[_index] = null;
-        Next();
+        await Next();
     }
 
     /// <summary>
     /// The neighbour hold under review has been physically removed from the wall. Records its id
     /// for deletion at the final Confirm and drops any link for it (removal wins), then advances.
     /// </summary>
-    private void DeleteHold()
+    private async Task DeleteHold()
     {
         var neighborHoldId = _steps[_index].HoldAId;
         _removed.Add(neighborHoldId);
@@ -158,7 +161,7 @@ public partial class PanelOverlapStepper
             }
         }
 
-        Next();
+        await Next();
     }
 
     private void EnterMoved()
@@ -190,7 +193,7 @@ public partial class PanelOverlapStepper
         _addMode = false;
     }
 
-    private void UseMovedHold()
+    private async Task UseMovedHold()
     {
         var step = _steps[_index];
         if (_movedSelectedHoldId is not { } chosen)
@@ -204,7 +207,7 @@ public partial class PanelOverlapStepper
         }
 
         CancelMoved();
-        Next();
+        await Next();
     }
 
     // ---- Manual linking --------------------------------------------------------
@@ -252,14 +255,14 @@ public partial class PanelOverlapStepper
     /// two selections so the user can pair more. Reuses the same "one new hold, one link" guard as the
     /// proposal steps and dedupes against links already marked manually.
     /// </summary>
-    private void MarkManualOverlap()
+    private async Task MarkManualOverlap()
     {
         if (_manualLeftId is not { } left || _manualRightId is not { } right)
         {
             return;
         }
 
-        if (IsNewHoldTaken(right, exceptIndex: -1) || _manualLinks.Any(l => l.NewHoldId == right))
+        if (IsNewHoldTaken(right, exceptIndex: -1))
         {
             _warning = "That hold is already linked to another neighbour hold — pick a different one.";
             return;
@@ -275,18 +278,16 @@ public partial class PanelOverlapStepper
         _manualLeftId = null;
         _manualRightId = null;
         _warning = null;
+        await ReportProgressAsync();
     }
 
     /// <summary>Records a decision, guarding against linking the same new hold from two steps.</summary>
     private bool TryRecord(ConfirmedLink link)
     {
-        for (var i = 0; i < _decisions.Length; i++)
+        if (IsNewHoldTaken(link.NewHoldId, _index))
         {
-            if (i != _index && _decisions[i] is { } other && other.NewHoldId == link.NewHoldId)
-            {
-                _warning = "That hold is already linked to another neighbour hold — pick a different one.";
-                return false;
-            }
+            _warning = "That hold is already linked to another neighbour hold — pick a different one.";
+            return false;
         }
 
         _decisions[_index] = link;
@@ -294,17 +295,20 @@ public partial class PanelOverlapStepper
         return true;
     }
 
-    private void Next()
+    // Every path here has just recorded (or deliberately declined) a decision, so this is the natural
+    // save point for the panel: one round-trip per step, never one per render.
+    private async Task Next()
     {
         _warning = null;
         _refocus = true;
         if (_index < _steps.Count - 1)
         {
             _index++;
+            await ReportProgressAsync();
         }
         else
         {
-            _ = Finish();
+            await Finish();
         }
     }
 
@@ -337,6 +341,13 @@ public partial class PanelOverlapStepper
         await Finish();
     }
 
+    /// <summary>
+    /// Whether some other link already claims this new-panel hold. Spans BOTH halves of the outcome —
+    /// the proposal decisions and the standalone <c>_manualLinks</c> — because both end up in the
+    /// confirmation, and two links onto one new hold become two HoldLink rows for the same HoldB at
+    /// promote. A resumed walk seeds restored links into <c>_manualLinks</c>, so scanning only the
+    /// decisions let the user confirm a proposal onto a hold a restored link had already taken.
+    /// </summary>
     private bool IsNewHoldTaken(Guid newHoldId, int exceptIndex)
     {
         for (var i = 0; i < _decisions.Length; i++)
@@ -347,19 +358,13 @@ public partial class PanelOverlapStepper
             }
         }
 
-        return false;
+        return _manualLinks.Any(l => l.NewHoldId == newHoldId);
     }
 
     private async Task Finish()
     {
         _finishing = true;
-        var links = _decisions
-            .Where(d => d is not null)
-            .Select(d => d!)
-            .Concat(_manualLinks)
-            .Where(d => !_removed.Contains(d.NeighborHoldId))
-            .ToList();
-        await OnConfirm.InvokeAsync(new PanelConfirmation(links, _removed.ToList()));
+        await OnConfirm.InvokeAsync(CurrentOutcome());
     }
 
     private Task Discard() => OnDiscard.InvokeAsync();

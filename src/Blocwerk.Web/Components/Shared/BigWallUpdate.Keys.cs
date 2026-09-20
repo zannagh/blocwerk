@@ -2,6 +2,8 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Enums;
+
 namespace Blocwerk.Web.Components.Shared;
 
 /// <summary>
@@ -26,7 +28,7 @@ public partial class BigWallUpdate
     private TouchupStep? _touchupStep;
     private CarryoverReview? _carryover;
 
-    private TouchupStep? CurrentTouchupStep => _phase == Phase.Detected ? _detectedStep : _touchupStep;
+    private TouchupStep? CurrentTouchupStep => _phase == WallUpdatePhase.Detected ? _detectedStep : _touchupStep;
 
     /// <summary>
     /// The keys that are live for the current phase. Neighbours declares nothing on purpose: the
@@ -35,21 +37,21 @@ public partial class BigWallUpdate
     /// than the only guard — keep it anyway, so the phase's key set stays honest on its own terms.
     /// Carryover goes quiet the same way while one of its sub-views is open.
     /// </summary>
-    private string[] KeysForPhase() => _phase switch
+    private string[] KeysForPhase() => _superseded ? [] : _phase switch
     {
         // "Not now" simply closes the flow and leaves the staged update untouched, so Escape is safe.
-        Phase.ResumePrompt => ["Enter", "Escape"],
+        WallUpdatePhase.ResumePrompt => ["Enter", "Escape"],
 
         // Nothing is staged yet, so Escape is the plain Cancel button — it discards nothing.
-        Phase.Upload => ["Enter", "Escape"],
+        WallUpdatePhase.Upload => ["Enter", "Escape"],
 
-        Phase.Detected => ["Enter", "s", "a", "x"],
-        Phase.Carryover => _carryoverSubViewOpen ? [] : ["Enter", "a", "x"],
-        Phase.Touchup => ["Enter", "s", "a", "x"],
-        Phase.Confirm => ["Enter"],
+        WallUpdatePhase.Detected => ["Enter", "s", "a", "x"],
+        WallUpdatePhase.Carryover => _carryoverSubViewOpen ? [] : ["Enter", "a", "x"],
+        WallUpdatePhase.Touchup => ["Enter", "s", "a", "x"],
+        WallUpdatePhase.Confirm => ["Enter"],
 
         // The update is already applied; Enter/Escape both just close the finished flow.
-        Phase.Done => ["Enter", "Escape"],
+        WallUpdatePhase.Done => ["Enter", "Escape"],
 
         // Loading, Working and Neighbours: no wizard-level keys.
         _ => [],
@@ -94,23 +96,23 @@ public partial class BigWallUpdate
     // Skip exists on the touch-up phases only; elsewhere the key is not declared at all.
     private async Task SkipShortcutAsync()
     {
-        if (_phase == Phase.Detected)
+        if (_phase == WallUpdatePhase.Detected)
         {
             await OnDetectedContinue();
         }
-        else if (_phase == Phase.Touchup)
+        else if (_phase == WallUpdatePhase.Touchup)
         {
-            OnTouchupSkip();
+            await OnTouchupSkip();
         }
     }
 
     private void AddModeShortcut()
     {
-        if (_phase is Phase.Detected or Phase.Touchup)
+        if (_phase is WallUpdatePhase.Detected or WallUpdatePhase.Touchup)
         {
             CurrentTouchupStep?.TryToggleAddMode();
         }
-        else if (_phase == Phase.Carryover)
+        else if (_phase == WallUpdatePhase.Carryover)
         {
             _carryover?.TryToggleAddMode();
         }
@@ -118,11 +120,11 @@ public partial class BigWallUpdate
 
     private async Task RemoveHoldShortcutAsync()
     {
-        if (_phase is (Phase.Detected or Phase.Touchup) && CurrentTouchupStep is { } step)
+        if (_phase is (WallUpdatePhase.Detected or WallUpdatePhase.Touchup) && CurrentTouchupStep is { } step)
         {
             await step.TryRemoveSelectedHoldAsync();
         }
-        else if (_phase == Phase.Carryover && _carryover is { } carryover)
+        else if (_phase == WallUpdatePhase.Carryover && _carryover is { } carryover)
         {
             await carryover.TryRemoveSelectedNewHoldAsync();
         }
@@ -132,7 +134,16 @@ public partial class BigWallUpdate
     // closes the flow where closing throws nothing away.
     private async Task EscapeShortcutAsync()
     {
-        if (_phase is Phase.ResumePrompt or Phase.Upload or Phase.Done)
+        // The conflict prompt's Escape is its own Cancel: it backs out to the upload form without
+        // touching the other admin's update, which closing the whole flow would also do — but this
+        // keeps the photos the user already picked.
+        if (_conflict is not null)
+        {
+            CancelConflict();
+            return;
+        }
+
+        if (_phase is WallUpdatePhase.ResumePrompt or WallUpdatePhase.Upload or WallUpdatePhase.Done)
         {
             await Close();
         }
@@ -142,11 +153,19 @@ public partial class BigWallUpdate
     {
         switch (_phase)
         {
-            case Phase.ResumePrompt:
-                ResumeExisting();
+            case WallUpdatePhase.ResumePrompt:
+                await ResumeExistingAsync();
                 break;
 
-            case Phase.Upload:
+            case WallUpdatePhase.Upload:
+                // While the conflict prompt is up, Enter is its primary action — continuing the
+                // update that is already open. Never the destructive takeover.
+                if (_conflict is not null)
+                {
+                    await ResumeConflictingAsync();
+                    break;
+                }
+
                 // TryStartAsync re-checks the button's own disabled condition, so a premature Enter
                 // (no centre photo, a photo still being prepared) does nothing.
                 if (_uploader is { } uploader)
@@ -156,11 +175,11 @@ public partial class BigWallUpdate
 
                 break;
 
-            case Phase.Detected:
+            case WallUpdatePhase.Detected:
                 await OnDetectedContinue();
                 break;
 
-            case Phase.Carryover:
+            case WallUpdatePhase.Carryover:
                 if (_carryover is { } carryover)
                 {
                     await carryover.TryContinueAsync();
@@ -168,15 +187,15 @@ public partial class BigWallUpdate
 
                 break;
 
-            case Phase.Touchup:
-                OnTouchupContinue();
+            case WallUpdatePhase.Touchup:
+                await OnTouchupContinue();
                 break;
 
-            case Phase.Confirm:
+            case WallUpdatePhase.Confirm:
                 await Apply();
                 break;
 
-            case Phase.Done:
+            case WallUpdatePhase.Done:
                 await Close();
                 break;
         }
