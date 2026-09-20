@@ -96,7 +96,7 @@ public class MultiPanelSubsetPromoteTests
             w.WallId, Confirm(new CarryoverDecision(w.CentreHoldId, CarryKind.Carried, s.CentreStagedHoldId)));
 
         await using var db = h.CreateContext();
-        var nbSuccessorId = (await db.HoldGenerationLinks.SingleAsync(l => l.OldHoldId == w.NeighbourHoldId)).NewHoldId;
+        var nbSuccessorId = (await db.HoldGenerationLinks.SingleAsync(l => l.OldHoldId == w.NeighbourHoldId)).NewHoldId!.Value;
 
         // Neighbour-only boulder: advanced to the new generation, active, repointed onto the successor.
         var nbBoulder = await db.Boulders.SingleAsync(b => b.Id == w.NeighbourBoulderId);

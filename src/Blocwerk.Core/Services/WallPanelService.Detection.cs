@@ -1,5 +1,6 @@
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -44,6 +45,7 @@ public partial class WallPanelService
         }
 
         var removable = await CollectRemovableAutoHoldsAsync(db, wallId, panelId, wall.CurrentGeneration);
+        await PrepareRemovableAsync(db, removable);
         db.Holds.RemoveRange(removable);
 
         var detected = await holdDetectionService.DetectHoldsAsync(panel.Photo);
@@ -96,6 +98,7 @@ public partial class WallPanelService
         }
 
         var removable = await CollectRemovableAutoHoldsAsync(db, wallId, panelId, wall.CurrentGeneration);
+        await PrepareRemovableAsync(db, removable);
         db.Holds.RemoveRange(removable);
         await db.SaveChangesAsync();
         logger.LogInformation(
@@ -132,5 +135,17 @@ public partial class WallPanelService
             .ToHashSet();
 
         return autoHolds.Where(h => !referenced.Contains(h.Id)).ToList();
+    }
+
+    /// <summary>
+    /// Clears what the Restrict FKs would otherwise block on. The boulder guard above already keeps
+    /// referenced holds out of <paramref name="removable"/>, so memberships are left untouched; panel
+    /// links and cross-generation lineage are NOT covered by that guard and must be handled — an
+    /// auto-detected hold that a promote later carried forward does own lineage rows.
+    /// </summary>
+    private static Task PrepareRemovableAsync(BlocwerkDbContext db, List<Hold> removable)
+    {
+        return HoldDeletion.PrepareHoldsForDeleteAsync(
+            db, removable.Select(h => h.Id).ToList(), HoldDeleteBoulderPolicy.LeaveUntouched);
     }
 }

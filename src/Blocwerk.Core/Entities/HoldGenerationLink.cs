@@ -22,17 +22,24 @@ public class HoldGenerationLink
     [ForeignKey(nameof(WallId))]
     public Wall Wall { get; set; } = null!;
 
-    /// <summary>The predecessor hold, at <see cref="FromGeneration"/>.</summary>
-    public Guid OldHoldId { get; set; }
+    /// <summary>
+    /// The predecessor hold, at <see cref="FromGeneration"/>. NULL once that hold has been deleted:
+    /// the row is kept as a tombstone so the surviving end still records where it came from (see
+    /// <see cref="Data.HoldDeletion"/>).
+    /// </summary>
+    public Guid? OldHoldId { get; set; }
 
     [ForeignKey(nameof(OldHoldId))]
-    public Hold OldHold { get; set; } = null!;
+    public Hold? OldHold { get; set; }
 
-    /// <summary>The successor hold, at <see cref="ToGeneration"/>.</summary>
-    public Guid NewHoldId { get; set; }
+    /// <summary>
+    /// The successor hold, at <see cref="ToGeneration"/>. NULL once that hold has been deleted — see
+    /// <see cref="OldHoldId"/>.
+    /// </summary>
+    public Guid? NewHoldId { get; set; }
 
     [ForeignKey(nameof(NewHoldId))]
-    public Hold NewHold { get; set; } = null!;
+    public Hold? NewHold { get; set; }
 
     public HoldGenerationLinkKind Kind { get; set; } = HoldGenerationLinkKind.Same;
 

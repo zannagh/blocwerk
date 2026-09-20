@@ -261,41 +261,25 @@ public partial class WallBigUpdateService
         }
 
         var holds = await db.Holds.Where(h => h.WallPanelId != null && panelIds.Contains(h.WallPanelId.Value)).ToListAsync();
+
+        // Staged holds carry neither memberships nor lineage today; clearing defensively costs one
+        // query each and keeps the discard from becoming a rollback the day that stops being true.
+        // Memberships are left alone deliberately: a staged hold a boulder points at is a bug, and
+        // the Restrict FK should surface it rather than quietly retire the boulder.
+        await HoldDeletion.PrepareHoldsForDeleteAsync(
+            db, holds.Select(h => h.Id).ToList(), HoldDeleteBoulderPolicy.LeaveUntouched);
         db.Holds.RemoveRange(holds);
         var panels = await db.WallPanels.Where(p => panelIds.Contains(p.Id)).ToListAsync();
         db.WallPanels.RemoveRange(panels);
     }
 
     /// <summary>
-    /// Deletes one hold that a boulder may point at: clears its <see cref="BoulderHold"/>s (making
-    /// their boulders historic), drops the <see cref="HoldLink"/>s referencing it (both ends are
-    /// Restrict), then removes the hold. No SaveChanges.
+    /// Deletes holds a boulder may point at: clears everything referencing them with a Restrict FK
+    /// (memberships — their boulders go historic — panel links, and the cross-generation lineage,
+    /// which is tombstoned rather than dropped), then removes the holds. One set-based preparation for
+    /// the whole batch rather than three queries per hold, since this runs inside the promote
+    /// transaction. No SaveChanges.
     /// </summary>
-    private static async Task RemoveHoldAsync(BlocwerkDbContext db, Hold hold)
-    {
-        var boulderLinks = await db.BoulderHolds
-            .Where(bh => bh.HoldId == hold.Id)
-            .Include(bh => bh.Boulder)
-            .ToListAsync();
-        foreach (var link in boulderLinks)
-        {
-            if (link.Boulder is { IsArchived: false, IsHistoric: false })
-            {
-                link.Boulder.IsHistoric = true;
-                link.Boulder.NeedsReview = false;
-            }
-        }
-
-        db.BoulderHolds.RemoveRange(boulderLinks);
-
-        var holdLinks = await db.HoldLinks
-            .Where(l => l.HoldAId == hold.Id || l.HoldBId == hold.Id)
-            .ToListAsync();
-        db.HoldLinks.RemoveRange(holdLinks);
-
-        db.Holds.Remove(hold);
-    }
-
     private static async Task DeleteHoldsAsync(BlocwerkDbContext db, Guid wallId, HashSet<Guid> holdIds)
     {
         if (holdIds.Count == 0)
@@ -304,10 +288,9 @@ public partial class WallBigUpdateService
         }
 
         var holds = await db.Holds.Where(h => holdIds.Contains(h.Id) && h.WallId == wallId).ToListAsync();
-        foreach (var hold in holds)
-        {
-            await RemoveHoldAsync(db, hold);
-        }
+        await HoldDeletion.PrepareHoldsForDeleteAsync(
+            db, holds.Select(h => h.Id).ToList(), clearNeedsReview: true);
+        db.Holds.RemoveRange(holds);
     }
 
     private static void ClearStaged(WallPanel panel)

@@ -219,9 +219,11 @@ internal static class DevWallUpdateSupport
 
         // Genuinely-new centre holds: rows at the new generation on the centre panel that no
         // generation link carried forward (a carried/changed hold is always a link's successor).
+        // NewHoldId is null on a tombstoned row (its successor hold was deleted); such a row can no
+        // longer claim any live hold as carried, so skipping it is both safe and correct here.
         var linkTargets = await db.HoldGenerationLinks
-            .Where(l => l.WallId == wallId && l.ToGeneration == newGen)
-            .Select(l => l.NewHoldId)
+            .Where(l => l.WallId == wallId && l.ToGeneration == newGen && l.NewHoldId != null)
+            .Select(l => l.NewHoldId!.Value)
             .ToListAsync();
         var holdsNew = await db.Holds
             .CountAsync(h => h.WallPanelId == centerPanelId && h.Generation == newGen && !linkTargets.Contains(h.Id));

@@ -19,6 +19,7 @@ public class WallService : IWallService
     private readonly ILogger<WallService> _logger;
     private readonly IKioskContext? _kioskContext;
     private readonly IPushNotificationService? _pushNotificationService;
+    private readonly IChangeJournal? _changeJournal;
 
     /// <summary>Creates the service.</summary>
     /// <remarks>
@@ -34,7 +35,8 @@ public class WallService : IWallService
         IActivityLogService activityLogService,
         ILogger<WallService> logger,
         IKioskContext? kioskContext = null,
-        IPushNotificationService? pushNotificationService = null)
+        IPushNotificationService? pushNotificationService = null,
+        IChangeJournal? changeJournal = null)
     {
         _dbContextFactory = dbContextFactory;
         _currentUserService = currentUserService;
@@ -43,6 +45,7 @@ public class WallService : IWallService
         _logger = logger;
         _kioskContext = kioskContext;
         _pushNotificationService = pushNotificationService;
+        _changeJournal = changeJournal;
     }
 
     public async Task<Wall> CreateWallAsync(string name, string? description, int angle = 0)
@@ -856,9 +859,16 @@ public class WallService : IWallService
         var touchesDuplicate = links
             .Where(l => l.OldHoldId == duplicateHoldId || l.NewHoldId == duplicateHoldId)
             .ToList();
+        // Only rows with BOTH ends live take part in the uniqueness dedupe: a tombstoned end is NULL
+        // and the unique index is filtered to exclude those. The consequence is that duplicate
+        // tombstones — several (NULL, survivor) rows — can accumulate here and are indistinguishable
+        // from one another, so nothing can ever collapse them: they are unbounded noise. Tolerated
+        // because nothing outside the dev endpoints reads lineage today; if that changes, these rows
+        // need a real identity (or a dedupe) rather than a comment.
         var taken = links
             .Except(touchesDuplicate)
-            .Select(l => (l.OldHoldId, l.NewHoldId))
+            .Where(l => l.OldHoldId is not null && l.NewHoldId is not null)
+            .Select(l => (l.OldHoldId!.Value, l.NewHoldId!.Value))
             .ToHashSet();
 
         foreach (var link in touchesDuplicate)
@@ -866,7 +876,8 @@ public class WallService : IWallService
             var oldHoldId = link.OldHoldId == duplicateHoldId ? survivorHoldId : link.OldHoldId;
             var newHoldId = link.NewHoldId == duplicateHoldId ? survivorHoldId : link.NewHoldId;
 
-            if (oldHoldId == newHoldId || !taken.Add((oldHoldId, newHoldId)))
+            if (oldHoldId is { } live && newHoldId is { } liveNew
+                && (live == liveNew || !taken.Add((live, liveNew))))
             {
                 db.HoldGenerationLinks.Remove(link);
                 continue;
@@ -1699,33 +1710,19 @@ public class WallService : IWallService
 
             await WallAdminGuard.EnsureWallEditorAsync(db, hold.WallId, user.Id, CancellationToken.None);
 
-            // The HoldId FK is Restrict, so the hold cannot be removed while any BoulderHold references
-            // it — load the link rows, flag each active boulder historic, then drop the links.
-            var boulderLinks = await db.BoulderHolds
-                .Include(bh => bh.Boulder)
-                .Where(bh => bh.HoldId == holdId)
-                .ToListAsync();
-
-            var historicCount = 0;
-            foreach (var link in boulderLinks)
-            {
-                if (link.Boulder is { IsArchived: false, IsHistoric: false })
-                {
-                    link.Boulder.IsHistoric = true;
-                    historicCount++;
-                }
-            }
-
-            db.BoulderHolds.RemoveRange(boulderLinks);
-
-            // Hold-to-hold alignment links are Restrict on both ends too; drop any that touch this hold.
-            var holdLinks = await db.HoldLinks
-                .Where(l => l.HoldAId == holdId || l.HoldBId == holdId)
-                .ToListAsync();
-            db.HoldLinks.RemoveRange(holdLinks);
+            // Everything that references the hold with a Restrict FK — boulder memberships (each
+            // active boulder is flagged historic), panel links, and the cross-generation lineage
+            // rows, which are tombstoned rather than destroyed.
+            var historicCount = await HoldDeletion.PrepareHoldForDeleteAsync(db, holdId);
 
             db.Holds.Remove(hold);
-            await db.SaveChangesAsync();
+
+            // A named batch, so the delete is findable in the journal for a later revert instead of
+            // landing in an anonymous adhoc batch.
+            using (_changeJournal?.BeginBatch("hold-delete", ChangeJournalScopeKind.Wall, hold.WallId))
+            {
+                await db.SaveChangesAsync();
+            }
 
             BlocwerkMetrics.RecordHoldDeleted(hold.WallId);
             await _activityLogService.LogAsync(hold.WallId, null, ActivityType.HoldDeleted);
@@ -1759,8 +1756,21 @@ public class WallService : IWallService
                 .Where(h => h.WallId == wallId && h.IsAutoDetected && h.Generation == wall.CurrentGeneration)
                 .ToListAsync();
 
+            // Memberships are LEFT ALONE deliberately. This is an unfiltered bulk delete of every
+            // auto-detected hold at the current generation, and auto-detected holds are exactly what
+            // users build boulders from — detaching them here would silently retire live boulders for
+            // a clean-up action. The Restrict FK on BoulderHold must keep failing loudly instead, so
+            // the user finds out rather than losing boulders to a log line nobody reads.
+            await HoldDeletion.PrepareHoldsForDeleteAsync(
+                db, autoHolds.Select(h => h.Id).ToList(), HoldDeleteBoulderPolicy.LeaveUntouched);
             db.Holds.RemoveRange(autoHolds);
-            await db.SaveChangesAsync();
+
+            // A named batch, so this bulk delete is findable in the journal for a later revert.
+            using (_changeJournal?.BeginBatch("hold-clear-autodetected", ChangeJournalScopeKind.Wall, wallId))
+            {
+                await db.SaveChangesAsync();
+            }
+
             _logger.LogInformation("Wall {WallId} auto-detected holds cleared by {UserId}: {RemovedCount} removed", wallId, user.Id, autoHolds.Count);
         }
         catch (Exception ex)
@@ -1798,6 +1808,29 @@ public class WallService : IWallService
         }
     }
 
+    /// <summary>
+    /// Builds the "this hold is still on the wall" test for <see cref="CleanOutsideBorderAsync"/>.
+    /// Segments describe the wall in full when there are any, so a hold survives if it sits in any one
+    /// of them; only a segment-less wall falls back to the border polygon. Returns <c>null</c> when the
+    /// wall has neither — nothing may be deleted on a wall whose shape is unknown.
+    /// </summary>
+    private static Func<Hold, bool>? BuildInsideWallPredicate(Wall wall)
+    {
+        var segments = wall.Segments.ToList();
+        if (segments.Count > 0)
+        {
+            return h => WallProjection.IsInsideAnySegment(h.X, h.Y, segments);
+        }
+
+        if (wall.BorderPoints == null || wall.BorderPoints.Count < 3)
+        {
+            return null;
+        }
+
+        var borderPolygon = wall.BorderPoints.Select(p => (p.Dx, p.Dy)).ToList();
+        return h => IsPointInPolygon(h.X, h.Y, borderPolygon);
+    }
+
     public async Task<int> CleanOutsideBorderAsync(Guid wallId)
     {
         using var op = BlocwerkMetrics.TimeOperation("Wall.CleanOutsideBorder", wallId);
@@ -1818,31 +1851,29 @@ public class WallService : IWallService
                 throw new InvalidOperationException("Wall not found");
             }
 
-            // Segments describe the wall in full when there are any, so a hold survives if it
-            // sits in any one of them. Only a segment-less wall falls back to the border.
-            var segments = wall.Segments.ToList();
-            Func<Hold, bool> isInside;
-            if (segments.Count > 0)
+            if (BuildInsideWallPredicate(wall) is not { } isInside)
             {
-                isInside = h => WallProjection.IsInsideAnySegment(h.X, h.Y, segments);
-            }
-            else
-            {
-                if (wall.BorderPoints == null || wall.BorderPoints.Count < 3)
-                {
-                    return 0;
-                }
-
-                var borderPolygon = wall.BorderPoints.Select(p => (p.Dx, p.Dy)).ToList();
-                isInside = h => IsPointInPolygon(h.X, h.Y, borderPolygon);
+                return 0;
             }
 
             var toRemove = wall.Holds
                 .Where(h => h.Generation == wall.CurrentGeneration && !isInside(h))
                 .ToList();
 
+            // Memberships are LEFT ALONE deliberately, as in ClearAutoDetectedHoldsAsync: this deletes
+            // every current-generation hold outside the border with no boulder filter at all, so
+            // detaching would retire live boulders for a geometry clean-up. The loud Restrict FK
+            // failure is the intended outcome — the user must move the border or the hold instead.
+            await HoldDeletion.PrepareHoldsForDeleteAsync(
+                db, toRemove.Select(h => h.Id).ToList(), HoldDeleteBoulderPolicy.LeaveUntouched);
             db.Holds.RemoveRange(toRemove);
-            await db.SaveChangesAsync();
+
+            // A named batch, so this bulk delete is findable in the journal for a later revert.
+            using (_changeJournal?.BeginBatch("hold-clean-outside-border", ChangeJournalScopeKind.Wall, wallId))
+            {
+                await db.SaveChangesAsync();
+            }
+
             _logger.LogInformation("Wall {WallId} cleaned outside border by {UserId}: {RemovedCount} hold(s) removed", wallId, user.Id, toRemove.Count);
             return toRemove.Count;
         }
@@ -2161,6 +2192,10 @@ public class WallService : IWallService
         var removable = autoHolds.Where(h => !referenced.Contains(h.Id)).ToList();
         if (removable.Count > 0)
         {
+            // Boulder-free by construction (referenced ones were just filtered out), so memberships
+            // are left alone; lineage and panel links still have to be cleared.
+            await HoldDeletion.PrepareHoldsForDeleteAsync(
+                db, removable.Select(h => h.Id).ToList(), HoldDeleteBoulderPolicy.LeaveUntouched);
             db.Holds.RemoveRange(removable);
         }
     }

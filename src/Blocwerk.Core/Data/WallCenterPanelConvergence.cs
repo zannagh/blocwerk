@@ -77,7 +77,7 @@ public static class WallCenterPanelConvergence
                 && h.WallPanelId == null)
             .ToListAsync();
 
-        var changed = DiscardSingleImageStaging(db, wall, stagedHolds);
+        var changed = await DiscardSingleImageStagingAsync(db, wall, stagedHolds);
         changed |= EnsureCenterPanel(db, wall, panels, unassignedLiveHolds);
 
         if (changed)
@@ -147,7 +147,7 @@ public static class WallCenterPanelConvergence
     /// generation (the restricted BoulderHold FK would otherwise block the delete). No save; returns
     /// whether anything changed.
     /// </summary>
-    internal static bool DiscardSingleImageStaging(
+    internal static async Task<bool> DiscardSingleImageStagingAsync(
         BlocwerkDbContext db,
         Wall wall,
         IReadOnlyCollection<Hold> stagedGenerationHolds)
@@ -157,6 +157,7 @@ public static class WallCenterPanelConvergence
             return false;
         }
 
+        var removable = new List<Guid>();
         foreach (var hold in stagedGenerationHolds)
         {
             if (hold.BoulderHolds.Count > 0)
@@ -165,9 +166,15 @@ public static class WallCenterPanelConvergence
             }
             else
             {
+                removable.Add(hold.Id);
                 db.Holds.Remove(hold);
             }
         }
+
+        // Boulder-linked staged holds were rescued above rather than deleted, so no membership can be
+        // in the way here; panel links and cross-generation lineage still have to be cleared, or this
+        // startup backfill would throw on a wall that ever ran a generation update.
+        await HoldDeletion.PrepareHoldsForDeleteAsync(db, removable, HoldDeleteBoulderPolicy.LeaveUntouched);
 
         wall.StagedPhoto = null;
         wall.StagedPhotoContentType = null;

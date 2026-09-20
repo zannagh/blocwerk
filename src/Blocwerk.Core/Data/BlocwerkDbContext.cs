@@ -352,7 +352,14 @@ public class BlocwerkDbContext : DbContext
                 .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasIndex(l => l.WallId);
-            entity.HasIndex(l => new { l.OldHoldId, l.NewHoldId }).IsUnique();
+
+            // Filtered: both ends are nullable now (a deleted hold tombstones its end rather than
+            // destroying the lineage row), and Postgres treats NULLs as DISTINCT, so an unfiltered
+            // unique index would silently stop constraining anything the moment an end goes NULL.
+            // Uniqueness is what we actually want for LIVE pairs, so state exactly that.
+            entity.HasIndex(l => new { l.OldHoldId, l.NewHoldId })
+                .IsUnique()
+                .HasFilter("\"OldHoldId\" IS NOT NULL AND \"NewHoldId\" IS NOT NULL");
             entity.HasIndex(l => new { l.WallId, l.ToGeneration });
         });
     }

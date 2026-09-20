@@ -99,7 +99,7 @@ public partial class WallBigUpdateService
                 stagedTwins, claimedTwins, survivingCenterStaged, warpPositions, warpShapes, userId);
         }
 
-        ReconcileNewCentreHolds(db, centerStaged, confirmation, newGen, survivingCenterStaged);
+        await ReconcileNewCentreHolds(db, centerStaged, confirmation, newGen, survivingCenterStaged);
         return survivingCenterStaged;
     }
 
@@ -226,7 +226,7 @@ public partial class WallBigUpdateService
     /// <see cref="Hold.IsAutoDetected"/>; the auto-detected flag only decides the fate of holds the
     /// review never saw.
     /// </summary>
-    private static void ReconcileNewCentreHolds(
+    private static async Task ReconcileNewCentreHolds(
         BlocwerkDbContext db,
         IReadOnlyDictionary<Guid, Hold> centerStaged,
         BigUpdateConfirmation confirmation,
@@ -235,6 +235,7 @@ public partial class WallBigUpdateService
     {
         var accepted = confirmation.AcceptedNewCenterHoldIds.ToHashSet();
         var removed = confirmation.RemovedNewCenterHoldIds.ToHashSet();
+        var rejected = new List<Hold>();
         foreach (var (stagedId, staged) in centerStaged)
         {
             if (survivingCenterStaged.Contains(stagedId))
@@ -253,9 +254,16 @@ public partial class WallBigUpdateService
             }
             else
             {
-                db.Holds.Remove(staged);
+                rejected.Add(staged);
             }
         }
+
+        // Rejected staged detections: no memberships by construction, but clear the Restrict FKs
+        // anyway so a rejection can never roll the promote back. Prepared as ONE set — a redetect can
+        // reject hundreds of detections, and this runs inside the promote transaction.
+        await HoldDeletion.PrepareHoldsForDeleteAsync(
+            db, rejected.Select(x => x.Id).ToList(), HoldDeleteBoulderPolicy.LeaveUntouched);
+        db.Holds.RemoveRange(rejected);
     }
 
     /// <summary>

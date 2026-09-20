@@ -21,6 +21,7 @@ public partial class WallPanelService : IWallPanelService
     private readonly IHoldOverlapMatcher overlapMatcher;
     private readonly ILogger<WallPanelService> logger;
     private readonly IKioskContext? kioskContext;
+    private readonly IChangeJournal? changeJournal;
 
     /// <summary>Creates the service.</summary>
     /// <remarks>
@@ -28,6 +29,12 @@ public partial class WallPanelService : IWallPanelService
     /// register one, which means "never a kiosk". It only ever LOOSENS the read-only queries in
     /// <c>WallPanelService.Reads</c> for an anonymous kiosk on its own wall, so its absence fails
     /// closed and no write path consults it at all.
+    /// <para>
+    /// <c>changeJournal</c> is optional for the same reason it is on <c>WallService</c>: unit tests
+    /// construct the service without one. It only ever NAMES the batch a SaveChanges lands in — the
+    /// journalling itself is done by the DbContext interceptor — so its absence changes no behaviour
+    /// beyond the deletes ending up in an anonymous "adhoc" batch.
+    /// </para>
     /// </remarks>
     public WallPanelService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
@@ -35,7 +42,8 @@ public partial class WallPanelService : IWallPanelService
         IHoldDetectionService holdDetectionService,
         IHoldOverlapMatcher overlapMatcher,
         ILogger<WallPanelService> logger,
-        IKioskContext? kioskContext = null)
+        IKioskContext? kioskContext = null,
+        IChangeJournal? changeJournal = null)
     {
         this.dbContextFactory = dbContextFactory;
         this.currentUserService = currentUserService;
@@ -43,6 +51,7 @@ public partial class WallPanelService : IWallPanelService
         this.overlapMatcher = overlapMatcher;
         this.logger = logger;
         this.kioskContext = kioskContext;
+        this.changeJournal = changeJournal;
     }
 
     /// <inheritdoc/>
@@ -248,7 +257,40 @@ public partial class WallPanelService : IWallPanelService
         }
 
         var removed = removedNeighborHoldIds.ToHashSet();
+        await AddConfirmedLinksAsync(db, wallId, links, removed, user.Id);
+        await DeleteRemovedNeighborHoldsAsync(db, wallId, removed, logger);
 
+        panel.Photo = panel.StagedPhoto;
+        panel.PhotoContentType = panel.StagedPhotoContentType;
+        panel.StagedPhoto = null;
+        panel.StagedPhotoContentType = null;
+        panel.StagedAt = null;
+        panel.StagedByUserId = null;
+
+        // A named batch: this one SaveChanges promotes the panel AND hard-deletes the neighbour holds
+        // the user flagged as removed (making their boulders historic). That is the most destructive
+        // thing this service does, so it must be findable in the journal for a later revert instead of
+        // landing in an anonymous adhoc batch.
+        using (changeJournal?.BeginBatch("panel-confirm", ChangeJournalScopeKind.Wall, wallId))
+        {
+            await db.SaveChangesAsync();
+        }
+
+        logger.LogInformation("Panel {PanelId} confirmed live on wall {WallId} by {UserId}", panelId, wallId, user.Id);
+    }
+
+    /// <summary>
+    /// Adds the cross-panel <see cref="HoldLink"/>s the user confirmed, skipping any that touch a hold
+    /// marked as removed and any that already exist (the unique pair is unordered). No SaveChanges —
+    /// the caller commits them atomically with the removals and the panel promotion.
+    /// </summary>
+    private static async Task AddConfirmedLinksAsync(
+        BlocwerkDbContext db,
+        Guid wallId,
+        IReadOnlyList<ConfirmedLink> links,
+        HashSet<Guid> removed,
+        Guid userId)
+    {
         var existing = await db.HoldLinks
             .Where(l => l.WallId == wallId)
             .Select(l => new { l.HoldAId, l.HoldBId })
@@ -264,8 +306,7 @@ public partial class WallPanelService : IWallPanelService
                 continue;
             }
 
-            var key = Unordered(link.NeighborHoldId, link.NewHoldId);
-            if (!seen.Add(key))
+            if (!seen.Add(Unordered(link.NeighborHoldId, link.NewHoldId)))
             {
                 continue;
             }
@@ -276,31 +317,21 @@ public partial class WallPanelService : IWallPanelService
                 HoldAId = link.NeighborHoldId,
                 HoldBId = link.NewHoldId,
                 Kind = link.Moved ? HoldLinkKind.Moved : HoldLinkKind.Same,
-                CreatedByUserId = user.Id,
+                CreatedByUserId = userId,
             });
         }
-
-        await DeleteRemovedNeighborHoldsAsync(db, wallId, removed);
-
-        panel.Photo = panel.StagedPhoto;
-        panel.PhotoContentType = panel.StagedPhotoContentType;
-        panel.StagedPhoto = null;
-        panel.StagedPhotoContentType = null;
-        panel.StagedAt = null;
-        panel.StagedByUserId = null;
-
-        await db.SaveChangesAsync();
-        logger.LogInformation("Panel {PanelId} confirmed live on wall {WallId} by {UserId}", panelId, wallId, user.Id);
     }
 
     /// <summary>
-    /// Deletes the neighbour holds the user flagged as physically removed from the wall. Boulder
-    /// links are cleared first (the FK to Hold is Restrict) and any boulder that used the hold is
-    /// made historic; HoldLinks referencing the hold are dropped so no link is left dangling. Only
-    /// holds belonging to <paramref name="wallId"/> are touched. No SaveChanges — the caller
-    /// commits removals atomically with the new links and the panel promotion.
+    /// Deletes the neighbour holds the user flagged as physically removed from the wall. Everything
+    /// referencing them with a Restrict FK is cleared first (<see cref="HoldDeletion"/>): boulder
+    /// memberships — their boulders are made historic — panel links, and the cross-generation
+    /// lineage, whose dying end is tombstoned. Only holds belonging to <paramref name="wallId"/> are
+    /// touched. No SaveChanges — the caller commits removals atomically with the new links and the
+    /// panel promotion.
     /// </summary>
-    private static async Task DeleteRemovedNeighborHoldsAsync(BlocwerkDbContext db, Guid wallId, HashSet<Guid> removed)
+    private static async Task DeleteRemovedNeighborHoldsAsync(
+        BlocwerkDbContext db, Guid wallId, HashSet<Guid> removed, ILogger<WallPanelService> logger)
     {
         if (removed.Count == 0)
         {
@@ -310,28 +341,16 @@ public partial class WallPanelService : IWallPanelService
         var holds = await db.Holds
             .Where(h => removed.Contains(h.Id) && h.WallId == wallId)
             .ToListAsync();
-        foreach (var hold in holds)
+        var retired = await HoldDeletion.PrepareHoldsForDeleteAsync(db, holds.Select(h => h.Id).ToList());
+        db.Holds.RemoveRange(holds);
+
+        // Retiring a boulder is the loudest thing this path does and the user is never shown it, so at
+        // least say it happened: without the count the only trace is the boulder quietly going historic.
+        if (retired > 0)
         {
-            var boulderLinks = await db.BoulderHolds
-                .Where(bh => bh.HoldId == hold.Id)
-                .Include(bh => bh.Boulder)
-                .ToListAsync();
-            foreach (var link in boulderLinks)
-            {
-                if (link.Boulder is { IsArchived: false, IsHistoric: false })
-                {
-                    link.Boulder.IsHistoric = true;
-                }
-            }
-
-            db.BoulderHolds.RemoveRange(boulderLinks);
-
-            var holdLinks = await db.HoldLinks
-                .Where(l => l.HoldAId == hold.Id || l.HoldBId == hold.Id)
-                .ToListAsync();
-            db.HoldLinks.RemoveRange(holdLinks);
-
-            db.Holds.Remove(hold);
+            logger.LogInformation(
+                "Removing {HoldCount} neighbour holds on wall {WallId} retired {BoulderCount} boulders",
+                holds.Count, wallId, retired);
         }
     }
 
@@ -352,6 +371,12 @@ public partial class WallPanelService : IWallPanelService
         // Delete the panel's holds FIRST: Hold→WallPanel is SetNull on delete, so removing the
         // panel first would orphan its staged holds onto the center wall instead of deleting them.
         var holds = await db.Holds.Where(h => h.WallPanelId == panelId).ToListAsync();
+
+        // A discarded panel's holds are staged rows with no memberships; panel links and lineage are
+        // cleared defensively so the discard can never roll back on a Restrict FK. Memberships stay
+        // untouched on purpose — if one exists the delete should fail loudly, not retire a boulder.
+        await HoldDeletion.PrepareHoldsForDeleteAsync(
+            db, holds.Select(h => h.Id).ToList(), HoldDeleteBoulderPolicy.LeaveUntouched);
         db.Holds.RemoveRange(holds);
         await db.SaveChangesAsync();
 
