@@ -233,6 +233,13 @@ public sealed class TestDbContextFactory : IDbContextFactory<BlocwerkDbContext>
     }
 
     /// <summary>
+    /// The database these contexts address. Exposed so a test can build its OWN context factory
+    /// over the same database — e.g. one with interceptors wired in, which the plain factory
+    /// deliberately leaves out.
+    /// </summary>
+    public string ConnectionString => connectionString;
+
+    /// <summary>
     /// A connection string for a private in-memory database. Named uniquely so tests running in
     /// parallel cannot see each other's rows, and shared-cache so that several connections to it
     /// address the same database. It lives only as long as a connection to it stays open.

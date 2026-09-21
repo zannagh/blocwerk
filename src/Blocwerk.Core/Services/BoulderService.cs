@@ -1057,6 +1057,20 @@ public class BoulderService : IBoulderService
                 // queue records a success.
                 if (RevisionIsNoOp(boulder, updatedHolds, name, grade, kickboardFootholdsOn, handsFollowFeet, footColorOnly, noMatch, setterUserIds))
                 {
+                    // ...except that reviewing a boulder and concluding nothing needs to change IS
+                    // the point of the review: the setter opened it, checked it against the new
+                    // photos and signed it off. Clearing the flag here keeps the replay idempotent
+                    // anyway, because the first apply already left it false and a second pass then
+                    // writes nothing.
+                    if (boulder.NeedsReview)
+                    {
+                        boulder.NeedsReview = false;
+                        await db.SaveChangesAsync();
+                        _logger.LogInformation(
+                            "Boulder {BoulderId} signed off as reviewed by {UserId} with no other change",
+                            boulderId, user.Id);
+                    }
+
                     return boulder;
                 }
 
