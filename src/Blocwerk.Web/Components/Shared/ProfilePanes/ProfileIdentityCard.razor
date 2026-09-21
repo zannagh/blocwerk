@@ -1,0 +1,180 @@
+@* Header card: avatar, name, role and — for the viewer's own profile — the avatar controls and
+   the display-name editor. Extracted from Profile.razor unchanged in behaviour. *@
+@inject ICurrentUserService CurrentUserService
+
+<div class="profile-card">
+    @if (IsSelf)
+    {
+        <div class="avatar-edit">
+            <UserAvatar UserId="Target.Id" Name="@Target.Name" HasAvatar="Target.HasAvatar" />
+
+            @* Hidden file input triggered by the pencil label below, overlaying the header avatar. *@
+            <InputFile id="avatar-file" class="avatar-file-input" OnChange="OnAvatarSelectedAsync"
+                       accept="image/*" disabled="@savingAvatar" />
+            <label class="avatar-icon-btn avatar-edit-btn @(savingAvatar ? "is-disabled" : null)"
+                   for="avatar-file" title="Change photo" aria-label="Change photo">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                    <path d="M12 20h9" />
+                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+                </svg>
+            </label>
+
+            @if (Target.HasAvatar)
+            {
+                <button type="button" class="avatar-icon-btn avatar-delete-btn"
+                        @onclick="RemoveAvatarAsync" disabled="@savingAvatar"
+                        title="Remove photo" aria-label="Remove photo">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                        <polyline points="3 6 5 6 21 6" />
+                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    </svg>
+                </button>
+            }
+        </div>
+    }
+    else
+    {
+        <UserAvatar UserId="Target.Id" Name="@Target.Name" HasAvatar="Target.HasAvatar" />
+    }
+    <h1>@Target.Name</h1>
+    <span class="role-badge">@Target.Role</span>
+    <p class="member-since">Member since <LocalTime Value="@Target.CreatedAt" Format="LocalTimeFormat.MonthYear" /></p>
+    @if (IsSelf && avatarError != null)
+    {
+        <p class="field-error">@avatarError</p>
+    }
+
+    @if (IsSelf)
+    {
+        @* A disclosure, not an always-open field: renaming yourself is a once-a-year action, and the
+           identity card is the header of every screen — four controls parked under it would push the
+           section tabs off a phone's first viewport. *@
+        <details class="field-group profile-name-edit">
+            <summary>Display name</summary>
+            <label class="field-label" for="display-name">Display name</label>
+            <input id="display-name" class="text-input" maxlength="256" @bind="nameInput" @bind:event="oninput" />
+            <div class="field-actions">
+                <button class="btn-primary" @onclick="SaveDisplayNameAsync" disabled="@savingName">Save</button>
+                @if (!string.IsNullOrWhiteSpace(Target.CustomDisplayName))
+                {
+                    <button class="btn-secondary" @onclick="ResetDisplayNameAsync" disabled="@savingName">Reset to @Target.DisplayName</button>
+                }
+            </div>
+            <p class="member-since">Leave empty to use your account name (@Target.DisplayName).</p>
+            @if (nameError != null)
+            {
+                <p class="field-error">@nameError</p>
+            }
+        </details>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public User Target { get; set; } = default!;
+
+    [Parameter]
+    public bool IsSelf { get; set; }
+
+    /// <summary>Raised after a save so the page can reload the viewer and re-render every pane.</summary>
+    [Parameter]
+    public EventCallback OnSelfChanged { get; set; }
+
+    // Upper bound for the SignalR upload stream. The server downscales to a small avatar before storing,
+    // so this only caps what may be streamed in, not what is persisted.
+    private const long MaxAvatarUploadBytes = 30L * 1024 * 1024;
+
+    private string nameInput = string.Empty;
+    private bool savingName;
+    private string? nameError;
+    private bool savingAvatar;
+    private string? avatarError;
+
+    // The page hands us a fresh User instance after every reload; resync the input only then, so a
+    // re-render triggered by a sibling pane never clobbers what is being typed.
+    private User? syncedFor;
+
+    protected override void OnParametersSet()
+    {
+        if (!ReferenceEquals(syncedFor, Target))
+        {
+            syncedFor = Target;
+            nameInput = Target.CustomDisplayName ?? string.Empty;
+        }
+    }
+
+    private async Task SaveDisplayNameAsync()
+    {
+        savingName = true;
+        nameError = null;
+        try
+        {
+            await CurrentUserService.SetDisplayNameAsync(nameInput);
+            CurrentUserService.InvalidateCache();
+            await OnSelfChanged.InvokeAsync();
+        }
+        catch (Exception)
+        {
+            nameError = "Couldn't update your display name. Please try again.";
+        }
+        finally
+        {
+            savingName = false;
+        }
+    }
+
+    private async Task ResetDisplayNameAsync()
+    {
+        nameInput = string.Empty;
+        await SaveDisplayNameAsync();
+    }
+
+    private async Task OnAvatarSelectedAsync(InputFileChangeEventArgs e)
+    {
+        savingAvatar = true;
+        avatarError = null;
+        try
+        {
+            var file = e.File;
+            using var stream = file.OpenReadStream(MaxAvatarUploadBytes);
+            using var memory = new MemoryStream();
+            await stream.CopyToAsync(memory);
+
+            await CurrentUserService.SetAvatarAsync(memory.ToArray(), file.ContentType);
+            CurrentUserService.InvalidateCache();
+            await OnSelfChanged.InvokeAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            avatarError = ex.Message;
+        }
+        catch (Exception)
+        {
+            avatarError = "Couldn't update your photo. Please try again.";
+        }
+        finally
+        {
+            savingAvatar = false;
+        }
+    }
+
+    private async Task RemoveAvatarAsync()
+    {
+        savingAvatar = true;
+        avatarError = null;
+        try
+        {
+            await CurrentUserService.SetAvatarAsync(null, null);
+            CurrentUserService.InvalidateCache();
+            await OnSelfChanged.InvokeAsync();
+        }
+        catch (Exception)
+        {
+            avatarError = "Couldn't remove your photo. Please try again.";
+        }
+        finally
+        {
+            savingAvatar = false;
+        }
+    }
+}

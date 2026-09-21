@@ -1,5 +1,6 @@
 @inject IJSRuntime JS
 @inject KeyboardShortcutGate KeyGate
+@inject IHttpContextAccessor HttpContextAccessor
 @implements IDisposable
 @implements IAsyncDisposable
 @using Microsoft.AspNetCore.Components.Routing
@@ -9,193 +10,17 @@
    silently discard it. *@
 <NavigationLock ConfirmExternalNavigation="_hasPendingAlignmentWork" OnBeforeInternalNavigation="OnBeforeNavigateAway" />
 
-<div class="editor-toolbar @(BottomToolbar ? "docked-bottom" : string.Empty)">
-    <div class="toolbar-left">
-        <span class="hold-count">@Holds.Count(h => h.Category == HoldCategory.Hand)H / @Holds.Count(h => h.Category == HoldCategory.Foot)F</span>
-        @if (CanEdit && IncompleteCount > 0)
-        {
-            <span class="hold-count" title="@IncompleteHint">@IncompleteCount ?</span>
-        }
-    </div>
-    <div class="toolbar-right">
-        <button class="tool-btn @(_showNames ? "active" : "")" @onclick="() => _showNames = !_showNames"
-                title="@(_showNames ? "Hide hold names (L)" : "Show hold names (L)")">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20" opacity="@(_showNames ? "1" : "0.5")">
-                <path d="M4 7V4h16v3M9 20h6M12 4v16" />
-            </svg>
-        </button>
-        @* Filling a hold in needs the edit tools, so a viewer gets no overlay toggle at all. *@
-        @if (CanEdit)
-        {
-            <button class="tool-btn @(_showIncomplete ? "active" : "")" @onclick="CycleIncompleteCriteria"
-                    title="@IncompleteHint">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20" opacity="@(_showIncomplete ? "1" : "0.5")">
-                    <circle cx="12" cy="12" r="9" stroke-dasharray="2.6 1.8" />
-                    <path d="M9.6 9.2a2.5 2.5 0 1 1 3.3 2.4c-.6.2-.9.7-.9 1.4v.4" />
-                    <circle cx="12" cy="17" r="0.9" fill="currentColor" stroke="none" />
-                </svg>
-            </button>
-        }
-        <span class="toolbar-sep"></span>
-        @if (OnRequestHoldUsage != null)
-        {
-            <button class="tool-btn @A(EditMode.Usage)" @onclick="ToggleUsageMode"
-                    title="Show which holds are used by a boulder (U)">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                    <circle cx="11" cy="11" r="7" /><line x1="16.5" y1="16.5" x2="21" y2="21" />
-                    <path d="M8 11h6M11 8v6" />
-                </svg>
-            </button>
-            @if (CanEdit)
-            {
-                <span class="toolbar-sep"></span>
-            }
-        }
-        @if (CanEdit && !BorderOnly)
-        {
-            <button class="tool-btn @A(EditMode.Add)" @onclick="() => SetMode(EditMode.Add)" title="Add hold (A)">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                    <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" />
-                </svg>
-            </button>
-            <button class="tool-btn @A(EditMode.Move)" @onclick="() => SetMode(EditMode.Move)" title="Select / Move (M)">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                    <path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20" />
-                </svg>
-            </button>
-            <button class="tool-btn @A(EditMode.Shape)" @onclick="() => SetMode(EditMode.Shape)" title="Edit hold shape (S)">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                    <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5" />
-                    <circle cx="12" cy="2" r="1.5" fill="currentColor" /><circle cx="22" cy="8.5" r="1.5" fill="currentColor" />
-                </svg>
-            </button>
-            <button class="tool-btn @A(EditMode.Paint)" @onclick="() => SetMode(EditMode.Paint)" title="Paint color (P)"
-                    style="@(_mode == EditMode.Paint ? $"background: {GetCssColor(_paintColor)};" : "")">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                    <path d="M19 3H5a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2z" />
-                    <path d="M12 11v6a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-1" />
-                </svg>
-            </button>
-            <button class="tool-btn @A(EditMode.Name)" @onclick="() => SetMode(EditMode.Name)" title="Name hold (N)">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                    <path d="M4 7V4h16v3M9 20h6M12 4v16" />
-                </svg>
-            </button>
-            <button class="tool-btn @(_mode == EditMode.Delete ? "active danger" : "")" @onclick="() => SetMode(EditMode.Delete)" title="Delete hold (D)">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                    <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                </svg>
-            </button>
-            <span class="toolbar-sep"></span>
-            @if (CanEditShape)
-            {
-                <button class="tool-btn @A(EditMode.Border)" @onclick="() => SetMode(EditMode.Border)" title="Edit wall border (B)">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                        <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2" />
-                    </svg>
-                </button>
-            }
-            <button class="tool-btn" @onclick="() => _showBorder = !_showBorder" title="@(_showBorder ? "Hide" : "Show") border &amp; segments (O)">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="@(_showBorder ? "2" : "1")" width="20" height="20" opacity="@(_showBorder ? "1" : "0.4")">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
-                </svg>
-            </button>
-            @if (OnRedetectRequested.HasDelegate)
-            {
-                <button class="tool-btn" @onclick="OnRedetect" title="Re-detect holds on this panel (R)" disabled="@_isDetecting">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                        <path d="M23 4v6h-6M1 20v-6h6" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-                    </svg>
-                </button>
-            }
-            <button class="tool-btn @A(EditMode.ShapeTilt)" @onclick="() => SetMode(EditMode.ShapeTilt)" title="Tilt hold shape (T): click a hold, then drag the handle to rotate the polygon in X/Y">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                    <ellipse cx="12" cy="12" rx="9" ry="4" />
-                    <ellipse cx="12" cy="12" rx="4" ry="9" />
-                </svg>
-            </button>
-            @if (IsStaging)
-            {
-                <span class="toolbar-sep"></span>
-                <button class="tool-btn" @onclick="OnAutoAlignClick" disabled="@_autoAligning"
-                        title="Auto-align the overlay holds to the new photo, then fine-tune">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                        <path d="M3 12h4M17 12h4M12 3v4M12 17v4" /><circle cx="12" cy="12" r="3" />
-                    </svg>
-                </button>
-            }
-            @if (IsStaging && !ManualAlignment)
-            {
-                <span class="toolbar-sep"></span>
-                <button class="tool-btn @A(EditMode.Merge)" @onclick="() => SetMode(EditMode.Merge)" title="Merge (G): click a new hold then the matching old hold">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                        <circle cx="7" cy="12" r="4" /><circle cx="17" cy="12" r="4" /><line x1="11" y1="12" x2="13" y2="12" />
-                    </svg>
-                </button>
-            }
-            @if (!IsStaging)
-            {
-                <span class="toolbar-sep"></span>
-                <button class="tool-btn @A(EditMode.MakeActual)" @onclick="() => SetMode(EditMode.MakeActual)"
-                        title="Make actual (K): promote a virtual (placeholder) hold as-is or merge it into a detected hold">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                        <circle cx="12" cy="12" r="9" stroke-dasharray="2.2 1.6" /><polyline points="8.5 12 11 14.5 15.5 9.5" />
-                    </svg>
-                </button>
-                <button class="tool-btn @A(EditMode.JoinVirtual)" @onclick="() => SetMode(EditMode.JoinVirtual)"
-                        title="Join duplicate virtual holds (J): click the virtual hold to KEEP, then the duplicate virtual hold to absorb into it">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                        <circle cx="8" cy="12" r="4.5" stroke-dasharray="2.2 1.6" />
-                        <circle cx="16" cy="12" r="4.5" stroke-dasharray="2.2 1.6" />
-                        <path d="M10.5 9.5 13.5 14.5M13.5 9.5 10.5 14.5" />
-                    </svg>
-                </button>
-            }
-            @if (HasMultiplePanels && OnLinkPanels.HasDelegate)
-            {
-                <span class="toolbar-sep"></span>
-                <button class="tool-btn" @onclick="() => OnLinkPanels.InvokeAsync()"
-                        title="Link holds across panels: mark a hold on one panel and a hold on another as the same physical hold">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                        <path d="M9 12h6" />
-                        <path d="M10.5 8H7a4 4 0 0 0 0 8h3.5" />
-                        <path d="M13.5 8H17a4 4 0 0 1 0 8h-3.5" />
-                    </svg>
-                </button>
-            }
-            <span class="toolbar-sep"></span>
-            <button class="tool-btn @A(EditMode.MarkUnchanged)" @onclick="() => SetMode(EditMode.MarkUnchanged)"
-                    title="Mark unchanged (C): this hold didn't physically change — reset a falsely-moved staged hold, and pull its boulders back out of historic state">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                    <path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><polyline points="3 3 3 8 8 8" /><polyline points="9 12 11.4 14.4 15.5 10" />
-                </svg>
-            </button>
-            @if (!IsStaging)
-            {
-                <button class="tool-btn @A(EditMode.MarkChanged)" @onclick="() => SetMode(EditMode.MarkChanged)"
-                        title="Mark changed (X): this hold was physically swapped, turned or re-set — flag it and every boulder using it for review">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                        <path d="M3 12a9 9 0 0 1 15.3-6.4L21 8" /><polyline points="21 3 21 8 16 8" />
-                        <path d="M10.5 10.5 13.5 13.5M13.5 10.5 10.5 13.5" />
-                    </svg>
-                </button>
-            }
-        }
-        @if (BorderOnly && CanEditShape)
-        {
-            <button class="tool-btn @A(EditMode.Border)" @onclick="() => SetMode(EditMode.Border)" title="Edit wall border (B)">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
-                    <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2" />
-                </svg>
-            </button>
-            <button class="tool-btn" @onclick="() => _showBorder = !_showBorder" title="@(_showBorder ? "Hide" : "Show") border &amp; segments (O)">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="@(_showBorder ? "2" : "1")" width="20" height="20" opacity="@(_showBorder ? "1" : "0.4")">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
-                </svg>
-            </button>
-        }
-    </div>
-</div>
+@* The toolbar and its contextual row are one component now (UnifiedToolbar). The row used to be
+   fifteen .option-bar blocks in .editor-bottom whose height changed per tool, so the image resized
+   under the cursor on every mode switch; it has a fixed height here. Each tool still supplies its
+   own row — the fragments below live in this component, where the state they read lives. *@
+@* Both classes are emitted unconditionally from the PREFERENCE; the desktop tier is a CSS concern.
+   docked-bottom in particular is emitted for either placement, because below the desktop tier the
+   sidebar rules are switched off and the phone still needs its thumb-reachable docked bar. *@
+<div class="editor-shell @(placement == ToolbarPlacement.Sidebar ? "with-sidebar" : string.Empty)">
+<UnifiedToolbar Spec="Toolbar" State="tools" ToolChanged="OnToolPicked"
+                Placement="placement" Class="@(BottomToolbar ? "docked-bottom" : null)" />
+<div class="editor-stage">
 
 @* Zoom geometry is owned by JS via the `--zoom` custom property (viewport.js); the
    markup must not emit a width or a late re-render would stomp the live transform. *@
@@ -205,7 +30,7 @@
    clamps scrollLeft/scrollTop, i.e. the view pans by itself. Never reintroduce an inline style here. *@
 <div class="photo-viewport@(_frame != null ? " bw-framed" : string.Empty) @CursorClassForMode()" @ref="_viewportRef">
 <div class="photo-editor" @ref="_containerRef"
-     data-hold-drag="@(CanEdit && _mode == EditMode.Move ? "true" : null)">
+     data-hold-drag="@(CanEdit && _mode == HoldTouchupTool.Move ? "true" : null)">
     <img src="@ResponsiveImage.Initial(EffectivePhotoUrl)" data-bw-res alt="Wall" class="wall-photo" />
     @* Hold drag uses POINTER events so mouse, touch and pen share one path. PointerEventArgs
        derives from MouseEventArgs, so OnSvgMouseMove/OnSvgMouseUp bind unchanged. *@
@@ -224,19 +49,22 @@
                      style="pointer-events: none" />
         }
 
-        @* Wall segments are edited in the wall settings, so they are only drawn here as boundary
-           context while actively editing — never on the everyday photo view. *@
-        @if (CanEdit && _showBorder && _segmentDrafts.Count > 0)
-        {
-            <WallSegmentOverlay Segments="_segmentDrafts" HandleScale="HandleScale" />
-        }
-
         @* Holds *@
+        @* Destructive tools get EXACT hit targets, the same opt-out PanelImageView ships for its delete
+           tool. Delete, Paint and the pipette stamp act on the tap itself with no confirmation, and
+           under 5px of travel separates that tap from a pan — so the transparent half of the stroke,
+           which normally makes a small hold easier to grab, must not count as a hit. `pointer-events:
+           fill` restricts the target to the shape the hold actually paints (the traced polygon where
+           there is one), instead of that shape plus half a stroke width all round. *@
+        @{
+            var exactHit = _mode is HoldTouchupTool.Delete or HoldTouchupTool.Paint or HoldTouchupTool.Pipette;
+            var hitEvents = exactHit ? "fill" : null;
+        }
         @foreach (var hold in Holds)
         {
             var isSelected = _selectedHoldId == hold.Id;
-            var isShapeEditing = _mode == EditMode.Shape && _shapeEditHoldId == hold.Id;
-            var isNaming = _mode == EditMode.Name && _namingHoldId == hold.Id;
+            var isShapeEditing = _mode == HoldTouchupTool.Shape && _shapeEditHoldId == hold.Id;
+            var isNaming = _mode == HoldTouchupTool.Name && _namingHoldId == hold.Id;
             var isFoot = hold.Category == HoldCategory.Foot;
             var fillColor = GetHoldFillColor(hold, isSelected || isShapeEditing || isNaming);
             var strokeColor = (isSelected || isShapeEditing || isNaming) ? "#ffffff" : GetHoldStrokeColor(hold);
@@ -250,20 +78,20 @@
             }
             var isPendingMergeHold = _pendingMerge is { } pending
                 && (pending.stagedId == hold.Id || pending.liveId == hold.Id);
-            var isMergePick = _mode == EditMode.Merge && (_mergeFirstPickId == hold.Id || isPendingMergeHold);
+            var isMergePick = _mode == HoldTouchupTool.Merge && (_mergeFirstPickId == hold.Id || isPendingMergeHold);
             if (isMergePick)
             {
                 strokeColor = "#ffd700";
             }
-            var isMakeActualPick = _mode == EditMode.MakeActual &&
+            var isMakeActualPick = _mode == HoldTouchupTool.MakeActual &&
                 (_makeActualVirtualId == hold.Id || _makeActualTargetId == hold.Id);
             if (isMakeActualPick)
             {
                 strokeColor = "#ffd700";
             }
             // Survivor and absorbed pick read differently on purpose: green "kept", red "absorbed".
-            var isJoinSurvivor = _mode == EditMode.JoinVirtual && _joinSurvivorId == hold.Id;
-            var isJoinDuplicate = _mode == EditMode.JoinVirtual && _joinDuplicateId == hold.Id;
+            var isJoinSurvivor = _mode == HoldTouchupTool.JoinVirtual && _joinSurvivorId == hold.Id;
+            var isJoinDuplicate = _mode == HoldTouchupTool.JoinVirtual && _joinDuplicateId == hold.Id;
             if (isJoinSurvivor)
             {
                 strokeColor = "#33dd66";
@@ -272,12 +100,12 @@
             {
                 strokeColor = "#ff5566";
             }
-            var isMarkUnchangedPick = _mode == EditMode.MarkUnchanged && _markUnchangedHoldId == hold.Id;
+            var isMarkUnchangedPick = _mode == HoldTouchupTool.MarkUnchanged && _markUnchangedHoldId == hold.Id;
             if (isMarkUnchangedPick)
             {
                 strokeColor = "#38e1c6";
             }
-            var isMarkChangedPick = _mode == EditMode.MarkChanged && _markChangedHoldId == hold.Id;
+            var isMarkChangedPick = _mode == HoldTouchupTool.MarkChanged && _markChangedHoldId == hold.Id;
             if (isMarkChangedPick)
             {
                 strokeColor = "#ff8a3d";
@@ -301,8 +129,8 @@
 
             // The usage tool overrides every other styling: used holds light up, unused
             // ones recede, so "is this hold free?" is answerable at a glance.
-            var usageRefs = _mode == EditMode.Usage ? UsageFor(hold.Id) : [];
-            if (_mode == EditMode.Usage)
+            var usageRefs = _showUsage ? UsageFor(hold.Id) : [];
+            if (_showUsage)
             {
                 var isUsagePick = _usageHoldId == hold.Id;
                 var used = usageRefs.Count > 0;
@@ -314,33 +142,14 @@
 
             var r = (isFoot ? hold.Radius * 0.7 : hold.Radius) * 100;
 
-            @if (hold.ShapePoints is { Count: >= 3 })
-            {
-                <polygon points="@Pts(hold.ShapePoints.Select(sp => (hold.X + sp.Dx, hold.Y + sp.Dy)))"
-                         fill="@fillColor" stroke="@strokeColor" stroke-width="@sw" stroke-dasharray="@dash"
-                         style="cursor: pointer"
-                         @onclick="() => OnHoldClick(hold)" @onclick:stopPropagation="true"
-                         @onpointerdown="() => StartDrag(hold)" @onpointerdown:stopPropagation="true" />
-            }
-            else if (isFoot)
-            {
-                <rect x="@F((hold.X - r / 100.0) * 100)" y="@F((hold.Y - r / 100.0) * 100)"
-                      width="@F(r * 2 / 100.0 * 100)" height="@F(r * 2 / 100.0 * 100)"
-                      rx="0.3" fill="@fillColor" stroke="@strokeColor" stroke-width="@sw" stroke-dasharray="@dash"
-                      style="cursor: pointer"
-                      @onclick="() => OnHoldClick(hold)" @onclick:stopPropagation="true"
-                      @onpointerdown="() => StartDrag(hold)" @onpointerdown:stopPropagation="true" />
-            }
-            else
-            {
-                <circle cx="@F(hold.X * 100)" cy="@F(hold.Y * 100)" r="@F(r)"
-                        fill="@fillColor" stroke="@strokeColor" stroke-width="@sw" stroke-dasharray="@dash"
-                        style="cursor: pointer"
-                        @onclick="() => OnHoldClick(hold)" @onclick:stopPropagation="true"
-                        @onpointerdown="() => StartDrag(hold)" @onpointerdown:stopPropagation="true" />
-            }
+            @* No @key here, deliberately: this loop has never had one, and keying it on the hold id
+               would change the diff's identity rules for every overlay layered below. *@
+            <HoldShape X="hold.X" Y="hold.Y" Radius="hold.Radius" ShapePoints="hold.ShapePoints"
+                       Foot="isFoot" Fill="@fillColor" Stroke="@strokeColor" StrokeWidth="@sw" Dash="@dash"
+                       PointerEvents="@hitEvents" Style="cursor: pointer"
+                       OnClick="() => OnHoldClick(hold)" OnPointerDown="() => StartDrag(hold)" />
 
-            @if (_mode == EditMode.Usage && usageRefs.Count > 0)
+            @if (_showUsage && usageRefs.Count > 0)
             {
                 <g pointer-events="none">
                     <circle cx="@F(hold.X * 100 + r * 0.85)" cy="@F(hold.Y * 100 - r * 0.85)" r="1.4"
@@ -406,7 +215,7 @@
            every hold that comes later and becomes unclickable. Do not "tidy" these back into the
            loop or next to the shapes they belong to. *@
 
-        @if (_showBorder && BorderPoints.Count >= 3 && CanEditShape && _mode == EditMode.Border)
+        @if (_showBorder && BorderPoints.Count >= 3 && CanEditShape && _mode == HoldTouchupTool.Border)
         {
             @for (int i = 0; i < BorderPoints.Count; i++)
             {
@@ -420,7 +229,7 @@
             }
         }
 
-        @if (_mode == EditMode.Shape && _shapeEditHoldId.HasValue)
+        @if (_mode == HoldTouchupTool.Shape && _shapeEditHoldId.HasValue)
         {
             var sh = Holds.FirstOrDefault(h => h.Id == _shapeEditHoldId);
             if (sh?.ShapePoints is { Count: >= 3 })
@@ -470,7 +279,7 @@
                     @onmousedown="(e) => StartAlignDrag(e, AlignHandle.Translate)" @onmousedown:stopPropagation="true" @onclick:stopPropagation="true" />
         }
 
-        @if (CanEdit && _mode == EditMode.ShapeTilt && _shapeTiltHoldId.HasValue)
+        @if (CanEdit && _mode == HoldTouchupTool.ShapeTilt && _shapeTiltHoldId.HasValue)
         {
             var th = Holds.FirstOrDefault(h => h.Id == _shapeTiltHoldId);
             if (th != null)
@@ -492,395 +301,39 @@
 </div>
 </div>
 
-<WallDimControl />
+@* Dimming the photo helps a READER pick a boulder's holds out of the wall; while editing it
+   only fights the thing being edited, and the bar stole a row of vertical space right under
+   the photo where the docked toolbar wants it. So it appears on the read-only arms of this
+   component only — never in edit mode, never on the border/shape settings card. *@
+@if (!CanEdit && !BorderOnly)
+{
+    <WallDimControl />
+}
 
 @* Mode-specific contextual controls — kept BELOW the viewport so the image
    never shifts under the cursor when a tool's options appear or change. *@
+@* What is left down here is WALL-LIFECYCLE state, not tool state: these bars appear and disappear
+   with staging / manual alignment / change review, never when you switch tool, so they cannot make
+   the image jump under the cursor. Everything that DID depend on the tool now lives in the
+   toolbar's fixed-height row. *@
 <div class="editor-bottom">
-    @if (_mode == EditMode.Usage)
-    {
-        <div class="option-bar">
-            @if (_holdUsage == null)
-            {
-                <span class="option-hint">Loading hold usage…</span>
-            }
-            else if (_usageHoldId is { } pickedId)
-            {
-                var picked = Holds.FirstOrDefault(h => h.Id == pickedId);
-                var refs = UsageFor(pickedId);
-                @if (refs.Count == 0)
-                {
-                    <span class="option-hint">
-                        <strong>@(picked?.Name ?? "This hold")</strong> is not used by any boulder — safe to change or remove.
-                    </span>
-                }
-                else
-                {
-                    <span class="option-hint">
-                        <strong>@(picked?.Name ?? "This hold")</strong> is used by @refs.Count boulder@(refs.Count == 1 ? "" : "s"):
-                    </span>
-                    <div class="usage-list">
-                        @foreach (var r in refs)
-                        {
-                            <a class="usage-chip" href="/walls/@WallId/boulders/@r.BoulderId">
-                                <span class="usage-dot @UsageDotClass(r.Type)"></span>
-                                @r.Name
-                                @if (!string.IsNullOrEmpty(r.Grade)) { <span class="usage-grade">@r.Grade</span> }
-                                @if (r.IsDraft) { <span class="usage-flag">draft</span> }
-                                @if (r.IsHistoric) { <span class="usage-flag">historic</span> }
-                            </a>
-                        }
-                    </div>
-                }
-            }
-            else
-            {
-                <span class="option-hint">
-                    Tap a hold to see which boulders use it.
-                    <strong>@(Holds.Count - UnusedHoldCount)</strong> of @Holds.Count holds in use,
-                    <strong>@UnusedHoldCount</strong> free.
-                </span>
-            }
-        </div>
-    }
     @if (CanEdit && IsStaging && !string.IsNullOrEmpty(_autoAlignMsg))
     {
         <div class="option-bar">
             <span class="option-hint">@_autoAlignMsg</span>
         </div>
     }
-    @if (CanEdit && _mode == EditMode.Add)
-    {
-        <div class="option-bar">
-            <div class="option-group"><label>Type:</label>
-                <button class="opt-btn @(_addCategory == HoldCategory.Hand ? "active" : "")" @onclick="() => _addCategory = HoldCategory.Hand">Hand</button>
-                <button class="opt-btn foot @(_addCategory == HoldCategory.Foot ? "active" : "")" @onclick="() => _addCategory = HoldCategory.Foot">Foot</button>
-            </div>
-            <div class="option-group"><label>Material:</label>
-                <select class="color-select" value="@_addMaterial" @onchange="OnAddMaterialChange">
-                    @foreach (var m in _materials) { <option value="@m">@MaterialLabel(m)</option> }
-                </select>
-            </div>
-            <div class="option-group"><label>Color:</label>
-                <select class="color-select" value="@_addColor" @onchange="OnAddColorChange">
-                    <option value="none">No color</option>
-                    @foreach (var c in HoldPalette.ColorsFor(_addMaterial)) { <option value="@c.Key">@c.DisplayName</option> }
-                </select>
-                <span class="color-dot" style="background: @GetCssColor(_addColor == "none" ? null : _addColor);"></span>
-            </div>
-            <div class="option-group"><label class="cb-label"><input type="checkbox" @bind="_addOnKickboard" /> Kickboard</label></div>
-        </div>
-    }
-    @if (CanEdit && _mode == EditMode.Paint)
-    {
-        <div class="option-bar">
-            <div class="option-group swatches"><label>Paint:</label>
-                @for (var i = 0; i < HoldPalette.All.Count; i++)
-                {
-                    var c = HoldPalette.All[i];
-                    @* Only the first nine are reachable by digit; the rest stay mouse-only. *@
-                    var swatchKey = i < 9 ? $" ({i + 1})" : string.Empty;
-                    <button class="color-swatch @(_paintColor == c.Key ? "active" : "")" style="background: @c.Hex;" @onclick="() => _paintColor = c.Key" title="@(c.DisplayName + swatchKey)"></button>
-                }
-            </div>
-        </div>
-    }
-    @if (CanEditShape && _mode == EditMode.Border)
-    {
-        <div class="option-bar">
-            <div class="option-group"><label>Border:</label>
-                @if (BorderPoints.Count == 0) { <button class="opt-btn" @onclick="InitBorder">Create</button> }
-                else
-                {
-                    <button class="opt-btn danger" @onclick="ClearBorder">Remove</button>
-                }
-            </div>
-            <span class="option-hint">
-                Drag points to define wall area.
-            </span>
-        </div>
-    }
-    @if (CanEdit && _mode == EditMode.Shape)
-    {
-        <div class="option-bar">
-            <span class="option-hint">Click a hold to edit its shape. Drag the control points.</span>
-            <div class="option-group"><label>Point size:</label><input type="range" min="2" max="20" value="@((int)(_shapePointRadius * 10))" @oninput="OnShapePointSizeChange" /></div>
-            @{
-                var shapeHold = Holds.FirstOrDefault(h => h.Id == _shapeEditHoldId);
-                var shapePointCount = shapeHold?.ShapePoints?.Count ?? 0;
-            }
-            @if (shapeHold != null && shapePointCount >= 3)
-            {
-                <div class="option-group"><label>Points: @shapePointCount</label>
-                    <button class="opt-btn" @onclick="RemoveShapePoint" disabled="@(shapePointCount <= 3)" title="Remove a point">−</button>
-                    <button class="opt-btn" @onclick="AddShapePoint" title="Add a point on the longest edge">+</button>
-                </div>
-            }
-        </div>
-    }
-    @if (CanEdit && _mode == EditMode.Name)
-    {
-        <div class="option-bar">
-            <span class="option-hint">Click a hold to name it.</span>
-            @if (_namingHoldId.HasValue)
-            {
-                <div class="option-group">
-                    <input type="text" class="name-input" @bind="_nameInput" @bind:event="oninput" placeholder="Hold name..." maxlength="64" />
-                    <button class="opt-btn active" @onclick="ApplyName">OK</button>
-                    <button class="opt-btn" @onclick="() => _namingHoldId = null">Cancel</button>
-                </div>
-            }
-        </div>
-    }
-    @if (CanEdit && _mode == EditMode.Move && _selectedHoldId.HasValue)
-    {
-        var sel = Holds.FirstOrDefault(h => h.Id == _selectedHoldId);
-        if (sel != null)
-        {
-            <div class="option-bar">
-                <div class="option-group"><label>Type:</label>
-                    <button class="opt-btn @(sel.Category == HoldCategory.Hand ? "active" : "")" @onclick="() => SetSelectedCategory(HoldCategory.Hand)">Hand</button>
-                    <button class="opt-btn foot @(sel.Category == HoldCategory.Foot ? "active" : "")" @onclick="() => SetSelectedCategory(HoldCategory.Foot)">Foot</button>
-                </div>
-                <div class="option-group"><label class="cb-label"><input type="checkbox" checked="@sel.IsOnKickboard" @onchange="() => ToggleKickboard(sel)" /> KB</label></div>
-                @if (sel.Category == HoldCategory.Hand)
-                {
-                    <div class="option-group"><label>Sub-type:</label>
-                        <select class="color-select" value="@(sel.HandType?.ToString() ?? "none")" @onchange="e => OnSelectedHandTypeChange(sel, e)">
-                            <option value="none">—</option>
-                            @foreach (var t in _handTypes) { <option value="@t">@t</option> }
-                        </select>
-                    </div>
-                }
-                <div class="option-group"><label>Material:</label>
-                    <select class="color-select" value="@(sel.Material?.ToString() ?? "none")" @onchange="e => OnSelectedMaterialChange(sel, e)">
-                        <option value="none">—</option>
-                        @foreach (var m in _materials) { <option value="@m">@MaterialLabel(m)</option> }
-                    </select>
-                </div>
-                <div class="option-group"><label>Color:</label>
-                    <select class="color-select" value="@(sel.Color ?? "none")" @onchange="OnSelectedColorChange">
-                        <option value="none">No color</option>
-                        @foreach (var c in HoldPalette.ColorsFor(sel.Material)) { <option value="@c.Key">@c.DisplayName</option> }
-                    </select>
-                    <span class="color-dot" style="background: @GetCssColor(sel.Color);"></span>
-                </div>
-                <div class="option-group"><label>Size:</label><input type="range" min="3" max="40" value="@((int)(_selectedRadius * 1000))" @oninput="OnRadiusChange" /></div>
-                <button class="opt-btn danger" @onclick="DeleteSelected">Del</button>
-                @if (ManualAlignment)
-                {
-                    <label class="cb-label" title="Leave checked if this physical hold did not change. Uncheck if it moved/changed so boulders using it get flagged for review.">
-                        <input type="checkbox" checked="@(!_changedHoldIds.Contains(sel.Id))" @onchange="() => ToggleHoldChanged(sel.Id)" /> Hold did not change
-                    </label>
-                    <button class="opt-btn active" @onclick="() => ConfirmHoldAligned(sel.Id)">@(_alignedHoldIds.Contains(sel.Id) ? "Confirmed ✓" : "Confirm hold")</button>
-                }
-                else if (ChangeReview)
-                {
-                    @if (_pendingChanges > 0)
-                    {
-                        <span class="option-hint">Save changes first to mark this hold changed / unchanged.</span>
-                    }
-                    else if (sel.NeedsReview)
-                    {
-                        <button class="opt-btn active" title="This hold is flagged as changed — click to mark it unchanged and pull its boulders back out of review."
-                                @onclick="() => MarkSelectedUnchanged(sel.Id)">Changed ✓ — mark unchanged</button>
-                    }
-                    else
-                    {
-                        <button class="opt-btn" title="Flag this hold as changed so boulders using it are flagged for review."
-                                @onclick="() => MarkSelectedModified(sel.Id)">Mark changed</button>
-                    }
-                }
-                else if (!IsStaging && _pendingChanges == 0)
-                {
-                    <button class="opt-btn" title="Mark this hold as slightly modified; boulders using it will be flagged for review."
-                            @onclick="() => MarkSelectedModified(sel.Id)">Mark modified@(sel.NeedsReview ? " ✓" : "")</button>
-                }
-            </div>
-        }
-    }
     @if (CanEdit && ManualAlignment)
     {
         <div class="option-bar">
             <span class="option-hint">Drag each hold onto its new position, then <strong>Confirm hold</strong>. @_alignedHoldIds.Count/@Holds.Count confirmed.</span>
-            <div class="option-group">
-                <button class="opt-btn @(_showChanges ? "active" : "")"
-                        title="Highlight the holds you've marked as changed — the ones whose boulders get flagged for review on confirm."
-                        @onclick="() => _showChanges = !_showChanges">Marked changed (@ChangedCount)</button>
-                <span style="display:inline-flex;align-items:center;gap:0.3rem;font-size:0.8rem;opacity:0.85;">
-                    <span style="width:0.7rem;height:0.7rem;border-radius:50%;background:var(--status-review);display:inline-block;"></span>
-                    moved vs last photo
-                </span>
-            </div>
-            <div class="option-group">
-                <button class="opt-btn" title="Mark every hold as changed — all boulders will be flagged for review." @onclick="MarkAllChanged">Wall completely reset</button>
-                <button class="opt-btn" title="Mark every hold as unchanged (default)." @onclick="MarkAllUnchanged">Mark all unchanged</button>
-            </div>
-        </div>
-    }
-    @if (CanEdit && ChangeReview && !ManualAlignment)
-    {
-        <div class="option-bar">
-            <span class="option-hint"><strong>Tap a hold</strong> to mark it changed or unchanged — moving holds alone won't flag boulders. A nearer-centre panel's verdict carries to its overlap twins.</span>
-            <div class="option-group">
-                <button class="opt-btn @(_showChanges ? "active" : "")"
-                        title="Highlight the holds marked as changed on this panel — their boulders are flagged for review."
-                        @onclick="() => _showChanges = !_showChanges">Marked changed (@ReviewChangedCount)</button>
-                <span style="display:inline-flex;align-items:center;gap:0.3rem;font-size:0.8rem;opacity:0.85;">
-                    <span style="width:0.7rem;height:0.7rem;border-radius:50%;background:var(--status-review);display:inline-block;"></span>
-                    needs review
-                </span>
-            </div>
+            <span class="option-hint legend-dot"><span class="legend-swatch" style="background:var(--status-review);"></span> moved vs last photo</span>
         </div>
     }
     @if (CanEdit && IsStaging && !ManualAlignment && Holds.Any(IsLiveHold))
     {
         <div class="option-bar">
             <span class="option-hint">Align the <strong>old</strong> overlay: <strong style="color:#ffd700">yellow</strong> = move, <strong style="color:#ff4d4d">red</strong> = X tilt, <strong style="color:#3ddc84">green</strong> = Y tilt, <strong style="color:#4aa8ff">blue</strong> = spin (Z), <strong style="color:#f5a623">orange</strong> = scale.</span>
-        </div>
-    }
-    @if (CanEdit && _mode == EditMode.ShapeTilt)
-    {
-        <div class="option-bar">
-            <span class="option-hint">Click a hold to select, then drag the violet handle to tilt its polygon outline in X/Y.</span>
-            @if (_shapeTiltHoldId.HasValue)
-            {
-                <button class="opt-btn" @onclick="ResetShapeTilt">Reset shape</button>
-            }
-        </div>
-    }
-    @if (CanEdit && _mode == EditMode.Merge)
-    {
-        <div class="option-bar">
-            @if (_pendingMerge.HasValue)
-            {
-                var staged = Holds.FirstOrDefault(h => h.Id == _pendingMerge.Value.stagedId);
-                var live = Holds.FirstOrDefault(h => h.Id == _pendingMerge.Value.liveId);
-                <span class="option-hint">Merge new <strong>@(staged?.Name ?? "hold")</strong> into old <strong>@(live?.Name ?? "hold")</strong>? Boulders using the old hold will be flagged for review.</span>
-                <button class="opt-btn active" @onclick="ConfirmMerge">Confirm merge</button>
-                <button class="opt-btn" @onclick="CancelMerge">Cancel</button>
-            }
-            else if (_mergeFirstPickId.HasValue)
-            {
-                <span class="option-hint">Now click the matching hold of the other generation.</span>
-                <button class="opt-btn" @onclick="CancelMerge">Cancel</button>
-            }
-            else
-            {
-                <span class="option-hint">Click a hold. If a hold of the other generation lies underneath, merge will be offered immediately; otherwise click a second hold to pair them.</span>
-            }
-        </div>
-    }
-    @if (CanEdit && _mode == EditMode.MakeActual)
-    {
-        <div class="option-bar">
-            @if (_makeActualVirtualId is { } virtualId)
-            {
-                var virtualHold = Holds.FirstOrDefault(h => h.Id == virtualId);
-                @if (_makeActualTargetId is { } targetId)
-                {
-                    var target = Holds.FirstOrDefault(h => h.Id == targetId);
-                    <span class="option-hint">Merge virtual <strong>@(virtualHold?.Name ?? "hold")</strong> into detected <strong>@(target?.Name ?? "hold")</strong>? Boulders using it will be flagged for review.</span>
-                    <button class="opt-btn active" @onclick="ConfirmMakeActualMerge">Confirm merge</button>
-                    <button class="opt-btn" @onclick="CancelMakeActual">Cancel</button>
-                }
-                else
-                {
-                    <span class="option-hint">Virtual <strong>@(virtualHold?.Name ?? "hold")</strong> selected. Tap a detected hold to merge into it, or make it actual where it is.</span>
-                    <button class="opt-btn active" @onclick="MakeActualAsIs">Make actual as-is</button>
-                    <button class="opt-btn" @onclick="CancelMakeActual">Cancel</button>
-                }
-            }
-            else
-            {
-                <span class="option-hint">Tap a <strong style="color:#c86dff">virtual</strong> (dotted) hold to make it actual.</span>
-            }
-        </div>
-    }
-    @if (CanEdit && _mode == EditMode.JoinVirtual)
-    {
-        <div class="option-bar">
-            @if (_joinSurvivorId is { } keepId)
-            {
-                var keep = Holds.FirstOrDefault(h => h.Id == keepId);
-                @if (_joinDuplicateId is { } dropId)
-                {
-                    var drop = Holds.FirstOrDefault(h => h.Id == dropId);
-                    <span class="option-hint">
-                        Keep <strong style="color:#33dd66">@(keep?.Name ?? "hold")</strong> and absorb
-                        <strong style="color:#ff5566">@(drop?.Name ?? "hold")</strong> into it? Boulders on the absorbed
-                        hold move over; nothing is flagged historic.
-                    </span>
-                    <button class="opt-btn active" @onclick="ConfirmJoinVirtual">Confirm join</button>
-                    <button class="opt-btn" @onclick="CancelJoinVirtual">Cancel</button>
-                }
-                else
-                {
-                    <span class="option-hint">
-                        Keeping <strong style="color:#33dd66">@(keep?.Name ?? "hold")</strong>. Tap the duplicate
-                        <strong style="color:#c86dff">virtual</strong> hold to absorb into it.
-                    </span>
-                    <button class="opt-btn" @onclick="CancelJoinVirtual">Cancel</button>
-                }
-            }
-            else
-            {
-                <span class="option-hint">Tap the <strong style="color:#c86dff">virtual</strong> hold to KEEP, then the duplicate virtual hold to absorb.</span>
-            }
-        </div>
-    }
-    @if (CanEdit && _mode == EditMode.MarkUnchanged)
-    {
-        <div class="option-bar">
-            @if (_markUnchangedHoldId is { } uid)
-            {
-                var uh = Holds.FirstOrDefault(h => h.Id == uid);
-                var hasBaseline = _manualBaseline.ContainsKey(uid);
-                <span class="option-hint">
-                    <strong>@(uh?.Name ?? "This hold")</strong> — mark as physically unchanged.
-                </span>
-                @if (ManualAlignment && hasBaseline)
-                {
-                    <button class="opt-btn active"
-                            title="Snap this staged hold back to its previous-generation position and clear its changed flag, so confirming won't flag its boulders."
-                            @onclick="() => ResetHoldToUnchanged(uid)">Reset — didn't move</button>
-                }
-                <button class="opt-btn"
-                        title="Pull boulders that went historic in a past update back out of historic state, when all their holds still exist."
-                        @onclick="() => RestoreUnchangedBoulders(uid)">Restore its boulders</button>
-                <button class="opt-btn" @onclick="() => _markUnchangedHoldId = null">Done</button>
-            }
-            else
-            {
-                <span class="option-hint">Tap a hold that didn't physically change. You can reset a falsely-moved staged hold and pull its boulders back out of historic state.</span>
-            }
-        </div>
-    }
-    @if (CanEdit && _mode == EditMode.MarkChanged)
-    {
-        <div class="option-bar">
-            @if (_markChangedHoldId is { } cid)
-            {
-                var ch = Holds.FirstOrDefault(h => h.Id == cid);
-                <span class="option-hint">
-                    <strong>@(ch?.Name ?? "This hold")</strong> &mdash; mark as physically changed.
-                </span>
-                @if (_pendingChanges > 0)
-                {
-                    <span class="option-hint">Save your pending edits first.</span>
-                }
-                else
-                {
-                    <button class="opt-btn active"
-                            title="Flag this hold as changed, so every boulder still using it is flagged for review."
-                            @onclick="() => ConfirmMarkChanged(cid)">@(ch?.NeedsReview == true ? "Flag again" : "Mark changed")</button>
-                }
-                <button class="opt-btn" @onclick="() => _markChangedHoldId = null">Done</button>
-            }
-            else
-            {
-                <span class="option-hint">Tap a hold that was physically swapped, turned or re-set. Confirming flags it and every boulder using it for review.</span>
-            }
         </div>
     }
     @if (CanEdit && ManualAlignment)
@@ -907,17 +360,645 @@
         </div>
     }
 </div>
+</div>
+</div>
 
 @code {
+
+    // ================= Unified toolbar =================
+    // The spec describes the controls; the rows below are the SAME markup the fifteen .option-bar
+    // blocks used to be, moved verbatim into fragments that still live in this component. That is
+    // what makes the extraction possible at all: a row reads this component's own fields
+    // (_selectedHoldId, _paintColor, _addCategory, _pendingChanges …), so it must stay a member
+    // here. The toolbar owns the TOOL — which one is picked and what that excludes — and nothing
+    // else. Two earlier attempts copied the rows into the toolbar instead and had to rebuild the
+    // state machine around them; that copy is what drifted.
+
+    /// <summary>
+    /// Where the toolbar sits. Resolved from the member's own cookie preference in
+    /// <see cref="OnInitializedAsync"/> — deliberately NOT a parameter: every host would otherwise
+    /// have to thread the same value through, and each of them would be one more place to forget it.
+    /// </summary>
+    private ToolbarPlacement placement = ToolbarPlacement.TopBar;
+
+    /// <summary>
+    /// The picked tool, owned by <see cref="UnifiedToolbar"/>. This component READS it (to decide
+    /// what a tap on the photo means) and writes it only through <see cref="SetMode"/>, which is the
+    /// same object the toolbar writes — there is no second copy.
+    /// </summary>
+    private readonly HoldTouchupSurface tools = new();
+
+    private ToolbarSpec? toolbarSpec;
+
+    // Built once: every gate is a live Func, so a cached spec still reflects the current state and a
+    // drag does not re-allocate thirty records per frame.
+    private ToolbarSpec Toolbar => toolbarSpec ??= BuildToolbarSpec();
+
+    private ToolbarSpec BuildToolbarSpec() => new()
+    {
+        Status = StatusRow,
+        IdleRow = RowIdle,
+        Groups =
+        [
+            new ToolbarGroup
+            {
+                Id = "view",
+                Items =
+                [
+                    new ToolbarItem
+                    {
+                        Id = "show-names", Kind = ToolbarItemKind.Toggle, Label = "Show hold names",
+                        ShortcutKey = "L", Icon = IconName, IsOn = () => _showNames,
+                        OnInvoke = EventCallback.Factory.Create(this, () => _showNames = !_showNames),
+                    },
+                    new ToolbarItem
+                    {
+                        Id = "show-incomplete", Kind = ToolbarItemKind.Toggle, Label = "Highlight incomplete holds",
+                        Icon = IconIncomplete, Visible = () => CanEdit, IsOn = () => _showIncomplete,
+                        OnInvoke = EventCallback.Factory.Create(this, CycleIncompleteCriteria),
+                    },
+                    new ToolbarItem
+                    {
+                        Id = "show-border", Kind = ToolbarItemKind.Toggle, Label = "Show wall border",
+                        ShortcutKey = "O", Icon = IconEye, Visible = () => BorderToggleAvailable,
+                        IsOn = () => _showBorder,
+                        OnInvoke = EventCallback.Factory.Create(this, () => _showBorder = !_showBorder),
+                    },
+                    new ToolbarItem
+                    {
+                        Id = "show-changes", Kind = ToolbarItemKind.Toggle, Label = "Highlight holds marked changed",
+                        Icon = IconChanges, Visible = () => CanEdit && (ManualAlignment || ChangeReview),
+                        IsOn = () => _showChanges, Badge = () => ChangedBadge,
+                        OnInvoke = EventCallback.Factory.Create(this, () => _showChanges = !_showChanges),
+                    },
+                    new ToolbarItem
+                    {
+                        Id = "usage", Kind = ToolbarItemKind.Toggle, Label = "Show which holds a boulder uses",
+                        ShortcutKey = "U", Icon = IconUsage, Visible = () => OnRequestHoldUsage != null,
+                        IsOn = () => _showUsage, Row = RowUsage,
+                        OnInvoke = EventCallback.Factory.Create(this, ToggleUsageMode),
+                    },
+                ],
+            },
+            new ToolbarGroup
+            {
+                Id = "holds",
+                Items =
+                [
+                    new ToolbarItem { Id = "add", Kind = ToolbarItemKind.Tool, Tool = HoldTouchupTool.Add, Label = "Add hold", ShortcutKey = "A", Icon = IconAdd, Visible = () => HoldToolsAvailable, Row = RowAdd },
+                    new ToolbarItem { Id = "move", Kind = ToolbarItemKind.Tool, Tool = HoldTouchupTool.Move, Label = "Select / Move", ShortcutKey = "M", Icon = IconMove, Visible = () => HoldToolsAvailable, Row = RowMove },
+                    new ToolbarItem { Id = "shape", Kind = ToolbarItemKind.Tool, Tool = HoldTouchupTool.Shape, Label = "Edit hold shape", ShortcutKey = "S", Icon = IconShape, Visible = () => HoldToolsAvailable, Row = RowShape },
+                    new ToolbarItem { Id = "paint", Kind = ToolbarItemKind.Tool, Tool = HoldTouchupTool.Paint, Label = "Paint colour", ShortcutKey = "P", Icon = IconPaint, Visible = () => HoldToolsAvailable, Row = RowPaint, ActiveStyle = () => $"background: {GetCssColor(_paintColor)};" },
+                    new ToolbarItem { Id = "pipette", Kind = ToolbarItemKind.Tool, Tool = HoldTouchupTool.Pipette, Label = "Pipette — copy properties between holds", ShortcutKey = "E", Icon = IconPipette, Visible = () => HoldToolsAvailable, Row = RowPipette },
+                    new ToolbarItem { Id = "name", Kind = ToolbarItemKind.Tool, Tool = HoldTouchupTool.Name, Label = "Name hold", ShortcutKey = "N", Icon = IconName, Visible = () => HoldToolsAvailable, Row = RowName },
+                    new ToolbarItem { Id = "delete", Kind = ToolbarItemKind.Tool, Tool = HoldTouchupTool.Delete, Label = "Delete hold", ShortcutKey = "D", Icon = IconDelete, Visible = () => HoldToolsAvailable, Danger = true, Row = RowDelete },
+                    new ToolbarItem { Id = "shape-tilt", Kind = ToolbarItemKind.Tool, Tool = HoldTouchupTool.ShapeTilt, Label = "Tilt hold shape", ShortcutKey = "T", Icon = IconTilt, Visible = () => HoldToolsAvailable, Row = RowShapeTilt },
+                ],
+            },
+            new ToolbarGroup
+            {
+                Id = "wall",
+                Items =
+                [
+                    new ToolbarItem { Id = "border", Kind = ToolbarItemKind.Tool, Tool = HoldTouchupTool.Border, Label = "Edit wall border", ShortcutKey = "B", Icon = IconBorder, Visible = () => BorderToolAvailable, Row = RowBorder },
+                ],
+            },
+            new ToolbarGroup
+            {
+                Id = "lifecycle",
+                Items =
+                [
+                    new ToolbarItem { Id = "merge", Kind = ToolbarItemKind.Tool, Tool = HoldTouchupTool.Merge, Label = "Merge a new hold into the matching old one", ShortcutKey = "G", Icon = IconMerge, Visible = () => HoldToolsAvailable && IsStaging && !ManualAlignment, Row = RowMerge },
+                    new ToolbarItem { Id = "make-actual", Kind = ToolbarItemKind.Tool, Tool = HoldTouchupTool.MakeActual, Label = "Make a virtual hold actual", ShortcutKey = "K", Icon = IconMakeActual, Visible = () => HoldToolsAvailable && !IsStaging, Row = RowMakeActual },
+                    new ToolbarItem { Id = "join-virtual", Kind = ToolbarItemKind.Tool, Tool = HoldTouchupTool.JoinVirtual, Label = "Join duplicate virtual holds", ShortcutKey = "J", Icon = IconJoinVirtual, Visible = () => HoldToolsAvailable && !IsStaging, Row = RowJoinVirtual },
+                    new ToolbarItem { Id = "mark-unchanged", Kind = ToolbarItemKind.Tool, Tool = HoldTouchupTool.MarkUnchanged, Label = "Mark a hold unchanged", ShortcutKey = "C", Icon = IconMarkUnchanged, Visible = () => HoldToolsAvailable, Row = RowMarkUnchanged },
+                    new ToolbarItem { Id = "mark-changed", Kind = ToolbarItemKind.Tool, Tool = HoldTouchupTool.MarkChanged, Label = "Mark a hold changed", ShortcutKey = "X", Icon = IconMarkChanged, Visible = () => HoldToolsAvailable && !IsStaging, Row = RowMarkChanged },
+                ],
+            },
+            new ToolbarGroup
+            {
+                Id = "commands",
+                Items =
+                [
+                    new ToolbarItem
+                    {
+                        Id = "redetect", Kind = ToolbarItemKind.Command, Label = "Re-detect holds on this panel",
+                        ShortcutKey = "R", Icon = IconRedetect,
+                        Visible = () => HoldToolsAvailable && OnRedetectRequested.HasDelegate,
+                        Enabled = () => !_isDetecting,
+                        OnInvoke = EventCallback.Factory.Create(this, OnRedetect),
+                    },
+                    new ToolbarItem
+                    {
+                        Id = "auto-align", Kind = ToolbarItemKind.Command, Label = "Auto-align the overlay holds to the new photo",
+                        Icon = IconAutoAlign, Visible = () => HoldToolsAvailable && IsStaging,
+                        Enabled = () => !_autoAligning,
+                        OnInvoke = EventCallback.Factory.Create(this, OnAutoAlignClick),
+                    },
+                    new ToolbarItem
+                    {
+                        Id = "link-panels", Kind = ToolbarItemKind.Command, Label = "Link the same hold across panels",
+                        Icon = IconLinkPanels,
+                        Visible = () => HoldToolsAvailable && HasMultiplePanels && OnLinkPanels.HasDelegate,
+                        OnInvoke = EventCallback.Factory.Create(this, () => OnLinkPanels.InvokeAsync()),
+                    },
+                    // Bulk verdicts. They existed only inside the manual-alignment option bar, so they
+                    // were reachable only once a hold was selected; as commands they are always at hand.
+                    new ToolbarItem
+                    {
+                        Id = "mark-all-changed", Kind = ToolbarItemKind.Command, Label = "Wall completely reset — mark every hold changed",
+                        Icon = IconAllChanged, Danger = true, Visible = () => CanEdit && ManualAlignment,
+                        OnInvoke = EventCallback.Factory.Create(this, MarkAllChanged),
+                    },
+                    new ToolbarItem
+                    {
+                        Id = "mark-all-unchanged", Kind = ToolbarItemKind.Command, Label = "Mark every hold unchanged",
+                        Icon = IconAllUnchanged, Visible = () => CanEdit && ManualAlignment,
+                        OnInvoke = EventCallback.Factory.Create(this, MarkAllUnchanged),
+                    },
+                ],
+            },
+        ],
+    };
+
+    // The border pair used to be copy-pasted: once in the CanEdit branch and once again in a
+    // BorderOnly branch below it. One item with the union of both gates replaces both copies.
+    private bool HoldToolsAvailable => CanEdit && !BorderOnly;
+
+    private bool BorderToolAvailable => CanEditShape && (BorderOnly || CanEdit);
+
+    private bool BorderToggleAvailable => (CanEdit && !BorderOnly) || (BorderOnly && CanEditShape);
+
+    private string? ChangedBadge
+    {
+        get
+        {
+            var count = ManualAlignment ? ChangedCount : ReviewChangedCount;
+            return count > 0 ? count.ToString(System.Globalization.CultureInfo.InvariantCulture) : null;
+        }
+    }
+
+    /// <summary>The toolbar picked a tool; drop the previous tool's working state. See <see cref="SetMode"/>.</summary>
+    private void OnToolPicked(HoldTouchupTool tool) => ClearToolState(tool);
+
+    private RenderFragment StatusRow => @<text>
+        <span class="hold-count">@Holds.Count(h => h.Category == HoldCategory.Hand)H / @Holds.Count(h => h.Category == HoldCategory.Foot)F</span>
+        @if (CanEdit && IncompleteCount > 0)
+        {
+            <span class="hold-count" title="@IncompleteHint">@IncompleteCount ?</span>
+        }
+    </text>;
+
+    private RenderFragment RowIdle => @<div class="option-bar">
+        @if (CanEdit && ChangeReview && !ManualAlignment)
+        {
+            @ChangeReviewHint
+        }
+        else
+        {
+            <span class="option-hint">Pick a tool to edit the wall — or tap a hold to see its name.</span>
+        }
+    </div>;
+
+    @* Was a banner in .editor-bottom, i.e. permanently below the image, even though the controls it
+       describes (Mark changed / Mark unchanged) now live on the toolbar. It follows them into their
+       rows and into the idle row, and the image gets its strip of the card back. *@
+    private RenderFragment ChangeReviewHint => @<text>
+        <span class="option-hint"><strong>Tap a hold</strong> to mark it changed or unchanged — moving holds alone won't flag boulders. A nearer-centre panel's verdict carries to its overlap twins.</span>
+        <span class="option-hint legend-dot"><span class="legend-swatch" style="background:var(--status-review);"></span> needs review</span>
+    </text>;
+
+    private RenderFragment RowUsage => @<div class="option-bar">
+        @if (_holdUsage == null)
+        {
+            <span class="option-hint">Loading hold usage…</span>
+        }
+        else if (_usageHoldId is { } pickedId)
+        {
+            var picked = Holds.FirstOrDefault(h => h.Id == pickedId);
+            var refs = UsageFor(pickedId);
+            @if (refs.Count == 0)
+            {
+                <span class="option-hint"><strong>@(picked?.Name ?? "This hold")</strong> is not used by any boulder — safe to change or remove.</span>
+            }
+            else
+            {
+                <span class="option-hint"><strong>@(picked?.Name ?? "This hold")</strong> is used by @refs.Count boulder@(refs.Count == 1 ? "" : "s"):</span>
+                <div class="usage-list">
+                    @foreach (var r in refs)
+                    {
+                        <a class="usage-chip" href="/walls/@WallId/boulders/@r.BoulderId">
+                            <span class="usage-dot @UsageDotClass(r.Type)"></span>
+                            @r.Name
+                            @if (!string.IsNullOrEmpty(r.Grade)) { <span class="usage-grade">@r.Grade</span> }
+                            @if (r.IsDraft) { <span class="usage-flag">draft</span> }
+                            @if (r.IsHistoric) { <span class="usage-flag">historic</span> }
+                        </a>
+                    }
+                </div>
+            }
+        }
+        else
+        {
+            <span class="option-hint">
+                Tap a hold to see which boulders use it.
+                <strong>@(Holds.Count - UnusedHoldCount)</strong> of @Holds.Count holds in use,
+                <strong>@UnusedHoldCount</strong> free.
+            </span>
+        }
+    </div>;
+
+    private RenderFragment RowAdd => @<div class="option-bar">
+        <div class="option-group"><label>Type:</label>
+            <button class="opt-btn @(_addCategory == HoldCategory.Hand ? "active" : "")" @onclick="() => _addCategory = HoldCategory.Hand">Hand</button>
+            <button class="opt-btn foot @(_addCategory == HoldCategory.Foot ? "active" : "")" @onclick="() => _addCategory = HoldCategory.Foot">Foot</button>
+        </div>
+        <div class="option-group"><label>Material:</label>
+            <select class="color-select" value="@_addMaterial" @onchange="OnAddMaterialChange">
+                @foreach (var m in _materials) { <option value="@m">@MaterialLabel(m)</option> }
+            </select>
+        </div>
+        <div class="option-group"><label>Color:</label>
+            <select class="color-select" value="@_addColor" @onchange="OnAddColorChange">
+                <option value="none">No color</option>
+                @foreach (var c in HoldPalette.ColorsFor(_addMaterial)) { <option value="@c.Key">@c.DisplayName</option> }
+            </select>
+            <span class="color-dot" style="background: @GetCssColor(_addColor == "none" ? null : _addColor);"></span>
+        </div>
+        <div class="option-group"><label class="cb-label"><input type="checkbox" @bind="_addOnKickboard" /> Kickboard</label></div>
+    </div>;
+
+    private RenderFragment RowPaint => @<div class="option-bar">
+        <div class="option-group swatches"><label>Paint:</label>
+            @for (var i = 0; i < HoldPalette.All.Count; i++)
+            {
+                var c = HoldPalette.All[i];
+                @* Only the first nine are reachable by digit; the rest stay mouse-only. *@
+                var swatchKey = i < 9 ? $" ({i + 1})" : string.Empty;
+                <button class="color-swatch @(_paintColor == c.Key ? "active" : "")" style="background: @c.Hex;" @onclick="() => _paintColor = c.Key" title="@(c.DisplayName + swatchKey)"></button>
+            }
+        </div>
+    </div>;
+
+    @* Pipette: the contextual row IS the feature. Each property is an independent tick; the first tap
+       fills the buffer with exactly the ticked ones and every tap after that stamps them onto the hold
+       it lands on. An unticked property is never written — that is what HoldEdit's Keep exists for. *@
+    private RenderFragment RowPipette => @<div class="option-bar">
+        <div class="option-group"><label>Copy:</label>
+            @foreach (var (property, label) in StampProperties)
+            {
+                <button class="opt-btn @(tools.IsStampProperty(property) ? "active" : "")"
+                        title="@StampTitle(property)"
+                        @onclick="() => tools.ToggleStampProperty(property)">@label</button>
+            }
+        </div>
+        @if (tools.Stamp is { } stamp)
+        {
+            <span class="option-hint">
+                Picked @StampSummary(stamp) — tap holds to stamp.
+            </span>
+            <button class="opt-btn" title="Drop the picked properties and pick from another hold."
+                    @onclick="() => tools.ClearStamp()">Pick again</button>
+        }
+        else if (tools.StampMask == HoldStampProperty.None)
+        {
+            <span class="option-hint">Tick at least one property to copy.</span>
+        }
+        else
+        {
+            <span class="option-hint">Tap the hold to copy from.</span>
+        }
+    </div>;
+
+    /// <summary>The picker's ticks, in the order the design names them: size · colour · material · type · sub-type · kickboard.</summary>
+    private static readonly (HoldStampProperty Property, string Label)[] StampProperties =
+    [
+        (HoldStampProperty.Size, "Size"),
+        (HoldStampProperty.Color, "Colour"),
+        (HoldStampProperty.Material, "Material"),
+        (HoldStampProperty.Category, "Type"),
+        (HoldStampProperty.HandType, "Sub-type"),
+        (HoldStampProperty.Kickboard, "Kickboard"),
+    ];
+
+    private static string StampTitle(HoldStampProperty property) => property switch
+    {
+        // The one rule worth spelling out on the control itself — see HoldStamp's remarks.
+        HoldStampProperty.Color => "Colour. Wood and plastic have separate palettes, so stamping a colour "
+            + "the target's material cannot wear brings the sampled material with it.",
+        HoldStampProperty.Category => "Hand or foot.",
+        HoldStampProperty.HandType => "The hand sub-type (crimp, jug, sloper …).",
+        _ => property.ToString(),
+    };
+
+    private static string StampSummary(HoldStamp stamp) =>
+        string.Join(", ", StampProperties.Where(p => stamp.Has(p.Property)).Select(p => p.Label.ToLowerInvariant()));
+
+    private RenderFragment RowDelete => @<div class="option-bar">
+        <span class="option-hint">Tap a hold to delete it. Nothing is written until you save.</span>
+    </div>;
+
+    private RenderFragment RowBorder => @<div class="option-bar">
+        <div class="option-group"><label>Border:</label>
+            @if (BorderPoints.Count == 0)
+            {
+                <button class="opt-btn" @onclick="InitBorder">Create</button>
+            }
+            else
+            {
+                <button class="opt-btn danger" @onclick="ClearBorder">Remove</button>
+            }
+        </div>
+        <span class="option-hint">Drag points to define wall area.</span>
+    </div>;
+
+    private RenderFragment RowShape => @<div class="option-bar">
+        <span class="option-hint">Click a hold to edit its shape. Drag the control points.</span>
+        <div class="option-group"><label>Point size:</label><input type="range" min="2" max="20" value="@((int)(_shapePointRadius * 10))" @oninput="OnShapePointSizeChange" /></div>
+        @{
+            var shapeHold = Holds.FirstOrDefault(h => h.Id == _shapeEditHoldId);
+            var shapePointCount = shapeHold?.ShapePoints?.Count ?? 0;
+        }
+        @if (shapeHold != null && shapePointCount >= 3)
+        {
+            <div class="option-group"><label>Points: @shapePointCount</label>
+                <button class="opt-btn" @onclick="RemoveShapePoint" disabled="@(shapePointCount <= 3)" title="Remove a point">−</button>
+                <button class="opt-btn" @onclick="AddShapePoint" title="Add a point on the longest edge">+</button>
+            </div>
+        }
+    </div>;
+
+    private RenderFragment RowName => @<div class="option-bar">
+        <span class="option-hint">Click a hold to name it.</span>
+        @if (_namingHoldId.HasValue)
+        {
+            <div class="option-group">
+                <input type="text" class="name-input" @bind="_nameInput" @bind:event="oninput" placeholder="Hold name..." maxlength="64" />
+                <button class="opt-btn active" @onclick="ApplyName">OK</button>
+                <button class="opt-btn" @onclick="() => _namingHoldId = null">Cancel</button>
+            </div>
+        }
+    </div>;
+
+    private RenderFragment RowMove => @<div class="option-bar">
+        @{
+            var sel = _selectedHoldId is { } selId ? Holds.FirstOrDefault(h => h.Id == selId) : null;
+        }
+        @if (sel == null)
+        {
+            <span class="option-hint">Tap a hold to select it, then drag to move it.</span>
+        }
+        else
+        {
+            <div class="option-group"><label>Type:</label>
+                <button class="opt-btn @(sel.Category == HoldCategory.Hand ? "active" : "")" @onclick="() => SetSelectedCategory(HoldCategory.Hand)">Hand</button>
+                <button class="opt-btn foot @(sel.Category == HoldCategory.Foot ? "active" : "")" @onclick="() => SetSelectedCategory(HoldCategory.Foot)">Foot</button>
+            </div>
+            <div class="option-group"><label class="cb-label"><input type="checkbox" checked="@sel.IsOnKickboard" @onchange="() => ToggleKickboard(sel)" /> KB</label></div>
+            @if (sel.Category == HoldCategory.Hand)
+            {
+                <div class="option-group"><label>Sub-type:</label>
+                    <select class="color-select" value="@(sel.HandType?.ToString() ?? "none")" @onchange="e => OnSelectedHandTypeChange(sel, e)">
+                        <option value="none">—</option>
+                        @foreach (var t in _handTypes) { <option value="@t">@t</option> }
+                    </select>
+                </div>
+            }
+            <div class="option-group"><label>Material:</label>
+                <select class="color-select" value="@(sel.Material?.ToString() ?? "none")" @onchange="e => OnSelectedMaterialChange(sel, e)">
+                    <option value="none">—</option>
+                    @foreach (var m in _materials) { <option value="@m">@MaterialLabel(m)</option> }
+                </select>
+            </div>
+            <div class="option-group"><label>Color:</label>
+                <select class="color-select" value="@(sel.Color ?? "none")" @onchange="OnSelectedColorChange">
+                    <option value="none">No color</option>
+                    @foreach (var c in HoldPalette.ColorsFor(sel.Material)) { <option value="@c.Key">@c.DisplayName</option> }
+                </select>
+                <span class="color-dot" style="background: @GetCssColor(sel.Color);"></span>
+            </div>
+            <div class="option-group"><label>Size:</label><input type="range" min="3" max="40" value="@((int)(_selectedRadius * 1000))" @oninput="OnRadiusChange" /></div>
+            <button class="opt-btn danger" @onclick="DeleteSelected">Del</button>
+            @if (ManualAlignment)
+            {
+                <label class="cb-label" title="Leave checked if this physical hold did not change. Uncheck if it moved/changed so boulders using it get flagged for review.">
+                    <input type="checkbox" checked="@(!_changedHoldIds.Contains(sel.Id))" @onchange="() => ToggleHoldChanged(sel.Id)" /> Hold did not change
+                </label>
+                <button class="opt-btn active" @onclick="() => ConfirmHoldAligned(sel.Id)">@(_alignedHoldIds.Contains(sel.Id) ? "Confirmed ✓" : "Confirm hold")</button>
+            }
+            else if (ChangeReview)
+            {
+                @if (_pendingChanges > 0)
+                {
+                    <span class="option-hint">Save changes first to mark this hold changed / unchanged.</span>
+                }
+                else if (sel.NeedsReview)
+                {
+                    <button class="opt-btn active" title="This hold is flagged as changed — click to mark it unchanged and pull its boulders back out of review."
+                            @onclick="() => MarkSelectedUnchanged(sel.Id)">Changed ✓ — mark unchanged</button>
+                }
+                else
+                {
+                    <button class="opt-btn" title="Flag this hold as changed so boulders using it are flagged for review."
+                            @onclick="() => MarkSelectedModified(sel.Id)">Mark changed</button>
+                }
+            }
+            else if (!IsStaging && _pendingChanges == 0)
+            {
+                <button class="opt-btn" title="Mark this hold as slightly modified; boulders using it will be flagged for review."
+                        @onclick="() => MarkSelectedModified(sel.Id)">Mark modified@(sel.NeedsReview ? " ✓" : "")</button>
+            }
+        }
+    </div>;
+
+    private RenderFragment RowShapeTilt => @<div class="option-bar">
+        <span class="option-hint">Click a hold to select, then drag the violet handle to tilt its polygon outline in X/Y.</span>
+        @if (_shapeTiltHoldId.HasValue)
+        {
+            <button class="opt-btn" @onclick="ResetShapeTilt">Reset shape</button>
+        }
+    </div>;
+
+    private RenderFragment RowMerge => @<div class="option-bar">
+        @if (_pendingMerge.HasValue)
+        {
+            var staged = Holds.FirstOrDefault(h => h.Id == _pendingMerge.Value.stagedId);
+            var live = Holds.FirstOrDefault(h => h.Id == _pendingMerge.Value.liveId);
+            <span class="option-hint">Merge new <strong>@(staged?.Name ?? "hold")</strong> into old <strong>@(live?.Name ?? "hold")</strong>? Boulders using the old hold will be flagged for review.</span>
+            <button class="opt-btn active" @onclick="ConfirmMerge">Confirm merge</button>
+            <button class="opt-btn" @onclick="CancelMerge">Cancel</button>
+        }
+        else if (_mergeFirstPickId.HasValue)
+        {
+            <span class="option-hint">Now click the matching hold of the other generation.</span>
+            <button class="opt-btn" @onclick="CancelMerge">Cancel</button>
+        }
+        else
+        {
+            <span class="option-hint">Click a hold. If a hold of the other generation lies underneath, merge will be offered immediately; otherwise click a second hold to pair them.</span>
+        }
+    </div>;
+
+    private RenderFragment RowMakeActual => @<div class="option-bar">
+        @if (_makeActualVirtualId is { } virtualId)
+        {
+            var virtualHold = Holds.FirstOrDefault(h => h.Id == virtualId);
+            @if (_makeActualTargetId is { } targetId)
+            {
+                var target = Holds.FirstOrDefault(h => h.Id == targetId);
+                <span class="option-hint">Merge virtual <strong>@(virtualHold?.Name ?? "hold")</strong> into detected <strong>@(target?.Name ?? "hold")</strong>? Boulders using it will be flagged for review.</span>
+                <button class="opt-btn active" @onclick="ConfirmMakeActualMerge">Confirm merge</button>
+                <button class="opt-btn" @onclick="CancelMakeActual">Cancel</button>
+            }
+            else
+            {
+                <span class="option-hint">Virtual <strong>@(virtualHold?.Name ?? "hold")</strong> selected. Tap a detected hold to merge into it, or make it actual where it is.</span>
+                <button class="opt-btn active" @onclick="MakeActualAsIs">Make actual as-is</button>
+                <button class="opt-btn" @onclick="CancelMakeActual">Cancel</button>
+            }
+        }
+        else
+        {
+            <span class="option-hint">Tap a <strong style="color:#c86dff">virtual</strong> (dotted) hold to make it actual.</span>
+        }
+    </div>;
+
+    private RenderFragment RowJoinVirtual => @<div class="option-bar">
+        @if (_joinSurvivorId is { } keepId)
+        {
+            var keep = Holds.FirstOrDefault(h => h.Id == keepId);
+            @if (_joinDuplicateId is { } dropId)
+            {
+                var drop = Holds.FirstOrDefault(h => h.Id == dropId);
+                <span class="option-hint">
+                    Keep <strong style="color:#33dd66">@(keep?.Name ?? "hold")</strong> and absorb
+                    <strong style="color:#ff5566">@(drop?.Name ?? "hold")</strong> into it? Boulders on the absorbed
+                    hold move over; nothing is flagged historic.
+                </span>
+                <button class="opt-btn active" @onclick="ConfirmJoinVirtual">Confirm join</button>
+                <button class="opt-btn" @onclick="CancelJoinVirtual">Cancel</button>
+            }
+            else
+            {
+                <span class="option-hint">
+                    Keeping <strong style="color:#33dd66">@(keep?.Name ?? "hold")</strong>. Tap the duplicate
+                    <strong style="color:#c86dff">virtual</strong> hold to absorb into it.
+                </span>
+                <button class="opt-btn" @onclick="CancelJoinVirtual">Cancel</button>
+            }
+        }
+        else
+        {
+            <span class="option-hint">Tap the <strong style="color:#c86dff">virtual</strong> hold to KEEP, then the duplicate virtual hold to absorb.</span>
+        }
+    </div>;
+
+    private RenderFragment RowMarkUnchanged => @<div class="option-bar">
+        @if (_markUnchangedHoldId is { } uid)
+        {
+            var uh = Holds.FirstOrDefault(h => h.Id == uid);
+            var hasBaseline = _manualBaseline.ContainsKey(uid);
+            <span class="option-hint"><strong>@(uh?.Name ?? "This hold")</strong> — mark as physically unchanged.</span>
+            @if (ManualAlignment && hasBaseline)
+            {
+                <button class="opt-btn active"
+                        title="Snap this staged hold back to its previous-generation position and clear its changed flag, so confirming won't flag its boulders."
+                        @onclick="() => ResetHoldToUnchanged(uid)">Reset — didn't move</button>
+            }
+            <button class="opt-btn"
+                    title="Pull boulders that went historic in a past update back out of historic state, when all their holds still exist."
+                    @onclick="() => RestoreUnchangedBoulders(uid)">Restore its boulders</button>
+            <button class="opt-btn" @onclick="() => _markUnchangedHoldId = null">Done</button>
+        }
+        else
+        {
+            <span class="option-hint">Tap a hold that didn't physically change. You can reset a falsely-moved staged hold and pull its boulders back out of historic state.</span>
+            @if (ChangeReview && !ManualAlignment)
+            {
+                <span class="option-hint legend-dot"><span class="legend-swatch" style="background:var(--status-review);"></span> needs review</span>
+            }
+        }
+    </div>;
+
+    private RenderFragment RowMarkChanged => @<div class="option-bar">
+        @if (_markChangedHoldId is { } cid)
+        {
+            var ch = Holds.FirstOrDefault(h => h.Id == cid);
+            <span class="option-hint"><strong>@(ch?.Name ?? "This hold")</strong> &mdash; mark as physically changed.</span>
+            @if (_pendingChanges > 0)
+            {
+                <span class="option-hint">Save your pending edits first.</span>
+            }
+            else
+            {
+                <button class="opt-btn active"
+                        title="Flag this hold as changed, so every boulder still using it is flagged for review."
+                        @onclick="() => ConfirmMarkChanged(cid)">@(ch?.NeedsReview == true ? "Flag again" : "Mark changed")</button>
+            }
+            <button class="opt-btn" @onclick="() => _markChangedHoldId = null">Done</button>
+        }
+        else
+        {
+            <span class="option-hint">Tap a hold that was physically swapped, turned or re-set. Confirming flags it and every boulder using it for review. A nearer-centre panel's verdict carries to its overlap twins.</span>
+            @if (ChangeReview && !ManualAlignment)
+            {
+                <span class="option-hint legend-dot"><span class="legend-swatch" style="background:var(--status-review);"></span> needs review</span>
+            }
+        }
+    </div>;
+
+    // ---- Icons -------------------------------------------------------------------------------
+
+    private RenderFragment IconName => @<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M4 7V4h16v3M9 20h6M12 4v16" /></svg>;
+
+    private RenderFragment IconIncomplete => @<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><circle cx="12" cy="12" r="9" stroke-dasharray="2.6 1.8" /><path d="M9.6 9.2a2.5 2.5 0 1 1 3.3 2.4c-.6.2-.9.7-.9 1.4v.4" /><circle cx="12" cy="17" r="0.9" fill="currentColor" stroke="none" /></svg>;
+
+    private RenderFragment IconEye => @<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>;
+
+    private RenderFragment IconChanges => @<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><circle cx="12" cy="12" r="8" /><path d="M12 8v5M12 16h.01" /></svg>;
+
+    private RenderFragment IconUsage => @<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><circle cx="11" cy="11" r="7" /><line x1="16.5" y1="16.5" x2="21" y2="21" /><path d="M8 11h6M11 8v6" /></svg>;
+
+    private RenderFragment IconAdd => @<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" /></svg>;
+
+    private RenderFragment IconMove => @<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20" /></svg>;
+
+    private RenderFragment IconShape => @<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5" /><circle cx="12" cy="2" r="1.5" fill="currentColor" /><circle cx="22" cy="8.5" r="1.5" fill="currentColor" /></svg>;
+
+    private RenderFragment IconPaint => @<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M19 3H5a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2z" /><path d="M12 11v6a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-1" /></svg>;
+
+    private RenderFragment IconPipette => @<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M19.5 3.5a2.1 2.1 0 0 0-3 0l-2.3 2.3-1-1-1.5 1.5 6 6L19.2 11l-1-1 2.3-2.3a2.1 2.1 0 0 0 0-3z" /><path d="M13.2 9.3 4 18.5V21h2.5l9.2-9.2" /></svg>;
+
+    private RenderFragment IconDelete => @<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>;
+
+    private RenderFragment IconBorder => @<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2" /></svg>;
+
+    private RenderFragment IconTilt => @<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><ellipse cx="12" cy="12" rx="9" ry="4" /><ellipse cx="12" cy="12" rx="4" ry="9" /></svg>;
+
+    private RenderFragment IconRedetect => @<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M23 4v6h-6M1 20v-6h6" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg>;
+
+    private RenderFragment IconAutoAlign => @<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M3 12h4M17 12h4M12 3v4M12 17v4" /><circle cx="12" cy="12" r="3" /></svg>;
+
+    private RenderFragment IconMerge => @<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><circle cx="7" cy="12" r="4" /><circle cx="17" cy="12" r="4" /><line x1="11" y1="12" x2="13" y2="12" /></svg>;
+
+    private RenderFragment IconMakeActual => @<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><circle cx="12" cy="12" r="9" stroke-dasharray="2.2 1.6" /><polyline points="8.5 12 11 14.5 15.5 9.5" /></svg>;
+
+    private RenderFragment IconJoinVirtual => @<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><circle cx="8" cy="12" r="4.5" stroke-dasharray="2.2 1.6" /><circle cx="16" cy="12" r="4.5" stroke-dasharray="2.2 1.6" /><path d="M10.5 9.5 13.5 14.5M13.5 9.5 10.5 14.5" /></svg>;
+
+    private RenderFragment IconMarkUnchanged => @<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><polyline points="3 3 3 8 8 8" /><polyline points="9 12 11.4 14.4 15.5 10" /></svg>;
+
+    private RenderFragment IconMarkChanged => @<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M3 12a9 9 0 0 1 15.3-6.4L21 8" /><polyline points="21 3 21 8 16 8" /><path d="M10.5 10.5 13.5 13.5M13.5 10.5 10.5 13.5" /></svg>;
+
+    private RenderFragment IconLinkPanels => @<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M9 12h6" /><path d="M10.5 8H7a4 4 0 0 0 0 8h3.5" /><path d="M13.5 8H17a4 4 0 0 1 0 8h-3.5" /></svg>;
+
+    private RenderFragment IconAllChanged => @<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><rect x="3" y="3" width="18" height="18" rx="3" /><path d="M8.5 8.5 15.5 15.5M15.5 8.5 8.5 15.5" /></svg>;
+
+    private RenderFragment IconAllUnchanged => @<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><rect x="3" y="3" width="18" height="18" rx="3" /><polyline points="7.5 12 10.5 15 16.5 9" /></svg>;
+
+    // ================= end unified toolbar =================
     [Parameter] public Guid WallId { get; set; }
     [Parameter] public List<Hold> Holds { get; set; } = [];
     [Parameter] public List<ShapePoint> BorderPoints { get; set; } = [];
-
-    /// <summary>
-    /// The wall's segments, shown read-only alongside the border. They are created and
-    /// reshaped in the wall settings (<c>WallSegmentEditor</c>), not here.
-    /// </summary>
-    [Parameter] public List<WallSegment>? Segments { get; set; }
     [Parameter] public bool CanEdit { get; set; }
 
     /// <summary>
@@ -1129,7 +1210,7 @@
     private Guid? _selectedHoldId;
     private Guid? _shapeEditHoldId;
     private double _selectedRadius = 0.015;
-    private EditMode _mode = EditMode.Add;
+    private HoldTouchupTool _mode => tools.Tool;
     private Guid? _draggingHoldId;
     private int? _draggingShapePointIdx;
     private Hold? _draggingShapeHold;
@@ -1157,7 +1238,10 @@
 
     private Dictionary<Guid, List<HoldUsageRef>>? _holdUsage;
     private Guid? _usageHoldId;
-    private EditMode _modeBeforeUsage = EditMode.Add;
+    private HoldTouchupTool _modeBeforeUsage = HoldTouchupTool.Add;
+
+    /// <summary>The hold-usage view filter. A toggle, not a tool — but it parks the tool while on.</summary>
+    private bool _showUsage;
     private double _shapePointRadius = 0.8;
 
     private readonly List<Hold> _addedHolds = [];
@@ -1188,13 +1272,48 @@
     // handles stop shrinking at the old 6x cap and are oversized for the rest of the range.
     private double HandleScale => 1.0 / Math.Clamp(_zoom, 0.5, 12.0);
 
-    private enum EditMode { Add, Move, Shape, Paint, Delete, Border, Name, Merge, ShapeTilt, Usage, MakeActual, JoinVirtual, MarkUnchanged, MarkChanged }
-
     public record BatchChanges(List<Hold> Added, List<Hold> Updated, List<Guid> Deleted);
 
     public WallPhotoEditor()
     {
         _zoomState = new ViewportZoomState(() => InvokeAsync(StateHasChanged));
+
+        // The editor has always opened in Add; the shared tool state's zero value is None, so the
+        // opening tool is stated here rather than left to the enum's default.
+        tools.SetTool(HoldTouchupTool.Add);
+    }
+
+    // Toolbar placement, resolved before the first render so the toolbar is never drawn in the wrong
+    // shape. Two passes, two sources — both of which are the SAME cookie:
+    //   * static/prerender pass: HttpContext is live, so the cookie comes off the request and the
+    //     first paint is already correct (this is why the pref is a cookie and not localStorage);
+    //   * interactive pass (circuit activation, or the editor being switched on later by the pencil
+    //     FAB, where there is no HttpContext at all): read it through bwPrefs.
+    // Awaiting the interop here rather than in OnAfterRenderAsync is the point — a render that has
+    // already happened cannot be un-flashed. A failed read simply keeps the top bar.
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpContextAccessor.HttpContext is { } context)
+        {
+            placement = ToolbarPlacementPreference.Parse(
+                context.Request.Cookies[ToolbarPlacementPreference.CookieName]);
+            return;
+        }
+
+        if (!RendererInfo.IsInteractive)
+        {
+            return;
+        }
+
+        try
+        {
+            var stored = await JS.InvokeAsync<string>("bwPrefs.getToolbarPlacement");
+            placement = ToolbarPlacementPreference.Parse(stored);
+        }
+        catch (Exception)
+        {
+            /* interop unavailable (circuit torn down, script blocked) — keep the top bar. */
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -1282,17 +1401,8 @@
         _zoomState.Dispose();
     }
 
-
-    private List<WallSegmentDraft> _segmentDrafts = [];
-
     protected override void OnParametersSet()
     {
-        _segmentDrafts = (Segments ?? [])
-            .Where(s => s.Points.Count >= 3)
-            .OrderBy(s => s.SortOrder)
-            .Select(WallSegmentDraft.FromEntity)
-            .ToList();
-
         // Frame the read-only view to the wall region (border if present, else the holds' bbox) so
         // the photo isn't mostly floor/ceiling. Editing stays uncropped: the editor needs the whole
         // canvas (adding holds outside the border, editing the border itself) and its flex/fullscreen
@@ -1303,7 +1413,7 @@
         // Border-only mode has no tool but the border tool, so open straight in border mode.
         if (BorderOnly)
         {
-            _mode = EditMode.Border;
+            SetMode(HoldTouchupTool.Border);
         }
 
         // Reset all editing state whenever we enter or leave manual alignment so
@@ -1322,7 +1432,7 @@
             _manualBaseline.Clear();
             if (ManualAlignment)
             {
-                _mode = EditMode.Move;
+                SetMode(HoldTouchupTool.Move);
                 CaptureManualBaseline();
             }
 
@@ -1348,53 +1458,65 @@
         }
     }
 
-    private string A(EditMode m) => _mode == m ? "active" : "";
-
     // Returns a CSS class, never an inline cursor: an inline style on .photo-viewport is rewritten
     // wholesale by Blazor on a tool switch and takes viewport.js's inline touch-action/--fit-aspect/
     // --crop-scale/aspect-ratio with it, which makes the view pan on its own. See components.css.
     private string CursorClassForMode() => _mode switch
     {
-        EditMode.Delete => "bw-cursor-crosshair",
-        EditMode.Add => "bw-cursor-crosshair",
-        EditMode.Name => "bw-cursor-help",
-        EditMode.ShapeTilt => "bw-cursor-pointer",
-        EditMode.Merge => "bw-cursor-pointer",
-        EditMode.MakeActual => "bw-cursor-pointer",
-        EditMode.JoinVirtual => "bw-cursor-pointer",
-        EditMode.MarkUnchanged => "bw-cursor-pointer",
-        EditMode.MarkChanged => "bw-cursor-pointer",
-        EditMode.Usage => "bw-cursor-pointer",
+        HoldTouchupTool.Delete => "bw-cursor-crosshair",
+        HoldTouchupTool.Add => "bw-cursor-crosshair",
+        HoldTouchupTool.Name => "bw-cursor-help",
+        HoldTouchupTool.ShapeTilt => "bw-cursor-pointer",
+        HoldTouchupTool.Merge => "bw-cursor-pointer",
+        HoldTouchupTool.MakeActual => "bw-cursor-pointer",
+        HoldTouchupTool.JoinVirtual => "bw-cursor-pointer",
+        HoldTouchupTool.MarkUnchanged => "bw-cursor-pointer",
+        HoldTouchupTool.MarkChanged => "bw-cursor-pointer",
         _ => "bw-cursor-default"
     };
 
-    private void SetMode(EditMode mode)
+    /// <summary>
+    /// Picks a tool through the toolbar's own state and drops the previous tool's working state.
+    /// The keyboard shortcuts come through here, so keys and clicks write the SAME object.
+    /// </summary>
+    private void SetMode(HoldTouchupTool mode)
     {
-        if (mode != EditMode.ShapeTilt)
+        tools.SetTool(mode);
+        ClearToolState(mode);
+    }
+
+    /// <summary>
+    /// The per-tool working state this component owns (which hold is being named, the pending merge,
+    /// …). It is deliberately NOT in the toolbar: it is wall state, and handing the toolbar a
+    /// reference to this component to reach it is exactly what sank the previous two extractions.
+    /// </summary>
+    private void ClearToolState(HoldTouchupTool mode)
+    {
+        _showUsage = false;
+        _usageHoldId = null;
+        if (mode != HoldTouchupTool.ShapeTilt)
         {
             _shapeTiltHoldId = null;
             ClearShapeTiltSnapshot();
         }
-        _mode = mode;
-        if (mode != EditMode.Move) _selectedHoldId = null;
-        if (mode != EditMode.Shape) _shapeEditHoldId = null;
-        if (mode != EditMode.Name) _namingHoldId = null;
-        if (mode != EditMode.Usage) _usageHoldId = null;
-        if (mode != EditMode.MakeActual)
+        if (mode != HoldTouchupTool.Move) _selectedHoldId = null;
+        if (mode != HoldTouchupTool.Shape) _shapeEditHoldId = null;
+        if (mode != HoldTouchupTool.Name) _namingHoldId = null;
+        if (mode != HoldTouchupTool.MakeActual)
         {
             _makeActualVirtualId = null;
             _makeActualTargetId = null;
         }
-        if (mode != EditMode.JoinVirtual)
+        if (mode != HoldTouchupTool.JoinVirtual)
         {
             _joinSurvivorId = null;
             _joinDuplicateId = null;
         }
-        if (mode != EditMode.MarkUnchanged)
+        if (mode != HoldTouchupTool.MarkUnchanged)
         {
             _markUnchangedHoldId = null;
         }
-        if (mode != EditMode.MarkChanged)
+        if (mode != HoldTouchupTool.MarkChanged)
         {
             _markChangedHoldId = null;
         }
@@ -1426,14 +1548,17 @@
     /// </summary>
     private async Task ToggleUsageMode()
     {
-        if (_mode == EditMode.Usage)
+        if (_showUsage)
         {
             SetMode(_modeBeforeUsage);
             return;
         }
 
         _modeBeforeUsage = _mode;
-        SetMode(EditMode.Usage);
+
+        // SetMode clears _showUsage, so the flag is raised AFTER parking the tool.
+        SetMode(HoldTouchupTool.None);
+        _showUsage = true;
 
         // Always refetch: boulders may have changed since the tool was last opened.
         _holdUsage = null;
@@ -1461,23 +1586,44 @@
         // Tapping a hold reveals its name even when the labels are hidden.
         _revealNameHoldId = _revealNameHoldId == hold.Id ? null : hold.Id;
 
+        // The usage toggle parks the tool while it is on, so a tap means "what uses this hold?"
+        // and nothing else — the same exclusivity the old Usage mode had, without being a mode.
+        if (_showUsage)
+        {
+            _usageHoldId = _usageHoldId == hold.Id ? null : hold.Id;
+            return;
+        }
+
         switch (_mode)
         {
-            case EditMode.Usage:
-                _usageHoldId = _usageHoldId == hold.Id ? null : hold.Id;
-                return;
-            case EditMode.Paint:
+            case HoldTouchupTool.Paint:
                 TakeSnapshot();
                 hold.Color = _paintColor;
                 SyncMaterialToColor(hold);
                 _updatedHoldIds.Add(hold.Id);
                 return;
-            case EditMode.Delete:
+            case HoldTouchupTool.Pipette:
+                // First tap fills the buffer; every tap after it stamps. Both go through HoldStamp, so
+                // what is drawn here and what SaveChanges sends are the same payload.
+                if (tools.Stamp is not { } stamp)
+                {
+                    tools.PickStamp(hold);
+                    return;
+                }
+
+                TakeSnapshot();
+                if (stamp.ApplyTo(hold))
+                {
+                    _updatedHoldIds.Add(hold.Id);
+                }
+
+                return;
+            case HoldTouchupTool.Delete:
                 TakeSnapshot();
                 _deletedHoldIds.Add(hold.Id);
                 Holds.RemoveAll(h => h.Id == hold.Id);
                 return;
-            case EditMode.Shape:
+            case HoldTouchupTool.Shape:
                 _shapeEditHoldId = hold.Id;
                 if (hold.ShapePoints == null)
                 {
@@ -1486,30 +1632,30 @@
                     _updatedHoldIds.Add(hold.Id);
                 }
                 return;
-            case EditMode.Name:
+            case HoldTouchupTool.Name:
                 _namingHoldId = hold.Id;
                 _nameInput = hold.Name ?? string.Empty;
                 return;
-            case EditMode.Move:
+            case HoldTouchupTool.Move:
                 _selectedHoldId = hold.Id;
                 _selectedRadius = hold.Radius;
                 return;
-            case EditMode.Merge:
+            case HoldTouchupTool.Merge:
                 HandleMergeClick(hold);
                 return;
-            case EditMode.MakeActual:
+            case HoldTouchupTool.MakeActual:
                 HandleMakeActualClick(hold);
                 return;
-            case EditMode.JoinVirtual:
+            case HoldTouchupTool.JoinVirtual:
                 HandleJoinVirtualClick(hold);
                 return;
-            case EditMode.MarkUnchanged:
+            case HoldTouchupTool.MarkUnchanged:
                 _markUnchangedHoldId = _markUnchangedHoldId == hold.Id ? null : hold.Id;
                 return;
-            case EditMode.MarkChanged:
+            case HoldTouchupTool.MarkChanged:
                 _markChangedHoldId = _markChangedHoldId == hold.Id ? null : hold.Id;
                 return;
-            case EditMode.ShapeTilt:
+            case HoldTouchupTool.ShapeTilt:
                 _shapeTiltHoldId = hold.Id;
                 CaptureShapeTiltSnapshot(hold);
                 _shapeTiltAngleX = 0;
@@ -1852,7 +1998,7 @@
 
     private async Task StartShapeTiltDrag(MouseEventArgs e, Hold hold)
     {
-        if (!CanEdit || _mode != EditMode.ShapeTilt) return;
+        if (!CanEdit || _mode != HoldTouchupTool.ShapeTilt) return;
         if (_shapeTiltSnapshot == null) CaptureShapeTiltSnapshot(hold);
         var pos = await JS.InvokeAsync<RelativePos>("wallEditor.getRelativePosition", _containerRef, e.ClientX, e.ClientY);
         _shapeTiltDragging = true;
@@ -1915,7 +2061,7 @@
 
     private void StartDrag(Hold hold)
     {
-        if (!CanEdit || _mode != EditMode.Move) return;
+        if (!CanEdit || _mode != HoldTouchupTool.Move) return;
         _selectedHoldId = hold.Id;
         _selectedRadius = hold.Radius;
         _draggingHoldId = hold.Id;
@@ -1941,7 +2087,7 @@
 
     private async Task OnSvgClick(MouseEventArgs e)
     {
-        if (!CanEdit || _mode != EditMode.Add) return;
+        if (!CanEdit || _mode != HoldTouchupTool.Add) return;
         var pos = await JS.InvokeAsync<RelativePos>("wallEditor.getRelativePosition", _containerRef, e.ClientX, e.ClientY);
         var radius = _selectedRadius;
         TakeSnapshot();
@@ -2375,7 +2521,7 @@
     // below, mirroring each button's own gate.
     private static readonly string[] AlwaysShortcutKeys =
     [
-        "a", "m", "s", "p", "n", "d", "b", "t", "u", "g", "k", "j", "c", "x",
+        "a", "m", "s", "p", "e", "n", "d", "b", "t", "u", "g", "k", "j", "c", "x",
         "l", "o", "r", "i",
         "1", "2", "3", "4", "5", "6", "7", "8", "9", "[", "]",
         "+", "-", "0",
@@ -2428,19 +2574,21 @@
         var tools = CanEdit && !BorderOnly;
         switch (key)
         {
-            case "a" when tools: SetMode(EditMode.Add); return true;
-            case "m" when tools: SetMode(EditMode.Move); return true;
-            case "s" when tools: SetMode(EditMode.Shape); return true;
-            case "p" when tools: SetMode(EditMode.Paint); return true;
-            case "n" when tools: SetMode(EditMode.Name); return true;
-            case "d" when tools: SetMode(EditMode.Delete); return true;
-            case "t" when tools: SetMode(EditMode.ShapeTilt); return true;
-            case "c" when tools: SetMode(EditMode.MarkUnchanged); return true;
-            case "x" when tools && !IsStaging: SetMode(EditMode.MarkChanged); return true;
-            case "g" when tools && IsStaging && !ManualAlignment: SetMode(EditMode.Merge); return true;
-            case "k" when tools && !IsStaging: SetMode(EditMode.MakeActual); return true;
-            case "j" when tools && !IsStaging: SetMode(EditMode.JoinVirtual); return true;
-            case "b" when CanEdit && CanEditShape: SetMode(EditMode.Border); return true;
+            case "a" when tools: SetMode(HoldTouchupTool.Add); return true;
+            case "m" when tools: SetMode(HoldTouchupTool.Move); return true;
+            case "s" when tools: SetMode(HoldTouchupTool.Shape); return true;
+            case "p" when tools: SetMode(HoldTouchupTool.Paint); return true;
+            // "p" is Paint here and "i" is the incomplete filter, so the pipette takes "e" for eyedropper.
+            case "e" when tools: SetMode(HoldTouchupTool.Pipette); return true;
+            case "n" when tools: SetMode(HoldTouchupTool.Name); return true;
+            case "d" when tools: SetMode(HoldTouchupTool.Delete); return true;
+            case "t" when tools: SetMode(HoldTouchupTool.ShapeTilt); return true;
+            case "c" when tools: SetMode(HoldTouchupTool.MarkUnchanged); return true;
+            case "x" when tools && !IsStaging: SetMode(HoldTouchupTool.MarkChanged); return true;
+            case "g" when tools && IsStaging && !ManualAlignment: SetMode(HoldTouchupTool.Merge); return true;
+            case "k" when tools && !IsStaging: SetMode(HoldTouchupTool.MakeActual); return true;
+            case "j" when tools && !IsStaging: SetMode(HoldTouchupTool.JoinVirtual); return true;
+            case "b" when CanEdit && CanEditShape: SetMode(HoldTouchupTool.Border); return true;
             case "l": _showNames = !_showNames; return true;
             case "i" when CanEdit: CycleIncompleteCriteria(); return true;
             case "o" when tools || (BorderOnly && CanEditShape): _showBorder = !_showBorder; return true;
@@ -2454,7 +2602,7 @@
     /// </summary>
     private bool TryPaintShortcut(string key)
     {
-        if (!CanEdit || _mode != EditMode.Paint)
+        if (!CanEdit || _mode != HoldTouchupTool.Paint)
         {
             return false;
         }
@@ -2506,7 +2654,7 @@
                || _joinDuplicateId != null
                || _markUnchangedHoldId.HasValue
                || _markChangedHoldId.HasValue
-               || (_mode == EditMode.ShapeTilt && _shapeTiltHoldId.HasValue));
+               || (_mode == HoldTouchupTool.ShapeTilt && _shapeTiltHoldId.HasValue));
 
     /// <summary>
     /// Escape cancels the active sub-mode and NOTHING else.
@@ -2573,7 +2721,7 @@
             return;
         }
 
-        if (_mode == EditMode.ShapeTilt && _shapeTiltHoldId.HasValue)
+        if (_mode == HoldTouchupTool.ShapeTilt && _shapeTiltHoldId.HasValue)
         {
             ResetShapeTilt();
             _shapeTiltHoldId = null;

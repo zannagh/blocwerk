@@ -1,0 +1,254 @@
+@* "Account" pane: e-mail, password sign-in, two-factor, linked accounts, API keys and the
+   irreversible delete-account entry. Account security lives on your OWN device, never on a wall
+   tablet — the page renders the kiosk notice instead of this pane, and the writes are refused at the
+   service (CurrentUserService.EnsureNotKiosk) and, for the e-mail, inline at the write below. *@
+@inject ICurrentUserService CurrentUserService
+@inject IEmailVerificationService EmailVerification
+@inject Blocwerk.Core.Configuration.BlocwerkSettings Settings
+@inject Blocwerk.Core.Abstractions.IKioskContext KioskContext
+@inject NavigationManager Navigation
+@using Microsoft.EntityFrameworkCore
+@inject IDbContextFactory<Blocwerk.Core.Data.BlocwerkDbContext> DbContextFactory
+
+<div class="profile-grid">
+    <details class="section profile-collapsible" id="email-section">
+        <summary>@(Target.EmailVerified ? "Email (verified)" : "Email")</summary>
+
+        @if (Target.EmailVerified && !string.IsNullOrEmpty(Target.Email))
+        {
+            <p class="member-since">
+                Your email <strong>@Target.Email</strong> is verified. Enter a new address and
+                verify it below to change it.
+            </p>
+        }
+        else if (!string.IsNullOrEmpty(Target.Email))
+        {
+            <p class="member-since">Your email <strong>@Target.Email</strong> isn't verified yet.</p>
+        }
+        else
+        {
+            <p class="member-since">Add an email address and confirm it with a code we send you.</p>
+        }
+
+        @if (!Settings.Smtp.IsConfigured)
+        {
+            <p class="member-since">Email sending isn't configured on this server, so email can't be verified right now.</p>
+        }
+        else
+        {
+            <div class="field-group">
+                <label class="field-label" for="verify-email">Email address</label>
+                <input id="verify-email" class="text-input" type="email" maxlength="256" autocomplete="email"
+                       @bind="emailInput" @bind:event="oninput" />
+                <div class="field-actions">
+                    <button class="btn-primary" @onclick="SendEmailCodeAsync" disabled="@emailBusy">Send code</button>
+                </div>
+
+                @if (emailCodeSent)
+                {
+                    <label class="field-label" for="verify-email-code">6-digit code</label>
+                    <input id="verify-email-code" class="text-input" inputmode="numeric" maxlength="6"
+                           autocomplete="one-time-code" @bind="emailCode" @bind:event="oninput" />
+                    <div class="field-actions">
+                        <button class="btn-primary" @onclick="VerifyEmailCodeAsync" disabled="@emailBusy">Verify</button>
+                    </div>
+                }
+
+                @if (emailError != null)
+                {
+                    <p class="field-error">@emailError</p>
+                }
+                @if (emailInfo != null)
+                {
+                    <p class="field-label">@emailInfo</p>
+                }
+            </div>
+        }
+    </details>
+
+    <details class="section profile-collapsible" id="password-section">
+        <summary>@(Target.HasPassword ? "Password sign-in (all set)" : "Password sign-in")</summary>
+        @if (Target.HasPassword)
+        {
+            <p class="member-since">
+                A password is set for username <strong>@Target.LoginUsername</strong>.
+                You can sign in without a provider. Enter a new username and password below to change it.
+            </p>
+        }
+        else
+        {
+            <p class="member-since">
+                Set a username and password to sign in without an OAuth provider. This never
+                replaces your linked accounts — it's an additional way in.
+            </p>
+        }
+
+        <div class="field-group">
+            <label class="field-label" for="login-username">Username</label>
+            <input id="login-username" class="text-input" maxlength="64" autocomplete="off"
+                   @bind="pwUsername" @bind:event="oninput" />
+
+            @if (Target.HasPassword)
+            {
+                <label class="field-label" for="login-current-password">Current password</label>
+                <input id="login-current-password" class="text-input" type="password" autocomplete="current-password"
+                       @bind="pwCurrent" @bind:event="oninput" />
+            }
+
+            <label class="field-label" for="login-password">Password</label>
+            <input id="login-password" class="text-input" type="password" autocomplete="new-password"
+                   @bind="pwPassword" @bind:event="oninput" />
+
+            <label class="field-label" for="login-password-confirm">Confirm password</label>
+            <input id="login-password-confirm" class="text-input" type="password" autocomplete="new-password"
+                   @bind="pwConfirm" @bind:event="oninput" />
+
+            <div class="field-actions">
+                <button class="btn-primary" @onclick="SavePasswordAsync" disabled="@savingPassword">
+                    @(Target.HasPassword ? "Change password" : "Set password")
+                </button>
+            </div>
+            <p class="member-since">Username 3–64 characters (letters, digits, dot, underscore, hyphen); password at least 8 characters.</p>
+            @if (passwordError != null)
+            {
+                <p class="field-error">@passwordError</p>
+            }
+            @if (passwordSuccess)
+            {
+                <p class="field-label">Password saved.</p>
+            }
+        </div>
+    </details>
+
+    @if (Target.HasPassword)
+    {
+        <details class="section profile-collapsible">
+            <summary>@(Target.HasTotp ? "Two-factor authentication (all set)" : "Two-factor authentication")</summary>
+            @if (Target.HasTotp)
+            {
+                <p class="member-since">
+                    Two-factor authentication is <strong>on</strong>. It is required <strong>only when
+                    you sign in with your username &amp; password</strong> — signing in through a linked
+                    OAuth provider is not affected. Enter a current code to turn it off.
+                </p>
+                <div class="field-group">
+                    <label class="field-label" for="totp-disable">6-digit code</label>
+                    <input id="totp-disable" class="text-input" inputmode="numeric" maxlength="8"
+                           autocomplete="one-time-code" @bind="totpCode" @bind:event="oninput" />
+                    <div class="field-actions">
+                        <button class="btn-secondary" @onclick="DisableTotpAsync" disabled="@totpBusy">Disable 2FA</button>
+                    </div>
+                </div>
+                @if (totpError != null)
+                {
+                    <p class="field-error">@totpError</p>
+                }
+            }
+            else if (totpEnrollment != null)
+            {
+                <p class="member-since">
+                    Scan this QR code with your authenticator app (or enter the secret manually),
+                    then enter a code below to finish enabling 2FA.
+                </p>
+                <img class="totp-qr" width="220" height="220" alt="TOTP QR code"
+                     src="data:image/png;base64,@Convert.ToBase64String(totpEnrollment.QrPng)" />
+                <p class="member-since">Secret: <code>@totpEnrollment.Secret</code></p>
+
+                <div class="field-group">
+                    <label class="field-label" for="totp-confirm">6-digit code</label>
+                    <input id="totp-confirm" class="text-input" inputmode="numeric" maxlength="8"
+                           autocomplete="one-time-code" @bind="totpCode" @bind:event="oninput" />
+                    <div class="field-actions">
+                        <button class="btn-primary" @onclick="ConfirmTotpAsync" disabled="@totpBusy">Confirm &amp; enable</button>
+                        <button class="btn-secondary" @onclick="CancelTotpEnrollment" disabled="@totpBusy">Cancel</button>
+                    </div>
+                    @if (totpError != null)
+                    {
+                        <p class="field-error">@totpError</p>
+                    }
+                </div>
+            }
+            else
+            {
+                <p class="member-since">
+                    Add a second factor: after your password, sign-in will ask for a rotating
+                    6-digit code from an authenticator app (Google Authenticator, Aegis, 1Password…).
+                </p>
+                <div class="field-actions">
+                    <button class="btn-primary" @onclick="EnableTotpAsync" disabled="@totpBusy">Enable 2FA</button>
+                </div>
+                @if (totpError != null)
+                {
+                    <p class="field-error">@totpError</p>
+                }
+            }
+        </details>
+    }
+
+    @if (AllProviders.Count > 0)
+    {
+        // Only providers the user hasn't linked yet can be linked; already-linked ones are
+        // listed read-only below so the section still shows what's connected.
+        var unlinkedProviders = AllProviders.Where(p => !IsProviderLinked(p.Key)).ToList();
+        var linkedLabels = AllProviders.Where(p => IsProviderLinked(p.Key)).Select(p => p.Label).ToList();
+
+        <details class="section profile-collapsible">
+            <summary>Linked accounts</summary>
+            @if (LinkMessage != null)
+            {
+                <p class="field-label">@LinkMessage</p>
+            }
+            <p class="member-since">Sign in with any linked provider to reach this account. Linking a provider that already belongs to another account merges that account into this one.</p>
+
+            @if (linkedLabels.Count > 0)
+            {
+                <div class="field-group">
+                    @foreach (var label in linkedLabels)
+                    {
+                        <div class="field-actions">
+                            <span class="field-label">@label</span>
+                            <span class="role-badge">Linked</span>
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (unlinkedProviders.Count > 0)
+            {
+                <div class="field-group">
+                    @foreach (var provider in unlinkedProviders)
+                    {
+                        <div class="field-actions">
+                            <span class="field-label">@provider.Label</span>
+                            <button class="btn-secondary" @onclick="() => StartLink(provider.Key)">Link @provider.Label</button>
+                        </div>
+                    }
+                </div>
+            }
+            <p class="member-since">Unlinking a provider isn't supported yet.</p>
+        </details>
+    }
+
+    <div class="section profile-section-card">
+        <h2>API keys</h2>
+        <p class="member-since">Keys for the public REST API and for wall sensors that upload readings.</p>
+        <div class="profile-links">
+            <a class="btn-secondary" href="/settings/api-keys">API keys</a>
+        </div>
+    </div>
+
+    @* Deliberately its own card, not a button among the links above: it is the one irreversible
+       action on this page. /settings/delete-account is on the kiosk deny-list and the deletion
+       service refuses a kiosk session outright. *@
+    <div class="section profile-section-card profile-danger-card">
+        <h2>Delete account</h2>
+        <p class="member-since">
+            Erases your name, e-mail, photo, logins and training history for good. The
+            boulders you set and the comments you wrote stay on their walls, credited to
+            @Blocwerk.Core.Helpers.PlaceholderIdentity.DisplayName.
+        </p>
+        <div class="profile-links">
+            <a class="btn-secondary" href="/settings/delete-account">Delete my account</a>
+        </div>
+    </div>
+</div>

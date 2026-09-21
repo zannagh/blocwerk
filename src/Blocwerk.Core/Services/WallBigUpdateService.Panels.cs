@@ -21,7 +21,7 @@ public partial class WallBigUpdateService
     /// hand the UI the exact set the matcher used instead of the UI re-deriving a wall-wide one.
     /// </summary>
     private static PanelHold ToPanelHold(Hold hold) =>
-        new(hold.Id, hold.X, hold.Y, hold.Radius, hold.Color, hold.ShapePoints, hold.IsVirtual);
+        new(hold.Id, hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.ShapePoints, hold.IsVirtual);
 
     /// <summary>
     /// Pairs every re-photographed panel with its live ("before") panel and the old holds this update will

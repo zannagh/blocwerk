@@ -2,6 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
 
 namespace Blocwerk.Web.Components.Shared;
@@ -45,7 +46,7 @@ public partial class PanelOverlapStepper
     private async Task OnMovedAddTap((double X, double Y) at)
     {
         var id = await WallPanelService.AddPanelHoldAsync(WallId, PanelId, at.X, at.Y, HoldTouchupSurface.DefaultRadius);
-        AddToStagedSet(new PanelHold(id, at.X, at.Y, HoldTouchupSurface.DefaultRadius, null));
+        AddToStagedSet(new PanelHold(id, at.X, at.Y, HoldTouchupSurface.DefaultRadius, null, HoldCategory.Hand));
         _movedSelectedHoldId = id;
         _addMode = false;
     }

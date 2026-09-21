@@ -130,6 +130,12 @@ window.wallCarousel = {
             timer: 0,
             reported: -1,
             pointers: 0,
+            // Whether the scroll this settle is correcting came from a FINGER. Only a genuine swipe
+            // gets the smooth correction; a scroll nobody asked for — a panel switch calling
+            // bwViewport.fitBox rewrites the viewport's aspect-ratio, which perturbs the mandatory
+            // snap container — realigns instantly, so a button-initiated switch never plays the
+            // swipe animation. markPage (a dot/arrow/deep-link move) clears it for the same reason.
+            swiped: false,
         };
         state.arm = () => {
             if (state.timer) {
@@ -158,12 +164,14 @@ window.wallCarousel = {
                 return;
             }
             const page = this.currentPage(el);
+            const smooth = state.swiped;
+            state.swiped = false;
             // Correct only when there is something to correct. Re-aiming at an offset we are already
             // on is not free on fractional device-pixel ratios: the smooth scroll lands a rounding
             // remainder away, which emits scroll events, which settle again — an oscillation that
             // never converges. One device pixel of slack ends it.
             if (Math.abs(el.scrollLeft - this.targetOffset(el, page)) > 1) {
-                this.scrollToPage(el, page, true);
+                this.scrollToPage(el, page, smooth);
             }
             if (page !== state.reported) {
                 state.reported = page;
@@ -173,8 +181,19 @@ window.wallCarousel = {
         state.onScroll = () => {
             state.arm();
         };
+        // A trackpad/wheel slide is a user gesture just as much as a swipe, and it reaches the track
+        // as a bare `scroll` event that would otherwise be indistinguishable from a layout-induced
+        // one. Only a HORIZONTALLY dominant wheel can move this x-scroller, so a vertical wheel that
+        // merely passed over the carousel while scrolling the page doesn't leave the flag armed for
+        // an unrelated layout scroll to inherit.
+        state.onWheel = (e) => {
+            if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+                state.swiped = true;
+            }
+        };
         state.onPointerDown = () => {
             state.pointers++;
+            state.swiped = true;
             if (state.timer) {
                 clearTimeout(state.timer);
                 state.timer = 0;
@@ -185,6 +204,7 @@ window.wallCarousel = {
             state.arm();
         };
         el.addEventListener('scroll', state.onScroll, { passive: true });
+        el.addEventListener('wheel', state.onWheel, { passive: true });
         // pointer* covers touch and mouse on everything current; the touch* pair is the fallback for
         // an engine without Pointer Events, and the counter tolerates both firing.
         if (window.PointerEvent) {
@@ -238,6 +258,49 @@ window.wallCarousel = {
             return;
         }
         el._bwCarousel.reported = idx;
+        // The scroll it is about to cause is its own, not a swipe: any correction that follows must
+        // not animate on top of it (see `swiped`).
+        el._bwCarousel.swiped = false;
+    },
+    // ---- fold marker ----------------------------------------------------------------------
+    //
+    // A carousel page is its own vertical scroller, so the document reports no scroll at all and the
+    // bottom edge of the slide looks exactly like the end of the page. The boulder list is 4+ slides
+    // of cards deep, so it needs to SAY that it continues: the page carries `has-more` while it is
+    // scrolled anywhere above its own bottom, and the stylesheet fades the last 48px.
+    //
+    // `child` is an element inside the page (the .boulder-section) — the page itself is created by
+    // WallCarousel, so the caller can only hand us something within it.
+    //
+    // Deliberately no unobserve: both listeners and the observer are attached to nodes that die with
+    // the page, and a detached node takes its listeners with it. Nothing here writes layout, so the
+    // mandatory snap container is never perturbed — only a class that drives an opacity.
+    watchFold(child) {
+        const el = child && child.closest ? child.closest('.wall-page') : null;
+        if (!el || el._bwFold) {
+            return;
+        }
+        const state = {};
+        state.apply = () => {
+            // 2px of slack: a fractional device-pixel ratio leaves a sub-pixel remainder at the very
+            // bottom that would otherwise keep the fade on forever.
+            const more = el.scrollHeight - el.clientHeight - el.scrollTop > 2;
+            if (more !== state.last) {
+                state.last = more;
+                el.classList.toggle('has-more', more);
+            }
+        };
+        state.last = undefined;
+        el.addEventListener('scroll', state.apply, { passive: true });
+        if (window.ResizeObserver) {
+            // The list changes height without scrolling: a filter, a new boulder, the archive
+            // section opening. Watch both the page (viewport) and the content.
+            state.ro = new ResizeObserver(state.apply);
+            state.ro.observe(el);
+            state.ro.observe(child);
+        }
+        el._bwFold = state;
+        state.apply();
     },
     unobserve(el) {
         const state = el && el._bwCarousel;
@@ -248,6 +311,7 @@ window.wallCarousel = {
             clearTimeout(state.timer);
         }
         el.removeEventListener('scroll', state.onScroll);
+        el.removeEventListener('wheel', state.onWheel);
         el.removeEventListener('pointerdown', state.onPointerDown);
         el.removeEventListener('pointerup', state.onPointerUp);
         el.removeEventListener('pointercancel', state.onPointerUp);

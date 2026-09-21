@@ -4,7 +4,6 @@
 @inject IWallService WallService
 @inject IWallPanelService WallPanelService
 @inject WallCacheState Cache
-@inject IWallSegmentService WallSegmentService
 @inject IBoulderService BoulderService
 @inject IBoulderFeedbackService FeedbackService
 @inject IActivityLogService ActivityLogService
@@ -41,7 +40,11 @@ else
 {
     <SectionContent SectionName="TopBarTitle">@_wall.Name</SectionContent>
 
-    <WallCarousel @ref="_carousel" InitialPage="@InitialCarouselPage" Locked="_isEditing">
+    @* PageClasses is pipe-separated per page: only page 4 (the boulder list) gets a surface of its
+       own — full-bleed slide, sticky list head, fold marker. See the .boulders-page block in
+       pages.css. *@
+    <WallCarousel @ref="_carousel" InitialPage="@InitialCarouselPage" Locked="_isEditing"
+                  PageClasses="|||boulders-page|">
         <Page1>
             @* Activity is visible to all wall members; settings/shape/API keys stay admin-only. *@
             <details open class="settings-panel settings-card">
@@ -194,24 +197,10 @@ else
                             <WallPhotoEditor WallId="_wall.Id"
                                              Holds="_holds"
                                              BorderPoints="_borderPoints"
-                                             Segments="_segments"
                                              CanEdit="false"
                                              CanEditShape="_isAdmin"
                                              BorderOnly="true"
                                              OnBorderChanged="OnBorderChanged" />
-                        </details>
-
-                        <details class="segment-settings">
-                            <summary>
-                                Wall segments &amp; projection
-                                @if (_segments.Count > 0)
-                                {
-                                    <span class="segment-settings-count">@_segments.Count</span>
-                                }
-                            </summary>
-                            <WallSegmentEditor WallId="_wall.Id" FallbackAngle="_wall.Angle"
-                                               Holds="_holds" BorderPoints="_borderPoints"
-                                               OnSegmentsSaved="OnSegmentsSaved" />
                         </details>
                     }
                     else
@@ -393,9 +382,8 @@ else
                         @* Edit pencil overlaid on the image's top-right, co-located with the editor's
                            usage "lens" button — not in a separate row above. Rendered at the WallDetail
                            level (not inside WallPhotoEditor) so it covers every view path uniformly:
-                           the single-image editor, the multi-panel viewer, and the schematic view,
-                           where WallPhotoEditor isn't the renderer. Shows an X while editing. The
-                           Photo/Schematic toggle was removed; _viewMode stays and defaults to Photo. *@
+                           the single-image editor and the multi-panel viewer, where WallPhotoEditor
+                           isn't the renderer. Shows an X while editing. *@
                         @if (_canEditHolds)
                         {
                             <button class="btn-icon wall-edit-fab @(_isEditing ? "editing" : "")" @onclick="ToggleEditing" title="@(_isEditing ? "Exit edit mode" : "Edit wall")">
@@ -415,7 +403,7 @@ else
                                 }
                             </button>
                         }
-                        @if (_viewMode == ViewMode.Photo && _livePanels.Count > 0 && _canEditHolds && _isEditing && _editingPanel != null)
+                        @if (_livePanels.Count > 0 && _canEditHolds && _isEditing && _editingPanel != null)
                         {
                             @* Big wall in edit mode: scope the single-image editor to one live panel
                                (its own photo + holds) and let the admin step between panels. Wall-level
@@ -449,7 +437,6 @@ else
                                              PhotoUrlOverride="@($"/api/walls/{_wall.Id}/panels/{_editingPanel!.Id}/photo")"
                                              Holds="_editingPanelHolds"
                                              BorderPoints="new List<ShapePoint>()"
-                                             Segments="null"
                                              CanEdit="true"
                                              BottomToolbar="true"
                                              IsStaging="false"
@@ -466,7 +453,7 @@ else
                                              OnLinkPanels="OpenLinkTool"
                                              OnRequestHoldUsage="@(_isAnonymous ? null : LoadHoldUsage)" />
                         }
-                        else if (_viewMode == ViewMode.Photo && _livePanels.Count > 0)
+                        else if (_livePanels.Count > 0)
                         {
                             @* Big wall: step between the live panel images instead of one flat photo.
                                Editing the panel grid lives in the wall settings, never here. *@
@@ -477,7 +464,7 @@ else
                                               EnableSwipe="true"
                                               OnRequestHoldUsage="@(_isAnonymous ? null : LoadHoldUsage)" />
                         }
-                        else if (_wall.PhotoContentType != null && _viewMode == ViewMode.Photo)
+                        else if (_wall.PhotoContentType != null)
                         {
                             @* Fallback flat-photo view for when no live panels are enumerable — in
                                practice an anonymous share viewer who can't list panels, so it renders
@@ -488,7 +475,6 @@ else
                             <WallPhotoEditor WallId="_wall.Id"
                                              Holds="_holds"
                                              BorderPoints="_borderPoints"
-                                             Segments="_segments"
                                              CanEdit="_canEditHolds && _isEditing"
                                              CanEditShape="_isAdmin"
                                              BottomToolbar="_isEditing"
@@ -502,11 +488,6 @@ else
                                              OnJoinVirtualHolds="OnJoinVirtualHolds"
                                              OnRestoreUnchangedHold="OnRestoreUnchangedHold"
                                              OnRequestHoldUsage="@(_isAnonymous ? null : LoadHoldUsage)" />
-                        }
-                        else if (_wall.PhotoContentType != null && _viewMode == ViewMode.Schematic)
-                        {
-                            <WallSchematicView Holds="_holds" Angle="_wall.Angle" Segments="_segments"
-                                               ShowSegments="false" />
                         }
                         else if (_isAdmin && _isEditing)
                         {
@@ -526,6 +507,11 @@ else
 
                 @if (!_isEditing)
                 {
+                    @* The per-wall rail. On the phone tier .wall-side is display:contents, so this
+                       wrapper is not in the layout at all and the cards stack under the photo as
+                       before; on the desktop tier it is the right-hand column beside the photo (and
+                       the place a docked wall toolbar will go). *@
+                    <div class="wall-side">
                     <div class="stats-bar">
                         <div class="stat">
                             @* Count the LIVE holds only. GetWallAsync returns the live holds per panel
@@ -600,15 +586,19 @@ else
                             </button>
                         </div>
                     }
+                    </div>
                 }
             </div>
         </Page3>
 
         <Page4>
             @* Boulders *@
-            <div class="boulder-section">
+            <div class="boulder-section" @ref="_boulderSection">
+                @* Header + filters are ONE sticky head: on a list this long they used to scroll away
+                   within the first flick and never come back. *@
+                <div class="boulder-list-head">
                 <div class="section-header">
-                    <h2>Boulders</h2>
+                    <h2>Boulders<span class="list-count">@ActiveBoulders.Count</span></h2>
                     @* Anonymous kiosk setting is opt-in per wall, so the button mirrors exactly what
                        BoulderCreate and BoulderService.EnsureAnonymousKioskCreateAllowedAsync accept:
                        this tablet's own wall, with the setting on. Without the kiosk branch a tablet
@@ -680,6 +670,7 @@ else
                         </div>
                     </details>
                 }
+                </div>
 
                 @if (_items.Count == 0)
                 {
@@ -719,6 +710,10 @@ else
                         </details>
                     }
                 }
+                @* Fold marker: the slide is its own scroller, so its bottom edge otherwise reads as
+                   the end of the page. wall-carousel.js toggles `has-more` on the slide; this fades
+                   in only while there really is more below. *@
+                <div class="list-fade" aria-hidden="true"></div>
             </div>
         </Page4>
 
@@ -812,7 +807,6 @@ else
     private string? _loadedShareToken;
     private List<Hold> _holds = [];
     private List<ShapePoint> _borderPoints = [];
-    private List<WallSegment> _segments = [];
     private List<WallPanelInfo> _livePanels = [];
     private WallPanelInfo? _editingPanel;
     private List<Hold> _editingPanelHolds = [];
@@ -845,10 +839,33 @@ else
     // (the lease toggles on enter/leave) via EditGuardInterop.
     private bool _editGuardActive;
 
+    // The boulder list's root, handed to wall-carousel.js so it can find the carousel page that owns
+    // it and mark the fold. Only set once the list has actually rendered.
+    private ElementReference _boulderSection;
+    private bool _foldWatched;
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         // Every render, not just the first: the lease toggles when edit mode is entered or left.
         _editGuardActive = await EditGuardInterop.SyncAsync(JS, "wall-edit", _editLease is not null, _editGuardActive);
+
+        // Not on firstRender: the boulder section only exists once the wall has loaded. watchFold is
+        // a no-op on a page it already watches, and it needs no teardown (its listeners live on nodes
+        // that die with the page), so calling it again after a re-render costs nothing.
+        if (!_foldWatched && _wall is not null && _boulderSection.Id is not null)
+        {
+            _foldWatched = true;
+            try
+            {
+                await JS.InvokeVoidAsync("wallCarousel.watchFold", _boulderSection);
+            }
+            catch (Exception ex) when (ex is JSDisconnectedException or ObjectDisposedException or OperationCanceledException or JSException)
+            {
+                // A fold marker is decoration; never fail a render over it.
+                _foldWatched = false;
+                Logger.LogDebug(ex, "Boulder list fold watcher not attached");
+            }
+        }
     }
 
     private bool _showBigUpdate;
@@ -881,7 +898,6 @@ else
     private bool _fBeta;
     private bool _fNeedsReview;
     private SortMode _sort = SortMode.Newest;
-    private ViewMode _viewMode = ViewMode.Photo;
 
     private enum SortMode { Newest, Oldest, GradeAsc, GradeDesc, Rating, MyAttempts }
 
@@ -925,8 +941,6 @@ else
     private List<ActivityLogEntry>? _activityItems;
     private int _activityTotal;
     private int _activityPage;
-
-    private enum ViewMode { Photo, Schematic }
 
     // ActiveBoulders/ArchivedBoulders are read several times per render (empty-check, count,
     // foreach), and the page re-renders on every unrelated state change (toasts, activity). The
@@ -1349,7 +1363,6 @@ else
             // directly would leak uncommitted edits back into the cache on discard/navigate-away.
             _holds = _wall.Holds.Select(h => h.Clone()).ToList();
             _borderPoints = _wall.BorderPoints?.Select(p => new ShapePoint { Dx = p.Dx, Dy = p.Dy }).ToList() ?? [];
-            await LoadSegments();
             await LoadPanels();
             if (!_isAnonymous)
             {
@@ -1388,7 +1401,8 @@ else
 
         foreach (var hold in changes.Updated)
         {
-            await WallService.UpdateHoldAsync(hold.Id, hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.IsOnKickboard, hold.ShapePoints, hold.Name, hold.Material, handType: hold.HandType);
+            await WallService.UpdateHoldAsync(hold.Id, HoldEdit.FromEditorState(
+                hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.IsOnKickboard, hold.ShapePoints, hold.Name, hold.Material, hold.HandType));
         }
 
         foreach (var holdId in changes.Deleted)
@@ -1398,23 +1412,6 @@ else
         }
 
         await ShowToast($"Saved {changes.Added.Count + changes.Updated.Count + changes.Deleted.Count} changes");
-    }
-
-    /// <summary>
-    /// Loads the wall's segments. <c>GetWallAsync</c> does not include them, and a guest
-    /// viewing through a share link has no identity to query them with — in that case the
-    /// renderers simply fall back to the wall's single angle.
-    /// </summary>
-    private async Task LoadSegments()
-    {
-        try
-        {
-            _segments = await WallSegmentService.GetSegmentsAsync(WallId);
-        }
-        catch (Exception)
-        {
-            _segments = [];
-        }
     }
 
     /// <summary>
@@ -1590,7 +1587,9 @@ else
             // Per-panel edit: a hold's position shifts by parallax between panel photos, so a move must
             // not auto-flag boulders. "Changed" is a manual per-hold decision here (Mark modified /
             // Mark unchanged), surfaced by the panel editor's change-review overlay.
-            await WallService.UpdateHoldAsync(hold.Id, hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.IsOnKickboard, hold.ShapePoints, hold.Name, hold.Material, flagBouldersOnMove: false, handType: hold.HandType);
+            await WallService.UpdateHoldAsync(hold.Id, HoldEdit.FromEditorState(
+                hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.IsOnKickboard, hold.ShapePoints, hold.Name, hold.Material, hold.HandType,
+                flagBouldersOnMove: false));
         }
 
         foreach (var holdId in changes.Deleted)
@@ -1619,14 +1618,6 @@ else
 
         await WallService.UpdateWallAsync(_wall.Id, _wall.Name, _wall.Description, _wall.Angle);
         await ShowToast($"Fallback angle set to {_wall.Angle}°");
-    }
-
-    private async Task OnSegmentsSaved(List<WallSegment> segments)
-    {
-        _segments = segments;
-        await ShowToast(segments.Count == 0
-            ? "Segments cleared — the wall uses its single angle again"
-            : $"Saved {segments.Count} segment(s)");
     }
 
     private async Task OnBorderChanged(List<ShapePoint> points)

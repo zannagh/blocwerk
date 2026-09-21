@@ -1,0 +1,128 @@
+@using Blocwerk.Core.Entities
+
+@* THE renderer for a hold inside a `svg.hold-overlay` (viewBox 0 0 100 100). Every hold overlay in the
+   app goes through this one component, so a hold looks the same on the wall view, the wall editor, the
+   panel viewer, the panel stepper and the boulder pickers.
+
+   It owns exactly the three things that used to be re-derived in each of those files:
+     * polygon-vs-rect-vs-circle — a shaped hold draws as its polygon; a FOOT without a shape draws as
+       a rounded square; everything else as a circle,
+     * the foot shrink (a foot's radius is 0.7 of the stored one),
+     * turning normalized 0..1 coordinates into the 0-100 viewBox with two-decimal formatting.
+
+   Everything that legitimately differs per surface — the paint (fill/stroke/width/dash), the cursor and
+   pointer-events, and which pointer handlers exist at all — is a parameter. Nothing here decides how a
+   hold should LOOK; callers do, because selection, usage lensing, change review, staging and boulder
+   classification are their business.
+
+   Handlers are attached only when the caller actually supplies one: an unset EventCallback is dropped by
+   the render tree builder, so a read-only overlay (MultiPanelViewer) stays listener-free and the
+   stopPropagation flags below go with them. That matters — a stray stopPropagation on pointerdown would
+   silence viewport-gestures.js and the image would stop panning. *@
+
+@if (ShapePoints is { Count: >= 3 })
+{
+    <polygon points="@PolygonPoints()"
+             fill="@Fill" stroke="@Stroke" stroke-width="@StrokeWidth" stroke-dasharray="@Dash"
+             pointer-events="@PointerEvents" style="@Style"
+             @onclick="OnClick" @onclick:stopPropagation="OnClick.HasDelegate"
+             @onpointerdown="OnPointerDown" @onpointerdown:stopPropagation="OnPointerDown.HasDelegate"
+             @onmouseover="OnMouseOver" @onmouseout="OnMouseOut" />
+}
+else if (Foot)
+{
+    <rect x="@F((X - R / 100.0) * 100)" y="@F((Y - R / 100.0) * 100)"
+          width="@F(R * 2 / 100.0 * 100)" height="@F(R * 2 / 100.0 * 100)" rx="0.3"
+          fill="@Fill" stroke="@Stroke" stroke-width="@StrokeWidth" stroke-dasharray="@Dash"
+          pointer-events="@PointerEvents" style="@Style"
+          @onclick="OnClick" @onclick:stopPropagation="OnClick.HasDelegate"
+          @onpointerdown="OnPointerDown" @onpointerdown:stopPropagation="OnPointerDown.HasDelegate"
+          @onmouseover="OnMouseOver" @onmouseout="OnMouseOut" />
+}
+else
+{
+    <circle cx="@F(X * 100)" cy="@F(Y * 100)" r="@F(R)"
+            fill="@Fill" stroke="@Stroke" stroke-width="@StrokeWidth" stroke-dasharray="@Dash"
+            pointer-events="@PointerEvents" style="@Style"
+            @onclick="OnClick" @onclick:stopPropagation="OnClick.HasDelegate"
+            @onpointerdown="OnPointerDown" @onpointerdown:stopPropagation="OnPointerDown.HasDelegate"
+            @onmouseover="OnMouseOver" @onmouseout="OnMouseOut" />
+}
+
+@code {
+    /// <summary>The hold's normalized centre X (0..1) in its image's own space.</summary>
+    [Parameter] public double X { get; set; }
+
+    /// <summary>The hold's normalized centre Y (0..1).</summary>
+    [Parameter] public double Y { get; set; }
+
+    /// <summary>The hold's normalized radius (0..1). Shrunk to 0.7 when <see cref="Foot"/> is set.</summary>
+    [Parameter] public double Radius { get; set; }
+
+    /// <summary>
+    /// The hold's custom outline as offsets from its centre, or null for the plain shape. Three points
+    /// or more make a polygon; anything less falls back to the rect/circle below.
+    /// </summary>
+    [Parameter] public IReadOnlyList<ShapePoint>? ShapePoints { get; set; }
+
+    /// <summary>
+    /// Draw this hold as a foothold: a rounded square instead of a circle, at 0.7 of its radius. Set it
+    /// from <c>hold.Category == HoldCategory.Foot</c> on the surfaces that distinguish feet. A shaped
+    /// hold ignores it — its polygon is the hold's real outline either way.
+    /// </summary>
+    [Parameter] public bool Foot { get; set; }
+
+    /// <summary>The shape's fill, already decided by the caller (selection, usage, staging, …).</summary>
+    [Parameter] public string? Fill { get; set; }
+
+    /// <summary>The shape's outline colour, already decided by the caller.</summary>
+    [Parameter] public string? Stroke { get; set; }
+
+    /// <summary>Outline width in viewBox units, as the caller formatted it (callers that thin the
+    /// outline with zoom pass a finer-quantised value, so this stays a string).</summary>
+    [Parameter] public string? StrokeWidth { get; set; }
+
+    /// <summary>
+    /// The <c>stroke-dasharray</c> value. The app-wide convention is <c>"0.6 0.4"</c> for a virtual hold
+    /// — one that isn't on the photo at all — with staging and alignment adding their own patterns.
+    /// Passed straight through, so a caller that uses <c>string.Empty</c> and one that uses null keep
+    /// their current (equivalent) markup.
+    /// </summary>
+    [Parameter] public string? Dash { get; set; }
+
+    /// <summary>
+    /// The <c>pointer-events</c> PRESENTATION ATTRIBUTE, for the wall editor, which switches hit-testing
+    /// on the whole overlay per tool. Leave null elsewhere; a caller that needs it inside the style
+    /// attribute (see <see cref="Style"/>) puts it there instead, which is what wins in the cascade.
+    /// </summary>
+    [Parameter] public string? PointerEvents { get; set; }
+
+    /// <summary>
+    /// The inline style. It is load-bearing, not decoration: viewport-gestures.js hit-tests by COMPUTED
+    /// CSS CURSOR to decide whether a pointer-down is a pan or an interaction, so a surface that draws
+    /// non-interactive shapes over a pannable image passes <c>cursor: inherit; pointer-events: none;</c>
+    /// on purpose. Null leaves the attribute off entirely (a read-only overlay).
+    /// </summary>
+    [Parameter] public string? Style { get; set; }
+
+    /// <summary>Tap/click on the hold. Left unset the element gets no click listener at all.</summary>
+    [Parameter] public EventCallback<MouseEventArgs> OnClick { get; set; }
+
+    /// <summary>Pointer-down on the hold (starts a move drag). Unset means no listener — and, with it,
+    /// no stopPropagation, so the gesture stays available to the pan engine.</summary>
+    [Parameter] public EventCallback<PointerEventArgs> OnPointerDown { get; set; }
+
+    /// <summary>Pointer entering the hold (hover preview), and leaving it.</summary>
+    [Parameter] public EventCallback<MouseEventArgs> OnMouseOver { get; set; }
+
+    /// <summary>Pointer leaving the hold.</summary>
+    [Parameter] public EventCallback<MouseEventArgs> OnMouseOut { get; set; }
+
+    /// <summary>The drawn radius in viewBox units: the foot shrink applied, scaled into 0-100 space.</summary>
+    private double R => (Foot ? Radius * 0.7 : Radius) * 100;
+
+    private string PolygonPoints() =>
+        string.Join(" ", ShapePoints!.Select(sp => F((X + sp.Dx) * 100) + "," + F((Y + sp.Dy) * 100)));
+
+    private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+}

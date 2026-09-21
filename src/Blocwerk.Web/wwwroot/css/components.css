@@ -69,8 +69,7 @@
 /* Default to pan-y so a not-zoomed viewport lets the finger scroll the PAGE; viewport.js
    flips this to `none` (inline) the moment the content is zoomed in and it owns the gesture. */
 .photo-viewport,
-.picker-viewport,
-.schematic-viewport { touch-action: pan-y; overscroll-behavior: contain; }
+.picker-viewport { touch-action: pan-y; overscroll-behavior: contain; }
 .photo-viewport { height: 70vh; overflow: auto; -webkit-overflow-scrolling: touch; }
 
 /* Scroll anchoring OFF — deliberate, not a workaround. These viewports' scrollLeft/scrollTop
@@ -81,7 +80,6 @@
    (.panel-step-viewport lives in pages.css; the rule is here with its siblings on purpose.) */
 .photo-viewport,
 .picker-viewport,
-.schematic-viewport,
 .panel-step-viewport { overflow-anchor: none; }
 
 /* Tool cursors are CLASSES, never `style="cursor: ..."`. viewport.js writes INLINE styles on
@@ -139,8 +137,7 @@
 .wall-fold .wall-detail-card > .detail-header { padding-top: 10px; }
 .wall-fold .wall-detail-card > .view-toggle { margin-bottom: 0; padding-bottom: 8px; }
 .wall-fold .wall-photo-container { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
-.wall-fold .photo-viewport,
-.wall-fold .schematic-viewport { flex: 1 1 0; height: auto; min-height: 0; }
+.wall-fold .photo-viewport { flex: 1 1 0; height: auto; min-height: 0; }
 .wall-fold .editor-toolbar { border-radius: 0; }
 .wall-fold .editor-bottom > :last-child { border-radius: 0; }
 /* --zoom is written by JS (viewport.js) and by nothing else. Razor only ever renders
@@ -179,18 +176,6 @@
    zooms (viewport-gestures.js isInteractiveTarget). Editors, which DO drag holds, are unaffected. */
 .boulder-detail .hold-overlay { pointer-events: none; }
 .detecting-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--overlay-bg); display: flex; align-items: center; justify-content: center; color: white; font-size: 1.1rem; font-weight: 600; }
-
-/* ========== WallSchematicView ========== */
-
-.schematic-container {
-    background: var(--bg-surface); border-radius: 12px;
-    box-shadow: 0 2px 8px var(--shadow-md); overflow: hidden;
-}
-.zoom-controls { display: flex; gap: 4px; padding: 8px 12px; background: var(--topbar-bg); }
-.schematic-viewport { height: 70vh; overflow: auto; -webkit-overflow-scrolling: touch; }
-.schematic-svg { display: block; }
-.schematic-viewport > .schematic-svg { width: calc(var(--zoom, 1) * 100%); min-width: 100%; }
-.schematic-info { text-align: center; padding: 8px; font-size: 0.8rem; color: var(--text-secondary); }
 
 /* ========== Hold + wall colours ==========
    The foot (orange) and top (purple) tokens every hold-related surface uses. Kept in sync
@@ -295,9 +280,6 @@
     width: calc(var(--zoom, 1) * 100%); min-width: 100%; }
 .photo-picker .wall-photo { width: 100%; display: block; }
 .photo-picker .hold-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
-.schematic-picker { overflow: hidden; background: var(--wall-bg); user-select: none;
-    width: calc(var(--zoom, 1) * 100%); min-width: 100%; }
-.schematic-picker .schematic-svg { width: 100%; display: block; }
 
 /* ========== Background (wall photo) visibility ==========
    --wall-dim (0..1) and .bw-wall-focus are set on <html> by wwwroot/js/wall-dim.js
@@ -326,23 +308,55 @@ img.wall-photo {
     border-bottom: 1px solid var(--border);
 }
 .wall-dim-bar > svg { flex: 0 0 auto; opacity: 0.7; }
-.wall-dim-bar input[type="range"] { flex: 1 1 auto; min-width: 0; height: 28px; accent-color: var(--accent); }
+
+/* The range input is styled from tokens in ALL THREE theme states rather than left to
+   the UA: a native slider follows `color-scheme`, which used to be `light dark` (OS
+   preference) and so rendered a light track inside dark chrome whenever the site theme
+   was set explicitly. app.css now pins color-scheme per theme AND exposes --range-track
+   / --range-thumb, and every colour below comes from a token defined on bare :root. */
+.wall-dim-bar input[type="range"] {
+    flex: 1 1 auto; min-width: 0; height: 28px; margin: 0;
+    -webkit-appearance: none; appearance: none;
+    background: transparent; cursor: pointer;
+    accent-color: var(--accent);
+}
+.wall-dim-bar input[type="range"]::-webkit-slider-runnable-track {
+    height: 4px; border-radius: var(--r-pill); background: var(--range-track);
+}
+.wall-dim-bar input[type="range"]::-moz-range-track {
+    height: 4px; border-radius: var(--r-pill); background: var(--range-track);
+}
+.wall-dim-bar input[type="range"]::-moz-range-progress {
+    height: 4px; border-radius: var(--r-pill); background: var(--range-thumb);
+}
+.wall-dim-bar input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 16px; height: 16px; margin-top: -6px; /* centres the 16px thumb on the 4px track */
+    border-radius: 50%; border: 2px solid var(--bg-surface);
+    background: var(--range-thumb);
+    box-shadow: 0 1px 3px var(--shadow-md);
+}
+.wall-dim-bar input[type="range"]::-moz-range-thumb {
+    width: 16px; height: 16px; box-sizing: border-box;
+    border-radius: 50%; border: 2px solid var(--bg-surface);
+    background: var(--range-thumb);
+    box-shadow: 0 1px 3px var(--shadow-md);
+}
+.wall-dim-bar input[type="range"]:focus { outline: none; }
+.wall-dim-bar input[type="range"]:focus-visible::-webkit-slider-thumb {
+    box-shadow: 0 0 0 3px var(--accent-soft), 0 0 0 4px var(--accent);
+}
+.wall-dim-bar input[type="range"]:focus-visible::-moz-range-thumb {
+    box-shadow: 0 0 0 3px var(--accent-soft), 0 0 0 4px var(--accent);
+}
+
 .wall-dim-focus {
     flex: 0 0 auto; padding: 6px 14px; min-height: 30px;
     border: 1px solid var(--border); background: var(--bg-surface); color: var(--text);
     border-radius: var(--r-pill); font-size: 0.75rem; font-weight: 600; cursor: pointer;
 }
+.wall-dim-focus:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 :root.bw-wall-focus .wall-dim-focus { background: var(--accent); border-color: var(--accent); color: #fff; }
-
-/* Inside the dark editor/picker chrome the bar adopts the surrounding toolbar look. */
-.zoom-bar + .wall-dim-bar,
-.photo-viewport + .wall-dim-bar {
-    background: #22223a; color: rgba(255,255,255,0.6); border-bottom: none;
-}
-.zoom-bar + .wall-dim-bar .wall-dim-focus,
-.photo-viewport + .wall-dim-bar .wall-dim-focus {
-    background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.25); color: #fff;
-}
 
 /* ========== GradePicker ========== */
 
@@ -360,45 +374,8 @@ img.wall-photo {
 }
 
 /* ========== Wall segments ==========
-   Segment editor + roster. Colours are design tokens so the panel matches both themes;
-   the SVG overlays stay fixed hues from WallSegmentPalette. */
-.segment-editor { display: flex; flex-direction: column; gap: 10px; }
-.segment-editor-bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.segment-editor .segment-viewport { height: 46vh; min-height: 240px; border-radius: var(--r-md); overflow: auto; }
-.segment-hint { font-size: 0.78rem; color: var(--text-secondary); margin: 0; }
-.segment-empty { font-size: 0.82rem; color: var(--text-secondary); margin: 0; }
-
-.segment-list { display: flex; flex-direction: column; gap: 8px; }
-.segment-row {
-    display: flex; flex-direction: column; gap: 8px; padding: 10px;
-    border: 1px solid var(--border); border-left-width: 4px; border-radius: var(--r-md);
-    background: var(--bg-surface-alt); cursor: pointer;
-}
-.segment-row.active { border-color: var(--accent); background: var(--accent-soft); }
-.segment-row-head { display: flex; align-items: center; gap: 8px; }
-.segment-badge {
-    flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%; color: #fff;
-    font-size: 0.75rem; font-weight: 700; display: flex; align-items: center; justify-content: center;
-}
-.segment-name {
-    flex: 1 1 auto; min-width: 0; padding: 5px 8px; font-size: 0.9rem; font-weight: 600;
-    border: 1px solid var(--border); border-radius: var(--r-sm);
-    background: var(--input-bg); color: var(--text);
-}
-.segment-order { display: flex; gap: 4px; flex: 0 0 auto; }
-.segment-row-body { display: flex; flex-direction: column; gap: 6px; }
-
-/* Segment type (Wall / Floor). Shares the facing-toggle look; a Floor is trimmed from the schematic. */
-.segment-kind { display: flex; gap: 4px; }
-.kind-btn {
-    flex: 1 1 0; padding: 5px 8px; font-size: 0.78rem; font-weight: 600;
-    border: 1px solid var(--border); border-radius: var(--r-sm);
-    background: var(--input-bg); color: var(--text-secondary); cursor: pointer;
-}
-.kind-btn:hover { border-color: var(--accent); color: var(--text); }
-.kind-btn.active { border-color: var(--accent); background: var(--accent-soft); color: var(--text-heading); }
-
-/* Collapsible wall-segment settings: clutter-free by default, open to adjust the projection. */
+   Collapsible wall-shape settings: clutter-free by default, open to adjust the wall border
+   and its fallback angle. Colours are design tokens so the panel matches both themes. */
 .segment-settings > summary {
     cursor: pointer; font-weight: 600; color: var(--text-heading);
     padding: 8px 0; list-style: revert; display: flex; align-items: center; gap: 8px;
@@ -407,35 +384,7 @@ img.wall-photo {
     font-size: 0.72rem; font-weight: 600; color: var(--text-secondary);
     background: var(--accent-soft); border-radius: 999px; padding: 1px 8px;
 }
-.segment-angle-label { font-size: 0.8rem; font-weight: 600; color: var(--text-heading); }
 .segment-angle-word { font-weight: 400; color: var(--text-secondary); }
-.segment-warn { font-size: 0.72rem; color: var(--warning-text); }
-.segment-vertices { display: flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--text-secondary); }
-
-/* Facing (yaw) control: a plain-language 3-way toggle over WallSegment.Yaw, with the raw
-   degrees tucked behind "Fine-tune". Tokenised so it matches both themes. */
-.segment-facing { display: flex; flex-direction: column; gap: 6px; }
-.segment-facing-label { font-size: 0.8rem; font-weight: 600; color: var(--text-heading); }
-.facing-toggle { display: flex; gap: 4px; flex-wrap: wrap; }
-.facing-btn {
-    flex: 1 1 0; min-width: 84px; padding: 5px 8px; font-size: 0.78rem; font-weight: 600;
-    border: 1px solid var(--border); border-radius: var(--r-sm);
-    background: var(--input-bg); color: var(--text-secondary); cursor: pointer;
-}
-.facing-btn:hover { border-color: var(--accent); color: var(--text); }
-.facing-btn.active { border-color: var(--accent); background: var(--accent-soft); color: var(--text-heading); }
-.facing-advanced-toggle {
-    align-self: flex-start; padding: 0; font-size: 0.74rem; font-weight: 600;
-    background: none; border: none; color: var(--accent); cursor: pointer; text-decoration: underline;
-}
-.facing-fine { display: flex; flex-direction: column; gap: 4px; }
-.facing-fine-label { font-size: 0.76rem; color: var(--text-secondary); }
-
-/* Live folded preview inside the segment editor: the shared schematic, size-capped so it
-   sits under the drawing surface without dominating the settings panel. */
-.segment-preview { display: flex; flex-direction: column; gap: 4px; }
-.segment-preview-label { font-size: 0.76rem; font-weight: 600; color: var(--text-secondary); }
-.segment-preview .schematic-viewport { height: 34vh; min-height: 200px; }
 
 /* ============================================================================
    New boulder-setting experience: experience toggle, radial classify overlay.
@@ -547,3 +496,268 @@ img.wall-photo {
 }
 .classify-close:hover { color: var(--text-heading); border-color: var(--text-secondary); }
 .classify-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ========== Unified toolbar (UnifiedToolbar.razor) ==========
+   One toolbar for every hold surface. Two things it must do that the old hand-written bars did not:
+
+   1. Tool / Toggle / Command LOOK different. Every control used to wear .tool-btn, so a mode, a view
+      filter and a one-shot action were indistinguishable — the single most common complaint.
+   2. The contextual row has a FIXED height and is always rendered. The old per-tool .option-bar
+      stack sat in flow below the image and changed height per tool, so the image resized under the
+      cursor on every mode switch. */
+
+.editor-shell { display: flex; flex-direction: column; min-width: 0; }
+.editor-stage { display: flex; flex-direction: column; min-width: 0; }
+
+/* The height-locked wall layout sizes the viewport through a chain of flex children; the two
+   wrappers above sit in the middle of it, so they have to carry the chain on. */
+.wall-fold .editor-shell,
+.wall-fold .editor-stage { flex: 1 1 0; min-height: 0; }
+
+.bw-toolbar { display: flex; flex-direction: column; min-width: 0; }
+.bw-toolbar-bar { border-radius: 10px 10px 0 0; }
+
+/* Fixed height is the whole point: switching tools must never move the image. Rows wider than the
+   bar scroll inside it rather than wrapping, which would change the height again.
+
+   Scrolling silently is the trap: on a phone the Add row's "Color:" select simply ran off the right
+   edge and read as clipped, because a touch scrollbar is invisible at rest. The four layered
+   gradients are the classic scroll-shadow: the two `local` ones paint the row's own background and
+   travel WITH the content, so they cover the two `scroll` shadows pinned to the edges — a shadow is
+   therefore visible exactly while there is something to scroll to in that direction, and disappears
+   at each end. No JS, no state, and nothing to keep in sync. The shadows are LIGHT, not the usual
+   dark: the row's ground is near-black, so a dark shadow on it is invisible — which is the whole
+   failure being fixed. */
+.bw-toolbar-row {
+    height: 56px;
+    box-sizing: border-box;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior: contain;
+    background:
+        linear-gradient(to right, #22223a 60%, rgba(34, 34, 58, 0)) left center / 24px 100% no-repeat local,
+        linear-gradient(to left, #22223a 60%, rgba(34, 34, 58, 0)) right center / 24px 100% no-repeat local,
+        radial-gradient(farthest-side at 0 50%, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0)) left center / 20px 100% no-repeat scroll,
+        radial-gradient(farthest-side at 100% 50%, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0)) right center / 20px 100% no-repeat scroll,
+        #22223a;
+}
+
+/* A thin, always-drawn scrollbar so the row reads as a scroller on a trackpad too (macOS hides the
+   overlay one at rest, which is what made the clipped row look broken rather than scrollable). */
+.bw-toolbar-row { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.28) transparent; }
+.bw-toolbar-row::-webkit-scrollbar { height: 5px; }
+.bw-toolbar-row::-webkit-scrollbar-track { background: transparent; }
+.bw-toolbar-row::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.28); border-radius: 999px; }
+
+.bw-toolbar-row-inner { min-height: 100%; display: flex; align-items: stretch; }
+.bw-toolbar-row-inner > .option-bar { flex: 1; flex-wrap: nowrap; white-space: nowrap; align-items: center; }
+.bw-toolbar-row-inner .option-hint { white-space: normal; }
+
+/* Leave the last control clear of the right-hand shadow, so a control is never half-shaded at rest. */
+.bw-toolbar-row-inner > .option-bar { padding-right: 20px; }
+
+/* ---- the three kinds ---- */
+.tb-btn {
+    position: relative;
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid transparent;
+    background: none; color: white;
+    padding: 6px; border-radius: 6px; cursor: pointer;
+    min-width: 34px; min-height: 34px; justify-content: center;
+}
+.tb-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.tb-icon { display: inline-flex; }
+.tb-label { display: none; }
+
+/* TOOL — a radio. Raised when idle, pressed/inset when it is the tool in effect. */
+.tb-tool { background: rgba(255,255,255,0.1); }
+.tb-tool:hover:not(:disabled) { background: rgba(255,255,255,0.2); }
+.tb-tool.is-active { background: var(--accent); box-shadow: inset 0 2px 5px rgba(0,0,0,0.45); }
+.tb-tool.is-active.is-danger { background: #cc2244; }
+
+/* TOGGLE — a checkbox. Always outlined so it reads as a switch, with a tick box that fills when on. */
+.tb-toggle { border-color: rgba(255,255,255,0.35); border-radius: 999px; padding-right: 10px; }
+.tb-toggle .tb-mark {
+    width: 11px; height: 11px; border-radius: 3px;
+    border: 1px solid rgba(255,255,255,0.55);
+    flex: 0 0 auto;
+}
+.tb-toggle.is-active { border-color: var(--accent); color: #fff; background: rgba(255,255,255,0.06); }
+.tb-toggle.is-active .tb-mark { background: var(--accent); border-color: var(--accent); }
+.tb-toggle:not(.is-active) .tb-icon { opacity: 0.5; }
+.tb-toggle:hover:not(:disabled) { background: rgba(255,255,255,0.12); }
+
+/* COMMAND — fires and returns, so it never takes an active state and wears no chrome at rest. */
+.tb-command { background: none; opacity: 0.85; }
+.tb-command:hover:not(:disabled) { background: rgba(255,255,255,0.16); opacity: 1; }
+.tb-command:active:not(:disabled) { background: rgba(255,255,255,0.28); }
+.tb-command.is-danger { color: #ff8095; }
+
+.tb-badge {
+    position: absolute; top: -3px; right: -3px;
+    min-width: 15px; height: 15px; padding: 0 3px;
+    border-radius: 999px; background: var(--status-review, #e8a33d); color: #1a1a2e;
+    font-size: 0.62rem; font-weight: 700; line-height: 15px; text-align: center;
+}
+
+/* ---- sidebar placement (desktop tier only) ----
+   A 340px-class rail beside the photo only makes sense where there is width to spend, so the whole
+   block is gated on the SAME condition the wall page's right-hand rail uses (pages.css): the 900px
+   breakpoint AND the --tier marker, so the manual wide/compact toggle keeps meaning something here
+   too. Below that the rules simply never apply and the base .bw-toolbar styles — a horizontal bar —
+   are what is left, which is exactly the fallback we want. The member's preference is not
+   overridden; it is only spent where it fits. */
+@media (min-width: 900px) {
+  @container style(--tier: desktop) {
+    .editor-shell.with-sidebar { flex-direction: row-reverse; align-items: stretch; }
+    .editor-shell.with-sidebar > .editor-stage { flex: 1 1 auto; min-width: 0; }
+    .editor-shell.with-sidebar > .bw-toolbar { flex: 0 0 auto; width: 232px; max-width: 45vw; overflow: hidden; }
+
+    .bw-toolbar.placement-sidebar { background: var(--topbar-bg); border-radius: 0 10px 10px 0; }
+    .bw-toolbar.placement-sidebar .bw-toolbar-bar { flex-direction: column; align-items: stretch; border-radius: 0; }
+    .bw-toolbar.placement-sidebar .editor-toolbar { min-width: 0; flex-wrap: nowrap; }
+    .bw-toolbar.placement-sidebar .toolbar-right { flex-direction: column; align-items: stretch; gap: 2px; min-width: 0; flex-wrap: nowrap; }
+    .bw-toolbar.placement-sidebar .toolbar-sep { width: auto; height: 1px; margin: 4px 0; }
+    .bw-toolbar.placement-sidebar .tb-btn { justify-content: flex-start; padding: 5px 8px; min-width: 0; overflow: hidden; }
+    .bw-toolbar.placement-sidebar .tb-label {
+        display: block; order: 3; flex: 1 1 auto; min-width: 0;
+        font-size: 0.76rem; line-height: 1.15; text-align: left;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .bw-toolbar.placement-sidebar .tb-badge { position: static; order: 4; flex: 0 0 auto; margin-left: 4px; }
+
+    /* The edit FAB (pages.css) is absolutely positioned over the top-right corner of the photo card
+       and hangs ~17px into the editor. The TOP BAR pays for it with padding-right (app.css); a
+       column has to pay for it at the top instead, because the rail's opaque ground would otherwise
+       swallow the bottom half of the X. Margin, not padding: the ground has to start below it. */
+    .editor-shell.with-sidebar > .bw-toolbar { margin-top: 26px; }
+
+    /* The rail is a SCROLLER — nineteen tools have never fitted a laptop's height and never will —
+       so everything the horizontal row does to advertise that has to be said again vertically, or
+       the list just reads as sliced off. That is the same "scrolling silently" trap documented on
+       .bw-toolbar-row above, turned 90°: the two `local` gradients travel with the content and
+       cover the two `scroll` ones pinned to the edges, so a shadow shows exactly while there is
+       something to scroll to that way. The cap follows the WINDOW rather than a flat 60vh, so a
+       short window still gives the list every pixel it has; the max() keeps it usable if the
+       window is shorter than the chrome. */
+    .bw-toolbar.placement-sidebar .bw-toolbar-bar {
+        max-height: max(220px, calc(100dvh - 280px));
+        min-height: 0;
+        /* grow AND shrink: on the height-locked wall layout the rail is stretched to the fold, and
+           whatever does not fit has to come out of the BUTTON LIST — never out of the contextual
+           row, which is rigid and was getting its last line clipped by the rail's overflow. */
+        flex: 1 1 auto;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        background:
+            linear-gradient(to bottom, var(--topbar-bg) 60%, transparent) top center / 100% 24px no-repeat local,
+            linear-gradient(to top, var(--topbar-bg) 60%, transparent) bottom center / 100% 24px no-repeat local,
+            radial-gradient(farthest-side at 50% 0, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0)) top center / 100% 20px no-repeat scroll,
+            radial-gradient(farthest-side at 50% 100%, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0)) bottom center / 100% 20px no-repeat scroll,
+            var(--topbar-bg);
+    }
+
+    /* 232px is too narrow to scroll a row of controls SIDEWAYS: "Material: PU" simply reads as cut
+       off, which is the defect the horizontal treatment exists to prevent. In a column the row
+       wraps and scrolls downwards instead — which is what its 96px (against the top bar's 56px)
+       was always for — and carries the same scroll shadows. */
+    .bw-toolbar.placement-sidebar .bw-toolbar-row {
+        /* Taller than the top bar's 56px because the controls wrap here instead of scrolling
+           sideways; still FIXED, so switching tools never moves the photo. */
+        height: 112px;
+        flex: 0 0 auto;
+        border-radius: 0 0 10px 0;
+        overflow-x: hidden;
+        overflow-y: auto;
+        background:
+            linear-gradient(to bottom, #22223a 60%, rgba(34, 34, 58, 0)) top center / 100% 20px no-repeat local,
+            linear-gradient(to top, #22223a 60%, rgba(34, 34, 58, 0)) bottom center / 100% 20px no-repeat local,
+            radial-gradient(farthest-side at 50% 0, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0)) top center / 100% 16px no-repeat scroll,
+            radial-gradient(farthest-side at 50% 100%, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0)) bottom center / 100% 16px no-repeat scroll,
+            #22223a;
+    }
+
+    .bw-toolbar.placement-sidebar .bw-toolbar-row-inner { align-items: flex-start; }
+    .bw-toolbar.placement-sidebar .bw-toolbar-row-inner > .option-bar {
+        flex-wrap: wrap;
+        white-space: normal;
+        padding-right: 8px;
+    }
+
+    /* macOS hides the overlay scrollbar at rest, which is exactly what made the clipped list read
+       as broken rather than scrollable. Same thin always-drawn bar the row already uses. */
+    .bw-toolbar.placement-sidebar .bw-toolbar-bar,
+    .bw-toolbar.placement-sidebar .bw-toolbar-row { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.28) transparent; }
+    .bw-toolbar.placement-sidebar .bw-toolbar-bar::-webkit-scrollbar,
+    .bw-toolbar.placement-sidebar .bw-toolbar-row::-webkit-scrollbar { width: 5px; }
+    .bw-toolbar.placement-sidebar .bw-toolbar-bar::-webkit-scrollbar-track,
+    .bw-toolbar.placement-sidebar .bw-toolbar-row::-webkit-scrollbar-track { background: transparent; }
+    .bw-toolbar.placement-sidebar .bw-toolbar-bar::-webkit-scrollbar-thumb,
+    .bw-toolbar.placement-sidebar .bw-toolbar-row::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.28); border-radius: 999px; }
+
+    /* WallPhotoEditor emits docked-bottom for EITHER placement (the phone needs the dock whatever the
+       preference says), and the min-width:721px block below un-docks it on a desktop with the top
+       bar's rounding. A column is rounded on the other side, so take the corners back — three
+       classes, so source order between the two blocks cannot decide it. */
+    .bw-toolbar.docked-bottom.placement-sidebar { border-radius: 0 10px 10px 0; }
+    .bw-toolbar.docked-bottom.placement-sidebar .editor-toolbar { border-radius: 0; }
+  }
+}
+
+/* ---- bottom-docked placement (the phone's editing bar, which replaces the tab bar) ----
+   app.css fixes .docked-bottom to the viewport bottom and reserves a flat 180px on the .wall-page
+   scroller for it. On a DESKTOP that produced the dead strip between the image card and the bar: the
+   card is width-bounded by the content column, so it stops well short of a full-width bar pinned to
+   the bottom of a 900px viewport, and the strip between them is just page background. A phone needs
+   the thumb-reachable dock; a desktop does not, so above the phone tier the bar returns to normal
+   flow at the top of the editor card — the same place, and the same shape, as placement-top. */
+@media (min-width: 721px) {
+    .bw-toolbar.docked-bottom {
+        position: static;
+        border-radius: 10px 10px 0 0;
+        border-top: 0;
+        padding-bottom: 0;
+        max-height: none;
+        overflow: visible;
+    }
+    .bw-toolbar.docked-bottom .editor-toolbar { border-radius: 10px 10px 0 0; }
+
+    /* Nothing is fixed any more, so the clearance app.css reserves for it is pure dead scroll. */
+    .app-shell:has(.bw-toolbar.docked-bottom) .wall-page { padding-bottom: 0; }
+
+    /* Undocked it sits under the floating edit pencil again, so it takes the same right-hand
+       reservation the non-docked bar has (app.css, :not(.docked-bottom)). */
+    .wall-main .wall-photo-container .bw-toolbar.docked-bottom .editor-toolbar { padding-right: 54px; }
+}
+
+/* On the phone the bar stays docked, but twenty-odd controls wrapped to three rows and ate a quarter
+   of the screen — space the photo needs far more. Tighter chrome, same hit targets at 30px. */
+@media (max-width: 720px) {
+    .bw-toolbar.docked-bottom .editor-toolbar { padding: 6px 8px; min-height: 0; gap: 6px; }
+    .bw-toolbar.docked-bottom .toolbar-right { gap: 2px; }
+    .bw-toolbar.docked-bottom .tb-btn { min-width: 30px; min-height: 30px; padding: 4px; }
+    .bw-toolbar.docked-bottom .tb-icon svg { width: 18px; height: 18px; }
+    .bw-toolbar.docked-bottom .toolbar-sep { height: 16px; }
+
+    /* At phone width a single nowrap line is simply too narrow — the Add row's "Color:" select ran
+       off the right edge and read as broken, even though it scrolled. Here the row WRAPS instead,
+       at a taller but still FIXED height, so nothing is truncated and switching tools still cannot
+       reflow the image. A row that needs more than two lines (the selected-hold controls) scrolls
+       vertically inside that height, with the same edge shadows to say so. */
+    .bw-toolbar-row { height: 84px; overflow-y: auto; }
+    .bw-toolbar-row-inner > .option-bar {
+        flex-wrap: wrap; white-space: normal; align-content: center;
+        gap: 6px 8px; padding: 6px 8px; padding-right: 20px;
+    }
+
+    /* Groups wrap too, or a single long one (the pipette's six property ticks) is itself wider than
+       the screen and the wrap above can do nothing about it. Their buttons keep their labels on one
+       line at a tighter size, which is what actually makes the six fit across a 390px phone. */
+    .bw-toolbar-row-inner .option-group { flex-wrap: wrap; gap: 4px; }
+    .bw-toolbar-row-inner .opt-btn { padding: 3px 7px; font-size: 0.75rem; white-space: nowrap; }
+    .bw-toolbar-row-inner .option-bar > label,
+    .bw-toolbar-row-inner .option-group > label { font-size: 0.78rem; }
+}
+
+.legend-dot { display: inline-flex; align-items: center; gap: 0.3rem; font-style: normal; }
+.legend-swatch { width: 0.7rem; height: 0.7rem; border-radius: 50%; display: inline-block; flex: 0 0 auto; }

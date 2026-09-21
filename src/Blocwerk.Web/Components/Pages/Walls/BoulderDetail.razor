@@ -26,6 +26,11 @@
 else
 {
     <div class="boulder-detail">
+        @* Left column on the desktop tier: everything that describes THIS boulder on the wall —
+           header, notices, view toggle, banners and the photo itself. Both column wrappers are
+           display:contents on the phone tier, so they are absent from the layout there and the
+           page stays the single stack it has always been. *@
+        <div class="boulder-photo-col">
         <div class="page-header">
             @{ var backUrl = !string.IsNullOrEmpty(ShareToken) ? $"/walls/{WallId}/shared/{ShareToken}?view=boulders" : $"/walls/{WallId}?view=boulders"; }
             <a href="@backUrl" class="back-link">&larr; Back to boulder list</a>
@@ -163,9 +168,7 @@ else
             </div>
         }
 
-        @* The Photo/Schematic switch was removed; _viewMode stays in code (defaults to Photo) so the
-           boulder photo renders as before and the schematic view remains reachable programmatically.
-           The historic Then/Now toggle is a separate feature and keeps its own view-toggle. *@
+        @* The historic Then/Now toggle is the page's only view switch. *@
         @if (CanViewHistoric)
         {
             @* Both states are rendered, with the active one marked. A single button labelled with the
@@ -207,118 +210,113 @@ else
             </div>
         }
 
-        @if (_viewMode == ViewMode.Photo)
+        <WallDimControl />
+        @if (HistoricHoldsMissing > 0)
         {
-            <WallDimControl />
-            @if (HistoricHoldsMissing > 0)
+            @* Fix: a partial translation used to be silent. Some of the boulder's holds have no
+               row at the generation on screen (they were added later, or their lineage was never
+               recorded), so the overlay is genuinely incomplete — say so rather than letting a
+               climber read a start or top that isn't drawn as "not part of the boulder". *@
+            @* The first number is BoulderHolds.Count - HistoricHoldsMissing, NOT _renderHolds.Count:
+               several of the boulder's holds can converge on one older row, so the rendered list is
+               SHORTER than the holds it accounts for and "3 of 8 ... the other 1" read as broken
+               arithmetic. Subtracting the genuine misses makes the two numbers always sum to M.
+               No "switch to Now" advice here either: for a boulder whose holds are spread over
+               several generations "Now" can draw FEWER holds — sometimes none — so the tip made
+               the very situation it was offered for worse. *@
+            <p class="boulder-outdated-note" role="status">
+                Only @(_boulder.BoulderHolds.Count - HistoricHoldsMissing) of this boulder's
+                @_boulder.BoulderHolds.Count holds can be shown on the wall as it was then — the other
+                @HistoricHoldsMissing were set on holds that aren't on these photos.
+            </p>
+        }
+        @if (UsingMultiPanel)
+        {
+            @if (BoulderOnOutdatedPanel)
             {
-                @* Fix: a partial translation used to be silent. Some of the boulder's holds have no
-                   row at the generation on screen (they were added later, or their lineage was never
-                   recorded), so the overlay is genuinely incomplete — say so rather than letting a
-                   climber read a start or top that isn't drawn as "not part of the boulder". *@
-                @* The first number is BoulderHolds.Count - HistoricHoldsMissing, NOT _renderHolds.Count:
-                   several of the boulder's holds can converge on one older row, so the rendered list is
-                   SHORTER than the holds it accounts for and "3 of 8 ... the other 1" read as broken
-                   arithmetic. Subtracting the genuine misses makes the two numbers always sum to M.
-                   No "switch to Now" advice here either: for a boulder whose holds are spread over
-                   several generations "Now" can draw FEWER holds — sometimes none — so the tip made
-                   the very situation it was offered for worse. *@
                 <p class="boulder-outdated-note" role="status">
-                    Only @(_boulder.BoulderHolds.Count - HistoricHoldsMissing) of this boulder's
-                    @_boulder.BoulderHolds.Count holds can be shown on the wall as it was then — the other
-                    @HistoricHoldsMissing were set on holds that aren't on these photos.
+                    Some of this boulder's holds are on a panel awaiting update.
                 </p>
             }
-            @if (UsingMultiPanel)
-            {
-                @if (BoulderOnOutdatedPanel)
-                {
-                    <p class="boulder-outdated-note" role="status">
-                        Some of this boulder's holds are on a panel awaiting update.
-                    </p>
-                }
-                @* Big wall: show the panel holding most of the boulder's holds and let the user
-                   step to the neighbouring panels that carry its other holds. *@
-                @* @key on a DATA EPOCH, never on the user's intent. MultiPanelViewer loads its panel
-                   and its holds in OnInitializedAsync and in its own GoToAsync ONLY — it has no
-                   OnParametersSetAsync — and `UsingMultiPanel` stays true across a Then/Now toggle, so
-                   Blazor would otherwise RETAIN the instance and keep today's photo while
-                   HighlightedHoldIds switched to the other generation's ids: zero overlap, boulder
-                   invisible. A changed key forces a fresh instance that reloads from the StartCol/
-                   StartRow LoadPanelData just recomputed.
-                   Keyed on _viewEpoch and NOT on (_showHistoric, _historicGeneration) because
-                   ShowGenerationAsync sets _showHistoric SYNCHRONOUSLY and then awaits: ComponentBase's
-                   IHandleEvent renders at that first yield, so an intent-based key changed while
-                   _livePanels/_startPanelCol/_holdsByPanel were still the OLD ones. The viewer was then
-                   re-created TOO EARLY, cached the old panel and old holds, and — the key being
-                   unchanged once the load finished — was retained for good. That is the same outage the
-                   key was added to prevent, one render earlier. _viewEpoch moves only as the LAST
-                   statement of LoadPanelData, so the key means "new data is in place", not "the user
-                   intends a change". Deliberately a key rather than an OnParametersSetAsync inside the
-                   viewer: that would re-fetch on every unrelated parameter change and fight GoToAsync's
-                   panel position, and it would reach WallDetail's usage too. BoulderId stays in the key
-                   for the same reason as before: this page is retained across a navigation between two
-                   boulders on the same route template. *@
-                <MultiPanelViewer @key="(BoulderId, _viewEpoch)"
-                                  WallId="WallId" ShareToken="@ShareToken" Panels="_livePanels"
-                                  StartCol="_startPanelCol" StartRow="_startPanelRow"
-                                  ArrowMode="MultiPanelViewer.ArrowDisplayMode.HoldsOnly"
-                                  HoldsByPanel="_holdsByPanel"
-                                  HoldsProvider="LoadPanelHoldsAsync"
-                                  HighlightedHoldIds="_highlightedHoldIds"
-                                  FootHoldIds="FootHoldIds"
-                                  HoldColor="BoulderHoldColorOf"
-                                  HighlightedPanelIds="_highlightedPanelIds"
-                                  EnableSwipe="true"
-                                  HistoricMode="_showHistoric"
-                                  LensOverlay="true" />
-            }
-            else
-            {
-                @* Zoom geometry is owned by JS via `--zoom` (wwwroot/js/viewport.js). *@
-                <div class="photo-viewport photo-section@(_frame != null ? " bw-framed" : "")" @ref="_photoViewportRef">
-                    @* data-lens-overlay marks this editor so the long-press magnifier bakes the marked-hold
-                       overlay into the lens — boulder detail only; the wall view's editor is never marked. *@
-                    <div class="photo-editor" data-lens-overlay="true">
-                        <img src="@ResponsiveImage.Initial(PhotoUrl)" data-bw-res alt="Wall" class="wall-photo" />
-                        <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
-                            @* The "feet of one colour only" rule is shown as an info banner above the
-                               image, not by painting every wall hold of that colour. Only the boulder's
-                               own holds (including dedicated orange footholds) are drawn here. *@
-                            @* _renderHolds, not the boulder's raw holds: in the historic view they are
-                               the SAME holds translated to the generation on screen. *@
-                            @foreach (var bh in _renderHolds)
-                            {
-                                @* A virtual hold isn't visible on the photo: dash its outline, as the
-                                   pickers and MultiPanelViewer do, so it doesn't read as a real hold. *@
-                                var dash = bh.Hold.IsVirtual ? "0.6 0.4" : null;
-                                @if (bh.Hold.ShapePoints is { Count: >= 3 })
-                                {
-                                    <polygon @key="bh.HoldId" points="@ShapePolygon(bh.Hold)"
-                                             fill="@BoulderHoldColors.FillFor(bh.Type, bh.Usage)"
-                                             stroke="@BoulderHoldColors.Stroke(bh.Type)" stroke-width="0.5"
-                                             stroke-dasharray="@dash" />
-                                }
-                                else
-                                {
-                                    <circle @key="bh.HoldId" cx="@F(bh.Hold.X * 100)" cy="@F(bh.Hold.Y * 100)"
-                                            r="@F(bh.Hold.Radius * 100)"
-                                            fill="@BoulderHoldColors.FillFor(bh.Type, bh.Usage)"
-                                            stroke="@BoulderHoldColors.Stroke(bh.Type)" stroke-width="0.5"
-                                            stroke-dasharray="@dash" />
-                                }
-                            }
-                        </svg>
-                    </div>
-                </div>
-            }
+            @* Big wall: show the panel holding most of the boulder's holds and let the user
+               step to the neighbouring panels that carry its other holds. *@
+            @* @key on a DATA EPOCH, never on the user's intent. MultiPanelViewer loads its panel
+               and its holds in OnInitializedAsync and in its own GoToAsync ONLY — it has no
+               OnParametersSetAsync — and `UsingMultiPanel` stays true across a Then/Now toggle, so
+               Blazor would otherwise RETAIN the instance and keep today's photo while
+               HighlightedHoldIds switched to the other generation's ids: zero overlap, boulder
+               invisible. A changed key forces a fresh instance that reloads from the StartCol/
+               StartRow LoadPanelData just recomputed.
+               Keyed on _viewEpoch and NOT on (_showHistoric, _historicGeneration) because
+               ShowGenerationAsync sets _showHistoric SYNCHRONOUSLY and then awaits: ComponentBase's
+               IHandleEvent renders at that first yield, so an intent-based key changed while
+               _livePanels/_startPanelCol/_holdsByPanel were still the OLD ones. The viewer was then
+               re-created TOO EARLY, cached the old panel and old holds, and — the key being
+               unchanged once the load finished — was retained for good. That is the same outage the
+               key was added to prevent, one render earlier. _viewEpoch moves only as the LAST
+               statement of LoadPanelData, so the key means "new data is in place", not "the user
+               intends a change". Deliberately a key rather than an OnParametersSetAsync inside the
+               viewer: that would re-fetch on every unrelated parameter change and fight GoToAsync's
+               panel position, and it would reach WallDetail's usage too. BoulderId stays in the key
+               for the same reason as before: this page is retained across a navigation between two
+               boulders on the same route template. *@
+            <MultiPanelViewer @key="(BoulderId, _viewEpoch)"
+                              WallId="WallId" ShareToken="@ShareToken" Panels="_livePanels"
+                              StartCol="_startPanelCol" StartRow="_startPanelRow"
+                              ArrowMode="MultiPanelViewer.ArrowDisplayMode.HoldsOnly"
+                              HoldsByPanel="_holdsByPanel"
+                              HoldsProvider="LoadPanelHoldsAsync"
+                              HighlightedHoldIds="_highlightedHoldIds"
+                              FootHoldIds="FootHoldIds"
+                              HoldColor="BoulderHoldColorOf"
+                              HighlightedPanelIds="_highlightedPanelIds"
+                              EnableSwipe="true"
+                              HistoricMode="_showHistoric"
+                              LensOverlay="true" />
         }
-        else if (_wallHolds != null)
+        else
         {
-            <WallSchematicView Holds="_wallHolds" Angle="_boulder.Wall.Angle"
-                               HighlightedHoldIds="_boulderHoldIds" FootHoldIds="FootHoldIds" />
+            @* Zoom geometry is owned by JS via `--zoom` (wwwroot/js/viewport.js). *@
+            <div class="photo-viewport photo-section@(_frame != null ? " bw-framed" : "")" @ref="_photoViewportRef">
+                @* data-lens-overlay marks this editor so the long-press magnifier bakes the marked-hold
+                   overlay into the lens — boulder detail only; the wall view's editor is never marked. *@
+                <div class="photo-editor" data-lens-overlay="true">
+                    <img src="@ResponsiveImage.Initial(PhotoUrl)" data-bw-res alt="Wall" class="wall-photo" />
+                    <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
+                        @* The "feet of one colour only" rule is shown as an info banner above the
+                           image, not by painting every wall hold of that colour. Only the boulder's
+                           own holds (including dedicated orange footholds) are drawn here. *@
+                        @* _renderHolds, not the boulder's raw holds: in the historic view they are
+                           the SAME holds translated to the generation on screen. *@
+                        @foreach (var bh in _renderHolds)
+                        {
+                            @* A virtual hold isn't visible on the photo: dash its outline, as the
+                               pickers and MultiPanelViewer do, so it doesn't read as a real hold. *@
+                            var dash = bh.Hold.IsVirtual ? "0.6 0.4" : null;
+                            @if (bh.Hold.ShapePoints is { Count: >= 3 })
+                            {
+                                <polygon @key="bh.HoldId" points="@ShapePolygon(bh.Hold)"
+                                         fill="@BoulderHoldColors.FillFor(bh.Type, bh.Usage)"
+                                         stroke="@BoulderHoldColors.Stroke(bh.Type)" stroke-width="0.5"
+                                         stroke-dasharray="@dash" />
+                            }
+                            else
+                            {
+                                <circle @key="bh.HoldId" cx="@F(bh.Hold.X * 100)" cy="@F(bh.Hold.Y * 100)"
+                                        r="@F(bh.Hold.Radius * 100)"
+                                        fill="@BoulderHoldColors.FillFor(bh.Type, bh.Usage)"
+                                        stroke="@BoulderHoldColors.Stroke(bh.Type)" stroke-width="0.5"
+                                        stroke-dasharray="@dash" />
+                            }
+                        }
+                    </svg>
+                </div>
+            </div>
         }
+        </div>
 
+        @* Right column on the desktop tier: everything you DO with the boulder. *@
+        <div class="boulder-side-col">
         <BoulderRulesSummary Boulder="_boulder" />
 
         @if (!_isAnonymous)
@@ -422,7 +420,15 @@ else
         <BoulderBetaVideos @ref="_betaVideos" BoulderId="BoulderId" CurrentUserId="_currentUserId"
                            IsAnonymous="_isAnonymous" ShareToken="@ShareToken"
                            Uploaded="OnBetaVideoUploaded" />
+        </div>
 
+        @* Full-width row under both columns on the desktop tier: the three sections whose content
+           has no natural length — activity, comments, history. In a 360px rail they were a thin
+           stack of wrapped text next to half a screen of empty space beside the photo; here they
+           fill the width the photo column leaves and flow into as many readable columns as fit.
+           Same display:contents trick as the two columns above, so the phone tier is untouched and
+           the DOM order stays exactly the order the phone stack has always rendered. *@
+        <div class="boulder-wide-col">
         <BoulderActivityFeed @ref="_activityFeed" BoulderId="BoulderId" ShareToken="@ShareToken" />
 
         <BoulderComments @ref="_commentList" BoulderId="BoulderId"
@@ -448,6 +454,7 @@ else
                 }
             </div>
         }
+        </div>
     </div>
 }
 
@@ -494,7 +501,6 @@ else
     private BoulderActivityFeed? _activityFeed;
     private BoulderComments? _commentList;
     private BoulderBetaVideos? _betaVideos;
-    private readonly ViewMode _viewMode = ViewMode.Photo;
     private List<Hold>? _wallHolds;
 
     // Normalized wall-region rectangle the photo view is framed to (null = show the whole photo).
@@ -575,8 +581,6 @@ else
     private string? _fitBoxForUrl;
     private DotNetObjectReference<BoulderDetail>? _selfRef;
 
-    private enum ViewMode { Photo, Schematic }
-
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
@@ -596,7 +600,7 @@ else
             }
         }
 
-        if (_viewMode == ViewMode.Photo && _boulder != null && !UsingMultiPanel)
+        if (_boulder != null && !UsingMultiPanel)
         {
             try
             {
@@ -1333,7 +1337,7 @@ else
             .ToDictionary(
                 g => g.Key,
                 g => g.Select(bh => new PanelHold(
-                    bh.HoldId, bh.Hold.X, bh.Hold.Y, bh.Hold.Radius, bh.Hold.Color, bh.Hold.ShapePoints, bh.Hold.IsVirtual)).ToList());
+                    bh.HoldId, bh.Hold.X, bh.Hold.Y, bh.Hold.Radius, bh.Hold.Color, bh.Hold.Category, bh.Hold.ShapePoints, bh.Hold.IsVirtual)).ToList());
         foreach (var bh in onPanels)
         {
             _highlightedHoldIds.Add(bh.HoldId);

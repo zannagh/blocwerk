@@ -540,21 +540,36 @@ public class KioskEscalationTests
     [Fact]
     public void TheProfilePageStillRefusesAnEmailChangeFromAKiosk()
     {
+        // The page is staged into panes now: the account widgets and the inline write live in the
+        // account pane, and the kiosk branch that replaces them with a notice lives on the page.
+        var pane = Path.Combine(
+            RepositoryRoot(),
+            "src",
+            "Blocwerk.Web",
+            "Components",
+            "Shared",
+            "ProfilePanes",
+            "ProfileAccountPane.Email.cs");
+        Assert.True(File.Exists(pane), $"ProfileAccountPane.Email.cs not found at '{pane}'.");
+
+        var paneSource = File.ReadAllText(pane);
+
+        // The inline refusal at the write itself.
+        Assert.Contains("private async Task SaveVerifiedEmailAsync", paneSource, StringComparison.Ordinal);
+        var write = paneSource[paneSource.IndexOf("private async Task SaveVerifiedEmailAsync", StringComparison.Ordinal)..];
+        Assert.Contains("KioskContext.IsKiosk", write[..Math.Min(write.Length, 1200)], StringComparison.Ordinal);
+
         var profile = Path.Combine(
             RepositoryRoot(), "src", "Blocwerk.Web", "Components", "Pages", "Profile.razor");
         Assert.True(File.Exists(profile), $"Profile.razor not found at '{profile}'.");
 
         var source = File.ReadAllText(profile);
 
-        // The inline refusal at the write itself.
-        Assert.Contains("private async Task SaveVerifiedEmailAsync", source, StringComparison.Ordinal);
-        var write = source[source.IndexOf("private async Task SaveVerifiedEmailAsync", StringComparison.Ordinal)..];
-        Assert.Contains("KioskContext.IsKiosk", write[..Math.Min(write.Length, 1200)], StringComparison.Ordinal);
-
         // And the defence in depth: the e-mail, password, second-factor and linked-account widgets
         // are not rendered at all for a kiosk session.
         Assert.Contains("@if (KioskContext.IsKiosk)", source, StringComparison.Ordinal);
         Assert.Contains("@if (!KioskContext.IsKiosk)", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("<ProfileAccountPane", source[..source.IndexOf("@if (KioskContext.IsKiosk)", StringComparison.Ordinal)], StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -568,8 +583,14 @@ public class KioskEscalationTests
     public void TheProfilePageDoesNotOfferTopLoggerTokenEntryFromAKiosk()
     {
         var profile = Path.Combine(
-            RepositoryRoot(), "src", "Blocwerk.Web", "Components", "Pages", "Profile.razor");
-        Assert.True(File.Exists(profile), $"Profile.razor not found at '{profile}'.");
+            RepositoryRoot(),
+            "src",
+            "Blocwerk.Web",
+            "Components",
+            "Shared",
+            "ProfilePanes",
+            "ProfileTopLoggerPane.razor");
+        Assert.True(File.Exists(profile), $"ProfileTopLoggerPane.razor not found at '{profile}'.");
 
         var source = File.ReadAllText(profile);
         Assert.Contains("<textarea id=\"tl-access\"", source, StringComparison.Ordinal);

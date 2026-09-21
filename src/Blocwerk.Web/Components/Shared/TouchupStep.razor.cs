@@ -44,18 +44,14 @@ public partial class TouchupStep
     [Inject]
     private IWallPanelService WallPanelService { get; set; } = default!;
 
-    // Normalized default radius for a user-added hold (~2% of the panel), matching the review pane.
-    private const double DefaultNewHoldRadius = 0.02;
-
     private bool _loading = true;
     private int _panelIndex;
 
-    // The active toolbar tool, and the size newly added holds get. The size starts at the default and
-    // is then whatever the pipette sampled or the slider last set, so a run of adds no longer has to be
-    // resized one hold at a time.
-    private HoldTouchupTool _tool;
-    private double _newHoldRadius = DefaultNewHoldRadius;
-    private Guid? _selectedHoldId;
+    // Toolbar state — the active tool, the size newly added holds get, and the selection — shared with
+    // every other touch-up surface so the select / sample / reset rules cannot drift between them. The
+    // size starts at the default and is then whatever the pipette sampled or the slider last set, so a
+    // run of adds no longer has to be resized one hold at a time.
+    private readonly HoldTouchupSurface _touchup = new();
     private List<PanelHold> _holds = [];
     private List<StagedPanelRef> _panels = [];
 
@@ -75,7 +71,7 @@ public partial class TouchupStep
             return;
         }
 
-        SetTool(_tool == tool ? HoldTouchupTool.None : tool);
+        _touchup.Toggle(tool);
         StateHasChanged();
     }
 
@@ -85,7 +81,7 @@ public partial class TouchupStep
     /// </summary>
     public async Task TryRemoveSelectedHoldAsync()
     {
-        if (_loading || _selectedHoldId is null)
+        if (_loading || _touchup.SelectedHoldId is null)
         {
             return;
         }
@@ -130,8 +126,7 @@ public partial class TouchupStep
         }
 
         _panelIndex = index;
-        _tool = HoldTouchupTool.None;
-        _selectedHoldId = null;
+        _touchup.Reset();
         await ReloadHoldsAsync();
     }
 
@@ -141,70 +136,32 @@ public partial class TouchupStep
     /// </summary>
     private async Task OnHoldTapAsync(Guid id)
     {
-        switch (_tool)
+        switch (_touchup.Tool)
         {
             case HoldTouchupTool.Delete:
                 await RemoveHoldAsync(id);
                 break;
 
             case HoldTouchupTool.Pipette:
-                SampleSize(id);
+                _touchup.Sample(id, _holds);
                 break;
 
             default:
-                SelectHold(id);
+                _touchup.Select(id, _holds);
                 break;
         }
     }
 
-    /// <summary>
-    /// Selects a hold AND adopts its radius as the toolbar's size, exactly as the wall editor does on
-    /// select and on drag-start. Without this the slider still showed the last add-size while its label
-    /// read "Size (selected):", so one nudge resized the selected hold to a value the user never chose —
-    /// a 40% shrink on a hold larger than the default.
-    /// </summary>
-    private void SelectHold(Guid id)
-    {
-        _selectedHoldId = id;
-        if (_holds.FirstOrDefault(h => h.Id == id) is { } hold)
-        {
-            _newHoldRadius = hold.Radius;
-        }
-    }
-
-    // Pipette: take the tapped hold's radius as the current size and drop straight into Add mode, which
-    // is what the sample is for. The selection is cleared so the slider unambiguously describes the size
-    // of the NEXT hold rather than silently resizing the hold that was just sampled.
-    private void SampleSize(Guid id)
-    {
-        if (_holds.FirstOrDefault(h => h.Id == id) is { } hold)
-        {
-            _newHoldRadius = hold.Radius;
-        }
-
-        _selectedHoldId = null;
-        _tool = HoldTouchupTool.Add;
-    }
-
-    // Mutually exclusive tools, mirroring the wall editor's SetMode: leaving a tool clears the transient
-    // state that only made sense inside it.
-    private void SetTool(HoldTouchupTool tool)
-    {
-        _tool = tool;
-        if (tool is HoldTouchupTool.Add or HoldTouchupTool.Pipette)
-        {
-            _selectedHoldId = null;
-        }
-    }
+    private void SetTool(HoldTouchupTool tool) => _touchup.SetTool(tool);
 
     // Live slider feedback: the size a new hold gets always follows the slider.
-    private void OnSizeChanged(double radius) => _newHoldRadius = radius;
+    private void OnSizeChanged(double radius) => _touchup.SetRadius(radius);
 
     // Slider released: with a hold selected that hold is resized, through the same geometry/persistence
     // path a drag uses. With nothing selected the slider only set the size for the next add.
     private async Task OnSizeCommittedAsync(double radius)
     {
-        if (_selectedHoldId is not { } id || _holds.FirstOrDefault(h => h.Id == id) is not { } hold)
+        if (_touchup.SelectedHoldId is not { } id || _holds.FirstOrDefault(h => h.Id == id) is not { } hold)
         {
             return;
         }
@@ -229,17 +186,17 @@ public partial class TouchupStep
         // needsReview:false — a hold the user adds here is a correction of a model miss, not a
         // physical change, so it must not be flagged for review.
         var id = await WallPanelService.AddStagedHoldAsync(
-            WallId, panel.PanelId, at.X, at.Y, _newHoldRadius, needsReview: false);
+            WallId, panel.PanelId, at.X, at.Y, _touchup.Radius, needsReview: false);
 
         // The Add tool stays active so a run of misses can be fixed in one go; the fresh hold is
         // selected so the slider can fine-tune it straight away.
-        _selectedHoldId = id;
+        _touchup.Added(id);
         await ReloadHoldsAsync();
     }
 
     private async Task RemoveSelectedHold()
     {
-        if (_selectedHoldId is not { } id)
+        if (_touchup.SelectedHoldId is not { } id)
         {
             return;
         }
@@ -250,10 +207,7 @@ public partial class TouchupStep
     private async Task RemoveHoldAsync(Guid id)
     {
         await WallPanelService.DeleteStagedHoldAsync(WallId, id);
-        if (_selectedHoldId == id)
-        {
-            _selectedHoldId = null;
-        }
+        _touchup.Removed(id);
 
         await ReloadHoldsAsync();
     }

@@ -49,7 +49,7 @@ public partial class CarryoverReview
             return;
         }
 
-        SetTool(_tool == tool ? HoldTouchupTool.None : tool);
+        _touchup.Toggle(tool);
         StateHasChanged();
     }
 
@@ -59,7 +59,7 @@ public partial class CarryoverReview
     /// </summary>
     public async Task TryRemoveSelectedNewHoldAsync()
     {
-        if (_loading || SubViewOpen || _selectedNewHoldId is null)
+        if (_loading || SubViewOpen || _touchup.SelectedHoldId is null)
         {
             return;
         }

@@ -50,10 +50,10 @@ else
                 <PanelImageView @key="panel.PanelId" WallId="WallId" Caption="@panel.Label"
                                 PhotoUrl="@StagedPhotoUrl(panel.PanelId)"
                                 Holds="_holds"
-                                Editable="true" AddMode="@(_tool == HoldTouchupTool.Add)"
-                                SelectedHoldId="_selectedHoldId"
-                                ExactHitTargets="@(_tool == HoldTouchupTool.Delete)"
-                                DragToMove="@(_tool == HoldTouchupTool.Move)"
+                                Editable="true" AddMode="@_touchup.AddMode"
+                                SelectedHoldId="_touchup.SelectedHoldId"
+                                ExactHitTargets="@_touchup.DeleteMode"
+                                DragToMove="@_touchup.MoveMode"
                                 OnHoldTap="OnHoldTapAsync"
                                 OnEmptyTap="OnEmptyTap"
                                 OnHoldGeometryChanged="OnHoldGeometryChanged" />
@@ -66,10 +66,10 @@ else
                     detection. Pick the <strong>move</strong> tool to drag holds into place; the <strong>size slider</strong>
                     resizes the selected hold.
                 </span>
-                <HoldTouchupToolbar Tool="_tool" ToolChanged="SetTool"
-                                    Size="_newHoldRadius" SizeChanged="OnSizeChanged"
+                <HoldTouchupToolbar Tool="_touchup.Tool" ToolChanged="SetTool"
+                                    Size="_touchup.Radius" SizeChanged="OnSizeChanged"
                                     OnSizeCommitted="OnSizeCommittedAsync"
-                                    HasSelection="@(_selectedHoldId is not null)" />
+                                    HasSelection="@(_touchup.SelectedHoldId is not null)" />
             </div>
         }
 

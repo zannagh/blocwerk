@@ -372,7 +372,7 @@ public class HoldPropertySyncTests
         }
 
         // Edit the PERIPHERAL hold: the edited hold is the source regardless of centrality.
-        await h.WallService.UpdateHoldAsync(rightId, rx, ry, 0.02, color: "green", category: HoldCategory.Hand);
+        await h.WallService.UpdateHoldAsync(rightId, new HoldEdit { X = rx, Y = ry, Radius = 0.02, Color = "green", Category = HoldCategory.Hand });
 
         await using var check = h.CreateContext();
         Assert.Equal("green", (await check.Holds.FirstAsync(x => x.Id == rightId)).Color);

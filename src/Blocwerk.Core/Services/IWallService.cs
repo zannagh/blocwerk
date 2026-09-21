@@ -111,7 +111,12 @@ public interface IWallService
     /// </summary>
     Task<Hold> AddHoldAsync(Guid wallId, double x, double y, double radius, string? color, HoldCategory category = HoldCategory.Hand, List<ShapePoint>? shapePoints = null, bool isVirtual = false, HoldMaterial? material = null, HoldHandType? handType = null, Guid? wallPanelId = null);
 
-    Task<Hold> UpdateHoldAsync(Guid holdId, double x, double y, double radius, string? color = null, HoldCategory? category = null, bool? isOnKickboard = null, List<ShapePoint>? shapePoints = null, string? name = null, HoldMaterial? material = null, bool flagBouldersOnMove = true, HoldHandType? handType = null);
+    /// <summary>
+    /// Writes one hold. <paramref name="edit"/> carries the geometry (always written) plus a
+    /// tri-state per appearance field, so a partial payload touches nothing it did not name — the
+    /// nullable parameter list this replaced silently cleared colour, material and hand-type.
+    /// </summary>
+    Task<Hold> UpdateHoldAsync(Guid holdId, HoldEdit edit);
 
     Task DeleteHoldAsync(Guid holdId);
 

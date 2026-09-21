@@ -16,6 +16,10 @@
     --shadow-sm: rgba(30, 20, 10, 0.05);
     --shadow-md: rgba(30, 20, 10, 0.08);
     --shadow-lg: rgba(30, 20, 10, 0.14);
+    /* Edge scrim for fade-out affordances. A pure fade to --bg is invisible in light
+       mode, where card and page are nearly the same colour. Shadow tokens are
+       alpha-blacks tuned for drop shadows and read far too heavy here in dark. */
+    --scrim: rgba(20, 14, 8, 0.10);
     --topbar-bg: #16162a;
     --topbar-text: #ffffff;
     --nav-bg: #ffffff;
@@ -54,7 +58,17 @@
        relative filter, so it reads correctly in both light and dark. */
     --wall-dim: 0;
 
-    color-scheme: light dark;
+    /* Native range slider (WallDimControl). The unfilled track has no themed
+       system colour that follows --data-theme, so it is a token like everything
+       else; the thumb rides --accent. */
+    --range-track: #dcd8cf;
+    --range-thumb: var(--accent);
+
+    /* Explicit, NOT `light dark`: with `light dark` every native control follows the
+       OS preference, so an explicit [data-theme="dark"] on a light-OS machine left
+       range sliders and scrollbars rendering light inside dark chrome. Each theme
+       block below restates it. */
+    color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -75,6 +89,7 @@
         --shadow-sm: rgba(0, 0, 0, 0.30);
         --shadow-md: rgba(0, 0, 0, 0.42);
         --shadow-lg: rgba(0, 0, 0, 0.58);
+        --scrim: rgba(0, 0, 0, 0.45);
         --topbar-bg: #0a0a15;
         --topbar-text: #ffffff;
         --nav-bg: #14141f;
@@ -94,6 +109,10 @@
         --status-info: #6ab4ff;
         --status-review: #ff66c4;
         --overlay-bg: rgba(0, 0, 0, 0.7);
+        --range-track: #3a3a50;
+        --range-thumb: var(--accent);
+
+        color-scheme: dark;
     }
 }
 
@@ -114,6 +133,7 @@
     --shadow-sm: rgba(0, 0, 0, 0.30);
     --shadow-md: rgba(0, 0, 0, 0.42);
     --shadow-lg: rgba(0, 0, 0, 0.58);
+    --scrim: rgba(0, 0, 0, 0.45);
     --topbar-bg: #0a0a15;
     --topbar-text: #ffffff;
     --nav-bg: #14141f;
@@ -133,6 +153,10 @@
     --status-info: #6ab4ff;
     --status-review: #ff66c4;
     --overlay-bg: rgba(0, 0, 0, 0.7);
+    --range-track: #3a3a50;
+    --range-thumb: var(--accent);
+
+    color-scheme: dark;
 }
 
 *, *::before, *::after {
@@ -457,10 +481,11 @@ body.bw-tabbar-collapsed .tabbar-restore { display: flex; }
 .app-shell:not(:has(.bw-tabbar)) .content { padding-bottom: 0; }
 
 /* When the wall is in edit mode, the docked editor toolbar replaces the bottom nav. */
-.app-shell:has(.editor-toolbar.docked-bottom) .bw-tabbar { display: none; }
-.app-shell:has(.editor-toolbar.docked-bottom) .content { padding-bottom: 0; }
+.app-shell:has(.bw-toolbar.docked-bottom) .bw-tabbar { display: none; }
+.app-shell:has(.bw-toolbar.docked-bottom) .content { padding-bottom: 0; }
 
-.editor-toolbar.docked-bottom {
+.bw-toolbar.docked-bottom .editor-toolbar { border-radius: 0; }
+.bw-toolbar.docked-bottom {
     position: fixed;
     bottom: 0;
     left: 0;
@@ -480,14 +505,14 @@ body.bw-tabbar-collapsed .tabbar-restore { display: flex; }
    scroller (.wall-page) — the old margin-bottom lived inside the height-locked card that clipped it,
    which only buried Save deeper. As bottom padding on the scroll container it reliably extends the
    scrollable range so Save comes to rest ABOVE the toolbar. Tune the clearance to taste on-device. */
-.app-shell:has(.editor-toolbar.docked-bottom) .wall-page {
-    padding-bottom: calc(120px + env(safe-area-inset-bottom));
+.app-shell:has(.bw-toolbar.docked-bottom) .wall-page {
+    padding-bottom: calc(180px + env(safe-area-inset-bottom));
 }
 /* Keep a small floor so (de)selecting a hold doesn't jump the layout, and leave room above the
    fixed toolbar when a control is scrolled into view. */
-.app-shell:has(.editor-toolbar.docked-bottom) .editor-bottom {
+.app-shell:has(.bw-toolbar.docked-bottom) .editor-bottom {
     min-height: 42px;
-    scroll-margin-bottom: calc(120px + env(safe-area-inset-bottom));
+    scroll-margin-bottom: calc(180px + env(safe-area-inset-bottom));
 }
 
 .loading { text-align: center; color: var(--text-secondary); padding: 48px; }
@@ -942,7 +967,11 @@ body.bw-tabbar-collapsed .tabbar-restore { display: flex; }
    Only wall photo boxes read --wall-photo-chrome (see pages.css), so this is scoped. */
 :root:root {
     --wall-stats-h: 96px;                                    /* ~64px stat card + 20px margin + 12px column gap */
-    --wall-photo-chrome: calc(140px + var(--wall-stats-h));  /* carousel padding + card padding + dim bar + dots + gaps (toggle row removed) + stats */
+    /* Split in two so the desktop tier can drop the stats term without restating the base: there
+       the stat cards live in the right-hand rail beside the photo, not under it, so the photo has
+       no reason to budget for them (pages.css, @container style(--tier: desktop)). */
+    --wall-photo-chrome-base: 140px;                         /* carousel padding + card padding + dim bar + dots + gaps (toggle row removed) */
+    --wall-photo-chrome: calc(var(--wall-photo-chrome-base) + var(--wall-stats-h));
 
     /* Re-budget the boulder photo chrome so the whole top of the boulder detail page — title
        row, view/historic toggle, the image, the tags/rule chips, AND the Attempt/Send/Flash
@@ -991,7 +1020,7 @@ body.bw-tabbar-collapsed .tabbar-restore { display: flex; }
    its right edge in the read-only view): reserve room on the right of the non-docked
    toolbar so the lens/name toggles shift clear of the floated pencil. The docked
    (bottom) editing toolbar is untouched — the FAB then floats over the image alone. */
-.wall-main .wall-photo-container .editor-toolbar:not(.docked-bottom) { padding-right: 54px; }
+.wall-main .wall-photo-container .bw-toolbar:not(.docked-bottom) .editor-toolbar { padding-right: 54px; }
 
 /* TASK 4 — Reclaim the space freed when the bottom nav is hidden. Mirrors the
    docked-editor precedent above: zero the .content reservation and collapse the

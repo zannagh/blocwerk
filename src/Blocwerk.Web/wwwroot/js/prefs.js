@@ -13,6 +13,9 @@ window.bwPrefs = (function () {
     const ZOOM_LENS_MAG_DEFAULT = 2;
     const ZOOM_LENS_MAG_MIN = 1;
     const ZOOM_LENS_MAG_MAX = 16;
+    const TOOLBAR_PLACEMENT_KEY = 'blocwerk-toolbar-placement';
+    const TOOLBAR_PLACEMENT_SIDEBAR = 'sidebar';
+    const TOOLBAR_PLACEMENT_TOPBAR = 'topbar';
     const ONE_YEAR = 60 * 60 * 24 * 365;
 
     function readCookie(name) {
@@ -131,6 +134,23 @@ window.bwPrefs = (function () {
             n = Math.max(ZOOM_LENS_MAG_MIN, Math.min(ZOOM_LENS_MAG_MAX, n));
             writeCookie(ZOOM_LENS_MAG_KEY, String(n));
             return n;
+        },
+
+        // Toolbar placement: "topbar" (default) or "sidebar", the two shapes UnifiedToolbar renders.
+        // Read server-side from the cookie on the prerender pass (WallPhotoEditor) so the editor's
+        // very first paint is already in the right shape; read through here on an interactive pass,
+        // where there is no HttpContext. Anything unrecognised means the default.
+        getToolbarPlacement: function () {
+            return readCookie(TOOLBAR_PLACEMENT_KEY) === TOOLBAR_PLACEMENT_SIDEBAR
+                ? TOOLBAR_PLACEMENT_SIDEBAR
+                : TOOLBAR_PLACEMENT_TOPBAR;
+        },
+        setToolbarPlacement: function (value) {
+            const v = value === TOOLBAR_PLACEMENT_SIDEBAR
+                ? TOOLBAR_PLACEMENT_SIDEBAR
+                : TOOLBAR_PLACEMENT_TOPBAR;
+            writeCookie(TOOLBAR_PLACEMENT_KEY, v);
+            return v;
         },
         recordLastPage: recordLastPage
     };

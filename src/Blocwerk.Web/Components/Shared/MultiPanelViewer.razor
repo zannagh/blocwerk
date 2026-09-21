@@ -40,20 +40,19 @@ else
                            convention the pickers and the wall editor use) so it never reads as a
                            real hold. The boulder-type fill/stroke above is kept either way. *@
                         var dash = h.IsVirtual ? "0.6 0.4" : null;
-                        @if (h.ShapePoints is { Count: >= 3 })
-                        {
-                            <polygon @key="h.Id" points="@ShapePolygon(h)"
-                                     fill="@fill" stroke="@stroke" stroke-width="@sw" stroke-dasharray="@dash" />
-                        }
-                        else
-                        {
-                            <circle @key="h.Id" cx="@F(h.X * 100)" cy="@F(h.Y * 100)" r="@F(h.Radius * 100)"
-                                    fill="@fill" stroke="@stroke" stroke-width="@sw" stroke-dasharray="@dash" />
-                        }
+                        @* No handlers and no style on purpose: this overlay is read-only, so the shapes
+                           stay out of the pan engine's way entirely. *@
+                        @* Feet draw as a smaller rounded square, the same as in the wall editor and the
+                           hold picker — the shrink and the shape both live in HoldShape. *@
+                        var isFoot = h.Category == HoldCategory.Foot;
+                        <HoldShape @key="h.Id" X="h.X" Y="h.Y" Radius="h.Radius" ShapePoints="h.ShapePoints"
+                                   Foot="isFoot"
+                                   Fill="@fill" Stroke="@stroke" StrokeWidth="@sw" Dash="@dash" />
 
                         @if (_showUsage && usageCount > 0)
                         {
-                            var r = h.Radius * 100;
+                            @* Track the drawn radius so the badge keeps hugging a shrunken foot. *@
+                            var r = h.Radius * 100 * (isFoot && h.ShapePoints is not { Count: >= 3 } ? 0.7 : 1);
                             <g pointer-events="none">
                                 <circle cx="@F(h.X * 100 + r * 0.85)" cy="@F(h.Y * 100 - r * 0.85)" r="1.4"
                                         fill="#4CAF50" stroke="white" stroke-width="0.25" />
@@ -508,11 +507,6 @@ else
     }
 
     private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
-
-    // A hold's custom shape as SVG polygon points (0-100 space), matching the single-image editor so
-    // shaped holds don't fall back to a plain circle on multi-image walls.
-    private static string ShapePolygon(Blocwerk.Core.Services.PanelHold h) =>
-        string.Join(" ", h.ShapePoints!.Select(sp => F((h.X + sp.Dx) * 100) + "," + F((h.Y + sp.Dy) * 100)));
 
     // Flips the usage overlay. On first switch-on (when a usage source is wired) the wall's
     // hold-usage map is fetched once and cached for the viewer's session.

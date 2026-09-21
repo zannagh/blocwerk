@@ -37,25 +37,54 @@
 
 (function () {
     const key = 'blocwerk-fullscreen';
+    const DESKTOP = '(min-width: 900px)';
 
-    function isOn() {
-        return localStorage.getItem(key) === '1';
+    /*
+     * Layout tier override.
+     *
+     * The desktop tier is now a CSS breakpoint (pages.css, 900px), so this toggle is no longer
+     * "off by default" — it is the manual override at BOTH ends, which is what keeps it from
+     * becoming a no-op on a wide window:
+     *   stored 'wide'   -> html.bw-fullscreen, force the wide layout on a narrow window
+     *   stored 'narrow' -> html.bw-compact,    force the phone column on a wide window
+     *   nothing stored  -> follow the breakpoint
+     *
+     * Legacy values: '1' was the old opt-in and still means 'wide'. '0' was merely "never turned
+     * it on" — under the old default that was everybody, so it must NOT be read as an explicit
+     * request for the phone column on desktop; it is migrated away to "follow the breakpoint".
+     */
+    function stored() {
+        const v = localStorage.getItem(key);
+        if (v === '1' || v === 'wide') return 'wide';
+        if (v === 'narrow') return 'narrow';
+        if (v === '0') localStorage.removeItem(key);
+        return null;
     }
 
-    function apply(on) {
-        document.documentElement.classList.toggle('bw-fullscreen', on);
+    function isWide() {
+        const pref = stored();
+        if (pref) return pref === 'wide';
+        return window.matchMedia(DESKTOP).matches;
     }
 
-    apply(isOn());
+    function apply(pref) {
+        const html = document.documentElement;
+        html.classList.toggle('bw-fullscreen', pref === 'wide');
+        html.classList.toggle('bw-compact', pref === 'narrow');
+    }
+
+    apply(stored());
 
     window.blocwerkLayout = {
         toggle: function () {
-            const next = !isOn();
-            localStorage.setItem(key, next ? '1' : '0');
-            apply(next);
+            const next = !isWide();
+            localStorage.setItem(key, next ? 'wide' : 'narrow');
+            apply(next ? 'wide' : 'narrow');
             return next;
         },
-        isFullscreen: isOn
+        // Reported to TopBarActions as the button's active state: the EFFECTIVE tier, not the
+        // stored override, so the icon matches what the user is looking at on a desktop window.
+        isFullscreen: isWide
     };
 })();
 
@@ -83,9 +112,16 @@
             html.removeAttribute('data-theme');
         }
 
-        const wantFullscreen = localStorage.getItem('blocwerk-fullscreen') === '1';
-        if (html.classList.contains('bw-fullscreen') !== wantFullscreen) {
-            html.classList.toggle('bw-fullscreen', wantFullscreen);
+        // Mirrors the tri-state above ('wide' / 'narrow' / follow the breakpoint); '1' is the
+        // legacy spelling of 'wide'. No stored value means neither class belongs on <html>.
+        const pref = localStorage.getItem('blocwerk-fullscreen');
+        const wantWide = pref === 'wide' || pref === '1';
+        const wantCompact = pref === 'narrow';
+        if (html.classList.contains('bw-fullscreen') !== wantWide) {
+            html.classList.toggle('bw-fullscreen', wantWide);
+        }
+        if (html.classList.contains('bw-compact') !== wantCompact) {
+            html.classList.toggle('bw-compact', wantCompact);
         }
     }
 

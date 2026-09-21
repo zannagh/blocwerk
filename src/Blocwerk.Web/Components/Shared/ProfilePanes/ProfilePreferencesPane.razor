@@ -1,0 +1,317 @@
+@* "App" pane: everything that changes how Blocwerk behaves for this member — home wall, zoom lens,
+   grading system, the Tools button and the per-type notification opt-outs. Behaviour (handlers, error
+   text, optimistic mirroring onto the shared Viewer instance, the @key revision trick) is unchanged
+   from the single-file Profile page. *@
+@implements IDisposable
+@inject ICurrentUserService CurrentUserService
+@inject Blocwerk.Core.Services.IPushNotificationService Push
+@inject IJSRuntime JS
+
+<div class="profile-grid">
+    <div class="section profile-section-card">
+        <h2>Home wall</h2>
+        <select class="window-select home-wall-select" value="@Viewer.HomeWallId" @onchange="OnHomeWallChange">
+            <option value="">None</option>
+            @foreach (var wall in MyWalls)
+            {
+                <option value="@wall.Id">@wall.Name</option>
+            }
+        </select>
+        <p class="member-since">Adds a Home shortcut to the bottom bar that jumps to this wall.</p>
+        @if (homeWallError != null)
+        {
+            <p class="field-error">@homeWallError</p>
+        }
+    </div>
+
+    <div class="section profile-section-card">
+        <h2>Preferred grading system</h2>
+        <select class="window-select" value="@(Viewer.PreferFontGrades == false ? "v" : "font")" @onchange="OnPreferFontChange">
+            <option value="font">Fontainebleau</option>
+            <option value="v">V-Scale</option>
+        </select>
+        <p class="member-since">The scale new and revised boulders open on when you enter a grade.</p>
+        @if (preferFontError != null)
+        {
+            <p class="field-error">@preferFontError</p>
+        }
+    </div>
+
+    <div class="section profile-section-card">
+        <h2>Zoom lens magnification</h2>
+        <select class="window-select" value="@zoomLensMag" @onchange="OnZoomLensMagChange">
+            @foreach (var mag in ZoomLensMagOptions)
+            {
+                <option value="@mag">@(mag)×</option>
+            }
+        </select>
+        <p class="member-since">
+            How much the long-press magnifier enlarges the wall photo (relative to its
+            original resolution) while viewing a wall or boulder. Currently @(zoomLensMag)×.
+        </p>
+    </div>
+
+    <div class="section profile-section-card">
+        <h2>Wall editor toolbar</h2>
+        <select class="window-select" value="@toolbarPlacement" @onchange="OnToolbarPlacementChange">
+            <option value="@ToolbarPlacementPreference.TopBarValue">Above the photo</option>
+            <option value="@ToolbarPlacementPreference.SidebarValue">Beside the photo</option>
+        </select>
+        <p class="member-since">
+            Where the editing tools sit while you work on a wall. Beside the photo puts them in a
+            column with their names spelled out; it needs a wide window, so on a phone (or a narrow
+            one) the tools stay above the photo whichever you pick.
+        </p>
+        @if (toolbarPlacementError != null)
+        {
+            <p class="field-error">@toolbarPlacementError</p>
+        }
+    </div>
+
+    <div class="section profile-section-card">
+        <h2>Tools button</h2>
+        <label class="toggle-label">
+            @* @key re-syncs the native checkbox to the bound value: on a failed save we bump
+               settingsRev so Blazor recreates the input (its recorded value is unchanged, so a
+               plain diff would leave it visually flipped). *@
+            <input type="checkbox" checked="@Viewer.ShowToolsInNav"
+                   @onchange="OnShowToolsInNavChange" @key="(settingsRev, 0)" />
+            Show Tools in navigation bar
+        </label>
+        <p class="member-since">
+            Puts the Tools &amp; guides button back in the bottom bar. Wall tablets always show
+            it regardless of this setting.
+        </p>
+        @if (showToolsError != null)
+        {
+            <p class="field-error">@showToolsError</p>
+        }
+    </div>
+
+    @* Deliberately NOT hidden on kiosk: which push notifications a member wants is a per-person
+       choice they can make from any device. The device-level permission prompt is handled elsewhere
+       (NotificationPrompt). *@
+    <details class="section profile-collapsible profile-grid-wide">
+        <summary>Notifications</summary>
+        <p class="member-since">
+            These apply once notifications are enabled on this device. Turn a type off to stop
+            being notified about it.
+        </p>
+        @* Device-level entry point, independent of the transient NotificationPrompt banner:
+           shown when this device is installed + supported but not actually subscribed (permission
+           not granted, or the PushManager subscription was dropped — storage clear, rotation, a
+           prior unsubscribe — which the banner's permission==='default' gate would never re-offer).
+           Wired through the SAME gesture-bound path as the banner (bwPush.bindEnable →
+           OnDeviceSubscribed/OnEnableFailed) so iOS keeps the user-activation. Hidden once VAPID
+           is unconfigured or the device is already subscribed. *@
+        @if (showEnablePush)
+        {
+            <div class="field-actions">
+                <button type="button" class="btn-primary" @ref="pushEnableButton">Enable notifications on this device</button>
+            </div>
+            <p class="member-since">This device isn't receiving notifications yet. Turn them on here.</p>
+        }
+        @if (pushEnableInfo != null)
+        {
+            <p class="field-label">@pushEnableInfo</p>
+        }
+        @if (pushEnableError != null)
+        {
+            <p class="field-error">@pushEnableError</p>
+        }
+        <div class="rules-block profile-notify-grid">
+            @foreach (var option in NotificationOptions)
+            {
+                <label class="checkbox-label">
+                    @* @key re-syncs the native checkbox after a failed save (see Tools toggle). *@
+                    <input type="checkbox"
+                           checked="@(!Viewer.DisabledNotifications.HasFlag(option.Type))"
+                           @onchange="e => OnNotificationToggle(option.Type, e)"
+                           @key="(settingsRev, option.Type)" />
+                    @option.Label
+                </label>
+            }
+        </div>
+        @if (notificationError != null)
+        {
+            <p class="field-error">@notificationError</p>
+        }
+    </details>
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public User Viewer { get; set; } = default!;
+
+    [Parameter]
+    public IReadOnlyList<Wall> MyWalls { get; set; } = [];
+
+    // Friendly labels for the per-type notification opt-out checkboxes. Order mirrors the enum.
+    private static readonly (NotificationType Type, string Label)[] NotificationOptions =
+    [
+        (NotificationType.SessionStarted, "Someone starts a session on your wall"),
+        (NotificationType.AppOnline, "App is back online after an update"),
+        (NotificationType.BoulderAdded, "A boulder is added to your wall"),
+        (NotificationType.CommentOnYourBoulder, "Someone comments on a boulder you set"),
+        (NotificationType.SendOnYourBoulder, "Someone sends/flashes a boulder you set"),
+        (NotificationType.BetaOnYourBoulder, "Someone adds a beta video to a boulder you set"),
+        (NotificationType.MemberJoined, "Someone joins your wall"),
+    ];
+
+    // Client-only rendering preference (stored in a cookie via bwPrefs, no server persistence): the
+    // magnification of the long-press zoom lens. Read once the circuit can call JS.
+    private static readonly int[] ZoomLensMagOptions = [1, 2, 4, 6, 8, 10, 12, 14, 16];
+    private int zoomLensMag = 2;
+
+    // Same cookie-backed, client-only shape as the zoom lens: where the wall editor's toolbar sits.
+    // Held as the raw cookie value so the <select> binds to it directly; WallPhotoEditor is what
+    // turns it back into a ToolbarPlacement.
+    private string toolbarPlacement = ToolbarPlacementPreference.TopBarValue;
+
+    private string? homeWallError;
+    private string? preferFontError;
+    private string? showToolsError;
+    private string? notificationError;
+    private string? toolbarPlacementError;
+
+    // Bumped in a failed-save catch so the settings checkboxes' @key changes and Blazor recreates them
+    // bound to the true server value — a native checkbox left visually flipped isn't patched back by a
+    // plain diff, because the recorded value never changed.
+    private int settingsRev;
+
+    // "Enable notifications on this device" control. Detected once the circuit can call JS; its button
+    // is bound to a native click gesture (bwPush.bindEnable) exactly like the NotificationPrompt
+    // banner, so iOS keeps the user-activation across requestPermission.
+    private bool showEnablePush;
+    private bool pushEnableBound;
+    private ElementReference pushEnableButton;
+    private DotNetObjectReference<ProfilePreferencesPane>? pushDotNetRef;
+    private string? pushEnableInfo;
+    private string? pushEnableError;
+
+    private async Task OnZoomLensMagChange(ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out var mag))
+        {
+            return;
+        }
+
+        try
+        {
+            // setZoomLensMag clamps and returns the stored value, so echo that back to the UI.
+            zoomLensMag = await JS.InvokeAsync<int>("bwPrefs.setZoomLensMag", mag);
+        }
+        catch (Exception)
+        {
+            /* couldn't persist the pref — leave the shown value as-is. */
+        }
+    }
+
+    private async Task OnToolbarPlacementChange(ChangeEventArgs e)
+    {
+        var picked = e.Value?.ToString();
+        if (picked is null)
+        {
+            return;
+        }
+
+        try
+        {
+            // setToolbarPlacement normalises and returns the stored value, so echo that back.
+            toolbarPlacement = await JS.InvokeAsync<string>("bwPrefs.setToolbarPlacement", picked);
+            toolbarPlacementError = null;
+        }
+        catch (Exception)
+        {
+            toolbarPlacementError = "Couldn't save your toolbar setting on this device. Please try again.";
+        }
+    }
+
+    private async Task OnHomeWallChange(ChangeEventArgs e)
+    {
+        var raw = e.Value?.ToString();
+        Guid? selected = null;
+        if (!string.IsNullOrEmpty(raw))
+        {
+            if (!Guid.TryParse(raw, out var wallId))
+            {
+                return;
+            }
+
+            selected = wallId;
+        }
+
+        try
+        {
+            await CurrentUserService.SetHomeWallAsync(selected);
+            homeWallError = null;
+            Viewer.HomeWallId = selected;
+        }
+        catch (Exception)
+        {
+            homeWallError = "Couldn't update your main wall. Please try again.";
+        }
+    }
+
+    private async Task OnPreferFontChange(ChangeEventArgs e)
+    {
+        bool preferFont = e.Value?.ToString() != "v";
+
+        try
+        {
+            await CurrentUserService.SetPreferFontGradesAsync(preferFont);
+            preferFontError = null;
+            Viewer.PreferFontGrades = preferFont;
+        }
+        catch (Exception)
+        {
+            preferFontError = "Couldn't update your preferred grading system. Please try again.";
+        }
+    }
+
+    private async Task OnShowToolsInNavChange(ChangeEventArgs e)
+    {
+        bool show = e.Value is true;
+
+        try
+        {
+            await CurrentUserService.SetShowToolsInNavAsync(show);
+            showToolsError = null;
+            Viewer.ShowToolsInNav = show;
+        }
+        catch (Exception)
+        {
+            showToolsError = "Couldn't update your Tools button setting. Please try again.";
+            // Save failed: Viewer still holds the true value, but the native checkbox flipped. Force a
+            // fresh input (new @key) so it re-renders to the real state instead of staying flipped.
+            settingsRev++;
+        }
+    }
+
+    // Opt-OUT semantics: a checked box means the type is ENABLED (its bit is NOT set). Persist the
+    // inverse and mirror it into the local mask so the box reflects the change without a reload.
+    private async Task OnNotificationToggle(NotificationType type, ChangeEventArgs e)
+    {
+        bool isChecked = e.Value is true;
+
+        try
+        {
+            await CurrentUserService.SetNotificationDisabledAsync(type, disabled: !isChecked);
+            notificationError = null;
+            if (isChecked)
+            {
+                Viewer.DisabledNotifications &= ~type;
+            }
+            else
+            {
+                Viewer.DisabledNotifications |= type;
+            }
+        }
+        catch (Exception)
+        {
+            notificationError = "Couldn't update your notification settings. Please try again.";
+            // See OnShowToolsInNavChange: re-key the checkboxes so the failed one snaps back.
+            settingsRev++;
+        }
+    }
+}

@@ -1,0 +1,289 @@
+@* "TopLogger" pane: connect a TopLogger account, sync the logbook, resolve unmapped grades and
+   calibrate a gym's points→grade table. Pasting TopLogger tokens is third-party credential entry, so
+   it belongs on your own device and never on a public wall tablet — same rule as the password, 2FA
+   and e-mail widgets. Only the token entry goes; the connection status and the sync of an
+   already-connected account stay usable at the wall. *@
+@inject ITopLoggerImportService TopLogger
+@inject Blocwerk.Core.Abstractions.IKioskContext KioskContext
+@using Blocwerk.Core.Services.TopLogger
+
+<div class="section tl-card profile-section-card">
+    <h2>TopLogger import</h2>
+
+    @if (KioskContext.IsKiosk && !HasPassword)
+    {
+        <p class="member-since">
+            TopLogger is connected from your own device — not from this wall tablet.
+        </p>
+    }
+    else if (!HasPassword)
+    {
+        <p class="member-since">
+            Set a password first to connect TopLogger — your tokens are stored encrypted.
+            <button type="button" class="profile-link-button" @onclick="OnGoToAccount">Set a password in Account.</button>
+        </p>
+    }
+    else
+    {
+        var tlConnected = tlStatus is { Connected: true, NeedsReauth: false };
+        var tlBusy = tlBusyPhase is not null;
+
+        // The token form (help text + two textareas + Connect). Shown expanded when not
+        // connected (or on reauth) as the primary call-to-action, and tucked inside a
+        // collapsed "Update tokens" disclosure once connected and healthy.
+        RenderFragment tokenForm =
+            @<text>
+                <p class="member-since">
+                    Paste your TopLogger access + refresh token from app.toplogger.nu → DevTools →
+                    Network → a graphql request's Authorization header (access token) and the refresh token.
+                </p>
+                <div class="field-group">
+                    <label class="field-label" for="tl-access">Access token</label>
+                    <textarea id="tl-access" class="text-input tl-token" rows="2" autocomplete="off"
+                              @bind="tlAccessToken" @bind:event="oninput"></textarea>
+
+                    <label class="field-label" for="tl-refresh">Refresh token</label>
+                    <textarea id="tl-refresh" class="text-input tl-token" rows="2" autocomplete="off"
+                              @bind="tlRefreshToken" @bind:event="oninput"></textarea>
+
+                    <div class="field-actions">
+                        <button class="btn-primary" @onclick="ConnectTopLoggerAsync" disabled="@tlBusy">
+                            @(tlBusy ? TlBusyLabel : "Connect")
+                        </button>
+                    </div>
+                </div>
+            </text>;
+
+        @if (tlStatus?.NeedsReauth == true)
+        {
+            @if (KioskContext.IsKiosk)
+            {
+                <p class="tl-reauth">
+                    Reset TopLogger Tokens — your saved session was rejected. Reconnect from your
+                    own device, not from this wall tablet.
+                </p>
+            }
+            else
+            {
+                <p class="tl-reauth">
+                    Reset TopLogger Tokens — your saved session was rejected. Paste fresh tokens below to reconnect.
+                </p>
+            }
+            @if (!string.IsNullOrEmpty(tlStatus.LastError))
+            {
+                <p class="field-error">@tlStatus.LastError</p>
+            }
+        }
+
+        @if (tlConnected)
+        {
+            <p class="tl-meta">
+                Last sync attempt:
+                @if (tlStatus!.LastSyncAttemptedAt != null)
+                {
+                    <LocalTime Value="@tlStatus.LastSyncAttemptedAt" Format="LocalTimeFormat.DateTime" />
+                    @if (tlStatus.LastSyncOutcome == TopLoggerSyncOutcome.Failed)
+                    {
+                        <span class="tl-outcome tl-outcome-failed">
+                            — Failed@(string.IsNullOrEmpty(tlStatus.LastError) ? string.Empty : $": {tlStatus.LastError}")
+                        </span>
+                    }
+                    else if (tlStatus.LastSyncOutcome == TopLoggerSyncOutcome.Success)
+                    {
+                        <span class="tl-outcome tl-outcome-ok">— Success</span>
+                    }
+                }
+                else
+                {
+                    <span>never</span>
+                }
+            </p>
+            <p class="tl-meta">
+                Last successful sync:
+                @if (tlStatus.LastSyncAt != null)
+                {
+                    <LocalTime Value="@tlStatus.LastSyncAt" Format="LocalTimeFormat.DateTime" />
+                }
+                else
+                {
+                    <span>never</span>
+                }
+            </p>
+            <p class="tl-meta">@tlStatus.AscentCount imported ascent(s).</p>
+            @if (tlStatus.UnmappedGradeCount > 0)
+            {
+                <p class="tl-meta">@tlStatus.UnmappedGradeCount send(s) need a grade.</p>
+                <details class="tl-resolve" @ontoggle="OnResolveGradesToggle">
+                    <summary>Resolve grades</summary>
+                    @if (tlUnmapped == null)
+                    {
+                        <p class="tl-meta">Loading…</p>
+                    }
+                    else
+                    {
+                        @foreach (var item in tlUnmapped)
+                        {
+                            var selection = GetGradeSelection(item.RawGrade);
+                            <div class="tl-resolve-row">
+                                <div class="tl-resolve-info">
+                                    <span class="tl-resolve-raw">@(string.IsNullOrEmpty(item.RawGrade) ? "(no grade)" : item.RawGrade)</span>
+                                    <span class="tl-meta">
+                                        @item.Count ascent(s)@(string.IsNullOrEmpty(item.SampleClimbName) ? string.Empty : $" · e.g. {item.SampleClimbName}")
+                                    </span>
+                                </div>
+                                <GradePicker Value="@selection"
+                                             ValueChanged="@(v => SetGradeSelection(item.RawGrade, v))" />
+                                <button class="btn-primary"
+                                        @onclick="() => ResolveGradeAsync(item)"
+                                        disabled="@(tlBusy || tlResolveBusy || string.IsNullOrEmpty(selection))">
+                                    Save
+                                </button>
+                            </div>
+                        }
+                    }
+                </details>
+            }
+
+            <details class="tl-calibration" @ontoggle="OnCalibrationToggle">
+                <summary>Gym grade points</summary>
+                <p class="tl-meta">
+                    Enter the points your gym awards per grade, plus the flash bonus. We use these
+                    to read the grade and flash from each ascent's points.
+                </p>
+                @if (tlGyms == null)
+                {
+                    <p class="tl-meta">Loading…</p>
+                }
+                else if (tlGyms.Count == 0)
+                {
+                    <p class="tl-meta">No gyms yet — sync some ascents first.</p>
+                }
+                else
+                {
+                    <div class="field-group">
+                        <label class="field-label" for="tl-calib-gym">Gym</label>
+                        <select id="tl-calib-gym" class="window-select"
+                                value="@tlSelectedGymId" @onchange="OnCalibrationGymChange">
+                            <option value="">Select a gym…</option>
+                            @foreach (var g in tlGyms)
+                            {
+                                <option value="@g.Id">@g.Name</option>
+                            }
+                        </select>
+                    </div>
+
+                    @if (tlSelectedGymId != null)
+                    {
+                        <div class="tl-calib-grid">
+                            <table class="tl-calib-table">
+                                <thead>
+                                    <tr><th>Grade</th><th>Points</th></tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var grade in GradeScale.FontGrades)
+                                    {
+                                        <tr>
+                                            <td>@grade</td>
+                                            <td>
+                                                <input type="number" min="0" inputmode="numeric"
+                                                       class="text-input tl-calib-input"
+                                                       value="@GetCalibPoints(grade)"
+                                                       @onchange="e => SetCalibPoints(grade, e.Value?.ToString())" />
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="field-group">
+                            <label class="field-label" for="tl-calib-bonus">Bonus points for flash</label>
+                            <input id="tl-calib-bonus" type="number" min="0" inputmode="numeric"
+                                   class="text-input tl-calib-input"
+                                   value="@tlFlashBonusInput"
+                                   @onchange="e => tlFlashBonusInput = e.Value?.ToString() ?? string.Empty" />
+                        </div>
+
+                        <div class="tl-actions">
+                            <button class="btn-primary" @onclick="SaveCalibrationAsync"
+                                    disabled="@(tlBusy || tlCalibBusy)">
+                                @(tlCalibBusy ? "Saving…" : "Save")
+                            </button>
+                            <button class="btn-secondary" @onclick="DiscardCalibrationAsync"
+                                    disabled="@(tlBusy || tlCalibBusy)">Discard</button>
+                        </div>
+                    }
+                }
+            </details>
+
+            <div class="tl-actions">
+                <button class="btn-primary" @onclick="SyncTopLoggerAsync" disabled="@tlBusy">
+                    @(tlBusy ? TlBusyLabel : "Sync now")
+                </button>
+                @if (!tlConfirmingDisconnect)
+                {
+                    <button class="btn-secondary" @onclick="() => tlConfirmingDisconnect = true" disabled="@tlBusy">Disconnect</button>
+                }
+            </div>
+
+            @if (tlConfirmingDisconnect)
+            {
+                <div class="tl-confirm">
+                    <label class="tl-check">
+                        <input type="checkbox" @bind="tlDeleteAscents" disabled="@tlBusy" />
+                        Also delete imported ascents
+                    </label>
+                    <div class="tl-actions">
+                        <button class="btn-secondary" @onclick="DisconnectTopLoggerAsync" disabled="@tlBusy">Confirm disconnect</button>
+                        <button class="btn-secondary" @onclick="() => tlConfirmingDisconnect = false" disabled="@tlBusy">Cancel</button>
+                    </div>
+                </div>
+            }
+
+            @if (tlBusy)
+            {
+                <div class="tl-busy">
+                    <span class="tl-spinner" aria-hidden="true"></span>
+                    <span>@TlBusyLabel</span>
+                </div>
+            }
+
+            @if (KioskContext.IsKiosk)
+            {
+                <p class="member-since">
+                    TopLogger tokens are updated from your own device — not from this wall tablet.
+                </p>
+            }
+            else
+            {
+                <details class="tl-token-edit">
+                    <summary>Update tokens</summary>
+                    @tokenForm
+                </details>
+            }
+        }
+        else if (KioskContext.IsKiosk)
+        {
+            <p class="member-since">
+                TopLogger is connected from your own device — not from this wall tablet.
+            </p>
+        }
+        else
+        {
+            @tokenForm
+
+            @if (tlBusy)
+            {
+                <div class="tl-busy">
+                    <span class="tl-spinner" aria-hidden="true"></span>
+                    <span>@TlBusyLabel</span>
+                </div>
+            }
+        }
+
+        @if (tlError != null)
+        {
+            <p class="field-error">@tlError</p>
+        }
+    }
+</div>

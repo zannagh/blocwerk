@@ -2,6 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
 
 namespace Blocwerk.Web.Components.Shared;
@@ -91,7 +92,7 @@ public partial class PanelOverlapStepper
         // The same AddPanelHoldAsync the moved pick uses: it already stamps a staged panel's hold at
         // the staged generation, so the two add paths cannot diverge on generation.
         var id = await WallPanelService.AddPanelHoldAsync(WallId, PanelId, at.X, at.Y, _touchup.Radius);
-        AddToStagedSet(new PanelHold(id, at.X, at.Y, _touchup.Radius, null));
+        AddToStagedSet(new PanelHold(id, at.X, at.Y, _touchup.Radius, null, HoldCategory.Hand));
         _touchup.Added(id);
     }
 

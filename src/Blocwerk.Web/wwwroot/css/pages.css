@@ -120,7 +120,7 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
 
 /* ========== Wall List ========== */
 
-.wall-list { padding: 16px; max-width: 600px; margin: 0 auto; }
+.wall-list { padding: 16px; max-width: var(--page-max, 600px); margin: 0 auto; }
 
 .list-header {
     display: flex; justify-content: space-between; align-items: center;
@@ -301,11 +301,11 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
 
 /* ========== Wall Detail ========== */
 
-.wall-detail { padding: 16px; max-width: 600px; margin: 0 auto; }
+.wall-detail { padding: 16px; max-width: var(--page-max, 600px); margin: 0 auto; }
 
 /* ========== Wall page carousel ========== */
 .wall-carousel-root {
-    max-width: 600px;
+    max-width: var(--page-max, 600px);
     margin: 0 auto;
     display: flex;
     flex-direction: column;
@@ -421,7 +421,43 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
 /* Grow-with-content, not viewport-locked: `.wall-page` (overflow-y:auto) is the vertical scroller,
    so the column and its card must be free to exceed the viewport slice and let the page scroll
    instead of being height-locked and clipped. `min-height:100%` still fills a short viewport. */
-.wall-main { display: flex; flex-direction: column; gap: 12px; min-height: 100%; }
+/* Two-column on the desktop tier, one column on the phone tier — ONE block, switched by
+   --wall-main-display (see the layout-tier section at the bottom of this file). In the flex
+   (phone) polarity the grid properties below are inert, so the phone layout is byte-identical
+   to what it was; in the grid polarity `flex-direction` is the inert one. Column 1 is the photo
+   card, column 2 the .wall-side rail (stats, invite, panel-link callout — and, later, a docked
+   toolbar). `align-items: start` keeps both columns content-height instead of stretching the
+   rail to the photo's height; it is inert in the column-flex polarity (the children are
+   grid polarity `flex-direction` is the inert one. `align-items` has to stay on the switch: in
+   the grid polarity `start` is what keeps the rail content-height instead of stretched to the
+   photo's height, but in the column-flex polarity it would shrink-wrap the phone's full-width
+   cards, so the phone keeps `stretch`. */
+.wall-main {
+    display: var(--wall-main-display, flex);
+    flex-direction: column;
+    gap: 12px;
+    min-height: 100%;
+    max-width: var(--page-max, none);
+    /* `auto` rather than a fixed second track: the rail is only rendered when the wall is NOT in
+       edit mode, and an auto track with no item in it collapses to zero, so the editor gets the
+       whole width back instead of staring at a 340px hole. The rail carries its own width. */
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: var(--wall-main-align, stretch);
+}
+/* The rail. `display: contents` on the phone tier makes the wrapper vanish entirely — its
+   children are laid out exactly as if it were not in the markup, which is what keeps the phone
+   pixel-identical; max-height/overflow are inert on a contents box. On the desktop tier it
+   becomes a real column that scrolls on its own so nothing in it can ever be unreachable. */
+.wall-side {
+    display: var(--wall-side-display, contents);
+    flex-direction: column;
+    gap: 0;
+    width: var(--wall-side-w, 340px);   /* inert on the phone tier's `contents` box */
+    min-width: 0;
+    max-height: var(--wall-side-max-h, none);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
 .wall-main .wall-detail-card {
     display: flex;
     flex-direction: column;
@@ -469,9 +505,12 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
 }
 .upload-prompt p { color: var(--text-secondary); margin-bottom: 12px; }
 
-.stats-bar { display: flex; gap: 10px; margin-bottom: 20px; }
+/* --stats-wrap/--stat-basis are the tier switch: on the phone the bar is one nowrap row of
+   flex:1 0-basis cards (unchanged); in the narrow desktop rail the cards keep a 130px basis and
+   wrap into a 2x2 block instead of shrinking to unreadable slivers. */
+.stats-bar { display: flex; flex-wrap: var(--stats-wrap, nowrap); gap: 10px; margin-bottom: 20px; }
 .stat {
-    flex: 1; text-align: center;
+    flex: 1 1 var(--stat-basis, 0); text-align: center;
     padding: 14px 10px 12px;
     background: var(--bg-surface);
     border: 1px solid var(--border-light);
@@ -635,6 +674,129 @@ svg.stat-value { margin-inline: auto; }
 .btn-archive:hover { border-color: var(--accent); color: var(--accent); }
 
 .boulder-section { margin-bottom: 20px; }
+
+/* ---------- Boulder list as its own surface (carousel page 4) ----------
+ *
+ * The list is USER-generated and unbounded, so it keeps scrolling — but it was scrolling inside a
+ * slide sized for the photo pages: 690px of an 844px phone screen, with the section header and the
+ * filter card eating the top of it and no sign that 4+ viewports of cards continued below.
+ *
+ * Three changes, all scoped to `.boulders-page` so no other carousel page is touched:
+ *   1. the slide goes full-bleed (padding moves onto the section) so the list owns the whole slice;
+ *   2. the header + filter card become ONE sticky head, so "+ New" and Filters stay reachable
+ *      however far down the list you are — they used to scroll away and never come back;
+ *   3. a sticky fade at the bottom edge marks the fold, shown only while there IS more below
+ *      (wall-carousel.js toggles `has-more` on the slide).
+ *
+ * Nothing here changes the WIDTH of a slide or the height of the flex track, so the `x mandatory`
+ * snap container is undisturbed; `has-more` only animates an opacity. */
+.wall-page.boulders-page { padding: 0; }
+/* One block, switched by --boulder-list-display (see the layout-tier section at the bottom of this
+   file), exactly like .wall-main. In the flex (phone) polarity the grid properties are inert, so the
+   phone layout is byte-identical to the one-column list; in the grid (desktop) polarity
+   `flex-direction` is the inert one and the cards flow into as many columns as the width affords.
+   Only the COLUMN gap comes from `gap` — rows keep the 8px margin every .boulder-card already
+   carries, so a card looks the same in both polarities. */
+.boulders-page .boulder-section {
+    display: var(--boulder-list-display, flex);
+    flex-direction: column;
+    grid-template-columns: var(--boulder-list-columns, none);
+    gap: 0 12px;
+    align-content: start;
+    min-height: 100%;
+    margin-bottom: 0;
+    padding: 0 16px 12px;
+    box-sizing: border-box;
+}
+/* Everything that is not a card spans the full width of the grid. Inert in the flex polarity. */
+.boulders-page .boulder-list-head,
+.boulders-page .empty-boulders,
+.boulders-page .archive-section,
+.boulders-page .list-fade { grid-column: 1 / -1; }
+.boulders-page .boulder-list-head {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    /* Full-bleed background: the cards scroll UNDER the head, so it has to cover the slide edge to
+       edge or a sliver of card shows past the section padding. */
+    margin: 0 -16px;
+    padding: 12px 16px 8px;
+    background: var(--bg);
+}
+/* One compact row: title · count — filter chip — "+ New". `display: contents` dissolves the
+   section-header wrapper so its two children join this flex row directly; the filter card sits
+   between them as a chip. Two stacked rows cost 140px of a 690px slide, which is a fifth of the
+   list; this is 54px. */
+.boulders-page .boulder-list-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 10px;
+}
+.boulders-page .boulder-list-head .section-header { display: contents; }
+.boulders-page .boulder-list-head .section-header h2 { flex: 1 1 auto; }
+.boulders-page .boulder-list-head .filter-card {
+    order: 1;
+    flex: 0 0 auto;
+    margin: 0;
+    padding: 7px 12px;
+}
+.boulders-page .boulder-list-head .btn-add-boulder { order: 2; }
+/* Open, it is a panel rather than a chip: it hangs OFF the bar (out of flow, anchored under it)
+   instead of growing it. That is what keeps "+ New" and the Filters chip on screen while the card
+   is open — the earlier version un-stuck the whole head, which took "+ New" off-screen with it, and
+   the bar cannot simply grow because a 290px panel inside a 690px slide is most of the list. Out of
+   flow, the sticky box stays one bar tall whatever the panel does.
+   `position: absolute` resolves against the sticky head itself (sticky is a positioned ancestor).
+   The max-height is a safety valve for a very short window, not an everyday scroller. */
+.boulders-page .boulder-list-head .filter-card[open] {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin: 0;
+    padding: 16px;
+    max-height: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - 120px);
+    overflow-y: auto;
+    box-shadow: 0 10px 24px -12px var(--shadow-md);
+}
+/* Count badge next to the "Boulders" heading: the length of the list is the other half of "there is
+   more below" — the fade says THAT there is more, this says how much. */
+.boulders-page .section-header h2 .list-count {
+    margin-left: 6px;
+    padding: 1px 7px;
+    border-radius: var(--r-pill);
+    background: var(--bg-surface-alt);
+    border: 1px solid var(--border-light);
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    letter-spacing: 0;
+}
+/* The fold marker. Last child of the section, pulled back over the final card by its negative
+   margin so it costs no layout height, and sticky to the bottom of the slide so it rides the scroll.
+   Invisible unless the slide actually has more content below the fold. */
+.boulders-page .list-fade {
+    position: sticky;
+    bottom: 0;
+    flex: 0 0 auto;
+    height: 48px;
+    margin: -48px -16px 0;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.18s ease;
+    /* Two layers, because one is not enough in BOTH themes: the card surface and the page
+       background are nearly the same colour in light mode, so a plain fade-to-background is
+       invisible there — the scrim (a neutral darkening, the same direction as every other shadow in
+       the app) is what actually reads. In dark mode the background fade carries it and the scrim
+       only deepens the edge. */
+    background:
+        linear-gradient(to top, var(--bg) 0%, color-mix(in srgb, var(--bg) 70%, transparent) 42%, transparent 100%),
+        linear-gradient(to top, var(--scrim) 0%, transparent 72%);
+}
+.wall-page.boulders-page.has-more .list-fade { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+    .boulders-page .list-fade { transition: none; }
+}
 .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 .section-header h2 {
     font-family: var(--font-body);
@@ -830,7 +992,46 @@ svg.stat-value { margin-inline: auto; }
 
 /* ========== Boulder Detail ========== */
 
-.boulder-detail { padding: 16px; max-width: 600px; margin: 0 auto; }
+/* Same one-block two-polarity switch as .wall-main: block flow on the phone tier (every grid
+   property below is inert on a block box, so the phone is unchanged), a two-column grid on the
+   desktop tier. Column 1 is the header + photo stack, column 2 the interaction rail (rules,
+   ascent buttons, rating, backdating, videos), and a third full-width row under both carries the
+   sections with no natural length — activity, comments, history. The desktop cap is its own var
+   rather than --page-max: this page WANTS a bounded width so no comment or history row ever
+   runs the full 1440px, while --page-max: none still frees the pages that want the window. */
+.boulder-detail {
+    display: var(--boulder-detail-display, block);
+    padding: 16px;
+    max-width: var(--boulder-page-max, var(--page-max, 600px));
+    margin: 0 auto;
+    grid-template-columns: minmax(0, 1fr) var(--boulder-side-w, 360px);
+    gap: 0 20px;
+    align-items: start;
+}
+/* Both wrappers are transparent on the phone tier (display: contents), so their children stay
+   direct children of the block flow and nothing moves. On the desktop tier they are the two
+   grid columns; the photo column sticks under the top bar while the rail scrolls past it. */
+.boulder-photo-col, .boulder-side-col {
+    display: var(--boulder-col-display, contents);
+    flex-direction: column;
+    min-width: 0;
+}
+.boulder-photo-col { position: var(--boulder-photo-col-position, static); top: calc(var(--topbar-h) + 8px); }
+
+/* The long-form row. Transparent on the phone tier like the other two wrappers, so its three
+   sections stay where they always were in the single stack. On the desktop tier it is a grid item
+   spanning both columns under them, and an auto-fit grid in its own right: each section gets at
+   least 340px and the row uses as many columns as the page width affords (three at 1280+, two at
+   1024, one at the bottom of the tier). align-items: start so a short Activity list does not
+   stretch to the height of a long comment thread. */
+.boulder-wide-col {
+    display: var(--boulder-wide-display, contents);
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    align-items: start;
+    gap: 0 20px;
+    min-width: 0;
+}
 
 .page-header { margin-bottom: 12px; }
 .title-row { display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap; }
@@ -1123,7 +1324,7 @@ svg.stat-value { margin-inline: auto; }
 
 /* ========== Wall Create ========== */
 
-.create-wall { padding: 16px; max-width: 500px; margin: 0 auto; }
+.create-wall { padding: 16px; max-width: var(--page-max, 500px); margin: 0 auto; }
 .create-wall h1 { font-size: 1.5rem; font-weight: 700; color: var(--text-heading); margin-bottom: 20px; }
 
 .hint { font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px; }
@@ -1139,14 +1340,19 @@ svg.stat-value { margin-inline: auto; }
 .radio-label {
     display: flex; align-items: center; gap: 8px; padding: 10px 14px;
     background: var(--bg-surface); border: 2px solid var(--border); border-radius: 8px;
-    cursor: pointer; font-size: 0.95rem;
+    cursor: pointer; font-size: 0.95rem; color: var(--text);
 }
-.radio-label:has(input:checked) { border-color: var(--accent); background: #fff5f6; }
+/* Same selected-not-invalid treatment as .checkbox-label below. */
+.radio-label:has(input:checked) {
+    border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+    background: var(--accent-soft);
+}
+.radio-label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 .radio-label input[type=radio] { accent-color: var(--accent); }
 
 /* ========== Boulder Create ========== */
 
-.boulder-create { padding: 16px; max-width: 600px; margin: 0 auto; }
+.boulder-create { padding: 16px; max-width: var(--page-max, 600px); margin: 0 auto; }
 .boulder-create .page-header h1 { font-size: 1.4rem; font-weight: 700; color: var(--text-heading); margin-top: 4px; }
 .boulder-create .form-group > label { font-size: 0.85rem; }
 
@@ -1168,11 +1374,23 @@ svg.stat-value { margin-inline: auto; }
     display: flex; align-items: center; gap: 8px; padding: 10px 14px;
     background: var(--bg-surface); border: 2px solid var(--border); border-radius: 8px;
     cursor: pointer; font-size: 0.9rem; font-weight: 500;
+    color: var(--text);
 }
+/* Checked reads as SELECTED, not as invalid. The fill used to be a literal #fff5f6, which
+   in dark mode put near-white label text on a pale pink ground — illegible, and a pale
+   fill inside a full-strength --accent border is exactly how this app draws a validation
+   error. --accent-soft is a translucent tint defined in all three theme blocks, so it
+   composites over whatever the card ground is, and the border is mixed back toward
+   --border so the row reads as emphasis rather than alarm. */
 .checkbox-label:has(input:checked), .toggle-label:has(input:checked) {
-    border-color: var(--accent); background: #fff5f6;
+    border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+    background: var(--accent-soft);
+    color: var(--text);
 }
 .checkbox-label input, .toggle-label input { accent-color: var(--accent); }
+.checkbox-label:has(input:focus-visible), .toggle-label:has(input:focus-visible) {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+}
 
 .submit-row { display: flex; gap: 8px; margin-top: 12px; }
 .submit-row > .btn-secondary { flex: 0 1 auto; width: auto; margin-bottom: 0; }
@@ -1220,7 +1438,7 @@ svg.stat-value { margin-inline: auto; }
 
 /* ========== Activity ========== */
 
-.activity-page { padding: 16px; max-width: 600px; margin: 0 auto; }
+.activity-page { padding: 16px; max-width: var(--page-max, 600px); margin: 0 auto; }
 
 .activity-page .section { margin-bottom: 24px; }
 .activity-page .section h2 { font-size: 1.1rem; font-weight: 600; color: var(--text-heading); margin-bottom: 10px; }
@@ -1436,7 +1654,7 @@ svg.stat-value { margin-inline: auto; }
 .list-hint { font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 10px; }
 
 /* ---- Activity detail page ---- */
-.activity-detail { padding: 16px; max-width: 600px; margin: 0 auto; }
+.activity-detail { padding: 16px; max-width: var(--page-max, 600px); margin: 0 auto; }
 .activity-detail .page-header { margin: 8px 0 16px; }
 .activity-detail .page-header h1 { font-size: 1.4rem; font-weight: 700; color: var(--text-heading); }
 .detail-sub { font-size: 0.85rem; color: var(--text-secondary); }
@@ -1456,7 +1674,7 @@ svg.stat-value { margin-inline: auto; }
 
 /* ========== Profile ========== */
 
-.profile-page { padding: 16px; max-width: 500px; margin: 0 auto; }
+.profile-page { padding: 16px; max-width: var(--page-max, 500px); margin: 0 auto; }
 
 .profile-card {
     text-align: center; padding: 32px 20px; background: var(--bg-surface);
@@ -1507,6 +1725,104 @@ img.avatar { object-fit: cover; }
     padding: 16px;
 }
 
+/* ---- Staged profile shell -------------------------------------------------
+   /profile is content the app authors end to end, so it is a fixed composition sized to the viewport
+   instead of a 3.4-viewport scroll: a persistent identity/links side column plus four tabbed screens.
+   Scoped to .profile-shell so the settings pages that reuse the plain .profile-page shell (API keys,
+   delete account) keep their narrow single-column layout. ---- */
+.profile-shell { max-width: var(--profile-max, 1180px); }
+
+.profile-columns { display: flex; flex-direction: column; gap: 16px; align-items: stretch; }
+.profile-shell .profile-side > .profile-card { margin-bottom: 16px; }
+.profile-shell .profile-side .section:last-child { margin-bottom: 0; }
+.profile-main { min-width: 0; }
+
+/* Tab rail. Horizontal, scrollable on a phone rather than wrapping into two rows. */
+.profile-tabs {
+    display: flex; gap: 6px; margin-bottom: 14px; padding-bottom: 2px;
+    overflow-x: auto; scrollbar-width: none;
+}
+.profile-tabs::-webkit-scrollbar { display: none; }
+.profile-tab {
+    flex: 0 0 auto; padding: 9px 16px; border-radius: 999px; cursor: pointer;
+    background: var(--bg-surface); color: var(--text-secondary);
+    border: 1px solid var(--border); font-size: 0.9rem; font-weight: 600;
+}
+.profile-tab:hover { color: var(--text-heading); border-color: var(--text-secondary); }
+.profile-tab.is-active {
+    background: var(--secondary); border-color: var(--secondary); color: #fff;
+}
+
+/* Cards inside a screen flow into as many columns as the width allows, so a 1440px desktop never
+   shows a full-width row holding one dropdown. */
+.profile-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+    gap: 14px; align-items: start;
+}
+.profile-shell .profile-grid > .section { margin-bottom: 0; }
+.profile-shell .profile-grid > .profile-collapsible { margin-bottom: 0; }
+.profile-grid-wide { grid-column: 1 / -1; }
+.profile-notify-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 2px 18px; }
+
+/* The two progression charts sit side by side once there is room for both. */
+.profile-chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
+
+/* Display-name editor inside the centred identity card: a disclosure whose summary reads as a
+   normal field label, so the card stays short enough to keep the section tabs above the fold. */
+.profile-shell .profile-name-edit { text-align: left; margin: 18px 0 0; }
+.profile-shell .profile-name-edit > summary {
+    cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px;
+    font-size: 0.9rem; font-weight: 600; color: var(--text-heading);
+}
+.profile-shell .profile-name-edit > summary::-webkit-details-marker { display: none; }
+.profile-shell .profile-name-edit > summary::before {
+    content: ''; width: 0; height: 0; flex: none;
+    border-left: 6px solid currentColor;
+    border-top: 5px solid transparent; border-bottom: 5px solid transparent;
+    transition: transform 0.15s ease;
+}
+.profile-shell .profile-name-edit[open] > summary::before { transform: rotate(90deg); }
+.profile-shell .profile-name-edit[open] > summary { margin-bottom: 10px; }
+.profile-shell .profile-name-edit > summary + .field-label { display: none; }
+
+/* Inline "go to the Account tab" affordance where a cross-tab anchor used to point. */
+.profile-link-button {
+    background: none; border: none; padding: 0; font: inherit; cursor: pointer;
+    color: var(--secondary); font-weight: 600; text-decoration: underline;
+}
+
+.profile-shell .profile-danger-card h2 { color: var(--danger-text); }
+
+/* Below the two-column breakpoint the identity card goes horizontal — a phone's first viewport has
+   to reach the section tabs, and a 300px-tall centred header card eats it. */
+@media (max-width: 899px) {
+    .profile-shell .profile-side .profile-card {
+        display: grid; grid-template-columns: 64px 1fr; gap: 2px 14px;
+        text-align: left; padding: 16px; align-items: center;
+    }
+    .profile-shell .profile-side .profile-card > .avatar-edit,
+    .profile-shell .profile-side .profile-card > .avatar {
+        grid-column: 1; grid-row: 1 / span 3; margin: 0; align-self: center;
+    }
+    .profile-shell .profile-side .profile-card > h1 { grid-column: 2; margin-bottom: 0; }
+    .profile-shell .profile-side .profile-card > .role-badge { grid-column: 2; justify-self: start; }
+    .profile-shell .profile-side .profile-card > .member-since { grid-column: 2; margin-top: 2px; }
+    .profile-shell .profile-side .profile-card > .profile-name-edit,
+    .profile-shell .profile-side .profile-card > .field-error { grid-column: 1 / -1; }
+    .profile-shell .profile-side .profile-card > .profile-name-edit { margin-top: 12px; }
+}
+
+@media (max-width: 480px) {
+    .profile-tab { padding: 9px 12px; font-size: 0.85rem; }
+}
+
+/* Two columns from tablet up: the identity/links rail keeps its place while the screens swap. */
+@media (min-width: 900px) {
+    .profile-columns { flex-direction: row; align-items: flex-start; }
+    .profile-side { flex: 0 0 300px; max-width: 300px; }
+    .profile-main { flex: 1 1 auto; }
+}
+
 /* Home wall dropdown left-aligned like a normal form control (was right-aligned in a flex header). */
 .home-wall-select { display: block; margin-bottom: 4px; }
 
@@ -1522,50 +1838,144 @@ img.avatar { object-fit: cover; }
 
 /* ========== Privacy / About ========== */
 
-.legal-page { padding: 24px 16px; max-width: 600px; margin: 0 auto; }
+.legal-page { padding: 24px 16px; max-width: var(--page-max, 600px); margin: 0 auto; }
 .legal-page h1 { font-size: 1.5rem; font-weight: 700; color: var(--text-heading); margin-bottom: 16px; }
 .legal-page h2 { font-size: 1.1rem; font-weight: 600; color: var(--text-heading); margin: 20px 0 8px; }
 .legal-page p { color: var(--text); font-size: 0.95rem; line-height: 1.6; margin-bottom: 12px; }
 .legal-page ul { padding-left: 20px; margin-bottom: 12px; }
 .legal-page li { color: var(--text); font-size: 0.95rem; line-height: 1.6; margin-bottom: 4px; }
 
-/* ========== Fullscreen mode (app-wide full-width toggle) ========== */
+/* ========== Layout tier (desktop breakpoint + manual override) ==========
+ *
+ * ONE breakpoint defines the desktop tier: at >= 900px the app drops the ~600px phone column and
+ * uses the window. 900px is chosen off the evidence rather than a device list — the de-facto
+ * column is 600px plus 16px of padding a side (632px of content), so anything under ~900px has
+ * no meaningful room to spend and would only trade a comfortable reading column for a stretched
+ * one. It also clears tablet portrait (768px), where the phone column still reads correctly, and
+ * sits well above the only other breakpoint in this file (560px), so the two never interact.
+ *
+ * The manual toggle (theme.js / TopBarActions) is still honoured at BOTH ends, so it never
+ * becomes a no-op: `html.bw-fullscreen` forces the desktop tier on a narrow window, and
+ * `html.bw-compact` forces the phone column back on a wide one.
+ *
+ * Nothing below is written twice. The tier only flips switch custom properties; the layout rules
+ * that read them stay where they already live (the page rules keep their own cap as the var
+ * fallback, the photo boxes keep their single sizing block). Two polarities, for one reason:
+ *   - Page width caps are WIDE-triggered, because every page's narrow cap differs (600/500/none)
+ *     and `var(--page-max, <that page's cap>)` keeps it in exactly one place.
+ *   - The wall photo box is NARROW-triggered, because its desktop values contain `--fit-aspect`,
+ *     which bwViewport publishes per ELEMENT — so it cannot be hoisted to a :root switch and has
+ *     to be the fallback written at the use site.
+ */
 
-html.bw-fullscreen .wall-carousel-root,
-html.bw-fullscreen .wall-detail,
-html.bw-fullscreen .wall-list,
-html.bw-fullscreen .boulder-detail,
-html.bw-fullscreen .boulder-create,
-html.bw-fullscreen .create-wall,
-html.bw-fullscreen .activity-page,
-html.bw-fullscreen .activity-detail,
-html.bw-fullscreen .profile-page,
-html.bw-fullscreen .legal-page,
-html.bw-fullscreen .wall-main {
-    max-width: none;
+/* Desktop tier: lift the page column cap, drop the short-window floor under the photo box, and
+ * switch the two detail pages from one stacked column to photo-left / rail-right (the layout
+ * rules themselves live with their pages above and read these switches; nothing is written
+ * twice). Both selectors are :root-bumped so they outrank the `:root:root` chrome block in
+ * app.css, which is where --wall-stats-h and --boulder-photo-chrome are defined: with the stats
+ * and the rows under the photo moved into the rail, the photo no longer has to budget for them
+ * and grows into the height they used to take. */
+/* Step 1 — earn the marker. Two ways in (a wide window, or the manual toggle), one word out.
+ * These two lines are the ONLY thing written twice, and they carry no layout. */
+@media (min-width: 900px) {
+    html:not(.bw-compact) { --tier: desktop; }
+}
+html.bw-fullscreen { --tier: desktop; }
+
+/* Step 2 — spend it, once. A style container query: every element is a style container, so the
+ * <html> that carries --tier is the query container for <body>, and the whole payload lands on
+ * body and inherits down to every page. Setting it on body (not :root) is also what lets it
+ * beat the `:root:root` chrome block in app.css — --wall-photo-chrome and
+ * --boulder-photo-chrome are defined there, and a declaration on the element itself outranks
+ * anything inherited.
+ * A browser without style queries simply keeps the phone tier, which is the safe degradation. */
+@container style(--tier: desktop) {
+    body {
+        --page-max: none;
+        --photo-fit-floor: 0px;
+    }
 }
 
-/* Contain the photo/overlay views within the window on desktop/wide (fullscreen) mode.
+/* Step 3 — the two-column payload, which needs actual width and not just the marker. Wrapping
+ * the same style query in the width media query gives exactly the three cases we want:
+ *   wide window                -> two columns;
+ *   wide window + .bw-compact  -> no marker, so one column (the toggle still means something);
+ *   narrow + .bw-fullscreen    -> marker but no width, so the caps lift as they always did and
+ *                                 the page stays one column instead of collapsing the photo
+ *                                 into a 0px grid track next to a 340px rail.
+ * With the stats bar and the rows under the boulder photo moved into the right-hand rail, the
+ * photos no longer have to budget for them and grow into the height they used to take. */
+@media (min-width: 900px) {
+    @container style(--tier: desktop) {
+        body {
+            /* Wall detail: photo left, rail right. */
+            --wall-main-display: grid;
+            --wall-main-align: start;
+            --wall-side-display: flex;
+            --wall-side-max-h: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - 48px);
+            --stats-wrap: wrap;
+            --stat-basis: 130px;
+
+            /* Boulder LIST (wall carousel page 4): the wall page loses --page-max on this tier,
+               so a 31-card list was one 600px-ish column of cards in a 1440px slide and nearly
+               four viewports of scroll. Flow it into as many ~360px columns as fit instead.
+               Read only by .boulders-page, so no other list is affected. */
+            --boulder-list-display: grid;
+            --boulder-list-columns: repeat(auto-fill, minmax(360px, 1fr));
+
+            /* Boulder detail: header + photo left, interaction rail right. */
+            --boulder-detail-display: grid;
+            --boulder-col-display: block;
+            --boulder-wide-display: grid;
+            --boulder-photo-col-position: sticky;
+            --boulder-page-max: 1320px;
+            --boulder-photo-chrome: 190px;
+        }
+
+        /* The stats term of the wall photo's chrome (app.css) pays for the stat cards UNDER the
+           photo. On the desktop tier they sit beside it instead, so the photo gets that height
+           back — but only while the rail is actually there: in edit mode the rail is not
+           rendered, the editor has the full width, and its docked toolbar still needs the room
+           the stats used to take. Hence the :has() rather than a flat override on body. */
+        .wall-main:has(> .wall-side) { --wall-photo-chrome: var(--wall-photo-chrome-base); }
+    }
+}
+
+/* Phone tier: neutralise the desktop aspect-capping on the wall photo box (see below). */
+@media (max-width: 899.98px) {
+    html:not(.bw-fullscreen) {
+        --wall-photo-aspect: auto;
+        --wall-photo-cap: none;
+        --wall-photo-center: 0;
+    }
+}
+html.bw-compact {
+    --wall-photo-aspect: auto;
+    --wall-photo-cap: none;
+    --wall-photo-center: 0;
+}
+
+/* Contain the photo/overlay views within the window on the desktop tier.
  *
- * Fullscreen removes the 600px width cap above, so on a wide window the photo box would grow
+ * Desktop removes the 600px width cap above, so on a wide window the photo box would grow
  * full-width and — because its height follows the image aspect ratio — become far taller than
  * the window, forcing a scroll. We instead cap the box WIDTH at `availableHeight * aspect` (the
  * image aspect published as `--fit-aspect` by bwViewport.fitBox). `width: auto` then settles at
  * `min(container width, availableHeight * aspect)`, so the box uses as much width as it can while
- * its height stays within the window. Purely CSS + `100dvh`, so it re-fits on resize on its own.
- * Mobile/narrow (no .bw-fullscreen) is untouched. */
+ * its height stays within the window. Purely CSS + `100dvh`, so it re-fits on resize on its own. */
 /* Scale the boulder image so the header + view + tags + Attempt/Send/Flash buttons all fit one
- * screen (mobile/normal, non-fullscreen). bwViewport.fitBox pins this box's aspect-ratio inline
- * and publishes it as --fit-aspect, so capping the HEIGHT (and the matching WIDTH via that aspect)
- * shrinks the image to make room for the rows below instead of pushing the buttons off-screen —
- * the same trick the wall photo uses. --boulder-photo-chrome (app.css) budgets everything else in
- * the slice; --bottomnav-h collapses when the tab bar hides, reclaiming that space automatically.
- * --fit-h floors the box so a very short window shrinks it gracefully instead of to nothing; the
- * description/lower sections then become the scrollable overflow. Scoped to .boulder-detail so no
- * other page is touched; fullscreen/desktop re-caps just below. */
+ * screen. bwViewport.fitBox pins this box's aspect-ratio inline and publishes it as --fit-aspect,
+ * so capping the HEIGHT (and the matching WIDTH via that aspect) shrinks the image to make room
+ * for the rows below instead of pushing the buttons off-screen — the same trick the wall photo
+ * uses. --boulder-photo-chrome (app.css) budgets everything else in the slice; --bottomnav-h
+ * collapses when the tab bar hides, reclaiming that space automatically. The phone tier floors
+ * the box at 180px so a very short window shrinks it gracefully instead of to nothing (the
+ * description/lower sections then become the scrollable overflow); the desktop tier sets
+ * --photo-fit-floor to 0 so the box is free to use the whole height budget. That floor is the
+ * ONLY thing the two tiers disagree on here, which is why this is one block and not two. */
 .boulder-detail .photo-viewport.photo-section {
     --avail-h: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - var(--boulder-photo-chrome));
-    --fit-h: max(180px, var(--avail-h));
+    --fit-h: max(var(--photo-fit-floor, 180px), var(--avail-h));
     width: auto;
     height: auto;
     max-height: var(--fit-h);
@@ -1573,24 +1983,27 @@ html.bw-fullscreen .wall-main {
     margin-inline: auto;
 }
 
-html.bw-fullscreen .boulder-detail .photo-viewport.photo-section {
-    --avail-h: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - var(--boulder-photo-chrome));
-    width: auto;
-    max-height: var(--avail-h);
-    max-width: min(100%, calc(var(--avail-h) * var(--fit-aspect, 1)));
-    margin-inline: auto;
-}
-
-html.bw-fullscreen .wall-main .photo-viewport {
+/* Wall photo box. The width cap / centring / aspect sizing are desktop-only; the phone tier
+ * switches them off through the three --wall-photo-* vars above, so the box falls back to the
+ * flex-driven, full-width behaviour of the base rule further up this file. --avail-h is the same
+ * viewport slice that base rule caps to, so max-height is identical in both tiers.
+ * Note: `.wall-main .photo-viewport.bw-framed` (higher specificity, further up) keeps owning
+ * aspect-ratio/max-height for the framed read-only view in BOTH tiers — with the same values —
+ * while the desktop-only width cap below still applies to it. */
+.wall-main .photo-viewport {
     --avail-h: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - var(--wall-photo-chrome));
-    flex: 0 1 auto;                       /* size to the contained photo, don't stretch the column */
-    aspect-ratio: var(--fit-aspect, 1.4); /* opt the wall box into aspect sizing only here */
+    flex: 0 1 auto;                        /* size to the contained photo, don't stretch the column */
+    aspect-ratio: var(--wall-photo-aspect, var(--fit-aspect, 1.4));
     height: auto;
     width: auto;
-    max-height: var(--avail-h);           /* hard safety cap: never exceed the card height */
-    max-width: min(100%, calc(var(--avail-h) * var(--fit-aspect, 1.4)));
-    margin-inline: auto;                  /* centre horizontally within the full-width card */
+    max-height: var(--avail-h);            /* hard safety cap: never exceed the card height */
+    max-width: var(--wall-photo-cap, min(100%, calc(var(--avail-h) * var(--fit-aspect, 1.4))));
+    margin-inline: var(--wall-photo-center, auto);  /* centre within the full-width card */
 }
+
+/* The remaining manual-override rules below are deliberately NOT on the tier switch: they widen
+ * an already desktop-sized dialog (1100px), so the desktop tier changes nothing for them and the
+ * explicit toggle stays the only way to go edge to edge. */
 
 /* ========== Personal API Keys ========== */
 

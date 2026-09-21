@@ -53,22 +53,38 @@
                             // When Editable, the transparent drag proxies below own the pointer, so the drawn
                             // shapes go pointer-events:none; otherwise this is byte-for-byte today's behaviour.
                             var interact = Interactive && !Editable;
-                            @if (h.ShapePoints is { Count: >= 3 })
+                            var isFoot = h.Category == HoldCategory.Foot;
+                            @* A foot's drawn square is smaller than the circle that used to be its tap
+                               target, and these interactive modes (carryover review, cross-gen link, the
+                               overlap stepper's picking) are wall-update DECISION surfaces where a mis-tap
+                               is expensive. So a transparent full-radius circle goes behind the square,
+                               restoring byte-for-byte the target the foot had before it was drawn smaller:
+                               same radius, same stroke width, same cursor and pointer-events, same
+                               handlers. It exists only when the drawn shape itself is already pickable
+                               (interact), so no foot becomes pickable anywhere it wasn't, and only for an
+                               UNSHAPED foot — a shaped one draws its polygon and never shrank.
+                               Editable mode needs none of this: its drag proxies below are already
+                               full-radius circles. *@
+                            @if (interact && isFoot && h.ShapePoints is not { Count: >= 3 })
                             {
-                                <polygon @key="h.Id" points="@ShapePolygon(h, g)"
-                                         fill="@fill" stroke="@stroke" stroke-width="@sw"
-                                         style="cursor: @(interact ? "pointer" : "inherit"); pointer-events: @(interact ? "auto" : "none");"
-                                         @onclick="() => HandleHoldTap(h.Id)" @onclick:stopPropagation="true"
-                                         @onmouseover="() => OnHoldHover.InvokeAsync(h.Id)" @onmouseout="() => OnHoldHoverEnd.InvokeAsync()" />
+                                <HoldShape @key="@($"foot-hit-{h.Id}")" X="g.X" Y="g.Y" Radius="g.Radius"
+                                           Fill="transparent" Stroke="transparent" StrokeWidth="@sw"
+                                           Style="cursor: pointer; pointer-events: auto;"
+                                           OnClick="() => HandleHoldTap(h.Id)"
+                                           OnMouseOver="() => OnHoldHover.InvokeAsync(h.Id)"
+                                           OnMouseOut="() => OnHoldHoverEnd.InvokeAsync()" />
                             }
-                            else
-                            {
-                                <circle @key="h.Id" cx="@F(g.X * 100)" cy="@F(g.Y * 100)" r="@F(g.Radius * 100)"
-                                        fill="@fill" stroke="@stroke" stroke-width="@sw"
-                                        style="cursor: @(interact ? "pointer" : "inherit"); pointer-events: @(interact ? "auto" : "none");"
-                                        @onclick="() => HandleHoldTap(h.Id)" @onclick:stopPropagation="true"
-                                        @onmouseover="() => OnHoldHover.InvokeAsync(h.Id)" @onmouseout="() => OnHoldHoverEnd.InvokeAsync()" />
-                            }
+
+                            @* Feet draw as a smaller rounded square, matching the wall editor and the hold
+                               picker. Purely visual: Style below still owns cursor and pointer-events, so
+                               viewport-gestures.js hit-tests exactly as before. *@
+                            <HoldShape @key="h.Id" X="g.X" Y="g.Y" Radius="g.Radius" ShapePoints="h.ShapePoints"
+                                       Foot="isFoot"
+                                       Fill="@fill" Stroke="@stroke" StrokeWidth="@sw"
+                                       Style="@($"cursor: {(interact ? "pointer" : "inherit")}; pointer-events: {(interact ? "auto" : "none")};")"
+                                       OnClick="() => HandleHoldTap(h.Id)"
+                                       OnMouseOver="() => OnHoldHover.InvokeAsync(h.Id)"
+                                       OnMouseOut="() => OnHoldHoverEnd.InvokeAsync()" />
                         }
 
                         @if (HintPoint is { } hint)
@@ -83,27 +99,22 @@
                         {
                             @* Transparent hit proxies drawn over each hold: a pointer-down here starts a move
                                drag; a plain click still selects (via HandleHoldTap). Only present in Editable
-                               mode, so the reuse sites are completely unaffected. *@
+                               mode, so the reuse sites are completely unaffected.
+                               Deliberately NOT Foot: the proxy stays a full-radius circle, which fully
+                               contains the drawn foot square, so drawing feet smaller never shrinks a
+                               drag/tap target here. *@
                             @foreach (var h in Holds)
                             {
                                 var g = Geo(h);
-                                @if (h.ShapePoints is { Count: >= 3 })
-                                {
-                                    <polygon @key="@($"drag-{h.Id}")" points="@ShapePolygon(h, g)"
-                                             fill="transparent" stroke="transparent" stroke-width="@HitStroke"
-                                             style="cursor: move; pointer-events: auto;"
-                                             @onpointerdown="() => StartMove(h)" @onpointerdown:stopPropagation="true"
-                                             @onclick="() => HandleHoldTap(h.Id)" @onclick:stopPropagation="true" />
-                                }
-                                else
-                                {
-                                    <circle @key="@($"drag-{h.Id}")" cx="@F(g.X * 100)" cy="@F(g.Y * 100)"
-                                            r="@F((ExactHitTargets ? g.Radius : Math.Max(g.Radius, HitFloor)) * 100)"
-                                            fill="transparent" stroke="transparent" stroke-width="@HitStroke"
-                                            style="cursor: move; pointer-events: auto;"
-                                            @onpointerdown="() => StartMove(h)" @onpointerdown:stopPropagation="true"
-                                            @onclick="() => HandleHoldTap(h.Id)" @onclick:stopPropagation="true" />
-                                }
+                                @* The polygon variant ignores the radius, so the inflated hit radius can be
+                                   passed unconditionally — it only ever reaches the circle. *@
+                                <HoldShape @key="@($"drag-{h.Id}")" X="g.X" Y="g.Y"
+                                           Radius="@(ExactHitTargets ? g.Radius : Math.Max(g.Radius, HitFloor))"
+                                           ShapePoints="h.ShapePoints"
+                                           Fill="transparent" Stroke="transparent" StrokeWidth="@HitStroke"
+                                           Style="cursor: move; pointer-events: auto;"
+                                           OnPointerDown="() => StartMove(h)"
+                                           OnClick="() => HandleHoldTap(h.Id)" />
                             }
                         }
                     }
@@ -417,12 +428,6 @@
     // The proxies' transparent stroke inflates the target by half its width all round, so it shrinks
     // with zoom too (1 viewBox unit at fit, as before).
     private string HitStroke => F3(1.0 / EffectiveZoom);
-
-    // A hold's custom shape as SVG polygon points (0-100 space), centred on its effective position so a
-    // drag moves the outline too. Shaped holds render as their real shape here (matching the single-image
-    // editor) instead of a plain circle.
-    private string ShapePolygon(PanelHold h, (double X, double Y, double Radius) g) =>
-        string.Join(" ", h.ShapePoints!.Select(sp => F((g.X + sp.Dx) * 100) + "," + F((g.Y + sp.Dy) * 100)));
 
     // A translucent fill for the highlighted hold, derived from the badge colour.
     private static string Blend(string hslOrHex) =>

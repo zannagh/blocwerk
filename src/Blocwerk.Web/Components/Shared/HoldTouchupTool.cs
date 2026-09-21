@@ -33,4 +33,39 @@ public enum HoldTouchupTool
 
     /// <summary>Tap a hold to adopt its size as the size for newly added holds.</summary>
     Pipette,
+
+    // ---- Wall-editor tools -----------------------------------------------------------------
+    // The wall editor's own EditMode used to be a second, parallel enum with no None value, so "no
+    // tool" was unrepresentable there and nothing could be shared with the touch-up surfaces. Its
+    // members live here instead; a surface that does not offer one simply never puts it in its spec.
+
+    /// <summary>Tap a hold to edit its traced outline, then drag the control points.</summary>
+    Shape,
+
+    /// <summary>Tap holds to stamp the current paint colour onto them.</summary>
+    Paint,
+
+    /// <summary>Tap a hold to name it.</summary>
+    Name,
+
+    /// <summary>Drag the wall-border polygon's points.</summary>
+    Border,
+
+    /// <summary>Tap a hold, then drag its handle to tilt the polygon outline in X/Y.</summary>
+    ShapeTilt,
+
+    /// <summary>Tap a new hold then the matching old one to merge them (staged wall updates).</summary>
+    Merge,
+
+    /// <summary>Tap a virtual hold to promote it, or merge it into a detected hold.</summary>
+    MakeActual,
+
+    /// <summary>Tap the virtual hold to keep, then the duplicate to absorb into it.</summary>
+    JoinVirtual,
+
+    /// <summary>Tap a hold that did not physically change, to clear its flags.</summary>
+    MarkUnchanged,
+
+    /// <summary>Tap a hold that was physically swapped or re-set, to flag it and its boulders.</summary>
+    MarkChanged,
 }

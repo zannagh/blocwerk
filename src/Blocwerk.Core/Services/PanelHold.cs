@@ -1,4 +1,5 @@
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
 
 namespace Blocwerk.Core.Services;
 
@@ -12,6 +13,10 @@ namespace Blocwerk.Core.Services;
 /// <param name="Y">Normalized centre Y (0..1).</param>
 /// <param name="Radius">Normalized radius (0..1).</param>
 /// <param name="Color">The detected colour name, or null.</param>
+/// <param name="Category">
+/// Whether the hold is a hand or a foot hold. Mirrors <see cref="Hold.Category"/>; the overlays use it
+/// to draw a foot as a smaller rounded square, the way the wall editor and the hold picker already do.
+/// </param>
 /// <param name="ShapePoints">The hold's custom shape outline (offsets from the centre), or null for a circle.</param>
 /// <param name="IsVirtual">
 /// True when the hold is a user-placed placeholder that isn't visible in the wall photo (e.g. a
@@ -23,5 +28,6 @@ public record PanelHold(
     double Y,
     double Radius,
     string? Color,
+    HoldCategory Category,
     List<ShapePoint>? ShapePoints = null,
     bool IsVirtual = false);

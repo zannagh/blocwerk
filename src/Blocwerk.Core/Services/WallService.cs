@@ -1477,8 +1477,10 @@ public class WallService : IWallService
         }
     }
 
-    public async Task<Hold> UpdateHoldAsync(Guid holdId, double x, double y, double radius, string? color = null, HoldCategory? category = null, bool? isOnKickboard = null, List<ShapePoint>? shapePoints = null, string? name = null, HoldMaterial? material = null, bool flagBouldersOnMove = true, HoldHandType? handType = null)
+    public async Task<Hold> UpdateHoldAsync(Guid holdId, HoldEdit edit)
     {
+        var (x, y, radius) = (edit.X, edit.Y, edit.Radius);
+
         using var op = BlocwerkMetrics.TimeOperation("Wall.UpdateHold");
         try
         {
@@ -1500,38 +1502,22 @@ public class WallService : IWallService
 
             bool positionChanged = Math.Abs(hold.X - x) > 0.0001 || Math.Abs(hold.Y - y) > 0.0001;
 
-            // Callers send the full intended state, so color/material are assigned
-            // unconditionally — allowing them to be cleared, not only set.
-            bool colorChanged = hold.Color != color;
-            bool shapeChanged = shapePoints != null;
-            bool nameChanged = name != null && hold.Name != name;
+            // Every appearance field is tri-state: absent leaves it alone, present writes it — and a
+            // present null CLEARS it. Geometry is the exception, it is always written.
+            bool colorChanged = edit.Color.HasValue && hold.Color != edit.Color.Value;
+            bool shapeChanged = edit.ShapePoints.HasValue;
+            bool nameChanged = edit.Name.HasValue && hold.Name != edit.Name.Value;
 
             hold.X = x;
             hold.Y = y;
             hold.Radius = radius;
-            hold.Color = color;
-            hold.Material = material;
-            hold.HandType = handType;
-
-            if (category.HasValue)
-            {
-                hold.Category = category.Value;
-            }
-
-            if (isOnKickboard.HasValue)
-            {
-                hold.IsOnKickboard = isOnKickboard.Value;
-            }
-
-            if (shapePoints != null)
-            {
-                hold.ShapePoints = shapePoints;
-            }
-
-            if (name != null)
-            {
-                hold.Name = name;
-            }
+            hold.Color = edit.Color.Or(hold.Color);
+            hold.Material = edit.Material.Or(hold.Material);
+            hold.HandType = edit.HandType.Or(hold.HandType);
+            hold.Category = edit.Category.Or(hold.Category);
+            hold.IsOnKickboard = edit.IsOnKickboard.Or(hold.IsOnKickboard);
+            hold.ShapePoints = edit.ShapePoints.Or(hold.ShapePoints);
+            hold.Name = edit.Name.Or(hold.Name);
 
             if (positionChanged)
             {
@@ -1539,7 +1525,7 @@ public class WallService : IWallService
                 // slightly different spots, a hold's position drifts by parallax, so a move alone must not
                 // flag its boulders. There, "changed" is a manual per-hold decision (Mark modified / Mark
                 // unchanged). The single-image editors keep the default, so a move still retires boulders.
-                if (flagBouldersOnMove)
+                if (edit.FlagBouldersOnMove)
                 {
                     var affectedBoulders = await db.BoulderHolds
                         .Where(bh => bh.HoldId == holdId)
@@ -1566,7 +1552,7 @@ public class WallService : IWallService
             else if (nameChanged)
             {
                 BlocwerkMetrics.RecordHoldUpdated(hold.WallId, "named");
-                await _activityLogService.LogAsync(hold.WallId, null, ActivityType.HoldNamed, name);
+                await _activityLogService.LogAsync(hold.WallId, null, ActivityType.HoldNamed, hold.Name);
             }
             else if (colorChanged)
             {

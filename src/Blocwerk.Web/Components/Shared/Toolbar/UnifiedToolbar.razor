@@ -1,0 +1,136 @@
+@* The one toolbar. It renders a ToolbarSpec — the host says what it needs, not how to draw it — and
+   it OWNS the tool selection: the surface handed in is written only here (and by the host's keyboard
+   shortcuts, which go through the same object), so there is no second copy to drift.
+
+   Two things are deliberate:
+   * Tool / Toggle / Command wear DIFFERENT chrome. They were identical .tool-btn buttons before, so a
+     mode, a view filter and a one-shot action looked the same.
+   * The contextual row has a FIXED height, always rendered. Switching tools therefore never reflows
+     the page, which is what the old per-tool .option-bar stack did — the image resized under the
+     cursor every time you changed mode. *@
+
+<div class="bw-toolbar @(Placement == ToolbarPlacement.Sidebar ? "placement-sidebar" : "placement-top") @Class">
+    <div class="editor-toolbar bw-toolbar-bar">
+        @if (Spec.Status is not null)
+        {
+            <div class="toolbar-left">@Spec.Status</div>
+        }
+        <div class="toolbar-right">
+            @{
+                var drawnGroups = 0;
+            }
+            @foreach (var group in Spec.Groups)
+            {
+                var items = group.VisibleItems.ToList();
+                if (items.Count == 0)
+                {
+                    continue;
+                }
+
+                if (drawnGroups++ > 0)
+                {
+                    <span class="toolbar-sep"></span>
+                }
+
+                @foreach (var item in items)
+                {
+                    <button type="button" @key="item.Id"
+                            class="@ButtonClass(item)"
+                            style="@(IsActive(item) ? item.ActiveStyle?.Invoke() : null)"
+                            disabled="@(!item.IsEnabled)"
+                            aria-pressed="@AriaPressed(item)"
+                            title="@Title(item)"
+                            @onclick="() => InvokeAsync(item)">
+                        <span class="tb-icon">@item.Icon</span>
+                        @if (item.Kind == ToolbarItemKind.Toggle)
+                        {
+                            <span class="tb-mark" aria-hidden="true"></span>
+                        }
+                        @if (item.Badge?.Invoke() is { Length: > 0 } badge)
+                        {
+                            <span class="tb-badge">@badge</span>
+                        }
+                        <span class="tb-label">@item.Label</span>
+                    </button>
+                }
+            }
+        </div>
+    </div>
+
+    @* Always present, always the same height — that is the point. *@
+    <div class="bw-toolbar-row">
+        <div class="bw-toolbar-row-inner">
+            @(Spec.RowFor(State.Tool) ?? EmptyRow)
+        </div>
+    </div>
+</div>
+
+@code {
+    /// <summary>What to render. Built by the host, re-read on every render so the gates stay live.</summary>
+    [Parameter, EditorRequired] public ToolbarSpec Spec { get; set; } = default!;
+
+    /// <summary>
+    /// The tool state. The toolbar is the only thing that picks a tool through it; hosts READ it (to
+    /// decide what a tap on their surface means) and never write it behind the toolbar's back.
+    /// </summary>
+    [Parameter, EditorRequired] public HoldTouchupSurface State { get; set; } = default!;
+
+    /// <summary>Raised after the picked tool changed, so the host can drop that tool's working state.</summary>
+    [Parameter] public EventCallback<HoldTouchupTool> ToolChanged { get; set; }
+
+    /// <summary>Top bar (default) or right-hand column.</summary>
+    [Parameter] public ToolbarPlacement Placement { get; set; } = ToolbarPlacement.TopBar;
+
+    /// <summary>Extra classes on the outer element.</summary>
+    [Parameter] public string? Class { get; set; }
+
+    private static readonly RenderFragment EmptyRow = builder => { };
+
+    private bool IsActive(ToolbarItem item) => item.Kind switch
+    {
+        ToolbarItemKind.Tool => State.Tool == item.Tool,
+        ToolbarItemKind.Toggle => item.IsOn?.Invoke() ?? false,
+        _ => false,
+    };
+
+    private string ButtonClass(ToolbarItem item)
+    {
+        var kind = item.Kind switch
+        {
+            ToolbarItemKind.Tool => "tb-tool",
+            ToolbarItemKind.Toggle => "tb-toggle",
+            _ => "tb-command",
+        };
+
+        var active = IsActive(item) ? " is-active" : string.Empty;
+        var danger = item.Danger ? " is-danger" : string.Empty;
+        return $"tb-btn {kind}{active}{danger}";
+    }
+
+    // Toggles are the only kind with an on/off state a screen reader should announce; a tool is a
+    // radio and a command has no state at all.
+    private string? AriaPressed(ToolbarItem item) =>
+        item.Kind == ToolbarItemKind.Toggle ? (IsActive(item) ? "true" : "false") : null;
+
+    private static string Title(ToolbarItem item) =>
+        item.ShortcutKey is { Length: > 0 } key ? $"{item.Label} ({key.ToUpperInvariant()})" : item.Label;
+
+    private async Task InvokeAsync(ToolbarItem item)
+    {
+        if (!item.IsEnabled)
+        {
+            return;
+        }
+
+        if (item.Kind == ToolbarItemKind.Tool)
+        {
+            // Clicking the active tool leaves tool mode, exactly as every touch-up surface already does.
+            var next = State.Tool == item.Tool ? HoldTouchupTool.None : item.Tool;
+            State.SetTool(next);
+            await ToolChanged.InvokeAsync(next);
+            return;
+        }
+
+        await item.OnInvoke.InvokeAsync();
+    }
+}

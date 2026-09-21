@@ -83,6 +83,20 @@ window.bwGestures = (function () {
         }
     }
 
+    /**
+     * The part of the page currently on screen, in layout-viewport CSS pixels — the coordinate
+     * space of clientX/clientY and of `position: fixed`. Identical to the layout viewport at page
+     * scale 1; under a pinch-zoomed page it is the smaller, offset visual viewport.
+     */
+    function visibleBox() {
+        const vv = window.visualViewport;
+        if (vv) {
+            return { left: vv.offsetLeft, top: vv.offsetTop, width: vv.width, height: vv.height };
+        }
+
+        return { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+    }
+
     function touchDistance(touches) {
         const dx = touches[0].clientX - touches[1].clientX;
         const dy = touches[0].clientY - touches[1].clientY;
@@ -97,12 +111,35 @@ window.bwGestures = (function () {
     }
 
     /**
+     * Every node bindGestures has put listeners on `window` for. Mirrors viewport.js's
+     * `bwSwipeBound`: a re-render replaces the viewport element without telling us, and the
+     * window-level mouse listeners it left behind would keep closing over the dead node forever.
+     * Binding a new viewport first sweeps out every entry whose node has left the document, so the
+     * list holds one entry per live viewport and the page has at most a couple of those.
+     */
+    const bwWindowBound = [];
+
+    function releaseDetached() {
+        for (let i = bwWindowBound.length - 1; i >= 0; i--) {
+            const entry = bwWindowBound[i];
+            if (entry.el && entry.el.isConnected) {
+                continue;
+            }
+
+            entry.release();
+            bwWindowBound.splice(i, 1);
+        }
+    }
+
+    /**
      * Normalises wheel / mouse / touch / Safari-gesture input into three intents on
      * `model`: panBy(dx, dy), zoomBy(factor, clientX, clientY, panDx, panDy) and
      * toggleDoubleTapZoom(clientX, clientY). All deltas are screen pixels and every
      * intent is applied exactly once per input event — no deferred second pass.
      */
     function bindGestures(el, model) {
+        releaseDetached();
+
         // ---- Long-press magnifier lens (~8x) on the wall photo.
         // A stationary press-and-hold (touch or mouse) after LENS_HOLD_MS pops a circular
         // lens ABOVE the finger/cursor that magnifies the wall image at the press point. It
@@ -273,9 +310,16 @@ window.bwGestures = (function () {
             }
 
             // Float above the finger/cursor; drop below only when it would clip the top edge.
-            const left = clamp(clientX - LENS_SIZE / 2, 4, window.innerWidth - LENS_SIZE - 4);
+            // Clamped to the VISUAL viewport, not window.innerWidth/innerHeight: since the app stopped
+            // locking the page scale, the user may have pinch-zoomed the page itself, and then the two
+            // differ. The lens is position:fixed, so it is placed in layout-viewport coordinates — the
+            // same space clientX/clientY are in — and visualViewport.offsetLeft/Top + width/height give
+            // the on-screen window expressed in exactly that space. Falls back to the layout viewport
+            // where visualViewport is missing, which is the old behaviour.
+            const view = visibleBox();
+            const left = clamp(clientX - LENS_SIZE / 2, view.left + 4, view.left + view.width - LENS_SIZE - 4);
             let top = clientY - 24 - LENS_SIZE;
-            if (top < 4) {
+            if (top < view.top + 4) {
                 top = clientY + 24;
             }
 
@@ -364,7 +408,17 @@ window.bwGestures = (function () {
             armLens(e.clientX, e.clientY, e.target);
         });
 
-        window.addEventListener('mousemove', function (e) {
+        // Ends a mouse drag from any source: the release itself, a release the window never saw
+        // (focus lost, the OS took the pointer, a context menu opened over the press). Without the
+        // latter the button reads as still held and the image keeps panning with nothing pressed.
+        function endMouseDrag() {
+            mouseDown = false;
+            mouseMoved = 0;
+            cancelLens();
+            setTimeout(function () { delete el.dataset.panActive; }, 0);
+        }
+
+        function onWindowMouseMove(e) {
             if (!mouseDown) {
                 return;
             }
@@ -391,12 +445,24 @@ window.bwGestures = (function () {
                 model.panBy(dx, dy);
                 el.dataset.panActive = 'true';
             }
-        });
+        }
 
-        window.addEventListener('mouseup', function () {
-            mouseDown = false;
-            cancelLens();
-            setTimeout(function () { delete el.dataset.panActive; }, 0);
+        window.addEventListener('mousemove', onWindowMouseMove);
+        window.addEventListener('mouseup', endMouseDrag);
+        // A drag the window stops seeing: the pointer went to another window/tab, the OS cancelled
+        // it, or a context menu opened over the press and swallowed the mouseup.
+        window.addEventListener('blur', endMouseDrag);
+        window.addEventListener('pointercancel', endMouseDrag);
+        el.addEventListener('contextmenu', endMouseDrag);
+
+        bwWindowBound.push({
+            el: el,
+            release: function () {
+                window.removeEventListener('mousemove', onWindowMouseMove);
+                window.removeEventListener('mouseup', endMouseDrag);
+                window.removeEventListener('blur', endMouseDrag);
+                window.removeEventListener('pointercancel', endMouseDrag);
+            },
         });
 
         el.addEventListener('dblclick', function (e) {
@@ -535,6 +601,7 @@ window.bwGestures = (function () {
             // the browser won't synthesise a click, so the hold is not toggled either.
             const wasTap = mode === 'pan' && touchMoved <= 4 && !startInteractive;
             mode = null;
+            startInteractive = false;
             startHoldDrag = false;
             setTimeout(function () { delete el.dataset.panActive; }, 0);
 

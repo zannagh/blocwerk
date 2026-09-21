@@ -9,7 +9,13 @@
 <html lang="en">
 <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    @* No maximum-scale / user-scalable=no: locking the page scale is a WCAG 2.2 SC 1.4.4 failure, and
+       a pointed one in an app whose content is photographs of small holds. Browser zoom is now allowed
+       on ordinary page content; it is suppressed ONLY inside the photo surfaces, which run their own
+       pinch (viewport-gestures.js preventDefaults touch/gesture/ctrl-wheel on the viewport element, and
+       viewport.js keeps touch-action at pan-y/none there). Double-tap-to-zoom stays off app-wide via
+       `touch-action: manipulation` on body, so the custom double-tap zoom has no browser rival. *@
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="/" />
     <link rel="manifest" href="manifest.webmanifest" />
     <meta name="theme-color" content="#16162a" />
@@ -26,6 +32,11 @@
     <link rel="stylesheet" href="@Assets["css/components.css"]" />
     <link rel="stylesheet" href="@Assets["css/training.css"]" />
     <link rel="stylesheet" href="@Assets["css/guides.css"]" />
+    @* The Blazor scoped-CSS bundle (every *.razor.css in this project). It was never linked, which
+       made every scoped rule inert — the components that had been migrated to real <button>s were
+       silently keeping the user-agent button chrome their .razor.css exists to strip. Last, so a
+       component's own rules win over the global sheets, which is what scoped CSS is for. *@
+    <link rel="stylesheet" href="@Assets["Blocwerk.Web.styles.css"]" />
     <script src="@Assets["js/theme.js"]"></script>
     <script src="@Assets["js/nav.js"]"></script>
     <script src="@Assets["js/prefs.js"]"></script>
@@ -105,7 +116,13 @@
     <script src="@Assets["js/beta-video.js"]"></script>
     @* Small glue only; it lazy-loads the large lib/hls/hls.min.js on first playback of an HLS clip. *@
     <script src="@Assets["js/beta-hls.js"]"></script>
-    <script>window.bwViewport && window.bwViewport.blockPageZoom();</script>
+    @* bwViewport.blockPageZoom() is deliberately NOT called any more. It registered window-level
+       preventDefault on ctrl/cmd+wheel and on every Safari gesture* event, i.e. it killed browser
+       zoom across the whole app — which would have made the meta-viewport change above pointless.
+       The photo surfaces do not need it: viewport-gestures.js binds the same preventDefaults on the
+       viewport ELEMENT (target phase, so it always ran first anyway), so custom pinch there is
+       unchanged and the browser cannot double-zoom on top of it. Everywhere else the page now zooms
+       like any other website. The function itself is left in viewport.js, unused. *@
     <script src="@Assets["js/cookie-consent.js"]"></script>
 
     @* Order matters: the queue needs its store, the delegated click handler needs the queue, and

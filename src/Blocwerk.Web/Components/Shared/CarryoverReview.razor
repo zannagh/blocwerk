@@ -154,10 +154,10 @@ else
             <PanelImageView WallId="WallId" Caption="New centre (after)"
                             PhotoUrl="@($"/api/walls/{WallId}/panels/{CenterPanelId}/staged-photo")"
                             Holds="_newHolds" HoldColors="NewColors()"
-                            Editable="true" AddMode="@(_tool == HoldTouchupTool.Add)"
-                            SelectedHoldId="_selectedNewHoldId"
-                            ExactHitTargets="@(_tool == HoldTouchupTool.Delete)"
-                            DragToMove="@(_tool == HoldTouchupTool.Move)"
+                            Editable="true" AddMode="@_touchup.AddMode"
+                            SelectedHoldId="_touchup.SelectedHoldId"
+                            ExactHitTargets="@_touchup.DeleteMode"
+                            DragToMove="@_touchup.MoveMode"
                             OnHoldTap="OnNewHoldTapAsync"
                             OnEmptyTap="OnNewEmptyTap"
                             OnHoldGeometryChanged="OnNewHoldGeometryChanged" />
@@ -170,10 +170,10 @@ else
                 detection. Pick the <strong>move</strong> tool to drag holds into place; the <strong>size slider</strong>
                 resizes the selected hold.
             </span>
-            <HoldTouchupToolbar Tool="_tool" ToolChanged="SetTool"
-                                Size="_newHoldRadius" SizeChanged="OnSizeChanged"
+            <HoldTouchupToolbar Tool="_touchup.Tool" ToolChanged="SetTool"
+                                Size="_touchup.Radius" SizeChanged="OnSizeChanged"
                                 OnSizeCommitted="OnSizeCommittedAsync"
-                                HasSelection="@(_selectedNewHoldId is not null)" />
+                                HasSelection="@(_touchup.SelectedHoldId is not null)" />
         </div>
 
         <div class="bigupdate-legend">

@@ -22,7 +22,7 @@ A self-hostable app to set, share and track boulders on your home wall. Take a p
 
 Blocwerk is built around the thing that makes home walls annoying to track: the wall keeps changing. Holds get stripped, moved and re-set, and everything you ever set on it should survive that. Most of the design follows from there.
 
-* **Set your wall up from photos.** One photo for a small wall, a grid of panel photos for a big one, plus the overhang angle so the schematic view matches what you actually climb on.
+* **Set your wall up from photos.** One photo for a small wall, a grid of panel photos for a big one, plus the overhang angle so grades and progression reflect what you actually climb on.
 * **Holds are detected for you.** A YOLO model finds the holds, and an editor lets you fix what it got wrong: move, reshape, recolour, delete, or add the ones it missed.
 * **Set boulders by picking holds.** Start, normal and top holds, plus a foothold rule (all kickboard holds on, or only the ones you marked). Save as a draft or publish, name it yourself or let it name one for you.
 * **Font and V grades.** Pick the system you think in and everyone else still sees theirs. If a grade is optimistic, others can propose a different one.

@@ -2,6 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Entities;
 using Blocwerk.Core.Services;
 
 namespace Blocwerk.Web.Components.Shared;
@@ -48,6 +49,19 @@ public sealed class HoldTouchupSurface
     /// <summary>True while hit targets must be exact, because the tap deletes what it lands on.</summary>
     public bool DeleteMode => Tool == HoldTouchupTool.Delete;
 
+    /// <summary>
+    /// Which properties the pipette carries, ticked independently in its contextual row. The default
+    /// is <see cref="HoldStampProperty.Size"/> alone, which is exactly what the pipette did when it
+    /// could only copy a radius — so a surface that never shows the picker behaves as it always did.
+    /// </summary>
+    public HoldStampProperty StampMask { get; private set; } = HoldStampProperty.Size;
+
+    /// <summary>
+    /// The buffer filled by the last pipette pick, or null while the pipette is still waiting for one.
+    /// Its presence is what makes the NEXT tap a stamp rather than another pick.
+    /// </summary>
+    public HoldStamp? Stamp { get; private set; }
+
     /// <summary>Mutually exclusive tool switch, mirroring the wall editor's SetMode.</summary>
     public void SetTool(HoldTouchupTool tool)
     {
@@ -56,7 +70,34 @@ public sealed class HoldTouchupSurface
         {
             SelectedHoldId = null;
         }
+
+        // Entering the pipette always starts from an empty buffer, so the first tap is unambiguously a
+        // pick. Carrying a stale buffer over would make the same gesture mean "stamp" depending on what
+        // you did minutes ago.
+        if (tool == HoldTouchupTool.Pipette)
+        {
+            Stamp = null;
+        }
     }
+
+    /// <summary>Ticks or unticks one property in the pipette's picker. Changing the set drops the buffer.</summary>
+    public void ToggleStampProperty(HoldStampProperty property)
+    {
+        StampMask ^= property;
+
+        // The buffer records what was ticked at pick time; re-ticking after a pick would otherwise stamp
+        // a property the pipette never sampled (or keep stamping one the user just unticked).
+        Stamp = null;
+    }
+
+    /// <summary>Whether <paramref name="property"/> is ticked in the picker.</summary>
+    public bool IsStampProperty(HoldStampProperty property) => (StampMask & property) == property;
+
+    /// <summary>Fills the buffer from <paramref name="source"/> with the currently ticked properties.</summary>
+    public void PickStamp(Hold source) => Stamp = HoldStamp.From(source, StampMask);
+
+    /// <summary>Drops the buffer, so the next pipette tap picks again.</summary>
+    public void ClearStamp() => Stamp = null;
 
     /// <summary>Picks a tool, or leaves tool mode when it is already the active one.</summary>
     public void Toggle(HoldTouchupTool tool) => SetTool(Tool == tool ? HoldTouchupTool.None : tool);

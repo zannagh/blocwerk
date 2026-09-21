@@ -19,7 +19,7 @@ public class HoldTwinPropagationTests
         using var h = new WallTestHarness();
         var (centre, twin) = await SeedLinkedPairAsync(h);
 
-        await h.WallService.UpdateHoldAsync(centre.Id, centre.X, centre.Y, centre.Radius, name: "Blue Pinch");
+        await h.WallService.UpdateHoldAsync(centre.Id, new HoldEdit { X = centre.X, Y = centre.Y, Radius = centre.Radius, Name = "Blue Pinch" });
 
         await using var db = h.CreateContext();
         Assert.Equal("Blue Pinch", (await db.Holds.SingleAsync(x => x.Id == twin.Id)).Name);
@@ -33,7 +33,7 @@ public class HoldTwinPropagationTests
         using var h = new WallTestHarness();
         var (centre, twin) = await SeedLinkedPairAsync(h);
 
-        await h.WallService.UpdateHoldAsync(twin.Id, twin.X, twin.Y, twin.Radius, name: "Far Jug");
+        await h.WallService.UpdateHoldAsync(twin.Id, new HoldEdit { X = twin.X, Y = twin.Y, Radius = twin.Radius, Name = "Far Jug" });
 
         await using var db = h.CreateContext();
         Assert.Equal("Far Jug", (await db.Holds.SingleAsync(x => x.Id == centre.Id)).Name);
@@ -48,7 +48,7 @@ public class HoldTwinPropagationTests
         var (centre, twin) = await SeedLinkedPairAsync(h);
         await SetNameAsync(h, twin.Id, "Keeps Its Name");
 
-        await h.WallService.UpdateHoldAsync(centre.Id, centre.X, centre.Y, centre.Radius, color: "red", name: "");
+        await h.WallService.UpdateHoldAsync(centre.Id, new HoldEdit { X = centre.X, Y = centre.Y, Radius = centre.Radius, Color = "red", Name = "" });
 
         await using var db = h.CreateContext();
         Assert.Equal("Keeps Its Name", (await db.Holds.SingleAsync(x => x.Id == twin.Id)).Name);
