@@ -2292,7 +2292,10 @@ html.bw-fullscreen .wall-main .photo-viewport {
     position: relative;
     height: auto;
     aspect-ratio: var(--fit-aspect, 1.4);
-    max-height: 70vh;
+    /* Published as a custom property, not a literal, so the desktop-mode width cap below can
+       derive the box's widest allowed width from the SAME budget this height cap uses. */
+    --panel-step-max-h: 70vh;
+    max-height: var(--panel-step-max-h);
     overflow: auto;
     -webkit-overflow-scrolling: touch;
     touch-action: pan-y;
@@ -2399,7 +2402,32 @@ html.bw-fullscreen .wall-main .photo-viewport {
     .panel-stepper-pair { grid-template-columns: 1fr; }
     /* Keep the aspect-fit sizing on mobile; just tighten the portrait cap so a tall photo
        does not eat the whole screen. No fixed height, so landscape still hugs the image. */
-    .panel-step-viewport { max-height: 60vh; }
+    .panel-step-viewport { --panel-step-max-h: 60vh; }
+}
+
+/* ── Cross-panel hold link tool (PanelLinkTool.razor) ──────────────────────── */
+/* The overlay itself is a full-view takeover (it is also in the keyboard dispatcher's
+   takeover-surface selector, so the class name must stay); only the dialog inside it is
+   width-capped. The cap is a comfortable reading width in normal (mobile-ish) layout, and
+   desktop mode — html.bw-fullscreen, the same toggle the pages use — lifts it so the two
+   photos get the whole window, which is the entire point of comparing them side by side. */
+.panel-link-dialog {
+    width: 100%;
+    max-width: 1100px;
+    background: var(--bg-surface);
+    border-radius: 14px;
+    padding: 16px;
+    box-shadow: 0 10px 40px var(--shadow-lg);
+}
+html.bw-fullscreen .panel-link-dialog { max-width: none; }
+/* With the cap lifted, each half of the pair can become wide enough that the box's
+   aspect-driven height would exceed its height budget and the photo would only be reachable by
+   scrolling. Cap the WIDTH at `budget * --fit-aspect` instead (the same trick the fullscreen
+   photo views use), so the image grows into all the width it can actually use and still shows
+   whole. Pure CSS off the JS-published aspect, so the zoom/pan model is untouched. */
+html.bw-fullscreen .panel-link-dialog .panel-step-viewport {
+    max-width: min(100%, calc(var(--panel-step-max-h) * var(--fit-aspect, 1.4)));
+    margin-inline: auto;
 }
 
 /* ── Big-wall update flow (upload → carryover → overlaps → apply) ──────────── */
