@@ -431,6 +431,10 @@ else
     private bool _isAdmin;
     private bool _isSetter;
     private bool _showHistoric;
+
+    /// <summary>The generation the "Then" view renders, or null when there is nothing older to show.
+    /// Resolved once per boulder load; see <see cref="ResolveHistoricGenerationAsync"/>.</summary>
+    private int? _historicGeneration;
     private string? _publishError;
     private string? _toast;
 
@@ -628,23 +632,49 @@ else
     }
 
     /// <summary>
-    /// The generation the boulder's own holds live at. Gating on this rather than
-    /// Boulder.Generation is exact: the latter is only stamped on create/revise, so a
-    /// boulder carried through an alignment would otherwise look stale when it isn't.
+    /// The generation the boulder's own holds live at. FALLBACK ONLY now — the "Then" view uses
+    /// <see cref="_historicGeneration"/>, which also follows each hold's ancestor. This still beats
+    /// Boulder.Generation (only stamped on create/revise) when the server cannot answer.
     /// </summary>
     private int? BoulderHoldGeneration => _boulder is { BoulderHolds.Count: > 0 }
         ? _boulder.BoulderHolds.Max(bh => bh.Hold.Generation)
         : null;
 
     /// <summary>
-    /// The "Then" toggle is offered whenever the boulder's holds predate the wall's current
-    /// generation. This gate MUST stay permission-free and query-free: any panel read runs through
-    /// the viewer resolution, which throws for an anonymous share-link viewer and returns nothing
-    /// for a signed-in non-member, so gating on one would hide the toggle from exactly the viewers
-    /// who can still use it.
+    /// The "Then" toggle is offered whenever the boulder has an older state to show, and it renders
+    /// THAT generation. Resolved once per load into <see cref="_historicGeneration"/> — this gate
+    /// MUST stay a pure field read: any query or permission call at render time runs through the
+    /// viewer resolution, which throws for an anonymous share-link viewer and returns nothing for a
+    /// signed-in non-member, so gating on one hid the toggle from exactly the viewers who can use it.
     /// </summary>
-    private bool CanViewHistoric =>
-        _boulder != null && BoulderHoldGeneration is { } g && g < _boulder.Wall.CurrentGeneration;
+    private bool CanViewHistoric => _boulder != null && _historicGeneration.HasValue;
+
+    /// <summary>
+    /// Resolves the generation the "Then" view shows, through the server rule that follows each
+    /// hold's cross-generation ancestor. Needed because a hold CARRIED through a wall update is a new
+    /// row stamped at the CURRENT generation: the boulder's own hold generations therefore do not
+    /// reveal that it changed, and the old max-hold-generation gate hid the toggle on precisely the
+    /// boulders flagged because a hold changed. Share-link viewers resolve it by token.
+    /// <para>
+    /// If the server cannot answer, fall back to the OLD max-hold-generation rule rather than hiding
+    /// the toggle: a slightly wrong "Then" beats no "Then" at all.
+    /// </para>
+    /// </summary>
+    private async Task ResolveHistoricGenerationAsync()
+    {
+        try
+        {
+            _historicGeneration = await BoulderService.GetHistoricGenerationAsync(BoulderId, ShareToken);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Could not resolve the historic generation of boulder {BoulderId}", BoulderId);
+            _historicGeneration = _boulder != null && BoulderHoldGeneration is { } g
+                && g < _boulder.Wall.CurrentGeneration
+                    ? g
+                    : null;
+        }
+    }
 
     /// <summary>
     /// True when one of the panels carrying this boulder's holds lags the wall's current generation
@@ -686,7 +716,7 @@ else
     {
         get
         {
-            var gen = _showHistoric && BoulderHoldGeneration is { } g ? $"/{g}" : string.Empty;
+            var gen = _showHistoric && _historicGeneration is { } g ? $"/{g}" : string.Empty;
             return !string.IsNullOrEmpty(ShareToken)
                 ? $"/api/walls/{WallId}/photo{gen}?token={ShareToken}"
                 : $"/api/walls/{WallId}/photo{gen}";
@@ -749,6 +779,7 @@ else
         _isSetter = false;
         _isAdmin = false;
         _showHistoric = false;
+        _historicGeneration = null;
         _boulderHoldIds = [];
         _activeProposal = null;
         _isFavorite = false;
@@ -850,6 +881,7 @@ else
         // others have sent it, so there is no longer a "sent by others" gate to pre-compute here.
 
         // A stale boulder only makes sense against the wall it was set on, so open it in "Then".
+        await ResolveHistoricGenerationAsync();
         _showHistoric = CanViewHistoric;
         await LoadWallHolds();
         await LoadPanelData();
@@ -891,6 +923,17 @@ else
                 if (_boulder != null)
                 {
                     _boulderHoldIds = _boulder.BoulderHolds.Select(bh => bh.HoldId).ToHashSet();
+
+                    // A promote on another circuit moves the wall's generation and the boulder's
+                    // lineage under us, so the cached answer would be stale exactly when it matters.
+                    await ResolveHistoricGenerationAsync();
+                    if (!CanViewHistoric)
+                    {
+                        // Nothing older left to show: drop out of "Then" rather than labelling
+                        // today's wall as the old one.
+                        _showHistoric = false;
+                    }
+
                     await LoadWallHolds();
                     await LoadPanelData();
                 }
@@ -960,7 +1003,7 @@ else
             // generation — the photos its holds were placed on — not today's re-photographed ones.
             // Its holds carry the superseded panel rows' ids, so those rows are also what makes
             // RenderPanelId resolve them instead of dropping them onto the centre panel.
-            var panels = _showHistoric && BoulderHoldGeneration is { } gen
+            var panels = _showHistoric && _historicGeneration is { } gen
                 ? await WallPanelService.GetPanelsAsync(WallId, gen)
                 : await WallPanelService.GetPanelsAsync(WallId);
             _livePanels = panels.Where(p => p.IsLive).ToList();
@@ -1190,12 +1233,12 @@ else
     {
         // In the historic view the schematic must draw the generation the boulder's
         // holds belong to, or none of the highlighted ids would be in the list.
-        if (_showHistoric && BoulderHoldGeneration is { } gen && string.IsNullOrEmpty(ShareToken))
+        if (_showHistoric && _historicGeneration is { } gen && string.IsNullOrEmpty(ShareToken))
         {
             return await Cache.GetHoldsForGenerationAsync(WallId, gen);
         }
 
-        if (_showHistoric && BoulderHoldGeneration.HasValue && _boulder != null)
+        if (_showHistoric && _historicGeneration.HasValue && _boulder != null)
         {
             // Anonymous share viewers can't query generations; the boulder's own
             // holds are enough to render its schematic.

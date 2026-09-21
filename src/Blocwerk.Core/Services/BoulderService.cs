@@ -63,6 +63,26 @@ public interface IBoulderService
 
     Task<Boulder?> GetBoulderByShareTokenAsync(Guid boulderId, string shareToken);
 
+    /// <summary>
+    /// The generation the boulder should be SHOWN at in the historic ("Then") view, or null when it
+    /// has no older state worth offering — i.e. the resolved generation is the wall's current one.
+    /// </summary>
+    /// <remarks>
+    /// Per hold: its ANCESTOR's generation when cross-generation lineage records one, else the hold's
+    /// own generation; the boulder's value is the MAX over its holds. The ancestor hop is what makes
+    /// this correct — a hold CARRIED through a wall update gets a fresh row at the current generation,
+    /// so the boulder's own hold generations reveal nothing about it having changed, and gating on
+    /// them alone hid the toggle from exactly the boulders flagged because a hold changed. The hop is
+    /// ONE generation back (the immediate predecessor), not transitively to the origin: the question
+    /// is "how did it look before the change that flagged it".
+    /// <para>
+    /// Pass <paramref name="shareToken"/> to resolve it on the anonymous share-link path; that read
+    /// is gated by the wall's share token exactly like <see cref="GetBoulderByShareTokenAsync"/>
+    /// instead of by viewer membership, which an anonymous viewer has none of.
+    /// </para>
+    /// </remarks>
+    Task<int?> GetHistoricGenerationAsync(Guid boulderId, string? shareToken = null, CancellationToken ct = default);
+
     Task<List<Boulder>> GetBouldersForWallAsync(Guid wallId, bool includeArchived = false);
 
     /// <summary>
@@ -604,6 +624,65 @@ public class BoulderService : IBoulderService
                 .Include(b => b.Wall)
                 .Where(b => b.Id == boulderId && b.Wall.ShareToken == shareToken && !b.IsDraft)
                 .FirstOrDefaultAsync();
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
+    }
+
+    public async Task<int?> GetHistoricGenerationAsync(
+        Guid boulderId, string? shareToken = null, CancellationToken ct = default)
+    {
+        using var op = BlocwerkMetrics.TimeOperation("Boulder.GetHistoricGeneration");
+        try
+        {
+            var isShare = !string.IsNullOrEmpty(shareToken);
+
+            // The share path never resolves a viewer: Guid.Empty opens the membership half of the
+            // wall filter and the share token below is the whole gate, mirroring
+            // GetBoulderByShareTokenAsync. Only the normal path resolves a viewer (and still
+            // tolerates an anonymous kiosk, which ResolveViewerIdAsync maps to Guid.Empty).
+            var viewerId = isShare ? Guid.Empty : await ResolveViewerIdAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
+            db.CurrentUserId = viewerId;
+
+            var gated = isShare
+                ? db.Boulders.Where(b => b.Id == boulderId && b.Wall.ShareToken == shareToken)
+
+                // Same reach-through as GetBoulderAsync: Boulder carries no filter of its own, so the
+                // wall read is what puts this under membership (and the kiosk wall gate).
+                : db.Boulders.Where(b => b.Id == boulderId && db.Walls.Any(w => w.Id == b.WallId));
+
+            // One round trip: per boulder hold, its own generation and the generation of each ancestor
+            // pointing at it (null when it has none), plus the wall's current generation to compare
+            // against. Written as a LEFT JOIN rather than a per-row subquery because the latter needs
+            // APPLY, which SQLite — what the tests run on — cannot translate.
+            var rows = await (
+                from b in gated
+                from bh in b.BoulderHolds
+                join link in db.HoldGenerationLinks on bh.HoldId equals link.NewHoldId into links
+                from link in links.DefaultIfEmpty()
+                select new
+                {
+                    b.Wall.CurrentGeneration,
+                    OwnGeneration = bh.Hold.Generation,
+                    AncestorGeneration = (int?)link.FromGeneration,
+                })
+                .ToListAsync(ct);
+
+            if (rows.Count == 0)
+            {
+                return null;
+            }
+
+            // A hold carried into the current generation is a NEW row at that generation, so its own
+            // generation says nothing about the change that flagged the boulder — its ancestor's does.
+            // Prefer the ancestor's generation wherever there is one; the boulder is offered at the
+            // MAX of those, i.e. the newest state that still predates today's wall.
+            var resolved = rows.Max(r => r.AncestorGeneration ?? r.OwnGeneration);
+            return resolved < rows[0].CurrentGeneration ? resolved : null;
         }
         catch (Exception ex)
         {
