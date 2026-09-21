@@ -24,6 +24,21 @@ namespace Blocwerk.Core.Services;
 public partial class WallBigUpdateService
 {
     /// <summary>
+    /// How many hold radii a warp-predicted outline's vertex mean may sit from the successor's centre and
+    /// still be accepted on the radius half of the test. Two radii is a whole hold-width of slack — ample
+    /// for registration jitter — while a physically moved hold misses by many multiples of it. Note this
+    /// is only the FLOOR of the window: the outline's own extent widens it (see
+    /// <see cref="BelongsToSuccessor"/>), because a traced polygon's radius is stale by construction.
+    /// </summary>
+    private const double WarpedShapeRadiusFactor = 2.0;
+
+    /// <summary>
+    /// Floor for the radius used in the tolerance above, so a hold with a zero/degenerate radius still
+    /// gets a workable window instead of demanding an exact vertex-mean hit.
+    /// </summary>
+    private const double MinWarpedShapeRadius = 0.005;
+
+    /// <summary>
     /// Reconciles the carried old holds against the staged detections per the user's carryover decisions,
     /// then keeps or discards the remaining staged CENTRE detections as new holds. Twin lookup spans EVERY
     /// updated panel (<paramref name="stagedTwins"/>), so a co-updated neighbour's old hold promotes its
@@ -402,7 +417,25 @@ public partial class WallBigUpdateService
     /// the old hold. The warped vertices are ABSOLUTE new-image normalized points; ShapePoints are stored
     /// as centre-relative offsets, so each vertex is rebased against the successor's OWN (already-final)
     /// centre. A degenerate polygon (&lt; 3 vertices) or no entry leaves the successor's shape untouched —
-    /// i.e. whatever the clone copied (the old outline) or the twin's own detected shape.
+    /// i.e. whatever the clone copied (the old outline), or, for a matched twin, NOTHING: a staged
+    /// detection is created without ShapePoints, so a twin that never gets a warped outline written has
+    /// none at all.
+    /// <para>
+    /// A warped polygon that does not sit ON the successor is REFUSED (see <see cref="BelongsToSuccessor"/>).
+    /// The warp is a prediction of where the OLD hold's pixels land; for a hold that physically MOVED the
+    /// prediction stays near the old spot while the matched twin sits at the new one, and rebasing those
+    /// absolute vertices on the twin's centre produced offsets of roughly (old − new) — a polygon drawn
+    /// far from its own hold, which then left the viewBox entirely on the first drag.
+    /// </para>
+    /// <para>
+    /// A refusal on the MATCHED-TWIN path therefore COSTS the outline: the predecessor may have carried a
+    /// hand-traced polygon and the twin has none, so the hold comes out of the promote as a plain circle.
+    /// That is still the honest answer — translating the old photo's polygon onto a hold that moved would
+    /// assert a trace the new photo never supports — but it must not be silent, so the successor is flagged
+    /// <see cref="Hold.NeedsReview"/>. The owner then finds it in the review queue and re-traces it, instead
+    /// of discovering a lost outline months later. A clone (no twin) keeps the copied old outline and is
+    /// not flagged: nothing was lost there.
+    /// </para>
     /// </summary>
     private static void ApplyWarpedShape(
         Hold successor,
@@ -414,9 +447,57 @@ public partial class WallBigUpdateService
             return;
         }
 
+        if (!BelongsToSuccessor(successor, polygon))
+        {
+            // Nothing is written, and the successor may now be left with no outline at all. Flag it so the
+            // loss surfaces in the review queue rather than passing as a hold that never had one.
+            if (successor.ShapePoints is not { Count: >= 3 })
+            {
+                successor.NeedsReview = true;
+            }
+
+            return;
+        }
+
         successor.ShapePoints = polygon
             .Select(v => new ShapePoint { Dx = v.X - successor.X, Dy = v.Y - successor.Y })
             .ToList();
+    }
+
+    /// <summary>
+    /// True when the warped polygon sits ON the successor — i.e. it can plausibly be that hold's outline.
+    /// The window is the LARGER of two things: <see cref="WarpedShapeRadiusFactor"/> hold radii, and the
+    /// polygon's own extent (the half-diagonal of its bounding box around its vertex mean).
+    /// <para>
+    /// The extent half is what makes this safe on traced outlines. A polygon is hand-drawn vertex by vertex
+    /// and never updates the hold's radius — changing the radius RESETS the polygon to a default octagon —
+    /// so a rail or volume traced out of a small detection keeps that small radius for ever, and its vertex
+    /// mean legitimately sits many radii out. A radius-only test calls such an outline detached. An outline
+    /// of a hold contains that hold's centre, though, so its mean offset never exceeds its own extent,
+    /// while an (old − new) translation carries the whole polygon clear of the hold and does exceed it.
+    /// </para>
+    /// <para>
+    /// Deliberately a refusal rather than a re-centre on the polygon's own vertex mean: for a moved hold the
+    /// warped polygon is the shape the OLD photo saw at the OLD place, and translating it onto the twin
+    /// would assert a traced outline the new photo never supports. Keeping what the successor already has
+    /// is the honest answer (see <see cref="ApplyWarpedShape"/> for the review flag that makes the loss
+    /// visible), and it leaves every legitimate warp-carry bit-for-bit unchanged.
+    /// </para>
+    /// </summary>
+    private static bool BelongsToSuccessor(Hold successor, IReadOnlyList<HoldPositionNorm> polygon)
+    {
+        var meanX = polygon.Average(v => v.X);
+        var meanY = polygon.Average(v => v.Y);
+        var dx = meanX - successor.X;
+        var dy = meanY - successor.Y;
+
+        var extentX = polygon.Max(v => Math.Abs(v.X - meanX));
+        var extentY = polygon.Max(v => Math.Abs(v.Y - meanY));
+        var extent = Math.Sqrt((extentX * extentX) + (extentY * extentY));
+
+        var radiusTolerance = Math.Max(successor.Radius, MinWarpedShapeRadius) * WarpedShapeRadiusFactor;
+        var tolerance = Math.Max(radiusTolerance, extent);
+        return (dx * dx) + (dy * dy) <= tolerance * tolerance;
     }
 
     private static void AddGenerationLink(

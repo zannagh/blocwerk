@@ -68,7 +68,9 @@ public class HoldPropertySyncTests
         Assert.Equal(0.1, target.X);
         Assert.Equal(0.2, target.Y);
         Assert.Equal(0.02, target.Radius);
-        Assert.Equal("tgt", target.Name);
+        // Name IS an appearance field (a physical label carried across panels), so it is copied here;
+        // geometry, position and lifecycle are what this asserts are left alone.
+        Assert.Equal("src", target.Name);
         Assert.False(target.IsOnKickboard);
         Assert.False(target.NeedsReview);
         Assert.Equal(3, target.Generation);
@@ -134,20 +136,28 @@ public class HoldPropertySyncTests
     // ---- Backfill -------------------------------------------------------------------------
 
     [Fact]
-    public async Task Backfill_TransitiveChain_PropagatesCentreToAll_AndIsIdempotent()
+    public async Task Backfill_TransitiveChain_FillsUncuratedCopies_AndIsIdempotent()
     {
         using var h = new WallTestHarness();
         await h.SeedWallAsync(holdCount: 0);
 
+        // The case the backfill exists for: one curated centre, two never-curated copies down the chain.
         var (centre, right, right2) = await SeedChainAsync(
             h,
-            centre: new Appearance("red", HoldMaterial.PU, HoldCategory.Hand, HoldHandType.Crimp),
-            right: new Appearance("blue", HoldMaterial.Wood, HoldCategory.Foot, HoldHandType.Jug),
-            right2: new Appearance("green", HoldMaterial.PE, HoldCategory.Foot, HoldHandType.Sloper));
+            centre: new Appearance("red", HoldMaterial.PU, HoldCategory.Foot, HoldHandType.Crimp),
+            right: new Appearance(null, null, HoldCategory.Hand, null),
+            right2: new Appearance(null, null, HoldCategory.Hand, null));
 
         await HoldPropertyBackfill.RunIfNeededAsync(h.DbContextFactory, NullLogger.Instance);
 
-        await AssertAllEqualAsync(h, "red", HoldMaterial.PU, HoldCategory.Hand, HoldHandType.Crimp, centre, right, right2);
+        // Category is NOT propagated: Hand is both the enum default and a valid deliberate choice, so
+        // the backfill cannot tell "never set" from "set back to Hand" and filling it turned every
+        // restart into a revert of the user's edit. The copies keep their own Hand.
+        await AssertAllEqualAsync(h, "red", HoldMaterial.PU, HoldCategory.Hand, HoldHandType.Crimp, right, right2);
+        await using (var centreCheck = h.CreateContext())
+        {
+            Assert.Equal(HoldCategory.Foot, (await centreCheck.Holds.FirstAsync(x => x.Id == centre)).Category);
+        }
 
         // A second run must not change any hold's UpdatedAt-equivalent state: values stay identical.
         var before = await SnapshotAsync(h, centre, right, right2);
@@ -156,8 +166,85 @@ public class HoldPropertySyncTests
         Assert.Equal(before, after);
     }
 
+    // The backfill runs unattended on every start, so it must never overwrite a value somebody set: a
+    // deliberate edit on a peripheral panel used to be REVERTED to the centre's value at the next restart.
     [Fact]
-    public async Task Backfill_NullCentreValue_ClearsPeripheral_CentreWinsFully()
+    public async Task Backfill_CuratedPeripheral_IsNotRevertedToTheCentre()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync(holdCount: 0);
+
+        var (_, right, _) = await SeedChainAsync(
+            h,
+            centre: new Appearance("red", HoldMaterial.PU, HoldCategory.Hand, HoldHandType.Crimp),
+            right: new Appearance("blue", HoldMaterial.Wood, HoldCategory.Foot, HoldHandType.Jug),
+            right2: null);
+
+        await HoldPropertyBackfill.RunIfNeededAsync(h.DbContextFactory, NullLogger.Instance);
+
+        await using var db = h.CreateContext();
+        var edited = await db.Holds.FirstAsync(x => x.Id == right);
+        Assert.Equal("blue", edited.Color);
+        Assert.Equal(HoldMaterial.Wood, edited.Material);
+        Assert.Equal(HoldCategory.Foot, edited.Category);
+        Assert.Equal(HoldHandType.Jug, edited.HandType);
+    }
+
+    // F5 convergence. Fill-only propagation that runs strictly centre-outward never converges when the
+    // CENTRE is the uncurated end: nothing carries a value inward. The fill is direction-agnostic, so a
+    // value on the periphery reaches the centre (and the far end) just the same.
+    [Fact]
+    public async Task Backfill_CuratedPeripheral_FillsTheUncuratedCentre()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync(holdCount: 0);
+
+        var (centre, _, right2) = await SeedChainAsync(
+            h,
+            centre: new Appearance(null, null, HoldCategory.Hand, null),
+            right: new Appearance("blue", HoldMaterial.Wood, HoldCategory.Hand, HoldHandType.Jug),
+            right2: new Appearance(null, null, HoldCategory.Hand, null));
+
+        await HoldPropertyBackfill.RunIfNeededAsync(h.DbContextFactory, NullLogger.Instance);
+
+        await using var db = h.CreateContext();
+        var filledCentre = await db.Holds.FirstAsync(x => x.Id == centre);
+        Assert.Equal("blue", filledCentre.Color);
+        Assert.Equal(HoldMaterial.Wood, filledCentre.Material);
+        Assert.Equal(HoldHandType.Jug, filledCentre.HandType);
+
+        // And sideways, to the far peripheral copy the centre could never have reached either.
+        var filledFar = await db.Holds.FirstAsync(x => x.Id == right2);
+        Assert.Equal("blue", filledFar.Color);
+        Assert.Equal(HoldHandType.Jug, filledFar.HandType);
+    }
+
+    // F5, the destructive half. A peripheral hold deliberately set BACK to Hand looks exactly like one
+    // that was never touched, so filling Category from the centre overwrote that choice on every single
+    // restart. Category is not backfilled at all any more — a restart must be a no-op here.
+    [Fact]
+    public async Task Backfill_DeliberateHandCategory_SurvivesRepeatedRestarts()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync(holdCount: 0);
+
+        var (_, right, _) = await SeedChainAsync(
+            h,
+            centre: new Appearance("red", HoldMaterial.PU, HoldCategory.Foot, HoldHandType.Crimp),
+            right: new Appearance("red", HoldMaterial.PU, HoldCategory.Hand, HoldHandType.Crimp),
+            right2: null);
+
+        for (var restart = 0; restart < 3; restart++)
+        {
+            await HoldPropertyBackfill.RunIfNeededAsync(h.DbContextFactory, NullLogger.Instance);
+        }
+
+        await using var db = h.CreateContext();
+        Assert.Equal(HoldCategory.Hand, (await db.Holds.FirstAsync(x => x.Id == right)).Category);
+    }
+
+    [Fact]
+    public async Task Backfill_NullCentreValue_DoesNotClearPeripheral()
     {
         using var h = new WallTestHarness();
         await h.SeedWallAsync(holdCount: 0);
@@ -170,11 +257,12 @@ public class HoldPropertySyncTests
 
         await HoldPropertyBackfill.RunIfNeededAsync(h.DbContextFactory, NullLogger.Instance);
 
+        // An unset centre says nothing; it is not an instruction to wipe the copy that HAS a value.
         await using var db = h.CreateContext();
         var peripheral = await db.Holds.FirstAsync(x => x.Id == right);
-        Assert.Null(peripheral.Color);
-        Assert.Null(peripheral.Material);
-        Assert.Null(peripheral.HandType);
+        Assert.Equal("blue", peripheral.Color);
+        Assert.Equal(HoldMaterial.PE, peripheral.Material);
+        Assert.Equal(HoldHandType.Sloper, peripheral.HandType);
     }
 
     [Fact]
@@ -183,29 +271,37 @@ public class HoldPropertySyncTests
         using var h = new WallTestHarness();
         await h.SeedWallAsync(holdCount: 0);
 
-        // Two holds tie on centrality 1: panel (-1,0) wins on lower Col, so its "left" colour spreads.
+        // Two holds tie on centrality 1: panel (-1,0) wins on lower Col, so its "left" colour is the
+        // source — and the uncoloured hold further out at (2,0) is the one that gets filled. The tied
+        // (1,0) hold keeps the colour it already has: the backfill fills gaps, it does not overwrite.
         Guid leftId;
         Guid rightId;
+        Guid outerId;
         await using (var db = h.CreateContext())
         {
             var left = NewPanel(h.WallId, -1, 0);
             var right = NewPanel(h.WallId, 1, 0);
-            db.WallPanels.AddRange(left, right);
+            var outer = NewPanel(h.WallId, 2, 0);
+            db.WallPanels.AddRange(left, right, outer);
 
             var leftHold = NewHold(h.WallId, left.Id, "left-colour");
             var rightHold = NewHold(h.WallId, right.Id, "right-colour");
-            db.Holds.AddRange(leftHold, rightHold);
+            var outerHold = NewHold(h.WallId, outer.Id, null);
+            db.Holds.AddRange(leftHold, rightHold, outerHold);
             db.HoldLinks.Add(NewLink(h.WallId, leftHold.Id, rightHold.Id));
+            db.HoldLinks.Add(NewLink(h.WallId, rightHold.Id, outerHold.Id));
             await db.SaveChangesAsync();
             leftId = leftHold.Id;
             rightId = rightHold.Id;
+            outerId = outerHold.Id;
         }
 
         await HoldPropertyBackfill.RunIfNeededAsync(h.DbContextFactory, NullLogger.Instance);
 
         await using var check = h.CreateContext();
         Assert.Equal("left-colour", (await check.Holds.FirstAsync(x => x.Id == leftId)).Color);
-        Assert.Equal("left-colour", (await check.Holds.FirstAsync(x => x.Id == rightId)).Color);
+        Assert.Equal("left-colour", (await check.Holds.FirstAsync(x => x.Id == outerId)).Color);
+        Assert.Equal("right-colour", (await check.Holds.FirstAsync(x => x.Id == rightId)).Color);
     }
 
     // ---- CreateHoldLinkAsync --------------------------------------------------------------

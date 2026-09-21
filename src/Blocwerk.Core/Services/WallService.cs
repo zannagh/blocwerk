@@ -392,13 +392,25 @@ public class WallService : IWallService
 
             await WallAdminGuard.EnsureWallEditorAsync(db, hold.WallId, user.Id, CancellationToken.None);
 
-            hold.NeedsReview = true;
+            // Mirror image of RestoreBouldersForUnchangedHoldAsync: this (more central) panel is ground
+            // truth for the same physical hold on more peripheral panels, so a CHANGED verdict has to
+            // carry outward exactly as the UNCHANGED one already does. Without it a hold ends up flagged
+            // on one panel and clean on its twin, and the editor's "a nearer-centre panel's verdict
+            // carries to its overlap twins" is only half true.
+            var flaggedHoldIds = await FlagHoldAndPeripheralTwinsAsync(db, hold);
 
-            var affectedBoulders = await db.BoulderHolds
-                .Where(bh => bh.HoldId == holdId)
+            // The twins' boulders are flagged too. It is ONE physical hold that moved: whichever panel's
+            // copy a boulder happens to reference (the reconciler can attach either), its geometry is
+            // equally stale, and the restore path already un-flags boulders that reference any settled
+            // twin — flagging only the clicked copy's boulders would make that inverse un-flag boulders
+            // nothing ever flagged.
+            var affectedBoulders = (await db.BoulderHolds
+                .Where(bh => flaggedHoldIds.Contains(bh.HoldId))
                 .Select(bh => bh.Boulder)
                 .Where(b => !b.IsArchived)
-                .ToListAsync();
+                .ToListAsync())
+                .DistinctBy(b => b.Id)
+                .ToList();
 
             foreach (var b in affectedBoulders)
             {
@@ -1595,10 +1607,12 @@ public class WallService : IWallService
     }
 
     /// <summary>
-    /// After a live edit, propagates the edited hold's appearance (Color/Material/Category/HandType)
+    /// After a live edit, propagates the edited hold's appearance (Name/Color/Material/Category/HandType)
     /// to every hold transitively linked to it on the same wall — the same physical hold seen on other
     /// panels. The EDITED hold is the source here (its new values win, regardless of centrality). Only
     /// appearance fields, verbatim; write-if-changed, so it re-saves only when a twin actually differs.
+    /// A blank source name is skipped rather than propagated, so an edit to an unnamed hold can never
+    /// blank a named twin. Geometry stays per-panel: ShapePoints/X/Y/Radius describe one photograph.
     /// </summary>
     private static async Task SyncLinkedAppearanceAsync(BlocwerkDbContext db, Hold source)
     {
@@ -1643,9 +1657,39 @@ public class WallService : IWallService
     }
 
     /// <summary>
+    /// Flags <paramref name="hold"/> and every overlap twin of it on a MORE peripheral panel as needing
+    /// review, and returns the ids it flagged (the hold plus those twins) so the caller can scope the
+    /// boulder fan-out to the same set. Reuses <see cref="GetPeripheralTwinIdsAsync"/> — the one traversal
+    /// the unchanged-verdict path already uses — so both verdicts propagate over identical edges. No
+    /// SaveChanges: the caller commits.
+    /// </summary>
+    private async Task<HashSet<Guid>> FlagHoldAndPeripheralTwinsAsync(BlocwerkDbContext db, Hold hold)
+    {
+        hold.NeedsReview = true;
+
+        var peripheralTwinIds = await GetPeripheralTwinIdsAsync(db, hold);
+        var flagged = new HashSet<Guid>(peripheralTwinIds) { hold.Id };
+        if (peripheralTwinIds.Count == 0)
+        {
+            return flagged;
+        }
+
+        var twins = await db.Holds
+            .Where(h => peripheralTwinIds.Contains(h.Id))
+            .ToListAsync();
+        foreach (var twin in twins)
+        {
+            twin.NeedsReview = true;
+        }
+
+        return flagged;
+    }
+
+    /// <summary>
     /// Overlap twins of <paramref name="hold"/> (linked via <see cref="HoldLink"/>) that sit on a MORE
-    /// peripheral panel — further from the (0,0) centre. The centre panel is ground truth, so a hold
-    /// confirmed unchanged here also settles those twins (the same physical hold on an outer photo).
+    /// peripheral panel — further from the (0,0) centre. The centre panel is ground truth, so a verdict
+    /// recorded here — unchanged OR changed — carries to those twins (the same physical hold on an outer
+    /// photo). Shared by both directions so neither can drift from the other.
     /// </summary>
     private async Task<List<Guid>> GetPeripheralTwinIdsAsync(BlocwerkDbContext db, Hold hold)
     {

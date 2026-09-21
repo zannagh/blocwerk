@@ -582,7 +582,7 @@ else
                                     @_livePanels.Count panels ·
                                     @(_holdLinkCount == 0
                                         ? "no holds linked across them"
-                                        : $"{_holdLinkCount} hold{(_holdLinkCount == 1 ? "" : "s")} linked across them")
+                                        : $"{_holdLinkCount} hold pair{(_holdLinkCount == 1 ? "" : "s")} linked across them")
                                 </strong>
                                 <span class="hint">
                                     A hold visible on two panels is two holds until you link them. Link
@@ -1430,10 +1430,18 @@ else
     }
 
     /// <summary>
-    /// Counts the wall's cross-panel hold links, for the card that tells an editor the linking tool
-    /// exists. Only worth asking for on a multi-panel wall an editor is looking at; a failure (or a
-    /// viewer who cannot enumerate links) simply leaves the card reporting none.
+    /// Counts the wall's cross-panel hold links that are actually in force right now, for the card
+    /// that tells an editor the linking tool exists. Only worth asking for on a multi-panel wall an
+    /// editor is looking at; a failure (or a viewer who cannot enumerate links) simply leaves the
+    /// card reporting none.
     /// </summary>
+    /// <remarks>
+    /// <c>HoldLink</c> rows are wall-level facts between two hold rows and carry no generation, so
+    /// the wall-wide row count keeps counting links whose endpoints belong to holds of a superseded
+    /// generation. <see cref="PanelLinkTool"/> counts only links whose endpoints are holds of the
+    /// panels' CURRENT generation, which is why the two disagreed after a wall update. Count what the
+    /// tool counts: intersect the link rows with the live panels' live hold ids.
+    /// </remarks>
     private async Task LoadHoldLinkCount()
     {
         _holdLinkCount = 0;
@@ -1444,7 +1452,17 @@ else
 
         try
         {
-            _holdLinkCount = (await WallPanelService.GetHoldLinksAsync(WallId)).Count;
+            var liveHoldIds = new HashSet<Guid>();
+            foreach (var panel in _livePanels)
+            {
+                foreach (var hold in await LoadPanelHolds(panel.Id))
+                {
+                    liveHoldIds.Add(hold.Id);
+                }
+            }
+
+            var links = await WallPanelService.GetHoldLinksAsync(WallId);
+            _holdLinkCount = links.Count(l => liveHoldIds.Contains(l.HoldAId) && liveHoldIds.Contains(l.HoldBId));
         }
         catch (Exception)
         {

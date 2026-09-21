@@ -66,6 +66,12 @@ public partial class WallBigUpdateService
         // never gets a successor or a lineage link (the boulder-membership guard keeps referenced holds).
         var oldHolds = (await FilterCarriedMatFalseHoldsAsync(db, carriedOldHolds))
             .ToDictionary(h => h.Id);
+
+        // The mat/floor false holds this just dropped are still IN SCOPE of the promote: they live on a
+        // re-shot panel and go historic with no successor, exactly like a hold the user removed. The link
+        // carry has to be told about them or it reads them as "never carried" and leaves a link pointing
+        // at — or worse, writes a fresh link row onto — a hold that just retired.
+        var carriedScopeHoldIds = carriedOldHolds.Select(h => h.Id).ToHashSet();
         var centerStaged = await db.Holds
             .Where(h => h.WallPanelId == centerPanel.Id && h.Generation == stagedGen)
             .ToDictionaryAsync(h => h.Id);
@@ -121,6 +127,12 @@ public partial class WallBigUpdateService
         ClearStaged(centerPanel);
 
         await PromoteNeighboursAsync(db, wallId, stagedGen, newGen, centerPanel.Id, survivingCenterStaged, confirmation, user.Id);
+
+        // Project the wall's EXISTING cross-panel links onto the successors, after both halves have run:
+        // the carry's lineage rows and the neighbours' new links are all pending by now, and the holds a
+        // neighbour removal discarded have already had their links cleared. Without this a promote left
+        // every link pointing at retained gen-N rows, i.e. wiped the wall's link set outright.
+        await CarryHoldLinksAsync(db, wallId, carriedScopeHoldIds);
 
         wall.Photo = centerPanel.Photo;
         wall.PhotoContentType = centerPanel.PhotoContentType;

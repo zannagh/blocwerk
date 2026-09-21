@@ -12,6 +12,10 @@
 <div class="editor-toolbar @(BottomToolbar ? "docked-bottom" : string.Empty)">
     <div class="toolbar-left">
         <span class="hold-count">@Holds.Count(h => h.Category == HoldCategory.Hand)H / @Holds.Count(h => h.Category == HoldCategory.Foot)F</span>
+        @if (CanEdit && IncompleteCount > 0)
+        {
+            <span class="hold-count" title="@IncompleteHint">@IncompleteCount ?</span>
+        }
     </div>
     <div class="toolbar-right">
         <button class="tool-btn @(_showNames ? "active" : "")" @onclick="() => _showNames = !_showNames"
@@ -20,6 +24,18 @@
                 <path d="M4 7V4h16v3M9 20h6M12 4v16" />
             </svg>
         </button>
+        @* Filling a hold in needs the edit tools, so a viewer gets no overlay toggle at all. *@
+        @if (CanEdit)
+        {
+            <button class="tool-btn @(_showIncomplete ? "active" : "")" @onclick="CycleIncompleteCriteria"
+                    title="@IncompleteHint">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20" opacity="@(_showIncomplete ? "1" : "0.5")">
+                    <circle cx="12" cy="12" r="9" stroke-dasharray="2.6 1.8" />
+                    <path d="M9.6 9.2a2.5 2.5 0 1 1 3.3 2.4c-.6.2-.9.7-.9 1.4v.4" />
+                    <circle cx="12" cy="17" r="0.9" fill="currentColor" stroke="none" />
+                </svg>
+            </button>
+        }
         <span class="toolbar-sep"></span>
         @if (OnRequestHoldUsage != null)
         {
@@ -154,6 +170,16 @@
                     <path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><polyline points="3 3 3 8 8 8" /><polyline points="9 12 11.4 14.4 15.5 10" />
                 </svg>
             </button>
+            @if (!IsStaging)
+            {
+                <button class="tool-btn @A(EditMode.MarkChanged)" @onclick="() => SetMode(EditMode.MarkChanged)"
+                        title="Mark changed (X): this hold was physically swapped, turned or re-set — flag it and every boulder using it for review">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                        <path d="M3 12a9 9 0 0 1 15.3-6.4L21 8" /><polyline points="21 3 21 8 16 8" />
+                        <path d="M10.5 10.5 13.5 13.5M13.5 10.5 10.5 13.5" />
+                    </svg>
+                </button>
+            }
         }
         @if (BorderOnly && CanEditShape)
         {
@@ -261,6 +287,11 @@
             {
                 strokeColor = "#38e1c6";
             }
+            var isMarkChangedPick = _mode == EditMode.MarkChanged && _markChangedHoldId == hold.Id;
+            if (isMarkChangedPick)
+            {
+                strokeColor = "#ff8a3d";
+            }
             var sw = (isSelected || isShapeEditing || isNaming) ? "0.4" : (IsStaging ? "0.45" : "0.25");
             var dash = "";
             if (ManualAlignment && !(isSelected || isShapeEditing || isNaming))
@@ -272,7 +303,7 @@
                 dash = IsStagedHold(hold) ? "0.6 0.3" : "0.3 0.3";
             }
             if (hold.IsVirtual && !(isSelected || isShapeEditing || isNaming) && !isMakeActualPick && !isMarkUnchangedPick
-                && !isJoinSurvivor && !isJoinDuplicate)
+                && !isMarkChangedPick && !isJoinSurvivor && !isJoinDuplicate)
             {
                 strokeColor = "#c86dff";
                 dash = "0.6 0.4";
@@ -342,6 +373,23 @@
                             fill="none" stroke="var(--status-review)" stroke-width="0.4" stroke-dasharray="0.9 0.5" opacity="0.95" />
                     <circle cx="@F(hold.X * 100 + r * 0.9)" cy="@F(hold.Y * 100 - r * 0.9)" r="1.1"
                             fill="var(--status-review)" stroke="white" stroke-width="0.2" />
+                </g>
+            }
+
+            @* Missing-information overlay: a badge on holds with no colour, or hand holds with no
+               sub-type. Deliberately NOT a mode — it is layered over whatever the current tool draws
+               with pointer-events off, so the holds it badges stay tappable and editable in place
+               (Select/Move + the selected-hold option bar). *@
+            @if (HoldCompleteness.IsIncomplete(hold, _incompleteCriteria))
+            {
+                <g pointer-events="none">
+                    <circle cx="@F(hold.X * 100)" cy="@F(hold.Y * 100)" r="@F(r + 0.8)"
+                            fill="none" stroke="#ffb300" stroke-width="0.35" opacity="0.95" />
+                    <circle cx="@F(hold.X * 100 - r * 0.9)" cy="@F(hold.Y * 100 + r * 0.9)" r="1.3"
+                            fill="#ffb300" stroke="white" stroke-width="0.2" />
+                    <text x="@F(hold.X * 100 - r * 0.9)" y="@F(hold.Y * 100 + r * 0.9)"
+                          text-anchor="middle" dominant-baseline="central"
+                          font-size="1.9" font-weight="700" fill="#1a1a1a">?</text>
                 </g>
             }
 
@@ -795,6 +843,33 @@
             }
         </div>
     }
+    @if (CanEdit && _mode == EditMode.MarkChanged)
+    {
+        <div class="option-bar">
+            @if (_markChangedHoldId is { } cid)
+            {
+                var ch = Holds.FirstOrDefault(h => h.Id == cid);
+                <span class="option-hint">
+                    <strong>@(ch?.Name ?? "This hold")</strong> &mdash; mark as physically changed.
+                </span>
+                @if (_pendingChanges > 0)
+                {
+                    <span class="option-hint">Save your pending edits first.</span>
+                }
+                else
+                {
+                    <button class="opt-btn active"
+                            title="Flag this hold as changed, so every boulder still using it is flagged for review."
+                            @onclick="() => ConfirmMarkChanged(cid)">@(ch?.NeedsReview == true ? "Flag again" : "Mark changed")</button>
+                }
+                <button class="opt-btn" @onclick="() => _markChangedHoldId = null">Done</button>
+            }
+            else
+            {
+                <span class="option-hint">Tap a hold that was physically swapped, turned or re-set. Confirming flags it and every boulder using it for review.</span>
+            }
+        </div>
+    }
     @if (CanEdit && ManualAlignment)
     {
         <div class="batch-bar">
@@ -1025,6 +1100,12 @@
     private bool _showChanges = true;
     private Guid? _markUnchangedHoldId;
 
+    // ---- MarkChanged tool ---------------------------------------------------------------------
+    // The inverse of MarkUnchanged: a deliberate "this hold was swapped/turned/re-set" verdict that
+    // flags the hold and the boulders using it for review. Server-side and immediate, so it is only
+    // offered outside a staged update and with nothing pending to save.
+    private Guid? _markChangedHoldId;
+
     private ElementReference _containerRef;
     private ElementReference _viewportRef;
 
@@ -1049,6 +1130,13 @@
     private double _zoom => _zoomState.Zoom;
     private bool _showBorder = true;
     private bool _showNames;
+
+    // Overlay (not a mode): badges holds that still miss information. See HoldCompleteness. The
+    // criteria are chosen rather than fixed — the I key cycles off / colour / colour + sub-type —
+    // because "missing a sub-type" is true of nearly every hand hold on a mature wall and would
+    // otherwise badge the whole overlay into uselessness.
+    private HoldCompletenessCriteria _incompleteCriteria = HoldCompletenessCriteria.None;
+    private bool _showIncomplete => _incompleteCriteria != HoldCompletenessCriteria.None;
     private Guid? _revealNameHoldId;
 
     private Guid? _namingHoldId;
@@ -1087,7 +1175,7 @@
     // handles stop shrinking at the old 6x cap and are oversized for the rest of the range.
     private double HandleScale => 1.0 / Math.Clamp(_zoom, 0.5, 12.0);
 
-    private enum EditMode { Add, Move, Shape, Paint, Delete, Border, Name, Merge, ShapeTilt, Usage, MakeActual, JoinVirtual, MarkUnchanged }
+    private enum EditMode { Add, Move, Shape, Paint, Delete, Border, Name, Merge, ShapeTilt, Usage, MakeActual, JoinVirtual, MarkUnchanged, MarkChanged }
 
     public record BatchChanges(List<Hold> Added, List<Hold> Updated, List<Guid> Deleted);
 
@@ -1258,6 +1346,7 @@
         EditMode.MakeActual => "pointer",
         EditMode.JoinVirtual => "pointer",
         EditMode.MarkUnchanged => "pointer",
+        EditMode.MarkChanged => "pointer",
         EditMode.Usage => "pointer",
         _ => "default"
     };
@@ -1287,6 +1376,10 @@
         if (mode != EditMode.MarkUnchanged)
         {
             _markUnchangedHoldId = null;
+        }
+        if (mode != EditMode.MarkChanged)
+        {
+            _markChangedHoldId = null;
         }
     }
 
@@ -1395,6 +1488,9 @@
                 return;
             case EditMode.MarkUnchanged:
                 _markUnchangedHoldId = _markUnchangedHoldId == hold.Id ? null : hold.Id;
+                return;
+            case EditMode.MarkChanged:
+                _markChangedHoldId = _markChangedHoldId == hold.Id ? null : hold.Id;
                 return;
             case EditMode.ShapeTilt:
                 _shapeTiltHoldId = hold.Id;
@@ -1986,6 +2082,22 @@
     // Holds flagged for review on this panel (the change-review overlay's count).
     private int ReviewChangedCount => Holds.Count(h => h.NeedsReview);
 
+    // Holds still missing information the owner has to supply (the "?" overlay's count). Counted
+    // under the ACTIVE criteria while the overlay is on, and under the default (colour) while it is
+    // off, so the badge still tells the owner there is something to find.
+    private int IncompleteCount => HoldCompleteness.CountIncomplete(
+        Holds, _showIncomplete ? _incompleteCriteria : HoldCompleteness.Default);
+
+    // One wording for the toggle, the count badge and the help page, so none of them can overstate
+    // what the overlay is able to detect.
+    private string IncompleteHint => HoldCompleteness.Describe(_incompleteCriteria);
+
+    // Off -> colour -> colour + sub-type -> off.
+    private void CycleIncompleteCriteria()
+    {
+        _incompleteCriteria = HoldCompleteness.Next(_incompleteCriteria);
+    }
+
     /// <summary>
     /// Pre-promote fix: snap a falsely-flagged staged clone back to its previous-generation
     /// geometry and clear its changed flag, so confirming the alignment records DidChange=false
@@ -2006,6 +2118,16 @@
         hold.ShapePoints = b.Shape?.Select(sp => new ShapePoint { Dx = sp.Dx, Dy = sp.Dy }).ToList();
         _changedHoldIds.Remove(holdId);
         _alignedHoldIds.Add(holdId);
+    }
+
+    /// <summary>
+    /// The MarkChanged tool's confirm: flag the hold, and with it every non-archived boulder using
+    /// it, for review. Server-side and immediate, so the pick is dropped first.
+    /// </summary>
+    private async Task ConfirmMarkChanged(Guid holdId)
+    {
+        _markChangedHoldId = null;
+        await OnMarkHoldModified.InvokeAsync(holdId);
     }
 
     private async Task RestoreUnchangedBoulders(Guid holdId)
@@ -2236,8 +2358,8 @@
     // below, mirroring each button's own gate.
     private static readonly string[] AlwaysShortcutKeys =
     [
-        "a", "m", "s", "p", "n", "d", "b", "t", "u", "g", "k", "j", "c",
-        "l", "o", "r",
+        "a", "m", "s", "p", "n", "d", "b", "t", "u", "g", "k", "j", "c", "x",
+        "l", "o", "r", "i",
         "1", "2", "3", "4", "5", "6", "7", "8", "9", "[", "]",
         "+", "-", "0",
     ];
@@ -2297,11 +2419,13 @@
             case "d" when tools: SetMode(EditMode.Delete); return true;
             case "t" when tools: SetMode(EditMode.ShapeTilt); return true;
             case "c" when tools: SetMode(EditMode.MarkUnchanged); return true;
+            case "x" when tools && !IsStaging: SetMode(EditMode.MarkChanged); return true;
             case "g" when tools && IsStaging && !ManualAlignment: SetMode(EditMode.Merge); return true;
             case "k" when tools && !IsStaging: SetMode(EditMode.MakeActual); return true;
             case "j" when tools && !IsStaging: SetMode(EditMode.JoinVirtual); return true;
             case "b" when CanEdit && CanEditShape: SetMode(EditMode.Border); return true;
             case "l": _showNames = !_showNames; return true;
+            case "i" when CanEdit: CycleIncompleteCriteria(); return true;
             case "o" when tools || (BorderOnly && CanEditShape): _showBorder = !_showBorder; return true;
             default: return false;
         }
@@ -2364,6 +2488,7 @@
                || _joinSurvivorId != null
                || _joinDuplicateId != null
                || _markUnchangedHoldId.HasValue
+               || _markChangedHoldId.HasValue
                || (_mode == EditMode.ShapeTilt && _shapeTiltHoldId.HasValue));
 
     /// <summary>
@@ -2422,6 +2547,12 @@
         if (_markUnchangedHoldId.HasValue)
         {
             _markUnchangedHoldId = null;
+            return;
+        }
+
+        if (_markChangedHoldId.HasValue)
+        {
+            _markChangedHoldId = null;
             return;
         }
 

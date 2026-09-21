@@ -6,11 +6,30 @@ using Microsoft.Extensions.Logging;
 namespace Blocwerk.Core.Data;
 
 /// <summary>
-/// One-time propagation of appearance/identity fields (Color, Material, Category, HandType) across
-/// linked holds — the same physical hold seen on overlapping big-wall panels, tied by
-/// <see cref="HoldLink"/>. The most-central hold in each link's connected component is the source of
-/// truth and every peripheral copy inherits its values verbatim (centre wins fully, nulls included).
-/// Idempotent: it only writes a field that actually differs and only saves when something changed, so
+/// Startup propagation of appearance/identity fields (Name, Color, Material, HandType) across linked
+/// holds — the same physical hold seen on overlapping big-wall panels, tied by <see cref="HoldLink"/>.
+/// Per component and per field, the value is taken from whichever member HAS one and written onto the
+/// members that have none (<see cref="HoldPropertySync.FillGapsAcrossComponent"/>).
+/// <para>
+/// GAP-FILLING, not overwriting, and that is the point: this runs unattended on every start, so any
+/// source-of-truth pick it makes is nobody's decision. Overwriting would silently REVERT a deliberate
+/// edit made on a peripheral panel at the next restart — the backfill cannot tell a value the user just
+/// set on the periphery from a stale one. Live edits (edited hold wins) and link creation (the more
+/// central end wins) stay full overwrites: those are user actions with an obvious author.
+/// </para>
+/// <para>
+/// DIRECTION-AGNOSTIC, because strictly centre-outward filling does not converge: it can only move a
+/// value out of the single most-central hold, so a legacy component whose CENTRE is the uncurated end
+/// stays inconsistent for ever and two peripheral panels never see each other's values. Since a gap fill
+/// never overwrites, privileging the centre buys nothing — centrality is kept only as the TIE-BREAK
+/// when several members disagree, which keeps the result deterministic across runs.
+/// </para>
+/// <para>
+/// <see cref="Hold.Category"/> is NOT propagated here. It is non-nullable with Hand = 0, so a hold the
+/// user deliberately set back to Hand is indistinguishable from one that was never touched; filling it
+/// made every restart overwrite that choice from a linked twin. It moves on a user edit only.
+/// </para>
+/// Idempotent: it only writes a field that is actually unset and only saves when something changed, so
 /// a second run is a pure no-op. Never touches geometry, position, or lifecycle fields.
 /// </summary>
 public static class HoldPropertyBackfill
@@ -57,26 +76,15 @@ public static class HoldPropertyBackfill
                 continue;
             }
 
-            var sourceId = HoldPropertySync.MostCentral(candidates).HoldId;
-            var source = holdsById[sourceId];
+            // Most-central first, so a field several members disagree about resolves to the central one.
+            var ordered = HoldPropertySync.ByCentrality(candidates)
+                .Select(c => holdsById[c.HoldId])
+                .ToList();
 
-            var componentChanged = false;
-            foreach (var id in component)
+            var componentChangedHolds = HoldPropertySync.FillGapsAcrossComponent(ordered);
+            if (componentChangedHolds > 0)
             {
-                if (id == sourceId || !holdsById.TryGetValue(id, out var target))
-                {
-                    continue;
-                }
-
-                if (HoldPropertySync.CopyAppearance(source, target))
-                {
-                    changedHolds++;
-                    componentChanged = true;
-                }
-            }
-
-            if (componentChanged)
-            {
+                changedHolds += componentChangedHolds;
                 changedComponents++;
             }
         }

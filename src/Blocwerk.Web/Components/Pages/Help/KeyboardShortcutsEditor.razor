@@ -64,6 +64,13 @@
                 <dt><kbd>c</kbd></dt>
                 <dd>Mark unchanged</dd>
             </div>
+            <div class="keyshort-row">
+                <dt><kbd>x</kbd></dt>
+                <dd>
+                    Mark changed &mdash; flag a hold that was physically swapped, turned or re-set, and
+                    with it every boulder still using it (outside a staged wall update)
+                </dd>
+            </div>
         </dl>
 
         <h3>View and actions</h3>
@@ -75,6 +82,20 @@
             <div class="keyshort-row">
                 <dt><kbd>o</kbd></dt>
                 <dd>Toggle border / segment outlines</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>i</kbd></dt>
+                <dd>
+                    Cycle the <strong>missing information</strong> overlay through off &rarr; holds with
+                    no colour &rarr; those plus hand holds with no sub-type. Colour is the default,
+                    because nothing ever stamps a sub-type: including it badges most hand holds on a
+                    mature wall, which is useful for a deliberate pass and noise the rest of the time.
+                    Hold type and material are never checked &mdash; every hold gets one by default, so
+                    a set value was never necessarily a decision, and neither criterion can tell &ldquo;not
+                    filled in yet&rdquo; from &ldquo;deliberately left blank&rdquo;. It is an overlay, not
+                    a tool: badged holds stay tappable, so you can fix them in place with <kbd>m</kbd>
+                    (Select / move).
+                </dd>
             </div>
             <div class="keyshort-row">
                 <dt><kbd>r</kbd></dt>
@@ -108,8 +129,8 @@
                 <dt><kbd>Esc</kbd></dt>
                 <dd>
                     Cancel the active sub-mode and nothing else: naming, a pending merge, a pending
-                    &ldquo;make actual&rdquo;, a pending &ldquo;mark unchanged&rdquo; or a shape tilt, in
-                    that order. With no sub-mode pending the editor does not claim <kbd>Esc</kbd> at all.
+                    &ldquo;make actual&rdquo;, a pending &ldquo;mark unchanged&rdquo;, a pending
+                    &ldquo;mark changed&rdquo; or a shape tilt, in that order. With no sub-mode pending the editor does not claim <kbd>Esc</kbd> at all.
                 </dd>
             </div>
         </dl>

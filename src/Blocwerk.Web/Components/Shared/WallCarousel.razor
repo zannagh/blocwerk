@@ -1,9 +1,10 @@
 @inject IJSRuntime JS
 @inject KeyboardShortcutGate KeyGate
+@inject ILogger<WallCarousel> Logger
 @implements IAsyncDisposable
 
 <div class="wall-carousel-root @(Locked ? "editing" : string.Empty)">
-    <div class="wall-carousel @(_initialized ? string.Empty : "carousel-pending")" @ref="_ref" @onscroll="OnScroll">
+    <div class="wall-carousel @(_initialized ? string.Empty : "carousel-pending")" @ref="_ref">
         @foreach (var (frag, idx) in Pages())
         {
             <div class="wall-page @(PageClass(idx))">
@@ -46,6 +47,15 @@
     private bool _repositionPending;
 
     private KeyboardShortcutScope? _keys;
+    private DotNetObjectReference<WallCarousel>? _selfRef;
+    private bool _observed;
+    private bool _appliedLocked;
+
+    // The scroll container the JS listeners are actually attached to. Enhanced navigation can RETAIN
+    // this component across a route change while rebuilding its DOM — the recorded footgun — and the
+    // new node carries none of the listeners, leaving the carousel unobserved (no settle, no dot
+    // updates) for the rest of its life. Comparing the element id each render catches that.
+    private string? _observedElementId;
 
     private IEnumerable<(RenderFragment Fragment, int Index)> Pages()
     {
@@ -93,6 +103,10 @@
             // visible swipe from page 1. Revealing happens on the StateHasChanged re-render below.
             await JS.InvokeVoidAsync("wallCarousel.initPage", _ref, _currentPage);
             _initialized = true;
+            // JS owns settling from here: it waits until the scroller is actually still, corrects the
+            // offset once and reports the page back through CarouselSettled. Nothing re-renders the
+            // page track while a scroll is in flight, which is what used to cancel the pending snap.
+            await ObserveAsync();
             // Registered after positioning so the first paint is never held up by an extra
             // round-trip. This scope lands low on the dispatcher stack: anything rendered inside a
             // pane (the panel viewer, the photo editor) registers later and therefore wins the
@@ -105,6 +119,22 @@
         if (firstRender)
         {
             await RegisterShortcutsAsync();
+        }
+
+        // Re-attach when the element behind _ref is a different DOM node than the one JS observes.
+        // observe() is a no-op on a node it already owns, so this costs nothing on an ordinary render.
+        if (_initialized && _fragCount > 0 && _ref.Id != _observedElementId)
+        {
+            await ObserveAsync();
+            // The rebuilt node starts at offset 0; put it back on the page the component believes it
+            // is on. Instant — the user did not ask for a swipe.
+            await SafeInvokeAsync("wallCarousel.scrollToPage", _ref, _currentPage, false);
+        }
+
+        if (_observed && _appliedLocked != Locked)
+        {
+            _appliedLocked = Locked;
+            await SafeInvokeAsync("wallCarousel.setLocked", _ref, Locked);
         }
 
         if (_repositionPending)
@@ -181,15 +211,24 @@
         }
 
         SetCurrentPage(idx);
-        await JS.InvokeVoidAsync("wallCarousel.scrollToPage", _ref, idx, true);
+        await MoveAsync(idx, smooth: true);
     }
 
     public async Task GoToPageAsync(int idx, bool smooth = true)
     {
         var clamped = Math.Clamp(idx, 0, Math.Max(0, _fragCount - 1));
         SetCurrentPage(clamped);
-        await JS.InvokeVoidAsync("wallCarousel.scrollToPage", _ref, clamped, smooth);
+        await MoveAsync(clamped, smooth);
         StateHasChanged();
+    }
+
+    // A programmatic move (dot, arrow key, deep link) already knows the target page, so tell JS it is
+    // the settled one: the smooth scroll it causes then settles without echoing a redundant report
+    // back into a re-render.
+    private async Task MoveAsync(int idx, bool smooth)
+    {
+        await SafeInvokeAsync("wallCarousel.markPage", _ref, idx);
+        await SafeInvokeAsync("wallCarousel.scrollToPage", _ref, idx, smooth);
     }
 
     private void SetCurrentPage(int idx)
@@ -197,27 +236,64 @@
         _currentPage = idx;
     }
 
-    private bool _scrollQuerying;
-
-    private async Task OnScroll()
+    /// <summary>
+    /// Reported by wall-carousel.js once the track has come to rest (scrollend, or a 120 ms idle
+    /// timer on Safari) and has been corrected onto the page boundary. One call per gesture, never
+    /// while a scroll is still running.
+    /// </summary>
+    [JSInvokable]
+    public Task CarouselSettled(int page)
     {
-        // Scroll events fire dozens of times a second during a swipe, and each one here is a SignalR
-        // interop round-trip. Coalesce them: while one currentPage query is in flight, drop further
-        // scroll events instead of queuing a round-trip (and a re-render) per frame.
-        if (!_initialized || _scrollQuerying) return;
-        _scrollQuerying = true;
+        if (!_initialized || _fragCount == 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        var clamped = Math.Clamp(page, 0, _fragCount - 1);
+        if (clamped != _currentPage)
+        {
+            SetCurrentPage(clamped);
+            StateHasChanged();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task ObserveAsync()
+    {
+        _selfRef ??= DotNetObjectReference.Create(this);
+        await SafeInvokeAsync("wallCarousel.observe", _ref, _selfRef);
+        _observed = true;
+        _observedElementId = _ref.Id;
+        // Seed the settled page so the very first settle after the initial positioning doesn't
+        // report a page .NET already knows about.
+        await SafeInvokeAsync("wallCarousel.markPage", _ref, _currentPage);
+        _appliedLocked = Locked;
+        if (Locked)
+        {
+            await SafeInvokeAsync("wallCarousel.setLocked", _ref, Locked);
+        }
+    }
+
+    private async Task SafeInvokeAsync(string identifier, params object?[] args)
+    {
         try
         {
-            var frag = await JS.InvokeAsync<int>("wallCarousel.currentPage", _ref);
-            if (frag != _currentPage)
-            {
-                SetCurrentPage(frag);
-                StateHasChanged();
-            }
+            await JS.InvokeVoidAsync(identifier, args);
         }
-        finally
+        catch (Exception ex) when (ex is JSDisconnectedException or ObjectDisposedException or OperationCanceledException)
         {
-            _scrollQuerying = false;
+            // The circuit (or the component) went away between the render and the interop call;
+            // there is nothing left to talk to.
+            Logger.LogDebug(ex, "Carousel interop skipped ({Identifier}): circuit disconnected", identifier);
+        }
+        catch (JSException ex)
+        {
+            // A plain JS-side failure, which unobserve can hit for real: DisposeAsync passes an
+            // ElementReference whose node Blazor may already have detached, and the resolver then
+            // throws. None of these calls is worth failing a dispose (or a render) over — the whole
+            // point of this wrapper is that a settle/lock/unobserve is best-effort.
+            Logger.LogDebug(ex, "Carousel interop failed ({Identifier})", identifier);
         }
     }
 
@@ -228,5 +304,15 @@
             await _keys.DisposeAsync();
             _keys = null;
         }
+
+        if (_observed)
+        {
+            _observed = false;
+            _observedElementId = null;
+            await SafeInvokeAsync("wallCarousel.unobserve", _ref);
+        }
+
+        _selfRef?.Dispose();
+        _selfRef = null;
     }
 }

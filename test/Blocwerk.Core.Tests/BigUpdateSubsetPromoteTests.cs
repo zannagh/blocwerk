@@ -246,6 +246,45 @@ public class BigUpdateSubsetPromoteTests
             "boulder-referenced mat-signature hold must be guarded and carried");
     }
 
+    // F4. A crash-mat false hold is removed from the carry set BEFORE the carry, so it never gets a
+    // successor — but it is still in the promote's scope and still goes historic. The link carry used to
+    // read it as "never carried" and therefore "still live", and wrote a BRAND NEW link row pointing at a
+    // hold that had just retired. The link must be dropped instead, exactly as for a user-removed hold.
+    [Fact]
+    public async Task Promote_LinkOntoAMatFilteredHold_IsDropped_NotResurrected()
+    {
+        using var h = new WallTestHarness();
+        var seed = await SeedMatPopulationWallAsync(h);
+
+        var matId = seed.LooseMatHoldIds[0];
+        var normalId = seed.SampleNormalHoldIds[0];
+        await using (var setup = h.CreateContext())
+        {
+            setup.HoldLinks.Add(new HoldLink
+            {
+                WallId = seed.WallId,
+                HoldAId = normalId,
+                HoldBId = matId,
+                Kind = HoldLinkKind.Same,
+            });
+            await setup.SaveChangesAsync();
+        }
+
+        await StageCentreUpdateAsync(h, seed.WallId);
+        var service = NewService(h);
+        await service.PromoteAsync(seed.WallId, Confirm());
+
+        await using var db = h.CreateContext();
+
+        // The mat was dropped, so the link has no live far end and is gone entirely.
+        Assert.False(await db.HoldLinks.AnyAsync(l => l.HoldAId == matId || l.HoldBId == matId));
+        Assert.False(await db.HoldLinks.AnyAsync(l => l.WallId == seed.WallId));
+
+        // The mat hold itself is untouched history, and the normal end still advanced.
+        Assert.Equal(2, (await db.Holds.SingleAsync(x => x.Id == matId)).Generation);
+        Assert.True(await db.HoldGenerationLinks.AnyAsync(l => l.OldHoldId == normalId));
+    }
+
     private static WallBigUpdateService NewService(WallTestHarness h) =>
         new(
             h.DbContextFactory,
