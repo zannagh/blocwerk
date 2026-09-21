@@ -20,6 +20,12 @@
     {
         <div class="panel-stepper-bar">
             <span class="panel-stepper-progress">@(_index + 1) / @Items.Count</span>
+            @* Only ever set while the parent is force-showing reviewed holds: say who signed this one
+               off so a second admin knows they are looking at somebody else's decision. *@
+            @if (CurrentReviewedNote is { } reviewedNote)
+            {
+                <span class="panel-stepper-reviewed">@reviewedNote</span>
+            }
         </div>
 
         <div class="panel-stepper-pair">
@@ -33,17 +39,37 @@
                             BadgeNumber="_index + 1" BadgeColor="@LeftBadgeColor"
                             FocusKey="_index" FocusPoint="Point(OldHold)" />
 
+            @* The right pane is editable ONLY while a touch-up tool is picked, so with no tool active it
+               behaves exactly as it always has: taps re-target, drags pan the zoomed image. *@
             <PanelImageView WallId="WallId" Caption="@RightCaption"
                             PhotoUrl="@NewPhotoUrl"
                             Holds="NewHolds"
                             HighlightHoldId="@(_interactive ? null : EffectiveNewHoldId)"
-                            SelectedHoldId="_selectedNewId"
+                            SelectedHoldId="@RightPaneSelectedId"
                             HintPoint="@(_interactive ? Point(NewHold) : null)"
-                            Interactive="_interactive"
+                            Interactive="@RightPaneInteractive"
+                            Editable="@RightPaneEditable"
+                            AddMode="@(RightPaneEditable && _touchup.AddMode)"
+                            ExactHitTargets="@(RightPaneEditable && _touchup.DeleteMode)"
+                            DragToMove="@(RightPaneEditable && _touchup.MoveMode)"
                             BadgeNumber="_index + 1" BadgeColor="@RightBadgeColor"
                             FocusKey="_index" FocusPoint="Point(NewHold ?? OldHold)"
-                            OnHoldTap="OnNewHoldTap" />
+                            OnHoldTap="OnRightHoldTapAsync"
+                            OnEmptyTap="OnTouchupEmptyTapAsync"
+                            OnHoldGeometryChanged="OnHoldGeometryChanged" />
         </div>
+
+        @* Fix a wrong hold without leaving the review. stopPropagation keeps the slider's own arrow
+           keys (and any letter typed while it has focus) out of the stepper's keydown handler. *@
+        @if (ToolsEnabled)
+        {
+            <div class="bigupdate-edit-tools" @onkeydown:stopPropagation="true">
+                <HoldTouchupToolbar Tool="_touchup.Tool" ToolChanged="SetTouchupTool"
+                                    Size="_touchup.Radius" SizeChanged="OnTouchupSizeChanged"
+                                    OnSizeCommitted="OnTouchupSizeCommittedAsync"
+                                    HasSelection="@(_touchup.SelectedHoldId is not null)" />
+            </div>
+        }
 
         @if (_interactive)
         {
@@ -57,13 +83,21 @@
         {
             <div class="panel-stepper-actions">
                 <button class="btn-secondary" @onclick="Back" disabled="@(_index == 0)" title="Previous (←)">←</button>
-                <button class="btn-primary" @onclick="KeepNew" title="Keep this new hold (Enter)">Keep ✓</button>
-                <button class="btn-danger-soft" @onclick="DiscardNew" title="False detection (X)">Discard</button>
+                <button class="btn-primary" @onclick="KeepNew" disabled="@CurrentNewHoldGone" title="Keep this new hold (Enter)">Keep ✓</button>
+                <button class="btn-danger-soft" @onclick="DiscardNew" disabled="@CurrentNewHoldGone" title="False detection (X)">Discard</button>
                 <button class="btn-secondary" @onclick="Next" title="Skip (→)">→</button>
             </div>
             <div class="panel-stepper-foot">
                 <span class="panel-stepper-legend"><kbd>Enter</kbd> keep · <kbd>X</kbd> discard · <kbd>←</kbd>/<kbd>→</kbd> step</span>
+                @if (ToolsEnabled)
+                {
+                    <span class="panel-stepper-legend"><kbd>A</kbd> add · <kbd>M</kbd> move · <kbd>D</kbd> delete · <kbd>P</kbd> pipette</span>
+                }
             </div>
+            @if (CurrentNewHoldGone)
+            {
+                <p class="staged-hint">This hold has been deleted — step past it.</p>
+            }
         }
         else
         {
@@ -82,6 +116,10 @@
             </div>
             <div class="panel-stepper-foot">
                 <span class="panel-stepper-legend"><kbd>Enter</kbd> accept · <kbd>C</kbd> changed · <kbd>X</kbd> remove · <kbd>←</kbd>/<kbd>→</kbd> step</span>
+                @if (ToolsEnabled)
+                {
+                    <span class="panel-stepper-legend"><kbd>A</kbd> add · <kbd>M</kbd> move · <kbd>D</kbd> delete · <kbd>P</kbd> pipette</span>
+                }
             </div>
         }
     }

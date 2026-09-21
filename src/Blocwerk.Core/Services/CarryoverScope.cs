@@ -99,7 +99,16 @@ public static class CarryoverScope
     /// The matcher default for one old hold: carried in place, twinned to the matcher's same-panel
     /// proposal when there is one. Identical to what the review seeds and to what the promote's
     /// undecided-reconcile does, so resetting to it can never lose a hold or freeze a boulder.
+    /// <para>
+    /// Explicitly NOT confirmed: a reset throws the user's verdict away, so the hold must read as
+    /// unreviewed again rather than as a phantom somebody signed off. A verdict left ALONE by
+    /// <see cref="Reconcile"/> keeps whatever confirmation it had, because nothing about it changed.
+    /// </para>
     /// </summary>
     private static CarryoverDecision Default(Guid oldHoldId, IReadOnlyDictionary<Guid, Guid> proposals) =>
-        new(oldHoldId, CarryKind.Carried, proposals.TryGetValue(oldHoldId, out var twin) ? twin : null);
+        new(
+            oldHoldId,
+            CarryKind.Carried,
+            proposals.TryGetValue(oldHoldId, out var twin) ? twin : null,
+            Confirmed: false);
 }

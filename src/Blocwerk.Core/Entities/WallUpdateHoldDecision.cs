@@ -53,5 +53,24 @@ public class WallUpdateHoldDecision
     /// </summary>
     public bool Discarded { get; set; }
 
+    /// <summary>
+    /// Whether a human deliberately signed this verdict off, as opposed to it merely being the matcher
+    /// default the review seeds for EVERY old hold. The two are otherwise the same row — and
+    /// <see cref="UpdatedAt"/> cannot tell them apart either, because seeding writes it — so this is the
+    /// only fact that says "someone looked at this hold". Review metadata: the promote never reads it.
+    /// <para>
+    /// False for every pre-existing row and for every seeded or bulk-rewritten verdict. Once true it
+    /// survives a re-seed and a bulk rewrite of the carryover half, and is cleared only when the verdict
+    /// it was given about changes without a confirmation, or when a caller clears it explicitly.
+    /// </para>
+    /// </summary>
+    public bool Confirmed { get; set; }
+
+    /// <summary>The wall admin who confirmed the verdict; null while <see cref="Confirmed"/> is false.</summary>
+    public Guid? ConfirmedByUserId { get; set; }
+
+    /// <summary>When the verdict was confirmed; null while <see cref="Confirmed"/> is false.</summary>
+    public DateTimeOffset? ConfirmedAt { get; set; }
+
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

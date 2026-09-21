@@ -9,18 +9,27 @@
 }
 else if (_reviewMode is { } mode)
 {
+    @* The staged add / resize / delete path is THIS component's (see CarryoverReview.Tools.cs), so the
+       stepper gets it as callbacks rather than injecting IWallPanelService a second time — which also
+       keeps the deliberate needsReview:true default in one place. *@
     <CarryoverStepper WallId="WallId" CenterPanelId="CenterPanelId" Mode="mode"
                       Items="ReviewItems" OldHolds="_oldHolds" NewHolds="_newHolds"
                       OnCarryDecision="ApplyCarryDecision" OnNewDecision="ApplyNewDecision"
-                      OnClose="CloseReview" />
+                      ReviewedNote="ReviewedNoteFor" OnClose="CloseReview"
+                      AddStagedHold="AddNewHoldAsync"
+                      OnHoldGeometryChanged="OnNewHoldGeometryChanged"
+                      OnDeleteHold="RemoveNewHoldAsync" />
 }
 else if (_crossGenOpen)
 {
     <CrossGenLinkTool WallId="WallId" CenterPanelId="CenterPanelId"
                       OldHolds="_oldHolds" NewHolds="_newHolds"
-                      Links="CrossGenLinks()" AttentionOldIds="_attentionQueue"
+                      Links="CrossGenLinks()" AttentionOldIds="_crossGenQueue"
                       OnLink="LinkCrossGen" OnUnlink="UnlinkCrossGen"
-                      OnAdvance="AdvanceToChangedReview" OnClose="CloseCrossGen" />
+                      OnAdvance="AdvanceToChangedReview" OnClose="CloseCrossGen"
+                      AddStagedHold="AddNewHoldAsync"
+                      OnHoldGeometryChanged="OnNewHoldGeometryChanged"
+                      OnDeleteHold="RemoveNewHoldAsync" />
 }
 else
 {
@@ -69,9 +78,53 @@ else
             else
             {
                 <strong class="bigupdate-attention-head">@NeedsReviewCount of @TotalOldCount holds need your review.</strong>
-                <span class="bigupdate-attention-sub">The other @AutoCarriedCount carried over automatically (green) — leave them be.</span>
+                <span class="bigupdate-attention-sub">
+                    The other @AutoCarriedCount carried over automatically (green) — leave them be.@(ReviewedCount > 0 ? $" {ReviewedCount} already reviewed." : "")
+                </span>
             }
         </div>
+
+        @* Reviewed holds leave every queue — that is what makes the counts above shrink as the work is
+           done, and what stops a second admin re-reviewing the first one's decisions. The toggle LISTS
+           them so a mis-click can be found; un-reviewing, not the toggle, is what puts one back in a
+           queue, so neither the counts above nor an open stepper move when it flips. *@
+        @if (ReviewedListCount > 0 || _showReviewed)
+        {
+            <div class="bigupdate-reviewed">
+                <div class="bigupdate-reviewed-head">
+                    <button class="btn-secondary" @onclick="ToggleShowReviewedAsync">
+                        @(_showReviewed ? $"Hide reviewed holds ({ReviewedListCount})" : $"Show reviewed holds ({ReviewedListCount})")
+                    </button>
+                    <span class="hint">
+                        Holds you (or another wall admin) have already signed off are hidden from the
+                        review queues. Reviews by someone else appear when this page is loaded or
+                        refreshed — they do not arrive while you work.
+                    </span>
+                </div>
+
+                @if (_showReviewed)
+                {
+                    <ul class="bigupdate-reviewed-list">
+                        @foreach (var reviewedId in ReviewedOldIds)
+                        {
+                            <li class="bigupdate-reviewed-row">
+                                <span class="bigupdate-reviewed-hold">@HoldLabel(reviewedId)</span>
+                                <span class="hint">@ReviewedLabel(reviewedId)</span>
+                                <button class="btn-secondary" @onclick="() => UnReviewAsync(reviewedId)"
+                                        title="Put this hold back in the review queues; its decision is unchanged">
+                                    Un-review
+                                </button>
+                            </li>
+                        }
+                    </ul>
+                    <p class="hint">
+                        Un-reviewing puts the hold back in the queues. Its carry decision itself stays
+                        exactly as it is. A row labelled "Hold on another panel" was signed off against a
+                        co-updated panel this step cannot draw — un-review it here if it looks wrong.
+                    </p>
+                }
+            </div>
+        }
 
         <div class="bigupdate-primary-actions">
             <button class="btn-primary" @onclick="OpenCrossGen">

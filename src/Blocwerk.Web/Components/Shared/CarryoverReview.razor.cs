@@ -108,8 +108,17 @@ public partial class CarryoverReview
         // partial.
         SeedFromRestored();
 
-        // Derive the FEW old holds that actually need the user's eyes (no proposal / low confidence /
-        // high residual), residual-ranked. Static per session, so compute once here.
+        // The holds a live boulder is built from, so every review queue can put them first. ONE query
+        // per wall, read only from here on.
+        await LoadBoulderHoldsAsync();
+
+        // Who already reviewed what, on this shared per-wall session. Read once here: a second admin's
+        // confirmations show up on load or refresh, never live.
+        await LoadConfirmationsAsync();
+
+        // Derive the old holds that actually need the user's eyes (no proposal / low confidence / high
+        // residual), boulder holds first, minus everything already reviewed. Rebuilt after every
+        // decision — see SaveCarryAsync.
         _attentionQueue = BuildAttentionQueue();
 
         _loading = false;
@@ -149,43 +158,11 @@ public partial class CarryoverReview
     // changed" on any of them — deterministic and matcher-independent (the matcher no longer flags
     // moves). The button is labelled "Review carried" because this is the count it walks; the amber
     // "changed" chip reports how many of them are flagged, via ChangedCount above.
-    private int CarriedToReview => DisplayedDecisions.Count(d => d.Kind is CarryKind.Carried or CarryKind.Changed);
-    private int RemovalToReview => DisplayedRemovedCandidates.Count;
-    private int NewToReview => Session.NewCenterHoldIds.Count(id => _newHolds.Any(h => h.Id == id));
-
-    // ---- Review item lists (walked one at a time) ------------------------------
-    // Every item carries the PERSISTED decision (Kind + NewHoldId) so the stepper can reflect prior
-    // state on reopen instead of resetting to a blank "carried". _decisions is the source of truth.
-    private CarryReviewItem ItemForOld(Guid oldId)
-    {
-        var d = _decisions.GetValueOrDefault(oldId);
-        return new CarryReviewItem(oldId, d?.NewHoldId, d?.Kind ?? CarryKind.Carried);
-    }
-
-    private List<CarryReviewItem> CarriedItems =>
-        DisplayedDecisions.Where(d => d.Kind is CarryKind.Carried or CarryKind.Changed)
-            .Select(d => new CarryReviewItem(d.OldHoldId, d.NewHoldId, d.Kind)).ToList();
-
-    // The matcher reports removal candidates for EVERY re-photographed panel (its per-panel carryover
-    // pass). Only the displayed panel's can be drawn over this photo, so only those are offered here.
-    private List<Guid> DisplayedRemovedCandidates =>
-        Session.RemovedCandidateHoldIds.Where(_displayedOldIds.Contains).ToList();
-
-    private List<CarryReviewItem> RemovalItems =>
-        DisplayedRemovedCandidates.Select(ItemForOld).ToList();
-
-    private List<CarryReviewItem> NewItems =>
-        Session.NewCenterHoldIds.Where(id => _newHolds.Any(h => h.Id == id))
-            .Select(id => new CarryReviewItem(null, id)).ToList();
-
-    private List<CarryReviewItem> ReviewItems => _reviewMode switch
-    {
-        CarryReviewMode.Uncertain => UncertainItems,
-        CarryReviewMode.Carried => CarriedItems,
-        CarryReviewMode.Removal => RemovalItems,
-        CarryReviewMode.New => NewItems,
-        _ => [],
-    };
+    // Each count is the length of the list its button walks, so the two can never disagree: reviewed
+    // holds are filtered out of both.
+    private int CarriedToReview => CarriedItems.Count;
+    private int RemovalToReview => RemovalItems.Count;
+    private int NewToReview => NewItems.Count;
 
     // ---- Colour coding ---------------------------------------------------------
     private Dictionary<Guid, string> OldColors()
@@ -232,11 +209,6 @@ public partial class CarryoverReview
 
         return map;
     }
-
-    // The decision handlers and the as-you-go saves live in CarryoverReview.Persistence.cs.
-    private void OpenReview(CarryReviewMode mode) => _reviewMode = mode;
-
-    private void CloseReview() => _reviewMode = null;
 
     private async Task Continue()
     {

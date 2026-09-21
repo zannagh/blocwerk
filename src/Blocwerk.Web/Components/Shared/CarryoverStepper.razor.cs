@@ -1,7 +1,6 @@
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Components;
-using Microsoft.AspNetCore.Components.Web;
 
 namespace Blocwerk.Web.Components.Shared;
 
@@ -26,6 +25,14 @@ public partial class CarryoverStepper
     [Parameter] public EventCallback<CarryDecisionChange> OnCarryDecision { get; set; }
     [Parameter] public EventCallback<NewDecisionChange> OnNewDecision { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <summary>
+    /// Says who already reviewed an old hold, and when — null for one nobody has. A reviewed hold is
+    /// filtered out of every queue, so this only ever speaks about a hold confirmed DURING this walk:
+    /// the walk order is frozen when it opens, so stepping back onto one shows who signed it off (you,
+    /// a moment ago). Display only: un-reviewing lives on the parent's reviewed list.
+    /// </summary>
+    [Parameter] public Func<Guid, string?>? ReviewedNote { get; set; }
 
     private int _index;
     private bool _interactive;
@@ -114,6 +121,9 @@ public partial class CarryoverStepper
 
     private PanelHold? NewHold => EffectiveNewHoldId is { } id ? _newById.GetValueOrDefault(id) : null;
 
+    private string? CurrentReviewedNote =>
+        Current?.OldHoldId is { } old ? ReviewedNote?.Invoke(old) : null;
+
     private bool IsChanged => Current?.OldHoldId is { } old && _changed.Contains(old);
 
     private CarryKind CurrentKind => IsChanged ? CarryKind.Changed : CarryKind.Carried;
@@ -152,118 +162,9 @@ public partial class CarryoverStepper
         _ => string.Empty,
     };
 
-    // ---- Actions ---------------------------------------------------------------
-
-    // Records the current per-hold decision: Carried by default, Changed when the toggle is on,
-    // always with the effective (possibly re-targeted) new-hold association.
-    private async Task EmitCarry()
-    {
-        if (Current?.OldHoldId is { } old)
-        {
-            await OnCarryDecision.InvokeAsync(new CarryDecisionChange(old, CurrentKind, EffectiveNewHoldId));
-        }
-    }
-
-    private async Task AcceptCarry()
-    {
-        await EmitCarry();
-        Next();
-    }
-
-    private async Task ToggleChanged(ChangeEventArgs e)
-    {
-        if (Current?.OldHoldId is not { } old)
-        {
-            return;
-        }
-
-        if (e.Value is true)
-        {
-            _changed.Add(old);
-        }
-        else
-        {
-            _changed.Remove(old);
-        }
-
-        await EmitCarry();
-    }
-
-    private async Task ToggleChangedKey()
-    {
-        if (Current?.OldHoldId is not { } old)
-        {
-            return;
-        }
-
-        if (!_changed.Add(old))
-        {
-            _changed.Remove(old);
-        }
-
-        await EmitCarry();
-    }
-
-    private async Task RemoveOld()
-    {
-        if (Current?.OldHoldId is { } old)
-        {
-            await OnCarryDecision.InvokeAsync(new CarryDecisionChange(old, CarryKind.Removed, null));
-        }
-
-        Next();
-    }
-
-    private async Task KeepNew()
-    {
-        if (Current?.NewHoldId is { } id)
-        {
-            await OnNewDecision.InvokeAsync(new NewDecisionChange(id, Discarded: false));
-        }
-
-        Next();
-    }
-
-    private async Task DiscardNew()
-    {
-        if (Current?.NewHoldId is { } id)
-        {
-            await OnNewDecision.InvokeAsync(new NewDecisionChange(id, Discarded: true));
-        }
-
-        Next();
-    }
-
-    private void EnterInteractive()
-    {
-        _interactive = true;
-        _selectedNewId = EffectiveNewHoldId;
-        _refocus = true;
-    }
-
-    private void CancelInteractive()
-    {
-        _interactive = false;
-        _selectedNewId = null;
-        _refocus = true;
-    }
-
-    private void OnNewHoldTap(Guid holdId) => _selectedNewId = holdId;
-
-    // Manual re-target only records "this old hold is this new hold". It is independent of the
-    // "changed" toggle, and it does NOT advance — the user may still toggle changed or remove.
-    private async Task UseInteractive()
-    {
-        if (Current?.OldHoldId is { } old && _selectedNewId is { } chosen)
-        {
-            _retargeted[old] = chosen;
-            _interactive = false;
-            _selectedNewId = null;
-            _refocus = true;
-            await EmitCarry();
-        }
-    }
-
+    // ---- Navigation ------------------------------------------------------------
+    // The per-hold actions (accept, changed, remove, keep/discard, re-target) live in
+    // CarryoverStepper.Actions.cs; the keyboard layer in CarryoverStepper.Keys.cs.
     private void Next()
     {
         _interactive = false;
@@ -289,63 +190,4 @@ public partial class CarryoverStepper
             _index--;
         }
     }
-
-    private async Task OnKeyDown(KeyboardEventArgs e)
-    {
-        if (Items.Count == 0)
-        {
-            return;
-        }
-
-        if (_interactive)
-        {
-            switch (e.Key)
-            {
-                case "Enter":
-                    await UseInteractive();
-                    break;
-                case "Escape":
-                    CancelInteractive();
-                    break;
-            }
-
-            return;
-        }
-
-        switch (e.Key)
-        {
-            case "Enter":
-                await Primary();
-                break;
-            case "c":
-            case "C":
-                if (Mode != CarryReviewMode.New)
-                {
-                    await ToggleChangedKey();
-                }
-
-                break;
-            case "x":
-            case "X":
-            case "Delete":
-                if (Mode == CarryReviewMode.New)
-                {
-                    await DiscardNew();
-                }
-                else
-                {
-                    await RemoveOld();
-                }
-
-                break;
-            case "ArrowRight":
-                Next();
-                break;
-            case "ArrowLeft":
-                Back();
-                break;
-        }
-    }
-
-    private Task Primary() => Mode == CarryReviewMode.New ? KeepNew() : AcceptCarry();
 }

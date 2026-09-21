@@ -35,7 +35,7 @@ public partial class WallUpdateSessionService
 
         var carryover = holdRows
             .Where(d => d.Kind == WallUpdateHoldDecisionKind.Carry)
-            .Select(d => new CarryoverDecision(d.HoldId, d.CarryKind, d.PairedHoldId))
+            .Select(d => new CarryoverDecision(d.HoldId, d.CarryKind, d.PairedHoldId, d.Confirmed))
             .ToList();
         var newCentre = holdRows.Where(d => d.Kind == WallUpdateHoldDecisionKind.NewCentreHold).ToList();
 
@@ -69,11 +69,23 @@ public partial class WallUpdateSessionService
             wallId,
             WallUpdateHoldDecisionKind.Carry,
             decision.OldHoldId,
-            row =>
-            {
-                row.CarryKind = decision.Kind;
-                row.PairedHoldId = decision.Kind == CarryKind.Removed ? null : decision.NewHoldId;
-            });
+            (row, userId) => CarryConfirmationPolicy.Apply(
+                row,
+                decision.Kind,
+                decision.Kind == CarryKind.Removed ? null : decision.NewHoldId,
+                decision.Confirmed,
+                userId,
+                DateTimeOffset.UtcNow));
+    }
+
+    /// <inheritdoc/>
+    public async Task ClearCarryConfirmationAsync(Guid wallId, Guid oldHoldId)
+    {
+        await UpsertHoldDecisionAsync(
+            wallId,
+            WallUpdateHoldDecisionKind.Carry,
+            oldHoldId,
+            (row, _) => CarryConfirmationPolicy.Clear(row));
     }
 
     /// <inheritdoc/>
@@ -83,7 +95,7 @@ public partial class WallUpdateSessionService
             wallId,
             WallUpdateHoldDecisionKind.NewCentreHold,
             stagedHoldId,
-            row => row.Discarded = discarded);
+            (row, _) => row.Discarded = discarded);
     }
 
     /// <summary>
@@ -91,7 +103,10 @@ public partial class WallUpdateSessionService
     /// that triple is what makes this an upsert rather than an append.
     /// </summary>
     private async Task UpsertHoldDecisionAsync(
-        Guid wallId, WallUpdateHoldDecisionKind kind, Guid holdId, Action<WallUpdateHoldDecision> apply)
+        Guid wallId,
+        WallUpdateHoldDecisionKind kind,
+        Guid holdId,
+        Action<WallUpdateHoldDecision, Guid> apply)
     {
         var user = await currentUserService.GetCurrentUserAsync();
         await using var db = await dbContextFactory.CreateDbContextAsync();
@@ -107,7 +122,7 @@ public partial class WallUpdateSessionService
             db.WallUpdateHoldDecisions.Add(row);
         }
 
-        apply(row);
+        apply(row, user.Id);
         row.UpdatedAt = DateTimeOffset.UtcNow;
         WallUpdateSessions.Touch(session, user.Id);
         await db.SaveChangesAsync();
@@ -135,24 +150,7 @@ public partial class WallUpdateSessionService
         // and take the whole save down. Drop those ids instead: the decision is about a hold that no
         // longer exists, which is exactly what the cascade does to already-saved rows.
         var live = await LoadLiveHoldIdsAsync(db, wallId, CollectHoldIds(carryover, acceptedNewCentreHoldIds, removedNewCentreHoldIds));
-        foreach (var decision in carryover)
-        {
-            if (!live.Contains(decision.OldHoldId))
-            {
-                continue;
-            }
-
-            var paired = decision.Kind == CarryKind.Removed ? null : decision.NewHoldId;
-            db.WallUpdateHoldDecisions.Add(new WallUpdateHoldDecision
-            {
-                SessionId = session.Id,
-                Kind = WallUpdateHoldDecisionKind.Carry,
-                HoldId = decision.OldHoldId,
-                PairedHoldId = paired is { } p && live.Contains(p) ? p : null,
-                CarryKind = decision.Kind,
-            });
-        }
-
+        AddCarryRows(db, session.Id, carryover, live, CarryRowsByHold(existing));
         AddNewCentreRows(db, session.Id, acceptedNewCentreHoldIds, live, discarded: false);
         AddNewCentreRows(db, session.Id, removedNewCentreHoldIds, live, discarded: true);
 
@@ -162,6 +160,71 @@ public partial class WallUpdateSessionService
         logger.LogDebug(
             "Wall update session {SessionId} carryover saved by {UserId}: {Carry} verdicts, {Kept} kept, {Dropped} discarded",
             session.Id, user.Id, carryover.Count, acceptedNewCentreHoldIds.Count, removedNewCentreHoldIds.Count);
+    }
+
+    /// <summary>The carry rows being replaced, by subject hold, so their confirmation can be carried over.</summary>
+    private static Dictionary<Guid, WallUpdateHoldDecision> CarryRowsByHold(List<WallUpdateHoldDecision> existing)
+    {
+        return existing
+            .Where(d => d.Kind == WallUpdateHoldDecisionKind.Carry)
+            .GroupBy(d => d.HoldId)
+            .ToDictionary(g => g.Key, g => g.First());
+    }
+
+    /// <summary>
+    /// Re-adds the carryover half. The rows are new, but each one starts from the row it replaces so a
+    /// human confirmation is not silently dropped by a bulk replay that re-states the same verdict —
+    /// <see cref="CarryConfirmationPolicy"/> then decides whether it survives or is cleared.
+    /// <para>
+    /// This path NEVER confirms. The decisions it replays came out of a read (the review seeds itself
+    /// from <see cref="GetDecisionsAsync"/>, whose <c>Confirmed</c> is the persisted FACT), so a true
+    /// arriving here is a stale echo of what the row already said, not somebody's intent — and echoing
+    /// it back would re-confirm a sign-off another admin cleared in the meantime and stamp it with the
+    /// name of whoever happened to press Continue. Every deliberate confirmation is written one hold at
+    /// a time through <see cref="SaveCarryDecisionAsync"/>; nothing relies on this save to register one.
+    /// </para>
+    /// </summary>
+    private static void AddCarryRows(
+        BlocwerkDbContext db,
+        Guid sessionId,
+        IReadOnlyList<CarryoverDecision> carryover,
+        IReadOnlySet<Guid> live,
+        IReadOnlyDictionary<Guid, WallUpdateHoldDecision> previous)
+    {
+        var now = DateTimeOffset.UtcNow;
+        foreach (var decision in carryover)
+        {
+            if (!live.Contains(decision.OldHoldId))
+            {
+                continue;
+            }
+
+            var row = new WallUpdateHoldDecision
+            {
+                SessionId = sessionId,
+                Kind = WallUpdateHoldDecisionKind.Carry,
+                HoldId = decision.OldHoldId,
+                UpdatedAt = now,
+            };
+            if (previous.TryGetValue(decision.OldHoldId, out var prior))
+            {
+                CarryConfirmationPolicy.CopyFrom(row, prior);
+            }
+
+            // confirmed: false is the whole point of this path (see the remarks) — a verdict that MOVED
+            // still drops the stored sign-off, because that sign-off was about the verdict that went
+            // away. userId is unread while confirmed is false: the policy records who only when it
+            // confirms.
+            var paired = decision.Kind == CarryKind.Removed ? null : decision.NewHoldId;
+            CarryConfirmationPolicy.Apply(
+                row,
+                decision.Kind,
+                paired is { } p && live.Contains(p) ? p : null,
+                confirmed: false,
+                userId: Guid.Empty,
+                now);
+            db.WallUpdateHoldDecisions.Add(row);
+        }
     }
 
     private static void AddNewCentreRows(

@@ -106,15 +106,31 @@ public partial class CrossGenLinkTool
 
     private void ResetSelection()
     {
-        _leftHoldId = null;
-        _rightHoldId = null;
+        ClearLinkSelection();
         _focusKey++;
     }
 
-    // ---- Taps ---------------------------------------------------------------------
-    private void OnLeftTap(Guid holdId) => _leftHoldId = holdId;
+    // Drops the pending pair WITHOUT re-centring the panes: picking a touch-up tool must not yank the
+    // user's zoomed view back to the focused queue hold they were about to edit next to.
+    private void ClearLinkSelection()
+    {
+        _leftHoldId = null;
+        _rightHoldId = null;
+    }
 
-    private void OnRightTap(Guid holdId) => _rightHoldId = holdId;
+    // ---- Taps ---------------------------------------------------------------------
+    // While a touch-up tool owns the photos, a left tap would only half-arm a link the user is not
+    // making — the two modes are mutually exclusive, so it is ignored. The right pane's tap is routed
+    // by the tool in CrossGenLinkTool.Tools.cs.
+    private void OnLeftTap(Guid holdId)
+    {
+        if (_touchup.Active)
+        {
+            return;
+        }
+
+        _leftHoldId = holdId;
+    }
 
     // The left hold whose mapping the "Break" action targets: the manual selection if it is linked,
     // else the focused queue hold if it is linked.

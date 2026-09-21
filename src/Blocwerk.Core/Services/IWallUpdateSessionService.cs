@@ -46,8 +46,32 @@ public interface IWallUpdateSessionService
     /// </summary>
     Task<BigUpdateConfirmation> GetDecisionsAsync(Guid wallId);
 
-    /// <summary>Upserts the verdict for ONE old live hold. The as-you-go save of the carryover stepper.</summary>
+    /// <summary>
+    /// Upserts the verdict for ONE old live hold. The as-you-go save of the carryover stepper.
+    /// <para>
+    /// <see cref="CarryoverDecision.Confirmed"/> is the human-confirmation intent: true records that a
+    /// person signed this verdict off (who and when), re-confirming an unchanged verdict is a no-op, and
+    /// false leaves an existing confirmation alone unless this write changes the verdict — see
+    /// <see cref="CarryConfirmationPolicy"/> for the full rule.
+    /// </para>
+    /// </summary>
     Task SaveCarryDecisionAsync(Guid wallId, CarryoverDecision decision);
+
+    /// <summary>
+    /// Who has confirmed which old-hold carry verdicts on the wall's open session, for the review to show
+    /// "reviewed by X" and for two admins working the same session not to duplicate each other. Only
+    /// CONFIRMED verdicts appear; a seeded or matcher-default one is simply absent. Empty when no session
+    /// is open. The boolean alone is already on every <see cref="CarryoverDecision"/> from
+    /// <see cref="GetDecisionsAsync"/> — call this only when the attribution is actually displayed.
+    /// </summary>
+    Task<IReadOnlyList<CarryConfirmation>> GetCarryConfirmationsAsync(Guid wallId);
+
+    /// <summary>
+    /// Drops the human confirmation from ONE old hold's verdict, leaving the verdict itself untouched.
+    /// The "un-review this" action: the only way to clear a confirmation without changing the verdict,
+    /// since a write that re-states the same verdict deliberately preserves it.
+    /// </summary>
+    Task ClearCarryConfirmationAsync(Guid wallId, Guid oldHoldId);
 
     /// <summary>Upserts the keep/discard verdict for ONE staged centre hold with no old twin.</summary>
     Task SaveNewCentreHoldDecisionAsync(Guid wallId, Guid stagedHoldId, bool discarded);
@@ -57,6 +81,18 @@ public interface IWallUpdateSessionService
     /// kept/discarded new centre holds. The bulk save for leaving the carryover step; the per-hold
     /// upserts above cover the keystroke-by-keystroke case. Ids whose hold no longer exists (another
     /// admin deleted the staged row) are dropped rather than throwing.
+    /// <para>
+    /// Rewriting the half does NOT wipe the review: a verdict that comes back unchanged keeps whatever
+    /// human confirmation it had, and one whose verdict has CHANGED loses it (the sign-off was about the
+    /// verdict that went away).
+    /// </para>
+    /// <para>
+    /// This save never CONFIRMS. <see cref="CarryoverDecision.Confirmed"/> on this path is a stale echo
+    /// of a read, not an intent — the caller ships back the whole in-memory carryover, which it seeded
+    /// from <see cref="GetDecisionsAsync"/> — so an incoming true is ignored and the stored confirmation
+    /// (or its absence) stands. Deliberate confirmations go through
+    /// <see cref="SaveCarryDecisionAsync"/>, one hold at a time, as they are made.
+    /// </para>
     /// </summary>
     Task SaveCarryOutcomeAsync(
         Guid wallId,

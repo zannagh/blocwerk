@@ -4,6 +4,7 @@
 
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
+using Microsoft.AspNetCore.Components;
 
 namespace Blocwerk.Web.Components.Shared;
 
@@ -15,6 +16,9 @@ namespace Blocwerk.Web.Components.Shared;
 /// </summary>
 public partial class CarryoverReview
 {
+    [Inject]
+    private IBoulderService BoulderService { get; set; } = default!;
+
     // ---- Attention-queue thresholds (named + easy to tune) --------------------------
     // Mirrors the matcher's per-hold carry gate; a residual past HighResidualFactor× this gate reads
     // as the matcher's implicit "this hold moved" and is surfaced for confirmation.
@@ -28,12 +32,39 @@ public partial class CarryoverReview
     // An old hold with NO proposal at all is carried blind (warp-predicted) — the top of the queue.
     private const double NoProposalRank = double.PositiveInfinity;
 
-    // Residual-ranked (descending) old holds the matcher was not confident about. Static per session
-    // (matcher output does not change), so it is computed once after seeding and reused for the
-    // headline count, the side-by-side focus, and the Uncertain stepper queue.
+    // The old holds still needing eyes: the matcher was unsure about them AND nobody has reviewed them
+    // yet. Boulder holds first, then residual (descending). The matcher half is static per session, the
+    // reviewed half is not — so this is REBUILT after every decision that can confirm one (see
+    // SaveCarryAsync). The show-reviewed toggle does NOT rebuild it: that toggle lists reviewed holds,
+    // it never returns one to a queue or a count. It drives the headline count, the
+    // side-by-side focus and the Uncertain stepper queue, which is exactly why it has to move as the
+    // user works: a count that never shrinks tells them nothing about what is left.
     private List<Guid> _attentionQueue = [];
 
+    // Old holds that at least one LIVE boulder is built from. The reason to review a hold at all: a
+    // mis-carried hold under a boulder freezes it, a mis-carried unused hold costs nothing. Loaded ONCE
+    // per component from IBoulderService.GetHoldUsageAsync (one query, already twin-expanded) and then
+    // only read — see LoadBoulderHoldsAsync.
+    private HashSet<Guid> _boulderHoldIds = [];
+
     private bool _crossGenOpen;
+
+    /// <summary>
+    /// Loads the wall's hold→boulder usage once, reduced to the set of holds carrying a live boulder.
+    /// A failure leaves the set empty, which only costs the boulder-first ORDER — never an item.
+    /// </summary>
+    private async Task LoadBoulderHoldsAsync()
+    {
+        try
+        {
+            var usage = await BoulderService.GetHoldUsageAsync(WallId);
+            _boulderHoldIds = HoldReviewOrdering.LiveBoulderHoldIds(usage);
+        }
+        catch (Exception)
+        {
+            _boulderHoldIds = [];
+        }
+    }
 
     private List<Guid> BuildAttentionQueue()
     {
@@ -54,7 +85,15 @@ public partial class CarryoverReview
             }
         }
 
-        return scored.OrderByDescending(s => s.Residual).Select(s => s.Id).ToList();
+        // Reviewed holds leave the queue (un-reviewing is the only way back in), and holds that carry a
+        // boulder outrank everything else regardless of residual.
+        return HoldReviewOrdering.BoulderFirstThenByDescending(
+                ExcludeReviewed(scored, s => s.Id),
+                s => s.Id,
+                s => s.Residual,
+                _boulderHoldIds)
+            .Select(s => s.Id)
+            .ToList();
     }
 
     private Dictionary<Guid, CarryoverProposal> ProposalsByOld()
@@ -69,9 +108,11 @@ public partial class CarryoverReview
     }
 
     // ---- Headline framing ----------------------------------------------------------
+    // All three move as the user works: the queue is rebuilt after every decision, so a hold that has
+    // just been reviewed leaves NeedsReviewCount and joins ReviewedCount.
     private int NeedsReviewCount => _attentionQueue.Count;
     private int TotalOldCount => _oldHolds.Count;
-    private int AutoCarriedCount => Math.Max(0, TotalOldCount - NeedsReviewCount);
+    private int AutoCarriedCount => Math.Max(0, TotalOldCount - NeedsReviewCount - ReviewedCount);
 
     // ---- Cross-gen linking seam (in-memory over _decisions) ------------------------
     // The current old→new mapping the side-by-side renders as pre-linked (green). Only carried holds
@@ -107,7 +148,10 @@ public partial class CarryoverReview
         var changed = new List<CarryoverDecision>();
         foreach (var (oldId, d) in stealers)
         {
-            var released = d with { NewHoldId = null };
+            // The release is a side effect of somebody else's link, never a review of THIS hold: write
+            // it unconfirmed so the verdict change drops any earlier sign-off and the hold comes back
+            // into the queue carrying blind.
+            var released = d with { NewHoldId = null, Confirmed = false };
             _decisions[oldId] = released;
             changed.Add(released);
         }
@@ -115,7 +159,9 @@ public partial class CarryoverReview
         var cur = _decisions.GetValueOrDefault(e.OldHoldId);
         // Linking a hold asserts it is present, so a stray "removed" reverts to carried.
         var kind = cur is null || cur.Kind == CarryKind.Removed ? CarryKind.Carried : cur.Kind;
-        var linked = new CarryoverDecision(e.OldHoldId, kind, e.NewHoldId);
+        // Pointing at the hold's real counterpart is as deliberate as a decision gets, so the link
+        // confirms the verdict and the hold leaves the review queues.
+        var linked = new CarryoverDecision(e.OldHoldId, kind, e.NewHoldId, Confirmed: true);
         _decisions[e.OldHoldId] = linked;
         changed.Add(linked);
 
@@ -128,16 +174,35 @@ public partial class CarryoverReview
         // never lost) — the "never lose a hold" invariant is preserved.
         if (_decisions.TryGetValue(oldId, out var d))
         {
-            var unlinked = d with { NewHoldId = null };
+            // Unconfirmed, exactly like the stealer release above and for the same reason: breaking the
+            // match says only "that twin is wrong", never where the hold actually is, and it leaves the
+            // hold carried BLIND. Riding the old sign-off along would let a hold that just entered the
+            // riskiest state read as reviewed and leave the queues — and re-stamp the breaker as its
+            // confirmer. False lets the policy's verdict-changed rule drop the sign-off the vanished
+            // match was about; a hold that had no twin to begin with keeps whatever it had.
+            var unlinked = d with { NewHoldId = null, Confirmed = false };
             _decisions[oldId] = unlinked;
             await SaveCarryAsync(unlinked);
         }
     }
 
     // ---- Phase switching -----------------------------------------------------------
-    private void OpenCrossGen() => _crossGenOpen = true;
+    // The side-by-side walks a FROZEN copy of the queue, for the same reason the stepper does: a link
+    // confirms its hold, which drops it out of the live queue, and a list shrinking under the focus
+    // index would silently skip the next hold.
+    private List<Guid> _crossGenQueue = [];
 
-    private void CloseCrossGen() => _crossGenOpen = false;
+    private void OpenCrossGen()
+    {
+        _crossGenQueue = [.. _attentionQueue];
+        _crossGenOpen = true;
+    }
+
+    private void CloseCrossGen()
+    {
+        _crossGenOpen = false;
+        _crossGenQueue = [];
+    }
 
     // Hand off from the side-by-side confirm (Step 2) to the changed/moved review (Step 3), walking
     // the same residual-ranked attention queue.
@@ -146,7 +211,4 @@ public partial class CarryoverReview
         _crossGenOpen = false;
         OpenReview(CarryReviewMode.Uncertain);
     }
-
-    // The residual-ranked attention queue as stepper items, each carrying its persisted decision.
-    private List<CarryReviewItem> UncertainItems => _attentionQueue.Select(ItemForOld).ToList();
 }

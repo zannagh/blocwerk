@@ -1,9 +1,12 @@
 @inject IWallPanelService WallPanelService
+@inject IBoulderService BoulderService
 
 @* Focused, one-at-a-time overlap confirmation for a newly staged big-wall panel. Each proposed
    hold-match is reviewed on its own: the neighbour hold (left) and the proposed new hold (right)
    are shown side by side, each on an independently zoom/pannable image, colour-and-number paired.
-   Proposals are ordered by confidence so the obvious ones fly by. See PanelImageView.razor. *@
+   Proposals about holds a live boulder is built from come first, then the matcher's confidence, so
+   the consequential ones are decided while the user is still paying attention.
+   See PanelImageView.razor. *@
 
 <div class="panel-stepper" tabindex="0" @ref="_rootRef" @onkeydown="OnKeyDown">
     <div class="panel-stepper-head">
@@ -100,6 +103,11 @@
             {
                 <span class="panel-stepper-decided">@(d.Moved ? "moved ✓" : "linked ✓")</span>
             }
+            else if (CurrentIsUndecidedByDelete)
+            {
+                @* This step HAD a confirmed match until the hold it pointed at was deleted. *@
+                <span class="panel-stepper-band low">match deleted — decide again</span>
+            }
         </div>
 
         <div class="panel-stepper-pair">
@@ -109,16 +117,23 @@
                             HighlightHoldId="step.HoldAId" BadgeNumber="_index + 1" BadgeColor="@color"
                             FocusKey="_index" FocusPoint="Point(neighborHold)" />
 
+            @* Editable only while a touch-up tool is picked (and never inside the moved pick), so with
+               no tool active the pane behaves exactly as it always has. *@
             <PanelImageView WallId="WallId" Caption="@(_movedMode ? "New panel — pick the ACTUAL hold" : "New panel")"
                             PhotoUrl="@PhotoUrl(PanelId, staged: true)"
                             Holds="_stagedList"
                             HighlightHoldId="@(_movedMode ? null : step.HoldBId)"
-                            SelectedHoldId="_movedSelectedHoldId"
+                            SelectedHoldId="@RightPaneSelectedId"
                             HintPoint="@(_movedMode ? Point(newHold) : null)"
-                            Interactive="_movedMode" AddMode="_addMode"
+                            Interactive="@(_movedMode || ToolActive)"
+                            AddMode="@(_addMode || (ToolActive && _touchup.AddMode))"
+                            Editable="@ToolActive"
+                            ExactHitTargets="@(ToolActive && _touchup.DeleteMode)"
+                            DragToMove="@(ToolActive && _touchup.MoveMode)"
                             BadgeNumber="_index + 1" BadgeColor="@color"
                             FocusKey="_index" FocusPoint="Point(newHold)"
-                            OnHoldTap="OnMovedHoldTap" OnEmptyTap="OnMovedAddTap" />
+                            OnHoldTap="OnRightHoldTapAsync" OnEmptyTap="OnRightEmptyTapAsync"
+                            OnHoldGeometryChanged="MoveStagedHoldAsync" />
         </div>
 
         @if (!string.IsNullOrEmpty(_warning))
@@ -153,10 +168,41 @@
                         Link holds manually@(_manualLinks.Count > 0 ? $" ({_manualLinks.Count})" : "")
                     </button>
                 }
+                @* Deleting a hold on the right un-decides every step that was linked to it — possibly
+                   steps long behind this one. They stay reachable here instead of disappearing behind a
+                   warning on whichever step happened to be open. *@
+                @if (UndecidedByDeleteCount > 0)
+                {
+                    <button class="btn-link" @onclick="GoToFirstUndecided" title="Go back to the first step whose confirmed match was dropped when you deleted a hold">
+                        Decide again (@UndecidedByDeleteCount)
+                    </button>
+                }
                 <button class="btn-link" @onclick="ConfirmAllHighConfidence" title="Auto-confirm every remaining match at 90% or higher, discard the rest, and finish">
                     Confirm all remaining ≥ 90% (@RemainingHighConfidence)
                 </button>
             </div>
+
+            @* Fix a wrong hold on the NEW panel without leaving the review. Deliberately buttons only:
+               this stepper's letters c / d / m / x are established review actions documented on the
+               help page, and re-lettering them (or binding only the two tool letters that happen to be
+               free) would be worse than no tool keys at all. stopPropagation keeps the size slider's
+               own keys out of the stepper's keydown handler. *@
+            @if (ToolsEnabled)
+            {
+                <div class="bigupdate-edit-tools" @onkeydown:stopPropagation="true">
+                    <span class="hint">
+                        Wrong hold on the new panel? Fix it here: <strong>+</strong> adds a missed hold, the
+                        <strong>bin</strong> deletes a false detection, <strong>move</strong> drags one into
+                        place and the <strong>size slider</strong> resizes the selected hold. These tools have
+                        no keyboard shortcuts here — <kbd>C</kbd>, <kbd>D</kbd>, <kbd>M</kbd> and <kbd>X</kbd>
+                        stay the review actions above.
+                    </span>
+                    <HoldTouchupToolbar Tool="_touchup.Tool" ToolChanged="SetTouchupTool"
+                                        Size="_touchup.Radius" SizeChanged="OnTouchupSizeChanged"
+                                        OnSizeCommitted="OnTouchupSizeCommittedAsync"
+                                        HasSelection="@(_touchup.SelectedHoldId is not null)" />
+                </div>
+            }
         }
     }
 </div>

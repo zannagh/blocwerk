@@ -62,9 +62,15 @@ public partial class CarryoverReview
     }
 
     // ---- Decision handlers (from the focused stepper) --------------------------
+    /// <summary>
+    /// The stepper's verdict for one old hold. Anything that arrives here — an accept, a "has
+    /// physically changed", a re-target, a removal — is a person deciding, so it is written as
+    /// CONFIRMED: the hold then leaves the attention queue and the review lists, and a second admin on
+    /// the same session is not asked to look at it again.
+    /// </summary>
     private async Task ApplyCarryDecision(CarryDecisionChange change)
     {
-        var decision = new CarryoverDecision(change.OldHoldId, change.Kind, change.NewHoldId);
+        var decision = new CarryoverDecision(change.OldHoldId, change.Kind, change.NewHoldId, Confirmed: true);
         _decisions[change.OldHoldId] = decision;
         await SaveCarryAsync(decision);
     }
@@ -98,6 +104,18 @@ public partial class CarryoverReview
         catch (Exception ex)
         {
             _saveError = $"Could not save that decision yet: {ex.Message}";
+        }
+
+        // The queue is a function of the decisions, so it is rebuilt here rather than only at init:
+        // a reviewed hold has to leave it (and the headline count) the moment it is decided. Rebuilt
+        // even on a failed save, because the in-memory decision is what the screen shows.
+        _attentionQueue = BuildAttentionQueue();
+
+        // Only re-read the "reviewed by whom" attribution while it is actually on screen; the reviewed
+        // FLAG itself is already in hand on the decision we just wrote.
+        if (_showReviewed && decision.Confirmed)
+        {
+            await LoadConfirmationsAsync();
         }
     }
 

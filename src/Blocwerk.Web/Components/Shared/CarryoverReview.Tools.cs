@@ -107,14 +107,36 @@ public partial class CarryoverReview
 
     private async Task OnNewEmptyTap((double X, double Y) at)
     {
-        // needsReview is left at the service default (true) here — unlike the touch-up step, an added
-        // hold during the carryover is a real change on the new wall, not a detection correction.
-        var id = await WallPanelService.AddStagedHoldAsync(WallId, CenterPanelId, at.X, at.Y, _newHoldRadius);
-
         // The Add tool stays active for a run of adds; the fresh hold is selected so the slider can
         // fine-tune it straight away.
-        _selectedNewHoldId = id;
+        if (await AddNewHoldAsync((at.X, at.Y, _newHoldRadius)) is { } id)
+        {
+            _selectedNewHoldId = id;
+        }
+    }
+
+    /// <summary>
+    /// The one staged-add path, shared by this pane's toolbar and by the review sub-views (the focused
+    /// stepper and the cross-gen link tool), which reach it as a parameter instead of injecting
+    /// <c>IWallPanelService</c> a second time. Returns the new hold's id so the caller can select it.
+    /// <para>
+    /// needsReview is left at the service default (true) — unlike the touch-up step, a hold added
+    /// during the carryover is a real change on the new wall, not a detection correction. Routing the
+    /// sub-views through here is what keeps that asymmetry a single decision.
+    /// </para>
+    /// <para>
+    /// It is a <see cref="Func{T, TResult}"/> rather than an <c>EventCallback</c> because the callers
+    /// need the id back; that forgoes the automatic re-render an EventCallback would trigger, so this
+    /// component renders itself after the reload — the sub-views draw the staged holds from the
+    /// <c>NewHolds</c> parameter, which only moves when this component renders.
+    /// </para>
+    /// </summary>
+    private async Task<Guid?> AddNewHoldAsync((double X, double Y, double Radius) at)
+    {
+        var id = await WallPanelService.AddStagedHoldAsync(WallId, CenterPanelId, at.X, at.Y, at.Radius);
         await ReloadNewHoldsAsync();
+        StateHasChanged();
+        return id;
     }
 
     private async Task RemoveSelectedNewHold()
@@ -137,7 +159,16 @@ public partial class CarryoverReview
         var orphaned = new List<CarryoverDecision>();
         foreach (var (oldId, d) in _decisions.Where(kv => kv.Value.NewHoldId == id).ToList())
         {
-            var fallback = d with { NewHoldId = null };
+            // Deliberately UNCONFIRMED. The user decided "that detection is not a hold"; they decided
+            // nothing about the old holds that were pointing at it, which have just lost their twin and
+            // are now carried BLIND at their old position — the state that most needs a human. Writing
+            // it confirmed would attribute the sign-off to whoever pressed the bin and drop every one of
+            // those holds out of the attention queue and the review lists unseen. False also lets the
+            // policy's verdict-changed rule clear an EARLIER sign-off, which was about the match that
+            // just went away. Every one of these holds is rewritten, including the co-updated neighbour
+            // panels' — a decision must never point at a staged hold that no longer exists — and the
+            // reviewed list reads the whole map, so an out-of-panel sign-off can still be un-reviewed.
+            var fallback = d with { NewHoldId = null, Confirmed = false };
             _decisions[oldId] = fallback;
             orphaned.Add(fallback);
         }

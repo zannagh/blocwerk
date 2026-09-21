@@ -730,6 +730,31 @@ svg.stat-value { margin-inline: auto; }
 
 .share-link { margin-bottom: 12px; }
 
+/* Cross-panel linking, said out loud on the wall page: the tool itself is otherwise a bare icon
+   buried in per-panel edit mode, so a multi-panel wall could be built with zero links. */
+.panel-link-callout {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    border-radius: var(--r-sm);
+    border: 1px solid var(--border);
+    background: var(--bg-surface);
+}
+.panel-link-callout.warn {
+    border-color: var(--status-warning);
+    background: color-mix(in srgb, var(--status-warning) 10%, var(--bg-surface));
+}
+.panel-link-callout-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1 1 220px;
+}
+.panel-link-callout .btn-secondary { width: auto; margin-bottom: 0; }
+
 .member-row {
     display: flex; justify-content: space-between; align-items: center;
     padding: 10px 12px; background: var(--bg-surface); border-radius: 8px;
@@ -2561,6 +2586,41 @@ html.bw-fullscreen .wall-main .photo-viewport {
     padding: 4px 0;
 }
 .bigupdate-more-review[open] > summary { margin-bottom: 6px; }
+
+.panel-stepper-reviewed {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+}
+
+/* Reviewed holds: hidden from the queues by default, force-shown with attribution + un-review. */
+.bigupdate-reviewed { margin: 0 0 10px; }
+.bigupdate-reviewed-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+.bigupdate-reviewed-head .btn-secondary { width: auto; margin-bottom: 0; }
+.bigupdate-reviewed-list {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.bigupdate-reviewed-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: var(--r-sm);
+    border: 1px solid var(--border);
+    background: var(--bg-surface);
+}
+.bigupdate-reviewed-row .btn-secondary { width: auto; margin-bottom: 0; margin-left: auto; }
+.bigupdate-reviewed-hold { font-weight: 600; color: var(--text-primary); }
 
 /* Cross-gen side-by-side confirm tool */
 .crossgen-tool { margin: 4px 0; }

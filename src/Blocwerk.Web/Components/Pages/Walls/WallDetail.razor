@@ -568,6 +568,33 @@ else
                             <p class="hint">@_inviteCopyLabel</p>
                         </div>
                     }
+
+                    @* The cross-panel link tool used to be reachable only as a bare chain-link icon
+                       inside per-panel edit mode, so a wall could be updated with zero links and lose
+                       twin expansion for every boulder that spans two panels — which is exactly what
+                       happened in production. Say the state out loud on the wall page instead, with a
+                       way in. Editors only; the tool re-checks the role on the server anyway. *@
+                    @if (_canEditHolds && _livePanels.Count >= 2)
+                    {
+                        <div class="panel-link-callout @(_holdLinkCount == 0 ? "warn" : "")">
+                            <div class="panel-link-callout-text">
+                                <strong>
+                                    @_livePanels.Count panels ·
+                                    @(_holdLinkCount == 0
+                                        ? "no holds linked across them"
+                                        : $"{_holdLinkCount} hold{(_holdLinkCount == 1 ? "" : "s")} linked across them")
+                                </strong>
+                                <span class="hint">
+                                    A hold visible on two panels is two holds until you link them. Link
+                                    them and a boulder that spans the panels counts once — and survives
+                                    the next wall update as one hold.
+                                </span>
+                            </div>
+                            <button type="button" class="btn-secondary" @onclick="OpenLinkTool">
+                                Link holds across panels
+                            </button>
+                        </div>
+                    }
                 }
             </div>
         </Page3>
@@ -823,6 +850,10 @@ else
     // The wall's in-flight update, if any — surfaced at the entry point so a second admin joins it.
     private WallUpdateSessionInfo? _openUpdate;
     private bool _showLinkTool;
+
+    // How many cross-panel hold links the wall has. Only loaded for an editor of a multi-panel wall,
+    // where it is what the discoverability card reports; a single-panel wall can have none.
+    private int _holdLinkCount;
     private string? _shareLink;
     private bool _showInviteLink;
     private string _inviteCopyLabel = string.Empty;
@@ -1389,10 +1420,35 @@ else
             _livePanels = [];
         }
 
+        await LoadHoldLinkCount();
+
         // Keep the edited-panel selection pointing at a panel that still exists after a reload.
         if (_editingPanel is not null && _livePanels.All(p => p.Id != _editingPanel.Id))
         {
             _editingPanel = _livePanels.Count > 0 ? _livePanels[0] : null;
+        }
+    }
+
+    /// <summary>
+    /// Counts the wall's cross-panel hold links, for the card that tells an editor the linking tool
+    /// exists. Only worth asking for on a multi-panel wall an editor is looking at; a failure (or a
+    /// viewer who cannot enumerate links) simply leaves the card reporting none.
+    /// </summary>
+    private async Task LoadHoldLinkCount()
+    {
+        _holdLinkCount = 0;
+        if (_livePanels.Count < 2 || !_canEditHolds)
+        {
+            return;
+        }
+
+        try
+        {
+            _holdLinkCount = (await WallPanelService.GetHoldLinksAsync(WallId)).Count;
+        }
+        catch (Exception)
+        {
+            _holdLinkCount = 0;
         }
     }
 
@@ -1796,9 +1852,12 @@ else
         }
     }
 
-    private void CloseLinkTool()
+    private async Task CloseLinkTool()
     {
         _showLinkTool = false;
+
+        // The tool is where links are made and broken, so the card's count is re-read on the way out.
+        await LoadHoldLinkCount();
     }
 
     private async Task OnBigUpdatePromoted()

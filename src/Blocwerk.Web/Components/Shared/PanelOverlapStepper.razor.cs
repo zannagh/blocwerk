@@ -30,6 +30,9 @@ public partial class PanelOverlapStepper
 
     private const double HighConfidence = 0.90;
 
+    // The neighbour-panel holds that carry a live boulder, for the boulder-first step order.
+    private HashSet<Guid> _boulderHoldIds = [];
+
     private bool _loading = true;
     private bool _finishing;
     private int _index;
@@ -64,7 +67,24 @@ public partial class PanelOverlapStepper
 
     protected override async Task OnInitializedAsync()
     {
-        _steps = Proposals.OrderByDescending(p => p.Confidence).ToList();
+        // Proposals about a hold a LIVE boulder is built from come first: those are the links whose
+        // loss actually breaks something. One query per wall (already twin-expanded), read once here;
+        // a failure just leaves the previous confidence-only order.
+        try
+        {
+            var usage = await BoulderService.GetHoldUsageAsync(WallId);
+            _boulderHoldIds = HoldReviewOrdering.LiveBoulderHoldIds(usage);
+        }
+        catch (Exception)
+        {
+            _boulderHoldIds = [];
+        }
+
+        _steps = HoldReviewOrdering.BoulderFirstThenByDescending(
+            Proposals,
+            p => p.HoldAId,
+            p => p.Confidence,
+            _boulderHoldIds);
         _decisions = new ConfirmedLink?[_steps.Count];
 
         var staged = await WallPanelService.GetPanelHoldsAsync(WallId, PanelId, includeStaged: true);
@@ -139,6 +159,9 @@ public partial class PanelOverlapStepper
     private async Task DiscardMatch()
     {
         _decisions[_index] = null;
+
+        // "Not the same hold" is a decision, so this step is no longer one the bin tool owes the user.
+        ClearUndecided(_index);
         await Next();
     }
 
@@ -159,126 +182,16 @@ public partial class PanelOverlapStepper
             {
                 _decisions[i] = null;
             }
+
+            // A hold the user says is gone is settled either way: never re-offer its steps, whether the
+            // bin tool un-decided them or this removal just did.
+            if (_steps[i].HoldAId == neighborHoldId)
+            {
+                ClearUndecided(i);
+            }
         }
 
         await Next();
-    }
-
-    private void EnterMoved()
-    {
-        _movedMode = true;
-        _addMode = false;
-        _movedSelectedHoldId = null;
-        _warning = null;
-        _refocus = true;
-    }
-
-    private void CancelMoved()
-    {
-        _movedMode = false;
-        _addMode = false;
-        _movedSelectedHoldId = null;
-        _refocus = true;
-    }
-
-    private void OnMovedHoldTap(Guid holdId) => _movedSelectedHoldId = holdId;
-
-    private async Task OnMovedAddTap((double X, double Y) at)
-    {
-        var id = await WallPanelService.AddPanelHoldAsync(WallId, PanelId, at.X, at.Y, 0.02);
-        var hold = new PanelHold(id, at.X, at.Y, 0.02, null);
-        _stagedHolds[id] = hold;
-        _stagedList = _stagedList.Append(hold).ToList();
-        _movedSelectedHoldId = id;
-        _addMode = false;
-    }
-
-    private async Task UseMovedHold()
-    {
-        var step = _steps[_index];
-        if (_movedSelectedHoldId is not { } chosen)
-        {
-            return;
-        }
-
-        if (!TryRecord(new ConfirmedLink(step.HoldAId, chosen, Moved: true)))
-        {
-            return;
-        }
-
-        CancelMoved();
-        await Next();
-    }
-
-    // ---- Manual linking --------------------------------------------------------
-    private void EnterManual()
-    {
-        if (_neighborPanels.Count == 0)
-        {
-            return;
-        }
-
-        _manualMode = true;
-        _movedMode = false;
-        _addMode = false;
-        _manualLeftId = null;
-        _manualRightId = null;
-        _manualNeighborId ??= _neighborPanels.First().Id;
-        _warning = null;
-        _manualFocusKey++;
-        _refocus = true;
-    }
-
-    private void CancelManual()
-    {
-        _manualMode = false;
-        _manualLeftId = null;
-        _manualRightId = null;
-        _warning = null;
-        _refocus = true;
-    }
-
-    private void OnManualLeftTap(Guid holdId) => _manualLeftId = holdId;
-
-    private void OnManualRightTap(Guid holdId) => _manualRightId = holdId;
-
-    private void SelectManualNeighbor(Guid neighborId)
-    {
-        _manualNeighborId = neighborId;
-        // The left selection belongs to a specific neighbour; drop it when switching neighbours.
-        _manualLeftId = null;
-        _manualFocusKey++;
-    }
-
-    /// <summary>
-    /// Records a free-form neighbour-hold ↔ new-hold pair the matcher never proposed, then clears the
-    /// two selections so the user can pair more. Reuses the same "one new hold, one link" guard as the
-    /// proposal steps and dedupes against links already marked manually.
-    /// </summary>
-    private async Task MarkManualOverlap()
-    {
-        if (_manualLeftId is not { } left || _manualRightId is not { } right)
-        {
-            return;
-        }
-
-        if (IsNewHoldTaken(right, exceptIndex: -1))
-        {
-            _warning = "That hold is already linked to another neighbour hold — pick a different one.";
-            return;
-        }
-
-        if (_manualLinks.Any(l => l.NeighborHoldId == left && l.NewHoldId == right))
-        {
-            _warning = "Those two holds are already marked as overlapping.";
-            return;
-        }
-
-        _manualLinks.Add(new ConfirmedLink(left, right, Moved: false));
-        _manualLeftId = null;
-        _manualRightId = null;
-        _warning = null;
-        await ReportProgressAsync();
     }
 
     /// <summary>Records a decision, guarding against linking the same new hold from two steps.</summary>
@@ -291,6 +204,7 @@ public partial class PanelOverlapStepper
         }
 
         _decisions[_index] = link;
+        ClearUndecided(_index);
         _warning = null;
         return true;
     }
@@ -335,6 +249,7 @@ public partial class PanelOverlapStepper
             if (!IsNewHoldTaken(p.HoldBId, i))
             {
                 _decisions[i] = new ConfirmedLink(p.HoldAId, p.HoldBId, Moved: false);
+                ClearUndecided(i);
             }
         }
 
@@ -363,6 +278,13 @@ public partial class PanelOverlapStepper
 
     private async Task Finish()
     {
+        // A link the bin tool took away is the user's own work: never close the panel over one without
+        // showing it to them first. See TryDeflectToUndecided — it gives way after saying so once.
+        if (TryDeflectToUndecided())
+        {
+            return;
+        }
+
         _finishing = true;
         await OnConfirm.InvokeAsync(CurrentOutcome());
     }

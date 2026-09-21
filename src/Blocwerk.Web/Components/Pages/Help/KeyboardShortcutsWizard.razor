@@ -85,7 +85,9 @@
         <p class="keyshort-note">
             They are the stepper's own keys, so they go to whatever has focus. The stepper takes focus
             itself when it opens and again after every decision, so you can normally just start typing;
-            if you clicked something else in between, click the stepper once to hand focus back.
+            if you clicked something else in between, click the stepper once to hand focus back. Nothing
+            typed into the hold-size slider reaches them, so its own <kbd>&larr;</kbd>/<kbd>&rarr;</kbd>
+            never also steps the review.
         </p>
         <dl class="keyshort-list">
             <div class="keyshort-row">
@@ -98,7 +100,11 @@
             </div>
             <div class="keyshort-row">
                 <dt><kbd>d</kbd></dt>
-                <dd>Discard match &mdash; neighbour-overlap stepper only</dd>
+                <dd>
+                    Discard match &mdash; neighbour-overlap stepper only. On the carry-over stepper and the
+                    side-by-side confirm the same letter is the <em>delete hold</em> tool instead (see below);
+                    the two steppers never show both meanings at once.
+                </dd>
             </div>
             <div class="keyshort-row">
                 <dt><kbd>m</kbd></dt>
@@ -120,11 +126,55 @@
             </div>
             <div class="keyshort-row">
                 <dt><kbd>Esc</kbd></dt>
-                <dd>Cancel the current sub-mode (manual pairing, &ldquo;moved&rdquo; pick, interactive pick)</dd>
+                <dd>
+                    Cancel the current sub-mode (manual pairing, &ldquo;moved&rdquo; pick, interactive pick),
+                    or leave the hold touch-up tool where one is active. It never discards anything.
+                </dd>
             </div>
         </dl>
         <p class="keyshort-note">
             While a sub-mode is open the stepper only listens for <kbd>Enter</kbd> (confirm the pick, and
             <kbd>c</kbd> does the same in the &ldquo;moved&rdquo; pick) and <kbd>Esc</kbd> (cancel it).
+        </p>
+
+        <h3>Hold touch-up tools inside a review</h3>
+        <p class="keyshort-note">
+            The carry-over stepper, the side-by-side confirm and the neighbour-overlap stepper all carry
+            the same hold toolbar as the touch-up step, so a wrong hold can be added, moved, resized or
+            deleted without backing out to the overview. It only ever edits the <strong>new</strong>
+            (right-hand) photo. Picking a tool leaves the surface's own tap mode &mdash; the re-target
+            pick, the link pick, the &ldquo;moved&rdquo; pick &mdash; and leaving the tool gives it back,
+            so a tap never means two things at once.
+        </p>
+        <dl class="keyshort-list">
+            <div class="keyshort-row">
+                <dt><kbd>a</kbd></dt>
+                <dd>The <em>add hold</em> tool &mdash; carry-over stepper and side-by-side confirm</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>m</kbd></dt>
+                <dd>The <em>select / move</em> tool &mdash; carry-over stepper and side-by-side confirm</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>d</kbd></dt>
+                <dd>The <em>delete hold</em> tool &mdash; carry-over stepper and side-by-side confirm</dd>
+            </div>
+            <div class="keyshort-row">
+                <dt><kbd>p</kbd></dt>
+                <dd>The <em>pipette</em> tool &mdash; carry-over stepper and side-by-side confirm</dd>
+            </div>
+        </dl>
+        <p class="keyshort-note">
+            <strong>The neighbour-overlap stepper has no tool keys</strong> &mdash; its toolbar is
+            buttons only. <kbd>c</kbd>, <kbd>d</kbd>, <kbd>m</kbd> and <kbd>x</kbd> are already its
+            confirm / discard / moved / delete review actions, and those were not re-lettered for the
+            tools. The side-by-side confirm had no keys of its own at all before these four, and the
+            carry-over stepper's own keys (<kbd>Enter</kbd>, <kbd>c</kbd>, <kbd>x</kbd>, the arrows)
+            leave <kbd>a</kbd>/<kbd>m</kbd>/<kbd>d</kbd>/<kbd>p</kbd> free.
+        </p>
+        <p class="keyshort-note">
+            The tools also appear on the neighbour-overlap stepper only during a <strong>wall
+            update</strong>. In the add-a-panel flow that stepper has no staged update behind it, so the
+            toolbar is not shown there at all.
         </p>
     </section>

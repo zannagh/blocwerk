@@ -114,6 +114,41 @@ public class CarryoverScopeTests
         Assert.Equal([asMatched], reconciled.Decisions);
     }
 
+    // A reset throws the user's verdict away, so the hold must read as UNREVIEWED again: a reset phantom
+    // that still counted as confirmed would sit in the review queue as somebody's finished work.
+    [Fact]
+    public async Task ResettingAnOutOfScopeVerdict_ClearsItsHumanConfirmation()
+    {
+        using var h = new WallTestHarness();
+        var w = await SeedWallAsync(h);
+        await StageCentrePlusNeighbourAsync(h, w.WallId);
+
+        var session = await BuildService(h).ResumeAsync(w.WallId);
+        var stale = new CarryoverDecision(w.NeighbourHoldId, CarryKind.Removed, null, Confirmed: true);
+
+        var reconciled = CarryoverScope.Reconcile(session, [stale]);
+
+        Assert.False(Assert.Single(reconciled.Decisions).Confirmed);
+        Assert.True(Assert.Single(reconciled.Reset).Confirmed);
+    }
+
+    // A verdict the reconcile leaves ALONE keeps its confirmation: nothing about it changed.
+    [Fact]
+    public async Task AnUntouchedVerdict_KeepsItsHumanConfirmation()
+    {
+        using var h = new WallTestHarness();
+        var w = await SeedWallAsync(h);
+        await StageCentrePlusNeighbourAsync(h, w.WallId);
+
+        var session = await BuildService(h).ResumeAsync(w.WallId);
+        var reviewed = new CarryoverDecision(w.CentreHoldIds[0], CarryKind.Removed, null, Confirmed: true);
+
+        var reconciled = CarryoverScope.Reconcile(session, [reviewed]);
+
+        Assert.Empty(reconciled.Reset);
+        Assert.True(Assert.Single(reconciled.Decisions).Confirmed);
+    }
+
     // With no carried panels (the pre-match staged session) the scope is unknowable, so nothing is
     // touched: guessing at a scope there could reset a verdict the user CAN see.
     [Fact]

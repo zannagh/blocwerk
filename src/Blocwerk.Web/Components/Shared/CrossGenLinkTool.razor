@@ -4,7 +4,7 @@
    them; break a mapping to fall back to safe blind warp-carry. In-memory over the parent's decisions —
    nothing persists here. See CrossGenLinkTool.razor.cs. *@
 
-<div class="crossgen-tool">
+<div class="crossgen-tool" tabindex="0" @ref="_rootRef" @onkeydown="OnKeyDown">
     <div class="panel-stepper-head">
         <div>
             <h3 class="panel-overlap-title">Confirm the matches</h3>
@@ -54,22 +54,47 @@
                         FocusKey="_focusKey" FocusPoint="Point(FocusOldHold)"
                         OnHoldTap="OnLeftTap" />
 
+        @* The right pane is the STAGED new generation, so it is the only one the touch-up tools can
+           edit; it is editable only while a tool is picked, so with no tool active linking behaves
+           exactly as it always has. *@
         <PanelImageView WallId="WallId" Caption="New wall (staged holds)"
                         PhotoUrl="@NewPhotoUrl"
                         Holds="NewHolds"
                         HoldColors="RightHoldColors()"
-                        SelectedHoldId="_rightHoldId"
+                        SelectedHoldId="@RightPaneSelectedId"
                         HighlightHoldId="FocusNewId"
                         BadgeNumber="_queueIndex + 1"
                         BadgeColor="@LinkGreen"
                         Interactive="true"
+                        Editable="@RightPaneEditable"
+                        AddMode="@(RightPaneEditable && _touchup.AddMode)"
+                        ExactHitTargets="@(RightPaneEditable && _touchup.DeleteMode)"
+                        DragToMove="@(RightPaneEditable && _touchup.MoveMode)"
                         FocusKey="_focusKey" FocusPoint="Point(FocusNewHold ?? FocusOldHold)"
-                        OnHoldTap="OnRightTap" />
+                        OnHoldTap="OnRightHoldTapAsync"
+                        OnEmptyTap="OnTouchupEmptyTapAsync"
+                        OnHoldGeometryChanged="OnHoldGeometryChanged" />
     </div>
+
+    @* Fix a wrong hold on the new photo without leaving the confirm. stopPropagation keeps the size
+       slider's own keys out of this component's keydown handler. *@
+    @if (ToolsEnabled)
+    {
+        <div class="bigupdate-edit-tools" @onkeydown:stopPropagation="true">
+            <HoldTouchupToolbar Tool="_touchup.Tool" ToolChanged="SetTouchupTool"
+                                Size="_touchup.Radius" SizeChanged="OnTouchupSizeChanged"
+                                OnSizeCommitted="OnTouchupSizeCommittedAsync"
+                                HasSelection="@(_touchup.SelectedHoldId is not null)" />
+        </div>
+    }
 
     <div class="panel-stepper-actions">
         <span class="panel-stepper-hint">
-            @if (_leftHoldId is not null && _rightHoldId is not null)
+            @if (_touchup.Active)
+            {
+                <text>A tool is active — the toolbar above says what a tap does. Leave the tool (press its button again, or Esc) to go back to linking.</text>
+            }
+            else if (_leftHoldId is not null && _rightHoldId is not null)
             {
                 <text>Link the selected old hold to the selected new hold.</text>
             }
@@ -78,9 +103,9 @@
                 <text>Tap a hold on the left, then its match on the right.</text>
             }
         </span>
-        <button class="btn-primary" @onclick="LinkSelected" disabled="@(!CanLink)"
+        <button class="btn-primary" @onclick="LinkSelected" disabled="@(!CanLink || _touchup.Active)"
                 title="Map the selected old hold onto the selected new hold">Link these</button>
-        <button class="btn-danger-soft" @onclick="BreakSelected" disabled="@(BreakableOldId is null)"
+        <button class="btn-danger-soft" @onclick="BreakSelected" disabled="@(BreakableOldId is null || _touchup.Active)"
                 title="Break this match — the hold falls back to a safe blind carry">Break match</button>
     </div>
 
@@ -90,6 +115,10 @@
             <i class="bigupdate-dot" style="background:var(--status-warning)"></i> needs a look ·
             <i class="bigupdate-dot" style="background:var(--status-info)"></i> new hold
         </span>
+        @if (ToolsEnabled)
+        {
+            <span class="panel-stepper-legend"><kbd>A</kbd> add · <kbd>M</kbd> move · <kbd>D</kbd> delete · <kbd>P</kbd> pipette</span>
+        }
     </div>
 
     <div class="staged-actions">
