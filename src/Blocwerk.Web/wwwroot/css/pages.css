@@ -698,6 +698,13 @@ svg.stat-value { margin-inline: auto; }
     font-size: 0.65rem; padding: 1px 6px; background: var(--warning-bg); color: var(--warning-text);
     border-radius: 4px; font-weight: 600; margin-left: 6px; vertical-align: middle;
 }
+/* Shares the badge shape with .historic-badge but takes the danger colours on purpose: historic is
+   a statement about the past, review is a job somebody still has to do. Without a rule here the
+   badge renders as bare body text and reads as part of the boulder's name. */
+.review-badge {
+    font-size: 0.65rem; padding: 1px 6px; background: var(--danger-bg); color: var(--danger-text);
+    border-radius: 4px; font-weight: 600; margin-left: 6px; vertical-align: middle;
+}
 .status-icon { font-size: 1rem; }
 .flash-icon { color: #FF5722; }
 .send-icon { color: #4CAF50; font-weight: 700; }

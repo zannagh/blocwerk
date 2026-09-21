@@ -19,6 +19,17 @@ public interface IWallPanelService
     Task<IReadOnlyList<WallPanelInfo>> GetPanelsAsync(Guid wallId);
 
     /// <summary>
+    /// The wall's panels AS THEY STOOD at <paramref name="generation"/>: per grid cell, the newest
+    /// committed panel row at or below that generation. Exists because a historic boulder must be
+    /// rendered against the panels of ITS OWN generation — the photos its holds were placed on —
+    /// not against today's re-photographed panels. Superseded panel rows keep their own
+    /// <c>Photo</c> and <c>Generation</c> (promotion inserts a new row rather than mutating the old
+    /// one), so an old generation stays fully retrievable by panel id. Always live-only: a row with
+    /// no committed photo is skipped.
+    /// </summary>
+    Task<IReadOnlyList<WallPanelInfo>> GetPanelsAsync(Guid wallId, int generation, CancellationToken ct = default);
+
+    /// <summary>
     /// The empty grid cells orthogonally adjacent to at least one live panel — the "+" slots.
     /// </summary>
     Task<IReadOnlyList<PanelPosition>> GetFrontierPositionsAsync(Guid wallId);

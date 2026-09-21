@@ -6,7 +6,7 @@
             @Boulder.Name
             @if (Boulder.IsDraft) { <span class="draft-badge" title="Draft — not climbable until published">draft</span> }
             @if (Boulder.IsHistoric) { <span class="historic-badge" title="Wall changed since creation">historic</span> }
-            @if (Boulder.NeedsReview) { <span class="review-badge" title="A hold on this boulder changed — review needed">review</span> }
+            @if (Boulder.NeedsReview) { <span class="review-badge" title="A hold on this boulder changed — check the boulder still works">needs review</span> }
         </span>
         <span class="boulder-meta">
             @DisplayHoldCount holds &middot; by @Item.AuthorDisplay

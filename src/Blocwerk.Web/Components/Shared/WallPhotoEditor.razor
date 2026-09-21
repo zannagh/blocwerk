@@ -222,19 +222,6 @@
             <polygon points="@Pts(BorderPoints.Select(p => (p.Dx, p.Dy)))"
                      fill="none" stroke="#FF9800" stroke-width="0.3" stroke-dasharray="1 0.5"
                      style="pointer-events: none" />
-            @if (CanEditShape && _mode == EditMode.Border)
-            {
-                @for (int i = 0; i < BorderPoints.Count; i++)
-                {
-                    var idx = i;
-                    var bp = BorderPoints[idx];
-                    <circle cx="@F(bp.Dx * 100)" cy="@F(bp.Dy * 100)" r="@F(1.2 * HandleScale)"
-                            fill="#FF9800" stroke="white" stroke-width="@F(0.3 * HandleScale)"
-                            style="cursor: grab"
-                            @onmousedown="() => StartBorderDrag(idx)"
-                            @onmousedown:stopPropagation="true" />
-                }
-            }
         }
 
         @* Wall segments are edited in the wall settings, so they are only drawn here as boundary
@@ -396,19 +383,6 @@
                 </g>
             }
 
-            @if (isShapeEditing && hold.ShapePoints is { Count: >= 3 })
-            {
-                @for (int i = 0; i < hold.ShapePoints.Count; i++)
-                {
-                    var cpIdx = i;
-                    var sp = hold.ShapePoints[cpIdx];
-                    <circle cx="@F((hold.X + sp.Dx) * 100)" cy="@F((hold.Y + sp.Dy) * 100)"
-                            r="@F(_shapePointRadius * HandleScale)" fill="white" stroke="#e94560" stroke-width="@F(0.25 * HandleScale)"
-                            style="cursor: grab"
-                            @onmousedown="() => StartShapePointDrag(hold, cpIdx)" @onmousedown:stopPropagation="true" />
-                }
-            }
-
             @if (isSelected && hold.ShapePoints == null)
             {
                 <circle cx="@F(hold.X * 100)" cy="@F(hold.Y * 100)" r="@F(r + 0.5)"
@@ -424,6 +398,42 @@
                                  font-family: sans-serif; font-weight: 600; white-space: nowrap;
                                  display: block; text-align: center;">@hold.Name</span>
                 </foreignObject>
+            }
+        }
+
+        @* Draggable handles live HERE, after every hold, on purpose. SVG has no z-index: paint and
+           hit-test order is document order, so a handle emitted inside the holds loop is covered by
+           every hold that comes later and becomes unclickable. Do not "tidy" these back into the
+           loop or next to the shapes they belong to. *@
+
+        @if (_showBorder && BorderPoints.Count >= 3 && CanEditShape && _mode == EditMode.Border)
+        {
+            @for (int i = 0; i < BorderPoints.Count; i++)
+            {
+                var idx = i;
+                var bp = BorderPoints[idx];
+                <circle cx="@F(bp.Dx * 100)" cy="@F(bp.Dy * 100)" r="@F(1.2 * HandleScale)"
+                        fill="#FF9800" stroke="white" stroke-width="@F(0.3 * HandleScale)"
+                        style="cursor: grab"
+                        @onmousedown="() => StartBorderDrag(idx)"
+                        @onmousedown:stopPropagation="true" />
+            }
+        }
+
+        @if (_mode == EditMode.Shape && _shapeEditHoldId.HasValue)
+        {
+            var sh = Holds.FirstOrDefault(h => h.Id == _shapeEditHoldId);
+            if (sh?.ShapePoints is { Count: >= 3 })
+            {
+                @for (int i = 0; i < sh.ShapePoints.Count; i++)
+                {
+                    var cpIdx = i;
+                    var sp = sh.ShapePoints[cpIdx];
+                    <circle cx="@F((sh.X + sp.Dx) * 100)" cy="@F((sh.Y + sp.Dy) * 100)"
+                            r="@F(_shapePointRadius * HandleScale)" fill="white" stroke="#e94560" stroke-width="@F(0.25 * HandleScale)"
+                            style="cursor: grab"
+                            @onmousedown="() => StartShapePointDrag(sh, cpIdx)" @onmousedown:stopPropagation="true" />
+                }
             }
         }
 

@@ -41,19 +41,28 @@
         </text>
     </g>
 
-    @if (Editable && isActive)
+}
+
+@* The active segment's vertex handles are emitted after every segment on purpose. SVG has no
+   z-index: paint and hit-test order is document order, so a handle drawn inside the loop is
+   covered by any later segment's (clickable) polygon and stops being draggable where segments
+   overlap. Do not move this back into the loop. *@
+@if (Editable && ActiveIndex is { } activeIdx
+     && activeIdx >= 0 && activeIdx < Segments.Count
+     && Segments[activeIdx].Points.Count >= 3)
+{
+    var activeDraft = Segments[activeIdx];
+    var activeStroke = WallSegmentPalette.Stroke(activeIdx);
+    @for (var i = 0; i < activeDraft.Points.Count; i++)
     {
-        @for (var i = 0; i < draft.Points.Count; i++)
-        {
-            var ptIdx = i;
-            var p = draft.Points[ptIdx];
-            <circle cx="@F(p.Dx * 100)" cy="@F(p.Dy * 100)" r="@F(1.2 * HandleScale)"
-                    fill="@stroke" stroke="white" stroke-width="@F(0.3 * HandleScale)"
-                    style="cursor: grab"
-                    @onmousedown="() => OnHandleDown.InvokeAsync((idx, ptIdx))"
-                    @onmousedown:stopPropagation="true"
-                    @onclick:stopPropagation="true" />
-        }
+        var ptIdx = i;
+        var p = activeDraft.Points[ptIdx];
+        <circle cx="@F(p.Dx * 100)" cy="@F(p.Dy * 100)" r="@F(1.2 * HandleScale)"
+                fill="@activeStroke" stroke="white" stroke-width="@F(0.3 * HandleScale)"
+                style="cursor: grab"
+                @onmousedown="() => OnHandleDown.InvokeAsync((activeIdx, ptIdx))"
+                @onmousedown:stopPropagation="true"
+                @onclick:stopPropagation="true" />
     }
 }
 

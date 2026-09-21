@@ -636,6 +636,13 @@ else
         ? _boulder.BoulderHolds.Max(bh => bh.Hold.Generation)
         : null;
 
+    /// <summary>
+    /// The "Then" toggle is offered whenever the boulder's holds predate the wall's current
+    /// generation. This gate MUST stay permission-free and query-free: any panel read runs through
+    /// the viewer resolution, which throws for an anonymous share-link viewer and returns nothing
+    /// for a signed-in non-member, so gating on one would hide the toggle from exactly the viewers
+    /// who can still use it.
+    /// </summary>
     private bool CanViewHistoric =>
         _boulder != null && BoulderHoldGeneration is { } g && g < _boulder.Wall.CurrentGeneration;
 
@@ -643,9 +650,12 @@ else
     /// True when one of the panels carrying this boulder's holds lags the wall's current generation
     /// (a sibling panel was updated ahead of it). Derived from the same per-panel outdated flag the
     /// wall view badges; drives a subtle "awaiting update" note on the boulder's photo.
+    /// Suppressed in the historic view: there every returned row is older than the wall's current
+    /// generation BY CONSTRUCTION, so the note would fire unconditionally. It is a nudge about a
+    /// panel lagging TODAY's wall, which says nothing while an old generation is shown on purpose.
     /// </summary>
     private bool BoulderOnOutdatedPanel =>
-        _livePanels.Any(p => p.IsOutdated && _highlightedPanelIds.Contains(p.Id));
+        !_showHistoric && _livePanels.Any(p => p.IsOutdated && _highlightedPanelIds.Contains(p.Id));
 
     /// <summary>
     /// A live/published boulder the creator, a setter, OR a wall admin may still fully re-edit (holds
@@ -686,7 +696,12 @@ else
     private async Task ToggleHistoric()
     {
         _showHistoric = !_showHistoric;
+
+        // Both halves have to move together: LoadWallHolds swaps the schematic hold data, but the
+        // photos underneath come from the panel rows, so without re-fetching them "Then" would show
+        // old holds on today's images.
         await LoadWallHolds();
+        await LoadPanelData();
     }
 
     private async Task PublishDraft()
@@ -834,7 +849,7 @@ else
         // A live boulder may now be fully re-edited by the creator or a wall admin even after
         // others have sent it, so there is no longer a "sent by others" gate to pre-compute here.
 
-        // A stale boulder only makes sense against the wall it was set on.
+        // A stale boulder only makes sense against the wall it was set on, so open it in "Then".
         _showHistoric = CanViewHistoric;
         await LoadWallHolds();
         await LoadPanelData();
@@ -941,7 +956,13 @@ else
 
         try
         {
-            var panels = await WallPanelService.GetPanelsAsync(WallId);
+            // In the historic ("Then") view the boulder must be drawn on the panels of ITS OWN
+            // generation — the photos its holds were placed on — not today's re-photographed ones.
+            // Its holds carry the superseded panel rows' ids, so those rows are also what makes
+            // RenderPanelId resolve them instead of dropping them onto the centre panel.
+            var panels = _showHistoric && BoulderHoldGeneration is { } gen
+                ? await WallPanelService.GetPanelsAsync(WallId, gen)
+                : await WallPanelService.GetPanelsAsync(WallId);
             _livePanels = panels.Where(p => p.IsLive).ToList();
         }
         catch (Exception)

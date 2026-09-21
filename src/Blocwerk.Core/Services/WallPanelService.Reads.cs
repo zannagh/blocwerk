@@ -69,6 +69,46 @@ public partial class WallPanelService
     }
 
     /// <inheritdoc/>
+    public async Task<IReadOnlyList<WallPanelInfo>> GetPanelsAsync(
+        Guid wallId, int generation, CancellationToken ct = default)
+    {
+        var viewerId = await ResolveViewerIdAsync(wallId);
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+        db.CurrentUserId = viewerId;
+
+        var currentGeneration = await db.Walls
+            .AsNoTracking()
+            .Where(w => w.Id == wallId)
+            .Select(w => (int?)w.CurrentGeneration)
+            .FirstOrDefaultAsync(ct) ?? 0;
+
+        // WHY this exists at all: a historic boulder — one whose holds were superseded by a wall
+        // update — has to be drawn on the photos it was actually set on. Promotion never mutates a
+        // panel row in place; it inserts a NEW row at the next generation and leaves the superseded
+        // row with its own Photo and Generation (see WallBigUpdateService.StageAndDetectAsync /
+        // PromoteAsync). So "the wall at generation N" is simply: per (Col,Row), the newest
+        // COMMITTED row at or below N. This was silently lost once already when every wall became a
+        // panel wall and the generation-aware single-image render arm went dead — the Then/Now
+        // toggle then swapped hold data over an unchanged, present-day photo.
+        //
+        // Staged rows are excluded deliberately (Photo != null): an in-flight update is not part of
+        // any past generation, and a historic view must never show an unpromoted capture.
+        var panels = await db.WallPanels
+            .AsNoTracking()
+            .Where(p => p.WallId == wallId && p.Photo != null && p.Generation <= generation)
+            .Select(p => new { p.Id, p.Col, p.Row, p.Generation })
+            .ToListAsync(ct);
+
+        return panels
+            .GroupBy(p => (p.Col, p.Row))
+            .Select(g => g.OrderByDescending(p => p.Generation).First())
+            .OrderBy(p => p.Row).ThenBy(p => p.Col)
+            .Select(p => new WallPanelInfo(
+                p.Id, p.Col, p.Row, true, false, p.Generation, p.Generation < currentGeneration))
+            .ToList();
+    }
+
+    /// <inheritdoc/>
     public async Task<IReadOnlyList<PanelPosition>> GetFrontierPositionsAsync(Guid wallId)
     {
         var user = await currentUserService.GetCurrentUserAsync();

@@ -86,6 +86,94 @@ public class PanelDedupTests
         Assert.True(cell.IsLive);
     }
 
+    /// <summary>
+    /// The generation-aware overload is what lets a historic boulder be drawn on the photos it was
+    /// actually set on: for generation N it must resolve each cell to the newest COMMITTED row at or
+    /// below N — the old image — and only for the current generation return today's rows.
+    /// </summary>
+    [Fact]
+    public async Task GetPanelsAtGeneration_ResolvesEachCellToThatGenerationsPanel()
+    {
+        using var h = new WallTestHarness();
+        const int generation = 2;
+        await h.SeedWallAsync(holdCount: 0, generation: generation);
+
+        var (staleId, currentId, neighbourId) = await SeedPanelsAsync(h, generation);
+
+        var service = new WallPanelService(
+            h.DbContextFactory,
+            h.CurrentUser,
+            h.HoldDetection,
+            Substitute.For<IHoldOverlapMatcher>(),
+            NullLogger<WallPanelService>.Instance);
+
+        // Generation N-1: (0,0) resolves to the SUPERSEDED row, never the current one. The neighbour
+        // at (1,0) only exists at the current generation, so it has no row at or below N-1.
+        var then = await service.GetPanelsAsync(h.WallId, generation - 1);
+        var thenCell = Assert.Single(then);
+        Assert.Equal(staleId, thenCell.Id);
+        Assert.Equal(generation - 1, thenCell.Generation);
+        Assert.True(thenCell.IsLive);
+
+        // Generation N: today's wall — the current centre row plus its neighbour.
+        var now = await service.GetPanelsAsync(h.WallId, generation);
+        Assert.Equal(2, now.Count);
+        Assert.Contains(now, p => p.Id == currentId);
+        Assert.Contains(now, p => p.Id == neighbourId);
+        Assert.DoesNotContain(now, p => p.Id == staleId);
+    }
+
+    /// <summary>
+    /// An in-flight update belongs to no past generation: a staged row (no committed photo) must
+    /// never stand in for a historic view, or the viewer would be shown an unpromoted capture.
+    /// Seeded the way production stages — same cell as the live row, at CurrentGeneration + 1 (see
+    /// WallBigUpdateService.StageAndDetectAsync) — and queried AT that staged generation, so the
+    /// exclusion has to come from the committed-photo filter and not merely from the generation
+    /// ceiling.
+    /// </summary>
+    [Fact]
+    public async Task GetPanelsAtGeneration_IgnoresStagedRows()
+    {
+        using var h = new WallTestHarness();
+        const int generation = 1;
+        await h.SeedWallAsync(holdCount: 0, generation: generation);
+
+        Guid liveId;
+        await using (var db = h.CreateContext())
+        {
+            var live = NewPanel(h.WallId, col: 0, row: 0, generation: generation);
+            var staged = new WallPanel
+            {
+                WallId = h.WallId,
+                Col = 0,
+                Row = 0,
+                Photo = null,
+                StagedPhoto = [9, 9, 9],
+                StagedPhotoContentType = "image/jpeg",
+                Generation = generation + 1,
+            };
+            db.WallPanels.AddRange(live, staged);
+            await db.SaveChangesAsync();
+            liveId = live.Id;
+        }
+
+        var service = new WallPanelService(
+            h.DbContextFactory,
+            h.CurrentUser,
+            h.HoldDetection,
+            Substitute.For<IHoldOverlapMatcher>(),
+            NullLogger<WallPanelService>.Instance);
+
+        // At the staged generation the staged row is in range and would win (0,0) on generation
+        // alone; only the committed-photo filter keeps the live row.
+        var atStagedGen = await service.GetPanelsAsync(h.WallId, generation + 1);
+        Assert.Equal(liveId, Assert.Single(atStagedGen).Id);
+
+        var panels = await service.GetPanelsAsync(h.WallId, generation);
+        var only = Assert.Single(panels);
+        Assert.Equal(liveId, only.Id);
+    }
+
     private static async Task<(Guid StaleId, Guid CurrentId, Guid NeighbourId)> SeedPanelsAsync(
         WallTestHarness h, int generation)
     {
