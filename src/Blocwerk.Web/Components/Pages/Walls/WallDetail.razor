@@ -673,6 +673,7 @@ else
                                         <label class="filter-check"><input type="checkbox" @bind="_fFavorites" /> My favourites</label>
                                         <label class="filter-check"><input type="checkbox" @bind="_fCreated" /> Created by me</label>
                                         <label class="filter-check"><input type="checkbox" @bind="_fBeta" /> Has beta video</label>
+                                        <label class="filter-check"><input type="checkbox" @bind="_fNeedsReview" /> Needs review</label>
                                     </div>
                                 }
                             </div>
@@ -878,6 +879,7 @@ else
     private bool _fFavorites;
     private bool _fCreated;
     private bool _fBeta;
+    private bool _fNeedsReview;
     private SortMode _sort = SortMode.Newest;
     private ViewMode _viewMode = ViewMode.Photo;
 
@@ -898,6 +900,7 @@ else
             if (_fFavorites) { count++; }
             if (_fCreated) { count++; }
             if (_fBeta) { count++; }
+            if (_fNeedsReview) { count++; }
             return count;
         }
     }
@@ -933,11 +936,11 @@ else
     private List<BoulderListItem>? _activeCache;
     private List<BoulderListItem>? _archivedCache;
     private object? _boulderCacheItemsRef;
-    private (string?, bool, bool, bool, bool, bool, bool, string?, string?, SortMode, Guid?) _boulderCacheKey;
+    private (string?, bool, bool, bool, bool, bool, bool, bool, string?, string?, SortMode, Guid?) _boulderCacheKey;
 
     private void EnsureBoulderLists()
     {
-        var key = (_searchText, _fAttempted, _fDone, _fNotDone, _fFavorites, _fCreated, _fBeta, _gradeMin, _gradeMax, _sort, _currentUserId);
+        var key = (_searchText, _fAttempted, _fDone, _fNotDone, _fFavorites, _fCreated, _fBeta, _fNeedsReview, _gradeMin, _gradeMax, _sort, _currentUserId);
         if (_activeCache is not null && _archivedCache is not null
             && ReferenceEquals(_boulderCacheItemsRef, _items) && key.Equals(_boulderCacheKey))
         {
@@ -990,6 +993,13 @@ else
         if (_fBeta)
         {
             src = src.Where(i => i.HasBetaVideo);
+        }
+
+        // The flag a wall update sets when one of the boulder's holds changed; it is independent of
+        // IsHistoric, so a boulder can need review without being historic and vice versa.
+        if (_fNeedsReview)
+        {
+            src = src.Where(i => i.Boulder.NeedsReview);
         }
 
         if (_fFavorites)
