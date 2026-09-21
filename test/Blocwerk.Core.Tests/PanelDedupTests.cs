@@ -1,6 +1,7 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Services;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -172,6 +173,70 @@ public class PanelDedupTests
         var panels = await service.GetPanelsAsync(h.WallId, generation);
         var only = Assert.Single(panels);
         Assert.Equal(liveId, only.Id);
+    }
+
+    /// <summary>
+    /// Two committed rows sharing a (Col,Row) AND a generation must resolve to the SAME row however
+    /// they happen to be stored. With no tie-break the winner came back in provider order, so the
+    /// cell could resolve to a different photo between two identical loads and a historic boulder's
+    /// "Then" view changed under the climber. Seeded in BOTH insertion orders; both overloads must
+    /// answer with the same id either way.
+    /// </summary>
+    /// <remarks>
+    /// The unique index on (WallId, Col, Row, Generation) is dropped for this test only: today's
+    /// schema forbids the tie, so the seed is impossible through EF, but the ordering is the only
+    /// thing standing between a row pair that predates the index (or arrives through a raw import)
+    /// and a view that changes between loads. Dropping it here tests the QUERY, not the constraint —
+    /// the other tests in this file still run against the real schema.
+    /// </remarks>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetPanels_TiedGenerationAtSamePosition_ResolvesToSameRowRegardlessOfInsertionOrder(
+        bool reversedInsertOrder)
+    {
+        // Fixed ids so "the same row" is checkable across the two runs; the smaller one must win.
+        var lowId = new Guid("11111111-1111-1111-1111-111111111111");
+        var highId = new Guid("99999999-9999-9999-9999-999999999999");
+
+        using var h = new WallTestHarness();
+        const int generation = 0;
+        await h.SeedWallAsync(holdCount: 0, generation: generation);
+
+        await using (var db = h.CreateContext())
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "DROP INDEX IF EXISTS \"IX_WallPanels_WallId_Col_Row_Generation\"");
+
+            var low = NewPanel(h.WallId, col: 0, row: 0, generation: generation);
+            low.Id = lowId;
+            var high = NewPanel(h.WallId, col: 0, row: 0, generation: generation);
+            high.Id = highId;
+
+            // Saved one at a time, in the order under test: a single AddRange lets EF order the two
+            // inserts itself, so both runs would store the same row first and the parameter would
+            // prove nothing. Separate saves make the stored (and therefore returned) order genuinely
+            // differ between the two runs.
+            var first = reversedInsertOrder ? high : low;
+            var second = reversedInsertOrder ? low : high;
+            db.WallPanels.Add(first);
+            await db.SaveChangesAsync();
+            db.WallPanels.Add(second);
+            await db.SaveChangesAsync();
+        }
+
+        var service = new WallPanelService(
+            h.DbContextFactory,
+            h.CurrentUser,
+            h.HoldDetection,
+            Substitute.For<IHoldOverlapMatcher>(),
+            NullLogger<WallPanelService>.Instance);
+
+        var live = Assert.Single(await service.GetPanelsAsync(h.WallId));
+        Assert.Equal(lowId, live.Id);
+
+        var atGeneration = Assert.Single(await service.GetPanelsAsync(h.WallId, generation));
+        Assert.Equal(lowId, atGeneration.Id);
     }
 
     private static async Task<(Guid StaleId, Guid CurrentId, Guid NeighbourId)> SeedPanelsAsync(

@@ -168,10 +168,19 @@ else
            The historic Then/Now toggle is a separate feature and keeps its own view-toggle. *@
         @if (CanViewHistoric)
         {
+            @* Both states are rendered, with the active one marked. A single button labelled with the
+               CURRENT state reads as a status label, so nobody could tell whether "Then" meant "you
+               are in Then" or "go to Then" — the two-button form is unambiguous either way round. *@
             <div class="view-toggle">
-                <button class="toggle-btn @(_showHistoric ? "active" : "")" @onclick="ToggleHistoric"
-                        title="@(_showHistoric ? "Showing the wall as it was when this boulder was set" : "Showing the current wall")">
-                    @(_showHistoric ? "Then" : "Now")
+                <button class="toggle-btn @(!_showHistoric ? "active" : "")" aria-pressed="@(!_showHistoric)"
+                        @onclick="() => ShowGenerationAsync(historic: false)"
+                        title="Show the wall as it is today">
+                    Now
+                </button>
+                <button class="toggle-btn @(_showHistoric ? "active" : "")" aria-pressed="@_showHistoric"
+                        @onclick="() => ShowGenerationAsync(historic: true)"
+                        title="Show the wall as it was when this boulder was set">
+                    Then
                 </button>
             </div>
         }
@@ -201,6 +210,25 @@ else
         @if (_viewMode == ViewMode.Photo)
         {
             <WallDimControl />
+            @if (HistoricHoldsMissing > 0)
+            {
+                @* Fix: a partial translation used to be silent. Some of the boulder's holds have no
+                   row at the generation on screen (they were added later, or their lineage was never
+                   recorded), so the overlay is genuinely incomplete — say so rather than letting a
+                   climber read a start or top that isn't drawn as "not part of the boulder". *@
+                @* The first number is BoulderHolds.Count - HistoricHoldsMissing, NOT _renderHolds.Count:
+                   several of the boulder's holds can converge on one older row, so the rendered list is
+                   SHORTER than the holds it accounts for and "3 of 8 ... the other 1" read as broken
+                   arithmetic. Subtracting the genuine misses makes the two numbers always sum to M.
+                   No "switch to Now" advice here either: for a boulder whose holds are spread over
+                   several generations "Now" can draw FEWER holds — sometimes none — so the tip made
+                   the very situation it was offered for worse. *@
+                <p class="boulder-outdated-note" role="status">
+                    Only @(_boulder.BoulderHolds.Count - HistoricHoldsMissing) of this boulder's
+                    @_boulder.BoulderHolds.Count holds can be shown on the wall as it was then — the other
+                    @HistoricHoldsMissing were set on holds that aren't on these photos.
+                </p>
+            }
             @if (UsingMultiPanel)
             {
                 @if (BoulderOnOutdatedPanel)
@@ -211,15 +239,38 @@ else
                 }
                 @* Big wall: show the panel holding most of the boulder's holds and let the user
                    step to the neighbouring panels that carry its other holds. *@
-                <MultiPanelViewer WallId="WallId" ShareToken="@ShareToken" Panels="_livePanels"
+                @* @key on a DATA EPOCH, never on the user's intent. MultiPanelViewer loads its panel
+                   and its holds in OnInitializedAsync and in its own GoToAsync ONLY — it has no
+                   OnParametersSetAsync — and `UsingMultiPanel` stays true across a Then/Now toggle, so
+                   Blazor would otherwise RETAIN the instance and keep today's photo while
+                   HighlightedHoldIds switched to the other generation's ids: zero overlap, boulder
+                   invisible. A changed key forces a fresh instance that reloads from the StartCol/
+                   StartRow LoadPanelData just recomputed.
+                   Keyed on _viewEpoch and NOT on (_showHistoric, _historicGeneration) because
+                   ShowGenerationAsync sets _showHistoric SYNCHRONOUSLY and then awaits: ComponentBase's
+                   IHandleEvent renders at that first yield, so an intent-based key changed while
+                   _livePanels/_startPanelCol/_holdsByPanel were still the OLD ones. The viewer was then
+                   re-created TOO EARLY, cached the old panel and old holds, and — the key being
+                   unchanged once the load finished — was retained for good. That is the same outage the
+                   key was added to prevent, one render earlier. _viewEpoch moves only as the LAST
+                   statement of LoadPanelData, so the key means "new data is in place", not "the user
+                   intends a change". Deliberately a key rather than an OnParametersSetAsync inside the
+                   viewer: that would re-fetch on every unrelated parameter change and fight GoToAsync's
+                   panel position, and it would reach WallDetail's usage too. BoulderId stays in the key
+                   for the same reason as before: this page is retained across a navigation between two
+                   boulders on the same route template. *@
+                <MultiPanelViewer @key="(BoulderId, _viewEpoch)"
+                                  WallId="WallId" ShareToken="@ShareToken" Panels="_livePanels"
                                   StartCol="_startPanelCol" StartRow="_startPanelRow"
                                   ArrowMode="MultiPanelViewer.ArrowDisplayMode.HoldsOnly"
                                   HoldsByPanel="_holdsByPanel"
+                                  HoldsProvider="LoadPanelHoldsAsync"
                                   HighlightedHoldIds="_highlightedHoldIds"
                                   FootHoldIds="FootHoldIds"
                                   HoldColor="BoulderHoldColorOf"
                                   HighlightedPanelIds="_highlightedPanelIds"
                                   EnableSwipe="true"
+                                  HistoricMode="_showHistoric"
                                   LensOverlay="true" />
             }
             else
@@ -234,7 +285,9 @@ else
                             @* The "feet of one colour only" rule is shown as an info banner above the
                                image, not by painting every wall hold of that colour. Only the boulder's
                                own holds (including dedicated orange footholds) are drawn here. *@
-                            @foreach (var bh in _boulder.BoulderHolds)
+                            @* _renderHolds, not the boulder's raw holds: in the historic view they are
+                               the SAME holds translated to the generation on screen. *@
+                            @foreach (var bh in _renderHolds)
                             {
                                 @* A virtual hold isn't visible on the photo: dash its outline, as the
                                    pickers and MultiPanelViewer do, so it doesn't read as a real hold. *@
@@ -449,6 +502,17 @@ else
     private List<Hold> _colorRuleHolds = [];
     private HashSet<Guid> _boulderHoldIds = [];
 
+    // The boulder's holds AS THE CURRENT VIEW DRAWS THEM: its own rows in "Now", and the same holds
+    // translated to the historic generation in "Then". Everything the overlay needs (ids, colours,
+    // panel ids) is derived from this one set so the two views can never disagree.
+    // See ResolveRenderHoldsAsync.
+    private List<BoulderHoldAtGeneration> _renderHolds = [];
+
+    // How many of the boulder's holds the historic view could NOT translate onto the generation on
+    // screen (0 in "Now", and 0 whenever the translation was complete). Surfaced as a note: dropping
+    // a start or a top silently makes the boulder unclimbable as drawn.
+    private int _untranslatedHoldCount;
+
     // Big-wall multi-image viewing: the wall's live panels, the highlighted holds grouped per panel
     // (drawn directly so they show even to viewers who can't enumerate panel holds), the panels that
     // carry a highlighted hold (arrow targets), and the start panel (the one with the most holds).
@@ -456,8 +520,20 @@ else
     // also light its twin(s) on the other panel(s), so the highlighted set is EXPANDED over the
     // boulder's own holds. _highlightedHoldTypes carries the boulder Type/Usage (colour) for every
     // highlighted id — the boulder's own holds and their linked twins alike.
+    // Bumped once per completed LoadPanelData — see the @key on MultiPanelViewer. It is the only
+    // thing that key may depend on: it changes when the panel data on screen has ALREADY changed,
+    // whereas intent state (_showHistoric) changes one render too early.
+    private int _viewEpoch;
+
     private List<WallPanelInfo> _livePanels = [];
-    private Dictionary<Guid, IReadOnlyList<PanelHold>> _holdsByPanel = new();
+
+    // INVARIANT: _holdsByPanel is NULL whenever it would otherwise be EMPTY — never an empty
+    // dictionary. MultiPanelViewer treats a non-null HoldsByPanel as the whole truth and short-
+    // circuits its HoldsProvider, so an empty-but-not-null one renders the photo with NO holds on it:
+    // the blank boulder page, twice now. Null instead lets the viewer fall back to LoadPanelHoldsAsync
+    // and draw the panel's own holds, so no failure, ordering bug or empty translation can blank the
+    // overlay. Every assignment below holds this up; keep it that way.
+    private Dictionary<Guid, IReadOnlyList<PanelHold>>? _holdsByPanel;
     private HashSet<Guid> _highlightedPanelIds = [];
     private HashSet<Guid> _highlightedHoldIds = [];
     private Dictionary<Guid, (HoldType Type, HoldUsage Usage)> _highlightedHoldTypes = new();
@@ -677,6 +753,183 @@ else
     }
 
     /// <summary>
+    /// Resolves <see cref="_renderHolds"/> for the view that is about to be drawn: the boulder's own
+    /// holds in "Now", and the same holds TRANSLATED to the historic generation in "Then".
+    /// <para>
+    /// The translation is what makes a carried boulder visible at all. A hold carried through a wall
+    /// update is a fresh row at today's generation pointing at today's panel; the historic view draws
+    /// the OLD generation's panels, so the raw holds match none of them and every one is dropped.
+    /// </para>
+    /// <para>
+    /// If the translation comes back empty (or fails) there is no hold set for that generation, so
+    /// "Then" cannot be drawn at all and the method exits in "Now" with the boulder's own holds —
+    /// which really are current-generation rows. A frozen boulder never takes that path: its holds
+    /// already sit at the historic generation and translate to themselves.
+    /// </para>
+    /// <para>
+    /// INVARIANT: <see cref="_showHistoric"/>, <see cref="_renderHolds"/> and
+    /// <see cref="_boulderHoldIds"/> describe ONE generation on every exit path. The half-updated
+    /// pair is what made the overlay and the photo disagree, and it is structurally unreachable now:
+    /// the single non-translated exit sets all three together.
+    /// </para>
+    /// </summary>
+    private async Task ResolveRenderHoldsAsync()
+    {
+        _untranslatedHoldCount = 0;
+        if (_boulder is null)
+        {
+            _renderHolds = [];
+            _boulderHoldIds = [];
+            return;
+        }
+
+        var own = _boulder.BoulderHolds
+            .Select(bh => new BoulderHoldAtGeneration(bh.Hold, bh.Type, bh.Usage))
+            .ToList();
+
+        if (_showHistoric && _historicGeneration is { } gen)
+        {
+            List<BoulderHoldAtGeneration>? translated = null;
+            try
+            {
+                var rows = await BoulderService.GetBoulderHoldsAtGenerationAsync(BoulderId, gen, ShareToken);
+                translated = rows is { Count: > 0 } ? [.. rows] : null;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(
+                    ex, "Could not map boulder {BoulderId} onto generation {Generation}", BoulderId, gen);
+            }
+
+            if (translated is not null)
+            {
+                _renderHolds = translated;
+
+                // Counted from the holds that came back with no match, never as a difference of set
+                // sizes: two of the boulder's holds descending from ONE older row is a convergence,
+                // and subtracting sizes reported it as a hold the view could not draw.
+                _untranslatedHoldCount = BoulderGenerationView.UntranslatedHoldCount(
+                    _boulder.BoulderHolds.Select(bh => bh.HoldId), translated);
+                _boulderHoldIds = translated.Select(bh => bh.HoldId).ToHashSet();
+                return;
+            }
+
+            // The translation produced nothing at all (empty, or it threw). There is no hold set for
+            // that generation, so "Then" cannot be drawn honestly however sympathetically we word it
+            // — and the boulder's own rows are CURRENT-generation rows. Falling through with them
+            // while leaving _showHistoric true is what put historic photos under current holds, with
+            // every hold dropped and no note. The only truthful exit is "Now" with the current holds,
+            // which the shared exit below takes.
+        }
+
+        // THE ONLY EXIT that is not a completed translation, and it forces "Now". _showHistoric,
+        // _renderHolds and _boulderHoldIds therefore describe ONE generation on every path out of
+        // this method — the invariant the doc comment promises. The earlier half-updated pair
+        // (historic mode, current holds) is now unrepresentable rather than merely unlikely.
+        _showHistoric = false;
+        _renderHolds = own;
+        _boulderHoldIds = own.Select(bh => bh.HoldId).ToHashSet();
+    }
+
+    /// <summary>
+    /// Whether today's wall could actually DRAW this boulder: true when at least one of its own holds
+    /// resolves onto a live panel (its home panel is live, or it carries no panel id and there is a
+    /// live centre panel to put it on), false when none does, and null when the panels could not be
+    /// read at all. This is the gate on every fallback out of "Then" — switching blindly to "Now" is
+    /// what blanked the page for frozen boulders, whose every hold sits on a superseded panel.
+    /// </summary>
+    private async Task<bool?> RendersOnCurrentPanelsAsync()
+    {
+        if (_boulder is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            var live = (await WallPanelService.GetPanelsAsync(WallId)).Where(p => p.IsLive).ToList();
+            if (live.Count == 0)
+            {
+                // No panel viewer at all: the single-image arm draws the boulder's own holds over the
+                // wall photo, which always renders.
+                return true;
+            }
+
+            // BoulderGenerationView.RendersOnPanels, NOT RenderPanelId: the centre-panel fallback
+            // must not count as "renders here" for a hold that is OLDER than the centre panel it
+            // would land on. Evening Wood's holds are generation 0 with no panel id on a generation-3
+            // wall; RenderPanelId happily drops them onto today's re-photographed centre panel, this
+            // said "yes, Now works", and the page opened in "Now" painting generation-0 coordinates
+            // over features that no longer exist. RenderPanelId keeps its own contract for the two
+            // drawing call sites in LoadPanelData — narrowing it there would silently drop
+            // never-stamped virtual holds from the current view, which is the hole it exists to
+            // close.
+            var placements = _boulder.BoulderHolds
+                .Select(bh => new HoldPlacement(bh.Hold.WallPanelId, bh.Hold.Generation));
+            return BoulderGenerationView.RendersOnPanels(live, placements);
+        }
+        catch (Exception)
+        {
+            // Unknown, and deliberately not "yes": staying put keeps whatever is on screen on screen.
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The panel holds the multi-image viewer falls back to when <c>_holdsByPanel</c> is null (see
+    /// the invariant on that field). Context only — none of these are highlighted — but a photo with
+    /// the wall's holds on it beats the bare photo that the empty-dictionary short-circuit produced.
+    /// Returns nothing rather than throwing for a viewer who may not enumerate panel holds.
+    /// </summary>
+    private async Task<IReadOnlyList<PanelHold>> LoadPanelHoldsAsync(Guid panelId)
+    {
+        try
+        {
+            return await WallPanelService.GetPanelHoldsAsync(WallId, panelId, includeStaged: false);
+        }
+        catch (Exception)
+        {
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// How many of the boulder's holds the view on screen cannot draw because the generation shown
+    /// has no row for them. Zero in "Now" and whenever the translation was complete.
+    /// </summary>
+    private int HistoricHoldsMissing => _showHistoric ? _untranslatedHoldCount : 0;
+
+    /// <summary>
+    /// Whether the page should OPEN in "Then". Only for a boulder that is genuinely frozen on an old
+    /// generation — none of its holds live on a panel of today's wall, so "Now" would have nothing to
+    /// draw. A carried boulder's holds ARE on today's panels, so it opens in "Now" and the toggle is
+    /// there for whoever wants the old state. Decided from the panel ids on the holds, not from a
+    /// flag: IsHistoric/NeedsReview say a review is due, not which image is the useful one.
+    /// </summary>
+    private async Task<bool> ShouldOpenHistoricAsync()
+    {
+        if (_boulder is null || !CanViewHistoric)
+        {
+            return false;
+        }
+
+        // Exactly the inverse of the gate every fallback uses, so the page can never open in a view
+        // the fallback would immediately bounce it out of (or worse, bounce it into a blank one).
+        // A hold with no panel id renders on whichever generation's centre panel is shown, so it is
+        // present in "Now" too and must not push the page into the historic view; RenderPanelId is
+        // what encodes that, and RendersOnCurrentPanelsAsync asks it directly.
+        var renders = await RendersOnCurrentPanelsAsync();
+        if (renders is null)
+        {
+            // The panels could not be read: fall back to the boulder's own hold generation, the rule
+            // that predates the panel comparison.
+            return BoulderHoldGeneration is { } g && g < _boulder.Wall.CurrentGeneration;
+        }
+
+        return !renders.Value;
+    }
+
+    /// <summary>
     /// True when one of the panels carrying this boulder's holds lags the wall's current generation
     /// (a sibling panel was updated ahead of it). Derived from the same per-panel outdated flag the
     /// wall view badges; drives a subtle "awaiting update" note on the boulder's photo.
@@ -723,13 +976,19 @@ else
         }
     }
 
-    private async Task ToggleHistoric()
+    /// <summary>
+    /// Switches the view between today's wall and the historic one. Explicit state rather than a
+    /// flip, so the two toggle buttons each say where they GO and pressing the active one is a no-op
+    /// reload rather than a surprise switch.
+    /// </summary>
+    private async Task ShowGenerationAsync(bool historic)
     {
-        _showHistoric = !_showHistoric;
+        _showHistoric = historic;
 
-        // Both halves have to move together: LoadWallHolds swaps the schematic hold data, but the
-        // photos underneath come from the panel rows, so without re-fetching them "Then" would show
-        // old holds on today's images.
+        // All three have to move together: the holds are re-resolved onto the generation being shown,
+        // LoadWallHolds swaps the schematic hold data, and the photos underneath come from the panel
+        // rows — without re-fetching them "Then" would show old holds on today's images.
+        await ResolveRenderHoldsAsync();
         await LoadWallHolds();
         await LoadPanelData();
     }
@@ -781,6 +1040,7 @@ else
         _showHistoric = false;
         _historicGeneration = null;
         _boulderHoldIds = [];
+        _renderHolds = [];
         _activeProposal = null;
         _isFavorite = false;
         _rating = new(null, 0, null);
@@ -880,9 +1140,11 @@ else
         // A live boulder may now be fully re-edited by the creator or a wall admin even after
         // others have sent it, so there is no longer a "sent by others" gate to pre-compute here.
 
-        // A stale boulder only makes sense against the wall it was set on, so open it in "Then".
+        // A boulder whose holds are all gone from today's panels can only be read on the old wall, so
+        // open THAT one; a carried boulder still renders on today's wall and opens there.
         await ResolveHistoricGenerationAsync();
-        _showHistoric = CanViewHistoric;
+        _showHistoric = await ShouldOpenHistoricAsync();
+        await ResolveRenderHoldsAsync();
         await LoadWallHolds();
         await LoadPanelData();
         _activeProposal = await BoulderService.GetActiveProposalAsync(BoulderId);
@@ -922,7 +1184,9 @@ else
                 await LoadBoulder();
                 if (_boulder != null)
                 {
-                    _boulderHoldIds = _boulder.BoulderHolds.Select(bh => bh.HoldId).ToHashSet();
+                    // _boulderHoldIds is NOT set from the raw holds here: ResolveRenderHoldsAsync
+                    // below owns it, and seeding it from the current generation first is how the ids
+                    // and the holds on screen came to describe different generations.
 
                     // A promote on another circuit moves the wall's generation and the boulder's
                     // lineage under us, so the cached answer would be stale exactly when it matters.
@@ -934,6 +1198,7 @@ else
                         _showHistoric = false;
                     }
 
+                    await ResolveRenderHoldsAsync();
                     await LoadWallHolds();
                     await LoadPanelData();
                 }
@@ -958,12 +1223,11 @@ else
     /// schematic. The "feet of one colour only" rule is no longer painted onto every matching wall
     /// hold; it is communicated by the info banner above the image instead.
     /// </summary>
-    private HashSet<Guid> FootHoldIds => _boulder == null
-        ? []
-        : _boulder.BoulderHolds
-            .Where(bh => bh.Usage == HoldUsage.FootOnly)
-            .Select(bh => bh.HoldId)
-            .ToHashSet();
+    /// <remarks>Read off <see cref="_renderHolds"/> so the ids match the generation on screen.</remarks>
+    private HashSet<Guid> FootHoldIds => _renderHolds
+        .Where(bh => bh.Usage == HoldUsage.FootOnly)
+        .Select(bh => bh.HoldId)
+        .ToHashSet();
 
     private async Task LoadWallHolds()
     {
@@ -986,8 +1250,20 @@ else
     /// </summary>
     private async Task LoadPanelData()
     {
+        // Every exit of the core — the null-boulder return, the failed-read fallback, the historic
+        // re-entry and the normal path — lands here, so the epoch can never be skipped by an early
+        // return that left new (or newly cleared) data behind. The re-entry path bumps twice; only
+        // the final value is ever rendered, and it has moved, which is all the key asks.
+        await LoadPanelDataCore();
+        _viewEpoch++;
+    }
+
+    private async Task LoadPanelDataCore()
+    {
         _livePanels = [];
-        _holdsByPanel = new();
+
+        // Null, not an empty dictionary — see the invariant on the field.
+        _holdsByPanel = null;
         _highlightedPanelIds = [];
         _highlightedHoldIds = [];
         _highlightedHoldTypes = new();
@@ -1015,10 +1291,40 @@ else
         }
 
         var livePanelIds = _livePanels.Select(p => p.Id).ToHashSet();
-        var centrePanelId = _livePanels.FirstOrDefault(p => p is { Col: 0, Row: 0 })?.Id;
-        var onPanels = _boulder.BoulderHolds
+
+        // Explicitly tie-broken (newest generation, then smallest id): a panel list can carry more
+        // than one row at (0,0), and FirstOrDefault picked between them in provider order — so the
+        // photo a hold with no panel id was drawn on could change between two identical loads.
+        var centrePanelId = BoulderGenerationView.CentrePanel(_livePanels)?.Id;
+        // _renderHolds, not the boulder's raw holds: in "Then" these are the boulder's holds
+        // translated onto the historic generation, so their panel ids are that generation's and
+        // RenderPanelId resolves them against the historic _livePanels instead of dropping them all.
+        var onPanels = _renderHolds
             .Where(bh => RenderPanelId(bh.Hold, livePanelIds, centrePanelId) is not null)
             .ToList();
+
+        if (onPanels.Count == 0 && _showHistoric && await RendersOnCurrentPanelsAsync() == true)
+        {
+            // Nothing of the boulder lands on the historic panels after all (holds without a panel id
+            // and no centre panel, say), and today's wall has been CONFIRMED able to draw it — only
+            // then is switching an improvement. For a frozen boulder it is not: "Now" resolves none of
+            // its holds either, so the old blind switch just moved the blank page to the other view.
+            // When we do switch, _renderHolds moves with _showHistoric (ResolveRenderHoldsAsync), so
+            // the two never disagree. Re-entered once only — _showHistoric is false on the way back in.
+            _showHistoric = false;
+            await ResolveRenderHoldsAsync();
+
+            // LoadWallHolds too, not just the holds and the panels: _wallHolds, _frame and
+            // _colorRuleHolds are ALL read off the generation on screen, and flipping without it left
+            // the page framed to the other generation with a "feet of one colour" set built from it.
+            await LoadWallHolds();
+            await LoadPanelData();
+            return;
+        }
+
+        // Falling through with onPanels empty is now possible (nothing renders either way). That is
+        // fine and no longer a blank page: _holdsByPanel stays null, so the viewer asks
+        // LoadPanelHoldsAsync for the panel's own holds instead of drawing an empty overlay.
 
         // Start from the boulder's own holds on their home panels — the pre-expansion baseline that
         // renders exactly as before. Twins linked across overlaps are added on top below.
@@ -1039,7 +1345,11 @@ else
         // Every entry in holdsByPanel is a highlighted hold (the boulder's own or a linked twin), so
         // the panels that carry one — the arrow targets — are exactly its keys, and the start panel
         // is the one holding the most highlighted holds (twins counted).
-        _holdsByPanel = holdsByPanel.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<PanelHold>)kv.Value);
+        // Null when nothing was grouped — see the invariant on the field. ExpandLinkedTwinsAsync can
+        // only ADD, so this is the last word on the dictionary and the only place it becomes non-null.
+        _holdsByPanel = holdsByPanel.Count == 0
+            ? null
+            : holdsByPanel.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<PanelHold>)kv.Value);
         _highlightedPanelIds = holdsByPanel.Keys.ToHashSet();
 
         var startPanelId = holdsByPanel
@@ -1081,7 +1391,7 @@ else
     /// no linked hold, so single-panel boulders keep their exact former behaviour.
     /// </summary>
     private async Task ExpandLinkedTwinsAsync(
-        List<BoulderHold> onPanels,
+        List<BoulderHoldAtGeneration> onPanels,
         Dictionary<Guid, List<PanelHold>> holdsByPanel)
     {
         List<HoldLinkPair> links;
@@ -1240,9 +1550,11 @@ else
 
         if (_showHistoric && _historicGeneration.HasValue && _boulder != null)
         {
-            // Anonymous share viewers can't query generations; the boulder's own
-            // holds are enough to render its schematic.
-            return _boulder.BoulderHolds.Select(bh => bh.Hold).ToList();
+            // Anonymous share viewers can't query generations, so the boulder's own holds are the
+            // whole schematic. They must be the TRANSLATED ones: _boulderHoldIds and FootHoldIds are
+            // read off _renderHolds, so returning the raw current-generation rows here left the two
+            // sets with no id in common and the share viewer's "Then" highlighted nothing at all.
+            return _renderHolds.Select(bh => bh.Hold).ToList();
         }
 
         var wall = !string.IsNullOrEmpty(ShareToken)

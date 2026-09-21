@@ -62,7 +62,10 @@ public partial class WallPanelService
             // sits one generation ahead of the live one, so ordering by generation alone would let the
             // not-yet-live staged panel win and the live viewers (which filter on IsLive) would drop
             // the cell. Only when a cell has no live panel at all does the latest staged row stand in.
-            .Select(g => g.OrderByDescending(p => p.HasLive).ThenByDescending(p => p.Generation).First())
+            // Tie-broken by smallest id: two rows can share a (Col,Row) AND a generation, and with
+            // no tie-break the winner came back in provider order — so the same wall could resolve a
+            // cell to a different photo between two identical loads. Arbitrary, but stable everywhere.
+            .Select(g => g.OrderByDescending(p => p.HasLive).ThenByDescending(p => p.Generation).ThenBy(p => p.Id).First())
             .OrderBy(p => p.Row).ThenBy(p => p.Col)
             .Select(p => new WallPanelInfo(p.Id, p.Col, p.Row, p.HasLive, p.HasStaged, p.Generation, p.Generation < currentGeneration))
             .ToList();
@@ -101,7 +104,10 @@ public partial class WallPanelService
 
         return panels
             .GroupBy(p => (p.Col, p.Row))
-            .Select(g => g.OrderByDescending(p => p.Generation).First())
+            // Smallest id breaks a generation tie: two committed rows can sit at the same (Col,Row)
+            // and the same generation, and without this the "Then" photo was picked in provider
+            // order — a historic boulder could render over a different photo on the next load.
+            .Select(g => g.OrderByDescending(p => p.Generation).ThenBy(p => p.Id).First())
             .OrderBy(p => p.Row).ThenBy(p => p.Col)
             .Select(p => new WallPanelInfo(
                 p.Id, p.Col, p.Row, true, false, p.Generation, p.Generation < currentGeneration))

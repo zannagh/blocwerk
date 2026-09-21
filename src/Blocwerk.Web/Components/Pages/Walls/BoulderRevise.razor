@@ -311,9 +311,9 @@
         _displayHolds = _wall.Holds.ToList();
 
         // Every wall carries its holds across several panel images, each in its own panel-local
-        // coordinate space. Load the live panels and open on the centre (0,0) so the picker can show
-        // one panel's photo + that panel's holds at a time. A failed read leaves _panels empty and
-        // _currentPanel null, and the picker falls back to the wall's centre photo.
+        // coordinate space. Load the live panels so the picker can show one panel's photo + that
+        // panel's holds at a time. A failed read leaves _panels empty and _currentPanel null, and the
+        // picker falls back to the wall's centre photo.
         try
         {
             _panels = (await WallPanelService.GetPanelsAsync(WallId)).Where(p => p.IsLive).ToList();
@@ -323,7 +323,7 @@
             _panels = [];
         }
 
-        _currentPanel = _panels.FirstOrDefault(p => p is { Col: 0, Row: 0 }) ?? _panels.FirstOrDefault();
+        _currentPanel = StartPanel();
 
         await BuildTwinMapAsync();
 
@@ -376,6 +376,30 @@
         }
 
         _selectedHolds = preselected;
+    }
+
+    // The panel the editor opens on: the one carrying most of the boulder's holds, mirroring how
+    // BoulderDetail picks its start panel. Opening on the centre (0,0) regardless — which this
+    // replaces — meant a boulder set on any other panel showed NOTHING ticked until the reviser
+    // happened to step onto the right panel, because RefreshPickerHolds restricts the picker to the
+    // current panel's holds. Falls back to the centre, then to any panel, then to null.
+    private WallPanelInfo? StartPanel()
+    {
+        var home = _boulder?.BoulderHolds
+            .Select(bh => bh.Hold.WallPanelId)
+            .Where(id => id is not null)
+            .GroupBy(id => id!.Value)
+            // Tie-broken by panel id: two panels can carry the same number of the boulder's holds,
+            // and without it the editor opened on whichever the provider happened to list first —
+            // the same boulder could open on a different panel between two loads.
+            .OrderByDescending(g => g.Count())
+            .ThenBy(g => g.Key)
+            .Select(g => (Guid?)g.Key)
+            .FirstOrDefault();
+
+        return (home is { } panelId ? _panels.FirstOrDefault(p => p.Id == panelId) : null)
+            ?? _panels.FirstOrDefault(p => p is { Col: 0, Row: 0 })
+            ?? _panels.FirstOrDefault();
     }
 
     // The photo behind the picker: the current panel's image, else null so the picker falls back to

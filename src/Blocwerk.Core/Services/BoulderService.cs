@@ -83,6 +83,33 @@ public interface IBoulderService
     /// </remarks>
     Task<int?> GetHistoricGenerationAsync(Guid boulderId, string? shareToken = null, CancellationToken ct = default);
 
+    /// <summary>
+    /// The boulder's holds as they existed at <paramref name="generation"/>, for drawing it on that
+    /// generation's photos. Null when the boulder cannot be read at all (unknown id, or no access) —
+    /// deliberately distinct from an EMPTY list, which means "read fine, nothing of this boulder
+    /// existed back then" and lets the caller tell a failure apart from a genuinely empty map.
+    /// </summary>
+    /// <remarks>
+    /// Each hold is followed BACKWARDS through <see cref="Entities.HoldGenerationLink"/> (successor →
+    /// predecessor) until a row at <paramref name="generation"/> is reached; a hold already at that
+    /// generation maps to itself with no lineage needed. A hold whose chain never reaches the target
+    /// did not exist then and is left out. The boulder's own <see cref="HoldType"/> /
+    /// <see cref="HoldUsage"/> marks ride along, because they belong to the boulder rather than to
+    /// any one generation of the wall.
+    /// <para>
+    /// This is what makes the historic view show a CARRIED boulder at all: such a boulder's holds are
+    /// fresh rows at today's generation pointing at today's panels, so drawing them against the old
+    /// generation's panels matches nothing and the overlay comes out empty.
+    /// </para>
+    /// <para>
+    /// Pass <paramref name="shareToken"/> to resolve it on the anonymous share-link path, gated by
+    /// the wall's share token exactly like <see cref="GetBoulderByShareTokenAsync"/> — drafts
+    /// included: that path never returns an unpublished boulder, whoever holds the token.
+    /// </para>
+    /// </remarks>
+    Task<IReadOnlyList<BoulderHoldAtGeneration>?> GetBoulderHoldsAtGenerationAsync(
+        Guid boulderId, int generation, string? shareToken = null, CancellationToken ct = default);
+
     Task<List<Boulder>> GetBouldersForWallAsync(Guid wallId, bool includeArchived = false);
 
     /// <summary>
@@ -683,6 +710,57 @@ public class BoulderService : IBoulderService
             // MAX of those, i.e. the newest state that still predates today's wall.
             var resolved = rows.Max(r => r.AncestorGeneration ?? r.OwnGeneration);
             return resolved < rows[0].CurrentGeneration ? resolved : null;
+        }
+        catch (Exception ex)
+        {
+            op.Fail(ex);
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<BoulderHoldAtGeneration>?> GetBoulderHoldsAtGenerationAsync(
+        Guid boulderId, int generation, string? shareToken = null, CancellationToken ct = default)
+    {
+        using var op = BlocwerkMetrics.TimeOperation("Boulder.GetHoldsAtGeneration");
+        try
+        {
+            var isShare = !string.IsNullOrEmpty(shareToken);
+
+            // Same gate as GetHistoricGenerationAsync: the share path never resolves a viewer, the
+            // token IS the gate; the normal path goes through membership (and the kiosk wall gate).
+            var viewerId = isShare ? Guid.Empty : await ResolveViewerIdAsync();
+            await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
+            db.CurrentUserId = viewerId;
+
+            // The share arm carries the SAME !IsDraft filter as GetBoulderByShareTokenAsync. Without
+            // it a share-token holder who guessed an unpublished boulder's id could read that draft's
+            // hold geometry here, which no other read on the share path lets them do.
+            var gated = isShare
+                ? db.Boulders.Where(b => b.Id == boulderId && b.Wall.ShareToken == shareToken && !b.IsDraft)
+                : db.Boulders.Where(b => b.Id == boulderId && db.Walls.Any(w => w.Id == b.WallId));
+
+            var wallId = await gated.Select(b => (Guid?)b.WallId).FirstOrDefaultAsync(ct);
+            if (wallId is not { } wall)
+            {
+                // Not readable at all — distinct from a boulder that simply had no holds back then.
+                return null;
+            }
+
+            var marks = await LoadBoulderMarksAsync(gated, ct);
+            if (marks.Count == 0)
+            {
+                return [];
+            }
+
+            var predecessor = await LoadPredecessorMapAsync(db, wall, generation, ct);
+            var mapped = WalkBackToGeneration(marks, predecessor, generation);
+            if (mapped.Count == 0)
+            {
+                return [];
+            }
+
+            return await LoadMappedHoldsAsync(db, wall, generation, mapped, ct);
         }
         catch (Exception ex)
         {
@@ -1501,5 +1579,163 @@ public class BoulderService : IBoulderService
         }
 
         return await WallAdminGuard.IsWallAdminAsync(db, boulder.WallId, userId, CancellationToken.None);
+    }
+
+    /// <summary>
+    /// The boulder's own marks, one per marked hold, each carrying the generation that hold row
+    /// itself lives at — the starting point of the backward walk.
+    /// </summary>
+    private static async Task<List<(Guid HoldId, HoldType Type, HoldUsage Usage, int OwnGeneration)>>
+        LoadBoulderMarksAsync(IQueryable<Boulder> gated, CancellationToken ct)
+    {
+        var rows = await (
+            from b in gated
+            from bh in b.BoulderHolds
+            select new
+            {
+                bh.HoldId,
+                bh.Type,
+                bh.Usage,
+                OwnGeneration = bh.Hold.Generation,
+            })
+            .ToListAsync(ct);
+
+        return rows.Select(r => (r.HoldId, r.Type, r.Usage, r.OwnGeneration)).ToList();
+    }
+
+    /// <summary>
+    /// Reads the hold rows the walk resolved to and pairs each with the boulder's mark for it. The
+    /// generation filter is kept on the read so a mapped id that is somehow not at that generation
+    /// drops out rather than drawing a row from the wrong one.
+    /// </summary>
+    private static async Task<List<BoulderHoldAtGeneration>> LoadMappedHoldsAsync(
+        BlocwerkDbContext db,
+        Guid wallId,
+        int generation,
+        Dictionary<Guid, MappedMark> mapped,
+        CancellationToken ct)
+    {
+        var ids = mapped.Keys.ToList();
+        var holds = await db.Holds
+            .AsNoTracking()
+            .Where(hold => hold.WallId == wallId && ids.Contains(hold.Id) && hold.Generation == generation)
+            .ToListAsync(ct);
+
+        return holds
+            .Select(hold => new BoulderHoldAtGeneration(hold, mapped[hold.Id].Type, mapped[hold.Id].Usage)
+            {
+                // Every one of the boulder's holds that landed on this row, so the caller can tell a
+                // hold that genuinely failed to translate from several that converged here.
+                SourceHoldIds = mapped[hold.Id].SourceHoldIds,
+            })
+            .ToList();
+    }
+
+    /// <summary>
+    /// The wall's hold lineage from <paramref name="generation"/> forward, reduced to ONE backward
+    /// step per hold: successor id -&gt; (predecessor id, the generation that predecessor lived at).
+    /// </summary>
+    /// <remarks>
+    /// One round trip, walked in memory: neither provider we run on translates a recursive CTE here
+    /// portably, and a wall's link count is in the low thousands. FromGeneration is read off the LINK
+    /// rather than off the predecessor hold so the chain still walks through a tombstoned predecessor
+    /// (OldHoldId nulled by HoldDeletion).
+    /// <para>
+    /// A single row can have SEVERAL ancestors — two older holds recorded as becoming one — and only
+    /// one backward step can be taken, so the pick is made EXPLICITLY here instead of being left to
+    /// the database's result order: that order is unspecified for this query, and letting it decide
+    /// meant the historic view could move a boulder onto a different hold between two identical
+    /// reads. Tie-break, in order: the latest recorded link first (the closest predecessor in time,
+    /// so the walk never jumps over a generation that also has a row for this hold), then the
+    /// smallest predecessor id — arbitrary, but identical on every read, machine and provider.
+    /// </para>
+    /// </remarks>
+    private static async Task<Dictionary<Guid, (Guid OldId, int FromGeneration)>> LoadPredecessorMapAsync(
+        BlocwerkDbContext db,
+        Guid wallId,
+        int generation,
+        CancellationToken ct)
+    {
+        var steps = await db.HoldGenerationLinks
+            .AsNoTracking()
+            .Where(l => l.WallId == wallId
+                && l.NewHoldId != null
+                && l.OldHoldId != null
+                && l.FromGeneration >= generation)
+            .Select(l => new { NewId = l.NewHoldId!.Value, OldId = l.OldHoldId!.Value, l.FromGeneration })
+            .ToListAsync(ct);
+
+        return steps
+            .GroupBy(s => s.NewId)
+            .ToDictionary(
+                g => g.Key,
+                g =>
+                {
+                    var pick = g.OrderByDescending(s => s.FromGeneration).ThenBy(s => s.OldId).First();
+                    return (pick.OldId, pick.FromGeneration);
+                });
+    }
+
+    /// <summary>
+    /// Walks each of the boulder's marked holds back along <paramref name="predecessor"/> until it
+    /// sits at <paramref name="generation"/>, and returns the boulder's marks keyed by the hold id AT
+    /// that generation. A hold already there maps to itself; one whose chain runs out before the
+    /// target did not exist then and drops out.
+    /// </summary>
+    /// <remarks>
+    /// Several of the boulder's holds can converge on ONE row at the target generation (that row was
+    /// later recorded as becoming each of them), so the convergence has to be resolved down to a
+    /// single mark. <paramref name="marks"/> is SORTED first rather than resolved in arrival order:
+    /// the caller's rows come back in whatever order the provider chose, and first-wins over an
+    /// unordered list is not reproducible. The order is the most prominent mark first (Top &gt; Start
+    /// &gt; Normal, so the old row is drawn as the start or top it became), then the lower
+    /// <see cref="HoldUsage"/>, then the smallest hold id — the last two are arbitrary, but stable.
+    /// </remarks>
+    private static Dictionary<Guid, MappedMark> WalkBackToGeneration(
+        IReadOnlyList<(Guid HoldId, HoldType Type, HoldUsage Usage, int OwnGeneration)> marks,
+        IReadOnlyDictionary<Guid, (Guid OldId, int FromGeneration)> predecessor,
+        int generation)
+    {
+        var mapped = new Dictionary<Guid, MappedMark>();
+        var sources = new Dictionary<Guid, List<Guid>>();
+        var ordered = marks
+            .OrderByDescending(m => m.Type)
+            .ThenBy(m => m.Usage)
+            .ThenBy(m => m.HoldId);
+
+        foreach (var mark in ordered)
+        {
+            var cursor = mark.HoldId;
+            var cursorGeneration = mark.OwnGeneration;
+            while (cursorGeneration > generation
+                && predecessor.TryGetValue(cursor, out var step)
+
+                // Each hop must move strictly back in time: a malformed link (or a cycle) would
+                // otherwise spin here forever on a page load.
+                && step.FromGeneration < cursorGeneration)
+            {
+                cursor = step.OldId;
+                cursorGeneration = step.FromGeneration;
+            }
+
+            if (cursorGeneration != generation)
+            {
+                continue;
+            }
+
+            // The marks are pre-sorted, so the first one to reach a row is already the winner. A
+            // later mark reaching the same row is a CONVERGENCE, not a failure: it is recorded as a
+            // second source so the caller does not count it as a hold with no match.
+            if (!sources.TryGetValue(cursor, out var reached))
+            {
+                reached = [];
+                sources[cursor] = reached;
+                mapped[cursor] = new MappedMark(mark.Type, mark.Usage, reached);
+            }
+
+            reached.Add(mark.HoldId);
+        }
+
+        return mapped;
     }
 }

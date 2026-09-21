@@ -67,7 +67,7 @@ else
             </div>
         </div>
 
-        @if (_panel.IsOutdated)
+        @if (_panel.IsOutdated && !HistoricMode)
         {
             @* Corner chip: this panel lags the wall's current generation (a sibling panel was updated
                ahead of it). Text-labelled, not colour-only. Pinned outside the scrolling viewport so
@@ -150,7 +150,9 @@ else
     [Parameter] public Func<Guid, Task<IReadOnlyList<PanelHold>>>? HoldsProvider { get; set; }
 
     /// <summary>Preloaded holds per panel; takes precedence over <see cref="HoldsProvider"/> and
-    /// keeps the boulder's own holds visible even to viewers who can't query panel holds.</summary>
+    /// keeps the boulder's own holds visible even to viewers who can't query panel holds. Pass NULL,
+    /// never an empty dictionary, when there is nothing preloaded: an empty one would suppress
+    /// <see cref="HoldsProvider"/> too and leave the panel photo with no overlay at all.</summary>
     [Parameter] public IReadOnlyDictionary<Guid, IReadOnlyList<PanelHold>>? HoldsByPanel { get; set; }
 
     /// <summary>Holds drawn prominently (a boulder's own holds). Everything else is context.</summary>
@@ -188,6 +190,15 @@ else
     /// detail view; left false in the wall view, whose editor stays photo-only in the lens.
     /// </summary>
     [Parameter] public bool LensOverlay { get; set; }
+
+    /// <summary>
+    /// When true the panels shown are an OLD generation on purpose, so the "last generation · needs
+    /// update" chip is suppressed. <see cref="WallPanelInfo.IsOutdated"/> keeps its meaning for every
+    /// other caller — it says the panel lags TODAY's wall, which is true by construction of every
+    /// historic panel and therefore says nothing here. Default false: only the boulder detail page's
+    /// "Then" view sets it.
+    /// </summary>
+    [Parameter] public bool HistoricMode { get; set; }
 
     public enum ArrowDisplayMode { AllNeighbours, HoldsOnly }
 
@@ -283,7 +294,11 @@ else
 
     private async Task<List<PanelHold>> FetchHoldsAsync(WallPanelInfo panel)
     {
-        if (HoldsByPanel is not null)
+        // `is { Count: > 0 }`, not `is not null`: an EMPTY preset dictionary carries no information,
+        // and short-circuiting the provider on one is what drew a bare photo with no holds on it.
+        // Callers are expected to pass null instead of an empty map (see BoulderDetail's invariant);
+        // this is the second line of defence, so one careless assignment cannot blank a page again.
+        if (HoldsByPanel is { Count: > 0 })
         {
             return HoldsByPanel.TryGetValue(panel.Id, out var preset) ? [.. preset] : [];
         }
