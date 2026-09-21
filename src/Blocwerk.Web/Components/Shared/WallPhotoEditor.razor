@@ -199,8 +199,11 @@
 
 @* Zoom geometry is owned by JS via the `--zoom` custom property (viewport.js); the
    markup must not emit a width or a late re-render would stomp the live transform. *@
-<div class="photo-viewport@(_frame != null ? " bw-framed" : string.Empty)" @ref="_viewportRef"
-     style="cursor: @CursorForMode();">
+@* The tool cursor is a CLASS, not `style="cursor: ..."`: viewport.js owns INLINE styles on this
+   element (touch-action, --fit-aspect, --crop-scale, aspect-ratio) and Blazor rewrites the whole
+   style attribute whenever its value changes, wiping them — the box then resizes and the browser
+   clamps scrollLeft/scrollTop, i.e. the view pans by itself. Never reintroduce an inline style here. *@
+<div class="photo-viewport@(_frame != null ? " bw-framed" : string.Empty) @CursorClassForMode()" @ref="_viewportRef">
 <div class="photo-editor" @ref="_containerRef"
      data-hold-drag="@(CanEdit && _mode == EditMode.Move ? "true" : null)">
     <img src="@ResponsiveImage.Initial(EffectivePhotoUrl)" data-bw-res alt="Wall" class="wall-photo" />
@@ -1337,18 +1340,22 @@
 
     private string A(EditMode m) => _mode == m ? "active" : "";
 
-    private string CursorForMode() => _mode switch
+    // Returns a CSS class, never an inline cursor: an inline style on .photo-viewport is rewritten
+    // wholesale by Blazor on a tool switch and takes viewport.js's inline touch-action/--fit-aspect/
+    // --crop-scale/aspect-ratio with it, which makes the view pan on its own. See components.css.
+    private string CursorClassForMode() => _mode switch
     {
-        EditMode.Delete => "crosshair",
-        EditMode.Add => "crosshair", EditMode.Name => "help",
-        EditMode.ShapeTilt => "pointer",
-        EditMode.Merge => "pointer",
-        EditMode.MakeActual => "pointer",
-        EditMode.JoinVirtual => "pointer",
-        EditMode.MarkUnchanged => "pointer",
-        EditMode.MarkChanged => "pointer",
-        EditMode.Usage => "pointer",
-        _ => "default"
+        EditMode.Delete => "bw-cursor-crosshair",
+        EditMode.Add => "bw-cursor-crosshair",
+        EditMode.Name => "bw-cursor-help",
+        EditMode.ShapeTilt => "bw-cursor-pointer",
+        EditMode.Merge => "bw-cursor-pointer",
+        EditMode.MakeActual => "bw-cursor-pointer",
+        EditMode.JoinVirtual => "bw-cursor-pointer",
+        EditMode.MarkUnchanged => "bw-cursor-pointer",
+        EditMode.MarkChanged => "bw-cursor-pointer",
+        EditMode.Usage => "bw-cursor-pointer",
+        _ => "bw-cursor-default"
     };
 
     private void SetMode(EditMode mode)

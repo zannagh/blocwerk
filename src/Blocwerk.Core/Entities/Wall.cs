@@ -97,6 +97,22 @@ public class Wall
     /// </remarks>
     public bool AllowKioskKeyboardShortcuts { get; set; }
 
+    /// <summary>
+    /// The <see cref="CurrentGeneration"/> at which an editor declared cross-panel hold linking done,
+    /// which hides the "link holds across panels" callout on the wall page. Null means never declared.
+    /// </summary>
+    /// <remarks>
+    /// <b>Storing the generation rather than a bool is the whole point: it SELF-INVALIDATES.</b> A
+    /// promote bumps <see cref="CurrentGeneration"/>, so the stored value falls behind and the wall
+    /// reads as not finalized again without the promote path knowing this flag exists. Only equality
+    /// counts as finalized — a value greater than the current generation (a rolled-back or stale
+    /// write) must not silently keep the callout hidden. Events that invalidate the links WITHIN a
+    /// generation (a panel confirmed live, a panel's holds re-detected) reset it to null explicitly.
+    /// Linking or unlinking individual holds deliberately does NOT reset it: that happens inside the
+    /// link tool, where the editor can see the state and switch the reminder back on by hand.
+    /// </remarks>
+    public int? LinksFinalizedGeneration { get; set; }
+
     public ICollection<WallMember> Members { get; set; } = [];
 
     public ICollection<Hold> Holds { get; set; } = [];

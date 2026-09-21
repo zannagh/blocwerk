@@ -196,4 +196,16 @@ public interface IWallPanelService
     /// <see cref="WallAdminGuard.EnsureWallEditorAsync"/>.
     /// </summary>
     Task DeleteHoldLinkAsync(Guid wallId, Guid holdAId, Guid holdBId);
+
+    /// <summary>
+    /// Records that an editor considers cross-panel hold linking done for the wall's CURRENT
+    /// generation (or clears that again when <paramref name="finalized"/> is false), which is what
+    /// hides the "link holds across panels" callout. Gated by
+    /// <see cref="WallAdminGuard.EnsureWallEditorAsync"/> and refused to a kiosk session.
+    /// </summary>
+    /// <remarks>
+    /// The stored value is a generation, not a flag, so a promote silently invalidates it — see
+    /// <see cref="Entities.Wall.LinksFinalizedGeneration"/>.
+    /// </remarks>
+    Task SetHoldLinksFinalizedAsync(Guid wallId, bool finalized, CancellationToken ct = default);
 }

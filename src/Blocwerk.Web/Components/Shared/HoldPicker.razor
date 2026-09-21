@@ -10,9 +10,11 @@
 @* The viewport carries no zoom geometry: JS owns `--zoom` on the content element
    (see wwwroot/js/viewport.js and the `calc(var(--zoom, 1) * 100%)` CSS rules), so a
    server re-render can never stomp the transform mid-gesture. *@
-<div class="picker-viewport" @ref="_viewportRef"
-     data-pan-mode="@(_isPanning ? "true" : "false")"
-     style="cursor: @(_isPanning ? "grab" : "default");">
+@* Cursor as a CLASS, not an inline style: viewport.js writes inline styles on this element
+   (touch-action, --fit-aspect, --crop-scale, aspect-ratio) and a Blazor-rendered style attribute
+   is rewritten as a whole when it changes, wiping them and making the view pan on its own. *@
+<div class="picker-viewport @(_isPanning ? "bw-cursor-grab" : "bw-cursor-default")" @ref="_viewportRef"
+     data-pan-mode="@(_isPanning ? "true" : "false")">
 
 @if (_viewMode == ViewMode.Photo)
 {

@@ -14,6 +14,17 @@
             <button class="btn-secondary" @onclick="Close" title="Close this tool">Close</button>
         </div>
 
+        @* The only way back once the wall page's callout has been silenced, so it lives where an
+           editor who came looking for the linking tool will find it. *@
+        @if (LinksFinalized)
+        {
+            <div class="panel-stepper-foot">
+                <span class="panel-stepper-legend">Links finalized for this generation — the wall page no longer asks about linking.</span>
+                <button class="btn-link" @onclick="Unfinalize"
+                        title="Show the cross-panel linking reminder on the wall page again">Show the reminder again</button>
+            </div>
+        }
+
         @if (_loading)
         {
             <p class="loading-small">Loading panels…</p>

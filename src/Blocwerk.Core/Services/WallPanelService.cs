@@ -267,6 +267,10 @@ public partial class WallPanelService : IWallPanelService
         panel.StagedAt = null;
         panel.StagedByUserId = null;
 
+        // A new photo went live on this panel, so whatever an editor previously declared "linked up"
+        // no longer covers the wall: bring the linking callout back for this generation.
+        await ClearLinksFinalizedAsync(db, wallId, CancellationToken.None);
+
         // A named batch: this one SaveChanges promotes the panel AND hard-deletes the neighbour holds
         // the user flagged as removed (making their boulders historic). That is the most destructive
         // thing this service does, so it must be findable in the journal for a later revert instead of

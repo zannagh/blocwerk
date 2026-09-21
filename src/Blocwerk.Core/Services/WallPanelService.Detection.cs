@@ -74,6 +74,10 @@ public partial class WallPanelService
             });
         }
 
+        // The panel's holds were just replaced, so the links pointing at the old ones stopped meaning
+        // anything: the editor has to look at cross-panel linking again.
+        wall.LinksFinalizedGeneration = null;
+
         await db.SaveChangesAsync();
         logger.LogInformation(
             "Panel {PanelId} holds redetected on wall {WallId} by {UserId}: removed {RemovedCount}, detected {DetectedCount}",

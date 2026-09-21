@@ -15,8 +15,10 @@
             @(_overlayHidden ? "◌ Show holds" : "● Hide holds")
         </button>
     </figcaption>
-    <div class="panel-step-viewport" @ref="_viewportRef"
-         style="cursor: @(AddMode ? "crosshair" : "default");">
+    @* Cursor as a CLASS, not an inline style: viewport.js writes inline styles on this element
+       (touch-action, --fit-aspect, --crop-scale, aspect-ratio) and Blazor rewrites the whole style
+       attribute when its value changes, wiping them — the box resizes and the view pans by itself. *@
+    <div class="panel-step-viewport @(AddMode ? "bw-cursor-crosshair" : "bw-cursor-default")" @ref="_viewportRef">
         <div class="photo-editor" @ref="_editorRef"
              data-hold-drag="@(Editable && DragToMove ? "true" : null)">
             <img src="@ResponsiveImage.Initial(PhotoUrl)" data-bw-res alt="@Caption" class="wall-photo" />

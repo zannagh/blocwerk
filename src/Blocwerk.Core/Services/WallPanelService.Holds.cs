@@ -211,6 +211,50 @@ public partial class WallPanelService
         return panels.ToDictionary(p => p.Id, p => (p.Col, p.Row));
     }
 
+    /// <summary>
+    /// Re-opens the cross-panel linking callout for a wall whose links just stopped being trustworthy
+    /// within the current generation. No SaveChanges — the caller commits it with its own work.
+    /// </summary>
+    private static async Task ClearLinksFinalizedAsync(BlocwerkDbContext db, Guid wallId, CancellationToken ct)
+    {
+        var wall = await db.Walls.IgnoreQueryFilters().FirstOrDefaultAsync(w => w.Id == wallId, ct);
+        if (wall is not null)
+        {
+            wall.LinksFinalizedGeneration = null;
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task SetHoldLinksFinalizedAsync(Guid wallId, bool finalized, CancellationToken ct = default)
+    {
+        // A kiosk tablet must never be able to silence an editor-facing prompt on the wall it is
+        // bolted to; the same rule the other per-wall settings follow.
+        KioskGuard.EnsureNotKiosk(kioskContext, "Finalizing cross-panel hold links");
+
+        var user = await currentUserService.GetCurrentUserAsync();
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+        db.CurrentUserId = user.Id;
+
+        // Editor, matching exactly who is shown the callout this hides.
+        await WallAdminGuard.EnsureWallEditorAsync(db, wallId, user.Id, ct);
+
+        // Filter-ignoring so an owner without an explicit member row can still settle their own wall.
+        var wall = await db.Walls
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(w => w.Id == wallId, ct);
+        if (wall is null)
+        {
+            throw new InvalidOperationException("Wall not found");
+        }
+
+        wall.LinksFinalizedGeneration = finalized ? wall.CurrentGeneration : null;
+        await db.SaveChangesAsync(ct);
+
+        logger.LogInformation(
+            "Cross-panel hold links on wall {WallId} marked {State} at generation {Generation} by {UserId}",
+            wallId, finalized ? "finalized" : "unfinalized", wall.CurrentGeneration, user.Id);
+    }
+
     /// <inheritdoc/>
     public async Task DeleteHoldLinkAsync(Guid wallId, Guid holdAId, Guid holdBId)
     {

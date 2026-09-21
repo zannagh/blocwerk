@@ -17,6 +17,15 @@ public partial class PanelLinkTool
 
     [Parameter] public EventCallback OnClose { get; set; }
 
+    /// <summary>
+    /// Whether the wall page's linking callout is currently silenced for this generation. The tool
+    /// stays fully usable either way — it only surfaces the way back out.
+    /// </summary>
+    [Parameter] public bool LinksFinalized { get; set; }
+
+    /// <summary>Raised when the user asks for the linking reminder back; the page does the write.</summary>
+    [Parameter] public EventCallback OnUnfinalizeLinks { get; set; }
+
     [Inject]
     private IWallPanelService WallPanelService { get; set; } = default!;
 
@@ -262,4 +271,6 @@ public partial class PanelLinkTool
     private string PhotoUrl(Guid panelId) => $"/api/walls/{WallId}/panels/{panelId}/photo";
 
     private Task Close() => OnClose.InvokeAsync();
+
+    private Task Unfinalize() => OnUnfinalizeLinks.InvokeAsync();
 }

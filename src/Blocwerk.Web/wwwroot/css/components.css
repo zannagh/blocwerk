@@ -72,6 +72,30 @@
 .picker-viewport,
 .schematic-viewport { touch-action: pan-y; overscroll-behavior: contain; }
 .photo-viewport { height: 70vh; overflow: auto; -webkit-overflow-scrolling: touch; }
+
+/* Scroll anchoring OFF — deliberate, not a workaround. These viewports' scrollLeft/scrollTop
+   are owned by viewport.js (the pan/zoom model). Chrome's scroll anchoring is a reading-flow
+   convenience that silently adjusts the offsets when nodes are inserted or removed inside the
+   scroll container: switching editor tools adds/removes SVG overlay bits, and the view then
+   "pans around on itself". A JS-driven viewport must keep the offsets it was given.
+   (.panel-step-viewport lives in pages.css; the rule is here with its siblings on purpose.) */
+.photo-viewport,
+.picker-viewport,
+.schematic-viewport,
+.panel-step-viewport { overflow-anchor: none; }
+
+/* Tool cursors are CLASSES, never `style="cursor: ..."`. viewport.js writes INLINE styles on
+   these very elements (touch-action, --fit-aspect, --crop-scale, aspect-ratio). Blazor rewrites
+   the whole style attribute whenever its rendered value changes — e.g. on a tool switch — which
+   wipes those JS-written values; the box then falls back to `aspect-ratio: var(--fit-aspect, 1.4)`,
+   resizes, and the browser clamps the scroll offsets, so the view jumps. Nothing repairs it,
+   because fitBox is gated on _fitKey and refreshTouchAction only runs at setup/zoom.
+   Do NOT move a cursor back into an inline style on a JS-driven viewport. */
+.bw-cursor-crosshair { cursor: crosshair; }
+.bw-cursor-help { cursor: help; }
+.bw-cursor-pointer { cursor: pointer; }
+.bw-cursor-grab { cursor: grab; }
+.bw-cursor-default { cursor: default; }
 /* Boulder detail: the box is sized to the image's aspect ratio (set inline by
    bwViewport.fitBox once the photo loads), so a short photo leaves no dead band AND the
    box height stays put while zooming — the zoomed content scrolls inside it rather than
