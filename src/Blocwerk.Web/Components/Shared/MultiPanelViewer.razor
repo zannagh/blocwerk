@@ -53,9 +53,12 @@ else
 
         @* Full-screen landscape takeover. Steps aside for the usage toggle when that one is shown,
            since both float in the same corner. *@
-        <StageOpenButton Class="@(OnRequestHoldUsage is not null ? "stacked" : null)"
-                         OnOpen="() => _stageOpen = true" />
-        @if (_stageOpen)
+        @if (Fullscreen)
+        {
+            <StageOpenButton Class="@(OnRequestHoldUsage is not null ? "stacked" : null)"
+                             OnOpen="() => _stageOpen = true" />
+        }
+        @if (Fullscreen && _stageOpen)
         {
             @* A SECOND render of PhotoLayers, not a move of the live nodes: the inline viewport keeps
                its @ref and its own zoom engine, so closing the takeover leaves it untouched. *@
@@ -227,6 +230,14 @@ else
     /// detail view; left false in the wall view, whose editor stays photo-only in the lens.
     /// </summary>
     [Parameter] public bool LensOverlay { get; set; }
+
+    /// <summary>
+    /// When true, show the "open in full screen" button that lifts the panel into the landscape
+    /// takeover. Opt-in, and set only from the boulder detail view: on the wall page the takeover
+    /// is not wanted — the wall view is a navigation surface, and its carousel, panel arrows and
+    /// edit affordances all live outside the stage, so a full-screen panel there is a dead end.
+    /// </summary>
+    [Parameter] public bool Fullscreen { get; set; }
 
     /// <summary>
     /// When true the panels shown are an OLD generation on purpose, so the "last generation · needs
