@@ -113,7 +113,12 @@
    the Boulders header + first row remain visible to signal scrollable content. */
 :root {
     --topbar-h: 56px;       /* sticky .bw-topbar */
-    --bottomnav-h: 72px;    /* fixed .bw-tabbar + safe-area */
+    /* fixed .bw-tabbar + safe-area. Written as the bar's real anatomy (6px top padding +
+       ~60px of tab content + its bottom padding) rather than a flat 72px, because the bottom
+       padding is `max(6px, env(safe-area-inset-bottom))` and — now that viewport-fit=cover
+       makes that inset non-zero — a flat 72 under-budgets the bar by the whole home-indicator
+       strip, which is how the Attempt/Send buttons ended up under the tab bar. */
+    --bottomnav-h: calc(66px + max(6px, env(safe-area-inset-bottom, 0px)));
     --fold-peek: 140px;     /* reserve below the fold for boulder peek */
     /* Vertical space taken by the chrome ABOVE/around each photo box, subtracted from the window
        so the fullscreen/desktop layout can size the photo to fit without scrolling. Deliberately

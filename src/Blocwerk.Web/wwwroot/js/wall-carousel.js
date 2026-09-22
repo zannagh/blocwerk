@@ -17,6 +17,9 @@ window.wallCarousel = {
         if (!el) {
             return Promise.resolve();
         }
+        if (el._bwCarousel) {
+            el._bwCarousel.page = idx;
+        }
         return new Promise((resolve) => {
             const prevBehavior = el.style.scrollBehavior;
             el.style.scrollBehavior = 'auto';
@@ -84,6 +87,7 @@ window.wallCarousel = {
             return;
         }
         const target = Math.min(count - 1, Math.max(0, this.currentPage(el) + dir));
+        state.page = target;
         state.swiped = true;
         this.scrollToPage(el, target, true);
         if (target !== state.reported) {
@@ -146,6 +150,17 @@ window.wallCarousel = {
             timer: 0,
             reported: -1,
             pointers: 0,
+            // The page the track is CONSIDERED to be on, tracked forward through every move
+            // instead of being re-derived from scrollLeft. It exists for one reason: a width
+            // change (rotation, or any resize) leaves scrollLeft pointing at a different page
+            // than before, and the scroll events it emits arrive with no pointer down — so the
+            // settle below would measure the stale offset against the new width and report a
+            // page the user never asked for. That is what "rotating breaks navigation" was.
+            page: 0,
+            // Set while a resize-induced re-snap is in flight: settle() then restores `page`
+            // rather than deriving one, and must NOT report anything to .NET (nothing changed
+            // from the server's point of view — only the window did).
+            resnapping: false,
             // Whether the scroll this settle is correcting came from a FINGER. Only a genuine swipe
             // gets the smooth correction; a scroll nobody asked for — a panel switch calling
             // bwViewport.fitBox rewrites the viewport's aspect-ratio, which perturbs the mandatory
@@ -169,6 +184,14 @@ window.wallCarousel = {
                 clearTimeout(state.timer);
                 state.timer = 0;
             }
+            // Consumed FIRST, before any early return: a re-snap flag that outlives the settle it
+            // was armed for poisons the next one. Locking the track inside the idle window armed by
+            // resnap() used to bail out below with the flag still set, and the settle that unlocking
+            // then runs took the re-snap branch — which returns without reporting, so a real page
+            // change never reached .NET. Dropping it here is safe: resnap() has already scrolled the
+            // track onto the remembered page, so a later settle derives that same page anyway.
+            const resnapping = state.resnapping;
+            state.resnapping = false;
             // Edit mode freezes the track on purpose (scroll-snap-type: none, overflow hidden); a
             // correction then would scroll the edit surface out from under the user.
             if (state.locked || !el.isConnected || el.clientWidth === 0) {
@@ -179,8 +202,12 @@ window.wallCarousel = {
             if (state.pointers > 0) {
                 return;
             }
-            const page = this.currentPage(el);
-            const smooth = state.swiped;
+            // A re-snap restores the remembered page; everything else measures where the track
+            // actually came to rest.
+            const page = resnapping ? Math.min(Math.max(0, state.page), Math.max(0, (el.children ? el.children.length : 1) - 1))
+                : this.currentPage(el);
+            state.page = page;
+            const smooth = state.swiped && !resnapping;
             state.swiped = false;
             // Correct only when there is something to correct. Re-aiming at an offset we are already
             // on is not free on fractional device-pixel ratios: the smooth scroll lands a rounding
@@ -188,6 +215,12 @@ window.wallCarousel = {
             // never converges. One device pixel of slack ends it.
             if (Math.abs(el.scrollLeft - this.targetOffset(el, page)) > 1) {
                 this.scrollToPage(el, page, smooth);
+            }
+            if (resnapping) {
+                // The window changed, not the page. Adopt it silently so a later genuine settle
+                // on the same page still counts as "already reported".
+                state.reported = page;
+                return;
             }
             if (page !== state.reported) {
                 state.reported = page;
@@ -218,6 +251,8 @@ window.wallCarousel = {
         state.onPointerDown = () => {
             state.pointers++;
             state.swiped = true;
+            // A finger beats a pending re-snap: from here the user decides the page again.
+            state.resnapping = false;
             if (state.timer) {
                 clearTimeout(state.timer);
                 state.timer = 0;
@@ -283,9 +318,44 @@ window.wallCarousel = {
             return;
         }
         el._bwCarousel.reported = idx;
+        el._bwCarousel.page = idx;
         // The scroll it is about to cause is its own, not a swipe: any correction that follows must
         // not animate on top of it (see `swiped`).
         el._bwCarousel.swiped = false;
+    },
+    // Re-aligns the track on the page it is already on after the container's WIDTH changed
+    // (rotation / resize). Called by orientation.js, never by .NET.
+    //
+    // The page index survives the width change because it is remembered (state.page), not
+    // re-derived: `scrollLeft` is in pixels, so the same offset means a different page once the
+    // pages are a different width, and deriving from it is precisely how a rotation used to
+    // teleport the user to another wall page and report it to the server.
+    //
+    // Instant, never smooth: this is not user input, and a smooth scroll during a rotation
+    // fights the browser's own re-layout.
+    resnap(el) {
+        const state = el && el._bwCarousel;
+        if (!state || state.locked || !el.isConnected || el.clientWidth === 0) {
+            return;
+        }
+        const count = el.children ? el.children.length : 0;
+        if (count === 0) {
+            return;
+        }
+        // A finger on the track owns it; re-snapping under a live gesture would yank it away.
+        if (state.pointers > 0) {
+            return;
+        }
+        state.page = Math.min(count - 1, Math.max(0, state.page));
+        state.resnapping = true;
+        state.swiped = false;
+        const target = this.targetOffset(el, state.page);
+        if (Math.abs(el.scrollLeft - target) > 1) {
+            el.scrollTo({ left: target, behavior: 'instant' });
+        }
+        // Arm a settle regardless: the scroll above may have been a no-op (nothing to correct)
+        // while a late reflow still moves the track, and settle() is idempotent.
+        state.arm();
     },
     // ---- fold marker ----------------------------------------------------------------------
     //

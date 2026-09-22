@@ -1,7 +1,7 @@
 /* ========== Home / Landing ========== */
 
 .landing {
-    min-height: 100vh;
+    min-height: 100dvh;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -16,7 +16,7 @@
 
 /* Momentary /home redirect placeholder — theme-aware so a light-mode user never sees a dark flash. */
 .home-redirect {
-    min-height: 100vh;
+    min-height: 100dvh;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -3618,4 +3618,61 @@ html.bw-fullscreen .panel-link-dialog .panel-step-viewport {
         grid-template-columns: 1fr;
         gap: 5px;
     }
+}
+
+/* ========== Short viewport (landscape phone) ==========================================
+ *
+ * A phone turned sideways is ~390-430px TALL. The vertical budget is entirely token-driven
+ * (--topbar-h + --bottomnav-h + a per-surface chrome term, all subtracted from 100dvh), and
+ * those tokens are sized for a ~850px portrait window: on the boulder page they alone came to
+ * 56 + 72 + 330 = 458px, i.e. more than the whole landscape window. --avail-h went negative,
+ * the 180px floor under the photo box won, the photo overflowed, and the action rows and the
+ * fixed tab bar were pushed out of reach — the "weird, unresponsive, zoomed" state.
+ *
+ * So shrink the BUDGET, not the components: every rule below either re-sizes a token or makes
+ * the real chrome match the token it just shrank (a token that lies is worse than a big one).
+ * 560px is the breakpoint because every phone in landscape is under it and every tablet in
+ * portrait is over it; it matches the existing max-height: 700px convention above.
+ *
+ * The WIDTH guard is not optional: height alone also matches a short desktop window and a landscape
+ * kiosk display, both of which would get the phone-sized tab bar and 19px icons for nothing. The
+ * cap is 960 rather than the desktop tier's 900 on purpose: a large phone in landscape is WIDER
+ * than the tier line (iPhone 16 Pro Max is 932px that way) and is exactly the case this block
+ * exists for. A real desktop window that is both under 960px wide and under 560px tall is rare
+ * enough to accept.
+ *
+ * `html body` rather than `:root`: --boulder-photo-chrome and friends are set on `body` by the
+ * desktop tier's style container query above and on `:root:root` in app.css, and a selector
+ * matching the same element with higher specificity is the only thing that reliably beats both.
+ */
+@media (max-height: 560px) and (max-width: 959.98px) {
+    html body {
+        --topbar-h: 40px;
+        --bottomnav-h: calc(44px + max(2px, env(safe-area-inset-bottom, 0px)));
+        --fold-peek: 44px;
+        /* The stat cards under the wall photo are the first thing worth sacrificing height for;
+           they are still there, just no longer budgeted as if the photo must clear them. */
+        --wall-stats-h: 0px;
+        /* BOTH, and in this order: `.wall-carousel-root.editing .wall-main` re-derives
+           --wall-photo-chrome from --wall-photo-chrome-base on a DESCENDANT, so overriding only the
+           computed token left wall EDIT mode budgeting the full 140px on a 400px-tall window. */
+        --wall-photo-chrome-base: 88px;
+        --wall-photo-chrome: 88px;
+        /* Title row + dim bar + chips + the Attempt/Send/Flash row, at their shrunken sizes. */
+        --boulder-photo-chrome: 150px;
+        /* No floor: on a window this short the photo must be free to become small so the
+           buttons below it stay on screen. The desktop tier already does exactly this. */
+        --photo-fit-floor: 0px;
+    }
+
+    /* Make the chrome actually fit the budget above. */
+    .bw-topbar { padding-top: 4px; padding-bottom: 4px; }
+    .bw-topbar-title { font-size: 0.95rem; }
+
+    .bw-tabbar { padding-top: 2px; padding-bottom: max(2px, env(safe-area-inset-bottom)); }
+    .nav-item { gap: 1px; padding: 2px 0; font-size: 0.6rem; }
+    .nav-item svg { width: 19px; height: 19px; }
+
+    /* 360px of first-fold on a 390px window left nothing for the rest of the page. */
+    .wall-fold { min-height: 200px; }
 }

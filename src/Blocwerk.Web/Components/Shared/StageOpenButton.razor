@@ -1,0 +1,27 @@
+@* The "open in full screen" affordance that floats over a wall photo, modelled on
+   .panel-usage-toggle (same size, same corner, same chrome).
+
+   `data-bw-stage-open` is not decoration: real fullscreen and the orientation lock both need
+   transient user activation, and a Blazor Server round-trip destroys it.
+   wwwroot/js/fullscreen-stage-lock.js therefore listens for a capture-phase click on this attribute
+   (bound at parse, from the app shell — nothing has to be armed from here) and asks for both in the
+   SAME task as the tap, while @onclick opens the overlay over the circuit in parallel. If the
+   overlay never comes up, that script's watchdog releases both again. *@
+<button type="button" class="bw-stage-open @Class" data-bw-stage-open
+        title="@Title" aria-label="@Title"
+        @onclick="OnOpen" @onclick:stopPropagation="true">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3" />
+    </svg>
+</button>
+
+@code {
+    /// <summary>Raised when the user asks for the full-screen view.</summary>
+    [Parameter] public EventCallback OnOpen { get; set; }
+
+    /// <summary>Extra classes, e.g. <c>stacked</c> when another button already owns the corner.</summary>
+    [Parameter] public string? Class { get; set; }
+
+    [Parameter] public string Title { get; set; } = "Open in full screen";
+}

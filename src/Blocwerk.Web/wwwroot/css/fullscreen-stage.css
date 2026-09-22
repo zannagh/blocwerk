@@ -1,0 +1,130 @@
+/* Full-screen landscape takeover for a wall photo + its hold overlay.
+   Linked from the app shell (BlocwerkApp.razor) through @Assets[], like every other stylesheet.
+
+   z-index 900 is deliberate and load-bearing: it clears every layer the pages use (the highest
+   is 300) while staying BELOW the radial classify overlay (1000/1001), which is position:fixed at
+   body level and must keep painting above the takeover when a hold is tapped inside it. */
+
+.bw-stage-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 900;
+    background: #000;
+    overscroll-behavior: contain;
+}
+.bw-stage-overlay:focus { outline: none; }
+
+/* NEVER rotated: the gesture recogniser is bound here and the rotation adapter maps screen
+   coordinates against this element's rect, so it has to stay axis-true. */
+.bw-stage-viewport {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+/* The quarter turn lives here — inside the viewport, never on it or an ancestor. JS owns its
+   width/height/transform; the identity case (landscape viewport) carries no transform at all. */
+.bw-stage-rot {
+    position: absolute;
+    top: 0;
+    left: 0;
+    overflow: hidden;
+    transform-origin: 0 0;
+}
+
+/* The pan/zoom layer. `transform-origin: 0 0` is required: the model composes
+   translate(pan) scale(zoom) against a top-left origin. JS owns width/height/transform. */
+.bw-stage-world {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform-origin: 0 0;
+}
+.bw-stage-world .wall-photo {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+.bw-stage-world .hold-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+/* Chrome sits inside the rotated layer so it reads upright once the photo does. */
+.bw-stage-close {
+    position: absolute;
+    z-index: 3;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    border: none;
+    border-radius: var(--r-pill, 999px);
+    color: #fff;
+    background: rgba(0, 0, 0, 0.55);
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
+    cursor: pointer;
+}
+.bw-stage-close:hover { background: rgba(0, 0, 0, 0.75); }
+
+.bw-stage-chrome {
+    position: absolute;
+    z-index: 3;
+    left: 50%;
+    bottom: 12px;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+/* The button that opens the takeover. Modelled on .panel-usage-toggle: floats over the image,
+   top-right, outside the scrolling/zooming content. */
+.bw-stage-open {
+    position: absolute;
+    z-index: 3;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    border: none;
+    border-radius: var(--r-pill, 999px);
+    color: #fff;
+    background: rgba(0, 0, 0, 0.5);
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.bw-stage-open:hover { background: rgba(0, 0, 0, 0.65); }
+
+/* A second floating button on the same image has to step aside for the first one. */
+.bw-stage-open.stacked { right: 56px; }
+
+/* Under the CSS fallback the whole photo is a quarter turn round, so the user is holding the
+   phone sideways. The radial classify menu is positioned in screen coordinates at body level
+   (it cannot live inside a transformed ancestor without its fixed positioning breaking), so it
+   is turned in place instead — same quarter turn, about its own centre, so it stays on the tap
+   point and reads upright to someone holding the device the way the photo asks for. */
+html.bw-stage-rot90 .classify-root { transform: translate(-50%, -50%) rotate(90deg); }
+
+/* The takeover owns the screen; nothing behind it should scroll under the finger. */
+html.bw-stage-open, html.bw-stage-open body { overflow: hidden; }
+
+/* The positioning context the floating open-button needs. Added around a photo viewport whose own
+   column is static (or sticky only on the desktop tier), so the button lands on the image at every
+   width instead of on the page. */
+.bw-stage-anchor { position: relative; }

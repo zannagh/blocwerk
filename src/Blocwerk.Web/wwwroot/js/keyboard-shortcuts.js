@@ -77,7 +77,7 @@ window.bwKeys = (function () {
     // so without them the editor's letter keys stay live underneath a tool that covers the screen.
     function takeoverSurfaceOpen() {
         return document.querySelector(
-            '.panel-stepper, .wall-lightbox, .bw-modal-backdrop, .crossgen-tool, .panel-link-overlay') !== null;
+            '.panel-stepper, .wall-lightbox, .bw-modal-backdrop, .crossgen-tool, .panel-link-overlay, .bw-stage-overlay') !== null;
     }
 
     // Enter and Space ACTIVATE whatever currently has focus. Listening in the capture phase means we

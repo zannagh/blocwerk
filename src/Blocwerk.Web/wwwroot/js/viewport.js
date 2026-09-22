@@ -100,6 +100,18 @@ window.bwViewport = (function () {
 
         return {
             getZoom: function () { return zoom; },
+            // Drop straight back to fit and re-assert touch-action. Used by the orientation
+            // coordinator: a viewport left zoomed carries `touch-action: none`, and nothing
+            // re-ran refreshTouchAction on a rotation — so after turning the phone the photo
+            // swallowed every touch with no way to scroll or navigate out of it.
+            resetToFit: function () {
+                syncContent();
+                applyZoom(SCROLL_ZOOM_MIN);
+                viewport.scrollLeft = 0;
+                viewport.scrollTop = 0;
+                notify();
+            },
+            refreshTouch: refreshTouchAction,
             // Whether the viewport consumes pan/scroll gestures. At fit it does not, so
             // the page scrolls normally instead of the drag being swallowed.
             capturesPan: function () { return isZoomed(); },
@@ -214,6 +226,26 @@ window.bwViewport = (function () {
     // on detach — and the page has at most a couple of those.
     const bwSwipeBound = [];
 
+    // Every viewport fitBox has ever sized, so a later relayout() can re-run it with the SAME
+    // arguments instead of the caller having to remember them. fitBox writes an inline
+    // aspect-ratio / --fit-aspect / --crop-scale that is only correct for the box size it
+    // measured; a rotation changes that size and nothing re-ran it, leaving the photo pinned to
+    // a stale shape. Entries are pruned on every pass (a detached node is dropped), so this
+    // stays one entry per live photo surface.
+    const fitRegistry = [];
+
+    function registerFit(viewport, pinAspect, frame) {
+        for (let i = 0; i < fitRegistry.length; i++) {
+            if (fitRegistry[i].el === viewport) {
+                fitRegistry[i].pinAspect = pinAspect;
+                fitRegistry[i].frame = frame;
+                return;
+            }
+        }
+
+        fitRegistry.push({ el: viewport, pinAspect: pinAspect, frame: frame });
+    }
+
     return {
         /** Attaches the scroll model. Safe to call repeatedly. */
         setupScroll: function (viewport, dotnetHelper) {
@@ -265,6 +297,10 @@ window.bwViewport = (function () {
             if (!img) {
                 return;
             }
+
+            // Remember the call so relayout() (orientation.js) can replay it verbatim after a
+            // rotation, rather than duplicating any of the sizing logic below.
+            registerFit(viewport, pinAspect, frame);
 
             const pin = pinAspect !== false;
 
@@ -322,6 +358,44 @@ window.bwViewport = (function () {
                 measure();
             } else {
                 img.addEventListener('load', measure, { once: true });
+            }
+        },
+
+        /**
+         * Re-fits every live photo viewport after the window geometry changed (rotation, a
+         * resize, the iOS URL bar collapsing). Called ONLY by orientation.js, which owns the
+         * debouncing — see that file for why this must not run per resize event.
+         *
+         * Three things, in order, per surface:
+         *   1. drop back to fit, so a photo left zoomed cannot keep `touch-action: none` and
+         *      swallow every touch in the new orientation;
+         *   2. re-assert touch-action explicitly (cheap, and correct even if 1 was a no-op);
+         *   3. re-run fitBox with its original arguments, so the inline aspect-ratio /
+         *      --fit-aspect / --crop-scale are measured against the NEW box size.
+         *
+         * `resetZoom === false` keeps the current zoom (a height-only change — the iOS URL bar
+         * collapsing — is not a reason to throw the user's zoom away) and only re-asserts
+         * touch-action, which is the half that actually unblocks input.
+         *
+         * Detached nodes are pruned as we go, which is the registry's only cleanup path.
+         */
+        relayout: function (resetZoom) {
+            for (let i = fitRegistry.length - 1; i >= 0; i--) {
+                const entry = fitRegistry[i];
+                const el = entry.el;
+                if (!el || !el.isConnected) {
+                    fitRegistry.splice(i, 1);
+                    continue;
+                }
+
+                const m = modelOf(el);
+                if (m && resetZoom !== false && m.resetToFit) {
+                    m.resetToFit();
+                } else if (m && m.refreshTouch) {
+                    m.refreshTouch();
+                }
+
+                this.fitBox(el, entry.pinAspect, entry.frame);
             }
         },
 

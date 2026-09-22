@@ -170,7 +170,10 @@ html, body {
     font-feature-settings: 'ss01', 'cv11'; /* Manrope stylistic set + alt digits */
     background: var(--bg);
     color: var(--text);
-    min-height: 100vh;
+    /* dvh, not vh: everything INSIDE the shell already sizes off 100dvh, and mixing the two
+       units meant the outer box claimed the tall (URL-bar-hidden) height while its contents
+       claimed the short one. On a landscape phone that mismatch is a visible dead strip. */
+    min-height: 100dvh;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
@@ -206,7 +209,12 @@ h2 { font-size: 1.15rem; }
 .app-shell {
     display: flex;
     flex-direction: column;
-    min-height: 100vh;
+    min-height: 100dvh;
+    /* Landscape on a notched phone puts the notch on one SIDE. With viewport-fit=cover the page
+       now extends under it, so the shell keeps its content clear; the fixed bars below do the
+       same for themselves, since they are positioned against the viewport, not this box. */
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
 }
 
 .bw-topbar {
@@ -340,7 +348,9 @@ h2 { font-size: 1.15rem; }
 
 .content {
     flex: 1;
-    padding-bottom: 72px;
+    /* The tab bar's own height token rather than a second copy of the number, so the safe-area
+       term and the short-viewport override below can never drift apart from it. */
+    padding-bottom: var(--bottomnav-h);
 }
 
 .bw-tabbar {
@@ -353,6 +363,8 @@ h2 { font-size: 1.15rem; }
     border-top: 1px solid var(--nav-border);
     padding: 6px 0;
     padding-bottom: max(6px, env(safe-area-inset-bottom));
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
     z-index: 50;
     /* Faint upward glow so the tab bar reads like it's floating above content */
     box-shadow: 0 -1px 0 var(--nav-border), 0 -12px 24px -14px var(--shadow-md);
@@ -492,6 +504,10 @@ body.bw-tabbar-collapsed .tabbar-restore { display: flex; }
     right: 0;
     border-radius: 0;
     padding-bottom: max(8px, env(safe-area-inset-bottom));
+    /* Fixed elements are positioned against the viewport, so the shell's side insets do not
+       reach them — with viewport-fit=cover they would sit under a landscape notch otherwise. */
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
     z-index: 60;
     background: var(--topbar-bg);
     border-top: 1px solid var(--nav-border);
@@ -929,6 +945,8 @@ body.bw-tabbar-collapsed .tabbar-restore { display: flex; }
     z-index: 300;
     padding: 12px 16px;
     padding-bottom: max(12px, env(safe-area-inset-bottom));
+    padding-left: calc(16px + env(safe-area-inset-left, 0px));
+    padding-right: calc(16px + env(safe-area-inset-right, 0px));
     background: var(--danger-bg);
     color: var(--danger-text);
     font-family: var(--font-body);

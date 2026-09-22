@@ -9,50 +9,41 @@
 @* Cursor as a CLASS, not an inline style: viewport.js writes inline styles on this element
    (touch-action, --fit-aspect, --crop-scale, aspect-ratio) and a Blazor-rendered style attribute
    is rewritten as a whole when it changes, wiping them and making the view pan on its own. *@
+@* bw-stage-anchor is the positioning context for the floating full-screen button. *@
+<div class="bw-stage-anchor">
 <div class="picker-viewport @(_isPanning ? "bw-cursor-grab" : "bw-cursor-default")" @ref="_viewportRef"
      data-pan-mode="@(_isPanning ? "true" : "false")">
 
 <div class="photo-picker" @ref="_photoPickerRef">
-    <img src="@ResponsiveImage.Initial(PhotoUrl ?? $"/api/walls/{WallId}/photo")" data-bw-res
-         alt="Wall" class="wall-photo" />
-    <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none"
-         @onclick="OnSvgClick"
-         style="cursor: @(_placingVirtual ? "crosshair" : "default");">
-        @foreach (var hold in AllHolds)
-        {
-            var selection = SelectedEntryFor(hold.Id);
-            var isSelected = selection != null;
-            var isColorFoot = IsColorRuleFoot(hold);
-            var fillColor = isSelected
-                ? BoulderHoldColors.FillFor(selection!.Type, selection.Usage)
-                : isColorFoot ? BoulderHoldColors.ColorRuleFill(0.45) : "rgba(255,255,255,0.15)";
-            var strokeColor = isSelected
-                ? BoulderHoldColors.Stroke(selection!.Type)
-                : isColorFoot ? BoulderHoldColors.Foot : "rgba(255,255,255,0.4)";
-            var sw = isSelected || isColorFoot ? "0.4" : "0.2";
-            var dash = hold.IsVirtual ? "0.6 0.4" : string.Empty;
-            if (hold.IsVirtual && !isSelected && !isColorFoot) { strokeColor = "#c86dff"; }
-            var isFoot = hold.Category == HoldCategory.Foot;
-
-            <HoldShape @key="hold.Id" X="hold.X" Y="hold.Y" Radius="hold.Radius" ShapePoints="hold.ShapePoints"
-                       Foot="isFoot" Fill="@fillColor" Stroke="@strokeColor" StrokeWidth="@sw" Dash="@dash"
-                       Style="cursor: pointer"
-                       OnClick="(e) => OnHoldClicked(hold, e)" />
-        }
-    </svg>
+@PhotoLayers
 </div>
+</div>
+
+@* The editor carries almost no chrome, which is exactly what makes it suit a full-screen takeover:
+   the photo gets the whole screen and tapping holds still classifies them. Interactive="true" so a
+   press that lands on a hold does not start a pan and the tap reaches Blazor. *@
+<StageOpenButton OnOpen="() => _stageOpen = true" />
+@if (_stageOpen)
+{
+    @* A SECOND render of the same fragment, not a move of the live nodes: the inline picker keeps
+       its @ref and its zoom engine, and leaving the takeover leaves it exactly as it was.
+       Escape only closes the takeover — the picked set is untouched by it. *@
+    <StageOverlay @ref="_stage" Interactive="true" OnClose="() => _stageOpen = false"
+                  Label="Pick holds in full screen"
+                  ContentKey="@(PhotoUrl ?? WallId.ToString())">
+        <ChildContent>
+            @PhotoLayers
+        </ChildContent>
+        <Chrome>
+            @PickerTools
+        </Chrome>
+    </StageOverlay>
+}
 </div>
 
 @* The "+ Virtual" tool sits below the image; everything else classifies through a tap that opens
    the radial menu. *@
-<div class="radial-controls">
-    <span class="pick-count">@SelectedHolds.Count selected</span>
-    <button class="mode-btn @(_placingVirtual ? "active" : string.Empty)"
-            @onclick="() => _placingVirtual = !_placingVirtual"
-            title="Add a virtual hold at a spot that isn't in the wall photo yet. Tap it afterwards to classify it.">
-        + Virtual
-    </button>
-</div>
+@PickerTools
 
 @if (_overlayHold != null)
 {
@@ -61,6 +52,61 @@
 }
 
 @code {
+    /// <summary>Whether the full-screen landscape takeover is up over the picker.</summary>
+    private bool _stageOpen;
+
+    private StageOverlay? _stage;
+
+    /// <summary>
+    /// The wall photo and the hold overlay, as one fragment, so the inline picker and the
+    /// full-screen takeover draw exactly the same thing — handlers included — from one piece of
+    /// markup. Only the inline wrapper is a `.photo-picker`; the takeover's world layer is not a
+    /// `.photo-editor` either, so the magnifier lens never arms in there (it reads the image rect
+    /// directly and cannot survive a rotated stage).
+    /// </summary>
+    private RenderFragment PhotoLayers => @<text>
+        <img src="@ResponsiveImage.Initial(PhotoUrl ?? $"/api/walls/{WallId}/photo")" data-bw-res
+             alt="Wall" class="wall-photo" />
+        <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none"
+             @onclick="OnSvgClick"
+             style="cursor: @(_placingVirtual ? "crosshair" : "default");">
+            @foreach (var hold in AllHolds)
+            {
+                var selection = SelectedEntryFor(hold.Id);
+                var isSelected = selection != null;
+                var isColorFoot = IsColorRuleFoot(hold);
+                var fillColor = isSelected
+                    ? BoulderHoldColors.FillFor(selection!.Type, selection.Usage)
+                    : isColorFoot ? BoulderHoldColors.ColorRuleFill(0.45) : "rgba(255,255,255,0.15)";
+                var strokeColor = isSelected
+                    ? BoulderHoldColors.Stroke(selection!.Type)
+                    : isColorFoot ? BoulderHoldColors.Foot : "rgba(255,255,255,0.4)";
+                var sw = isSelected || isColorFoot ? "0.4" : "0.2";
+                var dash = hold.IsVirtual ? "0.6 0.4" : string.Empty;
+                if (hold.IsVirtual && !isSelected && !isColorFoot) { strokeColor = "#c86dff"; }
+                var isFoot = hold.Category == HoldCategory.Foot;
+
+                <HoldShape @key="hold.Id" X="hold.X" Y="hold.Y" Radius="hold.Radius" ShapePoints="hold.ShapePoints"
+                           Foot="isFoot" Fill="@fillColor" Stroke="@strokeColor" StrokeWidth="@sw" Dash="@dash"
+                           Style="cursor: pointer"
+                           OnClick="(e) => OnHoldClicked(hold, e)" />
+            }
+        </svg>
+    </text>;
+
+    /// <summary>
+    /// The picker's only chrome. Rendered below the image normally, and inside the takeover's
+    /// rotated stage while that is up, so "+ Virtual" stays reachable in full screen.
+    /// </summary>
+    private RenderFragment PickerTools => @<div class="radial-controls">
+        <span class="pick-count">@SelectedHolds.Count selected</span>
+        <button class="mode-btn @(_placingVirtual ? "active" : string.Empty)"
+                @onclick="() => _placingVirtual = !_placingVirtual"
+                title="Add a virtual hold at a spot that isn't in the wall photo yet. Tap it afterwards to classify it.">
+            + Virtual
+        </button>
+    </div>;
+
     [Parameter] public Guid WallId { get; set; }
 
     /// <summary>
@@ -165,7 +211,13 @@
     private async Task OnSvgClick(MouseEventArgs e)
     {
         if (!_placingVirtual || _isPanning) return;
-        var pos = await JS.InvokeAsync<RelativePos>("wallEditor.getRelativePosition", _photoPickerRef, e.ClientX, e.ClientY);
+        // While the full-screen takeover is up, the tap landed on ITS copy of the photo, not on the
+        // inline picker behind it — so the box to normalise against is the takeover's world layer.
+        // getRelativePosition itself is rotation-aware (wall-editor.js): under the CSS fallback the
+        // stage carries data-bw-rot="90" and it maps through the quarter turn instead of the
+        // identity. Everything else on the page is unrotated and keeps the identity mapping.
+        var box = _stageOpen && _stage is not null ? _stage.WorldElement : _photoPickerRef;
+        var pos = await JS.InvokeAsync<RelativePos>("wallEditor.getRelativePosition", box, e.ClientX, e.ClientY);
         var usage = EffectiveUsage;
         var cat = usage == HoldUsage.FootOnly ? HoldCategory.Foot : HoldCategory.Hand;
         var hold = await WallService.AddHoldAsync(

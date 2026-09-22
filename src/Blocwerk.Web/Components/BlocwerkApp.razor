@@ -15,7 +15,12 @@
        pinch (viewport-gestures.js preventDefaults touch/gesture/ctrl-wheel on the viewport element, and
        viewport.js keeps touch-action at pan-y/none there). Double-tap-to-zoom stays off app-wide via
        `touch-action: manipulation` on body, so the custom double-tap zoom has no browser rival. *@
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    @* viewport-fit=cover: ~15 rules across the stylesheets budget for env(safe-area-inset-*),
+       which evaluates to 0 without it — so on a notched phone the tab bar sat under the home
+       indicator and, in LANDSCAPE, content ran under the notch. Every one of those rules is
+       written as max(fallback, env(...)) or calc(base + env(...)), so switching the insets on
+       can only ever add the real inset, never double-pad. *@
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <base href="/" />
     <link rel="manifest" href="manifest.webmanifest" />
     <meta name="theme-color" content="#16162a" />
@@ -32,6 +37,7 @@
     <link rel="stylesheet" href="@Assets["css/components.css"]" />
     <link rel="stylesheet" href="@Assets["css/training.css"]" />
     <link rel="stylesheet" href="@Assets["css/guides.css"]" />
+    <link rel="stylesheet" href="@Assets["css/fullscreen-stage.css"]" />
     @* The Blazor scoped-CSS bundle (every *.razor.css in this project). It was never linked, which
        made every scoped rule inert — the components that had been migrated to real <button>s were
        silently keeping the user-agent button chrome their .razor.css exists to strip. Last, so a
@@ -111,6 +117,18 @@
     <script src="@Assets["js/viewport.js"]"></script>
     <script src="@Assets["js/wall-editor.js"]"></script>
     <script src="@Assets["js/wall-carousel.js"]"></script>
+    @* After both of the modules it drives: it binds its listeners at parse and calls into
+       bwViewport / wallCarousel lazily, so this order is what keeps it from ever seeing a
+       half-defined global. One coordinator for orientationchange/resize for the whole app. *@
+    <script src="@Assets["js/orientation.js"]"></script>
+    @* The full-screen takeover. After viewport-gestures.js (it binds the shared recogniser) and
+       after its own model; the lock last, because it reads bwStage in its watchdog — lazily, inside
+       a function, so the order is for readability rather than load-bearing. Registered here like
+       every other viewport helper so both files and css/fullscreen-stage.css are fingerprinted:
+       editing an un-fingerprinted asset silently serves a stale one. *@
+    <script src="@Assets["js/fullscreen-stage-model.js"]"></script>
+    <script src="@Assets["js/fullscreen-stage.js"]"></script>
+    <script src="@Assets["js/fullscreen-stage-lock.js"]"></script>
     @* Defines window.bwKeys before any interactive component can register against it. *@
     <script src="@Assets["js/keyboard-shortcuts.js"]"></script>
     <script src="@Assets["js/progression-chart.js"]"></script>

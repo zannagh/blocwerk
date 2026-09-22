@@ -1,0 +1,204 @@
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+@inject ILogger<StageOverlay> Logger
+@implements IAsyncDisposable
+
+@* Full-screen landscape takeover for a wall photo and its hold overlay. The content (image + svg)
+   comes in as ChildContent so the three call sites — BoulderDetail's legacy single image,
+   MultiPanelViewer and HoldPicker — share one overlay instead of three copies of it.
+
+   The DOM shape is load-bearing and explained in wwwroot/js/fullscreen-stage.js: an UN-rotated
+   viewport (the gesture target, whose rect must stay axis-true) containing a stage that carries the
+   quarter turn, containing the pan/zoom world.
+
+   NO `style` attribute is rendered on any of these elements, ever: JS owns their inline width,
+   height and transform, and a Blazor-rendered style attribute is rewritten wholesale when it
+   changes — which would wipe the transform mid-gesture. Same rule as .photo-viewport/.photo-editor.
+
+   The world layer is deliberately NOT a `.photo-editor`: that is what the long-press magnifier lens
+   arms on, and the lens reads the image's own getBoundingClientRect() directly, so it cannot be made
+   correct under a rotated stage. Not marking it simply never arms it.
+
+   `bw-stage-overlay` is also listed in takeoverSurfaceOpen() in wwwroot/js/keyboard-shortcuts.js, so
+   the page's letter shortcuts stand down while this is up. *@
+<div class="bw-stage-overlay" @ref="rootRef" tabindex="-1" role="dialog" aria-modal="true"
+     aria-label="@Label">
+    <div class="bw-stage-viewport" @ref="viewportRef">
+        <div class="bw-stage-rot" @ref="stageRef">
+            <div class="bw-stage-world" @ref="worldRef">
+                @ChildContent
+            </div>
+            @* Chrome lives INSIDE the rotated layer so it reads upright once the photo does. *@
+            <button type="button" class="bw-stage-close" @onclick="CloseAsync"
+                    title="Close full screen" aria-label="Close full screen">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     width="20" height="20" stroke-linecap="round" aria-hidden="true">
+                    <path d="M6 6l12 12M18 6L6 18" />
+                </svg>
+            </button>
+            @if (Chrome is not null)
+            {
+                <div class="bw-stage-chrome">@Chrome</div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    /// <summary>The photo and its hold overlay, drawn into the pan/zoom world layer.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>Optional controls pinned to the bottom of the stage (the picker's tools).</summary>
+    [Parameter] public RenderFragment? Chrome { get; set; }
+
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    [Parameter] public string Label { get; set; } = "Full screen photo";
+
+    /// <summary>
+    /// Whether the content is tapped rather than only looked at. When true a press that lands on a
+    /// hold shape does not start a pan, so the tap reaches Blazor — the picker's selection depends
+    /// on it. Read-only viewers pan from anywhere.
+    /// </summary>
+    [Parameter] public bool Interactive { get; set; }
+
+    /// <summary>
+    /// Identifies the CONTENT under the overlay (a panel id, a boulder id). When it changes the
+    /// stage re-measures: the world is sized from the image's natural dimensions, which are read
+    /// once per photo, so a swap without this leaves the new photo wearing the old one's geometry.
+    /// </summary>
+    [Parameter] public string? ContentKey { get; set; }
+
+    private ElementReference rootRef;
+    private ElementReference viewportRef;
+    private ElementReference stageRef;
+    private ElementReference worldRef;
+    private DotNetObjectReference<StageOverlay>? selfRef;
+    private bool attached;
+    private string? attachedKey;
+
+    /// <summary>
+    /// The pan/zoom world. Its rect is what a tap must be normalised against while the overlay is
+    /// up — the call site's own inline element is behind the takeover and is the wrong box.
+    /// </summary>
+    public ElementReference WorldElement => worldRef;
+
+    protected override void OnInitialized()
+    {
+        Nav.LocationChanged += OnLocationChanged;
+    }
+
+    /// <summary>
+    /// Enhanced navigation RETAINS this component when the route template does not change
+    /// (boulder → boulder), so <c>firstRender</c> never comes round again and the stage would keep
+    /// the previous photo's world dimensions. The takeover belongs to the thing it was opened on,
+    /// so a navigation closes it — and the caller's own state goes with it.
+    /// </summary>
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        _ = InvokeAsync(() => OnClose.InvokeAsync());
+    }
+
+    /// <summary>
+    /// Keyed off state rather than <c>firstRender</c>, for the same enhanced-nav reason: a retained
+    /// component must still bind once and must re-fit whenever the content changed under it.
+    /// </summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!attached)
+        {
+            await AttachAsync();
+            return;
+        }
+
+        if (string.Equals(attachedKey, ContentKey, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        attachedKey = ContentKey;
+        try
+        {
+            await JS.InvokeVoidAsync("bwStage.refresh");
+        }
+        catch (JSDisconnectedException)
+        {
+            // Circuit went away mid-call; there is nothing left to re-fit.
+        }
+        catch (JSException ex)
+        {
+            Logger.LogError(ex, "Full-screen stage could not re-fit for content {ContentKey}.", ContentKey);
+        }
+    }
+
+    private async Task AttachAsync()
+    {
+        attached = true;
+        attachedKey = ContentKey;
+        try
+        {
+            selfRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync(
+                "bwStage.attach", rootRef, viewportRef, stageRef, worldRef, Interactive, selfRef);
+        }
+        catch (JSDisconnectedException)
+        {
+            // Circuit went away mid-call; nothing to attach to, and nothing can be released either.
+        }
+        catch (JSException ex)
+        {
+            // Never silent: the tap has ALREADY asked for real fullscreen and the landscape lock
+            // (fullscreen-stage-lock.js), so a stage that fails to bind must unwind both or the
+            // user is stranded locked-landscape on an ordinary page. The lock's own watchdog is
+            // the backstop for when even this call cannot get through.
+            Logger.LogError(ex, "Full-screen stage failed to attach; releasing the landscape lock.");
+            await AbortAsync();
+        }
+    }
+
+    private async Task AbortAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("bwStageLock.release");
+        }
+        catch (JSException)
+        {
+            // Scripts are not there at all; the watchdog cannot help either. Nothing more to do.
+        }
+        catch (JSDisconnectedException)
+        {
+            // Dead circuit: the watchdog in the browser releases it.
+        }
+    }
+
+    /// <summary>
+    /// Closing driven from JS: Escape, and the system leaving fullscreen. Escape only LEAVES the
+    /// takeover — it never touches what the caller is editing, so a picked set survives it.
+    /// </summary>
+    [JSInvokable]
+    public Task CloseFromJsAsync() => InvokeAsync(() => OnClose.InvokeAsync());
+
+    private Task CloseAsync() => OnClose.InvokeAsync();
+
+    public async ValueTask DisposeAsync()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+        try
+        {
+            // Unconditional: detach() tears down whatever is bound AND releases the fullscreen /
+            // orientation lock, and it is a no-op when nothing ever attached.
+            await JS.InvokeVoidAsync("bwStage.detach");
+        }
+        catch (JSDisconnectedException)
+        {
+            // Nothing to release on a dead circuit.
+        }
+        catch (JSException)
+        {
+            // Already gone.
+        }
+
+        selfRef?.Dispose();
+    }
+}

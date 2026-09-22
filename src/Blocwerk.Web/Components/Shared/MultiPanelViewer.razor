@@ -18,53 +18,7 @@ else
             @* data-lens-overlay (boulder detail only) makes the long-press magnifier bake the
                marked-hold overlay into the lens; omitted in the wall view. *@
             <div class="photo-editor" data-lens-overlay="@(LensOverlay ? "true" : null)">
-                <img src="@ResponsiveImage.Initial(PhotoUrl(_panel.Id))" data-bw-res
-                     alt="Wall panel @_panel.Col,@_panel.Row" class="wall-photo" />
-                <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
-                    @foreach (var h in _holds)
-                    {
-                        var isHi = HighlightedHoldIds?.Contains(h.Id) == true;
-                        @* Usage toggle overrides every other styling: used holds light green with a
-                           count badge, unused ones recede — mirroring WallPhotoEditor's usage tool. *@
-                        var usageCount = _showUsage ? UsageCount(h.Id) : -1;
-                        var fill = _showUsage
-                            ? (usageCount > 0 ? "rgba(76,175,80,0.55)" : "rgba(120,120,120,0.15)")
-                            : FillOf(h, isHi);
-                        var stroke = _showUsage
-                            ? (usageCount > 0 ? "#4CAF50" : "rgba(255,255,255,0.35)")
-                            : StrokeOf(h, isHi);
-                        var sw = _showUsage
-                            ? (usageCount > 0 ? "0.4" : "0.2")
-                            : (isHi ? "0.5" : "0.25");
-                        @* A virtual hold isn't on the photo at all — dash its outline (the same
-                           convention the pickers and the wall editor use) so it never reads as a
-                           real hold. The boulder-type fill/stroke above is kept either way. *@
-                        var dash = h.IsVirtual ? "0.6 0.4" : null;
-                        @* No handlers and no style on purpose: this overlay is read-only, so the shapes
-                           stay out of the pan engine's way entirely. *@
-                        @* Feet draw as a rounded square instead of a circle, but — unlike the wall
-                           editor and the hold picker — at FULL radius: on a viewing surface the shrink
-                           only made feet hard to see, and the shape alone tells them from hands. *@
-                        var isFoot = h.Category == HoldCategory.Foot;
-                        <HoldShape @key="h.Id" X="h.X" Y="h.Y" Radius="h.Radius" ShapePoints="h.ShapePoints"
-                                   Foot="isFoot" FootScale="HoldShape.FullFoot"
-                                   Fill="@fill" Stroke="@stroke" StrokeWidth="@sw" Dash="@dash" />
-
-                        @if (_showUsage && usageCount > 0)
-                        {
-                            @* The drawn radius, which feet no longer shrink below (HoldShape.FullFoot),
-                               so the badge keeps hugging the shape. *@
-                            var r = h.Radius * 100;
-                            <g pointer-events="none">
-                                <circle cx="@F(h.X * 100 + r * 0.85)" cy="@F(h.Y * 100 - r * 0.85)" r="1.4"
-                                        fill="#4CAF50" stroke="white" stroke-width="0.25" />
-                                <text x="@F(h.X * 100 + r * 0.85)" y="@F(h.Y * 100 - r * 0.85)"
-                                      text-anchor="middle" dominant-baseline="central"
-                                      font-size="1.7" font-weight="700" fill="white">@usageCount</text>
-                            </g>
-                        }
-                    }
-                </svg>
+                @PhotoLayers
             </div>
         </div>
 
@@ -97,6 +51,22 @@ else
             </button>
         }
 
+        @* Full-screen landscape takeover. Steps aside for the usage toggle when that one is shown,
+           since both float in the same corner. *@
+        <StageOpenButton Class="@(OnRequestHoldUsage is not null ? "stacked" : null)"
+                         OnOpen="() => _stageOpen = true" />
+        @if (_stageOpen)
+        {
+            @* A SECOND render of PhotoLayers, not a move of the live nodes: the inline viewport keeps
+               its @ref and its own zoom engine, so closing the takeover leaves it untouched. *@
+            @* ContentKey: a panel switch under the open takeover must re-fit the stage — the world
+               is sized from the image's natural dimensions, read once per photo. *@
+            <StageOverlay OnClose="() => _stageOpen = false" Label="Wall panel in full screen"
+                          ContentKey="@_panel.Id.ToString()">
+                @PhotoLayers
+            </StageOverlay>
+        }
+
         @if (_showArrows)
         {
             @if (Neighbour(-1, 0) is { } left)
@@ -124,6 +94,72 @@ else
 }
 
 @code {
+    /// <summary>Whether the full-screen landscape takeover is up over the current panel.</summary>
+    private bool _stageOpen;
+
+    /// <summary>
+    /// The panel photo and its hold overlay, as one fragment, so the inline viewport and the
+    /// full-screen takeover draw exactly the same thing from one piece of markup. Only the inline
+    /// wrapper is a `.photo-editor` carrying data-lens-overlay — the takeover must not arm the
+    /// magnifier, which reads the image rect directly and cannot survive a rotated stage.
+    /// </summary>
+    private RenderFragment PhotoLayers => @<text>
+                    @* Null-checked HERE rather than relying on the enclosing `else` branch: this
+                       fragment is a lambda, and StageOverlay renders it inside ITS render pass, so
+                       a panel switch that nulls _panel between passes would otherwise NRE the
+                       circuit from another component's tree. *@
+                    @if (_panel is { } panel)
+                    {
+                    <img src="@ResponsiveImage.Initial(PhotoUrl(panel.Id))" data-bw-res
+                         alt="Wall panel @panel.Col,@panel.Row" class="wall-photo" />
+                    <svg class="hold-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
+                        @foreach (var h in _holds)
+                        {
+                            var isHi = HighlightedHoldIds?.Contains(h.Id) == true;
+                            @* Usage toggle overrides every other styling: used holds light green with a
+                               count badge, unused ones recede — mirroring WallPhotoEditor's usage tool. *@
+                            var usageCount = _showUsage ? UsageCount(h.Id) : -1;
+                            var fill = _showUsage
+                                ? (usageCount > 0 ? "rgba(76,175,80,0.55)" : "rgba(120,120,120,0.15)")
+                                : FillOf(h, isHi);
+                            var stroke = _showUsage
+                                ? (usageCount > 0 ? "#4CAF50" : "rgba(255,255,255,0.35)")
+                                : StrokeOf(h, isHi);
+                            var sw = _showUsage
+                                ? (usageCount > 0 ? "0.4" : "0.2")
+                                : (isHi ? "0.5" : "0.25");
+                            @* A virtual hold isn't on the photo at all — dash its outline (the same
+                               convention the pickers and the wall editor use) so it never reads as a
+                               real hold. The boulder-type fill/stroke above is kept either way. *@
+                            var dash = h.IsVirtual ? "0.6 0.4" : null;
+                            @* No handlers and no style on purpose: this overlay is read-only, so the shapes
+                               stay out of the pan engine's way entirely. *@
+                            @* Feet draw as a rounded square instead of a circle, but — unlike the wall
+                               editor and the hold picker — at FULL radius: on a viewing surface the shrink
+                               only made feet hard to see, and the shape alone tells them from hands. *@
+                            var isFoot = h.Category == HoldCategory.Foot;
+                            <HoldShape @key="h.Id" X="h.X" Y="h.Y" Radius="h.Radius" ShapePoints="h.ShapePoints"
+                                       Foot="isFoot" FootScale="HoldShape.FullFoot"
+                                       Fill="@fill" Stroke="@stroke" StrokeWidth="@sw" Dash="@dash" />
+
+                            @if (_showUsage && usageCount > 0)
+                            {
+                                @* The drawn radius, which feet no longer shrink below (HoldShape.FullFoot),
+                                   so the badge keeps hugging the shape. *@
+                                var r = h.Radius * 100;
+                                <g pointer-events="none">
+                                    <circle cx="@F(h.X * 100 + r * 0.85)" cy="@F(h.Y * 100 - r * 0.85)" r="1.4"
+                                            fill="#4CAF50" stroke="white" stroke-width="0.25" />
+                                    <text x="@F(h.X * 100 + r * 0.85)" y="@F(h.Y * 100 - r * 0.85)"
+                                          text-anchor="middle" dominant-baseline="central"
+                                          font-size="1.7" font-weight="700" fill="white">@usageCount</text>
+                                </g>
+                            }
+                        }
+                    </svg>
+                    }
+    </text>;
+
     [Parameter, EditorRequired] public Guid WallId { get; set; }
 
     /// <summary>
