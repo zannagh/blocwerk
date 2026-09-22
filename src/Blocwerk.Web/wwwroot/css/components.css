@@ -613,7 +613,10 @@ img.wall-photo {
     .editor-shell.with-sidebar > .editor-stage { flex: 1 1 auto; min-width: 0; }
     .editor-shell.with-sidebar > .bw-toolbar { flex: 0 0 auto; width: 232px; max-width: 45vw; overflow: hidden; }
 
-    .bw-toolbar.placement-sidebar { background: var(--topbar-bg); border-radius: 0 10px 10px 0; }
+    /* min-height:0 so the two children can actually be sized against the rail rather than against
+       their content — without it a tall contextual row pushes the button list past the rail's
+       `overflow: hidden` and the bottom of the list is clipped instead of scrolled. */
+    .bw-toolbar.placement-sidebar { background: var(--topbar-bg); border-radius: 0 10px 10px 0; min-height: 0; }
     .bw-toolbar.placement-sidebar .bw-toolbar-bar { flex-direction: column; align-items: stretch; border-radius: 0; }
     .bw-toolbar.placement-sidebar .editor-toolbar { min-width: 0; flex-wrap: nowrap; }
     .bw-toolbar.placement-sidebar .toolbar-right { flex-direction: column; align-items: stretch; gap: 2px; min-width: 0; flex-wrap: nowrap; }
@@ -663,9 +666,19 @@ img.wall-photo {
        was always for — and carries the same scroll shadows. */
     .bw-toolbar.placement-sidebar .bw-toolbar-row {
         /* Taller than the top bar's 56px because the controls wrap here instead of scrolling
-           sideways; still FIXED, so switching tools never moves the photo. */
-        height: 112px;
-        flex: 0 0 auto;
+           sideways — and here it GROWS to fit the tool's options instead of holding a fixed 112px.
+           The fixed height came across from the top bar, where it is load-bearing: a row that
+           changed height there would resize the photo underneath it on every tool switch. In the
+           rail it is not, because the rail is BESIDE the stage — the stage's width is the rail's
+           232px, which does not move, so a taller row costs the button list some height and the
+           photo nothing. Holding 112px here only meant the options of a wrap-heavy tool (Material,
+           Colour) were silently below the fold: technically scrollable, read as cut off.
+           112px stays as the FLOOR so a one-line row still looks like the sidebar's row, and 60%
+           of the rail is the ceiling so the button list can never be squeezed out by a tall one. */
+        height: auto;
+        min-height: 112px;
+        max-height: 60%;
+        flex: 0 1 auto;
         border-radius: 0 0 10px 0;
         overflow-x: hidden;
         overflow-y: auto;

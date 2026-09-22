@@ -803,10 +803,20 @@
                             @onclick="() => MarkSelectedModified(sel.Id)">Mark changed</button>
                 }
             }
-            else if (!IsStaging && _pendingChanges == 0)
+            else if (!IsStaging)
             {
-                <button class="opt-btn" title="Mark this hold as slightly modified; boulders using it will be flagged for review."
-                        @onclick="() => MarkSelectedModified(sel.Id)">Mark modified@(sel.NeedsReview ? " ✓" : "")</button>
+                @* Moving or resizing no longer implies the physical hold changed, so this is the
+                   only thing that says so — and it has to be reachable in the same breath as the
+                   drag that prompted it. It drafts the verdict and the save applies it, which is
+                   what lets it stay on screen while edits are pending; the old immediate-call
+                   version disappeared the instant you touched the hold. *@
+                <button class="opt-btn @(_markChangedHoldIds.Contains(sel.Id) ? "active" : "")"
+                        title="@(_markChangedHoldIds.Contains(sel.Id)
+                            ? "This hold will be marked as physically changed when you save. Click to take it back."
+                            : "Say the PHYSICAL hold was swapped, turned or re-set. Boulders using it are flagged for review on save. Moving or resizing alone does not do this.")"
+                        @onclick="() => ToggleMarkChanged(sel.Id)">
+                    @(_markChangedHoldIds.Contains(sel.Id) ? "Changed on save ✓" : sel.NeedsReview ? "Changed ✓" : "Mark as changed")
+                </button>
             }
         }
     </div>;
@@ -1247,8 +1257,14 @@
     private readonly List<Hold> _addedHolds = [];
     private readonly HashSet<Guid> _updatedHoldIds = [];
     private readonly HashSet<Guid> _deletedHoldIds = [];
+
+    // Holds the user has deliberately marked as physically changed, applied on save with everything
+    // else. A DRAFT rather than the immediate server call the standalone Mark-changed tool makes,
+    // because the moment you want it most is right after nudging the hold — and an immediate call is
+    // exactly what forced the old button to hide itself while anything was pending.
+    private readonly HashSet<Guid> _markChangedHoldIds = [];
     private List<Hold>? _snapshotHolds;
-    private int _pendingChanges => _addedHolds.Count + _updatedHoldIds.Count + _deletedHoldIds.Count;
+    private int _pendingChanges => _addedHolds.Count + _updatedHoldIds.Count + _deletedHoldIds.Count + _markChangedHoldIds.Count;
 
     private string PhotoUrl => IsStaging
         ? $"/api/walls/{WallId}/staged-photo"
@@ -1272,7 +1288,13 @@
     // handles stop shrinking at the old 6x cap and are oversized for the rest of the range.
     private double HandleScale => 1.0 / Math.Clamp(_zoom, 0.5, 12.0);
 
-    public record BatchChanges(List<Hold> Added, List<Hold> Updated, List<Guid> Deleted);
+    /// <summary>
+    /// One save's worth of editor state. <paramref name="MarkedChanged"/> is the deliberate
+    /// "this physical hold was swapped / turned / re-set" verdict, kept apart from
+    /// <paramref name="Updated"/> on purpose: moving or resizing a circle only corrects where we
+    /// think a hold IS, and must not retire the boulders that use it.
+    /// </summary>
+    public record BatchChanges(List<Hold> Added, List<Hold> Updated, List<Guid> Deleted, List<Guid> MarkedChanged);
 
     public WallPhotoEditor()
     {
@@ -1425,6 +1447,7 @@
             _addedHolds.Clear();
             _updatedHoldIds.Clear();
             _deletedHoldIds.Clear();
+            _markChangedHoldIds.Clear();
             _alignmentChangedIds.Clear();
             _snapshotHolds = null;
             _selectedHoldId = null;
@@ -1452,6 +1475,7 @@
                 _addedHolds.Clear();
                 _updatedHoldIds.Clear();
                 _deletedHoldIds.Clear();
+                _markChangedHoldIds.Clear();
                 _snapshotHolds = null;
                 _selectedHoldId = null;
             }
@@ -2183,6 +2207,18 @@
         await OnMarkHoldModified.InvokeAsync(holdId);
     }
 
+    /// <summary>
+    /// Drafts (or takes back) the "this hold physically changed" verdict for one hold. Nothing
+    /// reaches the server until the save, so it can be toggled freely alongside a move or a resize.
+    /// </summary>
+    private void ToggleMarkChanged(Guid holdId)
+    {
+        if (!_markChangedHoldIds.Remove(holdId))
+        {
+            _markChangedHoldIds.Add(holdId);
+        }
+    }
+
     private async Task MarkSelectedUnchanged(Guid holdId)
     {
         await OnRestoreUnchangedHold.InvokeAsync(holdId);
@@ -2407,20 +2443,28 @@
         var updated = Holds.Where(h => manuallyTouchedIds.Contains(h.Id) && !_addedHolds.Any(a => a.Id == h.Id)).ToList();
         var deleted = _deletedHoldIds.ToList();
 
+        var markedChanged = _markChangedHoldIds.ToList();
+
         if (OnBatchSave.HasDelegate)
         {
-            await OnBatchSave.InvokeAsync(new BatchChanges(added, updated, deleted));
+            await OnBatchSave.InvokeAsync(new BatchChanges(added, updated, deleted, markedChanged));
         }
         else
         {
             foreach (var h in added) await OnHoldAdded.InvokeAsync(h);
             foreach (var h in updated) await OnHoldUpdated.InvokeAsync(h);
             foreach (var id in deleted) await OnHoldDeleted.InvokeAsync(id);
+
+            // The mark goes through OnMarkHoldModified, never through the hold write, so a marked
+            // hold's peripheral and overlap twins are flagged the same way whichever surface asked
+            // for it. Geometry first: the flag describes the hold as saved.
+            foreach (var id in markedChanged) await OnMarkHoldModified.InvokeAsync(id);
         }
 
         _addedHolds.Clear();
         _updatedHoldIds.Clear();
         _deletedHoldIds.Clear();
+        _markChangedHoldIds.Clear();
         _alignmentChangedIds.Clear();
         _snapshotHolds = null;
     }
@@ -2436,6 +2480,7 @@
         _addedHolds.Clear();
         _updatedHoldIds.Clear();
         _deletedHoldIds.Clear();
+        _markChangedHoldIds.Clear();
         _alignmentChangedIds.Clear();
         _snapshotHolds = null;
         _selectedHoldId = null;

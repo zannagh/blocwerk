@@ -1441,8 +1441,19 @@ else
 
         foreach (var hold in changes.Updated)
         {
+            // A move or a resize is a CORRECTION of where we think the hold is, not a claim that the
+            // physical hold changed — nudging a circle onto its hold, or growing it to cover the whole
+            // volume, used to retire every live boulder that used it (IsHistoric = true). "Physically
+            // changed" is a deliberate assertion now, made with the Mark-as-changed button in the Move
+            // tool's options and applied below, exactly as the per-panel editor has always done it.
             await WallService.UpdateHoldAsync(hold.Id, HoldEdit.FromEditorState(
-                hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.IsOnKickboard, hold.ShapePoints, hold.Name, hold.Material, hold.HandType));
+                hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.IsOnKickboard, hold.ShapePoints, hold.Name, hold.Material, hold.HandType,
+                flagBouldersOnMove: false));
+        }
+
+        foreach (var holdId in changes.MarkedChanged)
+        {
+            await WallService.MarkHoldModifiedAsync(holdId);
         }
 
         foreach (var holdId in changes.Deleted)

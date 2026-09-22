@@ -239,12 +239,24 @@ window.wallCarousel = {
         // fresh push. Momentum jitters a little, so this needs headroom in both forms.
         const wheelRiseRatio = 2;
         const wheelRiseFloorPx = 6;
+        // ...and a rise only counts once the gesture has DEMONSTRABLY decayed: the quietest event
+        // SINCE THE LOUDEST ONE must be under this fraction of that peak. Without it a single flick
+        // could page twice, because the step threshold is usually crossed on the flick's RISING
+        // edge — the commit then seeds the tail-detector with a small delta, and the flick's own
+        // peak, arriving two events later, beats it and looks exactly like a second push. Measuring
+        // the quiet point only AFTER the peak is what makes the two shapes distinguishable: a rise
+        // that keeps setting new peaks has not decayed and cannot be a second push, by definition.
+        const wheelDecayedFraction = 0.5;
+        // A tail decays to nothing, so `min * 2` eventually clears any floor; an absolute minimum
+        // keeps the dregs of one flick from reading as a push.
+        const wheelRiseMinPx = 8;
         state.wheelReset = () => {
             state.wheelX = 0;
             state.wheelY = 0;
             state.wheelAxis = 0;
             state.wheelLatched = false;
             state.wheelMin = Infinity;
+            state.wheelPeak = 0;
         };
         state.wheelAt = 0;
         state.wheelReset();
@@ -289,7 +301,9 @@ window.wallCarousel = {
                     state.wheelX = dx;
                     state.wheelY = dy;
                     state.wheelAxis = 1;
-                } else if (travel > Math.max(state.wheelMin * wheelRiseRatio, state.wheelMin + wheelRiseFloorPx)) {
+                } else if (state.wheelMin < state.wheelPeak * wheelDecayedFraction
+                    && travel >= wheelRiseMinPx
+                    && travel > Math.max(state.wheelMin * wheelRiseRatio, state.wheelMin + wheelRiseFloorPx)) {
                     // Re-acceleration: a second push arriving on top of the first one's momentum.
                     const dir = state.wheelDir;
                     state.wheelReset();
@@ -298,7 +312,14 @@ window.wallCarousel = {
                     state.wheelAxis = 1;
                     state.wheelDir = dir;
                 } else {
-                    state.wheelMin = Math.min(state.wheelMin, travel);
+                    // A new peak restarts the decay measurement; only events after it can show
+                    // that the gesture is running out of energy.
+                    if (travel >= state.wheelPeak) {
+                        state.wheelPeak = travel;
+                        state.wheelMin = travel;
+                    } else {
+                        state.wheelMin = Math.min(state.wheelMin, travel);
+                    }
                     return;
                 }
             }
@@ -308,6 +329,7 @@ window.wallCarousel = {
             state.wheelLatched = true;
             state.wheelDir = Math.sign(state.wheelX);
             state.wheelMin = travel;
+            state.wheelPeak = travel;
             this.stepPage(el, state, state.wheelX > 0 ? 1 : -1);
         };
         state.onPointerDown = () => {
