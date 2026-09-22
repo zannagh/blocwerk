@@ -16,6 +16,7 @@ window.bwPrefs = (function () {
     const TOOLBAR_PLACEMENT_KEY = 'blocwerk-toolbar-placement';
     const TOOLBAR_PLACEMENT_SIDEBAR = 'sidebar';
     const TOOLBAR_PLACEMENT_TOPBAR = 'topbar';
+    const WALL_VIEW_KEY = 'blocwerk-wall-view';
     const ONE_YEAR = 60 * 60 * 24 * 365;
 
     function readCookie(name) {
@@ -145,6 +146,21 @@ window.bwPrefs = (function () {
                 ? TOOLBAR_PLACEMENT_SIDEBAR
                 : TOOLBAR_PLACEMENT_TOPBAR;
         },
+        // Wall-editor overlay toggles (hold names, wall border, changed highlight, the
+        // missing-information criteria), serialised by the C# side as "n1.b0.c1.i3". Opaque here on
+        // purpose: WallViewPreference owns the format, and a second parser in JS would only drift.
+        // Read server-side from the cookie on the prerender pass so the overlays are already right
+        // on the first paint; read through here on an interactive pass, where there is no
+        // HttpContext. Anything unset comes back as an empty string, which means "all defaults".
+        getWallView: function () {
+            return readCookie(WALL_VIEW_KEY) || '';
+        },
+        setWallView: function (value) {
+            const v = typeof value === 'string' ? value : '';
+            writeCookie(WALL_VIEW_KEY, v);
+            return v;
+        },
+
         setToolbarPlacement: function (value) {
             const v = value === TOOLBAR_PLACEMENT_SIDEBAR
                 ? TOOLBAR_PLACEMENT_SIDEBAR

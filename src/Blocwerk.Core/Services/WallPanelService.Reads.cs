@@ -229,6 +229,32 @@ public partial class WallPanelService
     }
 
     /// <inheritdoc/>
+    public async Task<HashSet<Guid>> GetCarriedHoldIdsAsync(Guid wallId, IReadOnlyCollection<Guid> holdIds)
+    {
+        if (holdIds.Count == 0)
+        {
+            return [];
+        }
+
+        var user = await currentUserService.GetCurrentUserAsync();
+        await using var db = await dbContextFactory.CreateDbContextAsync();
+        db.CurrentUserId = user.Id;
+
+        // One query for the whole panel, never one per hold: the caller asks this once per panel load
+        // and then answers "is this hold new?" from the set in memory.
+        // Setting CurrentUserId applies the same visibility filters the other reads rely on: a wall the
+        // caller cannot see yields no link rows and therefore an empty set.
+        var ids = holdIds as ICollection<Guid> ?? [.. holdIds];
+
+        return await db.HoldGenerationLinks
+            .AsNoTracking()
+            .Where(l => l.WallId == wallId && l.NewHoldId != null && ids.Contains(l.NewHoldId.Value))
+            .Select(l => l.NewHoldId!.Value)
+            .Distinct()
+            .ToHashSetAsync();
+    }
+
+    /// <inheritdoc/>
     public Task<WallPhoto?> GetPanelPhotoAsync(Guid wallId, Guid panelId) =>
         GetPanelBytesAsync(wallId, panelId, staged: false);
 

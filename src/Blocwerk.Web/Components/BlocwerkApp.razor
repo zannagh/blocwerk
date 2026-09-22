@@ -104,6 +104,9 @@
 
     <script src="@Assets["_framework/blazor.web.js"]" autostart="false"></script>
     <script src="@Assets["js/image-res.js"]"></script>
+    @* The shared wheel recogniser must load before both surfaces that page off a trackpad
+       (the panel stepper in viewport.js and the carousel around it). *@
+    <script src="@Assets["js/wheel-pager.js"]"></script>
     <script src="@Assets["js/viewport-gestures.js"]"></script>
     <script src="@Assets["js/viewport.js"]"></script>
     <script src="@Assets["js/wall-editor.js"]"></script>

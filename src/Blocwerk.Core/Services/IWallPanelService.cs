@@ -112,6 +112,17 @@ public interface IWallPanelService
     Task<IReadOnlyList<Hold>> GetPanelHoldEntitiesAsync(Guid wallId, Guid panelId);
 
     /// <summary>
+    /// Of the given holds, those that CONTINUE an earlier hold — the ones recorded as the
+    /// <see cref="Entities.HoldGenerationLink.NewHoldId"/> of some lineage row on this wall. Generations
+    /// are immutable, so a hold carried through a wall update is a FRESH row at the new generation and
+    /// nothing on the entity itself tells it apart from a hold that was placed for the first time; the
+    /// lineage link is the only record. Batched deliberately: one query per panel load, never one per
+    /// hold. Empty when the wall is not visible to the caller, when no ids are given, or when the wall
+    /// has never been through a generation-carrying update.
+    /// </summary>
+    Task<HashSet<Guid>> GetCarriedHoldIdsAsync(Guid wallId, IReadOnlyCollection<Guid> holdIds);
+
+    /// <summary>
     /// The wall's hold links — pairs of holds recorded as the same physical hold across two
     /// overlapping panels. Visibility-gated the same way the other reads are: a wall the caller
     /// cannot see yields nothing. Both link kinds (Same and Moved) are returned; the caller treats

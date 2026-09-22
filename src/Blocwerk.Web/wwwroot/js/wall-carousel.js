@@ -199,139 +199,22 @@ window.wallCarousel = {
         };
         // ---- trackpad paging ------------------------------------------------------------------
         //
-        // A trackpad flick is a user gesture just as much as a swipe, but the browser handles it
-        // nothing like one. `scroll-snap-type: x mandatory` only commits a page once the scroller
-        // has travelled past roughly half a slide, and a wheel burst doesn't accumulate: each small
-        // deltaX is snapped straight back before the next arrives. Measured on the 5-page wall
-        // carousel at 520px wide, a SINGLE 300px deltaX changed page, while ten 30px events (the
-        // same 300px, the shape a real trackpad emits) changed nothing at all.
+        // The recogniser is shared with the panel stepper inside this carousel (viewport.js), so a
+        // flick means the same thing at both depths — see wheel-pager.js for why a wheel stream
+        // needs one at all, and how a momentum tail is told from a second push.
         //
-        // So a horizontal wheel gesture no longer scrolls this container natively at all: we cancel
-        // it and page it ourselves off an accumulator. That gives a threshold we control, removes
-        // the springback entirely, and cannot fight the step we make. A vertical gesture is never
-        // cancelled — it still scrolls the slide (and the page) as before.
-        //
-        // Three things make a flick feel like a flick rather than a deliberate drag:
-        //
-        //   * AXIS LOCK. The axis is decided from the ACCUMULATED travel of the gesture and then
-        //     held for the rest of it. Judging each event on its own let the diagonal noise in a
-        //     real flick leak through as native scroll between our own steps — the carousel then
-        //     lurched, because two mechanisms were moving it at once.
-        //
-        //   * A GESTURE ENDS ON AN IDLE GAP, measured from event timestamps. macOS keeps emitting
-        //     wheel events for up to a second or so of momentum after the fingers leave the pad, so
-        //     "gesture over" can't mean "events stopped" without also meaning "wait out the tail".
-        //
-        //   * THE MOMENTUM TAIL IS TOLD APART FROM A NEW PUSH by its shape, not by waiting for it.
-        //     One commit latches the gesture so a single flick moves exactly one page; the latch is
-        //     then released by a direction reversal, or by RE-ACCELERATION — momentum decays
-        //     monotonically, so a |deltaX| that climbs back well above the smallest one seen since
-        //     the commit is a second push, not the tail of the first. That is what makes two quick
-        //     flicks page twice: previously the tail held the latch and swallowed the second one,
-        //     which is why only a slow, deliberate, fingers-down drag ever worked.
-        const wheelStepPx = 40;
-        // Well under the gap between two deliberate flicks, and far under the momentum tail — the
-        // tail is ended by re-acceleration, not by this.
-        const wheelIdleMs = 140;
-        // Travel at which the axis stops being re-evaluated and locks for the gesture.
-        const wheelAxisLockPx = 24;
-        // How far |deltaX| must climb back above the quietest event since the commit to count as a
-        // fresh push. Momentum jitters a little, so this needs headroom in both forms.
-        const wheelRiseRatio = 2;
-        const wheelRiseFloorPx = 6;
-        // ...and a rise only counts once the gesture has DEMONSTRABLY decayed: the quietest event
-        // SINCE THE LOUDEST ONE must be under this fraction of that peak. Without it a single flick
-        // could page twice, because the step threshold is usually crossed on the flick's RISING
-        // edge — the commit then seeds the tail-detector with a small delta, and the flick's own
-        // peak, arriving two events later, beats it and looks exactly like a second push. Measuring
-        // the quiet point only AFTER the peak is what makes the two shapes distinguishable: a rise
-        // that keeps setting new peaks has not decayed and cannot be a second push, by definition.
-        const wheelDecayedFraction = 0.5;
-        // A tail decays to nothing, so `min * 2` eventually clears any floor; an absolute minimum
-        // keeps the dregs of one flick from reading as a push.
-        const wheelRiseMinPx = 8;
-        state.wheelReset = () => {
-            state.wheelX = 0;
-            state.wheelY = 0;
-            state.wheelAxis = 0;
-            state.wheelLatched = false;
-            state.wheelMin = Infinity;
-            state.wheelPeak = 0;
-        };
-        state.wheelAt = 0;
-        state.wheelReset();
-        state.onWheel = (e) => {
+        // 40px of travel commits a page. `canStep` is unconditional here because this is the
+        // OUTERMOST surface: there is nothing further out to hand a gesture to, and the inner
+        // surfaces have already had their say by the time the event bubbles up — anything they
+        // consumed arrives `defaultPrevented`, which the recogniser yields to on its own.
+        state.pager = window.bwWheelPager.create({
+            stepPx: 40,
             // Edit mode freezes the track on purpose; the wheel must behave as it did before.
-            if (state.locked) {
-                return;
-            }
-            // deltaMode 1 is lines and 2 is pages (Firefox, some mice); normalise to pixels so the
-            // threshold means the same thing everywhere.
-            const scale = e.deltaMode === 1 ? 16 : (e.deltaMode === 2 ? el.clientWidth : 1);
-            const dx = e.deltaX * scale;
-            const dy = e.deltaY * scale;
-            const now = e.timeStamp || performance.now();
-            if (now - state.wheelAt > wheelIdleMs) {
-                state.wheelReset();
-            }
-            state.wheelAt = now;
-            state.wheelX += dx;
-            state.wheelY += dy;
-            // Undecided gestures re-evaluate every event; past the lock distance the axis stands,
-            // so late vertical drift can't hand a horizontal flick back to the native scroller.
-            if (state.wheelAxis === 0) {
-                const horizontal = Math.abs(state.wheelX) > Math.abs(state.wheelY) * 1.5;
-                if (Math.max(Math.abs(state.wheelX), Math.abs(state.wheelY)) >= wheelAxisLockPx) {
-                    state.wheelAxis = horizontal ? 1 : -1;
-                } else if (!horizontal) {
-                    return;
-                }
-            }
-            if (state.wheelAxis === -1) {
-                return;
-            }
-            if (e.cancelable) {
-                e.preventDefault();
-            }
-            const travel = Math.abs(dx);
-            if (state.wheelLatched) {
-                // A reversal is unambiguously a new gesture, whatever the tail is doing.
-                if (dx !== 0 && Math.sign(dx) !== state.wheelDir) {
-                    state.wheelReset();
-                    state.wheelX = dx;
-                    state.wheelY = dy;
-                    state.wheelAxis = 1;
-                } else if (state.wheelMin < state.wheelPeak * wheelDecayedFraction
-                    && travel >= wheelRiseMinPx
-                    && travel > Math.max(state.wheelMin * wheelRiseRatio, state.wheelMin + wheelRiseFloorPx)) {
-                    // Re-acceleration: a second push arriving on top of the first one's momentum.
-                    const dir = state.wheelDir;
-                    state.wheelReset();
-                    state.wheelX = dx;
-                    state.wheelY = dy;
-                    state.wheelAxis = 1;
-                    state.wheelDir = dir;
-                } else {
-                    // A new peak restarts the decay measurement; only events after it can show
-                    // that the gesture is running out of energy.
-                    if (travel >= state.wheelPeak) {
-                        state.wheelPeak = travel;
-                        state.wheelMin = travel;
-                    } else {
-                        state.wheelMin = Math.min(state.wheelMin, travel);
-                    }
-                    return;
-                }
-            }
-            if (Math.abs(state.wheelX) < wheelStepPx) {
-                return;
-            }
-            state.wheelLatched = true;
-            state.wheelDir = Math.sign(state.wheelX);
-            state.wheelMin = travel;
-            state.wheelPeak = travel;
-            this.stepPage(el, state, state.wheelX > 0 ? 1 : -1);
-        };
+            accepts: () => !state.locked,
+            pageSize: () => el.clientWidth,
+            onStep: (dir) => this.stepPage(el, state, dir),
+        });
+        state.onWheel = (e) => state.pager.onWheel(e);
         state.onPointerDown = () => {
             state.pointers++;
             state.swiped = true;

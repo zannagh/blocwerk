@@ -456,16 +456,12 @@ window.bwViewport = (function () {
             const FLICK_SPEED = 1.0;     // ...at this many px/ms
             const DOMINANCE = 1.6;       // one axis must beat the other by this factor
             const WHEEL_THRESHOLD = 90;  // accumulated horizontal wheel px before it counts
-            const WHEEL_IDLE_MS = 200;   // quiet gap that ends one continuous trackpad gesture
             const LINE_PX = 16;          // deltaMode 1 (lines) -> approximate pixels
 
             let startX = 0;
             let startY = 0;
             let startTime = 0;
             let armed = false;
-            let wheelDx = 0;
-            let wheelFired = false;
-            let wheelLast = 0;
 
             // "Fully zoomed out" == the scroll model's floor (1.0 is fit; it cannot go below).
             function notZoomed() {
@@ -533,58 +529,28 @@ window.bwViewport = (function () {
                 }
             }
 
-            function onWheel(e) {
-                // ctrl/cmd + wheel is a pinch-zoom; above fit the gesture recogniser pans.
-                if (e.ctrlKey || e.metaKey || !notZoomed()) {
-                    wheelDx = 0;
-                    wheelFired = false;
-                    return;
-                }
-
+            // The trackpad equivalent of the touch swipe, on the recogniser the carousel around
+            // this viewport also uses (wheel-pager.js). It used to latch after one step and unlatch
+            // only on a 200ms idle gap — but macOS keeps sending momentum for up to a second after
+            // the fingers lift, so the tail swallowed the next flick and two quick flicks stepped
+            // one panel. The shared recogniser tells a tail from a fresh push by its shape.
+            const pager = window.bwWheelPager.create({
+                stepPx: WHEEL_THRESHOLD,
+                pageSize: () => viewport.clientWidth || LINE_PX,
+                // ctrl/cmd + wheel is a pinch-zoom; above fit the gesture recogniser pans instead.
                 // shift+wheel is the browser's own "scroll horizontally" modifier, and a tilt wheel
-                // sends deltaX on a mouse with no second axis to give. Neither is a trackpad panel
-                // swipe, and swallowing them is what makes horizontal scrolling read as broken.
-                if (e.shiftKey) {
-                    return;
-                }
+                // sends deltaX on a mouse with no second axis to give — neither is a panel swipe,
+                // and swallowing them is what makes horizontal scrolling read as broken.
+                accepts: (e) => !e.ctrlKey && !e.metaKey && !e.shiftKey && notZoomed(),
+                // Only take over a gesture we can act on. At the first/last panel in this direction
+                // there is nothing to step to, so cancelling would swallow the slide and do nothing
+                // with it. Letting it through is what hands it to the carousel instead.
+                canStep: (dir) => canNavigate(-dir),
+                onStep: (dir) => navigate(-dir),
+            });
 
-                const factor = e.deltaMode === 1 ? LINE_PX
-                    : e.deltaMode === 2 ? (viewport.clientWidth || LINE_PX)
-                    : 1;
-                const dx = e.deltaX * factor;
-                const dy = e.deltaY * factor;
-                if (Math.abs(dx) <= Math.abs(dy) * DOMINANCE) {
-                    // Vertical (or ambiguous): leave it to the page so scrolling still works.
-                    return;
-                }
-
-                // Only take over a gesture we actually act on. At the first/last panel in this
-                // direction there is nothing to step to, so preventDefault would swallow the slide
-                // and do nothing with it — which is precisely what "horizontal scrolling is broken"
-                // feels like. Let it through to the carousel instead.
-                if (!canNavigate(-dx)) {
-                    return;
-                }
-
-                e.preventDefault();
-
-                const now = e.timeStamp || Date.now();
-                if (now - wheelLast > WHEEL_IDLE_MS) {
-                    wheelDx = 0;
-                    wheelFired = false;
-                }
-
-                wheelLast = now;
-                if (wheelFired) {
-                    // Already stepped once; the rest of this continuous slide is swallowed.
-                    return;
-                }
-
-                wheelDx += dx;
-                if (Math.abs(wheelDx) >= WHEEL_THRESHOLD) {
-                    wheelFired = true;
-                    navigate(-wheelDx);
-                }
+            function onWheel(e) {
+                pager.onWheel(e);
             }
 
             viewport._bwSwipe = { onStart: onStart, onEnd: onEnd, onWheel: onWheel };

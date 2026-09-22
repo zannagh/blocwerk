@@ -164,8 +164,12 @@
                (the same set that flags boulders for review on confirm). Geometry drift is deliberately
                NOT used — on a large wall re-shot from a slightly different spot, drift is mostly parallax
                and would flag almost everything. Layered over the manual stroke, pointer-events off, and
-               only while "Show changes" is on. *@
-            @if (_showChanges && (ManualAlignment ? _changedHoldIds.Contains(hold.Id) : (ChangeReview && hold.NeedsReview)))
+               only while "Show changes" is on. A hold that first appeared in the CURRENT generation is
+               excluded: it has no previous state on the wall, so there is nothing to compare it against
+               and nothing for the reviewer to decide — "changed" is only a question for a hold that was
+               already there. *@
+            @if (_showChanges && !IsNewThisGeneration(hold)
+                 && (ManualAlignment ? _changedHoldIds.Contains(hold.Id) : (ChangeReview && hold.NeedsReview)))
             {
                 <g pointer-events="none">
                     <circle cx="@F(hold.X * 100)" cy="@F(hold.Y * 100)" r="@F(r + 1.3)"
@@ -409,27 +413,27 @@
                     {
                         Id = "show-names", Kind = ToolbarItemKind.Toggle, Label = "Show hold names",
                         ShortcutKey = "L", Icon = IconName, IsOn = () => _showNames,
-                        OnInvoke = EventCallback.Factory.Create(this, () => _showNames = !_showNames),
+                        OnInvoke = EventCallback.Factory.Create(this, ToggleShowNames),
                     },
                     new ToolbarItem
                     {
                         Id = "show-incomplete", Kind = ToolbarItemKind.Toggle, Label = "Highlight incomplete holds",
                         Icon = IconIncomplete, Visible = () => CanEdit, IsOn = () => _showIncomplete,
-                        OnInvoke = EventCallback.Factory.Create(this, CycleIncompleteCriteria),
+                        OnInvoke = EventCallback.Factory.Create(this, ToggleIncompleteCriteria),
                     },
                     new ToolbarItem
                     {
                         Id = "show-border", Kind = ToolbarItemKind.Toggle, Label = "Show wall border",
                         ShortcutKey = "O", Icon = IconEye, Visible = () => BorderToggleAvailable,
                         IsOn = () => _showBorder,
-                        OnInvoke = EventCallback.Factory.Create(this, () => _showBorder = !_showBorder),
+                        OnInvoke = EventCallback.Factory.Create(this, ToggleShowBorder),
                     },
                     new ToolbarItem
                     {
                         Id = "show-changes", Kind = ToolbarItemKind.Toggle, Label = "Highlight holds marked changed",
                         Icon = IconChanges, Visible = () => CanEdit && (ManualAlignment || ChangeReview),
                         IsOn = () => _showChanges, Badge = () => ChangedBadge,
-                        OnInvoke = EventCallback.Factory.Create(this, () => _showChanges = !_showChanges),
+                        OnInvoke = EventCallback.Factory.Create(this, ToggleShowChanges),
                     },
                     new ToolbarItem
                     {
@@ -1082,6 +1086,12 @@
     // Enables the per-panel change-review overlay + "Marked changed" toggle in the live (non-alignment)
     // editor: highlights holds flagged NeedsReview and lets the reviewer mark holds changed/unchanged.
     [Parameter] public bool ChangeReview { get; set; }
+
+    // The ids of the loaded holds that CONTINUE an earlier hold — the panel's cross-generation lineage,
+    // read server-side in one batched query (IWallPanelService.GetCarriedHoldIdsAsync) and handed down,
+    // because nothing on a Hold entity records it. Empty by default so every call site that does not
+    // supply it keeps its previous behaviour.
+    [Parameter] public IReadOnlySet<Guid> CarriedHoldIds { get; set; } = new HashSet<Guid>();
     [Parameter] public EventCallback<ManualAlignmentResult> OnConfirmManualAlignment { get; set; }
     [Parameter] public EventCallback OnDiscardManualAlignment { get; set; }
     [Parameter] public Func<Task<Homography?>>? OnRequestAutoAlign { get; set; }
@@ -1235,6 +1245,10 @@
     private bool _showBorder = true;
     private bool _showNames;
 
+    // The overlay preferences as they currently stand in the cookie. Seeded from the stored value on
+    // init (or the defaults when there is none) so the first toggle is the first write.
+    private WallViewPreference _savedViewPreference = WallViewPreference.Default;
+
     // Overlay (not a mode): badges holds that still miss information. See HoldCompleteness. The
     // criteria are chosen rather than fixed — the I key cycles off / colour / colour + sub-type —
     // because "missing a sub-type" is true of nearly every hand hold on a mature wall and would
@@ -1276,6 +1290,32 @@
 
     private bool IsStagedHold(Hold h) => IsStaging && h.Generation > LiveGeneration;
     private bool IsLiveHold(Hold h) => IsStaging && h.Generation <= LiveGeneration;
+
+    /// <summary>
+    /// True for a hold that first appeared in the current generation and was never on the wall
+    /// before. Such a hold is kept out of the changed-holds overlay: there is no previous-generation
+    /// state to compare it against, so "did this change?" is not a question the reviewer can answer
+    /// about it — it is simply new.
+    /// </summary>
+    /// <remarks>
+    /// Two sources of evidence, because no field on the loaded hold carries the answer: generations are
+    /// immutable, so a hold carried forward gets a FRESH row at the new generation and its
+    /// <see cref="Hold.Generation"/> looks exactly like a brand-new hold's (see
+    /// <see cref="HoldGenerationLink"/>).
+    /// <list type="bullet">
+    /// <item><see cref="CarriedHoldIds"/> — the server-side lineage for this panel: a hold that is not
+    /// in it has no predecessor and is therefore new.</item>
+    /// <item><c>_addedHolds</c> — the holds THIS editor session placed, which have no lineage row yet
+    /// because they have not been saved.</item>
+    /// </list>
+    /// The non-empty guard on the lineage set is essential, not defensive: a wall that has never been
+    /// through a big update has NO lineage at all, so a bare "no predecessor =&gt; new" rule would call
+    /// every hold on it new and silently swallow the reviewer's own explicit Mark-as-changed verdict.
+    /// An empty set therefore means "this panel has no generation history" — exclude nothing.
+    /// </remarks>
+    private bool IsNewThisGeneration(Hold h) =>
+        (CarriedHoldIds.Count > 0 && !CarriedHoldIds.Contains(h.Id))
+        || _addedHolds.Any(a => a.Id == h.Id);
 
     private static readonly HoldMaterial[] _materials = [HoldMaterial.PU, HoldMaterial.PE, HoldMaterial.DualTex, HoldMaterial.Wood];
     private static readonly HoldHandType[] _handTypes = [HoldHandType.Jug, HoldHandType.Pinch, HoldHandType.Crimp, HoldHandType.Pocket, HoldHandType.Sloper];
@@ -1319,6 +1359,8 @@
         {
             placement = ToolbarPlacementPreference.Parse(
                 context.Request.Cookies[ToolbarPlacementPreference.CookieName]);
+            ApplyViewPreference(WallViewPreference.Parse(
+                context.Request.Cookies[WallViewPreference.CookieName]));
             return;
         }
 
@@ -1331,11 +1373,91 @@
         {
             var stored = await JS.InvokeAsync<string>("bwPrefs.getToolbarPlacement");
             placement = ToolbarPlacementPreference.Parse(stored);
+
+            var view = await JS.InvokeAsync<string>("bwPrefs.getWallView");
+            ApplyViewPreference(WallViewPreference.Parse(view));
         }
         catch (Exception)
         {
-            /* interop unavailable (circuit torn down, script blocked) — keep the top bar. */
+            /* interop unavailable (circuit torn down, script blocked) — keep the defaults. */
         }
+    }
+
+    /// <summary>
+    /// Copies a stored overlay preference onto the fields the overlay renders from, and records it
+    /// as the value already in the cookie so restoring it never writes the cookie straight back.
+    /// </summary>
+    private void ApplyViewPreference(WallViewPreference preference)
+    {
+        _showNames = preference.ShowNames;
+        _showBorder = preference.ShowBorder;
+        _showChanges = preference.ShowChanges;
+        _incompleteCriteria = preference.IncompleteCriteria;
+
+        // Straight to the tool state rather than through SetMode: SetMode also clears the previous
+        // tool's transient state and writes the preference back, neither of which means anything
+        // while we are still restoring it. WallViewPreference only ever hands back a tool it
+        // considers safe to reopen in — a destructive or staged-update-only tool falls through and
+        // leaves the editor in its own default.
+        if (WallViewPreference.IsRestorable(preference.Tool))
+        {
+            tools.SetTool(preference.Tool);
+        }
+
+        _savedViewPreference = preference;
+    }
+
+    /// <summary>The overlay state as it would be stored.</summary>
+    private WallViewPreference CurrentViewPreference =>
+        new(_showNames, _showBorder, _showChanges, _incompleteCriteria, _mode);
+
+    /// <summary>
+    /// Writes the overlay toggles back to their cookie, but only when they actually moved — every
+    /// toggle and the whole shortcut path funnel through here, so an unrelated key press costs no
+    /// interop round-trip. <see cref="_savedViewPreference"/> is advanced only once the write has
+    /// gone through, so a failed interop call is retried on the next change rather than swallowed.
+    /// </summary>
+    private async Task SaveViewPreferenceAsync()
+    {
+        var current = CurrentViewPreference;
+        if (current == _savedViewPreference || !RendererInfo.IsInteractive)
+        {
+            return;
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("bwPrefs.setWallView", current.ToCookieValue());
+            _savedViewPreference = current;
+        }
+        catch (Exception)
+        {
+            /* interop unavailable — the toggle still works for this session, it just isn't stored. */
+        }
+    }
+
+    private async Task ToggleShowNames()
+    {
+        _showNames = !_showNames;
+        await SaveViewPreferenceAsync();
+    }
+
+    private async Task ToggleShowBorder()
+    {
+        _showBorder = !_showBorder;
+        await SaveViewPreferenceAsync();
+    }
+
+    private async Task ToggleShowChanges()
+    {
+        _showChanges = !_showChanges;
+        await SaveViewPreferenceAsync();
+    }
+
+    private async Task ToggleIncompleteCriteria()
+    {
+        CycleIncompleteCriteria();
+        await SaveViewPreferenceAsync();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -1507,6 +1629,12 @@
     {
         tools.SetTool(mode);
         ClearToolState(mode);
+
+        // The tool is part of the member's view preference, so reopening the editor comes back to
+        // the tool they were working in. Fire-and-forget through the renderer: SetMode is called
+        // from sync event handlers all over the toolbar, and the write is already a no-op when
+        // nothing changed, so there is nothing here worth making every caller await.
+        _ = InvokeAsync(SaveViewPreferenceAsync);
     }
 
     /// <summary>
@@ -2276,10 +2404,15 @@
     /// True when a staged hold's geometry drifted from its previous-generation baseline beyond a
     /// small threshold (position, radius, or shape). Derived/visual only — no persistence.
     /// </summary>
-    private int ChangedCount => ManualAlignment ? Holds.Count(h => _changedHoldIds.Contains(h.Id)) : 0;
+    // Both counts skip holds that are new this generation, for the same reason the overlay does:
+    // a hold with no previous state on the wall is nothing for the reviewer to compare, so counting
+    // it here would make the badge promise work that the overlay does not show.
+    private int ChangedCount => ManualAlignment
+        ? Holds.Count(h => _changedHoldIds.Contains(h.Id) && !IsNewThisGeneration(h))
+        : 0;
 
     // Holds flagged for review on this panel (the change-review overlay's count).
-    private int ReviewChangedCount => Holds.Count(h => h.NeedsReview);
+    private int ReviewChangedCount => Holds.Count(h => h.NeedsReview && !IsNewThisGeneration(h));
 
     // Holds still missing information the owner has to supply (the "?" overlay's count). Counted
     // under the ACTIVE criteria while the overlay is on, and under the default (colour) while it is
@@ -2605,6 +2738,10 @@
         {
             await HandleAsyncShortcut(key);
         }
+
+        // L / I / O flip an overlay from inside a synchronous handler; persisting once here keeps
+        // those three cases free of async plumbing and is a no-op when nothing moved.
+        await SaveViewPreferenceAsync();
 
         // The callback arrives from JS, outside any Blazor UI event, so nothing renders for us.
         StateHasChanged();

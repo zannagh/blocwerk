@@ -442,6 +442,7 @@ else
                                              IsStaging="false"
                                              ManualAlignment="false"
                                              ChangeReview="true"
+                                             CarriedHoldIds="_editingPanelCarriedHoldIds"
                                              OnBatchSave="OnPanelBatchSave"
                                              OnRedetectRequested="OnRedetectPanel"
                                              OnMarkHoldModified="OnMarkHoldModified"
@@ -820,6 +821,10 @@ else
     private List<WallPanelInfo> _livePanels = [];
     private WallPanelInfo? _editingPanel;
     private List<Hold> _editingPanelHolds = [];
+
+    // Which of _editingPanelHolds continue an earlier hold, read once per panel load. Brand-new holds
+    // are not in here, which is how the editor keeps them out of the changed-holds overlay.
+    private HashSet<Guid> _editingPanelCarriedHoldIds = [];
     private WallPhotoEditor? _panelEditor;
     private bool _confirmingPanelStep;
     private int _pendingPanelStepDelta;
@@ -1552,11 +1557,18 @@ else
         if (_editingPanel is null)
         {
             _editingPanelHolds = [];
+            _editingPanelCarriedHoldIds = [];
             return;
         }
 
         var holds = await WallPanelService.GetPanelHoldEntitiesAsync(WallId, _editingPanel.Id);
         _editingPanelHolds = holds.Select(h => h.Clone()).ToList();
+
+        // One batched lineage read per panel load. The editor cannot derive this itself: a carried hold
+        // is a fresh row at the new generation, indistinguishable on the entity from a brand-new one.
+        _editingPanelCarriedHoldIds = await WallPanelService.GetCarriedHoldIdsAsync(
+            WallId,
+            [.. _editingPanelHolds.Select(h => h.Id)]);
     }
 
     /// <summary>
