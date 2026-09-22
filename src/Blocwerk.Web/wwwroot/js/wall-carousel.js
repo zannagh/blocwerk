@@ -204,34 +204,50 @@ window.wallCarousel = {
         // has travelled past roughly half a slide, and a wheel burst doesn't accumulate: each small
         // deltaX is snapped straight back before the next arrives. Measured on the 5-page wall
         // carousel at 520px wide, a SINGLE 300px deltaX changed page, while ten 30px events (the
-        // same 300px, the shape a real trackpad emits) changed nothing at all. That is the
-        // "swipe reaaallly far" the user hit.
+        // same 300px, the shape a real trackpad emits) changed nothing at all.
         //
-        // So a horizontally dominant wheel no longer scrolls this container natively at all: we
-        // cancel it and page it ourselves off an accumulator. That gives a threshold we control,
-        // removes the springback entirely, and cannot fight the step we make. A vertically dominant
-        // wheel is never cancelled — it still scrolls the slide (and the page) as before.
+        // So a horizontal wheel gesture no longer scrolls this container natively at all: we cancel
+        // it and page it ourselves off an accumulator. That gives a threshold we control, removes
+        // the springback entirely, and cannot fight the step we make. A vertical gesture is never
+        // cancelled — it still scrolls the slide (and the page) as before.
         //
-        // Three guards keep it from feeling twitchy:
-        //   * the accumulated horizontal travel must beat `wheelStepPx`, and must also dominate the
-        //     accumulated VERTICAL travel, so a vertical scroll with a little sideways drift pages
-        //     nothing however long it runs;
-        //   * one commit latches the gesture: a trackpad's long tail of follow-up events is
-        //     swallowed, so a gesture moves exactly one page;
-        //   * a short idle gap ends the gesture (clears the accumulator and the latch), and a
-        //     direction reversal restarts the count.
+        // Three things make a flick feel like a flick rather than a deliberate drag:
+        //
+        //   * AXIS LOCK. The axis is decided from the ACCUMULATED travel of the gesture and then
+        //     held for the rest of it. Judging each event on its own let the diagonal noise in a
+        //     real flick leak through as native scroll between our own steps — the carousel then
+        //     lurched, because two mechanisms were moving it at once.
+        //
+        //   * A GESTURE ENDS ON AN IDLE GAP, measured from event timestamps. macOS keeps emitting
+        //     wheel events for up to a second or so of momentum after the fingers leave the pad, so
+        //     "gesture over" can't mean "events stopped" without also meaning "wait out the tail".
+        //
+        //   * THE MOMENTUM TAIL IS TOLD APART FROM A NEW PUSH by its shape, not by waiting for it.
+        //     One commit latches the gesture so a single flick moves exactly one page; the latch is
+        //     then released by a direction reversal, or by RE-ACCELERATION — momentum decays
+        //     monotonically, so a |deltaX| that climbs back well above the smallest one seen since
+        //     the commit is a second push, not the tail of the first. That is what makes two quick
+        //     flicks page twice: previously the tail held the latch and swallowed the second one,
+        //     which is why only a slow, deliberate, fingers-down drag ever worked.
         const wheelStepPx = 40;
-        const wheelIdleMs = 220;
-        state.wheelX = 0;
-        state.wheelY = 0;
-        state.wheelLatched = false;
-        state.wheelTimer = 0;
-        state.wheelIdle = () => {
-            state.wheelTimer = 0;
+        // Well under the gap between two deliberate flicks, and far under the momentum tail — the
+        // tail is ended by re-acceleration, not by this.
+        const wheelIdleMs = 140;
+        // Travel at which the axis stops being re-evaluated and locks for the gesture.
+        const wheelAxisLockPx = 24;
+        // How far |deltaX| must climb back above the quietest event since the commit to count as a
+        // fresh push. Momentum jitters a little, so this needs headroom in both forms.
+        const wheelRiseRatio = 2;
+        const wheelRiseFloorPx = 6;
+        state.wheelReset = () => {
             state.wheelX = 0;
             state.wheelY = 0;
+            state.wheelAxis = 0;
             state.wheelLatched = false;
+            state.wheelMin = Infinity;
         };
+        state.wheelAt = 0;
+        state.wheelReset();
         state.onWheel = (e) => {
             // Edit mode freezes the track on purpose; the wheel must behave as it did before.
             if (state.locked) {
@@ -242,27 +258,56 @@ window.wallCarousel = {
             const scale = e.deltaMode === 1 ? 16 : (e.deltaMode === 2 ? el.clientWidth : 1);
             const dx = e.deltaX * scale;
             const dy = e.deltaY * scale;
-            if (Math.abs(dx) > Math.abs(dy)) {
-                if (e.cancelable) {
-                    e.preventDefault();
-                }
+            const now = e.timeStamp || performance.now();
+            if (now - state.wheelAt > wheelIdleMs) {
+                state.wheelReset();
             }
-            if (state.wheelTimer) {
-                clearTimeout(state.wheelTimer);
-            }
-            state.wheelTimer = setTimeout(state.wheelIdle, wheelIdleMs);
-            if (dx !== 0 && state.wheelX !== 0 && Math.sign(dx) !== Math.sign(state.wheelX)) {
-                state.wheelX = 0;
-            }
+            state.wheelAt = now;
             state.wheelX += dx;
             state.wheelY += dy;
-            if (state.wheelLatched || Math.abs(state.wheelX) < wheelStepPx) {
+            // Undecided gestures re-evaluate every event; past the lock distance the axis stands,
+            // so late vertical drift can't hand a horizontal flick back to the native scroller.
+            if (state.wheelAxis === 0) {
+                const horizontal = Math.abs(state.wheelX) > Math.abs(state.wheelY) * 1.5;
+                if (Math.max(Math.abs(state.wheelX), Math.abs(state.wheelY)) >= wheelAxisLockPx) {
+                    state.wheelAxis = horizontal ? 1 : -1;
+                } else if (!horizontal) {
+                    return;
+                }
+            }
+            if (state.wheelAxis === -1) {
                 return;
             }
-            if (Math.abs(state.wheelX) <= Math.abs(state.wheelY) * 1.5) {
+            if (e.cancelable) {
+                e.preventDefault();
+            }
+            const travel = Math.abs(dx);
+            if (state.wheelLatched) {
+                // A reversal is unambiguously a new gesture, whatever the tail is doing.
+                if (dx !== 0 && Math.sign(dx) !== state.wheelDir) {
+                    state.wheelReset();
+                    state.wheelX = dx;
+                    state.wheelY = dy;
+                    state.wheelAxis = 1;
+                } else if (travel > Math.max(state.wheelMin * wheelRiseRatio, state.wheelMin + wheelRiseFloorPx)) {
+                    // Re-acceleration: a second push arriving on top of the first one's momentum.
+                    const dir = state.wheelDir;
+                    state.wheelReset();
+                    state.wheelX = dx;
+                    state.wheelY = dy;
+                    state.wheelAxis = 1;
+                    state.wheelDir = dir;
+                } else {
+                    state.wheelMin = Math.min(state.wheelMin, travel);
+                    return;
+                }
+            }
+            if (Math.abs(state.wheelX) < wheelStepPx) {
                 return;
             }
             state.wheelLatched = true;
+            state.wheelDir = Math.sign(state.wheelX);
+            state.wheelMin = travel;
             this.stepPage(el, state, state.wheelX > 0 ? 1 : -1);
         };
         state.onPointerDown = () => {
@@ -384,9 +429,6 @@ window.wallCarousel = {
         }
         if (state.timer) {
             clearTimeout(state.timer);
-        }
-        if (state.wheelTimer) {
-            clearTimeout(state.wheelTimer);
         }
         el.removeEventListener('scroll', state.onScroll);
         el.removeEventListener('wheel', state.onWheel);
