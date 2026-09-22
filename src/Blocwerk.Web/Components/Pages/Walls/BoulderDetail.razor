@@ -293,21 +293,14 @@ else
                             @* A virtual hold isn't visible on the photo: dash its outline, as the
                                pickers and MultiPanelViewer do, so it doesn't read as a real hold. *@
                             var dash = bh.Hold.IsVirtual ? "0.6 0.4" : null;
-                            @if (bh.Hold.ShapePoints is { Count: >= 3 })
-                            {
-                                <polygon @key="bh.HoldId" points="@ShapePolygon(bh.Hold)"
-                                         fill="@BoulderHoldColors.FillFor(bh.Type, bh.Usage)"
-                                         stroke="@BoulderHoldColors.Stroke(bh.Type)" stroke-width="0.5"
-                                         stroke-dasharray="@dash" />
-                            }
-                            else
-                            {
-                                <circle @key="bh.HoldId" cx="@F(bh.Hold.X * 100)" cy="@F(bh.Hold.Y * 100)"
-                                        r="@F(bh.Hold.Radius * 100)"
-                                        fill="@BoulderHoldColors.FillFor(bh.Type, bh.Usage)"
-                                        stroke="@BoulderHoldColors.Stroke(bh.Type)" stroke-width="0.5"
-                                        stroke-dasharray="@dash" />
-                            }
+                            @* Through HoldShape like every other overlay in the app. Foot is deliberately
+                               NOT set: this legacy single-image branch has always drawn every hold as a
+                               plain circle and keeps doing so, so the move is visually a no-op. *@
+                            <HoldShape @key="bh.HoldId" X="bh.Hold.X" Y="bh.Hold.Y" Radius="bh.Hold.Radius"
+                                       ShapePoints="bh.Hold.ShapePoints"
+                                       Fill="@BoulderHoldColors.FillFor(bh.Type, bh.Usage)"
+                                       Stroke="@BoulderHoldColors.Stroke(bh.Type)" StrokeWidth="0.5"
+                                       Dash="@dash" />
                         }
                     </svg>
                 </div>
@@ -1762,13 +1755,6 @@ else
         _activeProposal = null;
         await ShowToast("Proposal rejected");
     }, "Could not reject that proposal");
-
-    private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
-
-    // A hold's custom shape as SVG polygon points (0-100 space), so a boulder's shaped holds render as
-    // their real shape instead of a plain circle.
-    private static string ShapePolygon(Blocwerk.Core.Entities.Hold h) =>
-        string.Join(" ", h.ShapePoints!.Select(sp => F((h.X + sp.Dx) * 100) + "," + F((h.Y + sp.Dy) * 100)));
 
     /// <summary>
     /// An upload writes an activity entry, so the feed below the strip is stale until it re-reads.

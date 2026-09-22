@@ -113,108 +113,14 @@
             @if (tlStatus.UnmappedGradeCount > 0)
             {
                 <p class="tl-meta">@tlStatus.UnmappedGradeCount send(s) need a grade.</p>
-                <details class="tl-resolve" @ontoggle="OnResolveGradesToggle">
-                    <summary>Resolve grades</summary>
-                    @if (tlUnmapped == null)
-                    {
-                        <p class="tl-meta">Loading…</p>
-                    }
-                    else
-                    {
-                        @foreach (var item in tlUnmapped)
-                        {
-                            var selection = GetGradeSelection(item.RawGrade);
-                            <div class="tl-resolve-row">
-                                <div class="tl-resolve-info">
-                                    <span class="tl-resolve-raw">@(string.IsNullOrEmpty(item.RawGrade) ? "(no grade)" : item.RawGrade)</span>
-                                    <span class="tl-meta">
-                                        @item.Count ascent(s)@(string.IsNullOrEmpty(item.SampleClimbName) ? string.Empty : $" · e.g. {item.SampleClimbName}")
-                                    </span>
-                                </div>
-                                <GradePicker Value="@selection"
-                                             ValueChanged="@(v => SetGradeSelection(item.RawGrade, v))" />
-                                <button class="btn-primary"
-                                        @onclick="() => ResolveGradeAsync(item)"
-                                        disabled="@(tlBusy || tlResolveBusy || string.IsNullOrEmpty(selection))">
-                                    Save
-                                </button>
-                            </div>
-                        }
-                    }
-                </details>
+                <ProfileTopLoggerGrades ViewerId="Viewer.Id" Busy="tlBusy"
+                                        OnToast="OnToast" OnError="SetErrorAsync"
+                                        OnStatusChanged="ReloadTopLoggerStatusAsync" />
             }
 
-            <details class="tl-calibration" @ontoggle="OnCalibrationToggle">
-                <summary>Gym grade points</summary>
-                <p class="tl-meta">
-                    Enter the points your gym awards per grade, plus the flash bonus. We use these
-                    to read the grade and flash from each ascent's points.
-                </p>
-                @if (tlGyms == null)
-                {
-                    <p class="tl-meta">Loading…</p>
-                }
-                else if (tlGyms.Count == 0)
-                {
-                    <p class="tl-meta">No gyms yet — sync some ascents first.</p>
-                }
-                else
-                {
-                    <div class="field-group">
-                        <label class="field-label" for="tl-calib-gym">Gym</label>
-                        <select id="tl-calib-gym" class="window-select"
-                                value="@tlSelectedGymId" @onchange="OnCalibrationGymChange">
-                            <option value="">Select a gym…</option>
-                            @foreach (var g in tlGyms)
-                            {
-                                <option value="@g.Id">@g.Name</option>
-                            }
-                        </select>
-                    </div>
-
-                    @if (tlSelectedGymId != null)
-                    {
-                        <div class="tl-calib-grid">
-                            <table class="tl-calib-table">
-                                <thead>
-                                    <tr><th>Grade</th><th>Points</th></tr>
-                                </thead>
-                                <tbody>
-                                    @foreach (var grade in GradeScale.FontGrades)
-                                    {
-                                        <tr>
-                                            <td>@grade</td>
-                                            <td>
-                                                <input type="number" min="0" inputmode="numeric"
-                                                       class="text-input tl-calib-input"
-                                                       value="@GetCalibPoints(grade)"
-                                                       @onchange="e => SetCalibPoints(grade, e.Value?.ToString())" />
-                                            </td>
-                                        </tr>
-                                    }
-                                </tbody>
-                            </table>
-                        </div>
-
-                        <div class="field-group">
-                            <label class="field-label" for="tl-calib-bonus">Bonus points for flash</label>
-                            <input id="tl-calib-bonus" type="number" min="0" inputmode="numeric"
-                                   class="text-input tl-calib-input"
-                                   value="@tlFlashBonusInput"
-                                   @onchange="e => tlFlashBonusInput = e.Value?.ToString() ?? string.Empty" />
-                        </div>
-
-                        <div class="tl-actions">
-                            <button class="btn-primary" @onclick="SaveCalibrationAsync"
-                                    disabled="@(tlBusy || tlCalibBusy)">
-                                @(tlCalibBusy ? "Saving…" : "Save")
-                            </button>
-                            <button class="btn-secondary" @onclick="DiscardCalibrationAsync"
-                                    disabled="@(tlBusy || tlCalibBusy)">Discard</button>
-                        </div>
-                    }
-                }
-            </details>
+            <ProfileTopLoggerCalibration ViewerId="Viewer.Id" Busy="tlBusy"
+                                         OnToast="OnToast" OnError="SetErrorAsync"
+                                         OnStatusChanged="ReloadTopLoggerStatusAsync" />
 
             <div class="tl-actions">
                 <button class="btn-primary" @onclick="SyncTopLoggerAsync" disabled="@tlBusy">

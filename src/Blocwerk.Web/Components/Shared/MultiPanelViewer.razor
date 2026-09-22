@@ -42,17 +42,19 @@ else
                         var dash = h.IsVirtual ? "0.6 0.4" : null;
                         @* No handlers and no style on purpose: this overlay is read-only, so the shapes
                            stay out of the pan engine's way entirely. *@
-                        @* Feet draw as a smaller rounded square, the same as in the wall editor and the
-                           hold picker — the shrink and the shape both live in HoldShape. *@
+                        @* Feet draw as a rounded square instead of a circle, but — unlike the wall
+                           editor and the hold picker — at FULL radius: on a viewing surface the shrink
+                           only made feet hard to see, and the shape alone tells them from hands. *@
                         var isFoot = h.Category == HoldCategory.Foot;
                         <HoldShape @key="h.Id" X="h.X" Y="h.Y" Radius="h.Radius" ShapePoints="h.ShapePoints"
-                                   Foot="isFoot"
+                                   Foot="isFoot" FootScale="HoldShape.FullFoot"
                                    Fill="@fill" Stroke="@stroke" StrokeWidth="@sw" Dash="@dash" />
 
                         @if (_showUsage && usageCount > 0)
                         {
-                            @* Track the drawn radius so the badge keeps hugging a shrunken foot. *@
-                            var r = h.Radius * 100 * (isFoot && h.ShapePoints is not { Count: >= 3 } ? 0.7 : 1);
+                            @* The drawn radius, which feet no longer shrink below (HoldShape.FullFoot),
+                               so the badge keeps hugging the shape. *@
+                            var r = h.Radius * 100;
                             <g pointer-events="none">
                                 <circle cx="@F(h.X * 100 + r * 0.85)" cy="@F(h.Y * 100 - r * 0.85)" r="1.4"
                                         fill="#4CAF50" stroke="white" stroke-width="0.25" />

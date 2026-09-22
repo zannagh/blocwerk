@@ -612,11 +612,18 @@ else
                 @if (_items.Count > 0)
                 {
                     @* All boulder filters live in one collapsible card (collapsed by default), reusing
-                       the page's settings-card/summary chrome. The summary carries a filter icon, a
+                       the page's settings-card/summary chrome. The chip carries a filter icon, a
                        "Filters" label and — when any filter is active — a count badge, so a collapsed
-                       card still signals that the list below is filtered. *@
-                    <details class="settings-panel settings-card filter-card">
-                        <summary class="settings-card-summary">
+                       card still signals that the list below is filtered.
+                       Deliberately NOT <details>/<summary>: a <summary> must be the first child of its
+                       <details>, which pins the chip and the body into one box. Here the chip lives in
+                       the sticky bar while the body hangs off it (see .filter-card.open in pages.css),
+                       and an explicit flag is also what gives us aria-expanded and Escape-to-close. *@
+                    <div class="settings-panel settings-card filter-card@(filtersOpen ? " open" : string.Empty)"
+                         @onkeydown="OnFilterKeyDownAsync">
+                        <button type="button" class="settings-card-summary" @ref="filtersToggle"
+                                @onclick="ToggleFilters" aria-expanded="@(filtersOpen ? "true" : "false")"
+                                aria-controls="boulder-filter-panel">
                             <span class="filter-card-title">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                                      stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
@@ -628,8 +635,10 @@ else
                                     <span class="filter-count">@ActiveFilterCount</span>
                                 }
                             </span>
-                        </summary>
-                        <div class="settings-card-body">
+                        </button>
+                        @if (filtersOpen)
+                        {
+                        <div class="settings-card-body" id="boulder-filter-panel">
                             <div class="filter-bar">
                                 <input @bind="_searchText" @bind:event="oninput" placeholder="Search..." class="filter-input" />
                                 <div class="sort-row">
@@ -668,7 +677,8 @@ else
                                 }
                             </div>
                         </div>
-                    </details>
+                        }
+                    </div>
                 }
                 </div>
 
@@ -900,6 +910,36 @@ else
     private SortMode _sort = SortMode.Newest;
 
     private enum SortMode { Newest, Oldest, GradeAsc, GradeDesc, Rating, MyAttempts }
+
+    // The filter card is driven by this flag rather than by <details>, so the chip can sit in the
+    // sticky bar while the body hangs off it. Open, the body is an OVERLAY anchored under the bar,
+    // not a block in the list's flow: a panel in flow that is opened at scroll offset 900 is
+    // inserted above the viewport, so the tap appears to do nothing and the controls are
+    // unreachable without throwing away the reader's place in the list.
+    private bool filtersOpen;
+
+    // Focus goes back to the chip when Escape closes the panel, so keyboard users are not dropped
+    // at the top of the document.
+    private ElementReference filtersToggle;
+
+    private void ToggleFilters()
+    {
+        filtersOpen = !filtersOpen;
+    }
+
+    // Escape DISMISSES the overlay; it never clears a filter. Handled on the card itself rather
+    // than through bwKeys because the dispatcher stands down on typing targets, which is exactly
+    // where focus sits while the search box is in use.
+    private async Task OnFilterKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (!filtersOpen || e.Key != "Escape")
+        {
+            return;
+        }
+
+        filtersOpen = false;
+        await filtersToggle.FocusAsync();
+    }
 
     // Active-filter badge for the collapsed filter card: search text, a grade bound, and each
     // checked box count once. Sort is an ordering, not a filter, so it is deliberately excluded.

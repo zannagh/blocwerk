@@ -75,6 +75,22 @@ window.wallCarousel = {
         // caller asks for 'instant' explicitly to guarantee a jump whatever the stylesheet says.
         el.scrollTo({ left: this.targetOffset(el, idx), behavior: smooth ? 'smooth' : 'instant' });
     },
+    // Moves exactly one page in `dir` from wherever the track currently rests, and reports it
+    // straight away so the dots follow the gesture instead of waiting for the settle timer.
+    // `swiped` is set because this IS user input: the correction the settle may add should glide.
+    stepPage(el, state, dir) {
+        const count = el.children ? el.children.length : 0;
+        if (count === 0) {
+            return;
+        }
+        const target = Math.min(count - 1, Math.max(0, this.currentPage(el) + dir));
+        state.swiped = true;
+        this.scrollToPage(el, target, true);
+        if (target !== state.reported) {
+            state.reported = target;
+            this.report(state, target);
+        }
+    },
     // Nearest page by MEASURED offset, so the dots agree with what initPage/scrollToPage aimed at
     // even when a page isn't exactly clientWidth wide (a uniform-width estimate drifts on those).
     currentPage(el) {
@@ -181,15 +197,73 @@ window.wallCarousel = {
         state.onScroll = () => {
             state.arm();
         };
-        // A trackpad/wheel slide is a user gesture just as much as a swipe, and it reaches the track
-        // as a bare `scroll` event that would otherwise be indistinguishable from a layout-induced
-        // one. Only a HORIZONTALLY dominant wheel can move this x-scroller, so a vertical wheel that
-        // merely passed over the carousel while scrolling the page doesn't leave the flag armed for
-        // an unrelated layout scroll to inherit.
+        // ---- trackpad paging ------------------------------------------------------------------
+        //
+        // A trackpad flick is a user gesture just as much as a swipe, but the browser handles it
+        // nothing like one. `scroll-snap-type: x mandatory` only commits a page once the scroller
+        // has travelled past roughly half a slide, and a wheel burst doesn't accumulate: each small
+        // deltaX is snapped straight back before the next arrives. Measured on the 5-page wall
+        // carousel at 520px wide, a SINGLE 300px deltaX changed page, while ten 30px events (the
+        // same 300px, the shape a real trackpad emits) changed nothing at all. That is the
+        // "swipe reaaallly far" the user hit.
+        //
+        // So a horizontally dominant wheel no longer scrolls this container natively at all: we
+        // cancel it and page it ourselves off an accumulator. That gives a threshold we control,
+        // removes the springback entirely, and cannot fight the step we make. A vertically dominant
+        // wheel is never cancelled — it still scrolls the slide (and the page) as before.
+        //
+        // Three guards keep it from feeling twitchy:
+        //   * the accumulated horizontal travel must beat `wheelStepPx`, and must also dominate the
+        //     accumulated VERTICAL travel, so a vertical scroll with a little sideways drift pages
+        //     nothing however long it runs;
+        //   * one commit latches the gesture: a trackpad's long tail of follow-up events is
+        //     swallowed, so a gesture moves exactly one page;
+        //   * a short idle gap ends the gesture (clears the accumulator and the latch), and a
+        //     direction reversal restarts the count.
+        const wheelStepPx = 40;
+        const wheelIdleMs = 220;
+        state.wheelX = 0;
+        state.wheelY = 0;
+        state.wheelLatched = false;
+        state.wheelTimer = 0;
+        state.wheelIdle = () => {
+            state.wheelTimer = 0;
+            state.wheelX = 0;
+            state.wheelY = 0;
+            state.wheelLatched = false;
+        };
         state.onWheel = (e) => {
-            if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-                state.swiped = true;
+            // Edit mode freezes the track on purpose; the wheel must behave as it did before.
+            if (state.locked) {
+                return;
             }
+            // deltaMode 1 is lines and 2 is pages (Firefox, some mice); normalise to pixels so the
+            // threshold means the same thing everywhere.
+            const scale = e.deltaMode === 1 ? 16 : (e.deltaMode === 2 ? el.clientWidth : 1);
+            const dx = e.deltaX * scale;
+            const dy = e.deltaY * scale;
+            if (Math.abs(dx) > Math.abs(dy)) {
+                if (e.cancelable) {
+                    e.preventDefault();
+                }
+            }
+            if (state.wheelTimer) {
+                clearTimeout(state.wheelTimer);
+            }
+            state.wheelTimer = setTimeout(state.wheelIdle, wheelIdleMs);
+            if (dx !== 0 && state.wheelX !== 0 && Math.sign(dx) !== Math.sign(state.wheelX)) {
+                state.wheelX = 0;
+            }
+            state.wheelX += dx;
+            state.wheelY += dy;
+            if (state.wheelLatched || Math.abs(state.wheelX) < wheelStepPx) {
+                return;
+            }
+            if (Math.abs(state.wheelX) <= Math.abs(state.wheelY) * 1.5) {
+                return;
+            }
+            state.wheelLatched = true;
+            this.stepPage(el, state, state.wheelX > 0 ? 1 : -1);
         };
         state.onPointerDown = () => {
             state.pointers++;
@@ -204,7 +278,8 @@ window.wallCarousel = {
             state.arm();
         };
         el.addEventListener('scroll', state.onScroll, { passive: true });
-        el.addEventListener('wheel', state.onWheel, { passive: true });
+        // NOT passive: a horizontally dominant wheel is cancelled and paged by hand (see onWheel).
+        el.addEventListener('wheel', state.onWheel, { passive: false });
         // pointer* covers touch and mouse on everything current; the touch* pair is the fallback for
         // an engine without Pointer Events, and the counter tolerates both firing.
         if (window.PointerEvent) {
@@ -309,6 +384,9 @@ window.wallCarousel = {
         }
         if (state.timer) {
             clearTimeout(state.timer);
+        }
+        if (state.wheelTimer) {
+            clearTimeout(state.wheelTimer);
         }
         el.removeEventListener('scroll', state.onScroll);
         el.removeEventListener('wheel', state.onWheel);

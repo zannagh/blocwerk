@@ -1,0 +1,116 @@
+@* Grade-resolution disclosure for the TopLogger pane: the buckets of imported sends whose raw grade
+   we couldn't read, each with a grade picker and a Save. Split out of ProfileTopLoggerPane.razor —
+   the pane owns the connection, this owns the mapping. The list loads on the first open of the
+   disclosure and not before, so a member who never expands it never pays for the query. *@
+@inject ITopLoggerImportService TopLogger
+@using Blocwerk.Core.Services.TopLogger
+
+<details class="tl-resolve" @ontoggle="OnResolveGradesToggle">
+    <summary>Resolve grades</summary>
+    @if (unmapped == null)
+    {
+        <p class="tl-meta">Loading…</p>
+    }
+    else
+    {
+        @foreach (var item in unmapped)
+        {
+            var selection = GetGradeSelection(item.RawGrade);
+            <div class="tl-resolve-row">
+                <div class="tl-resolve-info">
+                    <span class="tl-resolve-raw">@(string.IsNullOrEmpty(item.RawGrade) ? "(no grade)" : item.RawGrade)</span>
+                    <span class="tl-meta">
+                        @item.Count ascent(s)@(string.IsNullOrEmpty(item.SampleClimbName) ? string.Empty : $" · e.g. {item.SampleClimbName}")
+                    </span>
+                </div>
+                <GradePicker Value="@selection"
+                             ValueChanged="@(v => SetGradeSelection(item.RawGrade, v))" />
+                <button class="btn-primary"
+                        @onclick="() => ResolveGradeAsync(item)"
+                        disabled="@(Busy || resolveBusy || string.IsNullOrEmpty(selection))">
+                    Save
+                </button>
+            </div>
+        }
+    }
+</details>
+
+@code {
+    /// <summary>The member whose imported sends are being mapped.</summary>
+    [Parameter]
+    [EditorRequired]
+    public Guid ViewerId { get; set; }
+
+    /// <summary>Whether the pane is busy connecting or syncing — saves are held while it is.</summary>
+    [Parameter]
+    public bool Busy { get; set; }
+
+    /// <summary>Raised with a short status message the page shows as a toast.</summary>
+    [Parameter]
+    public EventCallback<string> OnToast { get; set; }
+
+    /// <summary>Raised with the pane's error line, or null to clear it.</summary>
+    [Parameter]
+    public EventCallback<string?> OnError { get; set; }
+
+    /// <summary>Raised after a mapping changed the import status the pane renders.</summary>
+    [Parameter]
+    public EventCallback OnStatusChanged { get; set; }
+
+    // Per-bucket grade-picker selections keyed by raw grade.
+    private readonly Dictionary<string, string?> gradeSelections = new(StringComparer.Ordinal);
+
+    // The unmapped-grade buckets (null until the disclosure is first opened) and a save busy flag.
+    private IReadOnlyList<TopLoggerUnmappedGrade>? unmapped;
+    private bool resolveBusy;
+
+    private string? GetGradeSelection(string rawGradeKey) =>
+        gradeSelections.TryGetValue(rawGradeKey, out var value) ? value : null;
+
+    private void SetGradeSelection(string rawGradeKey, string? value)
+    {
+        gradeSelections[rawGradeKey] = value;
+    }
+
+    // Loads the unmapped buckets the first time the disclosure is opened (ontoggle fires on open+close;
+    // the null guard makes this a one-shot load per fresh list).
+    private async Task OnResolveGradesToggle()
+    {
+        if (unmapped == null)
+        {
+            unmapped = await TopLogger.GetUnmappedGradesAsync(ViewerId, CancellationToken.None);
+            StateHasChanged();
+        }
+    }
+
+    private async Task ResolveGradeAsync(TopLoggerUnmappedGrade item)
+    {
+        var grade = GetGradeSelection(item.RawGrade);
+        if (string.IsNullOrEmpty(grade))
+        {
+            return;
+        }
+
+        resolveBusy = true;
+        await OnError.InvokeAsync(null);
+        try
+        {
+            var updated = await TopLogger.ResolveGradeMappingAsync(ViewerId, item.RawGrade, grade, CancellationToken.None);
+            var rawLabel = string.IsNullOrEmpty(item.RawGrade) ? "(no grade)" : item.RawGrade;
+
+            await OnStatusChanged.InvokeAsync();
+            unmapped = await TopLogger.GetUnmappedGradesAsync(ViewerId, CancellationToken.None);
+            gradeSelections.Remove(item.RawGrade);
+
+            await OnToast.InvokeAsync($"Mapped {rawLabel} → {grade} on {updated} ascent(s).");
+        }
+        catch (Exception)
+        {
+            await OnError.InvokeAsync("Couldn't resolve the grade. Please try again.");
+        }
+        finally
+        {
+            resolveBusy = false;
+        }
+    }
+}

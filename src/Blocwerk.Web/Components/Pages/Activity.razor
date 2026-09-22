@@ -420,19 +420,37 @@
     {
         if (_grid == null || _grid.Count == 0) return;
 
+        // The grid is padded back to the Sunday on/before Jan 1 and forward to the Saturday on/after
+        // Dec 31, so its first and last columns can belong to the neighbouring year's month. Those
+        // stubs are one column wide, which used to put their label on top of the following month's
+        // and — since the labels sit at the month's first column — half of it outside the scroll
+        // box. Label a month only once it owns at least two columns, so a stub is never labelled.
+        const int minColumnsForLabel = 2;
+
         _monthLabels = [];
-        string? lastMonth = null;
-        for (int week = 0; week < _weekCount; week++)
+        string? runMonth = null;
+        var runStart = 0;
+        for (int week = 0; week <= _weekCount; week++)
         {
             var idx = week * 7;
-            if (idx >= _grid.Count) break;
-            var monthName = _grid[idx].Date.ToString("MMM");
-            if (monthName != lastMonth)
+            var monthName = week < _weekCount && idx < _grid.Count ? _grid[idx].Date.ToString("MMM") : null;
+            if (monthName == runMonth)
             {
-                var pct = (double)week / _weekCount * 100;
-                _monthLabels.Add(new MonthLabel(monthName, pct));
-                lastMonth = monthName;
+                continue;
             }
+
+            if (runMonth is not null && week - runStart >= minColumnsForLabel)
+            {
+                _monthLabels.Add(new MonthLabel(runMonth, (double)runStart / _weekCount * 100));
+            }
+
+            if (monthName is null)
+            {
+                break;
+            }
+
+            runMonth = monthName;
+            runStart = week;
         }
     }
 

@@ -7,7 +7,8 @@
    It owns exactly the three things that used to be re-derived in each of those files:
      * polygon-vs-rect-vs-circle — a shaped hold draws as its polygon; a FOOT without a shape draws as
        a rounded square; everything else as a circle,
-     * the foot shrink (a foot's radius is 0.7 of the stored one),
+     * the foot shrink (a foot's radius times <see cref="FootScale"/> — the editing surfaces shrink,
+       the viewing surfaces do not),
      * turning normalized 0..1 coordinates into the 0-100 viewBox with two-decimal formatting.
 
    Everything that legitimately differs per surface — the paint (fill/stroke/width/dash), the cursor and
@@ -56,7 +57,8 @@ else
     /// <summary>The hold's normalized centre Y (0..1).</summary>
     [Parameter] public double Y { get; set; }
 
-    /// <summary>The hold's normalized radius (0..1). Shrunk to 0.7 when <see cref="Foot"/> is set.</summary>
+    /// <summary>The hold's normalized radius (0..1). Scaled by <see cref="FootScale"/> when
+    /// <see cref="Foot"/> is set.</summary>
     [Parameter] public double Radius { get; set; }
 
     /// <summary>
@@ -66,11 +68,28 @@ else
     [Parameter] public IReadOnlyList<ShapePoint>? ShapePoints { get; set; }
 
     /// <summary>
-    /// Draw this hold as a foothold: a rounded square instead of a circle, at 0.7 of its radius. Set it
-    /// from <c>hold.Category == HoldCategory.Foot</c> on the surfaces that distinguish feet. A shaped
-    /// hold ignores it — its polygon is the hold's real outline either way.
+    /// Draw this hold as a foothold: a rounded square instead of a circle, scaled by
+    /// <see cref="FootScale"/>. Set it from <c>hold.Category == HoldCategory.Foot</c> on the surfaces
+    /// that distinguish feet. A shaped hold ignores it — its polygon is the hold's real outline either
+    /// way.
     /// </summary>
     [Parameter] public bool Foot { get; set; }
+
+    /// <summary>
+    /// How much a foot's radius is scaled when <see cref="Foot"/> is set. THE one place the foot size
+    /// is tuned: pass <see cref="CompactFoot"/> (the default) on the editing surfaces, where a smaller
+    /// square separates densely packed feet from the hands around them, and <see cref="FullFoot"/> on
+    /// the viewing surfaces, where the square alone carries the distinction and the shrink only made
+    /// feet hard to see.
+    /// </summary>
+    [Parameter] public double FootScale { get; set; } = CompactFoot;
+
+    /// <summary>The foot scale used by the editing surfaces (wall editor, hold picker).</summary>
+    public const double CompactFoot = 0.7;
+
+    /// <summary>The foot scale used by the viewing surfaces: a foot keeps a hand's visual weight and
+    /// is told apart by its SHAPE alone.</summary>
+    public const double FullFoot = 1.0;
 
     /// <summary>The shape's fill, already decided by the caller (selection, usage, staging, …).</summary>
     [Parameter] public string? Fill { get; set; }
@@ -119,7 +138,7 @@ else
     [Parameter] public EventCallback<MouseEventArgs> OnMouseOut { get; set; }
 
     /// <summary>The drawn radius in viewBox units: the foot shrink applied, scaled into 0-100 space.</summary>
-    private double R => (Foot ? Radius * 0.7 : Radius) * 100;
+    private double R => (Foot ? Radius * FootScale : Radius) * 100;
 
     private string PolygonPoints() =>
         string.Join(" ", ShapePoints!.Select(sp => F((X + sp.Dx) * 100) + "," + F((Y + sp.Dy) * 100)));

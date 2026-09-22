@@ -482,6 +482,43 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     border-radius: 12px;
 }
 
+/* Edit mode renders NEITHER of the two things the chrome budget reserves room for under the
+   photo: WallDetail drops the .wall-side rail (so no stat cards), and WallPhotoEditor renders
+   WallDimControl only on its read-only arms (so no dim bar). Budgeting for both anyway shrank the
+   photo's cap by --wall-stats-h + --wall-dim-bar-h for nothing. Declared on .wall-main so it beats
+   BOTH the inherited `:root:root` block in app.css and the desktop tier's body-level payload; the
+   desktop tier's own override keys on `:has(> .wall-side)`, which edit mode never matches, so the
+   two rules cannot both apply. Read-only keeps the full budget unchanged. */
+.wall-carousel-root.editing .wall-main {
+    --wall-photo-chrome: calc(var(--wall-photo-chrome-base) - var(--wall-dim-bar-h));
+}
+
+/* Close the dead strip between the editor card and the docked toolbar (phone tier only, where the
+   bar is actually fixed to the bottom — above 720px components.css returns it to normal flow and
+   this whole problem does not exist).
+   The photo is WIDTH-bound at phone widths: on a 390px screen it renders 332x249 against a 616px
+   height cap, so no chrome re-budgeting can grow it and the card shrink-wrapped it, leaving ~296px
+   of page background above the bar. `.wall-main` already fills the scroller's content box
+   (min-height: 100%), so all that is missing is a stretch chain from it down to the stage.
+   `.photo-viewport` is deliberately NOT in that chain: it keeps `flex: 0 1 auto`, so the image is
+   letterboxed at its natural size rather than upscaled or cropped, and — more importantly — its box
+   dimensions stay exactly as they were. viewport.js owns inline styles on that element and the
+   browser re-clamps scroll offsets when its size changes, which is what makes the view pan by
+   itself; centring it inside a taller parent moves it without ever resizing it. */
+@media (max-width: 720px) {
+    .wall-carousel-root.editing .wall-detail-card,
+    .wall-carousel-root.editing .wall-photo-container,
+    .wall-carousel-root.editing .editor-shell,
+    .wall-carousel-root.editing .editor-stage {
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+
+    /* Letterbox: the photo (and the lifecycle bar that belongs under it) centre in the free space
+       as one group, so the bar stays attached to the image instead of floating away from it. */
+    .wall-carousel-root.editing .editor-stage { justify-content: center; }
+}
+
 /* When the wall photo is framed to its wall region, size the box to the region aspect (published
    as --fit-aspect by bwViewport.fitBox) instead of stretching to fill the card — this is what
    actually trims the floor/ceiling dead band. Only the read-only view is framed; the editor keeps
@@ -741,6 +778,23 @@ svg.stat-value { margin-inline: auto; }
     margin: 0;
     padding: 7px 12px;
 }
+/* The chip is a real <button> now, not a <summary>, so it needs the button chrome stripped back to
+   what .settings-card-summary already draws. `justify-content` is overridden because a summary
+   fills its card and pushes the chevron to the far edge, while the chip is only as wide as its own
+   label. */
+.boulders-page .boulder-list-head .filter-card > .settings-card-summary {
+    justify-content: flex-start;
+    gap: 6px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+}
+.boulders-page .boulder-list-head .filter-card.open > .settings-card-summary::after {
+    transform: rotate(180deg);
+}
 .boulders-page .boulder-list-head .btn-add-boulder { order: 2; }
 /* Open, it is a panel rather than a chip: it hangs OFF the bar (out of flow, anchored under it)
    instead of growing it. That is what keeps "+ New" and the Filters chip on screen while the card
@@ -748,8 +802,11 @@ svg.stat-value { margin-inline: auto; }
    the bar cannot simply grow because a 290px panel inside a 690px slide is most of the list. Out of
    flow, the sticky box stays one bar tall whatever the panel does.
    `position: absolute` resolves against the sticky head itself (sticky is a positioned ancestor).
-   The max-height is a safety valve for a very short window, not an everyday scroller. */
-.boulders-page .boulder-list-head .filter-card[open] {
+   The max-height is a safety valve for a very short window, not an everyday scroller.
+   The alternative — a panel in the list's own flow that scrolls away with the cards — was tried and
+   rejected: opened part-way down the list it is inserted ABOVE the viewport, so the tap looks like
+   a no-op and the controls cannot be reached without scrolling the reader back to the top. */
+.boulders-page .boulder-list-head .filter-card.open {
     position: absolute;
     top: 100%;
     left: 0;
@@ -1511,7 +1568,9 @@ svg.stat-value { margin-inline: auto; }
 [data-theme="dark"] .grid-cell.intensity-0 { background: #2d2d3a; }
 
 .month-labels { position: relative; width: 100%; height: 18px; margin-top: 4px; }
-.month-label { position: absolute; font-size: 0.65rem; color: var(--text-secondary); transform: translateX(-50%); }
+/* `left` is the month's FIRST column, so the label starts there rather than being centred on it:
+   centring pushed the leftmost label half outside the scroll box, which clipped it. */
+.month-label { position: absolute; font-size: 0.65rem; color: var(--text-secondary); white-space: nowrap; }
 
 .grid-legend { display: flex; align-items: center; gap: 3px; margin-top: 2px; justify-content: flex-end; }
 .legend-text { font-size: 0.7rem; color: var(--text-secondary); }
@@ -2004,6 +2063,19 @@ html.bw-compact {
 /* The remaining manual-override rules below are deliberately NOT on the tier switch: they widen
  * an already desktop-sized dialog (1100px), so the desktop tier changes nothing for them and the
  * explicit toggle stays the only way to go edge to edge. */
+
+/* ========== Administration ========== */
+
+/* The dashboard is the one page container without a gutter of its own, so on the desktop tier the
+ * heading and the wall table sit flush against the window edge. Give it the same 16px side gutter
+ * every other page container uses (.wall-list, .activity-page, .profile-page, …).
+ *
+ * Desktop-only, and through the --tier style switch rather than a fresh media query, so the phone
+ * tier keeps the edge-to-edge rows it has today. --tier inherits from <html>, so the parent of
+ * .admin-dashboard is a valid query container for it, exactly as <body> is for the block above. */
+@container style(--tier: desktop) {
+    .admin-dashboard { padding-inline: 16px; }
+}
 
 /* ========== Personal API Keys ========== */
 

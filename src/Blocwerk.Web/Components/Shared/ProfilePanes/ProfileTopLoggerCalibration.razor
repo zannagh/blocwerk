@@ -1,0 +1,209 @@
+@* Gym points→grade calibration disclosure for the TopLogger pane. TopLogger hands us points, not
+   grades, so each gym needs a table saying what its points are worth plus the flash bonus; saving one
+   recalculates the member's ascents from that gym. Split out of ProfileTopLoggerPane.razor. The gym
+   list loads on the first open of the disclosure and not before. *@
+@inject ITopLoggerImportService TopLogger
+@using Blocwerk.Core.Helpers
+@using Blocwerk.Core.Services.TopLogger
+
+<details class="tl-calibration" @ontoggle="OnCalibrationToggle">
+    <summary>Gym grade points</summary>
+    <p class="tl-meta">
+        Enter the points your gym awards per grade, plus the flash bonus. We use these
+        to read the grade and flash from each ascent's points.
+    </p>
+    @if (gyms == null)
+    {
+        <p class="tl-meta">Loading…</p>
+    }
+    else if (gyms.Count == 0)
+    {
+        <p class="tl-meta">No gyms yet — sync some ascents first.</p>
+    }
+    else
+    {
+        <div class="field-group">
+            <label class="field-label" for="tl-calib-gym">Gym</label>
+            <select id="tl-calib-gym" class="window-select"
+                    value="@selectedGymId" @onchange="OnCalibrationGymChange">
+                <option value="">Select a gym…</option>
+                @foreach (var g in gyms)
+                {
+                    <option value="@g.Id">@g.Name</option>
+                }
+            </select>
+        </div>
+
+        @if (selectedGymId != null)
+        {
+            <div class="tl-calib-grid">
+                <table class="tl-calib-table">
+                    <thead>
+                        <tr><th>Grade</th><th>Points</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var grade in GradeScale.FontGrades)
+                        {
+                            <tr>
+                                <td>@grade</td>
+                                <td>
+                                    <input type="number" min="0" inputmode="numeric"
+                                           class="text-input tl-calib-input"
+                                           value="@GetCalibPoints(grade)"
+                                           @onchange="e => SetCalibPoints(grade, e.Value?.ToString())" />
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="field-group">
+                <label class="field-label" for="tl-calib-bonus">Bonus points for flash</label>
+                <input id="tl-calib-bonus" type="number" min="0" inputmode="numeric"
+                       class="text-input tl-calib-input"
+                       value="@flashBonusInput"
+                       @onchange="e => flashBonusInput = e.Value?.ToString() ?? string.Empty" />
+            </div>
+
+            <div class="tl-actions">
+                <button class="btn-primary" @onclick="SaveCalibrationAsync"
+                        disabled="@(Busy || calibBusy)">
+                    @(calibBusy ? "Saving…" : "Save")
+                </button>
+                <button class="btn-secondary" @onclick="DiscardCalibrationAsync"
+                        disabled="@(Busy || calibBusy)">Discard</button>
+            </div>
+        }
+    }
+</details>
+
+@code {
+    /// <summary>The member whose gyms are being calibrated.</summary>
+    [Parameter]
+    [EditorRequired]
+    public Guid ViewerId { get; set; }
+
+    /// <summary>Whether the pane is busy connecting or syncing — saves are held while it is.</summary>
+    [Parameter]
+    public bool Busy { get; set; }
+
+    /// <summary>Raised with a short status message the page shows as a toast.</summary>
+    [Parameter]
+    public EventCallback<string> OnToast { get; set; }
+
+    /// <summary>Raised with the pane's error line, or null to clear it.</summary>
+    [Parameter]
+    public EventCallback<string?> OnError { get; set; }
+
+    /// <summary>Raised after a save changed the import status the pane renders.</summary>
+    [Parameter]
+    public EventCallback OnStatusChanged { get; set; }
+
+    // The per-grade points inputs for the calibration form (blank = unset).
+    private readonly Dictionary<string, string> pointInputs = new(StringComparer.Ordinal);
+
+    // The user's gyms (null until the disclosure first opens), the selected gym, the flash bonus
+    // input, and a save flag.
+    private IReadOnlyList<TopLoggerGymRef>? gyms;
+    private Guid? selectedGymId;
+    private string flashBonusInput = string.Empty;
+    private bool calibBusy;
+
+    private string GetCalibPoints(string grade) =>
+        pointInputs.TryGetValue(grade, out var value) ? value : string.Empty;
+
+    private void SetCalibPoints(string grade, string? value)
+    {
+        pointInputs[grade] = value ?? string.Empty;
+    }
+
+    // Loads the user's gyms the first time the disclosure opens (ontoggle fires on open+close; the null
+    // guard makes it a one-shot load).
+    private async Task OnCalibrationToggle()
+    {
+        if (gyms == null)
+        {
+            gyms = await TopLogger.GetCalibratableGymsAsync(ViewerId, CancellationToken.None);
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnCalibrationGymChange(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var gymId))
+        {
+            selectedGymId = gymId;
+            await LoadCalibrationFormAsync(gymId);
+        }
+        else
+        {
+            selectedGymId = null;
+            pointInputs.Clear();
+            flashBonusInput = string.Empty;
+        }
+    }
+
+    // Loads a gym's saved calibration into the editable form state (blank inputs where unset).
+    private async Task LoadCalibrationFormAsync(Guid gymId)
+    {
+        var calibration = await TopLogger.GetGymCalibrationAsync(gymId, CancellationToken.None);
+        pointInputs.Clear();
+        foreach (var p in calibration.Points)
+        {
+            pointInputs[p.Grade] = p.Points.ToString();
+        }
+
+        flashBonusInput = calibration.FlashBonusPoints > 0 ? calibration.FlashBonusPoints.ToString() : string.Empty;
+    }
+
+    private async Task SaveCalibrationAsync()
+    {
+        if (selectedGymId is not { } gymId)
+        {
+            return;
+        }
+
+        calibBusy = true;
+        await OnError.InvokeAsync(null);
+        try
+        {
+            var points = new List<GymGradePointDto>();
+            foreach (var grade in GradeScale.FontGrades)
+            {
+                if (pointInputs.TryGetValue(grade, out var text)
+                    && int.TryParse(text, out var value) && value > 0)
+                {
+                    points.Add(new GymGradePointDto(grade, value));
+                }
+            }
+
+            var bonus = int.TryParse(flashBonusInput, out var b) && b > 0 ? b : 0;
+
+            var updated = await TopLogger.SaveGymCalibrationAsync(gymId, points, bonus, ViewerId, CancellationToken.None);
+            var gymName = gyms?.FirstOrDefault(g => g.Id == gymId)?.Name ?? "gym";
+
+            await OnStatusChanged.InvokeAsync();
+            await LoadCalibrationFormAsync(gymId);
+
+            await OnToast.InvokeAsync($"Saved {gymName}; recalculated {updated} ascent(s).");
+        }
+        catch (Exception)
+        {
+            await OnError.InvokeAsync("Couldn't save the calibration. Please try again.");
+        }
+        finally
+        {
+            calibBusy = false;
+        }
+    }
+
+    // Drop unsaved edits: reload the saved calibration for the selected gym back into the form.
+    private async Task DiscardCalibrationAsync()
+    {
+        if (selectedGymId is { } gymId)
+        {
+            await LoadCalibrationFormAsync(gymId);
+        }
+    }
+}

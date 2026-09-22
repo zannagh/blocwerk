@@ -137,12 +137,16 @@ public sealed partial class TopLoggerImportService : ITopLoggerImportService
 
         // Group by the raw grade, collapsing null/empty into a single "" bucket so it can still be
         // resolved. Min(ClimbName) yields a deterministic sample without a per-group First() subquery.
+        // The ordering has to sit on the GROUPING (g.Count()) and not on the projected record's Count
+        // property: EF cannot see member bindings through a positional record constructor, so ordering
+        // after the projection makes the whole query untranslatable.
         List<TopLoggerUnmappedGrade> grades = await db.ExternalAscents
             .AsNoTracking()
             .Where(a => a.UserId == userId && a.Source == ExternalSource.TopLogger && a.NeedsGradeMapping)
             .GroupBy(a => a.RawGrade ?? string.Empty)
+            .OrderByDescending(g => g.Count())
+            .ThenBy(g => g.Key)
             .Select(g => new TopLoggerUnmappedGrade(g.Key, g.Count(), g.Min(a => a.ClimbName)))
-            .OrderByDescending(g => g.Count)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 

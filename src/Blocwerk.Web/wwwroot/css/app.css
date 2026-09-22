@@ -966,11 +966,18 @@ body.bw-tabbar-collapsed .tabbar-restore { display: flex; }
    bounded by the content column, so a slightly smaller cap looks fine there too.
    Only wall photo boxes read --wall-photo-chrome (see pages.css), so this is scoped. */
 :root:root {
-    --wall-stats-h: 96px;                                    /* ~64px stat card + 20px margin + 12px column gap */
+    /* Measured, not estimated: .stats-bar is 82px tall on the phone tier with a 20px bottom
+       margin, and .wall-main adds its own 12px column gap under it. (The old 96px assumed a
+       64px card and under-budgeted the slice by 18px.) */
+    --wall-stats-h: 114px;                                   /* 82px stats bar + 20px margin + 12px column gap */
+    /* The WallDimControl row under the photo. Broken out of the base below because
+       WallPhotoEditor renders it on its READ-ONLY arms only (`@if (!CanEdit && !BorderOnly)`),
+       so edit mode has to be able to subtract it again — see pages.css. */
+    --wall-dim-bar-h: 40px;
     /* Split in two so the desktop tier can drop the stats term without restating the base: there
        the stat cards live in the right-hand rail beside the photo, not under it, so the photo has
        no reason to budget for them (pages.css, @container style(--tier: desktop)). */
-    --wall-photo-chrome-base: 140px;                         /* carousel padding + card padding + dim bar + dots + gaps (toggle row removed) */
+    --wall-photo-chrome-base: 140px;                         /* carousel padding + card padding + --wall-dim-bar-h + dots + gaps (toggle row removed) */
     --wall-photo-chrome: calc(var(--wall-photo-chrome-base) + var(--wall-stats-h));
 
     /* Re-budget the boulder photo chrome so the whole top of the boulder detail page — title

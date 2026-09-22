@@ -31,11 +31,6 @@ public partial class ProfileTopLoggerPane
     [Parameter]
     public EventCallback OnGoToAccount { get; set; }
 
-    // Per-bucket grade-picker selections keyed by raw grade, and the per-grade points inputs for the
-    // gym calibration form (blank = unset).
-    private readonly Dictionary<string, string?> tlGradeSelections = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, string> tlPointInputs = new(StringComparer.Ordinal);
-
     private TopLoggerStatus? tlStatus;
     private string tlAccessToken = string.Empty;
     private string tlRefreshToken = string.Empty;
@@ -46,18 +41,6 @@ public partial class ProfileTopLoggerPane
     private string? tlError;
     private bool tlDeleteAscents;
     private bool tlConfirmingDisconnect;
-
-    // Grade-resolution panel: the unmapped-grade buckets (null until the disclosure is first opened)
-    // and a save busy flag.
-    private IReadOnlyList<TopLoggerUnmappedGrade>? tlUnmapped;
-    private bool tlResolveBusy;
-
-    // Gym points→grade calibration panel: the user's gyms (null until the disclosure first opens), the
-    // selected gym, the flash bonus input, and a save flag.
-    private IReadOnlyList<TopLoggerGymRef>? tlGyms;
-    private Guid? tlSelectedGymId;
-    private string tlFlashBonusInput = string.Empty;
-    private bool tlCalibBusy;
 
     /// <inheritdoc />
     protected override async Task OnInitializedAsync()
@@ -186,6 +169,14 @@ public partial class ProfileTopLoggerPane
         {
             tlBusyPhase = null;
         }
+    }
+
+    // The grade-resolution and calibration disclosures are their own components; they raise their
+    // failures here so the pane keeps one error line under everything.
+    private Task SetErrorAsync(string? message)
+    {
+        tlError = message;
+        return Task.CompletedTask;
     }
 
     private async Task ReloadTopLoggerStatusAsync()
