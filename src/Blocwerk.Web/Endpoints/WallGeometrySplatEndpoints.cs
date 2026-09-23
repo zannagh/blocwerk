@@ -37,6 +37,7 @@ public static class WallGeometrySplatEndpoints
         Guid wallId,
         Guid modelId,
         [FromQuery] string? token,
+        [FromQuery] string? lod,
         ClaimsPrincipal user,
         HttpContext http,
         [FromServices] IWallService wallService,
@@ -66,13 +67,18 @@ public static class WallGeometrySplatEndpoints
 
         // Streamed from disk (a splat is megabytes, unlike a texture), with range support so an
         // interrupted download on a phone can resume.
-        var path = files.ResolvePhysicalPath(splat.StoredPath);
+        // ?lod=mobile: the pruned copy for phones; a scene without one is small enough to send whole.
+        var mobile = lod == WallGeometrySplats.MobileLod && splat.MobileStoredPath is not null;
+        var path = files.ResolvePhysicalPath(mobile ? splat.MobileStoredPath! : splat.StoredPath);
         if (path is null || !File.Exists(path))
         {
             return Results.NotFound();
         }
 
-        var etag = ImageResponse.Etag("geometry-splat", splat.Id, splat.SizeBytes);
+        var etag = ImageResponse.Etag(
+            mobile ? "geometry-splat-mobile" : "geometry-splat",
+            splat.Id,
+            mobile ? splat.MobileSizeBytes ?? 0 : splat.SizeBytes);
         http.Response.Headers.ETag = etag;
         http.Response.Headers.CacheControl = ImageResponse.ImmutableCacheControl;
         return ImageResponse.Matches(http.Request, etag)

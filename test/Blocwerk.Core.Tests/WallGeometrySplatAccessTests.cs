@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Capture;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Geometry.View3D;
@@ -43,7 +44,7 @@ public class WallGeometrySplatAccessTests
         head.Request.Method = HttpMethods.Head;
         head.Request.Headers.IfNoneMatch = http.Response.Headers.ETag.ToString();
         var notModified = await WallGeometrySplatEndpoints.HandleAsync(
-            h.WallId, modelId, null, new ClaimsPrincipal(), head, h.WallService, h.CurrentUser,
+            h.WallId, modelId, null, null, new ClaimsPrincipal(), head, h.WallService, h.CurrentUser,
             h.DbContextFactory, Kiosk(null), s.Files, CancellationToken.None);
         Assert.Equal(StatusCodes.Status304NotModified, Assert.IsType<StatusCodeHttpResult>(notModified).StatusCode);
     }
@@ -119,6 +120,37 @@ public class WallGeometrySplatAccessTests
     }
 
     [Fact]
+    public async Task BigScene_GetsAMobileLevelOfDetail_InTheViewAndOnTheRoute()
+    {
+        using var h = new WallTestHarness();
+        using var s = new CaptureScenario(h);
+        s.SplatClient.Spz = SpzDecimatorTests.Spz(SpzDecimator.MobileThreshold + 5_000, shDegree: 0);
+        var modelId = await ComputeWithSplatAsync(h, s);
+
+        var view = (await ViewService(h).BuildAsync(h.WallId, null)).View!;
+        Assert.Equal($"/api/walls/{h.WallId}/geometry/{modelId}/splat?lod=mobile", view.SplatMobileUrl);
+
+        var (full, fullHttp) = await ServeAsync(h, s, h.WallId, modelId, null, Kiosk(null));
+        var (mobile, mobileHttp) = await ServeAsync(h, s, h.WallId, modelId, null, Kiosk(null), "mobile");
+        var mobileBytes = await File.ReadAllBytesAsync(Assert.IsType<PhysicalFileHttpResult>(mobile).FileName);
+        Assert.Equal(s.SplatClient.Spz, await File.ReadAllBytesAsync(Assert.IsType<PhysicalFileHttpResult>(full).FileName));
+        Assert.Equal(SpzDecimator.MobileTarget, SpzDecimator.CountOf(mobileBytes));
+        Assert.NotEqual(fullHttp.Response.Headers.ETag.ToString(), mobileHttp.Response.Headers.ETag.ToString());
+    }
+
+    [Fact]
+    public async Task SmallOrUnreadableScene_HasNoMobileLevelOfDetail_AndTheRouteFallsBackToTheFullOne()
+    {
+        using var h = new WallTestHarness();
+        using var s = new CaptureScenario(h);
+        var modelId = await ComputeWithSplatAsync(h, s);     // the fake's .spz is not a real scene
+
+        Assert.Null((await ViewService(h).BuildAsync(h.WallId, null)).View!.SplatMobileUrl);
+        var (mobile, _) = await ServeAsync(h, s, h.WallId, modelId, null, Kiosk(null), "mobile");
+        Assert.Equal(s.SplatClient.Spz, await File.ReadAllBytesAsync(Assert.IsType<PhysicalFileHttpResult>(mobile).FileName));
+    }
+
+    [Fact]
     public async Task View_WithoutASplat_OrForAnInactiveModel_HasNone()
     {
         using var h = new WallTestHarness();
@@ -171,11 +203,11 @@ public class WallGeometrySplatAccessTests
     }
 
     private static async Task<(IResult Result, HttpContext Http)> ServeAsync(
-        WallTestHarness h, CaptureScenario s, Guid wallId, Guid modelId, string? token, IKioskContext kiosk)
+        WallTestHarness h, CaptureScenario s, Guid wallId, Guid modelId, string? token, IKioskContext kiosk, string? lod = null)
     {
         var http = new DefaultHttpContext();
         var result = await WallGeometrySplatEndpoints.HandleAsync(
-            wallId, modelId, token, new ClaimsPrincipal(), http, h.WallService, h.CurrentUser,
+            wallId, modelId, token, lod, new ClaimsPrincipal(), http, h.WallService, h.CurrentUser,
             h.DbContextFactory, kiosk, s.Files, CancellationToken.None);
         return (result, http);
     }

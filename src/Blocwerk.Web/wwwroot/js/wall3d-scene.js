@@ -4,6 +4,8 @@
 import * as THREE from '../lib/three/three.module.min.js';
 
 const GRID_MM = 250;
+/** The back of the wall: bare plywood, a shade darker than the gridded front. */
+const BACK_WOOD = 0xc4ab82;
 
 export const v3 = a => new THREE.Vector3(a[0], a[1], a[2]);
 
@@ -54,26 +56,34 @@ function quadGeometry(corners, extent, uvFn) {
     return g;
 }
 
-/** Plywood facets with outlined edges. Returns { group, meshes: Map(facetId → mesh) }. */
+/**
+ * Plywood facets with outlined edges: the gridded front (the side the normal points to) and a plain
+ * wood back, as two single-sided meshes. Everything lying on a facet is front-only
+ * (wall3d-sides.js), so from behind the wall reads as the back of a board, never a mirrored photo.
+ * Returns { group, meshes: Map(facetId → front mesh), backs: [back meshes] }.
+ */
 export function buildFacets(view, renderer) {
     const group = new THREE.Group();
     const grid = gridTexture(renderer);
-    const material = new THREE.MeshStandardMaterial({
-        map: grid, roughness: 0.92, metalness: 0, side: THREE.DoubleSide,
-        polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
-    });
+    const offset = { polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 };
+    const material = new THREE.MeshStandardMaterial({ map: grid, roughness: 0.92, metalness: 0, side: THREE.FrontSide, ...offset });
+    const backMaterial = new THREE.MeshStandardMaterial({ color: BACK_WOOD, roughness: 0.95, metalness: 0, side: THREE.BackSide, ...offset });
+    const backs = [];
     const edgeMat = new THREE.LineBasicMaterial({ color: 0x5b4630 });
     const meshes = new Map();
     for (const f of view.facets) {
         const geo = quadGeometry(f.corners, f.extent, (a, b) => [a / GRID_MM, b / GRID_MM]);
         const mesh = new THREE.Mesh(geo, material);
         mesh.userData.facet = f;
-        group.add(mesh);
+        const back = new THREE.Mesh(geo, backMaterial);
+        back.userData.facet = f;
+        group.add(mesh, back);
         meshes.set(f.id, mesh);
+        backs.push(back);
         const loop = new THREE.BufferGeometry().setFromPoints(f.corners.map(v3));
         group.add(new THREE.LineLoop(loop, edgeMat));
     }
-    return { group, meshes };
+    return { group, meshes, backs };
 }
 
 /**
@@ -119,7 +129,7 @@ export function buildTextures(view, renderer) {
  * it. Without a mask (older textures) the photo stays opaque, as before.
  */
 function texturedMesh(geo, tex, mask) {
-    const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9, side: THREE.DoubleSide });
+    const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9, side: THREE.FrontSide });
     if (mask) {
         mask.colorSpace = THREE.NoColorSpace;   // a plain coverage value, not a colour
         Object.assign(mat, { alphaMap: mask, transparent: true, alphaTest: 0.02 });
@@ -140,12 +150,13 @@ export function buildMarkers(view) {
         const lift = n.multiplyScalar(-1.5);
         const base = pos.length / 3;
         c.forEach(p => { p.add(lift); pos.push(p.x, p.y, p.z); });
-        idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+        // Wound to face out of the wall (front side only): from behind the board they are culled.
+        idx.push(base, base + 2, base + 1, base, base + 3, base + 2);
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setIndex(idx);
-    return new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0x17171c, side: THREE.DoubleSide }));
+    return new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0x17171c, side: THREE.FrontSide }));
 }
 
 /** A screen-sized text label (sizeAttenuation off, so it stays legible at any zoom). */
@@ -221,6 +232,7 @@ export function buildLabels(view) {
         const p = v3(f.origin).addScaledVector(v3(f.u), a).addScaledVector(v3(f.v), b).addScaledVector(v3(f.normal), 60);
         const s = label(f.name, angleText(f.angleDeg, f.normal));
         s.position.copy(p);
+        s.userData.facet = f;                       // hidden while the camera is behind it
         group.add(s);
     }
     return group;

@@ -84,7 +84,8 @@ function pickFace(h, facet) {
 }
 
 /**
- * Concatenates non-indexed geometries into one, painting each part in its colour. Returns the
+ * Concatenates non-indexed geometries into one, painting each part in its colour and tagging it
+ * with its facet `slot` (wall3d-sides.js hides a facet's parts from behind). Returns the
  * merged geometry and `starts`: the first triangle of every part, for face → part lookups.
  */
 function merge(parts) {
@@ -92,6 +93,7 @@ function merge(parts) {
     const pos = new Float32Array(count * 3);
     const nrm = new Float32Array(count * 3);
     const col = new Float32Array(count * 3);
+    const slot = new Float32Array(count);
     const starts = new Int32Array(parts.length);
     let at = 0;
     parts.forEach((p, i) => {
@@ -100,6 +102,7 @@ function merge(parts) {
         starts[i] = at / 3;
         pos.set(g.attributes.position.array, at * 3);
         if (g.attributes.normal) nrm.set(g.attributes.normal.array, at * 3);
+        slot.fill(p.slot ?? 0, at, at + n);
         if (p.color) {
             for (let k = (at * 3), end = (at + n) * 3; k < end; k += 3) {
                 col[k] = p.color.r; col[k + 1] = p.color.g; col[k + 2] = p.color.b;
@@ -112,6 +115,7 @@ function merge(parts) {
     merged.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     merged.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
     merged.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    merged.setAttribute('facetIndex', new THREE.BufferAttribute(slot, 1));
     merged.computeBoundingSphere();
     return { geometry: merged, starts };
 }
@@ -144,24 +148,28 @@ export function ringMatrix(h, facet, scale) {
 /**
  * Holds as outline slabs: `lit` (normal, or the highlighted boulder's holds), `dim` (everything else
  * while a boulder is highlighted), `rings` (boulder roles) and `pick` (never drawn). `holdAt(intersection)` maps a pick hit to its hold.
+ * `sides` (wall3d-sides.js) hides the slabs of facets the camera is behind.
  */
-export function buildHolds(view, roleColors) {
+export function buildHolds(view, roleColors, sides) {
     const facets = new Map(view.facets.map(f => [f.id, f]));
     const holds = view.holds.filter(h => facets.has(h.facetId));
     const highlighting = !!view.boulderId;
     const lit = holds.filter(h => !highlighting || h.role);
     const dim = highlighting ? holds.filter(h => !h.role) : [];
 
-    const slabs = (list, dimmed) => merge(list.map(h => ({ geo: slab(h, facets.get(h.facetId)), color: holdColor(h, dimmed) })));
-    const litMesh = new THREE.Mesh(slabs(lit, false).geometry,
-        new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.02, side: THREE.DoubleSide }));
-    const dimMesh = new THREE.Mesh(slabs(dim, true).geometry, new THREE.MeshStandardMaterial({
+    const slabs = (list, dimmed) => merge(list.map(h => ({
+        geo: slab(h, facets.get(h.facetId)), color: holdColor(h, dimmed), slot: sides.index.get(h.facetId),
+    })));
+    const litMesh = new THREE.Mesh(slabs(lit, false).geometry, sides.cullBehind(
+        new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.02, side: THREE.DoubleSide })));
+    const dimMesh = new THREE.Mesh(slabs(dim, true).geometry, sides.cullBehind(new THREE.MeshStandardMaterial({
         vertexColors: true, roughness: 0.7, transparent: true, opacity: 0.22, depthWrite: false,
-    }));
+    })));
     dimMesh.renderOrder = 2;
 
     const ringGeo = new THREE.RingGeometry(0.44, 0.5, 40);
-    const ringMesh = new THREE.InstancedMesh(ringGeo, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }),
+    // Front side only: a ring lies flat on its facet, facing out, so from behind the wall it is culled.
+    const ringMesh = new THREE.InstancedMesh(ringGeo, new THREE.MeshBasicMaterial({ side: THREE.FrontSide }),
         Math.max(1, highlighting ? lit.length : 0));
     ringMesh.count = highlighting ? lit.length : 0;
     const color = new THREE.Color();
@@ -199,5 +207,6 @@ export function buildSelection() {
 
 export function placeSelection(mesh, hold, facet) {
     mesh.matrix.copy(ringMatrix(hold, facet, 1.55));
+    mesh.userData.facet = facet;
     mesh.visible = true;
 }

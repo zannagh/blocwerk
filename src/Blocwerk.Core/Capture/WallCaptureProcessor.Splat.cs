@@ -150,11 +150,15 @@ public sealed partial class WallCaptureProcessor
             throw new InvalidDataException("the photo-real scene is not an .spz file.");
         }
 
+        // Phones get a pruned copy of a big scene (SpzDecimator): the full one can lose their WebGL context.
+        var mobile = MobileLevelOfDetail(spz, modelId);
         var row = new WallGeometrySplat
         {
             GeometryModelId = modelId,
             StoredPath = await files.SaveAsync(spz, ".spz", ct),
             SizeBytes = spz.LongLength,
+            MobileStoredPath = mobile is null ? null : await files.SaveAsync(mobile, ".spz", ct),
+            MobileSizeBytes = mobile?.LongLength,
             FrameJson = frameJson,
         };
 
@@ -166,10 +170,26 @@ public sealed partial class WallCaptureProcessor
         foreach (var splat in old)
         {
             files.Delete(splat.StoredPath);
+            files.Delete(splat.MobileStoredPath);
         }
 
         logger.LogInformation(
             "Stored the photo-real view of model {ModelId} ({Bytes} bytes, alignment residual {Residual})",
             modelId, row.SizeBytes, CaptureSplatDocuments.ResidualText(frameJson));
+    }
+
+    /// <summary>The pruned copy for phones, or null (small scene, or a layout the pruner does not read).</summary>
+    private byte[]? MobileLevelOfDetail(byte[] spz, Guid modelId)
+    {
+        try
+        {
+            return SpzDecimator.Decimate(spz);
+        }
+        catch (InvalidDataException ex)
+        {
+            // The full scene still works everywhere a desktop GPU is; phones just get it whole.
+            logger.LogWarning("No mobile level of detail for the photo-real view of model {ModelId}: {Reason}", modelId, ex.Message);
+            return null;
+        }
     }
 }

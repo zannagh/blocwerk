@@ -137,6 +137,9 @@ public sealed class Wall3DViewService(
         {
             Textures = textures,
             SplatUrl = matrix is null ? null : WallGeometrySplats.Url(view.WallId, splat!.GeometryModelId, shareToken),
+            SplatMobileUrl = matrix is null || splat!.MobileStoredPath is null
+                ? null
+                : WallGeometrySplats.Url(view.WallId, splat.GeometryModelId, shareToken, mobile: true),
             SplatMatrix = matrix,
         };
     }

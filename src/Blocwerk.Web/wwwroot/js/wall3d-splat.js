@@ -6,11 +6,40 @@
 //
 // While the mode is on the view renders continuously: Spark sorts splats in a worker and needs the
 // frames after a camera move to show the re-sorted result.
+//
+// Phones and low-memory devices get the pruned mobile level of detail (`view.splatMobileUrl`, ~180k
+// splats, SpzDecimator on the server) and a 1× pixel ratio while the mode is on: a half-million-splat
+// capture sorted and blended at 2× every frame can make iOS Safari drop the WebGL context, which
+// shows as a black canvas. `?splatLod=full|mobile` on the page overrides the pick (testing).
 
 /** Spark packs splats into 2048-wide texture arrays; anything smaller cannot hold a wall. */
 const MIN_TEXTURE_SIZE = 2048;
 
+/** At most this much device memory (GB, `navigator.deviceMemory`; Chromium only) counts as low. */
+const LOW_MEMORY_GB = 4;
+/** GPUs whose largest texture is smaller than this are phone-class. */
+const DESKTOP_TEXTURE_SIZE = 8192;
+
 export class PhotoRealUnsupportedError extends Error {}
+
+/**
+ * Whether this device should get the light splat: little memory, a phone-class GPU, or a phone /
+ * tablet (mobile UA, iPadOS posing as a Mac, or a coarse touch-only pointer).
+ */
+export function prefersLightSplat(renderer) {
+    const forced = new URLSearchParams(location.search).get('splatLod');
+    if (forced === 'full' || forced === 'mobile') return forced === 'mobile';
+    const gl = renderer.getContext();
+    const memory = navigator.deviceMemory;
+    const ua = navigator.userAgent || '';
+    const mobileUa = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+    const iPadOs = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+    const touchOnly = navigator.maxTouchPoints > 0 && window.matchMedia('(pointer: coarse)').matches
+        && !window.matchMedia('(any-pointer: fine)').matches;
+    return (typeof memory === 'number' && memory <= LOW_MEMORY_GB)
+        || gl.getParameter(gl.MAX_TEXTURE_SIZE) < DESKTOP_TEXTURE_SIZE
+        || mobileUa || iPadOs || touchOnly;
+}
 
 function supported(renderer) {
     const gl = renderer.getContext();
@@ -33,16 +62,21 @@ export function createPhotoReal({ renderer, scene, view, facetParts, onProgress 
     let loading = null;
     let active = false;
     let disposed = false;
+    let broken = false;
+    const light = prefersLightSplat(renderer);
+    const fullPixelRatio = renderer.getPixelRatio();
 
     async function load() {
+        if (broken) throw new PhotoRealUnsupportedError('The photo-real view failed on this device.');
         if (!supported(renderer)) throw new PhotoRealUnsupportedError('WebGL 2 with large texture arrays is required.');
         const { SparkRenderer, SplatMesh } = await import('../lib/spark/spark.module.min.js');
         if (disposed) return;
         sparkRenderer = new SparkRenderer({ renderer });
         mesh = new SplatMesh({
-            url: view.splatUrl,
+            url: light && view.splatMobileUrl ? view.splatMobileUrl : view.splatUrl,
             fileType: 'spz',
-            onProgress: e => onProgress(e && e.lengthComputable && e.total > 0 ? e.loaded / e.total : null),
+            // A late progress event must not re-open the "Loading…" bubble over a finished scene.
+            onProgress: e => { if (!mesh?.isInitialized) onProgress(e && e.lengthComputable && e.total > 0 ? e.loaded / e.total : null); },
         });
         mesh.matrixAutoUpdate = false;
         mesh.matrix.fromArray(view.splatMatrix);
@@ -58,10 +92,21 @@ export function createPhotoReal({ renderer, scene, view, facetParts, onProgress 
         if (mesh) mesh.visible = active;
         if (sparkRenderer) sparkRenderer.visible = active;
         for (const part of facetParts) part.visible = !active;
+        if (light) renderer.setPixelRatio(active ? 1 : fullPixelRatio);
+    }
+
+    function release() {
+        if (mesh) { scene.remove(mesh); mesh.dispose(); }
+        if (sparkRenderer) { scene.remove(sparkRenderer); sparkRenderer.dispose(); }
+        mesh = null;
+        sparkRenderer = null;
+        loading = null;
     }
 
     return {
         get available() { return !!(view.splatUrl && view.splatMatrix && view.splatMatrix.length === 16); },
+        /** Whether this device got the light (mobile) splat and pixel ratio. */
+        get light() { return light && !!view.splatMobileUrl; },
         get active() { return active; },
         get loaded() { return !!mesh && mesh.isInitialized; },
 
@@ -72,9 +117,21 @@ export function createPhotoReal({ renderer, scene, view, facetParts, onProgress 
                 loading ??= load().catch(err => { loading = null; throw err; });
                 await loading;
                 if (disposed) return;
+                if (broken) throw new PhotoRealUnsupportedError('The photo-real view failed on this device.');
             }
             active = on;
             apply();
+        },
+
+        /**
+         * Gives up on the mode after a render failure (lost WebGL context, shader error): the splat is
+         * dropped and every later `setActive(true)` throws PhotoRealUnsupportedError.
+         */
+        fail() {
+            broken = true;
+            active = false;
+            apply();
+            release();
         },
 
         dispose() {
@@ -82,10 +139,7 @@ export function createPhotoReal({ renderer, scene, view, facetParts, onProgress 
             disposed = true;
             active = false;
             apply();
-            if (mesh) { scene.remove(mesh); mesh.dispose(); }
-            if (sparkRenderer) { scene.remove(sparkRenderer); sparkRenderer.dispose(); }
-            mesh = null;
-            sparkRenderer = null;
+            release();
         },
     };
 }

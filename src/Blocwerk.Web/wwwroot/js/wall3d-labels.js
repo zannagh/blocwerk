@@ -13,8 +13,11 @@ const MAX_PASSES = 6;          // bounded, deterministic resolution loop
 const FADED_OPACITY = 0.35;
 const MAX_OBSTACLES = 8;
 
-/** Creates the layout for `group` (sprites) and adds its leader lines to `group`. */
-export function createLabelLayout(group, camera, canvas) {
+/**
+ * Creates the layout for `group` (sprites) and adds its leader lines to `group`. With `sides`
+ * (wall3d-sides.js) a label whose facet the camera is behind is hidden and takes no space.
+ */
+export function createLabelLayout(group, camera, canvas, sides = null) {
     const sprites = group.children.slice();
     const n = sprites.length;
     const anchors = sprites.map(s => s.position.clone());
@@ -25,6 +28,7 @@ export function createLabelLayout(group, camera, canvas) {
     const obstacles = new Float32Array(MAX_OBSTACLES * 4);
     let obstacleCount = 0;
     const tmp = new THREE.Vector3();
+    const camPos = new THREE.Vector3();
 
     const linePos = new Float32Array(Math.max(1, n) * 6);
     const lineGeo = new THREE.BufferGeometry();
@@ -169,9 +173,16 @@ export function createLabelLayout(group, camera, canvas) {
         sortByDepth();
         placed.fill(0);
         let lines = 0;
+        camPos.setFromMatrixPosition(camera.matrixWorld);
         for (let r = 0; r < n; r++) {
             const i = order[r];
             const s = sprites[i];
+            const facet = s.userData.facet;
+            s.visible = !sides || !facet || sides.inFront(facet, camPos);
+            if (!s.visible) {
+                placed[i] = 0;
+                continue;
+            }
             const o = i * 4;
             const bw = box[o + 2] - box[o];
             const bh = box[o + 3] - box[o + 1];

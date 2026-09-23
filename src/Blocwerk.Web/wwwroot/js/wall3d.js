@@ -10,15 +10,16 @@ import { OrbitControls } from '../lib/three/controls/OrbitControls.js';
 import { buildFacets, buildLabels, buildMarkers, buildTextures, fitLabels } from './wall3d-scene.js';
 import { buildHolds, buildSelection, OUTLINE_LIFT, placeSelection } from './wall3d-holds.js';
 import { buildOutlines } from './wall3d-outlines.js';
-import { availableModes, createModeController, normalizeMode } from './wall3d-modes.js';
+import { availableModes, createModeController, normalizeMode, PHOTO_REAL_FAILED, watchRenderFailures } from './wall3d-modes.js';
 import { createLabelLayout } from './wall3d-labels.js';
 import { createTweener, presetPose, wallFrame } from './wall3d-camera.js';
 import { buildOverlay, chromeInsets, createPlanMap } from './wall3d-ui.js';
 import { createPhotoReal, PhotoRealUnsupportedError } from './wall3d-splat.js';
+import { createFacetSides } from './wall3d-sides.js';
+import { createPicker } from './wall3d-pick.js';
 
 /** Colours of a boulder's hold roles; the page passes BoulderHoldColors so they match the 2D views. */
 const DEFAULT_ROLE_COLORS = { Start: '#4CAF50', Top: '#9C27B0', Hand: '#2196F3', Foot: '#FF9800', ColorFoot: '#FF9800' };
-const TAP_SLOP_PX = 8;
 
 /** Injects wall3d.css once; returns the link while it is still loading (null when already there). */
 function ensureStylesheet() {
@@ -77,9 +78,10 @@ export function mount(container, view, options = {}) {
     const camera = new THREE.PerspectiveCamera(50, 1, 20, 200000);
     camera.up.set(0, 0, 1);
 
+    const sides = createFacetSides(view.facets);
     const facets = buildFacets(view, renderer);
-    const holds = buildHolds(view, roleColors);
-    const outlines = buildOutlines(holds.litHolds, holds.dimHolds, holds.facets, OUTLINE_LIFT);
+    const holds = buildHolds(view, roleColors, sides);
+    const outlines = buildOutlines(holds.litHolds, holds.dimHolds, holds.facets, OUTLINE_LIFT, sides);
     const selection = buildSelection();
     const labels = buildLabels(view);
     const textures = buildTextures(view, renderer);
@@ -120,8 +122,9 @@ export function mount(container, view, options = {}) {
         modes, photo, ui, request: () => request(), PhotoRealUnsupportedError,
         parts: { textures, outlines, slabs: [holds.lit, holds.dim] },
     });
+    const failures = watchRenderFailures(renderer, modeCtl, () => request());
     const plan = createPlanMap(ui.map, view, frame);
-    const labelLayout = createLabelLayout(labels, camera, renderer.domElement);
+    const labelLayout = createLabelLayout(labels, camera, renderer.domElement, sides);
     // Labels keep out of the overlay controls; re-measured when one appears, goes or resizes.
     let obstaclesDirty = true;
     const hintObserver = new MutationObserver(() => { obstaclesDirty = true; request(); });
@@ -154,15 +157,23 @@ export function mount(container, view, options = {}) {
         raf = 0;
         const tweening = tweener.step(now);
         const moving = controls.update();
+        camera.updateMatrixWorld();
+        sides.update(camera);
+        // The selection halo draws over everything (no depth test), so it hides behind its facet.
+        if (selection.userData.facet) selection.material.visible = sides.inFront(selection.userData.facet, camera.position);
         if (labels.visible) {
             if (obstaclesDirty) {
                 labelLayout.measure([ui.modes, ui.hint, ui.map]);
                 obstaclesDirty = false;
             }
-            camera.updateMatrixWorld();
             labelLayout.update();
         }
-        renderer.render(scene, camera);
+        try {
+            renderer.render(scene, camera);
+        } catch (err) {
+            console.warn('wall3d: render failed', err);
+            modeCtl.fail(PHOTO_REAL_FAILED);
+        }
         const dist = camera.position.distanceTo(controls.target);
         const h = renderer.domElement.clientHeight;
         ui.setScale(h / (2 * dist * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)));
@@ -182,29 +193,14 @@ export function mount(container, view, options = {}) {
         request();
     }
 
-    // ── picking: a tap (not a drag) on a hold opens its card ─────────────────────────────────
-    const raycaster = new THREE.Raycaster();
-    let down = null;
-    const onDown = e => { down = { x: e.clientX, y: e.clientY }; ui.hideHint(); };
-    const onUp = e => {
-        if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > TAP_SLOP_PX) { down = null; return; }
-        down = null;
-        const r = renderer.domElement.getBoundingClientRect();
-        const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
-        raycaster.setFromCamera(ndc, camera);
-        const hold = holds.holdAt(raycaster.intersectObject(holds.pick, false)[0]);
-        if (hold) {
-            placeSelection(selection, hold, holds.facets.get(hold.facetId));
-            ui.showHold(hold);
-        } else {
-            selection.visible = false;
-            ui.hideCard();
-        }
-        request();
-    };
+    // Picking: a tap on a hold (on the camera's side of the wall) opens its card.
+    const picker = createPicker({
+        canvas: renderer.domElement, camera, holds, sides, walls: [...facets.meshes.values(), ...facets.backs],
+        onDown: () => ui.hideHint(),
+        onHold: hold => { placeSelection(selection, hold, holds.facets.get(hold.facetId)); ui.showHold(hold); request(); },
+        onMiss: () => { selection.visible = false; ui.hideCard(); request(); },
+    });
     const onStart = () => { tweener.cancel(); ui.hideHint(); ui.setActive(null); framed = null; };
-    renderer.domElement.addEventListener('pointerdown', onDown);
-    renderer.domElement.addEventListener('pointerup', onUp);
     controls.addEventListener('start', onStart);
     controls.addEventListener('change', request);
 
@@ -260,8 +256,8 @@ export function mount(container, view, options = {}) {
             ro.disconnect();
             hintObserver.disconnect();
             window.removeEventListener('orientationchange', resize);
-            renderer.domElement.removeEventListener('pointerdown', onDown);
-            renderer.domElement.removeEventListener('pointerup', onUp);
+            picker.dispose();
+            failures.dispose();
             controls.removeEventListener('start', onStart);
             controls.removeEventListener('change', request);
             controls.dispose();

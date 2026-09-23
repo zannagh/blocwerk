@@ -51,6 +51,12 @@ public sealed record Wall3DView
     public string? SplatUrl { get; init; }
 
     /// <summary>
+    /// The same scene pruned for phones and low-memory devices (same frame, same
+    /// <see cref="SplatMatrix"/>); null when the full scene is small enough or has no mobile copy yet.
+    /// </summary>
+    public string? SplatMobileUrl { get; init; }
+
+    /// <summary>
     /// Column-major 4×4 (three.js <c>Matrix4.fromArray</c>) from the splat's own coordinates into this
     /// view's world frame (wall-geometry mm, z up). Set whenever <see cref="SplatUrl"/> is.
     /// </summary>

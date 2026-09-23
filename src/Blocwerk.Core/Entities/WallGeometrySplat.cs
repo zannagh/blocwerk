@@ -30,6 +30,17 @@ public class WallGeometrySplat
 
     public long SizeBytes { get; set; }
 
+    /// <summary>
+    /// Stored name of the lighter <c>.spz</c> for phones and low-memory devices (the full scene pruned
+    /// to its most visible splats, <see cref="Capture.SpzDecimator"/>), or null when the full one is
+    /// already small enough or predates the mobile level of detail.
+    /// </summary>
+    [MaxLength(128)]
+    public string? MobileStoredPath { get; set; }
+
+    /// <summary>Byte size of <see cref="MobileStoredPath"/>; null without it.</summary>
+    public long? MobileSizeBytes { get; set; }
+
     /// <summary>The worker's <c>frame.json</c> as returned (matrix, toWorldMm, crop, alignment, stats).</summary>
     [Required]
     public required string FrameJson { get; set; }
