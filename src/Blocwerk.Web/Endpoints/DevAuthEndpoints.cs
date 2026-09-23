@@ -78,9 +78,11 @@ internal static class DevAuthEndpoints
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
         var principal = new ClaimsPrincipal(identity);
 
+        // Persistent so a local dev session survives closing the browser (Development only).
         var authProperties = new AuthenticationProperties
         {
-            IsPersistent = false,
+            IsPersistent = true,
+            ExpiresUtc = DateTimeOffset.UtcNow.AddDays(30),
             AllowRefresh = true,
         };
 
