@@ -23,9 +23,10 @@ export function normalizeMode(name) {
 
 /**
  * Switches the scene between modes. `parts`: { textures, slabs: [lit, dim], outlines }. `photo` is the
- * photo-real controller; `ui` gets setMode(mode, loading) and say(text); `request` asks for a frame.
+ * photo-real controller; `ui` gets setMode(mode, loading) and say(text); `request` asks for a frame;
+ * `onMode(mode)` runs once a mode shows (the photo-real hold overlay, wall3d-overlay.js).
  */
-export function createModeController({ modes, parts, photo, ui, request, PhotoRealUnsupportedError }) {
+export function createModeController({ modes, parts, photo, ui, request, PhotoRealUnsupportedError, onMode }) {
     let mode = null;
     let pending = Promise.resolve();
 
@@ -57,6 +58,7 @@ export function createModeController({ modes, parts, photo, ui, request, PhotoRe
             showModelled(name);
         }
         mode = name;
+        onMode?.(name);
         ui.setMode(name, false);
         request();
     }
@@ -75,6 +77,7 @@ export function createModeController({ modes, parts, photo, ui, request, PhotoRe
             pending = pending.then(() => {
                 showModelled('schematic');
                 mode = 'schematic';
+                onMode?.(mode);
                 ui.setMode(mode, false);
                 ui.say(message);
                 request();

@@ -116,7 +116,9 @@ export function buildTextures(view, renderer) {
         const tex = loader.load(t.url, () => renderer.__wall3dRequest?.());
         tex.colorSpace = THREE.SRGBColorSpace;
         tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
-        group.add(texturedMesh(geo, tex, t.maskUrl ? loader.load(t.maskUrl, () => renderer.__wall3dRequest?.()) : null));
+        const mesh = texturedMesh(geo, tex, t.maskUrl ? loader.load(t.maskUrl, () => renderer.__wall3dRequest?.()) : null);
+        mesh.userData.facetId = f.id;                // faded while ghosted (wall3d-ghost.js)
+        group.add(mesh);
     }
     return group;
 }
@@ -139,24 +141,29 @@ function texturedMesh(geo, tex, mask) {
     return mesh;
 }
 
-/** The printed markers as small dark squares, lifted a millimetre off their facet. */
-export function buildMarkers(view) {
+/**
+ * The printed markers as small dark squares, lifted a millimetre off their facet. `sides`
+ * (wall3d-sides.js) drops the squares of a ghosted facet.
+ */
+export function buildMarkers(view, sides) {
     const pos = [];
     const idx = [];
+    const slots = [];
     for (const m of view.markers) {
         const c = m.corners.map(v3);
         const n = new THREE.Vector3().subVectors(c[1], c[0]).cross(new THREE.Vector3().subVectors(c[3], c[0])).normalize();
         // TL,TR,BR,BL: (TR-TL) × (BL-TL) points into the wall for a front-facing marker; lift the other way.
         const lift = n.multiplyScalar(-1.5);
         const base = pos.length / 3;
-        c.forEach(p => { p.add(lift); pos.push(p.x, p.y, p.z); });
+        c.forEach(p => { p.add(lift); pos.push(p.x, p.y, p.z); slots.push(sides.index.get(m.facetId) ?? 0); });
         // Wound to face out of the wall (front side only): from behind the board they are culled.
         idx.push(base, base + 2, base + 1, base, base + 3, base + 2);
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('facetIndex', new THREE.Float32BufferAttribute(slots, 1));
     g.setIndex(idx);
-    return new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0x17171c, side: THREE.FrontSide }));
+    return new THREE.Mesh(g, sides.cullBehind(new THREE.MeshBasicMaterial({ color: 0x17171c, side: THREE.FrontSide }), 'solid'));
 }
 
 /** A screen-sized text label (sizeAttenuation off, so it stays legible at any zoom). */

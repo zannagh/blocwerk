@@ -189,3 +189,12 @@
     pointer-events: none;
     white-space: nowrap;
 }
+
+/* Photo-real "Show holds" toggle (wall3d-overlay.js), under the mode switch. */
+.w3d-holds-toggle {
+    position: absolute;
+    top: 56px; left: 10px;
+    min-height: 36px;
+    font-size: 0.85rem;
+}
+.w3d-holds-toggle[hidden] { display: none; }

@@ -1,6 +1,7 @@
 // Camera presets and tweens for the 3D wall view (wall3d.js). World is z-up, millimetres.
 import * as THREE from '../lib/three/three.module.min.js';
 import { v3 } from './wall3d-scene.js';
+import { clearPose, facetQuads } from './wall3d-clearance.js';
 
 export const PRESETS = ['front', 'below', 'left', 'right', 'top'];
 
@@ -46,7 +47,9 @@ export function wallFrame(view, facetGroup) {
     if (points.length < 2) {
         for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) points.push(new THREE.Vector3(x, y, z));
     }
-    return { box, center, front, right, floorZ, stand, under, points, radius: box.getBoundingSphere(new THREE.Sphere()).radius };
+    // floorZ is the lowest facet edge (the kickboard's bottom ≈ the mats' top): the floor plane.
+    const quads = facetQuads(view.facets);
+    return { box, center, front, right, floorZ, stand, under, points, quads, radius: box.getBoundingSphere(new THREE.Sphere()).radius };
 }
 
 function area(f) {
@@ -103,10 +106,24 @@ export function fitPose(camera, points, dir, insets = {}, size = null) {
     return { position: target.clone().addScaledVector(back, d), target };
 }
 
-/** { position, target } for a named preset, framed into the stage's free area (see fitPose). */
+/**
+ * { position, target } for a named preset, framed into the stage's free area (see fitPose) and
+ * moved out of the way of facets (wall3d-clearance.js): a camera behind a side piece, under the
+ * floor clearance or with a facet between it and the wall turns around the target until clear.
+ */
 export function presetPose(name, frame, camera, insets, size) {
-    const { center, front, right, floorZ, under } = frame;
     const along = dir => fitPose(camera, frame.points, dir, insets, size);
+    const base = designedPose(name, frame, along);
+    const distance = base.position.distanceTo(base.target);
+    // 'below' is placed, not fitted: turning it keeps its distance to the target.
+    const poseAlong = name === 'below'
+        ? dir => ({ target: base.target.clone(), position: base.target.clone().addScaledVector(dir, distance) })
+        : along;
+    return clearPose(base, poseAlong, frame.quads || [], frame.floorZ);
+}
+
+function designedPose(name, frame, along) {
+    const { center, front, right, floorZ, under } = frame;
     switch (name) {
         case 'below': {
             // Crouch on the mat at the overhang's lip and look up into it.

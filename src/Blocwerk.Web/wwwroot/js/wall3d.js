@@ -5,6 +5,12 @@
 // The world frame is wall-geometry.json's: millimetres, z up. Rendering is on demand — a frame is
 // drawn only while something moves (damping, a tween, a resize), so an idle view costs nothing —
 // except in photo-real mode (wall3d-splat.js), which renders continuously while it is on.
+//
+// Nothing blocks the view: presets pick camera spots in free space with a clear sight line
+// (wall3d-clearance.js), a facet between the orbiting camera and its target is ghosted
+// (wall3d-ghost.js), and the splat fades what is near the camera, the mats in the way and ghosted
+// facets' surroundings (wall3d-splat-clip.js). Photo-real draws the hold outlines over the splat
+// (wall3d-overlay.js); taps pick holds the same way in every mode (wall3d-pick.js).
 import * as THREE from '../lib/three/three.module.min.js';
 import { OrbitControls } from '../lib/three/controls/OrbitControls.js';
 import { buildFacets, buildLabels, buildMarkers, buildTextures, fitLabels } from './wall3d-scene.js';
@@ -16,7 +22,11 @@ import { createTweener, presetPose, wallFrame } from './wall3d-camera.js';
 import { buildOverlay, chromeInsets, createPlanMap } from './wall3d-ui.js';
 import { createPhotoReal, PhotoRealUnsupportedError } from './wall3d-splat.js';
 import { createFacetSides } from './wall3d-sides.js';
-import { createPicker } from './wall3d-pick.js';
+import { createPicker, screenPointOf } from './wall3d-pick.js';
+import { buildSurroundings, disposeScene } from './wall3d-stage.js';
+import { createGhosting } from './wall3d-ghost.js';
+import { createPhotoOverlay } from './wall3d-overlay.js';
+import { createSplatClip } from './wall3d-splat-clip.js';
 
 /** Colours of a boulder's hold roles; the page passes BoulderHoldColors so they match the 2D views. */
 const DEFAULT_ROLE_COLORS = { Start: '#4CAF50', Top: '#9C27B0', Hand: '#2196F3', Foot: '#FF9800', ColorFoot: '#FF9800' };
@@ -35,32 +45,6 @@ function ensureStylesheet() {
 function themeColor(el, name, fallback) {
     const v = getComputedStyle(el).getPropertyValue(name).trim();
     return v || fallback;
-}
-
-/** Floor, a 1.75 m person where a climber stands (scale at a glance), and lights. Returns [floor, person]. */
-function buildSurroundings(scene, frame, bg) {
-    scene.background = new THREE.Color(bg);
-    // The overhang faces the floor, so the ground bounce has to be bright or it reads as a cave.
-    scene.add(new THREE.HemisphereLight(0xffffff, 0xd8cfc4, 2.0));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.5);
-    sun.position.copy(frame.center).addScaledVector(frame.front, 6000).add(new THREE.Vector3(-2000, 0, 5000));
-    sun.target.position.copy(frame.center);
-    scene.add(sun, sun.target);
-
-    // A mat a shade off the page background, so it grounds the wall without a hard horizon.
-    const floor = new THREE.Mesh(
-        new THREE.CircleGeometry(frame.radius * 1.6, 64),
-        new THREE.MeshStandardMaterial({ color: new THREE.Color(bg).lerp(new THREE.Color(0x3a4050), 0.18), roughness: 1 }));
-    floor.position.set(frame.center.x, frame.center.y, frame.floorZ - 2);
-    scene.add(floor);
-
-    const person = new THREE.Mesh(
-        new THREE.CapsuleGeometry(150, 1750 - 300, 6, 16),
-        new THREE.MeshStandardMaterial({ color: 0x8a93a6, roughness: 0.8, transparent: true, opacity: 0.4, depthWrite: false }));
-    person.rotation.x = Math.PI / 2;           // capsule axis is y; stand it on z
-    person.position.set(frame.stand.x, frame.stand.y, frame.floorZ + 875);
-    scene.add(person);
-    return [floor, person];
 }
 
 export function mount(container, view, options = {}) {
@@ -85,9 +69,11 @@ export function mount(container, view, options = {}) {
     const selection = buildSelection();
     const labels = buildLabels(view);
     const textures = buildTextures(view, renderer);
-    const markers = buildMarkers(view);
+    const markers = buildMarkers(view, sides);
     scene.add(facets.group, textures, markers, labels, holds.lit, holds.dim, outlines, holds.rings, holds.pick, selection);
     const frame = wallFrame(view, facets.group);
+    const ghosts = createGhosting({ facets, textures, quads: frame.quads, sides });
+    const clip = createSplatClip(frame.quads, frame.floorZ);
     const surroundings = buildSurroundings(scene, frame, themeColor(container, '--bg', '#f5f4f1'));
 
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -104,11 +90,11 @@ export function mount(container, view, options = {}) {
     const request = () => { if (!raf && !disposed) raf = requestAnimationFrame(tick); };
     renderer.__wall3dRequest = request;         // texture loads ask for a redraw when they land
 
-    // Photo-real mode swaps the modelled wall for the captured splat; the boulder rings, the
-    // selection and hold taps stay (the never-drawn pick outlines are still what a tap hits).
+    // Photo-real mode swaps the modelled wall for the captured splat; the hold outlines and boulder
+    // rings (wall3d-overlay.js), the selection and hold taps stay.
     const photo = createPhotoReal({
-        renderer, scene, view,
-        facetParts: [facets.group, textures, markers, labels, holds.lit, holds.dim, outlines, ...surroundings],
+        renderer, scene, view, clip,
+        facetParts: [facets.group, textures, markers, labels, holds.lit, holds.dim, ...surroundings],
         photoTextures: textures,
         onGiveUp: message => modeCtl.fail(message),
         onProgress: f => ui.say(f == null ? 'Loading the photo-real view…' : `Loading the photo-real view… ${Math.round(f * 100)}%`),
@@ -120,8 +106,10 @@ export function mount(container, view, options = {}) {
         closeCard: () => { ui.hideCard(); selection.visible = false; request(); },
         mode: name => modeCtl.set(name),
     }, modes, { hintOnce: !!options.hintOnce });
+    const overlay = createPhotoOverlay({ root: container, facets, outlines, rings: holds.rings, request: () => request() });
+    scene.add(overlay.prepass);
     const modeCtl = createModeController({
-        modes, photo, ui, request: () => request(), PhotoRealUnsupportedError,
+        modes, photo, ui, request: () => request(), PhotoRealUnsupportedError, onMode: m => overlay.apply(m),
         parts: { textures, outlines, slabs: [holds.lit, holds.dim] },
     });
     const failures = watchRenderFailures(renderer, modeCtl, () => request(), photo);
@@ -161,6 +149,12 @@ export function mount(container, view, options = {}) {
         const moving = controls.update();
         camera.updateMatrixWorld();
         sides.update(camera);
+        if (ghosts.update(camera.position, controls.target)) {
+            overlay.setGhosted(ghosts.ids);
+        }
+        if (photo.active) {
+            clip.update(camera, controls.target, ghosts.ids);
+        }
         // The selection halo draws over everything (no depth test), so it hides behind its facet.
         if (selection.userData.facet) selection.material.visible = sides.inFront(selection.userData.facet, camera.position);
         if (labels.visible) {
@@ -196,11 +190,18 @@ export function mount(container, view, options = {}) {
         request();
     }
 
-    // Picking: a tap on a hold (on the camera's side of the wall) opens its card.
+    // Picking: a tap on a hold (on the camera's side of the wall) opens its card; listeners
+    // (handle.onPick, a future 3D boulder editor) get the pick: hold id + facet point.
+    const pickListeners = new Set();
     const picker = createPicker({
-        canvas: renderer.domElement, camera, holds, sides, walls: [...facets.meshes.values(), ...facets.backs],
+        canvas: renderer.domElement, camera, holds, sides, walls: () => ghosts.occluders(),
         onDown: () => ui.hideHint(),
-        onHold: hold => { placeSelection(selection, hold, holds.facets.get(hold.facetId)); ui.showHold(hold); request(); },
+        onPick: pick => {
+            placeSelection(selection, pick.hold, holds.facets.get(pick.facetId));
+            ui.showHold(pick.hold);
+            request();
+            for (const listener of pickListeners) listener(pick);
+        },
         onMiss: () => { selection.visible = false; ui.hideCard(); request(); },
     });
     const onStart = () => { tweener.cancel(); ui.hideHint(); ui.setActive(null); framed = null; };
@@ -245,6 +246,24 @@ export function mount(container, view, options = {}) {
             tweener.to({ target, position: target.clone().addScaledVector(new THREE.Vector3(...f.normal), distanceMm) });
             request();
         },
+        /** The hold pick at a client point ({ holdId, hold, facetId, point, plane } or null); no side effects. */
+        pickAt: (clientX, clientY) => picker.pickAt(clientX, clientY),
+        /** Calls `listener(pick)` on every hold tap; returns the unsubscribe function. */
+        onPick(listener) {
+            pickListeners.add(listener);
+            return () => pickListeners.delete(listener);
+        },
+        /** Client coordinates of a hold's centre (tests, tutorials); null when it is off screen. */
+        holdScreenPoint(id) {
+            const hold = holdById(id);
+            return hold ? screenPointOf(hold, holds.facets.get(hold.facetId), camera, renderer.domElement) : null;
+        },
+        /** Puts the camera at `position` looking at `target` ([x, y, z] mm): free orbit, no preset. */
+        lookFrom(position, target) {
+            onStart();
+            tweener.to({ position: new THREE.Vector3(...position), target: new THREE.Vector3(...target) });
+            request();
+        },
         selectHold(id) {
             const hold = holdById(id);
             if (!hold) return;
@@ -260,6 +279,9 @@ export function mount(container, view, options = {}) {
             hintObserver.disconnect();
             window.removeEventListener('orientationchange', resize);
             picker.dispose();
+            pickListeners.clear();
+            overlay.dispose();
+            ghosts.dispose();
             failures.dispose();
             controls.removeEventListener('start', onStart);
             controls.removeEventListener('change', request);
@@ -275,19 +297,4 @@ export function mount(container, view, options = {}) {
     };
     container.__wall3d = handle;           // for the screenshot / perf scripts
     return handle;
-}
-
-function disposeScene(scene) {
-    const seen = new Set();
-    const free = x => { if (x && !seen.has(x)) { seen.add(x); x.dispose?.(); } };
-    scene.traverse(o => {
-        free(o.geometry);
-        const mats = Array.isArray(o.material) ? o.material : [o.material];
-        for (const m of mats) {
-            if (!m) continue;
-            for (const v of Object.values(m)) if (v && v.isTexture) free(v);
-            free(m);
-        }
-        if (o.isInstancedMesh) o.dispose();
-    });
 }

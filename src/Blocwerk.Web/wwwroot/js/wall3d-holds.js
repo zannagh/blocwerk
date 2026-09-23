@@ -14,6 +14,8 @@ export const OUTLINE_LIFT = BASE_LIFT + 1.5;
 const FOOT_DARKEN = 0.28;         // feet read darker than hand holds
 const RING_SCALE = 1.3;           // boulder-role ring, relative to the outline's bounding box
 const CIRCLE_SEGMENTS = 24;
+/** Opacity of a ghosted facet's holds (wall3d-ghost.js). */
+export const GHOST_OPACITY = 0.18;
 
 /** Outline of a hold as [[da, db], …]; an ellipse of its mm size when the payload carries none. */
 export function outlineOf(h) {
@@ -160,8 +162,13 @@ export function buildHolds(view, roleColors, sides) {
     const slabs = (list, dimmed) => merge(list.map(h => ({
         geo: slab(h, facets.get(h.facetId)), color: holdColor(h, dimmed), slot: sides.index.get(h.facetId),
     })));
-    const litMesh = new THREE.Mesh(slabs(lit, false).geometry, sides.cullBehind(
-        new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.02, side: THREE.DoubleSide })));
+    const litGeo = slabs(lit, false).geometry;
+    const litMesh = new THREE.Mesh(litGeo, sides.cullBehind(
+        new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.02, side: THREE.DoubleSide }), 'solid'));
+    // The same slabs, faded, for a facet ghosted out of the camera's way (wall3d-ghost.js).
+    litMesh.add(new THREE.Mesh(litGeo, sides.cullBehind(new THREE.MeshStandardMaterial({
+        vertexColors: true, roughness: 0.7, transparent: true, opacity: GHOST_OPACITY, depthWrite: false,
+    }), 'ghost')));
     const dimMesh = new THREE.Mesh(slabs(dim, true).geometry, sides.cullBehind(new THREE.MeshStandardMaterial({
         vertexColors: true, roughness: 0.7, transparent: true, opacity: 0.22, depthWrite: false,
     })));
@@ -169,8 +176,10 @@ export function buildHolds(view, roleColors, sides) {
 
     const ringGeo = new THREE.RingGeometry(0.44, 0.5, 40);
     // Front side only: a ring lies flat on its facet, facing out, so from behind the wall it is culled.
-    const ringMesh = new THREE.InstancedMesh(ringGeo, new THREE.MeshBasicMaterial({ side: THREE.FrontSide }),
+    // Transparent (drawn late): in photo-real the rings go over the splat (wall3d-overlay.js).
+    const ringMesh = new THREE.InstancedMesh(ringGeo, new THREE.MeshBasicMaterial({ side: THREE.FrontSide, transparent: true }),
         Math.max(1, highlighting ? lit.length : 0));
+    ringMesh.renderOrder = 6;
     ringMesh.count = highlighting ? lit.length : 0;
     const color = new THREE.Color();
     if (highlighting) {

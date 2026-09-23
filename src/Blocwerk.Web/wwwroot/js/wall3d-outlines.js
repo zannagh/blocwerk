@@ -1,7 +1,8 @@
 // Hold outlines as thin lines lying on the facets, for the Photos mode of the 3D wall view: the
 // rectified photo already shows the holds themselves, so it gets their traced outlines (and pocket
 // holes) drawn over it instead of opaque slabs. One LineSegments per state (lit / dimmed), coloured
-// per vertex, so the whole wall is two draw calls.
+// per vertex, so the whole wall is two draw calls (plus the faded twin of a ghosted facet's lines).
+// Photo-real shows the same layer over the splat (wall3d-overlay.js).
 import * as THREE from '../lib/three/three.module.min.js';
 import { holdColor, holdFrame, outlineOf } from './wall3d-holds.js';
 
@@ -44,11 +45,17 @@ function segments(list, facets, lift, dimmed, sides) {
  */
 export function buildOutlines(lit, dim, facets, lift, sides) {
     const group = new THREE.Group();
-    group.add(new THREE.LineSegments(segments(lit, facets, lift, false, sides),
-        sides.cullBehind(new THREE.LineBasicMaterial({ vertexColors: true }))));
+    // Transparent, drawn after the photo-real splat, so the outlines lie over it (wall3d-overlay.js).
+    const line = (geo, opacity, pass) => {
+        const l = new THREE.LineSegments(geo, sides.cullBehind(
+            new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity, depthWrite: opacity >= 1 }), pass));
+        l.renderOrder = 5;
+        return l;
+    };
+    const litGeo = segments(lit, facets, lift, false, sides);
+    group.add(line(litGeo, 1, 'solid'), line(litGeo, 0.3, 'ghost'));
     if (dim.length) {
-        group.add(new THREE.LineSegments(segments(dim, facets, lift, true, sides),
-            sides.cullBehind(new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.45 }))));
+        group.add(line(segments(dim, facets, lift, true, sides), 0.45, 'all'));
     }
     group.visible = false;
     return group;

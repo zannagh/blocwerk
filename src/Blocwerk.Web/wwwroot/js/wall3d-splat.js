@@ -53,8 +53,9 @@ function releaseTextures(group) {
  * @param ctx.photoTextures the facet photo group, whose GPU textures are freed while photo-real shows
  * @param ctx.onProgress    (fraction 0..1 or null when unknown) while the first level downloads
  * @param ctx.onGiveUp      (message) when even the smallest level cannot be shown on this device
+ * @param ctx.clip          the splat clip (wall3d-splat-clip.js): near fade, mats, ghosted facets
  */
-export function createPhotoReal({ renderer, scene, view, facetParts, photoTextures, onProgress, onGiveUp }) {
+export function createPhotoReal({ renderer, scene, view, facetParts, photoTextures, onProgress, onGiveUp, clip }) {
     const levels = ladderOf(view);
     const light = prefersLightSplat(renderer);
     const facts = { ...deviceFacts(renderer), mobile: light };
@@ -109,7 +110,8 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
         if (disposed) return false;
         const myEpoch = epoch;
         if (!sparkRenderer) {
-            sparkRenderer = new spark.SparkRenderer({ renderer, ...retry.rendererOptions });
+            sparkRenderer = new spark.SparkRenderer({ renderer, ...clip?.rendererOptions, ...retry.rendererOptions });
+            clip?.install(sparkRenderer);
             sparkRenderer.visible = active;
             scene.add(sparkRenderer);
         }
