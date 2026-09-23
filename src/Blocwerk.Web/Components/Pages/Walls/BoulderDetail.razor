@@ -178,7 +178,9 @@ else
             </div>
         }
 
-        @* The historic Then/Now toggle is the page's only view switch. *@
+        @* Two view switches: the historic Then/Now toggle, and Photos | 3D (the inline 3D schematic
+           with this boulder highlighted). The 3D model is today's wall, so it is only offered on
+           "Now", and going to "Then" leaves it. *@
         @if (CanViewHistoric)
         {
             @* Both states are rendered, with the active one marked. A single button labelled with the
@@ -196,6 +198,11 @@ else
                     Then
                 </button>
             </div>
+        }
+
+        @if (!_showHistoric)
+        {
+            <WallViewSwitch WallId="WallId" @bind-Show3D="_show3D" />
         }
 
         @if (!string.IsNullOrEmpty(_boulder.FootColorOnly) || _boulder.NoMatch)
@@ -220,7 +227,11 @@ else
             </div>
         }
 
-        <WallDimControl />
+        @if (!_show3D || _showHistoric)
+        {
+            @* Dims the photo around the boulder: meaningless on the 3D view, which dims by itself. *@
+            <WallDimControl />
+        }
         @if (HistoricHoldsMissing > 0)
         {
             @* Fix: a partial translation used to be silent. Some of the boulder's holds have no
@@ -240,7 +251,11 @@ else
                 @HistoricHoldsMissing were set on holds that aren't on these photos.
             </p>
         }
-        @if (UsingMultiPanel)
+        @if (_show3D && !_showHistoric)
+        {
+            <Wall3DInline WallId="WallId" BoulderId="BoulderId" ShareToken="@ShareToken" />
+        }
+        else if (UsingMultiPanel)
         {
             @if (BoulderOnOutdatedPanel)
             {
@@ -526,6 +541,9 @@ else
     private bool _isAdmin;
     private bool _isSetter;
     private bool _showHistoric;
+
+    // The "3D" side of the Photos | 3D switch (only offered while showing "Now").
+    private bool _show3D;
 
     /// <summary>The generation the "Then" view renders, or null when there is nothing older to show.
     /// Resolved once per boulder load; see <see cref="ResolveHistoricGenerationAsync"/>.</summary>
@@ -1023,6 +1041,7 @@ else
     private async Task ShowGenerationAsync(bool historic)
     {
         _showHistoric = historic;
+        _show3D &= !historic;
 
         // All three have to move together: the holds are re-resolved onto the generation being shown,
         // LoadWallHolds swaps the schematic hold data, and the photos underneath come from the panel

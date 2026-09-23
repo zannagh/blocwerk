@@ -1,0 +1,94 @@
+@* The 3D schematic inline on the wall / boulder page (WallViewSwitch's "3D" side): plain facets with
+   every hold as its real outline, the boulder highlighted when BoulderId is set. The view is built
+   through IWall3DViewService, which reads the wall exactly as the host page does (members, the
+   kiosk on its own wall, share tokens), so it can show nothing the page could not. *@
+@using Blocwerk.Core.Geometry.View3D
+@inject IWall3DViewService ViewService
+
+<div class="wall3d-inline">
+    @if (result is null)
+    {
+        <p class="wall3d-inline-message">Loading the 3D view…</p>
+    }
+    else if (result.Status != Wall3DViewStatus.Ok || result.View is null)
+    {
+        <p class="wall3d-inline-message">@StatusMessage</p>
+    }
+    else
+    {
+        <div class="wall3d-inline-stage">
+            <Wall3DStage View="result.View" InitialMode="schematic" />
+        </div>
+        <div class="wall3d-inline-foot">
+            @if (result.View.BoulderName is not null)
+            {
+                <span class="wall3d-inline-legend" aria-label="Legend">
+                    <span><i style="background:@BoulderHoldColors.Start"></i>Start</span>
+                    <span><i style="background:@BoulderHoldColors.Normal"></i>Hand</span>
+                    <span><i style="background:@BoulderHoldColors.Foot"></i>Foot</span>
+                    <span><i style="background:@BoulderHoldColors.Top"></i>Top</span>
+                </span>
+            }
+            @if (result.View.UnplacedHoldCount > 0)
+            {
+                <span class="wall3d-inline-note">@UnplacedText(result.View.UnplacedHoldCount)</span>
+            }
+            <a class="wall3d-inline-full" href="@FullUrl">Full screen</a>
+        </div>
+    }
+</div>
+
+@code {
+    private Wall3DViewResult? result;
+    private (Guid Wall, Guid? Boulder, string? Token)? loaded;
+
+    [Parameter, EditorRequired] public Guid WallId { get; set; }
+
+    /// <summary>Highlight this boulder's holds.</summary>
+    [Parameter] public Guid? BoulderId { get; set; }
+
+    /// <summary>The share token, when the host page is a share-link route.</summary>
+    [Parameter] public string? ShareToken { get; set; }
+
+    private string FullUrl
+    {
+        get
+        {
+            var shared = string.IsNullOrEmpty(ShareToken) ? string.Empty : $"/shared/{Uri.EscapeDataString(ShareToken)}";
+            var boulder = BoulderId is { } id ? $"&boulder={id}" : string.Empty;
+            return $"/walls/{WallId}{shared}/3d?mode=schematic{boulder}";
+        }
+    }
+
+    private string StatusMessage => result?.Status switch
+    {
+        Wall3DViewStatus.NoGeometry => "This wall has no measured 3D model yet.",
+        Wall3DViewStatus.InvalidGeometry => "This wall's 3D model could not be read.",
+        Wall3DViewStatus.UnderMaintenance => "This wall is currently being updated.",
+        _ => "The 3D view is not available.",
+    };
+
+    // Parameters, not OnInitializedAsync: the host page is retained across wall/boulder navigation.
+    protected override async Task OnParametersSetAsync()
+    {
+        var key = (WallId, BoulderId, ShareToken);
+        if (loaded == key)
+        {
+            return;
+        }
+
+        loaded = key;
+        result = null;
+        try
+        {
+            result = await ViewService.BuildAsync(WallId, BoulderId, ShareToken);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            result = new Wall3DViewResult(Wall3DViewStatus.NotFound);
+        }
+    }
+
+    private static string UnplacedText(int count) =>
+        count == 1 ? "1 hold not measured yet" : $"{count} holds not measured yet";
+}

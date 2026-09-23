@@ -1,0 +1,47 @@
+/* The inline 3D schematic takes the photo viewer's place: a tall box that still leaves the page
+   scrollable around it (the canvas itself owns every gesture inside it). */
+.wall3d-inline {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md, 10px);
+    overflow: hidden;
+    background: var(--bg);
+}
+
+.wall3d-inline-stage {
+    display: flex;
+    flex-direction: column;
+    height: min(68dvh, 640px);
+    min-height: 320px;
+}
+
+.wall3d-inline-message {
+    margin: 0;
+    padding: 40px 16px;
+    text-align: center;
+    color: var(--text-secondary);
+}
+
+.wall3d-inline-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    padding: 8px 12px;
+    border-top: 1px solid var(--border);
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.wall3d-inline-legend { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; }
+.wall3d-inline-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.wall3d-inline-legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+
+.wall3d-inline-full {
+    margin-left: auto;
+    font-weight: 600;
+    color: var(--accent);
+    text-decoration: none;
+}
+.wall3d-inline-full:hover { text-decoration: underline; }

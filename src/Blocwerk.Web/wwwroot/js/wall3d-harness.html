@@ -3,7 +3,8 @@
      app. Serve wwwroot over HTTP (ES modules), then open /js/wall3d-harness.html with:
        ?geom=<url of a wall-geometry.json>  (default: a small built-in sample)
        ?preset=front|below|left|right|top   ?boulder=1  (highlight a synthetic boulder)
-       ?select=1 (open the info card on one hold)   ?holds=<n> (default 260)   ?dark=1
+       ?select=1 (open the info card on one hold; ?select=pocket picks a pocket hold)   ?holds=<n> (default 260)   ?dark=1
+       ?mode=schematic|photos|photoreal (start mode)   ?circles=1 (holds without outlines)   ?photos=1 (fake facet photos)
        ?w=390&h=844 (fixed stage size, e.g. to check a phone viewport in a larger headless window)
        ?splat=<url of a wall.spz>&frame=<url of its frame.json> (enables photo-real)   ?photo=1 (start in it) -->
 <html lang="en">
@@ -51,6 +52,26 @@
     let seed = 7;
     const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
 
+    // A lumpy closed outline (mm, relative to the centre) of roughly w × h, like a traced hold.
+    function blob(w, h, n, lumps) {
+        const phase = rnd() * Math.PI * 2;
+        const ring = [];
+        for (let i = 0; i < n; i++) {
+            const t = (2 * Math.PI * i) / n;
+            const r = 1 + 0.18 * Math.sin(lumps * t + phase) + 0.06 * (rnd() - 0.5);
+            ring.push([Math.round(r * (w / 2) * Math.cos(t) * 10) / 10, Math.round(r * (h / 2) * Math.sin(t) * 10) / 10]);
+        }
+        return ring;
+    }
+
+    // Mirror of HoldShapeProjector's output: an outline, ~1 in 8 hand holds with a pocket hole.
+    function syntheticShape(w, h, foot) {
+        if (q.get('circles')) return null;
+        const pocket = !foot && w > 90 && rnd() < 0.14;
+        const holes = pocket ? [blob(w * 0.38, h * 0.3, 20, 2).map(([a, b]) => [a + w * 0.05, b - h * 0.05])] : [];
+        return { source: 'Markers', outline: blob(w, h, 24 + Math.floor(rnd() * 40), 2 + Math.floor(rnd() * 4)), holes };
+    }
+
     function buildView(doc) {
         const facets = [];
         for (const s of doc.segments) for (const f of s.facets) {
@@ -80,7 +101,8 @@
                 holds.push({ id: `h${holds.length}`, facetId: f.id, position: at(f, a, b, 12), planeA: a, planeB: b,
                     widthMm: measured ? w : (foot ? 55 : 90), heightMm: measured ? w * (0.55 + rnd() * 0.6) : (foot ? 55 : 90),
                     sizeMeasured: measured, color: key, colorName: name, hex, isFoot: foot,
-                    usageCount: Math.floor(rnd() * 9), role: null });
+                    usageCount: Math.floor(rnd() * 9), role: null,
+                    shape: syntheticShape(measured ? w : (foot ? 55 : 90), measured ? w * 0.8 : (foot ? 55 : 90), foot) });
             }
         }
         let boulderId = null;
@@ -92,7 +114,28 @@
             holds.filter(h => h.isFoot).slice(0, 4).forEach(h => { h.role = 'Foot'; });
         }
         return { wallId: 'w', wallName: 'Harness', boulderId, markerSizeMm: doc.markerSizeMm, facets, markers, holds,
-            unplacedHoldCount: 0, textures: [], splatUrl: null };
+            unplacedHoldCount: 0, textures: q.get('photos') ? fakePhotos(facets, holds) : [], splatUrl: null };
+    }
+
+    // ?photos=1: a stand-in "rectified photo" per facet (blurred hold blobs on grey plywood), so the
+    // Photos mode and its outline overlay can be checked without the app.
+    function fakePhotos(facets, holds) {
+        return facets.map(f => {
+            const e = f.extent, k = 0.25;                       // 4 mm per pixel
+            const c = document.createElement('canvas');
+            c.width = Math.round((e.aMax - e.aMin) * k); c.height = Math.round((e.bMax - e.bMin) * k);
+            const g = c.getContext('2d');
+            g.fillStyle = '#cfc6b8'; g.fillRect(0, 0, c.width, c.height);
+            g.filter = 'blur(2px)';
+            for (const h of holds.filter(x => x.facetId === f.id)) {
+                g.fillStyle = h.hex;
+                g.beginPath();
+                const ring = h.shape ? h.shape.outline : [[h.widthMm / 2, 0], [0, h.heightMm / 2], [-h.widthMm / 2, 0], [0, -h.heightMm / 2]];
+                ring.forEach(([da, db], i) => g[i ? 'lineTo' : 'moveTo']((h.planeA + da - e.aMin) * k, (e.bMax - h.planeB - db) * k));
+                g.fill();
+            }
+            return { facetId: f.id, url: c.toDataURL('image/jpeg', 0.8), bounds: e };
+        });
     }
 
     const geomUrl = q.get('geom');
@@ -105,10 +148,12 @@
         view.splatMatrix = [0, 1, 2, 3].flatMap(c => rows.map(r => r[c]));
     }
     const handle = mount(stage, view,
-        { initialPreset: q.get('preset') || 'front', preserveDrawingBuffer: true });
+        { initialPreset: q.get('preset') || 'front', initialMode: q.get('mode'), preserveDrawingBuffer: true });
     if (q.get('select')) {
-        const h = view.holds.find(x => x.role === 'Start') || view.holds[Math.floor(view.holds.length / 2)];
+        const h = q.get('select') === 'pocket' ? view.holds.find(x => x.shape && x.shape.holes.length)
+            : view.holds.find(x => x.role === 'Start') || view.holds[Math.floor(view.holds.length / 2)];
         handle.selectHold(h.id);
+        if (q.get('closeup')) handle.focusHold(h.id, Number(q.get('closeup')));
     }
     if (q.get('photo')) await handle.photoReal(true);
     handle.renderNow();

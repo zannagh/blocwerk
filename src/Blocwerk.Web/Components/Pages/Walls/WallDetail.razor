@@ -388,13 +388,20 @@ else
                         <p class="description">@_wall.Description</p>
                     }
 
+                    @if (!_isEditing)
+                    {
+                        @* Photos | 3D: renders only for a wall with a measured 3D model (kiosk and
+                           share links included — the inline view reads the wall as this page does). *@
+                        <WallViewSwitch WallId="_wall.Id" @bind-Show3D="_show3D" />
+                    }
+
                     <div class="wall-photo-container">
                         @* Edit pencil overlaid on the image's top-right, co-located with the editor's
                            usage "lens" button — not in a separate row above. Rendered at the WallDetail
                            level (not inside WallPhotoEditor) so it covers every view path uniformly:
                            the single-image editor and the multi-panel viewer, where WallPhotoEditor
                            isn't the renderer. Shows an X while editing. *@
-                        @if (_canEditHolds)
+                        @if (_canEditHolds && (!_show3D || _isEditing))
                         {
                             <button class="btn-icon wall-edit-fab @(_isEditing ? "editing" : "")" @onclick="ToggleEditing" title="@(_isEditing ? "Exit edit mode" : "Edit wall")">
                                 @if (_isEditing)
@@ -413,7 +420,11 @@ else
                                 }
                             </button>
                         }
-                        @if (_livePanels.Count > 0 && _canEditHolds && _isEditing && _editingPanel != null)
+                        @if (_show3D && !_isEditing)
+                        {
+                            <Wall3DInline WallId="_wall.Id" ShareToken="@ShareToken" />
+                        }
+                        else if (_livePanels.Count > 0 && _canEditHolds && _isEditing && _editingPanel != null)
                         {
                             @* Big wall in edit mode: scope the single-image editor to one live panel
                                (its own photo + holds) and let the admin step between panels. Wall-level
@@ -864,6 +875,10 @@ else
     private Guid _currentUserId;
     private bool _isEditing;
 
+    // The "3D" side of the Photos | 3D switch: the inline schematic replaces the photo viewer. Edit
+    // mode always shows the photos (holds are edited on them), and a wall change resets it.
+    private bool _show3D;
+
     // Hold-editor access: owner, admin, or moderator. Mirrors WallAdminGuard.EnsureWallEditorAsync
     // on the server. Settings/photos/shape/API keys/border stay on _isAdmin.
     private bool _canEditHolds => _isAdmin || _isModerator;
@@ -1165,6 +1180,7 @@ else
         // recreates the carousel so it opens on the new wall's initial page rather than wherever the
         // user had swiped the previous one.
         _wall = null;
+        _show3D = false;
         StateHasChanged();
         await LoadCurrentWall();
     }

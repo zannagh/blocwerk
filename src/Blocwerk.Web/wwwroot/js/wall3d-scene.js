@@ -4,10 +4,6 @@
 import * as THREE from '../lib/three/three.module.min.js';
 
 const GRID_MM = 250;
-const HOLD_DEPTH = 0.32;          // disc thickness as a fraction of its smaller side
-const FOOT_SCALE = 0.85;          // feet read slightly smaller ...
-const FOOT_DARKEN = 0.28;         // ... and darker than hand holds
-const RING_SCALE = 1.35;          // boulder-role ring, relative to the hold size
 
 export const v3 = a => new THREE.Vector3(a[0], a[1], a[2]);
 
@@ -133,94 +129,6 @@ export function buildMarkers(view) {
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setIndex(idx);
     return new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0x17171c, side: THREE.DoubleSide }));
-}
-
-function holdMatrix(h, facet, scale) {
-    const m = facetBasis(facet);
-    const w = h.widthMm * scale;
-    const hh = h.heightMm * scale;
-    const depth = Math.min(w, hh) * HOLD_DEPTH;
-    m.scale(new THREE.Vector3(w, hh, depth));
-    // Sit the half-ellipsoid ON the facet (its base on the lifted centre), never through it.
-    m.setPosition(v3(h.position).addScaledVector(v3(facet.normal), depth / 2));
-    return m;
-}
-
-function instanced(geometry, material, count) {
-    const mesh = new THREE.InstancedMesh(geometry, material, Math.max(1, count));
-    mesh.count = count;
-    return mesh;
-}
-
-/**
- * Holds as flattened, lit ellipsoids of their real mm size, one InstancedMesh per state:
- * `lit` (normal, or the highlighted boulder's holds), `dim` (everything else while a boulder is
- * highlighted) and `rings` (the boulder-role rings). `index` maps mesh+instance → hold.
- */
-export function buildHolds(view, roleColors) {
-    const facets = new Map(view.facets.map(f => [f.id, f]));
-    const holds = view.holds.filter(h => facets.has(h.facetId));
-    const highlighting = !!view.boulderId;
-    const lit = holds.filter(h => !highlighting || h.role);
-    const dim = highlighting ? holds.filter(h => !h.role) : [];
-
-    const sphere = new THREE.SphereGeometry(0.5, 24, 12);
-    const litMesh = instanced(sphere, new THREE.MeshStandardMaterial({ roughness: 0.55, metalness: 0.02 }), lit.length);
-    const dimMesh = instanced(sphere, new THREE.MeshStandardMaterial({
-        roughness: 0.7, transparent: true, opacity: 0.22, depthWrite: false,
-    }), dim.length);
-    const ringGeo = new THREE.RingGeometry(0.40, 0.5, 40);
-    const ringMesh = instanced(ringGeo, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }), highlighting ? lit.length : 0);
-
-    const color = new THREE.Color();
-    const black = new THREE.Color(0x000000);
-    const place = (mesh, list, dimmed) => list.forEach((h, i) => {
-        const f = facets.get(h.facetId);
-        mesh.setMatrixAt(i, holdMatrix(h, f, h.isFoot ? FOOT_SCALE : 1));
-        color.set(h.hex);
-        if (h.isFoot) color.lerp(black, FOOT_DARKEN);
-        if (dimmed) color.lerp(new THREE.Color(0x9a9aa2), 0.5);
-        mesh.setColorAt(i, color);
-    });
-    place(litMesh, lit, false);
-    place(dimMesh, dim, true);
-    if (highlighting) {
-        lit.forEach((h, i) => {
-            const f = facets.get(h.facetId);
-            const m = holdMatrix(h, f, (h.isFoot ? FOOT_SCALE : 1) * RING_SCALE);
-            // Rings are flat: undo the depth scale and sit just above the disc's crown.
-            m.scale(new THREE.Vector3(1, 1, 0.0001));
-            ringMesh.setMatrixAt(i, m);
-            ringMesh.setColorAt(i, color.set(roleColors[h.role] || roleColors.Hand));
-        });
-    }
-    [litMesh, dimMesh, ringMesh].forEach(m => {
-        m.instanceMatrix.needsUpdate = true;
-        if (m.instanceColor) m.instanceColor.needsUpdate = true;
-        m.computeBoundingSphere();
-    });
-    litMesh.userData.holds = lit;
-    dimMesh.userData.holds = dim;
-    dimMesh.renderOrder = 2;
-    return { lit: litMesh, dim: dimMesh, rings: ringMesh, pickables: [litMesh, dimMesh], facets };
-}
-
-/** A selection halo for one hold (reused; moved on each pick). */
-export function buildSelection() {
-    const mesh = new THREE.Mesh(
-        new THREE.RingGeometry(0.46, 0.5, 48),
-        new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, depthTest: false, transparent: true }));
-    mesh.renderOrder = 10;
-    mesh.matrixAutoUpdate = false;
-    mesh.visible = false;
-    return mesh;
-}
-
-export function placeSelection(mesh, hold, facet) {
-    const m = holdMatrix(hold, facet, 1.6 * (hold.isFoot ? FOOT_SCALE : 1));
-    m.scale(new THREE.Vector3(1, 1, 0.0001));
-    mesh.matrix.copy(m);
-    mesh.visible = true;
 }
 
 /** A screen-sized text label (sizeAttenuation off, so it stays legible at any zoom). */

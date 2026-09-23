@@ -47,7 +47,37 @@
 .w3d-presets::-webkit-scrollbar { display: none; }
 .w3d-btn-reset { background: transparent; box-shadow: none; }
 
-.w3d-photoreal { position: absolute; top: 10px; left: 10px; min-height: 36px; font-size: 0.85rem; }
+/* Schematic / Photos / Photo-real: a segmented control in the top-left corner (the map is top-right). */
+.w3d-modes {
+    position: absolute;
+    top: 10px; left: 10px;
+    max-width: calc(100% - 20px - 96px - 10px);
+    display: inline-flex;
+    padding: 3px;
+    gap: 2px;
+    border-radius: var(--r-pill, 999px);
+    border: 1px solid var(--border, #e3e0d9);
+    background: var(--bg-surface, #fff);
+    box-shadow: 0 2px 8px var(--shadow-md, rgba(30, 20, 10, 0.08));
+}
+.w3d-modes[hidden] { display: none; }
+.w3d-mode {
+    min-height: 36px;
+    padding: 0 12px;
+    border: none;
+    border-radius: var(--r-pill, 999px);
+    background: transparent;
+    color: var(--text-heading, #16162a);
+    font: inherit;
+    font-weight: 600;
+    font-size: 0.85rem;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.w3d-mode.active { background: var(--topbar-bg, #16162a); color: var(--topbar-text, #fff); }
+.w3d-mode:focus-visible { outline: 2px solid var(--accent, #e94560); outline-offset: 1px; }
+.w3d-mode:disabled { cursor: progress; }
+.w3d-mode:disabled:not(.active) { opacity: 0.5; }
 
 .w3d-hint {
     position: absolute;
@@ -136,4 +166,5 @@
     .w3d-card { left: 10px; right: 10px; width: auto; }
     .w3d-btn { min-width: 0; padding: 0 12px; font-size: 0.9rem; }
     .w3d-presets { justify-content: flex-start; }
+    .w3d-mode { padding: 0 9px; font-size: 0.8rem; }
 }

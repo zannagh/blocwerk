@@ -2,7 +2,6 @@
 @page "/walls/{WallId:guid}/shared/{ShareToken}/3d"
 @rendermode InteractiveServer
 @using Blocwerk.Core.Geometry.View3D
-@implements IAsyncDisposable
 
 <PageTitle>@(_result?.WallName ?? "Wall") in 3D - Blocwerk</PageTitle>
 
@@ -37,16 +36,13 @@ else
                     <span><i style="background:@BoulderHoldColors.Top"></i>Top</span>
                 </span>
             }
-            @if (_mountFailed)
-            {
-                <span class="wall3d-note">This device could not start the 3D view (WebGL is unavailable).</span>
-            }
             @if (view.UnplacedHoldCount > 0)
             {
                 <span class="wall3d-note">@UnplacedText(view.UnplacedHoldCount)</span>
             }
         </div>
-        @* Rendered once and left alone: wall3d.js owns everything inside it. *@
-        <div class="wall3d-stage" @ref="_stage"></div>
+        <div class="wall3d-stage">
+            <Wall3DStage View="view" InitialMode="@Mode" />
+        </div>
     </div>
 }

@@ -3,34 +3,19 @@
 
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Geometry.View3D;
-using Blocwerk.Web.Components.Shared;
 using Microsoft.AspNetCore.Components;
-using Microsoft.JSInterop;
 
 namespace Blocwerk.Web.Components.Pages.Walls;
 
 /// <summary>
-/// The opt-in 3D view of a wall with a solved glyph geometry model: facets, markers and holds in
-/// millimetres, rendered by <c>wwwroot/js/wall3d.js</c> (three.js). <c>?boulder={id}</c> highlights
-/// one boulder's holds.
+/// The opt-in 3D view of a wall with a solved glyph geometry model: facets, markers and holds (as
+/// their real outlines) in millimetres, rendered by <see cref="Shared.Wall3DStage"/>.
+/// <c>?boulder={id}</c> highlights one boulder's holds; <c>?mode=schematic|photos|photoreal</c> picks
+/// the start mode (schematic by default).
 /// </summary>
-public partial class Wall3D : IAsyncDisposable
+public partial class Wall3D
 {
-    private static readonly Dictionary<string, string> RoleColors = new()
-    {
-        ["Start"] = BoulderHoldColors.Start,
-        ["Top"] = BoulderHoldColors.Top,
-        ["Hand"] = BoulderHoldColors.Normal,
-        ["Foot"] = BoulderHoldColors.Foot,
-        ["ColorFoot"] = BoulderHoldColors.Foot,
-    };
-
     private Wall3DViewResult? _result;
-    private ElementReference _stage;
-    private IJSObjectReference? _module;
-    private IJSObjectReference? _viewer;
-    private bool _needsMount;
-    private bool _mountFailed;
     private (Guid Wall, string? Token, Guid? Boulder)? _loaded;
 
     [Parameter]
@@ -42,17 +27,14 @@ public partial class Wall3D : IAsyncDisposable
     [SupplyParameterFromQuery(Name = "boulder")]
     public Guid? BoulderId { get; set; }
 
+    [SupplyParameterFromQuery(Name = "mode")]
+    public string? Mode { get; set; }
+
     [Inject]
     private IWall3DViewService ViewService { get; set; } = null!;
 
     [Inject]
     private NavigationManager Navigation { get; set; } = null!;
-
-    [Inject]
-    private IJSRuntime JS { get; set; } = null!;
-
-    [Inject]
-    private ILogger<Wall3D> Logger { get; set; } = null!;
 
     private string SharedSuffix => string.IsNullOrEmpty(ShareToken) ? string.Empty : $"/shared/{Uri.EscapeDataString(ShareToken)}";
 
@@ -70,26 +52,9 @@ public partial class Wall3D : IAsyncDisposable
         _ => "Wall not found.",
     };
 
-    public async ValueTask DisposeAsync()
-    {
-        await UnmountAsync();
-        if (_module is not null)
-        {
-            try
-            {
-                await _module.DisposeAsync();
-            }
-            catch (JSDisconnectedException)
-            {
-                // Circuit already torn down.
-            }
-        }
-
-        GC.SuppressFinalize(this);
-    }
-
     // Route data is loaded here, not in OnInitializedAsync: enhanced navigation between two walls
-    // (same route template) keeps this component alive and only swaps the parameters.
+    // (same route template) keeps this component alive and only swaps the parameters. The stage
+    // remounts when the view instance changes.
     protected override async Task OnParametersSetAsync()
     {
         var key = (WallId, ShareToken, BoulderId);
@@ -100,8 +65,6 @@ public partial class Wall3D : IAsyncDisposable
 
         _loaded = key;
         _result = null;
-        _mountFailed = false;
-        await UnmountAsync();
         try
         {
             _result = await ViewService.BuildAsync(WallId, BoulderId, ShareToken);
@@ -110,61 +73,9 @@ public partial class Wall3D : IAsyncDisposable
         {
             // Same as the wall page: an anonymous visitor without a share link signs in first.
             Navigation.NavigateTo("/account/login", replace: true);
-            return;
-        }
-
-        _needsMount = _result.Status == Wall3DViewStatus.Ok;
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (!_needsMount || _result?.View is not { } view)
-        {
-            return;
-        }
-
-        _needsMount = false;
-        try
-        {
-            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "/js/wall3d.js");
-            _viewer = await _module.InvokeAsync<IJSObjectReference>(
-                "mount",
-                _stage,
-                view,
-                new Dictionary<string, object> { ["roleColors"] = RoleColors, ["initialPreset"] = "front" });
-        }
-        catch (JSDisconnectedException)
-        {
-            // The circuit went away mid-mount; nothing to render into any more.
-        }
-        catch (JSException ex)
-        {
-            Logger.LogWarning(ex, "3D view of wall {WallId} failed to start (WebGL unavailable?)", WallId);
-            _mountFailed = true;
-            StateHasChanged();
         }
     }
 
     private static string UnplacedText(int count) =>
         count == 1 ? "1 hold not measured yet" : $"{count} holds not measured yet";
-
-    private async Task UnmountAsync()
-    {
-        var viewer = _viewer;
-        _viewer = null;
-        if (viewer is null)
-        {
-            return;
-        }
-
-        try
-        {
-            await viewer.InvokeVoidAsync("dispose");
-            await viewer.DisposeAsync();
-        }
-        catch (JSDisconnectedException)
-        {
-            // The browser side is already gone, and its WebGL context with it.
-        }
-    }
 }

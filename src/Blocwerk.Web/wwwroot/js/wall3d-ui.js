@@ -1,5 +1,7 @@
 // DOM overlay of the 3D wall view (wall3d.js): preset buttons, hold info card, scale bar, the
-// "you stand here" plan map and the photo-real toggle. Plain DOM, styled by /css/wall3d.css.
+// "you stand here" plan map and the Schematic / Photos / Photo-real mode switch. Plain DOM, styled
+// by /css/wall3d.css.
+import { MODE_LABELS } from './wall3d-modes.js';
 
 const PRESET_LABELS = { front: 'Front', below: 'Below', left: 'Left', right: 'Right', top: 'Top' };
 const ROLE_LABELS = { Start: 'Start hold', Top: 'Top hold', Hand: 'Hand hold', Foot: 'Foot hold', ColorFoot: 'Foot (colour rule)' };
@@ -12,13 +14,36 @@ function el(tag, cls, text) {
     return e;
 }
 
-const PHOTO_LABELS = { off: 'Photo-real (beta)', loading: 'Loading…', on: 'Facet model' };
+const MODE_TITLES = {
+    schematic: 'Plain facets with every hold as its real outline',
+    photos: 'The rectified wall photos, hold outlines drawn over them',
+    photoreal: 'The photo-real capture of the wall (beta)',
+};
+
+/** The mode switch (a radio group); hidden when only one mode is available. */
+function buildModeSwitch(modes, pick) {
+    const group = el('div', 'w3d-modes');
+    group.setAttribute('role', 'radiogroup');
+    group.setAttribute('aria-label', 'View mode');
+    group.hidden = modes.length < 2;
+    for (const mode of modes) {
+        const b = el('button', 'w3d-mode', MODE_LABELS[mode]);
+        b.type = 'button';
+        b.dataset.mode = mode;
+        b.title = MODE_TITLES[mode];
+        b.setAttribute('role', 'radio');
+        b.setAttribute('aria-checked', 'false');
+        b.addEventListener('click', () => pick(mode));
+        group.append(b);
+    }
+    return group;
+}
 
 /**
  * Builds the overlay into `root`. `on` carries the callbacks: preset(name), reset(), closeCard(),
- * photoReal() (toggle). `photoAvailable` enables the photo-real toggle.
+ * mode(name). `modes` lists the view modes this wall offers (wall3d-modes.js).
  */
-export function buildOverlay(root, view, on, photoAvailable) {
+export function buildOverlay(root, view, on, modes) {
     const hint = el('div', 'w3d-hint', 'Drag to orbit · pinch or scroll to zoom · two fingers / right-drag to pan');
     const presets = el('div', 'w3d-presets');
     presets.setAttribute('role', 'toolbar');
@@ -35,12 +60,7 @@ export function buildOverlay(root, view, on, photoAvailable) {
     reset.addEventListener('click', () => on.reset());
     presets.append(reset);
 
-    const photo = el('button', 'w3d-btn w3d-photoreal', PHOTO_LABELS.off);
-    photo.type = 'button';
-    photo.disabled = !photoAvailable;
-    photo.setAttribute('aria-pressed', 'false');
-    photo.title = photoAvailable ? 'Show the photo-real capture of the wall' : 'No photo-real capture of this wall yet';
-    photo.addEventListener('click', () => photoAvailable && on.photoReal());
+    const modeSwitch = buildModeSwitch(modes, on.mode);
 
     const scale = el('div', 'w3d-scale');
     const bar = el('div', 'w3d-scale-bar');
@@ -54,20 +74,24 @@ export function buildOverlay(root, view, on, photoAvailable) {
     card.hidden = true;
     card.setAttribute('role', 'status');
 
-    root.append(hint, photo, map, scale, card, presets);
+    root.append(hint, modeSwitch, map, scale, card, presets);
     return {
-        hint, presets, card, map, photo,
+        hint, presets, card, map, modes: modeSwitch,
         setActive(name) {
             presets.querySelectorAll('[data-preset]').forEach(b => b.classList.toggle('active', b.dataset.preset === name));
         },
         hideHint() { hint.classList.add('gone'); },
-        /** Photo-real toggle state: 'off' | 'loading' | 'on'. */
-        setPhotoReal(state) {
-            photo.textContent = PHOTO_LABELS[state];
-            photo.disabled = !photoAvailable || state === 'loading';
-            photo.setAttribute('aria-pressed', state === 'on' ? 'true' : 'false');
-            photo.classList.toggle('active', state === 'on');
-            root.classList.toggle('w3d-photo-on', state === 'on');
+        /** Marks `mode` as current; `loading` shows it as still loading and blocks further picks. */
+        setMode(mode, loading) {
+            modeSwitch.querySelectorAll('[data-mode]').forEach(b => {
+                const current = b.dataset.mode === mode;
+                b.classList.toggle('active', current);
+                b.setAttribute('aria-checked', current ? 'true' : 'false');
+                b.disabled = !!loading;
+                b.textContent = current && loading ? 'Loading…' : MODE_LABELS[b.dataset.mode];
+            });
+            root.dataset.mode = mode || '';
+            root.classList.toggle('w3d-photo-on', mode === 'photoreal' && !loading);
         },
         /** Shows a short message in the hint bubble. */
         say(text) { hint.textContent = text; hint.classList.remove('gone'); },

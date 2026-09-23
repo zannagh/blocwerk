@@ -31,6 +31,8 @@
     flex: 1;
     min-height: 0;
     border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
 }
 
 .wall3d-message { padding: 16px; }

@@ -92,6 +92,7 @@ public sealed record Wall3DMarker(int Id, string FacetId, IReadOnlyList<double[]
 /// <param name="IsFoot">True for foot-category holds.</param>
 /// <param name="UsageCount">Number of live (non-archived) boulders that use the hold.</param>
 /// <param name="Role">Role in the highlighted boulder, or null when not part of it / no boulder.</param>
+/// <param name="Shape">The hold's outline on the facet, mm relative to (PlaneA, PlaneB); null only from old callers.</param>
 public sealed record Wall3DHold(
     Guid Id,
     string FacetId,
@@ -106,7 +107,8 @@ public sealed record Wall3DHold(
     string Hex,
     bool IsFoot,
     int UsageCount,
-    Wall3DHoldRole? Role);
+    Wall3DHoldRole? Role,
+    Wall3DHoldShape? Shape = null);
 
 /// <summary>A hold's part in the highlighted boulder. Serialised by name for the renderer.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter<Wall3DHoldRole>))]

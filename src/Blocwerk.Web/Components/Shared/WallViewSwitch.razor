@@ -1,0 +1,44 @@
+@* "Photos | 3D" view switch for the wall and boulder pages. Renders only when the wall has an
+   active geometry model, so walls without one (and so without a 3D view) never show it. The 3D
+   side is the inline schematic (Wall3DInline); the host swaps its photo viewer for it. *@
+@inject IWall3DViewService ViewService
+
+@if (available)
+{
+    <div class="view-toggle wall-view-switch" role="group" aria-label="Wall view">
+        <button type="button" class="toggle-btn @(!Show3D ? "active" : "")" aria-pressed="@(!Show3D)"
+                @onclick="() => SetAsync(false)" title="The wall photos">
+            Photos
+        </button>
+        <button type="button" class="toggle-btn @(Show3D ? "active" : "")" aria-pressed="@Show3D"
+                @onclick="() => SetAsync(true)" title="The measured 3D model, every hold as its real outline">
+            3D
+        </button>
+    </div>
+}
+
+@code {
+    private bool available;
+    private Guid checkedWallId;
+
+    [Parameter, EditorRequired] public Guid WallId { get; set; }
+
+    /// <summary>True while the host shows the 3D view.</summary>
+    [Parameter] public bool Show3D { get; set; }
+
+    [Parameter] public EventCallback<bool> Show3DChanged { get; set; }
+
+    // Parameters, not OnInitializedAsync: the host page may be reused for another wall.
+    protected override async Task OnParametersSetAsync()
+    {
+        if (checkedWallId == WallId)
+        {
+            return;
+        }
+
+        checkedWallId = WallId;
+        available = WallId != Guid.Empty && await ViewService.HasActiveGeometryAsync(WallId);
+    }
+
+    private Task SetAsync(bool show) => show == Show3D ? Task.CompletedTask : Show3DChanged.InvokeAsync(show);
+}

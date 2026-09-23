@@ -67,7 +67,13 @@ public sealed class Wall3DViewService(
             return new Wall3DViewResult(Wall3DViewStatus.InvalidGeometry, wall.Name);
         }
 
-        var view = Wall3DViewBuilder.Build(wall, doc, boulderId);
+        Dictionary<Wall3DPhotoKey, Wall3DPhotoMarkers> photoMarkers;
+        await using (var db = await dbContextFactory.CreateDbContextAsync(ct))
+        {
+            photoMarkers = await Wall3DPhotoMarkerLoader.LoadAsync(db, wall.Id, ct);
+        }
+
+        var view = Wall3DViewBuilder.Build(wall, doc, boulderId, photoMarkers);
         return new Wall3DViewResult(Wall3DViewStatus.Ok, wall.Name, await WithImageryAsync(view, shareToken, ct));
     }
 

@@ -27,34 +27,26 @@ public static class Wall3DViewBuilder
     public const double FallbackMarginMm = 150;
 
     /// <summary>Builds the view. <paramref name="wall"/> must carry its holds and boulders (with BoulderHolds).</summary>
-    public static Wall3DView Build(Wall wall, WallGeometryDocument doc, Guid? boulderId)
+    /// <param name="wall">The wall with holds and boulders.</param>
+    /// <param name="doc">Its active geometry model.</param>
+    /// <param name="boulderId">The boulder to highlight, if any.</param>
+    /// <param name="photoMarkers">
+    /// Stored marker observations per hold photo, so outlines map onto their facet through the same
+    /// homography ingest measured them with. Optional: without them the photo's own placed holds fit one.
+    /// </param>
+    /// <returns>The view.</returns>
+    public static Wall3DView Build(
+        Wall wall,
+        WallGeometryDocument doc,
+        Guid? boulderId,
+        IReadOnlyDictionary<Wall3DPhotoKey, Wall3DPhotoMarkers>? photoMarkers = null)
     {
         var frames = new Dictionary<string, FacetFrame>(StringComparer.Ordinal);
         var facets = BuildFacets(doc, wall, frames);
         var markers = BuildMarkers(doc);
 
-        var liveBoulders = wall.Boulders.Where(b => !b.IsArchived && !b.IsDraft && !b.IsHistoric).ToList();
-        var usage = liveBoulders
-            .SelectMany(b => b.BoulderHolds.Select(bh => bh.HoldId).Distinct())
-            .GroupBy(id => id)
-            .ToDictionary(g => g.Key, g => g.Count());
-
         var boulder = boulderId is { } bid ? wall.Boulders.FirstOrDefault(b => b.Id == bid) : null;
-        var boulderHolds = boulder?.BoulderHolds.ToDictionary(bh => bh.HoldId) ?? [];
-
-        var holds = new List<Wall3DHold>();
-        var unplaced = 0;
-        foreach (var hold in LiveHolds(wall))
-        {
-            if (hold.FacetId is null || hold.PlaneAMm is not { } a || hold.PlaneBMm is not { } b
-                || !frames.TryGetValue(hold.FacetId, out var frame))
-            {
-                unplaced++;
-                continue;
-            }
-
-            holds.Add(ToHold(hold, frame, a, b, usage.GetValueOrDefault(hold.Id), RoleOf(hold, boulder, boulderHolds)));
-        }
+        var (holds, unplaced) = BuildHolds(wall, doc, frames, boulder, photoMarkers);
 
         return new Wall3DView
         {
@@ -96,6 +88,41 @@ public static class Wall3DViewBuilder
         return !string.IsNullOrEmpty(boulder.FootColorOnly) && hold.Color == boulder.FootColorOnly
             ? Wall3DHoldRole.ColorFoot
             : null;
+    }
+
+    /// <summary>Places every live hold on its facet with its outline; counts the ones that cannot be placed.</summary>
+    private static (List<Wall3DHold> Holds, int Unplaced) BuildHolds(
+        Wall wall,
+        WallGeometryDocument doc,
+        Dictionary<string, FacetFrame> frames,
+        Boulder? boulder,
+        IReadOnlyDictionary<Wall3DPhotoKey, Wall3DPhotoMarkers>? photoMarkers)
+    {
+        var usage = wall.Boulders
+            .Where(b => !b.IsArchived && !b.IsDraft && !b.IsHistoric)
+            .SelectMany(b => b.BoulderHolds.Select(bh => bh.HoldId).Distinct())
+            .GroupBy(id => id)
+            .ToDictionary(g => g.Key, g => g.Count());
+        var boulderHolds = boulder?.BoulderHolds.ToDictionary(bh => bh.HoldId) ?? [];
+
+        var live = LiveHolds(wall).ToList();
+        var projector = HoldPlaneProjector.Create(live.Where(h => h.FacetId is not null && frames.ContainsKey(h.FacetId)), doc, photoMarkers);
+        var holds = new List<Wall3DHold>();
+        var unplaced = 0;
+        foreach (var hold in live)
+        {
+            if (hold.FacetId is null || hold.PlaneAMm is not { } a || hold.PlaneBMm is not { } b
+                || !frames.TryGetValue(hold.FacetId, out var frame))
+            {
+                unplaced++;
+                continue;
+            }
+
+            var placed = ToHold(hold, frame, a, b, usage.GetValueOrDefault(hold.Id), RoleOf(hold, boulder, boulderHolds));
+            holds.Add(placed with { Shape = HoldShapeProjector.Project(hold, placed.WidthMm, placed.HeightMm, projector.For(hold)) });
+        }
+
+        return (holds, unplaced);
     }
 
     /// <summary>The wall's live holds: everything at or below the wall generation (staged gen+1 rows excluded).</summary>

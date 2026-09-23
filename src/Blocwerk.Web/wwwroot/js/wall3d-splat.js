@@ -53,7 +53,10 @@ export function createPhotoReal({ renderer, scene, view, facetParts, onProgress 
     }
 
     function apply() {
+        // The SparkRenderer draws its last sorted splats itself, so it is hidden too: with only the
+        // mesh hidden, an on-demand redraw after switching back still showed the splat.
         if (mesh) mesh.visible = active;
+        if (sparkRenderer) sparkRenderer.visible = active;
         for (const part of facetParts) part.visible = !active;
     }
 

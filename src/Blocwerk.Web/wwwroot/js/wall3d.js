@@ -7,7 +7,10 @@
 // except in photo-real mode (wall3d-splat.js), which renders continuously while it is on.
 import * as THREE from '../lib/three/three.module.min.js';
 import { OrbitControls } from '../lib/three/controls/OrbitControls.js';
-import { buildFacets, buildHolds, buildLabels, buildMarkers, buildSelection, buildTextures, fitLabels, placeSelection } from './wall3d-scene.js';
+import { buildFacets, buildLabels, buildMarkers, buildTextures, fitLabels } from './wall3d-scene.js';
+import { buildHolds, buildSelection, OUTLINE_LIFT, placeSelection } from './wall3d-holds.js';
+import { buildOutlines } from './wall3d-outlines.js';
+import { availableModes, createModeController, normalizeMode } from './wall3d-modes.js';
 import { createLabelLayout } from './wall3d-labels.js';
 import { createTweener, presetPose, wallFrame } from './wall3d-camera.js';
 import { buildOverlay, createPlanMap } from './wall3d-ui.js';
@@ -75,11 +78,12 @@ export function mount(container, view, options = {}) {
 
     const facets = buildFacets(view, renderer);
     const holds = buildHolds(view, roleColors);
+    const outlines = buildOutlines(holds.litHolds, holds.dimHolds, holds.facets, OUTLINE_LIFT);
     const selection = buildSelection();
     const labels = buildLabels(view);
     const textures = buildTextures(view, renderer);
     const markers = buildMarkers(view);
-    scene.add(facets.group, textures, markers, labels, holds.lit, holds.dim, holds.rings, selection);
+    scene.add(facets.group, textures, markers, labels, holds.lit, holds.dim, outlines, holds.rings, holds.pick, selection);
     const frame = wallFrame(view, facets.group);
     const surroundings = buildSurroundings(scene, frame, themeColor(container, '--bg', '#f5f4f1'));
 
@@ -98,41 +102,29 @@ export function mount(container, view, options = {}) {
     renderer.__wall3dRequest = request;         // texture loads ask for a redraw when they land
 
     // Photo-real mode swaps the modelled wall for the captured splat; the boulder rings, the
-    // selection and hold taps stay (the invisible hold discs are still what a tap hits).
+    // selection and hold taps stay (the never-drawn pick outlines are still what a tap hits).
     const photo = createPhotoReal({
         renderer, scene, view,
-        facetParts: [facets.group, textures, markers, labels, holds.lit, holds.dim, ...surroundings],
+        facetParts: [facets.group, textures, markers, labels, holds.lit, holds.dim, outlines, ...surroundings],
         onProgress: f => ui.say(f == null ? 'Loading the photo-real view…' : `Loading the photo-real view… ${Math.round(f * 100)}%`),
     });
+    const modes = availableModes(view, photo.available);
     const ui = buildOverlay(container, view, {
         preset: name => goTo(name),
         reset: () => { ui.hideCard(); selection.visible = false; goTo('front'); },
         closeCard: () => { ui.hideCard(); selection.visible = false; request(); },
-        photoReal: () => togglePhotoReal(),
-    }, photo.available);
+        mode: name => modeCtl.set(name),
+    }, modes);
+    const modeCtl = createModeController({
+        modes, photo, ui, request: () => request(), PhotoRealUnsupportedError,
+        parts: { textures, outlines, slabs: [holds.lit, holds.dim] },
+    });
     const plan = createPlanMap(ui.map, view, frame);
     const labelLayout = createLabelLayout(labels, camera, renderer.domElement);
     // Labels keep out of the overlay controls; re-measured when one appears, goes or resizes.
     let obstaclesDirty = true;
     const hintObserver = new MutationObserver(() => { obstaclesDirty = true; request(); });
     hintObserver.observe(ui.hint, { attributes: true, attributeFilter: ['class'], childList: true, characterData: true });
-
-    async function togglePhotoReal(on = !photo.active) {
-        ui.setPhotoReal(on ? 'loading' : 'off');
-        if (on && !photo.loaded) ui.say('Loading the photo-real view…');
-        try {
-            await photo.setActive(on);
-            ui.setPhotoReal(photo.active ? 'on' : 'off');
-            if (on) ui.hideHint();
-        } catch (err) {
-            ui.setPhotoReal('off');
-            ui.say(err instanceof PhotoRealUnsupportedError
-                ? 'This device cannot show the photo-real view (its graphics are too limited).'
-                : 'The photo-real view could not be loaded.');
-            console.warn('wall3d: photo-real view failed', err);
-        }
-        request();
-    }
 
     function goTo(name) {
         // The hint pill sits over the top-left of the stage, where presets such as "Below" put the
@@ -149,7 +141,7 @@ export function mount(container, view, options = {}) {
         const moving = controls.update();
         if (labels.visible) {
             if (obstaclesDirty) {
-                labelLayout.measure([ui.photo, ui.hint, ui.map]);
+                labelLayout.measure([ui.modes, ui.hint, ui.map]);
                 obstaclesDirty = false;
             }
             camera.updateMatrixWorld();
@@ -184,8 +176,7 @@ export function mount(container, view, options = {}) {
         const r = renderer.domElement.getBoundingClientRect();
         const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
         raycaster.setFromCamera(ndc, camera);
-        const hit = raycaster.intersectObjects(holds.pickables, false).find(i => i.instanceId != null);
-        const hold = hit && hit.object.userData.holds[hit.instanceId];
+        const hold = holds.holdAt(raycaster.intersectObject(holds.pick, false)[0]);
         if (hold) {
             placeSelection(selection, hold, holds.facets.get(hold.facetId));
             ui.showHold(hold);
@@ -210,16 +201,34 @@ export function mount(container, view, options = {}) {
     camera.position.copy(initial.position);
     controls.target.copy(initial.target);
     ui.setActive(options.initialPreset || 'front');
+    const startMode = normalizeMode(options.initialMode);
+    modeCtl.set(startMode && modes.includes(startMode) && startMode !== 'photoreal' ? startMode : 'schematic');
+    if (startMode === 'photoreal') modeCtl.set('photoreal');
     request();
 
-    return {
+    const handle = {
+        view,
         preset: goTo,
+        /** Switches the view mode ('schematic' | 'photos' | 'photoreal'); resolves when it shows. */
+        mode: name => modeCtl.set(name),
         /** Turns the photo-real (splat) mode on or off; resolves when it shows. */
-        photoReal: on => togglePhotoReal(on),
+        photoReal: on => modeCtl.set(on ? 'photoreal' : 'schematic'),
+        /** Scene statistics for the screenshot harness / perf checks. */
+        stats: () => ({ holds: holds.all.length, drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles }),
         /** Renders synchronously (used by the screenshot harness). */
         renderNow() { tweener.step(performance.now() + 1e6); controls.update(); tick(performance.now()); },
+        /** Looks straight at one hold from `distanceMm` out along its facet normal (close-ups). */
+        focusHold(id, distanceMm = 900) {
+            const hold = holds.all.find(h => h.id === id);
+            const f = hold && holds.facets.get(hold.facetId);
+            if (!f) return;
+            const target = new THREE.Vector3(...f.origin).addScaledVector(new THREE.Vector3(...f.u), hold.planeA)
+                .addScaledVector(new THREE.Vector3(...f.v), hold.planeB);
+            tweener.to({ target, position: target.clone().addScaledVector(new THREE.Vector3(...f.normal), distanceMm) });
+            request();
+        },
         selectHold(id) {
-            const hold = [...holds.lit.userData.holds, ...holds.dim.userData.holds].find(h => h.id === id);
+            const hold = holds.all.find(h => h.id === id);
             if (!hold) return;
             placeSelection(selection, hold, holds.facets.get(hold.facetId));
             ui.showHold(hold);
@@ -243,8 +252,11 @@ export function mount(container, view, options = {}) {
             renderer.forceContextLoss();
             container.replaceChildren();
             container.classList.remove('w3d-root');
+            delete container.__wall3d;
         },
     };
+    container.__wall3d = handle;           // for the screenshot / perf scripts
+    return handle;
 }
 
 function disposeScene(scene) {
