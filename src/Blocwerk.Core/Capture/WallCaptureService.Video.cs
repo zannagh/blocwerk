@@ -2,6 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -27,6 +28,10 @@ public sealed partial class WallCaptureService
 
         // Every gate BEFORE a single byte is written: admin of the wall, no kiosk, own open draft.
         await EnsureVideoAllowedAsync(captureId);
+
+        // A 1–2 GB upload runs for many minutes and cannot be resumed: hold the deploy gate until the
+        // file is stored, probed and attached (or refused, failed or cancelled — the using releases it).
+        using var busy = busyGate?.Hold(DeployBusyWork.CaptureVideoUpload);
         var stored = await SaveVideoAsync(content, extension, ct);
         CaptureVideoProbe probe;
         try

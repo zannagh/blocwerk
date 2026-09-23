@@ -91,6 +91,9 @@ services:
       SPLATSERVICE__APIKEY: ${SPLAT_API_KEY:-}
       # Training steps per photo-real job; empty = the worker's default (15000, ~50 min on an M4).
       SPLATSERVICE__MAXSTEPS: ${SPLAT_MAX_STEPS:-}
+      # Largest walk-along capture video the app accepts, in MB (1-16384; default 2048). A reverse proxy
+      # in front of the app must allow a request body this big on /api/captures/*/video.
+      CAPTURE__MAXVIDEOMB: ${CAPTURE__MAXVIDEOMB:-2048}
     volumes:
       - ./appsettings.json:/app/appsettings.json:ro
       # Persist the DataProtection key ring across redeploys (see AuthenticationServices.cs) so a

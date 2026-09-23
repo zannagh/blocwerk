@@ -39,9 +39,9 @@ public sealed class WallCapturePipelineOptions
 
     /// <summary>
     /// Largest walk-along video a capture takes (streamed to disk, never held in memory). Setting
-    /// <c>Blocwerk:Capture:MaxVideoMb</c> / <c>CAPTURE__MAXVIDEOMB</c>; default 1024 MB.
+    /// <c>Blocwerk:Capture:MaxVideoMb</c> / <c>CAPTURE__MAXVIDEOMB</c> (1–16384); default 2048 MB.
     /// </summary>
-    public long MaxVideoBytes { get; init; } = 1024L * 1024 * 1024;
+    public long MaxVideoBytes { get; init; } = 2048L * 1024 * 1024;
 
     /// <summary>
     /// Most frames taken from the video for the photo-real view (they never count against

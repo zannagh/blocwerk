@@ -29,7 +29,8 @@ public sealed partial class WallCaptureService(
     IMarkerDetectionService? markerDetection = null,
     IMarkerPlanService? markerPlans = null,
     ICaptureVideoFrameExtractor? videoFrames = null,
-    WallCapturePipelineOptions? pipelineOptions = null) : IWallCaptureService
+    WallCapturePipelineOptions? pipelineOptions = null,
+    IDeployBusyGate? busyGate = null) : IWallCaptureService
 {
     private const string AdminAction = "Capturing wall photos";
 

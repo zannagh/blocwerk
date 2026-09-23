@@ -104,7 +104,7 @@ public static class EditActivityPolicy
     /// </summary>
     public static bool IsExpired(EditActivityEntry entry, DateTimeOffset now)
     {
-        if (entry.EditKind == EditKind.Maintenance)
+        if (IsBackgroundWork(entry.EditKind))
         {
             // No circuit heartbeats it and no user clicks in it, so only the absolute cap applies.
             return now - entry.StartedUtc >= MaintenanceMaxLifetime;
@@ -112,6 +112,16 @@ public static class EditActivityPolicy
 
         return now - entry.LastSeenUtc >= LeaseTimeToLive
                || now - entry.LastActivityUtc >= InactivityTimeToLive;
+    }
+
+    /// <summary>
+    /// Kinds with no circuit behind them (a maintenance job, a capture video upload or extraction):
+    /// nothing heartbeats them and nobody clicks in them, so only
+    /// <see cref="MaintenanceMaxLifetime"/> bounds them.
+    /// </summary>
+    public static bool IsBackgroundWork(EditKind kind)
+    {
+        return kind is EditKind.Maintenance or EditKind.CaptureVideoUpload or EditKind.CaptureVideoFrames;
     }
 
     /// <summary>

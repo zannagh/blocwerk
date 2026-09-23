@@ -21,7 +21,8 @@ internal sealed class CaptureScenario : IDisposable
     private readonly string storeDir = Path.Combine(Path.GetTempPath(), "blocwerk-capture-tests", Guid.NewGuid().ToString("N"));
 
     public CaptureScenario(
-        WallTestHarness harness, IMarkerDetectionService? detector = null, IKioskContext? kiosk = null, WallCapturePipelineOptions? options = null)
+        WallTestHarness harness, IMarkerDetectionService? detector = null, IKioskContext? kiosk = null, WallCapturePipelineOptions? options = null,
+        IDeployBusyGate? busyGate = null)
     {
         Harness = harness;
         Options = options ?? Options;
@@ -34,10 +35,10 @@ internal sealed class CaptureScenario : IDisposable
         MarkerPlans = new MarkerPlanService(harness.DbContextFactory, harness.CurrentUser, NullLogger<MarkerPlanService>.Instance, kiosk);
         Service = new WallCaptureService(
             harness.DbContextFactory, harness.CurrentUser, Files, Queue, new FakeComputeJobClientFactory(Client, SplatClient),
-            NullLogger<WallCaptureService>.Instance, kiosk, Detector, MarkerPlans, Video, Options);
+            NullLogger<WallCaptureService>.Instance, kiosk, Detector, MarkerPlans, Video, Options, busyGate);
         Processor = new WallCaptureProcessor(
             harness.RootContextFactory, Settings, new FakeComputeJobClientFactory(Client, SplatClient), Files, Push,
-            NullLoggerFactory.Instance, Options, Detector, Video);
+            NullLoggerFactory.Instance, Options, Detector, Video, busyGate);
     }
 
     public WallTestHarness Harness { get; }

@@ -18,6 +18,9 @@ internal sealed class FakeVideoFrameExtractor : ICaptureVideoFrameExtractor
 
     public List<string> Probed { get; } = [];
 
+    /// <summary>Runs inside every extraction, before <see cref="Failure"/> is thrown (lets a test look at state mid-run).</summary>
+    public Action? DuringExtract { get; set; }
+
     public List<(string Path, CaptureVideoFrameRequest Request)> Extracted { get; } = [];
 
     public Task<CaptureVideoProbe> ProbeAsync(string videoPath, CancellationToken ct)
@@ -30,6 +33,7 @@ internal sealed class FakeVideoFrameExtractor : ICaptureVideoFrameExtractor
         string videoPath, CaptureVideoFrameRequest request, IProgress<double>? progress, CancellationToken ct)
     {
         Extracted.Add((videoPath, request));
+        DuringExtract?.Invoke();
         if (Failure is not null)
         {
             throw Failure;

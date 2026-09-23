@@ -26,7 +26,8 @@ public sealed partial class WallCaptureProcessor(
     ILoggerFactory loggerFactory,
     WallCapturePipelineOptions options,
     IMarkerDetectionService? markerDetection = null,
-    ICaptureVideoFrameExtractor? videoFrames = null)
+    ICaptureVideoFrameExtractor? videoFrames = null,
+    IDeployBusyGate? busyGate = null)
 {
     private readonly ILogger logger = loggerFactory.CreateLogger<WallCaptureProcessor>();
 

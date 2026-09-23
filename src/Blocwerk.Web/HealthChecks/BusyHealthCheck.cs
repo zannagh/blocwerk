@@ -58,7 +58,7 @@ public sealed class BusyHealthCheck : IHealthCheck
 
     private static object Describe(EditActivityEntry entry, DateTimeOffset now)
     {
-        var maintenance = entry.EditKind == EditKind.Maintenance;
+        var maintenance = EditActivityPolicy.IsBackgroundWork(entry.EditKind);
         var heartbeat = EditActivityPolicy.HeartbeatRemaining(entry, now);
         var activity = EditActivityPolicy.ActivityRemaining(entry, now);
 

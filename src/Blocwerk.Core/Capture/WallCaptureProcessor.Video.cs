@@ -3,6 +3,7 @@
 // </copyright>
 
 using System.Globalization;
+using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Compute;
 using Blocwerk.Core.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -40,6 +41,9 @@ public sealed partial class WallCaptureProcessor
             return;
         }
 
+        // Resumable (no frames stored → extracted again), but a deploy mid-run throws away up to
+        // VideoExtractTimeout of ffmpeg work, so the gate stays busy until the frames are stored.
+        using var busy = busyGate?.Hold(DeployBusyWork.CaptureVideoFrames);
         await SetStageAsync(captureId, WallCaptureStatus.Splatting, 0, VideoStage, ct);
         var frames = await ExtractFramesAsync(captureId, video, ct);
         var names = new List<string>(frames.Count);

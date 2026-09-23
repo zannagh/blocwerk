@@ -559,7 +559,8 @@ admins, never on a kiosk tablet.
 
 How to film it:
 
-- **30–90 seconds**, MP4 or MOV, up to 1 GB and at most 10 minutes long.
+- **30–90 seconds**, MP4 or MOV, up to 2 GB (`CAPTURE__MAXVIDEOMB`) and at most 10 minutes long.
+  The browser gives the upload up to 2 hours and shows MB sent and the time left.
 - Use the phone's **1× camera**. The ultra-wide's edges are soft and its distortion hurts matching.
 - Walk the whole wall **slowly** at the **three heights** above, the camera roughly square to the
   wall, about 1–2 m away. Good light and a slow pace avoid motion blur.
@@ -945,9 +946,12 @@ The repo's compose file and `docker/.env.example` pass the memory and COLMAP var
 still fails on memory, use fewer or smaller photos, or run the worker on a machine with more memory.
 
 **Video uploads through a reverse proxy.** The walk-along video goes to the **app**, not the worker,
-at `POST /api/captures/{id}/video`, as one streamed request of up to `CAPTURE__MAXVIDEOMB` (1 GB by
-default). If a reverse proxy sits in front of the app, it must allow a request body of about **1 GB**
-on that route, or uploads fail partway. Other routes can keep their normal limit.
+at `POST /api/captures/{id}/video`, as one streamed request of up to `CAPTURE__MAXVIDEOMB` (2 GB by
+default). If a reverse proxy sits in front of the app, it must allow a request body of about **2 GB**
+on that route (and a read timeout of up to 2 hours), or uploads fail partway. Other routes can keep
+their normal limit. While the upload streams, and later while the capture worker extracts the
+video's frames, `/health/ready-to-deploy` reports busy, so the autodeploy waits instead of
+restarting the app underneath it.
 
 **On a Mac (native).** Docker on macOS has no GPU access, so on a Mac the worker runs natively and
 trains through Metal:
@@ -1049,7 +1053,7 @@ The compose file maps `docker/.env` values onto these: `GEOMETRYSERVICE_URL` →
 | appsettings (`Blocwerk:…`) | Environment | Default | Effect |
 |---|---|---|---|
 | `Capture:PhotoRetentionDays` | `CAPTURE__PHOTORETENTIONDAYS` | 30 | Days after a capture ends before its photos are deleted. `0` = keep forever. The active model's capture is always kept. A capture's video frames follow its photos. |
-| `Capture:MaxVideoMb` | `CAPTURE__MAXVIDEOMB` | 1024 | Largest walk-along video (streamed to disk, 1–16384). A reverse proxy in front of the app must allow bodies this big on `/api/captures/*/video` (section 9). |
+| `Capture:MaxVideoMb` | `CAPTURE__MAXVIDEOMB` | 2048 | Largest walk-along video (streamed to disk, 1–16384). A reverse proxy in front of the app must allow bodies this big on `/api/captures/*/video` (section 9). |
 | `Capture:MaxVideoFrames` | `CAPTURE__MAXVIDEOFRAMES` | 120 | Most frames taken from the video (3–400). |
 | `Capture:VideoFramesPerSecond` | `CAPTURE__VIDEOFRAMESPERSECOND` | 2.5 | Target frame rate (ffmpeg decodes 3 candidates per kept frame; the sharpest wins); lowered for long videos to stay under the cap. |
 

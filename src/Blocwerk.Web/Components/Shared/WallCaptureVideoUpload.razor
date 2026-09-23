@@ -15,7 +15,7 @@
     @if (uploading)
     {
         <progress class="capture-video-progress" max="100" value="@percent" aria-label="Video upload"></progress>
-        <p class="loading-small" role="status">@(percent < 100 ? $"Uploading video… {percent} %" : "Checking the video…")</p>
+        <p class="loading-small" role="status">@ProgressText()</p>
     }
     else if (Video is { } video)
     {

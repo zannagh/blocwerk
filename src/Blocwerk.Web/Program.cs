@@ -4,6 +4,7 @@ using System.Reflection;
 using Blocwerk.Authentication;
 using Blocwerk.Authentication.Controllers;
 using Blocwerk.Core;
+using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
 using Blocwerk.Core.Telemetry;
@@ -216,6 +217,9 @@ public static class Program
         // releases its leases on circuit teardown (backstop against an abrupt disconnect).
         builder.Services.AddSingleton<EditActivityRegistry>();
         builder.Services.AddScoped<CircuitEditActivity>();
+
+        // Core's long-running work (capture video upload + frame extraction) holds the same gate.
+        builder.Services.AddSingleton<IDeployBusyGate, EditActivityDeployBusyGate>();
 
         // Heartbeats this circuit's leases while its connection is UP, so a lease whose client has
         // gone silent (a sleeping tablet behind a NAT) expires on its TTL instead of holding
