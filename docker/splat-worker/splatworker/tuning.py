@@ -16,8 +16,9 @@ triangulate" (looser ratio test, no cross-check, then point_triangulator keeping
 16k points, 0.66 px on the same photos vs 9k guided / 4.2k plain unguided). A step the memory guard
 kills is retried on the next tier down (pipeline.Run._match).
 """
-import math
 from dataclasses import dataclass
+
+from .profiles import Profile, ladder
 
 GUIDED_BYTES_PER_PAIR = 16
 GUIDED_BASE, GUIDED_PER_THREAD = 1.95, 0.5
@@ -25,13 +26,14 @@ UNGUIDED_MB = 400
 EXTRACT_MB_PER_THREAD, EXTRACT_BASE_MB = 620, 150
 HEADROOM = 0.9  # plan to use at most 90 % of the budget
 
-# Brush (v0.3.0, Metal, M4, 2026-09-23) keeps every training image resident and densifies more with more
-# views, so its peak grows with images x pixels: 14 photos at 1800 px peaked at 2.2 GB (118k splats);
-# 53 photos + 120 video frames (173) at 1800 px were killed at 3.43 GB right after loading (limit 3.27 GB);
-# the same 173 at 1280 px peaked at 3.38 GB (534k splats). Model through the two peaks:
-# BRUSH_BASE_MB + images x edge^2 x 3/4 x BRUSH_BYTES_PER_PIXEL.
-BRUSH_BASE_MB, BRUSH_BYTES_PER_PIXEL = 2000, 6.9
+# Brush (v0.3.0, Metal, M4, 2026-09-23) keeps every training image resident and its peak grows with the
+# splat count: base + resident pixels + splats. Fit through three measured runs: 14 photos at 1800 px
+# (34 Mpx, 118k splats) peaked at 2.2 GB; 53 photos + 120 video frames at 1280 px (175 Mpx, 534k splats)
+# at 3.38 GB; the same 173 at 1800 px (347 Mpx, ~140k splats) were killed at 3.43 GB right after loading.
+# ~1 kB per splat = its 59 floats (SH degree 3) with gradients and two Adam moments (Profile.mb_per_ksplat).
+BRUSH_BASE_MB, BRUSH_MB_PER_MPX = 1900, 5.4
 MIN_TRAIN_EDGE = 960  # below this the splat loses the holds' detail; better to fail on memory than to train blind
+EDGE_STEP = 160  # how far one fitting step lowers the edge
 
 
 @dataclass(frozen=True)
@@ -76,16 +78,60 @@ def extraction_threads(budget_mb, max_threads):
     return max(1, min(max(1, max_threads), fit))
 
 
-def brush_mb(images, edge):
-    """Estimated peak MB of Brush training `images` images at --max-resolution `edge` (4:3 worst case)."""
-    return int(BRUSH_BASE_MB + images * edge * edge * 0.75 * BRUSH_BYTES_PER_PIXEL / (1024 * 1024))
+def dataset_mpx(sizes, edge):
+    """Megapixels Brush keeps resident for images of these (w, h) sizes at --max-resolution `edge`."""
+    total = 0.0
+    for w, h in sizes:
+        s = min(1.0, edge / max(w, h))
+        total += w * s * h * s
+    return total / 1e6
 
 
-def train_edge(budget_mb, images, requested_edge):
-    """The largest --max-resolution <= requested_edge (a multiple of 16) whose Brush estimate fits
-    HEADROOM x budget; never below MIN_TRAIN_EDGE (nor above what was asked)."""
-    if budget_mb <= 0 or images <= 0 or brush_mb(images, requested_edge) <= budget_mb * HEADROOM:
-        return requested_edge
-    room = budget_mb * HEADROOM - BRUSH_BASE_MB
-    edge = int(math.sqrt(max(room, 0) * 1024 * 1024 / (images * 0.75 * BRUSH_BYTES_PER_PIXEL))) // 16 * 16
-    return max(min(MIN_TRAIN_EDGE, requested_edge), min(requested_edge, edge))
+def brush_mb(mpx, splats, mb_per_ksplat=1.0):
+    """Estimated peak MB of Brush with `mpx` resident megapixels growing to `splats` splats."""
+    return int(BRUSH_BASE_MB + mpx * BRUSH_MB_PER_MPX + splats / 1000 * mb_per_ksplat)
+
+
+@dataclass(frozen=True)
+class TrainPlan:
+    profile: Profile
+    edge: int
+    max_splats: int
+    estimate_mb: int
+    fits: bool = True
+
+    @property
+    def name(self):
+        return f"{self.profile.name} at {self.edge} px, <= {self.max_splats // 1000}k splats"
+
+
+def _fit(profile, usable, sizes):
+    """The largest edge (EDGE_STEP steps from profile.edge down to profile.min_edge) at which
+    profile.min_splats fit `usable` MB, with the splat cap raised to what fits (<= max_splats); or None."""
+    edge = profile.edge
+    while True:
+        mpx = dataset_mpx(sizes, edge)
+        room = usable - brush_mb(mpx, 0)
+        splats = min(profile.max_splats, int(room / profile.mb_per_ksplat * 1000)) if room > 0 else 0
+        if splats >= profile.min_splats:
+            return TrainPlan(profile, edge, splats, brush_mb(mpx, splats, profile.mb_per_ksplat))
+        if edge <= profile.min_edge:
+            return None
+        edge = max(profile.min_edge, edge - EDGE_STEP)
+
+
+def train_plans(budget_mb, sizes, profile):
+    """The Brush runs to try, best first: one per profile of profiles.ladder(profile) that fits
+    HEADROOM x budget (the memory guard stepping down to the next one on a kill). When nothing fits,
+    the lowest profile at its floor anyway (fits=False): the guard decides. budget 0 = unknown: as asked."""
+    chain = ladder(profile)
+    if budget_mb <= 0:
+        return [TrainPlan(p, p.edge, p.max_splats, brush_mb(dataset_mpx(sizes, p.edge), p.max_splats, p.mb_per_ksplat))
+                for p in chain]
+    plans = [plan for plan in (_fit(p, budget_mb * HEADROOM, sizes) for p in chain) if plan]
+    if not plans:
+        low = chain[-1]
+        edge = max(min(MIN_TRAIN_EDGE, low.edge), low.min_edge)
+        est = brush_mb(dataset_mpx(sizes, edge), low.min_splats, low.mb_per_ksplat)
+        plans.append(TrainPlan(low, edge, low.min_splats, est, False))
+    return plans

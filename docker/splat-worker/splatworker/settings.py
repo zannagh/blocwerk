@@ -10,7 +10,7 @@ settings.colmap_bin = os.environ.get("COLMAP_BIN", "colmap")
 settings.splat_timeout_s = env_int("SPLAT_TIMEOUT_S", 4 * 3600)
 settings.min_photos = env_int("MIN_PHOTOS", 3)
 # Photos are re-encoded (metadata-free) on arrival at most this long edge; the job then downscales
-# them to the request's maxImageEdge.
+# them to the quality profile's edges (profiles.py).
 settings.ingest_max_edge = env_int("INGEST_MAX_EDGE", 4096)
 # Brush keeps its GPU kernel autotune cache in ./target under its working directory: share it.
 settings.brush_cache_dir = os.environ.get("BRUSH_CACHE_DIR", os.path.join(settings.work_dir, "_brush-cache"))
@@ -26,6 +26,9 @@ settings.colmap_max_features = env_int("COLMAP_MAX_FEATURES", 8192)
 settings.colmap_max_matches = env_int("COLMAP_MAX_MATCHES", 8192)
 settings.colmap_threads = env_int("COLMAP_THREADS", 4)
 settings.max_memory_mb = env_int("SPLAT_MAX_MEMORY_MB", 0)
+# SPLAT_MIN_MEMORY_MB: floor of Brush's budget (0 = 3 GB; COLMAP keeps the plain budget) for a machine whose "available" memory is low only
+# because idle apps sit in it; the high/max profiles need 5-6 GB / 12+ GB (profiles.py, README).
+settings.min_memory_mb = env_int("SPLAT_MIN_MEMORY_MB", 0)
 settings.max_swap_growth_mb = env_int("SPLAT_MAX_SWAP_GROWTH_MB", 2048)
 # Walk-along video frames (photos named vf_*, see frames.py): each frame is matched with its next
 # FRAME_NEIGHBOURS frames, and every FRAME_PHOTO_STRIDE-th frame with every photo.

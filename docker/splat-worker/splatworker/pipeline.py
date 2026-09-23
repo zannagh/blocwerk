@@ -16,6 +16,7 @@ from .align import align, unaligned_frame
 from .frames import build_pairs, is_frame, split
 from .ingest import clean_jpeg, downscale
 from .options import SplatOptions, resolve_matcher
+from .procs import MemoryLimitError
 from .settings import settings
 from .sfm import Sfm
 from .splatio import Splats, crop_mask, read_ply, write_splat, write_spz
@@ -34,6 +35,7 @@ class Run:
         with open(os.path.join(job_dir, "inputs.json")) as fh:
             self.inputs = json.load(fh)
         self.opts = SplatOptions(**self.inputs["options"])
+        self.profile = self.opts.profile()
         gpath = os.path.join(job_dir, "geometry.json")
         self.geometry = json.load(open(gpath)) if os.path.exists(gpath) else None
         self.log = os.path.join(job_dir, "tools.log")
@@ -72,7 +74,8 @@ class Run:
         for i, (stem, facts) in enumerate(sorted(photos.items())):
             src = os.path.join(self.dir, "arrived", f"{stem}.jpg")
             with Image.open(src) as im:
-                small = downscale(im.convert("RGB"), self.opts.maxImageEdge)
+                edge = self.profile.frame_edge if is_frame(stem) else self.profile.edge
+                small = downscale(im.convert("RGB"), edge)
             if stem in fixes:
                 small = colour.apply(small, fixes[stem])
                 after[stem] = colour.image_stats(small)
@@ -128,7 +131,7 @@ class Run:
         self.model = model
         self.begin("undistort")
         undist = os.path.join(self.dir, "dataset")
-        sfm.cm.undistort(img_dir, model_dir, undist, self.opts.maxImageEdge, self.report)
+        sfm.cm.undistort(img_dir, model_dir, undist, self.profile.edge, self.report)
         return undist
 
     def check_registered(self, model):
@@ -155,18 +158,36 @@ class Run:
                            settings.frame_neighbours, settings.frame_photo_stride)
 
     def train(self, dataset):
+        """Brush on the first plan of tuning.train_plans that fits; a memory-guard kill steps down to
+        the next one (the next lower quality profile), like the matching tiers."""
         self.begin("train")
         budget = self.sfm_run.train_budget_mb()
-        images = sum(len(files) for _, _, files in os.walk(os.path.join(dataset, "images")))
-        edge = tuning.train_edge(budget, images, self.opts.maxImageEdge)
-        if edge < self.opts.maxImageEdge:
-            self.note = f"{images} images at {edge} px to fit {budget / 1024:.1f} GB"
-        ply, parser = brush.train(settings.brush_bin, dataset, os.path.join(self.dir, "train"),
-                                  self.opts.maxSteps, edge, settings.brush_cache_dir,
-                                  os.path.join(self.dir, "train.log"), self.report,
-                                  budget, settings.max_swap_growth_mb)
+        sizes = image_sizes(os.path.join(dataset, "images"))
+        plans = tuning.train_plans(budget, sizes, self.profile)
+        retries = []
+        for i, plan in enumerate(plans):
+            self.note = f"{self.profile.name} -> {plan.name}" if plan.profile.name != self.profile.name or \
+                plan.edge < self.profile.edge else plan.name
+            self.note += f" (est. {plan.estimate_mb / 1024:.1f} of {budget / 1024:.1f} GB)"
+            self._log_line(f"train plan: {self.note}")
+            p = plan.profile
+            try:
+                ply, parser = brush.train(settings.brush_bin, dataset, os.path.join(self.dir, "train"),
+                                          p.steps, plan.edge, settings.brush_cache_dir,
+                                          os.path.join(self.dir, "train.log"), self.report,
+                                          budget, settings.max_swap_growth_mb,
+                                          p.brush_args(p.steps, plan.max_splats), p.checkpoints)
+                break
+            except MemoryLimitError as e:
+                if i == len(plans) - 1:
+                    raise
+                retries.append({"stage": "train", "reason": e.kind, "from": plan.name, "to": plans[i + 1].name})
+                self._log_line(f"{e.message} -> retrying as {plans[i + 1].name}")
+        self.sfm_run.retries.extend(retries)
         self.brush_stats = {"steps": parser.step, "brushSplatCount": parser.splats, "brushReportedTime": parser.took,
-                            "trainImages": images, "trainImageEdge": edge}
+                            "trainImages": len(sizes), "trainImageEdge": plan.edge, "quality": p.name,
+                            "qualityRequested": self.profile.name, "maxSplats": plan.max_splats,
+                            "trainEstimateMb": plan.estimate_mb}
         return ply
 
     def frame_and_crop(self, ply):
@@ -216,6 +237,17 @@ class Run:
             json.dump(doc, fh, indent=1)
         files.append("frame.json")
         return {"frame": {k: v for k, v in doc.items() if k != "stats"}, "stats": stats, "files": files}
+
+
+def image_sizes(img_dir):
+    """(w, h) of every training image under img_dir (headers only)."""
+    from PIL import Image
+    sizes = []
+    for root, _, files in os.walk(img_dir):
+        for f in files:
+            with Image.open(os.path.join(root, f)) as im:
+                sizes.append(im.size)
+    return sizes
 
 
 def camera_group(stem, facts, small, geo_cam):

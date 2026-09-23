@@ -18,7 +18,7 @@ run on any GPU machine: the realistic one for Blocwerk is the owner's Mac.
 |---|---|
 | `photos` | 3–400 files (`.jpg/.jpeg/.png/.webp/.tif`), ≤ `MAX_PHOTO_MB` each. File name stem = the photo's name; to align, it must equal the geometry camera's `image` (e.g. `IMG_2770.jpg`). A stem starting with **`vf_`** (`vf_0001.jpg`, … in video order) is an **auxiliary video frame** (see below): trained on, never aligned with, not counted towards `MIN_PHOTOS`. |
 | `geometry` | optional: a solved wall-geometry document (`tools/glyph/wall-geometry.schema.md`) → enables `align` and a crop box from the facets |
-| `options` | optional JSON: `maxSteps` (15000; 100–100000), `maxImageEdge` (1800; 480–4096), `matcher` (`auto`\|`exhaustive`\|`sequential`\|`pairs`; auto = `pairs` when `vf_` frames came along, else exhaustive up to 150 photos), `cropMarginMm` (400), `spz` (true). Unknown keys → 422. |
+| `options` | optional JSON: `quality` (`draft`\|`high`\|`max`; default `high`, see **Quality profiles**), `maxSteps` (the profile's; 100–100000, overrides it), `maxImageEdge` (the profile's photo edge; 480–4096, overrides it), `matcher` (`auto`\|`exhaustive`\|`sequential`\|`pairs`; auto = `pairs` when `vf_` frames came along, else exhaustive up to 150 photos), `cropMarginMm` (400), `spz` (true). Unknown keys → 422. |
 | `callbackUrl` | optional (protocol) |
 
 `202 {jobId, status}`; then `GET /v1/jobs/{id}` (status, `progress` 0..1, `stage`, `stageDetail`),
@@ -33,7 +33,7 @@ details in the authenticated `GET /v1/info`).
 
 | stage | progress band | detail from |
 |---|---|---|
-| `ingest` | 0–2 % | downscale to `maxImageEdge`, camera grouping (photos were already made metadata-free on arrival) |
+| `ingest` | 0–2 % | downscale photos to the profile's edge and video frames to its frame edge, camera grouping (photos were already made metadata-free on arrival) |
 | `sfm-features` | 2–8 % | COLMAP `Processed file [i/n]` |
 | `sfm-matching` | 8–22 % | COLMAP `Processing block [i/n, j/m]` (exhaustive runs in ~n/5-image blocks for granularity) or `image [i/n]` (sequential) or `pairs 250/2680` (pairs) |
 | `sfm-mapping` | 22–26 % | COLMAP `Registering image #k (n)` → "9/14 images registered"; with frames, every later detail ends in "; 87/120 video frames registered" |
@@ -151,6 +151,53 @@ Camera intrinsics prior: the solver's calibrated `K`/`dist` for that photo when 
 (scaled; same aspect required), else the EXIF 35 mm focal length; photos sharing lens + orientation +
 size share one COLMAP camera (RADIAL). Without either, each photo gets its own camera.
 
+## Quality profiles (`options.quality`, `profiles.py`)
+
+| | `draft` | `high` (default) | `max` |
+|---|---|---|---|
+| photos' long edge (ingest, undistort, Brush `--max-resolution`) | 1800 | 2400 | 4032 (native 24 MP main lens) |
+| video frames' long edge | 1800 | 1280 | 1920 (native) |
+| floor when fitting memory (then the next profile down) | 960 | 1920 | 3000 |
+| steps | 5000 | 15000 | 30000 |
+| `--max-splats` (fitted down to the budget, never below the floor) | ≤ 1 M (floor 250k) | ≤ 2 M (floor 800k) | ≤ 5 M (floor 2 M) |
+| `--growth-stop-iter` | Brush default (15000, i.e. never) | 60 % of the steps | 50 % |
+| `--growth-select-fraction` | 0.1 (default) | 0.15 | 0.2 |
+| `--sh-degree` | 3 (default) | 0 | 0 |
+| checkpoints (`--export-every`) | end only | every third | every third |
+
+Video frames stay small on purpose: Brush keeps every training image resident, and a walk-along frame
+has far less detail per pixel than a still, so frames are coverage (sides, below), the stills are the
+sharpness. **SH degree 0** for `high`/`max` because both exports (`.splat`, `.spz`) keep only the DC
+colour: higher bands cost 45 of 59 floats per splat (with gradients and two Adam moments) and let the
+DC colour drift from what every view shows. Explicit
+`maxSteps` / `maxImageEdge` override the profile's.
+
+**Fitting and step-down** (`tuning.train_plans`). Brush's peak is modelled as 1.9 GB + 5.4 MB per
+resident megapixel (at the edge Brush trains) + a per-splat cost, fitted to M4 runs: 14 photos at 1800 px: 2.2 GB; 173 images at 1280 px,
+534k splats, SH 3: 3.38 GB (~1 MB per 1000 splats); 173 at 1800 px: killed at 3.43 GB right after
+loading; `high` (2400 px, SH 0): 3.85 GB at 0.23 M splats, killed at the 5 GB limit while growing
+past ~0.6–0.8 M, so ~2 MB per 1000 splats at that image size (the per-splat cost grows with the
+training resolution, not with the SH degree, so SH 0 buys less than its float count suggests). For the requested
+profile and each lower one the worker takes the largest photo edge (160 px steps down to the profile's
+floor) at which the floor splat count fits 90 % of the budget, then raises the splat cap to what fits.
+Profiles that fit nothing are skipped; when none fits, the lowest one runs at its floor and the guard
+decides. When the memory guard kills Brush the next plan (profile) runs, like the matching tiers;
+`stats.quality`, `qualityRequested`, `trainImageEdge`, `maxSplats`, `trainEstimateMb` and
+`memoryRetries` say what happened.
+
+**Expected time** (whole job, 53 stills + 120 video frames, COLMAP 7–10 min included):
+
+| machine | `draft` | `high` | `max` |
+|---|---|---|---|
+| Apple M4, 16 GB, busy desktop (measured, see below) | ~15 min | ~67 min (SfM 14, train 52 at 4.8 steps/s; peak 5.8 GB, 1.27 M splats, 20.7 MB `.spz`; `SPLAT_MIN_MEMORY_MB=7168`) | does not fit (needs 10+ GB free) |
+| RTX 4070 / 4070 Ti class (12 GB VRAM, Linux, Vulkan) | ~10 min | ~25–35 min | ~1.5–2 h, if 5 M splats fit 12 GB (else steps down to `high`) |
+| RTX 4090 / L4-L40S class (24 GB) | ~8 min | ~15–20 min | ~45–60 min |
+
+GPU rows are extrapolated from the M4 (a 4090 has ~15–20× its FP32 throughput; Brush is
+rasterisation-bound, so time scales roughly with steps × training pixels × splats per pixel) and
+are not measured yet; the COLMAP part is CPU-bound and does not shrink with the GPU. On a GPU host,
+give the job memory to match (`SPLAT_MAX_MEMORY_MB` unset, container limit ≥ 16 GB for `max`).
+
 ## Configuration (env)
 
 | var | default | |
@@ -168,6 +215,7 @@ size share one COLMAP camera (RADIAL). Without either, each photo gets its own c
 | `RESULT_TTL_S` | 3600 | finished jobs + files are deleted after this; restart loses everything (re-submit on `404`) |
 | `WORK_DIR`, `BRUSH_CACHE_DIR`, `INGEST_MAX_EDGE` (4096), `MIN_PHOTOS` (3) | | |
 | `SPLAT_MAX_MEMORY_MB` | 0 (unset) | hard upper bound on the job's memory budget (above; unset = from the machine alone). The budget is the ceiling per tool run (COLMAP step or Brush): a watchdog polls the tool's physical footprint (process + children; libproc on macOS, `/proc` RSS + swap on Linux) every 0.25 s and kills it above; COLMAP steps then step down a tier, Brush fails the job with `train: Brush exceeded the 3.9 GB memory limit …`. On Linux COLMAP additionally gets `RLIMIT_AS` = 1.5× the budget (macOS does not enforce `RLIMIT_AS`, amd64 emulation ignores it); Brush does not (GPU drivers reserve large virtual ranges). Peaks are logged to `tools.log` / `train.log` |
+| `SPLAT_MIN_MEMORY_MB` | 0 (= 3 GB) | floor of Brush's memory budget (COLMAP keeps the plain one: a raised budget would pick guided matching on 1 thread, ~10× slower on 170 images), for a machine whose "available" memory is low only because idle apps sit in it (macOS pages them out); still never above 60 % of the total, and the swap guard stays on. `high` needs ~6–6.5 GB and `max` 12+ GB for a 170-image capture (below), so a busy 16 GB Mac otherwise trains `draft` |
 | `SPLAT_MAX_SWAP_GROWTH_MB` | 2048 | kill a tool (holding ≥ half its limit) once the system's swap grew by this much within 120 s (`0` = no swap check) |
 | `COLMAP_MAX_IMAGE_SIZE` | 2400 | longest edge COLMAP's SIFT sees (`FeatureExtraction.max_image_size`, 3.9: `SiftExtraction.*`); photos are already downscaled to `maxImageEdge` first. `0` = COLMAP's default |
 | `COLMAP_MAX_FEATURES` | 8192 | upper bound on SIFT features per image (the job asks for 16384 up to 60 photos, 8192 beyond). A soft cap in COLMAP 4.2 (8192 still yields up to ~13.4k per photo, not from extra orientations: `max_num_orientations 1` changed nothing). Guided matching × features² × threads is what once took a 14-photo job to 25 GB; the budget now picks guided or not (above) |

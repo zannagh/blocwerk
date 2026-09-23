@@ -23,8 +23,12 @@ public static class SplatLodLadder
     /// <summary>A level is only built when it is at most this fraction of the full scene.</summary>
     public const double MaxFraction = 0.8;
 
-    /// <summary>Splat counts of the ladder's levels. The full scene is the implicit top.</summary>
-    public static readonly IReadOnlyList<int> Targets = [40_000, 120_000, 250_000];
+    /// <summary>
+    /// Splat counts of the ladder's levels. The full scene is the implicit top. 800k is a desktop step
+    /// between a phone's 250k cap and a <see cref="SplatQuality.High"/> scene's 1–2 M; it is only built
+    /// for scenes of at least 1 M (<see cref="MaxFraction"/>).
+    /// </summary>
+    public static readonly IReadOnlyList<int> Targets = [40_000, 120_000, 250_000, 800_000];
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 

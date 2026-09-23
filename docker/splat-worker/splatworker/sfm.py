@@ -96,8 +96,10 @@ class Sfm:
         return best
 
     def train_budget_mb(self):
-        """Brush's ceiling: the budget read again now (COLMAP is done, the machine may have changed)."""
-        self.brush_budget_mb, _ = memory_budget(system_memory(), settings.max_memory_mb)
+        """Brush's ceiling: the budget read again now (COLMAP is done, the machine may have changed), with
+        SPLAT_MIN_MEMORY_MB as its floor. COLMAP never gets that floor: its tiers trade speed, and a
+        raised budget picks guided matching on 1 thread, ~10x slower than unguided on 170 images."""
+        self.brush_budget_mb, _ = memory_budget(system_memory(), settings.max_memory_mb, settings.min_memory_mb)
         return self.brush_budget_mb
 
     def stats(self):

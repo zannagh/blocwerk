@@ -42,7 +42,8 @@ public sealed partial class WallCaptureService
         }
     }
 
-    public async Task<IReadOnlyList<string>> StartAsync(Guid captureId, CaptureDeclarations declarations, string? notes)
+    public async Task<IReadOnlyList<string>> StartAsync(
+        Guid captureId, CaptureDeclarations declarations, string? notes, SplatQuality splatQuality = SplatQuality.High)
     {
         if (!IsComputeConfigured)
         {
@@ -68,6 +69,7 @@ public sealed partial class WallCaptureService
             capture.PlanJson = layout.Plan is { } plan ? MarkerPlanJson.ToJson(plan) : null;
             capture.DeclarationsJson = CaptureDeclarationRules.Serialize(declarations);
             capture.Notes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim()[..Math.Min(notes.Trim().Length, 2048)];
+            capture.SplatQuality = splatQuality;
             capture.Status = WallCaptureStatus.Queued;
             capture.Stage = "Waiting to start";
             capture.Progress = 0;

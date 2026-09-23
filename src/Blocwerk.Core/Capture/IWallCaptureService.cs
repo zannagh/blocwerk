@@ -1,3 +1,5 @@
+using Blocwerk.Core.Entities;
+
 namespace Blocwerk.Core.Capture;
 
 /// <summary>
@@ -67,8 +69,20 @@ public interface IWallCaptureService
     /// </summary>
     Task<CaptureDeclarations> SuggestDeclarationsAsync(Guid captureId);
 
-    /// <summary>Submits the draft to the pipeline. Returns the problems that prevent it (empty = started).</summary>
-    Task<IReadOnlyList<string>> StartAsync(Guid captureId, CaptureDeclarations declarations, string? notes);
+    /// <summary>
+    /// Submits the draft to the pipeline. Returns the problems that prevent it (empty = started).
+    /// <paramref name="splatQuality"/> is the photo-real view's quality profile (used only when a splat worker is configured).
+    /// </summary>
+    Task<IReadOnlyList<string>> StartAsync(
+        Guid captureId, CaptureDeclarations declarations, string? notes, SplatQuality splatQuality = SplatQuality.High);
+
+    /// <summary>
+    /// Retrains a finished capture's photo-real view at <paramref name="quality"/> from its stored photos
+    /// and video frames. The current view stays until the new one succeeds. Admin only, never from a
+    /// kiosk. Returns the problems that prevent it (empty = queued): no splat worker, not finished, no
+    /// model, photos already expired, another capture of the wall running.
+    /// </summary>
+    Task<IReadOnlyList<string>> RetrainPhotoRealAsync(Guid captureId, SplatQuality quality);
 
     /// <summary>
     /// The photos of any capture (draft or finished), for reuse as panel photos. Admin only, never a

@@ -65,6 +65,12 @@ public class WallCapture
     public string? SplatJobId { get; set; }
 
     /// <summary>
+    /// The quality profile of the photo-real view: chosen at start, changed by a retrain. Null = not
+    /// recorded (captures from before the profiles, trained with the worker's settings of the day).
+    /// </summary>
+    public SplatQuality? SplatQuality { get; set; }
+
+    /// <summary>
     /// The optional walk-along video (a bare name in the capture store) whose frames feed ONLY the
     /// photo-real stage. Deleted once its frames are extracted; null when there is none (any more).
     /// </summary>

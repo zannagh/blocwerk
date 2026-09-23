@@ -1,6 +1,8 @@
 """Brush trainer (wgpu: Metal on macOS, Vulkan on Linux). Pinned release: v0.3.0."""
 import glob
 import os
+import re
+import shutil
 import subprocess
 
 from computejobs.child import JobError, tool_env
@@ -25,8 +27,17 @@ def _worth_logging(line):
     return m is None or int(m.group(1)) % 500 == 0
 
 
-def train(bin_path, dataset_dir, out_dir, steps, max_edge, cache_dir, log_path, report, max_memory_mb=0, swap_limit_mb=0):
-    """Train `steps` steps on a COLMAP dataset (images/ + sparse/0); returns (ply path, parser)."""
+def _export_iter(path):
+    m = re.search(r"splat_(\d+)\.ply$", path)
+    return int(m.group(1)) if m else -1
+
+
+def train(bin_path, dataset_dir, out_dir, steps, max_edge, cache_dir, log_path, report, max_memory_mb=0, swap_limit_mb=0,
+          extra_args=(), checkpoints=1):
+    """Train `steps` steps on a COLMAP dataset (images/ + sparse/0); returns (ply path, parser).
+    extra_args: the profile's refine options (profiles.Profile.brush_args); checkpoints: exports during
+    the run (the last is the result)."""
+    shutil.rmtree(out_dir, ignore_errors=True)  # a retry must not pick up the killed run's checkpoints
     os.makedirs(out_dir, exist_ok=True)
     os.makedirs(cache_dir, exist_ok=True)
     parser = BrushParser()
@@ -36,14 +47,15 @@ def train(bin_path, dataset_dir, out_dir, steps, max_edge, cache_dir, log_path, 
         if r:
             report(*r)
 
-    cmd = [bin_path, dataset_dir, "--total-steps", str(steps), "--export-every", str(steps),
+    export_every = steps if checkpoints <= 1 else max(1, steps // checkpoints)
+    cmd = [bin_path, dataset_dir, "--total-steps", str(steps), "--export-every", str(export_every),
            "--export-path", out_dir, "--export-name", "splat_{iter}.ply", "--max-resolution", str(max_edge),
-           "--eval-every", str(steps + 1)]
+           "--eval-every", str(steps + 1), *extra_args]
     # A TTY is required: Brush prints nothing (not even errors) to a pipe.
     # Memory: the RSS watchdog only (RLIMIT_AS would trip on the GPU driver's virtual reservations).
     ToolRun("train", cmd, cache_dir, log_path, on_line, use_pty=True, log_filter=_worth_logging,
             mem_limit_mb=max_memory_mb, swap_limit_mb=swap_limit_mb, name="Brush").run()
-    plys = sorted(glob.glob(os.path.join(out_dir, "splat_*.ply")), key=os.path.getmtime)
+    plys = sorted(glob.glob(os.path.join(out_dir, "splat_*.ply")), key=_export_iter)
     if not plys:
         raise JobError("train", "Brush exited without exporting a splat (no GPU adapter? see the "
                                 f"worker's train.log): {parser.took or 'no training output'}")

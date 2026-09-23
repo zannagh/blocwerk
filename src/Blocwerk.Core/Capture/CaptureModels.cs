@@ -49,7 +49,8 @@ public sealed record WallCaptureSummary(
     int PhotoCount,
     Guid? GeometryModelId,
     DateTimeOffset? CompletedAt,
-    MarkerPlacementCheck? PlacementCheck = null)
+    MarkerPlacementCheck? PlacementCheck = null,
+    SplatQuality? SplatQuality = null)
 {
     public bool IsRunning => Status is WallCaptureStatus.Queued or WallCaptureStatus.Detecting
         or WallCaptureStatus.Solving or WallCaptureStatus.Texturing or WallCaptureStatus.Splatting;

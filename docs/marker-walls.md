@@ -631,9 +631,18 @@ confirmation. A draft nobody starts is removed after a day.
    first extracts its frames (*"Photo-real view: extracting video frames"*); then the photos (and the
    frames) go to the splat worker, which trains the photo-real view. This can take tens of minutes to
    hours. A video that can't be read only costs its frames: the view is then trained from the photos.
+   Its sharpness is the **Photo-real view quality** picked before starting: *Draft* (minutes, soft),
+   *High* (the default: photos at 2400 px, 15000 steps, about an hour on an Apple M4) or *Max* (native
+   photo size, 30000 steps, for a strong GPU). A machine without the memory for the choice trains
+   the next lower one.
 6. A **push notification** tells the person who started the capture: *"3D model ready for
    {wall}."* A second one follows when the photo-real view is ready. People can opt out under
    their notification preferences ("A 3D wall model you started is ready").
+
+**Retrain photo-real at higher quality.** In the capture history, a finished capture whose photos
+are still kept offers this button (Draft → High → Max). It sends the stored photos and video frames
+to the splat worker again; the current photo-real view stays until the new one is ready, and stays
+for good if the retrain fails.
 
 You can leave the page. While the capture runs, the panel shows the stage and a progress bar, and
 refreshes about every two seconds.
@@ -1041,7 +1050,7 @@ There's no per-wall setting for outlines; they're server-wide.
 | `SplatService:ApiKey` | `SPLATSERVICE__APIKEY` | empty | Must equal the worker's `COMPUTE_API_KEY`. |
 | `SplatService:RequestTimeoutSeconds` | `SPLATSERVICE__REQUESTTIMEOUTSECONDS` | 300 | As above. |
 | `SplatService:JobTimeoutMinutes` | `SPLATSERVICE__JOBTIMEOUTMINUTES` | 240 | Training is slow; 4 h by default. |
-| `SplatService:MaxSteps` | `SPLATSERVICE__MAXSTEPS` | worker default (15000) | Training steps per job. Lower is faster and softer. |
+| `SplatService:MaxSteps` | `SPLATSERVICE__MAXSTEPS` | the quality profile's | Training steps per job, overriding the capture's quality profile (Draft 5000, High 15000, Max 30000). Leave it unset. |
 
 The compose file maps `docker/.env` values onto these: `GEOMETRYSERVICE_URL` → `GEOMETRYSERVICE__URL`,
 `COMPUTE_API_KEY` → `GEOMETRYSERVICE__APIKEY`,

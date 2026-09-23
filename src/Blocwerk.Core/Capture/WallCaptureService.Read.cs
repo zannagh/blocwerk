@@ -119,7 +119,8 @@ public sealed partial class WallCaptureService
             .ToDictionaryAsync(g => g.Key, g => g.Count);
         return captures.Select(c => new WallCaptureSummary(
             c.Id, c.CreatedAt, c.Status, c.Progress, c.Stage, c.Error, c.Notes,
-            counts.GetValueOrDefault(c.Id), c.GeometryModelId, c.CompletedAt, ReadPlacementCheck(c.PlacementCheckJson))).ToList();
+            counts.GetValueOrDefault(c.Id), c.GeometryModelId, c.CompletedAt, ReadPlacementCheck(c.PlacementCheckJson),
+            c.SplatQuality)).ToList();
     }
 
     private static MarkerPlacementCheck? ReadPlacementCheck(string? json)

@@ -99,6 +99,19 @@
                        @bind="notes" disabled="@busy" />
             </div>
 
+            @if (Captures.IsSplatConfigured)
+            {
+                <div class="form-group">
+                    <label for="capture-splat-quality">Photo-real view quality</label>
+                    <select id="capture-splat-quality" class="form-input" @bind="splatQuality" disabled="@busy">
+                        <option value="@SplatQuality.Draft">Draft: fast, soft (minutes)</option>
+                        <option value="@SplatQuality.High">High: sharp (about an hour on a laptop)</option>
+                        <option value="@SplatQuality.Max">Max: sharpest, needs a strong GPU</option>
+                    </select>
+                    <p class="hint">The 3D model and its photo textures do not depend on this; only the photo-real view does.</p>
+                </div>
+            }
+
             <div class="staged-actions">
                 <button class="btn-primary" @onclick="StartAsync" disabled="@busy">Compute 3D model</button>
                 @if (confirmDiscard)

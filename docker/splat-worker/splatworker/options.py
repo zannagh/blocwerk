@@ -1,8 +1,11 @@
 """Request options for kind=splat (JSON part `options`)."""
 import math
 from dataclasses import asdict, dataclass
+from typing import Optional
 
 from computejobs.geometry import GeometryError, check_geometry
+
+from .profiles import DEFAULT_QUALITY, QUALITIES, resolve
 
 MATCHERS = ("auto", "exhaustive", "sequential", "pairs")
 AUTO_EXHAUSTIVE_MAX = 150  # beyond this many photos `auto` switches to the sequential matcher
@@ -14,8 +17,9 @@ class OptionsError(ValueError):
 
 @dataclass
 class SplatOptions:
-    maxSteps: int = 15000
-    maxImageEdge: int = 1800
+    quality: str = DEFAULT_QUALITY  # profiles.PROFILES: draft | high | max
+    maxSteps: Optional[int] = None  # None = the profile's
+    maxImageEdge: Optional[int] = None  # None = the profile's (photos; video frames stay at its frame_edge)
     matcher: str = "auto"
     cropMarginMm: float = 400.0
     spz: bool = True
@@ -23,6 +27,10 @@ class SplatOptions:
 
     def to_dict(self):
         return asdict(self)
+
+    def profile(self):
+        """The quality profile with this request's maxSteps / maxImageEdge overrides."""
+        return resolve(self.quality, self.maxSteps, self.maxImageEdge)
 
 
 def _int(v, name, lo, hi):
@@ -42,6 +50,10 @@ def parse_options(doc):
     if unknown:
         raise OptionsError(f"unknown option(s) {sorted(unknown)}; known: {sorted(known)}")
     o = SplatOptions()
+    if "quality" in doc:
+        if doc["quality"] not in QUALITIES:
+            raise OptionsError(f"options.quality must be one of {QUALITIES}")
+        o.quality = doc["quality"]
     if "maxSteps" in doc:
         o.maxSteps = _int(doc["maxSteps"], "maxSteps", 100, 100000)
     if "maxImageEdge" in doc:

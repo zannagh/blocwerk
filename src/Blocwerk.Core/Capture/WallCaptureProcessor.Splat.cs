@@ -11,7 +11,7 @@ namespace Blocwerk.Core.Capture;
 
 /// <summary>
 /// Stage 4 (optional): the photo-real view. When a splat worker is configured (server config is the
-/// opt-in; there is no per-capture switch) the capture's stored, metadata-stripped photos and the
+/// opt-in; the capture only picks its <see cref="SplatQuality"/>) the capture's stored, metadata-stripped photos and the
 /// active geometry go to the splat worker; <c>wall.spz</c> + <c>frame.json</c> come back and are stored
 /// as a <see cref="WallGeometrySplat"/> of the model.
 /// </summary>
@@ -71,7 +71,7 @@ public sealed partial class WallCaptureProcessor
 
             var status = await RunJobAsync(
                 capture.SplatJobId,
-                () => SubmitSplatAsync(capture.Id, modelId, client, ct),
+                () => SubmitSplatAsync(capture.Id, modelId, capture.SplatQuality, client, ct),
                 jobId => UpdateAsync(capture.Id, c => c.SplatJobId = jobId, ct),
                 client,
                 new JobStage(capture.Id, WallCaptureStatus.Splatting, VideoBand, 0.98, "Photo-real view", CaptureSplatDocuments.Describe),
@@ -110,7 +110,8 @@ public sealed partial class WallCaptureProcessor
     private static WallCaptureStatus TextureOutcome(string? textureError) =>
         textureError is null ? WallCaptureStatus.Succeeded : WallCaptureStatus.SucceededWithoutTextures;
 
-    private async Task<string> SubmitSplatAsync(Guid captureId, Guid modelId, IComputeJobClient client, CancellationToken ct)
+    private async Task<string> SubmitSplatAsync(
+        Guid captureId, Guid modelId, SplatQuality? quality, IComputeJobClient client, CancellationToken ct)
     {
         await using var db = dbContextFactory.CreateDbContext();
         var geometry = await db.WallGeometryModels.Where(m => m.Id == modelId).Select(m => m.Json).FirstAsync(ct);
@@ -133,7 +134,7 @@ public sealed partial class WallCaptureProcessor
 
         // The walk-along video's frames (if any): auxiliary images for coverage, never for alignment.
         parts.AddRange(await FramePartsAsync(captureId, ct));
-        parts.Add(ComputeJobPart.Json("options", CaptureSplatDocuments.BuildOptions(settings.SplatMaxSteps)));
+        parts.Add(ComputeJobPart.Json("options", CaptureSplatDocuments.BuildOptions(settings.SplatMaxSteps, quality)));
         return await client.SubmitMultipartAsync(SplatKind, parts, ct);
     }
 

@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Blocwerk.Core.Compute;
+using Blocwerk.Core.Entities;
 
 namespace Blocwerk.Core.Capture;
 
@@ -29,10 +30,18 @@ public static class CaptureSplatDocuments
     /// <summary>The request name (stem) of the <paramref name="number"/>-th video frame, 1-based: <c>vf_0001</c>.</summary>
     public static string FrameName(int number) => $"{FramePrefix}{number:D4}";
 
-    /// <summary>The <c>options</c> JSON: only what the server configured, the worker's defaults otherwise.</summary>
-    public static string BuildOptions(int? maxSteps)
+    /// <summary>
+    /// The <c>options</c> JSON: the capture's quality profile (none recorded = the worker's default)
+    /// and only what the server configured beyond it. A configured step count overrides the profile's.
+    /// </summary>
+    public static string BuildOptions(int? maxSteps, SplatQuality? quality = null)
     {
         var options = new JsonObject { ["spz"] = true };
+        if (quality is { } q)
+        {
+            options["quality"] = QualityName(q);
+        }
+
         if (maxSteps is > 0)
         {
             options["maxSteps"] = maxSteps.Value;
@@ -40,6 +49,25 @@ public static class CaptureSplatDocuments
 
         return options.ToJsonString();
     }
+
+    /// <summary>The worker's name of a quality profile (<c>options.quality</c>).</summary>
+    public static string QualityName(SplatQuality quality) => quality switch
+    {
+        SplatQuality.Draft => "draft",
+        SplatQuality.Max => "max",
+        _ => "high",
+    };
+
+    /// <summary>
+    /// The profile a "retrain at higher quality" offers after <paramref name="current"/>: none recorded
+    /// (a capture from before the profiles) or draft → high, high → max, max → nothing higher.
+    /// </summary>
+    public static SplatQuality? NextQuality(SplatQuality? current) => current switch
+    {
+        null or SplatQuality.Draft => SplatQuality.High,
+        SplatQuality.High => SplatQuality.Max,
+        _ => null,
+    };
 
     /// <summary>"Photo-real view: training (step 1200/15000)" from the worker's <c>stage</c>/<c>stageDetail</c>.</summary>
     public static string Describe(ComputeJobStatus status)

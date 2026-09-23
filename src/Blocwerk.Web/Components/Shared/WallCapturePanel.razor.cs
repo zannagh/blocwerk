@@ -1,4 +1,5 @@
 using Blocwerk.Core.Capture;
+using Blocwerk.Core.Entities;
 using Blocwerk.Core.MarkerPlanning;
 using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Components;
@@ -23,6 +24,7 @@ public partial class WallCapturePanel
     private List<CaptureDeclarationRow> declarations = [];
     private string? levelPairs;
     private string? notes;
+    private SplatQuality splatQuality = SplatQuality.High;
     private List<string> planNotes = [];
     private WallCaptureStatusList? statusList;
 
@@ -201,7 +203,7 @@ public partial class WallCapturePanel
         }
 
         var problems = await Captures.StartAsync(
-            draft!.CaptureId, new CaptureDeclarations(declarations.Select(r => r.ToDeclaration()).ToList(), pairs), notes);
+            draft!.CaptureId, new CaptureDeclarations(declarations.Select(r => r.ToDeclaration()).ToList(), pairs), notes, splatQuality);
         if (problems.Count > 0)
         {
             errors.AddRange(problems);

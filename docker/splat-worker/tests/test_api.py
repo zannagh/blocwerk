@@ -82,7 +82,7 @@ def test_accepts_job_and_strips_metadata_on_arrival(client, gps_jpeg):
     for name in stored:
         assert_clean(open(os.path.join(d, "arrived", name), "rb").read())
     inputs = json.load(open(os.path.join(d, "inputs.json")))
-    assert inputs["options"] == {"maxSteps": 5000, "maxImageEdge": 1800, "matcher": "auto",
+    assert inputs["options"] == {"quality": "high", "maxSteps": 5000, "maxImageEdge": None, "matcher": "auto",
                                  "cropMarginMm": 400.0, "spz": True, "colourMatch": True}
     assert inputs["photos"]["a"]["focal35"] == 14.0 and "TestPhone" not in json.dumps(inputs)
     assert json.load(open(os.path.join(d, "geometry.json"))) == GEOMETRY
@@ -98,6 +98,7 @@ def test_accepts_job_and_strips_metadata_on_arrival(client, gps_jpeg):
     ([("a.jpg", b"not a jpeg")], None, None, 422, "photo a"),
     (None, {"maxStep": 10}, None, 422, "unknown option"),
     (None, {"maxSteps": 5}, None, 422, "maxSteps"),
+    (None, {"quality": "ultra"}, None, 422, "quality"),
     (None, {"matcher": "vocab"}, None, 422, "matcher"),
     (None, {"maxSteps": 1e12}, None, 422, "maxSteps"),
     (None, {"maxSteps": -1}, None, 422, "maxSteps"),

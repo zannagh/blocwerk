@@ -20,6 +20,7 @@ public partial class WallCaptureStatusList : IAsyncDisposable
     private WallCaptureSummary? running;
     private string? failure;
     private Task? pollLoop;
+    private bool retraining;
 
     [Parameter]
     public Guid WallId { get; set; }
@@ -72,6 +73,34 @@ public partial class WallCaptureStatusList : IAsyncDisposable
         WallCaptureStatus.Failed => "Failed",
         _ => "Uploading",
     };
+
+    private bool CanRetrain(WallCaptureSummary capture) => Captures.IsSplatConfigured && !capture.IsRunning
+        && capture.GeometryModelId is not null && capture.PhotoCount >= 2 && capture.Status != WallCaptureStatus.Failed;
+
+    /// <summary>Queues a retrain of the capture's photo-real view; the current view stays until the new one is stored.</summary>
+    private async Task RetrainAsync(Guid captureId, SplatQuality quality)
+    {
+        retraining = true;
+        try
+        {
+            var problems = await Captures.RetrainPhotoRealAsync(captureId, quality);
+            if (problems.Count > 0)
+            {
+                failure = string.Join(" ", problems);
+                return;
+            }
+
+            await LoadAsync();
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or UserFacingException or KioskRestrictedException)
+        {
+            failure = ex.Message;
+        }
+        finally
+        {
+            retraining = false;
+        }
+    }
 
     private static string StatusClass(WallCaptureStatus status) => status switch
     {

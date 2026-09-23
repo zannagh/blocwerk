@@ -63,6 +63,13 @@
                                         @(openCaptureId == capture.Id ? "Hide photos" : "Use as panel photos…")
                                     </button>
                                 }
+                                @if (running is null && CanRetrain(capture) && CaptureSplatDocuments.NextQuality(capture.SplatQuality) is { } better)
+                                {
+                                    <button class="btn-link" @onclick="() => RetrainAsync(capture.Id, better)" disabled="@retraining"
+                                            title="Trains the photo-real view again from this capture's photos; the current one stays until the new one is ready.">
+                                        Retrain photo-real at higher quality (@CaptureSplatDocuments.QualityName(better))
+                                    </button>
+                                }
                             </td>
                         </tr>
                         @if (openCaptureId == capture.Id && openPhotos is not null)

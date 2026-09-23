@@ -105,15 +105,17 @@ def system_memory():
     return info
 
 
-def memory_budget(info, cap_mb=0):
-    """(budget MB, one-line explanation) from system_memory(); cap_mb > 0 = SPLAT_MAX_MEMORY_MB."""
+def memory_budget(info, cap_mb=0, floor_mb=0):
+    """(budget MB, one-line explanation) from system_memory(); cap_mb > 0 = SPLAT_MAX_MEMORY_MB;
+    floor_mb > 0 = SPLAT_MIN_MEMORY_MB (replaces MIN_BUDGET_MB: the operator vouches that the machine can
+    page idle apps out of the way; still never above BUDGET_FRACTION of it, and the swap guard stays on)."""
     total, avail = info.get("totalMb"), info.get("availableMb")
     if not total:
         budget, why = cap_mb or 6144, "machine memory unknown"
     else:
         share = int(total * BUDGET_FRACTION)
         free = avail if avail is not None else share
-        budget = min(share, max(free, MIN_BUDGET_MB))
+        budget = min(share, max(free, floor_mb if floor_mb and floor_mb > 0 else MIN_BUDGET_MB))
         why = f"{free / 1024:.1f} GB available of {total / 1024:.1f} GB"
         if info.get("cgroupLimitMb"):
             why += " (container limit)"
