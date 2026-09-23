@@ -48,6 +48,12 @@ public sealed partial class HoldOutlineUpgradeService
             }
 
             await db.SaveChangesAsync(ct);
+            if (footprints is not null && run.OutlinedCount > 0)
+            {
+                // New outlines: refresh the 3D footprints they feed (a batch step, never per view).
+                await footprints.RefineFromPipelineAsync(wallId, ct);
+            }
+
             logger.LogInformation(
                 "Outline upgrade {RunId} on wall {WallId} by {UserId}: {Eligible} circle holds, {Outlined} outlined, "
                 + "{Holes} with holes, {Fingerprinted} fingerprinted, {Measured} measured, {Skipped} skipped (changed meanwhile)",

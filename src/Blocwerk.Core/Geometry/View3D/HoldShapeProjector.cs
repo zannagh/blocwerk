@@ -48,6 +48,20 @@ public static class HoldShapeProjector
         return Approximate(outline, holes, widthMm, heightMm);
     }
 
+    /// <summary>
+    /// The stored multi-view / corrected footprint as a shape (preferred by the 3D view over the
+    /// single-photo projection, whose silhouette smears protruding holds along the view direction).
+    /// </summary>
+    /// <param name="footprint">The hold's valid footprint, if any.</param>
+    /// <returns>The shape, or null without a footprint.</returns>
+    public static Wall3DHoldShape? FromFootprint(HoldFootprint? footprint) =>
+        footprint is { Outline.Count: >= 3 } f
+            ? new Wall3DHoldShape(
+                f.Source == HoldFootprintSource.MultiView ? Wall3DShapeSource.Footprint : Wall3DShapeSource.FootprintApproximate,
+                f.Outline,
+                [])
+            : null;
+
     /// <summary>An ellipse of the given diameters, centred on the hold.</summary>
     /// <param name="widthMm">Diameter along u.</param>
     /// <param name="heightMm">Diameter along v.</param>

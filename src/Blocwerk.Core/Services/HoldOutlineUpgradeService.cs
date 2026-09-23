@@ -28,6 +28,7 @@ public sealed partial class HoldOutlineUpgradeService : IHoldOutlineUpgradeServi
     private readonly ILogger<HoldOutlineUpgradeService> logger;
     private readonly IHoldOutlineService? outlineService;
     private readonly IKioskContext? kioskContext;
+    private readonly IHoldFootprintService? footprints;
 
     /// <summary>Initializes a new instance of the <see cref="HoldOutlineUpgradeService"/> class.</summary>
     /// <param name="dbContextFactory">Context factory.</param>
@@ -36,13 +37,15 @@ public sealed partial class HoldOutlineUpgradeService : IHoldOutlineUpgradeServi
     /// <param name="logger">Logger.</param>
     /// <param name="outlineService">The outliner; null means the action is unavailable.</param>
     /// <param name="kioskContext">The kiosk context, when the host has one.</param>
+    /// <param name="footprints">Refreshes the 3D hold footprints after new outlines; optional.</param>
     public HoldOutlineUpgradeService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         ICurrentUserService currentUserService,
         BlocwerkSettings settings,
         ILogger<HoldOutlineUpgradeService> logger,
         IHoldOutlineService? outlineService = null,
-        IKioskContext? kioskContext = null)
+        IKioskContext? kioskContext = null,
+        IHoldFootprintService? footprints = null)
     {
         this.dbContextFactory = dbContextFactory;
         this.currentUserService = currentUserService;
@@ -50,6 +53,7 @@ public sealed partial class HoldOutlineUpgradeService : IHoldOutlineUpgradeServi
         this.logger = logger;
         this.outlineService = outlineService;
         this.kioskContext = kioskContext;
+        this.footprints = footprints;
     }
 
     private bool Enabled => settings.OutlinesEnabled && outlineService is not null;

@@ -158,7 +158,8 @@ public static class Wall3DViewBuilder
 
             var placed = ToHold(hold, frame, a, b, 0, RoleOf(hold, boulder, boulderHolds));
             var mapping = projector.For(hold);
-            var shape = HoldShapeProjector.Project(hold, placed.WidthMm, placed.HeightMm, mapping);
+            var shape = HoldShapeProjector.FromFootprint(HoldFootprint.For(hold))
+                ?? HoldShapeProjector.Project(hold, placed.WidthMm, placed.HeightMm, mapping);
             var tilt = mapping is { } m ? PhotoViewTilt.At(m.Map, hold.X, hold.Y) : null;
             holds.Add(new HoldTwinCandidate(hold, placed with { Shape = shape }, tilt));
         }

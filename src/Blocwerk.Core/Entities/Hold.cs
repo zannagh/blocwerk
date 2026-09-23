@@ -140,6 +140,14 @@ public partial class Hold
     [MaxLength(32)]
     public string? MetricSource { get; set; }
 
+    /// <summary>
+    /// The hold's contact footprint on its facet as JSON (<see cref="Geometry.View3D.HoldFootprint"/>): the
+    /// traced silhouette with the protrusion smear removed, from several capture views or a single-view
+    /// correction. Written by the batch footprint refinement only; the 3D view prefers it over the
+    /// panel-photo projection. Null when never refined or when the outline or position changed since.
+    /// </summary>
+    public string? FootprintMm { get; set; }
+
     public ICollection<BoulderHold> BoulderHolds { get; set; } = [];
 
     /// <summary>
@@ -158,6 +166,7 @@ public partial class Hold
         OutlineSource = source.OutlineSource;
         OutlineConfidence = source.OutlineConfidence;
         MetricSource = source.MetricSource;
+        FootprintMm = source.FootprintMm;
     }
 
     /// <summary>
@@ -197,5 +206,6 @@ public partial class Hold
         OutlineSource = OutlineSource,
         OutlineConfidence = OutlineConfidence,
         MetricSource = MetricSource,
+        FootprintMm = FootprintMm,
     };
 }

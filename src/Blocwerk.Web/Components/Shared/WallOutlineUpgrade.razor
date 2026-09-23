@@ -44,6 +44,15 @@
             </div>
         }
 
+        <h4 class="glyph-subheading">3D hold shapes</h4>
+        <p class="hint">
+            A hold traced in one steep photo looks stretched on the 3D wall. This traces each hold again in the
+            3D capture's photos and keeps only what all views agree on.
+        </p>
+        <div class="staged-actions">
+            <button class="btn-secondary" @onclick="RefineFootprintsAsync" disabled="@busy">Refine 3D hold shapes</button>
+        </div>
+
         @if (busy)
         {
             <p class="loading-small">Looking at every wall photo — this can take a minute…</p>

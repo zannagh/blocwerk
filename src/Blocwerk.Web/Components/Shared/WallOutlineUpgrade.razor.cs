@@ -32,6 +32,9 @@ public partial class WallOutlineUpgrade
     private IHoldOutlineUpgradeService Upgrades { get; set; } = default!;
 
     [Inject]
+    private IHoldFootprintService Footprints { get; set; } = default!;
+
+    [Inject]
     private IKioskContext KioskContext { get; set; } = default!;
 
     [Inject]
@@ -109,6 +112,14 @@ public partial class WallOutlineUpgrade
         {
             message += $" {result.SkippedChanged} were edited meanwhile and left alone.";
         }
+    });
+
+    private Task RefineFootprintsAsync() => RunAsync(async () =>
+    {
+        var r = await Footprints.RefineAsync(WallId);
+        message = r.CapturePhotos == 0
+            ? $"No 3D capture photos: {r.SingleView} holds got an approximate correction from their wall photo."
+            : $"{r.MultiView} holds refined from several views, {r.SingleView} approximated from one view.";
     });
 
     private Task RevertAsync(Guid runId) => RunAsync(async () =>

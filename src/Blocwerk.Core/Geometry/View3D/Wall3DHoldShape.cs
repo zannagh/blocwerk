@@ -40,4 +40,10 @@ public enum Wall3DShapeSource
 
     /// <summary>The hold has no traced outline: an ellipse of its (measured or default) mm size.</summary>
     Circle,
+
+    /// <summary>The stored contact footprint: silhouettes from several capture views intersected on the facet.</summary>
+    Footprint,
+
+    /// <summary>The stored footprint from one view, shortened along the view direction by an estimated protrusion.</summary>
+    FootprintApproximate,
 }

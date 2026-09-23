@@ -158,6 +158,7 @@ public static class CoreServices
         builder.Services.AddScoped<IWallSegmentService, WallSegmentService>();
         builder.Services.AddScoped<IWallGlyphService, WallGlyphService>();
         builder.Services.AddScoped<IHoldOutlineUpgradeService, HoldOutlineUpgradeService>();
+        builder.Services.AddScoped<IHoldFootprintService, HoldFootprintService>();
         builder.Services.AddScoped<IWallPhotoPrivacyService, WallPhotoPrivacyService>();
 
         // In-app glyph capture: photos in, 3D model out, computed by the GEOMETRYSERVICE__URL worker.
