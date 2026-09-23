@@ -63,12 +63,12 @@ export function createModeController({ modes, parts, photo, ui, request, PhotoRe
     return {
         get mode() { return mode; },
         /**
-         * The photo-real view broke while showing (lost WebGL context, shader error): drops it, falls
-         * back to Schematic and says why, instead of leaving a black canvas.
+         * The photo-real view cannot go on (shader error, or its context lost for good): drops it,
+         * falls back to Schematic and says so quietly, instead of leaving a black canvas.
          */
-        fail(message) {
+        fail(message, reason) {
             const showing = mode === 'photoreal';
-            photo.fail();                // a switch still loading it now throws instead
+            photo.fail(reason);                // a switch still loading it now throws instead
             if (!showing) return pending;
             pending = pending.then(() => {
                 showModelled('schematic');
@@ -89,27 +89,33 @@ export function createModeController({ modes, parts, photo, ui, request, PhotoRe
     };
 }
 
-/** What the viewer is told when the photo-real view breaks while it shows. */
-export const PHOTO_REAL_FAILED = 'The photo-real view was too heavy for this device, so it switched back to Schematic.';
+/** What the viewer is told when the photo-real view cannot go on (a quiet note, not an alarm). */
+export const PHOTO_REAL_FAILED = 'Photo-real is not available on this device right now, so the view shows Schematic.';
 
 /**
- * Turns render failures into a Schematic fallback with a message (`modes.fail`) instead of a black
- * canvas: a lost WebGL context (iOS Safari drops it when a frame is too heavy or the tab too big —
- * three.js keeps it restorable) and a shader that does not compile on this GPU. `request` asks for
- * a frame once the context is back. Returns `dispose()`.
+ * Keeps render failures from leaving a black canvas. A lost WebGL context (iOS Safari drops it when
+ * a frame is too heavy or the tab too big; three.js keeps it restorable) is the photo-real view's to
+ * recover from (`photo.contextLost` / `contextRestored`, wall3d-splat.js: it resumes a level lower);
+ * a shader that does not compile on this GPU falls back to Schematic with a note (`modes.fail`).
+ * `request` asks for a frame once the context is back. Returns `dispose()`.
  */
-export function watchRenderFailures(renderer, modes, request) {
+export function watchRenderFailures(renderer, modes, request, photo) {
     const canvas = renderer.domElement;
-    const onLost = () => {
+    const onLost = event => {
         console.warn('wall3d: WebGL context lost');
-        modes.fail(PHOTO_REAL_FAILED);
+        event.preventDefault();
+        photo.contextLost(event);
     };
-    const onRestored = () => request();
+    const onRestored = () => {
+        photo.contextRestored();
+        request();
+    };
     canvas.addEventListener('webglcontextlost', onLost);
     canvas.addEventListener('webglcontextrestored', onRestored);
     renderer.debug.onShaderError = (gl, program) => {
-        console.error('wall3d: shader failed to compile', gl.getProgramInfoLog(program));
-        modes.fail(PHOTO_REAL_FAILED);
+        const log = gl.getProgramInfoLog(program);
+        console.error('wall3d: shader failed to compile', log);
+        modes.fail(PHOTO_REAL_FAILED, `shader: ${log}`);
     };
     return {
         dispose() {

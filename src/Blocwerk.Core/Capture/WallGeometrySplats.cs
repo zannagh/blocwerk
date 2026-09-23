@@ -17,21 +17,34 @@ public static class WallGeometrySplats
     /// The splat byte route (served by the web layer under the wall-media policy); with
     /// <paramref name="mobile"/> the pruned level of detail for phones (<see cref="WallGeometrySplat.MobileStoredPath"/>).
     /// </summary>
-    public static string Url(Guid wallId, Guid modelId, string? shareToken = null, bool mobile = false)
+    public static string Url(Guid wallId, Guid modelId, string? shareToken = null, bool mobile = false) =>
+        Url(wallId, modelId, shareToken, mobile ? MobileLod : null);
+
+    /// <summary>
+    /// The byte route of one ladder level (<see cref="SplatLodLadder"/>), addressed by its splat count;
+    /// a count the row does not have serves the full scene.
+    /// </summary>
+    public static string LevelUrl(Guid wallId, Guid modelId, int splats, string? shareToken = null) =>
+        Url(wallId, modelId, shareToken, splats.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+    /// <summary>
+    /// The stored file (name, size, ETag kind) that <paramref name="lod"/> selects: a ladder level by
+    /// its splat count, the legacy mobile copy, or else the full scene.
+    /// </summary>
+    public static (string Path, long Size, string Kind) Select(WallGeometrySplat splat, string? lod)
     {
-        var query = new List<string>(2);
-        if (!string.IsNullOrEmpty(shareToken))
+        if (lod == MobileLod && splat.MobileStoredPath is not null)
         {
-            query.Add($"token={Uri.EscapeDataString(shareToken)}");
+            return (splat.MobileStoredPath, splat.MobileSizeBytes ?? 0, "geometry-splat-mobile");
         }
 
-        if (mobile)
+        if (int.TryParse(lod, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var splats)
+            && SplatLodLadder.Parse(splat.LodLevelsJson).FirstOrDefault(l => l.Splats == splats) is { } level)
         {
-            query.Add($"lod={MobileLod}");
+            return (level.StoredPath, level.SizeBytes, $"geometry-splat-lod{level.Splats}");
         }
 
-        var suffix = query.Count == 0 ? string.Empty : "?" + string.Join('&', query);
-        return $"/api/walls/{wallId}/geometry/{modelId}/splat{suffix}";
+        return (splat.StoredPath, splat.SizeBytes, "geometry-splat");
     }
 
     /// <summary>
@@ -51,4 +64,21 @@ public static class WallGeometrySplats
         db.WallGeometrySplats.AsNoTracking()
             .Where(s => s.GeometryModel.WallId == wallId && s.GeometryModel.IsActive)
             .FirstOrDefaultAsync(ct);
+
+    private static string Url(Guid wallId, Guid modelId, string? shareToken, string? lod)
+    {
+        var query = new List<string>(2);
+        if (!string.IsNullOrEmpty(shareToken))
+        {
+            query.Add($"token={Uri.EscapeDataString(shareToken)}");
+        }
+
+        if (lod is not null)
+        {
+            query.Add($"lod={lod}");
+        }
+
+        var suffix = query.Count == 0 ? string.Empty : "?" + string.Join('&', query);
+        return $"/api/walls/{wallId}/geometry/{modelId}/splat{suffix}";
+    }
 }

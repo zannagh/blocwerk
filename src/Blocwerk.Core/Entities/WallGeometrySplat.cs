@@ -41,6 +41,16 @@ public class WallGeometrySplat
     /// <summary>Byte size of <see cref="MobileStoredPath"/>; null without it.</summary>
     public long? MobileSizeBytes { get; set; }
 
+    /// <summary>Splat count of the full scene (<see cref="StoredPath"/>); null for rows that predate it.</summary>
+    public int? SplatCount { get; set; }
+
+    /// <summary>
+    /// The level-of-detail ladder as JSON (<see cref="Capture.SplatLodLadder"/>: pruned copies of the
+    /// scene, smallest first, each a stored <c>.spz</c>), or null before it was built. Supersedes
+    /// <see cref="MobileStoredPath"/>, which stays for rows written before the ladder.
+    /// </summary>
+    public string? LodLevelsJson { get; set; }
+
     /// <summary>The worker's <c>frame.json</c> as returned (matrix, toWorldMm, crop, alignment, stats).</summary>
     [Required]
     public required string FrameJson { get; set; }

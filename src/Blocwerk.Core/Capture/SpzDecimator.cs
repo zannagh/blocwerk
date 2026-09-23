@@ -46,7 +46,30 @@ public static class SpzDecimator
             return null;
         }
 
-        var keep = MostVisible(raw, header, target);
+        return Encode(raw, header, Keep(Ranked(raw, header), target));
+    }
+
+    /// <summary>
+    /// A level-of-detail ladder: the scene pruned to each of <paramref name="targets"/> splats, ranked
+    /// once. Only levels of at most <paramref name="maxFraction"/> of the full count are built (a level
+    /// barely smaller than the full scene saves nothing); ascending by splat count.
+    /// </summary>
+    public static IReadOnlyList<(int Splats, byte[] Spz)> Ladder(byte[] spz, IEnumerable<int> targets, double maxFraction)
+    {
+        var raw = Decompress(spz);
+        var header = ReadHeader(raw);
+        var wanted = targets.Where(t => t >= 1 && t <= header.Count * maxFraction).Distinct().Order().ToList();
+        if (wanted.Count == 0)
+        {
+            return [];
+        }
+
+        var ranked = Ranked(raw, header);
+        return wanted.Select(t => (t, Encode(raw, header, Keep(ranked, t)))).ToList();
+    }
+
+    private static byte[] Encode(byte[] raw, SpzHeader header, int[] keep)
+    {
         var output = new MemoryStream();
         using (var gzip = new GZipStream(output, CompressionLevel.SmallestSize, leaveOpen: true))
         {
@@ -64,8 +87,16 @@ public static class SpzDecimator
         return output.ToArray();
     }
 
-    /// <summary>Indices (ascending) of the <paramref name="target"/> most visible splats.</summary>
-    private static int[] MostVisible(byte[] raw, SpzHeader header, int target)
+    /// <summary>Indices (ascending) of the <paramref name="target"/> last (most visible) of <paramref name="ranked"/>.</summary>
+    private static int[] Keep(int[] ranked, int target)
+    {
+        var keep = ranked.AsSpan(ranked.Length - target).ToArray();
+        Array.Sort(keep);
+        return keep;
+    }
+
+    /// <summary>Every splat index, least visible first.</summary>
+    private static int[] Ranked(byte[] raw, SpzHeader header)
     {
         var n = header.Count;
         var alphas = raw.AsSpan(header.AlphaOffset, n);
@@ -82,9 +113,7 @@ public static class SpzDecimator
         }
 
         Array.Sort(score, order);
-        var keep = order.AsSpan(n - target).ToArray();
-        Array.Sort(keep);
-        return keep;
+        return order;
     }
 
     private static void WriteSubset(Stream to, ReadOnlySpan<byte> column, int stride, int[] keep)

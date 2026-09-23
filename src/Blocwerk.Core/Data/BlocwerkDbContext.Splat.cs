@@ -28,6 +28,7 @@ public partial class BlocwerkDbContext
                 .OnDelete(DeleteBehavior.Cascade);
 
             entity.Property(s => s.FrameJson).HasColumnType("text");
+            entity.Property(s => s.LodLevelsJson).HasColumnType("text");
             entity.HasIndex(s => s.GeometryModelId).IsUnique();
         });
     }

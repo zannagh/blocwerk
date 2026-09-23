@@ -57,6 +57,13 @@ public sealed record Wall3DView
     public string? SplatMobileUrl { get; init; }
 
     /// <summary>
+    /// The scene's levels of detail, smallest first, the full scene last (<see cref="Blocwerk.Core.Capture.SplatLodLadder"/>;
+    /// same frame and <see cref="SplatMatrix"/>). The view starts on the first and steps up while the
+    /// device keeps up. Empty without a splat; just the full scene when it has no ladder yet.
+    /// </summary>
+    public IReadOnlyList<Wall3DSplatLevel> SplatLevels { get; init; } = [];
+
+    /// <summary>
     /// Column-major 4×4 (three.js <c>Matrix4.fromArray</c>) from the splat's own coordinates into this
     /// view's world frame (wall-geometry mm, z up). Set whenever <see cref="SplatUrl"/> is.
     /// </summary>
@@ -153,3 +160,9 @@ public enum Wall3DHoldRole
 /// textures made before masks existed.
 /// </summary>
 public sealed record Wall3DTexture(string FacetId, string Url, PlaneRectMm Bounds, string? MaskUrl = null);
+
+/// <summary>One level of detail of the photo-real scene.</summary>
+/// <param name="Url">Byte route of the level's <c>.spz</c>.</param>
+/// <param name="Splats">Its splat count; 0 when unknown (a full scene stored before counts were kept).</param>
+/// <param name="SizeBytes">Its download size.</param>
+public sealed record Wall3DSplatLevel(string Url, int Splats, long SizeBytes);

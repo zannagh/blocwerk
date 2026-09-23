@@ -120,22 +120,28 @@ public class WallGeometrySplatAccessTests
     }
 
     [Fact]
-    public async Task BigScene_GetsAMobileLevelOfDetail_InTheViewAndOnTheRoute()
+    public async Task BigScene_GetsALevelOfDetailLadder_InTheViewAndOnTheRoute()
     {
         using var h = new WallTestHarness();
         using var s = new CaptureScenario(h);
-        s.SplatClient.Spz = SpzDecimatorTests.Spz(SpzDecimator.MobileThreshold + 5_000, shDegree: 0);
+        s.SplatClient.Spz = SpzDecimatorTests.Spz(330_000, shDegree: 0);
         var modelId = await ComputeWithSplatAsync(h, s);
 
         var view = (await ViewService(h).BuildAsync(h.WallId, null)).View!;
-        Assert.Equal($"/api/walls/{h.WallId}/geometry/{modelId}/splat?lod=mobile", view.SplatMobileUrl);
+        Assert.Equal([40_000, 120_000, 250_000, 330_000], view.SplatLevels.Select(l => l.Splats));
+        Assert.Equal($"/api/walls/{h.WallId}/geometry/{modelId}/splat?lod=120000", view.SplatLevels[1].Url);
+        Assert.Equal(view.SplatUrl, view.SplatLevels[^1].Url);
+        Assert.Null(view.SplatMobileUrl);                    // the ladder supersedes the mobile copy
 
         var (full, fullHttp) = await ServeAsync(h, s, h.WallId, modelId, null, Kiosk(null));
-        var (mobile, mobileHttp) = await ServeAsync(h, s, h.WallId, modelId, null, Kiosk(null), "mobile");
-        var mobileBytes = await File.ReadAllBytesAsync(Assert.IsType<PhysicalFileHttpResult>(mobile).FileName);
+        var (level, levelHttp) = await ServeAsync(h, s, h.WallId, modelId, null, Kiosk(null), "120000");
+        var (unknown, _) = await ServeAsync(h, s, h.WallId, modelId, null, Kiosk(null), "77");
+        var levelBytes = await File.ReadAllBytesAsync(Assert.IsType<PhysicalFileHttpResult>(level).FileName);
         Assert.Equal(s.SplatClient.Spz, await File.ReadAllBytesAsync(Assert.IsType<PhysicalFileHttpResult>(full).FileName));
-        Assert.Equal(SpzDecimator.MobileTarget, SpzDecimator.CountOf(mobileBytes));
-        Assert.NotEqual(fullHttp.Response.Headers.ETag.ToString(), mobileHttp.Response.Headers.ETag.ToString());
+        Assert.Equal(s.SplatClient.Spz, await File.ReadAllBytesAsync(Assert.IsType<PhysicalFileHttpResult>(unknown).FileName));
+        Assert.Equal(120_000, SpzDecimator.CountOf(levelBytes));
+        Assert.Equal(view.SplatLevels[1].SizeBytes, levelBytes.LongLength);
+        Assert.NotEqual(fullHttp.Response.Headers.ETag.ToString(), levelHttp.Response.Headers.ETag.ToString());
     }
 
     [Fact]
@@ -145,7 +151,9 @@ public class WallGeometrySplatAccessTests
         using var s = new CaptureScenario(h);
         var modelId = await ComputeWithSplatAsync(h, s);     // the fake's .spz is not a real scene
 
-        Assert.Null((await ViewService(h).BuildAsync(h.WallId, null)).View!.SplatMobileUrl);
+        var view = (await ViewService(h).BuildAsync(h.WallId, null)).View!;
+        Assert.Null(view.SplatMobileUrl);
+        Assert.Equal(view.SplatUrl, Assert.Single(view.SplatLevels).Url);
         var (mobile, _) = await ServeAsync(h, s, h.WallId, modelId, null, Kiosk(null), "mobile");
         Assert.Equal(s.SplatClient.Spz, await File.ReadAllBytesAsync(Assert.IsType<PhysicalFileHttpResult>(mobile).FileName));
     }

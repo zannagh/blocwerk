@@ -67,18 +67,16 @@ public static class WallGeometrySplatEndpoints
 
         // Streamed from disk (a splat is megabytes, unlike a texture), with range support so an
         // interrupted download on a phone can resume.
-        // ?lod=mobile: the pruned copy for phones; a scene without one is small enough to send whole.
-        var mobile = lod == WallGeometrySplats.MobileLod && splat.MobileStoredPath is not null;
-        var path = files.ResolvePhysicalPath(mobile ? splat.MobileStoredPath! : splat.StoredPath);
+        // ?lod=<splats>: a level of the ladder (SplatLodLadder); ?lod=mobile: the legacy pruned copy of
+        // rows that predate it; otherwise (or for a level the row does not have) the full scene.
+        var (stored, size, kind) = WallGeometrySplats.Select(splat, lod);
+        var path = files.ResolvePhysicalPath(stored);
         if (path is null || !File.Exists(path))
         {
             return Results.NotFound();
         }
 
-        var etag = ImageResponse.Etag(
-            mobile ? "geometry-splat-mobile" : "geometry-splat",
-            splat.Id,
-            mobile ? splat.MobileSizeBytes ?? 0 : splat.SizeBytes);
+        var etag = ImageResponse.Etag(kind, splat.Id, size);
         http.Response.Headers.ETag = etag;
         http.Response.Headers.CacheControl = ImageResponse.ImmutableCacheControl;
         return ImageResponse.Matches(http.Request, etag)

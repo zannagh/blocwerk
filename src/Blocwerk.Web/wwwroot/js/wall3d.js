@@ -109,6 +109,8 @@ export function mount(container, view, options = {}) {
     const photo = createPhotoReal({
         renderer, scene, view,
         facetParts: [facets.group, textures, markers, labels, holds.lit, holds.dim, outlines, ...surroundings],
+        photoTextures: textures,
+        onGiveUp: message => modeCtl.fail(message),
         onProgress: f => ui.say(f == null ? 'Loading the photo-real view…' : `Loading the photo-real view… ${Math.round(f * 100)}%`),
     });
     const modes = availableModes(view, photo.available);
@@ -122,7 +124,7 @@ export function mount(container, view, options = {}) {
         modes, photo, ui, request: () => request(), PhotoRealUnsupportedError,
         parts: { textures, outlines, slabs: [holds.lit, holds.dim] },
     });
-    const failures = watchRenderFailures(renderer, modeCtl, () => request());
+    const failures = watchRenderFailures(renderer, modeCtl, () => request(), photo);
     const plan = createPlanMap(ui.map, view, frame);
     const labelLayout = createLabelLayout(labels, camera, renderer.domElement, sides);
     // Labels keep out of the overlay controls; re-measured when one appears, goes or resizes.
@@ -172,12 +174,13 @@ export function mount(container, view, options = {}) {
             renderer.render(scene, camera);
         } catch (err) {
             console.warn('wall3d: render failed', err);
-            modeCtl.fail(PHOTO_REAL_FAILED);
+            modeCtl.fail(PHOTO_REAL_FAILED, `render: ${err?.message || err}`);
         }
         const dist = camera.position.distanceTo(controls.target);
         const h = renderer.domElement.clientHeight;
         ui.setScale(h / (2 * dist * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)));
         plan.update(camera.position, controls.target);
+        if (photo.active) photo.frame(now);
         if (tweening || moving || photo.active) request();
     }
 
@@ -229,7 +232,7 @@ export function mount(container, view, options = {}) {
         /** Turns the photo-real (splat) mode on or off; resolves when it shows. */
         photoReal: on => modeCtl.set(on ? 'photoreal' : 'schematic'),
         /** Scene statistics for the screenshot harness / perf checks. */
-        stats: () => ({ holds: holds.all.length, drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles }),
+        stats: () => ({ holds: holds.all.length, drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles, splat: photo.level, pixelRatio: renderer.getPixelRatio() }),
         /** Renders synchronously (used by the screenshot harness). */
         renderNow() { tweener.step(performance.now() + 1e6); controls.update(); tick(performance.now()); },
         /** Looks straight at one hold from `distanceMm` out along its facet normal (close-ups). */

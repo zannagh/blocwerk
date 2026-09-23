@@ -150,15 +150,16 @@ public sealed partial class WallCaptureProcessor
             throw new InvalidDataException("the photo-real scene is not an .spz file.");
         }
 
-        // Phones get a pruned copy of a big scene (SpzDecimator): the full one can lose their WebGL context.
-        var mobile = MobileLevelOfDetail(spz, modelId);
+        // The level-of-detail ladder (SplatLodLadder): the view starts small and steps up while the
+        // device keeps up, so a phone never has to survive the full scene. Supersedes the mobile copy.
+        var (count, levels) = await LevelsOfDetailAsync(spz, modelId, ct);
         var row = new WallGeometrySplat
         {
             GeometryModelId = modelId,
             StoredPath = await files.SaveAsync(spz, ".spz", ct),
             SizeBytes = spz.LongLength,
-            MobileStoredPath = mobile is null ? null : await files.SaveAsync(mobile, ".spz", ct),
-            MobileSizeBytes = mobile?.LongLength,
+            SplatCount = count,
+            LodLevelsJson = SplatLodLadder.Serialize(levels),
             FrameJson = frameJson,
         };
 
@@ -167,10 +168,9 @@ public sealed partial class WallCaptureProcessor
         db.WallGeometrySplats.RemoveRange(old);
         db.WallGeometrySplats.Add(row);
         await db.SaveChangesAsync(ct);
-        foreach (var splat in old)
+        foreach (var file in old.SelectMany(SplatLodLadder.Files))
         {
-            files.Delete(splat.StoredPath);
-            files.Delete(splat.MobileStoredPath);
+            files.Delete(file);
         }
 
         logger.LogInformation(
@@ -178,18 +178,18 @@ public sealed partial class WallCaptureProcessor
             modelId, row.SizeBytes, CaptureSplatDocuments.ResidualText(frameJson));
     }
 
-    /// <summary>The pruned copy for phones, or null (small scene, or a layout the pruner does not read).</summary>
-    private byte[]? MobileLevelOfDetail(byte[] spz, Guid modelId)
+    /// <summary>The ladder's levels (saved), or none (small scene, or a layout the pruner does not read).</summary>
+    private async Task<(int? Count, List<SplatLodLevel> Levels)> LevelsOfDetailAsync(byte[] spz, Guid modelId, CancellationToken ct)
     {
         try
         {
-            return SpzDecimator.Decimate(spz);
+            return await SplatLodBackfill.SaveLadderAsync(spz, files, ct);
         }
         catch (InvalidDataException ex)
         {
             // The full scene still works everywhere a desktop GPU is; phones just get it whole.
-            logger.LogWarning("No mobile level of detail for the photo-real view of model {ModelId}: {Reason}", modelId, ex.Message);
-            return null;
+            logger.LogWarning("No level-of-detail ladder for the photo-real view of model {ModelId}: {Reason}", modelId, ex.Message);
+            return (null, []);
         }
     }
 }

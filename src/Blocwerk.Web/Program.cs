@@ -348,6 +348,9 @@ public static class Program
         // The photo-real (Gaussian splat) scene of the same model; same posture as its textures.
         app.MapWallGeometrySplats();
 
+        // Device reports of the photo-real view (start, level steps, lost contexts), logged only.
+        app.MapPhotoRealDiagnostics();
+
         // User avatar bytes; same browser-only auth posture as the wall photo routes above.
         app.MapUserAvatars();
 

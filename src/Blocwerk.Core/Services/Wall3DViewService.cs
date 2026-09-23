@@ -140,8 +140,26 @@ public sealed class Wall3DViewService(
             SplatMobileUrl = matrix is null || splat!.MobileStoredPath is null
                 ? null
                 : WallGeometrySplats.Url(view.WallId, splat.GeometryModelId, shareToken, mobile: true),
+            SplatLevels = matrix is null ? [] : SplatLevels(view.WallId, splat!, shareToken),
             SplatMatrix = matrix,
         };
+    }
+
+    /// <summary>The ladder, smallest first, then the full scene; rows without a ladder offer the legacy mobile copy.</summary>
+    private static List<Wall3DSplatLevel> SplatLevels(Guid wallId, WallGeometrySplat splat, string? shareToken)
+    {
+        var modelId = splat.GeometryModelId;
+        var levels = SplatLodLadder.Parse(splat.LodLevelsJson)
+            .Select(l => new Wall3DSplatLevel(WallGeometrySplats.LevelUrl(wallId, modelId, l.Splats, shareToken), l.Splats, l.SizeBytes))
+            .ToList();
+        if (levels.Count == 0 && splat.MobileStoredPath is not null)
+        {
+            levels.Add(new Wall3DSplatLevel(
+                WallGeometrySplats.Url(wallId, modelId, shareToken, mobile: true), SpzDecimator.MobileTarget, splat.MobileSizeBytes ?? 0));
+        }
+
+        levels.Add(new Wall3DSplatLevel(WallGeometrySplats.Url(wallId, modelId, shareToken), splat.SplatCount ?? 0, splat.SizeBytes));
+        return levels;
     }
 
     private async Task<string?> LoadActiveGeometryJsonAsync(Guid wallId, CancellationToken ct)

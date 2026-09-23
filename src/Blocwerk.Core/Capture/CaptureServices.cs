@@ -27,6 +27,10 @@ public static class CaptureServices
         // Retention: stale drafts, expired photos and files no row references (see WallCaptureSweeper).
         services.AddSingleton<WallCaptureSweeper>();
         services.AddHostedService<WallCaptureSweepWorker>();
+
+        // Level-of-detail ladders of photo-real scenes stored before the ladder existed.
+        services.AddSingleton<SplatLodBackfill>();
+        services.AddHostedService(sp => sp.GetRequiredService<SplatLodBackfill>());
         return services;
     }
 }

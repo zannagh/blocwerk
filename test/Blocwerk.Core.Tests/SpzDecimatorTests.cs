@@ -31,6 +31,21 @@ public class SpzDecimatorTests
     }
 
     [Fact]
+    public void Ladder_BuildsOnlyLevelsWellBelowTheFullScene_EachTheMostVisibleOfTheNext()
+    {
+        var spz = Spz(1000, shDegree: 0);
+
+        var ladder = SpzDecimator.Ladder(spz, [900, 100, 400, 850], maxFraction: 0.85);
+
+        Assert.Equal([100, 400, 850], ladder.Select(l => l.Splats));
+        Assert.All(ladder, l => Assert.Equal(l.Splats, SpzDecimator.CountOf(l.Spz)));
+        var small = Ids(Gunzip(ladder[0].Spz), 100);
+        var larger = Ids(Gunzip(ladder[1].Spz), 400);
+        Assert.Subset(larger.ToHashSet(), small.ToHashSet());             // a step up only adds splats
+        Assert.Empty(SpzDecimator.Ladder(spz, [900], maxFraction: 0.8));
+    }
+
+    [Fact]
     public void Decimate_LeavesASmallScene_Alone()
     {
         Assert.Null(SpzDecimator.Decimate(Spz(300, shDegree: 0), target: 100, threshold: 300));
@@ -130,4 +145,6 @@ public class SpzDecimatorTests
         z.CopyTo(raw);
         return raw.ToArray();
     }
+
+    private static List<int> Ids(byte[] raw, int count) => Enumerable.Range(0, count).Select(k => Id(raw, count, k)).ToList();
 }

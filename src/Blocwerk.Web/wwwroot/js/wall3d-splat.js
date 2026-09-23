@@ -4,42 +4,26 @@
 // `view.splatMatrix` (column-major, from frame.json's toWorldMm) moves it into the view's world frame
 // (wall-geometry millimetres, z up), where the facets and holds already are.
 //
+// Streaming instead of all-or-nothing: the scene comes as a level-of-detail ladder
+// (wall3d-splat-ladder.js). The smallest level shows first; while frames stay fast the view steps up
+// one level at a time (the next level loads behind the one showing, then replaces it), up to what the
+// device may take. A lost WebGL context (iOS Safari drops it when a frame or the tab is too heavy) is
+// not an error: the view waits for the context to come back and resumes one level lower at a lower
+// resolution (wall3d-splat-recover.js). Only when even the smallest level is lost twice does it give
+// up, quietly, back to Schematic. Every step is reported to the server log (wall3d-splat-diag.js).
+//
 // While the mode is on the view renders continuously: Spark sorts splats in a worker and needs the
 // frames after a camera move to show the re-sorted result.
-//
-// Phones and low-memory devices get the pruned mobile level of detail (`view.splatMobileUrl`, ~180k
-// splats, SpzDecimator on the server) and a 1× pixel ratio while the mode is on: a half-million-splat
-// capture sorted and blended at 2× every frame can make iOS Safari drop the WebGL context, which
-// shows as a black canvas. `?splatLod=full|mobile` on the page overrides the pick (testing).
+import { createFrameMonitor, ladderOf, levelCap, pinnedLevel, remembered, rememberSuccess, sizeOf } from './wall3d-splat-ladder.js';
+import { deviceFacts, report } from './wall3d-splat-diag.js';
+import { createRecovery, createRenderScale, prefersLightSplat } from './wall3d-splat-recover.js';
+
+export { prefersLightSplat };
 
 /** Spark packs splats into 2048-wide texture arrays; anything smaller cannot hold a wall. */
 const MIN_TEXTURE_SIZE = 2048;
 
-/** At most this much device memory (GB, `navigator.deviceMemory`; Chromium only) counts as low. */
-const LOW_MEMORY_GB = 4;
-/** GPUs whose largest texture is smaller than this are phone-class. */
-const DESKTOP_TEXTURE_SIZE = 8192;
-
 export class PhotoRealUnsupportedError extends Error {}
-
-/**
- * Whether this device should get the light splat: little memory, a phone-class GPU, or a phone /
- * tablet (mobile UA, iPadOS posing as a Mac, or a coarse touch-only pointer).
- */
-export function prefersLightSplat(renderer) {
-    const forced = new URLSearchParams(location.search).get('splatLod');
-    if (forced === 'full' || forced === 'mobile') return forced === 'mobile';
-    const gl = renderer.getContext();
-    const memory = navigator.deviceMemory;
-    const ua = navigator.userAgent || '';
-    const mobileUa = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
-    const iPadOs = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
-    const touchOnly = navigator.maxTouchPoints > 0 && window.matchMedia('(pointer: coarse)').matches
-        && !window.matchMedia('(any-pointer: fine)').matches;
-    return (typeof memory === 'number' && memory <= LOW_MEMORY_GB)
-        || gl.getParameter(gl.MAX_TEXTURE_SIZE) < DESKTOP_TEXTURE_SIZE
-        || mobileUa || iPadOs || touchOnly;
-}
 
 function supported(renderer) {
     const gl = renderer.getContext();
@@ -49,41 +33,152 @@ function supported(renderer) {
         && gl.getParameter(gl.MAX_ARRAY_TEXTURE_LAYERS) >= 1;
 }
 
+/** Frees the GPU copies of the facet photos (three.js re-uploads them if Photos mode shows again). */
+function releaseTextures(group) {
+    group?.traverse(o => {
+        const m = o.material;
+        if (!m) return;
+        for (const t of [m.map, m.alphaMap]) t?.dispose();
+    });
+}
+
 /**
- * @param ctx.renderer   the view's THREE.WebGLRenderer
- * @param ctx.scene      the view's scene
- * @param ctx.view       the Wall3DView payload (splatUrl, splatMatrix)
- * @param ctx.facetParts objects hidden while the photo-real scene shows (facets, textures, markers, …)
- * @param ctx.onProgress (fraction 0..1 or null when unknown) while the file downloads
+ * @param ctx.renderer      the view's THREE.WebGLRenderer
+ * @param ctx.scene         the view's scene
+ * @param ctx.view          the Wall3DView payload (splatLevels / splatUrl, splatMatrix)
+ * @param ctx.facetParts    objects hidden while the photo-real scene shows (facets, textures, markers, …)
+ * @param ctx.photoTextures the facet photo group, whose GPU textures are freed while photo-real shows
+ * @param ctx.onProgress    (fraction 0..1 or null when unknown) while the first level downloads
+ * @param ctx.onGiveUp      (message) when even the smallest level cannot be shown on this device
  */
-export function createPhotoReal({ renderer, scene, view, facetParts, onProgress }) {
+export function createPhotoReal({ renderer, scene, view, facetParts, photoTextures, onProgress, onGiveUp }) {
+    const levels = ladderOf(view);
+    const light = prefersLightSplat(renderer);
+    const facts = { ...deviceFacts(renderer), mobile: light };
+    const scale = createRenderScale(renderer, light);
+    const monitor = createFrameMonitor(light);
+    let cap = levels.length > 0 ? levelCap(levels, light) : 0;
+    let spark = null;               // the Spark module, once imported
     let sparkRenderer = null;
     let mesh = null;
+    let index = -1;                 // the level showing
+    let loadingIndex = -1;          // the level loading, -1 when none
+    let epoch = 0;                  // bumps on a lost context: loads of an older epoch are dropped
     let loading = null;
+    let stepping = null;            // the epoch of the step in flight, null when none
     let active = false;
     let disposed = false;
     let broken = false;
-    const light = prefersLightSplat(renderer);
-    const fullPixelRatio = renderer.getPixelRatio();
+    let startedAt = 0;
 
-    async function load() {
-        if (broken) throw new PhotoRealUnsupportedError('The photo-real view failed on this device.');
-        if (!supported(renderer)) throw new PhotoRealUnsupportedError('WebGL 2 with large texture arrays is required.');
-        const { SparkRenderer, SplatMesh } = await import('../lib/spark/spark.module.min.js');
-        if (disposed) return;
-        sparkRenderer = new SparkRenderer({ renderer });
-        mesh = new SplatMesh({
-            url: light && view.splatMobileUrl ? view.splatMobileUrl : view.splatUrl,
+    const state = extra => ({
+        level: index, levels: levels.length, splats: index >= 0 ? levels[index].splats : null,
+        frameMs: monitor.median || null, elapsedMs: startedAt ? performance.now() - startedAt : null,
+        lostCount: recovery.lostCount, safeSplats: remembered().failSplats ?? null, mobile: light, ...extra,
+    });
+    const say = (event, extra) => report(event, renderer, facts, state(extra));
+    const detail = createDetailBadge(renderer.domElement.parentElement);
+
+    const recovery = createRecovery({
+        renderer, say,
+        culprit: () => levels[Math.max(index, loadingIndex, 0)],
+        culpritIndex: () => Math.max(index, loadingIndex, 0),
+        drop() {
+            epoch++;
+            release();
+            detail.show('Restoring detail…');
+        },
+        resume(lowered) {
+            cap = Math.min(cap, lowered);
+            scale.lower();
+            if (active) scale.apply(true);
+            stepTo(lowered, true);
+        },
+        giveUp() {
+            detail.hide();
+            onGiveUp?.('Photo-real is taking a break on this device, so the view shows Schematic.');
+        },
+    });
+
+    async function loadLevel(i, progress) {
+        spark ??= await import('../lib/spark/spark.module.min.js');
+        if (disposed) return false;
+        const myEpoch = epoch;
+        if (!sparkRenderer) {
+            sparkRenderer = new spark.SparkRenderer({ renderer });
+            sparkRenderer.visible = active;
+            scene.add(sparkRenderer);
+        }
+        const next = new spark.SplatMesh({
+            url: levels[i].url,
             fileType: 'spz',
             // A late progress event must not re-open the "Loading…" bubble over a finished scene.
-            onProgress: e => { if (!mesh?.isInitialized) onProgress(e && e.lengthComputable && e.total > 0 ? e.loaded / e.total : null); },
+            onProgress: progress ? e => { if (!next.isInitialized) progress(e && e.lengthComputable && e.total > 0 ? e.loaded / e.total : null); } : undefined,
         });
-        mesh.matrixAutoUpdate = false;
-        mesh.matrix.fromArray(view.splatMatrix);
-        mesh.matrixWorldNeedsUpdate = true;
-        mesh.visible = false;
-        scene.add(sparkRenderer, mesh);
-        await mesh.initialized;
+        next.matrixAutoUpdate = false;
+        next.matrix.fromArray(view.splatMatrix);
+        next.matrixWorldNeedsUpdate = true;
+        next.visible = false;
+        scene.add(next);
+        loadingIndex = i;
+        try {
+            await next.initialized;
+        } catch (err) {
+            scene.remove(next);
+            next.dispose();
+            throw err;
+        } finally {
+            loadingIndex = -1;
+        }
+        if (disposed || myEpoch !== epoch || !sparkRenderer) {
+            scene.remove(next);
+            next.dispose();
+            return false;
+        }
+        const old = mesh;
+        mesh = next;
+        index = i;
+        mesh.visible = active;
+        if (old) { scene.remove(old); old.dispose(); }
+        monitor.reset();
+        return true;
+    }
+
+    /** Loads level `i` behind the one showing and swaps it in; a failure caps the ladder where it is. */
+    function stepTo(i, recovering = false) {
+        // A step of an older context epoch (lost mid-download) does not block the resume.
+        if (stepping === epoch || disposed || broken) return;
+        const myEpoch = epoch;
+        stepping = myEpoch;
+        detail.show(recovering ? 'Restoring detail…' : 'Loading detail…');
+        loadLevel(i, null)
+            .then(ok => { if (ok) say(recovering ? 'resumed' : 'level'); })
+            .catch(err => {
+                console.warn('wall3d: photo-real level failed', err);
+                cap = Math.max(0, Math.min(cap, index));
+                say('level-failed', { detail: String(err?.message || err), level: i });
+            })
+            .finally(() => {
+                if (stepping !== myEpoch) return;
+                stepping = null;
+                if (!recovery.recovering) detail.hide();
+            });
+    }
+
+    async function start() {
+        if (broken) throw new PhotoRealUnsupportedError('The photo-real view failed on this device.');
+        if (!supported(renderer)) throw new PhotoRealUnsupportedError('WebGL 2 with large texture arrays is required.');
+        if (levels.length === 0) throw new Error('No photo-real scene.');
+        startedAt = performance.now();
+        const first = pinnedLevel(levels.length) ?? 0;
+        say('start', { level: first, detail: `cap ${cap}, levels ${levels.map(l => l.splats).join('/')}` });
+        try {
+            await loadLevel(first, onProgress);
+        } catch (err) {
+            say('level-failed', { level: first, detail: String(err?.message || err) });
+            await loadLevel(first, onProgress);      // one retry: a flaky phone connection
+        }
+        say('level');
     }
 
     function apply() {
@@ -92,29 +187,36 @@ export function createPhotoReal({ renderer, scene, view, facetParts, onProgress 
         if (mesh) mesh.visible = active;
         if (sparkRenderer) sparkRenderer.visible = active;
         for (const part of facetParts) part.visible = !active;
-        if (light) renderer.setPixelRatio(active ? 1 : fullPixelRatio);
+        if (active) releaseTextures(photoTextures);
+        scale.apply(active);
+        if (!active) detail.hide();
     }
 
     function release() {
-        if (mesh) { scene.remove(mesh); mesh.dispose(); }
-        if (sparkRenderer) { scene.remove(sparkRenderer); sparkRenderer.dispose(); }
+        for (const o of [mesh, sparkRenderer]) {
+            if (!o) continue;
+            scene.remove(o);
+            try { o.dispose(); } catch { /* a lost context has nothing left to free */ }
+        }
         mesh = null;
         sparkRenderer = null;
-        loading = null;
+        index = -1;
     }
 
     return {
-        get available() { return !!(view.splatUrl && view.splatMatrix && view.splatMatrix.length === 16); },
-        /** Whether this device got the light (mobile) splat and pixel ratio. */
-        get light() { return light && !!view.splatMobileUrl; },
+        get available() { return !!(levels.length > 0 && view.splatMatrix && view.splatMatrix.length === 16); },
+        /** Whether this device counts as light (phone-class: capped ladder, 1× pixel ratio). */
+        get light() { return light; },
         get active() { return active; },
         get loaded() { return !!mesh && mesh.isInitialized; },
+        /** The level showing, the levels and the cap (diagnostics, the screenshot harness). */
+        get level() { return { index, cap, count: levels.length, splats: index >= 0 ? levels[index].splats : 0, stepping: stepping !== null, recovering: recovery.recovering }; },
 
         /** Switches the mode; resolves once the scene shows what was asked for. Throws on failure. */
         async setActive(on) {
             if (disposed || on === active) return;
             if (on) {
-                loading ??= load().catch(err => { loading = null; throw err; });
+                loading ??= start().catch(err => { loading = null; throw err; });
                 await loading;
                 if (disposed) return;
                 if (broken) throw new PhotoRealUnsupportedError('The photo-real view failed on this device.');
@@ -123,23 +225,64 @@ export function createPhotoReal({ renderer, scene, view, facetParts, onProgress 
             apply();
         },
 
+        /** Called every rendered frame while the mode shows: measures and steps the ladder. */
+        frame(now) {
+            if (!active || !mesh || stepping !== null || recovery.recovering || broken) return;
+            const next = index + 1;
+            if (next <= cap && sizeOf(levels[next]) <= (remembered().okSplats ?? 0)) {
+                stepTo(next);                     // ran fine here before: no need to measure again
+                return;
+            }
+            const decision = monitor.frame(now);
+            if (decision === 'up') {
+                rememberSuccess(levels[index]);
+                if (next <= cap) stepTo(next);
+            } else if (decision === 'down' && index > 0) {
+                cap = index - 1;
+                say('slow', { detail: `median ${monitor.median.toFixed(1)} ms` });
+                stepTo(index - 1);
+            }
+        },
+
+        /** A lost WebGL context: true when photo-real handles it (it had started), else false. */
+        contextLost: event => !disposed && !broken && !!loading && recovery.lost(event),
+        contextRestored: () => recovery.restored(),
+
         /**
-         * Gives up on the mode after a render failure (lost WebGL context, shader error): the splat is
-         * dropped and every later `setActive(true)` throws PhotoRealUnsupportedError.
+         * Gives up after a render failure (shader error, or recovery gave up): every later
+         * `setActive(true)` throws. A pending context restore still goes ahead for the modelled view.
          */
-        fail() {
+        fail(reason) {
+            if (reason && !broken) say('failed', { detail: reason });
             broken = true;
             active = false;
             apply();
             release();
+            loading = null;
         },
 
         dispose() {
             if (disposed) return;
             disposed = true;
             active = false;
+            recovery.cancel();
             apply();
             release();
+            detail.remove();
         },
+    };
+}
+
+/** The small "Loading detail…" pill over the stage. */
+function createDetailBadge(root) {
+    const el = document.createElement('div');
+    el.className = 'w3d-detail';
+    el.hidden = true;
+    el.setAttribute('role', 'status');
+    root?.append(el);
+    return {
+        show(text) { el.textContent = text; el.hidden = false; },
+        hide() { el.hidden = true; },
+        remove() { el.remove(); },
     };
 }
