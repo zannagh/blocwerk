@@ -114,4 +114,20 @@ public sealed record WallGeometryQuality
     public double? ReprojRmsPx { get; init; }
 
     public string? Gravity { get; init; }
+
+    /// <summary>
+    /// Markers the solver down-weighted because they fit the photos far worse than the rest (marker id →
+    /// details): typically a wrong printed size in the plan, or a sheet that does not lie flat.
+    /// </summary>
+    public IReadOnlyDictionary<string, WallGeometryDownweightedMarker>? DownweightedMarkers { get; init; }
+}
+
+/// <summary>Why the solver down-weighted a marker (<c>quality.downweightedMarkers</c>).</summary>
+public sealed record WallGeometryDownweightedMarker
+{
+    /// <summary>The marker's reprojection RMS in the free (unconstrained) solve, px.</summary>
+    public double? FreeRmsPx { get; init; }
+
+    /// <summary>The median marker's reprojection RMS in that solve, px.</summary>
+    public double? MedianRmsPx { get; init; }
 }

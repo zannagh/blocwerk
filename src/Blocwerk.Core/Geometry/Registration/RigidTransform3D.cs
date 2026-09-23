@@ -56,25 +56,34 @@ public sealed class RigidTransform3D
     ];
 
     /// <summary>Least-squares fit mapping every <c>From</c> onto its <c>To</c>; null for fewer than 3 pairs.</summary>
-    public static RigidTransform3D? Fit(IReadOnlyList<(double[] From, double[] To)> pairs)
+    public static RigidTransform3D? Fit(IReadOnlyList<(double[] From, double[] To)> pairs) =>
+        Fit(pairs.Select(p => (p.From, p.To, 1.0)).ToList());
+
+    /// <summary>
+    /// Weighted least-squares fit (minimises Σ w·|R·from + t − to|²); null for fewer than 3 pairs or no
+    /// positive weight.
+    /// </summary>
+    public static RigidTransform3D? Fit(IReadOnlyList<(double[] From, double[] To, double Weight)> pairs)
     {
-        if (pairs.Count < 3)
+        var total = pairs.Sum(p => Math.Max(0, p.Weight));
+        if (pairs.Count < 3 || total <= 0)
         {
             return null;
         }
 
-        var cFrom = Vec3.Mean(pairs.Select(p => p.From));
-        var cTo = Vec3.Mean(pairs.Select(p => p.To));
+        var cFrom = WeightedMean(pairs.Select(p => (p.From, p.Weight)), total);
+        var cTo = WeightedMean(pairs.Select(p => (p.To, p.Weight)), total);
         var s = new double[3, 3];
-        foreach (var (from, to) in pairs)
+        foreach (var (from, to, weight) in pairs)
         {
+            var w = Math.Max(0, weight);
             var a = Vec3.Sub(from, cFrom);
             var b = Vec3.Sub(to, cTo);
             for (var i = 0; i < 3; i++)
             {
                 for (var j = 0; j < 3; j++)
                 {
-                    s[i, j] += a[i] * b[j];
+                    s[i, j] += w * a[i] * b[j];
                 }
             }
         }
@@ -83,6 +92,21 @@ public sealed class RigidTransform3D
         var rotation = FromQuaternion(q[0], q[1], q[2], q[3]);
         var fitted = new RigidTransform3D(rotation, [0, 0, 0]);
         return new RigidTransform3D(rotation, Vec3.Sub(cTo, fitted.Rotate(cFrom)));
+    }
+
+    private static double[] WeightedMean(IEnumerable<(double[] Point, double Weight)> points, double total)
+    {
+        var sum = new double[3];
+        foreach (var (p, weight) in points)
+        {
+            var w = Math.Max(0, weight);
+            for (var i = 0; i < 3; i++)
+            {
+                sum[i] += w * p[i] / total;
+            }
+        }
+
+        return sum;
     }
 
     private static double[,] HornMatrix(double[,] s)

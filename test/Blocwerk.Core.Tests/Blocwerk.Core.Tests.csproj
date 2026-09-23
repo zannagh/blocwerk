@@ -37,6 +37,8 @@
     <Content Include="MarkerPlanning\attic-suggested.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="MarkerRevisions\capture1-rev1-geometry.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="MarkerRevisions\capture1-rev2-geometry.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Re-solves of the same 14-photo Attic capture (subsets, markers left out, fillers 4/5 declared 100 mm). -->
+    <Content Include="MarkerRevisions\Resolves\*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
