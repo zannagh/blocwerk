@@ -1,0 +1,282 @@
+{
+  "format": "blocwerk-marker-plan",
+  "schemaVersion": 1,
+  "dictionary": "DICT_4X4_50",
+  "photo": {
+    "distanceMm": 2500,
+    "cameraPreset": "phone-0.5x",
+    "horizontalFovDeg": 104,
+    "imageLongEdgePx": 4032
+  },
+  "segments": [
+    {
+      "index": 0,
+      "name": "main wall",
+      "shape": "rectangle",
+      "widthMm": 5200,
+      "heightMm": 3400,
+      "rightAngle": "bottomLeft",
+      "overhangDeg": 45,
+      "yawDeg": 0,
+      "attachedTo": null
+    },
+    {
+      "index": 1,
+      "name": "kickboard",
+      "shape": "rectangle",
+      "widthMm": 5800,
+      "heightMm": 450,
+      "rightAngle": "bottomLeft",
+      "overhangDeg": 0,
+      "yawDeg": 0,
+      "attachedTo": {
+        "parentIndex": 0,
+        "parentEdge": "bottom",
+        "ownEdge": "top",
+        "offsetMm": 30
+      }
+    },
+    {
+      "index": 2,
+      "name": "left triangle",
+      "shape": "triangle",
+      "widthMm": 2400,
+      "heightMm": 2400,
+      "rightAngle": "bottomLeft",
+      "overhangDeg": 0,
+      "yawDeg": 90,
+      "attachedTo": {
+        "parentIndex": 0,
+        "parentEdge": "left",
+        "ownEdge": "hypotenuse",
+        "offsetMm": 0
+      }
+    },
+    {
+      "index": 5,
+      "name": "right cornered piece",
+      "shape": "rectangle",
+      "widthMm": 1450,
+      "heightMm": 2500,
+      "rightAngle": "bottomLeft",
+      "overhangDeg": 45,
+      "yawDeg": 0,
+      "attachedTo": {
+        "parentIndex": 0,
+        "parentEdge": "right",
+        "ownEdge": "left",
+        "offsetMm": 100
+      }
+    }
+  ],
+  "markers": [
+    {
+      "id": 0,
+      "segment": 0,
+      "xMm": 105,
+      "yMm": 105,
+      "sizeMm": 150,
+      "role": "corner"
+    },
+    {
+      "id": 1,
+      "segment": 0,
+      "xMm": 5095,
+      "yMm": 105,
+      "sizeMm": 150,
+      "role": "corner"
+    },
+    {
+      "id": 2,
+      "segment": 0,
+      "xMm": 5095,
+      "yMm": 3295,
+      "sizeMm": 150,
+      "role": "corner"
+    },
+    {
+      "id": 3,
+      "segment": 0,
+      "xMm": 105,
+      "yMm": 3295,
+      "sizeMm": 150,
+      "role": "corner"
+    },
+    {
+      "id": 4,
+      "segment": 0,
+      "xMm": 1768.3,
+      "yMm": 80,
+      "sizeMm": 100,
+      "role": "filler"
+    },
+    {
+      "id": 5,
+      "segment": 0,
+      "xMm": 3431.7,
+      "yMm": 80,
+      "sizeMm": 100,
+      "role": "filler"
+    },
+    {
+      "id": 6,
+      "segment": 0,
+      "xMm": 5120,
+      "yMm": 1700,
+      "sizeMm": 100,
+      "role": "filler"
+    },
+    {
+      "id": 7,
+      "segment": 0,
+      "xMm": 3431.7,
+      "yMm": 3320,
+      "sizeMm": 100,
+      "role": "filler"
+    },
+    {
+      "id": 8,
+      "segment": 0,
+      "xMm": 1768.3,
+      "yMm": 3320,
+      "sizeMm": 100,
+      "role": "filler"
+    },
+    {
+      "id": 9,
+      "segment": 0,
+      "xMm": 80,
+      "yMm": 1700,
+      "sizeMm": 100,
+      "role": "filler"
+    },
+    {
+      "id": 10,
+      "segment": 1,
+      "xMm": 80,
+      "yMm": 80,
+      "sizeMm": 100,
+      "role": "corner"
+    },
+    {
+      "id": 11,
+      "segment": 1,
+      "xMm": 5720,
+      "yMm": 80,
+      "sizeMm": 100,
+      "role": "corner"
+    },
+    {
+      "id": 12,
+      "segment": 1,
+      "xMm": 5720,
+      "yMm": 370,
+      "sizeMm": 100,
+      "role": "corner"
+    },
+    {
+      "id": 13,
+      "segment": 1,
+      "xMm": 80,
+      "yMm": 370,
+      "sizeMm": 100,
+      "role": "corner"
+    },
+    {
+      "id": 14,
+      "segment": 1,
+      "xMm": 1960,
+      "yMm": 70,
+      "sizeMm": 80,
+      "role": "filler"
+    },
+    {
+      "id": 15,
+      "segment": 1,
+      "xMm": 3840,
+      "yMm": 70,
+      "sizeMm": 80,
+      "role": "filler"
+    },
+    {
+      "id": 16,
+      "segment": 1,
+      "xMm": 3840,
+      "yMm": 380,
+      "sizeMm": 80,
+      "role": "filler"
+    },
+    {
+      "id": 17,
+      "segment": 1,
+      "xMm": 1960,
+      "yMm": 380,
+      "sizeMm": 80,
+      "role": "filler"
+    },
+    {
+      "id": 18,
+      "segment": 2,
+      "xMm": 81.3,
+      "yMm": 81.3,
+      "sizeMm": 100,
+      "role": "corner"
+    },
+    {
+      "id": 19,
+      "segment": 2,
+      "xMm": 2155.2,
+      "yMm": 101.4,
+      "sizeMm": 100,
+      "role": "corner"
+    },
+    {
+      "id": 20,
+      "segment": 2,
+      "xMm": 101.4,
+      "yMm": 2155.2,
+      "sizeMm": 100,
+      "role": "corner"
+    },
+    {
+      "id": 21,
+      "segment": 2,
+      "xMm": 1138.8,
+      "yMm": 1138.8,
+      "sizeMm": 80,
+      "role": "filler"
+    },
+    {
+      "id": 22,
+      "segment": 5,
+      "xMm": 105,
+      "yMm": 105,
+      "sizeMm": 150,
+      "role": "corner"
+    },
+    {
+      "id": 23,
+      "segment": 5,
+      "xMm": 1345,
+      "yMm": 105,
+      "sizeMm": 150,
+      "role": "corner"
+    },
+    {
+      "id": 24,
+      "segment": 5,
+      "xMm": 1345,
+      "yMm": 2395,
+      "sizeMm": 150,
+      "role": "corner"
+    },
+    {
+      "id": 25,
+      "segment": 5,
+      "xMm": 105,
+      "yMm": 2395,
+      "sizeMm": 150,
+      "role": "corner"
+    }
+  ]
+}

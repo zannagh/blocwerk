@@ -20,4 +20,21 @@
     <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- A real glyph crop (markers 0, 5, 12) for the end-to-end enrichment test; the fixture itself
+         lives with the HoldDetection tests, which own the CV fixtures. -->
+    <Content Include="..\Blocwerk.HoldDetection.Tests\Fixtures\Glyphs\img2783-topleft.jpg"
+             Link="Fixtures\Glyphs\img2783-topleft.jpg"
+             CopyToOutputDirectory="PreserveNewest" />
+    <!-- A second real crop (kickboard seam) so the in-app capture test has two photos with markers. -->
+    <Content Include="..\Blocwerk.HoldDetection.Tests\Fixtures\Glyphs\img2772-kickboard-seam.jpg"
+             Link="Fixtures\Glyphs\img2772-kickboard-seam.jpg"
+             CopyToOutputDirectory="PreserveNewest" />
+    <!-- The Attic's solved geometry (capture 1, trimmed to the plane data) for the marker-plan import. -->
+    <Content Include="MarkerPlanning\attic-wall-geometry.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The planner's exports for The Attic: the legacy layout as a plan, and a suggested mixed-size layout. -->
+    <Content Include="MarkerPlanning\attic-plan.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="MarkerPlanning\attic-suggested.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
