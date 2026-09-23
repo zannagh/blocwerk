@@ -142,6 +142,16 @@
             }
             break;
 
+        case WallUpdatePhase.Shapes:
+            <ShapeRecognitionStep @ref="_shapeStep" WallId="WallId" SessionId="_sessionInfo?.Id"
+                                  OnReview="OnShapesReview" OnSkip="OnShapesSkipped" />
+            break;
+
+        case WallUpdatePhase.ShapeReview:
+            <ShapeReviewStep @ref="_shapeReview" WallId="WallId" SessionId="_sessionInfo?.Id"
+                             OnContinue="OnShapeReviewContinue" OnBack="OnShapeReviewBack" />
+            break;
+
         case WallUpdatePhase.Confirm:
             @* Verdicts recorded against holds on panels no review surface can display. They are already
                reset to "carry in place" in the payload below; the promote waits until that has been

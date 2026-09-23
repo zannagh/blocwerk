@@ -1,0 +1,131 @@
+@* One recognised hold shape in the wall update's shape review: the hold's crop with the recognised
+   outline (solid) and the shape it had before (dashed) drawn over it, the confidence, and the four
+   verdicts as large tap targets. Stateless; the review step owns the verdicts. *@
+
+<article class="shape-card @DecisionClass" aria-label="Hold shape, @Percent confidence">
+    <svg class="shape-crop" viewBox="@ViewBox" role="img" aria-label="Hold crop with outline">
+        <image href="@PhotoUrl" x="0" y="0" width="@Proposal.ImageWidth" height="@Proposal.ImageHeight" preserveAspectRatio="none" />
+        @if (Proposal.PreviousShape is { Count: >= 3 } previous)
+        {
+            <polygon class="shape-previous" points="@Points(previous)" style="stroke-width:@Stroke(0.6)" />
+        }
+        @if (Shown is { Count: >= 3 } shown)
+        {
+            <polygon class="shape-recognised" points="@Points(shown)" style="stroke-width:@Stroke(1)" />
+        }
+        else
+        {
+            <circle class="shape-recognised" cx="@F(CentreX)" cy="@F(CentreY)" r="@F(RadiusPx)" style="stroke-width:@Stroke(1)" />
+        }
+    </svg>
+
+    <div class="shape-card-meta">
+        <span class="shape-conf @Band">@Percent</span>
+        <span>@MethodLabel</span>
+        <span>@ReasonLabel</span>
+        <span class="shape-decision">@DecisionLabel</span>
+    </div>
+
+    <div class="shape-card-actions">
+        <button class="shape-act @(Proposal.Decision == ShapeReviewDecision.Accepted ? "on" : "")"
+                disabled="@(Proposal.Shape is null)" title="Use the recognised outline"
+                @onclick="() => OnDecide.InvokeAsync(ShapeReviewDecision.Accepted)">Accept</button>
+        <button class="shape-act @(Proposal.Decision == ShapeReviewDecision.Adjusted ? "on" : "")"
+                title="Fix the outline in the shape editor" @onclick="() => OnAdjust.InvokeAsync()">Adjust</button>
+        <button class="shape-act @(Proposal.Decision == ShapeReviewDecision.Circle ? "on" : "")"
+                title="Drop the outline and use a plain circle"
+                @onclick="() => OnDecide.InvokeAsync(ShapeReviewDecision.Circle)">Circle</button>
+        @if (Proposal.PreviousShape is not null)
+        {
+            <button class="shape-act @(Proposal.Decision == ShapeReviewDecision.KeepPrevious ? "on" : "")"
+                    title="Keep the shape this hold had before"
+                    @onclick="() => OnDecide.InvokeAsync(ShapeReviewDecision.KeepPrevious)">Old shape</button>
+        }
+    </div>
+</article>
+
+@code {
+    [Parameter, EditorRequired] public ShapeProposalInfo Proposal { get; set; } = default!;
+
+    [Parameter, EditorRequired] public string PhotoUrl { get; set; } = string.Empty;
+
+    [Parameter] public EventCallback<ShapeReviewDecision> OnDecide { get; set; }
+
+    [Parameter] public EventCallback OnAdjust { get; set; }
+
+    private List<ShapePoint>? Shown => Proposal.Decision switch
+    {
+        ShapeReviewDecision.Adjusted => Proposal.AdjustedShape,
+        ShapeReviewDecision.Circle => null,
+        ShapeReviewDecision.KeepPrevious => Proposal.PreviousShape,
+        _ => Proposal.Shape,
+    };
+
+    private double W => Math.Max(1, Proposal.ImageWidth);
+
+    private double H => Math.Max(1, Proposal.ImageHeight);
+
+    private double CentreX => Proposal.X * W;
+
+    private double CentreY => Proposal.Y * H;
+
+    private double RadiusPx => Proposal.Radius * Math.Max(W, H);
+
+    /// <summary>A square crop around the hold that fits the circle and every drawn outline, with a margin.</summary>
+    private double HalfSide
+    {
+        get
+        {
+            var extent = RadiusPx;
+            foreach (var p in (Proposal.Shape ?? []).Concat(Proposal.PreviousShape ?? []).Concat(Proposal.AdjustedShape ?? []))
+            {
+                extent = Math.Max(extent, Math.Max(Math.Abs(p.Dx * W), Math.Abs(p.Dy * H)));
+            }
+
+            return Math.Max(extent * 1.6, 24);
+        }
+    }
+
+    private string ViewBox => $"{F(CentreX - HalfSide)} {F(CentreY - HalfSide)} {F(2 * HalfSide)} {F(2 * HalfSide)}";
+
+    private string Points(IEnumerable<ShapePoint> shape) =>
+        string.Join(' ', shape.Select(p => $"{F(CentreX + (p.Dx * W))},{F(CentreY + (p.Dy * H))}"));
+
+    private string Stroke(double factor) => F(HalfSide / 45 * factor);
+
+    private string Percent => $"{Proposal.Confidence * 100:0}%";
+
+    private string Band => Proposal.Confidence switch
+    {
+        < 0.4 => "low",
+        < 0.7 => "mid",
+        _ => "high",
+    };
+
+    private string MethodLabel => Proposal.Method switch
+    {
+        HoldOutlineMethod.Contour => "colour",
+        HoldOutlineMethod.GrabCut => "GrabCut",
+        _ => "no outline found",
+    };
+
+    private string ReasonLabel => Proposal.Reason switch
+    {
+        ShapeProposalReason.New => "new hold",
+        ShapeProposalReason.Changed => "changed hold",
+        _ => "carried hold",
+    };
+
+    private string DecisionLabel => Proposal.Decision switch
+    {
+        ShapeReviewDecision.Accepted => "accepted",
+        ShapeReviewDecision.Adjusted => "adjusted",
+        ShapeReviewDecision.Circle => "circle",
+        ShapeReviewDecision.KeepPrevious => "old shape",
+        _ => "to review",
+    };
+
+    private string DecisionClass => $"decision-{Proposal.Decision.ToString().ToLowerInvariant()}";
+
+    private static string F(double v) => v.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+}

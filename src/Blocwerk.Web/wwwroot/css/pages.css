@@ -3705,3 +3705,101 @@ html.bw-fullscreen .panel-link-dialog .panel-step-viewport {
     /* 360px of first-fold on a 390px window left nothing for the rest of the page. */
     .wall-fold { min-height: 200px; }
 }
+
+/* ---- Wall update: optional shape recognition + shape review ------------------------------------ */
+.shape-optional {
+    margin-left: 6px;
+    padding: 1px 8px;
+    border-radius: var(--r-pill);
+    border: 1px solid var(--border-light);
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+/* Large tap targets: this step is used on a phone at the wall. */
+.shape-big-btn { min-height: 48px; width: auto; flex: 1 1 auto; margin-bottom: 0; }
+.shape-progress { width: 100%; height: 14px; margin: 6px 0 2px; accent-color: var(--accent); }
+.shape-scope { border: 1px solid var(--border-light); border-radius: var(--r-sm); padding: 8px 12px; margin: 0 0 12px; }
+.shape-scope legend { font-weight: 600; padding: 0 4px; }
+.shape-radio { display: flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; }
+.shape-radio input { width: 22px; height: 22px; flex: 0 0 auto; margin: 0; }
+.shape-radio small { color: var(--text-secondary); }
+
+.shape-review-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px;
+    margin: 6px 0 12px;
+}
+.shape-slider { display: flex; flex-direction: column; gap: 4px; flex: 1 1 220px; font-size: 0.88rem; }
+.shape-slider input[type=range] { width: 100%; min-height: 32px; }
+
+.shape-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 210px), 1fr));
+    gap: 12px;
+    margin: 0 0 12px;
+}
+.shape-card {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border-light);
+    border-radius: var(--r-sm);
+    background: var(--bg-surface);
+    overflow: hidden;
+}
+.shape-card.decision-accepted, .shape-card.decision-adjusted { border-color: var(--status-success); }
+.shape-card.decision-circle, .shape-card.decision-keepprevious { border-color: var(--text-secondary); }
+.shape-crop { width: 100%; aspect-ratio: 1; display: block; background: #111; }
+.shape-recognised { fill: rgba(233, 69, 96, 0.18); stroke: #e94560; vector-effect: none; }
+.shape-previous { fill: none; stroke: #ffd700; stroke-dasharray: 4 3; }
+.shape-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    padding: 6px 8px 0;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}
+.shape-conf { font-weight: 700; }
+.shape-conf.low { color: var(--danger-text, #c0392b); }
+.shape-conf.mid { color: var(--warning-text, #b3541e); }
+.shape-conf.high { color: var(--success-text, #2f8f4e); }
+.shape-decision { margin-left: auto; font-weight: 600; }
+.shape-card-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+    gap: 6px;
+    padding: 8px;
+}
+.shape-act {
+    min-height: 44px;
+    border-radius: var(--r-sm);
+    border: 1px solid var(--border-light);
+    background: var(--bg-surface-alt);
+    color: var(--text-primary);
+    font-weight: 600;
+    cursor: pointer;
+}
+.shape-act.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.shape-act:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.shape-adjust-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-surface);
+}
+.shape-adjust-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-light);
+}
+.shape-adjust-head .hint { margin: 2px 0 0; }
+.shape-adjust-head .shape-big-btn { flex: 0 0 auto; }
+.shape-adjust-editor { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-direction: column; }

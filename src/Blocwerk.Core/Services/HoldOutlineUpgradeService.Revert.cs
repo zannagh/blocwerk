@@ -81,6 +81,7 @@ public sealed partial class HoldOutlineUpgradeService
             hold.ShapePoints = entry.PrevShapeEmpty ? [] : null;
             hold.ShapeHoles = null;
             hold.OutlineSource = entry.PrevOutlineSource;
+            hold.OutlineConfidence = null;
             entry.PrevMetric?.RestoreTo(hold);
         }
 

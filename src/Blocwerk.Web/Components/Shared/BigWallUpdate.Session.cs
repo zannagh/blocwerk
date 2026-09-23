@@ -91,6 +91,8 @@ public partial class BigWallUpdate
         WallUpdatePhase.Carryover => WallUpdatePhase.Carryover,
         WallUpdatePhase.Neighbours => WallUpdatePhase.Neighbours,
         WallUpdatePhase.Touchup => WallUpdatePhase.Touchup,
+        WallUpdatePhase.Shapes => WallUpdatePhase.Shapes,
+        WallUpdatePhase.ShapeReview => WallUpdatePhase.ShapeReview,
         WallUpdatePhase.Confirm => WallUpdatePhase.Confirm,
         _ => WallUpdatePhase.Detected,
     };
@@ -101,6 +103,8 @@ public partial class BigWallUpdate
         WallUpdatePhase.Carryover => "Resume at the carryover review",
         WallUpdatePhase.Neighbours => "Resume at the overlap review",
         WallUpdatePhase.Touchup => "Resume at the final touch-up",
+        WallUpdatePhase.Shapes => "Resume at the hold shapes",
+        WallUpdatePhase.ShapeReview => "Resume at the shape review",
         WallUpdatePhase.Confirm => "Resume at the confirmation",
         _ => "Resume at the detected holds",
     };

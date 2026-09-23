@@ -1,0 +1,87 @@
+@* Full-view overlay that opens the regular wall editor (WallPhotoEditor) on ONE staged hold, already in
+   the shape tool and zoomed onto it, so adjusting a recognised outline uses the same editor as
+   everywhere else. Save hands the outline back to the shape review; nothing is written to the hold.
+   Its root class is on the keyboard dispatcher's takeover list (keyboard-shortcuts.js). *@
+
+<div class="shape-adjust-overlay" role="dialog" aria-modal="true" aria-label="Adjust hold shape"
+     tabindex="-1" @onkeydown="OnKeyDown">
+    <div class="shape-adjust-head">
+        <div>
+            <strong>Adjust the hold shape</strong>
+            <p class="hint">Drag the white points onto the hold's edge; + and − add or remove points. Then save.</p>
+        </div>
+        <button class="btn-secondary shape-big-btn" @onclick="() => OnCancel.InvokeAsync()">Cancel</button>
+    </div>
+    <div class="shape-adjust-editor">
+        <WallPhotoEditor WallId="WallId"
+                         Holds="_holds"
+                         BorderPoints="_noBorder"
+                         PhotoUrlOverride="@PhotoUrl"
+                         CanEdit="true"
+                         BottomToolbar="true"
+                         InitialShapeEditHoldId="Proposal.HoldId"
+                         ResetToken="Proposal.HoldId"
+                         OnBatchSave="OnBatchSave" />
+    </div>
+</div>
+
+@code {
+    private readonly List<ShapePoint> _noBorder = [];
+    private List<Hold> _holds = [];
+    private Guid? _builtFor;
+
+    [Parameter] public Guid WallId { get; set; }
+
+    [Parameter, EditorRequired] public ShapeProposalInfo Proposal { get; set; } = default!;
+
+    [Parameter, EditorRequired] public string PhotoUrl { get; set; } = string.Empty;
+
+    /// <summary>The adjusted outline, relative to the proposal's (X, Y).</summary>
+    [Parameter] public EventCallback<List<ShapePoint>> OnSave { get; set; }
+
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        if (_builtFor == Proposal.HoldId)
+        {
+            return;
+        }
+
+        // A detached stand-in for the staged hold, starting from the outline the reviewer is looking at.
+        _builtFor = Proposal.HoldId;
+        var start = Proposal.AdjustedShape ?? Proposal.Shape ?? Proposal.PreviousShape;
+        _holds =
+        [
+            new Hold
+            {
+                Id = Proposal.HoldId,
+                WallId = WallId,
+                WallPanelId = Proposal.PanelId,
+                X = Proposal.X,
+                Y = Proposal.Y,
+                Radius = Proposal.Radius,
+                IsAutoDetected = true,
+                ShapePoints = start?.Select(p => new ShapePoint { Dx = p.Dx, Dy = p.Dy }).ToList(),
+            },
+        ];
+    }
+
+    private async Task OnBatchSave(WallPhotoEditor.BatchChanges changes)
+    {
+        var hold = changes.Updated.FirstOrDefault(h => h.Id == Proposal.HoldId) ?? _holds.FirstOrDefault();
+        if (hold?.ShapePoints is not { Count: >= 3 } shape)
+        {
+            await OnCancel.InvokeAsync();
+            return;
+        }
+
+        // The editor may also have moved the hold; express the outline around the proposal's centre.
+        var rebased = ShapeJson.Rebase(shape, hold.X, hold.Y, Proposal.X, Proposal.Y);
+        await OnSave.InvokeAsync(rebased);
+    }
+
+    // Escape backs out without saving — it discards only this unsaved adjustment, never review work.
+    private Task OnKeyDown(KeyboardEventArgs e) =>
+        e.Key == "Escape" ? OnCancel.InvokeAsync() : Task.CompletedTask;
+}

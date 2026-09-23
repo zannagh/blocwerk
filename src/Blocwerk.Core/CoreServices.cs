@@ -199,6 +199,11 @@ public static class CoreServices
         builder.Services.AddScoped<IWallBigUpdateService, WallBigUpdateService>();
         builder.Services.AddScoped<IWallUpdateSessionService, WallUpdateSessionService>();
 
+        // The wall update's optional shape step: the run outlives its circuit/request, so the runner is a
+        // singleton on the root context factory; every check happens in the scoped service before it.
+        builder.Services.AddSingleton<WallShapeRecognitionRunner>();
+        builder.Services.AddScoped<IWallUpdateShapeService, WallUpdateShapeService>();
+
         ConfigureTopLogger(builder);
 
         return builder;

@@ -123,6 +123,7 @@ public sealed partial class HoldOutlineUpgradeService
             hold.ShapePoints = proposal.Result.ShapePoints;
             hold.ShapeHoles = proposal.HasHoles ? proposal.Result.ShapeHoles : null;
             hold.OutlineSource = HoldOutlineSource.AutoContour;
+            hold.OutlineConfidence = proposal.Result.Confidence;
         }
 
         if (proposal.FillsFingerprint)

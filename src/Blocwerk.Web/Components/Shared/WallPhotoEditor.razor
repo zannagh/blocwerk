@@ -1104,6 +1104,16 @@
     [Parameter] public Guid? ResetToken { get; set; }
 
     /// <summary>
+    /// Opens the editor straight in the shape tool on this hold, zoomed onto it — the wall update's shape
+    /// review uses it to adjust one outline. A hold with no outline starts from the default octagon.
+    /// Null (the default) changes nothing.
+    /// </summary>
+    [Parameter] public Guid? InitialShapeEditHoldId { get; set; }
+
+    private Guid? _appliedInitialShapeEdit;
+    private bool _pendingShapeFocus;
+
+    /// <summary>
     /// True while this editor holds unsaved hold edits (adds/updates/deletes). Lets the parent
     /// warn before it re-scopes the editor (e.g. stepping panels) and drops them.
     /// </summary>
@@ -1514,6 +1524,8 @@
                 _fitKey = fitKey;
                 await JS.InvokeVoidAsync("bwViewport.fitBox", _viewportRef, _frame != null, _frame);
             }
+
+            await FocusInitialShapeHoldAsync();
         }
         catch (JSException)
         {
@@ -1559,6 +1571,8 @@
         {
             SetMode(HoldTouchupTool.Border);
         }
+
+        ApplyInitialShapeEdit();
 
         // Reset all editing state whenever we enter or leave manual alignment so
         // stale hold ids from a prior staging session never bleed into the next one.
@@ -1687,7 +1701,7 @@
             ShapeHoles = ShapePoint.CloneRings(h.ShapeHoles),
             WidthMm = h.WidthMm, HeightMm = h.HeightMm, AreaMm2 = h.AreaMm2, FacetId = h.FacetId,
             PlaneAMm = h.PlaneAMm, PlaneBMm = h.PlaneBMm, FingerprintJson = h.FingerprintJson,
-            OutlineSource = h.OutlineSource, MetricSource = h.MetricSource,
+            OutlineSource = h.OutlineSource, OutlineConfidence = h.OutlineConfidence, MetricSource = h.MetricSource,
         }).ToList();
     }
 
@@ -2601,6 +2615,43 @@
         {
             hold.Material = null;
         }
+    }
+
+    private void ApplyInitialShapeEdit()
+    {
+        if (InitialShapeEditHoldId is not { } id || _appliedInitialShapeEdit == id
+            || Holds.FirstOrDefault(h => h.Id == id) is not { } hold)
+        {
+            return;
+        }
+
+        _appliedInitialShapeEdit = id;
+
+        // Not SetMode: that also stores the tool as the member's editor preference, and a one-off
+        // adjustment must not make the main wall editor reopen in the shape tool.
+        tools.SetTool(HoldTouchupTool.Shape);
+        ClearToolState(HoldTouchupTool.Shape);
+        _shapeEditHoldId = id;
+        if (hold.ShapePoints is not { Count: >= 3 })
+        {
+            hold.ShapePoints = ShapePoint.DefaultOctagon(hold.Radius);
+        }
+
+        // Counted as an edit from the start, so Save hands the outline back even if it is taken as is.
+        _updatedHoldIds.Add(id);
+        _pendingShapeFocus = true;
+    }
+
+    private async Task FocusInitialShapeHoldAsync()
+    {
+        if (!_pendingShapeFocus || Holds.FirstOrDefault(h => h.Id == InitialShapeEditHoldId) is not { } hold)
+        {
+            return;
+        }
+
+        _pendingShapeFocus = false;
+        var zoom = Math.Clamp(0.12 / Math.Max(hold.Radius, 0.004), 2.0, 10.0);
+        await JS.InvokeVoidAsync("bwViewport.centerOn", _viewportRef, hold.X, hold.Y, zoom);
     }
 
     private async Task SaveChanges()

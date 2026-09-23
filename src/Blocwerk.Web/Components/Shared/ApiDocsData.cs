@@ -6,7 +6,7 @@ namespace Blocwerk.Web.Components.Shared;
 /// DTOs in <c>Blocwerk.Web.Controllers</c>; when a controller signature changes, update the matching
 /// entry below.
 /// </summary>
-internal static class ApiDocsData
+internal static partial class ApiDocsData
 {
     private static readonly IReadOnlyList<ApiParamDoc> None = Array.Empty<ApiParamDoc>();
 
@@ -15,6 +15,7 @@ internal static class ApiDocsData
     {
         UserSurface,
         WallSurface,
+        WallUpdateShapesSurface,
     };
 
     private static ApiSurfaceDoc UserSurface => new(

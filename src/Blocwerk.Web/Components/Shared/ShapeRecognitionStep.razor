@@ -1,0 +1,93 @@
+@* The wall update's optional "recognise hold shapes" step. Starts the background run, shows its
+   progress while it works, and hands over to the review. Skipping keeps every hold's shape exactly as
+   it is. See ShapeRecognitionStep.razor.cs. *@
+
+<div class="bigupdate-phase shape-step">
+    <div class="bigupdate-step-label">Recognise hold shapes <span class="shape-optional">optional</span></div>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <p class="staged-hint danger">@_error</p>
+    }
+
+    @if (_status is null)
+    {
+        <p class="loading-small">Loading…</p>
+    }
+    else if (!_status.Available)
+    {
+        <p class="staged-hint">Outline detection is switched off on this server, so this step can only be skipped.</p>
+        <div class="staged-actions">
+            <button class="btn-primary shape-big-btn" @onclick="SkipAsync">Skip — keep shapes as they are</button>
+        </div>
+    }
+    else if (IsRunning)
+    {
+        <div class="bigupdate-attention clear" role="status" aria-live="polite">
+            <strong class="bigupdate-attention-head">Tracing hold outlines… @_status.Done of @_status.Total</strong>
+            <progress class="shape-progress" max="@Math.Max(1, _status.Total)" value="@_status.Done"></progress>
+            <span class="bigupdate-attention-sub">This runs on the server; you can close the page and come back.</span>
+        </div>
+        <div class="staged-actions">
+            <button class="btn-secondary shape-big-btn" @onclick="SkipAsync">Stop &amp; skip</button>
+        </div>
+    }
+    else if (_status.Status == ShapeRecognitionStatus.Completed)
+    {
+        <div class="bigupdate-attention clear" role="status">
+            <strong class="bigupdate-attention-head">@_status.Done hold shape(s) recognised.</strong>
+            <span class="bigupdate-attention-sub">
+                @if (_status.SkippedManual > 0)
+                {
+                    <text>@_status.SkippedManual hand-drawn shape(s) were left alone. </text>
+                }
+                Review them next — nothing is written to the wall until you apply the update.
+            </span>
+        </div>
+        <div class="staged-actions">
+            <button class="btn-primary shape-big-btn" @onclick="() => OnReview.InvokeAsync()">Review shapes →</button>
+            <button class="btn-secondary shape-big-btn" @onclick="() => StartAsync(rerun: true)">Run again</button>
+            <button class="btn-secondary shape-big-btn" @onclick="SkipAsync">Skip</button>
+        </div>
+    }
+    else
+    {
+        <div class="bigupdate-attention clear" role="status">
+            <strong class="bigupdate-attention-head">Trace the real outline of each hold instead of a circle.</strong>
+            <span class="bigupdate-attention-sub">
+                Works on every wall, markers or not. Each shape gets a confidence score, and the next step lists
+                the least certain ones first so you can fix them. Shapes someone drew by hand are kept unless you
+                tick the box below.
+            </span>
+        </div>
+
+        @if (_status.Status == ShapeRecognitionStatus.Failed || _status.Interrupted)
+        {
+            <p class="staged-hint danger">
+                The last run @(_status.Interrupted ? "was interrupted" : $"failed: {_status.Error}").
+                Starting again picks up where it stopped.
+            </p>
+        }
+
+        <fieldset class="shape-scope">
+            <legend>Which holds?</legend>
+            @foreach (var option in ScopeOptions)
+            {
+                <label class="shape-radio">
+                    <input type="radio" name="shape-scope" checked="@(_scope == option.Scope)"
+                           @onchange="() => _scope = option.Scope" />
+                    <span><strong>@option.Label</strong> <small>@option.Detail</small></span>
+                </label>
+            }
+            <label class="shape-radio">
+                <input type="checkbox" @bind="_overwriteManual" />
+                <span><strong>Also re-trace hand-drawn shapes</strong> <small>off by default</small></span>
+            </label>
+        </fieldset>
+
+        <div class="staged-actions">
+            <button class="btn-primary shape-big-btn" @onclick="() => StartAsync(rerun: false)">Recognise shapes</button>
+            <button class="btn-secondary shape-big-btn" @onclick="SkipAsync">Skip — keep shapes as they are</button>
+        </div>
+    }
+</div>

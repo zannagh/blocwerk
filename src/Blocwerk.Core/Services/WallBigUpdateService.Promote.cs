@@ -32,6 +32,7 @@ public partial class WallBigUpdateService
         // holds that no longer exist and its warp geometry is for a photo that was thrown away — so the
         // only safe answer is to refuse rather than to apply them to somebody else's capture.
         await WallUpdateSessions.EnsureCurrentAsync(db, wallId, expectedSessionId);
+        await EnsureShapeStepSettledAsync(db, wallId);
 
         // Accepted "this hold moved" suggestions become Changed carry verdicts (decision D-A). Read from
         // the session just verified as the caller's, so every accept is honoured once, by the one path
@@ -143,6 +144,9 @@ public partial class WallBigUpdateService
         // neighbour removal discarded have already had their links cleared. Without this a promote left
         // every link pointing at retained gen-N rows, i.e. wiped the wall's link set outright.
         await CarryHoldLinksAsync(db, wallId, carriedScopeHoldIds);
+
+        // The optional shape step's reviewed outlines, last so they win over the carry's warped ones.
+        await ApplyShapeDecisionsAsync(db, wallId, newGen);
 
         wall.Photo = centerPanel.Photo;
         wall.PhotoContentType = centerPanel.PhotoContentType;

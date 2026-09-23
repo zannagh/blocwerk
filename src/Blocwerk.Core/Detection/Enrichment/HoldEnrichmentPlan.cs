@@ -48,6 +48,7 @@ internal sealed class HoldEnrichmentPlan
             }
 
             hold.OutlineSource = contour ? HoldOutlineSource.AutoContour : HoldOutlineSource.AutoCircle;
+            hold.OutlineConfidence = contour ? outline.Confidence : null;
             hold.FingerprintJson = outline.Fingerprint.ToJson();
         }
 

@@ -26,7 +26,7 @@ namespace Blocwerk.Core.Entities;
 /// staging then refuses until someone takes it over. See the KNOWN GAP note on <c>ChangeJournalReverter</c>.
 /// </para>
 /// </summary>
-public class WallUpdateSession
+public partial class WallUpdateSession
 {
     [Key]
     public Guid Id { get; set; } = Guid.NewGuid();

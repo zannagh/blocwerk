@@ -128,6 +128,12 @@ public partial class Hold
     public HoldOutlineSource? OutlineSource { get; set; }
 
     /// <summary>
+    /// 0..1, how far the automatic outline (<see cref="ShapePoints"/>) can be trusted, as the outliner scored
+    /// it. Null when the outline was drawn by hand, is a plain circle, or predates the score.
+    /// </summary>
+    public double? OutlineConfidence { get; set; }
+
+    /// <summary>
     /// How the metric fields were derived, e.g. "multi-marker" (homography from ≥2 markers) or
     /// "single-marker" (exact only near that marker). Null when nothing metric is known.
     /// </summary>
@@ -150,6 +156,7 @@ public partial class Hold
         PlaneBMm = source.PlaneBMm;
         FingerprintJson = source.FingerprintJson;
         OutlineSource = source.OutlineSource;
+        OutlineConfidence = source.OutlineConfidence;
         MetricSource = source.MetricSource;
     }
 
@@ -188,6 +195,7 @@ public partial class Hold
         PlaneBMm = PlaneBMm,
         FingerprintJson = FingerprintJson,
         OutlineSource = OutlineSource,
+        OutlineConfidence = OutlineConfidence,
         MetricSource = MetricSource,
     };
 }
