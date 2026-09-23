@@ -26,6 +26,11 @@
 else
 {
     <div class="boulder-detail">
+        @* The two-column row on the desktop tier. It exists so the sticky photo column has a
+           containing block that ends where the rail ends: a sticky box sticks within its parent,
+           and with .boulder-detail as that parent the photo rode down over the full-width
+           activity/comments/history row below. display:contents on the phone tier. *@
+        <div class="boulder-main-row">
         @* Left column on the desktop tier: everything that describes THIS boulder on the wall —
            header, notices, view toggle, banners and the photo itself. Both column wrappers are
            display:contents on the phone tier, so they are absent from the layout there and the
@@ -436,6 +441,7 @@ else
         <BoulderBetaVideos @ref="_betaVideos" BoulderId="BoulderId" CurrentUserId="_currentUserId"
                            IsAnonymous="_isAnonymous" ShareToken="@ShareToken"
                            Uploaded="OnBetaVideoUploaded" />
+        </div>
         </div>
 
         @* Full-width row under both columns on the desktop tier: the three sections whose content

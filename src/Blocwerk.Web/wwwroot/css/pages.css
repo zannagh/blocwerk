@@ -1062,10 +1062,18 @@ a.wall3d-link {
    rather than --page-max: this page WANTS a bounded width so no comment or history row ever
    runs the full 1440px, while --page-max: none still frees the pages that want the window. */
 .boulder-detail {
-    display: var(--boulder-detail-display, block);
     padding: 16px;
     max-width: var(--boulder-page-max, var(--page-max, 600px));
     margin: 0 auto;
+}
+/* The two columns live in their own row rather than directly in .boulder-detail, because the
+   photo column is sticky on the desktop tier and a sticky box sticks for as long as its PARENT is
+   on screen. With .boulder-detail as the grid, that parent also held the full-width row below, so
+   the photo stayed pinned over activity/comments/history all the way to the bottom of the page.
+   Wrapped here, the photo sticks only while the rail beside it scrolls, then leaves with the row.
+   Transparent on the phone tier (display: contents), so the stack there is unchanged. */
+.boulder-main-row {
+    display: var(--boulder-detail-display, contents);
     grid-template-columns: minmax(0, 1fr) var(--boulder-side-w, 360px);
     gap: 0 20px;
     align-items: start;
@@ -1081,14 +1089,13 @@ a.wall3d-link {
 .boulder-photo-col { position: var(--boulder-photo-col-position, static); top: calc(var(--topbar-h) + 8px); }
 
 /* The long-form row. Transparent on the phone tier like the other two wrappers, so its three
-   sections stay where they always were in the single stack. On the desktop tier it is a grid item
-   spanning both columns under them, and an auto-fit grid in its own right: each section gets at
+   sections stay where they always were in the single stack. On the desktop tier it is a block
+   under .boulder-main-row spanning its full width, and an auto-fit grid in its own right: each section gets at
    least 340px and the row uses as many columns as the page width affords (three at 1280+, two at
    1024, one at the bottom of the tier). align-items: start so a short Activity list does not
    stretch to the height of a long comment thread. */
 .boulder-wide-col {
     display: var(--boulder-wide-display, contents);
-    grid-column: 1 / -1;
     grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
     align-items: start;
     gap: 0 20px;
