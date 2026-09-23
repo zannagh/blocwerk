@@ -13,7 +13,7 @@ const LOW_MEMORY_GB = 4;
 /** GPUs whose largest texture is smaller than this are phone-class. */
 const DESKTOP_TEXTURE_SIZE = 8192;
 /** Backing-store pixels of the canvas on a light device while photo-real shows (before any loss). */
-const LIGHT_MAX_PIXELS = 1_000_000;
+const LIGHT_MAX_PIXELS = 2_000_000;
 /** Each lost context scales the resolution by this, down to MIN_SCALE. */
 const LOSS_SCALE = 0.75;
 const MIN_SCALE = 0.5;
@@ -43,7 +43,7 @@ export function prefersLightSplat(renderer) {
 }
 
 /**
- * The canvas resolution while photo-real shows: 1× on a light device with at most LIGHT_MAX_PIXELS
+ * The canvas resolution while photo-real shows: up to 2× on a light device with at most LIGHT_MAX_PIXELS
  * backing pixels, the page's own ratio elsewhere; both scaled down after every lost context.
  */
 export function createRenderScale(renderer, light) {
@@ -56,7 +56,7 @@ export function createRenderScale(renderer, light) {
                 renderer.setPixelRatio(full);
                 return;
             }
-            let ratio = (light ? 1 : full) * scale;
+            let ratio = (light ? Math.min(full, 2) : full) * scale;
             const c = renderer.domElement;
             const area = Math.max(1, c.clientWidth * c.clientHeight);
             if (light) ratio = Math.min(ratio, Math.sqrt(LIGHT_MAX_PIXELS * scale * scale / area));

@@ -5,7 +5,7 @@
 // and remembers, in this browser, the size that was too much, so the next visit stops below it.
 
 /** Phones and low-memory devices never step past this many splats. */
-const LIGHT_CAP_SPLATS = 300_000;
+const LIGHT_CAP_SPLATS = 800_000;
 /** Frames skipped after a level shows (uploads, the first sorts) before its frame time counts. */
 const WARMUP_FRAMES = 20;
 /** Frames measured before deciding to step up. */
