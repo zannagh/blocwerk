@@ -69,6 +69,12 @@ public enum MarkerRejectionReason
 
     /// <summary>Another candidate with the same id in this image scored better.</summary>
     DuplicateId,
+
+    /// <summary>
+    /// After corner refinement: the quad is not a dark square on light paper (its surroundings are as dark
+    /// as its black border) — a dark hold or shadow whose texture happened to decode as an id.
+    /// </summary>
+    NoQuietZone,
 }
 
 /// <summary>A decoded candidate that failed validation, kept for diagnostics.</summary>

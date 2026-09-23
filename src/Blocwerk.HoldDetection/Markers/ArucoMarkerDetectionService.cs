@@ -49,13 +49,16 @@ public sealed class ArucoMarkerDetectionService : IMarkerDetectionService
 
         // ArUco's own corners snap to the paper edge or the corner screws (3–29 px off on real walls);
         // every millimetre downstream depends on them, so re-fit the black square's sides.
-        var markers = options.RefineCorners ? MarkerCornerRefiner.RefineAll(gray, outcome.Accepted) : outcome.Accepted;
+        var refined = options.RefineCorners ? MarkerCornerRefiner.RefineAll(gray, outcome.Accepted) : outcome.Accepted;
+
+        // A printed marker is a dark square on white paper; a dark hold that decodes as an id is not.
+        var (markers, noQuietZone) = MarkerQuietZoneCheck.Filter(gray, refined);
         return new MarkerDetectionResult
         {
             ImageWidth = gray.Width,
             ImageHeight = gray.Height,
             Markers = markers,
-            Rejected = outcome.Rejected,
+            Rejected = [.. outcome.Rejected, .. noQuietZone],
             UndecodedCandidateCount = undecoded.Length,
             Suspicious = outcome.Suspicious,
             Warnings = outcome.Warnings,

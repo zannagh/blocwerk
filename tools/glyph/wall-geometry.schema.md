@@ -71,7 +71,19 @@ normalized 0..1 pipeline is reinterpreted.
   "quality": {
     "reprojRmsPx": 0.9,
     "gravity": "from seg1 x seg2 normals",
-    "checks": { "seg0DeclaredVsMeasuredDeg": 0.4, "markerSideRmsErrMm": 0.6 }
+    "checks": { "seg0DeclaredVsMeasuredDeg": 0.4, "markerSideRmsErrMm": 0.6 },
+    "rejectedObservations": [                // optional (additive; absent from older solvers): single
+      {                                      // detections REMOVED before the final solve as probable
+        "photo": "p16",                      // false detections. photo = the request's photo name
+        "id": 17,
+        "views": 1,                          // photos the id was detected in before the removal
+        "residualPx": 10.33,                 // its free-solve reprojection RMS
+        "thresholdPx": 8.09,                 // max(4, median + 10 x MAD) over all observations
+        "otherViewsResidualPx": null,        // vs the pose its OTHER photos give (null: seen once)
+        "reason": "single-view-misfit",      // or "inconsistent-with-other-views"
+        "markerDropped": true                // it was the id's only detection: the id is not in markers[]
+      }
+    ]
   }
 }
 ```

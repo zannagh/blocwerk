@@ -147,6 +147,7 @@ def build_document(sol, checks):
                     "levelPairs": _level_checks(sol)},
          "facetDecisions": sol["decisions"],
          "downweightedMarkers": {str(k): v for k, v in sol["downweighted"].items()},
+         "rejectedObservations": sol.get("rejected", []),
          "unusedPhotos": sol["unreached"],
          "intrinsics": checks["distortion"],
          "coplanarityFreeSolveMm": {k: _r(v["rmsMm"], 2) for k, v in sol["coplanarity_free"].items()},

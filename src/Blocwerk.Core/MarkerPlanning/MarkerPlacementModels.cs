@@ -64,4 +64,7 @@ public enum MarkerPlacementIssue
 
     /// <summary>The marker measures clearly larger or smaller in the photos than its planned printed size.</summary>
     SizeMismatch,
+
+    /// <summary>The solver ignored one detection of the marker in one photo as a probable false detection.</summary>
+    IgnoredDetection,
 }

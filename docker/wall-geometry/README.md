@@ -48,6 +48,7 @@ source exists once (the previous `docker/wall-stitch/` rotted from copies).
                                "sigmaPx": null } ] } ],                       // optional manual weight
   "options": { "validate": false,              // leave-one-photo-out (slow)
                "autoDownweight": true,         // see "Outlier markers"
+               "rejectOutliers": true,         // see "False detections"
                "facets": { "foldDeg": 5, "mergeDeg": 5, "mergeMm": 40, "minMarkersPerFacet": 2 } },
   "callbackUrl": "https://…"                   // optional (protocol)
 }
@@ -62,7 +63,7 @@ document plus: per segment `declared`, `declaredVsMeasuredDeg`; per facet `marke
 `measuredSidePhotos` (see below); `world`
 `gravityKnown`, `referenceFacet`; `quality` `gravity` (`"unknown"` or the constraints used),
 `gravityDetail` (per-constraint residual degrees), `checks.declaredVsMeasuredDeg`,
-`checks.levelPairs` (height differences), `facetDecisions`, `downweightedMarkers`, `unusedPhotos`,
+`checks.levelPairs` (height differences), `facetDecisions`, `downweightedMarkers`, `rejectedObservations`, `unusedPhotos`,
 `intrinsics`, optional `leaveOnePhotoOut`.
 
 **Measured marker size.** The solved corners are always exactly the declared `sizeMm` square, so
@@ -84,6 +85,17 @@ average 125.4 mm, within ±3 mm except the bent marker 32 (2 photos, 133.7 mm).
   with each other; coplanar ones get a `coplanarNote`. Every decision is in `quality.facetDecisions`.
 - **Outlier markers.** A marker whose free-solve RMS is > 3 px and > 4× the median is down-weighted
   (sigma = its RMS / median, max 10 px).
+- **False detections** (`wallgeometry/reject.py`). Down-weighting suits a marker that is wrong in every
+  photo (bent); a detection that is wrong in ONE photo (a hold or a blurred grazing view read as an id)
+  is REMOVED instead, then the free solve is re-run. After the down-weighted free solve, an observation
+  is a candidate when its RMS exceeds max(4 px, median + 10 × MAD·1.4826) over all observations. For a
+  marker seen in ≥ 3 photos it is removed only if the marker's pose re-fitted from its OTHER photos
+  (cameras fixed) projects > threshold away AND > 3 × the median RMS of those other views (a bent
+  marker fails everywhere and stays, down-weighted). A 2-view marker needs > 3 × threshold with the
+  other view clean; a 1-view marker that fails is dropped from the model. At most 10 % of the
+  observations and never a photo's last one. Each removal is reported in `quality.rejectedObservations`.
+  On The Attic's 53-photo capture this removes a false id 17 on a black hold (left triangle: 267 → 1.4 mm
+  coplanarity) and marker 33 in two blurred grazing photos; capture 1 (14 photos) has none.
 - **Gravity.** Least-squares `up` ⟂ every facet normal of a `verticalReference` segment and ⟂ every
   `levelPairs` centre-to-centre direction (unit weights; with exactly two references and no pairs
   this is `n1 × n2`). Sign from the cameras' image-up (phones are held upright). With fewer than two

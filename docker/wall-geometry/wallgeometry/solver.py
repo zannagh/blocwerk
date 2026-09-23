@@ -2,8 +2,10 @@
 import numpy as np
 
 from .facets import assign_facets, build_facet_problem, coplanarity, marker_normals
+from .ba import Problem, pack_free, unpack_free
 from .freeba import ROBUST, build_cameras, free_mask, per_marker_rms, per_obs_err, rms, run_free
 from .frame import angles, camera_up_vote, gravity, pseudo_up
+from .reject import find_rejections
 from .request import observations
 
 # A marker whose free-solve RMS exceeds both of these is treated as physically suspect (bent, not
@@ -34,6 +36,26 @@ def downweight_outliers(prob, x, obs, free_intr):
     return x, flagged
 
 
+def reject_false_detections(prob, x, obs, free_intr, flagged, auto_downweight):
+    """Remove observations that contradict the rest (reject.py), re-solve, re-run the down-weighting."""
+    found = find_rejections(prob, x, obs, per_obs_err(prob, x))
+    if not found:
+        return prob, x, obs, flagged, []
+    drop = {k for k, _ in found}
+    keep = [o for k, o in enumerate(obs) if k not in drop]
+    for o in keep:
+        o["sigma"] = o["sigma0"].copy()
+    intr, cam_pose, mk_pose = unpack_free(prob, x)
+    mids = sorted({o["id"] for o in keep})
+    nprob = Problem(keep, prob.cams, prob.groups, prob.root, mids, prob.obj, prior=prob.prior)
+    x = pack_free(nprob, intr, cam_pose, {m: mk_pose[m] for m in mids})
+    x, _ = nprob.solve(x, free_mask(nprob, free_intr), max_nfev=300, **ROBUST)
+    flagged = {}
+    if auto_downweight:
+        x, flagged = downweight_outliers(nprob, x, keep, free_intr)
+    return nprob, x, keep, flagged, [rec for _, rec in found]
+
+
 def reference_facet(members, facet_segment, segments):
     """World-x facet: lowest declared non-reference segment's biggest facet; else the biggest facet."""
     cands = [s for s in sorted(segments) if not segments[s].vertical_reference]
@@ -62,9 +84,15 @@ def solve_structure(req, progress=_noop, drop_image=None, members=None):
     progress(0.05, "free bundle adjustment")
     prob, x, obs, unreached = run_free(obs, cams, intr, free_intr, prior, obj)
     progress(0.45, "outlier check")
-    flagged = {}
-    if req.options.get("autoDownweight", True):
+    for o in obs:
+        o["sigma0"] = o["sigma"].copy()
+    flagged, rejected = {}, []
+    auto_downweight = req.options.get("autoDownweight", True)
+    if auto_downweight:
         x, flagged = downweight_outliers(prob, x, obs, free_intr)
+    if req.options.get("rejectOutliers", True):
+        prob, x, obs, flagged, rejected = reject_false_detections(prob, x, obs, free_intr, flagged,
+                                                                  auto_downweight)
     declared = set(req.segments)
     decisions = []
     facet_segment = None
@@ -82,7 +110,7 @@ def solve_structure(req, progress=_noop, drop_image=None, members=None):
     return {
         "req": req, "obs": obs, "cams": prob.cams, "prob": prob, "x": x, "fprob": fprob, "fx": fx,
         "members": members, "facet_segment": facet_segment, "decisions": decisions,
-        "downweighted": flagged, "unreached": unreached, "free_intr": free_intr,
+        "downweighted": flagged, "rejected": rejected, "unreached": unreached, "free_intr": free_intr,
         "free_normals": marker_normals(prob, x),
         "coplanarity_free": coplanarity(prob, x, members),
         "rms_free": rms(per_obs_err(prob, x), obs),

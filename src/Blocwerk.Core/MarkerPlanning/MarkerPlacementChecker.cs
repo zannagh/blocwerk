@@ -27,8 +27,17 @@ public static class MarkerPlacementChecker
     /// <param name="layout">A layout built from a plan (a legacy layout has nothing to compare).</param>
     /// <param name="document">The solved geometry.</param>
     /// <param name="detectedIds">Every id detected in any photo of the capture.</param>
-    public static MarkerPlacementCheck Check(WallMarkerLayout layout, WallGeometryDocument document, IReadOnlySet<int> detectedIds)
+    /// <param name="photoLabel">
+    /// Solve-request photo name (<c>p03</c>) → what the admin knows it as (<c>IMG_2803</c>); null keeps the name.
+    /// </param>
+    public static MarkerPlacementCheck Check(
+        WallMarkerLayout layout,
+        WallGeometryDocument document,
+        IReadOnlySet<int> detectedIds,
+        Func<string, string>? photoLabel = null)
     {
+        var ignored = IgnoredDetectionFindings.From(layout, document, photoLabel);
+        var droppedIds = ignored.Where(f => f.Dropped).Select(f => f.Finding.MarkerId).ToHashSet();
         var solved = document.Markers
             .Where(m => layout.Markers.ContainsKey(m.Id) && m.CornersPlaneMm.Count == 4)
             .GroupBy(m => m.Id)
@@ -38,7 +47,10 @@ public static class MarkerPlacementChecker
         {
             if (!solved.TryGetValue(planned.Id, out var measured))
             {
-                findings.Add(Missing(layout, planned, detectedIds.Contains(planned.Id)));
+                if (!droppedIds.Contains(planned.Id))
+                {
+                    findings.Add(Missing(layout, planned, detectedIds.Contains(planned.Id)));
+                }
             }
             else if (measured.Segment != planned.Segment)
             {
@@ -51,6 +63,7 @@ public static class MarkerPlacementChecker
         var checkedCount = CheckOffsets(layout, solved, findings);
         CheckSizes(layout, solved, findings);
         CheckAngles(layout, document, findings);
+        findings.AddRange(ignored.Select(f => f.Finding));
         var ordered = findings.OrderBy(f => f.Kind).ThenBy(f => f.MarkerId).ThenBy(f => f.PlannedSegment).ToList();
         return new MarkerPlacementCheck(layout.Markers.Count, solved.Count, checkedCount, ordered);
     }

@@ -130,6 +130,12 @@ public sealed record WallGeometryQuality
     /// details): typically a wrong printed size in the plan, or a sheet that does not lie flat.
     /// </summary>
     public IReadOnlyDictionary<string, WallGeometryDownweightedMarker>? DownweightedMarkers { get; init; }
+
+    /// <summary>
+    /// Single detections the solver REMOVED because they contradict the rest (a hold or a blurred grazing
+    /// view read as a marker id). Null from solvers older than this field.
+    /// </summary>
+    public IReadOnlyList<WallGeometryRejectedObservation>? RejectedObservations { get; init; }
 }
 
 /// <summary>Why the solver down-weighted a marker (<c>quality.downweightedMarkers</c>).</summary>

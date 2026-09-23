@@ -3,6 +3,7 @@
 // </copyright>
 
 using System.Text.Json;
+using Blocwerk.Core.Entities;
 using Blocwerk.Core.Geometry;
 using Blocwerk.Core.MarkerPlanning;
 using Microsoft.EntityFrameworkCore;
@@ -40,7 +41,12 @@ public sealed partial class WallCaptureProcessor
                 .SelectMany(p => CaptureComputeDocuments.UsableMarkers(run.Layout, p.MarkersJson))
                 .Select(m => m.Id)
                 .ToHashSet();
-            var check = MarkerPlacementChecker.Check(run.Layout, WallGeometryDocument.Parse(json), detected);
+            var labels = photos.ToDictionary(p => CaptureComputeDocuments.PhotoName(p.Index), PhotoLabel);
+            var check = MarkerPlacementChecker.Check(
+                run.Layout,
+                WallGeometryDocument.Parse(json),
+                detected,
+                name => labels.GetValueOrDefault(name, name));
             var stored = JsonSerializer.Serialize(check);
             await UpdateAsync(run.Capture.Id, c => c.PlacementCheckJson = stored, ct);
             logger.LogInformation(
@@ -52,6 +58,12 @@ public sealed partial class WallCaptureProcessor
             logger.LogWarning(ex, "Capture {CaptureId}: the placement check could not read the model", run.Capture.Id);
         }
     }
+
+    /// <summary>What the admin knows a photo as: its uploaded file name without extension, else its number.</summary>
+    private static string PhotoLabel(WallCapturePhoto photo) =>
+        string.IsNullOrWhiteSpace(photo.OriginalFileName)
+            ? $"photo {photo.Index + 1}"
+            : Path.GetFileNameWithoutExtension(photo.OriginalFileName);
 
     private async Task<string?> ModelJsonAsync(Guid? modelId, CancellationToken ct)
     {
