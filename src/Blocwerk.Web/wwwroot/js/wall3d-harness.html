@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<!-- Dev-only harness for wall3d.js: renders a wall-geometry.json with synthetic holds, without the
+     app. Serve wwwroot over HTTP (ES modules), then open /js/wall3d-harness.html with:
+       ?geom=<url of a wall-geometry.json>  (default: a small built-in sample)
+       ?preset=front|below|left|right|top   ?boulder=1  (highlight a synthetic boulder)
+       ?select=1 (open the info card on one hold)   ?holds=<n> (default 260)   ?dark=1
+       ?w=390&h=844 (fixed stage size, e.g. to check a phone viewport in a larger headless window)
+       ?splat=<url of a wall.spz>&frame=<url of its frame.json> (enables photo-real)   ?photo=1 (start in it) -->
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>wall3d harness</title>
+    <style>
+        html, body { margin: 0; height: 100%; }
+        body.dark { --bg: #0f0f18; --bg-surface: #1b1b28; --text: #e6e6ee; --text-heading: #fff; --border: #2c2c3c; }
+        #stage { position: absolute; inset: 0; }
+    </style>
+</head>
+<body>
+<div id="stage"></div>
+<script type="module">
+    import { mount } from './wall3d.js';
+
+    const q = new URLSearchParams(location.search);
+    if (q.get('dark')) document.body.classList.add('dark');
+    const stage = document.getElementById('stage');
+    if (q.get('w')) Object.assign(stage.style, { right: 'auto', bottom: 'auto', width: `${q.get('w')}px`, height: `${q.get('h')}px` });
+
+    const SAMPLE = {
+        version: 1, markerSizeMm: 125,
+        segments: [
+            { index: 0, name: 'main wall', measuredAngleDeg: 44.6, facets: [{ id: '0', origin: [0, 0, 0], u: [1, 0, 0],
+                v: [0, -0.7071, 0.7071], normal: [0, -0.7071, -0.7071], measuredAngleDeg: 44.6,
+                extentMm: { aMin: -50, aMax: 3050, bMin: -50, bMax: 2550 } }] },
+            { index: 1, name: 'kickboard', measuredAngleDeg: 0, facets: [{ id: '1', origin: [0, 0, -300], u: [1, 0, 0],
+                v: [0, 0, 1], normal: [0, -1, 0], measuredAngleDeg: 0, extentMm: { aMin: -50, aMax: 3050, bMin: 0, bMax: 300 } }] },
+        ],
+        markers: [],
+    };
+
+    // Colour keys and hexes as Blocwerk.Core.Holds.HoldPalette defines them.
+    const PALETTE = [['yellow', 'Yellow', '#e6c800'], ['red', 'Red', '#cc3333'], ['pink', 'Pink', '#e05590'],
+        ['orange', 'Orange', '#dd8800'], ['blue', 'Blue', '#3366dd'], ['green', 'Green', '#33aa44'],
+        ['purple', 'Purple', '#8833bb'], ['white', 'White', '#eeeeee'], ['black', 'Black', '#444444'],
+        ['wood-medium', 'Medium wood', '#a0703c']];
+
+    // Mirror of Wall3DViewBuilder (C#): plane (a, b) → origin + a·u + b·v (+ lift·normal).
+    const at = (f, a, b, lift = 0) => [0, 1, 2].map(i => f.origin[i] + a * f.u[i] + b * f.v[i] + lift * f.normal[i]);
+
+    let seed = 7;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+
+    function buildView(doc) {
+        const facets = [];
+        for (const s of doc.segments) for (const f of s.facets) {
+            const e = f.extentMm;
+            if (!e) continue;
+            facets.push({ id: f.id, segment: s.index, name: s.facets.length > 1 ? `${s.name} (${f.id})` : s.name,
+                origin: f.origin, u: f.u, v: f.v, normal: f.normal, extent: e, angleDeg: f.measuredAngleDeg ?? s.measuredAngleDeg,
+                corners: [at(f, e.aMin, e.bMin), at(f, e.aMax, e.bMin), at(f, e.aMax, e.bMax), at(f, e.aMin, e.bMax)] });
+        }
+        const markers = (doc.markers || []).filter(m => m.cornersWorldMm)
+            .map(m => ({ id: m.id, facetId: m.facet, corners: m.cornersWorldMm, synthetic: !!m.synthetic }));
+        const n = Number(q.get('holds') || 260);
+        const area = f => (f.extent.aMax - f.extent.aMin) * (f.extent.bMax - f.extent.bMin);
+        const total = facets.reduce((t, f) => t + area(f), 0);
+        const holds = [];
+        for (const f of facets) {
+            const count = Math.round(n * area(f) / total);
+            const isKick = f.extent.bMax - f.extent.bMin < 600;
+            for (let i = 0; i < count; i++) {
+                const e = f.extent;
+                const a = e.aMin + 120 + rnd() * (e.aMax - e.aMin - 240);
+                const b = e.bMin + 80 + rnd() * (e.bMax - e.bMin - 160);
+                const [key, name, hex] = PALETTE[Math.floor(rnd() * PALETTE.length)];
+                const foot = isKick || rnd() < 0.12;
+                const w = foot ? 40 + rnd() * 50 : 60 + rnd() * 160;
+                const measured = rnd() < 0.85;
+                holds.push({ id: `h${holds.length}`, facetId: f.id, position: at(f, a, b, 12), planeA: a, planeB: b,
+                    widthMm: measured ? w : (foot ? 55 : 90), heightMm: measured ? w * (0.55 + rnd() * 0.6) : (foot ? 55 : 90),
+                    sizeMeasured: measured, color: key, colorName: name, hex, isFoot: foot,
+                    usageCount: Math.floor(rnd() * 9), role: null });
+            }
+        }
+        let boulderId = null;
+        if (q.get('boulder')) {
+            boulderId = 'b1';
+            const main = holds.filter(h => h.facetId === facets[0].id).sort((p, r) => p.planeB - r.planeB);
+            const pick = [0.1, 0.25, 0.35, 0.5, 0.62, 0.75, 0.9].map(t => main[Math.floor(t * (main.length - 1))]);
+            pick.forEach((h, i) => { h.role = i < 2 ? 'Start' : i === pick.length - 1 ? 'Top' : 'Hand'; });
+            holds.filter(h => h.isFoot).slice(0, 4).forEach(h => { h.role = 'Foot'; });
+        }
+        return { wallId: 'w', wallName: 'Harness', boulderId, markerSizeMm: doc.markerSizeMm, facets, markers, holds,
+            unplacedHoldCount: 0, textures: [], splatUrl: null };
+    }
+
+    const geomUrl = q.get('geom');
+    const doc = geomUrl ? await (await fetch(geomUrl)).json() : SAMPLE;
+    const view = buildView(doc);
+    if (q.get('splat') && q.get('frame')) {
+        // Mirror of CaptureSplatDocuments.WorldMatrix (C#): row-major toWorldMm → column-major.
+        const rows = (await (await fetch(q.get('frame'))).json()).toWorldMm;
+        view.splatUrl = q.get('splat');
+        view.splatMatrix = [0, 1, 2, 3].flatMap(c => rows.map(r => r[c]));
+    }
+    const handle = mount(stage, view,
+        { initialPreset: q.get('preset') || 'front', preserveDrawingBuffer: true });
+    if (q.get('select')) {
+        const h = view.holds.find(x => x.role === 'Start') || view.holds[Math.floor(view.holds.length / 2)];
+        handle.selectHold(h.id);
+    }
+    if (q.get('photo')) await handle.photoReal(true);
+    handle.renderNow();
+    window.__wall3d = handle;
+</script>
+</body>
+</html>

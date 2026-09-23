@@ -23,6 +23,8 @@ public partial class WallBigUpdateService : IWallBigUpdateService
     private readonly IHoldOverlapMatcher overlapMatcher;
     private readonly ILogger<WallBigUpdateService> logger;
     private readonly IChangeJournal? changeJournal;
+    private readonly IHoldEnrichmentService? holdEnrichment;
+    private readonly IHoldOutlineService? outlineService;
 
     public WallBigUpdateService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
@@ -30,7 +32,9 @@ public partial class WallBigUpdateService : IWallBigUpdateService
         IHoldDetectionService holdDetectionService,
         IHoldOverlapMatcher overlapMatcher,
         ILogger<WallBigUpdateService> logger,
-        IChangeJournal? changeJournal = null)
+        IChangeJournal? changeJournal = null,
+        IHoldEnrichmentService? holdEnrichment = null,
+        IHoldOutlineService? outlineService = null)
     {
         this.dbContextFactory = dbContextFactory;
         this.currentUserService = currentUserService;
@@ -38,6 +42,8 @@ public partial class WallBigUpdateService : IWallBigUpdateService
         this.overlapMatcher = overlapMatcher;
         this.logger = logger;
         this.changeJournal = changeJournal;
+        this.holdEnrichment = holdEnrichment;
+        this.outlineService = outlineService;
     }
 
     /// <inheritdoc/>
@@ -58,6 +64,14 @@ public partial class WallBigUpdateService : IWallBigUpdateService
             ?? throw new InvalidOperationException("No in-flight big update to resume.");
 
         var session = await BuildSessionAsync(db, wall, centerPanel.Id, stagedGen);
+
+        // A panel the matcher could not align is recorded on the session: the banner survives a resume and
+        // the promote flags that panel's blind carries.
+        await PersistAlignmentFailuresAsync(db, wallId, session);
+
+        // Now the matcher's outcome is known: suggest "this hold moved" pairs among what it could not
+        // pair positionally. Computed once per session and persisted, so a resume shows the same list.
+        await EnsureRelocationProposalsAsync(db, wall, session);
         logger.LogInformation(
             "Big update resumed on wall {WallId} by {UserId}: {Carry} carryover, {Panels} neighbour panels",
             wallId, user.Id, session.Carryover.Count, session.Neighbours.Count);
@@ -123,10 +137,19 @@ public partial class WallBigUpdateService : IWallBigUpdateService
         var carriedShapes = new Dictionary<Guid, IReadOnlyList<HoldPositionNorm>>();
         var autoMatchStatus = AutoMatchStatus.Ok;
         string? autoMatchMessage = null;
+
+        // Staged panels whose photo could not be lined up with the previous one: their old holds carry at
+        // their OLD coordinates. Surfaced to the review (banner) and persisted by ResumeAsync — never silent.
+        var unalignedCarry = new HashSet<Guid>();
+        var recorded = await RecordedUnalignedAsync(db, wall.Id);
+        var stagedCentre = new OverlapSeedSide(centerPanelId, true, centerImage, centerHolds);
+        var centreSeed = await CentreCarrySeedAsync(
+            db, wall, centreOldHolds, oldPanelPhotosById, panelPositions, stagedCentre);
         try
         {
-            var carry = overlapMatcher.Match(
-                wall.Photo!, oldMatcher, centerImage, centerMatcher, HoldOverlapDirection.Right, logger);
+            var carry = MatchUnlessUnaligned(
+                recorded.Carry.Contains(centerPanelId),
+                wall.Photo!, oldMatcher, centerImage, centerMatcher, HoldOverlapDirection.Right, logger, centreSeed);
 
             // Suggestion only: pre-fill the NewHoldId mapping the review layer will offer. The matcher
             // never asserts a hold has changed — "changed" is a purely manual decision in the UI, so
@@ -145,9 +168,15 @@ public partial class WallBigUpdateService : IWallBigUpdateService
             // full old-hold data below, so carry-all works with zero proposals.
             autoMatchStatus = ClassifyAutoMatchFailure(ex);
             autoMatchMessage = ex.Message;
+            unalignedCarry.Add(centerPanelId);
+
+            // None of them was re-found: count them as such (as a failed neighbour does), so the review's
+            // "couldn't re-find" queue walks every one instead of reading as zero.
+            removedCandidates.AddRange(centreOldHolds.Select(h => h.Id));
             logger.LogWarning(
-                ex, "Carryover auto-match {Status} on wall {WallId}; carrying all old holds by default",
-                autoMatchStatus, wall.Id);
+                ex,
+                "Carryover alignment {Status} for the centre panel on wall {WallId}: {Reason}. Its {Count} old holds are carried at their old positions, unconfirmed",
+                autoMatchStatus, wall.Id, ex.Message, centreOldHolds.Count);
         }
 
         var neighbours = new List<NeighbourOverlap>();
@@ -164,21 +193,32 @@ public partial class WallBigUpdateService : IWallBigUpdateService
                 .ToListAsync();
             var (neighbourMatcher, neighbourIndex) = BuildMatcherHolds(neighbourHolds);
             var direction = DirectionFromNeighbor(0, 0, panel.Col, panel.Row);
+            var stagedNeighbour = new OverlapSeedSide(panel.Id, true, panel.StagedPhoto!, neighbourHolds);
+            var oldNeighbourHolds = oldByPosition.GetValueOrDefault((panel.Col, panel.Row));
+            var carrySeed = await NeighbourCarrySeedAsync(db, wall, oldNeighbourHolds, oldPanelPhotosById, stagedNeighbour);
+            var overlapSeed = await OverlapSeedLoader.LoadAsync(db, wall, stagedCentre, stagedNeighbour, logger);
 
             // Same-panel carryover: match THIS neighbour's OLD holds against its OWN fresh staged
             // detections, so a co-updated neighbour's holds twin-match on their own panel exactly as the
             // centre does — a matched old promotes its twin in place (no clone), only a truly unmatched old
             // clones. Distinct from the cross-PANEL overlap match below, which links identity across seams.
-            MatchNeighbourCarryover(
-                oldByPosition.GetValueOrDefault((panel.Col, panel.Row)),
+            var aligned = MatchNeighbourCarryover(
+                oldNeighbourHolds,
                 oldPanelPhotosById, panel.StagedPhoto!, neighbourMatcher, neighbourIndex,
-                carryover, removedCandidates, carriedWarp, carriedShapes, wall.Id);
+                carryover, removedCandidates, carriedWarp, carriedShapes, (wall.Id, panel.Col, panel.Row), carrySeed,
+                recorded.Carry.Contains(panel.Id));
+            if (!aligned)
+            {
+                unalignedCarry.Add(panel.Id);
+            }
 
             var proposals = new List<OverlapProposalDto>();
+            var overlapFailed = false;
             try
             {
-                var result = overlapMatcher.Match(
-                    centerImage, centerMatcher, panel.StagedPhoto!, neighbourMatcher, direction);
+                var result = MatchUnlessUnaligned(
+                    recorded.Overlap.Contains(panel.Id),
+                    centerImage, centerMatcher, panel.StagedPhoto!, neighbourMatcher, direction, null, overlapSeed);
                 foreach (var p in result.Proposals)
                 {
                     // NeighborPanelId is the panel HoldAId belongs to — here the staged CENTRE panel,
@@ -193,16 +233,20 @@ public partial class WallBigUpdateService : IWallBigUpdateService
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "Overlap match failed for panel {PanelId} on wall {WallId}", panel.Id, wall.Id);
+                overlapFailed = true;
+                logger.LogWarning(
+                    ex,
+                    "Overlap alignment failed for panel {PanelId} ({Col},{Row}) vs the staged centre on wall {WallId}: {Reason}. No link proposals for it",
+                    panel.Id, panel.Col, panel.Row, wall.Id, ex.Message);
             }
 
-            neighbours.Add(new NeighbourOverlap(panel.Id, panel.Col, panel.Row, proposals));
+            neighbours.Add(new NeighbourOverlap(panel.Id, panel.Col, panel.Row, proposals, overlapFailed));
         }
 
         return new BigUpdateSession(
             wall.Id, centerPanelId, carryover, removedCandidates, newCenter, neighbours,
             autoMatchStatus, autoMatchMessage, carriedWarp, carriedShapes,
-            await BuildCarriedPanelsAsync(db, wall.Id, stagedGen, oldByPosition),
+            await BuildCarriedPanelsAsync(db, wall.Id, stagedGen, oldByPosition, unalignedCarry),
             oldHolds.Select(h => h.Id).ToList());
     }
 
@@ -299,69 +343,5 @@ public partial class WallBigUpdateService : IWallBigUpdateService
                 carriedShapes[oldIndex[i]] = shape.Select(v => new HoldPositionNorm(v.X, v.Y)).ToList();
             }
         }
-    }
-
-    /// <summary>
-    /// Runs one neighbour panel's OWN carryover match — its old holds (left, on the retained live panel
-    /// image) against its fresh staged detections (right) — and folds the result into the same session
-    /// buckets as the centre. With no old holds there is nothing to carry; with no reachable old panel
-    /// image (or a matcher failure) every old hold is offered as a removal candidate so the review layer
-    /// carries it by default (clone), never silently losing it.
-    /// </summary>
-    private void MatchNeighbourCarryover(
-        List<Hold>? neighbourOldHolds,
-        IReadOnlyDictionary<Guid, byte[]> oldPanelPhotosById,
-        byte[] stagedPhoto,
-        List<MatcherHold> stagedMatcher,
-        Guid[] stagedIndex,
-        List<CarryoverProposal> carryover,
-        List<Guid> removedCandidates,
-        Dictionary<Guid, HoldPositionNorm> carriedWarp,
-        Dictionary<Guid, IReadOnlyList<HoldPositionNorm>> carriedShapes,
-        Guid wallId)
-    {
-        if (neighbourOldHolds is null || neighbourOldHolds.Count == 0)
-        {
-            return;
-        }
-
-        if (neighbourOldHolds[0].WallPanelId is not { } oldPanelId
-            || !oldPanelPhotosById.TryGetValue(oldPanelId, out var oldPhoto))
-        {
-            removedCandidates.AddRange(neighbourOldHolds.Select(h => h.Id));
-            return;
-        }
-
-        var (oldMatcher, oldIndex) = BuildMatcherHolds(neighbourOldHolds);
-        try
-        {
-            var carry = overlapMatcher.Match(
-                oldPhoto, oldMatcher, stagedPhoto, stagedMatcher, HoldOverlapDirection.Right, logger);
-            CollectCarryover(carry, oldIndex, stagedIndex, carryover, removedCandidates, carriedWarp, carriedShapes);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Neighbour carryover match failed on wall {WallId}; carrying its old holds by default", wallId);
-            removedCandidates.AddRange(neighbourOldHolds.Select(h => h.Id));
-        }
-    }
-
-    /// <summary>
-    /// Classifies a carryover auto-match exception into a fail-soft status: a native/library-load
-    /// failure means the matcher could not run at all (<see cref="AutoMatchStatus.Unavailable"/>);
-    /// anything else is a matching failure the matcher itself raised (<see cref="AutoMatchStatus.Failed"/>),
-    /// e.g. the "too few texture matches" homography path or an undecodable image.
-    /// </summary>
-    private static AutoMatchStatus ClassifyAutoMatchFailure(Exception ex)
-    {
-        for (Exception? current = ex; current is not null; current = current.InnerException)
-        {
-            if (current is DllNotFoundException or TypeInitializationException or BadImageFormatException)
-            {
-                return AutoMatchStatus.Unavailable;
-            }
-        }
-
-        return AutoMatchStatus.Failed;
     }
 }

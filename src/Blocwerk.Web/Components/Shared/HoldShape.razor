@@ -19,9 +19,28 @@
    Handlers are attached only when the caller actually supplies one: an unset EventCallback is dropped by
    the render tree builder, so a read-only overlay (MultiPanelViewer) stays listener-free and the
    stopPropagation flags below go with them. That matters — a stray stopPropagation on pointerdown would
-   silence viewport-gestures.js and the image would stop panning. *@
+   silence viewport-gestures.js and the image would stop panning.
 
-@if (ShapePoints is { Count: >= 3 })
+   POCKET holds (ShapeHoles set): the look and the hit are split. The visible shape is ONE <path> — outer
+   ring plus hole rings, fill-rule evenodd — so the wall shows through the hole and the caller's stroke
+   (selection, highlight) outlines the outer edge AND every hole edge; it takes no pointer events. On top
+   of it sits a transparent polygon over the FULL outer ring carrying every hit-related attribute and
+   handler the solid polygon has, so a tap in the hole still selects the hold (it is one hold entity, not a
+   ring). Solid holds render exactly as before. *@
+
+@if (HoldShapeMarkup.HasPocket(ShapePoints, ShapeHoles))
+{
+    <path class="hold-pocket" d="@HoldShapeMarkup.PocketPath(X, Y, ShapePoints!, ShapeHoles!)" fill-rule="evenodd"
+          fill="@Fill" stroke="@Stroke" stroke-width="@StrokeWidth" stroke-dasharray="@Dash"
+          pointer-events="none" />
+    <polygon class="hold-hit" points="@PolygonPoints()"
+             fill="transparent" stroke="transparent" stroke-width="@StrokeWidth" stroke-dasharray="@Dash"
+             pointer-events="@PointerEvents" style="@Style"
+             @onclick="OnClick" @onclick:stopPropagation="OnClick.HasDelegate"
+             @onpointerdown="OnPointerDown" @onpointerdown:stopPropagation="OnPointerDown.HasDelegate"
+             @onmouseover="OnMouseOver" @onmouseout="OnMouseOut" />
+}
+else if (ShapePoints is { Count: >= 3 })
 {
     <polygon points="@PolygonPoints()"
              fill="@Fill" stroke="@Stroke" stroke-width="@StrokeWidth" stroke-dasharray="@Dash"
@@ -66,6 +85,12 @@ else
     /// or more make a polygon; anything less falls back to the rect/circle below.
     /// </summary>
     [Parameter] public IReadOnlyList<ShapePoint>? ShapePoints { get; set; }
+
+    /// <summary>
+    /// Interior holes of a pocket/donut hold, each ring in the <see cref="ShapePoints"/> convention. Only
+    /// drawn with a real <see cref="ShapePoints"/> outline; null/empty renders a solid hold unchanged.
+    /// </summary>
+    [Parameter] public IReadOnlyList<IReadOnlyList<ShapePoint>>? ShapeHoles { get; set; }
 
     /// <summary>
     /// Draw this hold as a foothold: a rounded square instead of a circle, scaled by
@@ -140,8 +165,7 @@ else
     /// <summary>The drawn radius in viewBox units: the foot shrink applied, scaled into 0-100 space.</summary>
     private double R => (Foot ? Radius * FootScale : Radius) * 100;
 
-    private string PolygonPoints() =>
-        string.Join(" ", ShapePoints!.Select(sp => F((X + sp.Dx) * 100) + "," + F((Y + sp.Dy) * 100)));
+    private string PolygonPoints() => HoldShapeMarkup.PolygonPoints(X, Y, ShapePoints!);
 
-    private static string F(double v) => v.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+    private static string F(double v) => HoldShapeMarkup.F(v);
 }

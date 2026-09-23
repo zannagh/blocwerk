@@ -30,6 +30,9 @@ public static class AuthenticationServices
     /// </summary>
     public const string AntiforgeryHeaderName = "X-Blocwerk-Antiforgery";
 
+    /// <summary>The friendly page (Blocwerk.Web's AccessDenied) a forbidden signed-in human lands on.</summary>
+    public const string AccessDeniedPath = "/access-denied";
+
     public static IHostApplicationBuilder ConfigureAuthenticationAndAuthorization(this IHostApplicationBuilder app, BlocwerkSettings configuration)
     {
         app.Services.AddHttpClient();
@@ -118,6 +121,10 @@ public static class AuthenticationServices
             {
                 options.LoginPath = "/account/login";
                 options.LogoutPath = "/account/logout";
+
+                // A signed-in user an [Authorize] endpoint forbids (a non-admin on /administration).
+                // Left unset this is the framework's /Account/AccessDenied, which nothing serves.
+                options.AccessDeniedPath = AccessDeniedPath;
                 options.SlidingExpiration = true;
                 options.ExpireTimeSpan = TimeSpan.FromHours(8);
 

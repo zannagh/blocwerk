@@ -1,0 +1,119 @@
+@* In-app capture: upload photos of the marker wall; the server detects the markers, has the 3D model
+   solved by the geometry compute service, activates it and renders facet textures. Rendered inside
+   WallMarkerSettings (admin-only, never on a kiosk tablet; the service refuses both anyway). *@
+
+<div class="capture-panel">
+    <h4 class="glyph-subheading">Compute from photos</h4>
+    <p class="hint capture-scope" role="note">
+        These photos build the 3D model only. Panel photos, which people browse and set boulders on, are
+        managed as before under <a href="#wall-panels" @onclick="() => OnShowPanels.InvokeAsync()"
+        @onclick:preventDefault>Wall Settings → panels</a>.
+    </p>
+
+    @if (!configured)
+    {
+        <p class="hint" role="note">
+            The 3D computation service isn't configured on this server, so photos can't be turned into a
+            wall model here. You can still import a wall-geometry.json below.
+        </p>
+    }
+    else
+    {
+        <p class="hint">
+            Upload 10–40 photos (JPEG or PNG, up to 20 MB each) that together show every marker, each in
+            at least two photos. Keep every marker fully inside the frame. The server does the rest and
+            notifies you when the model is ready.
+        </p>
+
+        <div class="form-group capture-upload">
+            <label for="capture-photos">Photos</label>
+            <InputFile id="capture-photos" OnChange="UploadAsync" multiple accept="image/jpeg,image/png"
+                       class="form-input" disabled="@busy" />
+            @if (uploadStatus is not null)
+            {
+                <p class="loading-small" role="status">@uploadStatus</p>
+            }
+        </div>
+
+        <div class="form-group capture-upload">
+            <label for="capture-plan">Marker plan (JSON, optional)</label>
+            <InputFile id="capture-plan" OnChange="UploadPlanAsync" accept=".json,application/json" class="form-input" disabled="@busy" />
+            <p class="hint">
+                The marker-plan.json from the marker planner. With it the server knows which marker sits on which
+                surface, how big each one is and how steep each surface is — and tells you afterwards if a marker
+                isn't where the plan puts it.
+            </p>
+            @if (draft?.Plan is { } plan)
+            {
+                <p class="hint capture-plan-status" role="status">
+                    Using @(plan.Uploaded ? "the uploaded" : "this wall's saved") marker plan: @plan.Segments surfaces,
+                    @plan.Markers markers.
+                    @if (plan.Uploaded)
+                    {
+                        <button class="btn-link" @onclick="RemovePlanAsync" disabled="@busy">Don't use it</button>
+                    }
+                </p>
+            }
+            @foreach (var note in planNotes)
+            {
+                <p class="hint" role="status">@note</p>
+            }
+        </div>
+
+        @if (errors.Count > 0)
+        {
+            <ul class="field-error glyph-errors" role="alert">
+                @foreach (var error in errors)
+                {
+                    <li>@error</li>
+                }
+            </ul>
+        }
+
+        @if (draft is { Photos.Count: > 0 })
+        {
+            <WallCapturePhotoList Photos="draft.Photos" Disabled="busy" OnRemove="RemovePhotoAsync" />
+            @if (Captures.IsSplatConfigured)
+            {
+                <WallCaptureVideoUpload CaptureId="draft.CaptureId" Video="draft.Video" Disabled="busy" OnChanged="ReloadDraftAsync" />
+            }
+            <WallCapturePanelPicker WallId="WallId" CaptureId="draft.CaptureId" Photos="draft.Photos" Disabled="busy"
+                                    OnPanelStaged="OnPanelStaged" OnStartWallUpdate="OnStartWallUpdate" />
+
+            @if (declarations.Count > 0)
+            {
+                <WallCaptureDeclarationTable Rows="declarations" Disabled="busy" IdsBySegment="draft.Plan?.IdsBySegment" />
+            }
+
+            <div class="form-group">
+                <label for="capture-level-pairs">Markers at equal height (optional)</label>
+                <input id="capture-level-pairs" class="form-input" placeholder="e.g. 14-15, 8-9"
+                       @bind="levelPairs" disabled="@busy" />
+                <p class="hint">Pairs of marker ids you know are level with each other; they help find “up”.</p>
+            </div>
+
+            <div class="form-group">
+                <label for="capture-notes">Notes (optional)</label>
+                <input id="capture-notes" class="form-input" maxlength="2048" placeholder="e.g. capture after the reset"
+                       @bind="notes" disabled="@busy" />
+            </div>
+
+            <div class="staged-actions">
+                <button class="btn-primary" @onclick="StartAsync" disabled="@busy">Compute 3D model</button>
+                @if (confirmDiscard)
+                {
+                    <span class="hint capture-discard-question">Delete all @draft.Photos.Count uploaded photos?</span>
+                    <button class="btn-danger" @onclick="DiscardAsync" disabled="@busy">Yes, discard</button>
+                    <button class="btn-secondary" @onclick="() => confirmDiscard = false" disabled="@busy">Keep them</button>
+                }
+                else
+                {
+                    <button class="btn-secondary" @onclick="() => confirmDiscard = true" disabled="@busy">Discard photos</button>
+                }
+            </div>
+        }
+    }
+
+    <WallCaptureStatusList @ref="statusList" WallId="WallId" OnCompleted="OnModelActivated"
+                           OnPanelStaged="OnPanelStaged" OnStartWallUpdate="OnStartWallUpdate" />
+</div>

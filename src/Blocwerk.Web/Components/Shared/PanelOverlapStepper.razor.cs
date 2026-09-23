@@ -25,6 +25,14 @@ public partial class PanelOverlapStepper
     /// and the staged holds so it resolves instead of 404ing on a nonexistent committed blob.
     /// </summary>
     [Parameter] public bool NeighbourStaged { get; set; }
+
+    /// <summary>
+    /// True when the matcher could not line this panel's photo up with its neighbour, so the (empty or short)
+    /// proposal list is a failed alignment rather than "nothing overlaps". Shows a banner; changes nothing else.
+    /// </summary>
+    [Parameter]
+    public bool AlignmentFailed { get; set; }
+
     [Parameter] public EventCallback<PanelConfirmation> OnConfirm { get; set; }
     [Parameter] public EventCallback OnDiscard { get; set; }
 

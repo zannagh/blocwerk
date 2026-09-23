@@ -2,6 +2,8 @@
 @rendermode InteractiveServer
 @attribute [Authorize]
 @inject IWallService WallService
+@inject IWallGlyphService GlyphService
+@inject ILogger<WallCreate> Logger
 @inject NavigationManager Navigation
 @inject CircuitEditActivity EditActivity
 @inject IJSRuntime JS
@@ -67,6 +69,13 @@
                 </div>
             </div>
         }
+
+        <div class="form-group">
+            <label>Printed markers</label>
+            <WallMarkerDeclaration Label="This wall has printed ArUco markers"
+                                   Hint="Tick this only if you have fixed the printed marker sheets to the wall. The size is the side of the black square. You can change this later in the wall's settings, and every wall update asks again."
+                                   @bind-Enabled="_model.HasMarkers" @bind-SizeMm="_model.MarkerSizeMm" />
+        </div>
 
         <button type="submit" class="btn-submit" disabled="@(_isSubmitting || string.IsNullOrWhiteSpace(_model.Name))">
             @if (_isSubmitting)
@@ -154,6 +163,7 @@
         try
         {
             var wall = await WallService.CreateWallAsync(_model.Name, _model.Description, _model.Angle);
+            await DeclareMarkersAsync(wall.Id);
 
             if (_photoData != null && _photoContentType != null)
             {
@@ -169,6 +179,26 @@
         }
     }
 
+    // Markers default to off, so only a ticked box needs saving. The wall already exists at this
+    // point: a failure here must not strand the user on a form that would create a second wall, so
+    // it is logged and the owner can re-declare in the wall's settings.
+    private async Task DeclareMarkersAsync(Guid wallId)
+    {
+        if (!_model.HasMarkers)
+        {
+            return;
+        }
+
+        try
+        {
+            await GlyphService.SetGlyphSettingsAsync(wallId, enabled: true, _model.MarkerSizeMm);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or UnauthorizedAccessException or KioskRestrictedException)
+        {
+            Logger.LogWarning(ex, "Could not declare markers on new wall {WallId}", wallId);
+        }
+    }
+
     private class WallCreateModel
     {
         public string Name { get; set; } = string.Empty;
@@ -176,6 +206,10 @@
         public string? Description { get; set; }
 
         public int Angle { get; set; }
+
+        public bool HasMarkers { get; set; }
+
+        public double MarkerSizeMm { get; set; } = WallGlyphSettings.DefaultMarkerSizeMm;
     }
 }
 

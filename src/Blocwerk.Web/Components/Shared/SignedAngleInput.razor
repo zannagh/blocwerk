@@ -1,0 +1,54 @@
+@using System.Globalization
+@* A signed angle entered without a minus key (the iPhone number pad has none): pick a direction
+   (e.g. Slab / Vertical / Overhang), then type a positive size. The value stays signed exactly as
+   stored. Compact mode is a select + number for table cells; the full mode is a button toggle with
+   the size, a one-word description and an optional drawing (ChildContent) beside it. *@
+
+@if (Compact)
+{
+    <span class="signed-angle-compact">
+        <select class="form-input signed-angle-dir" aria-label="@($"{AriaLabel}: direction")" disabled="@Disabled"
+                value="@(EffectiveSign?.ToString(CultureInfo.InvariantCulture) ?? string.Empty)" @onchange="OnSelect">
+            @if (AllowEmpty)
+            {
+                <option value="">—</option>
+            }
+            @foreach (var option in Options)
+            {
+                <option value="@option.Sign">@option.Name</option>
+            }
+        </select>
+        @if (EffectiveSign is { } s && s != 0)
+        {
+            <input class="form-input signed-angle-size" type="number" inputmode="decimal" min="0" max="@F(Max)" step="@F(Step)"
+                   aria-label="@($"{AriaLabel}: size in degrees")" placeholder="°" disabled="@Disabled"
+                   value="@SizeText" @onchange="OnSize" />
+        }
+    </span>
+}
+else
+{
+    <div class="mplan-lean" role="group" aria-labelledby="@LabelledBy">
+        @foreach (var option in Options)
+        {
+            var active = option.Sign == EffectiveSign;
+            <button type="button" class="mplan-tool @(active ? "active" : null)" aria-pressed="@active" disabled="@Disabled"
+                    @onclick="() => Choose(option)">@option.Name</button>
+        }
+    </div>
+    <div class="mplan-lean-row">
+        @if (ActiveOption is { Sign: not 0 } chosen)
+        {
+            <div class="mplan-lean-angle">
+                <label for="@Id">@(chosen.AngleLabel ?? $"{chosen.Name} angle (°)")</label>
+                <input id="@Id" type="number" inputmode="decimal" min="0" max="@F(Max)" step="@F(Step)" class="form-input"
+                       disabled="@Disabled" value="@SizeText" @onchange="OnSize" />
+                @if (Description is { Length: > 0 })
+                {
+                    <span class="mplan-lean-word">@Description</span>
+                }
+            </div>
+        }
+        @ChildContent
+    </div>
+}

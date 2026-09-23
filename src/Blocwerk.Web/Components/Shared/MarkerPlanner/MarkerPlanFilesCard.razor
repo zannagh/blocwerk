@@ -1,0 +1,108 @@
+@* Save the plan to the wall, download it (JSON to keep with the photos, PDF to print), import a JSON,
+   or start over from the wall's measured geometry. Replacing the plan asks inline first. *@
+
+<section class="mplan-card">
+    <h2>Save &amp; export</h2>
+    <div class="mplan-actions">
+        <button type="button" class="btn-primary" disabled="@(Busy || HasErrors)" @onclick="OnSave">@(Dirty ? "Save plan" : "Saved")</button>
+        <button type="button" class="btn-secondary" disabled="@Busy" @onclick="OnDownloadPdf">Download PDF</button>
+        <button type="button" class="btn-secondary" disabled="@Busy" @onclick="OnDownloadJson">Download JSON</button>
+    </div>
+    @if (HasErrors)
+    {
+        <p class="hint">Fix the errors above to save. You can still download to look at a draft.</p>
+    }
+    @if (Failure is not null)
+    {
+        <p class="field-error" role="alert">@Failure</p>
+    }
+    else if (Message is not null)
+    {
+        <p class="glyph-ok" role="status">@Message</p>
+    }
+
+    <div class="form-group glyph-import">
+        <label for="mplan-import">Import a marker-plan.json</label>
+        <InputFile id="mplan-import" OnChange="OnImport" accept=".json,application/json" class="form-input" disabled="@Busy" />
+        <p class="hint">Replaces the plan in the editor (not saved until you press Save).</p>
+        @if (ImportErrors.Count > 0)
+        {
+            <ul class="field-error glyph-errors" role="alert">
+                @foreach (var error in ImportErrors)
+                {
+                    <li>@error</li>
+                }
+            </ul>
+        }
+    </div>
+
+    @if (HasGeometry)
+    {
+        @if (confirmGeometry)
+        {
+            <p class="staged-hint danger">This replaces the surfaces and markers in the editor with the ones measured from your photos.</p>
+            <div class="staged-actions">
+                <button type="button" class="btn-danger" disabled="@Busy" @onclick="StartFromGeometryAsync">Replace with measured wall</button>
+                <button type="button" class="btn-secondary" @onclick="() => confirmGeometry = false">Cancel</button>
+            </div>
+        }
+        else
+        {
+            <button type="button" class="btn-secondary" disabled="@Busy" @onclick="() => confirmGeometry = true">Start from measured wall</button>
+            <p class="hint">Uses the active 3D measurement: one rectangle per measured surface, markers where they were found.</p>
+        }
+    }
+</section>
+
+@code {
+    private bool confirmGeometry;
+
+    /// <summary>An action is running.</summary>
+    [Parameter]
+    public bool Busy { get; set; }
+
+    /// <summary>The editor holds unsaved changes.</summary>
+    [Parameter]
+    public bool Dirty { get; set; }
+
+    /// <summary>The plan has validation errors (saving is refused).</summary>
+    [Parameter]
+    public bool HasErrors { get; set; }
+
+    /// <summary>The wall has an active measured geometry to start from.</summary>
+    [Parameter]
+    public bool HasGeometry { get; set; }
+
+    /// <summary>Status line.</summary>
+    [Parameter]
+    public string? Message { get; set; }
+
+    /// <summary>Failure line.</summary>
+    [Parameter]
+    public string? Failure { get; set; }
+
+    /// <summary>Why the last import was refused.</summary>
+    [Parameter]
+    public IReadOnlyList<string> ImportErrors { get; set; } = [];
+
+    [Parameter]
+    public EventCallback OnSave { get; set; }
+
+    [Parameter]
+    public EventCallback OnDownloadJson { get; set; }
+
+    [Parameter]
+    public EventCallback OnDownloadPdf { get; set; }
+
+    [Parameter]
+    public EventCallback<InputFileChangeEventArgs> OnImport { get; set; }
+
+    [Parameter]
+    public EventCallback OnStartFromGeometry { get; set; }
+
+    private async Task StartFromGeometryAsync()
+    {
+        confirmGeometry = false;
+        await OnStartFromGeometry.InvokeAsync();
+    }
+}

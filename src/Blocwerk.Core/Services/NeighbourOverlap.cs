@@ -9,8 +9,13 @@ namespace Blocwerk.Core.Services;
 /// <param name="Col">The panel's grid column.</param>
 /// <param name="Row">The panel's grid row.</param>
 /// <param name="Proposals">Proposed centre-hold ↔ this-panel-hold correspondences.</param>
+/// <param name="AlignmentFailed">
+/// True when the matcher could not line this panel up with the staged centre, so <paramref name="Proposals"/>
+/// is empty for that reason rather than because nothing overlaps. Sticky for the session.
+/// </param>
 public record NeighbourOverlap(
     Guid PanelId,
     int Col,
     int Row,
-    List<OverlapProposalDto> Proposals);
+    List<OverlapProposalDto> Proposals,
+    bool AlignmentFailed = false);

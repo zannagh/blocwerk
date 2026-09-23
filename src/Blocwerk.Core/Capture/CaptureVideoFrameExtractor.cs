@@ -1,0 +1,156 @@
+// <copyright file="CaptureVideoFrameExtractor.cs" company="Blocwerk">
+// Copyright (c) Blocwerk. All rights reserved.
+// </copyright>
+
+using System.Globalization;
+using System.Text.Json;
+using Blocwerk.Core.Configuration;
+
+namespace Blocwerk.Core.Capture;
+
+/// <summary>
+/// <see cref="ICaptureVideoFrameExtractor"/> over ffmpeg/ffprobe (the binaries the beta videos use).
+/// ffmpeg decodes at <see cref="Window"/>× the target rate with its default auto-rotation (the
+/// display matrix is applied to the pixels), scales to ≤ <see cref="MaxEdge"/> px, drops every
+/// container tag (<c>-map_metadata -1</c>: GPS "location", make, model) and writes candidate JPEGs to
+/// a private temp folder; the sharpest candidate of each window is kept and re-stripped with
+/// <see cref="ImageMetadataStripper"/>, so not even ffmpeg's own comment segment leaves the server.
+/// </summary>
+public sealed class CaptureVideoFrameExtractor(BlocwerkSettings settings) : ICaptureVideoFrameExtractor
+{
+    public const int MaxEdge = 1920;
+
+    /// <summary>Candidates per kept frame: the sharpest of each run of this many wins.</summary>
+    public const int Window = 3;
+
+    private static readonly TimeSpan ProbeTimeout = TimeSpan.FromMinutes(1);
+
+    public async Task<CaptureVideoProbe> ProbeAsync(string videoPath, CancellationToken ct)
+    {
+        string[] args =
+        [
+            "-v", "error", "-select_streams", "v:0",
+            "-show_entries", "format=duration:stream=width,height,duration:stream_side_data=rotation:stream_tags=rotate",
+            "-of", "json", videoPath,
+        ];
+        var json = await CaptureToolProcess.RunAsync(settings.BetaVideo.FfprobePath, args, ProbeTimeout, null, ct);
+        return ParseProbe(json) ?? throw new InvalidDataException("The file is not a readable video.");
+    }
+
+    /// <summary>ffprobe's JSON → duration and DISPLAYED size (a ±90° rotation swaps them); null without a video stream.</summary>
+    public static CaptureVideoProbe? ParseProbe(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        if (!root.TryGetProperty("streams", out var streams) || streams.GetArrayLength() == 0)
+        {
+            return null;
+        }
+
+        var stream = streams[0];
+        var width = stream.TryGetProperty("width", out var w) ? w.GetInt32() : 0;
+        var height = stream.TryGetProperty("height", out var h) ? h.GetInt32() : 0;
+        var duration = Seconds(root, "format") ?? Seconds(stream, null) ?? 0;
+        if (width <= 0 || height <= 0 || duration <= 0)
+        {
+            return null;
+        }
+
+        var quarterTurn = Math.Abs(Rotation(stream)) % 180 == 90;
+        return quarterTurn ? new CaptureVideoProbe(duration, height, width) : new CaptureVideoProbe(duration, width, height);
+    }
+
+    public async Task<IReadOnlyList<byte[]>> ExtractAsync(
+        string videoPath, CaptureVideoFrameRequest request, IProgress<double>? progress, CancellationToken ct)
+    {
+        var probe = await ProbeAsync(videoPath, ct);
+        var target = Math.Min(request.FramesPerSecond, Math.Max(1, request.MaxFrames) / probe.DurationSeconds);
+        var work = Directory.CreateTempSubdirectory("blocwerk-capture-video-");
+        try
+        {
+            var args = FfmpegArguments(videoPath, target * Window, Path.Combine(work.FullName, "c_%05d.jpg"));
+            await CaptureToolProcess.RunAsync(
+                settings.BetaVideo.FfmpegPath, args, request.Timeout,
+                line => ReportDecode(line, probe.DurationSeconds, progress), ct);
+            var candidates = work.EnumerateFiles("c_*.jpg").OrderBy(f => f.Name, StringComparer.Ordinal).ToList();
+            var scores = new List<double>(candidates.Count);
+            for (var i = 0; i < candidates.Count; i++)
+            {
+                scores.Add(CaptureFrameSharpness.Score(await File.ReadAllBytesAsync(candidates[i].FullName, ct)));
+                progress?.Report(0.8 + (0.2 * (i + 1) / candidates.Count));
+            }
+
+            var frames = new List<byte[]>();
+            foreach (var index in CaptureFrameSharpness.Select(scores, Window, request.MaxFrames))
+            {
+                frames.Add(ImageMetadataStripper.Strip(await File.ReadAllBytesAsync(candidates[index].FullName, ct)));
+            }
+
+            return frames;
+        }
+        finally
+        {
+            work.Delete(recursive: true);
+        }
+    }
+
+    /// <summary>The ffmpeg call: first video stream only, no tags, auto-rotated, ≤ MaxEdge, progress on stdout.</summary>
+    public static IReadOnlyList<string> FfmpegArguments(string videoPath, double candidateFps, string outputPattern) =>
+    [
+        "-nostdin", "-hide_banner", "-v", "error",
+        "-i", videoPath,
+        "-map", "0:v:0", "-an", "-sn", "-dn", "-map_metadata", "-1",
+        "-vf", string.Create(
+            CultureInfo.InvariantCulture,
+            $"fps={candidateFps:0.####},scale=w='min({MaxEdge},iw)':h='min({MaxEdge},ih)':force_original_aspect_ratio=decrease"),
+        "-q:v", "3", "-progress", "pipe:1", "-nostats",
+        "-f", "image2", outputPattern,
+    ];
+
+    private static void ReportDecode(string line, double duration, IProgress<double>? progress)
+    {
+        const string key = "out_time_us=";
+        if (progress is not null && line.StartsWith(key, StringComparison.Ordinal)
+            && long.TryParse(line.AsSpan(key.Length), NumberStyles.Integer, CultureInfo.InvariantCulture, out var us))
+        {
+            progress.Report(0.8 * Math.Clamp(us / 1e6 / duration, 0, 1));
+        }
+    }
+
+    private static double? Seconds(JsonElement element, string? child)
+    {
+        var holder = element;
+        if (child is not null && !element.TryGetProperty(child, out holder))
+        {
+            return null;
+        }
+
+        if (!holder.TryGetProperty("duration", out var d))
+        {
+            return null;
+        }
+
+        var seconds = d.ValueKind == JsonValueKind.Number ? d.GetDouble()
+            : double.TryParse(d.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var s) ? s : 0;
+        return seconds > 0 && double.IsFinite(seconds) ? seconds : null;
+    }
+
+    private static int Rotation(JsonElement stream)
+    {
+        if (stream.TryGetProperty("side_data_list", out var sides))
+        {
+            foreach (var side in sides.EnumerateArray())
+            {
+                if (side.TryGetProperty("rotation", out var r) && r.ValueKind == JsonValueKind.Number)
+                {
+                    return (int)Math.Round(r.GetDouble());
+                }
+            }
+        }
+
+        return stream.TryGetProperty("tags", out var tags) && tags.TryGetProperty("rotate", out var rotate)
+               && int.TryParse(rotate.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var deg)
+            ? deg
+            : 0;
+    }
+}

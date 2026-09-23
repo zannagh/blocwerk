@@ -1,0 +1,111 @@
+@page "/walls/{WallId:guid}/markers/plan"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@using Blocwerk.Core.MarkerPlanning
+@using Blocwerk.Web.Components.Shared.MarkerPlanner
+
+<PageTitle>Marker plan · @(wallName ?? "Wall") - Blocwerk</PageTitle>
+
+<SectionContent SectionName="TopBarTitle">@(wallName ?? "Wall") · Marker plan</SectionContent>
+
+<div class="mplan-page">
+    <a href="/walls/@WallId" class="back-link">&larr; Back to wall</a>
+    <h1>Marker plan</h1>
+
+    @if (blockedMessage is not null)
+    {
+        <div class="empty-state"><p>@blockedMessage</p></div>
+    }
+    else if (plan is null || canvas is null)
+    {
+        <p class="loading">Loading…</p>
+    }
+    else
+    {
+        <details class="mplan-help" open="@(!hadSavedPlan)">
+            <summary>How this works</summary>
+            <ol>
+                <li><strong>Draw your wall unfolded</strong>: one rectangle or triangle per flat surface, each attached to a neighbour, with its size, overhang and yaw.</li>
+                <li><strong>Tell us your photo distance</strong> and camera — that decides how big the markers must be.</li>
+                <li><strong>Generate markers</strong>, then drag them where they fit around your holds and change sizes if needed.</li>
+                <li><strong>Save and download the PDF</strong>: it has the placement map and every marker at true size. Print at 100 %.</li>
+                <li><strong>Stick the markers up</strong> as the map shows, and <strong>keep the JSON with your photos</strong> — upload it together with every photo dump of this wall.</li>
+            </ol>
+        </details>
+
+        <div class="mplan-layout">
+            <section class="mplan-stage" aria-label="Net">
+                <div class="mplan-toolbar">
+                    <button type="button" class="mplan-tool @(addMode ? "active" : null)" aria-pressed="@addMode"
+                            @onclick="() => addMode = !addMode">@(addMode ? "Tap a surface to place a marker…" : "+ Marker")</button>
+                    <span class="hint">Tap a surface to edit it; drag markers to move them (snaps to @PlannerGeometry.SnapMm mm).</span>
+                </div>
+                <MarkerPlanCanvas Model="canvas" SelectedSegment="selectedSegment" SelectedMarker="selectedMarker" AddMode="addMode"
+                                  OnCanvasClick="HandleCanvasClick" OnMarkerClick="SelectMarker" OnMarkerDrop="OnMarkerDrop" />
+            </section>
+
+            <div class="mplan-side">
+                <section class="mplan-card">
+                    <h2>Surfaces</h2>
+                    <MarkerPlanSegmentList Plan="plan" Selected="selectedSegment" OnSelect="SelectSegment" OnChange="OnSegmentsChanged" />
+                    @if (SelectedSegmentModel is { } segment)
+                    {
+                        <MarkerPlanSegmentForm Plan="plan" Segment="segment" OnChange="OnSegmentEdited" />
+                    }
+                </section>
+
+                @if (SelectedMarkerModel is { } marker)
+                {
+                    <section class="mplan-card">
+                        <h2>Marker</h2>
+                        <MarkerPlanMarkerForm Marker="marker" SegmentName="@SegmentName(marker.Segment)" EstimatedPx="EstimatedPx(marker.Id)"
+                                              Options="options" OnChange="OnMarkerEdited" OnDelete="DeleteMarker" />
+                        @if (markerMessage is not null)
+                        {
+                            <p class="field-error" role="alert">@markerMessage</p>
+                        }
+                    </section>
+                }
+
+                <section class="mplan-card">
+                    <h2>Photos</h2>
+                    <MarkerPlanPhotoForm Photo="plan.Photo" OnChange="OnPhotoChanged" />
+                </section>
+
+                <section class="mplan-card">
+                    <h2>Printing</h2>
+                    <MarkerPlanPrintForm Print="plan.Print" OnChange="OnPrintChanged" />
+                </section>
+
+                <section class="mplan-card">
+                    <h2>Markers</h2>
+                    <p class="hint">@plan.Markers.Count marker(s) on @plan.Segments.Count surface(s). The generator puts one in every corner and fills the edges so every photo sees several.</p>
+                    @if (confirmRegenerate)
+                    {
+                        <p class="staged-hint danger">This replaces all @plan.Markers.Count markers, including any you moved or resized by hand.</p>
+                        <div class="staged-actions">
+                            <button type="button" class="btn-danger" @onclick="Generate">Replace markers</button>
+                            <button type="button" class="btn-secondary" @onclick="() => confirmRegenerate = false">Cancel</button>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="mplan-actions">
+                            <button type="button" class="btn-secondary" @onclick="RequestGenerate">@(plan.Markers.Count == 0 ? "Generate markers" : "Regenerate markers")</button>
+                        </div>
+                    }
+                </section>
+
+                <section class="mplan-card">
+                    <h2>Check</h2>
+                    <MarkerPlanIssueList Issues="issues" OnPick="PickIssue" />
+                </section>
+
+                <MarkerPlanFilesCard Busy="busy" Dirty="dirty" HasErrors="HasErrors" HasGeometry="hasGeometry"
+                                     OnSave="SaveAsync" OnDownloadJson="DownloadJsonAsync" OnDownloadPdf="DownloadPdfAsync"
+                                     OnImport="ImportAsync" OnStartFromGeometry="StartFromGeometryAsync"
+                                     Message="@message" Failure="@failure" ImportErrors="importErrors" />
+            </div>
+        </div>
+    }
+</div>

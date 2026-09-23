@@ -1,0 +1,72 @@
+@using System.Globalization
+
+@* "Does this wall / do these photos carry printed ArUco markers?" — the one checkbox every place
+   that declares markers shares (wall create, the settings card, every wall update), plus the
+   printed size, shown only while the box is ticked. Purely a form control: the owner saves. *@
+
+<div class="glyph-declaration">
+    <label class="checkbox-label">
+        <input type="checkbox" checked="@Enabled" disabled="@Disabled"
+               @onchange="e => OnEnabledChanged(e.Value is true)" />
+        @Label
+    </label>
+    @if (Enabled)
+    {
+        <div class="glyph-size-row">
+            <label for="@sizeInputId">Marker size</label>
+            <input id="@sizeInputId" type="number" class="form-input glyph-size-input" min="10" max="1000" step="1"
+                   value="@SizeMm.ToString(CultureInfo.InvariantCulture)" disabled="@Disabled" @onchange="OnSizeChanged" />
+            <span class="glyph-size-unit">mm</span>
+        </div>
+    }
+    @if (!string.IsNullOrEmpty(Hint))
+    {
+        <p class="hint">@Hint</p>
+    }
+</div>
+
+@code {
+    /// <summary>The checkbox text, phrased for where it sits ("This wall has…", "These photos include…").</summary>
+    [Parameter, EditorRequired]
+    public string Label { get; set; } = string.Empty;
+
+    /// <summary>Short plain-words explanation under the control.</summary>
+    [Parameter]
+    public string? Hint { get; set; }
+
+    [Parameter]
+    public bool Enabled { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> EnabledChanged { get; set; }
+
+    /// <summary>Side of the printed black square, in millimetres.</summary>
+    [Parameter]
+    public double SizeMm { get; set; } = WallGlyphSettings.DefaultMarkerSizeMm;
+
+    [Parameter]
+    public EventCallback<double> SizeMmChanged { get; set; }
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    private readonly string sizeInputId = $"glyph-size-{Guid.NewGuid():N}";
+
+    private Task OnEnabledChanged(bool enabled)
+    {
+        Enabled = enabled;
+        return EnabledChanged.InvokeAsync(enabled);
+    }
+
+    private Task OnSizeChanged(ChangeEventArgs e)
+    {
+        // An empty or unparsable entry keeps the previous size rather than saving nonsense.
+        if (!double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var size) || size <= 0 || size > 1000)
+        {
+            return Task.CompletedTask;
+        }
+
+        SizeMm = size;
+        return SizeMmChanged.InvokeAsync(size);
+    }
+}

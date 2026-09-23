@@ -1,3 +1,5 @@
+using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Capture;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
@@ -27,6 +29,7 @@ public partial class WallBigUpdateService
             ?? throw new InvalidOperationException("Wall not found");
 
         ValidateStagedPhotos(wall, photos);
+        photos = [.. photos.Select(p => p with { Image = StoredPhotoSanitizer.Sanitize(p.Image) })];
 
         var stagedGen = wall.CurrentGeneration + 1;
 
@@ -42,7 +45,7 @@ public partial class WallBigUpdateService
         // promote seals — so reverting/replaying the update is self-contained. Null in tests.
         using var journalBatch = changeJournal?.BeginWallUpdateBatch(wallId);
 
-        var centerPanelId = await StageAndDetectAsync(db, wallId, photos, stagedGen, user.Id);
+        var centerPanelId = await StageAndDetectAsync(db, wall, photos, stagedGen, user.Id);
         WallUpdateSessions.Open(db, wallId, stagedGen, user.Id);
         await SaveStagedOrReportRaceAsync(db, wallId, user.Id);
 
@@ -221,17 +224,19 @@ public partial class WallBigUpdateService
     /// </summary>
     private async Task<Guid> StageAndDetectAsync(
         BlocwerkDbContext db,
-        Guid wallId,
+        Wall wall,
         IReadOnlyList<BigUpdatePhoto> photos,
         int stagedGen,
         Guid userId)
     {
+        var wallId = wall.Id;
         var centerPanelId = Guid.Empty;
         foreach (var photo in photos)
         {
-            // Stored exactly as uploaded: hold detection and the panel matcher below must see the
-            // camera's full resolution. The browser is served downscaled variants instead, generated
-            // on demand from these originals (see IImageVariantCache).
+            // Stored at full resolution (already stripped of location/metadata by StageAsync, pixels
+            // and EXIF orientation untouched): hold detection and the panel matcher below must see the
+            // camera's original. The browser is served downscaled variants instead, generated on
+            // demand from these originals (see IImageVariantCache).
             var image = photo.Image;
             var contentType = photo.ContentType;
 
@@ -254,9 +259,10 @@ public partial class WallBigUpdateService
             }
 
             var detected = await holdDetectionService.DetectHoldsAsync(image);
+            var staged = new List<Hold>(detected.Count);
             foreach (var d in detected)
             {
-                db.Holds.Add(new Hold
+                staged.Add(new Hold
                 {
                     WallId = wallId,
                     WallPanelId = panel.Id,
@@ -270,6 +276,10 @@ public partial class WallBigUpdateService
                     Generation = stagedGen,
                 });
             }
+
+            db.Holds.AddRange(staged);
+            await holdEnrichment.EnrichSafelyAsync(
+                db, new HoldEnrichmentRequest(image, wall, staged, panel.Id, stagedGen, FromStagedPhoto: true), logger);
         }
 
         return centerPanelId;

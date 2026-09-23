@@ -301,6 +301,11 @@ public class KioskAuthTests
     [InlineData("/js/kiosk-idle.js", false)]
     [InlineData("/icons/icon-192.png", false)]
     [InlineData("/manifest.webmanifest", false)]
+    [InlineData("/lib/three/three.module.js", false)]
+    [InlineData("/lib/hls/hls.min.js", false)]
+    [InlineData("/Blocwerk.Web.styles.css", false)]
+    [InlineData("/Blocwerk.Web.59ojwcjdxf.styles.css", false)]
+    [InlineData("/x/Blocwerk.Web.styles.css", true)]
     public void AllowList_PermitsTheKiosksJob_AndRefusesEverythingElse(string path, bool blocked)
     {
         Assert.Equal(blocked, KioskRestrictions.IsBlockedPath(new PathString(path)));

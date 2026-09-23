@@ -1,0 +1,85 @@
+@* Wall-settings section for the opt-in printed ArUco markers ("glyphs"): the on/off declaration and
+   marker size, the wall-geometry.json import, the active model's facet table, and the model history.
+   Admin-only (rendered inside the admin "Wall Shape" card) and never on a kiosk tablet — the service
+   refuses both anyway; hiding it here only avoids offering controls that would fail on tap. *@
+
+<div class="glyph-settings">
+    <h3 class="glyph-heading">Printed markers</h3>
+
+    @if (KioskContext.IsKiosk)
+    {
+        <p class="hint">Marker settings are managed from your own device, not from this wall tablet.</p>
+    }
+    else if (loading)
+    {
+        <p class="loading-small">Loading marker settings…</p>
+    }
+    else
+    {
+        <WallMarkerDeclaration Label="This wall has printed ArUco markers"
+                               Hint="Only tick this if the marker sheets are fixed to the wall. Walls without markers work exactly as before."
+                               @bind-Enabled="draftEnabled" @bind-SizeMm="draftSizeMm" Disabled="busy" />
+        @if (SettingsDirty)
+        {
+            <div class="staged-actions">
+                <button class="btn-primary" @onclick="SaveSettingsAsync" disabled="@busy">Save marker settings</button>
+            </div>
+        }
+
+        <p class="glyph-plan-link">
+            <a href="/walls/@WallId/markers/plan">Plan marker placement &rarr;</a>
+            <span class="hint">Draw the wall, get a decodable marker layout for your photo distance, print it.</span>
+        </p>
+
+        @if (failure is not null)
+        {
+            <p class="field-error" role="alert">@failure</p>
+        }
+        else if (message is not null)
+        {
+            <p class="glyph-ok" role="status">@message</p>
+        }
+
+        @if (settings.Enabled)
+        {
+            <h4 class="glyph-subheading">Measured geometry</h4>
+            @if (active is null)
+            {
+                <p class="empty-msg">No geometry yet. Compute one from photos below, or import a wall-geometry.json.</p>
+            }
+            else
+            {
+                <WallGlyphGeometryTable Active="active" />
+            }
+
+            <WallCapturePanel WallId="WallId" OnModelActivated="ReloadAfterCaptureAsync"
+                              OnPanelStaged="OnPanelStaged" OnStartWallUpdate="OnStartWallUpdate" OnShowPanels="OnShowPanels" />
+
+            <div class="form-group glyph-import">
+                <label for="glyph-import-notes">Import wall-geometry.json</label>
+                <input id="glyph-import-notes" class="form-input" placeholder="Notes (optional), e.g. capture date"
+                       maxlength="2048" @bind="importNotes" disabled="@busy" />
+                <InputFile OnChange="ImportAsync" accept=".json,application/json" class="form-input" disabled="@busy" />
+                @if (importErrors.Count > 0)
+                {
+                    <ul class="field-error glyph-errors" role="alert">
+                        @foreach (var error in importErrors)
+                        {
+                            <li>@error</li>
+                        }
+                    </ul>
+                }
+            </div>
+
+            @if (active is not null && segments.Count > 0)
+            {
+                <WallGlyphSegmentBinding Segments="segments" Active="active" Disabled="busy" OnBind="BindSegmentAsync" />
+            }
+
+            @if (history.Count > 1)
+            {
+                <WallGlyphHistory History="history" Disabled="busy" OnActivate="ActivateAsync" />
+            }
+        }
+    }
+</div>

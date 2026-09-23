@@ -1,0 +1,79 @@
+@* Wall-settings section: upgrade the wall's existing circle holds to real outlines on its current photos
+   (dry run → apply → revert the latest run). Admin-only (rendered inside the admin "Wall Shape" card);
+   hidden on a kiosk tablet and behind a share link — the service refuses both anyway. *@
+
+@if (!Hidden)
+{
+<div class="glyph-settings">
+    <h3 class="glyph-heading">Hold outlines</h3>
+
+    @if (loading)
+    {
+        <p class="loading-small">Loading…</p>
+    }
+    else if (status is { Enabled: false })
+    {
+        <p class="hint">Outline detection is switched off on this server.</p>
+    }
+    else if (status is not null)
+    {
+        <p class="hint">
+            Holds that are still plain circles can get their real shape traced from the current wall photos.
+            Positions and boulders are not changed.
+        </p>
+        <label class="checkbox-label">
+            <input type="checkbox" checked="@includeManual" @onchange="OnIncludeManualChanged" disabled="@busy" />
+            Also trace holds that were placed by hand
+        </label>
+
+        @if (preview is null)
+        {
+            <div class="staged-actions">
+                <button class="btn-secondary" @onclick="PreviewAsync" disabled="@busy">Detect real outlines for existing holds</button>
+            </div>
+        }
+        else
+        {
+            <p class="glyph-summary" role="status">@PreviewText(preview)</p>
+            <div class="staged-actions">
+                @if (preview.WouldOutline > 0 || preview.WouldFingerprint > 0)
+                {
+                    <button class="btn-primary" @onclick="ApplyAsync" disabled="@busy">Apply</button>
+                }
+                <button class="btn-secondary" @onclick="CancelPreview" disabled="@busy">Cancel</button>
+            </div>
+        }
+
+        @if (busy)
+        {
+            <p class="loading-small">Looking at every wall photo — this can take a minute…</p>
+        }
+
+        @if (failure is not null)
+        {
+            <p class="field-error" role="alert">@failure</p>
+        }
+        else if (message is not null)
+        {
+            <p class="glyph-ok" role="status">@message</p>
+        }
+
+        @if (status.LatestRun is { RevertedAt: null } run && run.Outlined + run.Fingerprinted > 0)
+        {
+            <h4 class="glyph-subheading">Last upgrade</h4>
+            <p class="glyph-summary"><LocalTime Value="@run.CreatedAt" Format="LocalTimeFormat.DateTime" />: @run.Outlined holds got an outline.</p>
+            <div class="staged-actions">
+                @if (confirmRevert)
+                {
+                    <button class="btn-danger" @onclick="() => RevertAsync(run.Id)" disabled="@busy">Yes, revert</button>
+                    <button class="btn-secondary" @onclick="() => confirmRevert = false" disabled="@busy">Keep it</button>
+                }
+                else
+                {
+                    <button class="btn-secondary" @onclick="() => confirmRevert = true" disabled="@busy">Revert this upgrade</button>
+                }
+            </div>
+        }
+    }
+</div>
+}

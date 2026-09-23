@@ -1,0 +1,88 @@
+@using Blocwerk.Core.Capture
+@* Reuse a capture's photos as PANEL photos. One photo on an empty "+" cell is staged as a new panel
+   through the panel grid's own staging call and opens its normal review; photos on the centre and its
+   direct neighbours pre-fill the normal full wall update. The capture itself is never changed. *@
+
+<details class="segment-settings capture-panel-use" open="@StartOpen">
+    <summary>Use as panel photo</summary>
+    <p class="hint">
+        A panel photo is what people browse and set boulders on. A photo that shows the markers makes
+        later wall updates match better. Put one photo on a free cell to add a new panel, or pick photos
+        for the centre and its neighbours to start a full wall update with them.
+    </p>
+
+    @if (loadFailure is not null)
+    {
+        <p class="field-error" role="alert">@loadFailure</p>
+    }
+    else
+    {
+        <div class="leaderboard-scroll">
+            <table class="leaderboard-table capture-photos">
+                <thead>
+                    <tr>
+                        <th scope="col">Photo</th>
+                        <th scope="col" class="num">Markers</th>
+                        <th scope="col">Use as panel photo</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var photo in Photos)
+                    {
+                        var name = PhotoName(photo);
+                        <tr>
+                            <td class="capture-photo-name">@name</td>
+                            <td class="num">@photo.MarkerIds.Count</td>
+                            <td>
+                                <select class="form-input capture-panel-target" aria-label="Use @name as panel photo"
+                                        value="@choices.GetValueOrDefault(photo.PhotoId, string.Empty)"
+                                        @onchange="e => Choose(photo.PhotoId, e.Value)" disabled="@(busy || Disabled)">
+                                    <option value="">Not used</option>
+                                    @if (frontier.Count > 0)
+                                    {
+                                        <optgroup label="New panel">
+                                            @foreach (var cell in frontier)
+                                            {
+                                                <option value="@CapturePanelTarget.NewPanel(cell.Col, cell.Row).Key">New panel at (@cell.Col,@cell.Row)</option>
+                                            }
+                                        </optgroup>
+                                    }
+                                    <optgroup label="Full wall update">
+                                        @foreach (var slot in slots)
+                                        {
+                                            <option value="@CapturePanelTarget.Update(slot.Col, slot.Row).Key">@SlotLabel(slot)</option>
+                                        }
+                                    </optgroup>
+                                </select>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        @if (Guidance is { } guidance)
+        {
+            <p class="hint" role="note">@guidance</p>
+        }
+
+        <div class="staged-actions">
+            <button class="btn-primary" @onclick="StageNewPanelAsync" disabled="@(busy || Disabled || !CanStageNewPanel)">
+                Stage as new panel
+            </button>
+            <button class="btn-secondary" @onclick="StartWallUpdateAsync" disabled="@(busy || Disabled || !CanStartWallUpdate)">
+                Start wall update with these photos
+            </button>
+        </div>
+
+        @if (busy)
+        {
+            <p class="loading-small" role="status">Detecting holds on the photo…</p>
+        }
+
+        @if (error is not null)
+        {
+            <p class="field-error" role="alert">@error</p>
+        }
+    }
+</details>

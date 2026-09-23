@@ -1,0 +1,86 @@
+@* The selected marker: id, position in its surface's frame, printed size and role, plus how big it
+   will come out on a photo. Drag it on the canvas for coarse moves; type here for exact ones. *@
+@using Blocwerk.Core.MarkerPlanning
+
+<div class="mplan-form" @key="Marker.Id">
+    <p class="mplan-marker-summary @(MeetsTarget ? "ok" : "warn")">
+        Marker #@Marker.Id on #@Marker.Segment @SegmentName — ≈ @Math.Round(EstimatedPx) px on your photos
+        (target @TargetPx px for a @Marker.Role.ToString().ToLowerInvariant()).
+    </p>
+    <div class="mplan-grid">
+        <div class="form-group">
+            <label for="mplan-mk-id">Id</label>
+            <input id="mplan-mk-id" type="number" min="0" max="@(ArucoDict4X4.Count - 1)" step="1" class="form-input" value="@Marker.Id"
+                   @onchange="e => ApplyNumber(e, v => v >= 0 && v == Math.Floor(v) ? Marker with { Id = (int)v } : null)" />
+        </div>
+        <div class="form-group">
+            <label for="mplan-mk-size">Printed size</label>
+            <select id="mplan-mk-size" class="form-input" value="@NetCanvasModel.F(Marker.SizeMm)"
+                    @onchange="e => ApplyNumber(e, v => v > 0 ? Marker with { SizeMm = v } : null)">
+                @foreach (var size in Sizes)
+                {
+                    <option value="@NetCanvasModel.F(size)">@NetCanvasModel.F(size) mm</option>
+                }
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="mplan-mk-x">X (mm from the left)</label>
+            <input id="mplan-mk-x" type="number" step="5" class="form-input" value="@NetCanvasModel.F(Marker.XMm)"
+                   @onchange="e => ApplyNumber(e, v => Marker with { XMm = v })" />
+        </div>
+        <div class="form-group">
+            <label for="mplan-mk-y">Y (mm up the surface)</label>
+            <input id="mplan-mk-y" type="number" step="5" class="form-input" value="@NetCanvasModel.F(Marker.YMm)"
+                   @onchange="e => ApplyNumber(e, v => Marker with { YMm = v })" />
+        </div>
+        <div class="form-group">
+            <label for="mplan-mk-role">Role</label>
+            <select id="mplan-mk-role" class="form-input" value="@Marker.Role"
+                    @onchange="e => PlannerInput.Enum<MarkerRole>(e.Value) is { } r ? OnChange.InvokeAsync((Marker.Id, Marker with { Role = r })) : Task.CompletedTask">
+                <option value="@MarkerRole.Corner">Corner</option>
+                <option value="@MarkerRole.Filler">Filler</option>
+            </select>
+        </div>
+    </div>
+    <div class="mplan-actions">
+        <button type="button" class="btn-danger" @onclick="() => OnDelete.InvokeAsync(Marker.Id)">Delete marker #@Marker.Id</button>
+    </div>
+</div>
+
+@code {
+    /// <summary>The marker being edited.</summary>
+    [Parameter]
+    [EditorRequired]
+    public PlanMarker Marker { get; set; } = default!;
+
+    /// <summary>Name of the surface it sits on.</summary>
+    [Parameter]
+    public string? SegmentName { get; set; }
+
+    /// <summary>Its expected on-photo side.</summary>
+    [Parameter]
+    public double EstimatedPx { get; set; }
+
+    /// <summary>Sizing targets and the printable sizes to offer.</summary>
+    [Parameter]
+    public MarkerGenerationOptions Options { get; set; } = MarkerGenerationOptions.Default;
+
+    /// <summary>The marker changed: (its id before the change, the new marker).</summary>
+    [Parameter]
+    public EventCallback<(int OldId, PlanMarker Marker)> OnChange { get; set; }
+
+    /// <summary>Delete the marker with this id.</summary>
+    [Parameter]
+    public EventCallback<int> OnDelete { get; set; }
+
+    private double TargetPx => PlanMarkerEdits.TargetPx(Marker.Role, Options);
+
+    private bool MeetsTarget => EstimatedPx >= TargetPx - 1e-6;
+
+    private IEnumerable<double> Sizes => Options.AvailableSizesMm.Append(Marker.SizeMm).Distinct().Order();
+
+    private Task ApplyNumber(ChangeEventArgs e, Func<double, PlanMarker?> update) =>
+        PlannerInput.Number(e.Value) is { } v && update(v) is { } updated
+            ? OnChange.InvokeAsync((Marker.Id, updated))
+            : Task.CompletedTask;
+}

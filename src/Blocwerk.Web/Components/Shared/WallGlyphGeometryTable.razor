@@ -1,0 +1,60 @@
+@* The active wall-geometry model at a glance: a one-line summary and one row per facet, with the
+   admin's declared angle next to the solver's measured one. The "marker span" is the extent the
+   markers cover (plus the solver's margin) on the widest facet — NOT the size of the wall. *@
+
+<p class="glyph-summary">
+    @(Active.Model.Source.StartsWith("capture ", StringComparison.Ordinal) ? "Measured from photos" : "Imported")
+    <LocalTime Value="@Active.Model.CreatedAt" Format="LocalTimeFormat.DateDmy" />
+    &middot; @Active.MarkerCount markers of @GlyphFormat.Millimetres(Active.MarkerSizeMm)
+    &middot; reprojection error @GlyphFormat.Pixels(Active.Model.ReprojRmsPx)@SpanText
+</p>
+@if (!string.IsNullOrEmpty(Active.Model.Notes))
+{
+    <p class="hint">@Active.Model.Notes</p>
+}
+
+@if (Active.Facets.Count == 0)
+{
+    <p class="empty-msg">The stored geometry could not be read. Import it again.</p>
+}
+else
+{
+    <div class="leaderboard-scroll">
+        <table class="leaderboard-table glyph-facet-table">
+            <thead>
+                <tr>
+                    <th scope="col">Facet</th>
+                    <th scope="col">Segment</th>
+                    <th scope="col" class="num">Declared</th>
+                    <th scope="col" class="num">Measured</th>
+                    <th scope="col" class="num">Yaw</th>
+                    <th scope="col" class="num">Markers</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var facet in Active.Facets)
+                {
+                    <tr>
+                        <td>@facet.FacetId</td>
+                        <td>@facet.SegmentIndex @(string.IsNullOrEmpty(facet.SegmentName) ? "" : $"· {facet.SegmentName}")</td>
+                        <td class="num">@GlyphFormat.Degrees(facet.DeclaredAngleDeg)</td>
+                        <td class="num">@GlyphFormat.Degrees(facet.MeasuredAngleDeg)</td>
+                        <td class="num">@GlyphFormat.Degrees(facet.YawDeg)</td>
+                        <td class="num">@facet.MarkerCount</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    /// <summary>The wall's active model.</summary>
+    [Parameter, EditorRequired]
+    public ActiveWallGeometry Active { get; set; } = default!;
+
+    // The widest facet's marker extent — explicitly NOT the wall's size.
+    private string SpanText => Active.Model.WidthMm is null
+        ? string.Empty
+        : $" · marker span {GlyphFormat.Metres(Active.Model.WidthMm)} × {GlyphFormat.Metres(Active.Model.HeightMm)}";
+}

@@ -1,0 +1,65 @@
+@using Blocwerk.Core.Capture
+@using Blocwerk.Core.MarkerPlanning
+@* One row per marker segment seen in the uploaded photos: its name, the angle the admin knows
+   (tilt from vertical, optional) and whether it is truly vertical — two vertical segments facing
+   different ways give the solver gravity. Rows are edited in place. *@
+
+<div class="leaderboard-scroll">
+    <table class="leaderboard-table capture-declarations">
+        <thead>
+            <tr>
+                <th scope="col" class="num">Markers</th>
+                <th scope="col">Name</th>
+                <th scope="col" class="num">Angle (°)</th>
+                <th scope="col">Vertical</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var row in Rows)
+            {
+                <tr>
+                    <td class="num capture-decl-markers" title="Marker ids @MarkerLabel(row.Index)">@MarkerLabel(row.Index)</td>
+                    <td class="capture-decl-name">
+                        <input class="form-input" aria-label="Name of marker segment @row.Index" maxlength="100"
+                               @bind="row.Name" disabled="@Disabled" />
+                    </td>
+                    <td class="num capture-decl-angle">
+                        <SignedAngleInput Compact="true" AllowEmpty="true" Options="LeanOptions" Max="90" Step="0.5"
+                                          AriaLabel="@($"Declared angle of marker segment {row.Index}")"
+                                          @bind-Value="row.AngleDeg" Disabled="@Disabled" />
+                    </td>
+                    <td>
+                        <label class="checkbox-label">
+                            <input type="checkbox" @bind="row.Vertical" disabled="@Disabled" />
+                            <span>Use as gravity reference</span>
+                        </label>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+<p class="hint">@(IdsBySegment is null ? string.Empty : "Pre-filled from the marker plan. ")Angle = tilt from vertical as you know it: pick Slab or Overhang, then type the size (e.g. Overhang 45, Slab 12); leave it at “—” if you don’t know it. Tick “vertical” only for pieces that are truly plumb. Leave a row empty for spare markers reused elsewhere — they are attached to whatever surface they sit on.</p>
+
+@code {
+    /// <summary>No default sizes: a declared angle is only ever one the admin typed.</summary>
+    private static readonly IReadOnlyList<SignedAngleOption> LeanOptions =
+    [
+        new("Slab", -1),
+        new("Vertical", 0),
+        new("Overhang", 1),
+    ];
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<CaptureDeclarationRow> Rows { get; set; } = [];
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    /// <summary>The marker plan's ids per segment; null for the legacy ids (six per segment).</summary>
+    [Parameter]
+    public IReadOnlyDictionary<int, IReadOnlyList<int>>? IdsBySegment { get; set; }
+
+    private string MarkerLabel(int segment) => CaptureDeclarationRules.FormatIdRanges(
+        IdsBySegment?.GetValueOrDefault(segment) ?? WallMarkerLayout.Legacy(null).IdsOn(segment));
+}

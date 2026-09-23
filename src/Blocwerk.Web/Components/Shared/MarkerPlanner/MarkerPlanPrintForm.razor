@@ -1,0 +1,154 @@
+@* Print options: mounting holes around every marker, sized for the owner's screws. Saved with the
+   plan (it rides in the JSON) and used by the PDF. *@
+@using System.Globalization
+@using Blocwerk.Core.MarkerPlanning
+
+<div class="form-group">
+    <label class="checkbox-label">
+        <input type="checkbox" checked="@Holes.Enabled" @onchange="e => ToggleAsync(e.Value is true)" />
+        Mounting holes
+    </label>
+    <p class="hint">
+        Prints a screw hole diagonally out from each corner of every marker, the screw head a small gap from the
+        black square and the cut line a small gap beyond the head, so the cut-out stays barely bigger than the marker.
+    </p>
+</div>
+@if (Holes.Enabled)
+{
+    <div class="mplan-grid">
+        <div class="form-group">
+            <label for="mplan-hole">Hole size</label>
+            <select id="mplan-hole" class="form-input" value="@Mm(Holes.HoleDiameterMm)" @onchange="OnHoleChanged">
+                @foreach (var size in MountingHoles.AllowedHoleDiametersMm)
+                {
+                    <option value="@Mm(size)">@Mm(size) mm</option>
+                }
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="mplan-head">Screw head Ø (mm)</label>
+            <input id="mplan-head" class="form-input" inputmode="decimal" value="@headText" @onchange="OnHeadChanged"
+                   aria-describedby="mplan-head-hint" />
+            <p id="mplan-head-hint" class="hint">
+                @Mm(MountingHoles.MinHeadFor(Holes.HoleDiameterMm)) to @Mm(MountingHoles.MaxHeadDiameterMm) mm.
+            </p>
+            @if (headError is not null)
+            {
+                <p class="field-error" role="alert">@headError</p>
+            }
+        </div>
+        <div class="form-group">
+            <label for="mplan-gap-marker">Gap to marker (mm)</label>
+            <input id="mplan-gap-marker" class="form-input" inputmode="decimal" value="@gapMarkerText"
+                   @onchange="e => OnGapChanged(e, toMarker: true)" />
+        </div>
+        <div class="form-group">
+            <label for="mplan-gap-edge">Gap to cut edge (mm)</label>
+            <input id="mplan-gap-edge" class="form-input" inputmode="decimal" value="@gapEdgeText"
+                   @onchange="e => OnGapChanged(e, toMarker: false)" />
+        </div>
+    </div>
+    @if (gapError is not null)
+    {
+        <p class="field-error" role="alert">@gapError</p>
+    }
+    <p class="hint">
+        Holes sit @Mm(MountingHoleLayout.DiagonalOffsetMm(Holes)) mm out from each corner; a 125 mm marker's cut-out is
+        @Mm(125 + (2 * MountingHoleLayout.BorderMm(Holes))) mm. Gaps @Mm(MountingHoles.MinGapMm) to @Mm(MountingHoles.MaxGapMm) mm.
+    </p>
+}
+
+@code {
+    private string headText = string.Empty;
+    private double shownHead = double.NaN;
+    private string? headError;
+    private string gapMarkerText = string.Empty;
+    private string gapEdgeText = string.Empty;
+    private (double Marker, double Edge) shownGaps = (double.NaN, double.NaN);
+    private string? gapError;
+
+    /// <summary>The plan's print options (null = never set).</summary>
+    [Parameter]
+    public PrintOptions? Print { get; set; }
+
+    /// <summary>The print options changed.</summary>
+    [Parameter]
+    public EventCallback<PrintOptions> OnChange { get; set; }
+
+    private MountingHoles Holes => Print?.MountingHoles ?? MountingHoles.Default with { Enabled = false };
+
+    protected override void OnParametersSet()
+    {
+        if (!shownHead.Equals(Holes.ScrewHeadDiameterMm))
+        {
+            shownHead = Holes.ScrewHeadDiameterMm;
+            headText = Mm(shownHead);
+            headError = null;
+        }
+
+        if (!shownGaps.Equals((Holes.GapToMarkerMm, Holes.GapToEdgeMm)))
+        {
+            shownGaps = (Holes.GapToMarkerMm, Holes.GapToEdgeMm);
+            gapMarkerText = Mm(shownGaps.Marker);
+            gapEdgeText = Mm(shownGaps.Edge);
+            gapError = null;
+        }
+    }
+
+    private static string Mm(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
+
+    private Task ToggleAsync(bool enabled) => Emit(Holes with { Enabled = enabled });
+
+    private Task OnHoleChanged(ChangeEventArgs e)
+    {
+        if (PlannerInput.Number(e.Value) is not { } hole || !MountingHoles.IsAllowedHole(hole))
+        {
+            return Task.CompletedTask;
+        }
+
+        // A head that no longer clears the new hole grows to the smallest allowed.
+        var head = Math.Max(Holes.ScrewHeadDiameterMm, MountingHoles.MinHeadFor(hole));
+        return Emit(Holes with { HoleDiameterMm = hole, ScrewHeadDiameterMm = head });
+    }
+
+    private Task OnHeadChanged(ChangeEventArgs e)
+    {
+        headText = e.Value?.ToString() ?? string.Empty;
+        var min = MountingHoles.MinHeadFor(Holes.HoleDiameterMm);
+        if (PlannerInput.Number(headText) is not { } head || head < min || head > MountingHoles.MaxHeadDiameterMm)
+        {
+            headError = $"Type a head diameter between {Mm(min)} and {Mm(MountingHoles.MaxHeadDiameterMm)} mm.";
+            return Task.CompletedTask;
+        }
+
+        headError = null;
+        shownHead = head;
+        return Emit(Holes with { ScrewHeadDiameterMm = head });
+    }
+
+    private Task OnGapChanged(ChangeEventArgs e, bool toMarker)
+    {
+        var text = e.Value?.ToString() ?? string.Empty;
+        if (toMarker)
+        {
+            gapMarkerText = text;
+        }
+        else
+        {
+            gapEdgeText = text;
+        }
+
+        if (PlannerInput.Number(text) is not { } gap || !MountingHoles.IsAllowedGap(gap))
+        {
+            gapError = $"Type a gap between {Mm(MountingHoles.MinGapMm)} and {Mm(MountingHoles.MaxGapMm)} mm.";
+            return Task.CompletedTask;
+        }
+
+        gapError = null;
+        var holes = toMarker ? Holes with { GapToMarkerMm = gap } : Holes with { GapToEdgeMm = gap };
+        shownGaps = (holes.GapToMarkerMm, holes.GapToEdgeMm);
+        return Emit(holes);
+    }
+
+    private Task Emit(MountingHoles holes) => OnChange.InvokeAsync((Print ?? new PrintOptions(null)) with { MountingHoles = holes });
+}

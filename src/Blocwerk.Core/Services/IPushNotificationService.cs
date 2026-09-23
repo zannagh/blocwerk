@@ -39,6 +39,19 @@ public interface IPushNotificationService
     Task NotifyMemberJoinedAsync(Guid wallId, Guid actorId);
 
     /// <summary>
+    /// Tells the admin who started an in-app capture that its 3D wall model is ready. Unlike the other
+    /// notices this goes TO the actor — they asked for the long-running job and are waiting for it.
+    /// </summary>
+    Task NotifyWallModelReadyAsync(Guid wallId, Guid userId);
+
+    /// <summary>
+    /// Tells the same admin that the capture's photo-real (Gaussian splat) view is ready, too. Shares
+    /// the <see cref="Enums.NotificationType.WallModelReady"/> opt-out: it is the second half of the
+    /// same "my 3D capture is done" story, not a new kind of notice.
+    /// </summary>
+    Task NotifyWallPhotoRealReadyAsync(Guid wallId, Guid userId);
+
+    /// <summary>
     /// Broadcasts an "app back online" notice to every subscribed user who has not opted out of
     /// <see cref="NotificationType.AppOnline"/>. For use ONLY after a real downtime window.
     /// </summary>

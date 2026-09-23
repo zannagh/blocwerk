@@ -299,9 +299,10 @@ img.wall-photo {
 .bw-wall-focus img.wall-photo { filter: brightness(0.3) saturate(0.12) contrast(1.15); }
 
 /* Focus mode also thickens hold outlines on the read-only/picking surfaces. The
-   editor is left alone so its drag handles keep their calibrated hit sizes. */
-.bw-wall-focus .photo-section .hold-overlay :is(circle, rect, polygon),
-.bw-wall-focus .photo-picker .hold-overlay :is(circle, rect, polygon) {
+   editor is left alone so its drag handles keep their calibrated hit sizes.
+   A pocket hold draws its visible shape as path.hold-pocket (its polygon.hold-hit is transparent). */
+.bw-wall-focus .photo-section .hold-overlay :is(circle, rect, polygon, path.hold-pocket),
+.bw-wall-focus .photo-picker .hold-overlay :is(circle, rect, polygon, path.hold-pocket) {
     stroke-width: 0.75;
     paint-order: stroke fill;
 }
@@ -390,6 +391,42 @@ img.wall-photo {
     background: var(--accent-soft); border-radius: 999px; padding: 1px 8px;
 }
 .segment-angle-word { font-weight: 400; color: var(--text-secondary); }
+
+/* ========== Printed markers (glyphs) ==========
+   WallMarkerDeclaration (create / settings / every wall update) and the WallMarkerSettings section
+   of the Wall Shape card. Built from the shared form pieces (.checkbox-label, .form-input,
+   .leaderboard-table); only layout lives here. */
+.glyph-declaration { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+/* .form-group label forces display:block; the checkbox row must stay a flex row. */
+.glyph-declaration .checkbox-label { display: flex; margin-bottom: 0; }
+.glyph-size-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.glyph-size-row > label { margin: 0; font-weight: 600; font-size: 0.9rem; color: var(--text); }
+.glyph-size-input { width: 7em; }
+.glyph-size-unit { color: var(--text-secondary); font-size: 0.9rem; }
+.glyph-declaration .hint { margin-top: 0; }
+.glyph-settings { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-light); }
+.glyph-heading { font-size: 1rem; font-weight: 700; color: var(--text-heading); margin-bottom: 8px; }
+.glyph-subheading { font-size: 0.9rem; font-weight: 600; color: var(--text-heading); margin: 14px 0 6px; }
+.glyph-summary { font-size: 0.85rem; color: var(--text); margin-bottom: 6px; }
+.glyph-facet-table { font-size: 0.85rem; }
+.glyph-ok {
+    padding: 8px 12px; margin: 8px 0; border-radius: var(--r-md); font-size: 0.85rem;
+    background: var(--success-bg); color: var(--success-text);
+}
+.glyph-import { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+.glyph-errors { margin: 4px 0 0; padding-left: 18px; }
+.glyph-binding-row {
+    display: grid; grid-template-columns: minmax(6em, 1fr) minmax(9em, 1.4fr); gap: 4px 8px;
+    align-items: center; margin-bottom: 8px;
+}
+.glyph-binding-row > label { margin: 0; font-weight: 600; font-size: 0.85rem; }
+.glyph-binding-measured { grid-column: 1 / -1; font-size: 0.78rem; color: var(--text-secondary); }
+.glyph-binding-measured:empty { display: none; }
+.glyph-history-action { text-align: right; white-space: nowrap; }
+.glyph-active-badge {
+    font-size: 0.72rem; font-weight: 600; color: var(--success-text);
+    background: var(--success-bg); border-radius: 999px; padding: 2px 8px;
+}
 
 /* ============================================================================
    New boulder-setting experience: experience toggle, radial classify overlay.

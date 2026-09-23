@@ -1,0 +1,48 @@
+@* Wall-settings section: remove location data (GPS) and other metadata from the photos this wall ALREADY
+   stores (dry run → apply → report). New uploads are cleaned when they arrive. Admin-only (rendered
+   inside the admin "Wall Shape" card); hidden on a kiosk tablet and behind a share link — the service
+   refuses both anyway. *@
+
+@if (!Hidden)
+{
+<div class="glyph-settings">
+    <h3 class="glyph-heading">Photo location data</h3>
+    <p class="hint">
+        Phone photos can carry the place they were taken. New photos have it removed on upload; this checks
+        the photos stored before that — wall and panel photos of every generation, gallery snapshots and
+        the copies kept in the change history. The pictures themselves are not changed.
+    </p>
+
+    @if (scan is null)
+    {
+        <div class="staged-actions">
+            <button class="btn-secondary" @onclick="ScanAsync" disabled="@busy">Check stored photos</button>
+        </div>
+    }
+    else
+    {
+        <p class="glyph-summary" role="status">@ScanText(scan)</p>
+        <div class="staged-actions">
+            @if (scan.WithMetadata > 0)
+            {
+                <button class="btn-primary" @onclick="ApplyAsync" disabled="@busy">Remove location data</button>
+            }
+            <button class="btn-secondary" @onclick="() => scan = null" disabled="@busy">Close</button>
+        </div>
+    }
+
+    @if (busy)
+    {
+        <p class="loading-small">Going through every stored photo — this can take a minute…</p>
+    }
+
+    @if (failure is not null)
+    {
+        <p class="field-error" role="alert">@failure</p>
+    }
+    else if (message is not null)
+    {
+        <p class="glyph-ok" role="status">@message</p>
+    }
+</div>
+}

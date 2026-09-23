@@ -52,7 +52,12 @@ internal static class DevWallUpdateSupport
             services.GetRequiredService<IHoldDetectionService>(),
             services.GetRequiredService<IHoldOverlapMatcher>(),
             services.GetRequiredService<ILogger<WallBigUpdateService>>(),
-            services.GetRequiredService<IChangeJournal>());
+            services.GetRequiredService<IChangeJournal>(),
+
+            // The real (DI-built) service stages WITH hold enrichment — outlines and, on a glyph wall, the
+            // marker pass that stores the staged photo's marker observations and plane positions. Without
+            // it the harness staged bare detections and a glyph wall's matcher never received a seed.
+            services.GetService<IHoldEnrichmentService>());
         return new DevRunContext(service, owner.Id, factory);
     }
 

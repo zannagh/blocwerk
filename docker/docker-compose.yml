@@ -71,6 +71,26 @@ services:
       # clear it again afterward. Alternative without editing env: `touch dpkeys/maintenance-window`
       # before the deploy — that one-shot marker triggers the all-users broadcast once and self-deletes.
       DEPLOY__MAINTENANCEWINDOW: ${DEPLOY__MAINTENANCEWINDOW:-}
+      # Wall-geometry compute service (3D wall solve + per-facet textures), reached over the internal
+      # compose network only. Speaks the compute job protocol in docker/compute-jobs-protocol.md.
+      # OPT-IN: empty GEOMETRYSERVICE_URL (the default) = the feature is off and the wall-capture UI
+      # hides itself, so a deploy without the compute services starts normally. To enable, set in
+      # docker/.env: COMPOSE_PROFILES=compute, GEOMETRYSERVICE_URL=http://wall-geometry:8000 and
+      # COMPUTE_API_KEY (the same key the wall-geometry service below reads). Do NOT hardcode it here.
+      # The app polls job status and asks for no progress callbacks, so it takes no callback secret.
+      # A URL must be https:// unless the host is localhost or a single-label internal name (like
+      # wall-geometry) — anything else is refused.
+      GEOMETRYSERVICE__URL: ${GEOMETRYSERVICE_URL:-}
+      GEOMETRYSERVICE__APIKEY: ${COMPUTE_API_KEY:-}
+      # Splat worker (photos -> Gaussian splat, docker/splat-worker/). Needs a GPU, so it usually runs on
+      # ANOTHER machine (e.g. the owner's Mac via run-native.sh, behind HTTPS): set SPLATSERVICE_URL in
+      # docker/.env to its https:// base URL. On a Linux GPU host running this whole stack, start the
+      # `gpu` profile below and use http://splat-worker:8100. Empty URL = feature off.
+      # SPLAT_API_KEY must equal the worker's COMPUTE_API_KEY. Do NOT hardcode either value here.
+      SPLATSERVICE__URL: ${SPLATSERVICE_URL:-}
+      SPLATSERVICE__APIKEY: ${SPLAT_API_KEY:-}
+      # Training steps per photo-real job; empty = the worker's default (15000, ~50 min on an M4).
+      SPLATSERVICE__MAXSTEPS: ${SPLAT_MAX_STEPS:-}
     volumes:
       - ./appsettings.json:/app/appsettings.json:ro
       # Persist the DataProtection key ring across redeploys (see AuthenticationServices.cs) so a
@@ -83,6 +103,74 @@ services:
     depends_on:
       - postgres
       - otel-dashboard
+    restart: unless-stopped
+
+  # Wall-geometry service (docker/wall-geometry/): marker observations -> metric 3D wall geometry, and
+  # photos + geometry -> per-facet orthophoto textures. Heavy CPU work runs HERE, never on the user's
+  # device. Internal only: no published port; the app reaches it at http://wall-geometry:8000.
+  # Profile `compute`: NOT started by a plain `docker compose up`; enable it with COMPOSE_PROFILES=compute
+  # in docker/.env (or `docker compose --profile compute up -d`) and set GEOMETRYSERVICE_URL for the app.
+  # The app does not depend_on it: the site must keep working when this experimental service is down.
+  # Single instance by design (in-memory job queue, results expire after RESULT_TTL_S).
+  # Built by .github/workflows/wall-geometry.yml. Production runs a STANDALONE copy of this compose
+  # file: adding this service there is a manual step (docker/wall-geometry/README.md, "Production").
+  wall-geometry:
+    image: ghcr.io/zannagh/blocwerk-geometry:latest
+    profiles: ["compute"]
+    environment:
+      # REQUIRED bearer key on every endpoint except /health: the service refuses to listen on 0.0.0.0
+      # without one (computejobs.serve exits 2), so it never runs unauthenticated. Other containers on
+      # this compose network could otherwise submit jobs. Set it in docker/.env; never commit the value.
+      # Not `:?` on purpose: compose interpolates EVERY service, even ones behind an inactive profile,
+      # so a required variable here would stop deploys that don't use the compute services at all.
+      COMPUTE_API_KEY: ${COMPUTE_API_KEY:-}
+      # HMAC key for signed progress callbacks (X-Blocwerk-Signature). Empty => no callbacks, the app polls.
+      COMPUTE_CALLBACK_SECRET: ${COMPUTE_CALLBACK_SECRET:-}
+      # Callbacks may only go to public addresses, plus these hosts on the private compose network.
+      CALLBACK_ALLOWED_HOSTS: blocwerk
+      RESULT_TTL_S: "3600"
+    # Job inputs/outputs live in the container's /tmp (writable layer, not RAM) and are deleted
+    # RESULT_TTL_S after each job finishes; nothing there is authoritative, so no volume.
+    restart: unless-stopped
+
+  # Splat worker (docker/splat-worker/): wall photos -> Gaussian splat (COLMAP + Brush on Vulkan).
+  # Profile `gpu`: NOT started by a plain `docker compose up` (the production box has no GPU); on a
+  # Linux NVIDIA host with the NVIDIA container toolkit: `docker compose --profile gpu up -d splat-worker`.
+  # (AMD/Intel: replace the `deploy` block with `devices: ["/dev/dri:/dev/dri"]`.) Docker on macOS has
+  # no GPU: on a Mac run docker/splat-worker/run-native.sh instead. Internal only: no published port.
+  # linux/amd64 image, built by .github/workflows/splat-worker.yml.
+  splat-worker:
+    image: ghcr.io/zannagh/blocwerk-splat-worker:latest
+    profiles: ["gpu"]
+    environment:
+      # Required: the worker refuses to listen on 0.0.0.0 without it. Set it in docker/.env.
+      # Not `:?` on purpose: compose interpolates EVERY service, even ones behind a profile, so a required
+      # variable here would force GPU-less boxes (which never start this worker) to invent a dummy key.
+      # The worker itself refuses to bind beyond localhost without a key, so an empty value fails safe.
+      COMPUTE_API_KEY: ${SPLAT_API_KEY:-}
+      COMPUTE_CALLBACK_SECRET: ${SPLAT_CALLBACK_SECRET:-}
+      CALLBACK_ALLOWED_HOSTS: blocwerk
+      RESULT_TTL_S: "3600"
+      SPLAT_TIMEOUT_S: "14400"
+      # Memory (docker/splat-worker/README.md): each job sizes its budget from the container's memory
+      # (cgroup limit / MemAvailable) and fits COLMAP to it; SPLAT_MAX_MEMORY_MB (0 = unset) is a hard
+      # upper bound on that budget. COLMAP's SIFT size / features / matches / threads are upper bounds.
+      SPLAT_MAX_MEMORY_MB: ${SPLAT_MAX_MEMORY_MB:-0}
+      SPLAT_MAX_SWAP_GROWTH_MB: ${SPLAT_MAX_SWAP_GROWTH_MB:-2048}
+      COLMAP_MAX_IMAGE_SIZE: ${COLMAP_MAX_IMAGE_SIZE:-2400}
+      COLMAP_MAX_FEATURES: ${COLMAP_MAX_FEATURES:-8192}
+      COLMAP_MAX_MATCHES: ${COLMAP_MAX_MATCHES:-8192}
+      COLMAP_THREADS: ${COLMAP_THREADS:-4}
+    volumes:
+      # Brush's GPU autotune cache survives restarts (job files are deleted after RESULT_TTL_S anyway).
+      - splat-cache:/var/lib/splat-worker/brush-cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     restart: unless-stopped
 
   # Receives the GitHub releases/packages webhook and, on a new published image, pulls and
@@ -131,3 +219,6 @@ services:
       # identical host paths the daemon expects.
       - ${COMPOSE_DIR}:${COMPOSE_DIR}
     restart: unless-stopped
+
+volumes:
+  splat-cache:

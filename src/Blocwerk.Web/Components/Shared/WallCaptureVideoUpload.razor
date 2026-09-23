@@ -1,0 +1,31 @@
+@using Blocwerk.Core.Capture
+@* The optional walk-along video of a capture draft: its frames only improve the photo-real view (side
+   and below views); the 3D model still comes from the photos. Offered only when a splat worker is
+   configured; rendered inside WallCapturePanel (admin-only, never on a kiosk; the service refuses both). *@
+
+<div class="form-group capture-upload">
+    <label for="capture-video">Walk-along video (optional, for the photo-real view)</label>
+    <input type="file" id="capture-video" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" class="form-input"
+           disabled="@(Disabled || uploading)" @onchange="UploadAsync" />
+    <p class="hint">
+        A 30–90 second video walking slowly along the whole wall (MP4 or MOV, up to @MaxMb MB). The server
+        takes up to @MaxFrames sharp frames from it to fill in the views from the sides and from below. It is
+        not used for the 3D model and is deleted once its frames are taken.
+    </p>
+    @if (uploading)
+    {
+        <progress class="capture-video-progress" max="100" value="@percent" aria-label="Video upload"></progress>
+        <p class="loading-small" role="status">@(percent < 100 ? $"Uploading video… {percent} %" : "Checking the video…")</p>
+    }
+    else if (Video is { } video)
+    {
+        <p class="hint capture-plan-status" role="status">
+            Video: @(video.FileName ?? "walk-along video") (@FormatSize(video.SizeBytes)@(video.DurationSeconds is { } s ? $", {s:0} s" : ""))
+            <button class="btn-link" @onclick="RemoveAsync" disabled="@Disabled">Remove</button>
+        </p>
+    }
+    @if (error is not null)
+    {
+        <p class="field-error" role="alert">@error</p>
+    }
+</div>

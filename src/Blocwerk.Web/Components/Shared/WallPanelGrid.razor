@@ -1,13 +1,16 @@
 @inject IWallPanelService WallPanelService
+@inject IWallGlyphService GlyphService
+@inject ILogger<WallPanelGrid> Logger
 
 @* The big-wall panel topology: live panels laid out at their (Col,Row) with the centre in the
    middle, and a "+" add card at every frontier cell. Picking an image for a "+" stages a panel
-   and drops into the overlap confirmation flow. *@
+   and drops into the overlap confirmation flow. Like every wall update, adding a panel re-declares
+   whether the photo carries printed ArUco markers; a changed answer is saved before staging. *@
 
 @if (_staging is not null)
 {
     <PanelOverlapStepper WallId="WallId" PanelId="_staging.PanelId" Col="_staging.Col" Row="_staging.Row"
-                         Proposals="_staging.Proposals"
+                         Proposals="_staging.Proposals" AlignmentFailed="_staging.AlignmentFailed"
                          OnConfirm="ConfirmStaged" OnDiscard="DiscardStaged" />
 }
 else if (_loading)
@@ -69,6 +72,12 @@ else
             </label>
         }
     </div>
+    @if (markers.Loaded)
+    {
+        <WallMarkerDeclaration Label="@WallMarkerDeclarationState.WholeWallLabel"
+                               Hint="@(markers.HintFor("Defaults to this wall's setting. Tick it if the printed marker sheets are in the photo you add."))"
+                               @bind-Enabled="markers.Enabled" @bind-SizeMm="markers.SizeMm" Disabled="_uploading" />
+    }
     <p class="hint">Add a neighbouring photo at any <strong>+</strong>. Detected holds are matched against the touching panel so shared holds stay one hold.</p>
 }
 
@@ -84,12 +93,19 @@ else
 @code {
     [Parameter] public Guid WallId { get; set; }
 
+    /// <summary>
+    /// A staged panel to open straight into its overlap review on mount (a capture photo just staged
+    /// as a new panel elsewhere on the page) — the same review its Resume button opens.
+    /// </summary>
+    [Parameter] public Guid? AutoResumePanelId { get; set; }
+
     private bool _loading = true;
     private bool _uploading;
     private string? _error;
     private IReadOnlyList<WallPanelInfo> _panels = [];
     private IReadOnlyList<PanelPosition> _frontier = [];
     private StagingContext? _staging;
+    private readonly WallMarkerDeclarationState markers = new();
 
     private sealed class StagingContext
     {
@@ -97,6 +113,7 @@ else
         public required int Col { get; init; }
         public required int Row { get; init; }
         public required IReadOnlyList<OverlapProposalDto> Proposals { get; init; }
+        public bool AlignmentFailed { get; init; }
     }
 
     private int MinCol => _panels.Select(p => p.Col).Concat(_frontier.Select(f => f.Col)).DefaultIfEmpty(0).Min();
@@ -107,18 +124,32 @@ else
     private string CellStyle(int col, int row) =>
         $"grid-column:{col - MinCol + 1};grid-row:{row - MinRow + 1};";
 
-    protected override Task OnInitializedAsync() => Reload();
+    protected override async Task OnInitializedAsync()
+    {
+        await Reload();
+        if (AutoResumePanelId is { } resumeId
+            && _panels.FirstOrDefault(p => p.Id == resumeId && !p.IsLive) is { } staged)
+        {
+            await ResumeStaged(staged.Id, staged.Col, staged.Row);
+        }
+    }
 
     private async Task Reload()
     {
         _loading = true;
         _panels = await WallPanelService.GetPanelsAsync(WallId);
         _frontier = await WallPanelService.GetFrontierPositionsAsync(WallId);
+        await markers.LoadAsync(GlyphService, WallId, Logger);
         _loading = false;
     }
 
     private async Task OnFrontierFile(InputFileChangeEventArgs e, int col, int row)
     {
+        if (_uploading)
+        {
+            return;
+        }
+
         _error = null;
         var file = e.File;
         if (file.Size > 10 * 1024 * 1024)
@@ -127,9 +158,16 @@ else
             return;
         }
 
+        // Set before the awaited marker save so a second pick cannot stage in parallel.
         _uploading = true;
         try
         {
+            _error = await markers.ApplyAsync(GlyphService, WallId, Logger);
+            if (_error is not null)
+            {
+                return;
+            }
+
             using var stream = file.OpenReadStream(10 * 1024 * 1024);
             using var ms = new MemoryStream();
             await stream.CopyToAsync(ms);
@@ -141,6 +179,7 @@ else
                 Col = col,
                 Row = row,
                 Proposals = result.Proposals,
+                AlignmentFailed = result.UnalignedNeighbourIds is { Count: > 0 },
             };
         }
         catch (Exception ex)
@@ -166,6 +205,7 @@ else
                 Col = col,
                 Row = row,
                 Proposals = result.Proposals,
+                AlignmentFailed = result.UnalignedNeighbourIds is { Count: > 0 },
             };
         }
         catch (Exception ex)

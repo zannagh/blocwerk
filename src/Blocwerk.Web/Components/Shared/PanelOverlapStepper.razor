@@ -17,6 +17,15 @@
         <button class="btn-secondary" @onclick="Discard" title="Cancel adding this panel entirely">Discard this panel</button>
     </div>
 
+    @if (AlignmentFailed)
+    {
+        <div class="bigupdate-banner" role="alert">
+            <strong>Couldn't line up this photo with the neighbouring one automatically.</strong>
+            <span>No overlapping holds could be suggested, so link the ones you care about by hand — or retake
+                  the photo with more overlap.</span>
+        </div>
+    }
+
     @if (_loading)
     {
         <p class="loading-small">Loading holds…</p>

@@ -1,5 +1,7 @@
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Capture;
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Detection.Enrichment;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Helpers;
@@ -22,6 +24,7 @@ public partial class WallPanelService : IWallPanelService
     private readonly ILogger<WallPanelService> logger;
     private readonly IKioskContext? kioskContext;
     private readonly IChangeJournal? changeJournal;
+    private readonly IHoldEnrichmentService? holdEnrichment;
 
     /// <summary>Creates the service.</summary>
     /// <remarks>
@@ -43,7 +46,8 @@ public partial class WallPanelService : IWallPanelService
         IHoldOverlapMatcher overlapMatcher,
         ILogger<WallPanelService> logger,
         IKioskContext? kioskContext = null,
-        IChangeJournal? changeJournal = null)
+        IChangeJournal? changeJournal = null,
+        IHoldEnrichmentService? holdEnrichment = null)
     {
         this.dbContextFactory = dbContextFactory;
         this.currentUserService = currentUserService;
@@ -52,17 +56,20 @@ public partial class WallPanelService : IWallPanelService
         this.logger = logger;
         this.kioskContext = kioskContext;
         this.changeJournal = changeJournal;
+        this.holdEnrichment = holdEnrichment;
     }
 
     /// <inheritdoc/>
     public async Task<StagePanelResult> StagePanelAsync(Guid wallId, int col, int row, byte[] image, string contentType)
     {
-        // Stored unmodified: the panel matcher and hold detection below need the full-resolution
-        // upload. The browser gets downscaled variants derived from it (see IImageVariantCache).
+        // Stored at full resolution — the panel matcher and hold detection below need it; the browser
+        // gets downscaled variants (see IImageVariantCache) — but without location or other metadata.
+        // The pixels and the EXIF orientation are untouched, so holds stay where they are drawn.
         var user = await currentUserService.GetCurrentUserAsync();
         await using var db = await dbContextFactory.CreateDbContextAsync();
         db.CurrentUserId = user.Id;
         await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
+        image = StoredPhotoSanitizer.Sanitize(image);
 
         var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId);
         if (wall is null)
@@ -126,14 +133,18 @@ public partial class WallPanelService : IWallPanelService
             db.Holds.Add(hold);
         }
 
+        var enrichment = await holdEnrichment.EnrichSafelyAsync(
+            db, new HoldEnrichmentRequest(image, wall, newHolds, panel.Id, panel.Generation, FromStagedPhoto: true), logger);
+        newHolds.RemoveAll(enrichment.DroppedMarkerHolds.Contains);
         await db.SaveChangesAsync();
 
-        var proposals = await BuildOverlapProposalsAsync(db, wall, panel, image, newHolds);
+        var unaligned = new List<Guid>();
+        var proposals = await BuildOverlapProposalsAsync(db, wall, panel, image, newHolds, unaligned);
 
         logger.LogInformation(
             "Panel {PanelId} staged on wall {WallId} at ({Col},{Row}): {HoldCount} holds, {ProposalCount} proposals",
             panel.Id, wallId, col, row, newHolds.Count, proposals.Count);
-        return new StagePanelResult(panel.Id, proposals);
+        return new StagePanelResult(panel.Id, proposals, unaligned);
     }
 
     /// <inheritdoc/>
@@ -165,26 +176,29 @@ public partial class WallPanelService : IWallPanelService
             .Where(h => h.WallPanelId == panelId && h.Generation == wall.CurrentGeneration)
             .ToListAsync();
 
-        var proposals = await BuildOverlapProposalsAsync(db, wall, panel, panel.StagedPhoto, panelHolds);
+        var unaligned = new List<Guid>();
+        var proposals = await BuildOverlapProposalsAsync(db, wall, panel, panel.StagedPhoto, panelHolds, unaligned);
 
         logger.LogInformation(
             "Panel {PanelId} resumed on wall {WallId} at ({Col},{Row}): {HoldCount} holds, {ProposalCount} proposals",
             panelId, wallId, panel.Col, panel.Row, panelHolds.Count, proposals.Count);
-        return new StagePanelResult(panelId, proposals);
+        return new StagePanelResult(panelId, proposals, unaligned);
     }
 
     /// <summary>
     /// Matches a panel's holds against every orthogonally-adjacent live neighbour and returns the
     /// overlap proposals (neighbour hold ↔ new hold candidates). Shared by staging a fresh panel
     /// and resuming a stranded one, so both paths yield identical proposals for the same DB state.
-    /// A neighbour whose match throws is logged and skipped rather than failing the whole build.
+    /// A neighbour whose match throws is logged, added to <paramref name="unalignedNeighbourIds"/> (so the
+    /// overlap step can say it could not line the photos up) and skipped rather than failing the whole build.
     /// </summary>
     private async Task<List<OverlapProposalDto>> BuildOverlapProposalsAsync(
         BlocwerkDbContext db,
         Wall wall,
         WallPanel panel,
         byte[] image,
-        IReadOnlyList<Hold> panelHolds)
+        IReadOnlyList<Hold> panelHolds,
+        List<Guid> unalignedNeighbourIds)
     {
         var neighborSet = Neighbors(panel.Col, panel.Row).ToHashSet();
         var adjacentLive = await db.WallPanels
@@ -212,10 +226,16 @@ public partial class WallPanelService : IWallPanelService
             var (neighborMatcherHolds, neighborIndex) = BuildMatcherHolds(neighborHolds);
 
             var direction = DirectionFromNeighbor(neighbor.Col, neighbor.Row, panel.Col, panel.Row);
+            var seed = await OverlapSeedLoader.LoadAsync(
+                db,
+                wall,
+                new OverlapSeedSide(neighbor.Id, false, neighborImage, neighborHolds),
+                new OverlapSeedSide(panel.Id, panel.Photo is null, image, panelHolds),
+                logger);
             try
             {
                 var result = overlapMatcher.Match(
-                    neighborImage, neighborMatcherHolds, image, newMatcherHolds, direction);
+                    neighborImage, neighborMatcherHolds, image, newMatcherHolds, direction, null, seed);
                 foreach (var p in result.Proposals)
                 {
                     proposals.Add(new OverlapProposalDto(
@@ -229,9 +249,11 @@ public partial class WallPanelService : IWallPanelService
             }
             catch (Exception ex)
             {
+                unalignedNeighbourIds.Add(neighbor.Id);
                 logger.LogWarning(
-                    ex, "Overlap match failed for panel {PanelId} vs neighbour {NeighborId}",
-                    panel.Id, neighbor.Id);
+                    ex,
+                    "Overlap alignment failed for panel {PanelId} vs neighbour {NeighborId} on wall {WallId}: {Reason}. No link proposals for it",
+                    panel.Id, neighbor.Id, wall.Id, ex.Message);
             }
         }
 
@@ -260,6 +282,7 @@ public partial class WallPanelService : IWallPanelService
         await AddConfirmedLinksAsync(db, wallId, links, removed, user.Id);
         await DeleteRemovedNeighborHoldsAsync(db, wallId, removed, logger);
 
+        await WallMarkerObservationPromotion.PromoteStagedAsync(db, panel.Id, panel.Generation);
         panel.Photo = panel.StagedPhoto;
         panel.PhotoContentType = panel.StagedPhotoContentType;
         panel.StagedPhoto = null;

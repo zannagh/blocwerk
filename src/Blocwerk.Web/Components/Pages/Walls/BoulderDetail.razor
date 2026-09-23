@@ -66,6 +66,16 @@ else
                             </svg>
                         </button>
                     }
+                    @* Only when the wall has a measured 3D model; opens it with this boulder's holds highlighted. *@
+                    <Wall3DLink WallId="WallId" BoulderId="BoulderId" ShareToken="@ShareToken" CssClass="btn-view3d">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"
+                             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M12 2 3 7v10l9 5 9-5V7z" />
+                            <path d="M3 7l9 5 9-5" />
+                            <path d="M12 12v10" />
+                        </svg>
+                        3D
+                    </Wall3DLink>
                     @if (CanFullRevise)
                     {
                         <a href="/walls/@WallId/boulders/@BoulderId/revise" class="btn-revise">Revise</a>
@@ -481,7 +491,7 @@ else
                    set: this legacy single-image branch has always drawn every hold as a plain
                    circle and keeps doing so, so the move is visually a no-op. *@
                 <HoldShape @key="bh.HoldId" X="bh.Hold.X" Y="bh.Hold.Y" Radius="bh.Hold.Radius"
-                           ShapePoints="bh.Hold.ShapePoints"
+                           ShapePoints="bh.Hold.ShapePoints" ShapeHoles="bh.Hold.ShapeHoles"
                            Fill="@BoulderHoldColors.FillFor(bh.Type, bh.Usage)"
                            Stroke="@BoulderHoldColors.Stroke(bh.Type)" StrokeWidth="0.5"
                            Dash="@dash" />
@@ -1362,7 +1372,7 @@ else
             .ToDictionary(
                 g => g.Key,
                 g => g.Select(bh => new PanelHold(
-                    bh.HoldId, bh.Hold.X, bh.Hold.Y, bh.Hold.Radius, bh.Hold.Color, bh.Hold.Category, bh.Hold.ShapePoints, bh.Hold.IsVirtual)).ToList());
+                    bh.HoldId, bh.Hold.X, bh.Hold.Y, bh.Hold.Radius, bh.Hold.Color, bh.Hold.Category, bh.Hold.ShapePoints, bh.Hold.IsVirtual, bh.Hold.ShapeHoles)).ToList());
         foreach (var bh in onPanels)
         {
             _highlightedHoldIds.Add(bh.HoldId);

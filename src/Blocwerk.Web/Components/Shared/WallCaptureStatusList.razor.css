@@ -1,0 +1,11 @@
+.capture-running {
+    margin: 10px 0; padding: 10px 12px; border: 1px solid var(--border-light);
+    border-radius: var(--r-md); background: var(--bg-surface-alt);
+}
+.capture-running-head { display: flex; justify-content: space-between; gap: 8px; font-size: 0.9rem; }
+.capture-progress { width: 100%; height: 8px; margin: 6px 0 4px; accent-color: var(--top-hold, currentColor); }
+.capture-error { font-size: 0.8rem; color: var(--danger-text, var(--text)); margin-top: 2px; }
+.capture-failed { font-weight: 600; color: var(--danger-text, var(--text)); }
+.capture-pending { font-weight: 600; color: var(--text-secondary); }
+.capture-history { margin-top: 10px; }
+.capture-photos-row td { background: var(--bg-surface-alt); }

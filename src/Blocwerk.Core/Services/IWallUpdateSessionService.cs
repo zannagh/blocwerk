@@ -111,4 +111,20 @@ public interface IWallUpdateSessionService
     /// </remarks>
     Task SaveNeighbourLinkSetAsync(Guid wallId, NeighbourLinkSet linkSet);
 
+    /// <summary>
+    /// The open session's "this hold moved" suggestions, best first — the same list on every read, since
+    /// they are computed once (when the matcher first runs) and persisted. Empty when no session is open.
+    /// </summary>
+    Task<IReadOnlyList<RelocationSuggestion>> GetRelocationSuggestionsAsync(Guid wallId);
+
+    /// <summary>
+    /// Answers one suggestion. <see cref="RelocationDecision.Moved"/> records the confirmed carry verdict
+    /// <see cref="CarryKind.Changed"/> old → new (moved == changed: its boulders are flagged for revision on
+    /// promote); <see cref="RelocationDecision.SameHold"/> records <see cref="CarryKind.Carried"/> old → new
+    /// (the photo shifted, the hold did not: carried like a normal match, nothing flagged). Both refuse when
+    /// another old hold already claims the new one. <see cref="RelocationDecision.Dismiss"/> leaves both
+    /// holds as they were; dismissing a previously accepted suggestion puts the old hold back to the
+    /// unconfirmed default (carried in place) while its verdict is still the one that accept wrote.
+    /// </summary>
+    Task DecideRelocationAsync(Guid wallId, Guid suggestionId, RelocationDecision decision);
 }

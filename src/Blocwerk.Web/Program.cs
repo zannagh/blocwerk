@@ -338,6 +338,12 @@ public static class Program
         // wall photo routes above.
         app.MapWallPanelPhotos();
 
+        // Per-facet textures of a solved glyph wall model (3D view); same posture as the panel photos.
+        app.MapWallGeometryTextures();
+
+        // The photo-real (Gaussian splat) scene of the same model; same posture as its textures.
+        app.MapWallGeometrySplats();
+
         // User avatar bytes; same browser-only auth posture as the wall photo routes above.
         app.MapUserAvatars();
 
@@ -380,6 +386,9 @@ public static class Program
         });
 
         app.MapBetaVideoUpload();
+
+        // A capture draft's optional walk-along video (photo-real view only), streamed to disk.
+        app.MapCaptureVideoUpload();
 
         // HLS adaptive-bitrate ladder for a Ready clip that has one. Same wall/share-token gate as the
         // byte route above (see BetaVideoHlsEndpoints); a denial or an MP4-only clip is a 404 and the

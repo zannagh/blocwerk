@@ -1,6 +1,9 @@
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Capture;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Detection.Enrichment;
+using Blocwerk.Core.MarkerPlanning;
 using Blocwerk.Core.Services;
 using Blocwerk.Core.Services.TopLogger;
 using Blocwerk.Core.Telemetry;
@@ -153,6 +156,12 @@ public static class CoreServices
         });
         builder.Services.AddScoped<IKioskService, KioskService>();
         builder.Services.AddScoped<IWallSegmentService, WallSegmentService>();
+        builder.Services.AddScoped<IWallGlyphService, WallGlyphService>();
+        builder.Services.AddScoped<IHoldOutlineUpgradeService, HoldOutlineUpgradeService>();
+        builder.Services.AddScoped<IWallPhotoPrivacyService, WallPhotoPrivacyService>();
+
+        // In-app glyph capture: photos in, 3D model out, computed by the GEOMETRYSERVICE__URL worker.
+        builder.Services.AddWallCapture();
         builder.Services.AddScoped<IProgressionService, ProgressionService>();
         builder.Services.AddScoped<ITrainingService, TrainingService>();
         builder.Services.AddScoped<ISessionService, SessionService>();
@@ -179,7 +188,13 @@ public static class CoreServices
         // Polls the DB for the "how many exist now" telemetry gauges (walls, boulders, users...).
         builder.Services.AddHostedService<TelemetryStatsCollector>();
 
+        // Post-detection hold outlines/fingerprints (all walls) and glyph metrics (glyph walls). Its CV
+        // dependencies come from the HoldDetection project and are optional; stateless, so a singleton.
+        builder.Services.AddSingleton<IHoldEnrichmentService, HoldEnrichmentService>();
+
         builder.Services.AddScoped<IWallService, WallService>();
+        builder.Services.AddWall3DView();
+        builder.Services.AddMarkerPlanning();
         builder.Services.AddScoped<IWallPanelService, WallPanelService>();
         builder.Services.AddScoped<IWallBigUpdateService, WallBigUpdateService>();
         builder.Services.AddScoped<IWallUpdateSessionService, WallUpdateSessionService>();

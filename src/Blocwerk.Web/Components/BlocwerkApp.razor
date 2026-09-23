@@ -38,6 +38,7 @@
     <link rel="stylesheet" href="@Assets["css/training.css"]" />
     <link rel="stylesheet" href="@Assets["css/guides.css"]" />
     <link rel="stylesheet" href="@Assets["css/fullscreen-stage.css"]" />
+    <link rel="stylesheet" href="@Assets["css/marker-planner.css"]" />
     @* The Blazor scoped-CSS bundle (every *.razor.css in this project). It was never linked, which
        made every scoped rule inert — the components that had been migrated to real <button>s were
        silently keeping the user-agent button chrome their .razor.css exists to strip. Last, so a
@@ -135,6 +136,7 @@
     <script src="@Assets["js/image-stitcher.js"]"></script>
     <script src="@Assets["js/file-download.js"]"></script>
     <script src="@Assets["js/beta-video.js"]"></script>
+    <script src="@Assets["js/capture-video.js"]"></script>
     @* Small glue only; it lazy-loads the large lib/hls/hls.min.js on first playback of an HLS clip. *@
     <script src="@Assets["js/beta-hls.js"]"></script>
     @* bwViewport.blockPageZoom() is deliberately NOT called any more. It registered window-level

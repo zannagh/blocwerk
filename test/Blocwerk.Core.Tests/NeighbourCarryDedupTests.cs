@@ -346,7 +346,8 @@ public class NeighbourCarryDedupTests
             byte[] rightImage,
             IReadOnlyList<MatcherHold> rightHolds,
             HoldOverlapDirection direction,
-            ILogger? diag = null)
+            ILogger? diag = null,
+            HoldOverlapSeed? seed = null)
         {
             var n = Math.Min(leftHolds.Count, rightHolds.Count);
             var proposals = new List<HoldOverlapProposal>();

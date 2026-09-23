@@ -1,0 +1,46 @@
+@* A surface seen from above, with you standing below the root surface (dashed): the solid line is
+   this surface turned about the vertical, the tick shows which way its face points. Positive yaw is
+   counter-clockwise from above = turned left (you turn left to face it). Purely illustrative. *@
+@using System.Globalization
+@using Blocwerk.Core.MarkerPlanning
+
+<svg class="mplan-lean-profile mplan-yaw-plan" viewBox="0 0 120 90" role="img" aria-label="Top view: @SurfaceYaw.Describe(YawDeg)">
+    <line class="plumb" x1="@F(CentreX - HalfLength)" y1="@F(CentreY)" x2="@F(CentreX + HalfLength)" y2="@F(CentreY)" />
+    @if (SurfaceYaw.TurnOf(YawDeg) != SurfaceTurn.Straight)
+    {
+        <path class="arc" d="@Arc()" />
+    }
+    <line class="wall" x1="@F(CentreX - (HalfLength * Math.Cos(Rad)))" y1="@F(CentreY + (HalfLength * Math.Sin(Rad)))"
+          x2="@F(CentreX + (HalfLength * Math.Cos(Rad)))" y2="@F(CentreY - (HalfLength * Math.Sin(Rad)))" />
+    <line class="face" x1="@F(CentreX)" y1="@F(CentreY)" x2="@F(CentreX + (FaceLength * Math.Sin(Rad)))" y2="@F(CentreY + (FaceLength * Math.Cos(Rad)))" />
+    <g class="you">
+        <circle cx="@F(CentreX)" cy="74" r="5" />
+        <line x1="@F(CentreX - 9)" y1="74" x2="@F(CentreX + 9)" y2="74" />
+    </g>
+    <text x="@F(CentreX)" y="88" text-anchor="middle">you</text>
+</svg>
+
+@code {
+    private const double CentreX = 60;
+    private const double CentreY = 30;
+    private const double HalfLength = 38;
+    private const double FaceLength = 12;
+    private const double ArcRadius = 24;
+
+    /// <summary>Signed yaw relative to the root surface (+ turned left, − turned right).</summary>
+    [Parameter]
+    public double YawDeg { get; set; }
+
+    private double Rad => Math.Clamp(YawDeg, -180, 180) * Math.PI / 180;
+
+    /// <summary>From the root's right end to this surface's right end (counter-clockwise on screen for a left turn).</summary>
+    private string Arc()
+    {
+        var endX = CentreX + (ArcRadius * Math.Cos(Rad));
+        var endY = CentreY - (ArcRadius * Math.Sin(Rad));
+        var sweep = YawDeg > 0 ? 0 : 1;
+        return $"M {F(CentreX + ArcRadius)} {F(CentreY)} A {F(ArcRadius)} {F(ArcRadius)} 0 0 {sweep} {F(endX)} {F(endY)}";
+    }
+
+    private static string F(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
+}

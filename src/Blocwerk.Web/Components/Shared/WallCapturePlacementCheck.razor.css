@@ -1,0 +1,3 @@
+.capture-placement { margin-top: 4px; }
+.capture-placement-head { font-size: 0.85rem; font-weight: 600; color: var(--warning-text, var(--text)); }
+.capture-placement-list { margin: 2px 0 0; padding-left: 1.2em; font-size: 0.8rem; }

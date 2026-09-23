@@ -1,0 +1,82 @@
+@using Blocwerk.Core.Capture
+@using Blocwerk.Core.Entities
+@* The running capture (stage + progress, refreshed every ~2 s while this is open) and the wall's
+   capture history with any error in plain words. *@
+
+@if (running is not null)
+{
+    <div class="capture-running" role="status" aria-live="polite">
+        <div class="capture-running-head">
+            <strong>@StatusLabel(running.Status)</strong>
+            <span>@((int)Math.Round(running.Progress * 100))%</span>
+        </div>
+        <progress class="capture-progress" max="1" value="@running.Progress.ToString(System.Globalization.CultureInfo.InvariantCulture)"></progress>
+        <div class="hint">@(running.Stage ?? "Working…") · you can leave this page; you'll get a notification when it's done.</div>
+    </div>
+}
+
+@if (failure is not null)
+{
+    <p class="field-error" role="alert">@failure</p>
+}
+
+@if (history.Count > 0)
+{
+    <details class="segment-settings capture-history" open="@(running is null && history[0].Error is not null)">
+        <summary>
+            Capture history
+            <span class="segment-settings-count">@history.Count</span>
+        </summary>
+        <div class="leaderboard-scroll">
+            <table class="leaderboard-table">
+                <thead>
+                    <tr>
+                        <th scope="col">Started</th>
+                        <th scope="col" class="num">Photos</th>
+                        <th scope="col">Result</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var capture in history)
+                    {
+                        <tr @key="capture.Id">
+                            <td><LocalTime Value="@capture.CreatedAt" Format="LocalTimeFormat.DateTime" /></td>
+                            <td class="num">@capture.PhotoCount</td>
+                            <td>
+                                <span class="@StatusClass(capture.Status)">@StatusLabel(capture.Status)</span>
+                                @if (capture.Error is not null)
+                                {
+                                    <div class="capture-error">@capture.Error</div>
+                                }
+                                @if (capture.Notes is not null)
+                                {
+                                    <div class="hint">@capture.Notes</div>
+                                }
+                                @if (capture.PlacementCheck is { } check)
+                                {
+                                    <WallCapturePlacementCheck Check="check" />
+                                }
+                                @if (!capture.IsRunning && capture.PhotoCount > 0)
+                                {
+                                    <button class="btn-link" @onclick="() => TogglePhotosAsync(capture.Id)"
+                                            aria-expanded="@(openCaptureId == capture.Id ? "true" : "false")">
+                                        @(openCaptureId == capture.Id ? "Hide photos" : "Use as panel photos…")
+                                    </button>
+                                }
+                            </td>
+                        </tr>
+                        @if (openCaptureId == capture.Id && openPhotos is not null)
+                        {
+                            <tr class="capture-photos-row" @key="(capture.Id, true)">
+                                <td colspan="3">
+                                    <WallCapturePanelPicker WallId="WallId" CaptureId="capture.Id" Photos="openPhotos" StartOpen="true"
+                                                            OnPanelStaged="OnPanelStaged" OnStartWallUpdate="OnStartWallUpdate" />
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </details>
+}

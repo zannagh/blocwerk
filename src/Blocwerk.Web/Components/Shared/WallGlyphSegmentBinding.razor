@@ -1,0 +1,79 @@
+@* Ties each drawn wall segment to the marker segment printed on it (the solved segment index: the marker plan's segment, or marker id / 6 without a plan), so the solver's
+   measured angle and yaw land on the right segment. The declared angle is never overwritten. *@
+
+<details class="segment-settings glyph-binding">
+    <summary>Match segments to markers</summary>
+    <p class="hint">
+        Pick which marker segment sits on each of your segments. Its measured angle is then shown next
+        to the angle you set; your own angle is kept.
+    </p>
+    @foreach (var segment in Segments)
+    {
+        <div class="glyph-binding-row">
+            <label for="@($"glyph-bind-{segment.Id:N}")">@segment.Name</label>
+            @* Keyed on a version bumped after every save attempt and every reload: `selected=` alone is
+               not re-applied when the re-render carries the same attributes, so after a failed save the
+               browser would keep showing the unsaved choice. A fresh element always shows the stored one. *@
+            <select @key="(segment.Id, version)" id="@($"glyph-bind-{segment.Id:N}")" class="form-input" disabled="@Disabled"
+                    @onchange="e => BindAsync(segment.Id, e.Value?.ToString())">
+                <option value="" selected="@(segment.MarkerSegmentIndex is null)">Not bound</option>
+                @foreach (var index in MarkerSegmentIndexes)
+                {
+                    <option value="@index" selected="@(segment.MarkerSegmentIndex == index)">Marker segment @index</option>
+                }
+            </select>
+            <span class="glyph-binding-measured">
+                @if (segment.MeasuredAngle is not null)
+                {
+                    <span>@GlyphFormat.Degrees(segment.MeasuredAngle) measured (you set @(segment.Angle)&deg;)</span>
+                }
+            </span>
+        </div>
+    }
+</details>
+
+@code {
+    /// <summary>The wall's climbable segments.</summary>
+    [Parameter, EditorRequired]
+    public IReadOnlyList<WallSegment> Segments { get; set; } = [];
+
+    /// <summary>The active model, whose segment indexes are offered.</summary>
+    [Parameter, EditorRequired]
+    public ActiveWallGeometry Active { get; set; } = default!;
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    /// <summary>Raised with a segment id and the chosen marker segment (null = unbind).</summary>
+    [Parameter]
+    public EventCallback<(Guid SegmentId, int? MarkerSegmentIndex)> OnBind { get; set; }
+
+    private int version;
+    private IReadOnlyList<WallSegment>? renderedSegments;
+
+    private IEnumerable<int> MarkerSegmentIndexes => Active.Facets.Select(f => f.SegmentIndex).Distinct().Order();
+
+    protected override void OnParametersSet()
+    {
+        // A reload hands in a new list: rebuild the selects so they show what is actually stored.
+        if (!ReferenceEquals(renderedSegments, Segments))
+        {
+            renderedSegments = Segments;
+            version++;
+        }
+    }
+
+    private async Task BindAsync(Guid segmentId, string? value)
+    {
+        int? index = int.TryParse(value, out var parsed) ? parsed : null;
+        try
+        {
+            await OnBind.InvokeAsync((segmentId, index));
+        }
+        finally
+        {
+            // Saved or not, the parent has reloaded by now; re-create the select from the stored value.
+            version++;
+        }
+    }
+}

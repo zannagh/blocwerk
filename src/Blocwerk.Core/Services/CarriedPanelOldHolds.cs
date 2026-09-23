@@ -20,9 +20,15 @@ namespace Blocwerk.Core.Services;
 /// The old live holds on this panel that the update will carry — after the updated-panel scope and the
 /// crash-mat false-positive drop, i.e. exactly the set the matcher and the promote work with.
 /// </param>
+/// <param name="AlignmentFailed">
+/// True when the matcher could not line this panel's new photo up with its previous one (in this run or an
+/// earlier one of the same session): every old hold on it is carried at its OLD coordinates, unconfirmed,
+/// and the promote flags those blind carries for review.
+/// </param>
 public record CarriedPanelOldHolds(
     int Col,
     int Row,
     Guid? LivePanelId,
     Guid StagedPanelId,
-    IReadOnlyList<PanelHold> OldHolds);
+    IReadOnlyList<PanelHold> OldHolds,
+    bool AlignmentFailed = false);

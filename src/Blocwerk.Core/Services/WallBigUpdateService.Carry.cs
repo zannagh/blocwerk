@@ -462,6 +462,10 @@ public partial class WallBigUpdateService
         successor.ShapePoints = polygon
             .Select(v => new ShapePoint { Dx = v.X - successor.X, Dy = v.Y - successor.Y })
             .ToList();
+
+        // Pocket holes belong to the outline they were detected in (the clone's old one, or the twin's fresh
+        // one) and are not warped with it — drop them; re-detection on the new photo restores them.
+        successor.ShapeHoles = null;
     }
 
     /// <summary>

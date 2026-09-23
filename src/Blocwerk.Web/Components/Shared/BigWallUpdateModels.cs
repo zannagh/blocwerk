@@ -43,3 +43,23 @@ public record CarryoverOutcome(
     List<CarryoverDecision> Carryover,
     List<Guid> AcceptedNewCenterHoldIds,
     List<Guid> RemovedNewCenterHoldIds);
+
+/// <summary>
+/// One row of the carryover review's "Possibly moved" list: a relocation suggestion with both holds
+/// resolved on the panes it is drawn over.
+/// </summary>
+/// <param name="Suggestion">The persisted suggestion.</param>
+/// <param name="Number">The row's 1-based number, also drawn as the badge on both panes.</param>
+/// <param name="OldHold">The disappeared old hold (on the "before" photo).</param>
+/// <param name="NewHold">The appeared staged hold (on the "after" photo).</param>
+/// <param name="OldLabel">The old hold's label, as the rest of the review names it.</param>
+/// <param name="OnBoulder">Whether a live boulder uses the old hold — accepting flags it for revision.</param>
+/// <param name="Claimed">Whether another old hold's verdict already points at the new hold.</param>
+public record RelocationRow(
+    RelocationSuggestion Suggestion,
+    int Number,
+    PanelHold OldHold,
+    PanelHold NewHold,
+    string OldLabel,
+    bool OnBoulder,
+    bool Claimed);

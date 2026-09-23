@@ -34,16 +34,26 @@ else if (_crossGenOpen)
 else
 {
     <div class="bigupdate-phase">
-        @if (AutoMatchDegraded)
+        @* A failed alignment carries every old hold at its OLD position — never silently: the banner says
+           so, the holds stay in the review queue, and the promote flags the blind carries for review. *@
+        @if (DisplayedPanelUnaligned)
         {
-            <div class="bigupdate-banner" role="status">
-                <strong>Automatic matching unavailable — map changed holds manually.</strong>
-                <span>Every old hold is already carried in place; edit the new image and mark
-                      changed holds yourself.</span>
-                @if (!string.IsNullOrWhiteSpace(Session.AutoMatchMessage))
-                {
-                    <span class="bigupdate-banner-detail">@Session.AutoMatchMessage</span>
-                }
+            <div class="bigupdate-banner" role="alert">
+                <strong>@(Session.AutoMatchStatus == AutoMatchStatus.Unavailable
+                    ? "Automatic matching isn't available right now — the holds are shown where they were before."
+                    : "Couldn't line up this photo with the previous one automatically — its holds are shown where they were before.")</strong>
+                <span>Check them, or retake the photo with more overlap. None of them counts as reviewed until
+                      you confirm it.</span>
+            </div>
+        }
+
+        @foreach (var unaligned in OtherUnalignedPanels)
+        {
+            <div class="bigupdate-banner" role="alert">
+                <strong>Couldn't line up the new photo of panel (@unaligned.Col, @unaligned.Row) with the previous one automatically.</strong>
+                <span>Its @unaligned.OldHolds.Count holds are kept where they were before and will be marked
+                      "needs review" on the wall after this update. Check them there, or retake that photo
+                      with more overlap.</span>
             </div>
         }
 
@@ -135,6 +145,9 @@ else
             </button>
         </div>
 
+        <RelocationSuggestions Rows="RelocationRows" OldPhotoUrl="@OldPhotoUrl" NewPhotoUrl="@NewPhotoUrl"
+                               Busy="relocationBusy" OnDecide="DecideRelocationAsync" OnShow="ShowRelocation" />
+
         @if (!string.IsNullOrEmpty(_saveError))
         {
             <p class="staged-hint danger">@_saveError</p>
@@ -147,13 +160,17 @@ else
             <span class="bigupdate-chip new">@NewCount new</span>
         </div>
 
-        <div class="panel-stepper-pair">
+        <div class="panel-stepper-pair" @ref="relocationPanes">
             <PanelImageView WallId="WallId" Caption="Old wall (before)"
                             PhotoUrl="@OldPhotoUrl"
-                            Holds="_oldHolds" HoldColors="OldColors()" />
+                            Holds="_oldHolds" HoldColors="OldColors()"
+                            HighlightHoldId="OldHighlightId" BadgeNumber="RelocationBadge"
+                            FocusKey="relocationFocusKey" FocusPoint="OldFocusPoint" />
             <PanelImageView WallId="WallId" Caption="New centre (after)"
-                            PhotoUrl="@($"/api/walls/{WallId}/panels/{CenterPanelId}/staged-photo")"
+                            PhotoUrl="@NewPhotoUrl"
                             Holds="_newHolds" HoldColors="NewColors()"
+                            HighlightHoldId="NewHighlightId" BadgeNumber="RelocationBadge"
+                            FocusKey="relocationFocusKey" FocusPoint="NewFocusPoint"
                             Editable="true" AddMode="@_touchup.AddMode"
                             SelectedHoldId="_touchup.SelectedHoldId"
                             ExactHitTargets="@_touchup.DeleteMode"

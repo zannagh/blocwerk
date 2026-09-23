@@ -1,0 +1,52 @@
+@page "/walls/{WallId:guid}/3d"
+@page "/walls/{WallId:guid}/shared/{ShareToken}/3d"
+@rendermode InteractiveServer
+@using Blocwerk.Core.Geometry.View3D
+@implements IAsyncDisposable
+
+<PageTitle>@(_result?.WallName ?? "Wall") in 3D - Blocwerk</PageTitle>
+
+<SectionContent SectionName="TopBarTitle">@(_result?.WallName ?? "Wall") · 3D</SectionContent>
+
+@if (_result is null)
+{
+    <p class="loading">Loading...</p>
+}
+else if (_result.Status != Wall3DViewStatus.Ok || _result.View is null)
+{
+    <div class="wall3d-message">
+        <div class="empty-state">
+            <p>@StatusMessage</p>
+            <a href="@BackUrl" class="back-link">&larr; @BackLabel</a>
+        </div>
+    </div>
+}
+else
+{
+    var view = _result.View;
+    <div class="wall3d-page">
+        <div class="wall3d-head">
+            <a href="@BackUrl" class="back-link">&larr; @BackLabel</a>
+            @if (view.BoulderName is not null)
+            {
+                <span class="wall3d-boulder">@view.BoulderName</span>
+                <span class="wall3d-legend" aria-label="Legend">
+                    <span><i style="background:@BoulderHoldColors.Start"></i>Start</span>
+                    <span><i style="background:@BoulderHoldColors.Normal"></i>Hand</span>
+                    <span><i style="background:@BoulderHoldColors.Foot"></i>Foot</span>
+                    <span><i style="background:@BoulderHoldColors.Top"></i>Top</span>
+                </span>
+            }
+            @if (_mountFailed)
+            {
+                <span class="wall3d-note">This device could not start the 3D view (WebGL is unavailable).</span>
+            }
+            @if (view.UnplacedHoldCount > 0)
+            {
+                <span class="wall3d-note">@UnplacedText(view.UnplacedHoldCount)</span>
+            }
+        </div>
+        @* Rendered once and left alone: wall3d.js owns everything inside it. *@
+        <div class="wall3d-stage" @ref="_stage"></div>
+    </div>
+}

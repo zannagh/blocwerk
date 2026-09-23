@@ -1,0 +1,81 @@
+@* The wall's surfaces as a list: pick one, attach a new rectangle or triangle to the picked one, or
+   delete it (never the root, never one others hang off). *@
+@using Blocwerk.Core.MarkerPlanning
+
+<div class="mplan-segment-list">
+    <ul class="mplan-chips" aria-label="Surfaces">
+        @foreach (var segment in Plan.Segments)
+        {
+            var count = Plan.Markers.Count(m => m.Segment == segment.Index);
+            <li>
+                <button type="button" class="mplan-chip @(segment.Index == Selected ? "sel" : null)"
+                        aria-pressed="@(segment.Index == Selected)" @onclick="() => OnSelect.InvokeAsync(segment.Index)">
+                    #@segment.Index @segment.Name
+                    <span class="mplan-chip-meta">@(segment.Shape == SegmentShape.Triangle ? "◺" : "▭") · @SurfaceAngle.Describe(segment.OverhangDeg) · @count</span>
+                </button>
+            </li>
+        }
+    </ul>
+    <div class="mplan-actions">
+        <button type="button" class="btn-secondary" disabled="@(Selected is null)" @onclick="() => AddAsync(SegmentShape.Rectangle)">+ Rectangle</button>
+        <button type="button" class="btn-secondary" disabled="@(Selected is null)" @onclick="() => AddAsync(SegmentShape.Triangle)">+ Triangle</button>
+        <button type="button" class="btn-danger" disabled="@(Selected is null)" @onclick="DeleteAsync">Delete surface</button>
+    </div>
+    @if (Selected is not null)
+    {
+        <p class="hint">New surfaces attach to the selected one (#@Selected) on its next free edge. Adjust the edge, offset and size below.</p>
+    }
+    @if (refusal is not null)
+    {
+        <p class="field-error" role="alert">@refusal</p>
+    }
+</div>
+
+@code {
+    private string? refusal;
+
+    /// <summary>The plan being edited.</summary>
+    [Parameter]
+    [EditorRequired]
+    public MarkerPlan Plan { get; set; } = default!;
+
+    /// <summary>The selected segment index.</summary>
+    [Parameter]
+    public int? Selected { get; set; }
+
+    /// <summary>A segment was picked.</summary>
+    [Parameter]
+    public EventCallback<int> OnSelect { get; set; }
+
+    /// <summary>The plan changed; the payload carries the new plan and the segment to select.</summary>
+    [Parameter]
+    public EventCallback<(MarkerPlan Plan, int? Select)> OnChange { get; set; }
+
+    private async Task AddAsync(SegmentShape shape)
+    {
+        refusal = null;
+        if (Selected is not { } parent)
+        {
+            return;
+        }
+
+        var plan = PlanSegmentEdits.AddSegment(Plan, parent, shape, out var index);
+        await OnChange.InvokeAsync((plan, index));
+    }
+
+    private async Task DeleteAsync()
+    {
+        refusal = null;
+        if (Selected is not { } index)
+        {
+            return;
+        }
+
+        var plan = PlanSegmentEdits.DeleteSegment(Plan, index, out refusal);
+        if (plan is not null)
+        {
+            var parent = Plan.Segments.FirstOrDefault(s => s.Index == index)?.AttachedTo?.ParentIndex;
+            await OnChange.InvokeAsync((plan, parent));
+        }
+    }
+}

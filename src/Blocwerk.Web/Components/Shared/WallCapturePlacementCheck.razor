@@ -1,0 +1,35 @@
+@using Blocwerk.Core.MarkerPlanning
+@* "Did I place the markers right?" — the marker plan against what the solve measured, as a short list. *@
+
+<div class="capture-placement" role="note">
+    @if (Check.AllGood)
+    {
+        <div class="hint">
+            Marker placement matches the plan (@Check.CheckedMarkers of @Check.PlannedMarkers markers compared).
+        </div>
+    }
+    else
+    {
+        <div class="capture-placement-head">
+            Marker placement: @Check.Findings.Count @(Check.Findings.Count == 1 ? "thing" : "things") to check
+            (@Check.SolvedMarkers of @Check.PlannedMarkers planned markers placed)
+        </div>
+        <ul class="capture-placement-list">
+            @foreach (var finding in Check.Findings.Take(MaxShown))
+            {
+                <li>@finding.Message</li>
+            }
+            @if (Check.Findings.Count > MaxShown)
+            {
+                <li>…and @(Check.Findings.Count - MaxShown) more.</li>
+            }
+        </ul>
+    }
+</div>
+
+@code {
+    private const int MaxShown = 12;
+
+    [Parameter, EditorRequired]
+    public MarkerPlacementCheck Check { get; set; } = default!;
+}

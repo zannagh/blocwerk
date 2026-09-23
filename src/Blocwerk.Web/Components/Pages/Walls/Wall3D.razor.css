@@ -1,0 +1,37 @@
+/* The 3D stage takes the whole content area under the top bar, above the tab bar. The overlay
+   inside the stage is styled by wwwroot/css/wall3d.css, which wall3d.js injects. */
+.wall3d-page {
+    display: flex;
+    flex-direction: column;
+    height: calc(100dvh - var(--topbar-h, 56px) - var(--bottomnav-h, 0px));
+    min-height: 360px;
+}
+
+.wall3d-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    padding: 8px 12px;
+}
+
+.wall3d-boulder {
+    font-family: var(--font-display);
+    font-weight: 700;
+    color: var(--text-heading);
+}
+
+.wall3d-legend { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; font-size: 0.8rem; color: var(--text-secondary); }
+.wall3d-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.wall3d-legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+
+.wall3d-note { font-size: 0.8rem; color: var(--text-secondary); }
+
+.wall3d-stage {
+    flex: 1;
+    min-height: 0;
+    border-top: 1px solid var(--border);
+}
+
+.wall3d-message { padding: 16px; }
+.wall3d-message .empty-state p { margin: 0 0 12px; }

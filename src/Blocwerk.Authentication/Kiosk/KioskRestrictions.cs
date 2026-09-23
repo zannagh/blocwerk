@@ -138,6 +138,10 @@ public static class KioskRestrictions
         "/about",
         "/privacy",
 
+        // Where the cookie handler lands a forbidden signed-in user. Static text and a link home;
+        // kiosk refusals are answered by the middleware and never come here.
+        "/access-denied",
+
         // The keyboard-shortcut reference. Needed as a PREFIX, not just as an allowed page type:
         // the `?` key opens /help/keyboard in a NEW TAB, which is a fresh HTTP GET that hits the
         // middleware and never the in-circuit route gate. Without this the page entry below would
@@ -176,6 +180,10 @@ public static class KioskRestrictions
         "/css",
         "/js",
         "/icons",
+
+        // Vendored libraries under wwwroot/lib: three.js and spark for the 3D view (an allowed kiosk
+        // page), hls.js for beta clips. Without this every module import there is a 302.
+        "/lib",
         "/manifest.webmanifest",
         "/robots.txt",
         "/offline.html",
@@ -203,6 +211,7 @@ public static class KioskRestrictions
         "Blocwerk.Web.Components.Pages.Home",
         "Blocwerk.Web.Components.Pages.About",
         "Blocwerk.Web.Components.Pages.Privacy",
+        "Blocwerk.Web.Components.Pages.AccessDenied",
         "Blocwerk.Web.Components.Pages.Activity",
         "Blocwerk.Web.Components.Pages.ActivityView",
         "Blocwerk.Web.Components.Pages.HomeWall",
@@ -251,6 +260,7 @@ public static class KioskRestrictions
         "Blocwerk.Web.Components.Pages.Training.Pullups",
         "Blocwerk.Web.Components.Pages.Walls.WallList",
         "Blocwerk.Web.Components.Pages.Walls.WallDetail",
+        "Blocwerk.Web.Components.Pages.Walls.Wall3D",
         "Blocwerk.Web.Components.Pages.Walls.BoulderCreate",
         "Blocwerk.Web.Components.Pages.Walls.BoulderDetail",
         "Blocwerk.Web.Components.Pages.Walls.BoulderRevise",
@@ -284,6 +294,11 @@ public static class KioskRestrictions
 
         // A wall the tablet is not registered to, and cannot be.
         "Blocwerk.Web.Components.Pages.Walls.WallCreate",
+
+        // The marker planner: an owner-desk task (drawing the wall, printing marker sheets) with
+        // nothing for a tablet to do. /walls is an allowed PREFIX, so this entry is what refuses it in
+        // circuit; saving is refused at MarkerPlanService too, which is the real gate.
+        "Blocwerk.Web.Components.Pages.Walls.WallMarkerPlanner",
 
         // The APPROVING half of device pairing. This page is for a wall admin on their own phone,
         // scanning the QR the tablet is showing; a tablet has no business on it. Approving mints a
@@ -325,6 +340,11 @@ public static class KioskRestrictions
             return true;
         }
 
+        if (IsScopedCssBundle(path.Value))
+        {
+            return false;
+        }
+
         return !MatchesAny(path, AllowedPathPrefixes);
     }
 
@@ -364,4 +384,14 @@ public static class KioskRestrictions
 
         return false;
     }
+
+    /// <summary>
+    /// The scoped-CSS bundle, <c>/Blocwerk.Web.styles.css</c> or its fingerprinted
+    /// <c>/Blocwerk.Web.{hash}.styles.css</c>. It sits at the site root, so no segment prefix can
+    /// allow it, and without it every page's <c>.razor.css</c> rules are missing on a tablet.
+    /// </summary>
+    private static bool IsScopedCssBundle(string path) =>
+        path.IndexOf('/', 1) < 0
+        && path.StartsWith("/Blocwerk.Web.", StringComparison.OrdinalIgnoreCase)
+        && path.EndsWith(".styles.css", StringComparison.OrdinalIgnoreCase);
 }

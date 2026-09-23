@@ -87,7 +87,7 @@
             }
             else
             {
-                <BigWallUpdateUploader @ref="_uploader" OnStart="OnUpload" OnCancel="Close" />
+                <BigWallUpdateUploader @ref="_uploader" WallId="WallId" Prefill="Prefill" OnStart="OnUpload" OnCancel="Close" />
             }
             break;
 
@@ -127,6 +127,7 @@
                 </div>
                 <PanelOverlapStepper @key="n.PanelId" WallId="WallId" PanelId="n.PanelId"
                                      Col="n.Col" Row="n.Row" Proposals="n.Proposals" NeighbourStaged="true"
+                                     AlignmentFailed="n.AlignmentFailed"
                                      Restored="RestoredFor(n.PanelId)"
                                      OnConfirm="OnNeighbourConfirm" OnProgress="OnNeighbourProgress"
                                      OnDiscard="OnNeighbourSkip" />

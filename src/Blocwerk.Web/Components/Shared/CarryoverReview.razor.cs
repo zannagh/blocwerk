@@ -66,7 +66,15 @@ public partial class CarryoverReview
         ? $"/api/walls/{WallId}/panels/{livePanelId}/photo"
         : $"/api/walls/{WallId}/photo";
 
-    private bool AutoMatchDegraded => Session.AutoMatchStatus != AutoMatchStatus.Ok;
+    // The displayed panel's photo could not be aligned with its previous one (in this run or an earlier one
+    // of the session), so its old holds sit at their OLD positions.
+    private bool DisplayedPanelUnaligned =>
+        Session.AutoMatchStatus != AutoMatchStatus.Ok || _displayedPanel?.AlignmentFailed == true;
+
+    // Re-photographed panels this pane does not draw whose alignment failed: they get a banner of their own,
+    // since there is no other place in the review that would show them.
+    private IEnumerable<CarriedPanelOldHolds> OtherUnalignedPanels =>
+        (Session.CarriedPanels ?? []).Where(p => p.AlignmentFailed && p != _displayedPanel && p.OldHolds.Count > 0);
 
     protected override async Task OnInitializedAsync()
     {
@@ -115,6 +123,10 @@ public partial class CarryoverReview
         // Who already reviewed what, on this shared per-wall session. Read once here: a second admin's
         // confirmations show up on load or refresh, never live.
         await LoadConfirmationsAsync();
+
+        // The "Possibly moved" suggestions, computed once per session by the matcher run; see the
+        // Relocations partial.
+        await LoadRelocationsAsync();
 
         // Derive the old holds that actually need the user's eyes (no proposal / low confidence / high
         // residual), boulder holds first, minus everything already reviewed. Rebuilt after every

@@ -572,6 +572,11 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     margin-bottom: 4px;
 }
 svg.stat-value { margin-inline: auto; }
+/* "View in 3D" under the wall stats (Wall3DLink's default btn-secondary look, as a link). */
+a.wall3d-link {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    box-sizing: border-box; text-decoration: none; margin-bottom: 20px;
+}
 .stat-label {
     font-size: 0.7rem;
     font-weight: 600;
@@ -1110,6 +1115,13 @@ svg.stat-value { margin-inline: auto; }
     display: inline-block; padding: 8px 16px; background: #E65100; color: white;
     text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 0.85rem;
 }
+/* "3D" next to Revise on the boulder page (Wall3DLink): an outlined pill, secondary to Revise. */
+.btn-view3d {
+    display: inline-flex; align-items: center; gap: 5px; min-height: 36px; padding: 6px 12px;
+    background: var(--bg-surface); color: var(--text-heading); border: 1px solid var(--border);
+    text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 0.85rem;
+}
+.btn-view3d:hover { background: var(--bg-surface-alt); }
 
 .bw-grade-proposal-notice {
     padding: 12px 14px; border-radius: 8px; margin-bottom: 12px; font-size: 0.9rem;
@@ -2740,6 +2752,8 @@ html.bw-compact {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 10px;
+    /* wallEditor.revealElement scrolls the panes to the top: keep them clear of the fixed top bar. */
+    scroll-margin-top: calc(var(--topbar-h, 56px) + 8px);
 }
 /* Single full-width panel (the touch-up step): the lone PanelImageView spans the whole width
    instead of sitting half-width in the left column of the side-by-side comparison grid. */
@@ -3086,6 +3100,21 @@ html.bw-fullscreen .panel-link-dialog .panel-step-viewport {
     border-color: var(--status-success);
     background: color-mix(in srgb, var(--status-success) 12%, var(--bg-surface));
 }
+/* A banner the user must not miss (failed alignment, reset verdicts): the danger tone, unlike the
+   warning-toned attention headline, because what it describes happened without the user's say. */
+.bigupdate-banner {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px 14px;
+    margin: 6px 0 10px;
+    border-radius: var(--r-sm);
+    border: 1px solid var(--status-danger);
+    background: color-mix(in srgb, var(--status-danger) 10%, var(--bg-surface));
+    color: var(--text-primary);
+}
+.bigupdate-banner span { font-size: 0.88rem; color: var(--text-secondary); }
+.bigupdate-banner .btn-secondary { width: auto; align-self: flex-start; margin-bottom: 0; }
 .bigupdate-attention-head { font-size: 1.02rem; color: var(--text-primary); }
 .bigupdate-attention-sub { font-size: 0.85rem; color: var(--text-secondary); }
 

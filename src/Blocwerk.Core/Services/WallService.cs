@@ -1,5 +1,6 @@
 ﻿using System.Security.Cryptography;
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Capture;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
@@ -20,6 +21,7 @@ public class WallService : IWallService
     private readonly IKioskContext? _kioskContext;
     private readonly IPushNotificationService? _pushNotificationService;
     private readonly IChangeJournal? _changeJournal;
+    private readonly IHoldEnrichmentService? holdEnrichment;
 
     /// <summary>Creates the service.</summary>
     /// <remarks>
@@ -36,7 +38,8 @@ public class WallService : IWallService
         ILogger<WallService> logger,
         IKioskContext? kioskContext = null,
         IPushNotificationService? pushNotificationService = null,
-        IChangeJournal? changeJournal = null)
+        IChangeJournal? changeJournal = null,
+        IHoldEnrichmentService? holdEnrichment = null)
     {
         _dbContextFactory = dbContextFactory;
         _currentUserService = currentUserService;
@@ -46,6 +49,7 @@ public class WallService : IWallService
         _kioskContext = kioskContext;
         _pushNotificationService = pushNotificationService;
         _changeJournal = changeJournal;
+        this.holdEnrichment = holdEnrichment;
     }
 
     public async Task<Wall> CreateWallAsync(string name, string? description, int angle = 0)
@@ -315,8 +319,9 @@ public class WallService : IWallService
 
     public async Task<Wall> UploadPhotoAsync(Guid wallId, byte[] photo, string contentType, bool autoDetect = true)
     {
-        // The upload is stored byte-for-byte: hold detection below, and every later alignment or
-        // re-detection pass, must see the camera's full resolution. Browsers are served downscaled
+        // The upload is stored at full resolution with its pixels untouched: hold detection below, and
+        // every later alignment or re-detection pass, must see the camera's original. Only location and
+        // other metadata are removed (the EXIF orientation stays). Browsers are served downscaled
         // variants derived from this original instead (see IImageVariantCache).
         using var op = BlocwerkMetrics.TimeOperation("Wall.UploadPhoto", wallId);
         try
@@ -325,6 +330,7 @@ public class WallService : IWallService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
             await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
+            photo = StoredPhotoSanitizer.Sanitize(photo);
 
             var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId);
             if (wall == null)
@@ -346,25 +352,25 @@ public class WallService : IWallService
             }
 
             var detectedHolds = await _holdDetectionService.DetectHoldsAsync(photo);
-            foreach (var detected in detectedHolds)
+            var newHolds = detectedHolds.Select(detected => new Hold
             {
-                db.Holds.Add(new Hold
-                {
-                    WallId = wallId,
-                    X = detected.X,
-                    Y = detected.Y,
-                    Radius = detected.Radius,
-                    Color = detected.Color,
-                    Confidence = detected.Confidence,
-                    IsAutoDetected = true,
-                    Generation = wall.CurrentGeneration,
-                });
-            }
+                WallId = wallId,
+                X = detected.X,
+                Y = detected.Y,
+                Radius = detected.Radius,
+                Color = detected.Color,
+                Confidence = detected.Confidence,
+                IsAutoDetected = true,
+                Generation = wall.CurrentGeneration,
+            }).ToList();
+            db.Holds.AddRange(newHolds);
+            var enrichment = await holdEnrichment.EnrichSafelyAsync(db, new HoldEnrichmentRequest(photo, wall, newHolds), _logger);
+            var kept = newHolds.Count - enrichment.DroppedMarkerHolds.Count;
 
             await EnsureCenterPanelAsync(db, wall);
             await db.SaveChangesAsync();
-            await _activityLogService.LogAsync(wallId, null, ActivityType.WallPhotoUploaded, $"{detectedHolds.Count} holds detected");
-            _logger.LogInformation("Photo uploaded to wall {WallId} by {UserId} with {DetectedHoldCount} holds detected", wallId, user.Id, detectedHolds.Count);
+            await _activityLogService.LogAsync(wallId, null, ActivityType.WallPhotoUploaded, $"{kept} holds detected");
+            _logger.LogInformation("Photo uploaded to wall {WallId} by {UserId} with {DetectedHoldCount} holds detected", wallId, user.Id, kept);
             return wall;
         }
         catch (Exception ex)
@@ -568,6 +574,7 @@ public class WallService : IWallService
             virtualHold.ShapePoints = actualHold.ShapePoints?
                 .Select(sp => new ShapePoint { Dx = sp.Dx, Dy = sp.Dy })
                 .ToList();
+            virtualHold.ShapeHoles = ShapePoint.CloneRings(actualHold.ShapeHoles);
             if (!string.IsNullOrEmpty(actualHold.Color))
             {
                 virtualHold.Color = actualHold.Color;
@@ -578,6 +585,9 @@ public class WallService : IWallService
             virtualHold.IsAutoDetected = actualHold.IsAutoDetected;
             virtualHold.Confidence = actualHold.Confidence;
             virtualHold.IsVirtual = false;
+
+            // The glyph metric fields describe the detected geometry just adopted, so they follow it.
+            virtualHold.CopyGlyphMetricsFrom(actualHold);
             virtualHold.NeedsReview = true;
 
             // Geometry moved, so the panel the geometry belongs to must move with it.
@@ -1508,6 +1518,12 @@ public class WallService : IWallService
             bool shapeChanged = edit.ShapePoints.HasValue;
             bool nameChanged = edit.Name.HasValue && hold.Name != edit.Name.Value;
 
+            // Stale glyph measurements: a move invalidates the plane position, a real reshape the metric
+            // size and pocket holes too (a radius change only counts on a plain circle). Evaluated against
+            // the geometry BEFORE it is overwritten below.
+            bool reshaped = hold.IsReshape(radius, shapeChanged ? edit.ShapePoints.Value : hold.ShapePoints);
+            hold.InvalidateGlyphForEdit(positionChanged, reshaped);
+
             hold.X = x;
             hold.Y = y;
             hold.Radius = radius;
@@ -1647,11 +1663,13 @@ public class WallService : IWallService
     /// review, and returns the ids it flagged (the hold plus those twins) so the caller can scope the
     /// boulder fan-out to the same set. Reuses <see cref="GetPeripheralTwinIdsAsync"/> — the one traversal
     /// the unchanged-verdict path already uses — so both verdicts propagate over identical edges. No
-    /// SaveChanges: the caller commits.
+    /// SaveChanges: the caller commits. A "changed" hold is physically a different hold, so every flagged
+    /// copy also loses its glyph measurements and fingerprint (<see cref="Hold.InvalidateGlyphMeasurements"/>).
     /// </summary>
     private async Task<HashSet<Guid>> FlagHoldAndPeripheralTwinsAsync(BlocwerkDbContext db, Hold hold)
     {
         hold.NeedsReview = true;
+        hold.InvalidateGlyphMeasurements();
 
         var peripheralTwinIds = await GetPeripheralTwinIdsAsync(db, hold);
         var flagged = new HashSet<Guid>(peripheralTwinIds) { hold.Id };
@@ -1666,6 +1684,7 @@ public class WallService : IWallService
         foreach (var twin in twins)
         {
             twin.NeedsReview = true;
+            twin.InvalidateGlyphMeasurements();
         }
 
         return flagged;

@@ -1,0 +1,94 @@
+@* How the owner photographs the wall: the usual distance (free text — "2500", "2.5 m", "250 cm") and
+   the camera. Together they decide how big the markers must be printed. *@
+@using Blocwerk.Core.MarkerPlanning
+
+<div class="mplan-grid">
+    <div class="form-group">
+        <label for="mplan-distance">Usual photo distance</label>
+        <input id="mplan-distance" class="form-input" inputmode="decimal" placeholder="e.g. 2.5 m or 2500"
+               value="@distanceText" @onchange="OnDistanceChanged" aria-describedby="mplan-distance-hint" />
+        <p id="mplan-distance-hint" class="hint">
+            From the camera to the wall. Millimetres or metres — "2500", "2.5 m" and "250 cm" all work.
+            Currently @PhotoDistanceParser.Format(Photo.DistanceMm).
+        </p>
+        @if (distanceError is not null)
+        {
+            <p class="field-error" role="alert">@distanceError</p>
+        }
+    </div>
+    <div class="form-group">
+        <label for="mplan-camera">Camera</label>
+        <select id="mplan-camera" class="form-input" value="@Photo.CameraPreset" @onchange="OnPresetChanged">
+            <option value="@MarkerCameraPresets.Phone1X">Phone, main camera (1×)</option>
+            <option value="@MarkerCameraPresets.PhoneUltraWide">Phone, ultra-wide (0.5×)</option>
+            <option value="@MarkerCameraPresets.Custom">Other camera…</option>
+        </select>
+    </div>
+    @if (Photo.CameraPreset == MarkerCameraPresets.Custom)
+    {
+        <div class="form-group">
+            <label for="mplan-fov">Horizontal field of view (°)</label>
+            <input id="mplan-fov" type="number" min="10" max="150" step="1" class="form-input" value="@NetCanvasModel.F(Photo.HorizontalFovDeg)"
+                   @onchange="e => ApplyCustom(e, v => v is >= 10 and <= 150 ? Photo with { HorizontalFovDeg = v } : null)" />
+        </div>
+        <div class="form-group">
+            <label for="mplan-longedge">Photo long edge (px)</label>
+            <input id="mplan-longedge" type="number" min="640" max="20000" step="1" class="form-input" value="@Photo.ImageLongEdgePx"
+                   @onchange="e => ApplyCustom(e, v => v is >= 640 and <= 20000 ? Photo with { ImageLongEdgePx = (int)v } : null)" />
+        </div>
+    }
+</div>
+<p class="hint">
+    One photo covers about @PhotoDistanceParser.Format(MarkerSizing.FootprintWidthMm(Photo)) ×
+    @PhotoDistanceParser.Format(MarkerSizing.FootprintHeightMm(Photo)) of wall; markers are spaced so every photo sees several.
+</p>
+
+@code {
+    private string distanceText = string.Empty;
+    private double shownDistance = double.NaN;
+    private string? distanceError;
+
+    /// <summary>The current photo setup.</summary>
+    [Parameter]
+    [EditorRequired]
+    public PhotoSetup Photo { get; set; } = default!;
+
+    /// <summary>The photo setup changed.</summary>
+    [Parameter]
+    public EventCallback<PhotoSetup> OnChange { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        // Only reformat when the distance changed from outside (a new plan, an import) — never while the
+        // owner's own text is the source of the value.
+        if (!shownDistance.Equals(Photo.DistanceMm))
+        {
+            shownDistance = Photo.DistanceMm;
+            distanceText = PhotoDistanceParser.Format(Photo.DistanceMm);
+            distanceError = null;
+        }
+    }
+
+    private async Task OnDistanceChanged(ChangeEventArgs e)
+    {
+        distanceText = e.Value?.ToString() ?? string.Empty;
+        if (PhotoDistanceParser.ParseMm(distanceText) is not { } mm)
+        {
+            distanceError = "Type a distance such as 2500, 2.5 m or 250 cm.";
+            return;
+        }
+
+        distanceError = null;
+        shownDistance = mm;
+        await OnChange.InvokeAsync(Photo with { DistanceMm = mm });
+    }
+
+    private Task OnPresetChanged(ChangeEventArgs e)
+    {
+        var preset = e.Value?.ToString() ?? MarkerCameraPresets.Phone1X;
+        return OnChange.InvokeAsync(MarkerCameraPresets.Create(preset, Photo.DistanceMm, Photo.HorizontalFovDeg, Photo.ImageLongEdgePx));
+    }
+
+    private Task ApplyCustom(ChangeEventArgs e, Func<double, PhotoSetup?> update) =>
+        PlannerInput.Number(e.Value) is { } v && update(v) is { } updated ? OnChange.InvokeAsync(updated) : Task.CompletedTask;
+}

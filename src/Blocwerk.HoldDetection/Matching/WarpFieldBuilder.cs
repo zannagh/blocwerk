@@ -11,11 +11,15 @@ namespace Blocwerk.HoldDetection.Matching;
 /// </summary>
 internal static class WarpFieldBuilder
 {
-    /// <summary>Result of a field build, including anchor counts and the raw anchors for the reverse field.</summary>
+    /// <summary>
+    /// Result of a field build: anchor counts, the MEASURED anchors (texture + marker/wall-space; no bootstrap, no
+    /// fill) and the raw anchors for the reverse field.
+    /// </summary>
     public sealed record BuildResult(
         LocalWarpField Field,
         int TextureAnchors,
         int BootAnchors,
+        IReadOnlyList<Pt> MeasuredSrc,
         IReadOnlyList<Pt> AnchorsSrc,
         IReadOnlyList<Pt> AnchorsDst);
 
@@ -72,6 +76,13 @@ internal static class WarpFieldBuilder
         return (src, dst);
     }
 
+    /// <summary>The number of texture correspondences that survive <see cref="LocalConsistencyFilter"/>.</summary>
+    public static int CountTextureAnchors(Mat imgL, Mat imgR)
+    {
+        var (src, dst) = TextureCorrespondences(imgL, imgR);
+        return LocalConsistencyFilter(src, dst).Count(k => k);
+    }
+
     /// <summary>
     /// Keeps a correspondence only if its displacement agrees with the median displacement
     /// of its k nearest neighbours — removes gross mismatches without imposing a single
@@ -116,13 +127,16 @@ internal static class WarpFieldBuilder
     }
 
     /// <summary>
-    /// Texture anchors + bootstrapped confident hold matches → <see cref="LocalWarpField"/>.
+    /// Texture anchors + bootstrapped confident hold matches → <see cref="LocalWarpField"/>. An optional
+    /// <paramref name="prior"/> (seeded runs only) adds measured anchors to the base set and fills regions
+    /// without any anchor from its predictions; null leaves the build exactly as without a seed.
     /// </summary>
     public static BuildResult Build(
         Mat imgL, Mat imgR,
         IReadOnlyList<Pt> cLb, IReadOnlyList<Pt> cRb,
         IReadOnlyList<float[]?> descL, IReadOnlyList<float[]?> descR,
-        int bootIters = 4, double bootGate = 40.0, double bootNcc = 0.25)
+        int bootIters = 4, double bootGate = 40.0, double bootNcc = 0.25,
+        WarpPrior? prior = null)
     {
         // Defaults are adapted from the reference (bootIters 2, gate 22, ncc 0.45): AKAZE's
         // initial texture field is coarser than SIFT's, so more bootstrap iterations and a
@@ -142,10 +156,21 @@ internal static class WarpFieldBuilder
         }
 
         int nTexture = src.Count;
-        var field = new LocalWarpField(src, dst);
-        int nBoot = 0;
+        if (prior is not null)
+        {
+            src.AddRange(prior.FixedSrc);
+            dst.AddRange(prior.FixedDst);
+        }
+
         List<Pt> allSrc = src;
         List<Pt> allDst = dst;
+        if (prior is not null)
+        {
+            (allSrc, allDst) = prior.WithFill(src, dst);
+        }
+
+        var field = new LocalWarpField(allSrc, allDst);
+        int nBoot = 0;
 
         for (int iter = 0; iter < bootIters; iter++)
         {
@@ -181,10 +206,15 @@ internal static class WarpFieldBuilder
             allDst = new List<Pt>(dst);
             allSrc.AddRange(bootSrc);
             allDst.AddRange(bootDst);
+            if (prior is not null)
+            {
+                (allSrc, allDst) = prior.WithFill(allSrc, allDst);
+            }
+
             field = new LocalWarpField(allSrc, allDst);
         }
 
-        return new BuildResult(field, nTexture, nBoot, allSrc, allDst);
+        return new BuildResult(field, nTexture, nBoot, src, allSrc, allDst);
     }
 
     /// <summary>Zero-mean unit-norm patch dot product (NCC). Returns 0 when either patch is missing.</summary>

@@ -83,6 +83,10 @@ public partial class WallPanelService
         await WallAdminGuard.EnsureWallEditorAsync(db, wallId, user.Id, CancellationToken.None);
 
         var hold = await LoadStagedHoldAsync(db, wallId, holdId);
+        hold.InvalidateGlyphForEdit(
+            Math.Abs(hold.X - Math.Clamp(x, 0, 1)) > Hold.GeometryEditTolerance
+            || Math.Abs(hold.Y - Math.Clamp(y, 0, 1)) > Hold.GeometryEditTolerance,
+            hold.IsReshape(Math.Clamp(radius, 0.003, 0.2), hold.ShapePoints));
         hold.X = Math.Clamp(x, 0, 1);
         hold.Y = Math.Clamp(y, 0, 1);
         hold.Radius = Math.Clamp(radius, 0.003, 0.2);

@@ -1,0 +1,136 @@
+/* "Possibly moved" list in the carryover review. Phone-first: each row wraps to thumbnails on one line,
+   meta on the next, buttons on the last; from ~560px they sit side by side. Colours come from the shared
+   status tokens so the list follows the theme like the attention banner above it. */
+.relocate {
+    margin: 0 0 10px;
+    padding: 10px 12px;
+    border-radius: var(--r-sm);
+    border: 1px solid var(--status-info);
+    background: color-mix(in srgb, var(--status-info) 8%, var(--bg-surface));
+}
+
+.relocate-head {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 8px;
+    color: var(--text-heading);
+}
+
+.relocate-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.relocate-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 10px;
+    padding: 6px 8px;
+    border-radius: var(--r-sm);
+    border: 1px solid var(--border);
+    background: var(--bg-surface);
+}
+
+.relocate-row.accepted { border-color: var(--status-warning); }
+.relocate-row.accepted.same { border-color: var(--status-success); }
+.relocate-row.dismissed { opacity: 0.6; }
+
+.relocate-pair {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+    color: inherit;
+}
+
+.relocate-num {
+    min-width: 1.4em;
+    font-weight: 700;
+    color: var(--text-secondary);
+}
+
+.relocate-thumb {
+    position: relative;
+    display: block;
+    width: 56px;
+    height: 56px;
+    overflow: hidden;
+    border-radius: var(--r-sm);
+    background: var(--bg-surface-alt);
+    flex: none;
+}
+
+.relocate-thumb img {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    max-width: none;
+    height: auto;
+    pointer-events: none;
+}
+
+.relocate-ring {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 36%;
+    height: 36%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    border: 2px solid var(--ring, var(--status-info));
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+}
+
+.relocate-arrow { color: var(--text-secondary); }
+
+.relocate-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1 1 120px;
+    min-width: 0;
+    font-size: 0.85rem;
+}
+
+.relocate-label { font-weight: 600; color: var(--text-heading); }
+.relocate-score { color: var(--text-secondary); }
+
+.relocate-tag {
+    display: inline-block;
+    margin-left: 4px;
+    padding: 0 6px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    border: 1px solid var(--border);
+}
+
+.relocate-tag.low { border-color: var(--status-warning); color: var(--status-warning); }
+
+.relocate-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+}
+
+.relocate-actions .btn-primary,
+.relocate-actions .btn-secondary {
+    width: auto;
+    margin-bottom: 0;
+    padding: 6px 14px;
+    font-size: 0.9rem;
+    min-height: 36px;
+}
+
+.relocate-state { font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); }
