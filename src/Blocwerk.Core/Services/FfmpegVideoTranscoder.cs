@@ -248,7 +248,8 @@ public class FfmpegVideoTranscoder : IVideoTranscoder
         // The ladder caps to the DISPLAYED height (a 90/270 clip swaps the coded axes) and the pre-split
         // rotation puts the frame in that displayed orientation before scale=-2:H runs.
         var displayedHeight = HlsLadderPlanner.DisplayedHeight(probe.Width, probe.Height, probe.RotationDegrees);
-        var rungs = HlsLadderPlanner.SelectRungs(settings.BetaVideo.HlsLadder, displayedHeight);
+        var displayedWidth = HlsLadderPlanner.DisplayedWidth(probe.Width, probe.Height, probe.RotationDegrees);
+        var rungs = HlsLadderPlanner.SelectRungs(settings.BetaVideo.HlsLadder, displayedHeight, displayedWidth);
         if (rungs.Count == 0)
         {
             throw new InvalidOperationException("No HLS ladder rungs are configured.");

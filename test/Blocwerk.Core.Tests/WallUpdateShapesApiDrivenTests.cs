@@ -28,7 +28,7 @@ public class WallUpdateShapesApiDrivenTests
         using var h = new WallTestHarness();
         var f = new ShapeStepFixture(h);
         var ids = await f.StageAsync(ShapeStepFixture.AutoHold(0.9), ShapeStepFixture.AutoHold(0.6));
-        var api = Bind(new WallUpdateShapesController(f.Service), h.WallId);
+        var api = Bind(new WallUpdateShapesController(f.Service, NullLogger<WallUpdateShapesController>.Instance), h.WallId);
 
         await api.Start(h.WallId, new ShapeRecognitionStartRequest(SessionId: f.SessionId), default);
         await f.Runner.WhenIdleAsync(f.SessionId);
@@ -52,7 +52,7 @@ public class WallUpdateShapesApiDrivenTests
         using var h = new WallTestHarness();
         var f = new ShapeStepFixture(h);
         await f.StageAsync(ShapeStepFixture.AutoHold(0.9));
-        var api = Bind(new WallUpdateShapesController(f.Service), h.WallId);
+        var api = Bind(new WallUpdateShapesController(f.Service, NullLogger<WallUpdateShapesController>.Instance), h.WallId);
 
         await api.Skip(h.WallId, new ShapeSessionRequest(f.SessionId), default);
 
@@ -67,7 +67,7 @@ public class WallUpdateShapesApiDrivenTests
         using var h = new WallTestHarness();
         var f = new ShapeStepFixture(h);
         await f.StageAsync(ShapeStepFixture.AutoHold(0.9));
-        var api = Bind(new WallUpdateShapesController(f.Service), h.WallId);
+        var api = Bind(new WallUpdateShapesController(f.Service, NullLogger<WallUpdateShapesController>.Instance), h.WallId);
 
         Assert.IsType<ConflictObjectResult>(await api.CompleteReview(h.WallId, new ShapeSessionRequest(f.SessionId), default));
     }

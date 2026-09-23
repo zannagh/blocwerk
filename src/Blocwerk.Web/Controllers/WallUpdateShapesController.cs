@@ -24,10 +24,12 @@ namespace Blocwerk.Web.Controllers;
 public sealed class WallUpdateShapesController : WallScopedApiController
 {
     private readonly IWallUpdateShapeService shapes;
+    private readonly ILogger<WallUpdateShapesController> logger;
 
-    public WallUpdateShapesController(IWallUpdateShapeService shapes)
+    public WallUpdateShapesController(IWallUpdateShapeService shapes, ILogger<WallUpdateShapesController> logger)
     {
         this.shapes = shapes;
+        this.logger = logger;
     }
 
     /// <summary>Starts (or resumes) recognition in the background. 202 with the run status; poll GET.</summary>
@@ -126,13 +128,16 @@ public sealed class WallUpdateShapesController : WallScopedApiController
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ApiErrorResponse(ex.Message));
         }
-        catch (WallUpdateSessionSupersededException ex)
+        catch (UserFacingException ex)
         {
+            // Written for the caller (stale session, step not finished, detection off): safe to echo.
             return Conflict(new ApiErrorResponse(ex.Message));
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new ApiErrorResponse(ex.Message));
+            // Anything else may be EF Core or framework internals: log it, never echo it.
+            logger.LogWarning(ex, "Shape step request on wall {WallId} failed unexpectedly", wallId);
+            return Conflict(new ApiErrorResponse(UserFacingException.GenericMessage));
         }
         catch (ArgumentException ex)
         {

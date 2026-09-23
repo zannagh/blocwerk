@@ -1,3 +1,7 @@
+// <copyright file="HlsLadderPlanner.cs" company="Blocwerk">
+// Copyright (c) Blocwerk. All rights reserved.
+// </copyright>
+
 using System.Globalization;
 using System.Text;
 using Blocwerk.Core.Abstractions;
@@ -23,6 +27,9 @@ public static class HlsLadderPlanner
     /// auto-rotated MP4 rather than risk a sideways HLS rendition. See <see cref="IsSupportedRotation"/>.
     /// </summary>
     public const int UnhandledRotation = -1;
+
+    /// <summary>Lowest video bitrate a source-sized rung gets, however small the clip.</summary>
+    public const int MinVideoKbps = 150;
 
     /// <summary>
     /// Whether <paramref name="rotationDegrees"/> is one this planner can rotate upright (0/90/180/270).
@@ -61,12 +68,14 @@ public static class HlsLadderPlanner
     };
 
     /// <summary>
-    /// The rungs to encode for a source of <paramref name="sourceHeight"/> px: every ladder rung whose
-    /// height is at or below the source (so nothing is upscaled), and always at least the smallest rung
-    /// even when the source is tinier than the whole ladder. Result is ascending by height. An unknown
-    /// (0 or negative) source height keeps the smallest rung only, which is safe for any input.
+    /// The rungs to encode for a source DISPLAYED at <paramref name="sourceWidth"/>×<paramref name="sourceHeight"/>
+    /// px (the caller swaps the axes for a 90/270 rotation, see <see cref="DisplayedHeight"/>): every
+    /// ladder rung whose height is at or below the source, so nothing is upscaled. A source shorter than
+    /// the smallest rung gets ONE rung at its own size instead (see <see cref="SourceSizedRung"/>). Result
+    /// is ascending by height. An unknown (0 or negative) source height keeps the smallest rung only,
+    /// since there is nothing to size a rung from; an unknown width lets ffmpeg derive it.
     /// </summary>
-    public static IReadOnlyList<HlsRung> SelectRungs(IReadOnlyList<HlsRung> ladder, int sourceHeight)
+    public static IReadOnlyList<HlsRung> SelectRungs(IReadOnlyList<HlsRung> ladder, int sourceHeight, int sourceWidth = 0)
     {
         var ordered = ladder.OrderBy(r => r.Height).ToList();
         if (ordered.Count == 0)
@@ -74,16 +83,28 @@ public static class HlsLadderPlanner
             return ordered;
         }
 
-        var selected = sourceHeight > 0
-            ? ordered.Where(r => r.Height <= sourceHeight).ToList()
-            : [];
-
-        if (selected.Count == 0)
+        if (sourceHeight <= 0)
         {
-            selected.Add(ordered[0]);
+            return [ordered[0]];
         }
 
-        return selected;
+        var selected = ordered.Where(r => r.Height <= sourceHeight).ToList();
+        return selected.Count > 0 ? selected : [SourceSizedRung(ordered[0], sourceHeight, sourceWidth)];
+    }
+
+    /// <summary>
+    /// The single rung for a source smaller than <paramref name="smallest"/>: the source's own size
+    /// rounded DOWN to even dimensions (H.264 4:2:0 needs them), and a video bitrate scaled from the
+    /// smallest rung by pixel count (both keep the source aspect, so that is the height ratio squared),
+    /// floored at <see cref="MinVideoKbps"/> so a tiny clip is not starved. Audio keeps the rung's rate.
+    /// </summary>
+    public static HlsRung SourceSizedRung(HlsRung smallest, int sourceHeight, int sourceWidth = 0)
+    {
+        ArgumentNullException.ThrowIfNull(smallest);
+        var height = Even(sourceHeight);
+        var ratio = (double)height / smallest.Height;
+        var kbps = Math.Clamp((int)Math.Round(smallest.VideoKbps * ratio * ratio), MinVideoKbps, Math.Max(MinVideoKbps, smallest.VideoKbps));
+        return new HlsRung(height, kbps, smallest.AudioKbps) { Width = sourceWidth > 0 ? Even(sourceWidth) : null };
     }
 
     /// <summary>
@@ -176,8 +197,10 @@ public static class HlsLadderPlanner
         for (var i = 0; i < rungs.Count; i++)
         {
             // -2 keeps the aspect ratio and forces an even width; the rungs are already capped to the
-            // displayed height, so this only ever scales down.
-            sb.Append($";[v{i}]scale=-2:{rungs[i].Height}[v{i}out]");
+            // displayed height, so this only ever scales down. A source-sized rung carries its exact
+            // (even, never wider than the source) width instead.
+            var width = rungs[i].Width?.ToString(CultureInfo.InvariantCulture) ?? "-2";
+            sb.Append($";[v{i}]scale={width}:{rungs[i].Height}[v{i}out]");
         }
 
         return sb.ToString();
@@ -195,4 +218,6 @@ public static class HlsLadderPlanner
     }
 
     private static string Quote(string value) => $"\"{value}\"";
+
+    private static int Even(int pixels) => Math.Max(2, pixels & ~1);
 }

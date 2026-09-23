@@ -119,14 +119,14 @@ public class CaptureVideoPipelineTests
         await WallGlyphSettingsTests.Service(h).SetGlyphSettingsAsync(h.WallId, true, 125);
         var draft = await s.Service.CreateDraftAsync(h.WallId);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
+        await Assert.ThrowsAsync<Blocwerk.Core.Services.UserFacingException>(
             () => s.Service.AddVideoAsync(draft.CaptureId, "walk.mp4", FakeVideoFrameExtractor.Mp4Stream(512), CancellationToken.None));
         s.SplatClient.IsConfigured = true;
-        await Assert.ThrowsAsync<InvalidOperationException>(
+        await Assert.ThrowsAsync<Blocwerk.Core.Services.UserFacingException>(
             () => s.Service.AddVideoAsync(draft.CaptureId, "walk.mp4", FakeVideoFrameExtractor.Mp4Stream(2048), CancellationToken.None));
-        await Assert.ThrowsAsync<InvalidOperationException>(
+        await Assert.ThrowsAsync<Blocwerk.Core.Services.UserFacingException>(
             () => s.Service.AddVideoAsync(draft.CaptureId, "walk.jpg", FakeVideoFrameExtractor.Mp4Stream(512), CancellationToken.None));
-        await Assert.ThrowsAsync<InvalidOperationException>(
+        await Assert.ThrowsAsync<Blocwerk.Core.Services.UserFacingException>(
             () => s.Service.AddVideoAsync(draft.CaptureId, "walk.mp4", new MemoryStream(new byte[512]), CancellationToken.None));
 
         Assert.Empty(s.Files.ListFiles()); // a refused upload leaves nothing behind

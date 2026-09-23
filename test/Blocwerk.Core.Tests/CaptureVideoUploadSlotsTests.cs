@@ -63,7 +63,7 @@ public class CaptureVideoUploadSlotsTests
         await reading.Task.WaitAsync(TimeSpan.FromSeconds(30));
 
         await using var second = FakeVideoFrameExtractor.Mp4Stream();
-        var refused = await Assert.ThrowsAsync<InvalidOperationException>(
+        var refused = await Assert.ThrowsAsync<Blocwerk.Core.Services.UserFacingException>(
             () => s.Service.AddVideoAsync(draft, "again.mp4", second, CancellationToken.None));
         Assert.Contains("Another video upload", refused.Message, StringComparison.Ordinal);
 

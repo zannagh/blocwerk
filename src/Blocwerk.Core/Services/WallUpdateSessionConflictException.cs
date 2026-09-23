@@ -5,7 +5,7 @@ namespace Blocwerk.Core.Services;
 /// existing session so the caller can offer "started by X at T — resume or discard?" instead of silently
 /// destroying another admin's staged work, which is what the unconditional restart-discard used to do.
 /// </summary>
-public class WallUpdateSessionConflictException : InvalidOperationException
+public class WallUpdateSessionConflictException : UserFacingException
 {
     public WallUpdateSessionConflictException(WallUpdateSessionInfo existing)
         : base(BuildMessage(existing))

@@ -111,7 +111,7 @@ public sealed partial class WallUpdateShapeService
     {
         if (session.ShapeStatus != ShapeRecognitionStatus.Completed)
         {
-            throw new InvalidOperationException(
+            throw new UserFacingException(
                 $"The shape recognition is {session.ShapeStatus}; shapes can only be reviewed once it has completed.");
         }
     }

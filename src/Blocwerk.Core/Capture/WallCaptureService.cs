@@ -145,7 +145,7 @@ public sealed partial class WallCaptureService(
         await using (var lookup = await dbContextFactory.CreateDbContextAsync())
         {
             wallId = await lookup.WallCaptures.Where(c => c.Id == captureId).Select(c => (Guid?)c.WallId).FirstOrDefaultAsync()
-                     ?? throw new InvalidOperationException("Capture not found");
+                     ?? throw new UserFacingException("Capture not found");
         }
 
         var (db, userId) = await OpenForAdminAsync(wallId);
@@ -160,7 +160,7 @@ public sealed partial class WallCaptureService(
         if (capture.Status != WallCaptureStatus.Draft || capture.CreatedByUserId != userId)
         {
             await db.DisposeAsync();
-            throw new InvalidOperationException("This capture has already been started and can no longer be changed.");
+            throw new UserFacingException("This capture has already been started and can no longer be changed.");
         }
 
         return (db, userId, capture);

@@ -207,7 +207,7 @@ public class WallUpdateShapeStepTests
         var f = new ShapeStepFixture(h);
         var ids = await f.StageAsync(ShapeStepFixture.AutoHold(0.6));
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
+        await Assert.ThrowsAsync<UserFacingException>(
             () => f.Service.DecideAsync(h.WallId, [new ShapeDecisionRequest(ids[0], ShapeReviewDecision.Accepted)], f.SessionId));
     }
 

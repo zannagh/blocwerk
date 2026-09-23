@@ -47,7 +47,7 @@ public sealed partial class WallUpdateShapeService : IWallUpdateShapeService
         ArgumentNullException.ThrowIfNull(options);
         if (!runner.Available)
         {
-            throw new InvalidOperationException("Outline detection is switched off on this server.");
+            throw new UserFacingException("Outline detection is switched off on this server.");
         }
 
         var (db, userId, session) = await OpenAsync(wallId, expectedSessionId, ct);
@@ -117,7 +117,7 @@ public sealed partial class WallUpdateShapeService : IWallUpdateShapeService
         {
             if (session.ShapeStatus is not (ShapeRecognitionStatus.Completed or ShapeRecognitionStatus.Skipped))
             {
-                throw new InvalidOperationException(
+                throw new UserFacingException(
                     $"The shape recognition is {session.ShapeStatus}; finish or skip it before moving on.");
             }
 
@@ -143,7 +143,7 @@ public sealed partial class WallUpdateShapeService : IWallUpdateShapeService
             await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, ct);
             await WallUpdateSessions.EnsureCurrentAsync(db, wallId, expectedSessionId, ct);
             var session = await WallUpdateSessions.FindOpenAsync(db, wallId, ct)
-                ?? throw new InvalidOperationException("No in-flight wall update on this wall.");
+                ?? throw new UserFacingException("No in-flight wall update on this wall.");
             return (db, user.Id, session);
         }
         catch

@@ -50,7 +50,7 @@ public class CaptureVideoBusyGateTests
         var busyDuringRead = false;
 
         await using var body = new ObservingReadStream(FakeVideoFrameExtractor.Mp4Stream(4096), () => busyDuringRead |= registry.IsBusy());
-        await Assert.ThrowsAsync<InvalidOperationException>(() => s.Service.AddVideoAsync(draft, "walk.mp4", body, CancellationToken.None));
+        await Assert.ThrowsAsync<Blocwerk.Core.Services.UserFacingException>(() => s.Service.AddVideoAsync(draft, "walk.mp4", body, CancellationToken.None));
 
         Assert.True(busyDuringRead);
         Assert.False(registry.IsBusy());

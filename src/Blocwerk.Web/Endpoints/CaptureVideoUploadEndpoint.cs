@@ -41,7 +41,7 @@ public static class CaptureVideoUploadEndpoint
             .DisableAntiforgery();
     }
 
-    private static async Task<IResult> HandleAsync(
+    internal static async Task<IResult> HandleAsync(
         Guid captureId,
         string? name,
         HttpContext http,
@@ -90,9 +90,15 @@ public static class CaptureVideoUploadEndpoint
         {
             return Results.Forbid();
         }
-        catch (InvalidOperationException ex)
+        catch (UserFacingException ex)
         {
             return Results.BadRequest(ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            // Not one of the service's refusals, so possibly EF Core or framework internals: log, don't echo.
+            loggerFactory.CreateLogger("CaptureVideoUpload").LogWarning(ex, "Capture video upload for {CaptureId} failed", captureId);
+            return Results.BadRequest(UserFacingException.GenericMessage);
         }
         catch (BadHttpRequestException ex)
         {

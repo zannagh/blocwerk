@@ -35,7 +35,7 @@ public interface ICaptureFileStore
 
 /// <summary>A streamed upload went past its size limit.</summary>
 public sealed class CaptureFileTooLargeException(long maxBytes)
-    : InvalidOperationException($"The file is larger than {maxBytes / (1024 * 1024)} MB.")
+    : Services.UserFacingException($"The file is larger than {maxBytes / (1024 * 1024)} MB.")
 {
     public long MaxBytes { get; } = maxBytes;
 }

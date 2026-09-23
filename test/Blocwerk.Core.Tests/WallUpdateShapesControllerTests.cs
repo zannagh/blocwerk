@@ -14,6 +14,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace Blocwerk.Core.Tests;
@@ -41,7 +42,7 @@ public class WallUpdateShapesControllerTests
         using var h = new WallTestHarness();
         var f = new ShapeStepFixture(h);
         var ids = await f.StageAsync(ShapeStepFixture.AutoHold(0.9), ShapeStepFixture.AutoHold(0.2), ShapeStepFixture.AutoHold(0.6));
-        var api = Bind(new WallUpdateShapesController(f.Service), h.WallId);
+        var api = Bind(new WallUpdateShapesController(f.Service, NullLogger<WallUpdateShapesController>.Instance), h.WallId);
 
         var started = await api.Start(h.WallId, new ShapeRecognitionStartRequest("new", SessionId: f.SessionId), default);
         Assert.Equal(StatusCodes.Status202Accepted, Assert.IsType<AcceptedResult>(started).StatusCode);
@@ -75,7 +76,7 @@ public class WallUpdateShapesControllerTests
         var f = new ShapeStepFixture(h);
         await f.StageAsync(ShapeStepFixture.AutoHold(0.6));
         h.ActingUser = await h.AddMemberAsync("member@test", WallRole.Member);
-        var api = Bind(new WallUpdateShapesController(f.Service), h.WallId);
+        var api = Bind(new WallUpdateShapesController(f.Service, NullLogger<WallUpdateShapesController>.Instance), h.WallId);
 
         var result = await api.Start(h.WallId, new ShapeRecognitionStartRequest(), default);
 
@@ -92,7 +93,7 @@ public class WallUpdateShapesControllerTests
         var kiosk = Substitute.For<IKioskContext>();
         kiosk.IsKiosk.Returns(true);
         kiosk.KioskWallId.Returns(h.WallId);
-        var api = Bind(new WallUpdateShapesController(new ShapeStepFixture(h, kiosk).Service), h.WallId);
+        var api = Bind(new WallUpdateShapesController(new ShapeStepFixture(h, kiosk).Service, NullLogger<WallUpdateShapesController>.Instance), h.WallId);
 
         var result = await api.Status(h.WallId, default);
 
@@ -105,7 +106,7 @@ public class WallUpdateShapesControllerTests
         using var h = new WallTestHarness();
         var f = new ShapeStepFixture(h);
         var ids = await f.StageAsync(ShapeStepFixture.AutoHold(0.6));
-        var api = Bind(new WallUpdateShapesController(f.Service), h.WallId);
+        var api = Bind(new WallUpdateShapesController(f.Service, NullLogger<WallUpdateShapesController>.Instance), h.WallId);
 
         var otherWall = await api.Status(Guid.NewGuid(), default);
         var stale = await api.Start(h.WallId, new ShapeRecognitionStartRequest(SessionId: Guid.NewGuid()), default);
