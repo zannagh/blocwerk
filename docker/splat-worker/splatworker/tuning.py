@@ -16,6 +16,7 @@ triangulate" (looser ratio test, no cross-check, then point_triangulator keeping
 16k points, 0.66 px on the same photos vs 9k guided / 4.2k plain unguided). A step the memory guard
 kills is retried on the next tier down (pipeline.Run._match).
 """
+import math
 from dataclasses import dataclass
 
 GUIDED_BYTES_PER_PAIR = 16
@@ -23,6 +24,14 @@ GUIDED_BASE, GUIDED_PER_THREAD = 1.95, 0.5
 UNGUIDED_MB = 400
 EXTRACT_MB_PER_THREAD, EXTRACT_BASE_MB = 620, 150
 HEADROOM = 0.9  # plan to use at most 90 % of the budget
+
+# Brush (v0.3.0, Metal, M4, 2026-09-23) keeps every training image resident and densifies more with more
+# views, so its peak grows with images x pixels: 14 photos at 1800 px peaked at 2.2 GB (118k splats);
+# 53 photos + 120 video frames (173) at 1800 px were killed at 3.43 GB right after loading (limit 3.27 GB);
+# the same 173 at 1280 px peaked at 3.38 GB (534k splats). Model through the two peaks:
+# BRUSH_BASE_MB + images x edge^2 x 3/4 x BRUSH_BYTES_PER_PIXEL.
+BRUSH_BASE_MB, BRUSH_BYTES_PER_PIXEL = 2000, 6.9
+MIN_TRAIN_EDGE = 960  # below this the splat loses the holds' detail; better to fail on memory than to train blind
 
 
 @dataclass(frozen=True)
@@ -65,3 +74,18 @@ def extraction_threads(budget_mb, max_threads):
     """SIFT extraction threads that fit the budget (at least 1, at most COLMAP_THREADS)."""
     fit = int((budget_mb * HEADROOM - EXTRACT_BASE_MB) // EXTRACT_MB_PER_THREAD)
     return max(1, min(max(1, max_threads), fit))
+
+
+def brush_mb(images, edge):
+    """Estimated peak MB of Brush training `images` images at --max-resolution `edge` (4:3 worst case)."""
+    return int(BRUSH_BASE_MB + images * edge * edge * 0.75 * BRUSH_BYTES_PER_PIXEL / (1024 * 1024))
+
+
+def train_edge(budget_mb, images, requested_edge):
+    """The largest --max-resolution <= requested_edge (a multiple of 16) whose Brush estimate fits
+    HEADROOM x budget; never below MIN_TRAIN_EDGE (nor above what was asked)."""
+    if budget_mb <= 0 or images <= 0 or brush_mb(images, requested_edge) <= budget_mb * HEADROOM:
+        return requested_edge
+    room = budget_mb * HEADROOM - BRUSH_BASE_MB
+    edge = int(math.sqrt(max(room, 0) * 1024 * 1024 / (images * 0.75 * BRUSH_BYTES_PER_PIXEL))) // 16 * 16
+    return max(min(MIN_TRAIN_EDGE, requested_edge), min(requested_edge, edge))

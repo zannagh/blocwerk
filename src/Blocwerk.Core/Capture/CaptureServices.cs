@@ -12,6 +12,7 @@ public static class CaptureServices
         ComputeJobClientFactory.Register(services);
         services.AddSingleton<ICaptureFileStore, FileSystemCaptureFileStore>();
         services.AddSingleton<ICaptureVideoFrameExtractor, CaptureVideoFrameExtractor>();
+        services.AddSingleton<ICapturePhotoConverter, HeifCapturePhotoConverter>();
         services.AddSingleton(sp => WallCapturePipelineOptions.Bind(sp.GetService<IConfiguration>()));
         services.AddSingleton(_ => new CaptureVideoUploadSlots());
 

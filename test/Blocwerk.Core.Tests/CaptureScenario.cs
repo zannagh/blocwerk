@@ -22,7 +22,7 @@ internal sealed class CaptureScenario : IDisposable
 
     public CaptureScenario(
         WallTestHarness harness, IMarkerDetectionService? detector = null, IKioskContext? kiosk = null, WallCapturePipelineOptions? options = null,
-        IDeployBusyGate? busyGate = null)
+        IDeployBusyGate? busyGate = null, ICapturePhotoConverter? photoConverter = null)
     {
         Harness = harness;
         Options = options ?? Options;
@@ -35,7 +35,7 @@ internal sealed class CaptureScenario : IDisposable
         MarkerPlans = new MarkerPlanService(harness.DbContextFactory, harness.CurrentUser, NullLogger<MarkerPlanService>.Instance, kiosk);
         Service = new WallCaptureService(
             harness.DbContextFactory, harness.CurrentUser, Files, Queue, new FakeComputeJobClientFactory(Client, SplatClient),
-            NullLogger<WallCaptureService>.Instance, kiosk, Detector, MarkerPlans, Video, Options, busyGate);
+            NullLogger<WallCaptureService>.Instance, kiosk, Detector, MarkerPlans, Video, Options, busyGate, photoConverter: photoConverter);
         Processor = new WallCaptureProcessor(
             harness.RootContextFactory, Settings, new FakeComputeJobClientFactory(Client, SplatClient), Files, Push,
             NullLoggerFactory.Instance, Options, Detector, Video, busyGate);

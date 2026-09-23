@@ -11,7 +11,7 @@ import time
 
 from computejobs.child import JobError
 
-from . import brush
+from . import brush, tuning
 from .align import align, unaligned_frame
 from .frames import build_pairs, is_frame, split
 from .ingest import clean_jpeg, downscale
@@ -125,11 +125,17 @@ class Run:
 
     def train(self, dataset):
         self.begin("train")
+        budget = self.sfm_run.train_budget_mb()
+        images = sum(len(files) for _, _, files in os.walk(os.path.join(dataset, "images")))
+        edge = tuning.train_edge(budget, images, self.opts.maxImageEdge)
+        if edge < self.opts.maxImageEdge:
+            self.note = f"{images} images at {edge} px to fit {budget / 1024:.1f} GB"
         ply, parser = brush.train(settings.brush_bin, dataset, os.path.join(self.dir, "train"),
-                                  self.opts.maxSteps, self.opts.maxImageEdge, settings.brush_cache_dir,
+                                  self.opts.maxSteps, edge, settings.brush_cache_dir,
                                   os.path.join(self.dir, "train.log"), self.report,
-                                  self.sfm_run.train_budget_mb(), settings.max_swap_growth_mb)
-        self.brush_stats = {"steps": parser.step, "brushSplatCount": parser.splats, "brushReportedTime": parser.took}
+                                  budget, settings.max_swap_growth_mb)
+        self.brush_stats = {"steps": parser.step, "brushSplatCount": parser.splats, "brushReportedTime": parser.took,
+                            "trainImages": images, "trainImageEdge": edge}
         return ply
 
     def frame_and_crop(self, ply):

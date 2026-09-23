@@ -20,14 +20,14 @@
     else
     {
         <p class="hint">
-            Upload 10–40 photos (JPEG or PNG, up to 20 MB each) that together show every marker, each in
+            Upload 10–60 photos (JPEG, PNG or HEIC, up to 20 MB each) that together show every marker, each in
             at least two photos. Keep every marker fully inside the frame. The server does the rest and
             notifies you when the model is ready.
         </p>
 
         <div class="form-group capture-upload">
             <label for="capture-photos">Photos</label>
-            <InputFile id="capture-photos" OnChange="UploadAsync" multiple accept="image/jpeg,image/png"
+            <InputFile id="capture-photos" OnChange="UploadAsync" multiple accept="image/jpeg,image/png,image/heic,image/heif,.heic,.heif"
                        class="form-input" disabled="@busy" />
             @if (uploadStatus is not null)
             {

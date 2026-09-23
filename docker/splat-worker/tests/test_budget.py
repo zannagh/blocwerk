@@ -234,3 +234,23 @@ def test_swap_guard_reacts_to_growth_rate_not_level():
 def test_swap_meter_reads_something():
     used = resources.SwapMeter().used_mb()
     assert used is None or used >= 0
+
+
+def test_train_edge_keeps_the_requested_edge_when_it_fits():
+    assert tuning.train_edge(3000, 14, 1800) == 1800  # the B3 capture: 2.2 GB measured
+    assert abs(tuning.brush_mb(14, 1800) - 2200) < 100 and abs(tuning.brush_mb(173, 1280) - 3381) < 100
+    assert tuning.train_edge(0, 500, 1800) == 1800  # no budget known: as asked
+
+
+def test_train_edge_shrinks_with_many_images():
+    # 53 photos + 120 video frames: killed at 1800 px with 3.27 GB; at 1280 px they peaked at 3.38 GB.
+    edge = tuning.train_edge(3266, 173, 1800)
+    assert tuning.MIN_TRAIN_EDGE <= edge < 1280 and edge % 16 == 0
+    assert 1200 <= tuning.train_edge(3660, 173, 1800) < 1280  # the budget that 1280 px just fitted (3.38 of 3.66 GB)
+    assert tuning.brush_mb(173, edge) <= 3266 * tuning.HEADROOM
+    assert tuning.brush_mb(173, 1800) > 3266 * tuning.HEADROOM
+
+
+def test_train_edge_has_a_floor_and_never_exceeds_the_request():
+    assert tuning.train_edge(2200, 400, 1800) == tuning.MIN_TRAIN_EDGE
+    assert tuning.train_edge(2200, 400, 800) == 800

@@ -3,6 +3,7 @@ using System.Text.Json;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Helpers;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using SkiaSharp;
 
 namespace Blocwerk.Core.Capture;
@@ -13,7 +14,13 @@ public sealed partial class WallCaptureService
     public async Task<CapturePhotoResult> AddPhotoAsync(Guid captureId, string? fileName, byte[] bytes, CancellationToken ct)
     {
         var name = fileName is { Length: > 256 } ? fileName[..256] : fileName;
-        var kind = ValidateUpload(name, bytes);
+        var kind = ValidateUpload(name, bytes, photoConverter is not null);
+        if (kind == CapturePhotoKind.Heic)
+        {
+            bytes = await ConvertHeicAsync(name, bytes, ct);
+            kind = CapturePhotoKind.Jpeg;
+        }
+
         var (width, height) = RawSize(bytes, name);
 
         var (db, _, capture) = await OpenDraftAsync(captureId);
@@ -77,7 +84,30 @@ public sealed partial class WallCaptureService
         }
     }
 
-    private static CapturePhotoKind ValidateUpload(string? name, byte[] bytes)
+    /// <summary>HEIC → upright JPEG (EXIF kept until the strip below reads and drops it).</summary>
+    private async Task<byte[]> ConvertHeicAsync(string? name, byte[] heic, CancellationToken ct)
+    {
+        var label = name ?? "The photo";
+        byte[] jpeg;
+        try
+        {
+            jpeg = await photoConverter!.ToJpegAsync(heic, ct);
+        }
+        catch (InvalidDataException ex)
+        {
+            logger.LogWarning(ex, "HEIC conversion failed for a capture photo");
+            throw new InvalidOperationException($"{label} is a HEIC photo that could not be converted. Export it as JPEG and upload that.");
+        }
+
+        if (CapturePhotoFormat.Sniff(jpeg) != CapturePhotoKind.Jpeg || jpeg.LongLength > WallCapturePipelineOptions.MaxPhotoBytes)
+        {
+            throw new InvalidOperationException($"{label} is a HEIC photo that could not be converted. Export it as JPEG and upload that.");
+        }
+
+        return jpeg;
+    }
+
+    private static CapturePhotoKind ValidateUpload(string? name, byte[] bytes, bool canConvertHeic)
     {
         var label = name ?? "The photo";
         if (bytes.LongLength > WallCapturePipelineOptions.MaxPhotoBytes)
@@ -89,6 +119,7 @@ public sealed partial class WallCaptureService
         {
             CapturePhotoKind.Jpeg => CapturePhotoKind.Jpeg,
             CapturePhotoKind.Png => CapturePhotoKind.Png,
+            CapturePhotoKind.Heic when canConvertHeic => CapturePhotoKind.Heic,
             CapturePhotoKind.Heic => throw new InvalidOperationException(
                 $"{label} is a HEIC photo, which cannot be processed. Upload it from the Photos picker in the browser "
                 + "(iOS converts it to JPEG), or set Camera → Formats → Most Compatible."),

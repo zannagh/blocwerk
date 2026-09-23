@@ -7,7 +7,7 @@ public enum CapturePhotoKind
     Jpeg,
     Png,
 
-    /// <summary>HEIC/HEIF: refused with a clear message (iOS converts to JPEG on a browser upload).</summary>
+    /// <summary>HEIC/HEIF: converted to JPEG on upload when a converter is available (see <see cref="ICapturePhotoConverter"/>), refused otherwise.</summary>
     Heic,
 }
 

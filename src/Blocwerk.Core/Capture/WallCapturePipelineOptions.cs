@@ -6,7 +6,11 @@ namespace Blocwerk.Core.Capture;
 /// <summary>Timing and limits of the capture pipeline (tests shrink the delays).</summary>
 public sealed class WallCapturePipelineOptions
 {
-    public const int MaxPhotos = 40;
+    /// <summary>
+    /// Photos per capture. Matches the compute services' own per-job cap (wall-geometry and textures take 60):
+    /// a big wall shot with the main lens (24 mm) needs ~50 photos for the same coverage 14 ultra-wide ones give.
+    /// </summary>
+    public const int MaxPhotos = 60;
 
     public const long MaxPhotoBytes = 20L * 1024 * 1024;
 
@@ -59,6 +63,12 @@ public sealed class WallCapturePipelineOptions
     /// <summary>Ceiling for one ffmpeg run of the frame extraction; the process tree is killed beyond it.</summary>
     public TimeSpan VideoExtractTimeout { get; init; } = TimeSpan.FromMinutes(20);
 
+    /// <summary>
+    /// libheif's converter for HEIC uploads. Setting <c>Blocwerk:Capture:HeifConvertPath</c> /
+    /// <c>CAPTURE__HEIFCONVERTPATH</c>; default <c>heif-convert</c> (on the PATH).
+    /// </summary>
+    public string HeifConvertPath { get; init; } = "heif-convert";
+
     /// <summary>The defaults, with the retention and video settings read from configuration when set.</summary>
     public static WallCapturePipelineOptions Bind(IConfiguration? configuration)
     {
@@ -76,6 +86,7 @@ public sealed class WallCapturePipelineOptions
             MaxVideoBytes = videoMb is { } mb ? mb * 1024L * 1024 : defaults.MaxVideoBytes,
             MaxVideoFrames = frames ?? defaults.MaxVideoFrames,
             VideoFramesPerSecond = fps,
+            HeifConvertPath = Read(configuration, "HeifConvertPath") is { Length: > 0 } heif ? heif : defaults.HeifConvertPath,
         };
     }
 
