@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Blocwerk.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blocwerk.Core.Migrations
 {
     [DbContext(typeof(BlocwerkDbContext))]
-    partial class BlocwerkDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260923091416_AddCapturePlanSnapshot")]
+    partial class AddCapturePlanSnapshot
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1554,23 +1557,6 @@ namespace Blocwerk.Core.Migrations
                         .HasColumnType("integer");
 
                     b.Property<string>("TexturesJobId")
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
-
-                    b.Property<double?>("VideoDurationSeconds")
-                        .HasColumnType("double precision");
-
-                    b.Property<string>("VideoFileName")
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
-
-                    b.Property<string>("VideoFramesJson")
-                        .HasColumnType("text");
-
-                    b.Property<long?>("VideoSizeBytes")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("VideoStoredPath")
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
 

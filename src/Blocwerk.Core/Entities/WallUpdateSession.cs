@@ -66,4 +66,27 @@ public class WallUpdateSession
 
     /// <summary>When the session stopped being open (promoted or discarded), or null while it is OPEN.</summary>
     public DateTimeOffset? ClosedAt { get; set; }
+
+    /// <summary>
+    /// When the "this hold moved" suggestions (<see cref="WallUpdateRelocationProposal"/>) were computed
+    /// for this session, or null while they have not been. Set even when there were none, so a resume
+    /// never recomputes them and the review shows the same list it showed before.
+    /// </summary>
+    public DateTimeOffset? RelocationsProposedAt { get; set; }
+
+    /// <summary>
+    /// The STAGED panels whose new photo the matcher could not line up with that panel's previous photo, so
+    /// their old holds are carried at their OLD coordinates. Sticky for the life of the session: RANSAC is
+    /// not deterministic, so a borderline pair may fail on one run and pass on the next, and a hold the user
+    /// saw flagged must stay flagged. Drives the review banner and the promote's <see cref="Hold.NeedsReview"/>
+    /// on those blind carries.
+    /// </summary>
+    public List<Guid> UnalignedCarryPanelIds { get; set; } = [];
+
+    /// <summary>
+    /// The STAGED non-centre panels whose photo could not be lined up with the staged centre, so the overlap
+    /// step has no link proposals for them. Sticky like <see cref="UnalignedCarryPanelIds"/>; no hold moves
+    /// because of it, it only drives the overlap step's banner.
+    /// </summary>
+    public List<Guid> UnalignedOverlapPanelIds { get; set; } = [];
 }

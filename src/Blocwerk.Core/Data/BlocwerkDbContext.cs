@@ -175,7 +175,13 @@ public partial class BlocwerkDbContext : DbContext
         ConfigureHoldGenerationLink(modelBuilder);
         ConfigureChangeJournal(modelBuilder);
         ConfigureWallUpdateSession(modelBuilder);
+        ConfigureRelocationProposals(modelBuilder);
         ConfigureTopLogger(modelBuilder);
+        ConfigureGlyphGeometry(modelBuilder);
+        ConfigureWallCapture(modelBuilder);
+        ConfigureWallGeometrySplat(modelBuilder);
+        ConfigureHoldOutlineUpgrade(modelBuilder);
+        ConfigureMarkerPlan(modelBuilder);
     }
 
     private static void ConfigureTopLogger(ModelBuilder modelBuilder)
@@ -555,6 +561,18 @@ public partial class BlocwerkDbContext : DbContext
             ? null
             : points.Select(point => new ShapePoint { Dx = point.Dx, Dy = point.Dy }).ToList());
 
+    /// <summary>The same value semantics for a nullable list of rings (<see cref="Hold.ShapeHoles"/>).</summary>
+    private static readonly ValueComparer<List<List<ShapePoint>>?> NullableShapeRingsComparer = new(
+        (left, right) => left == null
+            ? right == null
+            : right != null && left.Count == right.Count
+                && left.Zip(right).All(ring => ring.First.Count == ring.Second.Count
+                    && ring.First.Zip(ring.Second).All(pair => pair.First.Dx == pair.Second.Dx && pair.First.Dy == pair.Second.Dy)),
+        rings => rings == null
+            ? 0
+            : rings.Aggregate(0, (hash, ring) => ring.Aggregate(hash, (h, point) => HashCode.Combine(h, point.Dx, point.Dy))),
+        rings => ShapePoint.CloneRings(rings));
+
     private void ConfigureWall(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Wall>(entity =>
@@ -639,6 +657,13 @@ public partial class BlocwerkDbContext : DbContext
                     v => v == null ? null : JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
                     v => v == null ? null : JsonSerializer.Deserialize<List<ShapePoint>>(v, (JsonSerializerOptions?)null),
                     NullableShapePointsComparer);
+
+            // Same JSON column convention as ShapePoints: a list of rings, each ring a ShapePoint list.
+            entity.Property(h => h.ShapeHoles)
+                .HasConversion(
+                    v => v == null ? null : JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+                    v => v == null ? null : JsonSerializer.Deserialize<List<List<ShapePoint>>>(v, (JsonSerializerOptions?)null),
+                    NullableShapeRingsComparer);
         });
     }
 
