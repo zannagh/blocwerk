@@ -1,0 +1,3 @@
+@sparkjsdev/spark@2.2.0 (npm tarball registry.npmjs.org/@sparkjsdev/spark/-/spark-2.2.0.tgz, MIT, see LICENSE): dist/spark.module.min.js.
+Changes: the bare "three" / "three/addons/postprocessing/Pass.js" imports point at ../three/ (no import map in the app) and the
+trailing sourceMappingURL line is dropped (the map is not vendored). Loaded on demand by wwwroot/js/wall3d-splat.js only.
