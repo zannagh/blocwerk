@@ -7,6 +7,9 @@
 const ENDPOINT = '/api/diagnostics/photo-real';
 /** Reports per page load; the server rate-limits per user too. */
 const MAX_REPORTS = 40;
+/** Characters of `detail` (a shader link log is long) and of `shader` (numbered shader source). */
+const MAX_DETAIL = 4000;
+const MAX_SHADER = 16000;
 
 let sent = 0;
 
@@ -27,7 +30,7 @@ export function deviceFacts(renderer) {
 
 /**
  * Sends one report. `facts` from deviceFacts; `state`: { level, levels, splats, pixelRatio, frameMs,
- * elapsedMs, lostCount, safeSplats, mobile, detail }. Fire-and-forget: never throws, never waits.
+ * elapsedMs, lostCount, safeSplats, mobile, detail, shader }. Fire-and-forget: never throws, never waits.
  */
 export function report(event, renderer, facts, state = {}) {
     if (sent >= MAX_REPORTS) return;
@@ -51,7 +54,8 @@ export function report(event, renderer, facts, state = {}) {
         lostCount: state.lostCount ?? 0,
         safeSplats: state.safeSplats ?? null,
         mobile: state.mobile ?? null,
-        detail: state.detail ? String(state.detail).slice(0, 256) : null,
+        detail: state.detail ? String(state.detail).slice(0, MAX_DETAIL) : null,
+        shader: state.shader ? String(state.shader).slice(0, MAX_SHADER) : null,
     };
     try {
         fetch(ENDPOINT, {

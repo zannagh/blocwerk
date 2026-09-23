@@ -11,12 +11,15 @@
 // not an error: the view waits for the context to come back and resumes one level lower at a lower
 // resolution (wall3d-splat-recover.js). Only when even the smallest level is lost twice does it give
 // up, quietly, back to Schematic. Every step is reported to the server log (wall3d-splat-diag.js).
+// A shader that fails (iOS's Metal translator) is retried once on a plainer Spark path.
 //
 // While the mode is on the view renders continuously: Spark sorts splats in a worker and needs the
 // frames after a camera move to show the re-sorted result.
-import { createFrameMonitor, ladderOf, levelCap, pinnedLevel, remembered, rememberSuccess, sizeOf } from './wall3d-splat-ladder.js';
+import { createDetailBadge, createFrameMonitor, ladderOf, levelCap, pinnedLevel, remembered, rememberSuccess, sizeOf } from './wall3d-splat-ladder.js';
 import { deviceFacts, report } from './wall3d-splat-diag.js';
+import { PHOTO_REAL_FAILED } from './wall3d-modes.js';
 import { createRecovery, createRenderScale, prefersLightSplat } from './wall3d-splat-recover.js';
+import { createShaderRetry } from './wall3d-splat-safe.js';
 
 export { prefersLightSplat };
 
@@ -78,6 +81,7 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
     });
     const say = (event, extra) => report(event, renderer, facts, state(extra));
     const detail = createDetailBadge(renderer.domElement.parentElement);
+    const retry = createShaderRetry(renderer, say, () => !disposed && !broken && onGiveUp?.(PHOTO_REAL_FAILED));
 
     const recovery = createRecovery({
         renderer, say,
@@ -105,13 +109,14 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
         if (disposed) return false;
         const myEpoch = epoch;
         if (!sparkRenderer) {
-            sparkRenderer = new spark.SparkRenderer({ renderer });
+            sparkRenderer = new spark.SparkRenderer({ renderer, ...retry.rendererOptions });
             sparkRenderer.visible = active;
             scene.add(sparkRenderer);
         }
         const next = new spark.SplatMesh({
             url: levels[i].url,
             fileType: 'spz',
+            ...retry.meshOptions,
             // A late progress event must not re-open the "Loading…" bubble over a finished scene.
             onProgress: progress ? e => { if (!next.isInitialized) progress(e && e.lengthComputable && e.total > 0 ? e.loaded / e.total : null); } : undefined,
         });
@@ -136,6 +141,7 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
             return false;
         }
         const old = mesh;
+        retry.loaded();
         mesh = next;
         index = i;
         mesh.visible = active;
@@ -252,13 +258,25 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
          * Gives up after a render failure (shader error, or recovery gave up): every later
          * `setActive(true)` throws. A pending context restore still goes ahead for the modelled view.
          */
-        fail(reason) {
-            if (reason && !broken) say('failed', { detail: reason });
+        fail(reason, shader) {
+            if (reason && !broken) say('failed', { detail: reason, shader });
             broken = true;
             active = false;
             apply();
             release();
             loading = null;
+        },
+
+        /**
+         * A shader failed (`failure` from describeShaderFailure): reloads the level on the plainer
+         * Spark path (wall3d-splat-safe.js), once. True while that retry is on; false when photo-real
+         * never started or the retry itself failed (the caller then falls back to Schematic).
+         */
+        retrySimple(failure) {
+            if (disposed || broken || !loading) return false;
+            const level = Math.max(0, index);
+            // Not mid-render: three.js reports the failure while it draws the scene being released.
+            return retry.start(failure, () => { epoch++; release(); stepTo(level, true); });
         },
 
         dispose() {
@@ -270,19 +288,5 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
             release();
             detail.remove();
         },
-    };
-}
-
-/** The small "Loading detail…" pill over the stage. */
-function createDetailBadge(root) {
-    const el = document.createElement('div');
-    el.className = 'w3d-detail';
-    el.hidden = true;
-    el.setAttribute('role', 'status');
-    root?.append(el);
-    return {
-        show(text) { el.textContent = text; el.hidden = false; },
-        hide() { el.hidden = true; },
-        remove() { el.remove(); },
     };
 }

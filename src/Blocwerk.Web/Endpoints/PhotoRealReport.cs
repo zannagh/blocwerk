@@ -3,7 +3,10 @@
 
 namespace Blocwerk.Web.Endpoints;
 
-/// <summary>One report of the photo-real view (all optional; the client sends what it knows).</summary>
+/// <summary>
+/// One report of the photo-real view (all optional; the client sends what it knows). <see cref="Shader"/>
+/// carries a failing shader's numbered source (only with a shader failure).
+/// </summary>
 public sealed record PhotoRealReport(
     string? Event,
     int? Level,
@@ -22,4 +25,5 @@ public sealed record PhotoRealReport(
     int? LostCount,
     int? SafeSplats,
     bool? Mobile,
-    string? Detail);
+    string? Detail,
+    string? Shader = null);

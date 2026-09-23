@@ -3,6 +3,7 @@
 //   photos    — the rectified per-facet photos, with the holds' traced outlines drawn over them;
 //   photoreal — the captured Gaussian splat (wall3d-splat.js) instead of the modelled wall.
 // Photos needs facet textures and photo-real a splat; a mode without its imagery is not offered.
+import { describeShaderFailure } from './wall3d-splat-safe.js';
 
 export const MODE_LABELS = { schematic: 'Schematic', photos: 'Photos', photoreal: 'Photo-real' };
 
@@ -64,11 +65,12 @@ export function createModeController({ modes, parts, photo, ui, request, PhotoRe
         get mode() { return mode; },
         /**
          * The photo-real view cannot go on (shader error, or its context lost for good): drops it,
-         * falls back to Schematic and says so quietly, instead of leaving a black canvas.
+         * falls back to Schematic and says so quietly, instead of leaving a black canvas. `shader`:
+         * the failing program's numbered source, for the diagnostics beacon.
          */
-        fail(message, reason) {
+        fail(message, reason, shader) {
             const showing = mode === 'photoreal';
-            photo.fail(reason);                // a switch still loading it now throws instead
+            photo.fail(reason, shader);                // a switch still loading it now throws instead
             if (!showing) return pending;
             pending = pending.then(() => {
                 showModelled('schematic');
@@ -96,7 +98,8 @@ export const PHOTO_REAL_FAILED = 'Photo-real is not available on this device rig
  * Keeps render failures from leaving a black canvas. A lost WebGL context (iOS Safari drops it when
  * a frame is too heavy or the tab too big; three.js keeps it restorable) is the photo-real view's to
  * recover from (`photo.contextLost` / `contextRestored`, wall3d-splat.js: it resumes a level lower);
- * a shader that does not compile on this GPU falls back to Schematic with a note (`modes.fail`).
+ * a shader that does not compile on this GPU is retried once on Spark's plainest path
+ * (`photo.retrySimple`), then falls back to Schematic with a note (`modes.fail`).
  * `request` asks for a frame once the context is back. Returns `dispose()`.
  */
 export function watchRenderFailures(renderer, modes, request, photo) {
@@ -112,10 +115,11 @@ export function watchRenderFailures(renderer, modes, request, photo) {
     };
     canvas.addEventListener('webglcontextlost', onLost);
     canvas.addEventListener('webglcontextrestored', onRestored);
-    renderer.debug.onShaderError = (gl, program) => {
-        const log = gl.getProgramInfoLog(program);
-        console.error('wall3d: shader failed to compile', log);
-        modes.fail(PHOTO_REAL_FAILED, `shader: ${log}`);
+    renderer.debug.onShaderError = (gl, program, vertexShader, fragmentShader) => {
+        const failure = describeShaderFailure(gl, program, vertexShader, fragmentShader);
+        console.error('wall3d: shader failed to compile', failure.log);
+        if (photo.retrySimple(failure)) return;
+        modes.fail(PHOTO_REAL_FAILED, `shader: ${failure.log}`, failure.source);
     };
     return {
         dispose() {

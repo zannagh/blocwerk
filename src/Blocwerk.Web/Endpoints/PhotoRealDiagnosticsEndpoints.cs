@@ -21,6 +21,12 @@ public static class PhotoRealDiagnosticsEndpoints
     /// <summary>Reports per user per <see cref="Window"/>; more are dropped with 429.</summary>
     public const int MaxReports = 60;
 
+    /// <summary>Longest detail logged: a shader link log (e.g. an iOS Metal translation error) in full.</summary>
+    public const int MaxDetail = 4000;
+
+    /// <summary>Longest shader source logged (the client sends the first ~120 numbered lines per stage).</summary>
+    public const int MaxShader = 16000;
+
     public static readonly TimeSpan Window = TimeSpan.FromMinutes(10);
 
     private static readonly ConcurrentDictionary<string, Queue<DateTimeOffset>> Recent = new();
@@ -49,7 +55,14 @@ public static class PhotoRealDiagnosticsEndpoints
             Clip(report.Event, 32), report.Level, report.Levels, report.Splats, Clip(report.Renderer, 128),
             Clip(report.Vendor, 64), report.MaxTextureSize, report.DeviceMemory, report.Dpr, report.PixelRatio,
             report.CanvasWidth, report.CanvasHeight, report.FrameMs, report.ElapsedMs, report.LostCount,
-            report.SafeSplats, report.Mobile, Clip(report.Detail, 256));
+            report.SafeSplats, report.Mobile, Clip(report.Detail, MaxDetail));
+        if (!string.IsNullOrEmpty(report.Shader))
+        {
+            loggerFactory.CreateLogger("Blocwerk.PhotoReal").LogWarning(
+                "Photo-real {Event} shader source (renderer {Renderer}):\n{Shader}",
+                Clip(report.Event, 32), Clip(report.Renderer, 128), Clip(report.Shader, MaxShader));
+        }
+
         return Results.NoContent();
     }
 

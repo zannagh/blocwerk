@@ -131,3 +131,17 @@ export function createFrameMonitor(light) {
         },
     };
 }
+
+/** The small "Loading detail…" pill over the stage. */
+export function createDetailBadge(root) {
+    const el = document.createElement('div');
+    el.className = 'w3d-detail';
+    el.hidden = true;
+    el.setAttribute('role', 'status');
+    root?.append(el);
+    return {
+        show(text) { el.textContent = text; el.hidden = false; },
+        hide() { el.hidden = true; },
+        remove() { el.remove(); },
+    };
+}

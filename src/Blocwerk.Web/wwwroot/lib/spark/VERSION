@@ -1,3 +1,15 @@
 @sparkjsdev/spark@2.2.0 (npm tarball registry.npmjs.org/@sparkjsdev/spark/-/spark-2.2.0.tgz, MIT, see LICENSE): dist/spark.module.min.js.
 Changes: the bare "three" / "three/addons/postprocessing/Pass.js" imports point at ../three/ (no import map in the app) and the
 trailing sourceMappingURL line is dropped (the map is not vendored). Loaded on demand by wwwroot/js/wall3d-splat.js only.
+
+iOS shader patch (re-apply after every upgrade): `python3 tools/vendor/patch-spark-ios.py spark.module.min.js`.
+iOS Safari's ANGLE -> Metal translator fails to link a program in which a struct member, a swizzle or a global is passed to
+an `out` / `inout` parameter ("reference to type 'thread float3' could not bind to an lvalue of type '__metal_generic
+float3'"; sparkjsdev/spark#399, closed upstream as a WebKit bug 319958, no Spark fix as of 2.2.0 / main 2026-09-23).
+The script routes each such call through plain locals, marked /* bw-ios-outargs */, and asserts 12 call sites:
+  unpackSplatEncoding  in readPackedArray (gsplat.center/scales/quaternion/rgba)  - the one that failed on the iPhone
+  unpackSplatExt       in readExtArrays (gsplat.*)          unpackSplatExtCov in readCovArrays (covsplat.*)
+  unpackSplatEncoding  / unpackSplatExt in the paged-splat readers (${gsplat}.*)
+  packSplatExt / packSplatExtCov  (fragment outputs target, target2)
+  applyPackedRgbaDisplaceEdit x2 (${gsplat}.center, .rgba; inout)
+  applyGsplatSkinning, applyCovSplatDQSkinning, applyCovSplatLBSkinning (${splat}.center/quaternion/xxyyzz/xyxzyz; inout)
