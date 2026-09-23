@@ -55,12 +55,17 @@ public sealed partial class WallCaptureService
             t.BMin,
             t.BMax,
             t.WidthPx,
-            t.HeightPx)).ToList();
+            t.HeightPx,
+            t.MaskStoredPath is null ? null : $"{MaskUrl(wallId, t.GeometryModelId, t.FacetId)}{query}")).ToList();
     }
 
     /// <summary>The texture byte route (served by the web layer under the wall-media policy).</summary>
     public static string TextureUrl(Guid wallId, Guid modelId, string facetId) =>
         $"/api/walls/{wallId}/geometry/{modelId}/textures/{Uri.EscapeDataString(facetId)}";
+
+    /// <summary>The coverage-mask byte route of a texture (same policy as <see cref="TextureUrl"/>).</summary>
+    public static string MaskUrl(Guid wallId, Guid modelId, string facetId) =>
+        $"{TextureUrl(wallId, modelId, facetId)}/mask";
 
     /// <summary>
     /// The texture row behind the byte route. The CALLER has already passed the wall-view gate for

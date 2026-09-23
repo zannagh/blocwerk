@@ -113,6 +113,16 @@ model before importing it (`WallFrameRegistration` + `WallFrameRegistrationWrite
 On the real 14-photo capture of The Attic, a second solve without 3 photos and with 4 renumbered markers
 differs from the first by 18 mm RMS / 39 mm max in plane coordinates; registered, by 4.8 mm RMS / 10 mm max.
 
+## Facet textures (the `textures` job's result)
+
+Not part of `wall-geometry.json`, but keyed by its facet ids: per facet the worker returns
+`{facet, file, maskFile, mmPerPx, bounds {aMin, aMax, bMin, bMax}, widthPx, heightPx, photosUsed,
+coverage, markerCheck}`. `file` is the rectified JPEG; pixel `(i, j)` covers
+`a = aMin + (i+0.5)·mmPerPx`, `b = bMax − (j+0.5)·mmPerPx`. `maskFile` (added later, optional for
+consumers) is an 8-bit grayscale PNG on the same grid: 0 = no photo covers that spot (the JPEG is black
+there), 255 = covered, a few pixels of linear ramp inside the covered edge. Consumers use it as the
+texture's alpha and fall back to the opaque JPEG when it is absent (older textures).
+
 ## How the app uses it
 
 For a photo that sees ≥1 marker of facet `F`: pair each detected corner (pixels) with its

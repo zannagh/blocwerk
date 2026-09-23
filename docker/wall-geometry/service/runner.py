@@ -24,7 +24,7 @@ def _textures(job_dir, progress):
     os.environ["OPENCV_IO_MAX_IMAGE_PIXELS"] = str(settings.max_image_pixels)
     import cv2
 
-    from wallgeometry.textures import TextureError, encode_jpeg, render_textures
+    from wallgeometry.textures import TextureError, encode_jpeg, encode_png, render_textures
     with open(os.path.join(job_dir, "geometry.json")) as fh:
         doc = json.load(fh)
     with open(os.path.join(job_dir, "inputs.json")) as fh:
@@ -45,10 +45,14 @@ def _textures(job_dir, progress):
         name = f"facet_{r['facet']}.jpg"
         with open(os.path.join(job_dir, name), "wb") as fh:
             fh.write(encode_jpeg(r["image"], params.get("jpegQuality", 90)))
-        files.append(name)
-        facets.append({k: v for k, v in r.items() if k != "image"} | {"file": name})
+        mask_name = f"facet_{r['facet']}_mask.png"
+        with open(os.path.join(job_dir, mask_name), "wb") as fh:
+            fh.write(encode_png(r["mask"]))
+        files += [name, mask_name]
+        facets.append({k: v for k, v in r.items() if k not in ("image", "mask")} | {"file": name, "maskFile": mask_name})
     manifest = {"pixelConvention": "column i, row j -> a = aMin + (i + 0.5) * mmPerPx, "
-                                   "b = bMax - (j + 0.5) * mmPerPx (facet frame of the geometry)",
+                                   "b = bMax - (j + 0.5) * mmPerPx (facet frame of the geometry); maskFile: same "
+                                   "grid, 8-bit gray, 0 = no photo there, 255 = photo, feathered edge",
                 "facets": facets}
     with open(os.path.join(job_dir, "textures.json"), "w") as fh:
         json.dump(manifest, fh)

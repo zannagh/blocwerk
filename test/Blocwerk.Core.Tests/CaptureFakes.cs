@@ -10,7 +10,7 @@ namespace Blocwerk.Core.Tests;
 /// <summary>
 /// A scripted compute worker: records every submission, answers each job with "running" once and
 /// then the scripted terminal status. Solve jobs succeed with <see cref="GeometryJson"/>, texture
-/// jobs with one facet file per facet of it — unless a failure is scripted. As the splat worker it
+/// jobs with one facet file per facet of it (facet 0 with a coverage mask, 5a without, as from an older worker) — unless a failure is scripted. As the splat worker it
 /// serves <see cref="FrameJson"/> and <see cref="Spz"/> for any finished job.
 /// </summary>
 internal sealed class FakeComputeJobClient : IComputeJobClient
@@ -87,6 +87,9 @@ internal sealed class FakeComputeJobClient : IComputeJobClient
     /// </summary>
     public Func<string, byte[]>? Download { get; set; }
 
+    /// <summary>What a <c>*_mask.png</c> download answers (only the PNG signature matters to the app).</summary>
+    public static byte[] MaskPng { get; } = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0];
+
     public Task<byte[]> DownloadFileAsync(string jobId, string name, CancellationToken ct)
     {
         Downloads.Add(name);
@@ -99,6 +102,7 @@ internal sealed class FakeComputeJobClient : IComputeJobClient
         {
             "frame.json" => Encoding.UTF8.GetBytes(FrameJson),
             "wall.spz" => Spz,
+            _ when name.EndsWith("_mask.png", StringComparison.Ordinal) => MaskPng,
             _ => CaptureScenario.TinyJpeg(),
         });
     }
@@ -160,7 +164,7 @@ internal sealed class FakeComputeJobClient : IComputeJobClient
                 ["facets"] = new JsonArray(
                     new JsonObject
                     {
-                        ["facet"] = "0", ["file"] = "facet_0.jpg", ["widthPx"] = 1550, ["heightPx"] = 1300,
+                        ["facet"] = "0", ["file"] = "facet_0.jpg", ["maskFile"] = "facet_0_mask.png", ["widthPx"] = 1550, ["heightPx"] = 1300,
                         ["bounds"] = new JsonObject { ["aMin"] = -100.0, ["aMax"] = 3000.0, ["bMin"] = -100.0, ["bMax"] = 2500.0 },
                     },
                     new JsonObject { ["facetId"] = "5a", ["file"] = "facet_5a.jpg", ["widthPx"] = 450, ["heightPx"] = 1000, ["aMin"] = 0.0, ["aMax"] = 900.0, ["bMin"] = 0.0, ["bMax"] = 2000.0 }),

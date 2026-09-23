@@ -135,12 +135,14 @@ public sealed class WallCaptureSweeper(
         await using var db = dbContextFactory.CreateDbContext();
         var photos = await db.WallCapturePhotos.Select(p => p.StoredPath).ToListAsync(ct);
         var textures = await db.WallGeometryTextures.Select(t => t.StoredPath).ToListAsync(ct);
+        var masks = await db.WallGeometryTextures.Where(t => t.MaskStoredPath != null)
+            .Select(t => t.MaskStoredPath!).ToListAsync(ct);
         var videos = (await db.WallCaptures
                 .Where(c => c.VideoStoredPath != null || c.VideoFramesJson != null)
                 .Select(c => new { c.VideoStoredPath, c.VideoFramesJson })
                 .ToListAsync(ct))
             .SelectMany(c => CaptureVideoFiles.Of(c.VideoStoredPath, c.VideoFramesJson));
-        return new HashSet<string>(photos.Concat(textures).Concat(videos), StringComparer.Ordinal);
+        return new HashSet<string>(photos.Concat(textures).Concat(masks).Concat(videos), StringComparer.Ordinal);
     }
 
     private void DeleteFiles(IEnumerable<string> names)

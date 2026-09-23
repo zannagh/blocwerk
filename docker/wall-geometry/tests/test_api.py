@@ -3,6 +3,7 @@ import json
 import time
 
 import cv2
+import numpy as np
 import pytest
 import synthetic
 from fastapi.testclient import TestClient
@@ -81,6 +82,12 @@ def test_textures_happy_path(client):
     url = next(f["url"] for f in st["result"]["files"] if f["name"] == facet["file"])
     img = client.get(url)
     assert img.status_code == 200 and img.headers["content-type"] == "image/jpeg"
+    # the coverage mask: same grid as the texture, 8-bit gray PNG
+    murl = next(f["url"] for f in st["result"]["files"] if f["name"] == facet["maskFile"])
+    m = client.get(murl)
+    assert m.status_code == 200 and m.headers["content-type"] == "image/png"
+    mask = cv2.imdecode(np.frombuffer(m.content, np.uint8), cv2.IMREAD_UNCHANGED)
+    assert mask.dtype == np.uint8 and mask.shape == (facet["heightPx"], facet["widthPx"])
 
 
 @pytest.mark.parametrize("body, code", [

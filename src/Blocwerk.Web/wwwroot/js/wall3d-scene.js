@@ -106,10 +106,27 @@ export function buildTextures(view, renderer) {
         const tex = loader.load(t.url, () => renderer.__wall3dRequest?.());
         tex.colorSpace = THREE.SRGBColorSpace;
         tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
-        const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9, side: THREE.DoubleSide });
-        group.add(new THREE.Mesh(geo, mat));
+        group.add(texturedMesh(geo, tex, t.maskUrl ? loader.load(t.maskUrl, () => renderer.__wall3dRequest?.()) : null));
     }
     return group;
+}
+
+/**
+ * A facet photo, optionally with its coverage mask as alpha (0 where no photo saw the spot; the worker
+ * paints those parts black): the plywood facet 3 mm below then shows through instead. alphaTest drops
+ * the fully uncovered pixels outright so they write no depth; the feathered seam blends. Drawn first
+ * among the transparent objects so the (dimmed, transparent) hold outlines 5 mm up always blend over
+ * it. Without a mask (older textures) the photo stays opaque, as before.
+ */
+function texturedMesh(geo, tex, mask) {
+    const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9, side: THREE.DoubleSide });
+    if (mask) {
+        mask.colorSpace = THREE.NoColorSpace;   // a plain coverage value, not a colour
+        Object.assign(mat, { alphaMap: mask, transparent: true, alphaTest: 0.02 });
+    }
+    const mesh = new THREE.Mesh(geo, mat);
+    if (mask) mesh.renderOrder = -1;
+    return mesh;
 }
 
 /** The printed markers as small dark squares, lifted a millimetre off their facet. */

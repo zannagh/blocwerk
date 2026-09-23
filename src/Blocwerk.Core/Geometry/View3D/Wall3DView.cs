@@ -130,5 +130,9 @@ public enum Wall3DHoldRole
     ColorFoot,
 }
 
-/// <summary>A rectified image for one facet, covering <paramref name="Bounds"/> of its plane.</summary>
-public sealed record Wall3DTexture(string FacetId, string Url, PlaneRectMm Bounds);
+/// <summary>
+/// A rectified image for one facet, covering <paramref name="Bounds"/> of its plane. <paramref name="MaskUrl"/>
+/// is its photo-coverage mask (the texture's alpha: uncovered parts show the plain facet), null for
+/// textures made before masks existed.
+/// </summary>
+public sealed record Wall3DTexture(string FacetId, string Url, PlaneRectMm Bounds, string? MaskUrl = null);

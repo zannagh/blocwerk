@@ -6,7 +6,7 @@ Server-side 3D work for Blocwerk, so users never run anything locally:
   → metric wall geometry: facets (planes) in mm, gravity, measured angles, per-marker plane
   coordinates, camera poses. Output format: `tools/glyph/wall-geometry.schema.md` (extra fields OK).
 - **textures**: photos + a solved geometry → one rectified orthophoto JPEG per facet (default
-  2 mm/px), for the app's 3D view.
+  2 mm/px) plus its coverage mask (8-bit PNG), for the app's 3D view.
 
 It speaks the shared **Blocwerk compute job protocol v1** (`../compute-jobs-protocol.md`): async jobs,
 polling, optional signed callbacks, bearer auth. `kind=splat` is NOT served here (answers `501`); a
@@ -113,6 +113,16 @@ Per facet pixel, the ONE photo with the best `f·cos(view angle)/distance` is us
 ghosted holds), chosen on an 8-px label grid cleaned with a 5-cell mode filter. Plane points behind
 another facet's surface are left black (clips the side triangle along the overhang). Pixel `(i, j)`
 covers `a = aMin + (i+0.5)·mmPerPx`, `b = bMax − (j+0.5)·mmPerPx` in the facet frame.
+**Coverage mask.** Every facet also gets `facet_<id>_mask.png` (manifest field `maskFile`): an 8-bit
+grayscale PNG on exactly the texture's pixel grid, 0 where no photo was drawn (outside every photo,
+behind another facet — the black parts of the JPEG), 255 where one was, with a linear 4 px feather
+*inside* the covered area so the black fill never bleeds into the seam. A viewer uses it as the alpha of
+the texture and shows the plain facet elsewhere. It stays a separate file so the photo keeps JPEG's
+size and format: on The Attic's 4 facets (≈ 6.6 MP) the masks are 27 KB in total next to 1.95 MB of
+JPEG (+1.4 %). An RGBA PNG of the same textures would be 10.0 MB; a q90 WebP with alpha 1.56 MB, i.e.
+smaller, but a new image format for every consumer and no way back for old ones. The field is
+additive: clients that ignore it get exactly the old result.
+
 `markerCheck` re-detects the facet's markers in its own orthophoto, edge-refines them and reports
 side length vs `markerSizeMm` and position vs `cornersPlaneMm`.
 

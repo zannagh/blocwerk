@@ -33,6 +33,16 @@ public class WallGeometryTexture
 
     public long SizeBytes { get; set; }
 
+    /// <summary>
+    /// Stored name of the photo-coverage mask (8-bit grayscale PNG, same pixel grid as the image: 0 = no
+    /// photo there, 255 = covered). Null for textures made before the worker returned masks: those
+    /// render opaque as before.
+    /// </summary>
+    [MaxLength(128)]
+    public string? MaskStoredPath { get; set; }
+
+    public long? MaskSizeBytes { get; set; }
+
     public double AMin { get; set; }
 
     public double AMax { get; set; }

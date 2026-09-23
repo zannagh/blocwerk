@@ -14,20 +14,27 @@ namespace Blocwerk.Web.Endpoints;
 /// other wall media (<see cref="WallPanelPhotoEndpoints"/>, <see cref="WallGalleryImageEndpoint"/>):
 /// a member of the wall, an anonymous viewer holding its share token, or the wall's own kiosk
 /// tablet; API-key principals are rejected. A texture row is written once and never rewritten, so
-/// it is served immutable under an ETag of its id.
+/// it is served immutable under an ETag of its id. Its coverage mask (<see cref="MaskRoute"/>) is
+/// served by the same gate from the same row.
 /// </summary>
 public static class WallGeometryTextureEndpoints
 {
     public const string Route = "/api/walls/{wallId:guid}/geometry/{modelId:guid}/textures/{facetId}";
+
+    /// <summary>The texture's coverage mask: same gate, same row, its own file.</summary>
+    public const string MaskRoute = Route + "/mask";
 
     public static void MapWallGeometryTextures(this WebApplication app)
     {
         app.MapMethods(Route, [HttpMethods.Get, HttpMethods.Head], HandleAsync)
             .RequireAuthorization(BlocwerkPolicies.WallGalleryImage)
             .DenyApiKeyPrincipals();
+        app.MapMethods(MaskRoute, [HttpMethods.Get, HttpMethods.Head], HandleMaskAsync)
+            .RequireAuthorization(BlocwerkPolicies.WallGalleryImage)
+            .DenyApiKeyPrincipals();
     }
 
-    internal static async Task<IResult> HandleAsync(
+    internal static Task<IResult> HandleAsync(
         Guid wallId,
         Guid modelId,
         string facetId,
@@ -39,6 +46,40 @@ public static class WallGeometryTextureEndpoints
         [FromServices] IDbContextFactory<BlocwerkDbContext> dbContextFactory,
         [FromServices] IKioskContext kioskContext,
         [FromServices] ICaptureFileStore files,
+        CancellationToken ct) =>
+        ServeAsync(
+            wallId, modelId, facetId, token, user, http, false, wallService, currentUserService, dbContextFactory, kioskContext, files, ct);
+
+    /// <summary>The texture's photo-coverage mask (8-bit PNG, its alpha); 404 when it has none.</summary>
+    internal static Task<IResult> HandleMaskAsync(
+        Guid wallId,
+        Guid modelId,
+        string facetId,
+        [FromQuery] string? token,
+        ClaimsPrincipal user,
+        HttpContext http,
+        [FromServices] IWallService wallService,
+        [FromServices] ICurrentUserService currentUserService,
+        [FromServices] IDbContextFactory<BlocwerkDbContext> dbContextFactory,
+        [FromServices] IKioskContext kioskContext,
+        [FromServices] ICaptureFileStore files,
+        CancellationToken ct) =>
+        ServeAsync(
+            wallId, modelId, facetId, token, user, http, true, wallService, currentUserService, dbContextFactory, kioskContext, files, ct);
+
+    private static async Task<IResult> ServeAsync(
+        Guid wallId,
+        Guid modelId,
+        string facetId,
+        string? token,
+        ClaimsPrincipal user,
+        HttpContext http,
+        bool mask,
+        IWallService wallService,
+        ICurrentUserService currentUserService,
+        IDbContextFactory<BlocwerkDbContext> dbContextFactory,
+        IKioskContext kioskContext,
+        ICaptureFileStore files,
         CancellationToken ct)
     {
         if (user.IsApiKeyPrincipal() || facetId.Length > 32)
@@ -57,6 +98,23 @@ public static class WallGeometryTextureEndpoints
         if (texture is null)
         {
             return Results.NotFound();
+        }
+
+        if (mask)
+        {
+            if (texture.MaskStoredPath is not { } maskPath)
+            {
+                return Results.NotFound();
+            }
+
+            var maskSize = texture.MaskSizeBytes ?? 0;
+            return await ImageResponse.ConditionalAsync(
+                http,
+                ImageResponse.Etag("geometry-texture-mask", texture.Id, maskSize),
+                "image/png",
+                maskSize,
+                immutable: true,
+                () => files.ReadAsync(maskPath, ct));
         }
 
         return await ImageResponse.ConditionalAsync(

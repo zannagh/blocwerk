@@ -3,10 +3,11 @@ import json
 import os
 
 import cv2
+import numpy as np
 import pytest
 import synthetic
 
-from wallgeometry.textures import TextureError, render_textures
+from wallgeometry.textures import TextureError, coverage_mask, encode_png, render_textures
 
 PNG_DIR = os.environ.get("GLYPH_PNG_DIR", "")
 
@@ -42,3 +43,36 @@ def test_capture1_textures_marker_sizes():
     for r in res:
         if r["markerCheck"]["detected"]:
             assert r["markerCheck"]["sideRmsErrMm"] < 4.0, r["facet"]
+
+
+def test_mask_marks_what_the_photo_covered():
+    doc, photo = synthetic.scene()
+    # a 2 m margin reaches well outside the one photo, so most of the grid is uncovered
+    r = render_textures(doc, lambda n: photo, {"SYN_1"}, {"extraMarginMm": 2000})[0]
+    mask, img = r["mask"], r["image"]
+    assert mask.shape == img.shape[:2] and mask.dtype == np.uint8
+    assert r["coverage"] < 0.5
+    # nothing drawn -> alpha 0; the black fill is (almost) all masked out
+    assert (img[mask == 0] == 0).all()
+    assert (mask[img.max(2) == 0] == 0).mean() > 0.99
+    assert abs((mask > 0).mean() - r["coverage"]) < 0.02
+    assert (mask == 255).any()
+
+
+def test_mask_feather_ramps_inside_the_covered_area():
+    filled = np.zeros((40, 40), bool)
+    filled[:, 10:] = True
+    m = coverage_mask(filled, 4)
+    assert (m[:, :10] == 0).all()                  # never alpha outside the photo
+    row = m[20, 10:20].astype(int)
+    assert row[0] < 128 and (np.diff(row) >= 0).all() and row[-1] == 255
+    assert (coverage_mask(filled, 0)[filled] == 255).all()
+    assert not coverage_mask(np.zeros((5, 5), bool)).any()
+
+
+def test_mask_png_roundtrip_is_small():
+    filled = np.zeros((1000, 2000), bool)
+    filled[100:900, 50:1900] = True
+    png = encode_png(coverage_mask(filled))
+    back = cv2.imdecode(np.frombuffer(png, np.uint8), cv2.IMREAD_UNCHANGED)
+    assert back.shape == filled.shape and len(png) < 20_000

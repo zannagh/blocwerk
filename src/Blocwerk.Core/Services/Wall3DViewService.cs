@@ -118,7 +118,7 @@ public sealed class Wall3DViewService(
     private async Task<Wall3DView> WithImageryAsync(Wall3DView view, string? shareToken, CancellationToken ct)
     {
         var textures = (await captures.GetActiveTexturesAsync(view.WallId, shareToken))
-            .Select(t => new Wall3DTexture(t.FacetId, t.Url, new PlaneRectMm(t.AMin, t.AMax, t.BMin, t.BMax)))
+            .Select(t => new Wall3DTexture(t.FacetId, t.Url, new PlaneRectMm(t.AMin, t.AMax, t.BMin, t.BMax), t.MaskUrl))
             .ToList();
 
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);

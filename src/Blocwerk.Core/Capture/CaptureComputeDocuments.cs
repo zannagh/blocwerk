@@ -9,7 +9,11 @@ namespace Blocwerk.Core.Capture;
 
 /// <summary>One facet texture listed by a finished <c>textures</c> job.</summary>
 public sealed record TextureManifestEntry(
-    string FacetId, string File, double AMin, double AMax, double BMin, double BMax, int WidthPx, int HeightPx);
+    string FacetId, string File, double AMin, double AMax, double BMin, double BMax, int WidthPx, int HeightPx)
+{
+    /// <summary>The coverage mask's file (<c>maskFile</c>); null from a worker that does not make masks.</summary>
+    public string? MaskFile { get; init; }
+}
 
 /// <summary>
 /// The JSON documents exchanged with the geometry worker (<c>docker/wall-geometry/README.md</c>):
@@ -156,8 +160,12 @@ public static class CaptureComputeDocuments
             return null;
         }
 
+        var mask = Text(f, "maskFile");
         return new TextureManifestEntry(
-            id!, file, box[0]!.Value, box[1]!.Value, box[2]!.Value, box[3]!.Value, (int)width.Value, (int)height.Value);
+            id!, file, box[0]!.Value, box[1]!.Value, box[2]!.Value, box[3]!.Value, (int)width.Value, (int)height.Value)
+        {
+            MaskFile = string.IsNullOrEmpty(mask) || mask.Length > 128 ? null : mask,
+        };
     }
 
     private static JsonArray PhotoNodes(WallMarkerLayout layout, IEnumerable<WallCapturePhoto> photos)

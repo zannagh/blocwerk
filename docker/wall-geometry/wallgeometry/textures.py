@@ -10,7 +10,9 @@ Pixel convention of every output image: column i, row j (top-left origin) covers
   a = aMin + (i + 0.5) * mmPerPx,   b = bMax - (j + 0.5) * mmPerPx
 i.e. +a to the right, +b up, exactly the facet frame of the geometry document.
 
-Plane points that lie behind another facet's surface (inside the wall) are left black. Limits: no
+Plane points that lie behind another facet's surface (inside the wall), or that no photo sees, are left
+black; the per-facet coverage mask (`coverage_mask`) marks them 0 so a viewer can show the plain facet
+there instead. Limits: no
 full occlusion test (a hold or facet between camera and spot is not detected) and no exposure
 balancing between photos; both are visible as seams at worst.
 """
@@ -22,7 +24,7 @@ import numpy as np
 from .refine import prepare, refine_corners
 
 DEFAULTS = {"behindOtherFacetMm": 30.0, "mmPerPx": 2.0, "maxSidePx": 4096, "extraMarginMm": 100.0, "labelCellPx": 8,
-            "modeFilterCells": 5, "imageMarginPx": 16, "jpegQuality": 90}
+            "modeFilterCells": 5, "imageMarginPx": 16, "jpegQuality": 90, "maskFeatherPx": 4.0}
 
 
 # What a client may set in `options`, with its bounds (everything else in DEFAULTS is internal).
@@ -222,8 +224,8 @@ def marker_check(image, facet, doc, res, g):
 def render_textures(doc, load_photo, available, params=None, progress=None):
     """doc: geometry document; load_photo(name) -> BGR uint8 image; available: photo names.
 
-    Returns a list of {facet, image (BGR), mmPerPx, bounds, widthPx, heightPx, photosUsed, coverage,
-    markerCheck}.
+    Returns a list of {facet, image (BGR), mask (uint8, see coverage_mask), mmPerPx, bounds, widthPx,
+    heightPx, photosUsed, coverage, markerCheck}.
     """
     p = {**DEFAULTS, **(params or {})}
     cams = {c["image"]: _cam(c) for c in doc.get("cameras", []) if c["image"] in available}
@@ -254,11 +256,32 @@ def render_textures(doc, load_photo, available, params=None, progress=None):
     for j in jobs:
         lab, g = j["lab"], j["g"]
         used = {names[k]: round(float((lab == k).mean()), 4) for k in range(len(names)) if (lab == k).any()}
-        results.append({"facet": j["f"]["id"], "image": j["out"], "mmPerPx": g["res"], "bounds": g["bounds"],
+        results.append({"facet": j["f"]["id"], "image": j["out"],
+                        "mask": coverage_mask(j["filled"], p["maskFeatherPx"]), "mmPerPx": g["res"], "bounds": g["bounds"],
                         "widthPx": g["W"], "heightPx": g["H"], "photosUsed": used,
                         "coverage": round(float(j["filled"].mean()), 4),
                         "markerCheck": marker_check(j["out"], j["f"], doc, g["res"], g)})
     return results
+
+
+def coverage_mask(filled, feather_px=DEFAULTS["maskFeatherPx"]):
+    """Photo coverage as an 8-bit alpha mask, same grid as the image: 0 where no photo was drawn
+    (outside every photo, behind another facet), 255 inside, ramping linearly over `feather_px`
+    pixels INSIDE the covered area so the seam to the plain facet is soft and the black fill never
+    bleeds through (bilinear sampling or JPEG ringing along the edge)."""
+    m = filled.astype(np.uint8) * 255
+    if feather_px <= 0 or not filled.any():
+        return m
+    dist = cv2.distanceTransform(m, cv2.DIST_L2, 3)
+    return np.clip(dist / float(feather_px) * 255.0, 0, 255).astype(np.uint8)
+
+
+def encode_png(image):
+    """Lossless PNG at the strongest deflate level (a coverage mask is a few large flat regions)."""
+    ok, buf = cv2.imencode(".png", image, [cv2.IMWRITE_PNG_COMPRESSION, 9])
+    if not ok:
+        raise TextureError("PNG encoding failed")
+    return buf.tobytes()
 
 
 def encode_jpeg(image, quality=DEFAULTS["jpegQuality"]):

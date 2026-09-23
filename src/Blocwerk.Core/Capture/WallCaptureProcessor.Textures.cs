@@ -104,10 +104,7 @@ public sealed partial class WallCaptureProcessor
         catch
         {
             // Nothing references the files of a set that was not committed.
-            foreach (var row in rows)
-            {
-                files.Delete(row.StoredPath);
-            }
+            DeleteTextureFiles(rows);
 
             throw;
         }
@@ -123,6 +120,7 @@ public sealed partial class WallCaptureProcessor
             throw new CaptureFailedException($"texture {entry.FacetId} is not an image.");
         }
 
+        var mask = await DownloadMaskAsync(entry, jobId, client, ct);
         return new WallGeometryTexture
         {
             GeometryModelId = modelId,
@@ -130,6 +128,8 @@ public sealed partial class WallCaptureProcessor
             StoredPath = await files.SaveAsync(bytes, CapturePhotoFormat.Extension(kind), ct),
             ContentType = CapturePhotoFormat.ContentType(kind),
             SizeBytes = bytes.LongLength,
+            MaskStoredPath = mask is null ? null : await files.SaveAsync(mask, ".png", ct),
+            MaskSizeBytes = mask?.LongLength,
             AMin = entry.AMin,
             AMax = entry.AMax,
             BMin = entry.BMin,
@@ -137,6 +137,37 @@ public sealed partial class WallCaptureProcessor
             WidthPx = entry.WidthPx,
             HeightPx = entry.HeightPx,
         };
+    }
+
+    /// <summary>
+    /// The facet's coverage mask, or null: a worker without masks, or a mask that is not a PNG or does not
+    /// download. The mask is cosmetic (uncovered parts show the plain facet instead of black), so its
+    /// absence never fails the textures; the texture then renders opaque as before.
+    /// </summary>
+    private async Task<byte[]?> DownloadMaskAsync(
+        TextureManifestEntry entry, string jobId, IComputeJobClient client, CancellationToken ct)
+    {
+        if (entry.MaskFile is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var bytes = await client.DownloadFileAsync(jobId, entry.MaskFile, MaxTextureBytes, ct);
+            if (CapturePhotoFormat.Sniff(bytes) == CapturePhotoKind.Png)
+            {
+                return bytes;
+            }
+
+            logger.LogWarning("The coverage mask of texture {FacetId} is not a PNG; it is left out", entry.FacetId);
+        }
+        catch (Exception ex) when (ex is ComputeJobException or InvalidDataException or IOException)
+        {
+            logger.LogWarning(ex, "The coverage mask of texture {FacetId} could not be downloaded", entry.FacetId);
+        }
+
+        return null;
     }
 
     /// <summary>Swaps the model's texture set in one SaveChanges; the old files are removed afterwards.</summary>
@@ -147,9 +178,18 @@ public sealed partial class WallCaptureProcessor
         db.WallGeometryTextures.RemoveRange(old);
         db.WallGeometryTextures.AddRange(rows);
         await db.SaveChangesAsync(ct);
-        foreach (var texture in old)
+        DeleteTextureFiles(old);
+    }
+
+    private void DeleteTextureFiles(IEnumerable<WallGeometryTexture> textures)
+    {
+        foreach (var texture in textures)
         {
             files.Delete(texture.StoredPath);
+            if (texture.MaskStoredPath is { } mask)
+            {
+                files.Delete(mask);
+            }
         }
     }
 

@@ -81,7 +81,8 @@ public sealed record CapturePlanResult(bool Accepted, IReadOnlyList<string> Erro
 /// <summary>
 /// One texture of the wall's ACTIVE geometry model, for the 3D view: the facet it belongs to, the
 /// URL to fetch it from (already authorized for the caller's way in, share token included) and the
-/// facet-plane millimetres it spans.
+/// facet-plane millimetres it spans. <c>MaskUrl</c> is its coverage mask, authorized the same way; null
+/// when the texture has none.
 /// </summary>
 public sealed record WallGeometryTextureInfo(
     Guid ModelId,
@@ -92,7 +93,8 @@ public sealed record WallGeometryTextureInfo(
     double BMin,
     double BMax,
     int WidthPx,
-    int HeightPx);
+    int HeightPx,
+    string? MaskUrl = null);
 
 /// <summary>
 /// One stored capture photo, read back for reuse as a panel photo: the wall it belongs to (from the

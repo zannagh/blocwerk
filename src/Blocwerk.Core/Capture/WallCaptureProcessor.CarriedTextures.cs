@@ -34,6 +34,7 @@ public sealed partial class WallCaptureProcessor
                 continue;
             }
 
+            var mask = source.MaskStoredPath is null ? null : await files.ReadAsync(source.MaskStoredPath, ct);
             rows.Add(new WallGeometryTexture
             {
                 GeometryModelId = modelId,
@@ -41,6 +42,8 @@ public sealed partial class WallCaptureProcessor
                 StoredPath = await files.SaveAsync(bytes, CapturePhotoFormat.Extension(CapturePhotoFormat.Sniff(bytes)), ct),
                 ContentType = source.ContentType,
                 SizeBytes = bytes.LongLength,
+                MaskStoredPath = mask is null ? null : await files.SaveAsync(mask, ".png", ct),
+                MaskSizeBytes = mask?.LongLength,
                 AMin = source.AMin,
                 AMax = source.AMax,
                 BMin = source.BMin,
