@@ -18,6 +18,14 @@ namespace Blocwerk.Core.Services;
 /// </summary>
 public sealed class WallShapeRecognitionRunner
 {
+    /// <summary>
+    /// Runs that may outline at once, server-wide. Each is OpenCV work over full panel photos; anyone may
+    /// create walls and start updates, so without a cap N walls meant N concurrent runs. Further runs
+    /// queue (they count as running, and can be cancelled while they wait).
+    /// </summary>
+    public const int MaxConcurrentRuns = 2;
+
+    private readonly SemaphoreSlim slots = new(MaxConcurrentRuns, MaxConcurrentRuns);
     private readonly object gate = new();
     private readonly Dictionary<Guid, (Task Task, CancellationTokenSource Cts)> runs = [];
     private readonly RootDbContextFactory factory;
@@ -67,12 +75,24 @@ public sealed class WallShapeRecognitionRunner
             var job = new WallShapeRecognitionJob(factory, outlineService, logger);
             var task = Task.Run(async () =>
             {
+                var acquired = false;
                 try
                 {
+                    await slots.WaitAsync(cts.Token);
+                    acquired = true;
                     await job.RunAsync(sessionId, cts.Token);
+                }
+                catch (OperationCanceledException) when (!acquired)
+                {
+                    // Cancelled (skipped) while still queued: nothing ran; the caller sets the status.
                 }
                 finally
                 {
+                    if (acquired)
+                    {
+                        slots.Release();
+                    }
+
                     lock (gate)
                     {
                         runs.Remove(sessionId);

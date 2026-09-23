@@ -15,6 +15,9 @@ namespace Blocwerk.Core.Capture;
 /// </summary>
 public sealed partial class WallCaptureService
 {
+    // The DI singleton in the app; a service built without one (tests, tools) bounds only itself.
+    private readonly CaptureVideoUploadSlots videoUploadSlots = uploadSlots ?? new CaptureVideoUploadSlots();
+
     private WallCapturePipelineOptions PipelineOptions => pipelineOptions ?? new WallCapturePipelineOptions();
 
     public async Task<CaptureVideoInfo> AddVideoAsync(Guid captureId, string? fileName, Stream content, CancellationToken ct)
@@ -26,8 +29,12 @@ public sealed partial class WallCaptureService
             throw new InvalidOperationException($"{name ?? "The file"} is not an MP4 or MOV video.");
         }
 
-        // Every gate BEFORE a single byte is written: admin of the wall, no kiosk, own open draft.
-        await EnsureVideoAllowedAsync(captureId);
+        // Every gate BEFORE a single byte is written: admin of the wall, no kiosk, own open draft,
+        // and a free upload slot (one per user, a few server-wide).
+        var userId = await EnsureVideoAllowedAsync(captureId);
+        using var slot = videoUploadSlots.TryAcquire(userId)
+            ?? throw new InvalidOperationException(
+                "Another video upload is still running. Wait for it to finish (or cancel it), then try again.");
 
         // A 1–2 GB upload runs for many minutes and cannot be resumed: hold the deploy gate until the
         // file is stored, probed and attached (or refused, failed or cancelled — the using releases it).
@@ -62,9 +69,9 @@ public sealed partial class WallCaptureService
         }
     }
 
-    private async Task EnsureVideoAllowedAsync(Guid captureId)
+    private async Task<Guid> EnsureVideoAllowedAsync(Guid captureId)
     {
-        var (db, _, capture) = await OpenDraftAsync(captureId);
+        var (db, userId, capture) = await OpenDraftAsync(captureId);
         await using (db)
         {
             if (!await db.Walls.Where(w => w.Id == capture.WallId).Select(w => w.GlyphsEnabled).FirstOrDefaultAsync())
@@ -76,6 +83,8 @@ public sealed partial class WallCaptureService
             {
                 throw new InvalidOperationException("The photo-real view is not set up on this server, so a video would not be used.");
             }
+
+            return userId;
         }
     }
 

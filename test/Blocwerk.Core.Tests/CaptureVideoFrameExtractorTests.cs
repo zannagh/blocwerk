@@ -82,6 +82,50 @@ public class CaptureVideoFrameExtractorTests : IDisposable
         Assert.Null(CaptureVideoFrameExtractor.ParseProbe("""{"streams":[],"format":{"duration":"3"}}"""));
     }
 
+    [Fact]
+    public void ParseProbe_RefusesAPictureAboveThePixelCap()
+    {
+        const string json = """
+            {"streams":[{"width":65535,"height":65535}],"format":{"duration":"2"}}
+            """;
+        Assert.Null(CaptureVideoFrameExtractor.ParseProbe(json));
+    }
+
+    [Fact]
+    public void FfmpegArguments_CapPixelsInputDurationAndCandidateCount()
+    {
+        var args = CaptureVideoFrameExtractor.FfmpegArguments("/data/v.mp4", 7.5, "/tmp/c_%05d.jpg", 363).ToList();
+        var input = args.IndexOf("-i");
+
+        // Input options must precede -i to apply to the decoder/demuxer.
+        Assert.InRange(args.IndexOf("-max_pixels"), 0, input - 1);
+        Assert.Equal(CaptureVideoFrameExtractor.MaxPixels.ToString(System.Globalization.CultureInfo.InvariantCulture), args[args.IndexOf("-max_pixels") + 1]);
+        Assert.InRange(args.IndexOf("-t"), 0, input - 1);
+        Assert.Equal("600", args[args.IndexOf("-t") + 1]);
+        Assert.Equal("363", args[args.IndexOf("-frames:v") + 1]);
+        Assert.Equal(363, CaptureVideoFrameExtractor.MaxCandidates(60));
+    }
+
+    [SkippableFact]
+    public async Task Extraction_StopsAtTheCandidateCap_EvenWhenTheRateIsNotPlanned()
+    {
+        Skip.IfNot(FfmpegAvailable(), "ffmpeg is not installed");
+        var clip = await MakeClipAsync(width: 320, height: 240, seconds: 8, rotation: 0);
+        var output = Directory.CreateDirectory(Path.Combine(dir, "cand")).FullName;
+
+        // 30 candidate fps over 8 s would be 240 files; the cap must stop ffmpeg at 5.
+        var info = new ProcessStartInfo("ffmpeg") { RedirectStandardError = true, RedirectStandardOutput = true, UseShellExecute = false };
+        CaptureVideoFrameExtractor.FfmpegArguments(clip, 30, Path.Combine(output, "c_%05d.jpg"), 5).ToList().ForEach(info.ArgumentList.Add);
+        using (var p = Process.Start(info)!)
+        {
+            await p.StandardOutput.ReadToEndAsync();
+            await p.WaitForExitAsync();
+            Assert.Equal(0, p.ExitCode);
+        }
+
+        Assert.Equal(5, Directory.GetFiles(output, "c_*.jpg").Length);
+    }
+
     public void Dispose()
     {
         Directory.Delete(dir, recursive: true);

@@ -13,6 +13,7 @@ public static class CaptureServices
         services.AddSingleton<ICaptureFileStore, FileSystemCaptureFileStore>();
         services.AddSingleton<ICaptureVideoFrameExtractor, CaptureVideoFrameExtractor>();
         services.AddSingleton(sp => WallCapturePipelineOptions.Bind(sp.GetService<IConfiguration>()));
+        services.AddSingleton(_ => new CaptureVideoUploadSlots());
 
         // Single-instance app: one in-memory queue and ONE worker; the row status is the durable truth
         // and the worker re-enqueues unfinished captures on start (see WallCaptureWorker).

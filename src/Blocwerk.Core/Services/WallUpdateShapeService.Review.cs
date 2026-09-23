@@ -12,6 +12,9 @@ namespace Blocwerk.Core.Services;
 /// <summary>The review half: reading the proposals and recording verdicts. Writes only proposal rows.</summary>
 public sealed partial class WallUpdateShapeService
 {
+    /// <summary>Most verdicts one write may carry (a wall has far fewer holds; each may be 256 points).</summary>
+    public const int MaxDecisionsPerWrite = 5000;
+
     /// <inheritdoc/>
     public async Task<IReadOnlyList<ShapeProposalInfo>> GetProposalsAsync(
         Guid wallId, double? belowConfidence = null, CancellationToken ct = default)
@@ -46,6 +49,11 @@ public sealed partial class WallUpdateShapeService
         Guid wallId, IReadOnlyList<ShapeDecisionRequest> decisions, Guid? expectedSessionId = null, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(decisions);
+        if (decisions.Count > MaxDecisionsPerWrite)
+        {
+            throw new ArgumentException($"At most {MaxDecisionsPerWrite} verdicts per request.");
+        }
+
         var (db, userId, session) = await OpenAsync(wallId, expectedSessionId, ct);
         await using (db)
         {

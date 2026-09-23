@@ -231,6 +231,19 @@ public class WallUpdateShapeStepTests
     }
 
     /// <summary>One hold already proposed (and accepted), the run marked Running with nothing alive.</summary>
+    [Fact]
+    public async Task Decide_RefusesAnOversizedBatch_BeforeTouchingTheDatabase()
+    {
+        using var h = new WallTestHarness();
+        var f = new ShapeStepFixture(h);
+        var ids = await f.StageAsync(ShapeStepFixture.AutoHold(0.6));
+        await f.RecogniseAsync();
+        var flood = Enumerable.Repeat(new ShapeDecisionRequest(ids[0], ShapeReviewDecision.Accepted), WallUpdateShapeService.MaxDecisionsPerWrite + 1).ToList();
+
+        await Assert.ThrowsAsync<ArgumentException>(() => f.Service.DecideAsync(h.WallId, flood, f.SessionId));
+        Assert.Equal(ShapeReviewDecision.Pending, (await f.Service.GetProposalsAsync(h.WallId)).Single().Decision);
+    }
+
     private static async Task<Guid> SimulateInterruptedRunAsync(WallTestHarness h, ShapeStepFixture f, Guid doneHoldId)
     {
         await using var db = h.CreateContext();

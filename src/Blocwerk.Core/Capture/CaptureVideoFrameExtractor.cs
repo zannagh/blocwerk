@@ -23,13 +23,20 @@ public sealed class CaptureVideoFrameExtractor(BlocwerkSettings settings) : ICap
     /// <summary>Candidates per kept frame: the sharpest of each run of this many wins.</summary>
     public const int Window = 3;
 
+    /// <summary>
+    /// Largest picture ffmpeg/ffprobe will decode (8192², above any phone's 8K). Passed as the
+    /// decoder's <c>-max_pixels</c>, so a MOV carrying a 65535² MJPEG/PNG frame — or switching to one
+    /// mid-stream — fails to decode instead of allocating gigabytes inside the app container.
+    /// </summary>
+    public const long MaxPixels = 8192L * 8192;
+
     private static readonly TimeSpan ProbeTimeout = TimeSpan.FromMinutes(1);
 
     public async Task<CaptureVideoProbe> ProbeAsync(string videoPath, CancellationToken ct)
     {
         string[] args =
         [
-            "-v", "error", "-select_streams", "v:0",
+            "-v", "error", "-max_pixels", MaxPixelsArgument, "-select_streams", "v:0",
             "-show_entries", "format=duration:stream=width,height,duration:stream_side_data=rotation:stream_tags=rotate",
             "-of", "json", videoPath,
         ];
@@ -51,7 +58,7 @@ public sealed class CaptureVideoFrameExtractor(BlocwerkSettings settings) : ICap
         var width = stream.TryGetProperty("width", out var w) ? w.GetInt32() : 0;
         var height = stream.TryGetProperty("height", out var h) ? h.GetInt32() : 0;
         var duration = Seconds(root, "format") ?? Seconds(stream, null) ?? 0;
-        if (width <= 0 || height <= 0 || duration <= 0)
+        if (width <= 0 || height <= 0 || duration <= 0 || (long)width * height > MaxPixels)
         {
             return null;
         }
@@ -68,7 +75,8 @@ public sealed class CaptureVideoFrameExtractor(BlocwerkSettings settings) : ICap
         var work = Directory.CreateTempSubdirectory("blocwerk-capture-video-");
         try
         {
-            var args = FfmpegArguments(videoPath, target * Window, Path.Combine(work.FullName, "c_%05d.jpg"));
+            var args = FfmpegArguments(
+                videoPath, target * Window, Path.Combine(work.FullName, "c_%05d.jpg"), MaxCandidates(request.MaxFrames));
             await CaptureToolProcess.RunAsync(
                 settings.BetaVideo.FfmpegPath, args, request.Timeout,
                 line => ReportDecode(line, probe.DurationSeconds, progress), ct);
@@ -94,18 +102,34 @@ public sealed class CaptureVideoFrameExtractor(BlocwerkSettings settings) : ICap
         }
     }
 
-    /// <summary>The ffmpeg call: first video stream only, no tags, auto-rotated, ≤ MaxEdge, progress on stdout.</summary>
-    public static IReadOnlyList<string> FfmpegArguments(string videoPath, double candidateFps, string outputPattern) =>
+    /// <summary>
+    /// Most candidate JPEGs one extraction may write: the rate is planned from the container's declared
+    /// duration, which a crafted file can understate while its real timestamps run for hours (the fps
+    /// filter then duplicates frames without end). Twice the plan, plus a window of slack.
+    /// </summary>
+    public static int MaxCandidates(int maxFrames) => (2 * Math.Max(1, maxFrames) * Window) + Window;
+
+    /// <summary>
+    /// The ffmpeg call: first video stream only, no tags, auto-rotated, ≤ MaxEdge, progress on stdout;
+    /// decoding capped at <see cref="MaxPixels"/> per picture, <see cref="CaptureVideoFiles.MaxDuration"/>
+    /// of input and <paramref name="maxCandidates"/> written frames.
+    /// </summary>
+    public static IReadOnlyList<string> FfmpegArguments(string videoPath, double candidateFps, string outputPattern, int maxCandidates) =>
     [
         "-nostdin", "-hide_banner", "-v", "error",
+        "-max_pixels", MaxPixelsArgument,
+        "-t", CaptureVideoFiles.MaxDuration.TotalSeconds.ToString("0", CultureInfo.InvariantCulture),
         "-i", videoPath,
         "-map", "0:v:0", "-an", "-sn", "-dn", "-map_metadata", "-1",
         "-vf", string.Create(
             CultureInfo.InvariantCulture,
             $"fps={candidateFps:0.####},scale=w='min({MaxEdge},iw)':h='min({MaxEdge},ih)':force_original_aspect_ratio=decrease"),
+        "-frames:v", maxCandidates.ToString(CultureInfo.InvariantCulture),
         "-q:v", "3", "-progress", "pipe:1", "-nostats",
         "-f", "image2", outputPattern,
     ];
+
+    private static string MaxPixelsArgument => MaxPixels.ToString(CultureInfo.InvariantCulture);
 
     private static void ReportDecode(string line, double duration, IProgress<double>? progress)
     {
