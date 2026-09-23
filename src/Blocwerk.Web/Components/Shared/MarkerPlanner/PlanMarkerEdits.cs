@@ -79,6 +79,9 @@ public static class PlanMarkerEdits
         plan with { Markers = plan.Markers.Where(m => m.Id != id).ToList() };
 
     /// <summary>The on-photo target for the marker's role (corners need more pixels than fillers).</summary>
-    public static double TargetPx(MarkerRole role, MarkerGenerationOptions options) =>
-        role == MarkerRole.Corner ? options.CornerTargetPx : options.FillerTargetPx;
+    public static double TargetPx(MarkerRole role, MarkerGenerationOptions options) => MarkerSizing.TargetPx(role, options);
+
+    /// <summary>The target on its surface: steep-view margin and pose accuracy from the photo distance included.</summary>
+    public static double TargetPx(MarkerRole role, PlanSegment? segment, PhotoSetup photo, MarkerGenerationOptions options) =>
+        segment is null ? MarkerSizing.TargetPx(role, options) : MarkerSizing.RequiredPx(role, segment, photo, options);
 }

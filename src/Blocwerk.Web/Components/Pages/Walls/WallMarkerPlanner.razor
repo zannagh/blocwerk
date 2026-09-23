@@ -58,7 +58,7 @@
                 {
                     <section class="mplan-card">
                         <h2>Marker</h2>
-                        <MarkerPlanMarkerForm Marker="marker" SegmentName="@SegmentName(marker.Segment)" EstimatedPx="EstimatedPx(marker.Id)"
+                        <MarkerPlanMarkerForm Marker="marker" SegmentName="@SegmentName(marker.Segment)" Segment="@plan.Segments.FirstOrDefault(s => s.Index == marker.Segment)" Photo="plan.Photo" EstimatedPx="EstimatedPx(marker.Id)"
                                               Options="options" OnChange="OnMarkerEdited" OnDelete="DeleteMarker" />
                         @if (markerMessage is not null)
                         {
@@ -79,7 +79,8 @@
 
                 <section class="mplan-card">
                     <h2>Markers</h2>
-                    <p class="hint">@plan.Markers.Count marker(s) on @plan.Segments.Count surface(s). The generator puts one in every corner and fills the edges so every photo sees several.</p>
+                    <p class="hint">@plan.Markers.Count marker(s) on @plan.Segments.Count surface(s). The generator puts one in every corner and fills the edges so every photo sees several, each at the smallest size that still decodes from your farthest photo distance.</p>
+                    <MarkerPlanSizingSummary Plan="plan" Options="options" />
                     @if (confirmRegenerate)
                     {
                         <p class="staged-hint danger">This replaces all @plan.Markers.Count markers, including any you moved or resized by hand.</p>

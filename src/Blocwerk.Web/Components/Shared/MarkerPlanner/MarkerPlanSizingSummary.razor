@@ -1,0 +1,41 @@
+@* Why each surface's markers are the size they are (the next smaller size and why it fails), and what the
+   markers cost in wall area compared with printing them all at one size. *@
+@using System.Globalization
+@using Blocwerk.Core.MarkerPlanning
+
+@if (Plan.Markers.Count > 0 && MarkerFootprint.Of(Plan) is { } footprint)
+{
+    <p class="hint">
+        The @footprint.MarkerCount markers take about @Cm2(footprint.AreaCm2) of wall, white border included.
+        @if (footprint.Saving > 0.005)
+        {
+            <text>Printing them all at @footprint.UniformSizeMm.ToString("0", CultureInfo.InvariantCulture) mm would take @Cm2(footprint.UniformAreaCm2); these sizes use @footprint.Saving.ToString("0%", CultureInfo.InvariantCulture) less.</text>
+        }
+    </p>
+}
+<details class="mplan-sizing">
+    <summary>Why these sizes?</summary>
+    <ul>
+        @foreach (var segment in Plan.Segments)
+        {
+            <li>
+                <strong>@segment.Name</strong>
+                <br />@MarkerSizingAdvice.Explain(MarkerRole.Corner, segment, Plan.Photo, Options)
+                <br />@MarkerSizingAdvice.Explain(MarkerRole.Filler, segment, Plan.Photo, Options)
+            </li>
+        }
+    </ul>
+</details>
+
+@code {
+    /// <summary>The plan.</summary>
+    [Parameter]
+    [EditorRequired]
+    public MarkerPlan Plan { get; set; } = default!;
+
+    /// <summary>Sizing targets and printable sizes.</summary>
+    [Parameter]
+    public MarkerGenerationOptions Options { get; set; } = MarkerGenerationOptions.Default;
+
+    private static string Cm2(double cm2) => string.Create(CultureInfo.InvariantCulture, $"{cm2:#,0} cm²");
+}

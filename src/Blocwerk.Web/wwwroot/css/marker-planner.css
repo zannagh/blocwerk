@@ -111,3 +111,6 @@
 .mplan-lean-profile .you line, .mplan-lean-profile .you circle { stroke: var(--text-heading); stroke-width: 2; }
 .mplan-lean-profile text { fill: var(--text-secondary); font-size: 9px; font-family: inherit; }
 .mplan-lean-profile .face { stroke: var(--accent); stroke-width: 2; }
+.mplan-sizing { margin-top: 0.5rem; font-size: 0.875rem; }
+.mplan-sizing ul { margin: 0.25rem 0 0; padding-left: 1.1rem; }
+.mplan-sizing li { margin-bottom: 0.4rem; }

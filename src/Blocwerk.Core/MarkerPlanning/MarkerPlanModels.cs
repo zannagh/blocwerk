@@ -30,12 +30,33 @@ public sealed record MarkerPlan(
     public const int CurrentSchemaVersion = 1;
 }
 
-/// <summary>How the wall is photographed.</summary>
-/// <param name="DistanceMm">Usual distance from the camera to the wall surface.</param>
-/// <param name="CameraPreset">"phone-1x", "phone-0.5x" or "custom".</param>
+/// <summary>
+/// How the wall is photographed. <see cref="HorizontalFovDeg"/> and <see cref="ImageLongEdgePx"/> are what
+/// the sizing maths reads; the phone model and lens (added without a schema bump, both optional) say where
+/// they came from so the planner can show and re-pick them. Old plans without them still read: their
+/// <see cref="CameraPreset"/> maps to the generic phone of <see cref="PhoneCameraCatalog"/>.
+/// </summary>
+/// <param name="DistanceMm">Usual distance from the camera to the wall surface — the FARTHEST the owner
+/// usually shoots from; markers are sized so they still work from there.</param>
+/// <param name="CameraPreset">"phone-1x", "phone-0.5x" or "custom". With a phone model set it holds the
+/// nearest legacy preset (0.5× for ultra-wides) so older readers show something sensible.</param>
 /// <param name="HorizontalFovDeg">Horizontal field of view of the camera, in degrees.</param>
 /// <param name="ImageLongEdgePx">Pixels along the photo's long edge (e.g. 4032).</param>
-public sealed record PhotoSetup(double DistanceMm, string CameraPreset, double HorizontalFovDeg, int ImageLongEdgePx);
+/// <param name="PhoneModel">A <see cref="PhoneCamera.Id"/> from <see cref="PhoneCameraCatalog"/>, or null.</param>
+/// <param name="Lens">The lens / zoom preset of that phone (a <see cref="PhoneLens.Id"/> such as "0.5x"), or null.</param>
+/// <param name="NearestDistanceMm">The closest the owner usually shoots from, or null. Only used for hints
+/// (close-ups see fewer markers); sizing always uses <see cref="DistanceMm"/>.</param>
+public sealed record PhotoSetup(
+    double DistanceMm,
+    string CameraPreset,
+    double HorizontalFovDeg,
+    int ImageLongEdgePx,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    string? PhoneModel = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    string? Lens = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    double? NearestDistanceMm = null);
 
 /// <summary>
 /// One flat surface of the wall. Its own frame: origin at the bounding box's bottom-left, x to the right,
@@ -137,18 +158,36 @@ public enum MarkerRole
 }
 
 /// <summary>Options for generating a suggested marker layout.</summary>
-/// <param name="CornerTargetPx">Minimum on-photo side for corner markers (pose accuracy), e.g. 60.</param>
-/// <param name="FillerTargetPx">Minimum on-photo side for fillers (reliable decoding), e.g. 40.</param>
-/// <param name="AvailableSizesMm">Printable sizes to choose from, ascending (e.g. 50, 80, 100, 125, 150).</param>
+/// <param name="CornerTargetPx">Minimum on-photo short side for corner markers before the steep-view margin
+/// (<see cref="MarkerDetectability.CornerMinPx"/>).</param>
+/// <param name="FillerTargetPx">Minimum on-photo short side for fillers before the steep-view margin
+/// (<see cref="MarkerDetectability.FillerMinPx"/>).</param>
+/// <param name="AvailableSizesMm">Printable sizes to choose from, ascending (e.g. 30, 40, 50, 60, 80, …).</param>
 /// <param name="EdgeInsetMm">Gap between a segment edge and a marker's edge.</param>
+/// <param name="CornerPxPerMetre">Pose-accuracy target for corners: short-side px per metre of photo
+/// distance (<see cref="MarkerDetectability.CornerPosePxPerMetre"/>); 0 = decode target only.</param>
+/// <param name="FillerPxPerMetre">The same for fillers (<see cref="MarkerDetectability.FillerPosePxPerMetre"/>).</param>
 public sealed record MarkerGenerationOptions(
     double CornerTargetPx,
     double FillerTargetPx,
     IReadOnlyList<double> AvailableSizesMm,
-    double EdgeInsetMm)
+    double EdgeInsetMm,
+    double CornerPxPerMetre = 0,
+    double FillerPxPerMetre = 0)
 {
-    /// <summary>Defaults backed by the capture-1 measurements (corners ≥ 60 px, fillers ≥ 40 px).</summary>
-    public static MarkerGenerationOptions Default { get; } = new(60, 40, [50, 80, 100, 125, 150, 200], 30);
+    /// <summary>
+    /// Defaults backed by the 2026-09 sizing study on the owner's real photos (see
+    /// <see cref="MarkerDetectability"/>): decode floors of 28 px (corners) / 22 px (fillers) short side, and
+    /// for pose accuracy 30 / 20 px per metre of photo distance; sizes down to 30 mm, which works from about
+    /// 1 m on an ultra-wide or 2 m on a 24 MP main camera.
+    /// </summary>
+    public static MarkerGenerationOptions Default { get; } = new(
+        MarkerDetectability.CornerMinPx,
+        MarkerDetectability.FillerMinPx,
+        [30, 40, 50, 60, 80, 100, 125, 150, 200],
+        30,
+        MarkerDetectability.CornerPosePxPerMetre,
+        MarkerDetectability.FillerPosePxPerMetre);
 }
 
 /// <summary>A problem the planner shows next to the plan. Warnings don't block saving; errors do.</summary>

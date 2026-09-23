@@ -40,7 +40,7 @@ public class MarkerPlanJsonTests
     {
         var node = JsonNode.Parse(MarkerPlanJson.ToJson(AtticMarkerPlan.Plan))!.AsObject();
         node["capturedWith"] = "a future field";
-        node["photo"]!["lens"] = new JsonObject { ["model"] = "x" };
+        node["photo"]!["lensDetails"] = new JsonObject { ["model"] = "x" };
         var json = "// exported by a newer planner\n" + node.ToJsonString().TrimEnd('}') + ",}";
 
         Assert.NotNull(MarkerPlanJson.FromJson(json, out var errors));

@@ -29,10 +29,14 @@ Companion of `wall-geometry.schema.md`: a plan is the *intent* (drawn by the own
   "schemaVersion": 1,                     // readers refuse versions newer than theirs
   "dictionary": "DICT_4X4_50",            // the only dictionary the detector reads (ids 0..49)
   "photo": {
-    "distanceMm": 2500,                   // usual camera-to-wall distance, 300..20000
-    "cameraPreset": "phone-0.5x",         // "phone-1x" (≈69°, 4032 px) | "phone-0.5x" (≈104°, 4032 px) | "custom"
-    "horizontalFovDeg": 104,              // 10..150
-    "imageLongEdgePx": 4032               // 640..20000
+    "distanceMm": 2500,                   // FARTHEST usual camera-to-wall distance (markers are sized for it), 300..20000
+    "cameraPreset": "phone-0.5x",         // "phone-1x" (≈69°, 4032 px) | "phone-0.5x" (≈104°, 4032 px) | "custom";
+                                          // with phoneModel set: the nearest legacy name (0.5x for ultra-wides)
+    "horizontalFovDeg": 103,              // 5..150 — what the sizing maths reads
+    "imageLongEdgePx": 4032,              // 640..20000 — ditto
+    "phoneModel": "iphone-16-pro",        // optional (added without a schema bump): a PhoneCameraCatalog id, [a-z0-9.-], ≤ 64
+    "lens": "0.5x",                       // optional: that phone's zoom button, e.g. "0.5x", "1x", "1.2x", "5x"; needs phoneModel
+    "nearestDistanceMm": 1200             // optional: closest usual distance, ≤ distanceMm; hints only
   },
   "segments": [
     {
@@ -104,8 +108,18 @@ its left end when horizontal). Negative offsets are allowed.
 
 ### Roles
 
-`corner` markers anchor a surface (sized for pose accuracy, ≥ 60 px on photos by default); `filler`
-markers link photos along edges (≥ 40 px). Both are ordinary markers to the solver.
+`corner` markers anchor a surface (sized for decoding AND pose accuracy, see "Sizing maths"); `filler`
+markers link photos along edges (smaller targets). Both are ordinary markers to the solver.
+
+### Phone model and lens
+
+`phoneModel` / `lens` name a row of `PhoneCameraCatalog` (Core/MarkerPlanning, one file per maker; each
+lens row carries its source): iPhone 12–17 incl. Pro/Pro Max/16e/Air, Pixel 8/9 (Pro), Galaxy S23–S25
+(Ultra), plus `generic-phone` (the two legacy presets, exactly). Picking one copies its FOV and default
+photo size into `horizontalFovDeg` / `imageLongEdgePx`; those two stay the truth, so an unknown model (a newer
+catalog) only warns (`photo-camera-unknown`) and a hand-edited mismatch warns (`photo-camera-mismatch`).
+Plans without the fields read as before: `cameraPreset` maps to the generic phone. iPhones from the 15 save
+24 MP (5712 px) on the main lens and its 1.2× / 1.5× (28 / 35 mm) crops, 12 MP (4032 px) on 0.5× and 2×.
 
 ## With a photo dump (the in-app capture)
 
@@ -143,13 +157,14 @@ Errors block saving; warnings (and `tip-*` codes) are advice.
 |---|---|---|
 | `schema-version`, `dictionary`, `no-segments` | error | unusable header |
 | `photo-distance`, `photo-fov`, `photo-resolution` | error | implausible photo setup |
+| `photo-camera-unknown`, `photo-camera-mismatch` | warning | phone/lens not in this catalog, or stored FOV/px differ from the lens |
 | `segment-duplicate-index`, `segment-size` | error | bad segment |
 | `net-no-root`, `net-several-roots`, `attachment-edge`, `attachment-offset`, `attachment-self`, `attachment-missing-parent`, `attachment-cycle`, `net-overlap` | error | the net can't be laid out |
 | `marker-duplicate-id`, `marker-id-range`, `marker-segment`, `marker-size`, `marker-outside`, `marker-overlap` | error | bad marker |
 | `too-many-markers` | error | more than 50 markers |
 | `segment-few-markers` | error | fewer than 3 markers on a surface |
 | `segment-bunched` | warning | markers span < 35 % of the surface's diagonal |
-| `marker-too-small` | warning | estimated px below the role's target (message names the size to print) |
+| `marker-too-small` | warning | estimated px below the role's target on its surface (message names the camera, whether decoding or pose sets the target, and the smallest size that works) |
 | `grazing-surface` | warning | > 72° oblique to the standing camera: photograph it face-on |
 | `shared-edge-uncovered` | warning | no marker within one photo height of a shared edge on both sides |
 | `mounting-holes` | error | hole not 1/2/2.5/3/3.5 mm, head outside hole + 0.5 .. 15 mm, or a gap outside 0.5 .. 10 mm |
@@ -164,6 +179,16 @@ Errors block saving; warnings (and `tip-*` codes) are advice.
   `px = sizeMm · pxPerMm · min(cos overhang, cos yaw)`; beyond 72° the surface is flagged "shoot face-on"
   and sized for a face-on shot (factor 1).
 - Photo footprint `2·d·tan(hfov/2)` × ¾ of that; markers are spaced ≤ half the footprint height.
-- Example (The Attic, 2.5 m, phone 0.5×): 6.4 × 4.8 m per photo, 0.63 px/mm; a 125 mm marker is 79 px
-  face-on but 56 px on the 45° main wall, so the generator suggests 150 mm corners (67 px) and 100 mm
-  fillers (45 px) there, 100/80 mm on the vertical kickboard.
+- Required short-side px per role (`MarkerSizing.RequiredPx`, measured in the 2026-09 sizing study on
+  real photos, see `MarkerDetectability`): the larger of
+  - decoding: corners 28 px, fillers 22 px (app floor 20 px + margin), × a steep-view margin rising from
+    1 at 40° obliqueness to 1.3 at 60°;
+  - pose accuracy: corners 30 px, fillers 20 px **per metre of photo distance** on the marker's mean side
+    (≈ 5 / 8 mm marker position error; facet angles stay within 0.5°).
+- The generator picks the SMALLEST of `30, 40, 50, 60, 80, 100, 125, 150, 200` mm that reaches it (markers
+  cost wall space); the planner shows the wall area (cut-outs incl. white border) vs printing all markers
+  at the largest size.
+- Example (The Attic, 2.5 m, phone 0.5×): 6.4 × 4.8 m per photo, 0.63 px/mm; on the 45° main wall pose
+  sets the corners to 150 mm (67 px short side ≥ 62) and fillers to 100 mm, 125/80 mm on the vertical
+  kickboard. On an iPhone 16 Pro at 1.5 m (0.5×) a face-on wall gets 50 mm corners and 30 mm fillers; at
+  3 m the 0.5× needs 200/125 mm, the 1.2× (28 mm, 24 MP) 60/40 mm.

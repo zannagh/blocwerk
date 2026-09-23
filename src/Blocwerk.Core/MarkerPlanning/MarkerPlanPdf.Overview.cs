@@ -82,7 +82,7 @@ public static partial class MarkerPlanPdf
         var h = MarkerSizing.FootprintHeightMm(photo) / 1000;
         return string.Create(
             CultureInfo.InvariantCulture,
-            $"Photos from about {photo.DistanceMm / 1000:0.0#} m with {photo.CameraPreset} ({photo.HorizontalFovDeg:0}° wide, {photo.ImageLongEdgePx} px): one photo covers ≈ {w:0.0} × {h:0.0} m, a 100 mm marker ≈ {100 * pxPerMm:0} px face-on.");
+            $"Photos from about {photo.DistanceMm / 1000:0.0#} m (at most) with {MarkerSizingAdvice.DescribeCamera(photo)} ({photo.HorizontalFovDeg:0}° wide, {photo.ImageLongEdgePx} px): one photo covers ≈ {w:0.0} × {h:0.0} m, a 100 mm marker ≈ {100 * pxPerMm:0} px face-on.");
     }
 
     private static void DrawMap(MarkerPdfCanvas c, MarkerPlan plan, NetGeometry net, SKRect box)

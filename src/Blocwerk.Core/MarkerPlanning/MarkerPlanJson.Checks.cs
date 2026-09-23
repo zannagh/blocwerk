@@ -42,8 +42,9 @@ public static partial class MarkerPlanJson
         else
         {
             Range(errors, "photo.distanceMm", plan.Photo.DistanceMm, MarkerPlanValidator.MinDistanceMm, MarkerPlanValidator.MaxDistanceMm);
-            Range(errors, "photo.horizontalFovDeg", plan.Photo.HorizontalFovDeg, 10, 150);
+            Range(errors, "photo.horizontalFovDeg", plan.Photo.HorizontalFovDeg, 5, 150);
             Range(errors, "photo.imageLongEdgePx", plan.Photo.ImageLongEdgePx, 640, 20000);
+            CheckPhoneFields(errors, plan.Photo);
         }
 
         if (plan.Segments is null || plan.Markers is null)

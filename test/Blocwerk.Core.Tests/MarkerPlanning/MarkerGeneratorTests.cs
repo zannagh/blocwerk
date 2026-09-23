@@ -34,7 +34,7 @@ public class MarkerGeneratorTests
         var mainCorners = plan.Markers.Where(m => m.Segment == 0 && m.Role == MarkerRole.Corner).ToList();
         Assert.Equal(4, mainCorners.Count);
         Assert.All(mainCorners, m => Assert.Equal(150, m.SizeMm));
-        Assert.All(plan.Markers.Where(m => m.Segment == 1 && m.Role == MarkerRole.Corner), m => Assert.Equal(100, m.SizeMm));
+        Assert.All(plan.Markers.Where(m => m.Segment == 1 && m.Role == MarkerRole.Corner), m => Assert.Equal(125, m.SizeMm));
         Assert.Equal(3, plan.Markers.Count(m => m.Segment == 2 && m.Role == MarkerRole.Corner));
     }
 

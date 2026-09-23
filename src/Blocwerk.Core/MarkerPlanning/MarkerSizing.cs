@@ -119,5 +119,50 @@ public static class MarkerSizing
         return sorted[^1];
     }
 
+    /// <summary>The role's on-photo target of <paramref name="options"/> (corners need more than fillers).</summary>
+    public static double TargetPx(MarkerRole role, MarkerGenerationOptions options) =>
+        role == MarkerRole.Corner ? options.CornerTargetPx : options.FillerTargetPx;
+
+    /// <summary>
+    /// The decode target on <paramref name="segment"/>: the role's px target times the steep-view margin
+    /// (<see cref="MarkerDetectability.SteepViewFactor"/>). A grazing surface is photographed face-on, so
+    /// it gets no margin.
+    /// </summary>
+    public static double DecodePx(MarkerRole role, PlanSegment segment, MarkerGenerationOptions options) =>
+        TargetPx(role, options) * MarkerDetectability.SteepViewFactor(IsGrazing(segment) ? 0 : ObliquenessDeg(segment));
+
+    /// <summary>
+    /// The pose-accuracy target on the marker's MEAN side (what the re-solves measured): px per metre of the
+    /// plan's (farthest) photo distance.
+    /// </summary>
+    public static double PosePx(MarkerRole role, PhotoSetup photo, MarkerGenerationOptions options) =>
+        (role == MarkerRole.Corner ? options.CornerPxPerMetre : options.FillerPxPerMetre) * photo.DistanceMm / 1000;
+
+    /// <summary>
+    /// The pose target as a SHORT side on <paramref name="segment"/> (the unit of <see cref="EstimatedPx"/>):
+    /// with foreshortening f the sides are s and s/f, so the mean side is s·(1+f)/(2f).
+    /// </summary>
+    public static double PoseShortSidePx(MarkerRole role, PlanSegment segment, PhotoSetup photo, MarkerGenerationOptions options)
+    {
+        var f = Foreshortening(segment);
+        return PosePx(role, photo, options) * 2 * f / (1 + f);
+    }
+
+    /// <summary>True when pose accuracy, not decoding, sets the size on this surface.</summary>
+    public static bool PoseBinds(MarkerRole role, PlanSegment segment, PhotoSetup photo, MarkerGenerationOptions options) =>
+        PoseShortSidePx(role, segment, photo, options) > DecodePx(role, segment, options);
+
+    /// <summary>The short-side px a <paramref name="role"/> marker needs: the larger of decode and pose.</summary>
+    public static double RequiredPx(MarkerRole role, PlanSegment segment, PhotoSetup photo, MarkerGenerationOptions options) =>
+        Math.Max(DecodePx(role, segment, options), PoseShortSidePx(role, segment, photo, options));
+
+    /// <summary>True when a <paramref name="sizeMm"/> marker of <paramref name="role"/> reaches its required px.</summary>
+    public static bool Works(double sizeMm, MarkerRole role, PlanSegment segment, PhotoSetup photo, MarkerGenerationOptions options) =>
+        EstimatedPx(sizeMm, segment, photo) >= RequiredPx(role, segment, photo, options) - 1e-6;
+
+    /// <summary>The smallest available size that works for <paramref name="role"/> on the segment.</summary>
+    public static double PickSize(MarkerRole role, PlanSegment segment, PhotoSetup photo, MarkerGenerationOptions options, out bool meetsTarget) =>
+        PickSize(RequiredPx(role, segment, photo, options), segment, photo, options.AvailableSizesMm, out meetsTarget);
+
     private static double ToRad(double deg) => deg * Math.PI / 180.0;
 }

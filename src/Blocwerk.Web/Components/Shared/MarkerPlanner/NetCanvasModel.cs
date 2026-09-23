@@ -42,7 +42,7 @@ public sealed record NetCanvasModel(
         var markers = net.Markers
             .Where(m => roles.ContainsKey(m.Id))
             .DistinctBy(m => m.Id)
-            .Select(m => ToCanvas(m, roles[m.Id], options))
+            .Select(m => ToCanvas(m, roles[m.Id], byIndex.GetValueOrDefault(roles[m.Id].Segment), plan.Photo, options))
             .ToList();
         return new NetCanvasModel(viewBox, labelSize, segments, markers);
     }
@@ -67,10 +67,10 @@ public sealed record NetCanvasModel(
         return PlannerGeometry.SegmentToNet(net, incentre.X, incentre.Y);
     }
 
-    private static CanvasMarker ToCanvas(NetMarker net, PlanMarker marker, MarkerGenerationOptions options)
+    private static CanvasMarker ToCanvas(NetMarker net, PlanMarker marker, PlanSegment? segment, PhotoSetup photo, MarkerGenerationOptions options)
     {
         var centre = PlannerGeometry.Centre(net.CornersMm);
-        var ok = net.EstimatedPx >= PlanMarkerEdits.TargetPx(marker.Role, options) - 1e-6;
+        var ok = net.EstimatedPx >= PlanMarkerEdits.TargetPx(marker.Role, segment, photo, options) - 1e-6;
         return new CanvasMarker(marker.Id, marker.Segment, Points(net.CornersMm), centre.X, -centre.Y, marker.SizeMm, marker.Role, net.EstimatedPx, ok);
     }
 }

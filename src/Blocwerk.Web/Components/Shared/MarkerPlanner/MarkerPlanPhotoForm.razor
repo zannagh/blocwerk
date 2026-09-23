@@ -1,14 +1,57 @@
-@* How the owner photographs the wall: the usual distance (free text — "2500", "2.5 m", "250 cm") and
-   the camera. Together they decide how big the markers must be printed. *@
+@* How the owner photographs the wall: the phone and the lens / zoom they use, the farthest usual distance
+   (free text — "3000", "3 m", "300 cm") and optionally the closest. Together they decide how big the markers
+   must be printed: sized for the farthest shot, the closest only feeds a hint. *@
 @using Blocwerk.Core.MarkerPlanning
 
 <div class="mplan-grid">
     <div class="form-group">
-        <label for="mplan-distance">Usual photo distance</label>
-        <input id="mplan-distance" class="form-input" inputmode="decimal" placeholder="e.g. 2.5 m or 2500"
+        <label for="mplan-phone">Phone</label>
+        <select id="mplan-phone" class="form-input" value="@PhoneValue" @onchange="OnPhoneChanged">
+            @foreach (var brand in PhoneCameraCatalog.Brands)
+            {
+                <optgroup label="@brand">
+                    @foreach (var phone in PhoneCameraCatalog.All.Where(p => p.Brand == brand))
+                    {
+                        <option value="@phone.Id">@phone.Model</option>
+                    }
+                </optgroup>
+            }
+            <option value="@MarkerCameraPresets.Custom">Other camera…</option>
+        </select>
+    </div>
+    @if (Resolved is { } camera)
+    {
+        <div class="form-group">
+            <label for="mplan-lens">Lens / zoom</label>
+            <select id="mplan-lens" class="form-input" value="@camera.Lens.Id" @onchange="OnLensChanged" aria-describedby="mplan-lens-hint">
+                @foreach (var lens in camera.Phone.Lenses)
+                {
+                    <option value="@lens.Id">@lens.Label</option>
+                }
+            </select>
+            <p id="mplan-lens-hint" class="hint">The zoom button you shoot with (0.5× is the ultra-wide). @camera.Lens.HorizontalFovDeg.ToString("0", System.Globalization.CultureInfo.InvariantCulture)° wide, @camera.Lens.ImageLongEdgePx px.</p>
+        </div>
+    }
+    else
+    {
+        <div class="form-group">
+            <label for="mplan-fov">Horizontal field of view (°)</label>
+            <input id="mplan-fov" type="number" min="5" max="150" step="1" class="form-input" value="@NetCanvasModel.F(Photo.HorizontalFovDeg)"
+                   @onchange="e => ApplyCustom(e, v => v is >= 5 and <= 150 ? Photo with { HorizontalFovDeg = v } : null)" />
+        </div>
+        <div class="form-group">
+            <label for="mplan-mp">Photo size (megapixels)</label>
+            <input id="mplan-mp" type="number" min="1" max="300" step="0.1" class="form-input" value="@NetCanvasModel.F(Math.Round(Megapixels, 1))"
+                   @onchange="e => ApplyCustom(e, FromMegapixels)" aria-describedby="mplan-mp-hint" />
+            <p id="mplan-mp-hint" class="hint">4:3 photos assumed: @Photo.ImageLongEdgePx px along the long edge.</p>
+        </div>
+    }
+    <div class="form-group">
+        <label for="mplan-distance">Farthest usual photo distance</label>
+        <input id="mplan-distance" class="form-input" inputmode="decimal" placeholder="e.g. 3 m or 3000"
                value="@distanceText" @onchange="OnDistanceChanged" aria-describedby="mplan-distance-hint" />
         <p id="mplan-distance-hint" class="hint">
-            From the camera to the wall. Millimetres or metres — "2500", "2.5 m" and "250 cm" all work.
+            From the camera to the wall for your wide shots — markers are sized to still work from here. "3000", "3 m" and "300 cm" all work.
             Currently @PhotoDistanceParser.Format(Photo.DistanceMm).
         </p>
         @if (distanceError is not null)
@@ -17,78 +60,22 @@
         }
     </div>
     <div class="form-group">
-        <label for="mplan-camera">Camera</label>
-        <select id="mplan-camera" class="form-input" value="@Photo.CameraPreset" @onchange="OnPresetChanged">
-            <option value="@MarkerCameraPresets.Phone1X">Phone, main camera (1×)</option>
-            <option value="@MarkerCameraPresets.PhoneUltraWide">Phone, ultra-wide (0.5×)</option>
-            <option value="@MarkerCameraPresets.Custom">Other camera…</option>
-        </select>
+        <label for="mplan-near">Closest usual distance (optional)</label>
+        <input id="mplan-near" class="form-input" inputmode="decimal" placeholder="e.g. 1.2 m"
+               value="@nearText" @onchange="OnNearChanged" aria-describedby="mplan-near-hint" />
+        <p id="mplan-near-hint" class="hint">Your close-ups. Only used for hints: closer photos make markers bigger but see fewer of them.</p>
+        @if (nearError is not null)
+        {
+            <p class="field-error" role="alert">@nearError</p>
+        }
     </div>
-    @if (Photo.CameraPreset == MarkerCameraPresets.Custom)
-    {
-        <div class="form-group">
-            <label for="mplan-fov">Horizontal field of view (°)</label>
-            <input id="mplan-fov" type="number" min="10" max="150" step="1" class="form-input" value="@NetCanvasModel.F(Photo.HorizontalFovDeg)"
-                   @onchange="e => ApplyCustom(e, v => v is >= 10 and <= 150 ? Photo with { HorizontalFovDeg = v } : null)" />
-        </div>
-        <div class="form-group">
-            <label for="mplan-longedge">Photo long edge (px)</label>
-            <input id="mplan-longedge" type="number" min="640" max="20000" step="1" class="form-input" value="@Photo.ImageLongEdgePx"
-                   @onchange="e => ApplyCustom(e, v => v is >= 640 and <= 20000 ? Photo with { ImageLongEdgePx = (int)v } : null)" />
-        </div>
-    }
 </div>
 <p class="hint">
-    One photo covers about @PhotoDistanceParser.Format(MarkerSizing.FootprintWidthMm(Photo)) ×
-    @PhotoDistanceParser.Format(MarkerSizing.FootprintHeightMm(Photo)) of wall; markers are spaced so every photo sees several.
+    One photo from @PhotoDistanceParser.Format(Photo.DistanceMm) covers about @PhotoDistanceParser.Format(MarkerSizing.FootprintWidthMm(Photo)) ×
+    @PhotoDistanceParser.Format(MarkerSizing.FootprintHeightMm(Photo)) of wall at @MarkerSizing.PxPerMm(Photo).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) px per mm;
+    markers are spaced so every photo sees several.
 </p>
-
-@code {
-    private string distanceText = string.Empty;
-    private double shownDistance = double.NaN;
-    private string? distanceError;
-
-    /// <summary>The current photo setup.</summary>
-    [Parameter]
-    [EditorRequired]
-    public PhotoSetup Photo { get; set; } = default!;
-
-    /// <summary>The photo setup changed.</summary>
-    [Parameter]
-    public EventCallback<PhotoSetup> OnChange { get; set; }
-
-    protected override void OnParametersSet()
-    {
-        // Only reformat when the distance changed from outside (a new plan, an import) — never while the
-        // owner's own text is the source of the value.
-        if (!shownDistance.Equals(Photo.DistanceMm))
-        {
-            shownDistance = Photo.DistanceMm;
-            distanceText = PhotoDistanceParser.Format(Photo.DistanceMm);
-            distanceError = null;
-        }
-    }
-
-    private async Task OnDistanceChanged(ChangeEventArgs e)
-    {
-        distanceText = e.Value?.ToString() ?? string.Empty;
-        if (PhotoDistanceParser.ParseMm(distanceText) is not { } mm)
-        {
-            distanceError = "Type a distance such as 2500, 2.5 m or 250 cm.";
-            return;
-        }
-
-        distanceError = null;
-        shownDistance = mm;
-        await OnChange.InvokeAsync(Photo with { DistanceMm = mm });
-    }
-
-    private Task OnPresetChanged(ChangeEventArgs e)
-    {
-        var preset = e.Value?.ToString() ?? MarkerCameraPresets.Phone1X;
-        return OnChange.InvokeAsync(MarkerCameraPresets.Create(preset, Photo.DistanceMm, Photo.HorizontalFovDeg, Photo.ImageLongEdgePx));
-    }
-
-    private Task ApplyCustom(ChangeEventArgs e, Func<double, PhotoSetup?> update) =>
-        PlannerInput.Number(e.Value) is { } v && update(v) is { } updated ? OnChange.InvokeAsync(updated) : Task.CompletedTask;
+@if (MarkerSizingAdvice.CloseUpHint(Photo) is { } closeUp)
+{
+    <p class="hint">@closeUp</p>
 }

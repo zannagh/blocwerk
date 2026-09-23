@@ -6,8 +6,9 @@ namespace Blocwerk.Core.MarkerPlanning;
 
 /// <summary>
 /// Suggests a marker layout: a corner marker in every corner of every segment, fillers along every
-/// edge (and inside big surfaces) no further apart than half a photo, sizes picked from the available
-/// print sizes so each reaches its on-photo pixel target. Deterministic: same plan and options, same
+/// edge (and inside big surfaces) no further apart than half a photo, sizes picked as the SMALLEST
+/// available print size that reaches the role's measured on-photo pixel target on that surface
+/// (<see cref="MarkerSizing.RequiredPx"/>, steep-view margin included) — markers cost wall space. Deterministic: same plan and options, same
 /// markers, ids 0, 1, 2, … in segment order, corners before fillers.
 /// </summary>
 /// <remarks>
@@ -29,8 +30,8 @@ public static partial class MarkerGenerator
                 continue;
             }
 
-            var cornerSize = MarkerSizing.PickSize(options.CornerTargetPx, segment, plan.Photo, options.AvailableSizesMm, out _);
-            var fillerSize = MarkerSizing.PickSize(options.FillerTargetPx, segment, plan.Photo, options.AvailableSizesMm, out _);
+            var cornerSize = MarkerSizing.PickSize(MarkerRole.Corner, segment, plan.Photo, options, out _);
+            var fillerSize = MarkerSizing.PickSize(MarkerRole.Filler, segment, plan.Photo, options, out _);
             var context = new SegmentFill(segment, plan.Photo, options);
             var corners = PlaceCorners(context, cornerSize);
             PlaceEdgeFillers(context, corners, fillerSize);

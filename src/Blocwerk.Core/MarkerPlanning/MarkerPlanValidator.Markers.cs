@@ -51,20 +51,20 @@ public static partial class MarkerPlanValidator
 
     private static void CheckMarkerPixels(PhotoSetup photo, PlanSegment segment, PlanMarker m, MarkerGenerationOptions options, List<PlanIssue> issues)
     {
-        var target = m.Role == MarkerRole.Corner ? options.CornerTargetPx : options.FillerTargetPx;
+        var target = MarkerSizing.RequiredPx(m.Role, segment, photo, options);
         var px = MarkerSizing.EstimatedPx(m.SizeMm, segment, photo);
-        if (px >= target)
+        if (px >= target - 1e-6)
         {
             return;
         }
 
-        var needed = MarkerSizing.PickSize(target, segment, photo, options.AvailableSizesMm, out var meets);
+        var needed = MarkerSizing.PickSize(m.Role, segment, photo, options, out var meets);
         var fix = meets
-            ? $"print it at {needed:0} mm"
+            ? $"{needed:0} mm is the smallest size that works — print it at that"
             : $"print it at {Math.Ceiling(MarkerSizing.RequiredSizeMm(target, segment, photo) / 5) * 5:0} mm or photograph from closer";
         issues.Add(Warning(
             "marker-too-small",
-            $"Marker {m.Id} on \"{segment.Name}\" will be about {px:0} px in a photo from {photo.DistanceMm / 1000:0.0#} m — {(m.Role == MarkerRole.Corner ? "corner" : "filler")} markers need {target:0} px. {char.ToUpperInvariant(fix[0])}{fix[1..]}.",
+            $"Marker {m.Id} on \"{segment.Name}\" will be about {px:0} px from {photo.DistanceMm / 1000:0.0#} m on {MarkerSizingAdvice.DescribeCamera(photo)} — too small: {(m.Role == MarkerRole.Corner ? "corner" : "filler")} markers there need {target:0} px {MarkerSizingAdvice.Reason(m.Role, segment, photo, options)}. {char.ToUpperInvariant(fix[0])}{fix[1..]}.",
             m.Segment,
             m.Id));
     }

@@ -25,6 +25,7 @@ public static partial class MarkerPlanValidator
         var issues = new List<PlanIssue>();
         CheckHeader(plan, issues);
         var photoOk = CheckPhoto(plan.Photo, issues);
+        CheckCamera(plan.Photo, issues);
 
         var layout = NetLayout.Compute(plan);
         issues.AddRange(layout.Issues);
@@ -82,9 +83,9 @@ public static partial class MarkerPlanValidator
             ok = false;
         }
 
-        if (!(double.IsFinite(photo.HorizontalFovDeg) && photo.HorizontalFovDeg is >= 10 and <= 150))
+        if (!(double.IsFinite(photo.HorizontalFovDeg) && photo.HorizontalFovDeg is >= 5 and <= 150))
         {
-            issues.Add(Error("photo-fov", "The camera's field of view must be between 10° and 150° — pick a camera preset if unsure."));
+            issues.Add(Error("photo-fov", "The camera's field of view must be between 5° and 150° — pick your phone and lens if unsure."));
             ok = false;
         }
 

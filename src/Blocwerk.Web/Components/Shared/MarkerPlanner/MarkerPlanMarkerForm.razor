@@ -5,7 +5,7 @@
 <div class="mplan-form" @key="Marker.Id">
     <p class="mplan-marker-summary @(MeetsTarget ? "ok" : "warn")">
         Marker #@Marker.Id on #@Marker.Segment @SegmentName — ≈ @Math.Round(EstimatedPx) px on your photos
-        (target @TargetPx px for a @Marker.Role.ToString().ToLowerInvariant()).
+        (target @Math.Round(TargetPx) px for a @Marker.Role.ToString().ToLowerInvariant()@(Photo is not null ? $" from {Photo.DistanceMm / 1000:0.0#} m" : string.Empty)).
     </p>
     <div class="mplan-grid">
         <div class="form-group">
@@ -57,6 +57,14 @@
     [Parameter]
     public string? SegmentName { get; set; }
 
+    /// <summary>The surface it sits on (for the steep-view margin); null = unknown.</summary>
+    [Parameter]
+    public PlanSegment? Segment { get; set; }
+
+    /// <summary>The plan's photo setup (the pose target grows with distance); null = decode target only.</summary>
+    [Parameter]
+    public PhotoSetup? Photo { get; set; }
+
     /// <summary>Its expected on-photo side.</summary>
     [Parameter]
     public double EstimatedPx { get; set; }
@@ -73,7 +81,7 @@
     [Parameter]
     public EventCallback<int> OnDelete { get; set; }
 
-    private double TargetPx => PlanMarkerEdits.TargetPx(Marker.Role, Options);
+    private double TargetPx => Photo is null ? PlanMarkerEdits.TargetPx(Marker.Role, Options) : PlanMarkerEdits.TargetPx(Marker.Role, Segment, Photo, Options);
 
     private bool MeetsTarget => EstimatedPx >= TargetPx - 1e-6;
 
