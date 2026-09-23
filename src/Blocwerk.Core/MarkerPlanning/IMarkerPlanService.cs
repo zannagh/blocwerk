@@ -22,6 +22,14 @@ public interface IMarkerPlanService
     /// <summary>The wall's plan revisions, newest first. Wall admins only, never from a kiosk.</summary>
     Task<IReadOnlyList<MarkerPlanRevisionInfo>> GetRevisionsAsync(Guid wallId);
 
+    /// <summary>
+    /// Records that <paramref name="revision"/>'s markers were put up on the wall at <paramref name="effectiveFrom"/>
+    /// ("Markers swapped on the wall"); null clears it (back to "planned, not yet on the wall"). A prior for which
+    /// revision a photo shows — the photo's markers decide first. False when the revision does not exist.
+    /// Wall admins only, never from a kiosk.
+    /// </summary>
+    Task<bool> SetRevisionEffectiveAsync(Guid wallId, int revision, DateTimeOffset? effectiveFrom);
+
     /// <summary>One stored revision of the wall's plan, or null. Wall admins only, never from a kiosk.</summary>
     Task<MarkerPlan?> GetRevisionAsync(Guid wallId, int revision);
 

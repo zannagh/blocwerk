@@ -5,6 +5,7 @@
 using System.Text;
 using Blocwerk.Core.MarkerPlanning;
 using Blocwerk.Core.Services;
+using Blocwerk.Web.Components.Shared.MarkerPlanner;
 using Microsoft.AspNetCore.Components.Forms;
 using Microsoft.JSInterop;
 
@@ -54,6 +55,21 @@ public partial class WallMarkerPlanner
         message = result.Unchanged
             ? $"Nothing changed — still revision {result.Revision}."
             : $"Saved as revision {result.Revision}. Download the PDF to print, and keep the JSON with your photos.";
+    });
+
+    /// <summary>"Markers swapped on the wall": records (or, with null, clears) when a revision's markers went up.</summary>
+    private Task SetEffectiveAsync(MarkerRevisionEffectiveChange change) => RunAsync(async () =>
+    {
+        if (!await Plans.SetRevisionEffectiveAsync(WallId, change.Revision, change.EffectiveFrom))
+        {
+            failure = $"Revision {change.Revision} no longer exists.";
+            return;
+        }
+
+        revisions = await Plans.GetRevisionsAsync(WallId);
+        message = change.EffectiveFrom is { } from
+            ? $"Revision {change.Revision} marked as on the wall since {from.ToLocalTime():yyyy-MM-dd}."
+            : $"Revision {change.Revision} is planned, not yet on the wall.";
     });
 
     /// <summary>The PDF with true-size pages only for the markers added or changed since the last capture.</summary>

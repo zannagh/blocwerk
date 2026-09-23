@@ -43,8 +43,20 @@ public class WallMarkerObservation
     public DateTimeOffset DetectedAt { get; set; } = DateTimeOffset.UtcNow;
 
     /// <summary>
-    /// The wall's marker plan revision when the photo was detected (null: no plan yet, the legacy ids). A
-    /// marker changed in a later revision is never mapped with its new pose (see <c>MarkerRevisionScope</c>).
+    /// The marker plan revision the photo SHOWS, inferred from its markers when detected (older rows: the
+    /// wall's current revision at detection; null: no plan yet, the legacy ids). A marker changed in another
+    /// revision is never mapped with its new pose (see <c>MarkerRevisionScope</c>).
     /// </summary>
     public int? PlanRevision { get; set; }
+
+    /// <summary>
+    /// The lowest plan revision the photo's markers are compatible with (null: not inferred, an older tag).
+    /// <see cref="PlanRevision"/> is the best-supported revision within
+    /// <see cref="CompatibleRevisionFrom"/>..<see cref="CompatibleRevisionTo"/>; a range wider than one means only
+    /// markers unchanged across it were visible (see <c>MarkerRevisionInference</c>).
+    /// </summary>
+    public int? CompatibleRevisionFrom { get; set; }
+
+    /// <summary>The highest plan revision the photo's markers are compatible with (null: not inferred).</summary>
+    public int? CompatibleRevisionTo { get; set; }
 }

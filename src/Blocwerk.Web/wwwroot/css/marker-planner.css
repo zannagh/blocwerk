@@ -126,3 +126,5 @@
     display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px;
     background: var(--accent-soft); color: var(--text-heading); font-size: 0.8em; font-weight: 600;
 }
+.mplan-effective { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 2px 0 6px; font-size: 0.9em; }
+.mplan-effective label { display: inline-flex; align-items: center; gap: 4px; }

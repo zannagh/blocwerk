@@ -42,4 +42,11 @@ public class WallMarkerPlan
     /// made with, so markers that were moved, resized or replaced later are never mistaken for the old ones.
     /// </summary>
     public int Revision { get; set; }
+
+    /// <summary>
+    /// When the owner put this revision's markers up on the wall ("Markers swapped on the wall"); null while
+    /// it is only planned. A prior / tie-breaker for which revision a photo shows — the photo's own markers
+    /// decide first (see <c>MarkerRevisionInference</c>).
+    /// </summary>
+    public DateTimeOffset? EffectiveFrom { get; set; }
 }

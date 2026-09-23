@@ -5,21 +5,27 @@
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.MarkerPlanning;
 
-/// <summary>The plan's revision history and "what changed since the last capture".</summary>
+/// <summary>The plan's revision history, "what changed since the last capture", and when a revision went up on the wall.</summary>
 public sealed partial class MarkerPlanService
 {
     public async Task<IReadOnlyList<MarkerPlanRevisionInfo>> GetRevisionsAsync(Guid wallId)
     {
         await using var db = await OpenAdminReadAsync(wallId, "Reading the marker plan history");
         var modelRevision = await ActiveModelRevisionAsync(db, wallId);
+        var measured = (await db.WallGeometryModels.AsNoTracking()
+            .Where(m => m.WallId == wallId && m.PlanRevision != null)
+            .Select(m => m.PlanRevision!.Value)
+            .Distinct()
+            .ToListAsync()).ToHashSet();
         var rows = await db.WallMarkerPlans.AsNoTracking()
             .Where(p => p.WallId == wallId)
             .OrderByDescending(p => p.Revision)
             .ThenByDescending(p => p.CreatedAt)
-            .Select(p => new { p.Revision, p.CreatedAt, p.CreatedByUserId, p.IsCurrent, p.Json })
+            .Select(p => new { p.Revision, p.CreatedAt, p.CreatedByUserId, p.IsCurrent, p.Json, p.EffectiveFrom })
             .ToListAsync();
         var userIds = rows.Where(r => r.CreatedByUserId is not null).Select(r => r.CreatedByUserId!.Value).Distinct().ToList();
         var names = await db.Users.IgnoreQueryFilters().AsNoTracking()
@@ -32,8 +38,30 @@ public sealed partial class MarkerPlanService
                 r.CreatedByUserId is { } id && names.TryGetValue(id, out var name) ? name : null,
                 MarkerPlanJson.FromJson(r.Json, out _)?.Markers.Count ?? 0,
                 r.IsCurrent,
-                modelRevision.HasModel && modelRevision.Revision == r.Revision))
+                modelRevision.HasModel && modelRevision.Revision == r.Revision,
+                r.EffectiveFrom,
+                measured.Contains(r.Revision)))
             .ToList();
+    }
+
+    public async Task<bool> SetRevisionEffectiveAsync(Guid wallId, int revision, DateTimeOffset? effectiveFrom)
+    {
+        await using var db = await OpenAdminReadAsync(wallId, "Marking marker plan revisions as put up");
+        var rows = await db.WallMarkerPlans.Where(p => p.WallId == wallId && p.Revision == revision).ToListAsync();
+        if (rows.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (var row in rows)
+        {
+            row.EffectiveFrom = effectiveFrom?.ToUniversalTime();
+        }
+
+        await db.SaveChangesAsync();
+        logger.LogInformation(
+            "Marker plan revision {Revision} of wall {WallId}: markers on the wall from {EffectiveFrom}", revision, wallId, effectiveFrom);
+        return true;
     }
 
     public async Task<MarkerPlan?> GetRevisionAsync(Guid wallId, int revision)

@@ -51,6 +51,7 @@ public sealed partial class WallCaptureProcessor
         var glyphs = new WallGlyphService(
             dbContextFactory, new CaptureActingUser(run.User), loggerFactory.CreateLogger<WallGlyphService>());
         var notes = string.IsNullOrWhiteSpace(capture.Notes) ? "In-app capture" : $"In-app capture: {capture.Notes}";
+        await CheckShownRevisionAsync(run, json, ct);
         var frame = await RegisterToActiveAsync(run, json, ct);
         var options = new GeometryImportOptions(capture.PlanJson is null ? null : capture.PlanRevision, frame.Activate);
         var imported = await glyphs.ImportGeometryAsync(capture.WallId, frame.Json, notes, ModelSource(capture.Id), options);

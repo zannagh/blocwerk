@@ -1,5 +1,6 @@
 @* The plan's life over time: what changed since the markers the wall's model measured (the last capture),
-   what the next capture needs, a PDF of just the changed markers, and the saved revisions. *@
+   what the next capture needs, a PDF of just the changed markers, and the saved revisions — each
+   "planned, not yet on the wall" until the admin marks its markers as swapped (EffectiveFrom). *@
 @using System.Globalization
 @using Blocwerk.Core.MarkerPlanning
 
@@ -57,6 +58,25 @@
                         {
                             <span class="mplan-badge">3D model</span>
                         }
+                        <div class="mplan-effective">
+                            @if (r.EffectiveFrom is { } from)
+                            {
+                                <span class="glyph-ok">On the wall since @from.ToLocalTime().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)</span>
+                                <button type="button" class="btn-link" disabled="@Busy" @onclick="() => Clear(r.Revision)">Not on the wall yet</button>
+                            }
+                            else
+                            {
+                                <span class="hint">@(r.MeasuredByCapture ? "Measured by a capture (markers were on the wall then)" : "Planned, not yet on the wall")</span>
+                                <label>
+                                    Put up on
+                                    <input type="date" value="@DateOf(r.Revision)" disabled="@Busy"
+                                           @onchange="e => dates[r.Revision] = e.Value?.ToString()" />
+                                </label>
+                                <button type="button" class="btn-secondary" disabled="@Busy" @onclick="() => Swap(r.Revision)">
+                                    Markers swapped on the wall
+                                </button>
+                            }
+                        </div>
                     </li>
                 }
             </ul>
@@ -79,6 +99,29 @@
 
     [Parameter]
     public EventCallback OnDownloadChangedPdf { get; set; }
+
+    /// <summary>"Markers swapped on the wall" (a date) or "not on the wall yet" (null) for a revision.</summary>
+    [Parameter]
+    public EventCallback<MarkerRevisionEffectiveChange> OnSetEffective { get; set; }
+
+    private readonly Dictionary<int, string?> dates = [];
+
+    private string DateOf(int revision) =>
+        dates.GetValueOrDefault(revision) ?? DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    /// <summary>The picked day (local midnight), or now for today: photos from earlier today may still show the old sheets.</summary>
+    private Task Swap(int revision)
+    {
+        var picked = DateOnly.TryParseExact(DateOf(revision), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day)
+            ? day
+            : DateOnly.FromDateTime(DateTime.Now);
+        DateTimeOffset from = picked == DateOnly.FromDateTime(DateTime.Now)
+            ? DateTimeOffset.Now
+            : new DateTimeOffset(picked.ToDateTime(TimeOnly.MinValue, DateTimeKind.Local));
+        return OnSetEffective.InvokeAsync(new MarkerRevisionEffectiveChange(revision, from));
+    }
+
+    private Task Clear(int revision) => OnSetEffective.InvokeAsync(new MarkerRevisionEffectiveChange(revision, null));
 
     private static IEnumerable<(string Label, IReadOnlyList<int> Ids)> Groups(MarkerPlanDiffResult diff) =>
         new (string, IReadOnlyList<int>)[]

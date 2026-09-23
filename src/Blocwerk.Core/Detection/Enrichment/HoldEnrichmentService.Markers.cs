@@ -25,26 +25,43 @@ public sealed partial class HoldEnrichmentService
         }
 
         // The wall's plan says which ids are real (and how big each is); without one: the legacy defaults.
+        // Every saved revision's ids are accepted: the sheets on the wall may still be an older revision's.
         var layout = WallMarkerLayoutResolver.Resolve(
             await WallMarkerLayoutResolver.CurrentPlanJsonAsync(db, request.Wall.Id, ct), request.Wall.MarkerSizeMm);
-        var options = layout.IsFromPlan ? layout.DetectionOptions : null;
+        var candidates = await MarkerRevisionCandidates.LoadAsync(db, request.Wall.Id, ct);
+        var options = layout.IsFromPlan
+            ? layout.DetectionOptions with { AllowedIds = layout.AllowedIds.Union(MarkerRevisionCandidates.AllIds(candidates)).ToHashSet() }
+            : null;
         var detection = await Task.Run(() => markerService.DetectAsync(request.Image, options, ct), ct);
         plan.MarkerPassRan = true;
         plan.MarkerCount = detection.Markers.Count;
-        var revisions = await MarkerRevisionScope.LoadAsync(db, request.Wall.Id, ct);
-        await PlanObservationsAsync(db, request, detection, plan, revisions.CurrentRevision, ct);
-        var holds = PlanMarkerHoldDrops(request.Holds, detection.Markers, plan);
 
-        // The photo shows the markers of the CURRENT plan; the model may still carry an older revision.
-        // Only markers unchanged between the two may place the holds on the model.
+        // The photo shows the revision its markers say — not necessarily the current plan (saved, not yet put up).
+        var revisions = await MarkerRevisionScope.LoadAsync(db, request.Wall.Id, ct);
+        var evidence = layout.IsFromPlan
+            ? MarkerRevisionInference.Infer(detection.Markers.Select(ObservedMarker.From).ToList(), candidates, DateTimeOffset.UtcNow)
+            : null;
+        var shown = PhotoRevision.Of(evidence, revisions.CurrentRevision);
+        await PlanObservationsAsync(db, request, detection, plan, shown, ct);
+        var holds = PlanMarkerHoldDrops(request.Holds, detection.Markers, plan);
+        layout = LayoutOf(evidence, candidates, layout);
+
+        // The model may carry another revision: only markers unchanged between the two place the holds on it.
         var document = await LoadActiveGeometryAsync(db, request.Wall.Id, ct);
         var markers = document is null
             ? detection.Markers
-            : await revisions.FilterAsync(detection.Markers, revisions.CurrentRevision, ct);
+            : await revisions.FilterAsync(detection.Markers, shown.Revision, ct);
         var width = outlineImageSize?.Width ?? detection.ImageWidth;
         var height = outlineImageSize?.Height ?? detection.ImageHeight;
         PlanMetrics(request, holds, markers, document, plan, (width, height), layout);
     }
+
+    /// <summary>The layout of the revision the photo shows (sizes for the metrics), else <paramref name="current"/>.</summary>
+    private static WallMarkerLayout LayoutOf(
+        MarkerRevisionEvidence? evidence, IReadOnlyList<RevisionCandidate> candidates, WallMarkerLayout current) =>
+        evidence is not null && candidates.FirstOrDefault(c => c.Revision == evidence.Revision) is { } shown
+            ? WallMarkerLayout.FromPlan(shown.Plan)
+            : current;
 
     /// <summary>
     /// Plans dropping the auto-detected holds that are really the printed marker sheets (see
@@ -88,7 +105,7 @@ public sealed partial class HoldEnrichmentService
 
     /// <summary>
     /// Replaces the observation rows of this exact panel photo (panel + generation + staged/live), tagged
-    /// with the plan revision they were detected against. A legacy single-image upload has no panel to key
+    /// with the plan revision their markers show (see <see cref="MarkerRevisionInference"/>). A legacy single-image upload has no panel to key
     /// them on and stores none.
     /// </summary>
     private static async Task PlanObservationsAsync(
@@ -96,7 +113,7 @@ public sealed partial class HoldEnrichmentService
         HoldEnrichmentRequest request,
         MarkerDetectionResult detection,
         HoldEnrichmentPlan plan,
-        int? planRevision,
+        PhotoRevision revision,
         CancellationToken ct)
     {
         if (request.PanelId is not { } panelId)
@@ -121,7 +138,9 @@ public sealed partial class HoldEnrichmentService
             SidePx = m.SidePx,
             Synthetic = m.Synthetic,
             DetectedAt = now,
-            PlanRevision = planRevision,
+            PlanRevision = revision.Revision,
+            CompatibleRevisionFrom = revision.From,
+            CompatibleRevisionTo = revision.To,
         }));
     }
 

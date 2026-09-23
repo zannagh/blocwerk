@@ -11,8 +11,24 @@ namespace Blocwerk.Core.MarkerPlanning;
 /// <param name="Markers">How many markers it plans.</param>
 /// <param name="IsCurrent">True for the wall's current plan.</param>
 /// <param name="UsedByActiveModel">True when the wall's active 3D model was solved with it.</param>
+/// <param name="EffectiveFrom">When the owner marked its markers as put up on the wall; null while only planned.</param>
+/// <param name="MeasuredByCapture">True when any 3D model was solved with it: its markers were on the wall then.</param>
 public sealed record MarkerPlanRevisionInfo(
-    int Revision, DateTimeOffset CreatedAt, string? CreatedBy, int Markers, bool IsCurrent, bool UsedByActiveModel);
+    int Revision,
+    DateTimeOffset CreatedAt,
+    string? CreatedBy,
+    int Markers,
+    bool IsCurrent,
+    bool UsedByActiveModel,
+    DateTimeOffset? EffectiveFrom = null,
+    bool MeasuredByCapture = false)
+{
+    /// <summary>
+    /// True when the markers are known to have been on the wall: marked as swapped, or measured by a capture.
+    /// Otherwise the revision is "planned, not yet on the wall".
+    /// </summary>
+    public bool IsOnWall => EffectiveFrom is not null || MeasuredByCapture;
+}
 
 /// <summary>The markers the wall's active model measured: what the next capture is compared with.</summary>
 /// <param name="Revision">The model's plan revision; null when it measured the legacy markers.</param>

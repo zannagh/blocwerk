@@ -34,7 +34,7 @@ public sealed class MarkerRevisionScope
     /// <summary>The plan revision the active model was solved with (null: legacy or unknown).</summary>
     public int? ModelRevision { get; }
 
-    /// <summary>The wall's current plan revision (null: no plan) — what a photo detected now is tagged with.</summary>
+    /// <summary>The wall's current plan revision (null: no plan). A photo is tagged with the revision its markers show (<see cref="MarkerRevisionInference"/>), which may be older.</summary>
     public int? CurrentRevision { get; }
 
     /// <summary>The revision baselines behind this scope, for comparisons beyond the active model.</summary>
