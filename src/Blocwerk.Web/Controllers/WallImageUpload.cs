@@ -34,6 +34,9 @@ internal sealed record WallImageUpload
         return new WallImageUpload { ErrorStatus = status, ErrorMessage = message };
     }
 
+    /// <summary>The same upload after its temp file was rewritten to <paramref name="sizeBytes"/> bytes.</summary>
+    public WallImageUpload WithSize(long sizeBytes) => this with { SizeBytes = sizeBytes };
+
     public static WallImageUpload Succeeded(
         string tempPath,
         string contentType,

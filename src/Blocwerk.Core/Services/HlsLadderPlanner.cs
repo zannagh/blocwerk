@@ -140,6 +140,7 @@ public static class HlsLadderPlanner
             }
         }
 
+        sb.Append(BetaVideoArguments.MetadataScrub).Append(' ');
         sb.Append("-var_stream_map ").Append(Quote(BuildStreamMap(rungs.Count, hasAudio))).Append(' ');
         sb.Append("-master_pl_name ").Append(MasterPlaylistName).Append(' ');
         sb.Append("-f hls -hls_time ").Append(segments.ToString(CultureInfo.InvariantCulture)).Append(' ');

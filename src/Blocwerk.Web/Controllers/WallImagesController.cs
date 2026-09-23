@@ -70,6 +70,11 @@ public sealed class WallImagesController : WallScopedApiController
             ? await WallImageUploads.ReadMultipartAsync(Request, storage, cancellationToken)
             : await WallImageUploads.ReadRawAsync(Request, storage, cancellationToken);
 
+        if (upload.IsSuccess)
+        {
+            upload = await WallImageUploads.RemoveMetadataAsync(upload, cancellationToken);
+        }
+
         if (!upload.IsSuccess)
         {
             return StatusCode(upload.ErrorStatus!.Value, new ApiErrorResponse(upload.ErrorMessage!));

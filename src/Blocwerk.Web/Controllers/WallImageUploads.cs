@@ -1,5 +1,6 @@
 using System.Globalization;
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Capture;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Net.Http.Headers;
 
@@ -167,6 +168,42 @@ internal static class WallImageUploads
             if (!handedOver)
             {
                 Discard(tempPath);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Removes location and every other piece of metadata from the uploaded temp file in place, before
+    /// it is committed: a JPEG, PNG or WebP keeps its pixels byte for byte and its EXIF orientation;
+    /// other formats are kept as sent. A structurally broken JPEG/PNG/WebP is refused (400) and its temp
+    /// file dropped. The whole file is read once here — at most <see cref="MaxUploadBytes"/>.
+    /// </summary>
+    public static async Task<WallImageUpload> RemoveMetadataAsync(
+        WallImageUpload upload,
+        CancellationToken cancellationToken)
+    {
+        var keep = false;
+        try
+        {
+            var bytes = await File.ReadAllBytesAsync(upload.TempPath, cancellationToken);
+            var clean = StoredPhotoSanitizer.Sanitize(bytes);
+            if (clean.Length != bytes.Length || !clean.AsSpan().SequenceEqual(bytes))
+            {
+                await File.WriteAllBytesAsync(upload.TempPath, clean, cancellationToken);
+            }
+
+            keep = true;
+            return upload.WithSize(clean.LongLength);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return WallImageUpload.Failed(StatusCodes.Status400BadRequest, ex.Message);
+        }
+        finally
+        {
+            if (!keep)
+            {
+                Discard(upload.TempPath);
             }
         }
     }

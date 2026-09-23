@@ -213,11 +213,7 @@ public class FfmpegVideoTranscoder : IVideoTranscoder
 
     public async Task<VideoTranscodeResult> RemuxAsync(string inputPath, string outputPath, CancellationToken cancellationToken)
     {
-        var args = string.Join(' ',
-            "-y", "-hide_banner", "-loglevel", "error",
-            "-i", Quote(inputPath),
-            "-c", "copy", "-movflags", "+faststart",
-            Quote(outputPath));
+        var args = BetaVideoArguments.Remux(inputPath, outputPath);
 
         logger.LogInformation("Remuxing already-web-safe beta clip into faststart MP4");
         await RunAsync(settings.BetaVideo.FfmpegPath, args, cancellationToken);
@@ -228,19 +224,7 @@ public class FfmpegVideoTranscoder : IVideoTranscoder
     {
         var kbps = Math.Max(1, settings.BetaVideo.TargetVideoBitsPerSecond / 1000);
 
-        // Single-pass ABR with a capped max rate; H.264 High/4.1 in yuv420p + AAC-LC stereo, capped at
-        // 720p (long edge 1280). ffmpeg auto-rotates by the display matrix, so portrait phone clips
-        // come out upright without any rotation metadata the browser would have to honour.
-        var args = string.Join(' ',
-            "-y", "-hide_banner", "-loglevel", "error",
-            "-i", Quote(inputPath),
-            "-c:v", "libx264", "-preset", "veryfast", "-profile:v", "high", "-level", "4.1",
-            "-pix_fmt", "yuv420p",
-            "-b:v", $"{kbps}k", "-maxrate", $"{kbps * 3 / 2}k", "-bufsize", $"{kbps * 2}k",
-            "-vf", "scale=w=1280:h=1280:force_original_aspect_ratio=decrease:force_divisible_by=2",
-            "-c:a", "aac", "-b:a", "128k", "-ac", "2",
-            "-movflags", "+faststart",
-            Quote(outputPath));
+        var args = BetaVideoArguments.Transcode(inputPath, outputPath, kbps);
 
         logger.LogInformation("Transcoding beta clip to web-safe H.264/AAC at {Kbps} kb/s video", kbps);
         await RunAsync(settings.BetaVideo.FfmpegPath, args, cancellationToken);
