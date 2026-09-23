@@ -31,6 +31,14 @@ public interface IWallUpdateShapeService
     /// <summary>Skips the step (stopping a live run): every hold promotes with the shape it has now.</summary>
     Task<ShapeRecognitionStatusInfo> SkipAsync(Guid wallId, Guid? expectedSessionId = null, CancellationToken ct = default);
 
+    /// <summary>
+    /// Declares the shape step finished (review done, or the run skipped) and moves the update on to its
+    /// confirm step. Every method here also moves the session's resume cursor (start → Shapes, run complete or
+    /// a verdict → ShapeReview, skip or this → Confirm), so an API-driven update reopens in the wizard where the
+    /// API left it.
+    /// </summary>
+    Task<ShapeRecognitionStatusInfo> CompleteReviewAsync(Guid wallId, Guid? expectedSessionId = null, CancellationToken ct = default);
+
     /// <summary>The recognised shapes, lowest confidence first, optionally only those below a confidence.</summary>
     Task<IReadOnlyList<ShapeProposalInfo>> GetProposalsAsync(
         Guid wallId, double? belowConfidence = null, CancellationToken ct = default);

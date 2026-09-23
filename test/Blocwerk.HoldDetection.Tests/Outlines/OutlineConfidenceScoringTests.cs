@@ -40,6 +40,17 @@ public class OutlineConfidenceScoringTests
     }
 
     [Fact]
+    public void PaleHoldOnWood_IsOutlinedByItsEdges_AndRankedForReview()
+    {
+        // Pale beige on the synthetic wood: too little colour contrast for the colour pass, a clear edge though.
+        var result = OutlineOnWood(new Scalar(200, 212, 222));
+
+        Assert.Equal(HoldOutlineMethod.GrabCut, result.Method);
+        Assert.NotNull(result.ShapePoints);
+        Assert.InRange(result.Confidence, 0.2, 0.7);
+    }
+
+    [Fact]
     public void LessContrast_NeverScoresHigher()
     {
         var strong = OutlineOnWood(new Scalar(40, 40, 200));

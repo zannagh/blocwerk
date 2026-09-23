@@ -15,7 +15,9 @@ internal static partial class ApiDocsData
         + "key gets 403, kiosk tablets are refused). An update must already be open on the wall. Every write "
         + "takes an optional sessionId; when it is no longer the wall's open update the call is refused with "
         + "409, so a stale script cannot act on a newer update. Nothing reaches the live holds until the "
-        + "update is applied. Shapes are lists of {dx, dy} offsets from the hold centre (x, y), as fractions "
+        + "update is applied. Every call also moves the update's resume point (start: Shapes; run finished or a "
+        + "verdict: ShapeReview; skip or review/complete: Confirm), so the wizard reopens where the API left it. "
+        + "Shapes are lists of {dx, dy} offsets from the hold centre (x, y), as fractions "
         + "of the photo width and height.";
 
     private const string StartBody =
@@ -26,7 +28,7 @@ internal static partial class ApiDocsData
         + "and verdicts. Starting while a run is alive changes nothing; after a restart it resumes.";
 
     private const string StatusJson =
-        "{\n  \"sessionId\": \"<guid>\",\n  \"available\": true,\n  \"status\": \"Completed\","
+        "{\n  \"sessionId\": \"<guid>\",\n  \"phase\": \"ShapeReview\",\n  \"available\": true,\n  \"status\": \"Completed\","
         + "\n  \"interrupted\": false,\n  \"scope\": \"NewAndChanged\",\n  \"overwriteManual\": false,"
         + "\n  \"total\": 212,\n  \"done\": 212,\n  \"skippedManual\": 3,\n  \"startedAt\": \"...\","
         + "\n  \"finishedAt\": \"...\",\n  \"error\": null,\n  \"decisions\": { \"Pending\": 180, \"Accepted\": 32 }\n}";
@@ -81,6 +83,7 @@ internal static partial class ApiDocsData
         new("POST", ShapesBase + "/recognition", "Starts (or resumes) recognition in the background. Hand-drawn shapes are skipped.", WallOnly, StartBody, SameAsStatus, StartNote),
         new("GET", ShapesBase + "/recognition", "The run status and the review tally. Poll it while status is Running.", WallOnly, null, StatusJson, StatusNote),
         new("POST", ShapesBase + "/recognition/skip", "Skips the step (stopping a live run). Every hold keeps the shape it has now.", WallOnly, SessionBody, SameAsStatus),
+        new("POST", ShapesBase + "/review/complete", "Finishes the step: the update moves on to its confirm step. 409 until the run completed or was skipped.", WallOnly, SessionBody, SameAsStatus),
         new("GET", ShapesBase + "/proposals", "The recognised shapes, lowest confidence first.", WallAndBelow, null, ProposalsJson, ProposalsNote),
         new("POST", ShapesBase + "/decisions", "Records review verdicts; the whole batch is refused if any hold has no proposal.", WallOnly, DecisionsBody, "{ \"count\": 3 }", DecisionsNote),
         new("POST", ShapesBase + "/accept-above", "Accepts every still-pending recognised outline at or above a confidence.", WallOnly, AcceptAboveBody, "{ \"count\": 164 }", "Never overrides a verdict already given, and skips circle fallbacks."),

@@ -32,9 +32,10 @@ public record ShapeDecisionsRequest(List<ShapeDecisionDto> Decisions, Guid? Sess
 /// <summary>How many proposals a write changed.</summary>
 public record ShapeWriteResponse(int Count);
 
-/// <summary>The recognition run and review tally.</summary>
+/// <summary>The recognition run, the review tally, and the session's resume cursor (<c>Phase</c>).</summary>
 public record ShapeRecognitionStatusResponse(
     Guid SessionId,
+    string Phase,
     bool Available,
     string Status,
     bool Interrupted,
@@ -73,6 +74,7 @@ internal static class WallUpdateShapeMappings
     public static ShapeRecognitionStatusResponse ToResponse(this ShapeRecognitionStatusInfo s) =>
         new(
             s.SessionId,
+            s.Phase.ToString(),
             s.Available,
             s.Status.ToString(),
             s.Interrupted,

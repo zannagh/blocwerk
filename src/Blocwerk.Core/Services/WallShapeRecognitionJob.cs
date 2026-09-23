@@ -105,6 +105,15 @@ internal sealed class WallShapeRecognitionJob
 
         session.ShapeStatus = ShapeRecognitionStatus.Completed;
         session.ShapeFinishedAt = DateTimeOffset.UtcNow;
+
+        // A finished run is ready for review: advance the cursor as the wizard's own "Review" button would, so
+        // an update driven over the API (nobody on the page) reopens on the review.
+        if (session.Phase == WallUpdatePhase.Shapes)
+        {
+            WallUpdateSessions.MovePhase(
+                session, WallUpdatePhase.ShapeReview, 0, session.LastActiveByUserId ?? session.CreatedByUserId ?? Guid.Empty);
+        }
+
         await db.SaveChangesAsync(ct);
         logger.LogInformation(
             "Shape recognition for session {SessionId}: {Count} holds outlined in {Seconds:F1}s ({Manual} hand-drawn skipped)",

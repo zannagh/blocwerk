@@ -32,6 +32,15 @@ public sealed class OpenCvHoldOutlineSession : IHoldOutlineSession
     /// </summary>
     public const double MinGrabCutContrast = 18;
 
+    /// <summary>Boundary-to-crop gradient ratio a low-contrast GrabCut outline needs (see TryAcceptByEdges).</summary>
+    public const double MinEdgeSupport = 2.2;
+
+    /// <summary>Seeds larger than this (full-image pixels) never take the edge path: they are volumes.</summary>
+    public const double MaxEdgePathRadiusPx = 150;
+
+    /// <summary>A low-contrast GrabCut outline this close to the seed ellipse is the seed, not a hold.</summary>
+    public const double MaxSeedEllipseIoU = 0.85;
+
     private static readonly double[] ThresholdFactors = [0.45, 0.7];
 
     private readonly Mat image;
@@ -94,6 +103,12 @@ public sealed class OpenCvHoldOutlineSession : IHoldOutlineSession
             return OutlineResultBuilder.FromContour(crop, seed, cut.Contour, cut.Holes, image.Width, image.Height, conf, HoldOutlineMethod.GrabCut);
         }
 
+        if (gc is not null && TryAcceptByEdges(gc, crop) is { } edged)
+        {
+            double conf = Confidence(0.6, cContrast, edged.Ratio);
+            return OutlineResultBuilder.FromContour(crop, seed, edged.Contour, [], image.Width, image.Height, conf, HoldOutlineMethod.GrabCut);
+        }
+
         return OutlineResultBuilder.Circle(crop, seed, image.Width, image.Height, cContrast);
     }
 
@@ -117,6 +132,40 @@ public sealed class OpenCvHoldOutlineSession : IHoldOutlineSession
             : ratio > 1.05 ? Math.Clamp((MaskOps.MaxAreaRatio - ratio) / (MaskOps.MaxAreaRatio - 1.05), 0, 1) : 1;
         double raw = methodFactor * (0.3 + (0.7 * ((0.55 * cContrast) + (0.45 * cArea))));
         return Math.Round(Math.Clamp(raw, 0.21, 0.97), 3);
+    }
+
+    /// <summary>
+    /// The low-contrast GrabCut path: a pale hold on pale wood (white, grey, beige) has too little COLOUR
+    /// contrast for the colour pass, but a clear outline. GrabCut's answer is kept only when its boundary sits
+    /// on real edges, the seed is hold-sized (not a volume), (<see cref="MaskOps.EdgeSupport"/> ≥ <see cref="MinEdgeSupport"/>) and it is not simply the
+    /// seed ellipse handed back — which is what GrabCut returns on a featureless, wall-coloured volume.
+    /// </summary>
+    private static (Point[] Contour, double Ratio)? TryAcceptByEdges(Mat gc, OutlineCrop crop)
+    {
+        // Wooden volumes are the one wall-coloured object with strong edges, and they are big: by colour and
+        // edges alone a volume is indistinguishable from a pale hold, so the edge path leaves large seeds alone.
+        if (crop.Radius / crop.Scale > MaxEdgePathRadiusPx)
+        {
+            return null;
+        }
+
+        using Mat mask = gc.Clone();
+        MaskOps.Clean(mask, crop.Radius);
+        Point[]? contour = MaskOps.SeedContour(mask, crop);
+        if (contour is null)
+        {
+            return null;
+        }
+
+        var (ok, ratio, _) = MaskOps.Assess(contour, crop, crop.HasBox ? MaskOps.MinAreaRatioBoxed : MaskOps.MinAreaRatio);
+        if (!ok || ratio > 1.15 || MaskOps.SeedEllipseIoU(contour, crop) > MaxSeedEllipseIoU)
+        {
+            return null;
+        }
+
+        // A wooden volume is plywood: its outline is a real edge, but inside it has the wall's chromaticity.
+        // A pale hold differs from the wall in chromaticity even where its weighted Lab contrast is tiny.
+        return MaskOps.EdgeSupport(contour, crop) >= MinEdgeSupport ? (contour, ratio) : null;
     }
 
     /// <summary>

@@ -132,6 +132,66 @@ internal static class MaskOps
         return Cv2.MinAreaRect(contour).Points().Select(p => new Point((int)Math.Round(p.X), (int)Math.Round(p.Y))).ToArray();
     }
 
+    /// <summary>
+    /// How strongly a contour follows image edges: mean Sobel magnitude on the contour divided by the median
+    /// magnitude over the crop. ~1 on texture or a flat surface, well above 2 on a real object boundary.
+    /// </summary>
+    /// <param name="contour">The contour (working pixels).</param>
+    /// <param name="crop">The crop.</param>
+    /// <returns>The ratio.</returns>
+    public static double EdgeSupport(Point[] contour, OutlineCrop crop)
+    {
+        using var grey = new Mat();
+        Cv2.CvtColor(crop.Bgr, grey, ColorConversionCodes.BGR2GRAY);
+        using var gx = new Mat();
+        using var gy = new Mat();
+        Cv2.Sobel(grey, gx, MatType.CV_32F, 1, 0, 3);
+        Cv2.Sobel(grey, gy, MatType.CV_32F, 0, 1, 3);
+        using var mag = new Mat();
+        Cv2.Magnitude(gx, gy, mag);
+        mag.GetArray(out float[] values);
+        var sorted = (float[])values.Clone();
+        Array.Sort(sorted);
+        double median = Math.Max(1.0, sorted[sorted.Length / 2]);
+        double sum = 0;
+        int n = 0;
+        foreach (var p in contour)
+        {
+            // Best response within one pixel: a traced boundary sits on, not exactly at, the gradient peak.
+            float best = 0;
+            for (int dy = -1; dy <= 1; dy++)
+            {
+                for (int dx = -1; dx <= 1; dx++)
+                {
+                    int x = Math.Clamp(p.X + dx, 0, mag.Width - 1), y = Math.Clamp(p.Y + dy, 0, mag.Height - 1);
+                    best = Math.Max(best, values[(y * mag.Width) + x]);
+                }
+            }
+
+            sum += best;
+            n++;
+        }
+
+        return n == 0 ? 0 : sum / n / median;
+    }
+
+    /// <summary>Intersection over union of a contour with the seed's own ellipse.</summary>
+    /// <param name="contour">The contour (working pixels).</param>
+    /// <param name="crop">The crop.</param>
+    /// <returns>0..1.</returns>
+    public static double SeedEllipseIoU(Point[] contour, OutlineCrop crop)
+    {
+        using Mat a = Fill(contour, crop.Bgr.Width, crop.Bgr.Height);
+        using var b = new Mat(crop.Bgr.Height, crop.Bgr.Width, MatType.CV_8UC1, Scalar.All(0));
+        Cv2.Ellipse(b, new Point((int)crop.Centre.X, (int)crop.Centre.Y), new Size((int)crop.RadiusX, (int)crop.RadiusY), 0, 0, 360, Scalar.All(255), -1);
+        using var inter = new Mat();
+        using var union = new Mat();
+        Cv2.BitwiseAnd(a, b, inter);
+        Cv2.BitwiseOr(a, b, union);
+        int u = Cv2.CountNonZero(union);
+        return u == 0 ? 0 : (double)Cv2.CountNonZero(inter) / u;
+    }
+
     private static double CoreOverlap(Point[] contour, OutlineCrop crop)
     {
         int hits = 0;

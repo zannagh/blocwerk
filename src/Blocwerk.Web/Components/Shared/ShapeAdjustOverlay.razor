@@ -1,16 +1,16 @@
 @* Full-view overlay that opens the regular wall editor (WallPhotoEditor) on ONE staged hold, already in
    the shape tool and zoomed onto it, so adjusting a recognised outline uses the same editor as
    everywhere else. Save hands the outline back to the shape review; nothing is written to the hold.
+   Save and Cancel live in a footer pinned to the bottom of the overlay, so they stay reachable on a
+   phone however tall the editor gets (the editor's own batch bar is hidden here). The editor's toolbar
+   stays on top: its phone dock is fixed to the viewport bottom and would sit over that footer.
    Its root class is on the keyboard dispatcher's takeover list (keyboard-shortcuts.js). *@
 
 <div class="shape-adjust-overlay" role="dialog" aria-modal="true" aria-label="Adjust hold shape"
      tabindex="-1" @onkeydown="OnKeyDown">
     <div class="shape-adjust-head">
-        <div>
-            <strong>Adjust the hold shape</strong>
-            <p class="hint">Drag the white points onto the hold's edge; + and − add or remove points. Then save.</p>
-        </div>
-        <button class="btn-secondary shape-big-btn" @onclick="() => OnCancel.InvokeAsync()">Cancel</button>
+        <strong>Adjust the hold shape</strong>
+        <p class="hint">Drag the white points onto the hold's edge; + and − add or remove points.</p>
     </div>
     <div class="shape-adjust-editor">
         <WallPhotoEditor WallId="WallId"
@@ -18,10 +18,14 @@
                          BorderPoints="_noBorder"
                          PhotoUrlOverride="@PhotoUrl"
                          CanEdit="true"
-                         BottomToolbar="true"
+                         BottomToolbar="false"
                          InitialShapeEditHoldId="Proposal.HoldId"
                          ResetToken="Proposal.HoldId"
                          OnBatchSave="OnBatchSave" />
+    </div>
+    <div class="shape-adjust-footer">
+        <button class="btn-secondary shape-big-btn" @onclick="() => OnCancel.InvokeAsync()">Cancel</button>
+        <button class="btn-primary shape-big-btn" @onclick="SaveAsync">Save shape</button>
     </div>
 </div>
 
@@ -67,9 +71,12 @@
         ];
     }
 
-    private async Task OnBatchSave(WallPhotoEditor.BatchChanges changes)
+    // The editor edits the stand-in hold in place, so its current outline is always on _holds[0].
+    private Task OnBatchSave(WallPhotoEditor.BatchChanges changes) => SaveAsync();
+
+    private async Task SaveAsync()
     {
-        var hold = changes.Updated.FirstOrDefault(h => h.Id == Proposal.HoldId) ?? _holds.FirstOrDefault();
+        var hold = _holds.FirstOrDefault();
         if (hold?.ShapePoints is not { Count: >= 3 } shape)
         {
             await OnCancel.InvokeAsync();

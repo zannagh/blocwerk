@@ -203,6 +203,7 @@ public static class CoreServices
         // singleton on the root context factory; every check happens in the scoped service before it.
         builder.Services.AddSingleton<WallShapeRecognitionRunner>();
         builder.Services.AddScoped<IWallUpdateShapeService, WallUpdateShapeService>();
+        builder.Services.AddHostedService<WallShapeRecognitionResumer>();
 
         ConfigureTopLogger(builder);
 

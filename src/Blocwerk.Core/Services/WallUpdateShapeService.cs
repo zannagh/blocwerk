@@ -69,7 +69,7 @@ public sealed partial class WallUpdateShapeService : IWallUpdateShapeService
             session.ShapeStartedAt = DateTimeOffset.UtcNow;
             session.ShapeFinishedAt = null;
             session.ShapeError = null;
-            WallUpdateSessions.Touch(session, userId);
+            WallUpdateSessions.MovePhase(session, WallUpdatePhase.Shapes, 0, userId);
             await db.SaveChangesAsync(ct);
 
             runner.Launch(session.Id);
@@ -102,7 +102,26 @@ public sealed partial class WallUpdateShapeService : IWallUpdateShapeService
             await db.Entry(session).ReloadAsync(ct);
             session.ShapeStatus = ShapeRecognitionStatus.Skipped;
             session.ShapeFinishedAt = DateTimeOffset.UtcNow;
-            WallUpdateSessions.Touch(session, userId);
+            WallUpdateSessions.MovePhase(session, WallUpdatePhase.Confirm, 0, userId);
+            await db.SaveChangesAsync(ct);
+            return await DescribeAsync(db, session, ct);
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<ShapeRecognitionStatusInfo> CompleteReviewAsync(
+        Guid wallId, Guid? expectedSessionId = null, CancellationToken ct = default)
+    {
+        var (db, userId, session) = await OpenAsync(wallId, expectedSessionId, ct);
+        await using (db)
+        {
+            if (session.ShapeStatus is not (ShapeRecognitionStatus.Completed or ShapeRecognitionStatus.Skipped))
+            {
+                throw new InvalidOperationException(
+                    $"The shape recognition is {session.ShapeStatus}; finish or skip it before moving on.");
+            }
+
+            WallUpdateSessions.MovePhase(session, WallUpdatePhase.Confirm, 0, userId);
             await db.SaveChangesAsync(ct);
             return await DescribeAsync(db, session, ct);
         }
@@ -144,6 +163,7 @@ public sealed partial class WallUpdateShapeService : IWallUpdateShapeService
             .ToDictionary(x => x.Decision, x => x.Count);
         return new ShapeRecognitionStatusInfo(
             session.Id,
+            session.Phase,
             runner.Available,
             session.ShapeStatus,
             session.ShapeStatus == ShapeRecognitionStatus.Running && !runner.IsRunning(session.Id),

@@ -3739,7 +3739,7 @@ html.bw-fullscreen .panel-link-dialog .panel-step-viewport {
     margin: 6px 0 12px;
 }
 .shape-slider { display: flex; flex-direction: column; gap: 4px; flex: 1 1 220px; font-size: 0.88rem; }
-.shape-slider input[type=range] { width: 100%; min-height: 32px; }
+.shape-slider input[type=range] { width: 100%; min-height: 32px; accent-color: var(--accent); }
 
 .shape-grid {
     display: grid;
@@ -3757,8 +3757,10 @@ html.bw-fullscreen .panel-link-dialog .panel-step-viewport {
 }
 .shape-card.decision-accepted, .shape-card.decision-adjusted { border-color: var(--status-success); }
 .shape-card.decision-circle, .shape-card.decision-keepprevious { border-color: var(--text-secondary); }
-.shape-crop { width: 100%; aspect-ratio: 1; display: block; background: #111; }
-.shape-recognised { fill: rgba(233, 69, 96, 0.18); stroke: #e94560; vector-effect: none; }
+.shape-crop { width: 100%; aspect-ratio: 1; display: block; background: #111; image-rendering: auto; }
+.shape-recognised { fill: rgba(233, 69, 96, 0.08); stroke: #e94560; vector-effect: none; }
+/* Nothing was recognised: an unfilled dashed ring, so no tint suggests a colour the hold does not have. */
+.shape-recognised.shape-none { fill: none; stroke: #fff; stroke-dasharray: 6 4; }
 .shape-previous { fill: none; stroke: #ffd700; stroke-dasharray: 4 3; }
 .shape-card-meta {
     display: flex;
@@ -3800,13 +3802,19 @@ html.bw-fullscreen .panel-link-dialog .panel-step-viewport {
     background: var(--bg-surface);
 }
 .shape-adjust-head {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 10px 14px;
+    flex: 0 0 auto;
+    padding: 8px 14px;
     border-bottom: 1px solid var(--border-light);
 }
 .shape-adjust-head .hint { margin: 2px 0 0; }
-.shape-adjust-head .shape-big-btn { flex: 0 0 auto; }
 .shape-adjust-editor { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+/* Save/Cancel belong to this overlay's footer; the editor's own batch bar would duplicate them off-screen. */
+.shape-adjust-editor .batch-bar { display: none; }
+.shape-adjust-footer {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 10px;
+    padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--border-light);
+    background: var(--bg-surface);
+}

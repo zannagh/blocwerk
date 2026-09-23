@@ -66,7 +66,7 @@ public sealed partial class WallUpdateShapeService
                 Record(rows[decision.HoldId], decision, userId, now);
             }
 
-            WallUpdateSessions.Touch(session, userId);
+            WallUpdateSessions.MovePhase(session, WallUpdatePhase.ShapeReview, 0, userId);
             await db.SaveChangesAsync(ct);
             return decisions.Count;
         }
@@ -93,7 +93,7 @@ public sealed partial class WallUpdateShapeService
                 Record(row, new ShapeDecisionRequest(row.HoldId, ShapeReviewDecision.Accepted), userId, now);
             }
 
-            WallUpdateSessions.Touch(session, userId);
+            WallUpdateSessions.MovePhase(session, WallUpdatePhase.ShapeReview, 0, userId);
             await db.SaveChangesAsync(ct);
             return rows.Count;
         }

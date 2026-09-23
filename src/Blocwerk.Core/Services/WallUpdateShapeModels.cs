@@ -19,6 +19,7 @@ public sealed record ShapeRecognitionOptions(
 
 /// <summary>The shape step's run state plus the review tally, as the UI and the API poll it.</summary>
 /// <param name="SessionId">The wall update session the run belongs to.</param>
+/// <param name="Phase">The session's resume cursor — where the wizard reopens, whoever drove the step.</param>
 /// <param name="Available">Whether outline detection is available on this server at all.</param>
 /// <param name="Status">Where the step stands.</param>
 /// <param name="Interrupted">True when the status says Running but no run is alive (the app restarted): start again to resume.</param>
@@ -33,6 +34,7 @@ public sealed record ShapeRecognitionOptions(
 /// <param name="Tally">Proposals per review verdict.</param>
 public sealed record ShapeRecognitionStatusInfo(
     Guid SessionId,
+    WallUpdatePhase Phase,
     bool Available,
     ShapeRecognitionStatus Status,
     bool Interrupted,

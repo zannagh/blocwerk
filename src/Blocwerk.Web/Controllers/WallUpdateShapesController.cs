@@ -56,6 +56,11 @@ public sealed class WallUpdateShapesController : WallScopedApiController
     public Task<IActionResult> Skip(Guid wallId, [FromBody] ShapeSessionRequest? body, CancellationToken ct) =>
         RunAsync(wallId, async () => Ok((await shapes.SkipAsync(wallId, body?.SessionId, ct)).ToResponse()));
 
+    /// <summary>Finishes the shape step (review done, or run skipped): the update moves on to its confirm step.</summary>
+    [HttpPost("review/complete")]
+    public Task<IActionResult> CompleteReview(Guid wallId, [FromBody] ShapeSessionRequest? body, CancellationToken ct) =>
+        RunAsync(wallId, async () => Ok((await shapes.CompleteReviewAsync(wallId, body?.SessionId, ct)).ToResponse()));
+
     /// <summary>The recognised shapes, lowest confidence first; <paramref name="below"/> keeps only those under it.</summary>
     [HttpGet("proposals")]
     public Task<IActionResult> Proposals(Guid wallId, [FromQuery] double? below, CancellationToken ct) =>

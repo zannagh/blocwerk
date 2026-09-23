@@ -180,6 +180,17 @@
                 <span class="bigupdate-chip remove">@RemovedCount removed</span>
                 <span class="bigupdate-chip new">@NewKeptCount new</span>
                 <span class="bigupdate-chip link">@LinkCount links</span>
+                @if (_shapeSummary?.Status == ShapeRecognitionStatus.Completed)
+                {
+                    <span class="bigupdate-chip carry">@ShapeCount(ShapeReviewDecision.Accepted) shapes accepted</span>
+                    <span class="bigupdate-chip new">@ShapeCount(ShapeReviewDecision.Adjusted) adjusted</span>
+                    <span class="bigupdate-chip remove">@ShapeCount(ShapeReviewDecision.Circle) to circle</span>
+                    <span class="bigupdate-chip link">@(ShapeCount(ShapeReviewDecision.KeepPrevious) + ShapeCount(ShapeReviewDecision.Pending)) kept</span>
+                }
+                else if (_shapeSummary?.Status == ShapeRecognitionStatus.Skipped)
+                {
+                    <span class="bigupdate-chip link">shapes skipped</span>
+                }
             </div>
             <p class="staged-hint">
                 Removed holds retire their boulders to history; everything carried keeps its boulders.

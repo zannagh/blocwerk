@@ -45,6 +45,16 @@ internal sealed class LocalColourModel
     /// <summary>Gets the wall's green chromaticity.</summary>
     public float WallG { get; }
 
+    /// <summary>
+    /// Gets a value indicating whether the wall is coloured enough (plywood, painted panels) for "darker but same
+    /// chromaticity" to mean shadowed wall. On a near-neutral wall a grey or white hold in the shade has exactly
+    /// that chromaticity too, so the shadow rule would veto the hold itself; it is off there.
+    /// </summary>
+    public bool WallHasChroma => Math.Sqrt((Wall[1] * Wall[1]) + (Wall[2] * Wall[2])) >= NeutralWallChroma;
+
+    /// <summary>Lab chroma below which the wall counts as neutral (see <see cref="WallHasChroma"/>).</summary>
+    public const float NeutralWallChroma = 6f;
+
     /// <summary>Gets the weighted distance between hold core and wall: how separable the hold is at all.</summary>
     public float Contrast { get; }
 
@@ -126,7 +136,7 @@ internal sealed class LocalColourModel
     /// <returns>Whether the pixel looks like wall material.</returns>
     public bool IsWallMaterial(CropPixels px, int i)
     {
-        if (px.L[i] >= Wall[0] - 3)
+        if (!WallHasChroma || px.L[i] >= Wall[0] - 3)
         {
             return false;
         }

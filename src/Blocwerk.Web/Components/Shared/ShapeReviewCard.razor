@@ -15,7 +15,7 @@
         }
         else
         {
-            <circle class="shape-recognised" cx="@F(CentreX)" cy="@F(CentreY)" r="@F(RadiusPx)" style="stroke-width:@Stroke(1)" />
+            <circle class="shape-recognised shape-none" cx="@F(CentreX)" cy="@F(CentreY)" r="@F(RadiusPx)" style="stroke-width:@Stroke(1)" />
         }
     </svg>
 
@@ -82,7 +82,9 @@
                 extent = Math.Max(extent, Math.Max(Math.Abs(p.Dx * W), Math.Abs(p.Dy * H)));
             }
 
-            return Math.Max(extent * 1.6, 24);
+            // Generous context: the outline is judged against its surroundings, and a wider window means less
+            // magnification of a small hold's native pixels on a phone.
+            return Math.Max(Math.Max(extent * 2.2, RadiusPx * 3), 48);
         }
     }
 
@@ -91,7 +93,7 @@
     private string Points(IEnumerable<ShapePoint> shape) =>
         string.Join(' ', shape.Select(p => $"{F(CentreX + (p.Dx * W))},{F(CentreY + (p.Dy * H))}"));
 
-    private string Stroke(double factor) => F(HalfSide / 45 * factor);
+    private string Stroke(double factor) => F(HalfSide / 70 * factor);
 
     private string Percent => $"{Proposal.Confidence * 100:0}%";
 
