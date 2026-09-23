@@ -1,0 +1,57 @@
+I20260923 00:26:42.604882 0x203d8f5c0 incremental_pipeline.cc:353] Loading database
+I20260923 00:26:42.605719 0x203d8f5c0 database_cache.cc:73] Loading rigs...
+I20260923 00:26:42.605747 0x203d8f5c0 database_cache.cc:83]  3 in 0.000s
+I20260923 00:26:42.605754 0x203d8f5c0 database_cache.cc:91] Loading cameras...
+I20260923 00:26:42.605763 0x203d8f5c0 database_cache.cc:109]  3 in 0.000s
+I20260923 00:26:42.605768 0x203d8f5c0 database_cache.cc:117] Loading frames...
+I20260923 00:26:42.605895 0x203d8f5c0 database_cache.cc:127]  14 in 0.000s
+I20260923 00:26:42.605901 0x203d8f5c0 database_cache.cc:135] Loading matches...
+I20260923 00:26:42.606266 0x203d8f5c0 database_cache.cc:140]  76 in 0.000s
+I20260923 00:26:42.606271 0x203d8f5c0 database_cache.cc:148] Loading images...
+I20260923 00:26:42.622148 0x203d8f5c0 database_cache.cc:245]  14 in 0.016s (connected 14, loaded 14)
+I20260923 00:26:42.622177 0x203d8f5c0 database_cache.cc:259] Loading pose priors...
+I20260923 00:26:42.622194 0x203d8f5c0 database_cache.cc:267]  14 in 0.000s
+I20260923 00:26:42.622205 0x203d8f5c0 database_cache.cc:275] Building correspondence graph...
+I20260923 00:26:42.630376 0x203d8f5c0 database_cache.cc:304]  in 0.008s (ignored 0)
+I20260923 00:26:42.630396 0x203d8f5c0 timer.cc:90] Elapsed time: 0.000 [minutes]
+I20260923 00:26:42.632046 0x203d8f5c0 incremental_pipeline.cc:465] Finding good initial image pair
+I20260923 00:26:42.660770 0x203d8f5c0 incremental_pipeline.cc:492] Registering initial image pair #14 and #11
+I20260923 00:26:42.669163 0x203d8f5c0 incremental_pipeline.cc:510] Global bundle adjustment
+I20260923 00:26:42.714956 0x203d8f5c0 incremental_pipeline.cc:620] Registering image #6 (num_reg_frames=2)
+I20260923 00:26:42.714988 0x203d8f5c0 incremental_pipeline.cc:623] => Image sees 579 / 7516 points
+I20260923 00:26:42.794440 0x203d8f5c0 incremental_pipeline.cc:88] Retriangulation and Global bundle adjustment
+I20260923 00:26:42.818425 0x203d8f5c0 incremental_pipeline.cc:620] Registering image #5 (num_reg_frames=3)
+I20260923 00:26:42.818453 0x203d8f5c0 incremental_pipeline.cc:623] => Image sees 1719 / 11462 points
+I20260923 00:26:43.026015 0x203d8f5c0 incremental_pipeline.cc:88] Retriangulation and Global bundle adjustment
+I20260923 00:26:43.083196 0x203d8f5c0 incremental_pipeline.cc:620] Registering image #4 (num_reg_frames=4)
+I20260923 00:26:43.083219 0x203d8f5c0 incremental_pipeline.cc:623] => Image sees 1811 / 8301 points
+I20260923 00:26:43.370670 0x203d8f5c0 incremental_pipeline.cc:88] Retriangulation and Global bundle adjustment
+I20260923 00:26:43.433378 0x203d8f5c0 incremental_pipeline.cc:620] Registering image #7 (num_reg_frames=5)
+I20260923 00:26:43.433403 0x203d8f5c0 incremental_pipeline.cc:623] => Image sees 2061 / 8205 points
+I20260923 00:26:43.888267 0x203d8f5c0 incremental_pipeline.cc:88] Retriangulation and Global bundle adjustment
+I20260923 00:26:43.967914 0x203d8f5c0 incremental_pipeline.cc:620] Registering image #8 (num_reg_frames=6)
+I20260923 00:26:43.967942 0x203d8f5c0 incremental_pipeline.cc:623] => Image sees 2307 / 6644 points
+I20260923 00:26:44.313864 0x203d8f5c0 incremental_pipeline.cc:88] Retriangulation and Global bundle adjustment
+I20260923 00:26:44.411289 0x203d8f5c0 incremental_pipeline.cc:620] Registering image #10 (num_reg_frames=7)
+I20260923 00:26:44.411321 0x203d8f5c0 incremental_pipeline.cc:623] => Image sees 3640 / 9570 points
+I20260923 00:26:44.764961 0x203d8f5c0 incremental_pipeline.cc:88] Retriangulation and Global bundle adjustment
+I20260923 00:26:44.885828 0x203d8f5c0 incremental_pipeline.cc:620] Registering image #9 (num_reg_frames=8)
+I20260923 00:26:44.885858 0x203d8f5c0 incremental_pipeline.cc:623] => Image sees 2902 / 7759 points
+I20260923 00:26:45.144887 0x203d8f5c0 incremental_pipeline.cc:88] Retriangulation and Global bundle adjustment
+I20260923 00:26:45.277459 0x203d8f5c0 incremental_pipeline.cc:620] Registering image #12 (num_reg_frames=9)
+I20260923 00:26:45.277496 0x203d8f5c0 incremental_pipeline.cc:623] => Image sees 2774 / 6886 points
+I20260923 00:26:45.539350 0x203d8f5c0 incremental_pipeline.cc:88] Retriangulation and Global bundle adjustment
+I20260923 00:26:45.686086 0x203d8f5c0 incremental_pipeline.cc:620] Registering image #3 (num_reg_frames=10)
+I20260923 00:26:45.686138 0x203d8f5c0 incremental_pipeline.cc:623] => Image sees 2405 / 7263 points
+I20260923 00:26:45.884307 0x203d8f5c0 incremental_pipeline.cc:88] Retriangulation and Global bundle adjustment
+I20260923 00:26:46.044208 0x203d8f5c0 incremental_pipeline.cc:620] Registering image #2 (num_reg_frames=11)
+I20260923 00:26:46.044237 0x203d8f5c0 incremental_pipeline.cc:623] => Image sees 1732 / 5017 points
+I20260923 00:26:46.221507 0x203d8f5c0 incremental_pipeline.cc:620] Registering image #13 (num_reg_frames=12)
+I20260923 00:26:46.221531 0x203d8f5c0 incremental_pipeline.cc:623] => Image sees 1494 / 3115 points
+I20260923 00:26:46.391577 0x203d8f5c0 incremental_pipeline.cc:88] Retriangulation and Global bundle adjustment
+I20260923 00:26:46.612634 0x203d8f5c0 incremental_pipeline.cc:620] Registering image #1 (num_reg_frames=13)
+I20260923 00:26:46.612660 0x203d8f5c0 incremental_pipeline.cc:623] => Image sees 473 / 1846 points
+I20260923 00:26:46.759749 0x203d8f5c0 incremental_pipeline.cc:88] Retriangulation and Global bundle adjustment
+I20260923 00:26:47.017084 0x203d8f5c0 incremental_pipeline.cc:88] Retriangulation and Global bundle adjustment
+I20260923 00:26:47.126871 0x203d8f5c0 incremental_pipeline.cc:826] Keeping successful reconstruction
+I20260923 00:26:47.144433 0x203d8f5c0 timer.cc:90] Elapsed time: 0.075 [minutes]

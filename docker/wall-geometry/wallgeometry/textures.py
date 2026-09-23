@@ -1,0 +1,268 @@
+"""Per-facet rectified orthophotos ("textures") from the photos + a solved geometry document.
+
+For every facet, a regular grid on the facet plane (a along u, b along v, default 2 mm/px) is filled
+from ONE photo per pixel: the photo that sees that spot with the highest resolution and least
+obliqueness, score = f * cos(view angle) / distance (image px per mm). No averaging, so protruding
+holds are not ghosted. The choice is made on a coarse label grid, cleaned with a mode filter (no
+speckle), then upsampled; seams therefore run along cell boundaries.
+
+Pixel convention of every output image: column i, row j (top-left origin) covers plane point
+  a = aMin + (i + 0.5) * mmPerPx,   b = bMax - (j + 0.5) * mmPerPx
+i.e. +a to the right, +b up, exactly the facet frame of the geometry document.
+
+Plane points that lie behind another facet's surface (inside the wall) are left black. Limits: no
+full occlusion test (a hold or facet between camera and spot is not detected) and no exposure
+balancing between photos; both are visible as seams at worst.
+"""
+import math
+
+import cv2
+import numpy as np
+
+from .refine import prepare, refine_corners
+
+DEFAULTS = {"behindOtherFacetMm": 30.0, "mmPerPx": 2.0, "maxSidePx": 4096, "extraMarginMm": 100.0, "labelCellPx": 8,
+            "modeFilterCells": 5, "imageMarginPx": 16, "jpegQuality": 90}
+
+
+# What a client may set in `options`, with its bounds (everything else in DEFAULTS is internal).
+CLIENT_OPTIONS = {"mmPerPx": (0.25, 50.0, float), "maxSidePx": (256, 8192, int),
+                  "extraMarginMm": (0.0, 2000.0, float), "jpegQuality": (30, 100, int)}
+
+
+class TextureError(ValueError):
+    """Inputs are inconsistent (e.g. a photo's size differs from the solved camera)."""
+
+
+def validate_params(options):
+    """Client options -> clean dict; TextureError on unknown keys or out-of-range / non-finite values."""
+    if options is None:
+        return {}
+    if not isinstance(options, dict):
+        raise TextureError("'options' must be a JSON object")
+    unknown = set(options) - set(CLIENT_OPTIONS)
+    if unknown:
+        raise TextureError(f"unknown option(s) {sorted(unknown)}; known: {sorted(CLIENT_OPTIONS)}")
+    out = {}
+    for k, v in options.items():
+        lo, hi, typ = CLIENT_OPTIONS[k]
+        ok = isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and lo <= v <= hi
+        if not ok or (typ is int and v != int(v)):
+            kind = "an integer" if typ is int else "a number"
+            raise TextureError(f"options.{k} must be {kind} in [{lo:g}, {hi:g}]")
+        out[k] = typ(v)
+    return out
+
+
+def output_pixels(doc, params):
+    """Total output pixels the facets of `doc` would take with these params (memory budget check)."""
+    p = {**DEFAULTS, **(params or {})}
+    return sum(g["W"] * g["H"] for g in (_grid(f, p) for f in _facets(doc)))
+
+
+def _cam(c):
+    K = np.array(c["K"], float).reshape(3, 3)
+    d = np.array(c["dist"], float)
+    return {"K": K, "k": (d[0], d[1], d[4] if len(d) > 4 else 0.0),
+            "R": np.array(c["R"], float).reshape(3, 3), "t": np.array(c["t"], float),
+            "w": int(c["width"]), "h": int(c["height"])}
+
+
+def project(cam, X):
+    """World points (...,3) -> (pixels (...,2), depth (...), camera-frame points)."""
+    Xc = X @ cam["R"].T + cam["t"]
+    z = Xc[..., 2]
+    zs = np.where(z > 1e-6, z, 1e-6)
+    xn, yn = Xc[..., 0] / zs, Xc[..., 1] / zs
+    r2 = xn * xn + yn * yn
+    k1, k2, k3 = cam["k"]
+    d = 1 + k1 * r2 + k2 * r2 * r2 + k3 * r2 * r2 * r2
+    K = cam["K"]
+    px = np.stack([K[0, 0] * xn * d + K[0, 2], K[1, 1] * yn * d + K[1, 2]], -1)
+    return px, z, Xc
+
+
+def _facets(doc):
+    for s in doc["segments"]:
+        for f in s["facets"]:
+            yield f
+
+
+def _grid(f, p):
+    e = f["extentMm"]
+    m = p["extraMarginMm"]
+    a0, a1, b0, b1 = e["aMin"] - m, e["aMax"] + m, e["bMin"] - m, e["bMax"] + m
+    res = max(p["mmPerPx"], max(a1 - a0, b1 - b0) / p["maxSidePx"])
+    W, H = max(1, int(math.ceil((a1 - a0) / res))), max(1, int(math.ceil((b1 - b0) / res)))
+    return {"aMin": a0, "bMax": b1, "res": res, "W": W, "H": H,
+            "bounds": {"aMin": round(a0, 2), "aMax": round(a0 + W * res, 2),
+                       "bMin": round(b1 - H * res, 2), "bMax": round(b1, 2)}}
+
+
+def _plane_points(f, g, cols, rows):
+    """World points for pixel centres (cols, rows arrays, broadcastable)."""
+    O, u, v = (np.array(f[k], float) for k in ("origin", "u", "v"))
+    a = g["aMin"] + (cols + 0.5) * g["res"]
+    b = g["bMax"] - (rows + 0.5) * g["res"]
+    return O + a[..., None] * u + b[..., None] * v
+
+
+def _score(cam, f, X, margin):
+    """Image px per plane mm at X (0 where the camera cannot see it)."""
+    px, z, Xc = project(cam, X)
+    n = np.array(f["normal"], float)
+    centre = -cam["R"].T @ cam["t"]
+    ray = centre - X
+    dist = np.linalg.norm(ray, axis=-1)
+    cos = (ray @ n) / np.maximum(dist, 1e-9)
+    ok = (z > 1e-3) & (cos > 0.05)
+    ok &= (px[..., 0] >= margin) & (px[..., 0] <= cam["w"] - 1 - margin)
+    ok &= (px[..., 1] >= margin) & (px[..., 1] <= cam["h"] - 1 - margin)
+    return np.where(ok, cam["K"][0, 0] * cos / np.maximum(dist, 1e-9), 0.0)
+
+
+def _behind_others(f, others, X, tol):
+    """Plane points hidden inside the wall: more than `tol` behind another (non-coplanar) facet's
+    surface while projecting into that facet's extent. Clips e.g. the side triangle along the
+    overhang it meets, and the kickboard above its seam."""
+    n = np.array(f["normal"], float)
+    hidden = np.zeros(X.shape[:-1], bool)
+    for g in others:
+        ng = np.array(g["normal"], float)
+        if abs(n @ ng) > np.cos(np.radians(10)):  # (nearly) coplanar neighbours just abut
+            continue
+        Og, ug, vg = (np.array(g[k], float) for k in ("origin", "u", "v"))
+        d = (X - Og) @ ng
+        a, b = (X - Og) @ ug, (X - Og) @ vg
+        e = g["extentMm"]
+        inside = (a >= e["aMin"]) & (a <= e["aMax"]) & (b >= e["bMin"]) & (b <= e["bMax"])
+        hidden |= (d < -tol) & inside
+    return hidden
+
+
+def _labels(f, g, cams, names, p, others):
+    """Coarse per-cell photo choice, mode-filtered, upsampled to the full grid."""
+    cell = p["labelCellPx"]
+    cw, ch = int(math.ceil(g["W"] / cell)), int(math.ceil(g["H"] / cell))
+    cols = (np.arange(cw) * cell + cell / 2.0)[None, :]
+    rows = (np.arange(ch) * cell + cell / 2.0)[:, None]
+    X = _plane_points(f, g, np.broadcast_to(cols, (ch, cw)) - 0.5, np.broadcast_to(rows, (ch, cw)) - 0.5)
+    S = np.stack([_score(cams[n], f, X, p["imageMarginPx"]) for n in names])  # (C, ch, cw)
+    S[:, _behind_others(f, others, X, p["behindOtherFacetMm"])] = 0
+    valid = S > 0
+    lab = np.where(valid.any(0), S.argmax(0), -1)
+    k = int(p["modeFilterCells"])
+    if k > 1 and len(names) > 1:
+        votes = np.stack([cv2.boxFilter((lab == c).astype(np.float32), -1, (k, k), normalize=False,
+                                        borderType=cv2.BORDER_REPLICATE) for c in range(len(names))])
+        # tie-break by quality so the filter never picks a poor photo over an equally common one
+        smax = S.max(0, keepdims=True)
+        votes = votes + 0.01 * S / np.where(smax > 0, smax, 1)
+        votes[~valid] = -1
+        lab = np.where(valid.any(0), votes.argmax(0), -1)
+    full = cv2.resize(lab.astype(np.int16), (cw * cell, ch * cell), interpolation=cv2.INTER_NEAREST)
+    return full[:g["H"], :g["W"]]
+
+
+def _render_part(img, cam, f, g, mask, out, filled):
+    ys, xs = np.nonzero(mask)
+    if ys.size == 0:
+        return
+    y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
+    cols, rows = np.meshgrid(np.arange(x0, x1, dtype=np.float64), np.arange(y0, y1, dtype=np.float64))
+    px, z, _ = project(cam, _plane_points(f, g, cols, rows))
+    px = np.clip(px, -1e6, 1e6)
+    mx, my = px[..., 0].astype(np.float32), px[..., 1].astype(np.float32)
+    patch = cv2.remap(img, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
+    inside = (mx >= 0) & (mx <= cam["w"] - 1) & (my >= 0) & (my <= cam["h"] - 1) & (z > 0)
+    m = mask[y0:y1, x0:x1] & inside & ~filled[y0:y1, x0:x1]
+    out[y0:y1, x0:x1][m] = patch[m]
+    filled[y0:y1, x0:x1] |= m
+
+
+def _detector(dictionary):
+    prm = cv2.aruco.DetectorParameters()
+    # the settings that worked on capture 1 (see the glyph plan); CLAHE deliberately not used
+    prm.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
+    prm.adaptiveThreshWinSizeMin, prm.adaptiveThreshWinSizeMax, prm.adaptiveThreshWinSizeStep = 3, 53, 5
+    prm.minMarkerPerimeterRate = 0.01
+    prm.perspectiveRemovePixelPerCell = 8
+    return cv2.aruco.ArucoDetector(cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, dictionary)), prm)
+
+
+def marker_check(image, facet, doc, res, g):
+    """Detect the facet's ArUco markers in its orthophoto, edge-refine the corners, and compare the
+    side length with the declared size and the centre with the geometry's plane position."""
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    corners, ids, _ = _detector(doc["dictionary"]).detectMarkers(gray)
+    want = {m["id"]: m for m in doc["markers"] if m["facet"] == facet["id"]}
+    blurred = prepare(gray)
+    rows = []
+    for c, i in zip(corners, [] if ids is None else ids.ravel()):
+        if int(i) not in want:
+            continue
+        c = c.reshape(4, 2).astype(np.float64)
+        side_px = float(np.mean(np.linalg.norm(c - np.roll(c, -1, 0), axis=1)))
+        c, _, ok = refine_corners(blurred, c, side_px)
+        sides = np.linalg.norm(c - np.roll(c, -1, 0), axis=1) * res
+        mk = want[int(i)]
+        plane = np.array(mk["cornersPlaneMm"]).mean(0)
+        centre = c.mean(0)
+        pos = np.array([g["aMin"] + (centre[0] + 0.5) * res, g["bMax"] - (centre[1] + 0.5) * res])
+        rows.append({"id": int(i), "sideMm": round(float(sides.mean()), 2),
+                     "sideErrMm": round(float(sides.mean() - mk.get("sizeMm", doc["markerSizeMm"])), 2),
+                     "positionErrMm": round(float(np.linalg.norm(pos - plane)), 2),
+                     "cornersRefined": int(ok.sum())})
+    errs = np.array([r["sideErrMm"] for r in rows])
+    return {"detected": len(rows), "expected": len(want), "markers": rows,
+            "sideRmsErrMm": round(float(np.sqrt(np.mean(errs ** 2))), 3) if rows else None,
+            "maxPositionErrMm": max((r["positionErrMm"] for r in rows), default=None)}
+
+
+def render_textures(doc, load_photo, available, params=None, progress=None):
+    """doc: geometry document; load_photo(name) -> BGR uint8 image; available: photo names.
+
+    Returns a list of {facet, image (BGR), mmPerPx, bounds, widthPx, heightPx, photosUsed, coverage,
+    markerCheck}.
+    """
+    p = {**DEFAULTS, **(params or {})}
+    cams = {c["image"]: _cam(c) for c in doc.get("cameras", []) if c["image"] in available}
+    if not cams:
+        raise TextureError("none of the uploaded photos matches a camera of the geometry document")
+    names = sorted(cams)
+    facets = list(_facets(doc))
+    jobs = []
+    for f in facets:
+        g = _grid(f, p)
+        lab = _labels(f, g, cams, names, p, [o for o in facets if o is not f])
+        jobs.append({"f": f, "g": g, "lab": lab, "out": np.zeros((g["H"], g["W"], 3), np.uint8),
+                     "filled": np.zeros((g["H"], g["W"]), bool)})
+    for k, n in enumerate(names):
+        if progress:
+            progress(k / len(names), f"rendering from {n}")
+        if not any((j["lab"] == k).any() for j in jobs):
+            continue
+        img = load_photo(n)
+        cam = cams[n]
+        if img.shape[1] != cam["w"] or img.shape[0] != cam["h"]:
+            raise TextureError(f"photo {n} is {img.shape[1]}x{img.shape[0]} but was solved as "
+                               f"{cam['w']}x{cam['h']} (orientation or resizing mismatch)")
+        for j in jobs:
+            _render_part(img, cam, j["f"], j["g"], j["lab"] == k, j["out"], j["filled"])
+        del img
+    results = []
+    for j in jobs:
+        lab, g = j["lab"], j["g"]
+        used = {names[k]: round(float((lab == k).mean()), 4) for k in range(len(names)) if (lab == k).any()}
+        results.append({"facet": j["f"]["id"], "image": j["out"], "mmPerPx": g["res"], "bounds": g["bounds"],
+                        "widthPx": g["W"], "heightPx": g["H"], "photosUsed": used,
+                        "coverage": round(float(j["filled"].mean()), 4),
+                        "markerCheck": marker_check(j["out"], j["f"], doc, g["res"], g)})
+    return results
+
+
+def encode_jpeg(image, quality=DEFAULTS["jpegQuality"]):
+    ok, buf = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, int(quality)])
+    if not ok:
+        raise TextureError("JPEG encoding failed")
+    return buf.tobytes()

@@ -147,6 +147,8 @@ StyleCopReport.xml
 *.tmp_proj
 *_wpftmp.csproj
 *.log
+# The splat worker's parser tests read captured tool output; commit those normally.
+!docker/splat-worker/tests/fixtures/*.log
 *.tlog
 *.vspscc
 *.vssscc

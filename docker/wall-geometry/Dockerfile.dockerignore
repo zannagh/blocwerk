@@ -1,0 +1,13 @@
+# Used by BuildKit for `docker build -f docker/wall-geometry/Dockerfile .` (repo-root context):
+# send only what the image needs.
+*
+!docker/compute-jobs-py/computejobs/
+!docker/compute-jobs-py/tests/
+!docker/wall-geometry/requirements.lock
+!docker/wall-geometry/requirements-dev.lock
+!docker/wall-geometry/wallgeometry/
+!docker/wall-geometry/service/
+!docker/wall-geometry/tests/
+**/__pycache__
+**/*.pyc
+**/.pytest_cache

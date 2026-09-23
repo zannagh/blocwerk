@@ -1,0 +1,84 @@
+^D✅ evaluating every 1000 steps
+✅ evaluating every 1000 steps
+ℹ️ Starting up
+█🖌️
+✅ evaluating every 1000 steps
+ℹ️ Starting up
+█🖌️      Starting process...
+✅ evaluating every 1000 steps
+ℹ️ Starting up
+█🖌️      Loading data...
+✅ evaluating every 1000 steps
+ℹ️ Starting up
+█🖌️      Loading dataset with 14 training, 0 eval views
+✅ evaluating every 1000 steps
+ℹ️ Starting up
+█🖌️      Completed loading
+✅ evaluating every 1000 steps
+ℹ️ Starting up
+█🖌️      Completed loading
+✅ evaluating every 1000 steps
+ℹ️ Completed loading
+▓█🖌️     Completed loading
+✅ evaluating every 1000 steps
+ℹ️ Completed loading
+░▓█🖌️    Completed loading
+[1s] ◍○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○      10/300     Steps (12.9427/s, 22s remaining)
+[2s] ◍◍○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○      20/300     Steps (11.3305/s, 25s remaining)
+[3s] ◍◍◍◍○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○      30/300     Steps (10.6836/s, 25s remaining)
+[4s] ◍◍◍◍◍○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○      40/300     Steps (10.243/s, 25s remaining)
+[5s] ◍◍◍◍◍◍○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○      50/300     Steps (10.1211/s, 25s remaining)
+[6s] ◍◍◍◍◍◍◍◍○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○      60/300     Steps (9.9474/s, 24s remaining)
+[7s] ◍◍◍◍◍◍◍◍◍○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○      70/300     Steps (9.762/s, 24s remaining)
+[9s] ◍◍◍◍◍◍◍◍◍◍○○○○○○○○○○○○○○○○○○○○○○○○○○○○○○      80/300     Steps (9.5866/s, 23s remaining)
+[10s] ◍◍◍◍◍◍◍◍◍◍◍◍○○○○○○○○○○○○○○○○○○○○○○○○○○○○      90/300     Steps (9.5489/s, 22s remaining)
+[10s] ◍◍◍◍◍◍◍◍◍◍◍◍○○○○○○○○○○○○○○○○○○○○○○○○○○○○      95/300     Steps (9.5156/s, 22s remaining)
+[11s] ◍◍◍◍◍◍◍◍◍◍◍◍◍◍○○○○○○○○○○○○○○○○○○○○○○○○○○     105/300     Steps (9.3086/s, 21s remaining)
+[13s] ◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍○○○○○○○○○○○○○○○○○○○○○○○○○     115/300     Steps (9.2445/s, 20s remaining)
+[13s] ◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍○○○○○○○○○○○○○○○○○○○○○○○○     125/300     Steps (9.217/s, 19s remaining)
+[15s] ◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍○○○○○○○○○○○○○○○○○○○○○○     135/300     Steps (9.2082/s, 18s remaining)
+[16s] ◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍○○○○○○○○○○○○○○○○○○○○○     145/300     Steps (9.1721/s, 17s remaining)
+[17s] ◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍○○○○○○○○○○○○○○○○○○○○     155/300     Steps (9.1154/s, 16s remaining)
+[18s] ◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍○○○○○○○○○○○○○○○○○○     165/300     Steps (9.0917/s, 15s remaining)
+[19s] ◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍○○○○○○○○○○○○○○○○○     175/300     Steps (9.0788/s, 14s remaining)
+[20s] ◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍○○○○○○○○○○○○○○○○     185/300     Steps (9.0439/s, 13s remaining)
+[22s] ◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍○○○○○○○○○○○○○○     195/300     Steps (8.9952/s, 12s remaining)
+ℹ️ Current splat count 17430
+[23s] ◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍○○○○○○○○○○○○○     205/300     Steps (8.87/s, 11s remaining)
+ℹ️ Current splat count 17430
+[23s] ◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍○○○○○○○○○○○○     210/300     Steps (8.8592/s, 10s remaining)
+ℹ️ Current splat count 17430
+[24s] ◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍○○○○○○○○○○○○     215/300     Steps (8.8385/s, 10s remaining)
+ℹ️ Current splat count 17430
+[25s] ◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍○○○○○○○○○○○     220/300     Steps (8.8221/s, 9s remaining)
+ℹ️ Current splat count 17430
+[26s] ◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍○○○○○○○○○○     230/300     Steps (8.7772/s, 8s remaining)
+ℹ️ Current splat count 17430
+[26s] ◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍○○○○○○○○○     235/300     Steps (8.758/s, 7s remaining)
+ℹ️ Current splat count 17430
+[27s] ◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍○○○○○○○○     240/300     Steps (8.7621/s, 7s remaining)
+ℹ️ Current splat count 17430
+[27s] ◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍○○○○○○○○     245/300     Steps (8.7671/s, 6s remaining)
+ℹ️ Current splat count 17430
+[29s] ◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍○○○○○○     255/300     Steps (8.7525/s, 5s remaining)
+ℹ️ Current splat count 17430
+[29s] ◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍○○○○○○     260/300     Steps (8.7433/s, 5s remaining)
+ℹ️ Current splat count 17430
+[30s] ◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍○○○○○     265/300     Steps (8.7298/s, 4s remaining)
+ℹ️ Current splat count 17430
+[30s] ◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍○○○○     270/300     Steps (8.7107/s, 3s remaining)
+ℹ️ Current splat count 17430
+[31s] ◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍○○○○     275/300     Steps (8.7193/s, 3s remaining)
+ℹ️ Current splat count 17430
+[32s] ◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍○○     285/300     Steps (8.7168/s, 2s remaining)
+ℹ️ Current splat count 17430
+[32s] ◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍○○     290/300     Steps (8.7298/s, 1s remaining)
+ℹ️ Current splat count 17430
+[33s] ◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍○     295/300     Steps (8.7334/s, 1s remaining)
+ℹ️ Current splat count 17430
+[34s] ◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍     300/300     Steps (8.6145/s, 0s remaining)
+ℹ️ Current splat count 17430
+Training took 32s
+[34s] ◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍     300/300     Steps (8.6145/s, 0s remaining)
+ℹ️ Current splat count 17430
+[34s] ◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍◍     300/300     Steps (8.6145/s, 0s remaining)

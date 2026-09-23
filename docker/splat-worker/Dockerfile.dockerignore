@@ -1,0 +1,11 @@
+# Used by BuildKit for `docker build -f docker/splat-worker/Dockerfile .` (repo-root context).
+*
+!docker/compute-jobs-py/computejobs/
+!docker/compute-jobs-py/tests/
+!docker/splat-worker/requirements.lock
+!docker/splat-worker/requirements-dev.lock
+!docker/splat-worker/splatworker/
+!docker/splat-worker/tests/
+**/__pycache__
+**/*.pyc
+**/.pytest_cache

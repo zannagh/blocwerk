@@ -1,0 +1,18 @@
+I20260923 00:26:52.572787 0x203d8f5c0 undistorters.cc:209] Undistorting image [1/14]
+I20260923 00:26:52.691830 0x203d8f5c0 undistorters.cc:209] Undistorting image [2/14]
+I20260923 00:26:52.703797 0x203d8f5c0 undistorters.cc:209] Undistorting image [3/14]
+I20260923 00:26:52.707790 0x203d8f5c0 undistorters.cc:209] Undistorting image [4/14]
+I20260923 00:26:52.707830 0x203d8f5c0 undistorters.cc:209] Undistorting image [5/14]
+I20260923 00:26:52.707841 0x203d8f5c0 undistorters.cc:209] Undistorting image [6/14]
+I20260923 00:26:52.707851 0x203d8f5c0 undistorters.cc:209] Undistorting image [7/14]
+I20260923 00:26:52.707860 0x203d8f5c0 undistorters.cc:209] Undistorting image [8/14]
+I20260923 00:26:52.707869 0x203d8f5c0 undistorters.cc:209] Undistorting image [9/14]
+I20260923 00:26:52.707877 0x203d8f5c0 undistorters.cc:209] Undistorting image [10/14]
+I20260923 00:26:52.707887 0x203d8f5c0 undistorters.cc:209] Undistorting image [11/14]
+I20260923 00:26:52.744303 0x203d8f5c0 undistorters.cc:209] Undistorting image [12/14]
+I20260923 00:26:52.751351 0x203d8f5c0 undistorters.cc:209] Undistorting image [13/14]
+I20260923 00:26:52.751385 0x203d8f5c0 undistorters.cc:209] Undistorting image [14/14]
+I20260923 00:26:52.758607 0x203d8f5c0 undistorters.cc:223] Writing reconstruction...
+I20260923 00:26:52.795110 0x203d8f5c0 undistorters.cc:228] Writing configuration...
+I20260923 00:26:52.795250 0x203d8f5c0 undistorters.cc:232] Writing scripts...
+I20260923 00:26:52.795489 0x203d8f5c0 timer.cc:90] Elapsed time: 0.004 [minutes]

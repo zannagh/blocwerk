@@ -1,0 +1,45 @@
+W20260923 02:01:56.855491 0x203d8f5c0 feature_extraction.cc:445] Your current options use the maximum number of threads on the machine to extract features. Extracting SIFT features on the CPU can consume a lot of RAM per thread for large images. Consider reducing the maximum image size and/or the first octave or manually limit the number of extraction threads. Ignore this warning, if your machine has sufficient memory for the current settings.
+I20260923 02:01:56.856560 0x16fe0f000 feature_extraction.cc:498] === Feature extraction ===
+I20260923 02:01:56.856621 0x170413000 sift.cc:765] Creating SIFT CPU feature extractor
+I20260923 02:01:56.856632 0x17049f000 sift.cc:765] Creating SIFT CPU feature extractor
+I20260923 02:01:56.856636 0x17052b000 sift.cc:765] Creating SIFT CPU feature extractor
+I20260923 02:01:56.856641 0x170643000 sift.cc:765] Creating SIFT CPU feature extractor
+I20260923 02:01:56.856650 0x1706cf000 sift.cc:765] Creating SIFT CPU feature extractor
+I20260923 02:01:56.856658 0x17075b000 sift.cc:765] Creating SIFT CPU feature extractor
+I20260923 02:01:56.856678 0x1705b7000 sift.cc:765] Creating SIFT CPU feature extractor
+I20260923 02:01:56.856677 0x1708ff000 sift.cc:765] Creating SIFT CPU feature extractor
+I20260923 02:01:56.856670 0x170873000 sift.cc:765] Creating SIFT CPU feature extractor
+I20260923 02:01:56.856711 0x1707e7000 sift.cc:765] Creating SIFT CPU feature extractor
+I20260923 02:02:03.209858 0x17098b000 feature_extraction.cc:270] Processed file [1/14]
+I20260923 02:02:03.210774 0x17098b000 feature_extraction.cc:273]   Name:            main/IMG_2772.jpg
+I20260923 02:02:03.210792 0x17098b000 feature_extraction.cc:282]   Dimensions:      1350 x 1800
+I20260923 02:02:03.210797 0x17098b000 feature_extraction.cc:285]   Camera:          #1 - RADIAL
+I20260923 02:02:03.212008 0x17098b000 feature_extraction.cc:289]   Focal Length:    1455.97px (Prior)
+I20260923 02:02:03.213117 0x17098b000 feature_extraction.cc:294]   Features:        2645 (SIFT)
+I20260923 02:02:03.222174 0x17098b000 feature_extraction.cc:315]   Gravity:         X=0.000, Y=1.000, Z=0.000
+I20260923 02:02:03.506825 0x17098b000 feature_extraction.cc:270] Processed file [2/14]
+I20260923 02:02:03.506865 0x17098b000 feature_extraction.cc:273]   Name:            uw_land/IMG_2780.jpg
+I20260923 02:02:03.506874 0x17098b000 feature_extraction.cc:282]   Dimensions:      1800 x 1350
+I20260923 02:02:03.506880 0x17098b000 feature_extraction.cc:285]   Camera:          #2 - RADIAL
+I20260923 02:02:03.506887 0x17098b000 feature_extraction.cc:289]   Focal Length:    727.99px (Prior)
+I20260923 02:02:03.506896 0x17098b000 feature_extraction.cc:294]   Features:        2375 (SIFT)
+I20260923 02:02:03.506952 0x17098b000 feature_extraction.cc:315]   Gravity:         X=0.000, Y=1.000, Z=0.000
+I20260923 02:02:03.594138 0x17098b000 feature_extraction.cc:270] Processed file [3/14]
+I20260923 02:02:03.594210 0x17098b000 feature_extraction.cc:273]   Name:            uw_land/IMG_2771.jpg
+I20260923 02:02:03.594224 0x17098b000 feature_extraction.cc:282]   Dimensions:      1800 x 1350
+I20260923 02:02:03.594235 0x17098b000 feature_extraction.cc:285]   Camera:          #2 - RADIAL
+I20260923 02:02:03.594245 0x17098b000 feature_extraction.cc:289]   Focal Length:    727.99px (Prior)
+I20260923 02:02:03.594258 0x17098b000 feature_extraction.cc:294]   Features:        2673 (SIFT)
+I20260923 02:02:03.594338 0x17098b000 feature_extraction.cc:315]   Gravity:         X=0.000, Y=1.000, Z=0.000
+I20260923 02:02:04.156116 0x17098b000 feature_extraction.cc:270] Processed file [4/14]
+I20260923 02:02:04.156185 0x17098b000 feature_extraction.cc:273]   Name:            uw_land/IMG_2782.jpg
+I20260923 02:02:04.156199 0x17098b000 feature_extraction.cc:282]   Dimensions:      1800 x 1350
+I20260923 02:02:04.156222 0x17098b000 feature_extraction.cc:285]   Camera:          #2 - RADIAL
+I20260923 02:02:04.156232 0x17098b000 feature_extraction.cc:289]   Focal Length:    727.99px (Prior)
+I20260923 02:02:04.156244 0x17098b000 feature_extraction.cc:294]   Features:        2437 (SIFT)
+I20260923 02:02:04.156313 0x17098b000 feature_extraction.cc:315]   Gravity:         X=0.000, Y=1.000, Z=0.000
+I20260923 02:02:04.179506 0x17098b000 feature_extraction.cc:270] Processed file [5/14]
+I20260923 02:02:04.179543 0x17098b000 feature_extraction.cc:273]   Name:            uw_port/IMG_2775.jpg
+I20260923 02:02:04.179549 0x17098b000 feature_extraction.cc:282]   Dimensions:      1350 x 1800
+I20260923 02:02:04.179554 0x17098b000 feature_extraction.cc:285]   Camera:          #3 - RADIAL
+I20260923 02:02:04.179558 0x17098b000 feature_extraction.cc:289]   Focal Length:    727.99px (Prior)
