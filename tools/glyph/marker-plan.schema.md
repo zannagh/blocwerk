@@ -89,14 +89,28 @@ marker size (no floor). Defaults 3 mm hole / 6 mm head / 1 mm / 1 mm: `d` = 2.83
 cut-out 138.7 mm for a 125 mm marker (was 182 mm), 113.7 mm at 100, 93.7 mm at 80, 63.7 mm at 50.
 Plans without the two gap fields read as 1 mm each. Sizes are validated even while `enabled` is false.
 
-Detection limits (measured by rendering the PDF and running the app's detector on it, dark screw heads
-and a textured wall outside the cut line, 30–295 px per marker — `MountingHoleSafety`): the detector keeps
-the black square rather than the paper's outline (ArUco's too-close filter off, nested same-id quads
-collapsed to the inner one), so every marker decodes with the tight 1 / 1 mm default and any head gap
-≥ 0.5 mm, on white, mid-grey and dark walls. What remains is corner accuracy: a white border under ~3 photo
-px drifts the refined corners toward the wall (up to ~1.5 px). The planner warns (`mounting-holes-tight`)
-with the photo px and the gaps that measure clean, e.g. 1 / 4 mm for 125 mm markers at 40 px (cut-out
-145 mm); at the planned ~60 px the 1 / 1 mm default is clean (cut-out 139 mm).
+Detection limits. Simulated renders (the PDF drawn with dark screw heads and a textured wall outside the
+cut line, 30–295 px per marker, `MountingHoleDecodeTests`): the detector keeps the black square rather than
+the paper's outline (ArUco's too-close filter off, nested same-id quads collapsed to the inner one), so every
+marker decodes with the tight 1 / 1 mm default and any head gap ≥ 0.5 mm; the refined corners drift 0.8–1.5
+px at 1–2 px of border and are as good as a plain print from ~3 px. REAL photos set the thresholds
+(`MountingHoleSafety`; sizing study 2026-09-23: the owner's 125 mm markers cut with a 3–7 % border, 14
+iPhone 16 Pro shots downsampled to 20–80 px, view < 55°, mean side ≥ 26 px). Acceptance by white border px
+and the wall tone right outside the paper:
+
+| border px | light plywood | mid tone | dark hold / volume / shadow |
+|---|---|---|---|
+| 1–2 | 87–95 % | 40–77 % | 80–86 % |
+| 2–3 | 100 % | 80–88 % | 80–86 % |
+| 3–4 | 100 % | 95–100 % | 75–77 % |
+| 4–5 | 100 % | 100 % | 92 % |
+
+Two levels follow: under **2 px** (`mounting-holes-tight`) markers drop out on every tone and the median
+corner error doubles (0.35–0.5 px vs 0.15–0.2 px from 3 px); under **4 px** (`mounting-holes-thin`) the
+light wall is fine but a marker on a dark hold or volume loses about one photo in six. Both are warnings
+and name the gaps that reach 4 px (the cut edge moves first, then the holes). The 1 / 1 mm default leaves
+6.8 mm ≈ 3.3 px for a 125 mm marker at the planned 60 px: `mounting-holes-thin`, fixed by 1 / 3 mm
+(cut-out 143 mm) if a marker sits on a dark hold; at 40 px it takes 1 / 7 mm (cut-out 151 mm).
 
 ### Attachments
 
@@ -168,7 +182,8 @@ Errors block saving; warnings (and `tip-*` codes) are advice.
 | `grazing-surface` | warning | > 72° oblique to the standing camera: photograph it face-on |
 | `shared-edge-uncovered` | warning | no marker within one photo height of a shared edge on both sides |
 | `mounting-holes` | error | hole not 1/2/2.5/3/3.5 mm, head outside hole + 0.5 .. 15 mm, or a gap outside 0.5 .. 10 mm |
-| `mounting-holes-tight` | warning | white border < 3 photo px (side/20 when the photo scale is unknown; names the gaps that measure clean) |
+| `mounting-holes-tight` | warning | white border < 2 photo px (side/30 when the photo scale is unknown): markers drop out on any wall; names the gaps that reach 4 px |
+| `mounting-holes-thin` | warning | white border 2–4 photo px (under side/15 when the scale is unknown): fine on light plywood, not on dark holds or volumes; names the gaps that reach 4 px |
 | `tip-full-frame`, `tip-corner-photos`, `tip-marker-large` | warning | capture-1 lessons |
 | `tip-screw-bias` | warning | no mounting holes: screws near the black square shift detected corners |
 

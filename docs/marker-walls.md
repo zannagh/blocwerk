@@ -251,7 +251,8 @@ link to jump to it. **Errors block Save; warnings don't.** The main codes:
 | `shared-edge-uncovered` | warning | A shared edge doesn't have markers close to it on both sides. |
 | `tip-full-frame`, `tip-corner-photos`, `tip-marker-large` | warning | Reminders from the first real capture (full frame, corners in 3+ photos, and similar). |
 | `mounting-holes` | error | The mounting-hole sizes are out of range (see "Mounting holes" under step 8). It's checked even while the box is unticked, because the sizes are saved with the plan. |
-| `mounting-holes-tight` | warning | The white border the holes leave is too thin for your photos (see step 8). |
+| `mounting-holes-tight` | warning | The white border the holes leave is under 2 px in your photos: markers will be missed on any wall (see step 8). |
+| `mounting-holes-thin` | warning | The white border is 2–4 px in your photos: fine on light plywood, but markers on dark holds or volumes will be missed now and then. The message names the gaps that fix it (see step 8). |
 | `tip-screw-bias` | warning | The plan prints no mounting holes: screws near the black square can shift detected corners. Use mounting holes or tape. |
 
 When the list is empty it reads *"No problems found — this plan is ready to print."*
@@ -320,23 +321,41 @@ holes sit and how big a 125 mm marker's cut-out gets. With both gaps at 1 mm:
 
 The paper grows to fit the border (A4, or A3 when needed).
 
-**The "tight holes" warning.** A thin white border is fine for *finding* the marker, but not for
-measuring its corners exactly. In tests, once the white strip came out narrower than **about 3
-pixels** in the photo, the detected corners drifted toward the wall by up to 1.5 px. With 3 px or
-more they stayed within 0.5 px. The distance between the head and the square made no measurable
-difference. So the planner compares each marker's border with the size it will have in *your*
-photos: it uses the photo distance and camera from the Photos card, and the marker's surface
-(surfaces that lean or turn away come out smaller). If any marker's border falls under ~3 px, the
-Check list shows a `mounting-holes-tight` warning. It names the largest affected marker size, its
-border in mm and photo pixels, and the gaps that measured clean for every marker, with the cut-out
-they give. The cut-edge gap grows first; the holes only move out when the edge gap alone can't reach
-the border. If no allowed gap is enough, the warning asks you to keep that much white paper around
-the square (cut outside the printed line), or to tape those markers instead.
+**The "thin border" and "tight holes" warnings.** A thin white border is fine for *finding* the
+marker on a light wall, but not where the marker sits on something dark. Measured on real photos of
+the first test markers (cut with a 3–7 % border, shrunk to 20–80 px), the share of photos where a
+marker was found, by the width of its white border in the photo and by what is right outside the
+paper:
 
-Roughly, for a face-on surface with a 4032 px photo: the 1× camera at 2.5 m needs about 2.6 mm of
-border, and the ultra-wide at 2.5 m needs about 4.8 mm. The default 6.8 mm covers both. The
-ultra-wide at 5 m needs about 9.5 mm; the warning then recommends 1 mm to the marker and 4 mm to the
-cut edge (a 145 mm cut-out for 125 mm markers). It's only a warning, so it doesn't block Save.
+| White border in the photo | Light plywood | Mid tone | Dark hold, volume or shadow |
+|---|---|---|---|
+| 1–2 px | 87–95 % | 40–77 % | 80–86 % |
+| 2–3 px | 100 % | 80–88 % | 80–86 % |
+| 3–4 px | 100 % | 95–100 % | 75–77 % |
+| 4–5 px | 100 % | 100 % | 92 % |
+
+Under 2 px the corners were also about twice as noisy. So the planner compares each marker's border
+with the size it will have in *your* photos: it uses the photo distance and camera from the Photos
+card, and the marker's surface (surfaces that lean or turn away come out smaller). There are two
+warnings, and neither blocks Save:
+
+- **`mounting-holes-tight`**: some marker's border is under **2 px**. Markers drop out on any wall.
+- **`mounting-holes-thin`**: every border is at least 2 px, but some are under **4 px**. That's fine
+  on light plywood. A marker screwed onto a dark hold or volume, where the paper is its only contrast,
+  will be missed in about one photo in six.
+
+Each names the thinnest marker, its border in mm and photo pixels, and the gaps that reach 4 px for
+every marker, with the cut-out they give. The cut-edge gap grows first; the holes only move out when
+the edge gap alone can't reach the border. If no allowed gap is enough, the warning asks you to keep
+that much white paper around the square (cut outside the printed line), tape those markers, or shoot
+from closer.
+
+The default 1 mm / 1 mm gaps leave a 6.8 mm border. For a 125 mm marker at the planned ~60 px that
+is about 3.3 px: you get `mounting-holes-thin`. Keep the default for markers on the plywood; for
+markers on dark holds or volumes, the warning suggests 1 mm to the marker and 3 mm to the cut edge (a
+143 mm cut-out). Roughly, for a face-on surface with a 4032 px photo: the 1× camera at 2.5 m gives the
+default border about 8 px, and the ultra-wide at 2.5 m about 4 px (both clear). The ultra-wide at 5 m
+gives about 2 px; 4 px there takes 1 mm to the marker and 7 mm to the cut edge (a 151 mm cut-out).
 
 Without mounting holes, the Check list adds the `tip-screw-bias` reminder and the PDF tells you to
 tape the markers, or screw well clear of the black square.
@@ -354,8 +373,9 @@ black square itself: OpenCV's filter that throws away close duplicates is switch
 one marker found inside each other are merged into the black square. The corner refinement also runs
 again from its own result until the corners settle, so it no longer depends on which outline the
 detector returned first. In tests, every marker decoded with any border and any head gap down to
-0.5 mm, including the 1 mm / 1 mm default on 50 and 125 mm markers. The only remaining limit is
-corner accuracy, which is the ~3 px border above.
+0.5 mm, including the 1 mm / 1 mm default on 50 and 125 mm markers. That was on simulated photos.
+Real photos are harsher where the marker sits on something dark, which is what the 2 px and 4 px
+warnings above are about.
 
 #### 9. Place the markers
 

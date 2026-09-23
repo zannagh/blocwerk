@@ -15,8 +15,10 @@ namespace Blocwerk.HoldDetection.Tests.MarkerPlanning;
 /// corners 3–29 px on the wall) and a textured wall right outside the cut line — and read back, refined
 /// and raw. Every corner is compared with where the PDF drew it, against a plain print on the same wall.
 /// The tight default (1 mm to the head, 1 mm to the cut edge) is as good as a plain print once its white
-/// border spans ~3 photo px; below that it is measured and pinned as worse — the reason for the planner's
-/// "mounting-holes-tight" warning.
+/// border spans ~3 photo px; at ~1.6 px it is measured and pinned as worse. These are simulated renders;
+/// the planner's two levels (<see cref="MountingHoleSafety.MinBorderPx"/> for "mounting-holes-tight",
+/// <see cref="MountingHoleSafety.RecommendedBorderPx"/> for "mounting-holes-thin") come from real photos,
+/// where markers on dark holds still dropped out below ~4 px.
 /// </summary>
 public class MountingHoleDecodeTests(ITestOutputHelper output)
 {
@@ -101,8 +103,8 @@ public class MountingHoleDecodeTests(ITestOutputHelper output)
     }
 
     /// <summary>
-    /// Photo scale with the gaps the planner recommends for that scale (<see cref="MountingHoleSafety"/>):
-    /// as good as a plain print, refined.
+    /// Photo scale with the gaps the planner recommends for that scale (<see cref="MountingHoleSafety"/>,
+    /// 4 px of border): as good as a plain print, refined.
     /// </summary>
     [Theory]
     [InlineData(125, 3, 6, 30)]
@@ -180,7 +182,7 @@ public class MountingHoleDecodeTests(ITestOutputHelper output)
         Assert.DoesNotContain(plain.Values, double.IsNaN);
         var lost = withHoles.Values.Any(double.IsNaN);
         var worst = withHoles.Values.Where(v => !double.IsNaN(v)).DefaultIfEmpty(0).Max();
-        Assert.True(lost || worst > plain.Values.Max() + AllowedExtraErrorPx, "a sub-3 px border no longer hurts the corners — revisit MountingHoleSafety.MinBorderPx");
+        Assert.True(lost || worst > plain.Values.Max() + AllowedExtraErrorPx, "a sub-2 px border no longer hurts the corners — revisit MountingHoleSafety.MinBorderPx");
     }
 
     private void Report(string label, Dictionary<int, double> withHoles, Dictionary<int, double> plain)

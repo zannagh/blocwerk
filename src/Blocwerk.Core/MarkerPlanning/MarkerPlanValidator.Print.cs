@@ -36,39 +36,68 @@ public static partial class MarkerPlanValidator
     }
 
     /// <summary>
-    /// Warns when the holes sit too tight for any marker, naming the worst one (sizes in the owner's photos)
-    /// and the gaps that measured clean for all of them (see <see cref="MountingHoleSafety"/>).
+    /// Warns when the holes leave too thin a white border in the owner's photos (see <see cref="MountingHoleSafety"/>):
+    /// <c>mounting-holes-tight</c> under <see cref="MountingHoleSafety.MinBorderPx"/> (markers drop out on any
+    /// wall), else <c>mounting-holes-thin</c> under <see cref="MountingHoleSafety.RecommendedBorderPx"/> (fine on
+    /// light plywood, not on dark holds or volumes). Names the thinnest marker and the gaps that fix all of them.
     /// </summary>
     private static void CheckTightHoles(MarkerPlan plan, MountingHoles holes, List<PlanIssue> issues)
     {
-        var tight = plan.Markers
+        var thin = plan.Markers
             .Where(m => double.IsFinite(m.SizeMm) && m.SizeMm > 0)
             .Select(m => (Marker: m, PxPerMm: PhotoPxPerMm(plan, m)))
-            .Where(t => !MountingHoleSafety.IsSafe(t.Marker.SizeMm, holes, t.PxPerMm))
+            .Select(t => (t.Marker, t.PxPerMm, Level: MountingHoleSafety.Assess(t.Marker.SizeMm, holes, t.PxPerMm)))
+            .Where(t => t.Level != MountingHoleBorder.Clear)
             .ToList();
-        if (tight.Count == 0)
+        if (thin.Count == 0)
         {
             return;
         }
 
-        var (worst, pxPerMm) = tight.MaxBy(t => t.Marker.SizeMm);
+        var (worst, pxPerMm, level) = thin.MinBy(t => MountingHoleSafety.BorderPx(t.Marker.SizeMm, holes, t.PxPerMm));
         var size = worst.SizeMm;
         var border = MountingHoleLayout.BorderMm(holes);
-        var message = string.Create(
-            CultureInfo.InvariantCulture,
-            $"The mounting holes are tight for the {size:0} mm markers: the white border is {border:0.#} mm (≈{border * pxPerMm:0.#} px in your photos). In tests, a border under ~{MountingHoleSafety.MinBorderPx:0} photo px ({MountingHoleSafety.MinBorderMm(size, pxPerMm):0.#} mm here) let the detected corners drift toward the wall by up to 1.5 px.");
-        MountingHoles? safe = holes;
-        foreach (var (marker, px) in tight)
-        {
-            safe = safe is null ? null : MountingHoleSafety.SafeGaps(marker.SizeMm, safe, px);
-        }
-
-        message += safe is not null
+        var borderPx = MountingHoleSafety.BorderPx(size, holes, pxPerMm);
+        var tooThin = level == MountingHoleBorder.TooThin;
+        var message = tooThin
             ? string.Create(
                 CultureInfo.InvariantCulture,
-                $" Gap to marker {safe.GapToMarkerMm:0.#} mm and gap to cut edge {safe.GapToEdgeMm:0.#} mm measured clean (cut-out {size + (2 * MountingHoleLayout.BorderMm(safe)):0} mm for the {size:0} mm markers).")
-            : string.Create(CultureInfo.InvariantCulture, $" Keep at least {MountingHoleSafety.MinBorderMm(size, pxPerMm):0} mm of white paper around the square (cut outside the printed line), or tape these markers instead.");
-        issues.Add(Warning("mounting-holes-tight", message, worst.Segment, worst.Id));
+                $"The mounting holes are too tight for the {size:0} mm markers: the white border is {border:0.#} mm, only ≈{borderPx:0.#} px in your photos. On real photos, markers with under {MountingHoleSafety.MinBorderPx:0} px of white border were found in only 40–95 % of the photos, on the light wall too (far fewer under 1 px), and their corners were twice as noisy.")
+            : string.Create(
+                CultureInfo.InvariantCulture,
+                $"The white border around the {size:0} mm markers is {border:0.#} mm, ≈{borderPx:0.#} px in your photos. That is fine on the light wall (every real marker there was found from {MountingHoleSafety.MinBorderPx:0} px on), but on a dark hold or volume, where the paper is the only contrast, markers with under {MountingHoleSafety.RecommendedBorderPx:0} px were found only 75–88 % of the time (92–100 % from {MountingHoleSafety.RecommendedBorderPx:0} px).");
+        message += Remedy(thin.Select(t => (t.Marker.SizeMm, t.PxPerMm)).ToList(), holes, size, pxPerMm, tooThin);
+        issues.Add(Warning(tooThin ? "mounting-holes-tight" : "mounting-holes-thin", message, worst.Segment, worst.Id));
+    }
+
+    /// <summary>The gaps that reach the recommended border for every listed marker (else, when too thin, the minimum; else tape).</summary>
+    private static string Remedy(List<(double SizeMm, double PxPerMm)> markers, MountingHoles holes, double size, double pxPerMm, bool tooThin)
+    {
+        double[] targets = tooThin ? [MountingHoleSafety.RecommendedBorderPx, MountingHoleSafety.MinBorderPx] : [MountingHoleSafety.RecommendedBorderPx];
+        foreach (var target in targets)
+        {
+            MountingHoles? safe = holes;
+            foreach (var (sizeMm, px) in markers)
+            {
+                safe = safe is null ? null : MountingHoleSafety.SafeGaps(sizeMm, safe, px, target);
+            }
+
+            if (safe is not null)
+            {
+                var cutOut = size + (2 * MountingHoleLayout.BorderMm(safe));
+                return tooThin
+                    ? string.Create(
+                        CultureInfo.InvariantCulture,
+                        $" Gap to marker {safe.GapToMarkerMm:0.#} mm and gap to cut edge {safe.GapToEdgeMm:0.#} mm give at least {target:0} px (cut-out {cutOut:0} mm for the {size:0} mm markers).")
+                    : string.Create(
+                        CultureInfo.InvariantCulture,
+                        $" If any of these markers sit on dark holds or volumes, gap to marker {safe.GapToMarkerMm:0.#} mm and gap to cut edge {safe.GapToEdgeMm:0.#} mm give {target:0} px (cut-out {cutOut:0} mm for the {size:0} mm markers); otherwise keep the tighter gaps.");
+            }
+        }
+
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $" No allowed gap gets there: keep at least {MountingHoleSafety.RecommendedBorderMm(size, pxPerMm):0} mm of white paper around the square (cut outside the printed line), tape these markers instead, or photograph from closer.");
     }
 
     /// <summary>Photo px per mm on the marker's surface at the plan's distance (face-on when the surface is unknown).</summary>

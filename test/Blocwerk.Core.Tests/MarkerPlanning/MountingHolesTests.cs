@@ -176,62 +176,90 @@ public class MountingHolesTests
     }
 
     [Theory]
-    [InlineData(150, 1, 2, 165.7)]
-    [InlineData(200, 1, 4.5, 220.7)]
-    [InlineData(300, 1, 9.5, 330.7)]
-    [InlineData(400, 7, 10, 440.1)]
-    public void SafeGaps_MeetTheMeasuredLimits(double size, double toMarker, double toEdge, double cutOut)
+    [InlineData(125, 1, 3, 142.7)]
+    [InlineData(150, 1, 4.5, 170.7)]
+    [InlineData(200, 1, 8, 227.7)]
+    [InlineData(300, 7, 10, 340.1)]
+    public void SafeGaps_ReachTheRecommendedBorder(double size, double toMarker, double toEdge, double cutOut)
     {
+        // Photo scale unknown: sized for a 60 px marker, so 4 px of border is side/15.
         var safe = MountingHoleSafety.SafeGaps(size, MountingHoles.Default)!;
 
         Assert.Equal(toMarker, safe.GapToMarkerMm);
         Assert.Equal(toEdge, safe.GapToEdgeMm);
         Assert.Equal(cutOut, size + (2 * MountingHoleLayout.BorderMm(safe)), 1);
-        Assert.True(MountingHoleSafety.IsSafe(size, safe));
-        Assert.False(MountingHoleSafety.IsSafe(size, MountingHoles.Default));
+        Assert.Equal(MountingHoleBorder.Clear, MountingHoleSafety.Assess(size, safe));
+        Assert.NotEqual(MountingHoleBorder.Clear, MountingHoleSafety.Assess(size, MountingHoles.Default));
         Assert.Empty(safe.Problems());
     }
 
     [Theory]
-    [InlineData(125, 0)]
-    [InlineData(125, 60.0 / 125)]
-    [InlineData(50, 0)]
-    [InlineData(50, 40.0 / 50)]
-    public void TightDefaults_AreSafe_ForTheUsualSizes(double size, double photoPxPerMm)
+    [InlineData(125, 0, MountingHoleBorder.Thin)]
+    [InlineData(125, 60.0 / 125, MountingHoleBorder.Thin)]
+    [InlineData(125, 30.0 / 125, MountingHoleBorder.TooThin)]
+    [InlineData(50, 0, MountingHoleBorder.Clear)]
+    [InlineData(50, 40.0 / 50, MountingHoleBorder.Clear)]
+    public void TightDefaults_AgainstTheRealPhotoLevels(double size, double photoPxPerMm, MountingHoleBorder expected)
     {
-        Assert.True(MountingHoleSafety.IsSafe(size, MountingHoles.Default, photoPxPerMm));
-        Assert.Equal(MountingHoles.Default, MountingHoleSafety.SafeGaps(size, MountingHoles.Default, photoPxPerMm));
+        // The 1 / 1 mm default leaves 6.8 mm: ≈3.3 px on a 125 mm marker at 60 px — over the 2 px minimum,
+        // under the 4 px that dark holds and volumes need.
+        Assert.Equal(expected, MountingHoleSafety.Assess(size, MountingHoles.Default, photoPxPerMm));
+        Assert.Equal(expected != MountingHoleBorder.TooThin, MountingHoleSafety.IsSafe(size, MountingHoles.Default, photoPxPerMm));
+        if (expected == MountingHoleBorder.Clear)
+        {
+            Assert.Equal(MountingHoles.Default, MountingHoleSafety.SafeGaps(size, MountingHoles.Default, photoPxPerMm));
+        }
     }
 
     [Fact]
     public void SafeGaps_GrowWithThePhotoDistance_AndGiveUpBeyondTheGapRange()
     {
-        // 125 mm at 40 px: 3 px is 9.4 mm of border; the 6.8 mm default needs the cut edge 4 mm out.
+        // 125 mm at 60 px: 4 px is 8.3 mm of border; the 6.8 mm default needs the cut edge 3 mm out.
+        var planned = MountingHoleSafety.SafeGaps(125, MountingHoles.Default, 60.0 / 125)!;
+        Assert.Equal(1, planned.GapToMarkerMm);
+        Assert.Equal(3, planned.GapToEdgeMm);
+
+        // At 40 px: 12.5 mm → 7 mm to the edge; the 2 px minimum alone (6.25 mm) is met by the default.
         var far = MountingHoleSafety.SafeGaps(125, MountingHoles.Default, 40.0 / 125)!;
         Assert.Equal(1, far.GapToMarkerMm);
-        Assert.Equal(4, far.GapToEdgeMm);
+        Assert.Equal(7, far.GapToEdgeMm);
+        Assert.Equal(MountingHoles.Default, MountingHoleSafety.SafeGaps(125, MountingHoles.Default, 40.0 / 125, MountingHoleSafety.MinBorderPx));
         Assert.Null(MountingHoleSafety.SafeGaps(125, MountingHoles.Default, 0.1));
     }
 
     [Fact]
-    public void TightHoles_Warn_WithPhotoPixels_AndTheSafeGaps_ClearIt()
+    public void ThinHoles_Warn_WithPhotoPixels_AndTheDarkWallGaps_ClearIt()
     {
-        // From 2.5 m the Attic's 6.8 mm default border is ~4 photo px (fine); from 5 m it is ~2 px.
-        var near = AtticMarkerPlan.Plan with { Print = new PrintOptions(MountingHoles.Default) };
-        Assert.DoesNotContain(MarkerPlanValidator.Validate(near), i => i.Code == "mounting-holes-tight");
+        // From 2.5 m the Attic's 6.8 mm default border is 2–4 photo px: fine on the plywood, thin on dark holds.
+        var plan = AtticMarkerPlan.Plan with { Print = new PrintOptions(MountingHoles.Default) };
+        var issues = MarkerPlanValidator.Validate(plan);
+        Assert.DoesNotContain(issues, i => i.Code == "mounting-holes-tight");
+        var warning = Assert.Single(issues, i => i.Code == "mounting-holes-thin");
+        Assert.Equal(PlanIssueSeverity.Warning, warning.Severity);
+        Assert.Contains("fine on the light wall", warning.Message, StringComparison.Ordinal);
+        Assert.Contains("dark holds or volumes, gap to marker", warning.Message, StringComparison.Ordinal);
 
-        var plan = AtticMarkerPlan.Plan with { Photo = MarkerCameraPresets.Create(MarkerCameraPresets.PhoneUltraWide, 5000) };
-        var tight = plan with { Print = new PrintOptions(MountingHoles.Default) };
-        var warning = Assert.Single(MarkerPlanValidator.Validate(tight), i => i.Code == "mounting-holes-tight");
+        var safeHoles = SafeFor(plan, MountingHoleSafety.RecommendedBorderPx);
+        Assert.Contains($"gap to cut edge {safeHoles.GapToEdgeMm:0.#} mm", warning.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(MarkerPlanValidator.Validate(plan with { Print = new PrintOptions(safeHoles) }), i => i.Code.StartsWith("mounting-holes-", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TooThinHoles_Warn_Strongly_AndTheSafeGaps_ClearIt()
+    {
+        // From 5 m the default border is under 2 px on some surfaces.
+        var far = AtticMarkerPlan.Plan with { Photo = MarkerCameraPresets.Create(MarkerCameraPresets.PhoneUltraWide, 5000) };
+        var plan = far with { Print = new PrintOptions(MountingHoles.Default) };
+        var issues = MarkerPlanValidator.Validate(plan);
+        Assert.DoesNotContain(issues, i => i.Code == "mounting-holes-thin");
+        var warning = Assert.Single(issues, i => i.Code == "mounting-holes-tight");
         Assert.Equal(PlanIssueSeverity.Warning, warning.Severity);
         Assert.Contains("px in your photos", warning.Message, StringComparison.Ordinal);
         Assert.Contains("Gap to marker", warning.Message, StringComparison.Ordinal);
 
-        var safeHoles = plan.Markers.Aggregate(MountingHoles.Default, (holes, m) => MountingHoleSafety.SafeGaps(
-            m.SizeMm, holes, MarkerSizing.EstimatedPx(1, plan.Segments.Single(s => s.Index == m.Segment), plan.Photo))!);
+        var safeHoles = SafeFor(plan, MountingHoleSafety.RecommendedBorderPx);
         Assert.Contains($"gap to cut edge {safeHoles.GapToEdgeMm:0.#} mm", warning.Message, StringComparison.Ordinal);
-        var safe = plan with { Print = new PrintOptions(safeHoles) };
-        Assert.DoesNotContain(MarkerPlanValidator.Validate(safe), i => i.Code == "mounting-holes-tight");
+        Assert.DoesNotContain(MarkerPlanValidator.Validate(plan with { Print = new PrintOptions(safeHoles) }), i => i.Code.StartsWith("mounting-holes-", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -244,4 +272,8 @@ public class MountingHolesTests
         Assert.DoesNotContain(MarkerPlanPdf.Instructions(AtticMarkerPlan.Plan), l => l.Contains(line, StringComparison.Ordinal));
         Assert.Equal(3, JsonNode.Parse(MarkerPlanJson.ToJson(holes))!["print"]!["mountingHoles"]!["holeDiameterMm"]!.GetValue<double>());
     }
+
+    private static MountingHoles SafeFor(MarkerPlan plan, double borderPx) =>
+        plan.Markers.Aggregate(MountingHoles.Default, (holes, m) => MountingHoleSafety.SafeGaps(
+            m.SizeMm, holes, MarkerSizing.EstimatedPx(1, plan.Segments.Single(s => s.Index == m.Segment), plan.Photo), borderPx)!);
 }
