@@ -39,12 +39,31 @@ function buildModeSwitch(modes, pick) {
     return group;
 }
 
+const HINT_SEEN_KEY = 'bw.wall3d.hintSeen';
+
+function storedFlag(key, set) {
+    try {
+        if (set) localStorage.setItem(key, '1');
+        return localStorage.getItem(key) === '1';
+    } catch {
+        return false;                   // private mode / storage off: just show the hint again
+    }
+}
+
+function hintText() {
+    return window.matchMedia?.('(pointer: coarse)').matches
+        ? 'Drag to orbit · pinch to zoom · two fingers to pan'
+        : 'Drag to orbit · pinch or scroll to zoom · two fingers / right-drag to pan';
+}
+
 /**
  * Builds the overlay into `root`. `on` carries the callbacks: preset(name), reset(), closeCard(),
- * mode(name). `modes` lists the view modes this wall offers (wall3d-modes.js).
+ * mode(name). `modes` lists the view modes this wall offers (wall3d-modes.js). With `hintOnce`
+ * (the inline embed) the gesture hint shows until the viewer first touches the view, once per browser.
  */
-export function buildOverlay(root, view, on, modes) {
-    const hint = el('div', 'w3d-hint', 'Drag to orbit · pinch or scroll to zoom · two fingers / right-drag to pan');
+export function buildOverlay(root, view, on, modes, { hintOnce = false } = {}) {
+    const hint = el('div', 'w3d-hint', hintText());
+    if (hintOnce && storedFlag(HINT_SEEN_KEY)) hint.classList.add('gone');
     const presets = el('div', 'w3d-presets');
     presets.setAttribute('role', 'toolbar');
     presets.setAttribute('aria-label', 'Camera views');
@@ -74,13 +93,17 @@ export function buildOverlay(root, view, on, modes) {
     card.hidden = true;
     card.setAttribute('role', 'status');
 
-    root.append(hint, modeSwitch, map, scale, card, presets);
+    root.append(modeSwitch, hint, map, scale, card, presets);   // modes first: the hint's CSS keys off it
     return {
         hint, presets, card, map, modes: modeSwitch,
         setActive(name) {
             presets.querySelectorAll('[data-preset]').forEach(b => b.classList.toggle('active', b.dataset.preset === name));
         },
-        hideHint() { hint.classList.add('gone'); },
+        /** Fades the hint; `byViewer` (a touch, a drag, a preset) also remembers it for `hintOnce`. */
+        hideHint(byViewer = true) {
+            if (byViewer && hintOnce && !hint.classList.contains('gone')) storedFlag(HINT_SEEN_KEY, true);
+            hint.classList.add('gone');
+        },
         /** Marks `mode` as current; `loading` shows it as still loading and blocks further picks. */
         setMode(mode, loading) {
             modeSwitch.querySelectorAll('[data-mode]').forEach(b => {
@@ -105,6 +128,27 @@ export function buildOverlay(root, view, on, modes) {
         showHold(h) { showCard(card, h, on.closeCard); },
         hideCard() { card.hidden = true; },
     };
+}
+
+/**
+ * Pixels of overlay chrome along the stage's top and bottom edges (mode switch, plan map, preset
+ * bar, a visible hint), for fitPose to frame the wall between. Capped at half the height so a
+ * short landscape stage still gives the wall most of its room.
+ */
+export function chromeInsets(root, ui) {
+    const box = root.getBoundingClientRect();
+    if (!box.width || !box.height) return {};
+    let top = 0, bottom = 0;
+    for (const e of [ui.modes, ui.map, ui.presets, ui.hint]) {
+        if (!e || e.hidden || e.classList.contains('gone')) continue;
+        const r = e.getBoundingClientRect();
+        if (!r.width || !r.height) continue;
+        if ((r.top + r.bottom) / 2 - box.top < box.height / 2) top = Math.max(top, r.bottom - box.top);
+        else bottom = Math.max(bottom, box.bottom - r.top);
+    }
+    const cap = 0.5 * box.height;
+    const k = top + bottom > cap ? cap / (top + bottom) : 1;
+    return { top: top * k, bottom: bottom * k };
 }
 
 function showCard(card, h, close) {

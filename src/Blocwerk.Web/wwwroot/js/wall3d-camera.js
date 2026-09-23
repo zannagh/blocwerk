@@ -40,40 +40,73 @@ export function wallFrame(view, facetGroup) {
     }
     stand.z = floorZ;
     under.z = floorZ;
-    return { box, center, front, right, floorZ, stand, under, radius: box.getBoundingSphere(new THREE.Sphere()).radius };
+    // What the presets frame: the facets' real corners (the axis-aligned box of a leaning wall is
+    // mostly air, and fitting its corners left the wall a third of the frame on a phone).
+    const points = view.facets.flatMap(f => (f.corners || []).map(c => v3(c)));
+    if (points.length < 2) {
+        for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) points.push(new THREE.Vector3(x, y, z));
+    }
+    return { box, center, front, right, floorZ, stand, under, points, radius: box.getBoundingSphere(new THREE.Sphere()).radius };
 }
 
 function area(f) {
     return (f.extent.aMax - f.extent.aMin) * (f.extent.bMax - f.extent.bMin);
 }
 
+/** Share of the free area left empty around the fitted wall, per side. */
+const FIT_MARGIN = 0.04;
+
 /**
- * Smallest distance along `dir` (target → camera) at which every corner of the wall's box is
- * inside the frustum, plus a small margin for the overlay chrome.
+ * Camera pose looking along -`dir` that shows every frame point inside the stage's free area:
+ * `insets` (px: top, bottom, left, right) are the overlay chrome to keep clear, `size` the stage in
+ * px. Solved exactly for a perspective camera: the closest distance at which the points' spread fits
+ * both the width and the height (whichever binds for the stage's aspect), then the target is slid
+ * sideways / up so the wall sits centred in the free area rather than in the whole canvas.
  */
-function fitDistance(camera, box, target, dir) {
-    const vfov = THREE.MathUtils.degToRad(camera.fov);
-    const tanV = Math.tan(vfov / 2) * 0.9;
+export function fitPose(camera, points, dir, insets = {}, size = null) {
+    const w = size?.w || 1, h = size?.h || 1;
+    const tanV = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
     const tanH = tanV * camera.aspect;
+    // Free area as NDC bounds, then as tangents of the view angle.
+    const ndc = (inset, full) => Math.max(0.2, 1 - (2 * (inset || 0)) / full - 2 * FIT_MARGIN);
+    const hiY = tanV * ndc(insets.top, h), loY = -tanV * ndc(insets.bottom, h);
+    const hiX = tanH * ndc(insets.right, w), loX = -tanH * ndc(insets.left, w);
+
     const back = dir.clone().normalize();
     const side = new THREE.Vector3().crossVectors(UP, back);
     if (side.lengthSq() < 1e-6) side.set(1, 0, 0);
     side.normalize();
     const up = new THREE.Vector3().crossVectors(back, side);
+    const origin = points.reduce((acc, p) => acc.add(p), new THREE.Vector3()).divideScalar(points.length);
+    const rel = points.map(p => p.clone().sub(origin));
+    const a = rel.map(p => p.dot(side)), b = rel.map(p => p.dot(up)), q = rel.map(p => p.dot(back));
+
+    // Point i (lateral x_i - s, depth d - q_i) is in view when lo·(d - q_i) ≤ x_i - s ≤ hi·(d - q_i);
+    // a shift s exists for every pair (i, j) once d ≥ (x_i - x_j + hi·q_i - lo·q_j) / (hi - lo).
     let d = 0;
-    for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
-        const p = new THREE.Vector3(x, y, z).sub(target);
-        const depth = p.dot(back);
-        d = Math.max(d, depth + Math.abs(p.dot(side)) / tanH, depth + Math.abs(p.dot(up)) / tanV);
+    for (let i = 0; i < rel.length; i++) {
+        for (let j = 0; j < rel.length; j++) {
+            d = Math.max(d, (a[i] - a[j] + hiX * q[i] - loX * q[j]) / (hiX - loX),
+                (b[i] - b[j] + hiY * q[i] - loY * q[j]) / (hiY - loY));
+        }
     }
-    return d;
+    d = Math.max(d, Math.max(...q) + camera.near * 2);
+    const shift = (x, hi, lo) => {
+        let min = -Infinity, max = Infinity;
+        x.forEach((xi, i) => {
+            min = Math.max(min, xi - hi * (d - q[i]));
+            max = Math.min(max, xi - lo * (d - q[i]));
+        });
+        return (min + max) / 2;
+    };
+    const target = origin.clone().addScaledVector(side, shift(a, hiX, loX)).addScaledVector(up, shift(b, hiY, loY));
+    return { position: target.clone().addScaledVector(back, d), target };
 }
 
-/** { position, target } for a named preset. */
-export function presetPose(name, frame, camera) {
-    const { center, front, right, floorZ, under, box } = frame;
-    const target = center.clone();
-    const along = dir => target.clone().addScaledVector(dir, fitDistance(camera, box, target, dir));
+/** { position, target } for a named preset, framed into the stage's free area (see fitPose). */
+export function presetPose(name, frame, camera, insets, size) {
+    const { center, front, right, floorZ, under } = frame;
+    const along = dir => fitPose(camera, frame.points, dir, insets, size);
     switch (name) {
         case 'below': {
             // Crouch on the mat at the overhang's lip and look up into it.
@@ -84,14 +117,14 @@ export function presetPose(name, frame, camera) {
             return { position: p, target: t };
         }
         case 'left':
-            return { position: along(right.clone().multiplyScalar(-0.8).addScaledVector(front, 0.6).addScaledVector(UP, 0.15)), target };
+            return along(right.clone().multiplyScalar(-0.8).addScaledVector(front, 0.6).addScaledVector(UP, 0.15));
         case 'right':
-            return { position: along(right.clone().multiplyScalar(0.8).addScaledVector(front, 0.6).addScaledVector(UP, 0.15)), target };
+            return along(right.clone().multiplyScalar(0.8).addScaledVector(front, 0.6).addScaledVector(UP, 0.15));
         case 'top':
             // Not exactly overhead: OrbitControls degenerates at the pole.
-            return { position: along(UP.clone().addScaledVector(front, 0.25)), target };
+            return along(UP.clone().addScaledVector(front, 0.25));
         default: // front, from about eye height
-            return { position: along(front.clone().addScaledVector(UP, 0.1)), target };
+            return along(front.clone().addScaledVector(UP, 0.1));
     }
 }
 

@@ -42,6 +42,10 @@ public partial class Wall3DStage : IAsyncDisposable
     [Parameter]
     public string InitialPreset { get; set; } = "front";
 
+    /// <summary>Show the gesture hint only until the viewer first touches a 3D view (remembered per browser).</summary>
+    [Parameter]
+    public bool HintOnce { get; set; }
+
     [Inject]
     private IJSRuntime JS { get; set; } = null!;
 
@@ -88,6 +92,7 @@ public partial class Wall3DStage : IAsyncDisposable
                     ["roleColors"] = RoleColors,
                     ["initialPreset"] = InitialPreset,
                     ["initialMode"] = InitialMode ?? "schematic",
+                    ["hintOnce"] = HintOnce,
                 });
         }
         catch (JSDisconnectedException)

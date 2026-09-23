@@ -16,6 +16,12 @@
     min-height: 320px;
 }
 
+/* Phones in portrait: a wall is wider than it is tall, so the camera fits it to the width and a
+   68dvh box left the lower half as empty floor. Keep the box a little taller than wide instead. */
+@media (max-width: 600px) and (orientation: portrait) {
+    .wall3d-inline-stage { height: min(68dvh, 640px, max(320px, 115vw)); }
+}
+
 .wall3d-inline-message {
     margin: 0;
     padding: 40px 16px;

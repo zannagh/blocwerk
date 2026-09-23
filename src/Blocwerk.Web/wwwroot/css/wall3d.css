@@ -79,10 +79,14 @@
 .w3d-mode:disabled { cursor: progress; }
 .w3d-mode:disabled:not(.active) { opacity: 0.5; }
 
+/* The hint shares the top band with the plan map (left of it, under the mode switch when that
+   shows), which the camera fit keeps clear of the wall, so it never covers the wall. */
 .w3d-hint {
     position: absolute;
-    top: 56px; left: 10px;
-    max-width: 60%;
+    top: 10px; left: 10px;
+    right: calc(10px + 96px + 10px);
+    width: fit-content;
+    max-width: min(60%, calc(100% - 20px - 96px - 10px));
     padding: 6px 10px;
     border-radius: var(--r-md, 10px);
     background: rgba(22, 22, 42, 0.72);
@@ -92,6 +96,7 @@
     pointer-events: none;
     transition: opacity 0.6s ease;
 }
+.w3d-modes:not([hidden]) + .w3d-hint { top: 56px; }
 .w3d-hint.gone { opacity: 0; }
 
 .w3d-map {

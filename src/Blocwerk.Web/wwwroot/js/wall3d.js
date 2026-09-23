@@ -13,21 +13,22 @@ import { buildOutlines } from './wall3d-outlines.js';
 import { availableModes, createModeController, normalizeMode } from './wall3d-modes.js';
 import { createLabelLayout } from './wall3d-labels.js';
 import { createTweener, presetPose, wallFrame } from './wall3d-camera.js';
-import { buildOverlay, createPlanMap } from './wall3d-ui.js';
+import { buildOverlay, chromeInsets, createPlanMap } from './wall3d-ui.js';
 import { createPhotoReal, PhotoRealUnsupportedError } from './wall3d-splat.js';
 
 /** Colours of a boulder's hold roles; the page passes BoulderHoldColors so they match the 2D views. */
 const DEFAULT_ROLE_COLORS = { Start: '#4CAF50', Top: '#9C27B0', Hand: '#2196F3', Foot: '#FF9800', ColorFoot: '#FF9800' };
 const TAP_SLOP_PX = 8;
 
+/** Injects wall3d.css once; returns the link while it is still loading (null when already there). */
 function ensureStylesheet() {
     const href = new URL('../css/wall3d.css', import.meta.url).href;
-    if (![...document.querySelectorAll('link[rel="stylesheet"]')].some(l => l.href === href)) {
-        const link = document.createElement('link');
-        link.rel = 'stylesheet';
-        link.href = href;
-        document.head.append(link);
-    }
+    if ([...document.querySelectorAll('link[rel="stylesheet"]')].some(l => l.href === href)) return null;
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = href;
+    document.head.append(link);
+    return link;
 }
 
 function themeColor(el, name, fallback) {
@@ -62,7 +63,7 @@ function buildSurroundings(scene, frame, bg) {
 }
 
 export function mount(container, view, options = {}) {
-    ensureStylesheet();
+    const loadingCss = ensureStylesheet();
     const roleColors = { ...DEFAULT_ROLE_COLORS, ...(options.roleColors || {}) };
     const reducedMq = window.matchMedia('(prefers-reduced-motion: reduce)');
     container.classList.add('w3d-root');
@@ -114,7 +115,7 @@ export function mount(container, view, options = {}) {
         reset: () => { ui.hideCard(); selection.visible = false; goTo('front'); },
         closeCard: () => { ui.hideCard(); selection.visible = false; request(); },
         mode: name => modeCtl.set(name),
-    }, modes);
+    }, modes, { hintOnce: !!options.hintOnce });
     const modeCtl = createModeController({
         modes, photo, ui, request: () => request(), PhotoRealUnsupportedError,
         parts: { textures, outlines, slabs: [holds.lit, holds.dim] },
@@ -126,13 +127,27 @@ export function mount(container, view, options = {}) {
     const hintObserver = new MutationObserver(() => { obstaclesDirty = true; request(); });
     hintObserver.observe(ui.hint, { attributes: true, attributeFilter: ['class'], childList: true, characterData: true });
 
+    // The preset the camera still shows as framed; a drag clears it. While set, a resize (rotation,
+    // the stylesheet landing, the page reflowing) re-frames it for the new stage.
+    let framed = null;
+    const framedPose = name => presetPose(name, frame, camera, chromeInsets(container, ui),
+        { w: container.clientWidth, h: container.clientHeight });
+
     function goTo(name) {
-        // The hint pill sits over the top-left of the stage, where presets such as "Below" put the
-        // facet labels — it hid the leading digits of "44.7° overhang". Any camera move dismisses it.
+        // The hint covers part of the stage; any camera move dismisses it.
         ui.hideHint();
-        tweener.to(presetPose(name, frame, camera));
+        framed = name;
+        tweener.to(framedPose(name));
         ui.setActive(name);
         request();
+    }
+
+    function reframe() {
+        if (!framed || tweener.active) return;
+        const pose = framedPose(framed);
+        camera.position.copy(pose.position);
+        controls.target.copy(pose.target);
+        controls.update();
     }
 
     function tick(now) {
@@ -162,6 +177,7 @@ export function mount(container, view, options = {}) {
         camera.aspect = w / h;
         camera.updateProjectionMatrix();
         fitLabels(labels, camera.aspect);
+        reframe();
         obstaclesDirty = true;
         request();
     }
@@ -169,7 +185,7 @@ export function mount(container, view, options = {}) {
     // ── picking: a tap (not a drag) on a hold opens its card ─────────────────────────────────
     const raycaster = new THREE.Raycaster();
     let down = null;
-    const onDown = e => { down = { x: e.clientX, y: e.clientY }; };
+    const onDown = e => { down = { x: e.clientX, y: e.clientY }; ui.hideHint(); };
     const onUp = e => {
         if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > TAP_SLOP_PX) { down = null; return; }
         down = null;
@@ -186,7 +202,7 @@ export function mount(container, view, options = {}) {
         }
         request();
     };
-    const onStart = () => { tweener.cancel(); ui.hideHint(); ui.setActive(null); };
+    const onStart = () => { tweener.cancel(); ui.hideHint(); ui.setActive(null); framed = null; };
     renderer.domElement.addEventListener('pointerdown', onDown);
     renderer.domElement.addEventListener('pointerup', onUp);
     controls.addEventListener('start', onStart);
@@ -196,11 +212,11 @@ export function mount(container, view, options = {}) {
     ro.observe(container);
     window.addEventListener('orientationchange', resize);
 
+    framed = options.initialPreset || 'front';
     resize();
-    const initial = presetPose(options.initialPreset || 'front', frame, camera);
-    camera.position.copy(initial.position);
-    controls.target.copy(initial.target);
-    ui.setActive(options.initialPreset || 'front');
+    ui.setActive(framed);
+    // Until wall3d.css lands the overlay has no layout, so the chrome measured above was wrong.
+    loadingCss?.addEventListener('load', () => { if (!disposed) resize(); }, { once: true });
     const startMode = normalizeMode(options.initialMode);
     modeCtl.set(startMode && modes.includes(startMode) && startMode !== 'photoreal' ? startMode : 'schematic');
     if (startMode === 'photoreal') modeCtl.set('photoreal');
