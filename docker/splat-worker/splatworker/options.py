@@ -19,6 +19,7 @@ class SplatOptions:
     matcher: str = "auto"
     cropMarginMm: float = 400.0
     spz: bool = True
+    colourMatch: bool = True  # ingest matches the video frames' colours to the photos' (colour.py)
 
     def to_dict(self):
         return asdict(self)
@@ -55,6 +56,10 @@ def parse_options(doc):
         if not isinstance(doc["spz"], bool):
             raise OptionsError("options.spz must be true or false")
         o.spz = doc["spz"]
+    if "colourMatch" in doc:
+        if not isinstance(doc["colourMatch"], bool):
+            raise OptionsError("options.colourMatch must be true or false")
+        o.colourMatch = doc["colourMatch"]
     return o
 
 

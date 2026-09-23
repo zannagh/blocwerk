@@ -83,7 +83,7 @@ def test_accepts_job_and_strips_metadata_on_arrival(client, gps_jpeg):
         assert_clean(open(os.path.join(d, "arrived", name), "rb").read())
     inputs = json.load(open(os.path.join(d, "inputs.json")))
     assert inputs["options"] == {"maxSteps": 5000, "maxImageEdge": 1800, "matcher": "auto",
-                                 "cropMarginMm": 400.0, "spz": True}
+                                 "cropMarginMm": 400.0, "spz": True, "colourMatch": True}
     assert inputs["photos"]["a"]["focal35"] == 14.0 and "TestPhone" not in json.dumps(inputs)
     assert json.load(open(os.path.join(d, "geometry.json"))) == GEOMETRY
     for root, _, files in os.walk(d):  # nothing anywhere in the job dir still holds the GPS tags
@@ -105,6 +105,7 @@ def test_accepts_job_and_strips_metadata_on_arrival(client, gps_jpeg):
     (None, {"cropMarginMm": 1e9}, None, 422, "cropMarginMm"),
     (None, {"maxSteps": 150.5}, None, 422, "maxSteps"),
     (None, {"spz": "yes"}, None, 422, "spz"),
+    (None, {"colourMatch": 1}, None, 422, "colourMatch"),
     (None, None, {"cameras": [{"image": "a", "R": [1] * 9, "t": [0, 0, 1e300]}], "segments": []}, 422, "t"),
     (None, None, {"cameras": [{"image": "a", "R": [1] * 9, "t": [0, 0, 0]}],
                   "segments": [{"facets": [{"origin": [0, 0, 0]}]}]}, 422, "facets"),

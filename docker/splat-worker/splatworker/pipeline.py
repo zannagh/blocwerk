@@ -11,7 +11,7 @@ import time
 
 from computejobs.child import JobError
 
-from . import brush, tuning
+from . import brush, colour, tuning
 from .align import align, unaligned_frame
 from .frames import build_pairs, is_frame, split
 from .ingest import clean_jpeg, downscale
@@ -68,20 +68,51 @@ class Run:
         if self.geometry:
             cams = {c["image"]: c for c in self.geometry.get("cameras", [])}
         img_dir = os.path.join(self.dir, "images")
-        groups = {}
+        groups, fixes, after = {}, self.colour_plan(), {}
         for i, (stem, facts) in enumerate(sorted(photos.items())):
             src = os.path.join(self.dir, "arrived", f"{stem}.jpg")
             with Image.open(src) as im:
                 small = downscale(im.convert("RGB"), self.opts.maxImageEdge)
+            if stem in fixes:
+                small = colour.apply(small, fixes[stem])
+                after[stem] = colour.image_stats(small)
             key, params = video_group(small.size) if is_frame(stem) else camera_group(stem, facts, small.size, cams.get(stem))
             os.makedirs(os.path.join(img_dir, key), exist_ok=True)
             with open(os.path.join(img_dir, key, f"{stem}.jpg"), "wb") as fh:
                 fh.write(clean_jpeg(small, 92))
             groups.setdefault(key, {"names": [], "params": params})["names"].append(f"{key}/{stem}.jpg")
             self.report((i + 1) / len(photos), f"{i + 1}/{len(photos)} photos")
+        if after:
+            self.log_colour("after", after)
         shutil.rmtree(os.path.join(self.dir, "arrived"), ignore_errors=True)
         self.groups = groups
         return img_dir
+
+    def colour_plan(self):
+        """colour.plan over the arrivals ({} when off, or when there are not both photos and frames)."""
+        if not self.opts.colourMatch or not self.photo_stems or not self.frame_stems:
+            return {}
+        from PIL import Image
+        stats = {}
+        for stem in self.inputs["photos"]:
+            with Image.open(os.path.join(self.dir, "arrived", f"{stem}.jpg")) as im:
+                im.draft("RGB", (colour.STATS_EDGE, colour.STATS_EDGE))  # fast DCT downscale
+                stats[stem] = colour.image_stats(im)
+        fixes, ref = colour.plan(stats, is_frame)
+        if ref:
+            self.log_colour("before", stats)
+            self._log_line(f"colour: reference (median photo) {ref.summary()}")
+        return fixes
+
+    def log_colour(self, when, stats):
+        for name, kind in (("photos", False), ("frames", True)):
+            group = colour.group_stats([s for k, s in stats.items() if is_frame(k) == kind])
+            if group:
+                self._log_line(f"colour: {name} {when}: {group.summary()}")
+
+    def _log_line(self, text):
+        with open(self.log, "a") as fh:
+            fh.write(f"# {text}\n")
 
     def sfm(self, img_dir):
         n = len(self.inputs["photos"])

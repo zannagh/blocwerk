@@ -23,7 +23,17 @@ public interface ICaptureVideoFrameExtractor
 }
 
 /// <summary>What ffprobe says about an uploaded video.</summary>
-public sealed record CaptureVideoProbe(double DurationSeconds, int Width, int Height);
+public sealed record CaptureVideoProbe(double DurationSeconds, int Width, int Height)
+{
+    /// <summary>ffprobe's <c>color_transfer</c> (e.g. <c>arib-std-b67</c> for iPhone HLG); null when untagged.</summary>
+    public string? ColorTransfer { get; init; }
+
+    /// <summary>ffprobe's <c>color_primaries</c> (e.g. <c>bt2020</c>); null when untagged.</summary>
+    public string? ColorPrimaries { get; init; }
+
+    /// <summary>ffprobe's <c>color_space</c> (the YCbCr matrix, e.g. <c>bt2020nc</c>); null when untagged.</summary>
+    public string? ColorSpace { get; init; }
+}
 
 /// <summary>How many frames to take: about <paramref name="FramesPerSecond"/>, never more than <paramref name="MaxFrames"/>.</summary>
 public sealed record CaptureVideoFrameRequest(double FramesPerSecond, int MaxFrames, TimeSpan Timeout);

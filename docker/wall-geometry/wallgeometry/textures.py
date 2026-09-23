@@ -12,19 +12,26 @@ i.e. +a to the right, +b up, exactly the facet frame of the geometry document.
 
 Plane points that lie behind another facet's surface (inside the wall), or that no photo sees, are left
 black; the per-facet coverage mask (`coverage_mask`) marks them 0 so a viewer can show the plain facet
-there instead. Limits: no
-full occlusion test (a hold or facet between camera and spot is not detected) and no exposure
-balancing between photos; both are visible as seams at worst.
+there instead. There is no geometric occlusion test (a hold or facet between camera and spot is not
+detected).
+
+By default (blendViews > 1, see blended.py) every photo is first exposure / white-balance balanced
+(exposure.py), and the per-cell choice penalises photos that disagree with what the other photos see
+there (consensus.py), so occluders not in the model (roof rafters) are not painted onto the wall;
+seams are feathered from the top-N sample slots (blend.py). blendViews = 1 is the plain method above.
 """
 import math
 
 import cv2
 import numpy as np
 
-from .refine import prepare, refine_corners
+from . import blend, consensus, exposure
+from .markercheck import marker_check
 
 DEFAULTS = {"behindOtherFacetMm": 30.0, "mmPerPx": 2.0, "maxSidePx": 4096, "extraMarginMm": 100.0, "labelCellPx": 8,
-            "modeFilterCells": 5, "imageMarginPx": 16, "jpegQuality": 90, "maskFeatherPx": 4.0}
+            "modeFilterCells": 5, "imageMarginPx": 16, "jpegQuality": 90, "maskFeatherPx": 4.0,
+            "blendMaxBytes": 2.0e9, **blend.BLEND_DEFAULTS, **exposure.GAIN_DEFAULTS,
+            **consensus.CONSENSUS_DEFAULTS}
 
 
 # What a client may set in `options`, with its bounds (everything else in DEFAULTS is internal).
@@ -142,15 +149,18 @@ def _behind_others(f, others, X, tol):
     return hidden
 
 
-def _labels(f, g, cams, names, p, others):
-    """Coarse per-cell photo choice, mode-filtered, upsampled to the full grid."""
-    cell = p["labelCellPx"]
-    cw, ch = int(math.ceil(g["W"] / cell)), int(math.ceil(g["H"] / cell))
-    cols = (np.arange(cw) * cell + cell / 2.0)[None, :]
-    rows = (np.arange(ch) * cell + cell / 2.0)[:, None]
-    X = _plane_points(f, g, np.broadcast_to(cols, (ch, cw)) - 0.5, np.broadcast_to(rows, (ch, cw)) - 0.5)
+def _cell_scores(f, g, cams, names, p, others):
+    """Per label cell: world points X (ch, cw, 3) and every photo's score S (C, ch, cw)."""
+    X = blend.cell_points(f, g, p["labelCellPx"], _plane_points)
     S = np.stack([_score(cams[n], f, X, p["imageMarginPx"]) for n in names])  # (C, ch, cw)
     S[:, _behind_others(f, others, X, p["behindOtherFacetMm"])] = 0
+    return X, S
+
+
+def _labels(S, g, names, p):
+    """Coarse per-cell photo choice, mode-filtered, upsampled to the full grid."""
+    cell = p["labelCellPx"]
+    ch, cw = S.shape[1:]
     valid = S > 0
     lab = np.where(valid.any(0), S.argmax(0), -1)
     k = int(p["modeFilterCells"])
@@ -182,50 +192,12 @@ def _render_part(img, cam, f, g, mask, out, filled):
     filled[y0:y1, x0:x1] |= m
 
 
-def _detector(dictionary):
-    prm = cv2.aruco.DetectorParameters()
-    # the settings that worked on capture 1 (see the glyph plan); CLAHE deliberately not used
-    prm.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
-    prm.adaptiveThreshWinSizeMin, prm.adaptiveThreshWinSizeMax, prm.adaptiveThreshWinSizeStep = 3, 53, 5
-    prm.minMarkerPerimeterRate = 0.01
-    prm.perspectiveRemovePixelPerCell = 8
-    return cv2.aruco.ArucoDetector(cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, dictionary)), prm)
-
-
-def marker_check(image, facet, doc, res, g):
-    """Detect the facet's ArUco markers in its orthophoto, edge-refine the corners, and compare the
-    side length with the declared size and the centre with the geometry's plane position."""
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    corners, ids, _ = _detector(doc["dictionary"]).detectMarkers(gray)
-    want = {m["id"]: m for m in doc["markers"] if m["facet"] == facet["id"]}
-    blurred = prepare(gray)
-    rows = []
-    for c, i in zip(corners, [] if ids is None else ids.ravel()):
-        if int(i) not in want:
-            continue
-        c = c.reshape(4, 2).astype(np.float64)
-        side_px = float(np.mean(np.linalg.norm(c - np.roll(c, -1, 0), axis=1)))
-        c, _, ok = refine_corners(blurred, c, side_px)
-        sides = np.linalg.norm(c - np.roll(c, -1, 0), axis=1) * res
-        mk = want[int(i)]
-        plane = np.array(mk["cornersPlaneMm"]).mean(0)
-        centre = c.mean(0)
-        pos = np.array([g["aMin"] + (centre[0] + 0.5) * res, g["bMax"] - (centre[1] + 0.5) * res])
-        rows.append({"id": int(i), "sideMm": round(float(sides.mean()), 2),
-                     "sideErrMm": round(float(sides.mean() - mk.get("sizeMm", doc["markerSizeMm"])), 2),
-                     "positionErrMm": round(float(np.linalg.norm(pos - plane)), 2),
-                     "cornersRefined": int(ok.sum())})
-    errs = np.array([r["sideErrMm"] for r in rows])
-    return {"detected": len(rows), "expected": len(want), "markers": rows,
-            "sideRmsErrMm": round(float(np.sqrt(np.mean(errs ** 2))), 3) if rows else None,
-            "maxPositionErrMm": max((r["positionErrMm"] for r in rows), default=None)}
-
-
 def render_textures(doc, load_photo, available, params=None, progress=None):
     """doc: geometry document; load_photo(name) -> BGR uint8 image; available: photo names.
 
     Returns a list of {facet, image (BGR), mask (uint8, see coverage_mask), mmPerPx, bounds, widthPx,
-    heightPx, photosUsed, coverage, markerCheck}.
+    heightPx, photosUsed, coverage, markerCheck} (+ exposureGains when balanced).
+    blendViews > 1 (default): robust multi-view blend (see blend.py); 1: the single best photo per pixel.
     """
     p = {**DEFAULTS, **(params or {})}
     cams = {c["image"]: _cam(c) for c in doc.get("cameras", []) if c["image"] in available}
@@ -233,10 +205,27 @@ def render_textures(doc, load_photo, available, params=None, progress=None):
         raise TextureError("none of the uploaded photos matches a camera of the geometry document")
     names = sorted(cams)
     facets = list(_facets(doc))
+    slot_bytes = (int(p["blendViews"]) + 2) * 7 * sum(_grid(f, p)["W"] * _grid(f, p)["H"] for f in facets)
+    if int(p["blendViews"]) > 1 and slot_bytes <= p["blendMaxBytes"]:
+        from . import blended  # imports this module
+        return blended.render(doc, load_photo, cams, names, facets, p, progress)
+    return _render_single(doc, load_photo, cams, names, facets, p, progress)
+
+
+def _checked_photo(load_photo, n, cam):
+    img = load_photo(n)
+    if img.shape[1] != cam["w"] or img.shape[0] != cam["h"]:
+        raise TextureError(f"photo {n} is {img.shape[1]}x{img.shape[0]} but was solved as "
+                           f"{cam['w']}x{cam['h']} (orientation or resizing mismatch)")
+    return img
+
+
+def _render_single(doc, load_photo, cams, names, facets, p, progress):
     jobs = []
     for f in facets:
         g = _grid(f, p)
-        lab = _labels(f, g, cams, names, p, [o for o in facets if o is not f])
+        _, S = _cell_scores(f, g, cams, names, p, [o for o in facets if o is not f])
+        lab = _labels(S, g, names, p)
         jobs.append({"f": f, "g": g, "lab": lab, "out": np.zeros((g["H"], g["W"], 3), np.uint8),
                      "filled": np.zeros((g["H"], g["W"]), bool)})
     for k, n in enumerate(names):
@@ -244,11 +233,8 @@ def render_textures(doc, load_photo, available, params=None, progress=None):
             progress(k / len(names), f"rendering from {n}")
         if not any((j["lab"] == k).any() for j in jobs):
             continue
-        img = load_photo(n)
         cam = cams[n]
-        if img.shape[1] != cam["w"] or img.shape[0] != cam["h"]:
-            raise TextureError(f"photo {n} is {img.shape[1]}x{img.shape[0]} but was solved as "
-                               f"{cam['w']}x{cam['h']} (orientation or resizing mismatch)")
+        img = _checked_photo(load_photo, n, cam)
         for j in jobs:
             _render_part(img, cam, j["f"], j["g"], j["lab"] == k, j["out"], j["filled"])
         del img

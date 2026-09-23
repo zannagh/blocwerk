@@ -15,6 +15,7 @@ namespace Blocwerk.Core.Capture;
 /// container tag (<c>-map_metadata -1</c>: GPS "location", make, model) and writes candidate JPEGs to
 /// a private temp folder; the sharpest candidate of each window is kept and re-stripped with
 /// <see cref="ImageMetadataStripper"/>, so not even ffmpeg's own comment segment leaves the server.
+/// HDR clips (iPhone HLG / Dolby Vision, PQ) are tone-mapped to SDR BT.709 (<see cref="HdrToneMapFilter"/>).
 /// </summary>
 public sealed class CaptureVideoFrameExtractor(BlocwerkSettings settings) : ICaptureVideoFrameExtractor
 {
@@ -37,14 +38,18 @@ public sealed class CaptureVideoFrameExtractor(BlocwerkSettings settings) : ICap
         string[] args =
         [
             "-v", "error", "-max_pixels", MaxPixelsArgument, "-select_streams", "v:0",
-            "-show_entries", "format=duration:stream=width,height,duration:stream_side_data=rotation:stream_tags=rotate",
+            "-show_entries", "format=duration:stream=width,height,duration,color_transfer,color_primaries,color_space"
+                + ":stream_side_data=rotation:stream_tags=rotate",
             "-of", "json", videoPath,
         ];
         var json = await CaptureToolProcess.RunAsync(settings.BetaVideo.FfprobePath, args, ProbeTimeout, null, ct);
         return ParseProbe(json) ?? throw new InvalidDataException("The file is not a readable video.");
     }
 
-    /// <summary>ffprobe's JSON → duration and DISPLAYED size (a ±90° rotation swaps them); null without a video stream.</summary>
+    /// <summary>
+    /// ffprobe's JSON → duration, DISPLAYED size (a ±90° rotation swaps them) and colour tags; null
+    /// without a video stream.
+    /// </summary>
     public static CaptureVideoProbe? ParseProbe(string json)
     {
         using var doc = JsonDocument.Parse(json);
@@ -64,7 +69,12 @@ public sealed class CaptureVideoFrameExtractor(BlocwerkSettings settings) : ICap
         }
 
         var quarterTurn = Math.Abs(Rotation(stream)) % 180 == 90;
-        return quarterTurn ? new CaptureVideoProbe(duration, height, width) : new CaptureVideoProbe(duration, width, height);
+        return new CaptureVideoProbe(duration, quarterTurn ? height : width, quarterTurn ? width : height)
+        {
+            ColorTransfer = Text(stream, "color_transfer"),
+            ColorPrimaries = Text(stream, "color_primaries"),
+            ColorSpace = Text(stream, "color_space"),
+        };
     }
 
     public async Task<IReadOnlyList<byte[]>> ExtractAsync(
@@ -72,11 +82,14 @@ public sealed class CaptureVideoFrameExtractor(BlocwerkSettings settings) : ICap
     {
         var probe = await ProbeAsync(videoPath, ct);
         var target = Math.Min(request.FramesPerSecond, Math.Max(1, request.MaxFrames) / probe.DurationSeconds);
+        var toneMap = HdrToneMapFilter.IsHdr(probe.ColorTransfer)
+            ? HdrToneMapFilter.Select(probe.ColorTransfer, await FfmpegFilterCatalog.GetAsync(settings.BetaVideo.FfmpegPath, ct))
+            : null;
         var work = Directory.CreateTempSubdirectory("blocwerk-capture-video-");
         try
         {
             var args = FfmpegArguments(
-                videoPath, target * Window, Path.Combine(work.FullName, "c_%05d.jpg"), MaxCandidates(request.MaxFrames));
+                videoPath, target * Window, Path.Combine(work.FullName, "c_%05d.jpg"), MaxCandidates(request.MaxFrames), toneMap);
             await CaptureToolProcess.RunAsync(
                 settings.BetaVideo.FfmpegPath, args, request.Timeout,
                 line => ReportDecode(line, probe.DurationSeconds, progress), ct);
@@ -112,9 +125,11 @@ public sealed class CaptureVideoFrameExtractor(BlocwerkSettings settings) : ICap
     /// <summary>
     /// The ffmpeg call: first video stream only, no tags, auto-rotated, ≤ MaxEdge, progress on stdout;
     /// decoding capped at <see cref="MaxPixels"/> per picture, <see cref="CaptureVideoFiles.MaxDuration"/>
-    /// of input and <paramref name="maxCandidates"/> written frames.
+    /// of input and <paramref name="maxCandidates"/> written frames. <paramref name="toneMap"/> (from
+    /// <see cref="HdrToneMapFilter.Select"/>) runs after the downscale, so HDR is mapped on the small frames only.
     /// </summary>
-    public static IReadOnlyList<string> FfmpegArguments(string videoPath, double candidateFps, string outputPattern, int maxCandidates) =>
+    public static IReadOnlyList<string> FfmpegArguments(
+        string videoPath, double candidateFps, string outputPattern, int maxCandidates, string? toneMap = null) =>
     [
         "-nostdin", "-hide_banner", "-v", "error",
         "-max_pixels", MaxPixelsArgument,
@@ -123,7 +138,8 @@ public sealed class CaptureVideoFrameExtractor(BlocwerkSettings settings) : ICap
         "-map", "0:v:0", "-an", "-sn", "-dn", "-map_metadata", "-1",
         "-vf", string.Create(
             CultureInfo.InvariantCulture,
-            $"fps={candidateFps:0.####},scale=w='min({MaxEdge},iw)':h='min({MaxEdge},ih)':force_original_aspect_ratio=decrease"),
+            $"fps={candidateFps:0.####},scale=w='min({MaxEdge},iw)':h='min({MaxEdge},ih)':force_original_aspect_ratio=decrease")
+            + (string.IsNullOrEmpty(toneMap) ? string.Empty : "," + toneMap),
         "-frames:v", maxCandidates.ToString(CultureInfo.InvariantCulture),
         "-q:v", "3", "-progress", "pipe:1", "-nostats",
         "-f", "image2", outputPattern,
@@ -158,6 +174,12 @@ public sealed class CaptureVideoFrameExtractor(BlocwerkSettings settings) : ICap
             : double.TryParse(d.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var s) ? s : 0;
         return seconds > 0 && double.IsFinite(seconds) ? seconds : null;
     }
+
+    private static string? Text(JsonElement stream, string name) =>
+        stream.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+            && value.GetString() is { Length: > 0 } text && text != "unknown"
+            ? text
+            : null;
 
     private static int Rotation(JsonElement stream)
     {
