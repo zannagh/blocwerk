@@ -68,8 +68,9 @@ public sealed record CaptureVideoInfo(string? FileName, long SizeBytes, double? 
 /// <param name="Markers">Planned markers.</param>
 /// <param name="MaxMarkerId">Highest planned id (the limit for level pairs).</param>
 /// <param name="IdsBySegment">The planned ids per segment index, for the declarations table.</param>
+/// <param name="Revision">The wall plan revision it is (null when unknown).</param>
 public sealed record CapturePlanInfo(
-    bool Uploaded, int Segments, int Markers, int MaxMarkerId, IReadOnlyDictionary<int, IReadOnlyList<int>> IdsBySegment);
+    bool Uploaded, int Segments, int Markers, int MaxMarkerId, IReadOnlyDictionary<int, IReadOnlyList<int>> IdsBySegment, int? Revision = null);
 
 /// <summary>The outcome of uploading (or removing) a draft's marker plan.</summary>
 /// <param name="Accepted">True when the draft now runs with it.</param>

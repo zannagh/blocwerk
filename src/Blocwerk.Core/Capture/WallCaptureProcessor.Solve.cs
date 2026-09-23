@@ -6,7 +6,10 @@ using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Capture;
 
-/// <summary>Stage 2: the solve job, then import + activation through <see cref="IWallGlyphService"/>.</summary>
+/// <summary>
+/// Stage 2: the solve job, the registration to the active model (<c>WallCaptureProcessor.Register.cs</c>),
+/// then import + activation through <see cref="IWallGlyphService"/>.
+/// </summary>
 public sealed partial class WallCaptureProcessor
 {
     private const string SolveKind = "solve";
@@ -19,11 +22,16 @@ public sealed partial class WallCaptureProcessor
         var capture = run.Capture;
         if (await ImportedModelAsync(capture, ct) is { } existing)
         {
-            // A previous process imported (and activated) the model but died before recording it.
-            logger.LogInformation("Capture {CaptureId} already imported model {ModelId}; resuming from it", capture.Id, existing);
-            capture.GeometryModelId = existing;
-            await UpdateAsync(capture.Id, c => c.GeometryModelId = existing, ct);
+            // A previous process imported the model but died before recording it.
+            logger.LogInformation("Capture {CaptureId} already imported model {ModelId}; resuming from it", capture.Id, existing.Id);
+            capture.GeometryModelId = existing.Id;
+            await UpdateAsync(capture.Id, c => c.GeometryModelId = existing.Id, ct);
             await CheckPlacementAsync(run, null, ct);
+            if (!existing.IsActive)
+            {
+                throw new CaptureFailedException(NotActivatedMessage(null));
+            }
+
             return;
         }
 
@@ -43,7 +51,9 @@ public sealed partial class WallCaptureProcessor
         var glyphs = new WallGlyphService(
             dbContextFactory, new CaptureActingUser(run.User), loggerFactory.CreateLogger<WallGlyphService>());
         var notes = string.IsNullOrWhiteSpace(capture.Notes) ? "In-app capture" : $"In-app capture: {capture.Notes}";
-        var imported = await glyphs.ImportGeometryAsync(capture.WallId, json, notes, ModelSource(capture.Id));
+        var frame = await RegisterToActiveAsync(run, json, ct);
+        var options = new GeometryImportOptions(capture.PlanJson is null ? null : capture.PlanRevision, frame.Activate);
+        var imported = await glyphs.ImportGeometryAsync(capture.WallId, frame.Json, notes, ModelSource(capture.Id), options);
         if (!imported.Succeeded)
         {
             throw new CaptureFailedException("The computed model could not be used: " + string.Join(" ", imported.Errors));
@@ -51,17 +61,29 @@ public sealed partial class WallCaptureProcessor
 
         capture.GeometryModelId = imported.Model!.Id;
         await UpdateAsync(capture.Id, c => c.GeometryModelId = imported.Model.Id, ct);
+
+        // The placement check compares the plan with what THIS solve measured (not with carried-over markers).
         await CheckPlacementAsync(run, json, ct);
+        if (!frame.Activate)
+        {
+            throw new CaptureFailedException(NotActivatedMessage(frame.Refusal));
+        }
     }
 
-    private async Task<Guid?> ImportedModelAsync(WallCapture capture, CancellationToken ct)
+    private static string NotActivatedMessage(string? reason) =>
+        (reason is null ? string.Empty : reason + " ")
+        + "The new 3D model was saved but NOT activated, so hold positions stay as they are. Re-capture with more unchanged "
+        + "markers in view, or activate the new model from the model history if its frame change is acceptable.";
+
+    private async Task<(Guid Id, bool IsActive)?> ImportedModelAsync(WallCapture capture, CancellationToken ct)
     {
         var source = ModelSource(capture.Id);
         await using var db = dbContextFactory.CreateDbContext();
-        return await db.WallGeometryModels
+        var model = await db.WallGeometryModels
             .Where(m => m.WallId == capture.WallId && m.Source == source)
-            .Select(m => (Guid?)m.Id)
+            .Select(m => new { m.Id, m.IsActive })
             .FirstOrDefaultAsync(ct);
+        return model is null ? null : (model.Id, model.IsActive);
     }
 
     private async Task<string> SubmitSolveAsync(CaptureRun run, IComputeJobClient client, CancellationToken ct)

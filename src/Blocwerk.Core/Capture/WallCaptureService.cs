@@ -96,7 +96,8 @@ public sealed partial class WallCaptureService(
             .Where(p => p.CaptureId == draft.Id)
             .OrderBy(p => p.Index)
             .ToListAsync();
-        var plan = PlanInfo(draft, await DraftLayoutAsync(db, draft));
+        var revision = draft.PlanJson is not null ? draft.PlanRevision : await MarkerBaselines.CurrentRevisionAsync(db, draft.WallId);
+        var plan = PlanInfo(draft, await DraftLayoutAsync(db, draft), revision);
         var video = draft.VideoStoredPath is null
             ? null
             : new CaptureVideoInfo(draft.VideoFileName, draft.VideoSizeBytes ?? 0, draft.VideoDurationSeconds);

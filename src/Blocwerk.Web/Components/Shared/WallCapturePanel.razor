@@ -41,13 +41,14 @@
             <p class="hint">
                 The marker-plan.json from the marker planner. With it the server knows which marker sits on which
                 surface, how big each one is and how steep each surface is — and tells you afterwards if a marker
-                isn't where the plan puts it.
+                isn't where the plan puts it. A plan that differs from the wall's is saved as its next revision; the new
+                model is lined up with the current one through the markers that did not change.
             </p>
             @if (draft?.Plan is { } plan)
             {
                 <p class="hint capture-plan-status" role="status">
-                    Using @(plan.Uploaded ? "the uploaded" : "this wall's saved") marker plan: @plan.Segments surfaces,
-                    @plan.Markers markers.
+                    Using @(plan.Uploaded ? "the uploaded" : "this wall's saved") marker plan@(plan.Revision is { } rev ? $" (revision {rev})" : string.Empty):
+                    @plan.Segments surfaces, @plan.Markers markers.
                     @if (plan.Uploaded)
                     {
                         <button class="btn-link" @onclick="RemovePlanAsync" disabled="@busy">Don't use it</button>

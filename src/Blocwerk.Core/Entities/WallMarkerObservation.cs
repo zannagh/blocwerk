@@ -41,4 +41,10 @@ public class WallMarkerObservation
     public bool Synthetic { get; set; }
 
     public DateTimeOffset DetectedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    /// <summary>
+    /// The wall's marker plan revision when the photo was detected (null: no plan yet, the legacy ids). A
+    /// marker changed in a later revision is never mapped with its new pose (see <c>MarkerRevisionScope</c>).
+    /// </summary>
+    public int? PlanRevision { get; set; }
 }

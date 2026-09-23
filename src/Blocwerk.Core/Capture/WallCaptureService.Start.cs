@@ -59,7 +59,12 @@ public sealed partial class WallCaptureService
                 return errors;
             }
 
-            // The capture keeps the plan it started with: later edits of the wall's plan don't change it.
+            // The capture keeps the plan (and revision) it started with: later edits of the wall's plan don't change it.
+            if (capture.PlanJson is null)
+            {
+                capture.PlanRevision = layout.IsFromPlan ? await MarkerBaselines.CurrentRevisionAsync(db, capture.WallId) : null;
+            }
+
             capture.PlanJson = layout.Plan is { } plan ? MarkerPlanJson.ToJson(plan) : null;
             capture.DeclarationsJson = CaptureDeclarationRules.Serialize(declarations);
             capture.Notes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim()[..Math.Min(notes.Trim().Length, 2048)];

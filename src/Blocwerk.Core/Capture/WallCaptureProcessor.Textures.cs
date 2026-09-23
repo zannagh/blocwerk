@@ -47,7 +47,10 @@ public sealed partial class WallCaptureProcessor
     private async Task<string> SubmitTexturesAsync(Guid captureId, Guid modelId, IComputeJobClient client, CancellationToken ct)
     {
         await using var db = dbContextFactory.CreateDbContext();
-        var geometry = await db.WallGeometryModels.Where(m => m.Id == modelId).Select(m => m.Json).FirstAsync(ct);
+        var stored = await db.WallGeometryModels.Where(m => m.Id == modelId).Select(m => m.Json).FirstAsync(ct);
+
+        // Facets carried over from the previous model were not photographed now: they keep its textures.
+        var geometry = RegisteredGeometry.WithoutFacets(stored, RegisteredGeometry.Carried(stored).CarriedFacets);
         var cameras = CameraNames(geometry);
         var parts = new List<ComputeJobPart> { ComputeJobPart.Json("geometry", geometry) };
         foreach (var photo in await LoadPhotosAsync(captureId, ct))
@@ -93,6 +96,8 @@ public sealed partial class WallCaptureProcessor
             {
                 rows.Add(await DownloadTextureAsync(modelId, entry, status.JobId!, client, ct));
             }
+
+            await CopyCarriedTexturesAsync(modelId, rows, ct);
 
             await ReplaceTexturesAsync(modelId, rows, ct);
         }

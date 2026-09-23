@@ -49,4 +49,10 @@ public class WallGeometryModel
 
     [MaxLength(2048)]
     public string? Notes { get; set; }
+
+    /// <summary>
+    /// The marker plan revision the model was solved with (<see cref="WallMarkerPlan.Revision"/>); null for
+    /// the legacy <c>segment*6+role</c> convention or an uploaded file.
+    /// </summary>
+    public int? PlanRevision { get; set; }
 }

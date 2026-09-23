@@ -30,6 +30,7 @@
                 <li><strong>Generate markers</strong>, then drag them where they fit around your holds and change sizes if needed.</li>
                 <li><strong>Save and download the PDF</strong>: it has the placement map and every marker at true size. Print at 100 %.</li>
                 <li><strong>Stick the markers up</strong> as the map shows, and <strong>keep the JSON with your photos</strong> — upload it together with every photo dump of this wall.</li>
+                <li><strong>Changing markers later</strong> (adding some, smaller fillers, moving a few) is fine: every save is a new revision. Print only the changed ones, photograph the changed areas and keep at least 3 unchanged markers in view, so the new 3D model lines up with the old one and your holds stay put.</li>
             </ol>
         </details>
 
@@ -101,6 +102,8 @@
                     <h2>Check</h2>
                     <MarkerPlanIssueList Issues="issues" OnPick="PickIssue" />
                 </section>
+
+                <MarkerPlanRevisionsCard Changes="changes" Revisions="revisions" Busy="busy" OnDownloadChangedPdf="DownloadChangedPdfAsync" />
 
                 <MarkerPlanFilesCard Busy="busy" Dirty="dirty" HasErrors="HasErrors" HasGeometry="hasGeometry"
                                      OnSave="SaveAsync" OnDownloadJson="DownloadJsonAsync" OnDownloadPdf="DownloadPdfAsync"

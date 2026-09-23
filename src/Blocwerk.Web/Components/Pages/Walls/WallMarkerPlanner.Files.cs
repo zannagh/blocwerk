@@ -50,7 +50,22 @@ public partial class WallMarkerPlanner
 
         dirty = false;
         hadSavedPlan = true;
-        message = "Plan saved. Download the PDF to print, and keep the JSON with your photos.";
+        revisions = await Plans.GetRevisionsAsync(WallId);
+        message = result.Unchanged
+            ? $"Nothing changed — still revision {result.Revision}."
+            : $"Saved as revision {result.Revision}. Download the PDF to print, and keep the JSON with your photos.";
+    });
+
+    /// <summary>The PDF with true-size pages only for the markers added or changed since the last capture.</summary>
+    private Task DownloadChangedPdfAsync() => RunAsync(async () =>
+    {
+        if (changes is null || changes.Diff.ToPrint.Count == 0)
+        {
+            return;
+        }
+
+        var bytes = Plans.RenderPdf(plan!, wallName ?? "Wall", changes.Diff.ToPrint.ToHashSet());
+        await DownloadAsync($"{FileStem()}-changed-markers.pdf", "application/pdf", bytes);
     });
 
     private Task DownloadJsonAsync() => RunAsync(async () =>

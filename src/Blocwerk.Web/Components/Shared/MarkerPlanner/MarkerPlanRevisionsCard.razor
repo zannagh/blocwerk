@@ -1,0 +1,92 @@
+@* The plan's life over time: what changed since the markers the wall's model measured (the last capture),
+   what the next capture needs, a PDF of just the changed markers, and the saved revisions. *@
+@using System.Globalization
+@using Blocwerk.Core.MarkerPlanning
+
+<section class="mplan-card mplan-revisions">
+    <h2>Changes &amp; revisions</h2>
+    @if (Changes is null)
+    {
+        <p class="hint">No 3D model yet: the first capture measures these markers. Later changes are tracked against it.</p>
+    }
+    else if (Changes.Diff.IsEmpty)
+    {
+        <p class="glyph-ok" role="status">No marker changed since @Changes.BaselineLabel (the last capture).</p>
+    }
+    else
+    {
+        <p class="hint">Since @Changes.BaselineLabel (the last capture):</p>
+        <ul class="mplan-changes">
+            @foreach (var (label, ids) in Groups(Changes.Diff))
+            {
+                <li><strong>@ids.Count @label</strong>: @string.Join(", ", ids)</li>
+            }
+            <li>@Changes.Diff.UnchangedIds.Count unchanged</li>
+        </ul>
+        @foreach (var advice in Changes.Advice)
+        {
+            <p class="staged-hint">@advice</p>
+        }
+
+        <div class="mplan-actions">
+            <button type="button" class="btn-secondary" disabled="@(Busy || Changes.Diff.ToPrint.Count == 0)" @onclick="OnDownloadChangedPdf">
+                PDF: only the @Changes.Diff.ToPrint.Count changed marker(s)
+            </button>
+        </div>
+    }
+
+    @if (Revisions.Count > 0)
+    {
+        <details class="mplan-history">
+            <summary>@Revisions.Count saved revision(s)</summary>
+            <ul>
+                @foreach (var r in Revisions)
+                {
+                    <li>
+                        <strong>Revision @r.Revision</strong> · @r.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)
+                        @if (r.CreatedBy is not null)
+                        {
+                            <span> · @r.CreatedBy</span>
+                        }
+                        <span> · @r.Markers markers</span>
+                        @if (r.IsCurrent)
+                        {
+                            <span class="mplan-badge">current</span>
+                        }
+                        @if (r.UsedByActiveModel)
+                        {
+                            <span class="mplan-badge">3D model</span>
+                        }
+                    </li>
+                }
+            </ul>
+        </details>
+    }
+</section>
+
+@code {
+    /// <summary>Changes of the plan in the editor since the active model's markers; null without a model.</summary>
+    [Parameter]
+    public MarkerPlanChanges? Changes { get; set; }
+
+    /// <summary>Saved revisions, newest first.</summary>
+    [Parameter]
+    public IReadOnlyList<MarkerPlanRevisionInfo> Revisions { get; set; } = [];
+
+    /// <summary>An action is running.</summary>
+    [Parameter]
+    public bool Busy { get; set; }
+
+    [Parameter]
+    public EventCallback OnDownloadChangedPdf { get; set; }
+
+    private static IEnumerable<(string Label, IReadOnlyList<int> Ids)> Groups(MarkerPlanDiffResult diff) =>
+        new (string, IReadOnlyList<int>)[]
+        {
+            ("added", diff.Added),
+            ("removed", diff.Removed),
+            ("resized", diff.Resized),
+            ("moved", diff.Moved),
+            ("moved to another surface", diff.Reassigned),
+        }.Where(g => g.Item2.Count > 0);
+}

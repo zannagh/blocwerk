@@ -114,3 +114,15 @@
 .mplan-sizing { margin-top: 0.5rem; font-size: 0.875rem; }
 .mplan-sizing ul { margin: 0.25rem 0 0; padding-left: 1.1rem; }
 .mplan-sizing li { margin-bottom: 0.4rem; }
+
+/* Changes since the last capture + revision history. */
+.mplan-changes { margin: 4px 0 8px; padding-left: 18px; }
+.mplan-changes li { margin: 2px 0; overflow-wrap: anywhere; }
+.mplan-history { margin-top: 10px; }
+.mplan-history summary { cursor: pointer; font-weight: 600; color: var(--text-heading); }
+.mplan-history ul { margin: 6px 0 0; padding-left: 18px; }
+.mplan-history li { margin: 3px 0; }
+.mplan-badge {
+    display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px;
+    background: var(--accent-soft); color: var(--text-heading); font-size: 0.8em; font-weight: 600;
+}

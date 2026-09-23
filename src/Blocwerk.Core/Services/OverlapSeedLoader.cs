@@ -3,6 +3,7 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Geometry;
+using Blocwerk.Core.MarkerPlanning;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SkiaSharp;
@@ -39,8 +40,7 @@ public static class OverlapSeedLoader
         try
         {
             var document = await LoadDocumentAsync(db, wall.Id);
-            var leftPhoto = await LoadPhotoAsync(db, left);
-            var rightPhoto = await LoadPhotoAsync(db, right);
+            var (leftPhoto, rightPhoto) = await LoadPhotosAsync(db, wall.Id, left, right, document is not null);
             var seedHolds = left.Holds.Select(h => new SeedHold(h.X, h.Y, h.FacetId)).ToList();
             var seed = leftPhoto is null || rightPhoto is null
                 ? null
@@ -100,7 +100,34 @@ public static class OverlapSeedLoader
         }
     }
 
-    private static async Task<SeedPhoto?> LoadPhotoAsync(BlocwerkDbContext db, OverlapSeedSide side)
+    /// <summary>
+    /// Both photos' markers, restricted to the ids that mean the same physical marker in the old photo's
+    /// plan revision, the new photo's and (when it maps them) the active model's. A filler replaced by a
+    /// smaller one under the same id, or moved, would otherwise tie the two photos at the wrong place; a
+    /// marker only the new photo shows is simply no seed.
+    /// </summary>
+    internal static async Task<(SeedPhoto? Left, SeedPhoto? Right)> LoadPhotosAsync(
+        BlocwerkDbContext db, Guid wallId, OverlapSeedSide left, OverlapSeedSide right, bool withModel)
+    {
+        var l = await LoadPhotoAsync(db, left);
+        var r = await LoadPhotoAsync(db, right);
+        if (l is null || r is null)
+        {
+            return (l?.Photo, r?.Photo);
+        }
+
+        var scope = await MarkerRevisionScope.LoadAsync(db, wallId);
+        var revisions = withModel && scope.HasModel
+            ? new[] { l.Value.Revision, r.Value.Revision, scope.ModelRevision }
+            : [l.Value.Revision, r.Value.Revision];
+        var stable = await scope.Baselines.StableIdsAsync(revisions);
+        return stable is null ? (l.Value.Photo, r.Value.Photo) : (Keep(l.Value.Photo, stable), Keep(r.Value.Photo, stable));
+    }
+
+    private static SeedPhoto Keep(SeedPhoto photo, IReadOnlySet<int> ids) =>
+        photo with { Markers = photo.Markers.Where(m => ids.Contains(m.Id)).ToList() };
+
+    private static async Task<(SeedPhoto Photo, int? Revision)?> LoadPhotoAsync(BlocwerkDbContext db, OverlapSeedSide side)
     {
         var size = RawSize(side.Image);
         if (size is null)
@@ -119,14 +146,14 @@ public static class OverlapSeedLoader
 
         var generation = rows.Max(o => o.PanelGeneration);
         var (w, h) = size.Value;
-        var markers = rows
-            .Where(o => o.PanelGeneration == generation)
+        var photoRows = rows.Where(o => o.PanelGeneration == generation).ToList();
+        var markers = photoRows
             .Select(o => ToMarker(o, w, h))
             .OfType<DetectedMarker>()
             .GroupBy(m => m.Id)
             .Select(g => g.First())
             .ToList();
-        return new SeedPhoto(markers, w, h);
+        return (new SeedPhoto(markers, w, h), photoRows.Max(o => o.PlanRevision));
     }
 
     private static DetectedMarker? ToMarker(WallMarkerObservation o, int width, int height)

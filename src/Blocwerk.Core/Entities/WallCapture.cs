@@ -45,6 +45,12 @@ public class WallCapture
     /// </summary>
     public string? PlanJson { get; set; }
 
+    /// <summary>
+    /// The wall's marker plan revision <see cref="PlanJson"/> is (<see cref="WallMarkerPlan.Revision"/>);
+    /// null for the legacy convention.
+    /// </summary>
+    public int? PlanRevision { get; set; }
+
     /// <summary>The planned-vs-observed marker check made after the solve (<c>PlacementCheck</c> as JSON).</summary>
     public string? PlacementCheckJson { get; set; }
 

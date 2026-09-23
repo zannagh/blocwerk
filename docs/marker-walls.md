@@ -395,11 +395,12 @@ capture: the upload panel has a **Marker plan (JSON, optional)** field next to t
 `…-marker-plan.json` from the planner there. The panel then says which plan is in use (*"Using the
 uploaded marker plan: 3 surfaces, 24 markers."*), and **Don't use it** drops an uploaded plan again.
 
-- **Which plan counts.** An uploaded plan becomes the wall's saved plan **only when the wall has
-  none** (*"Saved as this wall's marker plan (it had none)."*). If the wall already has a plan, the
-  upload applies to this capture only and the saved plan is left alone. To replace a saved plan, use
-  the marker planner. Without an upload, the saved plan is used. Without either, the capture falls
-  back to the legacy scheme (see below).
+- **Which plan counts.** An uploaded plan that differs from the wall's saved plan is saved as the
+  wall's **next revision** and becomes its plan (*"Saved as revision 3 of this wall's marker plan: it
+  is the wall's plan from now on."*); the same plan again is just recognised (*"The uploaded plan is
+  the wall's saved marker plan (revision 3)."*). The notes also list what changed since the last
+  capture. Without an upload, the saved plan is used. Without either, the capture falls back to the
+  legacy scheme (see below). The capture records the revision it ran with.
 - **Errors refuse the plan.** An uploaded plan is checked like one in the planner. If it can't be
   read or has any errors, it isn't used and the reasons are listed (*"This marker plan can't be
   used:"*). Warnings don't block it.
@@ -433,6 +434,39 @@ doesn't flag every marker.
 
 The planned positions only feed this check. The solver doesn't use them as a starting point; it
 takes only each marker's surface and size from the plan.
+
+#### Changing markers later
+
+Markers change over a wall's life: you add a few, replace big fillers with smaller ones (sometimes
+under the same id, sometimes with a new one), move or remove some. That is supported; hold positions,
+boulders and panel photos stay valid.
+
+- **Every save is a revision.** The planner's **Changes & revisions** card lists the saved revisions
+  (number, date, who, markers; the current one and the one the 3D model was made with are badged).
+  Saving exactly the current plan again adds none.
+- **Changes since the last capture.** The same card compares the plan in the editor with the markers
+  the active 3D model measured (for a wall without a plan yet: the markers it found under the legacy
+  scheme): added, removed, resized, moved (more than 10 mm) and moved to another surface. A marker
+  that keeps its id but changes size or place counts as a **new** marker, never the old one.
+- **Print only what changed.** **PDF: only the N changed marker(s)** keeps the map and table but
+  prints true-size pages only for added, resized and moved markers.
+- **Photograph the changed areas** and keep **at least 3 unchanged markers, spread out,** visible in
+  overlapping photos. The capture lines the new model up with the current one using only the markers
+  that did not change (a rigid fit on their corners; one that disagrees by more than 25 mm is left
+  out), so every hold's surface and position mean the same spot as before. Surfaces you did not
+  photograph again are carried over from the current model, with their unchanged markers and textures.
+- **Too few unchanged markers.** With fewer than 3 (or all in one line, or disagreeing by more than
+  15 mm on average) the new model is stored but **not activated** and the capture fails with the
+  reason, e.g. *"Only 2 marker(s) kept their place (0, 2) — keep at least 3 unchanged, spread out,
+  visible in the photos when changing markers."* Re-capture with more unchanged markers in view, or
+  activate it from the model history if moving the holds' frame is acceptable.
+- **Old photos stay right.** Panel photos remember the plan revision they were taken with. They are
+  mapped onto the model only through markers unchanged since then, and wall-update alignment between
+  an old and a new photo only uses markers unchanged across both (a new marker is simply no anchor).
+
+**Starting a plan on a legacy wall** (e.g. one captured with ids `segment*6+role`): use **Start from
+measured wall** and save — that first revision is exactly the measured layout (same ids, surfaces,
+sizes, positions), so nothing counts as changed. Then edit and save the next revision.
 
 **Walls without a plan** use the legacy scheme: ids 0–35 only (higher ids are ignored), surface =
 `id ÷ 6`, and one marker size for the whole wall. The planner's generator numbers markers 0, 1, 2, …
@@ -616,7 +650,7 @@ refreshes about every two seconds.
 | Model ready | Done. |
 | Model ready (no textures) | The model is active, but textures failed. The 3D view works without photos on the surfaces. The error is shown underneath. |
 | Model ready (no photo-real view) | The model and textures are live; only the photo-real step failed. |
-| Failed | Nothing was activated. The error is shown in plain words in **Capture history**. |
+| Failed | Nothing was activated. The error is shown in plain words in **Capture history**. When the new model could not be lined up with the current one (too few unchanged markers), it is kept in the model history, inactive. |
 
 A capture is retried up to 3 times (including after a server restart) before it's marked failed.
 

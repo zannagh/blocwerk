@@ -25,7 +25,15 @@ public partial class WallGlyphService
     /// The import, with the model's <see cref="WallGeometryModel.Source"/> set by the caller (the capture
     /// pipeline tags its models so a resumed capture finds the one it already imported).
     /// </summary>
-    public async Task<GeometryImportResult> ImportGeometryAsync(Guid wallId, string json, string? notes, string? source)
+    public Task<GeometryImportResult> ImportGeometryAsync(Guid wallId, string json, string? notes, string? source) =>
+        ImportGeometryAsync(wallId, json, notes, source, new GeometryImportOptions());
+
+    /// <summary>
+    /// The import with the plan revision the model was solved with, and whether it becomes the active model
+    /// (a capture whose model could not be tied to the active one stores it inactive, for the admin to decide).
+    /// </summary>
+    public async Task<GeometryImportResult> ImportGeometryAsync(
+        Guid wallId, string json, string? notes, string? source, GeometryImportOptions options)
     {
         var (db, userId) = await OpenForAdminWriteAsync(wallId, "Importing a wall geometry");
         await using (db)
@@ -46,7 +54,8 @@ public partial class WallGlyphService
                 SchemaVersion = document.Version,
                 Source = source ?? $"upload (schema v{document.Version})",
                 CreatedByUserId = userId,
-                IsActive = true,
+                IsActive = options.Activate,
+                PlanRevision = options.PlanRevision,
                 WidthMm = span?.WidthMm,
                 HeightMm = span?.HeightMm,
                 ReprojRmsPx = document.Quality?.ReprojRmsPx,
@@ -54,7 +63,16 @@ public partial class WallGlyphService
             };
 
             wall.MarkerSizeMm ??= document.MarkerSizeMm;
-            await SwapActiveModelAsync(db, wallId, document, keep: null, () => db.WallGeometryModels.Add(model));
+            if (options.Activate)
+            {
+                await SwapActiveModelAsync(db, wallId, document, keep: null, () => db.WallGeometryModels.Add(model));
+            }
+            else
+            {
+                db.WallGeometryModels.Add(model);
+                await db.SaveChangesAsync();
+            }
+
             logger.LogInformation(
                 "Wall {WallId} geometry model {ModelId} imported by {UserId} ({Markers} markers, {Facets} facets)",
                 wallId, model.Id, userId, document.Markers.Count, document.Segments.Sum(s => s.Facets.Count));
@@ -197,3 +215,8 @@ public partial class WallGlyphService
         return trimmed.Length <= MaxNotesLength ? trimmed : trimmed[..MaxNotesLength];
     }
 }
+
+/// <summary>How <see cref="WallGlyphService.ImportGeometryAsync(Guid, string, string?, string?, GeometryImportOptions)"/> stores a model.</summary>
+/// <param name="PlanRevision">The marker plan revision it was solved with (null: legacy or unknown).</param>
+/// <param name="Activate">False stores it as inactive history only.</param>
+public sealed record GeometryImportOptions(int? PlanRevision = null, bool Activate = true);

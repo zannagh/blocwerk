@@ -138,10 +138,11 @@ Plans without the fields read as before: `cameraPreset` maps to the generic phon
 ## With a photo dump (the in-app capture)
 
 The capture upload takes the plan JSON next to the photos ("Marker plan (JSON, optional)"). The draft then
-runs with that plan; it becomes the wall's saved plan when the wall has none, otherwise it applies to that
-capture only (replacing a saved plan is done in the planner). Without an upload, the wall's saved plan is
-used; without either, the legacy `segment*6+role` convention with the wall's one marker size. The capture
-keeps a snapshot of the plan it started with (`WallCapture.PlanJson`).
+runs with that plan; when it differs from the wall's current plan it is saved as the wall's next revision
+(see below). Without an upload, the wall's saved plan is used; without either, the legacy `segment*6+role`
+convention with the wall's one marker size. The capture keeps a snapshot of the plan it started with
+(`WallCapture.PlanJson`) and its revision (`WallCapture.PlanRevision`); `UsePlanRevisionAsync` pins a draft
+to an older stored revision.
 
 Everything downstream reads the plan through `WallMarkerLayout` (`WallMarkerLayoutResolver`): detection
 accepts only the plan's ids, the declarations table is pre-filled with the plan's surfaces, names and
@@ -151,6 +152,22 @@ answers "did I place them right?": markers never seen or not placed, markers fou
 than planned, markers more than 100 mm from their planned spot (after a robust rigid fit of the plan onto
 each solved facet, whose origin is its markers' bounding box), and surfaces more than 5° off the planned
 angle. The list shows with the capture's result.
+
+## Revisions
+
+The JSON itself carries no revision: the app numbers every save per wall (`WallMarkerPlan.Revision`, 1, 2, …;
+saving exactly the current plan again adds none). Captures, geometry models (`WallGeometryModel.PlanRevision`)
+and panel-photo marker observations (`WallMarkerObservation.PlanRevision`) record the revision they were made
+with; null means the legacy convention. Revision "null" compares as the markers of the wall's newest legacy
+model read like "Start from measured wall" does (`MarkerPlanFromGeometry`), so a revision 1 built from it is
+unchanged.
+
+`MarkerPlanDiff` compares two revisions per id: **unchanged** only when segment, printed size (±0.5 mm) and
+centre (±10 mm, segment frame) all match; otherwise moved / resized / reassigned (combinable), added or
+removed. An id reused at another size or place is a CHANGED marker. Only unchanged markers may tie a photo
+or model of one revision to another: frame registration of a new capture (`WallFrameRegistration`, see
+`wall-geometry.schema.md`), mapping an old photo onto the model (`MarkerRevisionScope`), and the wall-update
+seed between an old and a new panel photo (`OverlapSeedLoader`).
 
 ## Reading rules
 

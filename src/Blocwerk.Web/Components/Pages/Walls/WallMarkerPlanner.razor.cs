@@ -41,6 +41,9 @@ public partial class WallMarkerPlanner
     private string? failure;
     private string? markerMessage;
     private IReadOnlyList<string> importErrors = [];
+    private MarkerCaptureBaseline? captureBaseline;
+    private MarkerPlanChanges? changes;
+    private IReadOnlyList<MarkerPlanRevisionInfo> revisions = [];
 
     /// <summary>The wall being planned.</summary>
     [Parameter]
@@ -106,6 +109,7 @@ public partial class WallMarkerPlanner
         (plan, net, canvas, wallName, blockedMessage) = (null, null, null, null, null);
         (selectedSegment, selectedMarker, addMode, dirty, confirmRegenerate) = (null, null, false, false, false);
         (message, failure, markerMessage, importErrors, issues) = (null, null, null, [], []);
+        (captureBaseline, changes, revisions) = (null, null, []);
     }
 
     private async Task LoadAsync()
@@ -129,6 +133,8 @@ public partial class WallMarkerPlanner
         var saved = await Plans.GetPlanAsync(WallId);
         hadSavedPlan = saved is not null;
         hasGeometry = await Glyphs.GetActiveGeometryAsync(WallId) is not null;
+        captureBaseline = await Plans.GetCaptureBaselineAsync(WallId);
+        revisions = await Plans.GetRevisionsAsync(WallId);
         SetPlan(saved ?? PlanSegmentEdits.NewPlan(), markDirty: saved is null);
         selectedSegment = plan!.Segments.FirstOrDefault(s => s.AttachedTo is null)?.Index;
     }
@@ -140,6 +146,7 @@ public partial class WallMarkerPlanner
         net = Plans.ComputeNet(updated);
         canvas = NetCanvasModel.Build(updated, net, options);
         issues = Plans.Validate(updated);
+        changes = captureBaseline?.CompareWith(updated.Markers);
         dirty |= markDirty;
         confirmRegenerate = false;
         if (selectedSegment is { } s && updated.Segments.All(x => x.Index != s))

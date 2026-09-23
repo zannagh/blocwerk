@@ -9,7 +9,7 @@ namespace Blocwerk.Core.Entities;
 
 /// <summary>
 /// One saved marker plan of a wall (the full plan JSON, see <c>tools/glyph/marker-plan.schema.md</c>).
-/// Every save adds a row; the newest is <see cref="IsCurrent"/> (at most one per wall, enforced by a
+/// Every save that changes the plan adds a row (the next <see cref="Revision"/>); the newest is <see cref="IsCurrent"/> (at most one per wall, enforced by a
 /// filtered unique index) and the older ones stay as history.
 /// </summary>
 public class WallMarkerPlan
@@ -35,4 +35,11 @@ public class WallMarkerPlan
 
     /// <summary>The plan the wall uses now. At most one current plan per wall.</summary>
     public bool IsCurrent { get; set; }
+
+    /// <summary>
+    /// The plan's revision number within its wall: 1 for the first save, then +1 for every save that
+    /// changes the plan. Captures, geometry models and marker observations record the revision they were
+    /// made with, so markers that were moved, resized or replaced later are never mistaken for the old ones.
+    /// </summary>
+    public int Revision { get; set; }
 }

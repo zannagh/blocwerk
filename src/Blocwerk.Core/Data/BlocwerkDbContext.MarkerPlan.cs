@@ -31,6 +31,11 @@ public partial class BlocwerkDbContext
 
             entity.HasIndex(p => new { p.WallId, p.CreatedAt });
 
+            // Revisions are numbered per wall by the service (max + 1 inside the save transaction); rows
+            // older than the column are numbered by the migration in CreatedAt order.
+            entity.Property(p => p.Revision).HasDefaultValueSql("0");
+            entity.HasIndex(p => new { p.WallId, p.Revision });
+
             entity.HasIndex(p => p.WallId)
                 .HasDatabaseName("IX_WallMarkerPlans_WallId_Current")
                 .HasFilter("\"IsCurrent\" = TRUE")

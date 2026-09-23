@@ -81,7 +81,7 @@ public class CapturePlanTests
     }
 
     [Fact]
-    public async Task UploadedPlan_DifferentFromTheWallsPlan_OnlyAppliesToThisCapture()
+    public async Task UploadedPlan_DifferentFromTheWallsPlan_BecomesItsNextRevision_AndTheCaptureRecordsIt()
     {
         using var h = new WallTestHarness();
         using var s = new CaptureScenario(h);
@@ -91,11 +91,15 @@ public class CapturePlanTests
         var other = AtticMarkerPlan.Plan with { Segments = AtticMarkerPlan.Segments.Select(g => g with { Name = g.Name + " (new)" }).ToList() };
 
         var attached = await s.Service.AttachPlanAsync(draftId, MarkerPlanJson.ToJson(other));
+        var again = await s.Service.AttachPlanAsync(draftId, MarkerPlanJson.ToJson(other));
 
         Assert.True(attached.Accepted, string.Join("\n", attached.Errors));
-        Assert.Contains(attached.Notes, n => n.Contains("unchanged"));
-        Assert.Equal("main wall", (await s.MarkerPlans.GetPlanAsync(h.WallId))!.Segments[0].Name);
-        Assert.True((await s.Service.GetDraftAsync(h.WallId))!.Plan!.Uploaded);
+        Assert.Contains(attached.Notes, n => n.Contains("Saved as revision 2"));
+        Assert.Contains(again.Notes, n => n.Contains("is the wall's saved marker plan (revision 2)"));
+        Assert.Equal("main wall (new)", (await s.MarkerPlans.GetPlanAsync(h.WallId))!.Segments[0].Name);
+        Assert.Equal([2, 1], (await s.MarkerPlans.GetRevisionsAsync(h.WallId)).Select(r => r.Revision));
+        await using var db = h.CreateContext();
+        Assert.Equal(2, (await db.WallCaptures.SingleAsync(c => c.Id == draftId)).PlanRevision);
     }
 
     [Fact]

@@ -4,6 +4,7 @@ using Blocwerk.Core.Detection.Enrichment;
 using Blocwerk.Core.Detection.Outlines;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Geometry;
+using Blocwerk.Core.MarkerPlanning;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -82,7 +83,7 @@ public sealed partial class HoldOutlineUpgradeService
 
         var metrics = metricModel is null || photo.PanelId is null
             ? []
-            : await MeasureAsync(db, photo, outlined.Proposals, metricModel, outlined.Width, outlined.Height, ct);
+            : await MeasureAsync(db, wallId, photo, outlined.Proposals, metricModel, outlined.Width, outlined.Height, ct);
         return new OutlineUpgradePhotoPlan(outlined.Proposals, metrics);
     }
 
@@ -94,10 +95,12 @@ public sealed partial class HoldOutlineUpgradeService
 
     /// <summary>
     /// Millimetre sizes for the newly outlined holds, from the photo's STORED marker observations and the
-    /// wall's active model — the ingest metric code, reused. Nothing without observations.
+    /// wall's active model — the ingest metric code, reused. Nothing without observations. Markers changed
+    /// since the photo was taken (another plan revision than the model's) are left out.
     /// </summary>
     private static async Task<Dictionary<Hold, HoldMetric>> MeasureAsync(
         BlocwerkDbContext db,
+        Guid wallId,
         OutlineUpgradePhoto photo,
         List<HoldOutlineUpgradeProposal> proposals,
         WallGeometryDocument model,
@@ -109,7 +112,8 @@ public sealed partial class HoldOutlineUpgradeService
             .AsNoTracking()
             .Where(o => o.WallPanelId == photo.PanelId && o.PanelGeneration == photo.Generation && !o.FromStagedPhoto)
             .ToListAsync(ct);
-        var markers = HoldMetricPlanner.MarkersFromObservations(rows, width, height);
+        var revisions = await MarkerRevisionScope.LoadAsync(db, wallId, ct);
+        var markers = HoldMetricPlanner.MarkersFromObservations(await revisions.FilterAsync(rows, ct), width, height);
         var outlined = proposals
             .Where(p => p.Outcome == HoldOutlineUpgradeOutcome.Outline)
             .ToDictionary(p => p.Hold, p => p.Result);

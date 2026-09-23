@@ -31,13 +31,19 @@ public sealed partial class HoldEnrichmentService
         var detection = await Task.Run(() => markerService.DetectAsync(request.Image, options, ct), ct);
         plan.MarkerPassRan = true;
         plan.MarkerCount = detection.Markers.Count;
-        await PlanObservationsAsync(db, request, detection, plan, ct);
+        var revisions = await MarkerRevisionScope.LoadAsync(db, request.Wall.Id, ct);
+        await PlanObservationsAsync(db, request, detection, plan, revisions.CurrentRevision, ct);
         var holds = PlanMarkerHoldDrops(request.Holds, detection.Markers, plan);
 
+        // The photo shows the markers of the CURRENT plan; the model may still carry an older revision.
+        // Only markers unchanged between the two may place the holds on the model.
         var document = await LoadActiveGeometryAsync(db, request.Wall.Id, ct);
+        var markers = document is null
+            ? detection.Markers
+            : await revisions.FilterAsync(detection.Markers, revisions.CurrentRevision, ct);
         var width = outlineImageSize?.Width ?? detection.ImageWidth;
         var height = outlineImageSize?.Height ?? detection.ImageHeight;
-        PlanMetrics(request, holds, detection.Markers, document, plan, (width, height), layout);
+        PlanMetrics(request, holds, markers, document, plan, (width, height), layout);
     }
 
     /// <summary>
@@ -81,14 +87,16 @@ public sealed partial class HoldEnrichmentService
     }
 
     /// <summary>
-    /// Replaces the observation rows of this exact panel photo (panel + generation + staged/live). A
-    /// legacy single-image upload has no panel to key them on and stores none.
+    /// Replaces the observation rows of this exact panel photo (panel + generation + staged/live), tagged
+    /// with the plan revision they were detected against. A legacy single-image upload has no panel to key
+    /// them on and stores none.
     /// </summary>
     private static async Task PlanObservationsAsync(
         BlocwerkDbContext db,
         HoldEnrichmentRequest request,
         MarkerDetectionResult detection,
         HoldEnrichmentPlan plan,
+        int? planRevision,
         CancellationToken ct)
     {
         if (request.PanelId is not { } panelId)
@@ -113,6 +121,7 @@ public sealed partial class HoldEnrichmentService
             SidePx = m.SidePx,
             Synthetic = m.Synthetic,
             DetectedAt = now,
+            PlanRevision = planRevision,
         }));
     }
 

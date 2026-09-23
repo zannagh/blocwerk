@@ -49,10 +49,16 @@ public interface IWallCaptureService
 
     /// <summary>
     /// Uses an uploaded marker plan JSON for this draft (null/empty removes it again). Refused with the
-    /// parse/validation errors when it is not a usable plan. Becomes the wall's saved plan when the wall
-    /// has none; otherwise it applies to this capture only.
+    /// parse/validation errors when it is not a usable plan. When it differs from the wall's current plan
+    /// it is saved as the wall's next plan revision; the draft records the revision either way.
     /// </summary>
     Task<CapturePlanResult> AttachPlanAsync(Guid captureId, string? planJson);
+
+    /// <summary>
+    /// Runs the draft with a stored revision of the wall's plan (e.g. the photos were taken before the
+    /// markers of the current revision were mounted). Refused with a reason when the revision does not exist.
+    /// </summary>
+    Task<CapturePlanResult> UsePlanRevisionAsync(Guid captureId, int revision);
 
     /// <summary>
     /// Declarations for the segments seen in the draft's photos: from the marker plan when the draft has

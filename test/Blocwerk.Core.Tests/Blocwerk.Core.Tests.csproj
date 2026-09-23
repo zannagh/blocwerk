@@ -35,6 +35,8 @@
     <!-- The planner's exports for The Attic: the legacy layout as a plan, and a suggested mixed-size layout. -->
     <Content Include="MarkerPlanning\attic-plan.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="MarkerPlanning\attic-suggested.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="MarkerRevisions\capture1-rev1-geometry.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="MarkerRevisions\capture1-rev2-geometry.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

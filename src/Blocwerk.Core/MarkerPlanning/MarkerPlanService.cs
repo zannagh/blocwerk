@@ -19,7 +19,7 @@ namespace Blocwerk.Core.MarkerPlanning;
 /// (anyone who can see the wall), writes need <see cref="WallAdminGuard"/> and are refused from any
 /// kiosk (<see cref="KioskGuard"/>) — planning markers is an owner-desk task.
 /// </summary>
-public sealed class MarkerPlanService(
+public sealed partial class MarkerPlanService(
     IDbContextFactory<BlocwerkDbContext> dbContextFactory,
     ICurrentUserService currentUserService,
     ILogger<MarkerPlanService> logger,
@@ -78,6 +78,16 @@ public sealed class MarkerPlanService(
             return new MarkerPlanSaveResult(false, issues);
         }
 
+        // Saving the plan the wall already has is no new revision: captures keep pointing at it.
+        var current = await db.WallMarkerPlans
+            .Where(p => p.WallId == wallId && p.IsCurrent)
+            .Select(p => new { p.Json, p.Revision })
+            .FirstOrDefaultAsync();
+        if (current is not null && current.Json == json)
+        {
+            return new MarkerPlanSaveResult(true, issues, current.Revision, Unchanged: true);
+        }
+
         var row = new WallMarkerPlan
         {
             WallId = wallId,
@@ -88,9 +98,9 @@ public sealed class MarkerPlanService(
         };
         await SwapCurrentAsync(db, wallId, row);
         logger.LogInformation(
-            "Wall {WallId} marker plan {PlanId} saved by {UserId} ({Segments} segments, {Markers} markers)",
-            wallId, row.Id, user.Id, plan.Segments.Count, plan.Markers.Count);
-        return new MarkerPlanSaveResult(true, issues);
+            "Wall {WallId} marker plan {PlanId} saved as revision {Revision} by {UserId} ({Segments} segments, {Markers} markers)",
+            wallId, row.Id, row.Revision, user.Id, plan.Segments.Count, plan.Markers.Count);
+        return new MarkerPlanSaveResult(true, issues, row.Revision);
     }
 
     public async Task<MarkerPlan?> BuildFromMeasuredGeometryAsync(Guid wallId, PhotoSetup photo)
@@ -132,10 +142,11 @@ public sealed class MarkerPlanService(
 
     public MarkerPlan? FromJson(string json, out IReadOnlyList<string> errors) => MarkerPlanJson.FromJson(json, out errors);
 
-    public byte[] RenderPdf(MarkerPlan plan, string wallName) => MarkerPlanPdf.Render(plan, wallName);
+    public byte[] RenderPdf(MarkerPlan plan, string wallName, IReadOnlySet<int>? printOnly = null) =>
+        MarkerPlanPdf.Render(plan, wallName, printOnly);
 
     /// <summary>
-    /// Retires the current plan and adds the new one in ONE transaction, as two saves: the filtered
+    /// Retires the current plan and adds the new one (the wall's next revision) in ONE transaction, as two saves: the filtered
     /// unique index is checked per statement and EF orders same-table statements by key, not by the
     /// index filter, so the retirement is flushed first (same pattern as the geometry model swap).
     /// </summary>
@@ -149,6 +160,8 @@ public sealed class MarkerPlanService(
         }
 
         await db.SaveChangesAsync();
+        var last = await db.WallMarkerPlans.Where(p => p.WallId == wallId).MaxAsync(p => (int?)p.Revision) ?? 0;
+        row.Revision = last + 1;
         db.WallMarkerPlans.Add(row);
         await db.SaveChangesAsync();
         await transaction.CommitAsync();

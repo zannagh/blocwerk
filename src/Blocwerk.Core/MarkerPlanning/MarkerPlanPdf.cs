@@ -17,10 +17,13 @@ public static partial class MarkerPlanPdf
 {
     private const float PointsPerMm = 72f / 25.4f;
 
-    /// <summary>Renders the whole PDF.</summary>
-    public static byte[] Render(MarkerPlan plan, string wallName)
+    /// <summary>
+    /// Renders the PDF. With <paramref name="printOnly"/> (e.g. the markers added or changed since the last
+    /// capture) the overview and table still show the whole plan, but only those markers get true-size pages.
+    /// </summary>
+    public static byte[] Render(MarkerPlan plan, string wallName, IReadOnlySet<int>? printOnly = null)
     {
-        var pages = MarkerPlanPdfLayout.Build(plan);
+        var pages = MarkerPlanPdfLayout.Build(plan, printOnly);
         var net = NetLayout.Compute(plan).Net;
         using var stream = new MemoryStream();
         using (var document = SKDocument.CreatePdf(stream, new SKDocumentPdfMetadata
@@ -36,6 +39,11 @@ public static partial class MarkerPlanPdf
                 var canvas = document.BeginPage((float)page.WidthMm * PointsPerMm, (float)page.HeightMm * PointsPerMm);
                 canvas.Scale(PointsPerMm);
                 DrawPage(new MarkerPdfCanvas(canvas), plan, net, wallName, page, i + 1, pages.Count);
+                if (printOnly is not null && page.Kind == MarkerPdfPageKind.Overview)
+                {
+                    DrawPrintOnlyNote(new MarkerPdfCanvas(canvas), plan, printOnly);
+                }
+
                 document.EndPage();
             }
 
@@ -92,6 +100,15 @@ public static partial class MarkerPlanPdf
         var footY = page.HeightMm - MarkerPlanPdfLayout.MarginMm - 12;
         c.CalibrationBar(MarkerPlanPdfLayout.MarginMm, footY);
         c.Text($"Page {number} / {count}", page.WidthMm - MarkerPlanPdfLayout.MarginMm, footY + 11, 2.4, MarkerPdfCanvas.Muted, SKTextAlign.Right);
+    }
+
+    private static void DrawPrintOnlyNote(MarkerPdfCanvas c, MarkerPlan plan, IReadOnlySet<int> printOnly)
+    {
+        var ids = plan.Markers.Select(m => m.Id).Where(printOnly.Contains).Order().ToList();
+        var text = ids.Count == 0
+            ? "Only changed markers were asked for, and none changed: no marker pages."
+            : $"Only the {ids.Count} new or changed marker(s) are printed: {string.Join(", ", ids)}. Leave the others where they are.";
+        c.Text(text, MarkerPlanPdfLayout.MarginMm, 41.5, 2.6, MarkerPdfCanvas.Accent, bold: true);
     }
 
     private static string SegmentName(MarkerPlan plan, int index) =>

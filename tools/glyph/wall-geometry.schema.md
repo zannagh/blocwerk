@@ -82,6 +82,33 @@ segment instead of `id // 6`; the facet split/move logic is unchanged, so a mark
 surface than planned is still moved to the facet its normal fits (and the app reports it). Requests
 without these fields are read exactly as before.
 
+## Registration to the active model (app-side)
+
+The solver picks its frame from what it saw (origin = the reference facet's markers' bounding box, facet
+plane origins likewise), so two captures of the same wall — or a new marker at a facet's edge — land in
+frames tens of mm apart. The solver stays stateless; the APP ties every new solve to the wall's active
+model before importing it (`WallFrameRegistration` + `WallFrameRegistrationWriter`):
+
+1. Markers eligible for the fit: present in both documents AND unchanged between the two plan revisions
+   (`MarkerPlanDiff`; same revision = all shared ids).
+2. A rigid transform (Horn's closed form) new → active on their world corners (`origin + a·u + b·v`),
+   dropping the worst marker while it misses by more than max(25 mm, 3 × median). Refused with fewer than
+   3 markers, markers within 150 mm of one line, or an RMS above 15 mm — the model is then stored
+   inactive and the capture fails with the reason.
+3. World quantities (facet frames, `cornersWorldMm`, cameras' R/t) are mapped. A new facet carrying the
+   active facet's registration markers takes that facet's **id and plane frame** (origin/u/v/normal and
+   measured angles), its markers are re-projected into it and its `extentMm` grows to cover both, so a
+   hold's `(facetId, planeA, planeB)` keeps meaning the same spot.
+4. Active facets not re-photographed are carried over verbatim, with their markers unchanged in the new
+   revision (`"carried": true` on such a marker); the `world` block stays the active model's.
+5. `quality.registration` records it: `referenceModelId`, `referencePlanRevision`, `planRevision`,
+   `usedMarkerIds`, `changedMarkerIds`, `outlierMarkerIds`, `rmsMm`, `maxMm`, `rotationDeg`,
+   `translationMm`, `renamedFacets`, `carriedFacets`, `carriedMarkerIds`. The textures job gets the
+   document without carried facets; their textures are copied from the active model.
+
+On the real 14-photo capture of The Attic, a second solve without 3 photos and with 4 renumbered markers
+differs from the first by 18 mm RMS / 39 mm max in plane coordinates; registered, by 4.8 mm RMS / 10 mm max.
+
 ## How the app uses it
 
 For a photo that sees ≥1 marker of facet `F`: pair each detected corner (pixels) with its

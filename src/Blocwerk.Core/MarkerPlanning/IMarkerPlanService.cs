@@ -13,8 +13,30 @@ public interface IMarkerPlanService
     /// <summary>The wall's saved plan, or null. Visible to anyone who can see the wall.</summary>
     Task<MarkerPlan?> GetPlanAsync(Guid wallId);
 
-    /// <summary>Validates and saves the wall's plan (wall admins only, never from a kiosk).</summary>
+    /// <summary>
+    /// Validates and saves the wall's plan as its next revision (wall admins only, never from a kiosk).
+    /// Saving exactly the current plan again adds no revision.
+    /// </summary>
     Task<MarkerPlanSaveResult> SavePlanAsync(Guid wallId, MarkerPlan plan);
+
+    /// <summary>The wall's plan revisions, newest first. Wall admins only, never from a kiosk.</summary>
+    Task<IReadOnlyList<MarkerPlanRevisionInfo>> GetRevisionsAsync(Guid wallId);
+
+    /// <summary>One stored revision of the wall's plan, or null. Wall admins only, never from a kiosk.</summary>
+    Task<MarkerPlan?> GetRevisionAsync(Guid wallId, int revision);
+
+    /// <summary>
+    /// What changed between the markers the wall's ACTIVE model measured (its plan revision, or the legacy
+    /// markers) and <paramref name="plan"/> (the plan being edited; null = the saved current plan). Null
+    /// without an active model: nothing was captured yet. Wall admins only, never from a kiosk.
+    /// </summary>
+    Task<MarkerPlanChanges?> GetChangesSinceLastCaptureAsync(Guid wallId, MarkerPlan? plan = null);
+
+    /// <summary>
+    /// The markers the wall's ACTIVE model measured, as a plan reads them (its plan revision's markers, or
+    /// the legacy markers), for comparing an edited plan live; null without an active model. Admins only.
+    /// </summary>
+    Task<MarkerCaptureBaseline?> GetCaptureBaselineAsync(Guid wallId);
 
     /// <summary>
     /// A starting plan built from the wall's ACTIVE measured geometry (<see cref="MarkerPlanFromGeometry"/>),
@@ -38,11 +60,16 @@ public interface IMarkerPlanService
     /// <summary>Parses plan JSON; null plus readable errors when it is not a valid plan.</summary>
     MarkerPlan? FromJson(string json, out IReadOnlyList<string> errors);
 
-    /// <summary>Renders the printable PDF: placement map, instructions, every marker at true size.</summary>
-    byte[] RenderPdf(MarkerPlan plan, string wallName);
+    /// <summary>
+    /// Renders the printable PDF: placement map, instructions, every marker at true size — or, with
+    /// <paramref name="printOnly"/>, only those markers (e.g. the ones changed since the last capture).
+    /// </summary>
+    byte[] RenderPdf(MarkerPlan plan, string wallName, IReadOnlySet<int>? printOnly = null);
 }
 
 /// <summary>The outcome of saving a plan.</summary>
-/// <param name="Saved">True when the plan was stored.</param>
+/// <param name="Saved">True when the plan was stored (or already was the current plan).</param>
 /// <param name="Issues">Everything <see cref="IMarkerPlanService.Validate"/> found (errors block saving).</param>
-public sealed record MarkerPlanSaveResult(bool Saved, IReadOnlyList<PlanIssue> Issues);
+/// <param name="Revision">The plan's revision number once saved.</param>
+/// <param name="Unchanged">True when it was exactly the current plan, so no revision was added.</param>
+public sealed record MarkerPlanSaveResult(bool Saved, IReadOnlyList<PlanIssue> Issues, int? Revision = null, bool Unchanged = false);

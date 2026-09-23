@@ -53,7 +53,8 @@ internal static class MarkerPlanPdfLayout
 
     private static readonly (double W, double H)[] Papers = [(210, 297), (297, 420)];
 
-    public static List<MarkerPdfPage> Build(MarkerPlan plan)
+    /// <summary>The pages; with <paramref name="printOnly"/> the true-size pages hold only those ids.</summary>
+    public static List<MarkerPdfPage> Build(MarkerPlan plan, IReadOnlySet<int>? printOnly = null)
     {
         var pages = new List<MarkerPdfPage> { new(210, 297, MarkerPdfPageKind.Overview, [], 0, 0) };
         for (var start = 0; start < plan.Markers.Count; start += TableRowsPerPage)
@@ -62,7 +63,8 @@ internal static class MarkerPlanPdfLayout
         }
 
         var holes = Holes(plan);
-        pages.AddRange(MarkerPages(plan.Markers.Where(m => double.IsFinite(m.SizeMm) && m.SizeMm > 0).OrderBy(m => m.Id), holes));
+        var printed = plan.Markers.Where(m => double.IsFinite(m.SizeMm) && m.SizeMm > 0 && (printOnly is null || printOnly.Contains(m.Id)));
+        pages.AddRange(MarkerPages(printed.OrderBy(m => m.Id), holes));
         return pages;
     }
 
