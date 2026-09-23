@@ -105,6 +105,16 @@ public sealed record WallGeometryMarker
 
     public double? ReprojRmsPx { get; init; }
 
+    /// <summary>
+    /// The marker's side length as the photos show it, mm: its corners triangulated without a size prior and
+    /// the four sides averaged. Unlike <see cref="CornersPlaneMm"/> (always exactly <see cref="SizeMm"/>) this
+    /// reveals a misprinted or misdeclared sheet. Null when seen in a single photo, or from an older solver.
+    /// </summary>
+    public double? MeasuredSideMm { get; init; }
+
+    /// <summary>How many photos <see cref="MeasuredSideMm"/> is based on; null with it.</summary>
+    public int? MeasuredSidePhotos { get; init; }
+
     /// <summary>True if any corner was reconstructed (e.g. id 1, cut off by the frame); down-weight it.</summary>
     public bool Synthetic { get; init; }
 }

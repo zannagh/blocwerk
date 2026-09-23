@@ -84,7 +84,7 @@ def _segments(sol):
     return out
 
 
-def _markers(sol, per_mk):
+def _markers(sol, per_mk, measured):
     wd, req = sol["world"], sol["req"]
     fid_of = {m: f for f, ms in sol["members"].items() for m in ms}
     n_obs = {}
@@ -100,6 +100,8 @@ def _markers(sol, per_mk):
                "cornersWorldMm": [_l(p, 2) for p in wd["corners"][m]],
                "observations": n_obs.get(m, 0),
                "reprojRmsPx": _r(per_mk.get(m, {}).get("rmsPx")),
+               "measuredSideMm": _r(measured[m]["sideMm"], 1) if m in measured else None,
+               "measuredSidePhotos": measured[m]["photos"] if m in measured else None,
                "synthetic": m in syn, "syntheticCorners": syn.get(m, [])}
         if m in sol["downweighted"]:
             rec["downweightedSigmaPx"] = sol["downweighted"][m]["sigmaPx"]
@@ -165,7 +167,7 @@ def build_document(sol, checks):
            "markerSizeMm": req.marker_size_mm,
            "world": {"origin": origin, "up": [0, 0, 1], "gravityKnown": g["known"],
                      "referenceFacet": sol["ref_facet"]},
-           "segments": segs, "markers": _markers(sol, checks["per_marker"]),
+           "segments": segs, "markers": _markers(sol, checks["per_marker"], checks["side"].get("measured", {})),
            "cameras": _cameras(sol, checks["per_image"]), "quality": q}
     if req.size_overrides_mm:
         doc["markerSizeOverridesMm"] = {str(k): v for k, v in req.size_overrides_mm.items()}

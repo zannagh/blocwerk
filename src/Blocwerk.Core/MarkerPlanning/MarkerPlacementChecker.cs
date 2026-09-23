@@ -10,7 +10,8 @@ namespace Blocwerk.Core.MarkerPlanning;
 /// <summary>
 /// Compares a marker plan with a solved geometry: markers never seen or not placed, markers on another
 /// surface than planned (the solver moves a marker whose normal fits another facet), markers far from
-/// their planned spot, and surfaces steeper or flatter than planned. A solved facet's frame has its
+/// their planned spot, markers whose measured size differs from the planned print (<see cref="MarkerSizeCheck"/>),
+/// and surfaces steeper or flatter than planned. A solved facet's frame has its
 /// origin at its markers' bounding box, not at the plan's segment corner, so positions are compared
 /// after a robust rigid 2D fit of planned onto measured centres, per facet.
 /// </summary>
@@ -48,6 +49,7 @@ public static class MarkerPlacementChecker
         }
 
         var checkedCount = CheckOffsets(layout, solved, findings);
+        CheckSizes(layout, solved, findings);
         CheckAngles(layout, document, findings);
         var ordered = findings.OrderBy(f => f.Kind).ThenBy(f => f.MarkerId).ThenBy(f => f.PlannedSegment).ToList();
         return new MarkerPlacementCheck(layout.Markers.Count, solved.Count, checkedCount, ordered);
@@ -94,6 +96,22 @@ public static class MarkerPlacementChecker
         }
 
         return compared;
+    }
+
+    private static void CheckSizes(
+        WallMarkerLayout layout, Dictionary<int, WallGeometryMarker> solved, List<MarkerPlacementFinding> findings)
+    {
+        foreach (var measured in solved.Values.OrderBy(m => m.Id))
+        {
+            if (layout.SizeOf(measured.Id) is not { } planned || MarkerSizeCheck.Mismatch(measured, planned) is not { } side)
+            {
+                continue;
+            }
+
+            findings.Add(new MarkerPlacementFinding(
+                MarkerPlacementIssue.SizeMismatch, measured.Id, layout.Markers[measured.Id].Segment, measured.Segment,
+                Math.Round(side - planned, 1), MarkerSizeCheck.Describe(measured.Id, planned, side)));
+        }
     }
 
     private static void CheckAngles(WallMarkerLayout layout, WallGeometryDocument document, List<MarkerPlacementFinding> findings)

@@ -30,7 +30,10 @@ public sealed record MarkerPlacementCheck(
 /// <param name="MarkerId">The marker concerned, if any.</param>
 /// <param name="PlannedSegment">The segment the plan puts it (or the angle) on.</param>
 /// <param name="ObservedSegment">The segment the solve found it on.</param>
-/// <param name="Value">Offset in mm (<see cref="MarkerPlacementIssue.Offset"/>) or angle difference in degrees.</param>
+/// <param name="Value">
+/// Offset in mm (<see cref="MarkerPlacementIssue.Offset"/>), angle difference in degrees, or measured minus planned
+/// size in mm (<see cref="MarkerPlacementIssue.SizeMismatch"/>).
+/// </param>
 /// <param name="Message">Plain-language description for the admin.</param>
 public sealed record MarkerPlacementFinding(
     [property: JsonPropertyName("kind")] MarkerPlacementIssue Kind,
@@ -58,4 +61,7 @@ public enum MarkerPlacementIssue
 
     /// <summary>A surface's measured angle differs clearly from the planned one.</summary>
     AngleMismatch,
+
+    /// <summary>The marker measures clearly larger or smaller in the photos than its planned printed size.</summary>
+    SizeMismatch,
 }

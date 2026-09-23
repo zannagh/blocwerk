@@ -70,7 +70,9 @@ public class ResolveRegistrationTests(ITestOutputHelper output)
         Log(name, result);
         Assert.False(result.Accepted);
         Assert.Null(result.Transform);
-        Assert.Contains("Marker 5 was planned at 100 mm but does not fit the photos as 100 mm", result.Message);
+
+        // the solver measured the sheet at its printed size: the refusal names both sizes
+        Assert.Matches(@"Marker 5 was planned at 100 mm but measures ≈12[3-7] mm in the photos; check its printed size\.", result.Message);
     }
 
     [Fact]

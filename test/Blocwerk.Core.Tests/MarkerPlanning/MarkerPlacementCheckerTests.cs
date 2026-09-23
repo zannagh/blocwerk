@@ -67,6 +67,31 @@ public class MarkerPlacementCheckerTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void AMarkerMeasuringOtherThanPlanned_IsASizeMismatch_NoiseIsNot()
+    {
+        // Marker 4 planned at 100 mm but printed at 125 mm (the solver measured 125.4 mm); marker 5 at 129 mm
+        // is within max(5 mm, 5 %) of its planned 125 mm; the rest carry no measurement (an older solve).
+        var measured = new Dictionary<int, double> { [4] = 125.4, [5] = 129 };
+        var solved = Attic with
+        {
+            Markers = Attic.Markers
+                .Select(m => measured.TryGetValue(m.Id, out var side) ? m with { MeasuredSideMm = side, MeasuredSidePhotos = 5 } : m)
+                .ToList(),
+        };
+        var plan = AtticMarkerPlan.Plan with
+        {
+            Markers = AtticMarkerPlan.Plan.Markers.Select(m => m.Id == 4 ? m with { SizeMm = 100 } : m).ToList(),
+        };
+
+        var check = MarkerPlacementChecker.Check(WallMarkerLayout.FromPlan(plan), solved, AllDetected);
+
+        var finding = Assert.Single(check.Findings);
+        Assert.Equal((MarkerPlacementIssue.SizeMismatch, (int?)4), (finding.Kind, finding.MarkerId));
+        Assert.Equal(25.4, finding.Value!.Value, 1);
+        Assert.Equal("Marker 4 was planned at 100 mm but measures ≈125 mm in the photos; check its printed size.", finding.Message);
+    }
+
+    [Fact]
     public void RobustFit_IgnoresOneBadPoint_AndMeasuresItsOffset()
     {
         PlanVector[] planned = [new(0, 0), new(1000, 0), new(1000, 800), new(0, 800), new(500, 400)];

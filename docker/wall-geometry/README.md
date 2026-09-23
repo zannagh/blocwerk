@@ -58,11 +58,20 @@ the whole dictionary, and every observed id must be in `markerSegments`), no dup
 
 **Response** (`result.geometry` of the finished job, also file `wall-geometry.json`): the schema's
 document plus: per segment `declared`, `declaredVsMeasuredDeg`; per facet `markerIds`,
-`angleToReferenceFacetDeg`; per marker `nominalSegment`, `sizeMm`, `downweightedSigmaPx`; `world`
+`angleToReferenceFacetDeg`; per marker `nominalSegment`, `sizeMm`, `downweightedSigmaPx`, `measuredSideMm` +
+`measuredSidePhotos` (see below); `world`
 `gravityKnown`, `referenceFacet`; `quality` `gravity` (`"unknown"` or the constraints used),
 `gravityDetail` (per-constraint residual degrees), `checks.declaredVsMeasuredDeg`,
 `checks.levelPairs` (height differences), `facetDecisions`, `downweightedMarkers`, `unusedPhotos`,
 `intrinsics`, optional `leaveOnePhotoOut`.
+
+**Measured marker size.** The solved corners are always exactly the declared `sizeMm` square, so
+they cannot reveal a misprinted or misdeclared sheet. `measuredSideMm` can: each corner is
+triangulated (no size prior) from every photo that shows the marker, with the solved cameras fixed,
+and the four sides are averaged. The cameras' scale comes from all markers, so one marker declared
+as 100 mm but printed at 125 mm still measures ≈125 mm. `measuredSidePhotos` is the photo count;
+both are `null` for a marker seen in a single photo. On capture 1 (125 mm prints) the markers
+average 125.4 mm, within ±3 mm except the bent marker 32 (2 photos, 133.7 mm).
 
 ### What the solver decides by itself (no wall-specific code)
 

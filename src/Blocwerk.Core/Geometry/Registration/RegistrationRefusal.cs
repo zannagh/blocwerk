@@ -36,7 +36,7 @@ internal static class RegistrationRefusal
             : solved.Markers.Select(m => m.Id).Distinct().Where(id => flagged.Contains(id) && !unchangedIds.Contains(id)).Order().ToList();
         if (changedFlagged.Count > 0)
         {
-            var each = changedFlagged.Select(id => DoesNotFit(id, solved.FindMarker(id)?.SizeMm, details[id.ToString()]));
+            var each = changedFlagged.Select(id => DoesNotFit(id, solved.FindMarker(id), details[id.ToString()]));
             return string.Join(" ", each)
                    + " Changed marker(s) that do not fit distort the whole new model, so it cannot be activated: correct the size "
                    + "in the marker plan (or reprint the sheet at the planned size, or put it where the plan says) and capture again.";
@@ -85,6 +85,10 @@ internal static class RegistrationRefusal
         {
             parts.Add($"The new solve itself could not fit marker(s) {string.Join(", ", flagged)} to the photos: check their printed "
                       + "size in the marker plan (a resized sheet that was not reprinted distorts the whole model) and that the sheets lie flat.");
+            parts.AddRange(flagged
+                .Select(solved.FindMarker)
+                .Where(m => m?.SizeMm is not null && MarkerSizeCheck.Mismatch(m, m.SizeMm) is not null)
+                .Select(m => MarkerSizeCheck.Describe(m!.Id, m.SizeMm!.Value, m.MeasuredSideMm!.Value)));
         }
 
         var reproj = solved.Quality?.ReprojRmsPx;
@@ -105,8 +109,14 @@ internal static class RegistrationRefusal
         return string.Join(" ", parts);
     }
 
-    private static string DoesNotFit(int id, double? sizeMm, WallGeometryDownweightedMarker d)
+    private static string DoesNotFit(int id, WallGeometryMarker? marker, WallGeometryDownweightedMarker d)
     {
+        var sizeMm = marker?.SizeMm;
+        if (sizeMm is { } planned && MarkerSizeCheck.Mismatch(marker, planned) is { } measured)
+        {
+            return MarkerSizeCheck.Describe(id, planned, measured);
+        }
+
         var size = sizeMm is { } mm ? $"was planned at {mm:0} mm but does not fit the photos as {mm:0} mm" : "does not fit the photos";
         var px = d.FreeRmsPx is { } free && d.MedianRmsPx is { } median
             ? $" (it misses by {free:0.0} px where a typical marker misses by {median:0.0} px)"

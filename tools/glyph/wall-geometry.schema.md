@@ -58,6 +58,10 @@ normalized 0..1 pipeline is reinterpreted.
       "cornersWorldMm": [[x,y,z], ...],
       "observations": 2,                     // photos it was solved from
       "reprojRmsPx": 0.8,
+      "measuredSideMm": 125.4,               // optional (null if seen in 1 photo): mean side length
+                                             // triangulated from its photos with the solved cameras;
+                                             // the corners above are always exactly sizeMm, this is not
+      "measuredSidePhotos": 5,               // optional: photos measuredSideMm is based on (null with it)
       "synthetic": false                     // true if any corner came from reconstruction (e.g. id 1)
     }
   ],

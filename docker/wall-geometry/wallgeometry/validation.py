@@ -40,15 +40,18 @@ def _triangulate(rays):
 
 def side_check(sol):
     """Triangulate every corner seen >= 2x with the solved cameras FIXED; compare sides with the
-    declared marker size. No marker-size prior enters the triangulation: an independent scale check."""
+    declared marker size. No marker-size prior enters the triangulation: an independent scale check.
+    `measured`: per marker seen in >= 2 photos, the mean triangulated side (mm) and that photo count;
+    the scale comes from the cameras, i.e. from all markers, so one misdeclared size shows up here."""
     fp, fx, cams, req = sol["fprob"], sol["fx"], sol["cams"], sol["req"]
     by_id = {}
     for o in sol["obs"]:
         if not o["synthetic"] and o["id"] in fp.mids:
             by_id.setdefault(o["id"], []).append(o)
-    errs, per = [], {}
+    errs, per, measured = [], {}, {}
     for m, ol in by_id.items():
-        if len(ol) < 2:
+        photos = len({o["image"] for o in ol})
+        if photos < 2:
             continue
         pts = []
         for ci in range(4):
@@ -65,12 +68,13 @@ def side_check(sol):
         pts = np.array(pts)
         sides = np.linalg.norm(pts - np.roll(pts, -1, 0), axis=1)
         per[m] = [round(float(s), 2) for s in sides]
+        measured[m] = {"sideMm": float(sides.mean()), "photos": photos}
         errs.extend(sides - req.marker_size(m))
     if not errs:
-        return {"markers": 0, "rmsErrMm": None, "meanErrMm": None, "perMarker": {}}
+        return {"markers": 0, "rmsErrMm": None, "meanErrMm": None, "perMarker": {}, "measured": {}}
     errs = np.array(errs)
     return {"markers": len(per), "rmsErrMm": float(np.sqrt(np.mean(errs ** 2))),
-            "meanErrMm": float(errs.mean()), "perMarker": per}
+            "meanErrMm": float(errs.mean()), "perMarker": per, "measured": measured}
 
 
 def leave_one_out(sol, progress=None):
