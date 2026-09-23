@@ -222,6 +222,9 @@ export function mount(container, view, options = {}) {
     if (startMode === 'photoreal') modeCtl.set('photoreal');
     request();
 
+    // A hold seen on two overlapping panels is drawn once; either panel's id resolves to it.
+    const holdById = id => holds.all.find(h => h.id === id || (h.duplicateIds && h.duplicateIds.includes(id)));
+
     const handle = {
         view,
         preset: goTo,
@@ -235,7 +238,7 @@ export function mount(container, view, options = {}) {
         renderNow() { tweener.step(performance.now() + 1e6); controls.update(); tick(performance.now()); },
         /** Looks straight at one hold from `distanceMm` out along its facet normal (close-ups). */
         focusHold(id, distanceMm = 900) {
-            const hold = holds.all.find(h => h.id === id);
+            const hold = holdById(id);
             const f = hold && holds.facets.get(hold.facetId);
             if (!f) return;
             const target = new THREE.Vector3(...f.origin).addScaledVector(new THREE.Vector3(...f.u), hold.planeA)
@@ -244,7 +247,7 @@ export function mount(container, view, options = {}) {
             request();
         },
         selectHold(id) {
-            const hold = holds.all.find(h => h.id === id);
+            const hold = holdById(id);
             if (!hold) return;
             placeSelection(selection, hold, holds.facets.get(hold.facetId));
             ui.showHold(hold);

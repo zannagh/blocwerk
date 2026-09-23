@@ -6,6 +6,7 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
 using Blocwerk.Core.Geometry;
 using Blocwerk.Core.Geometry.View3D;
 using Microsoft.EntityFrameworkCore;
@@ -68,12 +69,20 @@ public sealed class Wall3DViewService(
         }
 
         Dictionary<Wall3DPhotoKey, Wall3DPhotoMarkers> photoMarkers;
+        List<HoldLinkPair> holdLinks;
         await using (var db = await dbContextFactory.CreateDbContextAsync(ct))
         {
             photoMarkers = await Wall3DPhotoMarkerLoader.LoadAsync(db, wall.Id, ct);
+
+            // Overlapping panels each store their own copy of a hold; these links say which copies are one.
+            holdLinks = await db.HoldLinks
+                .AsNoTracking()
+                .Where(l => l.WallId == wall.Id && l.Kind == HoldLinkKind.Same)
+                .Select(l => new HoldLinkPair(l.HoldAId, l.HoldBId))
+                .ToListAsync(ct);
         }
 
-        var view = Wall3DViewBuilder.Build(wall, doc, boulderId, photoMarkers);
+        var view = Wall3DViewBuilder.Build(wall, doc, boulderId, photoMarkers, holdLinks);
         return new Wall3DViewResult(Wall3DViewStatus.Ok, wall.Name, await WithImageryAsync(view, shareToken, ct));
     }
 

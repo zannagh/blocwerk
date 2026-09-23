@@ -76,6 +76,8 @@ public partial class Wall3D
         }
     }
 
+    private static string HoldCountText(Wall3DView view) => Wall3DHoldCountText.Format(view);
+
     private static string UnplacedText(int count) =>
         count == 1 ? "1 hold not measured yet" : $"{count} holds not measured yet";
 }

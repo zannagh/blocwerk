@@ -167,6 +167,8 @@ function showCard(card, h, close) {
         : 'size not measured yet';
     const used = h.usageCount === 1 ? 'Used by 1 boulder' : `Used by ${h.usageCount} boulders`;
     card.append(head, el('div', 'w3d-card-line', size), el('div', 'w3d-card-line', used));
+    const copies = h.duplicateIds ? h.duplicateIds.length + 1 : 1;
+    if (copies > 1) card.append(el('div', 'w3d-card-line', `Seen on ${copies} panels`));
     if (h.role) card.append(el('div', `w3d-card-role role-${h.role}`, ROLE_LABELS[h.role] || h.role));
     card.hidden = false;
 }

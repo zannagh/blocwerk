@@ -36,6 +36,12 @@ public sealed record Wall3DView
     public int UnplacedHoldCount { get; init; }
 
     /// <summary>
+    /// Physical holds drawn once although several overlapping panels each store a copy of them (each
+    /// such <see cref="Wall3DHold"/> lists the folded copies in <see cref="Wall3DHold.DuplicateIds"/>).
+    /// </summary>
+    public int MultiPanelHoldCount { get; init; }
+
+    /// <summary>
     /// Per-facet rectified photo textures. Empty until the rectification pipeline produces them; the
     /// renderer maps each onto its facet by <see cref="Wall3DTexture.Bounds"/>.
     /// </summary>
@@ -93,6 +99,10 @@ public sealed record Wall3DMarker(int Id, string FacetId, IReadOnlyList<double[]
 /// <param name="UsageCount">Number of live (non-archived) boulders that use the hold.</param>
 /// <param name="Role">Role in the highlighted boulder, or null when not part of it / no boulder.</param>
 /// <param name="Shape">The hold's outline on the facet, mm relative to (PlaneA, PlaneB); null only from old callers.</param>
+/// <param name="DuplicateIds">
+/// Other panels' copies of this physical hold, folded into this one (not drawn themselves); null when
+/// the hold is seen on one panel only. A tap or a boulder on any of them resolves to this hold.
+/// </param>
 public sealed record Wall3DHold(
     Guid Id,
     string FacetId,
@@ -108,7 +118,8 @@ public sealed record Wall3DHold(
     bool IsFoot,
     int UsageCount,
     Wall3DHoldRole? Role,
-    Wall3DHoldShape? Shape = null);
+    Wall3DHoldShape? Shape = null,
+    IReadOnlyList<Guid>? DuplicateIds = null);
 
 /// <summary>A hold's part in the highlighted boulder. Serialised by name for the renderer.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter<Wall3DHoldRole>))]

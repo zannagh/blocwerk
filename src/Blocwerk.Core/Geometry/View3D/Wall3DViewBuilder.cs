@@ -4,6 +4,7 @@
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Holds;
+using Blocwerk.Core.Services;
 
 namespace Blocwerk.Core.Geometry.View3D;
 
@@ -34,19 +35,27 @@ public static class Wall3DViewBuilder
     /// Stored marker observations per hold photo, so outlines map onto their facet through the same
     /// homography ingest measured them with. Optional: without them the photo's own placed holds fit one.
     /// </param>
+    /// <param name="holdLinks">
+    /// The wall's stored "same physical hold" links (<see cref="HoldLink"/>), so a hold photographed on two
+    /// overlapping panels is drawn once. Optional: without them only the geometric fallback merges copies.
+    /// </param>
     /// <returns>The view.</returns>
     public static Wall3DView Build(
         Wall wall,
         WallGeometryDocument doc,
         Guid? boulderId,
-        IReadOnlyDictionary<Wall3DPhotoKey, Wall3DPhotoMarkers>? photoMarkers = null)
+        IReadOnlyDictionary<Wall3DPhotoKey, Wall3DPhotoMarkers>? photoMarkers = null,
+        IEnumerable<HoldLinkPair>? holdLinks = null)
     {
         var frames = new Dictionary<string, FacetFrame>(StringComparer.Ordinal);
         var facets = BuildFacets(doc, wall, frames);
         var markers = BuildMarkers(doc);
 
         var boulder = boulderId is { } bid ? wall.Boulders.FirstOrDefault(b => b.Id == bid) : null;
-        var (holds, unplaced) = BuildHolds(wall, doc, frames, boulder, photoMarkers);
+        var (candidates, unplaced) = BuildHolds(wall, doc, frames, boulder, photoMarkers);
+        var twins = HoldTwinMerger.Group(candidates, holdLinks);
+        var bouldersByHold = LiveBouldersByHold(wall);
+        var holds = twins.Groups.Select(g => Fold(g, bouldersByHold)).ToList();
 
         return new Wall3DView
         {
@@ -59,6 +68,7 @@ public static class Wall3DViewBuilder
             Markers = markers,
             Holds = holds,
             UnplacedHoldCount = unplaced,
+            MultiPanelHoldCount = twins.Groups.Count(g => g.Count > 1),
             Textures = [],
             SplatUrl = null,
         };
@@ -90,24 +100,52 @@ public static class Wall3DViewBuilder
             : null;
     }
 
-    /// <summary>Places every live hold on its facet with its outline; counts the ones that cannot be placed.</summary>
-    private static (List<Wall3DHold> Holds, int Unplaced) BuildHolds(
+    /// <summary>
+    /// One physical hold, drawn as its representative (the group's first row): its role is the strongest
+    /// any copy has in the highlighted boulder, its usage the distinct live boulders using any copy.
+    /// </summary>
+    /// <param name="group">The rows of one physical hold, representative first.</param>
+    /// <param name="bouldersByHold">Live boulders per hold row.</param>
+    /// <returns>The hold to draw.</returns>
+    public static Wall3DHold Fold(IReadOnlyList<HoldTwinCandidate> group, IReadOnlyDictionary<Guid, HashSet<Guid>> bouldersByHold)
+    {
+        var rep = group[0].Placed;
+        var boulders = group.SelectMany(c => bouldersByHold.GetValueOrDefault(c.Hold.Id) ?? []).Distinct().Count();
+        if (group.Count == 1)
+        {
+            return rep with { UsageCount = boulders };
+        }
+
+        var role = group.Select(c => c.Placed.Role).Where(r => r.HasValue).OrderBy(r => r!.Value).FirstOrDefault();
+        return rep with
+        {
+            Role = role,
+            UsageCount = boulders,
+            DuplicateIds = group.Skip(1).Select(c => c.Hold.Id).ToList(),
+        };
+    }
+
+    /// <summary>The live (not archived, draft or historic) boulders using each hold row.</summary>
+    private static Dictionary<Guid, HashSet<Guid>> LiveBouldersByHold(Wall wall) =>
+        wall.Boulders
+            .Where(b => !b.IsArchived && !b.IsDraft && !b.IsHistoric)
+            .SelectMany(b => b.BoulderHolds.Select(bh => (bh.HoldId, BoulderId: b.Id)))
+            .GroupBy(p => p.HoldId)
+            .ToDictionary(g => g.Key, g => g.Select(p => p.BoulderId).ToHashSet());
+
+    /// <summary>Places every live hold row on its facet with its outline; counts the ones that cannot be placed.</summary>
+    private static (List<HoldTwinCandidate> Holds, int Unplaced) BuildHolds(
         Wall wall,
         WallGeometryDocument doc,
         Dictionary<string, FacetFrame> frames,
         Boulder? boulder,
         IReadOnlyDictionary<Wall3DPhotoKey, Wall3DPhotoMarkers>? photoMarkers)
     {
-        var usage = wall.Boulders
-            .Where(b => !b.IsArchived && !b.IsDraft && !b.IsHistoric)
-            .SelectMany(b => b.BoulderHolds.Select(bh => bh.HoldId).Distinct())
-            .GroupBy(id => id)
-            .ToDictionary(g => g.Key, g => g.Count());
         var boulderHolds = boulder?.BoulderHolds.ToDictionary(bh => bh.HoldId) ?? [];
 
         var live = LiveHolds(wall).ToList();
         var projector = HoldPlaneProjector.Create(live.Where(h => h.FacetId is not null && frames.ContainsKey(h.FacetId)), doc, photoMarkers);
-        var holds = new List<Wall3DHold>();
+        var holds = new List<HoldTwinCandidate>();
         var unplaced = 0;
         foreach (var hold in live)
         {
@@ -118,8 +156,11 @@ public static class Wall3DViewBuilder
                 continue;
             }
 
-            var placed = ToHold(hold, frame, a, b, usage.GetValueOrDefault(hold.Id), RoleOf(hold, boulder, boulderHolds));
-            holds.Add(placed with { Shape = HoldShapeProjector.Project(hold, placed.WidthMm, placed.HeightMm, projector.For(hold)) });
+            var placed = ToHold(hold, frame, a, b, 0, RoleOf(hold, boulder, boulderHolds));
+            var mapping = projector.For(hold);
+            var shape = HoldShapeProjector.Project(hold, placed.WidthMm, placed.HeightMm, mapping);
+            var tilt = mapping is { } m ? PhotoViewTilt.At(m.Map, hold.X, hold.Y) : null;
+            holds.Add(new HoldTwinCandidate(hold, placed with { Shape = shape }, tilt));
         }
 
         return (holds, unplaced);
