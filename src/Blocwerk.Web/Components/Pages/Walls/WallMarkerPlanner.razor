@@ -37,7 +37,7 @@
         <div class="mplan-layout">
             <section class="mplan-stage" aria-label="Net">
                 <div class="mplan-toolbar">
-                    <button type="button" class="mplan-tool @(addMode ? "active" : null)" aria-pressed="@addMode"
+                    <button type="button" class="mplan-tool @(addMode ? "active" : null)" aria-pressed="@(addMode ? "true" : "false")"
                             @onclick="() => addMode = !addMode">@(addMode ? "Tap a surface to place a marker…" : "+ Marker")</button>
                     <span class="hint">Tap a surface to edit it; drag markers to move them (snaps to @PlannerGeometry.SnapMm mm).</span>
                 </div>

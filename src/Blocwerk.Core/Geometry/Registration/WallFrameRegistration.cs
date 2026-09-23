@@ -65,7 +65,7 @@ public static class WallFrameRegistration
         if (rms > MaxRmsMm)
         {
             return Refuse(
-                $"The unchanged markers disagree by {rms:0} mm between the old and the new model — were some moved without "
+                $"The unchanged markers disagree by {rms:0.0} mm (at most {MaxRmsMm:0} mm is accepted) between the old and the new model — were some moved without "
                 + "updating the marker plan?", kept, changed, outliers);
         }
 

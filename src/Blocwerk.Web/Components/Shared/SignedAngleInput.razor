@@ -32,7 +32,7 @@ else
         @foreach (var option in Options)
         {
             var active = option.Sign == EffectiveSign;
-            <button type="button" class="mplan-tool @(active ? "active" : null)" aria-pressed="@active" disabled="@Disabled"
+            <button type="button" class="mplan-tool @(active ? "active" : null)" aria-pressed="@(active ? "true" : "false")" disabled="@Disabled"
                     @onclick="() => Choose(option)">@option.Name</button>
         }
     </div>

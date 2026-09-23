@@ -192,12 +192,12 @@ else
                CURRENT state reads as a status label, so nobody could tell whether "Then" meant "you
                are in Then" or "go to Then" — the two-button form is unambiguous either way round. *@
             <div class="view-toggle">
-                <button class="toggle-btn @(!_showHistoric ? "active" : "")" aria-pressed="@(!_showHistoric)"
+                <button class="toggle-btn @(!_showHistoric ? "active" : "")" aria-pressed="@(_showHistoric ? "false" : "true")"
                         @onclick="() => ShowGenerationAsync(historic: false)"
                         title="Show the wall as it is today">
                     Now
                 </button>
-                <button class="toggle-btn @(_showHistoric ? "active" : "")" aria-pressed="@_showHistoric"
+                <button class="toggle-btn @(_showHistoric ? "active" : "")" aria-pressed="@(_showHistoric ? "true" : "false")"
                         @onclick="() => ShowGenerationAsync(historic: true)"
                         title="Show the wall as it was when this boulder was set">
                     Then

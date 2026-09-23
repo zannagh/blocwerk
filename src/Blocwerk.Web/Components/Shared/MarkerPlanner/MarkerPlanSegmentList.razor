@@ -9,7 +9,7 @@
             var count = Plan.Markers.Count(m => m.Segment == segment.Index);
             <li>
                 <button type="button" class="mplan-chip @(segment.Index == Selected ? "sel" : null)"
-                        aria-pressed="@(segment.Index == Selected)" @onclick="() => OnSelect.InvokeAsync(segment.Index)">
+                        aria-pressed="@(segment.Index == Selected ? "true" : "false")" @onclick="() => OnSelect.InvokeAsync(segment.Index)">
                     #@segment.Index @segment.Name
                     <span class="mplan-chip-meta">@(segment.Shape == SegmentShape.Triangle ? "◺" : "▭") · @SurfaceAngle.Describe(segment.OverhangDeg) · @count</span>
                 </button>

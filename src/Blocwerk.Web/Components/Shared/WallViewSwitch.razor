@@ -6,11 +6,11 @@
 @if (available)
 {
     <div class="view-toggle wall-view-switch" role="group" aria-label="Wall view">
-        <button type="button" class="toggle-btn @(!Show3D ? "active" : "")" aria-pressed="@(!Show3D)"
+        <button type="button" class="toggle-btn @(!Show3D ? "active" : "")" aria-pressed="@(Show3D ? "false" : "true")"
                 @onclick="() => SetAsync(false)" title="The wall photos">
             Photos
         </button>
-        <button type="button" class="toggle-btn @(Show3D ? "active" : "")" aria-pressed="@Show3D"
+        <button type="button" class="toggle-btn @(Show3D ? "active" : "")" aria-pressed="@(Show3D ? "true" : "false")"
                 @onclick="() => SetAsync(true)" title="The measured 3D model, every hold as its real outline">
             3D
         </button>
