@@ -3,6 +3,7 @@ using SkiaSharp;
 
 namespace Blocwerk.HoldDetection.Tests;
 
+[Collection(OnnxRuntimeCollection.Name)]
 public class HoldDetectionVisualTests : IDisposable
 {
     private static readonly string WallsDir = Path.Combine(AppContext.BaseDirectory, "walls");
