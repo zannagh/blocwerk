@@ -46,6 +46,12 @@ public class BlocwerkSettings
     public ComputeServiceSettings GeometryService { get; private set; } = new();
 
     /// <summary>
+    /// Texture options sent to the geometry worker (<c>GEOMETRYSERVICE__TEXTURES__MMPERPX</c> / <c>__MAXSIDEPX</c> /
+    /// <c>__JPEGQUALITY</c>); none set = no <c>options</c> part, the worker's defaults.
+    /// </summary>
+    public GeometryTextureSettings GeometryTextures { get; private set; } = new();
+
+    /// <summary>
     /// The Gaussian-splat worker (photo-real 3D view): env <c>SPLATSERVICE__URL</c> / <c>SPLATSERVICE__APIKEY</c>.
     /// Setting the URL is the opt-in: every capture then also trains a photo-real view. Its job
     /// timeout defaults to 4 h (training is slow) instead of the geometry worker's 30 min.
@@ -57,6 +63,9 @@ public class BlocwerkSettings
     /// Lower it for quick trial runs.
     /// </summary>
     public int? SplatMaxSteps { get; private set; }
+
+    /// <summary>Opt-in authentication features; everything in it is off by default.</summary>
+    public AuthSettings Auth { get; private set; } = new();
 
     public List<string> AdminIdentifiers { get; private set; } = [];
 
@@ -98,6 +107,7 @@ public class BlocwerkSettings
                 out var port)
                 ? port
                 : 5001,
+            TrustedProxies = ConfigurationLists.Read(section, "Server:TrustedProxies", "SERVER__TRUSTEDPROXIES"),
         };
 
         Postgres = new PostgresSettings
@@ -172,12 +182,15 @@ public class BlocwerkSettings
         };
 
         GeometryService = ComputeServiceSettings.Bind(section, "GeometryService", "GEOMETRYSERVICE");
+        GeometryTextures = GeometryTextureSettings.Bind(section);
         SplatService = ComputeServiceSettings.Bind(section, "SplatService", "SPLATSERVICE", TimeSpan.FromHours(4));
         SplatMaxSteps = int.TryParse(
             section["SplatService:MaxSteps"] ?? Environment.GetEnvironmentVariable("SPLATSERVICE__MAXSTEPS"),
             out var splatSteps) && splatSteps > 0
             ? splatSteps
             : null;
+
+        Auth = AuthSettings.Bind(section);
 
         GitHubOAuth = BindOAuthProvider(section, "GitHub", "https://github.com/login/oauth/authorize");
         GoogleOAuth = BindOAuthProvider(section, "Google", "https://accounts.google.com/o/oauth2/v2/auth");
@@ -246,6 +259,15 @@ public class ServerSettings
     public string Url { get; set; } = "https://localhost:5001";
 
     public int Port { get; set; } = 5001;
+
+    /// <summary>
+    /// Reverse proxies whose <c>X-Forwarded-*</c> headers are believed: IP addresses or CIDR networks
+    /// (<c>Blocwerk:Server:TrustedProxies</c>, env <c>BLOCWERK__SERVER__TRUSTEDPROXIES__0</c> or the
+    /// comma-separated <c>SERVER__TRUSTEDPROXIES</c>). Empty keeps the historical behaviour: every
+    /// sender is trusted, so the client IP (rate limits, logs) is only as honest as the last
+    /// forwarded entry.
+    /// </summary>
+    public IReadOnlyList<string> TrustedProxies { get; set; } = [];
 
     public string JwtIssuer => Url;
 }

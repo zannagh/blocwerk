@@ -64,6 +64,16 @@
             <input id="apikey-expiry" type="date" class="form-input" @bind="expiresOn" />
             <p class="hint">Leave empty for a key that never expires.</p>
         </div>
+        @* Personal keys are the only kind minted on this page, so the capability is always offered. *@
+        <div class="form-group">
+            <label>
+                <input type="checkbox" @bind="allowWrite" />
+                Allow this key to change walls (wall updates, captures)
+            </label>
+            <p class="hint">
+                Only on walls you administer. Leave it off for keys that only read or log your own climbing.
+            </p>
+        </div>
         <button type="button" class="btn-submit" disabled="@(busy || string.IsNullOrWhiteSpace(name))" @onclick="Create">
             @(busy ? "Working..." : "Create key")
         </button>
@@ -94,6 +104,7 @@
     private Guid userId;
     private string name = string.Empty;
     private DateTime? expiresOn;
+    private bool allowWrite;
     private string? newToken;
     private string? error;
     private string copyLabel = "Copy to clipboard";
@@ -134,12 +145,17 @@
         busy = true;
         try
         {
-            var (_, token) = await ApiKeyService.CreateUserKeyAsync(userId, userId, name.Trim(), expiresAt);
+            var (_, token) = await ApiKeyService.CreateUserKeyAsync(userId, userId, name.Trim(), expiresAt, allowWrite);
             newToken = token;
             copyLabel = "Copy to clipboard";
             name = string.Empty;
             expiresOn = null;
+            allowWrite = false;
             keys = await ApiKeyService.GetUserKeysAsync(userId, userId);
+        }
+        catch (ApiKeySessionRestrictedException ex)
+        {
+            error = ex.Message;
         }
         catch (Exception ex)
         {
@@ -169,6 +185,10 @@
         catch (UnauthorizedAccessException)
         {
             error = "That key does not belong to you.";
+        }
+        catch (ApiKeySessionRestrictedException ex)
+        {
+            error = ex.Message;
         }
         catch (InvalidOperationException)
         {

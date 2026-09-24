@@ -57,13 +57,13 @@ public sealed class ApiKeyAuthenticationHandlerTests : IDisposable
         var result = await AuthenticateAsync("Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature");
 
         Assert.True(result.None);
-        await apiKeyService.DidNotReceiveWithAnyArgs().ValidateAsync(default!, default);
+        await apiKeyService.DidNotReceiveWithAnyArgs().FindActiveAsync(default!, default);
     }
 
     [Fact]
     public async Task UnknownOrRevokedToken_Fails()
     {
-        apiKeyService.ValidateAsync(ValidToken, Arg.Any<CancellationToken>()).Returns((ApiKey?)null);
+        apiKeyService.FindActiveAsync(ValidToken, Arg.Any<CancellationToken>()).Returns((ApiKey?)null);
 
         var result = await AuthenticateAsync($"Bearer {ValidToken}");
 
@@ -85,7 +85,7 @@ public sealed class ApiKeyAuthenticationHandlerTests : IDisposable
             KeyHash = "hash",
             Prefix = "bwk_0123",
         };
-        apiKeyService.ValidateAsync(ValidToken, Arg.Any<CancellationToken>()).Returns(key);
+        apiKeyService.FindActiveAsync(ValidToken, Arg.Any<CancellationToken>()).Returns(key);
 
         var result = await AuthenticateAsync($"Bearer {ValidToken}");
 
@@ -112,7 +112,7 @@ public sealed class ApiKeyAuthenticationHandlerTests : IDisposable
             KeyHash = "hash",
             Prefix = "bwk_0123",
         };
-        apiKeyService.ValidateAsync(ValidToken, Arg.Any<CancellationToken>()).Returns(key);
+        apiKeyService.FindActiveAsync(ValidToken, Arg.Any<CancellationToken>()).Returns(key);
 
         var result = await AuthenticateAsync($"Bearer {ValidToken}");
 
@@ -135,7 +135,7 @@ public sealed class ApiKeyAuthenticationHandlerTests : IDisposable
             KeyHash = "hash",
             Prefix = "bwk_0123",
         };
-        apiKeyService.ValidateAsync(ValidToken, Arg.Any<CancellationToken>()).Returns(key);
+        apiKeyService.FindActiveAsync(ValidToken, Arg.Any<CancellationToken>()).Returns(key);
 
         var result = await AuthenticateAsync($"Bearer {ValidToken}");
 
@@ -147,6 +147,48 @@ public sealed class ApiKeyAuthenticationHandlerTests : IDisposable
         Assert.Equal(ApiKeyScope.Installation, principal.GetApiKeyScope());
         Assert.Equal("Installation", principal.FindFirstValue(ApiKeyClaimTypes.Scope));
         Assert.Null(principal.GetApiKeyWallId());
+    }
+
+    [Theory]
+    [InlineData(ApiKeyScope.User, true, true)]
+    [InlineData(ApiKeyScope.User, false, false)]
+    [InlineData(ApiKeyScope.Installation, true, false)]
+    public async Task WriteClaim_OnlyOnAPersonalKeyThatAllowsWrites(ApiKeyScope scope, bool allowWrite, bool expected)
+    {
+        var key = new ApiKey
+        {
+            Name = "Script",
+            Scope = scope,
+            UserId = user.Id,
+            KeyHash = "hash",
+            Prefix = "bwk_0123",
+            AllowWrite = allowWrite,
+        };
+        apiKeyService.FindActiveAsync(ValidToken, Arg.Any<CancellationToken>()).Returns(key);
+
+        var result = await AuthenticateAsync($"Bearer {ValidToken}");
+
+        Assert.Equal(expected, result.Principal!.HasClaim(ApiKeyClaimTypes.AllowWrite, "true"));
+        await apiKeyService.Received(1).MarkUsedAsync(key, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task AKeyOfAnErasedOwner_IsNotRecordedAsUsed()
+    {
+        var key = new ApiKey
+        {
+            Name = "Orphan",
+            Scope = ApiKeyScope.User,
+            UserId = Guid.NewGuid(),
+            KeyHash = "hash",
+            Prefix = "bwk_0123",
+        };
+        apiKeyService.FindActiveAsync(ValidToken, Arg.Any<CancellationToken>()).Returns(key);
+
+        var result = await AuthenticateAsync($"Bearer {ValidToken}");
+
+        Assert.False(result.Succeeded);
+        await apiKeyService.DidNotReceiveWithAnyArgs().MarkUsedAsync(default!, default);
     }
 
     [Fact]

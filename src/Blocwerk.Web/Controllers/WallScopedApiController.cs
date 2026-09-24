@@ -1,4 +1,5 @@
 using Blocwerk.Authentication.Authorization;
+using Blocwerk.Core.Enums;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Blocwerk.Web.Controllers;
@@ -25,5 +26,26 @@ public abstract class WallScopedApiController : ControllerBase
         return StatusCode(
             StatusCodes.Status403Forbidden,
             new ApiErrorResponse("This API key is not valid for that wall."));
+    }
+
+    /// <summary>
+    /// <see cref="GuardWall"/>, but also admitting a PERSONAL key (User scope, no wall claim) whose owner
+    /// allowed it to change walls (<c>ApiKey.AllowWrite</c>). Only for actions whose service decides per
+    /// wall from the acting user — wall admin, not a kiosk — so the personal key meets exactly the checks
+    /// its owner meets in the browser, and a wall key is still pinned to its own wall. The controller's
+    /// policy must admit User keys for this to be reachable.
+    /// </summary>
+    protected IActionResult? GuardWallOrPersonalKey(Guid wallId)
+    {
+        if (User.GetApiKeyScope() == ApiKeyScope.User)
+        {
+            return User.IsWritablePersonalKey()
+                ? null
+                : StatusCode(
+                    StatusCodes.Status403Forbidden,
+                    new ApiErrorResponse("This API key may not change walls. Create a key with write access."));
+        }
+
+        return GuardWall(wallId);
     }
 }

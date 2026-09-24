@@ -3,6 +3,7 @@ using System.Diagnostics.Metrics;
 using System.Reflection;
 using Blocwerk.Authentication;
 using Blocwerk.Authentication.Controllers;
+using Blocwerk.Authentication.Endpoints;
 using Blocwerk.Core;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Enums;
@@ -123,12 +124,10 @@ public static class Program
 
         // Logs are exported to OTLP by the Serilog OpenTelemetry sink configured above, so no
         // separate Microsoft.Extensions.Logging OTLP provider is registered here.
-        builder.Services.Configure<ForwardedHeadersOptions>(options =>
-        {
-            options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost;
-            options.KnownIPNetworks.Clear();
-            options.KnownProxies.Clear();
-        });
+        // Blocwerk:Server:TrustedProxies (empty = trust every sender, as before). See TrustedProxies.
+        builder.Services.AddOptions<ForwardedHeadersOptions>()
+            .Configure<Blocwerk.Core.Configuration.BlocwerkSettings>(
+                (options, blocwerk) => TrustedProxies.Apply(options, blocwerk.Server.TrustedProxies));
 
         builder.ConfigureCoreServices(out var settings)
             .ConfigureAuthenticationAndAuthorization(settings)
@@ -289,6 +288,10 @@ public static class Program
         app.ConfigureCoreApplication();
         app.ConfigureAuthenticationMiddlewares();
         app.MapControllers();
+
+        // Personal-API-key browser login for automation. OFF by default: unmapped (a plain 404)
+        // unless Blocwerk:Auth:ApiKeyLogin:Enabled is set. See ApiKeyLoginEndpoints.
+        app.MapApiKeyLogin(settings);
 
         // Prometheus/OpenMetrics scrape endpoint for the custom + runtime + ASP.NET metrics.
         // Handy for a quick `curl http://<host>:5050/metrics` when the dashboard isn't in reach.

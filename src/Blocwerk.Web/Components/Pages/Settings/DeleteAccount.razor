@@ -25,6 +25,10 @@
             Your account couldn't be loaded just now. Please reload the page and try again.
         </p>
     }
+    else if (restricted != null)
+    {
+        <p class="member-since">@restricted</p>
+    }
     else if (unavailable || user is null || preview is null)
     {
         <p class="member-since">This page isn't available.</p>
@@ -201,6 +205,9 @@
     private bool loading = true;
     private bool unavailable;
     private bool loadFailed;
+
+    // Set when the service refuses this SESSION (signed in with an API key), not the account.
+    private string? restricted;
     private bool busy;
     private string? error;
     private bool providerReauthDone;
@@ -267,6 +274,10 @@
         {
             // Nobody the page can act for — a signed-out tab, or a session whose account is gone.
             unavailable = true;
+        }
+        catch (ApiKeySessionRestrictedException ex)
+        {
+            restricted = ex.Message;
         }
         catch (Exception)
         {
@@ -355,6 +366,11 @@
         {
             error = $"A wall still needs an owner: {string.Join(", ", ex.WallNames)}. Hand it over first.";
             preview = await AccountDeletion.PreviewAsync(user.Id);
+            return;
+        }
+        catch (ApiKeySessionRestrictedException ex)
+        {
+            error = ex.Message;
             return;
         }
         catch (Exception)

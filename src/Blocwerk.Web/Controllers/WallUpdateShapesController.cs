@@ -14,12 +14,15 @@ namespace Blocwerk.Web.Controllers;
 /// <summary>
 /// Drives the wall update's optional "recognise hold shapes" step and its review over the machine API —
 /// the same <see cref="IWallUpdateShapeService"/> methods the wizard calls, so the rules are identical:
-/// a wall API key for the wall in the route whose OWNER is an admin of it, never a kiosk (kiosk keys are a
-/// different scope, and the service refuses kiosk sessions besides). Scheme pinned to API keys.
+/// a wall API key for the wall in the route, or a PERSONAL API key created with write access
+/// (<c>ApiKey.AllowWrite</c>), in both cases only when the key's
+/// OWNER is an admin of the wall (the service's own check, the one the browser user meets). Never a kiosk
+/// or installation key (neither satisfies <see cref="BlocwerkPolicies.AnyApiKey"/>, and the service refuses
+/// kiosk sessions besides). Scheme pinned to API keys.
 /// </summary>
 [ApiController]
 [Route("api/walls/{wallId:guid}/update/shapes")]
-[Authorize(Policy = BlocwerkPolicies.WallApiKey, AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName)]
+[Authorize(Policy = BlocwerkPolicies.AnyApiKey, AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName)]
 [Produces("application/json")]
 public sealed class WallUpdateShapesController : WallScopedApiController
 {
@@ -111,7 +114,7 @@ public sealed class WallUpdateShapesController : WallScopedApiController
     /// <summary>The wall guard plus one error mapping for every action.</summary>
     private async Task<IActionResult> RunAsync(Guid wallId, Func<Task<IActionResult>> action)
     {
-        if (GuardWall(wallId) is { } guard)
+        if (GuardWallOrPersonalKey(wallId) is { } guard)
         {
             return guard;
         }

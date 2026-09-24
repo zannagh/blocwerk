@@ -38,11 +38,27 @@ public sealed class KioskGuardedApiKeyService : IApiKeyService
 {
     private readonly IApiKeyService inner;
     private readonly IKioskContext kioskContext;
+    private readonly IApiKeySessionContext? apiKeySession;
 
-    public KioskGuardedApiKeyService(IApiKeyService inner, IKioskContext kioskContext)
+    /// <summary>
+    /// Initializes a new instance of the <see cref="KioskGuardedApiKeyService"/> class, wrapping
+    /// <paramref name="inner"/> with the kiosk and API-key-session refusals.
+    /// </summary>
+    /// <param name="inner">The unguarded service.</param>
+    /// <param name="kioskContext">The kiosk axis, as described on the type.</param>
+    /// <param name="apiKeySession">
+    /// The second axis: a browser session signed in WITH an API key may neither mint nor revoke keys
+    /// (nor change a key's settings), or a leaked key could mint its own successor and outlive its
+    /// revocation. Reads stay allowed. Null (tests, tooling) means "not a key session".
+    /// </param>
+    public KioskGuardedApiKeyService(
+        IApiKeyService inner,
+        IKioskContext kioskContext,
+        IApiKeySessionContext? apiKeySession = null)
     {
         this.inner = inner;
         this.kioskContext = kioskContext;
+        this.apiKeySession = apiKeySession;
     }
 
     public Task<(ApiKey Key, string Token)> CreateWallKeyAsync(
@@ -72,10 +88,11 @@ public sealed class KioskGuardedApiKeyService : IApiKeyService
         Guid actingUserId,
         string name,
         DateTimeOffset? expiresAt,
+        bool allowWrite = false,
         CancellationToken ct = default)
     {
         EnsureNotKiosk();
-        return inner.CreateUserKeyAsync(userId, actingUserId, name, expiresAt, ct);
+        return inner.CreateUserKeyAsync(userId, actingUserId, name, expiresAt, allowWrite, ct);
     }
 
     public Task<(ApiKey Key, string Token)> CreateInstallationKeyAsync(
@@ -118,6 +135,10 @@ public sealed class KioskGuardedApiKeyService : IApiKeyService
         // INSTALLATION key is not that: the only one in production is the deploy hook's, retiring it
         // takes a capability away from the SERVER rather than from the tablet, and it would leave
         // nothing on screen to explain why deploys stopped announcing themselves.
+        //
+        // A session signed in WITH an API key is refused outright, de-escalation included: revoking
+        // the owner's other keys is how a leaked key would lock the owner's own automation out.
+        ApiKeySessionGuard.EnsureNotApiKeySession(apiKeySession);
         if (kioskContext.IsKiosk && await IsInstallationKeyAsync(apiKeyId, actingUserId, ct))
         {
             throw new KioskRestrictedException("Installation API keys cannot be revoked from a kiosk session.");
@@ -165,6 +186,7 @@ public sealed class KioskGuardedApiKeyService : IApiKeyService
         // <see cref="RevokeAsync"/> is left unguarded: an admin standing at the tablet has to be
         // able to switch that very tablet off, and refusing them would be security theatre that
         // hands them a generic error banner instead.
+        ApiKeySessionGuard.EnsureNotApiKeySession(apiKeySession);
         if (allowed)
         {
             EnsureNotKiosk("Anonymous setting cannot be switched on from a kiosk session.");
@@ -178,6 +200,16 @@ public sealed class KioskGuardedApiKeyService : IApiKeyService
         return inner.ValidateAsync(token, ct);
     }
 
+    public Task<ApiKey?> FindActiveAsync(string token, CancellationToken ct = default)
+    {
+        return inner.FindActiveAsync(token, ct);
+    }
+
+    public Task MarkUsedAsync(ApiKey key, CancellationToken ct = default)
+    {
+        return inner.MarkUsedAsync(key, ct);
+    }
+
     public Task<Guid?> ValidateKioskAsync(string token, CancellationToken ct = default)
     {
         // Never guarded: this is the call that REGISTERS a tablet, made while the request is still
@@ -188,6 +220,9 @@ public sealed class KioskGuardedApiKeyService : IApiKeyService
     private void EnsureNotKiosk(
         string message = "API keys cannot be created from a kiosk session.")
     {
+        // Every caller of this is a mint or an installation-key read; both are refused to a session
+        // signed in with an API key as well.
+        ApiKeySessionGuard.EnsureNotApiKeySession(apiKeySession);
         if (kioskContext.IsKiosk)
         {
             throw new KioskRestrictedException(message);

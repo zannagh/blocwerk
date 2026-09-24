@@ -18,6 +18,9 @@
     <!-- The cutting-plan PDF tests render with SkiaSharp; the base package ships native
          assets for Windows/macOS but not Linux, so the CI (Linux) test run needs this. -->
     <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" />
+    <!-- In-memory server for the API-key login endpoint tests: real middleware order (rate
+         limiter, cookie auth, kiosk gate, antiforgery) without starting Kestrel or Postgres. -->
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
   </ItemGroup>
 
   <ItemGroup>

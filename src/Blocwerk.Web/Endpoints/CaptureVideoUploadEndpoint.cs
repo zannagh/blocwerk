@@ -2,6 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Authentication.Authorization;
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Http.Features;
@@ -35,9 +36,13 @@ public static class CaptureVideoUploadEndpoint
     public static void MapCaptureVideoUpload(this WebApplication app)
     {
         // Antiforgery is off for the same reason as the beta-video upload: the body is streamed, and
-        // the auth cookie is SameSite=Lax, so no cross-site POST carries it.
+        // the auth cookie is SameSite=Lax, so no cross-site POST carries it (nor, for a script, the
+        // Authorization header a personal API key arrives in).
+        //
+        // A signed-in human or a PERSONAL API key with write access (ApiKey.AllowWrite) acting as its
+        // owner; never a wall, kiosk or installation key, nor a read-only personal key. The key meets exactly the cookie user's gates, all inside AddVideoAsync.
         app.MapPost("/api/captures/{captureId:guid}/video", HandleAsync)
-            .RequireAuthorization()
+            .RequireAuthorization(BlocwerkPolicies.HumanOrUserApiKey)
             .DisableAntiforgery();
     }
 

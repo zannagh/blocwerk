@@ -33,6 +33,13 @@ public partial class AccountController
     [Authorize]
     public async Task<IActionResult> Link([FromQuery] string provider)
     {
+        // A session signed in with an API key may not attach another login: that would turn a leaked
+        // key into a permanent way into the account. Refused again on the callback below.
+        if (Services.ApiKeySessionClaims.IsApiKeySession(User))
+        {
+            return Redirect("/profile?link=apikey");
+        }
+
         if (GetProviderAuthConfig(provider) is null)
         {
             return Redirect("/profile?link=unavailable");
@@ -83,6 +90,13 @@ public partial class AccountController
                 "[Web Authentication] Account-link refused for user {UserId}: kiosk session.",
                 linkUserId);
             return KioskLinkRefused();
+        }
+
+        // Linking and merging from a session signed in with an API key: same refusal as Link.
+        if (Services.ApiKeySessionClaims.IsApiKeySession(User))
+        {
+            Log.Warning("[Web Authentication] Account-link refused for user {UserId}: API key session.", linkUserId);
+            return Redirect("/profile?link=apikey");
         }
 
         User currentUser;

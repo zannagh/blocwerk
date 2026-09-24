@@ -26,12 +26,14 @@ namespace Blocwerk.Core.Tests;
 public class WallUpdateShapesControllerTests
 {
     [Fact]
-    public void Route_IsWallApiKeyOnly_SoKioskKeysNeverReachIt()
+    public void Route_IsWallOrPersonalKeyOnly_SoKioskAndInstallationKeysNeverReachIt()
     {
         var authorize = typeof(WallUpdateShapesController).GetCustomAttribute<AuthorizeAttribute>();
 
+        // AnyApiKey = Wall + User scopes; kiosk and installation keys never satisfy it (pinned in
+        // ApiKeyPrivilegeBoundaryTests.AnyApiKeyPolicy_ExcludesKioskAndInstallationKeys).
         Assert.NotNull(authorize);
-        Assert.Equal(BlocwerkPolicies.WallApiKey, authorize!.Policy);
+        Assert.Equal(BlocwerkPolicies.AnyApiKey, authorize!.Policy);
         Assert.Equal(ApiKeyAuthenticationHandler.SchemeName, authorize.AuthenticationSchemes);
         Assert.True(typeof(WallScopedApiController).IsAssignableFrom(typeof(WallUpdateShapesController)));
     }
@@ -119,18 +121,77 @@ public class WallUpdateShapesControllerTests
         Assert.IsType<BadRequestObjectResult>(badDecision);
     }
 
+    [Fact]
+    public async Task PersonalKeyOfAnAdmin_DrivesTheStep_OnAnyWallTheOwnerAdministers()
+    {
+        using var h = new WallTestHarness();
+        var f = new ShapeStepFixture(h);
+        await f.StageAsync(ShapeStepFixture.AutoHold(0.6));
+        var api = Bind(new WallUpdateShapesController(f.Service, NullLogger<WallUpdateShapesController>.Instance), keyWallId: null);
+
+        var started = await api.Start(h.WallId, new ShapeRecognitionStartRequest("new", SessionId: f.SessionId), default);
+        await f.Runner.WhenIdleAsync(f.SessionId);
+
+        Assert.IsType<AcceptedResult>(started);
+        Assert.Equal("Completed", Body<ShapeRecognitionStatusResponse>(await api.Status(h.WallId, default)).Status);
+    }
+
+    [Fact]
+    public async Task PersonalKeyOfAMember_IsForbidden_ByTheSameWallAdminCheckAsTheBrowser()
+    {
+        using var h = new WallTestHarness();
+        var f = new ShapeStepFixture(h);
+        await f.StageAsync(ShapeStepFixture.AutoHold(0.6));
+        h.ActingUser = await h.AddMemberAsync("member@test", WallRole.Member);
+        var api = Bind(new WallUpdateShapesController(f.Service, NullLogger<WallUpdateShapesController>.Instance), keyWallId: null);
+
+        var result = await api.Start(h.WallId, new ShapeRecognitionStartRequest(), default);
+
+        Assert.Equal(StatusCodes.Status403Forbidden, Assert.IsType<ObjectResult>(result).StatusCode);
+    }
+
+    [Fact]
+    public async Task PersonalKeyWithoutWriteAccess_IsForbidden_EvenForAnAdmin()
+    {
+        using var h = new WallTestHarness();
+        var f = new ShapeStepFixture(h);
+        await f.StageAsync(ShapeStepFixture.AutoHold(0.6));
+        var api = Bind(
+            new WallUpdateShapesController(f.Service, NullLogger<WallUpdateShapesController>.Instance),
+            keyWallId: null,
+            allowWrite: false);
+
+        var result = await api.Start(h.WallId, new ShapeRecognitionStartRequest(), default);
+
+        Assert.Equal(StatusCodes.Status403Forbidden, Assert.IsType<ObjectResult>(result).StatusCode);
+        Assert.Equal(ShapeRecognitionStatus.NotStarted, (await f.Service.GetStatusAsync(h.WallId)).Status);
+    }
+
     private static T Body<T>(IActionResult result) => Assert.IsType<T>(Assert.IsType<OkObjectResult>(result).Value);
 
-    private static WallUpdateShapesController Bind(WallUpdateShapesController controller, Guid keyWallId)
+    /// <summary>
+    /// A wall key bound to <paramref name="keyWallId"/>, or a personal key when it is null (with write
+    /// access unless <paramref name="allowWrite"/> is false).
+    /// </summary>
+    private static WallUpdateShapesController Bind(
+        WallUpdateShapesController controller, Guid? keyWallId, bool allowWrite = true)
     {
-        var identity = new ClaimsIdentity(
-            [
-                new Claim(ClaimTypes.NameIdentifier, "1"),
-                new Claim(ApiKeyClaimTypes.Scope, ApiKeyScope.Wall.ToString()),
-                new Claim(ApiKeyClaimTypes.ApiKeyId, Guid.NewGuid().ToString()),
-                new Claim(ApiKeyClaimTypes.WallId, keyWallId.ToString()),
-            ],
-            ApiKeyAuthenticationHandler.SchemeName);
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, "1"),
+            new(ApiKeyClaimTypes.Scope, (keyWallId is null ? ApiKeyScope.User : ApiKeyScope.Wall).ToString()),
+            new(ApiKeyClaimTypes.ApiKeyId, Guid.NewGuid().ToString()),
+        };
+        if (keyWallId is { } wallId)
+        {
+            claims.Add(new Claim(ApiKeyClaimTypes.WallId, wallId.ToString()));
+        }
+        else if (allowWrite)
+        {
+            claims.Add(new Claim(ApiKeyClaimTypes.AllowWrite, "true"));
+        }
+
+        var identity = new ClaimsIdentity(claims, ApiKeyAuthenticationHandler.SchemeName);
         controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(identity) },

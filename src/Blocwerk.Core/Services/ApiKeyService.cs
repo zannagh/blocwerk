@@ -65,6 +65,7 @@ public partial class ApiKeyService : IApiKeyService
         Guid actingUserId,
         string name,
         DateTimeOffset? expiresAt,
+        bool allowWrite = false,
         CancellationToken ct = default)
     {
         EnsureSelf(userId, actingUserId, "mint");
@@ -72,8 +73,9 @@ public partial class ApiKeyService : IApiKeyService
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);
         db.CurrentUserId = Guid.Empty;
 
-        var key = await PersistAsync(db, ApiKeyScope.User, userId, null, name, expiresAt, ct);
-        logger.LogInformation("API key {ApiKeyId} issued for user {UserId}", key.Key.Id, userId);
+        var key = await PersistAsync(db, ApiKeyScope.User, userId, null, name, expiresAt, ct, allowWrite);
+        logger.LogInformation(
+            "API key {ApiKeyId} issued for user {UserId} (write: {AllowWrite})", key.Key.Id, userId, allowWrite);
         return key;
     }
 
@@ -250,7 +252,8 @@ public partial class ApiKeyService : IApiKeyService
         Guid? wallId,
         string name,
         DateTimeOffset? expiresAt,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool allowWrite = false)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -267,6 +270,9 @@ public partial class ApiKeyService : IApiKeyService
             KeyHash = ApiKeyTokens.Hash(token),
             Prefix = prefix,
             ExpiresAt = expiresAt,
+
+            // Only a personal key can carry it; every other scope's surface is fixed by the scope.
+            AllowWrite = allowWrite && scope == ApiKeyScope.User,
         };
 
         db.ApiKeys.Add(key);

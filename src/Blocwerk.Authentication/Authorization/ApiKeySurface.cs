@@ -27,8 +27,15 @@ public static class ApiKeySurface
     /// <summary>User-scoped machine routes: the personal REST API.</summary>
     public const string UserApiPrefix = "/api/v1";
 
+    /// <summary>
+    /// Wall capture drafts (the walk-along video upload). Its endpoint admits a personal key only,
+    /// through <see cref="BlocwerkPolicies.HumanOrUserApiKey"/>; the capture service then applies the
+    /// cookie user's own gates (wall admin, not a kiosk, own open draft).
+    /// </summary>
+    public const string CapturesApiPrefix = "/api/captures";
+
     /// <summary>Every prefix an API key may authenticate under. Deliberately not /api/offline.</summary>
-    public static readonly IReadOnlyList<string> AllowedPrefixes = [WallApiPrefix, UserApiPrefix];
+    public static readonly IReadOnlyList<string> AllowedPrefixes = [WallApiPrefix, UserApiPrefix, CapturesApiPrefix];
 
     /// <summary>True when the path belongs to the machine-facing API surface.</summary>
     public static bool Covers(PathString path)

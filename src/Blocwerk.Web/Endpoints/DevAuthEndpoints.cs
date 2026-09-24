@@ -1,8 +1,7 @@
-using System.Security.Claims;
+using Blocwerk.Authentication.Services;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Web.Endpoints;
@@ -10,15 +9,17 @@ namespace Blocwerk.Web.Endpoints;
 /// <summary>
 /// DEVELOPMENT-ONLY sign-in shortcut for automated (Playwright) end-to-end tests, so a test can act
 /// as an existing wall owner WITHOUT real OAuth/password credentials. It issues the exact same auth
-/// cookie a normal password login issues (see
-/// <c>AccountController.CompletePasswordSignInAsync</c>) — same cookie scheme, same claim shape —
-/// so the resulting Blazor Server circuit is authenticated indistinguishably from a real login.
+/// cookie a normal password login issues (both go through <see cref="UserCookieSignIn"/>) — same
+/// cookie scheme, same claim shape — so the resulting Blazor Server circuit is authenticated
+/// indistinguishably from a real login.
 /// <para>
 /// This route is mapped ONLY inside the <c>app.Environment.IsDevelopment()</c> block in
 /// <c>Program.cs</c>, next to the other dev harness endpoints (<see cref="DevWallUpdateEndpoints"/>).
 /// It is NEVER mapped outside Development, and the handler additionally re-checks the environment as
 /// defence in depth. It MUST NEVER be enabled in Production: the Development + localhost boundary is
-/// the only gate — there is no token or secret guarding it. No new configuration is required.
+/// the only gate for the id/email/wall lookups — there is no token or secret guarding those. The
+/// production-safe way to do the same thing is <c>POST /account/api-key-login</c> (see
+/// <c>ApiKeyLoginEndpoints</c>), whose Bearer-key path this route also accepts.
 /// </para>
 /// </summary>
 internal static class DevAuthEndpoints
@@ -31,6 +32,8 @@ internal static class DevAuthEndpoints
     }
 
     // Signs the caller in as an existing user identified by one of, in priority order:
+    //   Authorization: Bearer bwk_… — the owner of that PERSONAL API key, validated exactly as
+    //                    /account/api-key-login validates it (401 when the key does not qualify)
     //   ?userId=<guid>  — that exact user
     //   ?email=<email>  — the user with that (normalized) email
     //   ?wallId=<guid>  — the OWNER of that wall (Wall.OwnerId)
@@ -39,6 +42,7 @@ internal static class DevAuthEndpoints
         HttpContext http,
         IHostEnvironment environment,
         IDbContextFactory<BlocwerkDbContext> factory,
+        ApiKeyLoginValidator apiKeyLoginValidator,
         Guid? userId,
         string? email,
         Guid? wallId,
@@ -51,32 +55,28 @@ internal static class DevAuthEndpoints
             return Results.NotFound();
         }
 
-        await using var db = await factory.CreateDbContextAsync(http.RequestAborted);
+        // Only ever follow a local returnUrl. The framework check refuses "//host" and "/\host",
+        // which the previous "is it a relative URI" test let through as an open redirect.
+        var target = LocalReturnUrl.IsLocal(http, returnUrl) ? returnUrl! : "/";
 
-        // Guid.Empty disables the wall membership query filter, so a wall can be resolved regardless
-        // of who (if anyone) is currently signed in. Users have no query filter.
-        db.CurrentUserId = Guid.Empty;
+        if (ApiKeyLoginValidator.ReadBearerApiKey(http.Request) is not null)
+        {
+            // Exactly the production key login: same checks, same marked, key-bounded session.
+            var result = await apiKeyLoginValidator.ValidateAsync(http.Request, http.RequestAborted);
+            if (!result.Succeeded)
+            {
+                return Results.Unauthorized();
+            }
 
-        var user = await ResolveUserAsync(db, userId, email, wallId, http.RequestAborted);
+            await ApiKeySessionSignIn.SignInAsync(http, result.User!, result.Key!);
+            return Results.Redirect(target);
+        }
+
+        var user = await ResolveUserAsync(factory, userId, email, wallId, http.RequestAborted);
         if (user is null)
         {
             return Results.NotFound();
         }
-
-        // MIRRORS AccountController.CompletePasswordSignInAsync exactly: the "uid" claim makes
-        // CurrentUserService resolve this session by the exact user id (its terminal path 0, which
-        // never creates or misresolves a user). The NameIdentifier/Name claims carry the legacy
-        // identifier and display name, matching a real password sign-in claim-for-claim.
-        var claims = new List<Claim>
-        {
-            new(ClaimTypes.NameIdentifier, user.UserAuthId),
-            new(ClaimTypes.Name, user.UserName),
-            new("Name", user.UserName),
-            new("uid", user.Id.ToString()),
-        };
-
-        var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
-        var principal = new ClaimsPrincipal(identity);
 
         // Persistent so a local dev session survives closing the browser (Development only).
         var authProperties = new AuthenticationProperties
@@ -86,34 +86,35 @@ internal static class DevAuthEndpoints
             AllowRefresh = true,
         };
 
-        await http.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, authProperties);
-
-        // Only ever follow a local returnUrl — never bounce to an absolute/cross-site value.
-        var target = !string.IsNullOrEmpty(returnUrl)
-            && Uri.TryCreate(returnUrl, UriKind.Relative, out _)
-                ? returnUrl
-                : "/";
-
+        await UserCookieSignIn.SignInAsync(http, user, authProperties);
         return Results.Redirect(target);
     }
 
     private static async Task<User?> ResolveUserAsync(
-        BlocwerkDbContext db,
+        IDbContextFactory<BlocwerkDbContext> factory,
         Guid? userId,
         string? email,
         Guid? wallId,
         CancellationToken cancellationToken)
     {
+        await using var db = await factory.CreateDbContextAsync(cancellationToken);
+
+        // Guid.Empty disables the wall membership query filter, so a wall can be resolved regardless
+        // of who (if anyone) is currently signed in. Users have no query filter; erased accounts'
+        // tombstones are skipped so the dev login cannot sign anybody in as one.
+        db.CurrentUserId = Guid.Empty;
+        var users = db.Users.Where(u => u.DeletedAt == null);
+
         if (userId is { } id)
         {
-            return await db.Users.FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
+            return await users.FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
         }
 
         if (!string.IsNullOrWhiteSpace(email))
         {
             // Email is stored normalized (trimmed, lower-cased); match it the same way.
             var normalized = email.Trim().ToLowerInvariant();
-            return await db.Users.FirstOrDefaultAsync(u => u.Email == normalized, cancellationToken);
+            return await users.FirstOrDefaultAsync(u => u.Email == normalized, cancellationToken);
         }
 
         if (wallId is { } wid)
@@ -125,7 +126,7 @@ internal static class DevAuthEndpoints
 
             if (ownerId != Guid.Empty)
             {
-                return await db.Users.FirstOrDefaultAsync(u => u.Id == ownerId, cancellationToken);
+                return await users.FirstOrDefaultAsync(u => u.Id == ownerId, cancellationToken);
             }
         }
 

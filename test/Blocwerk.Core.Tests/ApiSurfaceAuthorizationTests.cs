@@ -104,6 +104,7 @@ public class ApiSurfaceAuthorizationTests
         Assert.Contains("/api/walls/{wallId:guid}/geometry/{modelId:guid}/textures/{facetId}", routes);
         Assert.Contains("/api/walls/{wallId:guid}/geometry/{modelId:guid}/splat", routes);
         Assert.Contains("/api/v1/me/sessions", routes);
+        Assert.Contains("/api/captures/{captureId:guid}/video", routes);
 
         // The browser gallery route lives under /media, outside the prefixes, so it must NOT show
         // up here — if it ever moved under /api/walls this assertion would say so.
@@ -241,6 +242,8 @@ public class ApiSurfaceAuthorizationTests
         builder.Services.AddSingleton(Substitute.For<IKioskContext>());
         builder.Services.AddSingleton(Substitute.For<IDbContextFactory<BlocwerkDbContext>>());
         builder.Services.AddSingleton(Substitute.For<Blocwerk.Core.Capture.ICaptureFileStore>());
+        builder.Services.AddSingleton(Substitute.For<Blocwerk.Core.Capture.IWallCaptureService>());
+        builder.Services.AddSingleton(new Blocwerk.Core.Capture.WallCapturePipelineOptions());
 
         var app = builder.Build();
         app.MapControllers();
@@ -254,6 +257,9 @@ public class ApiSurfaceAuthorizationTests
         // Glyph model textures (3D view) sit under /api/walls as well.
         app.MapWallGeometryTextures();
         app.MapWallGeometrySplats();
+
+        // The capture video upload sits under /api/captures, an API-key prefix for personal keys.
+        app.MapCaptureVideoUpload();
 
         // The liveness beacon: mapped here so the anonymity assertion below sees the real route
         // rather than a copy of it.
