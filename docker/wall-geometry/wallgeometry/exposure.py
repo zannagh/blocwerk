@@ -2,16 +2,24 @@
 
 Every photo gets one multiplicative gain per colour channel (sRGB values; a gain there is a gain in
 linear light too, just raised to the gamma). The gains come from where photos overlap on the facets,
-at low resolution (one sample per label cell): for each overlapping pair the median log ratio per
-channel (robust to occluders and parallax), then a weighted least-squares solve of
+at low resolution (one sample per label cell). The overlaps of ALL facets go into ONE solve, so a
+photo that covers two facets ties them together and no facet drifts on its own. For each overlapping
+pair the median log ratio per channel (robust to occluders and parallax), then a weighted
+least-squares solve of
   x_i - x_j = median(log I_i - log I_j)
-anchored at the photo with the most overlap (x_ref = 0), with a weak pull of every x towards 0 so a
-photo that overlaps nothing keeps gain 1. Near-black and near-saturated samples are ignored.
+with every x pulled towards 0 (gain 1) in proportion to how much evidence the photo has. The photos
+are shot at fixed exposure / ISO / white balance, so what differs between two views of the same spot
+is mostly view-dependent (sheen, the angle to a lamp), not the camera: the pull keeps real lighting
+differences from being over-corrected. Brightness (the mean over the channels) is pulled with
+`gainPriorLuma`, colour (the per-channel rest) much harder with `gainPriorChroma`, so no photo is
+tinted into an odd colour. No photo is the reference: the pull fixes the overall level at the photos'
+own. Near-black and near-saturated samples are ignored.
 """
 import numpy as np
 
-GAIN_DEFAULTS = {"gainMinOverlapCells": 40, "gainClamp": (0.5, 2.0), "gainDarkLevel": 12.0,
-                 "gainBrightLevel": 243.0, "gainRegularisation": 0.02}
+GAIN_DEFAULTS = {"gainMinOverlapCells": 40, "gainClamp": (0.67, 1.5), "gainDarkLevel": 12.0,
+                 "gainBrightLevel": 243.0, "gainPriorLuma": 0.5, "gainPriorChroma": 4.0}
+PAIR_CAP = 2000  # overlap cells beyond which a pair counts no more
 
 
 def _log_samples(cells):
@@ -38,36 +46,46 @@ def pair_offsets(lg, min_overlap):
     return pairs
 
 
-def solve_gains(C, pairs, ref=None, reg=GAIN_DEFAULTS["gainRegularisation"], clamp=GAIN_DEFAULTS["gainClamp"]):
-    """Least squares for per-photo log offsets -> (gains (C, 3), reference index)."""
+def _overlap(C, pairs):
+    ov = np.zeros(C)
+    for i, j, _, n in pairs:
+        ov[i] += min(n, PAIR_CAP)
+        ov[j] += min(n, PAIR_CAP)
+    return ov
+
+
+def _solve(C, pairs, b, prior, ov):
+    """min sum_pairs w (x_i - x_j - b)^2 + sum_i prior * ov_i * x_i^2  (b: (P, k)) -> x (C, k)."""
+    A = np.zeros((len(pairs) + C, C))
+    rhs = np.zeros((len(pairs) + C, b.shape[1]))
+    for r, (i, j, _, n) in enumerate(pairs):
+        w = np.sqrt(min(n, PAIR_CAP))
+        A[r, i], A[r, j], rhs[r] = w, -w, w * b[r]
+    # a photo without overlaps keeps gain 1; the tiny floor only fixes the gauge when prior = 0
+    A[len(pairs):, :] = np.diag(np.sqrt(np.maximum(prior * ov, 1e-6 * max(ov.max(), 1.0))))
+    return np.linalg.lstsq(A, rhs, rcond=None)[0]
+
+
+def solve_gains(C, pairs, prior_luma=GAIN_DEFAULTS["gainPriorLuma"],
+                prior_chroma=GAIN_DEFAULTS["gainPriorChroma"], clamp=GAIN_DEFAULTS["gainClamp"]):
+    """Regularised least squares for per-photo log offsets -> (gains (C, 3), best-connected photo).
+    Brightness and colour are solved separately, each with its own pull towards gain 1."""
     if not pairs:
-        return np.ones((C, 3)), ref
-    if ref is None:
-        ov = np.zeros(C)
-        for i, j, _, n in pairs:
-            ov[i] += n
-            ov[j] += n
-        ref = int(ov.argmax())
-    rows = len(pairs) + C + 1
-    A = np.zeros((rows, C))
-    b = np.zeros((rows, 3))
-    for r, (i, j, d, n) in enumerate(pairs):
-        w = np.sqrt(min(n, 2000))
-        A[r, i], A[r, j], b[r] = w, -w, w * d
-    for i in range(C):
-        A[len(pairs) + i, i] = reg
-    A[-1, ref] = 1e3
-    x = np.linalg.lstsq(A, b, rcond=None)[0]
-    x -= x[ref]
-    return np.clip(np.exp(-x), *clamp), ref
+        return np.ones((C, 3)), None
+    ov = _overlap(C, pairs)
+    d = np.array([p[2] for p in pairs])  # (P, 3)
+    luma = d.mean(1, keepdims=True)
+    x = _solve(C, pairs, luma, prior_luma, ov) + _solve(C, pairs, d - luma, prior_chroma, ov)
+    return np.clip(np.exp(-x), *clamp), int(ov.argmax())
 
 
-def fit_gains(cells, min_overlap=GAIN_DEFAULTS["gainMinOverlapCells"]):
-    """cells: per facet an array (C, ch, cw, 3) of low-res colours (NaN where unseen / not usable).
-    Returns (gains (C, 3), reference photo index, number of overlapping pairs)."""
+def fit_gains(cells, min_overlap=GAIN_DEFAULTS["gainMinOverlapCells"],
+              prior_luma=GAIN_DEFAULTS["gainPriorLuma"], prior_chroma=GAIN_DEFAULTS["gainPriorChroma"]):
+    """cells: per facet an array (C, ch, cw, 3) of low-res colours (NaN where unseen / not usable);
+    all facets are solved together. Returns (gains (C, 3), best-connected photo index, pair count)."""
     lg = _log_samples(cells)
     pairs = pair_offsets(lg, min_overlap)
-    gains, ref = solve_gains(lg.shape[0], pairs)
+    gains, ref = solve_gains(lg.shape[0], pairs, prior_luma, prior_chroma)
     return gains, ref, len(pairs)
 
 

@@ -35,7 +35,8 @@ def test_known_gain_is_recovered():
     truth = np.array([[1.0, 1.0, 1.0], [0.8, 1.1, 1.25], [1.3, 1.0, 0.9]])
     cells = scene / truth[:, None, None, :]  # photo i sees scene / gain_i
     cells[2, :, :10] = np.nan  # partial overlap
-    gains, ref, npairs = exposure.fit_gains([cells.astype(np.float32)], min_overlap=10)
+    gains, ref, npairs = exposure.fit_gains([cells.astype(np.float32)], min_overlap=10, prior_luma=0.0,
+                                           prior_chroma=0.0)
     rel = gains / gains[ref]
     want = truth / truth[ref]
     assert npairs == 3

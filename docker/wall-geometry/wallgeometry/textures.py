@@ -19,19 +19,21 @@ By default (blendViews > 1, see blended.py) every photo is first exposure / whit
 (exposure.py), and the per-cell choice penalises photos that disagree with what the other photos see
 there (consensus.py), so occluders not in the model (roof rafters) are not painted onto the wall;
 seams are feathered from the top-N sample slots (blend.py). blendViews = 1 is the plain method above.
+Finally the facets are harmonised where they meet (seams.py): a smooth low-frequency correction per
+facet so no brightness / colour step shows along a shared edge.
 """
 import math
 
 import cv2
 import numpy as np
 
-from . import blend, consensus, exposure
+from . import blend, consensus, exposure, seams
 from .markercheck import marker_check
 
 DEFAULTS = {"behindOtherFacetMm": 30.0, "mmPerPx": 2.0, "maxSidePx": 4096, "extraMarginMm": 100.0, "labelCellPx": 8,
             "modeFilterCells": 5, "imageMarginPx": 16, "jpegQuality": 90, "maskFeatherPx": 4.0,
             "blendMaxBytes": 2.0e9, **blend.BLEND_DEFAULTS, **exposure.GAIN_DEFAULTS,
-            **consensus.CONSENSUS_DEFAULTS}
+            **consensus.CONSENSUS_DEFAULTS, **seams.SEAM_DEFAULTS}
 
 
 # What a client may set in `options`, with its bounds (everything else in DEFAULTS is internal).
@@ -208,8 +210,14 @@ def render_textures(doc, load_photo, available, params=None, progress=None):
     slot_bytes = (int(p["blendViews"]) + 2) * 7 * sum(_grid(f, p)["W"] * _grid(f, p)["H"] for f in facets)
     if int(p["blendViews"]) > 1 and slot_bytes <= p["blendMaxBytes"]:
         from . import blended  # imports this module
-        return blended.render(doc, load_photo, cams, names, facets, p, progress)
-    return _render_single(doc, load_photo, cams, names, facets, p, progress)
+        results = blended.render(doc, load_photo, cams, names, facets, p, progress)
+    else:
+        results = _render_single(doc, load_photo, cams, names, facets, p, progress)
+    if p["seamHarmonise"] and len(results) > 1:
+        report = seams.harmonise(results, {f["id"]: f for f in facets}, p)
+        for r in results:
+            r["seams"] = {k: v for k, v in report.items() if r["facet"] in k.split("-")}
+    return results
 
 
 def _checked_photo(load_photo, n, cam):

@@ -128,10 +128,12 @@ export function buildTextures(view, renderer) {
  * paints those parts black): the plywood facet 3 mm below then shows through instead. alphaTest drops
  * the fully uncovered pixels outright so they write no depth; the feathered seam blends. Drawn first
  * among the transparent objects so the (dimmed, transparent) hold outlines 5 mm up always blend over
- * it. Without a mask (older textures) the photo stays opaque, as before.
+ * it. Without a mask (older textures) the photo stays opaque, as before. Unlit: the photo already
+ * carries the room's real light, and scene shading on top made the overhangs look far darker than the
+ * vertical facets next to them.
  */
 function texturedMesh(geo, tex, mask) {
-    const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9, side: THREE.FrontSide });
+    const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.FrontSide });
     if (mask) {
         mask.colorSpace = THREE.NoColorSpace;   // a plain coverage value, not a colour
         Object.assign(mat, { alphaMap: mask, transparent: true, alphaTest: 0.02 });

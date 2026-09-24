@@ -69,7 +69,8 @@ def render(doc, load_photo, cams, names, facets, p, progress):
         del img
     gains, ref, npairs = np.ones((len(names), 3)), None, 0
     if balance:
-        gains, ref, npairs = exposure.fit_gains([j["cells"] for j in jobs], int(p["gainMinOverlapCells"]))
+        gains, ref, npairs = exposure.fit_gains([j["cells"] for j in jobs], int(p["gainMinOverlapCells"]),
+                                                float(p["gainPriorLuma"]), float(p["gainPriorChroma"]))
     if progress:
         progress(0.92, "blending")
     report = _gain_report(gains, ref, npairs, names)
@@ -97,6 +98,7 @@ def _result(doc, j, gains, names, p, label):
 
 def _gain_report(gains, ref, npairs, names):
     """Small summary for the manifest (gains as RGB)."""
+    # "reference": the best-connected photo (the solve itself has none, see exposure.py)
     return {"reference": None if ref is None else names[ref], "pairs": npairs,
             "gainMin": [round(float(v), 3) for v in gains.min(0)[::-1]],
             "gainMax": [round(float(v), 3) for v in gains.max(0)[::-1]]}
