@@ -29,7 +29,7 @@ internal static class ArucoInterop
     /// biggest of nested quads: with a thin white cut-out on a darker wall that is the paper's outline,
     /// not the black square (the marker was lost or its corners landed on the paper edge / screw heads).
     /// <see cref="NestedMarkerCollapser"/> takes over the de-duplication. Same parameters on both
-    /// OpenCvSharp lines (4.13 additionally groups threshold copies by its default MinGroupDistance).
+    /// OpenCvSharp lines; on 4.13 <see cref="Detect"/> runs them one threshold window at a time.
     /// </summary>
     public static DetectorParameters CreateTunedParameters()
     {
@@ -58,8 +58,7 @@ internal static class ArucoInterop
 #if OPENCVSHARP_LEGACY_ARUCO
         CvAruco.DetectMarkers(gray, dictionary, out corners, out ids, parameters, out rejected);
 #else
-        using var detector = new ArucoDetector(dictionary, parameters, new RefineParameters());
-        detector.DetectMarkers(gray, out corners, out ids, out rejected);
+        DetectPerThresholdWindow(gray, dictionary, parameters, out corners, out ids, out rejected);
 #endif
     }
 
@@ -74,4 +73,47 @@ internal static class ArucoInterop
         dictionary.GenerateImageMarker(id, sidePx, marker, 1);
         return marker;
     }
+
+#if !OPENCVSHARP_LEGACY_ARUCO
+    /// <summary>
+    /// 4.8 parity on the 4.13 line. With <c>MinMarkerDistanceRate = 0</c>, 4.8 decodes every quad of
+    /// every threshold window on its own. 4.13 instead nests all quads into a containment tree and
+    /// decodes it innermost-first, skipping the ancestors of a decoded quad; its loop counter counts
+    /// those ancestors twice, so with the many nested window copies it stops before the deeper levels
+    /// and whole markers vanish (a real crop lost id 8, a print test ids 5 and 8). One window per
+    /// pass keeps each tree a few levels deep; <see cref="NestedMarkerCollapser"/> merges the copies,
+    /// as it does for 4.8's output.
+    /// </summary>
+    private static void DetectPerThresholdWindow(
+        Mat gray,
+        Dictionary dictionary,
+        DetectorParameters parameters,
+        out Point2f[][] corners,
+        out int[] ids,
+        out Point2f[][] rejected)
+    {
+        var allCorners = new List<Point2f[]>();
+        var allIds = new List<int>();
+        var allRejected = new List<Point2f[]>();
+        var single = parameters;
+
+        // 4.13 caps the sub-pixel window at 0.3 module (2 px on a 42 px marker); 4.8 always uses
+        // CornerRefinementWinSize. A huge relative size makes that the effective size again.
+        single.RelativeCornerRefinmentWinSize = 1000f;
+        for (var win = parameters.AdaptiveThreshWinSizeMin; win <= parameters.AdaptiveThreshWinSizeMax; win += parameters.AdaptiveThreshWinSizeStep)
+        {
+            single.AdaptiveThreshWinSizeMin = win;
+            single.AdaptiveThreshWinSizeMax = win;
+            using var detector = new ArucoDetector(dictionary, single, new RefineParameters());
+            detector.DetectMarkers(gray, out var windowCorners, out var windowIds, out var windowRejected);
+            allCorners.AddRange(windowCorners);
+            allIds.AddRange(windowIds);
+            allRejected.AddRange(windowRejected);
+        }
+
+        corners = [.. allCorners];
+        ids = [.. allIds];
+        rejected = [.. allRejected];
+    }
+#endif
 }

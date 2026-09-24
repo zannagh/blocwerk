@@ -44,8 +44,9 @@ internal static class GrabCutSegmenter
 
         using var fg = new Mat();
         using var prFg = new Mat();
-        Cv2.Compare(gc, new Scalar((int)GrabCutClasses.FGD), fg, CmpType.EQ);
-        Cv2.Compare(gc, new Scalar((int)GrabCutClasses.PR_FGD), prFg, CmpType.EQ);
+        // InRange instead of Compare: the CmpType enum is named differently in OpenCvSharp 4.8 (mac) and 4.13 (Linux).
+        Cv2.InRange(gc, new Scalar((int)GrabCutClasses.FGD), new Scalar((int)GrabCutClasses.FGD), fg);
+        Cv2.InRange(gc, new Scalar((int)GrabCutClasses.PR_FGD), new Scalar((int)GrabCutClasses.PR_FGD), prFg);
         using var any = new Mat();
         Cv2.BitwiseOr(fg, prFg, any);
         var full = new Mat();
