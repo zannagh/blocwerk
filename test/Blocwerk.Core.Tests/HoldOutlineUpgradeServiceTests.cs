@@ -118,8 +118,8 @@ public class HoldOutlineUpgradeServiceTests
         var off = s.Service(outlinesOn: false);
 
         Assert.False((await off.GetStatusAsync(h.WallId)).Enabled);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => off.PreviewAsync(h.WallId, new HoldOutlineUpgradeOptions()));
-        await Assert.ThrowsAsync<InvalidOperationException>(() => off.ApplyAsync(h.WallId, new HoldOutlineUpgradeOptions()));
+        await Assert.ThrowsAnyAsync<InvalidOperationException>(() => off.PreviewAsync(h.WallId, new HoldOutlineUpgradeOptions()));
+        await Assert.ThrowsAnyAsync<InvalidOperationException>(() => off.ApplyAsync(h.WallId, new HoldOutlineUpgradeOptions()));
         Assert.True((await s.Service().GetStatusAsync(h.WallId)).Enabled);
 
         await using var db = h.CreateContext();

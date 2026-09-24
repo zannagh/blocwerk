@@ -43,7 +43,7 @@ public class HoldOutlineUpgradeRevertTests
         await using var read = h.CreateContext();
         Assert.NotNull((await read.HoldOutlineUpgradeRuns.SingleAsync()).RevertedAt);
         Assert.NotNull((await service.GetStatusAsync(h.WallId)).LatestRun!.RevertedAt);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => service.RevertAsync(h.WallId, run.RunId));
+        await Assert.ThrowsAnyAsync<InvalidOperationException>(() => service.RevertAsync(h.WallId, run.RunId));
     }
 
     [Fact]

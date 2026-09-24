@@ -50,7 +50,7 @@ public class WallCaptureServiceTests
         using var s = new CaptureScenario(h);
         await h.SeedWallAsync(holdCount: 0);
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => s.Service.CreateDraftAsync(h.WallId));
+        var ex = await Assert.ThrowsAnyAsync<InvalidOperationException>(() => s.Service.CreateDraftAsync(h.WallId));
         Assert.Contains("markers", ex.Message);
     }
 
@@ -64,7 +64,7 @@ public class WallCaptureServiceTests
         var draft = await OpenDraftAsync(h, s);
         byte[] heic = [0, 0, 0, 24, .. "ftyp"u8.ToArray(), .. Encoding.ASCII.GetBytes(brand), 0, 0, 0, 0, .. new byte[64]];
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+        var ex = await Assert.ThrowsAnyAsync<InvalidOperationException>(
             () => s.Service.AddPhotoAsync(draft, "IMG_1.HEIC", heic, CancellationToken.None));
         Assert.Contains("HEIC", ex.Message);
     }
@@ -77,9 +77,9 @@ public class WallCaptureServiceTests
         var draft = await OpenDraftAsync(h, s);
         await s.Service.AddPhotoAsync(draft, "a.jpg", CaptureScenario.TinyJpeg(1), CancellationToken.None);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
+        await Assert.ThrowsAnyAsync<InvalidOperationException>(
             () => s.Service.AddPhotoAsync(draft, "notes.txt", "hello"u8.ToArray(), CancellationToken.None));
-        var dup = await Assert.ThrowsAsync<InvalidOperationException>(
+        var dup = await Assert.ThrowsAnyAsync<InvalidOperationException>(
             () => s.Service.AddPhotoAsync(draft, "a-again.jpg", ExifJpeg.Build(CaptureScenario.TinyJpeg(1)), CancellationToken.None));
         Assert.Contains("already uploaded", dup.Message);
     }

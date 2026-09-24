@@ -110,7 +110,7 @@ public class CaptureParserHardeningTests
 
         var upload = s.Service.AddPhotoAsync(draft.CaptureId, "evil.png", png, CancellationToken.None);
 
-        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => upload.WaitAsync(TimeSpan.FromSeconds(10)));
+        var error = await Assert.ThrowsAnyAsync<InvalidOperationException>(() => upload.WaitAsync(TimeSpan.FromSeconds(10)));
         Assert.Contains("evil.png", error.Message);
     }
 

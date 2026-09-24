@@ -120,7 +120,7 @@ public sealed partial class HoldOutlineUpgradeService : IHoldOutlineUpgradeServi
     {
         if (!Enabled)
         {
-            throw new InvalidOperationException("Outline detection is switched off on this server.");
+            throw new UserFacingException("Outline detection is switched off on this server.");
         }
     }
 

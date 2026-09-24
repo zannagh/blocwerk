@@ -1,0 +1,148 @@
+// <copyright file="CaptureFollowUpPipelineTests.cs" company="Blocwerk">
+// Copyright (c) Blocwerk. All rights reserved.
+// </copyright>
+
+using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Capture;
+using Blocwerk.Core.Capture.FollowUp;
+using Blocwerk.Core.Compute;
+using Blocwerk.Core.Entities;
+using Blocwerk.Core.Services;
+using Microsoft.EntityFrameworkCore;
+using NSubstitute;
+using NSubstitute.ExceptionExtensions;
+
+namespace Blocwerk.Core.Tests;
+
+/// <summary>
+/// The chain inside a real capture run: dropping photos places the existing holds and refines their shapes with
+/// no extra step, the capture history says so in plain words, a failing step never fails the capture, and without a
+/// reachable GPU worker the capture simply ends "done" (no error, no photo-real view, a quiet note at most).
+/// </summary>
+public class CaptureFollowUpPipelineTests
+{
+    private readonly IHoldTexturePlacementService placement = Substitute.For<IHoldTexturePlacementService>();
+    private readonly IHoldFootprintService footprints = Substitute.For<IHoldFootprintService>();
+    private readonly IHoldProtrusionService protrusion = Substitute.For<IHoldProtrusionService>();
+
+    public CaptureFollowUpPipelineTests()
+    {
+        placement.PlaceFromPipelineAsync(default, default, default, default)
+            .ReturnsForAnyArgs(new HoldPlacementResult(Guid.NewGuid(), 856, 3, 19, []));
+        footprints.RefineFromPipelineAsync(default, default).ReturnsForAnyArgs(new HoldFootprintRunResult(653, 0, 4, 24));
+        protrusion.MeasureFromPipelineAsync(default, default).ReturnsForAnyArgs(new HoldProtrusionRunResult(12, 1, 0, 12));
+    }
+
+    [Fact]
+    public async Task ACapture_PlacesAndRefinesTheExistingHolds_AndTheHistorySaysSo()
+    {
+        using var h = new WallTestHarness();
+        using var s = Scenario(h);
+        var captureId = await s.StartCaptureAsync();
+
+        await s.Processor.ProcessAsync(captureId, CancellationToken.None);
+
+        var summary = (await s.Service.GetCapturesAsync(h.WallId)).Single();
+        Assert.Equal(WallCaptureStatus.Succeeded, summary.Status);
+        Assert.Null(summary.Error);
+        Assert.Equal("856 holds placed on the 3D model, 653 hold shapes refined from several photos.", summary.FollowUp);
+        Assert.Null(summary.FollowUpNote);
+        await placement.Received(1).PlaceFromPipelineAsync(h.WallId, summary.GeometryModelId!.Value, h.Owner.Id, Arg.Any<CancellationToken>());
+        Received.InOrder(() =>
+        {
+            placement.PlaceFromPipelineAsync(h.WallId, Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+            footprints.RefineFromPipelineAsync(h.WallId, Arg.Any<CancellationToken>());
+        });
+        await protrusion.DidNotReceiveWithAnyArgs().MeasureFromPipelineAsync(default, default);
+    }
+
+    [Fact]
+    public async Task AFailingStep_NeverFailsTheCapture_AndTheOthersStillRun()
+    {
+        using var h = new WallTestHarness();
+        placement.PlaceFromPipelineAsync(default, default, default, default).ThrowsAsyncForAnyArgs(new InvalidOperationException("matcher crashed"));
+        using var s = Scenario(h);
+        var captureId = await s.StartCaptureAsync();
+
+        await s.Processor.ProcessAsync(captureId, CancellationToken.None);
+
+        var summary = (await s.Service.GetCapturesAsync(h.WallId)).Single();
+        Assert.Equal(WallCaptureStatus.Succeeded, summary.Status);
+        Assert.Equal("653 hold shapes refined from several photos.", summary.FollowUp);
+        Assert.Equal("Placing the existing holds on the 3D model failed.", summary.FollowUpNote);
+        await footprints.Received(1).RefineFromPipelineAsync(h.WallId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task NoGpuWorkerConfigured_TheCaptureIsSimplyDone()
+    {
+        using var h = new WallTestHarness();
+        using var s = Scenario(h);
+        var captureId = await s.StartCaptureAsync();
+
+        await s.Processor.ProcessAsync(captureId, CancellationToken.None);
+
+        await using var db = h.CreateContext();
+        var capture = await db.WallCaptures.SingleAsync(c => c.Id == captureId);
+        Assert.Equal(WallCaptureStatus.Succeeded, capture.Status);
+        Assert.Equal("Done", capture.Stage);
+        Assert.Null(capture.Error);
+        Assert.False(s.Service.IsSplatConfigured);
+        Assert.Empty(s.SplatClient.MultipartSubmissions);
+        var protrusionEntry = CaptureFollowUpRecord.Parse(capture.FollowUpJson).Find("measure-protrusion");
+        Assert.Equal(CaptureFollowUpOutcome.Skipped, protrusionEntry!.Outcome);
+        await s.Push.DidNotReceive().NotifyWallPhotoRealReadyAsync(Arg.Any<Guid>(), Arg.Any<Guid>());
+    }
+
+    [Theory]
+    [InlineData(ComputeFailureKind.Unavailable)]
+    [InlineData(ComputeFailureKind.Busy)]
+    public async Task AnUnreachableGpuWorker_EndsTheCaptureAsDone_WithAQuietNote(ComputeFailureKind kind)
+    {
+        using var h = new WallTestHarness();
+        using var s = Scenario(h);
+        s.SplatClient.IsConfigured = true;
+        s.SplatClient.SubmitError = new ComputeJobException(kind, "The splat service could not be reached.");
+        var captureId = await s.StartCaptureAsync();
+
+        await s.Processor.ProcessAsync(captureId, CancellationToken.None);
+
+        var summary = (await s.Service.GetCapturesAsync(h.WallId)).Single();
+        Assert.Equal(WallCaptureStatus.Succeeded, summary.Status);
+        Assert.Equal("Done", summary.Stage);
+        Assert.Null(summary.Error);
+        Assert.False(summary.IsRunning);
+        Assert.Equal(WallCaptureProcessor.NoWorkerNote, summary.FollowUpNote);
+        Assert.Equal("856 holds placed on the 3D model, 653 hold shapes refined from several photos.", summary.FollowUp);
+        await using var db = h.CreateContext();
+        Assert.Empty(await db.WallGeometrySplats.ToListAsync());
+        Assert.True((await db.WallGeometryModels.SingleAsync()).IsActive);
+        await s.Push.Received(1).NotifyWallModelReadyAsync(h.WallId, h.Owner.Id);
+        await s.Push.DidNotReceive().NotifyWallPhotoRealReadyAsync(Arg.Any<Guid>(), Arg.Any<Guid>());
+    }
+
+    [Fact]
+    public async Task WithAPhotoRealView_TheHoldsAreMeasuredInIt_AfterItIsStored()
+    {
+        using var h = new WallTestHarness();
+        using var s = Scenario(h);
+        s.SplatClient.IsConfigured = true;
+        var captureId = await s.StartCaptureAsync();
+
+        await s.Processor.ProcessAsync(captureId, CancellationToken.None);
+
+        var summary = (await s.Service.GetCapturesAsync(h.WallId)).Single();
+        Assert.Equal(WallCaptureStatus.Succeeded, summary.Status);
+        Assert.Equal(
+            "856 holds placed on the 3D model, 653 hold shapes refined from several photos, 12 holds measured in the photo-real view.",
+            summary.FollowUp);
+        await protrusion.Received(1).MeasureFromPipelineAsync(h.WallId, Arg.Any<CancellationToken>());
+    }
+
+    private CaptureScenario Scenario(WallTestHarness h) => new(h, followUps: harness => FollowUpChains.Build(
+        harness.RootContextFactory,
+        new PlaceHoldsFollowUpStep(placement),
+        new RefineFootprintsFollowUpStep(footprints),
+        new MeasureProtrusionFollowUpStep(protrusion),
+        new DetectVolumesFollowUpStep()));
+}

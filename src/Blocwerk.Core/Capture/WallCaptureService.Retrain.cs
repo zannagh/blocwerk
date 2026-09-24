@@ -1,6 +1,7 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using Blocwerk.Core.Capture.FollowUp;
 using Blocwerk.Core.Compute;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Services;
@@ -46,6 +47,7 @@ public sealed partial class WallCaptureService
             capture.Error = textureError;
             capture.Attempts = 0;
             capture.CompletedAt = null;
+            capture.FollowUpJson = WithoutNote(capture.FollowUpJson);
             await db.SaveChangesAsync();
             queue.Enqueue(capture.Id);
             logger.LogInformation(
@@ -66,6 +68,11 @@ public sealed partial class WallCaptureService
         var part = (i < 0 ? error : error[..i]).Trim();
         return part.Length == 0 ? null : part;
     }
+
+    /// <summary>The follow-up record without its note (the note spoke about the photo-real view being redone).</summary>
+    private static string? WithoutNote(string? followUpJson) => followUpJson is null
+        ? null
+        : (CaptureFollowUpRecord.Parse(followUpJson) with { Note = null }).ToJson();
 
     private static async Task<List<string>> RetrainProblemsAsync(Data.BlocwerkDbContext db, WallCapture capture)
     {

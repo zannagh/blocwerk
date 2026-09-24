@@ -60,7 +60,7 @@ public sealed partial class WallCaptureService(
             var glyphs = await db.Walls.Where(w => w.Id == wallId).Select(w => w.GlyphsEnabled).FirstOrDefaultAsync();
             if (!glyphs)
             {
-                throw new InvalidOperationException("Switch on printed markers for this wall first.");
+                throw new UserFacingException("Switch on printed markers for this wall first.");
             }
 
             var draft = await db.WallCaptures

@@ -41,7 +41,7 @@ public sealed class HoldFootprintService(
         }
 
         return await RunAsync(wallId, null, ct)
-            ?? throw new InvalidOperationException("This wall has no active geometry model, or outline detection is off.");
+            ?? throw new UserFacingException("This wall has no active geometry model, or outline detection is off.");
     }
 
     /// <inheritdoc />
@@ -77,8 +77,7 @@ public sealed class HoldFootprintService(
             .Where(m => m.WallId == wallId && m.IsActive)
             .Select(m => new { m.Id, m.Json })
             .FirstOrDefaultAsync(ct);
-        var generation = await db.Walls.Where(w => w.Id == wallId).Select(w => (int?)w.CurrentGeneration).FirstOrDefaultAsync(ct);
-        if (model is null || generation is null)
+        if (model is null || !await db.Walls.AnyAsync(w => w.Id == wallId, ct))
         {
             return null;
         }
@@ -86,11 +85,15 @@ public sealed class HoldFootprintService(
         var doc = WallGeometryDocument.Parse(model.Json);
         var cameras = SolvedCamera.ParseAll(model.Json);
         var photos = await CapturePhotosAsync(db, model.Id, ct);
-        var live = await db.Holds.AsNoTracking().Where(h => h.WallId == wallId && h.Generation <= generation).ToListAsync(ct);
+        var live = await (await LiveWallHolds.QueryAsync(db, wallId, ct)).AsNoTracking().ToListAsync(ct);
         var markers = await Wall3DPhotoMarkerLoader.LoadAsync(db, wallId, ct);
         var projector = HoldPlaneProjector.Create(live, doc, markers);
         var usable = cameras.Where(c => photos.ContainsKey(c.Image)).ToList();
-        var refinement = await Task.Run(() => HoldFootprintRefiner.Refine(live, doc, usable, c => Open(c, photos, ct), projector, only), ct);
+        var panelPhotos = await PanelPhotoInfoLoader.LoadAsync(
+            db, wallId, live.Where(h => h.FacetId is not null).Select(HoldPlaneProjector.PhotoOf), ct);
+        var refinement = await Task.Run(
+            () => HoldFootprintRefiner.Refine(live, doc, usable, c => Open(c, photos, ct), projector, only, panelPhotos), ct);
+        LogPanelCameras(wallId, refinement);
         var written = await WriteAsync(db, wallId, refinement, ct);
         logger.LogInformation(
             "Footprints on wall {WallId}: {Multi} multi-view, {Single} single-view, {Skipped} skipped, {Written} written, {Photos} capture photos",
@@ -98,7 +101,11 @@ public sealed class HoldFootprintService(
         return new HoldFootprintRunResult(refinement.MultiView, refinement.SingleView, refinement.Skipped, usable.Count);
     }
 
-    /// <summary>The stored path of each photo of the capture that produced the model, by base file name.</summary>
+    /// <summary>
+    /// The stored path of each photo of the capture that produced the model, by the name its solved camera carries:
+    /// <see cref="CaptureComputeDocuments.PhotoName"/> (<c>p01</c>…), the name the photos are sent to the geometry
+    /// worker under. Models solved before that naming carry the base file name, which still resolves.
+    /// </summary>
     private async Task<Dictionary<string, string>> CapturePhotosAsync(BlocwerkDbContext db, Guid modelId, CancellationToken ct)
     {
         if (files is null)
@@ -107,12 +114,10 @@ public sealed class HoldFootprintService(
         }
 
         var rows = await db.WallCapturePhotos.AsNoTracking()
-            .Where(p => p.Capture.GeometryModelId == modelId && p.OriginalFileName != null)
-            .Select(p => new { p.OriginalFileName, p.StoredPath })
+            .Where(p => p.Capture.GeometryModelId == modelId)
+            .Select(p => new { p.Index, p.OriginalFileName, p.StoredPath })
             .ToListAsync(ct);
-        return rows
-            .GroupBy(r => Path.GetFileNameWithoutExtension(r.OriginalFileName!), StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.First().StoredPath, StringComparer.OrdinalIgnoreCase);
+        return CameraPhotoNames.Map(rows.Select(r => (r.Index, r.OriginalFileName, r.StoredPath)));
     }
 
     /// <summary>One capture photo's outline session, or null when unreadable or rotated against its camera.</summary>
@@ -141,6 +146,26 @@ public sealed class HoldFootprintService(
         }
 
         return null;
+    }
+
+    private void LogPanelCameras(Guid wallId, HoldFootprintRefinement refinement)
+    {
+        foreach (var (key, e) in refinement.PanelCameras ?? new Dictionary<Wall3DPhotoKey, PanelCameraEstimate>())
+        {
+            if (e.Centre is { } c)
+            {
+                logger.LogInformation(
+                    "Footprints on wall {WallId}: photo {PanelId}/{Generation} camera by {Method} from {Used}/{Points} holds: "
+                    + "{Distance:F0} mm in front of the wall, height {Height:F0} mm, reprojection median {Error:F1} px, focal {Focal:F0} px",
+                    wallId, key.PanelId, key.Generation, e.Method, e.Used, e.Points, e.DistanceMm, c[2], e.MedianErrorPx, e.FocalPx);
+            }
+            else
+            {
+                logger.LogWarning(
+                    "Footprints on wall {WallId}: photo {PanelId}/{Generation} has no camera ({Points} placed holds): {Reason}",
+                    wallId, key.PanelId, key.Generation, e.Points, e.Rejection);
+            }
+        }
     }
 
     /// <summary>Stores the footprints on holds whose outline still matches; clears stale ones. Returns how many were written.</summary>

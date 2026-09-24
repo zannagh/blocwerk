@@ -36,7 +36,7 @@ public sealed partial class WallCaptureService
                 previous.Segments.FirstOrDefault(p => p.Index == index)
                 ?? (bound.FirstOrDefault(b => b.Index == index) is { } b
                     ? new CaptureSegmentDeclaration(index, b.Name, b.Angle, false)
-                    : new CaptureSegmentDeclaration(index, $"Segment {index}", null, false)))
+                    : new CaptureSegmentDeclaration(index, CaptureDeclarationRules.DefaultName(index), null, false)))
                 .ToList();
             return new CaptureDeclarations(segments, previous.LevelPairs);
         }

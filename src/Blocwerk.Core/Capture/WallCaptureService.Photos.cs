@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Helpers;
+using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SkiaSharp;
@@ -14,7 +15,7 @@ public sealed partial class WallCaptureService
     public async Task<CapturePhotoResult> AddPhotoAsync(Guid captureId, string? fileName, byte[] bytes, CancellationToken ct)
     {
         var name = fileName is { Length: > 256 } ? fileName[..256] : fileName;
-        var kind = ValidateUpload(name, bytes, photoConverter is not null);
+        var kind = ValidateUpload(name, bytes, photoConverter is not null, PipelineOptions.MaxPhotoBytes);
         if (kind == CapturePhotoKind.Heic)
         {
             bytes = await ConvertHeicAsync(name, bytes, ct);
@@ -30,7 +31,7 @@ public sealed partial class WallCaptureService
                 .Select(p => new { p.Index, p.ContentHash }).ToListAsync(ct);
             if (existing.Count >= WallCapturePipelineOptions.MaxPhotos)
             {
-                throw new InvalidOperationException($"A capture takes at most {WallCapturePipelineOptions.MaxPhotos} photos.");
+                throw new UserFacingException($"A capture takes at most {WallCapturePipelineOptions.MaxPhotos} photos.");
             }
 
             // The stripper validates the structure first; EXIF is then read from the original, and what
@@ -40,7 +41,7 @@ public sealed partial class WallCaptureService
             var hash = Convert.ToHexStringLower(SHA256.HashData(clean));
             if (existing.Any(p => p.ContentHash == hash))
             {
-                throw new InvalidOperationException($"{name ?? "This photo"} was already uploaded to this capture.");
+                throw new UserFacingException($"{name ?? "This photo"} was already uploaded to this capture.");
             }
 
             // The draft's layout decides which ids are real: the plan's, or the legacy 0..35.
@@ -96,23 +97,29 @@ public sealed partial class WallCaptureService
         catch (InvalidDataException ex)
         {
             logger.LogWarning(ex, "HEIC conversion failed for a capture photo");
-            throw new InvalidOperationException($"{label} is a HEIC photo that could not be converted. Export it as JPEG and upload that.");
+            throw new UserFacingException($"{label} is a HEIC photo that could not be converted. Export it as JPEG and upload that.");
         }
 
-        if (CapturePhotoFormat.Sniff(jpeg) != CapturePhotoKind.Jpeg || jpeg.LongLength > WallCapturePipelineOptions.MaxPhotoBytes)
+        if (CapturePhotoFormat.Sniff(jpeg) != CapturePhotoKind.Jpeg)
         {
-            throw new InvalidOperationException($"{label} is a HEIC photo that could not be converted. Export it as JPEG and upload that.");
+            throw new UserFacingException($"{label} is a HEIC photo that could not be converted. Export it as JPEG and upload that.");
+        }
+
+        if (jpeg.LongLength > PipelineOptions.MaxPhotoBytes)
+        {
+            throw new UserFacingException(
+                $"{label} is larger than {PipelineOptions.MaxPhotoBytes / (1024 * 1024)} MB once converted from HEIC.");
         }
 
         return jpeg;
     }
 
-    private static CapturePhotoKind ValidateUpload(string? name, byte[] bytes, bool canConvertHeic)
+    private static CapturePhotoKind ValidateUpload(string? name, byte[] bytes, bool canConvertHeic, long maxBytes)
     {
         var label = name ?? "The photo";
-        if (bytes.LongLength > WallCapturePipelineOptions.MaxPhotoBytes)
+        if (bytes.LongLength > maxBytes)
         {
-            throw new InvalidOperationException($"{label} is larger than {WallCapturePipelineOptions.MaxPhotoBytes / (1024 * 1024)} MB.");
+            throw new UserFacingException($"{label} is larger than {maxBytes / (1024 * 1024)} MB.");
         }
 
         return CapturePhotoFormat.Sniff(bytes) switch
@@ -120,10 +127,10 @@ public sealed partial class WallCaptureService
             CapturePhotoKind.Jpeg => CapturePhotoKind.Jpeg,
             CapturePhotoKind.Png => CapturePhotoKind.Png,
             CapturePhotoKind.Heic when canConvertHeic => CapturePhotoKind.Heic,
-            CapturePhotoKind.Heic => throw new InvalidOperationException(
+            CapturePhotoKind.Heic => throw new UserFacingException(
                 $"{label} is a HEIC photo, which cannot be processed. Upload it from the Photos picker in the browser "
                 + "(iOS converts it to JPEG), or set Camera → Formats → Most Compatible."),
-            _ => throw new InvalidOperationException($"{label} is not a JPEG or PNG photo."),
+            _ => throw new UserFacingException($"{label} is not a JPEG or PNG photo."),
         };
     }
 
@@ -134,12 +141,12 @@ public sealed partial class WallCaptureService
         using var codec = SKCodec.Create(data);
         if (codec is null || codec.Info.Width < 16 || codec.Info.Height < 16)
         {
-            throw new InvalidOperationException($"{name ?? "The photo"} could not be read as an image.");
+            throw new UserFacingException($"{name ?? "The photo"} could not be read as an image.");
         }
 
         if (ImagePixelLimit.IsTooLarge(codec.Info.Width, codec.Info.Height))
         {
-            throw new InvalidOperationException(
+            throw new UserFacingException(
                 $"{name ?? "The photo"} has more than {ImagePixelLimit.MaxPixels / 1_000_000} megapixels. "
                 + "Upload it at the camera's normal resolution.");
         }
@@ -155,7 +162,7 @@ public sealed partial class WallCaptureService
         }
         catch (InvalidDataException)
         {
-            throw new InvalidOperationException($"{name ?? "The photo"} is damaged or incomplete and cannot be used.");
+            throw new UserFacingException($"{name ?? "The photo"} is damaged or incomplete and cannot be used.");
         }
     }
 

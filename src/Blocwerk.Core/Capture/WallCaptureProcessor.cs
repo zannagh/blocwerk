@@ -1,5 +1,6 @@
 using System.Data.Common;
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Capture.FollowUp;
 using Blocwerk.Core.Compute;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
@@ -7,7 +8,6 @@ using Blocwerk.Core.Entities;
 using Blocwerk.Core.MarkerPlanning;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Capture;
@@ -29,7 +29,7 @@ public sealed partial class WallCaptureProcessor(
     IMarkerDetectionService? markerDetection = null,
     ICaptureVideoFrameExtractor? videoFrames = null,
     IDeployBusyGate? busyGate = null,
-    IServiceScopeFactory? scopes = null)
+    CaptureFollowUpChain? followUps = null)
 {
     private readonly ILogger logger = loggerFactory.CreateLogger<WallCaptureProcessor>();
 
@@ -99,7 +99,7 @@ public sealed partial class WallCaptureProcessor(
         }
 
         var textureError = await TextureAsync(run, client, ct);
-        await RefineFootprintsAsync(run, ct);
+        await FollowUpAsync(run, CaptureFollowUpPhase.Model, ct);
         await push.NotifyWallModelReadyAsync(run.Capture.WallId, run.User.Id);
         await AfterTexturesAsync(run, textureError, ct);
     }

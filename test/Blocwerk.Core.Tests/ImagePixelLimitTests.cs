@@ -32,7 +32,7 @@ public class ImagePixelLimitTests
         await WallGlyphSettingsTests.Service(h).SetGlyphSettingsAsync(h.WallId, true, 125);
         var draft = await s.Service.CreateDraftAsync(h.WallId);
 
-        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => s.Service.AddPhotoAsync(
+        var error = await Assert.ThrowsAnyAsync<InvalidOperationException>(() => s.Service.AddPhotoAsync(
             draft.CaptureId, "huge.png", HostileImages.PngClaiming(20_000, 20_000), CancellationToken.None));
 
         Assert.Contains("megapixels", error.Message);

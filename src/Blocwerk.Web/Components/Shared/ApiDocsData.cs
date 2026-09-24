@@ -16,6 +16,9 @@ internal static partial class ApiDocsData
         UserSurface,
         WallSurface,
         WallUpdateShapesSurface,
+        WallGeometryPlacementSurface,
+        WallCaptureSurface,
+        WallHoldShapesSurface,
     };
 
     private static ApiSurfaceDoc UserSurface => new(

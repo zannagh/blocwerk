@@ -15,10 +15,10 @@ public sealed partial class HoldOutlineUpgradeService
         await using (db)
         {
             var run = await db.HoldOutlineUpgradeRuns.FirstOrDefaultAsync(r => r.Id == runId && r.WallId == wallId, ct)
-                      ?? throw new InvalidOperationException("That outline upgrade was not found on this wall.");
+                      ?? throw new UserFacingException("That outline upgrade was not found on this wall.");
             if (run.RevertedAt is not null)
             {
-                throw new InvalidOperationException("That outline upgrade has already been reverted.");
+                throw new UserFacingException("That outline upgrade has already been reverted.");
             }
 
             var entries = HoldOutlineUpgradeEntry.FromJson(run.HoldIdsJson);

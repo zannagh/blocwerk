@@ -48,6 +48,14 @@
                                 {
                                     <div class="capture-error">@capture.Error</div>
                                 }
+                                @if (capture.FollowUp is not null)
+                                {
+                                    <div class="capture-follow-up">@capture.FollowUp</div>
+                                }
+                                @if (capture.FollowUpNote is not null)
+                                {
+                                    <div class="hint">@capture.FollowUpNote</div>
+                                }
                                 @if (capture.Notes is not null)
                                 {
                                     <div class="hint">@capture.Notes</div>

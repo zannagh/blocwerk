@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Capture;
+using Blocwerk.Core.Capture.FollowUp;
 using Blocwerk.Core.Compute;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.MarkerPlanning;
@@ -22,7 +23,7 @@ internal sealed class CaptureScenario : IDisposable
 
     public CaptureScenario(
         WallTestHarness harness, IMarkerDetectionService? detector = null, IKioskContext? kiosk = null, WallCapturePipelineOptions? options = null,
-        IDeployBusyGate? busyGate = null, ICapturePhotoConverter? photoConverter = null)
+        IDeployBusyGate? busyGate = null, ICapturePhotoConverter? photoConverter = null, Func<WallTestHarness, CaptureFollowUpChain>? followUps = null)
     {
         Harness = harness;
         Options = options ?? Options;
@@ -38,7 +39,7 @@ internal sealed class CaptureScenario : IDisposable
             NullLogger<WallCaptureService>.Instance, kiosk, Detector, MarkerPlans, Video, Options, busyGate, photoConverter: photoConverter);
         Processor = new WallCaptureProcessor(
             harness.RootContextFactory, Settings, new FakeComputeJobClientFactory(Client, SplatClient), Files, Push,
-            NullLoggerFactory.Instance, Options, Detector, Video, busyGate);
+            NullLoggerFactory.Instance, Options, Detector, Video, busyGate, followUps?.Invoke(harness));
     }
 
     public WallTestHarness Harness { get; }

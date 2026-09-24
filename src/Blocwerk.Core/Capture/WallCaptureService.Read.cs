@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Capture.FollowUp;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.MarkerPlanning;
@@ -120,7 +121,10 @@ public sealed partial class WallCaptureService
         return captures.Select(c => new WallCaptureSummary(
             c.Id, c.CreatedAt, c.Status, c.Progress, c.Stage, c.Error, c.Notes,
             counts.GetValueOrDefault(c.Id), c.GeometryModelId, c.CompletedAt, ReadPlacementCheck(c.PlacementCheckJson),
-            c.SplatQuality)).ToList();
+            c.SplatQuality,
+            CaptureFollowUpText.Summary(CaptureFollowUpRecord.Parse(c.FollowUpJson)),
+            CaptureFollowUpText.Note(CaptureFollowUpRecord.Parse(c.FollowUpJson)),
+            c.WallId)).ToList();
     }
 
     private static MarkerPlacementCheck? ReadPlacementCheck(string? json)

@@ -94,6 +94,13 @@ public class WallCapture
     /// <summary>The model this capture produced and activated, once it did.</summary>
     public Guid? GeometryModelId { get; set; }
 
+    /// <summary>
+    /// What the post-capture chain did with the new model (<c>CaptureFollowUpRecord</c> as JSON): one entry per
+    /// step (placing the existing holds, refining their shapes, measuring them in the photo-real view), written
+    /// after every step so a restarted app resumes the chain instead of redoing it. Null until the chain ran.
+    /// </summary>
+    public string? FollowUpJson { get; set; }
+
     [MaxLength(2048)]
     public string? Notes { get; set; }
 

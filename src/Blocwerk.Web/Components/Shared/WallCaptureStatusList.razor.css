@@ -9,3 +9,4 @@
 .capture-pending { font-weight: 600; color: var(--text-secondary); }
 .capture-history { margin-top: 10px; }
 .capture-photos-row td { background: var(--bg-surface-alt); }
+.capture-follow-up { font-size: 0.85rem; margin-top: 2px; }

@@ -53,6 +53,11 @@ public partial class WallCapturePanel
     [Inject]
     private ILogger<WallCapturePanel> Logger { get; set; } = default!;
 
+    [Inject]
+    private WallCapturePipelineOptions PipelineOptions { get; set; } = default!;
+
+    private long MaxPhotoMb => PipelineOptions.MaxPhotoBytes / (1024 * 1024);
+
     // Loaded per wall here, not in OnInitializedAsync: the wall page is retained across walls.
     protected override async Task OnParametersSetAsync()
     {
@@ -111,15 +116,15 @@ public partial class WallCapturePanel
 
     private async Task UploadOneAsync(IBrowserFile file)
     {
-        if (file.Size > WallCapturePipelineOptions.MaxPhotoBytes)
+        if (file.Size > PipelineOptions.MaxPhotoBytes)
         {
-            errors.Add($"{file.Name} is larger than 20 MB.");
+            errors.Add($"{file.Name} is larger than {MaxPhotoMb} MB.");
             return;
         }
 
         try
         {
-            await using var stream = file.OpenReadStream(WallCapturePipelineOptions.MaxPhotoBytes);
+            await using var stream = file.OpenReadStream(PipelineOptions.MaxPhotoBytes);
             using var buffer = new MemoryStream((int)file.Size);
             await stream.CopyToAsync(buffer);
             await Captures.AddPhotoAsync(draft!.CaptureId, file.Name, buffer.ToArray(), CancellationToken.None);

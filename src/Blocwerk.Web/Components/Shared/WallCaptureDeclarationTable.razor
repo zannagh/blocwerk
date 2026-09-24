@@ -35,6 +35,16 @@
                         </label>
                     </td>
                 </tr>
+                @if (row.MergeWarning is { } warning)
+                {
+                    @* A named row without an angle is left out of the solve (see CaptureDeclarationRules.MergeWarnings):
+                       say so here instead of letting the face vanish silently. *@
+                    <tr class="capture-decl-warning-row">
+                        <td colspan="4">
+                            <p class="capture-decl-warning" role="note">@warning</p>
+                        </td>
+                    </tr>
+                }
             }
         </tbody>
     </table>

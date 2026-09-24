@@ -610,6 +610,13 @@ rows aren't declared, so the solver attaches those markers to whatever surface t
 declared segment is never merged into another one, so filling in a spare row would split its
 markers off into a separate surface.
 
+**A named row needs an angle to stay a surface of its own.** Only rows with an angle or the gravity
+tick are sent to the solver. A row you gave a name but no angle (and no tick) is treated like a spare
+row, so its markers are merged into the nearest wall face. The table says so right under that row
+(*"Segment 5 ("Cave") has no angle, so its markers will be merged into the nearest wall face…"*):
+give it an angle to keep it as its own face, or clear the name if merging is what you want. The
+warning never blocks **Compute 3D model**.
+
 **Markers at equal height (optional).** Enter pairs of marker ids you know are level with each
 other, e.g. `14-15, 8-9`. They're an extra gravity hint. Only enter pairs you have measured: a wrong
 pair tilts the whole model (see Troubleshooting).
@@ -627,6 +634,16 @@ confirmation. A draft nobody starts is removed after a day.
 3. The new model **becomes the wall's active model** at this point.
 4. **Rendering textures**: the photos go to the service, which renders one straightened image per
    flat surface for the 3D view.
+   Then the new model is put to work for the holds the wall already has, with no extra step (the
+   *follow-up chain*): the live holds that are not on the model yet are **placed on it** from their
+   panel photos (holds placed by markers or by an edit are never moved; the run can be reverted under
+   the 3D settings), and the holds' **3D shapes are refined** from the new photos. After the
+   photo-real view (step 5) the holds are also **measured in it**. Each step is recorded on the
+   capture, a failing step never stops the next one or the capture, and a server restart continues
+   the chain where it stopped. Capture history shows the outcome in plain words, e.g. *"856 holds
+   placed on the 3D model, 653 hold shapes refined from several photos."* None of this changes a
+   panel hold's position or shape or a boulder: turning circles into outlines stays the reviewed
+   outline upgrade (section 8).
 5. **Photo-real view**, only if a splat worker is configured: with a walk-along video the server
    first extracts its frames (*"Photo-real view: extracting video frames"*); then the photos (and the
    frames) go to the splat worker, which trains the photo-real view. This can take tens of minutes to
@@ -659,10 +676,22 @@ refreshes about every two seconds.
 | Model ready · making the photo-real view | Model and textures are live; the splat worker is training. |
 | Model ready | Done. |
 | Model ready (no textures) | The model is active, but textures failed. The 3D view works without photos on the surfaces. The error is shown underneath. |
-| Model ready (no photo-real view) | The model and textures are live; only the photo-real step failed. |
+| Model ready (no photo-real view) | The model and textures are live; only the photo-real step failed (the worker answered, but training failed or was refused). |
 | Failed | Nothing was activated. The error is shown in plain words in **Capture history**. When the new model could not be lined up with the current one (too few unchanged markers), it is kept in the model history, inactive. |
 
 A capture is retried up to 3 times (including after a server restart) before it's marked failed.
+
+**Without a GPU worker.** The photo-real view is optional. With no splat worker configured, a
+capture ends as **Model ready** exactly as before: no video field, no quality choice, nothing
+waiting. When a worker is configured but can't be reached (network error, or its queue stays full),
+the capture also ends as **Model ready**, not as an error; the history shows a quiet note that the
+photo-real view was skipped, and **Retrain photo-real** can make it later from the kept photos.
+
+**Why the video field is hidden without a worker.** A walk-along video feeds only the photo-real
+view. On a server without a worker it would be a 1–2 GB upload that nothing uses, removed again by
+the retention sweep, so the upload panel doesn't offer it and the video route refuses it with
+*"The photo-real view is not set up on this server, so a video would not be used."* Photos alone
+build the model, the textures and everything the follow-up chain does.
 
 ### Model history and imports
 
@@ -961,6 +990,17 @@ on that route (and a read timeout of up to 2 hours), or uploads fail partway. Ot
 their normal limit. While the upload streams, and later while the capture worker extracts the
 video's frames, `/health/ready-to-deploy` reports busy, so the autodeploy waits instead of
 restarting the app underneath it.
+
+**Captures from a script.** Everything the upload panel does is also on the machine API under
+`/api/walls/{wallId}/captures` (see the in-app API docs): `POST …/draft`, `POST …/{captureId}/photos`
+(multipart/form-data, many files, streamed one at a time), `PUT …/{captureId}/plan`,
+`GET …/{captureId}/declarations`, `POST …/{captureId}/start` (declarations, level pairs, notes and
+quality are all optional) and `GET …/{captureId}` to poll. The outline upgrade and "refine 3D hold
+shapes" are under `/api/walls/{wallId}/holds/outline-upgrade[/preview|/{runId}/revert]` and
+`/api/walls/{wallId}/holds/refine-shapes`. Use a personal API key created with write access (or a
+wall key for that wall); its owner must be an admin of the wall. Kiosk tablets are refused. A photo
+batch can be large (up to 60 photos at `CAPTURE__MAXPHOTOMB` each), so a reverse proxy must allow
+that body size on `/api/walls/*/captures/*/photos` too.
 
 **On a Mac (native).** Docker on macOS has no GPU access, so on a Mac the worker runs natively and
 trains through Metal:

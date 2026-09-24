@@ -1,3 +1,4 @@
+using Blocwerk.Core.Capture.FollowUp;
 using Blocwerk.Core.Compute;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,6 +21,13 @@ public static class CaptureServices
         // and the worker re-enqueues unfinished captures on start (see WallCaptureWorker).
         services.AddSingleton<WallCaptureQueue>();
         services.AddSingleton<WallCaptureProcessor>();
+
+        // The post-capture chain: what a live model does for the wall's existing holds (see CaptureFollowUpChain).
+        services.AddSingleton<CaptureFollowUpChain>();
+        services.AddScoped<ICaptureFollowUpStep, PlaceHoldsFollowUpStep>();
+        services.AddScoped<ICaptureFollowUpStep, RefineFootprintsFollowUpStep>();
+        services.AddScoped<ICaptureFollowUpStep, MeasureProtrusionFollowUpStep>();
+        services.AddScoped<ICaptureFollowUpStep, DetectVolumesFollowUpStep>();
         services.AddHostedService<WallCaptureWorker>();
         services.AddScoped<IWallCaptureService, WallCaptureService>();
         services.AddScoped<ICapturePanelPhotoService, CapturePanelPhotoService>();

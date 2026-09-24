@@ -45,7 +45,7 @@ public class WallCaptureHeicUploadTests
         using var s = new CaptureScenario(h, photoConverter: new FakeConverter(null));
         var draft = await OpenDraftAsync(h, s);
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+        var ex = await Assert.ThrowsAnyAsync<InvalidOperationException>(
             () => s.Service.AddPhotoAsync(draft, "IMG_1.HEIC", Heic, CancellationToken.None));
 
         Assert.Contains("could not be converted", ex.Message);
@@ -60,7 +60,7 @@ public class WallCaptureHeicUploadTests
         using var s = new CaptureScenario(h, photoConverter: new FakeConverter(Encoding.ASCII.GetBytes("not a jpeg")));
         var draft = await OpenDraftAsync(h, s);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
+        await Assert.ThrowsAnyAsync<InvalidOperationException>(
             () => s.Service.AddPhotoAsync(draft, "IMG_1.HEIC", Heic, CancellationToken.None));
     }
 

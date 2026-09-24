@@ -21,9 +21,12 @@ public sealed class CaptureDeclarationRow
         Vertical = d.VerticalReference,
     };
 
+    /// <summary>Shown under the row when its markers would be merged into another face (a named row without an angle).</summary>
+    public string? MergeWarning => CaptureDeclarationRules.MergeWarningFor(ToDeclaration());
+
     public CaptureSegmentDeclaration ToDeclaration() => new(
         Index,
-        string.IsNullOrWhiteSpace(Name) ? $"Segment {Index}" : Name.Trim(),
+        string.IsNullOrWhiteSpace(Name) ? CaptureDeclarationRules.DefaultName(Index) : Name.Trim(),
         AngleDeg,
         Vertical);
 }

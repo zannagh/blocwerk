@@ -34,6 +34,7 @@ public partial class BlocwerkDbContext
             entity.Property(c => c.DeclarationsJson).HasColumnType("text");
             entity.Property(c => c.PlanJson).HasColumnType("text");
             entity.Property(c => c.PlacementCheckJson).HasColumnType("text");
+            entity.Property(c => c.FollowUpJson).HasColumnType("text");
             entity.HasIndex(c => new { c.WallId, c.CreatedAt });
             entity.HasIndex(c => c.Status);
         });

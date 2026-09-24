@@ -2,6 +2,7 @@
 // See License in the project root for license information.
 
 using System.Text;
+using Blocwerk.Core.Capture.FollowUp;
 using Blocwerk.Core.Compute;
 using Blocwerk.Core.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -19,7 +20,9 @@ namespace Blocwerk.Core.Capture;
 /// Failure semantics: the model and its textures are already live, so a splat failure never fails
 /// the capture. It ends as <see cref="WallCaptureStatus.SucceededWithoutSplat"/> with the reason in
 /// <c>Error</c> (or stays <see cref="WallCaptureStatus.SucceededWithoutTextures"/> when textures were
-/// missing too; both reasons are kept). While the stage runs the row is
+/// missing too; both reasons are kept). A worker that cannot be reached at all (network error, full queue) is
+/// no failure: the capture ends exactly as without a worker, with a quiet note on its follow-up record, because
+/// the GPU is optional and its absence must not look like an error. While the stage runs the row is
 /// <see cref="WallCaptureStatus.Splatting"/>, holding the texture outcome in <c>Error</c>, so a restart
 /// resumes right here from <see cref="WallCapture.SplatJobId"/> without redoing model or textures.
 /// The single capture worker is busy for the whole training run (up to an hour); captures are rare
@@ -27,6 +30,10 @@ namespace Blocwerk.Core.Capture;
 /// </remarks>
 public sealed partial class WallCaptureProcessor
 {
+    /// <summary>The note a capture keeps when no photo-real worker could be reached (shown as a hint, not an error).</summary>
+    internal const string NoWorkerNote =
+        "The photo-real view was skipped: the GPU worker could not be reached. Everything else is done; you can retrain the photo-real view later.";
+
     private const string SplatKind = "splat";
 
     /// <summary>Completes the capture, or hands it to the photo-real stage when a splat worker is configured.</summary>
@@ -34,6 +41,7 @@ public sealed partial class WallCaptureProcessor
     {
         if (!computeClients.Get(ComputeServiceKind.Splat).IsConfigured)
         {
+            await FollowUpAsync(run, CaptureFollowUpPhase.Final, ct);
             await CompleteAsync(run.Capture.Id, TextureOutcome(textureError), textureError, ct);
             return;
         }
@@ -58,6 +66,7 @@ public sealed partial class WallCaptureProcessor
         var client = computeClients.Get(ComputeServiceKind.Splat);
         if (!client.IsConfigured || capture.GeometryModelId is not { } modelId)
         {
+            await FollowUpAsync(run, CaptureFollowUpPhase.Final, ct);
             await CompleteAsync(capture.Id, TextureOutcome(textureError), textureError, ct);
             return;
         }
@@ -78,16 +87,39 @@ public sealed partial class WallCaptureProcessor
                 ct);
             await StoreSplatAsync(capture.Id, modelId, status.JobId!, client, ct);
         }
+        catch (ComputeJobException ex) when (IsWorkerAbsent(ex))
+        {
+            await EndWithoutWorkerAsync(run, ex, ct);
+            return;
+        }
         catch (Exception ex) when (ex is CaptureFailedException or ComputeJobException or InvalidDataException or IOException)
         {
             logger.LogInformation("Photo-real view of capture {CaptureId} failed: {Reason}", capture.Id, ex.Message);
+            await FollowUpAsync(run, CaptureFollowUpPhase.Final, ct);
             await UpdateAsync(capture.Id, c => EndWithoutSplat(c, ex.Message), ct);
             return;
         }
 
-        await MeasureProtrusionAsync(capture.Id, capture.WallId, ct);
+        await FollowUpAsync(run, CaptureFollowUpPhase.Final, ct);
         await CompleteAsync(capture.Id, TextureOutcome(textureError), textureError, ct);
         await push.NotifyWallPhotoRealReadyAsync(capture.WallId, run.User.Id);
+    }
+
+    /// <summary>
+    /// No GPU worker to be had (unreachable, or its queue full for longer than the retries): the photo-real view is
+    /// optional, so this is no failure. The capture ends as if no worker were configured, with a quiet note.
+    /// </summary>
+    private static bool IsWorkerAbsent(ComputeJobException ex) => ex.IsTransient || ex.Kind == ComputeFailureKind.NotConfigured;
+
+    private async Task EndWithoutWorkerAsync(CaptureRun run, ComputeJobException ex, CancellationToken ct)
+    {
+        var capture = run.Capture;
+        logger.LogWarning(
+            "Capture {CaptureId}: no photo-real worker was reachable ({Reason}); finishing without the photo-real view",
+            capture.Id, ex.Message);
+        await FollowUpAsync(run, CaptureFollowUpPhase.Final, ct);
+        await UpdateAsync(capture.Id, c => AddFollowUpNote(c, NoWorkerNote), ct);
+        await CompleteAsync(capture.Id, TextureOutcome(capture.Error), capture.Error, ct);
     }
 
     /// <summary>
