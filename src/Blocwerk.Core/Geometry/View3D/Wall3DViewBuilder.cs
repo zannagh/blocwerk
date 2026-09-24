@@ -161,10 +161,21 @@ public static class Wall3DViewBuilder
             var shape = HoldShapeProjector.FromFootprint(HoldFootprint.For(hold))
                 ?? HoldShapeProjector.Project(hold, placed.WidthMm, placed.HeightMm, mapping);
             var tilt = mapping is { } m ? PhotoViewTilt.At(m.Map, hold.X, hold.Y) : null;
-            holds.Add(new HoldTwinCandidate(hold, placed with { Shape = shape }, tilt));
+            holds.Add(new HoldTwinCandidate(hold, placed with { Shape = shape, Protrusion = ProtrusionOf(hold, shape) }, tilt));
         }
 
         return (holds, unplaced);
+    }
+
+    /// <summary>The stored protrusion when it still matches the hold, else an estimate from the drawn outline's size.</summary>
+    private static Wall3DHoldProtrusion ProtrusionOf(Hold hold, Wall3DHoldShape shape)
+    {
+        var p = HoldProtrusion.For(hold) ?? HoldProtrusion.Estimate(
+            shape.Outline.Max(v => v[0]) - shape.Outline.Min(v => v[0]),
+            shape.Outline.Max(v => v[1]) - shape.Outline.Min(v => v[1]),
+            string.Empty);
+        return new Wall3DHoldProtrusion(
+            p.BaseMm, p.HeightMm, p.ApexA, p.ApexB, p.ApexMm, p.Source == HoldProtrusionSource.Splat, p.OnVolume, p.ShiftA, p.ShiftB);
     }
 
     /// <summary>The wall's live holds: everything at or below the wall generation (staged gen+1 rows excluded).</summary>

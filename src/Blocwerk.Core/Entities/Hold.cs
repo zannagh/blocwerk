@@ -148,6 +148,13 @@ public partial class Hold
     /// </summary>
     public string? FootprintMm { get; set; }
 
+    /// <summary>
+    /// How far the hold stands out of its facet as JSON (<see cref="Geometry.View3D.HoldProtrusion"/>): body
+    /// height, apex and the surface it sits on (wall or volume), measured from the photo-real scene. Written
+    /// after a splat is installed; the 3D view lifts the hold's overlay by it. Null when never measured.
+    /// </summary>
+    public string? ProtrusionMm { get; set; }
+
     public ICollection<BoulderHold> BoulderHolds { get; set; } = [];
 
     /// <summary>
@@ -167,6 +174,7 @@ public partial class Hold
         OutlineConfidence = source.OutlineConfidence;
         MetricSource = source.MetricSource;
         FootprintMm = source.FootprintMm;
+        ProtrusionMm = source.ProtrusionMm;
     }
 
     /// <summary>
@@ -207,5 +215,6 @@ public partial class Hold
         OutlineConfidence = OutlineConfidence,
         MetricSource = MetricSource,
         FootprintMm = FootprintMm,
+        ProtrusionMm = ProtrusionMm,
     };
 }

@@ -85,6 +85,7 @@ public sealed partial class WallCaptureProcessor
             return;
         }
 
+        await MeasureProtrusionAsync(capture.Id, capture.WallId, ct);
         await CompleteAsync(capture.Id, TextureOutcome(textureError), textureError, ct);
         await push.NotifyWallPhotoRealReadyAsync(capture.WallId, run.User.Id);
     }

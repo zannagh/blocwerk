@@ -68,6 +68,17 @@ public static class SpzDecimator
         return wanted.Select(t => (t, Encode(raw, header, Keep(ranked, t)))).ToList();
     }
 
+    /// <summary>
+    /// The decompressed scene with its splat count and the byte offsets of the position, alpha and
+    /// scale arrays (for readers of the raw attributes, e.g. <see cref="SpzPoints"/>).
+    /// </summary>
+    internal static (byte[] Raw, int Count, int PositionOffset, int AlphaOffset, int ScaleOffset) Open(byte[] spz)
+    {
+        var raw = Decompress(spz);
+        var header = ReadHeader(raw);
+        return (raw, header.Count, HeaderBytes, header.AlphaOffset, header.ScaleOffset);
+    }
+
     private static byte[] Encode(byte[] raw, SpzHeader header, int[] keep)
     {
         var output = new MemoryStream();

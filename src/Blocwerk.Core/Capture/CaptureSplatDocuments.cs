@@ -20,6 +20,9 @@ public static class CaptureSplatDocuments
 
     public const string FrameFile = "frame.json";
 
+    /// <summary>The additive <c>frame.json</c> field holding the fine alignment (its own <c>toWorldMm</c> and residuals).</summary>
+    public const string RefinementField = "refinement";
+
     /// <summary>
     /// Name prefix of an AUXILIARY image in a splat request: a walk-along video frame. The worker
     /// trains on it but never aligns with it (<c>docker/splat-worker/README.md</c>). Photo names
@@ -119,14 +122,26 @@ public static class CaptureSplatDocuments
 
     /// <summary>
     /// The splat → wall-geometry-world (mm) transform as a column-major 4×4 (three.js
-    /// <c>Matrix4.fromArray</c>), from the frame's row-major <c>toWorldMm</c>. Null when missing.
+    /// <c>Matrix4.fromArray</c>), from the frame's row-major <c>toWorldMm</c>. An applied
+    /// <c>refinement</c> (the plane-ICP fine alignment that pulls the splat's bare wall onto the
+    /// facets, <c>splatworker/refine.py</c>) wins over the camera-centre alignment. Null when missing.
     /// </summary>
     public static double[]? WorldMatrix(string frameJson)
     {
         try
         {
             using var doc = JsonDocument.Parse(frameJson);
-            return WorldMatrixOrNull(doc.RootElement);
+            var root = doc.RootElement;
+            if (root.TryGetProperty(RefinementField, out var refinement)
+                && refinement.ValueKind == JsonValueKind.Object
+                && refinement.TryGetProperty("applied", out var applied)
+                && applied.ValueKind == JsonValueKind.True
+                && WorldMatrixOrNull(refinement) is { } refined)
+            {
+                return refined;
+            }
+
+            return WorldMatrixOrNull(root);
         }
         catch (JsonException)
         {
@@ -134,13 +149,20 @@ public static class CaptureSplatDocuments
         }
     }
 
-    /// <summary>For log lines: the frame's median alignment residual, if reported.</summary>
+    /// <summary>For log lines: the frame's median alignment residual, if reported, and the fine alignment's.</summary>
     public static string ResidualText(string frameJson)
     {
-        var node = JsonNode.Parse(frameJson)?["alignment"]?["residualMmMedian"] as JsonValue;
-        return node is not null && node.TryGetValue<double>(out var mm)
+        var root = JsonNode.Parse(frameJson);
+        var node = root?["alignment"]?["residualMmMedian"] as JsonValue;
+        var text = node is not null && node.TryGetValue<double>(out var mm)
             ? mm.ToString("0.#", CultureInfo.InvariantCulture) + " mm"
             : "n/a";
+        var refinement = root?[RefinementField];
+        return refinement?["applied"] is JsonValue a && a.TryGetValue<bool>(out var on) && on
+            && refinement["before"]?["medianAbsMm"] is JsonValue b && b.TryGetValue<double>(out var before)
+            && refinement["after"]?["medianAbsMm"] is JsonValue f && f.TryGetValue<double>(out var after)
+            ? $"{text}; wall plane {before.ToString("0.#", CultureInfo.InvariantCulture)} → {after.ToString("0.#", CultureInfo.InvariantCulture)} mm"
+            : text;
     }
 
     private static double[]? WorldMatrixOrNull(JsonElement root)

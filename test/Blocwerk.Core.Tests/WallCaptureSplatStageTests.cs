@@ -243,4 +243,18 @@ public class WallCaptureSplatStageTests
         Assert.Equal(new double[] { 1000, 0, 0, 0, 0, 1000, 0, 0, 0, 0, 1000, 0, 10, 20, 30, 1 }, m);
         Assert.Null(CaptureSplatDocuments.WorldMatrix("{\"toWorldMm\": [[1, 2]]}"));
     }
+
+    [Fact]
+    public void WorldMatrix_PrefersAnAppliedRefinement()
+    {
+        const string Frame = """
+            {"toWorldMm": [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]],
+             "refinement": {"applied": true, "before": {"medianAbsMm": 8.3}, "after": {"medianAbsMm": 5.9},
+                            "toWorldMm": [[1, 0, 0, 5], [0, 1, 0, 6], [0, 0, 1, 7], [0, 0, 0, 1]]}}
+            """;
+
+        Assert.Equal(new double[] { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 5, 6, 7, 1 }, CaptureSplatDocuments.WorldMatrix(Frame));
+        Assert.Equal(0, CaptureSplatDocuments.WorldMatrix(Frame.Replace("true", "false", StringComparison.Ordinal))![12]);
+        Assert.Equal("n/a; wall plane 8.3 → 5.9 mm", CaptureSplatDocuments.ResidualText(Frame));
+    }
 }

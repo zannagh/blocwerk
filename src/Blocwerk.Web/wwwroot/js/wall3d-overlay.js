@@ -1,6 +1,6 @@
-// The hold overlay of the photo-real mode (wall3d.js): the Photos-mode outline layer
-// (wall3d-outlines.js) and the boulder role rings drawn over the splat, with a "Show holds" toggle
-// (on by default, remembered per browser).
+// The hold overlay of the photo-real mode (wall3d.js): the outline layer (wall3d-outlines.js), raised
+// to each hold's relief (wall3d-relief.js), and the boulder role rings drawn over the splat, with a
+// "Show holds" toggle (on by default, remembered per browser).
 //
 // Occlusion: the splat draws without depth test (wall3d-splat-clip.js), so it is never cut by the
 // modelled facets. The facets themselves go into the depth buffer first, invisibly (colour writes off,
@@ -70,6 +70,8 @@ export function createPhotoOverlay({ root, facets, outlines, rings, request }) {
         const photoReal = mode === 'photoreal';
         const holds = !photoReal || show;
         outlines.visible = mode === 'photos' || (photoReal && show);
+        outlines.userData.setRaised?.(photoReal);
+        rings.userData.setRaised?.(photoReal);
         prepass.visible = photoReal && show;
         rings.visible = holds;
         toggle.hidden = !photoReal;

@@ -4,12 +4,12 @@
 // facet ghosted out of the way (wall3d-ghost.js) does not count. Every mode picks the same way,
 // photo-real included: the never-drawn pick outlines (wall3d-holds.js) are what a tap hits.
 //
-// A pick is { holdId, hold, facetId, point: [x, y, z] (world mm, on the hold's pick face),
+// A pick is { holdId, hold, facetId, point: [x, y, z] (world mm, on the hold's pick prism),
 // plane: { a, b } (mm in the facet's u / v frame) } — what a 3D boulder editor needs later.
 import * as THREE from '../lib/three/three.module.min.js';
 
 const TAP_SLOP_PX = 8;
-/** A facet this much nearer than the hold's pick face is in the way (the face floats ~5–25 mm up). */
+/** A facet this much nearer than the hold's pick prism is in the way (the prism stands on the hold's base). */
 const OCCLUDE_MM = 1;
 
 function pickOf(hold, facet, point) {

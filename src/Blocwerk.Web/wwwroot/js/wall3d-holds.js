@@ -3,9 +3,11 @@
 // bevelled slab lying on its facet. ~880 holds would be ~880 draw calls as separate meshes, so every
 // slab is baked into world space and merged into ONE geometry per state (lit / dimmed) with
 // per-vertex colour; the boulder rings stay one InstancedMesh. Picking goes through a separate,
-// never-drawn geometry of the holds' outer outlines WITHOUT their holes, so a tap inside a pocket
-// still selects the hold (as in the 2D views).
+// never-drawn geometry: each hold's outer outline WITHOUT its holes (a tap inside a pocket still
+// selects the hold, as in the 2D views) as a prism from the surface it sits on up to its cap
+// (wall3d-relief.js), the shape the photo-real overlay draws.
 import * as THREE from '../lib/three/three.module.min.js';
+import { reliefOf } from './wall3d-relief.js';
 import { facetBasis, v3 } from './wall3d-scene.js';
 
 const BASE_LIFT = 3.5;            // slab base above the facet: over the photo (3 mm) and markers (1.5 mm)
@@ -49,10 +51,14 @@ export function slabDepth(h) {
     return Math.max(5, Math.min(22, 0.14 * Math.min(f.w, f.h)));
 }
 
-/** Facet-local frame of a hold: x/y along u/v with the origin at its plane centre, z along the normal. */
-export function holdFrame(h, facet, lift) {
+/**
+ * Facet-local frame of a hold: x/y along u/v with the origin at its plane centre (moved by `shift`
+ * [da, db] mm when given: a hold on a volume, wall3d-relief.js), z along the normal.
+ */
+export function holdFrame(h, facet, lift, shift) {
     const m = facetBasis(facet);
-    const p = v3(facet.origin).addScaledVector(v3(facet.u), h.planeA).addScaledVector(v3(facet.v), h.planeB)
+    const [sa, sb] = shift || [0, 0];
+    const p = v3(facet.origin).addScaledVector(v3(facet.u), h.planeA + sa).addScaledVector(v3(facet.v), h.planeB + sb)
         .addScaledVector(v3(facet.normal), lift);
     return m.setPosition(p);
 }
@@ -78,11 +84,41 @@ function slab(h, facet) {
     return geo.index ? geo.toNonIndexed() : geo;
 }
 
-/** The outer outline (holes filled), flat at the slab's top: what a tap hits. */
-function pickFace(h, facet) {
-    const geo = new THREE.ShapeGeometry(toShape(h, false), 1);
-    geo.applyMatrix4(holdFrame(h, facet, BASE_LIFT + slabDepth(h)));
-    return geo.index ? geo.toNonIndexed() : geo;
+/** Top of a hold's overlay: its slab (Schematic) or its relief's cap (photo-real), whichever is higher. */
+function topOf(h) {
+    return Math.max(BASE_LIFT + slabDepth(h), reliefOf(h).cap);
+}
+
+/**
+ * The outer outline (holes filled) as a prism from the hold's base to its top: what a tap hits. A hold
+ * moved onto a volume also keeps a flat face at its photo spot (Photos, Schematic).
+ */
+function pickPrism(h, facet) {
+    const r = reliefOf(h);
+    const moved = r.shift[0] !== 0 || r.shift[1] !== 0;
+    const base = moved ? r.base : Math.min(BASE_LIFT, r.base);
+    const geo = new THREE.ExtrudeGeometry(toShape(h, false), { depth: Math.max(1, topOf(h) - base), curveSegments: 1, steps: 1, bevelEnabled: false });
+    geo.applyMatrix4(holdFrame(h, facet, base, r.shift));
+    const prism = geo.index ? geo.toNonIndexed() : geo;
+    if (!moved) return prism;
+    const flat = new THREE.ShapeGeometry(toShape(h, false), 1);
+    flat.applyMatrix4(holdFrame(h, facet, BASE_LIFT + slabDepth(h)));
+    return concat(prism, flat.index ? flat.toNonIndexed() : flat);
+}
+
+/** Two non-indexed geometries as one (positions and normals). */
+function concat(a, b) {
+    const g = new THREE.BufferGeometry();
+    for (const name of ['position', 'normal']) {
+        const x = a.attributes[name].array, y = b.attributes[name].array;
+        const out = new Float32Array(x.length + y.length);
+        out.set(x);
+        out.set(y, x.length);
+        g.setAttribute(name, new THREE.BufferAttribute(out, 3));
+    }
+    a.dispose();
+    b.dispose();
+    return g;
 }
 
 /**
@@ -139,10 +175,14 @@ export function holdColor(h, dimmed) {
     return c;
 }
 
-/** A flat ring matrix around a hold's outline, `scale` × its bounding box, just above its slab. */
-export function ringMatrix(h, facet, scale) {
+/**
+ * A flat ring matrix around a hold's outline, `scale` × its bounding box, just above its slab / cap;
+ * `raised`: around the photo-real overlay's cap instead (a hold on a volume moved onto it).
+ */
+export function ringMatrix(h, facet, scale, raised = false) {
     const f = footprint(h);
-    const m = holdFrame(h, facet, BASE_LIFT + slabDepth(h) + 1.5);
+    const r = reliefOf(h);
+    const m = raised ? holdFrame(h, facet, r.cap + 1.5, r.shift) : holdFrame(h, facet, topOf(h) + 1.5);
     m.multiply(new THREE.Matrix4().makeTranslation(f.ca, f.cb, 0));
     return m.scale(new THREE.Vector3(f.w * scale, f.h * scale, 1));
 }
@@ -182,18 +222,21 @@ export function buildHolds(view, roleColors, sides) {
     ringMesh.renderOrder = 6;
     ringMesh.count = highlighting ? lit.length : 0;
     const color = new THREE.Color();
-    if (highlighting) {
-        lit.forEach((h, i) => {
-            ringMesh.setMatrixAt(i, ringMatrix(h, facets.get(h.facetId), RING_SCALE));
-            ringMesh.setColorAt(i, color.set(roleColors[h.role] || roleColors.Hand));
-        });
+    // Photo-real puts the rings around the raised overlay (wall3d-overlay.js); the other modes around the slabs.
+    ringMesh.userData.setRaised = raised => {
+        if (!highlighting) return;
+        lit.forEach((h, i) => ringMesh.setMatrixAt(i, ringMatrix(h, facets.get(h.facetId), RING_SCALE, raised)));
         ringMesh.instanceMatrix.needsUpdate = true;
-        if (ringMesh.instanceColor) ringMesh.instanceColor.needsUpdate = true;
         ringMesh.computeBoundingSphere();
+    };
+    if (highlighting) {
+        lit.forEach((h, i) => ringMesh.setColorAt(i, color.set(roleColors[h.role] || roleColors.Hand)));
+        if (ringMesh.instanceColor) ringMesh.instanceColor.needsUpdate = true;
+        ringMesh.userData.setRaised(false);
     }
 
     const ordered = [...lit, ...dim];
-    const picked = merge(ordered.map(h => ({ geo: pickFace(h, facets.get(h.facetId)) })));
+    const picked = merge(ordered.map(h => ({ geo: pickPrism(h, facets.get(h.facetId)) })));
     const pick = new THREE.Mesh(picked.geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, visible: false }));
 
     return {

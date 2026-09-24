@@ -1,6 +1,6 @@
 """The splat job: stages, progress bands, failure reasons, frame.json.
 
-ingest -> sfm-features -> sfm-matching -> sfm-mapping -> undistort -> train -> [align] -> crop -> export
+ingest -> sfm-features -> sfm-matching -> sfm-mapping -> undistort -> train -> [align + refine] -> crop -> export
 """
 import hashlib
 import json
@@ -17,6 +17,7 @@ from .frames import build_pairs, is_frame, split
 from .ingest import clean_jpeg, downscale
 from .options import SplatOptions, resolve_matcher
 from .procs import MemoryLimitError
+from .refine import refine_frame
 from .settings import settings
 from .sfm import Sfm
 from .splatio import Splats, crop_mask, read_ply, write_splat, write_spz
@@ -197,7 +198,7 @@ class Run:
             # Photos only: the frames have no solved camera, and the alignment must not depend on them.
             centres = {stem: v for stem, v in ((os.path.splitext(os.path.basename(k))[0], v)
                                                for k, v in self.model["images"].items()) if not is_frame(stem)}
-            frame = align(centres, self.geometry, self.opts.cropMarginMm)
+            frame = refine_frame(align(centres, self.geometry, self.opts.cropMarginMm), splats, self.geometry)
         else:
             frame = unaligned_frame(splats.xyz)
         self.begin("crop")

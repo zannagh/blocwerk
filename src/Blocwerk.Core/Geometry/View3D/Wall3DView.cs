@@ -116,6 +116,7 @@ public sealed record Wall3DMarker(int Id, string FacetId, IReadOnlyList<double[]
 /// Other panels' copies of this physical hold, folded into this one (not drawn themselves); null when
 /// the hold is seen on one panel only. A tap or a boulder on any of them resolves to this hold.
 /// </param>
+/// <param name="Protrusion">How far the hold stands out of its facet (measured from the photo-real scene, else estimated from its size).</param>
 public sealed record Wall3DHold(
     Guid Id,
     string FacetId,
@@ -132,7 +133,18 @@ public sealed record Wall3DHold(
     int UsageCount,
     Wall3DHoldRole? Role,
     Wall3DHoldShape? Shape = null,
-    IReadOnlyList<Guid>? DuplicateIds = null);
+    IReadOnlyList<Guid>? DuplicateIds = null,
+    Wall3DHoldProtrusion? Protrusion = null);
+
+/// <summary>
+/// A hold's relief for the renderer, mm along the facet normal above the facet plane
+/// (<see cref="HoldProtrusion"/>): the surface it sits on, its body, and its apex (position relative to
+/// the hold's plane centre). <paramref name="Measured"/> is false for a size estimate. On a volume,
+/// <paramref name="ShiftA"/> / <paramref name="ShiftB"/> move the hold from its flat-mapped plane centre onto
+/// the volume (auto-detected, unreviewed); the photo-real overlay draws it there.
+/// </summary>
+public sealed record Wall3DHoldProtrusion(
+    double BaseMm, double HeightMm, double ApexA, double ApexB, double ApexMm, bool Measured, bool OnVolume, double ShiftA = 0, double ShiftB = 0);
 
 /// <summary>A hold's part in the highlighted boulder. Serialised by name for the renderer.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter<Wall3DHoldRole>))]

@@ -2,9 +2,11 @@
 // rectified photo already shows the holds themselves, so it gets their traced outlines (and pocket
 // holes) drawn over it instead of opaque slabs. One LineSegments per state (lit / dimmed), coloured
 // per vertex, so the whole wall is two draw calls (plus the faded twin of a ghosted facet's lines).
-// Photo-real shows the same layer over the splat (wall3d-overlay.js).
+// Photo-real shows them RAISED over the splat instead (wall3d-relief.js, wall3d-overlay.js): the
+// photo is flat, so its outlines stay on the facet, but the splat has the holds' real relief.
 import * as THREE from '../lib/three/three.module.min.js';
 import { holdColor, holdFrame, outlineOf } from './wall3d-holds.js';
+import { raisedSegments } from './wall3d-relief.js';
 
 function rings(h) {
     const holes = (h.shape && h.shape.holes ? h.shape.holes : []).filter(r => r.length >= 3);
@@ -40,8 +42,10 @@ function segments(list, facets, lift, dimmed, sides) {
 }
 
 /**
- * A group of two LineSegments (lit, dimmed) tracing every hold's outline `lift` mm above its facet.
- * `sides` (wall3d-sides.js) hides a facet's outlines while the camera is behind it.
+ * The outline layer: `flat` (two LineSegments, lit / dimmed, `lift` mm above the facets: Photos mode)
+ * and `raised` (cap contours and faint collars at each hold's relief: photo-real), one showing at a
+ * time through `group.userData.setRaised(on)`. `sides` (wall3d-sides.js) hides a facet's outlines
+ * while the camera is behind it.
  */
 export function buildOutlines(lit, dim, facets, lift, sides) {
     const group = new THREE.Group();
@@ -52,11 +56,27 @@ export function buildOutlines(lit, dim, facets, lift, sides) {
         l.renderOrder = 5;
         return l;
     };
+    const flat = new THREE.Group();
     const litGeo = segments(lit, facets, lift, false, sides);
-    group.add(line(litGeo, 1, 'solid'), line(litGeo, 0.3, 'ghost'));
+    flat.add(line(litGeo, 1, 'solid'), line(litGeo, 0.3, 'ghost'));
     if (dim.length) {
-        group.add(line(segments(dim, facets, lift, true, sides), 0.45, 'all'));
+        flat.add(line(segments(dim, facets, lift, true, sides), 0.45, 'all'));
     }
+    const raised = new THREE.Group();
+    const frameOf = (h, l, shift) => holdFrame(h, facets.get(h.facetId), l, shift);
+    const slotOf = h => sides.index.get(h.facetId) ?? 0;
+    const up = raisedSegments(lit, frameOf, h => holdColor(h, false), slotOf, rings);
+    raised.add(line(up.cap, 1, 'solid'), line(up.collar, 0.4, 'solid'), line(up.cap, 0.3, 'ghost'));
+    if (dim.length) {
+        const down = raisedSegments(dim, frameOf, h => holdColor(h, true), slotOf, rings);
+        raised.add(line(down.cap, 0.45, 'all'), line(down.collar, 0.2, 'all'));
+    }
+    raised.visible = false;
+    group.add(flat, raised);
+    group.userData.setRaised = on => {
+        flat.visible = !on;
+        raised.visible = on;
+    };
     group.visible = false;
     return group;
 }

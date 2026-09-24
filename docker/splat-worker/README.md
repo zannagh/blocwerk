@@ -52,7 +52,12 @@ telling log line>`, `sfm-features: tool not found …`, `…: timed out after 14
 (column-major 4×4 for three.js `Matrix4.fromArray`), `toViewer` (same, row-major: splat coordinates →
 metres with X right, Y up, Z out of the wall, origin = centre of the reference facet), `toWorldMm`
 (→ wall-geometry world, mm), `scaleMmPerUnit`, `crop` ([lo, hi] in the viewer frame: facet bounds ±
-`cropMarginMm`), `alignment {cameras, residualMmMedian, residualMmMax, perCameraMm}}` and `stats =
+`cropMarginMm`), `alignment {cameras, residualMmMedian, residualMmMax, perCameraMm}`, `refinement
+{method: "plane-icp", applied, reason?, before/after {medianAbsMm, points, facetOffsetMm{facet: mm}},
+correction {shiftMm, rotationDeg, scale}, toWorldMm}}` (the fine alignment, `splatworker/refine.py`: a
+robust rigid plane-ICP of the opaque, small splat centres onto the facets, holds and volumes trimmed
+away; the app prefers its `toWorldMm` when `applied`; on The Attic it moved the splat 9 mm / 0.23° and
+cut the bare-wall point-to-plane median from 8.3 to 5.9 mm) and `stats =
 {photos, registeredImages, unregistered[] (photos only), videoFrames, videoFramesRegistered, sparsePoints, meanReprojErrorPx, matcher, cameraGroups,
 memoryBudgetMb, trainMemoryBudgetMb, extractionThreads, matchingTier, memoryRetries[] (below),
 splatsTrained, splatCount, steps, trainingSeconds, stageSeconds{…}, alignmentResidualMm, fileBytes}`.

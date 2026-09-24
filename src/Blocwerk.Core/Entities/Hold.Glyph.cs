@@ -50,6 +50,7 @@ public partial class Hold
         PlaneBMm = null;
         MetricSource = null;
         FootprintMm = null;
+        ProtrusionMm = null;
     }
 
     /// <summary>Clears the plane position and the metric sizes, including those inside the fingerprint.</summary>
