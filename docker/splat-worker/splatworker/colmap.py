@@ -12,6 +12,9 @@ and 9.7 GB at 4 on 14 photos of 8.2k-13.4k features. When that does not fit, mat
 with a looser ratio test and no cross-check, and point_triangulator then adds the two-view tracks
 (16k points instead of 4.2k; about 150 MB). Note SiftExtraction.max_num_features is a soft cap in
 COLMAP 4.2: 8192 still gives 8.2k-13.4k per photo.
+
+GPU (COLMAP_USE_GPU, a CUDA build: Dockerfile.cuda): matching runs on SiftGPU/CUDA, sized to the VRAM
+(tuning.gpu_matching_tiers); extraction too unless DSP / affine shape are on (covariant SIFT is CPU-only).
 """
 import os
 import re
@@ -19,9 +22,9 @@ import shutil
 import sqlite3
 import subprocess
 
-import numpy as np
 from computejobs.child import tool_env
 
+from .colmap_model import read_text_model
 from .parsers import ExtractParser, MapParser, MatchParser, UndistortParser
 from .procs import ToolRun
 from .tuning import Tier
@@ -29,6 +32,7 @@ from .tuning import Tier
 UNGUIDED = Tier(False, 0, 0)  # plain unguided matching with the configured thread cap
 OPTION = re.compile(r"--([A-Za-z]+\.[A-Za-z_]+)")
 PAIR_CHUNK = 250  # pairs per matches_importer run (progress granularity; memory does not grow with it)
+GPU_CHUNK_FACTOR = 4
 
 
 def tool_version(bin_path):
@@ -58,7 +62,8 @@ class Colmap:
         options: the known option names (default: read from the binary's -h output)."""
         self.bin, self.log, self.cwd = bin_path, log_path, cwd
         self.caps = {"max_image_size": 0, "max_features": 0, "max_matches": 0, "threads": 0, "extract_threads": 0,
-                     "max_memory_mb": 0, "max_swap_growth_mb": 0, **(caps or {})}
+                     "max_memory_mb": 0, "max_swap_growth_mb": 0, "use_gpu": False, "gpu_index": 0,
+                     "dsp": True, "affine": True, **(caps or {})}
         if options is None:
             options = help_options(bin_path, "feature_extractor") | help_options(bin_path, "exhaustive_matcher")
         self.options = options
@@ -77,13 +82,29 @@ class Colmap:
             args += [f"--{name}", str(value)]
         return args
 
+    @property
+    def gpu_extraction(self):
+        """GPU SIFT extraction: COLMAP_USE_GPU without DSP / affine shape (COLMAP extracts those
+        covariant features on the CPU only; 4.2 would silently switch, so the worker says it up front)."""
+        return bool(self.caps["use_gpu"]) and not (self.caps["dsp"] or self.caps["affine"]) \
+            and not self.caps.get("cpu_extraction")
+
+    def _gpu(self, args, ns, on):
+        """--<ns>.use_gpu, and --<ns>.gpu_index when on (and known)."""
+        args += [f"--{ns}.use_gpu", "1" if on else "0"]
+        name = self._opt(f"{ns}.gpu_index")
+        if on and name:
+            args += [f"--{name}", str(self.caps["gpu_index"])]
+        return args
+
     def extract_args(self, db, image_dir, image_list, shared, params, max_features):
         feats = min(max_features, self.caps["max_features"]) if self.caps["max_features"] > 0 else max_features
         args = ["feature_extractor", "--database_path", db, "--image_path", image_dir,
-                "--image_list_path", image_list, "--ImageReader.camera_model", "RADIAL",
-                f"--{self.ext_ns}.use_gpu", "0",
-                "--SiftExtraction.max_num_features", str(feats),
-                "--SiftExtraction.estimate_affine_shape", "1", "--SiftExtraction.domain_size_pooling", "1"]
+                "--image_list_path", image_list, "--ImageReader.camera_model", "RADIAL"]
+        self._gpu(args, self.ext_ns, self.gpu_extraction)
+        args += ["--SiftExtraction.max_num_features", str(feats),
+                 "--SiftExtraction.estimate_affine_shape", "1" if self.caps["affine"] else "0",
+                 "--SiftExtraction.domain_size_pooling", "1" if self.caps["dsp"] else "0"]
         self._capped(args, "max_image_size", self.caps["max_image_size"],
                      f"{self.ext_ns}.max_image_size", "FeatureExtraction.max_image_size", "SiftExtraction.max_image_size")
         threads = self.caps["extract_threads"] or self.caps["threads"]
@@ -95,14 +116,18 @@ class Colmap:
         return args
 
     def _matching(self, args, tier):
-        """The options every matcher run shares: CPU, the match cap, and the tier's guided matching and
-        threads. The unguided tier also loosens the ratio test and drops the cross-check (more
-        matches per pair; RANSAC verification still filters them): 4.2k -> 7.3k points, and with
-        triangulate() 16k."""
+        """The options every matcher run shares: CPU or GPU, the match cap, and the tier's guided matching
+        and threads (on the GPU: the RANSAC verifier threads). The unguided tier also loosens the ratio
+        test and drops the cross-check (more matches per pair; RANSAC verification still filters them):
+        4.2k -> 7.3k points, and with triangulate() 16k."""
         threads = tier.threads or self.caps["threads"]
-        args += [f"--{self.match_ns}.use_gpu", "0", f"--{self.match_ns}.guided_matching", "1" if tier.guided else "0"]
-        self._capped(args, "max_matches", self.caps["max_matches"],
-                     f"{self.match_ns}.max_num_matches", "FeatureMatching.max_num_matches", "SiftMatching.max_num_matches")
+        self._gpu(args, self.match_ns, tier.gpu)
+        args += [f"--{self.match_ns}.guided_matching", "1" if tier.guided else "0"]
+        names = (f"{self.match_ns}.max_num_matches", "FeatureMatching.max_num_matches", "SiftMatching.max_num_matches")
+        if tier.gpu and tier.max_matches > 0:  # SiftGPU's buffer: the features per image it can match
+            args += [f"--{self._opt(*names)}", str(tier.max_matches)] if self._opt(*names) else []
+        else:
+            self._capped(args, "max_matches", self.caps["max_matches"], *names)
         if threads > 0:
             name = self._opt(f"{self.match_ns}.num_threads", "FeatureMatching.num_threads", "SiftMatching.num_threads")
             args += [f"--{name}", str(threads)] if name else []
@@ -123,6 +148,13 @@ class Colmap:
         return self._matching(["matches_importer", "--database_path", db, "--match_list_path", pairs_file,
                                "--match_type", "pairs"], tier)
 
+    def vocab_tree_args(self, db, tree, query_list, num_images, tier=UNGUIDED):
+        """vocab_tree_matcher: each image of `query_list` (the video frames) with its `num_images` most
+        similar images (retrieval over the whole database; pairs already matched are skipped)."""
+        return self._matching(["vocab_tree_matcher", "--database_path", db, "--VocabTreeMatching.vocab_tree_path",
+                               tree, "--VocabTreeMatching.match_list_path", query_list,
+                               "--VocabTreeMatching.num_images", str(num_images)], tier)
+
     def triangulate_args(self, db, image_dir, model_dir, out_dir):
         """point_triangulator on the mapper's model (same database, poses kept, points kept) that also
         keeps two-view tracks, which the mapper drops."""
@@ -133,21 +165,31 @@ class Colmap:
             args += ["--Mapper.num_threads", str(self.caps["threads"])]
         return args
 
-    def map_args(self, db, image_dir, out_dir):
+    def map_args(self, db, image_dir, out_dir, mapper="incremental"):
+        """mapper (incremental) or global_mapper (COLMAP 4.x: GLOMAP's rotation averaging + global
+        positioning, then bundle adjustment); both write <out_dir>/<n>/."""
+        if mapper == "global":
+            args = ["global_mapper", "--database_path", db, "--image_path", image_dir, "--output_path", out_dir,
+                    "--GlobalMapper.ba_refine_principal_point", "0"]
+            if self.caps["threads"] > 0:
+                args += ["--GlobalMapper.num_threads", str(self.caps["threads"])]
+            return args
         args = ["mapper", "--database_path", db, "--image_path", image_dir, "--output_path", out_dir,
                 "--Mapper.ba_refine_principal_point", "0"]
         if self.caps["threads"] > 0:  # same name in 3.9 and 4.x; mapper -h is not read
             args += ["--Mapper.num_threads", str(self.caps["threads"])]
         return args
 
-    def _run(self, stage, args, parser=None, report=None):
+    def _run(self, stage, args, parser=None, report=None, gpu=False):
+        """gpu: a CUDA run gets no RLIMIT_AS (the driver reserves huge virtual ranges; cuInit would
+        fail under it); the footprint watchdog still guards host memory."""
         def on_line(line):
             if parser and report:
                 r = parser(line)
                 if r:
                     report(*r)
         return ToolRun(stage, [self.bin, *args], self.cwd, self.log, on_line, name="COLMAP",
-                       mem_limit_mb=self.caps["max_memory_mb"], limit_address_space=True,
+                       mem_limit_mb=self.caps["max_memory_mb"], limit_address_space=not gpu,
                        swap_limit_mb=self.caps["max_swap_growth_mb"]).run()
 
     def extract(self, db, image_dir, groups, report, max_features):
@@ -158,26 +200,35 @@ class Colmap:
             with open(lst, "w") as fh:
                 fh.write("\n".join(names) + "\n")
             args = self.extract_args(db, image_dir, lst, shared, params, max_features)
-            self._run("sfm-features", args, ExtractParser(total, done), report)
+            self._run("sfm-features", args, ExtractParser(total, done), report, gpu=self.gpu_extraction)
             done += len(names)
 
     def match(self, db, matcher, n, report, tier=UNGUIDED):
-        self._run("sfm-matching", self.match_args(db, matcher, n, tier), MatchParser(), report)
+        self._run("sfm-matching", self.match_args(db, matcher, n, tier), MatchParser(), report, gpu=tier.gpu)
 
     def match_pairs(self, db, pairs, report, chunk=PAIR_CHUNK, tier=UNGUIDED):
         """Match an explicit pair list in chunks: one matches_importer run per chunk (each under the
-        memory guard), which also gives a progress line per chunk ("pairs 250/2680")."""
+        memory guard), which also gives a progress line per chunk ("pairs 250/2680"). GPU chunks are
+        GPU_CHUNK_FACTOR x bigger: each run sets CUDA and SiftGPU's buffers up anew."""
+        chunk = chunk * GPU_CHUNK_FACTOR if tier.gpu else chunk
         for start in range(0, len(pairs), chunk):
             part = pairs[start:start + chunk]
             path = os.path.join(self.cwd, "pairs.txt")
             with open(path, "w") as fh:
                 fh.write("".join(f"{a} {b}\n" for a, b in part))
-            self._run("sfm-matching", self.pairs_args(db, path, tier))
+            self._run("sfm-matching", self.pairs_args(db, path, tier), gpu=tier.gpu)
             report((start + len(part)) / len(pairs), f"pairs {start + len(part)}/{len(pairs)}")
 
-    def map(self, db, image_dir, out_dir, n, report):
+    def match_vocab(self, db, query_names, num_images, tree, tier=UNGUIDED):
+        """Loop closure for the video frames: vocab_tree_matcher over `query_names`."""
+        path = os.path.join(self.cwd, "vocab-queries.txt")
+        with open(path, "w") as fh:
+            fh.write("\n".join(query_names) + "\n")
+        self._run("sfm-matching", self.vocab_tree_args(db, tree, path, num_images, tier), gpu=tier.gpu)
+
+    def map(self, db, image_dir, out_dir, n, report, mapper="incremental"):
         os.makedirs(out_dir, exist_ok=True)
-        self._run("sfm-mapping", self.map_args(db, image_dir, out_dir), MapParser(n), report)
+        self._run("sfm-mapping", self.map_args(db, image_dir, out_dir, mapper), MapParser(n), report)
 
     def triangulate(self, db, image_dir, model_dir, out_dir):
         os.makedirs(out_dir, exist_ok=True)
@@ -218,32 +269,3 @@ class Colmap:
         for f in os.listdir(sparse):  # Brush expects <dataset>/sparse/0/*.bin
             if os.path.isfile(os.path.join(sparse, f)):
                 shutil.move(os.path.join(sparse, f), os.path.join(target, f))
-
-
-def qvec_to_R(q):
-    w, x, y, z = q
-    return np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
-                     [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
-                     [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)]])
-
-
-def read_text_model(txt_dir):
-    """{'images': {name: camera centre (3,)}, 'points': n, 'meanReprojErrorPx': float|None}."""
-    images = {}
-    with open(os.path.join(txt_dir, "images.txt")) as fh:
-        lines = [ln for ln in fh.read().split("\n") if not ln.startswith("#")]
-    for ln in lines[0::2]:
-        p = ln.split()
-        if len(p) < 10:
-            continue
-        R, t = qvec_to_R([float(v) for v in p[1:5]]), np.array([float(v) for v in p[5:8]])
-        images[p[9]] = -R.T @ t
-    n_points, err_sum = 0, 0.0
-    with open(os.path.join(txt_dir, "points3D.txt")) as fh:
-        for ln in fh:
-            if ln.startswith("#") or not ln.strip():
-                continue
-            n_points += 1
-            err_sum += float(ln.split()[7])
-    return {"images": images, "points": n_points,
-            "meanReprojErrorPx": round(err_sum / n_points, 3) if n_points else None}

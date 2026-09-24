@@ -41,6 +41,7 @@ def test_matcher_auto():
 
 class FakeColmap:
     registered = 3
+    gpu_extraction = False
 
     def __init__(self, *a, caps=None, **kw):
         self.caps = dict(caps or {})
@@ -104,3 +105,32 @@ def test_crop_failure_is_reported(tmp_path, monkeypatch):
     monkeypatch.setattr(pipeline, "crop_mask", lambda *a: np.zeros(5, bool))
     with pytest.raises(JobError, match="^crop: no splat inside the crop box"):
         r.frame_and_crop("x.ply")
+
+
+def test_feature_budget_takes_colmap_max_features_whatever_the_image_count():
+    from splatworker.tuning import feature_budget
+    # default (8192, the M4-safe cap): as before, 8192 on both sides of 60 images
+    assert feature_budget(14, 8192) == 8192 and feature_budget(180, 8192) == 8192
+    # raised: no longer cut to 8192 once video frames push the count past 60
+    assert feature_budget(14, 16384) == 16384 and feature_budget(180, 16384) == 16384
+    # lowered: the ceiling for small jobs too
+    assert feature_budget(14, 4096) == 4096 and feature_budget(180, 4096) == 4096
+    # 0: the job's own count by image number
+    assert feature_budget(60, 0) == 16384 and feature_budget(61, 0) == 8192
+
+
+@pytest.mark.parametrize("configured,n,expected", [(8192, 14, 8192), (8192, 180, 8192), (16384, 180, 16384),
+                                                   (0, 14, 16384), (0, 180, 8192)])
+def test_sfm_extracts_with_the_feature_budget(tmp_path, monkeypatch, configured, n, expected):
+    seen = []
+
+    class Capture(FakeColmap):
+        def extract(self, db, img_dir, batches, report, max_features):
+            seen.append(max_features)
+
+    monkeypatch.setattr(sfm, "Colmap", Capture)
+    monkeypatch.setattr(pipeline.settings, "colmap_max_features", configured)
+    r, _ = make_run(tmp_path, n)
+    with pytest.raises(JobError):  # 3 registered: fails in mapping, after the extraction that matters here
+        r.sfm(str(tmp_path))
+    assert seen == [expected]

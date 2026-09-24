@@ -71,3 +71,14 @@ def test_decompression_bombs_are_errors_not_warnings(w, h):
         warnings.simplefilter("error")
         with pytest.raises(PhotoError, match="too large"):
             sanitize(_png_header_only(w, h), 4096)
+
+
+def test_jpeg_qualities_default_to_the_old_values():
+    from splatworker.settings import settings
+    assert settings.ingest_jpeg_quality == 95 and settings.frame_jpeg_quality == 92
+
+
+def test_sanitize_uses_the_quality_it_is_given(gps_jpeg):
+    low, _ = sanitize(gps_jpeg, 4096, 10)
+    high, _ = sanitize(gps_jpeg, 4096, 100)
+    assert len(low) < len(high)

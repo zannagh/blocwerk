@@ -22,7 +22,7 @@ class SplatUpload(StreamingUpload):
 
     def _store(self, stem, _ext, raw):
         try:
-            jpg, facts = sanitize(raw, settings.ingest_max_edge)
+            jpg, facts = sanitize(raw, settings.ingest_max_edge, settings.ingest_jpeg_quality)
         except PhotoError as e:
             raise PhotoRejected(422, str(e)) from e
         with open(os.path.join(self.dir, f"{stem}.jpg"), "wb") as fh:

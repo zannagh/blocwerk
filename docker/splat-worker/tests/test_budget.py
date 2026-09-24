@@ -118,6 +118,8 @@ def test_extraction_threads_cap_is_used(tmp_path):
 class LadderColmap:
     """Kills every guided run like the memory guard would; unguided works."""
 
+    gpu_extraction = False
+
     def __init__(self, *a, caps=None, **kw):
         self.caps, self.calls = dict(caps or {}), []
 

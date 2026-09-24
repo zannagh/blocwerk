@@ -11,7 +11,7 @@ import time
 
 from computejobs.child import JobError
 
-from . import brush, colour, tuning
+from . import brush, colour, trainers, tuning
 from .align import align, unaligned_frame
 from .cleanup_run import RAW_FILE, clean_job
 from .frames import build_pairs, is_frame, split
@@ -38,7 +38,7 @@ class Run:
         with open(os.path.join(job_dir, "inputs.json")) as fh:
             self.inputs = json.load(fh)
         self.opts = SplatOptions(**self.inputs["options"])
-        self.profile = self.opts.profile()
+        self.profile, self.profile_note = trainers.job_profile(self.opts)  # quality + SPLAT_PROFILE_OVERRIDE
         gpath = os.path.join(job_dir, "geometry.json")
         self.geometry = json.load(open(gpath)) if os.path.exists(gpath) else None
         self.log = os.path.join(job_dir, "tools.log")
@@ -85,7 +85,7 @@ class Run:
             key, params = video_group(small.size) if is_frame(stem) else camera_group(stem, facts, small.size, cams.get(stem))
             os.makedirs(os.path.join(img_dir, key), exist_ok=True)
             with open(os.path.join(img_dir, key, f"{stem}.jpg"), "wb") as fh:
-                fh.write(clean_jpeg(small, 92))
+                fh.write(clean_jpeg(small, settings.frame_jpeg_quality))
             groups.setdefault(key, {"names": [], "params": params})["names"].append(f"{key}/{stem}.jpg")
             self.report((i + 1) / len(photos), f"{i + 1}/{len(photos)} photos")
         if after:
@@ -125,9 +125,10 @@ class Run:
         self.sfm_run = sfm = Sfm(self)
         db = os.path.join(self.dir, "colmap.db")
         batches = [(g["names"], g["params"], not k.startswith("single")) for k, g in sorted(self.groups.items())]
-        sfm.extract(db, img_dir, batches, 16384 if n <= 60 else 8192)
+        sfm.extract(db, img_dir, batches, tuning.feature_budget(n, settings.colmap_max_features))
         self.matcher = resolve_matcher(self.opts.matcher, n, len(self.frame_stems))
-        sfm.match(db, self.matcher, n, self.pair_list() if self.matcher == "pairs" else None)
+        pairs = self.pair_list() if self.matcher == "pairs" else None
+        sfm.match(db, self.matcher, n, pairs, self.frame_names() if pairs else None)
         best = sfm.map(db, img_dir, n)
         self.check_registered(best[1] if best else {"images": {}})
         model_dir, model = best
@@ -153,9 +154,18 @@ class Run:
             self.suffix = f"{self.frames_registered}/{len(self.frame_stems)} video frames registered"
             self.report(1.0)
 
+    def colmap_names(self):
+        """{stem: the image name as COLMAP knows it (<group>/<stem>.jpg)}."""
+        return {os.path.splitext(os.path.basename(nm))[0]: nm for g in self.groups.values() for nm in g["names"]}
+
+    def frame_names(self):
+        """The video frames' COLMAP names (vocabulary-tree loop closure queries), in video order."""
+        names = self.colmap_names()
+        return [names[s] for s in self.frame_stems if s in names]
+
     def pair_list(self):
         """frames.build_pairs over the image names as COLMAP knows them (<group>/<stem>.jpg)."""
-        names = {os.path.splitext(os.path.basename(nm))[0]: nm for g in self.groups.values() for nm in g["names"]}
+        names = self.colmap_names()
         return build_pairs([names[s] for s in self.photo_stems if s in names],
                            [names[s] for s in self.frame_stems if s in names],
                            settings.frame_neighbours, settings.frame_photo_stride)
@@ -163,6 +173,8 @@ class Run:
     def train(self, dataset):
         """Brush on the first plan of tuning.train_plans that fits; a memory-guard kill steps down to
         the next one (the next lower quality profile), like the matching tiers."""
+        if trainers.select() == "gsplat":  # CUDA (NVIDIA hosts): fitted to the VRAM instead
+            return trainers.train_gsplat(self, dataset)
         self.begin("train")
         budget = self.sfm_run.train_budget_mb()
         sizes = image_sizes(os.path.join(dataset, "images"))
@@ -235,6 +247,7 @@ class Run:
             "unregistered": sorted(set(self.photo_stems) - registered),
             "videoFrames": len(self.frame_stems), "videoFramesRegistered": len(set(self.frame_stems) & registered),
             "sparsePoints": self.model["points"], "meanReprojErrorPx": self.model["meanReprojErrorPx"],
+            "meanTrackLength": self.model.get("meanTrackLength"),
             "matcher": self.matcher, "cameraGroups": len(self.groups), **self.sfm_run.stats(),
             "splatsTrained": len(all_splats), "splatCount": len(kept),
             "splatsBeforeCleanup": len(raw) if raw is not None else None, **self.brush_stats,

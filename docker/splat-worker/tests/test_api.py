@@ -98,7 +98,7 @@ def test_accepts_job_and_strips_metadata_on_arrival(client, gps_jpeg):
     ([("a.jpg", b"not a jpeg")], None, None, 422, "photo a"),
     (None, {"maxStep": 10}, None, 422, "unknown option"),
     (None, {"maxSteps": 5}, None, 422, "maxSteps"),
-    (None, {"quality": "ultra"}, None, 422, "quality"),
+    (None, {"quality": "extreme"}, None, 422, "quality"),
     (None, {"matcher": "vocab"}, None, 422, "matcher"),
     (None, {"maxSteps": 1e12}, None, 422, "maxSteps"),
     (None, {"maxSteps": -1}, None, 422, "maxSteps"),

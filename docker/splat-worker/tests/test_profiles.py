@@ -27,12 +27,13 @@ def test_default_is_high_and_overrides_apply():
     p = parse_options({"quality": "max", "maxSteps": 2000, "maxImageEdge": 1000}).profile()
     assert (p.name, p.steps, p.edge, p.frame_edge, p.min_edge) == ("max", 2000, 1000, 1000, 1000)
     with pytest.raises(OptionsError, match="quality"):
-        parse_options({"quality": "ultra"})
+        parse_options({"quality": "extreme"})
 
 
 def test_profiles_get_sharper_and_longer():
-    d, h, m = (profiles.PROFILES[q] for q in profiles.QUALITIES)
+    d, h, m, u = (profiles.PROFILES[q] for q in profiles.QUALITIES)
     assert d.edge < h.edge < m.edge and d.steps < h.steps < m.steps and d.max_splats < h.max_splats < m.max_splats
+    assert m.edge < u.edge and m.steps < u.steps and m.max_splats < u.max_splats and u.sh_degree == 0
     assert d.sh_degree == 3 and h.sh_degree == 0 and m.sh_degree == 0  # the exports keep only the DC colour
     assert d.mb_per_ksplat == 1.0 and h.mb_per_ksplat == 2.0  # measured on the M4 (profiles.py)
     assert h.frame_edge < h.edge  # frames stay small: memory without detail

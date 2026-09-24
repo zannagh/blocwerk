@@ -1,0 +1,123 @@
+# Blocwerk splat worker for NVIDIA hosts (CUDA): trains with gsplat instead of Brush. For Linux NVIDIA
+# boxes and for Windows via Docker Desktop's WSL2 backend (Brush's Vulkan-on-D3D12 path crashes in
+# NVIDIA's driver there). Build context: the REPO ROOT. Context filter: Dockerfile.cuda.dockerignore.
+#   docker build -f docker/splat-worker/Dockerfile.cuda -t blocwerk-splat-worker-cuda .
+#   docker run --gpus all -p 8100:8100 -e COMPUTE_API_KEY=... blocwerk-splat-worker-cuda
+#
+# Size: no CUDA toolkit and no nvidia/cuda base. The prebuilt gsplat wheel (compiled kernels, no JIT)
+# only needs the CUDA runtime libraries the torch wheel ships, and the driver comes from the NVIDIA
+# container toolkit. gsplat publishes those wheels for CPython 3.10 only, so the trainer lives in its
+# own 3.10 venv (/opt/gsplat, a standalone CPython from uv) and runs as a subprocess of the worker, which
+# stays on the system Python 3.12 with its hash-locked requirements, like the Brush image.
+# GPUs: the pt24cu124 wheel covers compute capability 5.0-9.0 (Maxwell .. Hopper, RTX 20/30/40).
+# RTX 50xx (sm_120) needs a torch >= 2.7 / cu128 build and gsplat compiled from source (README).
+#
+# COLMAP: 4.2 built from source with CUDA (GPU SIFT extraction + matching: this image NEEDS an NVIDIA GPU
+# unless COLMAP_USE_GPU=0), headless (no GUI / OpenGL / MVS / CGAL / ONNX: the worker runs SfM and
+# image_undistorter only). 4.x also has `global_mapper` (GLOMAP, merged into COLMAP): COLMAP_MAPPER=global.
+# The SIFT vocabulary tree for COLMAP_VOCAB_TREE_IMAGES is COLMAP's own pinned faiss tree (sha256, 72 MB).
+
+# ---- COLMAP with CUDA (builder: the CUDA toolkit and the -dev packages never reach the runtime image) ----
+FROM nvidia/cuda:12.8.1-devel-ubuntu24.04 AS colmap
+ARG DEBIAN_FRONTEND=noninteractive
+ARG COLMAP_VERSION=4.2.0
+ARG COLMAP_COMMIT=be5e29168d4aff238409d60424812df66aac919f
+# Turing .. Hopper (RTX 20/30/40, A100, H100) as SASS; 90 also as PTX, so newer GPUs can JIT it.
+ARG CUDA_ARCHITECTURES="75-real;80-real;86-real;89-real;90"
+ARG VOCAB_TREE_URL=https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_faiss_flickr100K_words256K.bin
+ARG VOCAB_TREE_SHA256=96ca8ec8ea60b1f73465aaf2c401fd3b3ca75cdba2d3c50d6a2f6f760f275ddc
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git cmake ninja-build build-essential ca-certificates curl \
+        libboost-program-options-dev libboost-graph-dev libboost-system-dev libeigen3-dev \
+        libopenimageio-dev openimageio-tools libmetis-dev libgoogle-glog-dev libgflags-dev libsqlite3-dev \
+        libceres-dev libsuitesparse-dev libopenblas-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    # Ubuntu's OpenImageIO CMake config wants its tools and the OpenCV include dir (as COLMAP's own Dockerfile)
+    && mkdir -p /usr/include/opencv4
+# COLMAP's CMake finds OpenGL + GLEW unconditionally (headers only here: OPENGL_ENABLED=OFF)
+RUN apt-get update && apt-get install -y --no-install-recommends libgl-dev libglew-dev \
+    && rm -rf /var/lib/apt/lists/*
+RUN git clone --depth 1 --branch "${COLMAP_VERSION}" https://github.com/colmap/colmap.git /src \
+    && test "$(git -C /src rev-parse HEAD)" = "${COLMAP_COMMIT}" \
+    && cmake -S /src -B /build -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/colmap \
+        -DCMAKE_CUDA_ARCHITECTURES="${CUDA_ARCHITECTURES}" -DCUDA_ENABLED=ON -DGUI_ENABLED=OFF \
+        -DOPENGL_ENABLED=OFF -DMVS_ENABLED=OFF -DCGAL_ENABLED=OFF -DONNX_ENABLED=OFF \
+        -DDOWNLOAD_ENABLED=OFF -DTESTS_ENABLED=OFF -DCCACHE_ENABLED=OFF -DBLA_VENDOR=OpenBLAS \
+    && cmake --build /build --target install \
+    && rm -rf /build /src \
+    && strip /opt/colmap/bin/colmap
+RUN mkdir -p /opt/colmap-rt/bin /opt/colmap-rt/lib /opt/colmap-rt/share \
+    && cp /opt/colmap/bin/colmap /opt/colmap-rt/bin/ \
+    && curl -fsSL -o /opt/colmap-rt/share/vocab_tree_sift.bin "${VOCAB_TREE_URL}" \
+    && echo "${VOCAB_TREE_SHA256}  /opt/colmap-rt/share/vocab_tree_sift.bin" | sha256sum -c - \
+    # the CUDA runtime libraries COLMAP links (the driver itself comes from the NVIDIA container toolkit)
+    && ldd /opt/colmap/bin/colmap | awk '/libcudart/ {print $3}' | xargs -r -I{} cp -L {} /opt/colmap-rt/lib/ \
+    && ldd /opt/colmap/bin/colmap && ls -la /opt/colmap-rt/lib /opt/colmap-rt/bin
+
+# ---- the trainer's Python: torch + gsplat (prebuilt wheel, sha256-checked) ----
+FROM ubuntu:24.04 AS gsplat
+ARG DEBIAN_FRONTEND=noninteractive
+ARG TORCH_VERSION=2.4.1
+ARG TORCH_INDEX=https://download.pytorch.org/whl/cu124
+ARG GSPLAT_VERSION=1.5.3
+ARG GSPLAT_WHEEL=gsplat-1.5.3+pt24cu124-cp310-cp310-linux_x86_64.whl
+ARG GSPLAT_SHA256=01e1fd63dc69c9945e70158c818c3bb07fedf4aabcf020e6608d264cf27cc5dd
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=ghcr.io/astral-sh/uv:0.8.22 /uv /usr/local/bin/uv
+ENV UV_PYTHON_INSTALL_DIR=/opt/python UV_NO_CACHE=1 UV_LINK_MODE=copy UV_PYTHON_PREFERENCE=only-managed \
+    UV_HTTP_TIMEOUT=300
+# (builder stage: its layers never reach the runtime image, so torch gets its own cached layer)
+RUN uv venv --python 3.10 /opt/gsplat \
+    && uv pip install --python /opt/gsplat/bin/python --index-url "${TORCH_INDEX}" "torch==${TORCH_VERSION}"
+COPY docker/splat-worker/requirements-cuda.txt /tmp/
+RUN curl -fsSL -o "/tmp/${GSPLAT_WHEEL}" \
+        "https://github.com/nerfstudio-project/gsplat/releases/download/v${GSPLAT_VERSION}/$(echo "${GSPLAT_WHEEL}" | sed 's/+/%2B/')" \
+    && echo "${GSPLAT_SHA256}  /tmp/${GSPLAT_WHEEL}" | sha256sum -c - \
+    && uv pip install --python /opt/gsplat/bin/python --no-deps "/tmp/${GSPLAT_WHEEL}" \
+    && uv pip install --python /opt/gsplat/bin/python -r /tmp/requirements-cuda.txt \
+    # triton only serves torch.compile, which the trainer does not use (~0.5 GB)
+    && uv pip uninstall --python /opt/gsplat/bin/python triton \
+    # cuDNN's engine libraries (~0.9 GB) are dlopened on first cuDNN use only, and the trainer turns
+    # cuDNN off (its one convolution, the SSIM blur, runs on torch's own kernels). No headers or static libs.
+    && cd /opt/gsplat/lib/python3.10/site-packages \
+    && rm -f nvidia/cudnn/lib/libcudnn_adv.so.* nvidia/cudnn/lib/libcudnn_engines_precompiled.so.* \
+        nvidia/cudnn/lib/libcudnn_heuristic.so.* \
+    && rm -rf torch/include nvidia/*/include && find nvidia torch -name '*.a' -delete \
+    && find /opt/gsplat /opt/python -name __pycache__ -type d -prune -exec rm -rf {} + \
+    && rm -f /tmp/*.whl
+
+# ---- the worker (same as the Brush image's base, minus Brush and Vulkan) ----
+FROM ubuntu:24.04 AS runtime
+ARG DEBIAN_FRONTEND=noninteractive
+ARG GIT_SHA=unknown
+# COLMAP's runtime libraries (the CUDA ones come from the builder: /opt/colmap/lib, via ld.so.conf.d)
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv ca-certificates \
+        libboost-program-options1.83.0 libgoogle-glog0v6t64 libceres4t64 libcholmod5 libopenimageio2.4t64 \
+        libmetis5 libsqlite3-0 libgomp1 libopenblas0-pthread libglew2.2 libopengl0 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=colmap /opt/colmap-rt/ /opt/colmap/
+RUN echo /opt/colmap/lib > /etc/ld.so.conf.d/colmap.conf && ldconfig \
+    && ln -s /opt/colmap/bin/colmap /usr/bin/colmap && colmap -h | head -3 \
+    && ! ldd /opt/colmap/bin/colmap | grep "not found"
+COPY --from=gsplat /opt/python /opt/python
+COPY --from=gsplat /opt/gsplat /opt/gsplat
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PATH=/opt/venv/bin:$PATH COLMAP_BIN=/usr/bin/colmap SPLAT_TRAINER=gsplat GSPLAT_PYTHON=/opt/gsplat/bin/python \
+    COLMAP_USE_GPU=1 COLMAP_MAX_FEATURES=16384 COLMAP_MAX_MATCHES=32768 COLMAP_DSP_SIFT=0 COLMAP_AFFINE_SHAPE=0 \
+    COLMAP_VOCAB_TREE_PATH=/opt/colmap/share/vocab_tree_sift.bin
+WORKDIR /app
+COPY docker/splat-worker/requirements.lock .
+RUN python3 -m venv /opt/venv && pip install --require-hashes --no-deps -r requirements.lock
+COPY docker/compute-jobs-py/computejobs/ computejobs/
+COPY docker/splat-worker/splatworker/ splatworker/
+# NVIDIA container toolkit: `compute` for CUDA, `utility` for nvidia-smi (the worker reads the VRAM).
+ENV GIT_SHA=${GIT_SHA} HOST=0.0.0.0 PORT=8100 WORK_DIR=/var/lib/splat-worker/jobs \
+    NVIDIA_VISIBLE_DEVICES=all NVIDIA_DRIVER_CAPABILITIES=compute,utility
+RUN useradd --system --uid 10001 --no-create-home --home-dir /app app \
+    && mkdir -p /var/lib/splat-worker/jobs && chown -R app /var/lib/splat-worker
+USER app
+EXPOSE 8100
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8100/health', timeout=4).status == 200 else 1)"
+CMD ["python", "-m", "splatworker"]

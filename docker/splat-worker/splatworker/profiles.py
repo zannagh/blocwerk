@@ -9,12 +9,14 @@ so higher SH bands only cost memory and compute (59 instead of 14 floats per spl
 and two Adam moments) and let the DC colour drift from what every view shows.
 draft keeps Brush's default (3) so it stays the pre-profile run.
 
+ultra (gsplat on >= 12 GB of VRAM only) trains the photos at the ingest cap for 50k steps up to 6 M splats.
+
 draft is the pre-profile behaviour (5000 steps at 1800 px, Brush's refine defaults) plus a memory-fitted
 splat cap. See the README for the measured M4 numbers and the expected GPU hours.
 """
 from dataclasses import dataclass, replace
 
-QUALITIES = ("draft", "high", "max")
+QUALITIES = ("draft", "high", "max", "ultra")
 DEFAULT_QUALITY = "high"
 
 
@@ -61,6 +63,11 @@ PROFILES = {
     "max": Profile("max", edge=4032, frame_edge=1920, min_edge=3000, steps=30000,
                    max_splats=5_000_000, min_splats=2_000_000, growth_stop=0.5, growth_select_fraction=0.2,
                    sh_degree=0, checkpoints=3),
+    # gsplat on a big NVIDIA GPU only (trainers.job_profile: >= ULTRA_MIN_VRAM_MB of VRAM, else max): the
+    # photos at the ingest cap (INGEST_MAX_EDGE, 4096), 50k steps, up to 6 M splats.
+    "ultra": Profile("ultra", edge=4096, frame_edge=1920, min_edge=3000, steps=50000,
+                     max_splats=6_000_000, min_splats=3_000_000, growth_stop=0.5, growth_select_fraction=0.2,
+                     sh_degree=0, checkpoints=3),
 }
 
 

@@ -1,0 +1,50 @@
+device NVIDIA GeForce RTX 4070 Ti SUPER, 15085 of 16375 MB free
+loaded 2/48 images
+loaded 4/48 images
+loaded 6/48 images
+loaded 8/48 images
+loaded 10/48 images
+loaded 12/48 images
+loaded 14/48 images
+loaded 16/48 images
+loaded 18/48 images
+loaded 20/48 images
+loaded 22/48 images
+loaded 24/48 images
+loaded 26/48 images
+loaded 28/48 images
+loaded 30/48 images
+loaded 32/48 images
+loaded 34/48 images
+loaded 36/48 images
+loaded 38/48 images
+loaded 40/48 images
+loaded 42/48 images
+loaded 44/48 images
+loaded 46/48 images
+loaded 48/48 images
+48 views at <= 2400 px (48 cached)
+init 50763 splats from 50763 sparse points; scene scale 7.902 (world space NOT normalised)
+step 750/15000 splats 55966 loss 0.1416
+step 1500/15000 splats 78747 loss 0.1146
+step 2250/15000 splats 116341 loss 0.0864
+step 3000/15000 splats 163700 loss 0.1410
+step 3750/15000 splats 241855 loss 0.0971
+step 4500/15000 splats 340310 loss 0.0643
+step 5250/15000 splats 502789 loss 0.1878
+step 6000/15000 splats 707472 loss 0.0504
+step 6750/15000 splats 1045254 loss 0.1649
+step 7500/15000 splats 1470772 loss 0.0812
+step 8250/15000 splats 2000000 loss 0.0505
+step 9000/15000 splats 2000000 loss 0.0356
+step 9750/15000 splats 2000000 loss 0.1416
+step 10500/15000 splats 2000000 loss 0.0316
+step 11250/15000 splats 2000000 loss 0.0251
+step 12000/15000 splats 2000000 loss 0.0433
+step 12750/15000 splats 2000000 loss 0.0239
+step 13500/15000 splats 2000000 loss 0.0516
+step 14250/15000 splats 2000000 loss 0.0320
+step 15000/15000 splats 2000000 loss 0.0269
+Training took 466.8s
+writing splats
+wrote 2000000 splats; peak VRAM 1138 MB

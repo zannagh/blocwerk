@@ -94,6 +94,24 @@ services:
       # Largest walk-along capture video the app accepts, in MB (1-16384; default 2048). A reverse proxy
       # in front of the app must allow a request body this big on /api/captures/*/video.
       CAPTURE__MAXVIDEOMB: ${CAPTURE__MAXVIDEOMB:-2048}
+      # Capture quality knobs; empty = the built-in default (docs: WallCapturePipelineOptions). Largest photo
+      # in MB (1-200; default 40, also checked after HEIC -> JPEG), the HEIC -> JPEG quality (50-100; 92), video
+      # frames (MAXVIDEOFRAMES 3-400; 120, VIDEOFRAMESPERSECOND 0.1-10; 2.5), candidates per kept frame
+      # (FRAMESHARPNESSWINDOW 1-10; 3), the frames' ffmpeg -q:v (FRAMEJPEGQ 2-31, lower = better; 3) and the
+      # long edge the sharpness is scored at (SHARPNESSEDGE 120-1920; 480).
+      CAPTURE__MAXPHOTOMB: ${CAPTURE__MAXPHOTOMB:-}
+      CAPTURE__HEICJPEGQUALITY: ${CAPTURE__HEICJPEGQUALITY:-}
+      CAPTURE__MAXVIDEOFRAMES: ${CAPTURE__MAXVIDEOFRAMES:-}
+      CAPTURE__VIDEOFRAMESPERSECOND: ${CAPTURE__VIDEOFRAMESPERSECOND:-}
+      CAPTURE__FRAMESHARPNESSWINDOW: ${CAPTURE__FRAMESHARPNESSWINDOW:-}
+      CAPTURE__FRAMEJPEGQ: ${CAPTURE__FRAMEJPEGQ:-}
+      CAPTURE__SHARPNESSEDGE: ${CAPTURE__SHARPNESSEDGE:-}
+      # Texture options sent to wall-geometry (docker/wall-geometry/README.md); empty = not sent, the
+      # service's defaults apply (2 mm/px, 4096 px, JPEG 90). MMPERPX 0.25-50, MAXSIDEPX 256-8192,
+      # JPEGQUALITY 30-100. A finer texture needs TEXTURES_BLEND_MAX_BYTES / TEXTURES_MAX_MEGAPIXELS raised.
+      GEOMETRYSERVICE__TEXTURES__MMPERPX: ${GEOMETRYSERVICE__TEXTURES__MMPERPX:-}
+      GEOMETRYSERVICE__TEXTURES__MAXSIDEPX: ${GEOMETRYSERVICE__TEXTURES__MAXSIDEPX:-}
+      GEOMETRYSERVICE__TEXTURES__JPEGQUALITY: ${GEOMETRYSERVICE__TEXTURES__JPEGQUALITY:-}
     volumes:
       - ./appsettings.json:/app/appsettings.json:ro
       # Persist the DataProtection key ring across redeploys (see AuthenticationServices.cs) so a
@@ -132,6 +150,12 @@ services:
       # Callbacks may only go to public addresses, plus these hosts on the private compose network.
       CALLBACK_ALLOWED_HOSTS: blocwerk
       RESULT_TTL_S: "3600"
+      # Limits (docker/wall-geometry/README.md); empty = the default. A textures request carries every photo:
+      # 50+ full-size 48 MP photos (12-22 MB each) need GEOMETRY_MAX_REQUEST_MB well above the default 400.
+      MAX_REQUEST_MB: ${GEOMETRY_MAX_REQUEST_MB:-}
+      TEXTURES_TIMEOUT_S: ${TEXTURES_TIMEOUT_S:-}
+      TEXTURES_MAX_MEGAPIXELS: ${TEXTURES_MAX_MEGAPIXELS:-}
+      TEXTURES_BLEND_MAX_BYTES: ${TEXTURES_BLEND_MAX_BYTES:-}
     # Job inputs/outputs live in the container's /tmp (writable layer, not RAM) and are deleted
     # RESULT_TTL_S after each job finishes; nothing there is authoritative, so no volume.
     restart: unless-stopped
@@ -164,9 +188,65 @@ services:
       COLMAP_MAX_FEATURES: ${COLMAP_MAX_FEATURES:-8192}
       COLMAP_MAX_MATCHES: ${COLMAP_MAX_MATCHES:-8192}
       COLMAP_THREADS: ${COLMAP_THREADS:-4}
+      # Domain-size pooling / affine-covariant SIFT (CPU extraction; 1 = on, the tested default).
+      COLMAP_DSP_SIFT: ${COLMAP_DSP_SIFT:-1}
+      COLMAP_AFFINE_SHAPE: ${COLMAP_AFFINE_SHAPE:-1}
+      # JPEG quality of the metadata-free arrival copy (95) and of the training images (92); empty = default.
+      INGEST_JPEG_QUALITY: ${INGEST_JPEG_QUALITY:-}
+      FRAME_JPEG_QUALITY: ${FRAME_JPEG_QUALITY:-}
     volumes:
       # Brush's GPU autotune cache survives restarts (job files are deleted after RESULT_TTL_S anyway).
       - splat-cache:/var/lib/splat-worker/brush-cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  # The same worker for NVIDIA hosts, training with gsplat (CUDA) instead of Brush: Linux, and Windows
+  # through Docker Desktop's WSL2 backend (where Brush has no working NVIDIA path). Profile `gpu-cuda`:
+  # `docker compose --profile gpu-cuda up -d --build splat-worker-cuda`, then point the app at
+  # SPLATSERVICE_URL=http://splat-worker-cuda:8100. Built locally from Dockerfile.cuda (not published).
+  # Needs the NVIDIA container toolkit (Docker Desktop brings it on Windows). Run it OR `splat-worker`.
+  splat-worker-cuda:
+    build:
+      context: ..
+      dockerfile: docker/splat-worker/Dockerfile.cuda
+    image: blocwerk-splat-worker-cuda:local
+    profiles: ["gpu-cuda"]
+    environment:
+      # Same key / callback / limit pattern as splat-worker above (and the same reasons for no `:?`).
+      COMPUTE_API_KEY: ${SPLAT_API_KEY:-}
+      COMPUTE_CALLBACK_SECRET: ${SPLAT_CALLBACK_SECRET:-}
+      CALLBACK_ALLOWED_HOSTS: blocwerk
+      RESULT_TTL_S: "3600"
+      SPLAT_TIMEOUT_S: "14400"
+      SPLAT_TRAINER: gsplat
+      # e.g. `ultra` to train every request at ultra (>= 12 GB VRAM, else max); empty = what the app asks.
+      SPLAT_PROFILE_OVERRIDE: ${SPLAT_PROFILE_OVERRIDE:-}
+      # 0 = read the free VRAM with nvidia-smi; set it to leave room for something else on the GPU.
+      SPLAT_VRAM_MB: ${SPLAT_VRAM_MB:-0}
+      SPLAT_MAX_MEMORY_MB: ${SPLAT_MAX_MEMORY_MB:-0}
+      SPLAT_MAX_SWAP_GROWTH_MB: ${SPLAT_MAX_SWAP_GROWTH_MB:-2048}
+      COLMAP_MAX_IMAGE_SIZE: ${COLMAP_MAX_IMAGE_SIZE:-2400}
+      # COLMAP runs on the GPU here (CUDA build; docker/splat-worker/README.md "GPU SfM"). On the GPU,
+      # COLMAP_MAX_MATCHES is also how many features per image are matched at all: keep it >= the features.
+      COLMAP_USE_GPU: ${COLMAP_USE_GPU:-1}
+      COLMAP_GPU_INDEX: ${COLMAP_GPU_INDEX:-0}
+      COLMAP_MAX_FEATURES: ${COLMAP_MAX_FEATURES:-16384}
+      COLMAP_MAX_MATCHES: ${COLMAP_MAX_MATCHES:-32768}
+      COLMAP_THREADS: ${COLMAP_THREADS:-4}
+      # 1 = DSP / affine SIFT: better features, but COLMAP extracts them on the CPU only.
+      COLMAP_DSP_SIFT: ${COLMAP_DSP_SIFT:-0}
+      COLMAP_AFFINE_SHAPE: ${COLMAP_AFFINE_SHAPE:-0}
+      COLMAP_MAPPER: ${COLMAP_MAPPER:-incremental}
+      # > 0: vocabulary-tree loop closure for video frames (the tree is baked into the image).
+      COLMAP_VOCAB_TREE_IMAGES: ${COLMAP_VOCAB_TREE_IMAGES:-0}
+      # > 0: hold out every Nth view and report stats.evalPsnr / evalSsim (a measurement; those views don't train).
+      GSPLAT_EVAL_EVERY: ${GSPLAT_EVAL_EVERY:-0}
     deploy:
       resources:
         reservations:

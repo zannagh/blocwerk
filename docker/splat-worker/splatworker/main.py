@@ -8,7 +8,7 @@ from computejobs.service import ComputeService, bad, callback_url
 from computejobs.upload import json_field, text_field
 from fastapi import Request
 
-from . import __version__, brush, colmap
+from . import __version__, brush, colmap, gpu, gsplat_trainer, trainers
 from .frames import split
 from .options import OptionsError, parse_options, validate_geometry
 from .runner import run_job
@@ -20,15 +20,27 @@ TOOLS = {}
 
 def _probe_tools():
     """Resolve and version the external tools once at startup (details: authenticated /v1/info;
-    /health only says "degraded" when they are missing)."""
-    for key, path, probe in (("brush", settings.brush_bin, brush.tool_version),
-                             ("colmap", settings.colmap_bin, colmap.tool_version)):
+    /health only says "degraded" when they are missing). The trainer is SPLAT_TRAINER's (trainers.py)."""
+    try:
+        trainer = trainers.select()
+    except ValueError as e:
+        TOOLS.update(ok=False, error=str(e))
+        service.log.error("%s", e)
+        return
+    probe = ("gsplat", settings.gsplat_python, gsplat_trainer.tool_version) if trainer == "gsplat" else \
+        ("brush", settings.brush_bin, brush.tool_version)
+    for key, path, version in (probe, ("colmap", settings.colmap_bin, colmap.tool_version)):
         resolved = shutil.which(path) or (path if os.path.exists(path) else None)
-        TOOLS[key] = {"path": resolved, "version": probe(resolved) if resolved else None}
-    TOOLS["ok"] = all(TOOLS[k]["version"] for k in ("brush", "colmap"))
-    TOOLS["gpuBackend"] = "metal" if platform.system() == "Darwin" else "vulkan"
+        TOOLS[key] = {"path": resolved, "version": version(resolved) if resolved else None}
+    TOOLS["trainer"] = trainer
+    TOOLS["ok"] = all(TOOLS[k]["version"] for k in (trainer, "colmap"))
+    if trainer == "gsplat":
+        TOOLS["gpuBackend"], TOOLS["gpu"] = "cuda", gpu.vram()
+    else:
+        TOOLS["gpuBackend"] = "metal" if platform.system() == "Darwin" else "vulkan"
     if not TOOLS["ok"]:
-        service.log.error("splat tools missing: %s (set BRUSH_BIN / COLMAP_BIN)", TOOLS)
+        service.log.error("splat tools missing: %s (set BRUSH_BIN or GSPLAT_PYTHON / COLMAP_BIN; gsplat also "
+                          "needs a CUDA device)", TOOLS)
 
 
 def _info_extra():
@@ -40,7 +52,7 @@ def _info_extra():
 
 async def _splat(svc, request: Request):
     if TOOLS and not TOOLS.get("ok"):
-        bad("the splat tools (Brush / COLMAP) are not available on this worker; see /v1/info", 503)
+        bad("the splat tools (trainer / COLMAP) are not available on this worker; see /v1/info", 503)
     job = svc.create_job("splat", None)
     try:
         fields, photos = await SplatUpload(job.dir).read(request)

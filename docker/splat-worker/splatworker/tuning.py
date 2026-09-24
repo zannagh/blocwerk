@@ -15,6 +15,10 @@ Tiers, best first: guided with as many threads as fit (<= COLMAP_THREADS), then 
 triangulate" (looser ratio test, no cross-check, then point_triangulator keeping two-view tracks:
 16k points, 0.66 px on the same photos vs 9k guided / 4.2k plain unguided). A step the memory guard
 kills is retried on the next tier down (pipeline.Run._match).
+
+With COLMAP_USE_GPU the tiers come from gpu_matching_tiers instead: guided on the GPU, fitted to the free
+VRAM (not to the host budget, which GPU matching barely touches), then unguided on the GPU, then CPU
+unguided as the fallback when the GPU run fails.
 """
 from dataclasses import dataclass
 
@@ -25,6 +29,16 @@ GUIDED_BASE, GUIDED_PER_THREAD = 1.95, 0.5
 UNGUIDED_MB = 400
 EXTRACT_MB_PER_THREAD, EXTRACT_BASE_MB = 620, 150
 HEADROOM = 0.9  # plan to use at most 90 % of the budget
+# CUDA matching (SiftGPU, COLMAP 4.2 src/thirdparty/SiftGPU/SiftMatchCU.cpp): each matcher allocates a
+# max_num_matches^2 float distance matrix (4 B) plus, with cross-check, a max_num_matches x /8 x 4-channel
+# column table (2 B per pair); guided matching runs a second (guided) matcher: 2 x 6 B x M^2 (16384: 3 GB).
+# SiftGPU refuses buffers of 2^31 elements or more (M < 46341). Host memory stays small (descriptor cache
+# + RANSAC verifiers). Base = CUDA context + SiftGPU's textures. RTX 4070 Ti SUPER, South Building 48 photos
+# (2026-09-25): 26.6k features per image -> 8.3 GB peak (model 8.8), 29.0k -> 9.9 GB (model 10.4).
+GPU_DOT_BYTES, GPU_CROSS_BYTES = 4, 2
+GPU_MATCH_BASE_MB = 700
+GPU_HOST_MB = 1500
+GPU_MIN_MATCHES, GPU_MAX_MATCHES = 4096, 46336
 
 # Brush (v0.3.0, Metal, M4, 2026-09-23) keeps every training image resident and its peak grows with the
 # splat count: base + resident pixels + splats. Fit through three measured runs: 14 photos at 1800 px
@@ -42,9 +56,14 @@ class Tier:
     threads: int  # 0 = COLMAP_THREADS
     estimate_mb: int
     loose: bool = False  # unguided tier: looser ratio test, no cross-check, then point_triangulator
+    gpu: bool = False  # CUDA matching (COLMAP_USE_GPU): estimate_mb is then host memory, vram_mb the GPU's
+    max_matches: int = 0  # GPU: SiftGPU's buffer size = the features per image it matches (0 = the caps')
+    vram_mb: int = 0
 
     @property
     def name(self):
+        if self.gpu:
+            return f"GPU {'guided' if self.guided else 'unguided + triangulate'}, <= {self.max_matches} features"
         return f"guided, {self.threads} thread{'s' if self.threads != 1 else ''}" if self.guided \
             else "unguided + triangulate"
 
@@ -68,6 +87,44 @@ def matching_tiers(budget_mb, feature_counts, max_threads):
             if t > 1:
                 tiers.append(Tier(True, 1, guided_mb(feature_counts, 1)))
             break
+    tiers.append(Tier(False, max(1, max_threads), UNGUIDED_MB, loose=True))
+    return tiers
+
+
+def gpu_match_vram_mb(max_matches, guided, cross_check=True):
+    """Estimated VRAM of COLMAP's CUDA matching with SiftGPU buffers for `max_matches` features."""
+    m = (max_matches + 31) // 32 * 32
+    per_matcher = GPU_DOT_BYTES + (GPU_CROSS_BYTES if cross_check else 0)
+    return int(GPU_MATCH_BASE_MB + (2 if guided else 1) * per_matcher * m * m / (1024 * 1024))
+
+
+def _gpu_fit(usable_mb, target, guided, cross_check):
+    """The largest multiple of 1024 <= target (or target itself) whose buffers fit, or 0."""
+    m = target
+    while m >= GPU_MIN_MATCHES:
+        if gpu_match_vram_mb(m, guided, cross_check) <= usable_mb:
+            return m
+        m = (m - 1) // 1024 * 1024
+    return 0
+
+
+def gpu_matching_tiers(vram_free_mb, feature_counts, max_matches, max_threads):
+    """The tiers for COLMAP_USE_GPU, best first: [GPU guided, GPU unguided + triangulate, CPU unguided +
+    triangulate at max_threads (the fallback if the GPU fails)]. Never a CPU guided tier: on the CPU that
+    means 1-2 threads for an hour, which the GPU does in minutes. SiftGPU matches at most `max_matches`
+    features per image (the largest-scale ones; it warns "Clamping features"), so the buffer is sized to
+    the largest image's features (as COLMAP does) and lowered only as far as the free VRAM demands."""
+    target = max(feature_counts, default=0)
+    if max_matches > 0:
+        target = min(target, max_matches)
+    target = min(max(target, GPU_MIN_MATCHES), GPU_MAX_MATCHES)
+    usable = vram_free_mb * HEADROOM
+    tiers = []
+    for guided in (True, False):
+        m = _gpu_fit(usable, target, guided, cross_check=guided)
+        if m:
+            tiers.append(Tier(guided, max(1, max_threads), GPU_HOST_MB, loose=not guided, gpu=True,
+                              max_matches=m, vram_mb=gpu_match_vram_mb(m, guided, cross_check=guided)))
     tiers.append(Tier(False, max(1, max_threads), UNGUIDED_MB, loose=True))
     return tiers
 
@@ -135,3 +192,12 @@ def train_plans(budget_mb, sizes, profile):
         est = brush_mb(dataset_mpx(sizes, edge), low.min_splats, low.mb_per_ksplat)
         plans.append(TrainPlan(low, edge, low.min_splats, est, False))
     return plans
+
+
+def feature_budget(n, configured):
+    """SIFT features per image for a job of n images. COLMAP_MAX_FEATURES (`configured`, default 8192:
+    the M4-safe cap) is the value whatever n is, so raising it also raises jobs past 60 images (video
+    frames); 0 = the job's own count, 16384 up to 60 images, 8192 beyond."""
+    if configured > 0:
+        return configured
+    return 16384 if n <= 60 else 8192

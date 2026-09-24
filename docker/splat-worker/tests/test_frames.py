@@ -56,7 +56,7 @@ def test_match_pairs_runs_matches_importer_in_chunks_with_the_caps(tmp_path):
                          "FeatureExtraction.use_gpu"})
     runs, reports = [], []
 
-    def fake_run(stage, args, *a):
+    def fake_run(stage, args, *a, **kw):
         runs.append((stage, args, open(args[args.index("--match_list_path") + 1]).read().splitlines()))
 
     cm._run = fake_run
