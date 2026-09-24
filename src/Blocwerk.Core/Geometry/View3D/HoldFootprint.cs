@@ -20,13 +20,21 @@ namespace Blocwerk.Core.Geometry.View3D;
 /// <param name="HeightMm">The protrusion used by the single-view correction; null for multi-view.</param>
 /// <param name="OutlineKey">The <see cref="KeyOf"/> of the outline it was refined from.</param>
 /// <param name="Outline">The footprint ring, <c>[da, db]</c> per vertex.</param>
+/// <param name="ShiftA">
+/// How far (along u, mm) the capture photos moved the hold from where its panel photo mapped it
+/// (<see cref="HoldPositionRefiner"/>); already applied to <paramref name="Outline"/>, kept to show and undo
+/// it. 0 when they agreed with the panel photo (or never were asked).
+/// </param>
+/// <param name="ShiftB">The same along v.</param>
 public sealed record HoldFootprint(
     HoldFootprintSource Source,
     int Views,
     double SpreadDeg,
     double? HeightMm,
     string OutlineKey,
-    IReadOnlyList<double[]> Outline)
+    IReadOnlyList<double[]> Outline,
+    double ShiftA = 0,
+    double ShiftB = 0)
 {
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
 

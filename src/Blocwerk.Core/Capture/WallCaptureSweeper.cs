@@ -29,7 +29,8 @@ public sealed class WallCaptureSweeper(
     WallCapturePipelineOptions options,
     ILogger<WallCaptureSweeper> logger)
 {
-    private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png", ".mp4", ".mov", ".m4v" };
+    // .json: the textures' source-view maps (nothing else in the capture store is JSON)
+    private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png", ".mp4", ".mov", ".m4v", ".json" };
 
     public async Task<CaptureSweepResult> SweepAsync(CancellationToken ct)
     {
@@ -137,12 +138,14 @@ public sealed class WallCaptureSweeper(
         var textures = await db.WallGeometryTextures.Select(t => t.StoredPath).ToListAsync(ct);
         var masks = await db.WallGeometryTextures.Where(t => t.MaskStoredPath != null)
             .Select(t => t.MaskStoredPath!).ToListAsync(ct);
+        var sourceMaps = await db.WallGeometryTextures.Where(t => t.SourceMapStoredPath != null)
+            .Select(t => t.SourceMapStoredPath!).ToListAsync(ct);
         var videos = (await db.WallCaptures
                 .Where(c => c.VideoStoredPath != null || c.VideoFramesJson != null)
                 .Select(c => new { c.VideoStoredPath, c.VideoFramesJson })
                 .ToListAsync(ct))
             .SelectMany(c => CaptureVideoFiles.Of(c.VideoStoredPath, c.VideoFramesJson));
-        return new HashSet<string>(photos.Concat(textures).Concat(masks).Concat(videos), StringComparer.Ordinal);
+        return new HashSet<string>(photos.Concat(textures).Concat(masks).Concat(sourceMaps).Concat(videos), StringComparer.Ordinal);
     }
 
     private void DeleteFiles(IEnumerable<string> names)

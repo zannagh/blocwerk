@@ -55,13 +55,17 @@ public static class HoldFootprintEstimator
             return null;
         }
 
-        var usable = others.Where(v => Agrees(v, primary, primaryArea)).ToList();
-        var views = new List<FootprintView> { primary };
+        // The capture photos may agree the panel mapping put the hold a little off: build it there instead.
+        var shift = HoldPositionRefiner.Shift(frame, primary, others);
+        var moved = shift is { } s ? HoldPositionRefiner.Moved(primary, s) : primary;
+        var usable = others.Where(v => Agrees(v, moved, primaryArea)).ToList();
+        var views = new List<FootprintView> { moved };
         views.AddRange(usable);
         var spread = Spread(frame, centre, views);
         if (views.Count >= 2 && spread >= MinSpreadDeg && Intersect(views) is { } ring)
         {
-            return Finish(HoldFootprintSource.MultiView, views.Count, spread, null, outlineKey, ring, centre);
+            var fp = Finish(HoldFootprintSource.MultiView, views.Count, spread, null, outlineKey, ring, centre);
+            return shift is { } d ? fp with { ShiftA = Math.Round(d.A, 1), ShiftB = Math.Round(d.B, 1) } : fp;
         }
 
         return Corrected(frame, centre, primary, outlineKey);

@@ -88,6 +88,10 @@ def test_textures_happy_path(client):
     assert m.status_code == 200 and m.headers["content-type"] == "image/png"
     mask = cv2.imdecode(np.frombuffer(m.content, np.uint8), cv2.IMREAD_UNCHANGED)
     assert mask.dtype == np.uint8 and mask.shape == (facet["heightPx"], facet["widthPx"])
+    # the source-view map: which photo painted each label cell
+    surl = next(f["url"] for f in st["result"]["files"] if f["name"] == facet["sourceFile"])
+    src = json.loads(client.get(surl).content)
+    assert src["cameras"] == ["SYN_1"] and src["rows"] * src["cellMm"] >= facet["heightPx"] * facet["mmPerPx"]
 
 
 @pytest.mark.parametrize("body, code", [

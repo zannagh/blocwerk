@@ -13,6 +13,21 @@ function rings(h) {
     return [outlineOf(h), ...holes];
 }
 
+const centroid = ring => ring.reduce((s, p) => [s[0] + p[0] / ring.length, s[1] + p[1] / ring.length], [0, 0]);
+
+/**
+ * Photos mode: the hold where its facet photo shows it (`photoOutline`, from the texture's source-view
+ * map: a protruding hold is seen from the photo that painted it), its pocket holes moved along; the
+ * traced shape when the payload has none (older textures).
+ */
+function photoRings(h) {
+    const o = h.photoOutline;
+    if (!o || o.length < 3) return rings(h);
+    const [c0, c1] = [centroid(outlineOf(h)), centroid(o)];
+    const [da, db] = [c1[0] - c0[0], c1[1] - c0[1]];
+    return [o, ...rings(h).slice(1).map(r => r.map(([a, b]) => [a + da, b + db]))];
+}
+
 function segments(list, facets, lift, dimmed, sides) {
     const pos = [];
     const col = [];
@@ -22,7 +37,7 @@ function segments(list, facets, lift, dimmed, sides) {
         const m = holdFrame(h, facets.get(h.facetId), lift);
         const c = holdColor(h, dimmed);
         const slot = sides.index.get(h.facetId) ?? 0;
-        for (const ring of rings(h)) {
+        for (const ring of photoRings(h)) {
             for (let i = 0; i < ring.length; i++) {
                 const q = ring[(i + 1) % ring.length];
                 p.set(ring[i][0], ring[i][1], 0).applyMatrix4(m);

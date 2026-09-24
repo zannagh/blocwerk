@@ -6,7 +6,7 @@ among the top-N views. Then the gains are fitted and every facet is combined in 
 """
 import numpy as np
 
-from . import blend, consensus, exposure
+from . import blend, consensus, exposure, sourcemap
 from . import textures as tx
 
 GAIN_DOWNSCALE = 8
@@ -78,14 +78,17 @@ def render(doc, load_photo, cams, names, facets, p, progress):
 
 
 def _label(j, gains, names, p):
-    """Consensus-penalised single-photo choice (full-res photo index map), or None in blend mode."""
+    """(Consensus-penalised single-photo choice per label cell, the same upsampled to full resolution),
+    or (the best-weighted photo per cell, None) in blend mode."""
     if p["blendMode"] != "select":
-        return None
+        return sourcemap.best_cells(j["acc"].W), None
     S = consensus.penalised_scores(j["S"], j["cells"], gains, p) if p["exposureBalance"] else j["S"]
-    return tx._labels(S, j["g"], names, {**p, "modeFilterCells": p["selectModeFilterCells"]})
+    cells = tx._cell_labels(S, names, {**p, "modeFilterCells": p["selectModeFilterCells"]})
+    return cells, tx._upsample(cells, j["g"], p["labelCellPx"])
 
 
-def _result(doc, j, gains, names, p, label):
+def _result(doc, j, gains, names, p, labels):
+    cells, label = labels
     out, filled, kept = blend.finish(j["acc"], gains, p, label)
     g = j["g"]
     tot = kept.sum()
@@ -93,6 +96,7 @@ def _result(doc, j, gains, names, p, label):
     return {"facet": j["f"]["id"], "image": out, "mask": tx.coverage_mask(filled, p["maskFeatherPx"]),
             "mmPerPx": g["res"], "bounds": g["bounds"], "widthPx": g["W"], "heightPx": g["H"],
             "photosUsed": used, "coverage": round(float(filled.mean()), 4),
+            "source": sourcemap.from_cells(cells, names, g, p["labelCellPx"]),
             "markerCheck": tx.marker_check(out, j["f"], doc, g["res"], g)}
 
 

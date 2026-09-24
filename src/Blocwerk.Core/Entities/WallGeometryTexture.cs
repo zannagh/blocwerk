@@ -43,6 +43,16 @@ public class WallGeometryTexture
 
     public long? MaskSizeBytes { get; set; }
 
+    /// <summary>
+    /// Stored name of the source-view map (JSON, <c>docker/wall-geometry/wallgeometry/sourcemap.py</c>): which
+    /// capture photo painted each cell of the image, so the 3D view can draw a hold's outline where the
+    /// image shows it. Null for textures made before the worker returned it: outlines stay flat as before.
+    /// </summary>
+    [MaxLength(128)]
+    public string? SourceMapStoredPath { get; set; }
+
+    public long? SourceMapSizeBytes { get; set; }
+
     public double AMin { get; set; }
 
     public double AMax { get; set; }

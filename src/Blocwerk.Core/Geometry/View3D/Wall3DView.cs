@@ -121,6 +121,11 @@ public sealed record Wall3DMarker(int Id, string FacetId, IReadOnlyList<double[]
 /// True when the hold has no stored facet position (e.g. an edit could not re-place it yet) and was placed
 /// for this view only, by mapping its panel-photo centre through the photo's projector.
 /// </param>
+/// <param name="PhotoOutline">
+/// Where the hold shows in its facet's photo texture (<see cref="HoldPhotoOutline"/>), <c>[da, db]</c> mm relative
+/// to (PlaneA, PlaneB) like <see cref="Wall3DHoldShape.Outline"/>; the Photos mode draws it instead of the
+/// shape. Null when the texture has no source-view map or the hold shows where its shape is.
+/// </param>
 public sealed record Wall3DHold(
     Guid Id,
     string FacetId,
@@ -139,7 +144,8 @@ public sealed record Wall3DHold(
     Wall3DHoldShape? Shape = null,
     IReadOnlyList<Guid>? DuplicateIds = null,
     Wall3DHoldProtrusion? Protrusion = null,
-    bool PlacementApproximate = false);
+    bool PlacementApproximate = false,
+    IReadOnlyList<double[]>? PhotoOutline = null);
 
 /// <summary>
 /// A hold's relief for the renderer, mm along the facet normal above the facet plane

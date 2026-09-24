@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Blocwerk.Core.Compute;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Geometry.View3D;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -121,6 +122,7 @@ public sealed partial class WallCaptureProcessor
         }
 
         var mask = await DownloadMaskAsync(entry, jobId, client, ct);
+        var sourceMap = await DownloadSourceMapAsync(entry, jobId, client, ct);
         return new WallGeometryTexture
         {
             GeometryModelId = modelId,
@@ -130,6 +132,8 @@ public sealed partial class WallCaptureProcessor
             SizeBytes = bytes.LongLength,
             MaskStoredPath = mask is null ? null : await files.SaveAsync(mask, ".png", ct),
             MaskSizeBytes = mask?.LongLength,
+            SourceMapStoredPath = sourceMap is null ? null : await files.SaveAsync(sourceMap, ".json", ct),
+            SourceMapSizeBytes = sourceMap?.LongLength,
             AMin = entry.AMin,
             AMax = entry.AMax,
             BMin = entry.BMin,
@@ -170,6 +174,36 @@ public sealed partial class WallCaptureProcessor
         return null;
     }
 
+    /// <summary>
+    /// The facet's source-view map, or null: a worker without maps, or one that does not parse or download.
+    /// Like the mask it is optional; without it the 3D view draws that facet's hold outlines flat.
+    /// </summary>
+    private async Task<byte[]?> DownloadSourceMapAsync(
+        TextureManifestEntry entry, string jobId, IComputeJobClient client, CancellationToken ct)
+    {
+        if (entry.SourceFile is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var bytes = await client.DownloadFileAsync(jobId, entry.SourceFile, TextureSourceMap.MaxBytes, ct);
+            if (TextureSourceMap.Parse(bytes) is not null)
+            {
+                return bytes;
+            }
+
+            logger.LogWarning("The source-view map of texture {FacetId} does not parse; it is left out", entry.FacetId);
+        }
+        catch (Exception ex) when (ex is ComputeJobException or InvalidDataException or IOException)
+        {
+            logger.LogWarning(ex, "The source-view map of texture {FacetId} could not be downloaded", entry.FacetId);
+        }
+
+        return null;
+    }
+
     /// <summary>Swaps the model's texture set in one SaveChanges; the old files are removed afterwards.</summary>
     private async Task ReplaceTexturesAsync(Guid modelId, List<WallGeometryTexture> rows, CancellationToken ct)
     {
@@ -189,6 +223,11 @@ public sealed partial class WallCaptureProcessor
             if (texture.MaskStoredPath is { } mask)
             {
                 files.Delete(mask);
+            }
+
+            if (texture.SourceMapStoredPath is { } sourceMap)
+            {
+                files.Delete(sourceMap);
             }
         }
     }

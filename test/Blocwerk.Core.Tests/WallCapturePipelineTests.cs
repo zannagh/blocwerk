@@ -43,6 +43,9 @@ public class WallCapturePipelineTests
         Assert.True(File.Exists(s.Files.ResolvePhysicalPath(textures[0].MaskStoredPath!)));
         Assert.Equal(FakeComputeJobClient.MaskPng.LongLength, textures[0].MaskSizeBytes);
         Assert.Null(textures[1].MaskStoredPath);
+        Assert.True(File.Exists(s.Files.ResolvePhysicalPath(textures[0].SourceMapStoredPath!)));
+        Assert.Equal(FakeComputeJobClient.SourceMap.LongLength, textures[0].SourceMapSizeBytes);
+        Assert.Null(textures[1].SourceMapStoredPath);
         await s.Push.Received(1).NotifyWallModelReadyAsync(h.WallId, h.Owner.Id);
     }
 
@@ -174,6 +177,26 @@ public class WallCapturePipelineTests
         Assert.Equal(WallCaptureStatus.Failed, capture.Status);
         Assert.Contains("took longer than", capture.Error);
         Assert.Single(s.Client.Cancelled);
+    }
+
+    [Fact]
+    public async Task ABadSourceMap_IsLeftOut_WithoutFailingTheTextures()
+    {
+        using var h = new WallTestHarness();
+        using var s = new CaptureScenario(h);
+        s.Client.Download = name => name.EndsWith("_source.json", StringComparison.Ordinal)
+            ? "{\"version\":7}"u8.ToArray()
+            : name.EndsWith("_mask.png", StringComparison.Ordinal) ? FakeComputeJobClient.MaskPng : CaptureScenario.TinyJpeg();
+        var captureId = await s.StartCaptureAsync();
+
+        await s.Processor.ProcessAsync(captureId, CancellationToken.None);
+
+        await using var db = h.CreateContext();
+        Assert.Equal(WallCaptureStatus.Succeeded, (await db.WallCaptures.SingleAsync()).Status);
+        var textures = await db.WallGeometryTextures.ToListAsync();
+        Assert.Equal(2, textures.Count);
+        Assert.All(textures, t => Assert.Null(t.SourceMapStoredPath));
+        Assert.Contains(textures, t => t.MaskStoredPath is not null);
     }
 
     [Fact]

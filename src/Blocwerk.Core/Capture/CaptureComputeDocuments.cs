@@ -13,6 +13,9 @@ public sealed record TextureManifestEntry(
 {
     /// <summary>The coverage mask's file (<c>maskFile</c>); null from a worker that does not make masks.</summary>
     public string? MaskFile { get; init; }
+
+    /// <summary>The source-view map's file (<c>sourceFile</c>); null from a worker that does not make them.</summary>
+    public string? SourceFile { get; init; }
 }
 
 /// <summary>
@@ -161,10 +164,12 @@ public static class CaptureComputeDocuments
         }
 
         var mask = Text(f, "maskFile");
+        var source = Text(f, "sourceFile");
         return new TextureManifestEntry(
             id!, file, box[0]!.Value, box[1]!.Value, box[2]!.Value, box[3]!.Value, (int)width.Value, (int)height.Value)
         {
             MaskFile = string.IsNullOrEmpty(mask) || mask.Length > 128 ? null : mask,
+            SourceFile = string.IsNullOrEmpty(source) || source.Length > 128 ? null : source,
         };
     }
 

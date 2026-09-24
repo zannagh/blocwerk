@@ -135,6 +135,12 @@ JPEG (+1.4 %). An RGBA PNG of the same textures would be 10.0 MB; a q90 WebP wit
 smaller, but a new image format for every consumer and no way back for old ones. The field is
 additive: clients that ignore it get exactly the old result.
 
+**Source-view map.** Every facet also gets `facet_<id>_source.json` (manifest field `sourceFile`, see
+`wallgeometry/sourcemap.py`): which photo painted each label cell (8 px = 16 mm at the default
+resolution), as a base64 grid of 1-based indices into its `cameras` list (0 = none). A protruding hold
+shows in the texture as seen from that photo, so the app's 3D view uses it to draw hold outlines where
+the texture shows them. ~0.1 MB for a 5 × 3.5 m facet; additive like the mask.
+
 `markerCheck` re-detects the facet's markers in its own orthophoto, edge-refines them and reports
 side length vs `markerSizeMm` and position vs `cornersPlaneMm`.
 

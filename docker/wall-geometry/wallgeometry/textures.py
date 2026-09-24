@@ -27,7 +27,7 @@ import math
 import cv2
 import numpy as np
 
-from . import blend, consensus, exposure, flatten, seams
+from . import blend, consensus, exposure, flatten, seams, sourcemap
 from .markercheck import marker_check
 
 DEFAULTS = {"behindOtherFacetMm": 30.0, "mmPerPx": 2.0, "maxSidePx": 4096, "extraMarginMm": 100.0, "labelCellPx": 8,
@@ -160,10 +160,15 @@ def _cell_scores(f, g, cams, names, p, others):
     return X, S
 
 
-def _labels(S, g, names, p):
-    """Coarse per-cell photo choice, mode-filtered, upsampled to the full grid."""
-    cell = p["labelCellPx"]
-    ch, cw = S.shape[1:]
+def _upsample(lab, g, cell):
+    """Per-cell photo choice (_cell_labels) -> the full texture grid."""
+    ch, cw = lab.shape
+    full = cv2.resize(lab.astype(np.int16), (cw * cell, ch * cell), interpolation=cv2.INTER_NEAREST)
+    return full[:g["H"], :g["W"]]
+
+
+def _cell_labels(S, names, p):
+    """Per label cell: the chosen photo index (-1 = none), mode-filtered."""
     valid = S > 0
     lab = np.where(valid.any(0), S.argmax(0), -1)
     k = int(p["modeFilterCells"])
@@ -175,8 +180,7 @@ def _labels(S, g, names, p):
         votes = votes + 0.01 * S / np.where(smax > 0, smax, 1)
         votes[~valid] = -1
         lab = np.where(valid.any(0), votes.argmax(0), -1)
-    full = cv2.resize(lab.astype(np.int16), (cw * cell, ch * cell), interpolation=cv2.INTER_NEAREST)
-    return full[:g["H"], :g["W"]]
+    return lab
 
 
 def _render_part(img, cam, f, g, mask, out, filled):
@@ -198,8 +202,8 @@ def _render_part(img, cam, f, g, mask, out, filled):
 def render_textures(doc, load_photo, available, params=None, progress=None):
     """doc: geometry document; load_photo(name) -> BGR uint8 image; available: photo names.
 
-    Returns a list of {facet, image (BGR), mask (uint8, see coverage_mask), mmPerPx, bounds, widthPx,
-    heightPx, photosUsed, coverage, markerCheck} (+ exposureGains when balanced).
+    Returns a list of {facet, image (BGR), mask (uint8, see coverage_mask), source (sourcemap.py), mmPerPx,
+    bounds, widthPx, heightPx, photosUsed, coverage, markerCheck} (+ exposureGains when balanced).
     blendViews > 1 (default): robust multi-view blend (see blend.py); 1: the single best photo per pixel.
     """
     p = {**DEFAULTS, **(params or {})}
@@ -240,8 +244,9 @@ def _render_single(doc, load_photo, cams, names, facets, p, progress):
     for f in facets:
         g = _grid(f, p)
         _, S = _cell_scores(f, g, cams, names, p, [o for o in facets if o is not f])
-        lab = _labels(S, g, names, p)
-        jobs.append({"f": f, "g": g, "lab": lab, "out": np.zeros((g["H"], g["W"], 3), np.uint8),
+        cells = _cell_labels(S, names, p)
+        lab = _upsample(cells, g, p["labelCellPx"])
+        jobs.append({"f": f, "g": g, "lab": lab, "cells": cells, "out": np.zeros((g["H"], g["W"], 3), np.uint8),
                      "filled": np.zeros((g["H"], g["W"]), bool)})
     for k, n in enumerate(names):
         if progress:
@@ -261,6 +266,7 @@ def _render_single(doc, load_photo, cams, names, facets, p, progress):
                         "mask": coverage_mask(j["filled"], p["maskFeatherPx"]), "mmPerPx": g["res"], "bounds": g["bounds"],
                         "widthPx": g["W"], "heightPx": g["H"], "photosUsed": used,
                         "coverage": round(float(j["filled"].mean()), 4),
+                        "source": sourcemap.from_cells(j["cells"], names, g, p["labelCellPx"]),
                         "markerCheck": marker_check(j["out"], j["f"], doc, g["res"], g)})
     return results
 

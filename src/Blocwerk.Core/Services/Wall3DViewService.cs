@@ -8,6 +8,7 @@ using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Geometry;
+using Blocwerk.Core.Geometry.Footprints;
 using Blocwerk.Core.Geometry.View3D;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -28,7 +29,8 @@ public sealed class Wall3DViewService(
     ICurrentUserService currentUserService,
     IDbContextFactory<BlocwerkDbContext> dbContextFactory,
     IWallCaptureService captures,
-    ILogger<Wall3DViewService> logger) : IWall3DViewService
+    ILogger<Wall3DViewService> logger,
+    ICaptureFileStore? files = null) : IWall3DViewService
 {
     /// <inheritdoc />
     public async Task<Wall3DViewResult> BuildAsync(Guid wallId, Guid? boulderId, string? shareToken = null, CancellationToken ct = default)
@@ -83,7 +85,8 @@ public sealed class Wall3DViewService(
         }
 
         var view = Wall3DViewBuilder.Build(wall, doc, boulderId, photoMarkers, holdLinks);
-        return new Wall3DViewResult(Wall3DViewStatus.Ok, wall.Name, await WithImageryAsync(view, shareToken, ct));
+        view = await WithImageryAsync(view, shareToken, ct);
+        return new Wall3DViewResult(Wall3DViewStatus.Ok, wall.Name, await WithPhotoOutlinesAsync(wall, view, doc, json, ct));
     }
 
     /// <inheritdoc />
@@ -160,6 +163,50 @@ public sealed class Wall3DViewService(
 
         levels.Add(new Wall3DSplatLevel(WallGeometrySplats.Url(wallId, modelId, shareToken), splat.SplatCount ?? 0, splat.SizeBytes));
         return levels;
+    }
+
+    /// <summary>
+    /// Each hold's outline where the facet photo shows it (<see cref="Wall3DPhotoOutlines"/>), from the
+    /// textures' source-view maps. Only once the textures themselves were authorized for this viewer.
+    /// </summary>
+    private async Task<Wall3DView> WithPhotoOutlinesAsync(Wall wall, Wall3DView view, WallGeometryDocument doc, string json, CancellationToken ct)
+    {
+        if (files is null || view.Textures.Count == 0)
+        {
+            return view;
+        }
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+        var stored = await db.WallGeometryTextures.AsNoTracking()
+            .Where(t => t.GeometryModel.WallId == view.WallId && t.GeometryModel.IsActive && t.SourceMapStoredPath != null)
+            .Select(t => new { t.FacetId, Path = t.SourceMapStoredPath! })
+            .ToListAsync(ct);
+        var maps = new Dictionary<string, TextureSourceMap>(StringComparer.Ordinal);
+        foreach (var t in stored)
+        {
+            if (await files.ReadAsync(t.Path, ct) is { } bytes && TextureSourceMap.Parse(bytes) is { } map)
+            {
+                maps[t.FacetId] = map;
+            }
+        }
+
+        return maps.Count == 0 ? view : Wall3DPhotoOutlines.Apply(view, doc, maps, SolvedCamera.ParseAll(json), PanelCameraPerHold(wall, doc));
+    }
+
+    /// <summary>Each live hold's panel-photo camera centre, resected from the placed holds of that photo.</summary>
+    private static Dictionary<Guid, double[]> PanelCameraPerHold(Wall wall, WallGeometryDocument doc)
+    {
+        var frames = doc.Segments.SelectMany(s => s.Facets)
+            .Where(f => !string.IsNullOrEmpty(f.Id))
+            .Select(f => (f.Id, Frame: FacetFrame.From(f)))
+            .Where(x => x.Frame is not null)
+            .GroupBy(x => x.Id)
+            .ToDictionary(g => g.Key, g => g.First().Frame!, StringComparer.Ordinal);
+        var live = wall.Holds.Where(h => h.Generation <= wall.CurrentGeneration).ToList();
+        var cameras = HoldFootprintRefiner.PanelCameras(live, frames);
+        return live
+            .Where(h => cameras.ContainsKey(HoldPlaneProjector.PhotoOf(h)))
+            .ToDictionary(h => h.Id, h => cameras[HoldPlaneProjector.PhotoOf(h)]);
     }
 
     private async Task<string?> LoadActiveGeometryJsonAsync(Guid wallId, CancellationToken ct)

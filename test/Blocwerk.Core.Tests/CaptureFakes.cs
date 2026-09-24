@@ -90,6 +90,9 @@ internal sealed class FakeComputeJobClient : IComputeJobClient
     /// <summary>What a <c>*_mask.png</c> download answers (only the PNG signature matters to the app).</summary>
     public static byte[] MaskPng { get; } = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0];
 
+    /// <summary>What a <c>*_source.json</c> download answers: a well-formed source-view map.</summary>
+    public static byte[] SourceMap { get; } = TextureSourceMapTests.Doc();
+
     public Task<byte[]> DownloadFileAsync(string jobId, string name, CancellationToken ct)
     {
         Downloads.Add(name);
@@ -103,6 +106,7 @@ internal sealed class FakeComputeJobClient : IComputeJobClient
             "frame.json" => Encoding.UTF8.GetBytes(FrameJson),
             "wall.spz" => Spz,
             _ when name.EndsWith("_mask.png", StringComparison.Ordinal) => MaskPng,
+            _ when name.EndsWith("_source.json", StringComparison.Ordinal) => SourceMap,
             _ => CaptureScenario.TinyJpeg(),
         });
     }
@@ -164,7 +168,7 @@ internal sealed class FakeComputeJobClient : IComputeJobClient
                 ["facets"] = new JsonArray(
                     new JsonObject
                     {
-                        ["facet"] = "0", ["file"] = "facet_0.jpg", ["maskFile"] = "facet_0_mask.png", ["widthPx"] = 1550, ["heightPx"] = 1300,
+                        ["facet"] = "0", ["file"] = "facet_0.jpg", ["maskFile"] = "facet_0_mask.png", ["sourceFile"] = "facet_0_source.json", ["widthPx"] = 1550, ["heightPx"] = 1300,
                         ["bounds"] = new JsonObject { ["aMin"] = -100.0, ["aMax"] = 3000.0, ["bMin"] = -100.0, ["bMax"] = 2500.0 },
                     },
                     new JsonObject { ["facetId"] = "5a", ["file"] = "facet_5a.jpg", ["widthPx"] = 450, ["heightPx"] = 1000, ["aMin"] = 0.0, ["aMax"] = 900.0, ["bMin"] = 0.0, ["bMax"] = 2000.0 }),

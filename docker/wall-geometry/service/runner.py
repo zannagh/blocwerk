@@ -24,6 +24,7 @@ def _textures(job_dir, progress):
     os.environ["OPENCV_IO_MAX_IMAGE_PIXELS"] = str(settings.max_image_pixels)
     import cv2
 
+    from wallgeometry.sourcemap import encode as encode_source
     from wallgeometry.textures import TextureError, encode_jpeg, encode_png, render_textures
     with open(os.path.join(job_dir, "geometry.json")) as fh:
         doc = json.load(fh)
@@ -48,11 +49,16 @@ def _textures(job_dir, progress):
         mask_name = f"facet_{r['facet']}_mask.png"
         with open(os.path.join(job_dir, mask_name), "wb") as fh:
             fh.write(encode_png(r["mask"]))
-        files += [name, mask_name]
-        facets.append({k: v for k, v in r.items() if k not in ("image", "mask")} | {"file": name, "maskFile": mask_name})
+        source_name = f"facet_{r['facet']}_source.json"
+        with open(os.path.join(job_dir, source_name), "wb") as fh:
+            fh.write(encode_source(r["source"]))
+        files += [name, mask_name, source_name]
+        facets.append({k: v for k, v in r.items() if k not in ("image", "mask", "source")}
+                      | {"file": name, "maskFile": mask_name, "sourceFile": source_name})
     manifest = {"pixelConvention": "column i, row j -> a = aMin + (i + 0.5) * mmPerPx, "
                                    "b = bMax - (j + 0.5) * mmPerPx (facet frame of the geometry); maskFile: same "
-                                   "grid, 8-bit gray, 0 = no photo there, 255 = photo, feathered edge",
+                                   "grid, 8-bit gray, 0 = no photo there, 255 = photo, feathered edge; sourceFile: which photo "
+                                   "painted each label cell (wallgeometry/sourcemap.py)",
                 "facets": facets}
     with open(os.path.join(job_dir, "textures.json"), "w") as fh:
         json.dump(manifest, fh)

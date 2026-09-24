@@ -10,6 +10,9 @@ namespace Blocwerk.Core.Capture;
 /// <summary>
 /// A partial re-capture carries unphotographed facets over from the model it was registered to, in the same
 /// frame; their textures are copied too (as new files, so neither model's cleanup can delete the other's).
+/// Their source-view maps are NOT: those name the reference capture's photos, which this model's cameras
+/// do not include (and whose worker names, p00…, collide with this capture's), so a carried facet draws
+/// its hold outlines flat.
 /// </summary>
 public sealed partial class WallCaptureProcessor
 {
