@@ -110,7 +110,17 @@ Parts: `geometry` (JSON), `photos` (JPEG or PNG, named `<camera image>.<jpg|jpeg
 the solved camera), optional `options` JSON (`mmPerPx` 2.0 in 0.25–50, `maxSidePx` 4096 in 256–8192,
 `extraMarginMm` 100 in 0–2000, `jpegQuality` 90 in 30–100; unknown keys → 422), optional `callbackUrl`.
 The geometry is range-checked (finite numbers, ≤ 64 facets, sane image sizes, known dictionary) and the
-total output must stay under `TEXTURES_MAX_MEGAPIXELS`, else `422`.
+total output must stay under `TEXTURES_MAX_MEGAPIXELS`, else `422`. The app sends `mmPerPx`, `maxSidePx` and
+`jpegQuality` only when configured (`GEOMETRYSERVICE__TEXTURES__MMPERPX` / `__MAXSIDEPX` / `__JPEGQUALITY`).
+
+**Resolution and physical sizes.** The renderer's internal sizes that are lengths on the wall are kept
+physical at any `mmPerPx` (`wallgeometry/scale.py`): the label / source-map cell (16 mm), the seam feather
+(10 mm), the mask feather (8 mm), the blend mode's outlier blur / smoothing (6 / 22 mm) and the work cells
+of the shading flattening and seam harmonisation (16 / 8 mm). At the default 2 mm/px they are exactly the
+old pixel values (8, 5, 4, 3, 11, 8, 4 px), so the output there is unchanged. The multi-view blend keeps
+`(blendViews + 2) × 7` bytes per output pixel; above `TEXTURES_BLEND_MAX_BYTES` (2 GB ≈ 36 MP) a job
+silently renders single-view instead, so raise it together with a finer `mmPerPx` (1 mm/px is 4× the
+pixels), and `TEXTURES_MAX_MEGAPIXELS` / `MAX_REQUEST_MB` / `TEXTURES_TIMEOUT_S` with it.
 
 **Privacy / integrity.** Photos are parsed from the stream in memory (never spooled to disk as
 uploaded) and stripped of all metadata on arrival **without re-encoding** (`service/photos.py`, same
@@ -122,12 +132,12 @@ is not applied, as in the app). The header size is checked against `MAX_IMAGE_ME
 decoding.
 
 Per facet pixel, the ONE photo with the best `f·cos(view angle)/distance` is used (no averaging, so no
-ghosted holds), chosen on an 8-px label grid cleaned with a 5-cell mode filter. Plane points behind
+ghosted holds), chosen on a 16 mm (8 px at 2 mm/px) label grid cleaned with a 5-cell mode filter. Plane points behind
 another facet's surface are left black (clips the side triangle along the overhang). Pixel `(i, j)`
 covers `a = aMin + (i+0.5)·mmPerPx`, `b = bMax − (j+0.5)·mmPerPx` in the facet frame.
 **Coverage mask.** Every facet also gets `facet_<id>_mask.png` (manifest field `maskFile`): an 8-bit
 grayscale PNG on exactly the texture's pixel grid, 0 where no photo was drawn (outside every photo,
-behind another facet — the black parts of the JPEG), 255 where one was, with a linear 4 px feather
+behind another facet — the black parts of the JPEG), 255 where one was, with a linear 8 mm (4 px at 2 mm/px) feather
 *inside* the covered area so the black fill never bleeds into the seam. A viewer uses it as the alpha of
 the texture and shows the plain facet elsewhere. It stays a separate file so the photo keeps JPEG's
 size and format: on The Attic's 4 facets (≈ 6.6 MP) the masks are 27 KB in total next to 1.95 MB of
@@ -136,8 +146,8 @@ smaller, but a new image format for every consumer and no way back for old ones.
 additive: clients that ignore it get exactly the old result.
 
 **Source-view map.** Every facet also gets `facet_<id>_source.json` (manifest field `sourceFile`, see
-`wallgeometry/sourcemap.py`): which photo painted each label cell (8 px = 16 mm at the default
-resolution), as a base64 grid of 1-based indices into its `cameras` list (0 = none). A protruding hold
+`wallgeometry/sourcemap.py`): which photo painted each label cell (16 mm at any resolution: 8 px at the
+default 2 mm/px), as a base64 grid of 1-based indices into its `cameras` list (0 = none). A protruding hold
 shows in the texture as seen from that photo, so the app's 3D view uses it to draw hold outlines where
 the texture shows them. ~0.1 MB for a 5 × 3.5 m facet; additive like the mask.
 
@@ -156,9 +166,10 @@ Not handled: occlusion by holds/volumes, exposure differences between photos (vi
 | `CALLBACK_ALLOWED_HOSTS` / `CALLBACK_ALLOW_PRIVATE` | unset | callbacks go to public addresses only, plus these host names (compose: `blocwerk`) / any private address when `1` |
 | `MAX_IMAGE_MEGAPIXELS` | 100 | photos with a bigger header size are refused (`413`) |
 | `TEXTURES_MAX_MEGAPIXELS` | 200 | total output pixels of one textures job (`422` beyond) |
+| `TEXTURES_BLEND_MAX_BYTES` | 2000000000 | memory the multi-view blend may take (`(blendViews + 2) × 7` bytes per output pixel); a bigger job renders single-view. Raise it for `mmPerPx` < 2 on a machine with the RAM |
 | `HOST` / `PORT` | 127.0.0.1 / 8000 (image: 0.0.0.0) | listen address |
 | `RESULT_TTL_S` | 3600 | finished jobs + files are deleted after this |
-| `MAX_REQUEST_MB` / `MAX_PHOTO_MB` / `MAX_PHOTOS` | 400 / 40 / 60 | limits (`413`) |
+| `MAX_REQUEST_MB` / `MAX_PHOTO_MB` / `MAX_PHOTOS` | 400 / 40 / 60 | limits (`413`). A textures request carries every photo: 50 full-size 48 MP JPEGs (12–22 MB each) need `MAX_REQUEST_MB` ≈ 1200 |
 | `MAX_QUEUED_JOBS` | 16 | `429` beyond this |
 | `SOLVE_TIMEOUT_S` / `TEXTURES_TIMEOUT_S` | 600 / 900 | per job; the job's process is killed |
 | `WORK_DIR` | /tmp/wall-geometry-jobs | job inputs/outputs |

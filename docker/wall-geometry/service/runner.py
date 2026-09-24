@@ -40,7 +40,8 @@ def _textures(job_dir, progress):
         return img
 
     params = inputs.get("options") or {}
-    res = render_textures(doc, load, set(photos), params, lambda f, s: progress(0.05 + 0.9 * f, s))
+    render_params = {**params, "blendMaxBytes": settings.textures_blend_max_bytes}
+    res = render_textures(doc, load, set(photos), render_params, lambda f, s: progress(0.05 + 0.9 * f, s))
     facets, files = [], []
     for r in res:
         name = f"facet_{r['facet']}.jpg"

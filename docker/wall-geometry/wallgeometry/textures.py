@@ -27,7 +27,7 @@ import math
 import cv2
 import numpy as np
 
-from . import blend, consensus, exposure, flatten, seams, sourcemap
+from . import blend, consensus, exposure, flatten, scale, seams, sourcemap
 from .markercheck import marker_check
 
 DEFAULTS = {"behindOtherFacetMm": 30.0, "mmPerPx": 2.0, "maxSidePx": 4096, "extraMarginMm": 100.0, "labelCellPx": 8,
@@ -206,7 +206,7 @@ def render_textures(doc, load_photo, available, params=None, progress=None):
     bounds, widthPx, heightPx, photosUsed, coverage, markerCheck} (+ exposureGains when balanced).
     blendViews > 1 (default): robust multi-view blend (see blend.py); 1: the single best photo per pixel.
     """
-    p = {**DEFAULTS, **(params or {})}
+    p = scale.at_resolution({**DEFAULTS, **(params or {})}, params)  # physical sizes kept at any mmPerPx
     cams = {c["image"]: _cam(c) for c in doc.get("cameras", []) if c["image"] in available}
     if not cams:
         raise TextureError("none of the uploaded photos matches a camera of the geometry document")
