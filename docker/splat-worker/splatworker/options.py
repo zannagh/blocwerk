@@ -24,7 +24,7 @@ class SplatOptions:
     cropMarginMm: float = 400.0
     spz: bool = True
     colourMatch: bool = True  # ingest matches the video frames' colours to the photos' (colour.py)
-    cleanup: bool = True  # remove floaters with the wall geometry (cleanup.py); needs `geometry`
+    cleanup: bool = False  # remove floaters with the wall geometry (cleanup.py); needs `geometry`. Off until it stops darkening the wall.
 
     def to_dict(self):
         return asdict(self)
