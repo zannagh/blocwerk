@@ -88,7 +88,11 @@ public partial class WallGlyphService(
             }
 
             return new ActiveWallGeometry(
-                ToEntry(model), document.Markers.Count, document.MarkerSizeMm, WallGeometrySummary.FacetRows(document));
+                ToEntry(model),
+                document.Markers.Count,
+                document.MarkerSizeMm,
+                WallGeometrySummary.FacetRows(document),
+                WallGeometryModelChecks.From(document));
         }
     }
 

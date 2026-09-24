@@ -1,5 +1,6 @@
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Geometry;
 using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Components;
 
@@ -12,6 +13,8 @@ namespace Blocwerk.Web.Components.Shared;
 public partial class WallCaptureStatusList : IAsyncDisposable
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(2);
+
+    private static readonly string[] IgnoredDetectionKinds = [WallGeometryModelCheck.KindRejectedObservation];
 
     private readonly CancellationTokenSource disposed = new();
     private readonly HashSet<Guid> notified = [];

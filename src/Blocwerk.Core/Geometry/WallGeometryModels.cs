@@ -38,6 +38,9 @@ public sealed record WallGeometryWorld
     public string? Origin { get; init; }
 
     public double[]? Up { get; init; }
+
+    /// <summary>False when no vertical reference could be used, so absolute angles were not measured; null from older solvers.</summary>
+    public bool? GravityKnown { get; init; }
 }
 
 public sealed record WallGeometrySegment
@@ -50,6 +53,12 @@ public sealed record WallGeometrySegment
     public double? DeclaredAngleDeg { get; init; }
 
     public double? MeasuredAngleDeg { get; init; }
+
+    /// <summary>Measured minus declared angle, degrees; null when either is unknown.</summary>
+    public double? DeclaredVsMeasuredDeg { get; init; }
+
+    /// <summary>True when this segment was the vertical reference, so its angle is not a measurement.</summary>
+    public bool? AngleIsGravityReference { get; init; }
 
     public IReadOnlyList<WallGeometryFacet> Facets { get; init; } = [];
 }
@@ -136,6 +145,12 @@ public sealed record WallGeometryQuality
     /// view read as a marker id). Null from solvers older than this field.
     /// </summary>
     public IReadOnlyList<WallGeometryRejectedObservation>? RejectedObservations { get; init; }
+
+    /// <summary>The solver's self-checks and warnings; null from solvers older than this field.</summary>
+    public WallGeometryQualityChecks? Checks { get; init; }
+
+    /// <summary>How gravity was found; null from older solvers.</summary>
+    public WallGeometryGravityDetail? GravityDetail { get; init; }
 }
 
 /// <summary>Why the solver down-weighted a marker (<c>quality.downweightedMarkers</c>).</summary>

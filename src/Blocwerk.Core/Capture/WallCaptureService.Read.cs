@@ -3,6 +3,7 @@ using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Capture.FollowUp;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Geometry;
 using Blocwerk.Core.MarkerPlanning;
 using Microsoft.EntityFrameworkCore;
 
@@ -118,13 +119,32 @@ public sealed partial class WallCaptureService
             .GroupBy(p => p.CaptureId)
             .Select(g => new { g.Key, Count = g.Count() })
             .ToDictionaryAsync(g => g.Key, g => g.Count);
+        var modelChecks = await ModelChecksAsync(db, captures);
         return captures.Select(c => new WallCaptureSummary(
             c.Id, c.CreatedAt, c.Status, c.Progress, c.Stage, c.Error, c.Notes,
             counts.GetValueOrDefault(c.Id), c.GeometryModelId, c.CompletedAt, ReadPlacementCheck(c.PlacementCheckJson),
             c.SplatQuality,
             CaptureFollowUpText.Summary(CaptureFollowUpRecord.Parse(c.FollowUpJson)),
             CaptureFollowUpText.Note(CaptureFollowUpRecord.Parse(c.FollowUpJson)),
-            c.WallId)).ToList();
+            c.WallId,
+            c.GeometryModelId is { } modelId ? modelChecks.GetValueOrDefault(modelId, []) : [])).ToList();
+    }
+
+    /// <summary>What the solver said about each capture's model (its stored JSON), by model id.</summary>
+    private static async Task<Dictionary<Guid, IReadOnlyList<WallGeometryModelCheck>>> ModelChecksAsync(
+        BlocwerkDbContext db, List<WallCapture> captures)
+    {
+        var modelIds = captures.Where(c => c.GeometryModelId is not null).Select(c => c.GeometryModelId!.Value).Distinct().ToList();
+        if (modelIds.Count == 0)
+        {
+            return [];
+        }
+
+        var models = await db.WallGeometryModels.AsNoTracking()
+            .Where(m => modelIds.Contains(m.Id))
+            .Select(m => new { m.Id, m.Json })
+            .ToListAsync();
+        return models.ToDictionary(m => m.Id, m => WallGeometryModelChecks.FromJson(m.Json));
     }
 
     private static MarkerPlacementCheck? ReadPlacementCheck(string? json)

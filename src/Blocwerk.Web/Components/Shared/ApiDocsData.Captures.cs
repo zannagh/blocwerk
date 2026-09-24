@@ -47,11 +47,13 @@ internal static partial class ApiDocsData
     private const string CaptureStatusJson =
         "{\n  \"id\": \"<guid>\",\n  \"status\": 5,\n  \"progress\": 1,\n  \"stage\": \"Done\",\n  \"error\": null,"
         + "\n  \"photoCount\": 24,\n  \"geometryModelId\": \"<guid>\",\n  \"followUp\": \"856 holds placed on the 3D model, "
-        + "653 hold shapes refined from several photos.\",\n  \"followUpNote\": null,\n  \"wallId\": \"<guid>\"\n}";
+        + "653 hold shapes refined from several photos.\",\n  \"followUpNote\": null,\n  \"wallId\": \"<guid>\","
+        + "\n  \"modelChecks\": [\n    { \"kind\": \"segment-angle\", \"level\": \"info\", \"message\": \"Main wall 45.2° overhang (declared 45°)\" }\n  ]\n}";
 
     private const string CaptureStatusNote =
         "status: 1 queued … 5 done, 6 done without textures, 7 failed, 8 photo-real view training, 9 done without the photo-real view. "
-        + "followUp says what the new model did for the existing holds; followUpNote what it could not do (or a skipped photo-real view).";
+        + "followUp says what the new model did for the existing holds; followUpNote what it could not do (or a skipped photo-real view). "
+        + "modelChecks is what the solver said about the model (measured angles, warnings, ignored detections); level is info or warning.";
 
     private static ApiParamDoc[] CaptureWall => [new("wallId", "path", "The wall.")];
 

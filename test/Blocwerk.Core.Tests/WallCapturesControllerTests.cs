@@ -134,6 +134,39 @@ public class WallCapturesControllerTests
         Assert.IsType<NotFoundObjectResult>(await Api(s, ApiKeys.Personal()).Get(h.WallId, Guid.NewGuid()));
     }
 
+    [Fact]
+    public async Task Status_CarriesTheSolversModelChecks_AsAModelChecksArray()
+    {
+        using var h = new WallTestHarness();
+        using var s = await GlyphWallAsync(h);
+        var draft = await s.Service.CreateDraftAsync(h.WallId);
+        Guid solvedId;
+        await using (var db = h.CreateContext())
+        {
+            var model = new WallGeometryModel
+            {
+                WallId = h.WallId, Json = WallGeometryModelChecksTests.WithChecks(withWarnings: true), SchemaVersion = 1, Source = "test",
+            };
+            var solved = new WallCapture
+            {
+                WallId = h.WallId, CreatedByUserId = h.Owner.Id, Status = WallCaptureStatus.Succeeded, GeometryModelId = model.Id,
+            };
+            db.AddRange(model, solved);
+            await db.SaveChangesAsync();
+            solvedId = solved.Id;
+        }
+
+        var api = Api(s, ApiKeys.Personal());
+        var status = Body<WallCaptureSummary>(await api.Get(h.WallId, solvedId));
+        var open = Body<WallCaptureSummary>(await api.Get(h.WallId, draft.CaptureId));
+        var json = System.Text.Json.JsonSerializer.Serialize(status, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+
+        Assert.Contains(status.ModelChecks!, c => c.Kind == Geometry.WallGeometryModelCheck.KindSolverWarning && c.Level == "warning");
+        Assert.Contains(status.ModelChecks!, c => c.Message == "Main wall 44.6° overhang (declared 45°)");
+        Assert.Empty(open.ModelChecks!);
+        Assert.Contains("\"modelChecks\":[{\"kind\":\"segment-angle\",\"level\":\"info\",", json);
+    }
+
     private static async Task<CaptureScenario> GlyphWallAsync(WallTestHarness h, IKioskContext? kiosk = null)
     {
         var s = new CaptureScenario(h, kiosk: kiosk);

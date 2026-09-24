@@ -64,6 +64,12 @@
                                 {
                                     <WallCapturePlacementCheck Check="check" />
                                 }
+                                @if (capture.ModelChecks is { Count: > 0 } modelChecks)
+                                {
+                                    @* The placement check already lists the ignored detections, with the admin's photo names. *@
+                                    <WallGeometryModelCheckList Checks="modelChecks"
+                                                                HideKinds="@(capture.PlacementCheck is null ? null : IgnoredDetectionKinds)" />
+                                }
                                 @if (!capture.IsRunning && capture.PhotoCount > 0)
                                 {
                                     <button class="btn-link" @onclick="() => TogglePhotosAsync(capture.Id)"

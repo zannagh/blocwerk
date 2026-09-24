@@ -48,7 +48,12 @@ else
     </div>
 }
 
+@* The angles are in the table above; the solver's own warnings and notes follow. *@
+<WallGeometryModelCheckList Checks="Active.Checks" HideKinds="AnglesInTable" Title="Solver notes" />
+
 @code {
+    private static readonly string[] AnglesInTable = [Blocwerk.Core.Geometry.WallGeometryModelCheck.KindSegmentAngle];
+
     /// <summary>The wall's active model.</summary>
     [Parameter, EditorRequired]
     public ActiveWallGeometry Active { get; set; } = default!;

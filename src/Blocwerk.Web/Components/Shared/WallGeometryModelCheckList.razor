@@ -1,0 +1,55 @@
+@using Blocwerk.Core.Geometry
+@* What the solver said about a model (measured angles, warnings, ignored detections) as a calm list:
+   notes in the normal text colour, things worth a look in the warning colour. Never an error: a model
+   that exists was solved. *@
+
+@if (Shown.Count > 0)
+{
+    <div class="model-checks" role="note">
+        <div class="model-checks-head">
+            @Title
+            @if (WarningCount > 0)
+            {
+                <span class="model-checks-count">· @WarningCount worth a look</span>
+            }
+        </div>
+        <ul class="model-checks-list">
+            @foreach (var check in Shown.Take(MaxShown))
+            {
+                <li class="@(check.Level == WallGeometryModelCheck.Warning ? "model-check-warning" : "model-check-info")">@check.Message</li>
+            }
+            @if (Shown.Count > MaxShown)
+            {
+                <li class="model-check-info">…and @(Shown.Count - MaxShown) more.</li>
+            }
+        </ul>
+    </div>
+}
+
+@code {
+    private const int MaxShown = 12;
+
+    /// <summary>The checks to show.</summary>
+    [Parameter, EditorRequired]
+    public IReadOnlyList<WallGeometryModelCheck>? Checks { get; set; }
+
+    /// <summary>Kinds shown elsewhere already (e.g. the angles in the facet table).</summary>
+    [Parameter]
+    public IReadOnlyCollection<string>? HideKinds { get; set; }
+
+    /// <summary>The list's heading.</summary>
+    [Parameter]
+    public string Title { get; set; } = "What the solver measured";
+
+    private IReadOnlyList<WallGeometryModelCheck> Shown { get; set; } = [];
+
+    private int WarningCount => Shown.Count(c => c.Level == WallGeometryModelCheck.Warning);
+
+    protected override void OnParametersSet()
+    {
+        Shown = (Checks ?? [])
+            .Where(c => HideKinds is null || !HideKinds.Contains(c.Kind))
+            .OrderBy(c => c.Kind == WallGeometryModelCheck.KindSegmentAngle ? 0 : 1)
+            .ToList();
+    }
+}

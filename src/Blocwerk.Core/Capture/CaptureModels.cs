@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Geometry;
 using Blocwerk.Core.MarkerPlanning;
 
 namespace Blocwerk.Core.Capture;
@@ -41,7 +42,8 @@ public sealed record CapturePhotoResult(
 /// A capture row for the status panel and history (no photo bytes, no JSON payloads). <c>FollowUp</c> is what the
 /// post-capture chain did in plain words ("856 holds placed on the 3D model, …"); <c>FollowUpNote</c> what it could
 /// not do, or a quiet note such as a skipped photo-real view. Both null until the chain ran. <c>WallId</c> is the
-/// capture's wall (from its row).
+/// capture's wall (from its row). <c>ModelChecks</c> is what the solver said about the model this capture made
+/// (measured segment angles, warnings, ignored detections), empty without a model.
 /// </summary>
 public sealed record WallCaptureSummary(
     Guid Id,
@@ -58,7 +60,8 @@ public sealed record WallCaptureSummary(
     SplatQuality? SplatQuality = null,
     string? FollowUp = null,
     string? FollowUpNote = null,
-    Guid WallId = default)
+    Guid WallId = default,
+    IReadOnlyList<WallGeometryModelCheck>? ModelChecks = null)
 {
     public bool IsRunning => Status is WallCaptureStatus.Queued or WallCaptureStatus.Detecting
         or WallCaptureStatus.Solving or WallCaptureStatus.Texturing or WallCaptureStatus.Splatting;
