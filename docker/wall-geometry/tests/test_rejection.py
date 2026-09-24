@@ -102,3 +102,11 @@ def test_attic_false_17_on_a_black_hold_is_rejected():
     assert angles["0"][0] == pytest.approx(45.18, abs=0.1)
     assert angles["2"][1] == pytest.approx(89.44, abs=0.1)
     assert angles["5"][0] == pytest.approx(44.91, abs=0.1)
+    # the kickboard's fold (4.97 deg) sits just under foldDeg 5.0: one facet, flagged as borderline
+    [border] = q["checks"]["borderlineFacetDecisions"]
+    assert (border["segment"], border["kind"], border["foldDeg"]) == (1, "splitRejected", 5.0)
+    assert border["minPlaneAngleDeg"] == pytest.approx(4.97, abs=0.05)
+    assert q["checks"]["warnings"] == [
+        "kickboard: the facet decision is borderline. Its parts differ by 4.97° against the 5° fold "
+        "threshold, so the solver kept it as one facet, but one or two more or different photos can tip it "
+        "the other way."]

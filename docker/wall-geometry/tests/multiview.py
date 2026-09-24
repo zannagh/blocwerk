@@ -42,10 +42,10 @@ def project(R, t, P):
     return pc[:, :2] / pc[:, 2:] * F + np.array([(W - 1) / 2, (H - 1) / 2])
 
 
-def request(seed=0):
-    """Clean request dict plus the ground-truth marker corners."""
+def request(seed=0, mk=None):
+    """Clean request dict plus the ground-truth marker corners (`mk`: other corners, same layout)."""
     rng = np.random.default_rng(seed)
-    mk = _markers()
+    mk = _markers() if mk is None else mk
     photos = []
     for name, R, t in _cameras():
         ms = []
@@ -61,6 +61,16 @@ def request(seed=0):
                         {"index": 2, "name": "side", "declaredAngleDeg": 0.0, "verticalReference": True}],
            "levelPairs": [], "options": {"validate": False}, "photos": photos}
     return doc, mk
+
+
+def leaned(mk, ids, deg, pivot_z=500.0):
+    """Markers `ids` of the y=0 facet tilted about the horizontal x axis (a piece that leans out)."""
+    a = np.radians(deg)
+    R = np.array([[1, 0, 0], [0, np.cos(a), -np.sin(a)], [0, np.sin(a), np.cos(a)]])
+    out = dict(mk)
+    for m in ids:
+        out[m] = (mk[m] - [0, 0, pivot_z]) @ R.T + [0, 0, pivot_z]
+    return out
 
 
 def with_false_single_view(doc, photo="SYN_03", mid=17):

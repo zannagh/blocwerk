@@ -1,7 +1,8 @@
 """Gravity, the world frame, and measured angles.
 
 Gravity is a least-squares unit vector `up` that is perpendicular to
-  * the normal of every facet of a segment declared `verticalReference`, and
+  * the normal of every facet of a segment declared `verticalReference` (a segment that split into
+    several facets counts once, with its whole-segment plane: refplanes.py), and
   * the centre-to-centre direction of every declared `levelPairs` marker pair.
 i.e. the eigenvector of the smallest eigenvalue of sum(w_i * d_i d_i^T) over those unit directions
 (all weights 1). With exactly two non-parallel vertical references and no level pairs this is exactly
@@ -24,12 +25,12 @@ def camera_up_vote(cams_ba):
     return np.sum([-R.T[:, 1] for R, _ in cams_ba.values()], 0)
 
 
-def gravity(normals, centres, ref_facets, level_pairs, cam_up):
-    """Returns (up or None, info dict)."""
+def gravity(refs, centres, level_pairs, cam_up):
+    """refs: [(label, unit normal)] of the vertical references. Returns (up or None, info dict)."""
     dirs, used = [], []
-    for f in ref_facets:
-        dirs.append(normals[f])
-        used.append(f"facet {f} normal")
+    for label, n in refs:
+        dirs.append(n)
+        used.append(label)
     missing = []
     for a, b in level_pairs:
         if a in centres and b in centres:
@@ -53,8 +54,8 @@ def gravity(normals, centres, ref_facets, level_pairs, cam_up):
         up = -up
     info["residualDeg"] = {u: round(float(np.degrees(np.arcsin(np.clip(abs(d @ up), 0, 1)))), 4)
                            for u, d in zip(used, D)}
-    if len(ref_facets) == 2:
-        n1, n2 = normals[ref_facets[0]], normals[ref_facets[1]]
+    if len(refs) == 2:
+        n1, n2 = refs[0][1], refs[1][1]
         info["referenceNormalsAngleDeg"] = float(np.degrees(np.arccos(np.clip(n1 @ n2, -1, 1))))
     return up, info
 

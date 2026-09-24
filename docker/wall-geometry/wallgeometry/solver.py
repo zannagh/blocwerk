@@ -5,6 +5,7 @@ from .facets import assign_facets, build_facet_problem, coplanarity, marker_norm
 from .ba import Problem, pack_free, unpack_free
 from .freeba import ROBUST, build_cameras, free_mask, per_marker_rms, per_obs_err, rms, run_free
 from .frame import angles, camera_up_vote, gravity, pseudo_up
+from .refplanes import gravity_refs, split_report, whole_segment_planes
 from .reject import find_rejections
 from .request import observations
 
@@ -107,7 +108,7 @@ def solve_structure(req, progress=_noop, drop_image=None, members=None):
     progress(0.65, "facet bundle adjustment")
     fprob, fx = facet_solve(prob, x, members, free_intr)
     fmw = fprob.marker_world(fx)
-    return {
+    sol = {
         "req": req, "obs": obs, "cams": prob.cams, "prob": prob, "x": x, "fprob": fprob, "fx": fx,
         "members": members, "facet_segment": facet_segment, "decisions": decisions,
         "downweighted": flagged, "rejected": rejected, "unreached": unreached, "free_intr": free_intr,
@@ -119,6 +120,8 @@ def solve_structure(req, progress=_noop, drop_image=None, members=None):
         "normals": {fid: fprob.facet_frame(fx, fid)[0][:, 2] for fid in fprob.facets},
         "corners_ba": fmw, "centres": {m: c.mean(0) for m, c in fmw.items()},
     }
+    sol["gravity_planes"] = whole_segment_planes(sol, facet_solve)
+    return sol
 
 
 def apply_gravity(sol, level_pairs=None):
@@ -130,9 +133,13 @@ def apply_gravity(sol, level_pairs=None):
                   and req.segments[fseg[f]].vertical_reference]
     cams_ba = {img: sol["fprob"].cam(sol["fx"], img) for img in sol["fprob"].images}
     cam_up = camera_up_vote(cams_ba)
-    up, ginfo = gravity(normals, sol["centres"], ref_facets, level_pairs, cam_up)
+    planes = sol.get("gravity_planes", {})
+    refs = gravity_refs(ref_facets, normals, fseg, planes)
+    up, ginfo = gravity(refs, sol["centres"], level_pairs, cam_up)
     ref = reference_facet(members, fseg, req.segments)
     ginfo["known"] = up is not None
+    if planes:
+        ginfo["splitReferences"] = split_report(sol, planes, up)
     if up is None:
         up = pseudo_up(normals[ref], cam_up)
     sol.update({"up": up, "gravity": ginfo, "ref_facet": ref, "ref_facets_gravity": ref_facets,

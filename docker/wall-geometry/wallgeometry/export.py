@@ -3,6 +3,7 @@ import numpy as np
 
 from .camera import K_matrix
 from .frame import facet_axes, world_transform
+from .refplanes import borderline_decisions, warnings
 
 EXTENT_MARGIN_MM = 50.0
 UP = np.array([0.0, 0, 1])
@@ -144,7 +145,9 @@ def build_document(sol, checks):
          "checks": {"declaredVsMeasuredDeg": decl_checks,
                     "markerSideRmsErrMm": _r(checks["side"]["rmsErrMm"]),
                     "markerSideMeanErrMm": _r(checks["side"]["meanErrMm"]),
-                    "levelPairs": _level_checks(sol)},
+                    "levelPairs": _level_checks(sol),
+                    "borderlineFacetDecisions": borderline_decisions(sol["decisions"]),
+                    "warnings": warnings(sol)},
          "facetDecisions": sol["decisions"],
          "downweightedMarkers": {str(k): v for k, v in sol["downweighted"].items()},
          "rejectedObservations": sol.get("rejected", []),

@@ -63,7 +63,9 @@ document plus: per segment `declared`, `declaredVsMeasuredDeg`; per facet `marke
 `measuredSidePhotos` (see below); `world`
 `gravityKnown`, `referenceFacet`; `quality` `gravity` (`"unknown"` or the constraints used),
 `gravityDetail` (per-constraint residual degrees), `checks.declaredVsMeasuredDeg`,
-`checks.levelPairs` (height differences), `facetDecisions`, `downweightedMarkers`, `rejectedObservations`, `unusedPhotos`,
+`checks.levelPairs` (height differences), `checks.borderlineFacetDecisions` (split decisions whose
+plane angle is within 0.5° of `foldDeg`), `checks.warnings` (human-readable sentences: a folded
+gravity reference, borderline facet decisions), `facetDecisions`, `downweightedMarkers`, `rejectedObservations`, `unusedPhotos`,
 `intrinsics`, optional `leaveOnePhotoOut`.
 
 **Measured marker size.** The solved corners are always exactly the declared `sizeMm` square, so
@@ -98,7 +100,13 @@ average 125.4 mm, within ±3 mm except the bent marker 32 (2 photos, 133.7 mm).
   coplanarity) and marker 33 in two blurred grazing photos; capture 1 (14 photos) has none.
 - **Gravity.** Least-squares `up` ⟂ every facet normal of a `verticalReference` segment and ⟂ every
   `levelPairs` centre-to-centre direction (unit weights; with exactly two references and no pairs
-  this is `n1 × n2`). Sign from the cameras' image-up (phones are held upright). With fewer than two
+  this is `n1 × n2`). A reference segment that split into several facets counts ONCE, with its
+  whole-segment plane (the facet BA re-run with that segment as one plane, `wallgeometry/refplanes.py`):
+  equal votes let a 2-marker end outvote the rest and made the answer jump when a fold crossed
+  `foldDeg` (The Attic's kickboard: main wall 45.2° unsplit, 46.5° split; now 45.2° both ways). The
+  pieces are reported in `quality.gravityDetail.splitReferences` (markers, observations, extent, angle
+  to the whole plane, implied `share`, `leanDeg` against the vertical) and as a warning.
+  Sign from the cameras' image-up (phones are held upright). With fewer than two
   independent constraints: `quality.gravity = "unknown"`, the reference facet is treated as vertical,
   angles are `null`, millimetres stay valid.
 - **World frame.** x along the reference facet (lowest-index declared non-reference segment, its

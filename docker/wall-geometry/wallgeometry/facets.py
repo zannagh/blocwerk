@@ -88,10 +88,11 @@ def _split(seg, ms, mw, nm, p, log):
     worst = min(angle(a[1], b[1]) for a, b in itertools.combinations(planes, 2))
     if worst <= p["foldDeg"]:
         log.append({"kind": "splitRejected", "segment": seg, "clusters": [sorted(c) for c in clusters],
-                    "reason": f"side planes differ by only {worst:.2f} deg (<= {p['foldDeg']})"})
+                    "reason": f"side planes differ by only {worst:.2f} deg (<= {p['foldDeg']})",
+                    "minPlaneAngleDeg": round(worst, 3), "foldDeg": p["foldDeg"]})
         return [sorted(ms)]
     log.append({"kind": "split", "segment": seg, "facets": [sorted(c) for c in clusters],
-                "minPlaneAngleDeg": round(worst, 3)})
+                "minPlaneAngleDeg": round(worst, 3), "foldDeg": p["foldDeg"]})
     return [sorted(c) for c in sorted(clusters, key=min)]
 
 
