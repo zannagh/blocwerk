@@ -70,7 +70,7 @@ public sealed partial class WallCaptureProcessor
         }
 
         var latest = new LatestProgress();
-        var request = new CaptureVideoFrameRequest(options.VideoFramesPerSecond, options.MaxVideoFrames, options.VideoExtractTimeout);
+        var request = options.VideoFrameRequest();
         var extraction = Task.Run(() => videoFrames!.ExtractAsync(path, request, latest, ct), ct);
         while (await Task.WhenAny(extraction, Task.Delay(TimeSpan.FromSeconds(2), ct)) != extraction)
         {

@@ -12,7 +12,36 @@ public sealed class WallCapturePipelineOptions
     /// </summary>
     public const int MaxPhotos = 60;
 
-    public const long MaxPhotoBytes = 20L * 1024 * 1024;
+    /// <summary>
+    /// Largest photo a capture takes, checked on upload and again after a HEIC → JPEG conversion (a 48 MP
+    /// JPEG is 12–22 MB). Matches the compute services' <c>MAX_PHOTO_MB</c> (40). Setting
+    /// <c>Blocwerk:Capture:MaxPhotoMb</c> / <c>CAPTURE__MAXPHOTOMB</c> (1–200); default 40 MB.
+    /// </summary>
+    public long MaxPhotoBytes { get; init; } = 40L * 1024 * 1024;
+
+    /// <summary>
+    /// JPEG quality of a HEIC upload's conversion. Setting <c>Blocwerk:Capture:HeicJpegQuality</c> /
+    /// <c>CAPTURE__HEICJPEGQUALITY</c> (50–100); default 92.
+    /// </summary>
+    public int HeicJpegQuality { get; init; } = HeifCapturePhotoConverter.Quality;
+
+    /// <summary>
+    /// Video candidates per kept frame: the sharpest of each run of this many wins. Setting
+    /// <c>Blocwerk:Capture:FrameSharpnessWindow</c> / <c>CAPTURE__FRAMESHARPNESSWINDOW</c> (1–10); default 3.
+    /// </summary>
+    public int FrameSharpnessWindow { get; init; } = CaptureVideoFrameExtractor.Window;
+
+    /// <summary>
+    /// ffmpeg's <c>-q:v</c> for the extracted frames (2 best … 31 worst). Setting
+    /// <c>Blocwerk:Capture:FrameJpegQ</c> / <c>CAPTURE__FRAMEJPEGQ</c> (2–31); default 3.
+    /// </summary>
+    public int FrameJpegQ { get; init; } = CaptureVideoFrameExtractor.JpegQ;
+
+    /// <summary>
+    /// Long edge a frame's sharpness is scored at. Setting <c>Blocwerk:Capture:SharpnessEdge</c> /
+    /// <c>CAPTURE__SHARPNESSEDGE</c> (120–1920); default 480.
+    /// </summary>
+    public int SharpnessEdge { get; init; } = CaptureFrameSharpness.ScoreEdge;
 
     /// <summary>First wait between two job-status polls; grows by half each time.</summary>
     public TimeSpan PollInitialDelay { get; init; } = TimeSpan.FromSeconds(1);
@@ -69,12 +98,22 @@ public sealed class WallCapturePipelineOptions
     /// </summary>
     public string HeifConvertPath { get; init; } = "heif-convert";
 
-    /// <summary>The defaults, with the retention and video settings read from configuration when set.</summary>
+    /// <summary>The frame request of a capture video, with the extraction settings above.</summary>
+    public CaptureVideoFrameRequest VideoFrameRequest() =>
+        new(VideoFramesPerSecond, MaxVideoFrames, VideoExtractTimeout)
+        {
+            Window = FrameSharpnessWindow,
+            JpegQ = FrameJpegQ,
+            ScoreEdge = SharpnessEdge,
+        };
+
+    /// <summary>The defaults, with the retention, photo and video settings read from configuration when set.</summary>
     public static WallCapturePipelineOptions Bind(IConfiguration? configuration)
     {
         var defaults = new WallCapturePipelineOptions();
         var days = ReadInt(configuration, "PhotoRetentionDays", 0, int.MaxValue);
         var videoMb = ReadInt(configuration, "MaxVideoMb", 1, 16 * 1024);
+        var photoMb = ReadInt(configuration, "MaxPhotoMb", 1, 200);
         var frames = ReadInt(configuration, "MaxVideoFrames", 3, 400);
         var fps = Read(configuration, "VideoFramesPerSecond") is { } rawFps
                   && double.TryParse(rawFps, NumberStyles.Float, CultureInfo.InvariantCulture, out var f) && f is >= 0.1 and <= 10
@@ -84,6 +123,11 @@ public sealed class WallCapturePipelineOptions
         {
             PhotoRetention = days is { } d ? (d == 0 ? null : TimeSpan.FromDays(d)) : defaults.PhotoRetention,
             MaxVideoBytes = videoMb is { } mb ? mb * 1024L * 1024 : defaults.MaxVideoBytes,
+            MaxPhotoBytes = photoMb is { } pmb ? pmb * 1024L * 1024 : defaults.MaxPhotoBytes,
+            HeicJpegQuality = ReadInt(configuration, "HeicJpegQuality", 50, 100) ?? defaults.HeicJpegQuality,
+            FrameSharpnessWindow = ReadInt(configuration, "FrameSharpnessWindow", 1, 10) ?? defaults.FrameSharpnessWindow,
+            FrameJpegQ = ReadInt(configuration, "FrameJpegQ", 2, 31) ?? defaults.FrameJpegQ,
+            SharpnessEdge = ReadInt(configuration, "SharpnessEdge", 120, 1920) ?? defaults.SharpnessEdge,
             MaxVideoFrames = frames ?? defaults.MaxVideoFrames,
             VideoFramesPerSecond = fps,
             HeifConvertPath = Read(configuration, "HeifConvertPath") is { Length: > 0 } heif ? heif : defaults.HeifConvertPath,

@@ -26,9 +26,10 @@ public static class SplatLodLadder
     /// <summary>
     /// Splat counts of the ladder's levels. The full scene is the implicit top. 800k is a desktop step
     /// between a phone's 250k cap and a <see cref="SplatQuality.High"/> scene's 1–2 M; it is only built
-    /// for scenes of at least 1 M (<see cref="MaxFraction"/>).
+    /// for scenes of at least 1 M (<see cref="MaxFraction"/>). 2 M is the same for the big scenes a strong
+    /// GPU trains (only built from 2.5 M up); phones never step past 800k (the viewer's light-device cap).
     /// </summary>
-    public static readonly IReadOnlyList<int> Targets = [40_000, 120_000, 250_000, 800_000];
+    public static readonly IReadOnlyList<int> Targets = [40_000, 120_000, 250_000, 800_000, 2_000_000];
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 

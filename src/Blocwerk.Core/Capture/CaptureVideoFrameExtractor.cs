@@ -21,8 +21,11 @@ public sealed class CaptureVideoFrameExtractor(BlocwerkSettings settings) : ICap
 {
     public const int MaxEdge = 1920;
 
-    /// <summary>Candidates per kept frame: the sharpest of each run of this many wins.</summary>
+    /// <summary>Default candidates per kept frame: the sharpest of each run of this many wins.</summary>
     public const int Window = 3;
+
+    /// <summary>Default ffmpeg <c>-q:v</c> of the candidate JPEGs.</summary>
+    public const int JpegQ = 3;
 
     /// <summary>
     /// Largest picture ffmpeg/ffprobe will decode (8192², above any phone's 8K). Passed as the
@@ -88,8 +91,10 @@ public sealed class CaptureVideoFrameExtractor(BlocwerkSettings settings) : ICap
         var work = Directory.CreateTempSubdirectory("blocwerk-capture-video-");
         try
         {
+            var window = Math.Max(1, request.Window);
             var args = FfmpegArguments(
-                videoPath, target * Window, Path.Combine(work.FullName, "c_%05d.jpg"), MaxCandidates(request.MaxFrames), toneMap);
+                videoPath, target * window, Path.Combine(work.FullName, "c_%05d.jpg"),
+                MaxCandidates(request.MaxFrames, window), toneMap, request.JpegQ);
             await CaptureToolProcess.RunAsync(
                 settings.BetaVideo.FfmpegPath, args, request.Timeout,
                 line => ReportDecode(line, probe.DurationSeconds, progress), ct);
@@ -97,12 +102,12 @@ public sealed class CaptureVideoFrameExtractor(BlocwerkSettings settings) : ICap
             var scores = new List<double>(candidates.Count);
             for (var i = 0; i < candidates.Count; i++)
             {
-                scores.Add(CaptureFrameSharpness.Score(await File.ReadAllBytesAsync(candidates[i].FullName, ct)));
+                scores.Add(CaptureFrameSharpness.Score(await File.ReadAllBytesAsync(candidates[i].FullName, ct), request.ScoreEdge));
                 progress?.Report(0.8 + (0.2 * (i + 1) / candidates.Count));
             }
 
             var frames = new List<byte[]>();
-            foreach (var index in CaptureFrameSharpness.Select(scores, Window, request.MaxFrames))
+            foreach (var index in CaptureFrameSharpness.Select(scores, window, request.MaxFrames))
             {
                 frames.Add(ImageMetadataStripper.Strip(await File.ReadAllBytesAsync(candidates[index].FullName, ct)));
             }
@@ -120,16 +125,17 @@ public sealed class CaptureVideoFrameExtractor(BlocwerkSettings settings) : ICap
     /// duration, which a crafted file can understate while its real timestamps run for hours (the fps
     /// filter then duplicates frames without end). Twice the plan, plus a window of slack.
     /// </summary>
-    public static int MaxCandidates(int maxFrames) => (2 * Math.Max(1, maxFrames) * Window) + Window;
+    public static int MaxCandidates(int maxFrames, int window = Window) => (2 * Math.Max(1, maxFrames) * window) + window;
 
     /// <summary>
     /// The ffmpeg call: first video stream only, no tags, auto-rotated, ≤ MaxEdge, progress on stdout;
     /// decoding capped at <see cref="MaxPixels"/> per picture, <see cref="CaptureVideoFiles.MaxDuration"/>
     /// of input and <paramref name="maxCandidates"/> written frames. <paramref name="toneMap"/> (from
     /// <see cref="HdrToneMapFilter.Select"/>) runs after the downscale, so HDR is mapped on the small frames only.
+    /// <paramref name="jpegQ"/> is ffmpeg's <c>-q:v</c> of the written JPEGs.
     /// </summary>
     public static IReadOnlyList<string> FfmpegArguments(
-        string videoPath, double candidateFps, string outputPattern, int maxCandidates, string? toneMap = null) =>
+        string videoPath, double candidateFps, string outputPattern, int maxCandidates, string? toneMap = null, int jpegQ = JpegQ) =>
     [
         "-nostdin", "-hide_banner", "-v", "error",
         "-max_pixels", MaxPixelsArgument,
@@ -141,7 +147,7 @@ public sealed class CaptureVideoFrameExtractor(BlocwerkSettings settings) : ICap
             $"fps={candidateFps:0.####},scale=w='min({MaxEdge},iw)':h='min({MaxEdge},ih)':force_original_aspect_ratio=decrease")
             + (string.IsNullOrEmpty(toneMap) ? string.Empty : "," + toneMap),
         "-frames:v", maxCandidates.ToString(CultureInfo.InvariantCulture),
-        "-q:v", "3", "-progress", "pipe:1", "-nostats",
+        "-q:v", jpegQ.ToString(CultureInfo.InvariantCulture), "-progress", "pipe:1", "-nostats",
         "-f", "image2", outputPattern,
     ];
 

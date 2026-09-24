@@ -36,4 +36,14 @@ public sealed record CaptureVideoProbe(double DurationSeconds, int Width, int He
 }
 
 /// <summary>How many frames to take: about <paramref name="FramesPerSecond"/>, never more than <paramref name="MaxFrames"/>.</summary>
-public sealed record CaptureVideoFrameRequest(double FramesPerSecond, int MaxFrames, TimeSpan Timeout);
+public sealed record CaptureVideoFrameRequest(double FramesPerSecond, int MaxFrames, TimeSpan Timeout)
+{
+    /// <summary>Candidates per kept frame (the sharpest of each run of this many wins).</summary>
+    public int Window { get; init; } = CaptureVideoFrameExtractor.Window;
+
+    /// <summary>ffmpeg's <c>-q:v</c> for the candidate JPEGs (2 best … 31 worst).</summary>
+    public int JpegQ { get; init; } = CaptureVideoFrameExtractor.JpegQ;
+
+    /// <summary>Long edge each candidate's sharpness is scored at.</summary>
+    public int ScoreEdge { get; init; } = CaptureFrameSharpness.ScoreEdge;
+}

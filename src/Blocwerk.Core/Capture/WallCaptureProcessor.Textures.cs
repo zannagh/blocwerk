@@ -54,6 +54,11 @@ public sealed partial class WallCaptureProcessor
         var geometry = RegisteredGeometry.WithoutFacets(stored, RegisteredGeometry.Carried(stored).CarriedFacets);
         var cameras = CameraNames(geometry);
         var parts = new List<ComputeJobPart> { ComputeJobPart.Json("geometry", geometry) };
+        if (settings.GeometryTextures.ToOptionsJson() is { } textureOptions)
+        {
+            parts.Add(ComputeJobPart.Json("options", textureOptions));
+        }
+
         foreach (var photo in await LoadPhotosAsync(captureId, ct))
         {
             var name = CaptureComputeDocuments.PhotoName(photo.Index);
@@ -72,7 +77,7 @@ public sealed partial class WallCaptureProcessor
                 "photos", name + CapturePhotoFormat.Extension(kind), clean, CapturePhotoFormat.ContentType(kind)));
         }
 
-        if (parts.Count == 1)
+        if (!parts.Exists(p => p.Name == "photos"))
         {
             throw new CaptureFailedException("None of the photos was used by the 3D model.");
         }

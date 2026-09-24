@@ -12,7 +12,7 @@ namespace Blocwerk.Core.Capture;
 /// </summary>
 public sealed class HeifCapturePhotoConverter(WallCapturePipelineOptions options) : ICapturePhotoConverter
 {
-    /// <summary>JPEG quality of the conversion: visually lossless for marker corners and textures.</summary>
+    /// <summary>Default JPEG quality of the conversion: visually lossless for marker corners and textures.</summary>
     public const int Quality = 92;
 
     private static readonly TimeSpan Timeout = TimeSpan.FromMinutes(1);
@@ -25,7 +25,8 @@ public sealed class HeifCapturePhotoConverter(WallCapturePipelineOptions options
             var input = Path.Combine(work.FullName, "photo.heic");
             var output = Path.Combine(work.FullName, "photo.jpg");
             await File.WriteAllBytesAsync(input, heic, ct);
-            await CaptureToolProcess.RunAsync(options.HeifConvertPath, Arguments(input, output), Timeout, null, ct);
+            await CaptureToolProcess.RunAsync(
+                options.HeifConvertPath, Arguments(input, output, options.HeicJpegQuality), Timeout, null, ct);
             var written = ConvertedFile(work, output)
                           ?? throw new InvalidDataException("heif-convert wrote no image.");
             return await File.ReadAllBytesAsync(written, ct);
@@ -36,8 +37,9 @@ public sealed class HeifCapturePhotoConverter(WallCapturePipelineOptions options
         }
     }
 
-    public static IReadOnlyList<string> Arguments(string input, string output) =>
-        ["-q", Quality.ToString(System.Globalization.CultureInfo.InvariantCulture), input, output];
+    /// <summary>heif-convert's arguments: JPEG at <paramref name="quality"/> (default <see cref="Quality"/>).</summary>
+    public static IReadOnlyList<string> Arguments(string input, string output, int quality = Quality) =>
+        ["-q", quality.ToString(System.Globalization.CultureInfo.InvariantCulture), input, output];
 
     /// <summary>
     /// The primary image: <c>photo.jpg</c>, or <c>photo-1.jpg</c> when the file held several top-level images

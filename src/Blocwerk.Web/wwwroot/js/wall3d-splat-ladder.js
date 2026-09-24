@@ -1,8 +1,9 @@
 // Level-of-detail ladder of the photo-real view (wall3d-splat.js). The server stores the splat scene
-// pruned to a few sizes (SplatLodLadder: ~40k, 120k, 250k splats, then the full scene). A device
-// starts on the smallest — it shows within a second, even on a phone — and steps up one level at a
-// time while frames stay fast, up to a device-dependent cap. A lost WebGL context steps it back down
-// and remembers, in this browser, the size that was too much, so the next visit stops below it.
+// pruned to a few sizes (SplatLodLadder: ~40k, 120k, 250k, 800k and 2M splats as the scene allows,
+// then the full scene). A device starts on the smallest — it shows within a second, even on a phone —
+// and steps up one level at a time while frames stay fast, up to a device-dependent cap. A lost WebGL
+// context steps it back down and remembers, in this browser, the size that was too much, so the next
+// visit stops below it.
 
 /** Phones and low-memory devices never step past this many splats. */
 const LIGHT_CAP_SPLATS = 800_000;

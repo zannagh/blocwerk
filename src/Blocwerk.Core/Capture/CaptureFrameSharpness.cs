@@ -12,11 +12,14 @@ namespace Blocwerk.Core.Capture;
 /// </summary>
 public static class CaptureFrameSharpness
 {
-    /// <summary>Long edge the sharpness is measured at: enough for motion blur, cheap to decode.</summary>
+    /// <summary>Default long edge the sharpness is measured at: enough for motion blur, cheap to decode.</summary>
     public const int ScoreEdge = 480;
 
-    /// <summary>Variance of the 4-neighbour Laplacian of the image's luma; 0 when it cannot be decoded.</summary>
-    public static double Score(byte[] jpeg)
+    /// <summary>
+    /// Variance of the 4-neighbour Laplacian of the image's luma, measured at about <paramref name="edge"/> px on
+    /// the long edge; 0 when it cannot be decoded.
+    /// </summary>
+    public static double Score(byte[] jpeg, int edge = ScoreEdge)
     {
         using var codec = SKCodec.Create(new MemoryStream(jpeg));
         if (codec is null)
@@ -24,7 +27,7 @@ public static class CaptureFrameSharpness
             return 0;
         }
 
-        var scale = Math.Min(1f, ScoreEdge / (float)Math.Max(codec.Info.Width, codec.Info.Height));
+        var scale = Math.Min(1f, Math.Max(1, edge) / (float)Math.Max(codec.Info.Width, codec.Info.Height));
         var size = codec.GetScaledDimensions(scale);
         using var bitmap = new SKBitmap(new SKImageInfo(size.Width, size.Height, SKColorType.Gray8, SKAlphaType.Opaque));
         var result = codec.GetPixels(bitmap.Info, bitmap.GetPixels());
