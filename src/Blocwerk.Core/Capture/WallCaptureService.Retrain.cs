@@ -89,7 +89,8 @@ public sealed partial class WallCaptureService
 
         var busy = await db.WallCaptures.AnyAsync(c => c.WallId == capture.WallId && c.Id != capture.Id
             && (c.Status == WallCaptureStatus.Queued || c.Status == WallCaptureStatus.Detecting || c.Status == WallCaptureStatus.Solving
-                || c.Status == WallCaptureStatus.Texturing || c.Status == WallCaptureStatus.Splatting));
+                || c.Status == WallCaptureStatus.Texturing || c.Status == WallCaptureStatus.Splatting
+                || c.Status == WallCaptureStatus.AwaitingRunner));
         if (busy)
         {
             errors.Add("Another capture of this wall is still being processed. Wait for it to finish.");

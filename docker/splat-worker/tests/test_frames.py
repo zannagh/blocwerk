@@ -9,7 +9,7 @@ from test_api import GEOMETRY, client, form, jpeg, three, wait  # noqa: F401 - c
 
 from computejobs.child import JobError
 from computejobs.settings import settings
-from splatworker import pipeline
+from splatworker import finish, pipeline
 from splatworker.colmap import Colmap
 from splatworker.frames import build_pairs, is_frame, pair_count, split
 from splatworker.options import SplatOptions, resolve_matcher
@@ -108,8 +108,9 @@ def test_frames_share_one_camera_and_the_pair_list_uses_colmap_names(tmp_path, m
 
 
 def test_alignment_uses_the_photos_only(tmp_path, monkeypatch):
-    r, _ = make_run(tmp_path, geometry=GEOMETRY)
-    r.model = {"images": {"g/p01.jpg": np.zeros(3), "g/p02.jpg": np.ones(3), "v/vf_0001.jpg": np.ones(3) * 5}}
+    state = {"options": SplatOptions().to_dict(), "geometry": GEOMETRY,
+             "photoCentres": {"p01": [0, 0, 0], "p02": [1, 1, 1]}}  # prepared_state drops the frames
+    r = finish.Finish(str(tmp_path), lambda *a: None, state)
     seen = {}
 
     def fake_align(centres, doc, margin):
@@ -122,12 +123,27 @@ def test_alignment_uses_the_photos_only(tmp_path, monkeypatch):
         def subset(self, keep):
             return self
 
-    monkeypatch.setattr(pipeline, "read_ply", lambda p: None)
-    monkeypatch.setattr(pipeline.Splats, "from_ply", classmethod(lambda cls, c: S()))
-    monkeypatch.setattr(pipeline, "crop_mask", lambda *a: np.ones(2, bool))
-    monkeypatch.setattr(pipeline, "align", fake_align)
-    r.frame_and_crop("x.ply")
+    monkeypatch.setattr(finish, "crop_mask", lambda *a: np.ones(2, bool))
+    monkeypatch.setattr(finish, "align", fake_align)
+    monkeypatch.setattr(finish, "refine_frame", lambda frame, s, g: frame)
+    r.frame_and_crop(S())
     assert sorted(seen) == ["p01", "p02"]
+
+
+def test_prepared_state_keeps_only_photo_centres(tmp_path):
+    r, _ = make_run(tmp_path, geometry=GEOMETRY)
+    r.model = {"images": {"g/p01.jpg": np.zeros(3), "g/p02.jpg": np.ones(3), "v/vf_0001.jpg": np.ones(3) * 5},
+               "points": 3, "meanReprojErrorPx": 0.4}
+    r.matcher, r.groups = "pairs", {"g": {}, "v": {}}
+
+    class FakeSfm:
+        def stats(self):
+            return {"memoryRetries": []}
+
+    r.sfm_run = FakeSfm()
+    st = r.prepared_state()
+    assert sorted(st["photoCentres"]) == ["p01", "p02"] and st["registered"] == ["p01", "p02", "vf_0001"]
+    assert st["cameraGroups"] == 2 and st["version"] == 1
 
 
 def test_request_with_frames_is_accepted_and_frames_never_satisfy_the_minimum(client):  # noqa: F811

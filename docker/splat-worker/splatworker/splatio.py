@@ -59,6 +59,20 @@ class Splats:
                    np.stack([cols[f"f_dc_{i}"] for i in range(3)], 1),
                    cols["opacity"], np.stack([cols[f"rot_{i}"] for i in range(4)], 1))
 
+    @classmethod
+    def from_spz(cls, doc):
+        """From read_spz(): the (8-bit quantised) attributes of an .spz, e.g. a runner's upload."""
+        s = object.__new__(cls)
+        q = np.asarray(doc["quat_xyz"], np.float64)
+        w = np.sqrt(np.clip(1.0 - (q ** 2).sum(1), 0.0, 1.0))
+        rot = np.concatenate([w[:, None], q], 1)
+        s.xyz = np.asarray(doc["xyz"], np.float64)
+        s.log_scale = np.asarray(doc["log_scale"], np.float32)
+        s.dc = ((np.asarray(doc["colour"], np.float32) - 127.5) / (0.15 * 255)).astype(np.float32)
+        s.alpha = np.asarray(doc["alpha"], np.float32) / 255.0
+        s.rot = rot / np.maximum(np.linalg.norm(rot, axis=1, keepdims=True), 1e-12)
+        return s
+
     def __len__(self):
         return len(self.xyz)
 
@@ -67,6 +81,24 @@ class Splats:
         s.xyz, s.log_scale, s.dc, s.alpha, s.rot = (self.xyz[mask], self.log_scale[mask], self.dc[mask],
                                                    self.alpha[mask], self.rot[mask])
         return s
+
+
+SLIM_PLY_PROPS = ("x", "y", "z", "f_dc_0", "f_dc_1", "f_dc_2", "opacity", "scale_0", "scale_1", "scale_2",
+                  "rot_0", "rot_1", "rot_2", "rot_3")
+
+
+def write_slim_ply(cols, path):
+    """Only what the exports keep (position, DC colour, opacity, scale, rotation) of a read_ply() dict,
+    as a binary little-endian float .ply that read_ply reads back: a runner's upload (a quarter of
+    Brush's SH-3 export)."""
+    n = len(cols["x"])
+    data = np.stack([np.asarray(cols[k], "<f4") for k in SLIM_PLY_PROPS], 1)
+    header = "ply\nformat binary_little_endian 1.0\nelement vertex %d\n" % n
+    header += "".join(f"property float {k}\n" for k in SLIM_PLY_PROPS) + "end_header\n"
+    with open(path, "wb") as fh:
+        fh.write(header.encode("ascii"))
+        fh.write(np.ascontiguousarray(data).tobytes())
+    return n
 
 
 def crop_mask(splats, to_viewer, box, min_alpha=0.02):

@@ -7,6 +7,8 @@ How the Blocwerk app talks to its compute workers. One protocol, several impleme
 | `solve` | `wall-geometry` | `docker/wall-geometry/` (CPU, runs next to the app) |
 | `textures` | `wall-geometry` | same container |
 | `splat` | `splat-worker` (separate, GPU) | NOT in `wall-geometry`; may run on an external machine |
+| `splat-prepare` | `splat-worker` (CPU half) | photos -> training bundle for a 3D runner (`SPLAT_WORKER_MODE=cpu` needs no GPU) |
+| `splat-finish` | `splat-worker` (CPU half) | a runner's trained scene -> the same files as `splat` |
 
 The app knows each worker only as **a base URL plus an optional API key**. Whether the worker runs
 beside the app in the same compose network or on a GPU box elsewhere changes nothing in the protocol.
@@ -158,3 +160,13 @@ protocol (same auth, status shape, files, cancel, TTL, callbacks); its request/r
 with that worker. One convention crosses the boundary: a `photos` file whose name starts with `vf_`
 (`vf_0001.jpg`, … in video order) is an **auxiliary video frame**: trained on, never used to align
 the result with the geometry and never counted towards the photo minimum.
+
+### `splat-prepare` / `splat-finish` (splat-worker, the split for 3D runners)
+
+The same job split in two CPU halves around the GPU training, which a **3D runner** does elsewhere
+(the runner pulls work from the app; it never talks to this worker). `splat-prepare` takes exactly the
+`splat` request and returns `bundle.zip` (undistorted, metadata-free images + COLMAP sparse model +
+`train.json`: what the runner trains) and `prepared.json` (the state the finish needs; server-only).
+`splat-finish` takes multipart `prepared` (that JSON), `splat` (one file `splat.ply` or `splat.spz`,
+the trained scene; `SPLAT_MAX_RESULT_MB`, default 2048) and optional `trainStats` (JSON), and returns
+the same `wall.splat` / `wall.spz` / `frame.json` as `splat`. Details: `splat-worker/README.md`.

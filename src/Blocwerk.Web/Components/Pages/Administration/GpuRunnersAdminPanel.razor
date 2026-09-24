@@ -1,0 +1,57 @@
+@using Blocwerk.Core.Runners
+@using Blocwerk.Web.Components.Pages.Walls
+@inject IGpuRunnerService Runners
+@inject ILogger<GpuRunnersAdminPanel> Logger
+
+@* Every 3D runner on the server. Rendered only inside Dashboard.razor (AppAdmin policy); the
+   service refuses ListAllAsync for anyone else anyway. *@
+
+<div class="settings-panel">
+    <h2>3D runners</h2>
+    <p class="apikey-blurb">
+        GPU machines that pull photo-real training from this server. Each belongs to the admin who
+        created it; a site admin can revoke any of them.
+    </p>
+    @if (error is not null)
+    {
+        <div class="error-msg">@error</div>
+    }
+
+    @if (runners is null)
+    {
+        <p class="loading-small">Loading...</p>
+    }
+    else if (runners.Count == 0)
+    {
+        <p class="apikey-empty">No runners yet. Wall admins create them under a wall's settings.</p>
+    }
+    else
+    {
+        <p class="hint">@runners.Count(r => r.IsOnline) of @runners.Count(r => !r.IsRevoked) online.</p>
+        @foreach (var runner in runners)
+        {
+            <GpuRunnerRow @key="runner.Id" Runner="runner" ShowControls="false" AllowRevokeAsAdmin="true"
+                          OnChanged="LoadAsync" OnError="m => error = m" />
+        }
+    }
+</div>
+
+@code {
+    private IReadOnlyList<GpuRunnerInfo>? runners;
+    private string? error;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            runners = await Runners.ListAllAsync();
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or KioskRestrictedException)
+        {
+            Logger.LogDebug(ex, "Could not list the 3D runners");
+            error = "Only site admins see every runner.";
+        }
+    }
+}

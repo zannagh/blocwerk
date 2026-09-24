@@ -35,6 +35,9 @@ public partial class WallCaptureStatusList : IAsyncDisposable
     [Inject]
     private ILogger<WallCaptureStatusList> Logger { get; set; } = default!;
 
+    [Inject]
+    private Blocwerk.Core.Runners.IGpuRunnerService GpuRunners { get; set; } = default!;
+
     /// <summary>Re-reads the history now and starts polling if a capture is running.</summary>
     public async Task RefreshAsync()
     {
@@ -67,6 +70,7 @@ public partial class WallCaptureStatusList : IAsyncDisposable
         WallCaptureStatus.Solving => "Computing the 3D model",
         WallCaptureStatus.Texturing => "Rendering textures",
         WallCaptureStatus.Splatting => "Model ready · making the photo-real view",
+        WallCaptureStatus.AwaitingRunner => "Model ready · photo-real view waits for a 3D runner",
         WallCaptureStatus.Succeeded => "Model ready",
         WallCaptureStatus.SucceededWithoutTextures => "Model ready (no textures)",
         WallCaptureStatus.SucceededWithoutSplat => "Model ready (no photo-real view)",
@@ -90,6 +94,25 @@ public partial class WallCaptureStatusList : IAsyncDisposable
                 return;
             }
 
+            await LoadAsync();
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or UserFacingException or KioskRestrictedException)
+        {
+            failure = ex.Message;
+        }
+        finally
+        {
+            retraining = false;
+        }
+    }
+
+    /// <summary>Stops waiting for a 3D runner: the capture ends without a (new) photo-real view.</summary>
+    private async Task CancelRunnerJobAsync(Guid captureId)
+    {
+        retraining = true;
+        try
+        {
+            await GpuRunners.CancelCaptureJobAsync(captureId);
             await LoadAsync();
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or UserFacingException or KioskRestrictedException)
@@ -157,7 +180,7 @@ public partial class WallCaptureStatusList : IAsyncDisposable
                 var finished = history.FirstOrDefault(c => c.Id == watched);
 
                 // The model is live once the photo-real stage starts; that stage can take an hour.
-                if (finished is { GeometryModelId: not null } && (!finished.IsRunning || finished.Status == WallCaptureStatus.Splatting)
+                if (finished is { GeometryModelId: not null } && (!finished.IsRunning || finished.Status is WallCaptureStatus.Splatting or WallCaptureStatus.AwaitingRunner)
                     && notified.Add(watched))
                 {
                     await InvokeAsync(() => OnCompleted.InvokeAsync());

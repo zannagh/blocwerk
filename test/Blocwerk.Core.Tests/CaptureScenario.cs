@@ -4,6 +4,7 @@ using Blocwerk.Core.Capture;
 using Blocwerk.Core.Compute;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.MarkerPlanning;
+using Blocwerk.Core.Runners;
 using Blocwerk.Core.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -22,7 +23,8 @@ internal sealed class CaptureScenario : IDisposable
 
     public CaptureScenario(
         WallTestHarness harness, IMarkerDetectionService? detector = null, IKioskContext? kiosk = null, WallCapturePipelineOptions? options = null,
-        IDeployBusyGate? busyGate = null, ICapturePhotoConverter? photoConverter = null)
+        IDeployBusyGate? busyGate = null, ICapturePhotoConverter? photoConverter = null, GpuRunnerOptions? runnerOptions = null,
+        TimeProvider? clock = null)
     {
         Harness = harness;
         Options = options ?? Options;
@@ -36,12 +38,19 @@ internal sealed class CaptureScenario : IDisposable
         Service = new WallCaptureService(
             harness.DbContextFactory, harness.CurrentUser, Files, Queue, new FakeComputeJobClientFactory(Client, SplatClient),
             NullLogger<WallCaptureService>.Instance, kiosk, Detector, MarkerPlans, Video, Options, busyGate, photoConverter: photoConverter);
+        Runners = runnerOptions is null
+            ? null
+            : new GpuJobQueue(
+                harness.RootContextFactory, Files, Queue, runnerOptions, new GpuJobSignal(), NullLogger<GpuJobQueue>.Instance, busyGate, clock);
         Processor = new WallCaptureProcessor(
             harness.RootContextFactory, Settings, new FakeComputeJobClientFactory(Client, SplatClient), Files, Push,
-            NullLoggerFactory.Instance, Options, Detector, Video, busyGate);
+            NullLoggerFactory.Instance, Options, Detector, Video, busyGate, gpuJobs: Runners);
     }
 
     public WallTestHarness Harness { get; }
+
+    /// <summary>The 3D-runner job queue, when the scenario was built with runner options.</summary>
+    public GpuJobQueue? Runners { get; }
 
     public BlocwerkSettings Settings { get; }
 

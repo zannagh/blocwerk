@@ -34,3 +34,8 @@ settings.max_swap_growth_mb = env_int("SPLAT_MAX_SWAP_GROWTH_MB", 2048)
 # FRAME_NEIGHBOURS frames, and every FRAME_PHOTO_STRIDE-th frame with every photo.
 settings.frame_neighbours = env_int("FRAME_NEIGHBOURS", 6)
 settings.frame_photo_stride = env_int("FRAME_PHOTO_STRIDE", 4)
+# The worker's role: "all" (default: every kind, Brush required) or "cpu" (the server-side half for 3D
+# runners: splat-prepare + splat-finish only; Brush is not needed and kind `splat` is refused).
+settings.worker_mode = os.environ.get("SPLAT_WORKER_MODE", "all").strip().lower() or "all"
+# kind splat-finish: the largest trained scene (a runner's .ply / .spz) accepted.
+settings.max_result_bytes = env_int("SPLAT_MAX_RESULT_MB", 2048) << 20

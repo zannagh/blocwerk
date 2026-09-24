@@ -4,6 +4,10 @@
 #   docker build -f docker/splat-worker/Dockerfile --target test .                       # runs the tests
 #   docker run --gpus all -p 8100:8100 -e COMPUTE_API_KEY=... blocwerk-splat-worker     # NVIDIA
 #   docker run --device /dev/dri -p 8100:8100 -e COMPUTE_API_KEY=... blocwerk-splat-worker  # AMD / Intel
+# The same image, two more roles (README):
+#   3D runner (pulls GPU training from a Blocwerk server; no ports):
+#     docker run --gpus all -e BWR_KEY=bwr_... blocwerk-splat-worker python -m splatworker.gpurunner --server https://blocwerk.app
+#   CPU half next to the app (splat-prepare + splat-finish only, no GPU): -e SPLAT_WORKER_MODE=cpu
 #
 # linux/amd64 only: Brush publishes no Linux arm64 build. On macOS use run-native.sh instead (Docker
 # Desktop's VM has no GPU; see README).

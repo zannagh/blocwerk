@@ -33,10 +33,11 @@ def _export_iter(path):
 
 
 def train(bin_path, dataset_dir, out_dir, steps, max_edge, cache_dir, log_path, report, max_memory_mb=0, swap_limit_mb=0,
-          extra_args=(), checkpoints=1):
+          extra_args=(), checkpoints=1, stop=None):
     """Train `steps` steps on a COLMAP dataset (images/ + sparse/0); returns (ply path, parser).
     extra_args: the profile's refine options (profiles.Profile.brush_args); checkpoints: exports during
-    the run (the last is the result)."""
+    the run (the last is the result); stop: a threading.Event that kills Brush when set (the runner's
+    cancel; the run then raises JobError like any other failed exit)."""
     shutil.rmtree(out_dir, ignore_errors=True)  # a retry must not pick up the killed run's checkpoints
     os.makedirs(out_dir, exist_ok=True)
     os.makedirs(cache_dir, exist_ok=True)
@@ -54,7 +55,7 @@ def train(bin_path, dataset_dir, out_dir, steps, max_edge, cache_dir, log_path, 
     # A TTY is required: Brush prints nothing (not even errors) to a pipe.
     # Memory: the RSS watchdog only (RLIMIT_AS would trip on the GPU driver's virtual reservations).
     ToolRun("train", cmd, cache_dir, log_path, on_line, use_pty=True, log_filter=_worth_logging,
-            mem_limit_mb=max_memory_mb, swap_limit_mb=swap_limit_mb, name="Brush").run()
+            mem_limit_mb=max_memory_mb, swap_limit_mb=swap_limit_mb, name="Brush", stop=stop).run()
     plys = sorted(glob.glob(os.path.join(out_dir, "splat_*.ply")), key=_export_iter)
     if not plys:
         raise JobError("train", "Brush exited without exporting a splat (no GPU adapter? see the "

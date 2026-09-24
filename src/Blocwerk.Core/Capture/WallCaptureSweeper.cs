@@ -30,7 +30,7 @@ public sealed class WallCaptureSweeper(
     ILogger<WallCaptureSweeper> logger)
 {
     // .json: the textures' source-view maps (nothing else in the capture store is JSON)
-    private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png", ".mp4", ".mov", ".m4v", ".json" };
+    private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png", ".mp4", ".mov", ".m4v", ".json", ".zip", ".prep", ".upl" };
 
     public async Task<CaptureSweepResult> SweepAsync(CancellationToken ct)
     {
@@ -145,7 +145,12 @@ public sealed class WallCaptureSweeper(
                 .Select(c => new { c.VideoStoredPath, c.VideoFramesJson })
                 .ToListAsync(ct))
             .SelectMany(c => CaptureVideoFiles.Of(c.VideoStoredPath, c.VideoFramesJson));
-        return new HashSet<string>(photos.Concat(textures).Concat(masks).Concat(sourceMaps).Concat(videos), StringComparer.Ordinal);
+
+        // .zip/.prep/.upl: the 3D runners' bundles, prepared state and uploaded results (GpuJob).
+        var gpu = (await db.GpuJobs.Select(j => new { j.BundlePath, j.PreparedPath, j.ResultPath }).ToListAsync(ct))
+            .SelectMany(j => new[] { j.BundlePath, j.PreparedPath, j.ResultPath }).OfType<string>();
+        return new HashSet<string>(
+            photos.Concat(textures).Concat(masks).Concat(sourceMaps).Concat(videos).Concat(gpu), StringComparer.Ordinal);
     }
 
     private void DeleteFiles(IEnumerable<string> names)

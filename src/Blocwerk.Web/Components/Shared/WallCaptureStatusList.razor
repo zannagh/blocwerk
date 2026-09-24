@@ -12,6 +12,14 @@
         </div>
         <progress class="capture-progress" max="1" value="@running.Progress.ToString(System.Globalization.CultureInfo.InvariantCulture)"></progress>
         <div class="hint">@(running.Stage ?? "Working…") · you can leave this page; you'll get a notification when it's done.</div>
+        @if (running.Status == WallCaptureStatus.AwaitingRunner)
+        {
+            <div class="hint">
+                The 3D model, textures and holds are ready to use. Only the photo-real view waits for a
+                <a href="#wall-3d-runners">3D runner</a> with a GPU.
+                <button class="btn-link" @onclick="() => CancelRunnerJobAsync(running.Id)" disabled="@retraining">Cancel the photo-real view</button>
+            </div>
+        }
     </div>
 }
 

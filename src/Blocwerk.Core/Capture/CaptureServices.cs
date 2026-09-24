@@ -20,6 +20,13 @@ public static class CaptureServices
         // and the worker re-enqueues unfinished captures on start (see WallCaptureWorker).
         services.AddSingleton<WallCaptureQueue>();
         services.AddSingleton<WallCaptureProcessor>();
+
+        // 3D runners: GPU machines that pull the photo-real training (see GpuJobQueue).
+        services.AddSingleton(sp => Runners.GpuRunnerOptions.Bind(sp.GetService<IConfiguration>()));
+        services.AddSingleton<Runners.GpuJobSignal>();
+        services.AddSingleton<Runners.GpuJobQueue>();
+        services.AddHostedService<Runners.GpuJobSweepWorker>();
+        services.AddScoped<Runners.IGpuRunnerService, Runners.GpuRunnerService>();
         services.AddHostedService<WallCaptureWorker>();
         services.AddScoped<IWallCaptureService, WallCaptureService>();
         services.AddScoped<ICapturePanelPhotoService, CapturePanelPhotoService>();

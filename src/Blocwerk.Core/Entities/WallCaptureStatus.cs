@@ -38,4 +38,11 @@ public enum WallCaptureStatus
     /// capture itself succeeded; a texture failure still reports as <see cref="SucceededWithoutTextures"/>.
     /// </summary>
     SucceededWithoutSplat = 9,
+
+    /// <summary>
+    /// Model and textures are live; the server prepared the photo-real view's training bundle and a
+    /// 3D runner (<see cref="GpuRunner"/>) must train it. Waits as long as it takes; no capture
+    /// worker is held meanwhile. Back to <see cref="Splatting"/> once the trained splat arrived.
+    /// </summary>
+    AwaitingRunner = 10,
 }

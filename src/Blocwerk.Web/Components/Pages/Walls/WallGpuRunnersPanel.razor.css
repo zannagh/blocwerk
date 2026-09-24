@@ -1,0 +1,4 @@
+.gpu-runner-heading { font-size: 0.95rem; margin: 1rem 0 0.4rem; }
+.gpu-runner-cmd { font-size: 0.75rem; white-space: pre-wrap; word-break: break-all; }
+.gpu-job-row { display: flex; flex-direction: column; gap: 0.1rem; padding: 0.4rem 0; border-bottom: 1px solid var(--border-color, #333); }
+.gpu-runner-create { margin-top: 1rem; }

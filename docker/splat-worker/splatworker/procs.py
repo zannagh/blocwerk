@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 from collections import deque
 
 from computejobs.child import JobError, tool_env
@@ -30,15 +31,20 @@ class MemoryLimitError(JobError):
         self.kind = kind
 
 
+class ToolStopped(JobError):
+    """The tool was killed on purpose (ToolRun's stop event: a cancelled runner job)."""
+
+
 class ToolRun:
     def __init__(self, stage, cmd, cwd, log_path, on_line=None, use_pty=False, env=None, log_filter=None,
-                 mem_limit_mb=0, limit_address_space=False, name=None, swap_limit_mb=0):
+                 mem_limit_mb=0, limit_address_space=False, name=None, swap_limit_mb=0, stop=None):
         self.stage, self.cmd, self.cwd, self.log_path = stage, cmd, cwd, log_path
         # mem_limit_mb: RSS ceiling (watchdog kill); limit_address_space: also RLIMIT_AS on Linux (not
         # for Brush: GPU drivers reserve huge virtual ranges). name: the tool as users know it.
         self.mem_limit_mb, self.limit_as, self.swap_limit_mb = mem_limit_mb, limit_address_space, swap_limit_mb
         self.name = name or os.path.basename(cmd[0])
         self.watchdog = None
+        self.stop = stop  # threading.Event: kill the tool when set (a cancelled runner job)
         self.on_line, self.use_pty, self.env = on_line, use_pty, env
         self.log_filter = log_filter  # line -> bool: whether it goes into the log file (all lines are parsed)
         self.tail, self.recent, self.last = deque(maxlen=40), deque(maxlen=12), None
@@ -80,7 +86,15 @@ class ToolRun:
         if self.mem_limit_mb:
             self.watchdog = Watchdog(proc, self.mem_limit_mb, swap_limit_mb=self.swap_limit_mb, swap_meter=_SWAP)
             self.watchdog.start()
+        if self.stop is not None:
+            threading.Thread(target=self._stop_watch, args=(proc,), daemon=True).start()
         return proc
+
+    def _stop_watch(self, proc):
+        while proc.poll() is None:
+            if self.stop.wait(0.5):
+                proc.kill()
+                return
 
     def run(self):
         """Run to completion; raise JobError(stage, ...) on a non-zero exit."""
@@ -109,6 +123,8 @@ class ToolRun:
         except FileNotFoundError as e:
             raise JobError(self.stage, f"tool not found: {os.path.basename(self.cmd[0])} "
                                        "(set BRUSH_BIN / COLMAP_BIN)") from e
+        if code != 0 and self.stop is not None and self.stop.is_set():
+            raise ToolStopped(self.stage, f"{self.name} was stopped (cancelled)")
         if code != 0:
             kind = self._out_of_memory()
             if kind == "swap":

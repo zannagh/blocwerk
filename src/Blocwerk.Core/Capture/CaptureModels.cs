@@ -53,7 +53,8 @@ public sealed record WallCaptureSummary(
     SplatQuality? SplatQuality = null)
 {
     public bool IsRunning => Status is WallCaptureStatus.Queued or WallCaptureStatus.Detecting
-        or WallCaptureStatus.Solving or WallCaptureStatus.Texturing or WallCaptureStatus.Splatting;
+        or WallCaptureStatus.Solving or WallCaptureStatus.Texturing or WallCaptureStatus.Splatting
+        or WallCaptureStatus.AwaitingRunner;
 }
 
 /// <summary>A draft capture with its photos (and the marker plan it runs with), so an open upload can be resumed.</summary>

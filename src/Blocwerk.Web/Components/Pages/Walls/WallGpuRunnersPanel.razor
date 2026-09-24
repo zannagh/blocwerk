@@ -1,0 +1,75 @@
+@* 3D runners: GPU machines that pull this wall's photo-real training. Wall admins only; hidden on a kiosk. *@
+@using Blocwerk.Core.Runners
+
+<div class="gpu-runners">
+    <p class="apikey-blurb">
+        The photo-real view needs a GPU. Everything else (photos, COLMAP, alignment, export) runs on
+        this server; the training itself goes to a <strong>3D runner</strong>: a machine with a GPU
+        that connects <em>out</em> to Blocwerk with a runner key, takes the job, and sends back only
+        the result. No open ports needed. Without a runner online the capture simply waits.
+    </p>
+
+    @if (created is not null)
+    {
+        <div class="apikey-reveal">
+            <h2>Runner key for &ldquo;@created.Runner.Name&rdquo;</h2>
+            <p class="apikey-reveal-warning">
+                This is the only time the key is shown. Store it on the runner machine (as the
+                environment variable <code>BWR_KEY</code>), never in a file you share.
+            </p>
+            <code class="apikey-token">@created.Key</code>
+            <p class="hint">Docker (Linux, NVIDIA/AMD GPU):</p>
+            <code class="apikey-token gpu-runner-cmd">@DockerCommand(created.Key)</code>
+            <p class="hint">Mac with Apple Silicon (Metal), from a Blocwerk checkout:</p>
+            <code class="apikey-token gpu-runner-cmd">@NativeCommand(created.Key)</code>
+            <div class="apikey-reveal-actions">
+                <button type="button" class="apikey-btn primary" @onclick="() => CopyAsync(created.Key)">@copyLabel</button>
+                <button type="button" class="apikey-btn" @onclick="() => CopyAsync(DockerCommand(created.Key))">Copy docker command</button>
+                <button type="button" class="apikey-btn" @onclick="Dismiss">I have stored it</button>
+            </div>
+        </div>
+    }
+
+    @if (error is not null)
+    {
+        <div class="error-msg">@error</div>
+    }
+
+    @if (jobs is { Count: > 0 })
+    {
+        <h3 class="gpu-runner-heading">Photo-real jobs of this wall</h3>
+        @foreach (var job in jobs)
+        {
+            <div class="gpu-job-row">
+                <span class="gpu-job-status">@JobLabel(job)</span>
+                <span class="hint">@job.Quality quality · queued @Ago(job.CreatedAt)@(job.Attempts > 1 ? $" · attempt {job.Attempts}" : "")</span>
+            </div>
+        }
+    }
+
+    <h3 class="gpu-runner-heading">Runners</h3>
+    @if (runners is null)
+    {
+        <p class="loading-small">Loading...</p>
+    }
+    else if (runners.Count == 0)
+    {
+        <p class="apikey-empty">No 3D runner can serve this wall yet. Create one below and start it on a machine with a GPU.</p>
+    }
+    else
+    {
+        @foreach (var runner in runners)
+        {
+            <GpuRunnerRow @key="runner.Id" Runner="runner" WallId="WallId" Busy="busy" OnChanged="ReloadAsync" OnError="ShowError" />
+        }
+    }
+
+    <div class="form-group gpu-runner-create">
+        <label for="gpu-runner-name">New runner</label>
+        <input id="gpu-runner-name" class="form-input" maxlength="100" placeholder="e.g. Gaming PC in the cellar"
+               @bind="name" @bind:event="oninput" />
+    </div>
+    <button type="button" class="btn-submit" disabled="@(busy || string.IsNullOrWhiteSpace(name))" @onclick="CreateAsync">
+        @(busy ? "Working..." : "Create runner")
+    </button>
+</div>

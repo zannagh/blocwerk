@@ -91,6 +91,10 @@ services:
       SPLATSERVICE__APIKEY: ${SPLAT_API_KEY:-}
       # Training steps per photo-real job; empty = the worker's default (15000, ~50 min on an M4).
       SPLATSERVICE__MAXSTEPS: ${SPLAT_MAX_STEPS:-}
+      # 3D runners (GPU machines that pull the photo-real training, docs/marker-walls.md "3D runners"):
+      # auto = use them for walls that have one; always = the splat worker only prepares/finishes (it can
+      # then be the CPU-only `splat-cpu` service below: SPLATSERVICE_URL=http://splat-cpu:8100); off.
+      RUNNERS__MODE: ${RUNNERS_MODE:-auto}
       # Largest walk-along capture video the app accepts, in MB (1-16384; default 2048). A reverse proxy
       # in front of the app must allow a request body this big on /api/captures/*/video.
       CAPTURE__MAXVIDEOMB: ${CAPTURE__MAXVIDEOMB:-2048}
@@ -174,6 +178,20 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+    restart: unless-stopped
+
+  # The same image WITHOUT a GPU, for 3D runners (RUNNERS_MODE=always): COLMAP, alignment and export
+  # here, Brush training on the runners. Profile `compute`, next to wall-geometry. Internal only.
+  splat-cpu:
+    image: ghcr.io/zannagh/blocwerk-splat-worker:latest
+    profiles: ["compute"]
+    environment:
+      COMPUTE_API_KEY: ${SPLAT_API_KEY:-}
+      SPLAT_WORKER_MODE: cpu
+      RESULT_TTL_S: "3600"
+      SPLAT_TIMEOUT_S: "14400"
+      SPLAT_MAX_MEMORY_MB: ${SPLAT_MAX_MEMORY_MB:-0}
+      COLMAP_THREADS: ${COLMAP_THREADS:-4}
     restart: unless-stopped
 
   # Receives the GitHub releases/packages webhook and, on a new published image, pulls and

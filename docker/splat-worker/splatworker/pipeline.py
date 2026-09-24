@@ -1,66 +1,52 @@
-"""The splat job: stages, progress bands, failure reasons, frame.json.
+"""The splat job: stages, progress bands, failure reasons.
 
-ingest -> sfm-features -> sfm-matching -> sfm-mapping -> undistort -> train -> [align + refine] -> crop -> export
+all-in-one (kind `splat`): ingest -> sfm-features -> sfm-matching -> sfm-mapping -> undistort -> train
+-> [align + refine] -> crop -> cleanup -> export.
+split: `splat-prepare` runs ingest .. undistort and packs the training bundle (bundle.py) plus the
+finish state (prepared.json); a 3D runner trains (gpurunner); `splat-finish` does the rest (finish.py).
 """
-import hashlib
 import json
 import math
 import os
 import shutil
-import time
 
 from computejobs.child import JobError
 
-from . import brush, colour, tuning
-from .align import align, unaligned_frame
+from . import colour
+from .bundle import build_bundle, train_doc
+from .finish import finish
 from .frames import build_pairs, is_frame, split
+from .groups import camera_group, video_group  # noqa: F401 - re-exported (tests, callers)
 from .ingest import clean_jpeg, downscale
 from .options import SplatOptions, resolve_matcher
-from .procs import MemoryLimitError
-from .refine import refine_frame
 from .settings import settings
 from .sfm import Sfm
-from .splatio import Splats, crop_mask, read_ply, write_splat, write_spz
+from .stages import Stages
+from .training import image_sizes, train_fitted  # noqa: F401 - image_sizes re-exported
 
 # overall progress band per stage (train dominates; bands only need to be monotone)
 BANDS = {"ingest": (0.0, 0.02), "sfm-features": (0.02, 0.08), "sfm-matching": (0.08, 0.22),
          "sfm-mapping": (0.22, 0.26), "undistort": (0.26, 0.28), "train": (0.28, 0.95),
          "align": (0.95, 0.955), "crop": (0.955, 0.965), "export": (0.965, 1.0)}
+# kind `splat-prepare`: the same stages without training, over the job's own 0..1
+PREPARE_BANDS = {"ingest": (0.0, 0.05), "sfm-features": (0.05, 0.25), "sfm-matching": (0.25, 0.7),
+                 "sfm-mapping": (0.7, 0.8), "undistort": (0.8, 0.9), "bundle": (0.9, 1.0)}
 MIN_REGISTERED_FRACTION = 0.5
+PREPARED_VERSION = 1
 
 
-class Run:
-    def __init__(self, job_dir, progress):
-        self.dir, self.progress = job_dir, progress
-        self.timings, self.stage, self.t0 = {}, None, None
+class Run(Stages):
+    def __init__(self, job_dir, progress, bands=None):
+        super().__init__(job_dir, progress, bands or BANDS)
         with open(os.path.join(job_dir, "inputs.json")) as fh:
             self.inputs = json.load(fh)
         self.opts = SplatOptions(**self.inputs["options"])
         self.profile = self.opts.profile()
         gpath = os.path.join(job_dir, "geometry.json")
         self.geometry = json.load(open(gpath)) if os.path.exists(gpath) else None
-        self.log = os.path.join(job_dir, "tools.log")
         # photos (marker stills: align + registration minimum) vs auxiliary video frames (coverage only)
         self.photo_stems, self.frame_stems = split(self.inputs["photos"])
-        self.suffix = None  # appended to every stage detail once known ("87/120 video frames registered")
-        self.note = None  # appended to the details of the current stage ("memory budget 5.2 GB (...)")
         self.sfm_run = None
-
-    # ----- progress helpers -----
-    def begin(self, stage):
-        self.end()
-        self.stage, self.t0, self.note = stage, time.time(), None
-        self.progress(BANDS[stage][0], stage)
-
-    def end(self):
-        if self.stage:
-            self.timings[self.stage] = round(time.time() - self.t0, 1)
-            self.stage = None
-
-    def report(self, fraction, detail=None):
-        lo, hi = BANDS[self.stage]
-        detail = "; ".join(p for p in (detail, self.note, self.suffix) if p) or None
-        self.progress(lo + (hi - lo) * min(1.0, max(0.0, fraction)), self.stage, detail)
 
     # ----- stages -----
     def ingest(self):
@@ -114,10 +100,6 @@ class Run:
             if group:
                 self._log_line(f"colour: {name} {when}: {group.summary()}")
 
-    def _log_line(self, text):
-        with open(self.log, "a") as fh:
-            fh.write(f"# {text}\n")
-
     def sfm(self, img_dir):
         n = len(self.inputs["photos"])
         self.sfm_run = sfm = Sfm(self)
@@ -159,142 +141,68 @@ class Run:
                            settings.frame_neighbours, settings.frame_photo_stride)
 
     def train(self, dataset):
-        """Brush on the first plan of tuning.train_plans that fits; a memory-guard kill steps down to
-        the next one (the next lower quality profile), like the matching tiers."""
+        """Brush fitted to the budget (training.train_fitted)."""
         self.begin("train")
         budget = self.sfm_run.train_budget_mb()
-        sizes = image_sizes(os.path.join(dataset, "images"))
-        plans = tuning.train_plans(budget, sizes, self.profile)
-        retries = []
-        for i, plan in enumerate(plans):
-            self.note = f"{self.profile.name} -> {plan.name}" if plan.profile.name != self.profile.name or \
-                plan.edge < self.profile.edge else plan.name
-            self.note += f" (est. {plan.estimate_mb / 1024:.1f} of {budget / 1024:.1f} GB)"
-            self._log_line(f"train plan: {self.note}")
-            p = plan.profile
-            try:
-                ply, parser = brush.train(settings.brush_bin, dataset, os.path.join(self.dir, "train"),
-                                          p.steps, plan.edge, settings.brush_cache_dir,
-                                          os.path.join(self.dir, "train.log"), self.report,
-                                          budget, settings.max_swap_growth_mb,
-                                          p.brush_args(p.steps, plan.max_splats), p.checkpoints)
-                break
-            except MemoryLimitError as e:
-                if i == len(plans) - 1:
-                    raise
-                retries.append({"stage": "train", "reason": e.kind, "from": plan.name, "to": plans[i + 1].name})
-                self._log_line(f"{e.message} -> retrying as {plans[i + 1].name}")
-        self.sfm_run.retries.extend(retries)
-        self.brush_stats = {"steps": parser.step, "brushSplatCount": parser.splats, "brushReportedTime": parser.took,
-                            "trainImages": len(sizes), "trainImageEdge": plan.edge, "quality": p.name,
-                            "qualityRequested": self.profile.name, "maxSplats": plan.max_splats,
-                            "trainEstimateMb": plan.estimate_mb}
-        return ply
+        out = train_fitted(dataset, os.path.join(self.dir, "train"), os.path.join(self.dir, "train.log"),
+                           self.profile, budget, self.report, self._log_line, self._set_note)
+        self.sfm_run.retries.extend(out.retries)
+        self.brush_stats = out.stats
+        return out.ply
 
-    def frame_and_crop(self, ply):
-        splats = Splats.from_ply(read_ply(ply))
-        if self.geometry:
-            self.begin("align")
-            # Photos only: the frames have no solved camera, and the alignment must not depend on them.
-            centres = {stem: v for stem, v in ((os.path.splitext(os.path.basename(k))[0], v)
-                                               for k, v in self.model["images"].items()) if not is_frame(stem)}
-            frame = refine_frame(align(centres, self.geometry, self.opts.cropMarginMm), splats, self.geometry)
-        else:
-            frame = unaligned_frame(splats.xyz)
-        self.begin("crop")
-        keep = crop_mask(splats, frame["toViewer"], frame["crop"])
-        if not keep.any():
-            raise JobError("crop", "no splat inside the crop box: the alignment is probably wrong "
-                                   f"(camera residual {frame.get('alignment')})")
-        return splats, splats.subset(keep), frame
+    def _set_note(self, note):
+        self.note = note
 
-    def export(self, all_splats, kept, frame):
-        self.begin("export")
-        files = ["wall.splat"]
-        write_splat(kept, os.path.join(self.dir, "wall.splat"))
-        self.report(0.5)
-        if self.opts.spz:
-            write_spz(kept, os.path.join(self.dir, "wall.spz"))
-            files.append("wall.spz")
-        self.end()
-        registered = {os.path.splitext(os.path.basename(k))[0] for k in self.model["images"]}
-        stats = {
-            "photos": len(self.photo_stems), "registeredImages": len(self.model["images"]),
-            "unregistered": sorted(set(self.photo_stems) - registered),
-            "videoFrames": len(self.frame_stems), "videoFramesRegistered": len(set(self.frame_stems) & registered),
-            "sparsePoints": self.model["points"], "meanReprojErrorPx": self.model["meanReprojErrorPx"],
-            "matcher": self.matcher, "cameraGroups": len(self.groups), **self.sfm_run.stats(),
-            "splatsTrained": len(all_splats), "splatCount": len(kept), **self.brush_stats,
-            "trainingSeconds": self.timings.get("train"), "stageSeconds": self.timings,
-            "alignmentResidualMm": (frame["alignment"] or {}).get("residualMmMedian"),
-            "fileBytes": {f: os.path.getsize(os.path.join(self.dir, f)) for f in files},
-        }
-        doc = {"version": 1, "coordinates": "splat files are in the COLMAP frame of this run; "
-                                            "apply matrix/toViewer (-> metres, X right, Y up, Z out of the wall, "
-                                            "origin = centre of the reference facet) or toWorldMm "
-                                            "(-> wall-geometry world, mm)",
-               **{k: v for k, v in frame.items()}, "options": self.opts.to_dict(), "stats": stats}
-        with open(os.path.join(self.dir, "frame.json"), "w") as fh:
-            json.dump(doc, fh, indent=1)
-        files.append("frame.json")
-        return {"frame": {k: v for k, v in doc.items() if k != "stats"}, "stats": stats, "files": files}
+    def prepared_state(self):
+        """What the finish step needs of this run (prepared.json): no pixels, no photo metadata."""
+        centres, registered = {}, []
+        for name, centre in self.model["images"].items():
+            stem = os.path.splitext(os.path.basename(name))[0]
+            registered.append(stem)
+            if not is_frame(stem):
+                centres[stem] = [float(v) for v in centre]
+        return {"version": PREPARED_VERSION, "options": self.opts.to_dict(), "geometry": self.geometry,
+                "photoCentres": centres, "registered": sorted(registered), "photoStems": self.photo_stems,
+                "frameStems": self.frame_stems, "points": self.model["points"],
+                "meanReprojErrorPx": self.model["meanReprojErrorPx"], "matcher": self.matcher,
+                "cameraGroups": len(self.groups), "sfm": self.sfm_run.stats(), "stageSeconds": dict(self.timings)}
 
 
-def image_sizes(img_dir):
-    """(w, h) of every training image under img_dir (headers only)."""
-    from PIL import Image
-    sizes = []
-    for root, _, files in os.walk(img_dir):
-        for f in files:
-            with Image.open(os.path.join(root, f)) as im:
-                sizes.append(im.size)
-    return sizes
-
-
-def camera_group(stem, facts, small, geo_cam):
-    """(group key, RADIAL params f,cx,cy,k1,k2 at the downscaled size or None).
-
-    Photos sharing a lens (and orientation, and size) share one COLMAP camera. Intrinsics prior:
-    the solver's calibrated K for this photo if the geometry has it, else the EXIF 35 mm focal length.
-    Without either, the photo gets its own camera (safe for mixed lenses)."""
-    w, h = small
-    orient = "land" if w >= h else "port"
-    gw, gh = (geo_cam or {}).get("width") or 0, (geo_cam or {}).get("height") or 0
-    if geo_cam and geo_cam.get("K") and gw and gh and abs(w / gw - h / gh) < 0.01 * w / gw:
-        s = w / gw  # same aspect and orientation as the photo the solver calibrated
-        K = [float(v) for row in geo_cam["K"] for v in (row if isinstance(row, list) else [row])]
-        fx, fy, cx, cy = K[0], K[4], K[2], K[5]  # 3x3 or flat row-major 9
-        dist = list(geo_cam.get("dist") or []) + [0.0, 0.0]
-        full = str(geo_cam.get("group") or "geo")
-        group = "".join(ch if ch.isalnum() else "_" for ch in full)[:40]
-        # The readable prefix is truncated, and two lenses of one phone share it ("iPhone 16 Pro back
-        # triple camera 2.22mm" vs "…6.765mm"), so the key also carries a digest of the full group and
-        # its calibration: photos only share a COLMAP camera when the solver calibrated them alike.
-        digest = hashlib.sha1(f"{full}|{fx:.1f}|{fy:.1f}|{cx:.1f}|{cy:.1f}".encode()).hexdigest()[:8]
-        return f"geo_{group}_{digest}_{orient}_{w}x{h}", [(fx + fy) / 2 * s, cx * s, cy * s, dist[0], dist[1]]
-    if facts.get("focal35"):
-        f = facts["focal35"] / 36.0 * max(w, h)
-        return f"exif_{facts.get('lensKey') or 'lens'}_{int(facts['focal35'])}_{orient}_{w}x{h}", \
-            [f, w / 2, h / 2, 0.0, 0.0]
-    return "single", None
-
-
-def video_group(small):
-    """All frames of the walk-along video share one COLMAP camera (one lens, one size, no EXIF prior:
-    COLMAP estimates the focal length from the many views)."""
-    w, h = small
-    return f"video_{'land' if w >= h else 'port'}_{w}x{h}", None
+def _keep_only(job_dir, files):
+    """Only results (+ tool logs, never served) stay until the TTL."""
+    for name in os.listdir(job_dir):
+        if name not in files and not name.endswith(".log"):
+            path = os.path.join(job_dir, name)
+            shutil.rmtree(path, ignore_errors=True) if os.path.isdir(path) else os.remove(path)
 
 
 def run(job_dir, progress):
+    """kind `splat`: everything on this machine."""
     r = Run(job_dir, progress)
     img_dir = r.ingest()
     dataset = r.sfm(img_dir)
     ply = r.train(dataset)
-    all_splats, kept, frame = r.frame_and_crop(ply)
-    result = r.export(all_splats, kept, frame)
-    for name in os.listdir(job_dir):  # only results (+ tool logs, never served) stay until the TTL
-        if name not in result["files"] and not name.endswith(".log"):
-            path = os.path.join(job_dir, name)
-            shutil.rmtree(path, ignore_errors=True) if os.path.isdir(path) else os.remove(path)
+    r.end()
+    train_stats = {**r.brush_stats, "trainingSeconds": r.timings.get("train")}
+    result = finish(job_dir, progress, r.prepared_state(), ply, train_stats, BANDS)
+    _keep_only(job_dir, result["files"])
     return result
+
+
+def run_prepare(job_dir, progress):
+    """kind `splat-prepare`: the CPU half before training -> bundle.zip (for a 3D runner) + prepared.json."""
+    r = Run(job_dir, progress, PREPARE_BANDS)
+    img_dir = r.ingest()
+    dataset = r.sfm(img_dir)
+    r.begin("bundle")
+    info = build_bundle(dataset, os.path.join(job_dir, "bundle.zip"), train_doc(r.profile), r.report)
+    r.end()
+    state = r.prepared_state()
+    with open(os.path.join(job_dir, "prepared.json"), "w") as fh:
+        json.dump(state, fh)
+    files = ["bundle.zip", "prepared.json"]
+    _keep_only(job_dir, files)
+    return {"bundle": info, "quality": r.profile.name, "stats": {
+        "photos": len(r.photo_stems), "registeredImages": len(state["registered"]),
+        "videoFrames": len(r.frame_stems), "sparsePoints": state["points"], "matcher": r.matcher,
+        **state["sfm"], "stageSeconds": state["stageSeconds"]}, "files": files}

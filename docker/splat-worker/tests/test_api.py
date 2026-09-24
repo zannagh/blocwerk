@@ -60,7 +60,7 @@ def wait(client, job_id):
 
 def test_health_is_minimal_and_info_has_the_details(client, monkeypatch):
     h = client.get("/health").json()
-    assert h["service"] == "splat-worker" and h["kinds"] == ["splat"] and h["protocol"] == "blocwerk-compute/1"
+    assert h["service"] == "splat-worker" and h["kinds"] == ["splat", "splat-prepare", "splat-finish"] and h["protocol"] == "blocwerk-compute/1"
     assert set(h) == {"status", "service", "protocol", "version", "kinds"} and h["status"] == "ok"
     info = client.get("/v1/info").json()
     assert info["tools"]["ok"] is True and info["limits"]["maxPhotos"] == 400

@@ -237,6 +237,7 @@ public static class Program
 
         // Health checks: "busy" (Degraded while editing, not Unhealthy) gates deploys; "database"
         // probes PostgreSQL. Both are surfaced anonymously via MapHealthChecks below.
+        builder.Services.AddRunnerRateLimit();
         builder.Services.AddHealthChecks()
             .AddCheck<BusyHealthCheck>("busy", tags: new[] { "busy" })
             .AddCheck<DatabaseHealthCheck>("database", tags: new[] { "db" });
@@ -288,7 +289,11 @@ public static class Program
         app.MapStaticAssets();
         app.ConfigureCoreApplication();
         app.ConfigureAuthenticationMiddlewares();
+        app.UseRateLimiter();
         app.MapControllers();
+
+        // The 3D runners' pull API (runner keys, never user sessions); rate-limited per caller.
+        app.MapRunnerApi();
 
         // Prometheus/OpenMetrics scrape endpoint for the custom + runtime + ASP.NET metrics.
         // Handy for a quick `curl http://<host>:5050/metrics` when the dashboard isn't in reach.

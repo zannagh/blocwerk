@@ -93,14 +93,12 @@ def test_too_few_registered_fails_in_mapping_with_advice(tmp_path, monkeypatch):
 
 
 def test_crop_failure_is_reported(tmp_path, monkeypatch):
-    r, _ = make_run(tmp_path)
-    r.geometry, r.model = None, {"images": {}}
-    monkeypatch.setattr(pipeline, "read_ply", lambda p: None)
+    from splatworker import finish
+    f = finish.Finish(str(tmp_path), lambda *a: None, {"options": SplatOptions().to_dict(), "geometry": None})
 
     class S:
         xyz = np.zeros((5, 3))
 
-    monkeypatch.setattr(pipeline.Splats, "from_ply", classmethod(lambda cls, c: S()))
-    monkeypatch.setattr(pipeline, "crop_mask", lambda *a: np.zeros(5, bool))
+    monkeypatch.setattr(finish, "crop_mask", lambda *a: np.zeros(5, bool))
     with pytest.raises(JobError, match="^crop: no splat inside the crop box"):
-        r.frame_and_crop("x.ply")
+        f.frame_and_crop(S())

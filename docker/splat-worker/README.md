@@ -9,7 +9,8 @@ cameras → crop → export.
 It speaks the shared **Blocwerk compute job protocol v1** (`../compute-jobs-protocol.md`), like
 `wall-geometry`: async jobs, polling, optional signed callbacks, bearer auth, results TTL. The protocol
 machinery is the shared package `../compute-jobs-py/computejobs` (one copy for both services); this
-directory only adds the `splat` kind. The app knows the worker only as **URL + API key**, so it can
+directory only adds the `splat` kinds: `splat` (all-in-one) and the split `splat-prepare` +
+`splat-finish` around a **3D runner** (below). The app knows the worker only as **URL + API key**, so it can
 run on any GPU machine: the realistic one for Blocwerk is the owner's Mac.
 
 ## API: `POST /v1/jobs/splat` (`multipart/form-data`)
@@ -156,6 +157,62 @@ Camera intrinsics prior: the solver's calibrated `K`/`dist` for that photo when 
 (scaled; same aspect required), else the EXIF 35 mm focal length; photos sharing lens + orientation +
 size share one COLMAP camera (RADIAL). Without either, each photo gets its own camera.
 
+## The split for 3D runners: `splat-prepare` and `splat-finish`
+
+Everything but the Brush training is CPU work, so it can run on the Blocwerk server itself (this image
+with `SPLAT_WORKER_MODE=cpu`: no GPU, no Brush needed, kind `splat` answers `503`), while the training
+runs on a **3D runner** (below) that pulls it from the app.
+
+- `POST /v1/jobs/splat-prepare`: exactly the `splat` request. Runs ingest → COLMAP (features,
+  matching, mapping, undistort) and packs `bundle.zip` (`bundle.py`):
+  `dataset/images/<group>/<stem>.jpg` (the undistorted images; every JPEG checked and stripped at
+  marker level of any APPn but a JFIF APP0 and of COM segments, pixels untouched), `dataset/sparse/0/*.bin`
+  and `train.json` (the quality profile incl. `maxSteps`/`maxImageEdge` overrides). No file names but
+  the stems, no geometry, no GPS. Plus `prepared.json`: options, geometry, the registered photos' camera
+  centres, SfM stats and timings — the finish's input, never sent to a runner. Progress runs 0..1 over
+  its own stages (`ingest` … `undistort`, `bundle`).
+- `POST /v1/jobs/splat-finish`: multipart `prepared` (that JSON, ≤ 32 MB), `splat` (ONE file,
+  `splat.ply` = binary little-endian float PLY, Brush's or the runner's slim one, or `splat.spz` v2;
+  streamed to disk, `SPLAT_MAX_RESULT_MB` default 2048, `413` beyond) and optional `trainStats` (JSON:
+  allow-listed scalar keys such as `steps`, `brushSplatCount`, `trainingSeconds`, `quality`,
+  `qualityRequested`, `trainImageEdge`, `maxSplats`, `runnerGpu` go into `stats`, plus `retries` into
+  `memoryRetries`). Runs load → align + refine → crop → **cleanup hook** (`cleanup.py`, identity
+  today; the same hook runs in the all-in-one job) → export: the very files and `frame.json` shape of
+  `splat`.
+
+## 3D runner (GPU training for a Blocwerk server)
+
+A runner trains the photo-real views of a Blocwerk server on YOUR GPU. It connects out (no inbound
+port, works behind NAT): hello with its capabilities → long-poll for a job → download the job's
+training bundle → Brush with this worker's memory guard and quality profiles (the local budget picks
+the profile ceiling: ≥ 12 GB `max`, ≥ 5 GB `high`, else `draft`; a memory kill steps down like the
+worker) → upload only the trained scene (a slim `.ply`: position, DC colour, opacity, scale,
+rotation). The server does the rest. Create the runner in Blocwerk (wall settings → 3D runners); the
+`bwr_…` key is shown once. The key is read from `BWR_KEY` only (never an argument, never logged; the
+runner removes it from its environment before starting any tool).
+
+```bash
+# Linux + NVIDIA (AMD/Intel: --device /dev/dri instead of --gpus all); no ports to publish
+docker run -d --restart unless-stopped --gpus all -e BWR_KEY=bwr_... \
+    blocwerk-splat-worker python -m splatworker.gpurunner --server https://blocwerk.app
+# Mac (Apple Silicon, Metal): same Brush + venv bootstrap as run-native.sh
+BWR_KEY=bwr_... caffeinate -i docker/splat-worker/run-runner-native.sh --server https://blocwerk.app
+```
+
+Behaviour: reconnects with exponential backoff (1 → 60 s, jitter; honours `Retry-After`); exits with
+code 3 when the key is refused (revoked); a progress heartbeat at least every 20 s keeps the job's
+lease; the server cancelling the job (or handing it elsewhere) kills Brush at once; a lost connection
+is waited out for ~4 minutes mid-job before the job is given up (the server requeues it when the lease
+expires); a training failure is reported (`retryable` for memory / tool crashes); SIGTERM/SIGINT hand
+the running job back. Plain `http` only to localhost unless `--insecure-http`. Env: `RUNNER_WORK_DIR`
+(default `$TMPDIR/blocwerk-runner`), `RUNNER_MAX_QUALITY` (cap the reported ceiling),
+`SPLAT_MAX_MEMORY_MB` / `SPLAT_MIN_MEMORY_MB` / `SPLAT_MAX_SWAP_GROWTH_MB` / `BRUSH_BIN` as for the worker.
+
+Runner API it speaks (implemented by the app, `Authorization: Bearer bwr_…`): `POST /api/runners/hello`,
+`POST /api/runners/claim` (long-poll, `204` = nothing), `GET /api/runners/jobs/{id}/bundle`,
+`POST …/progress` (`{"cancel": true}` stops it), `PUT …/result` (raw body, `X-Blocwerk-Format`,
+`X-Blocwerk-Stats`), `POST …/fail`.
+
 ## Quality profiles (`options.quality`, `profiles.py`)
 
 | | `draft` | `high` (default) | `max` |
@@ -226,6 +283,8 @@ give the job memory to match (`SPLAT_MAX_MEMORY_MB` unset, container limit ≥ 1
 | `COLMAP_MAX_FEATURES` | 8192 | upper bound on SIFT features per image (the job asks for 16384 up to 60 photos, 8192 beyond). A soft cap in COLMAP 4.2 (8192 still yields up to ~13.4k per photo, not from extra orientations: `max_num_orientations 1` changed nothing). Guided matching × features² × threads is what once took a 14-photo job to 25 GB; the budget now picks guided or not (above) |
 | `COLMAP_MAX_MATCHES` | 8192 | `FeatureMatching.max_num_matches` (3.9: `SiftMatching.*`) per image pair |
 | `FRAME_NEIGHBOURS` / `FRAME_PHOTO_STRIDE` | 6 / 4 | `pairs` matcher: each video frame is matched with its next N frames, and every Nth frame with every photo |
+| `SPLAT_WORKER_MODE` | `all` | `cpu` = the server-side half only (`splat-prepare`, `splat-finish`; no Brush needed, `splat` answers `503`) |
+| `SPLAT_MAX_RESULT_MB` | 2048 | `splat-finish`: the largest trained scene accepted (`413` beyond) |
 | `COLMAP_THREADS` | 4 | upper bound on threads for feature extraction, matching and the mapper (`0` = all cores); the budget may use fewer. Memory grows with each; raise it on a big machine for speed |
 
 ## Run natively on a Mac (the "external GPU")

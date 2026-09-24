@@ -12,4 +12,7 @@ public enum DeployBusyWork
 
     /// <summary>ffmpeg is turning a capture's video into frames for the photo-real view.</summary>
     CaptureVideoFrames,
+
+    /// <summary>A 3D runner is uploading a trained splat. Not resumable: a restart makes the runner upload again.</summary>
+    RunnerResultUpload,
 }
