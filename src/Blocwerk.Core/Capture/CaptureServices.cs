@@ -26,8 +26,8 @@ public static class CaptureServices
         services.AddSingleton<CaptureFollowUpChain>();
         services.AddScoped<ICaptureFollowUpStep, PlaceHoldsFollowUpStep>();
         services.AddScoped<ICaptureFollowUpStep, RefineFootprintsFollowUpStep>();
-        services.AddScoped<ICaptureFollowUpStep, MeasureProtrusionFollowUpStep>();
         services.AddScoped<ICaptureFollowUpStep, DetectVolumesFollowUpStep>();
+        services.AddScoped<ICaptureFollowUpStep, MeasureProtrusionFollowUpStep>();
         services.AddHostedService<WallCaptureWorker>();
         services.AddScoped<IWallCaptureService, WallCaptureService>();
         services.AddScoped<ICapturePanelPhotoService, CapturePanelPhotoService>();

@@ -53,14 +53,33 @@ export function slabDepth(h) {
 
 /**
  * Facet-local frame of a hold: x/y along u/v with the origin at its plane centre (moved by `shift`
- * [da, db] mm when given: a hold on a volume, wall3d-relief.js), z along the normal.
+ * [da, db] mm when given: a hold on a volume, wall3d-relief.js), z along the normal. A hold placed on a
+ * detected volume (`protrusion.normal`, with a shift) is tilted to the volume's surface there: `lift` still
+ * counts from the facet plane, the part above the volume (`protrusion.baseMm`) along the tilted normal.
  */
 export function holdFrame(h, facet, lift, shift) {
-    const m = facetBasis(facet);
     const [sa, sb] = shift || [0, 0];
-    const p = v3(facet.origin).addScaledVector(v3(facet.u), h.planeA + sa).addScaledVector(v3(facet.v), h.planeB + sb)
-        .addScaledVector(v3(facet.normal), lift);
-    return m.setPosition(p);
+    const at = v3(facet.origin).addScaledVector(v3(facet.u), h.planeA + sa).addScaledVector(v3(facet.v), h.planeB + sb);
+    const n = shift && h.protrusion && h.protrusion.normal;
+    if (!n) return facetBasis(facet).setPosition(at.addScaledVector(v3(facet.normal), lift));
+    const u = v3(facet.u);
+    const up = u.clone().multiplyScalar(n[0]).addScaledVector(v3(facet.v), n[1]).addScaledVector(v3(facet.normal), n[2]).normalize();
+    const x = u.addScaledVector(up, -u.dot(up)).normalize();
+    const y = new THREE.Vector3().crossVectors(up, x);
+    const base = h.protrusion.baseMm || 0;
+    at.addScaledVector(v3(facet.normal), base).addScaledVector(up, lift - base);
+    return new THREE.Matrix4().makeBasis(x, y, up).setPosition(at);
+}
+
+/** [da, db] of a hold placed on a detected volume (drawn there in every mode), else null. */
+export function volumeShift(h) {
+    const p = h.protrusion;
+    return p && p.volumeId ? [p.shiftA || 0, p.shiftB || 0] : null;
+}
+
+/** Height of the volume surface under a hold placed on one, else 0 (mm above the facet plane). */
+export function volumeBase(h) {
+    return volumeShift(h) ? Math.max(0, h.protrusion.baseMm || 0) : 0;
 }
 
 function toShape(h, withHoles) {
@@ -79,14 +98,14 @@ function slab(h, facet) {
         depth: depth - 2 * bevel, curveSegments: 1, steps: 1,
         bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelOffset: -bevel, bevelSegments: 2,
     });
-    // The bevel reaches `bevel` below z = 0: sit the slab's underside on the lifted base.
-    geo.applyMatrix4(holdFrame(h, facet, BASE_LIFT + bevel));
+    // The bevel reaches `bevel` below z = 0: sit the slab's underside on the lifted base (on its volume, if any).
+    geo.applyMatrix4(holdFrame(h, facet, volumeBase(h) + BASE_LIFT + bevel, volumeShift(h)));
     return geo.index ? geo.toNonIndexed() : geo;
 }
 
 /** Top of a hold's overlay: its slab (Schematic) or its relief's cap (photo-real), whichever is higher. */
 function topOf(h) {
-    return Math.max(BASE_LIFT + slabDepth(h), reliefOf(h).cap);
+    return Math.max(volumeBase(h) + BASE_LIFT + slabDepth(h), reliefOf(h).cap);
 }
 
 /**
@@ -100,7 +119,7 @@ function pickPrism(h, facet) {
     const geo = new THREE.ExtrudeGeometry(toShape(h, false), { depth: Math.max(1, topOf(h) - base), curveSegments: 1, steps: 1, bevelEnabled: false });
     geo.applyMatrix4(holdFrame(h, facet, base, r.shift));
     const prism = geo.index ? geo.toNonIndexed() : geo;
-    if (!moved) return prism;
+    if (!moved || volumeShift(h)) return prism;
     const flat = new THREE.ShapeGeometry(toShape(h, false), 1);
     flat.applyMatrix4(holdFrame(h, facet, BASE_LIFT + slabDepth(h)));
     return concat(prism, flat.index ? flat.toNonIndexed() : flat);
@@ -182,7 +201,7 @@ export function holdColor(h, dimmed) {
 export function ringMatrix(h, facet, scale, raised = false) {
     const f = footprint(h);
     const r = reliefOf(h);
-    const m = raised ? holdFrame(h, facet, r.cap + 1.5, r.shift) : holdFrame(h, facet, topOf(h) + 1.5);
+    const m = raised || volumeShift(h) ? holdFrame(h, facet, (raised ? r.cap : topOf(h)) + 1.5, r.shift) : holdFrame(h, facet, topOf(h) + 1.5);
     m.multiply(new THREE.Matrix4().makeTranslation(f.ca, f.cb, 0));
     return m.scale(new THREE.Vector3(f.w * scale, f.h * scale, 1));
 }

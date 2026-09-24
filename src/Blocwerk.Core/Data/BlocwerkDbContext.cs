@@ -184,6 +184,7 @@ public partial class BlocwerkDbContext : DbContext
         ConfigureHoldOutlineUpgrade(modelBuilder);
         ConfigureHoldPlacement(modelBuilder);
         ConfigureMarkerPlan(modelBuilder);
+        ConfigureWallVolumes(modelBuilder);
     }
 
     private static void ConfigureTopLogger(ModelBuilder modelBuilder)

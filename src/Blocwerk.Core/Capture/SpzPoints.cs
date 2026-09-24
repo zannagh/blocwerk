@@ -16,14 +16,24 @@ public static class SpzPoints
     /// <summary>Widest splat kept, mm: anything wider is fog, not surface.</summary>
     public const double MaxSplatMm = 40;
 
+    /// <summary>With <c>includeFlat</c>: a flat splat (thinnest axis at most this, mm) is surface even when wide.</summary>
+    public const double FlatThinMm = 4;
+
+    /// <summary>With <c>includeFlat</c>: the widest flat splat kept, mm (smooth volume faces carry wide flat splats).</summary>
+    public const double FlatMaxMm = 150;
+
+    /// <summary>With <c>includeFlat</c>: the faintest flat splat kept.</summary>
+    public const double FlatMinAlpha = 0.3;
+
     /// <summary>
     /// Surface-like centres in world mm. <paramref name="worldMatrix"/> is the column-major 4×4 of
     /// <see cref="CaptureSplatDocuments.WorldMatrix"/> (a similarity: its scale turns splat sizes into mm).
     /// </summary>
     /// <param name="spz">The gzip-compressed scene.</param>
     /// <param name="worldMatrix">Column-major splat → world (mm).</param>
+    /// <param name="includeFlat">Also keep wide but thin, opaque splats (volume detection: smooth faces are drawn with them).</param>
     /// <returns>The kept centres.</returns>
-    public static List<(float X, float Y, float Z)> Read(byte[] spz, IReadOnlyList<double> worldMatrix)
+    public static List<(float X, float Y, float Z)> Read(byte[] spz, IReadOnlyList<double> worldMatrix, bool includeFlat = false)
     {
         var (raw, n, positionOffset, alphaOffset, scaleOffset) = SpzDecimator.Open(spz);
         var scale = 1.0 / (1 << raw[13]);
@@ -34,10 +44,17 @@ public static class SpzPoints
         var positions = raw.AsSpan(positionOffset, n * 9);
         var minAlpha = (byte)Math.Ceiling(MinAlpha * 255);
         var maxLog = (int)Math.Floor((Math.Log(MaxSplatMm / mmPerUnit) + 10) * 16);
+        var flatThin = (int)Math.Floor((Math.Log(FlatThinMm / mmPerUnit) + 10) * 16);
+        var flatMax = includeFlat ? (int)Math.Floor((Math.Log(FlatMaxMm / mmPerUnit) + 10) * 16) : -1;
+        var flatAlpha = (byte)Math.Ceiling(FlatMinAlpha * 255);
         var result = new List<(float, float, float)>();
         for (var i = 0; i < n; i++)
         {
-            if (alphas[i] < minAlpha || Math.Max(scales[3 * i], Math.Max(scales[(3 * i) + 1], scales[(3 * i) + 2])) > maxLog)
+            var widest = Math.Max(scales[3 * i], Math.Max(scales[(3 * i) + 1], scales[(3 * i) + 2]));
+            var small = alphas[i] >= minAlpha && widest <= maxLog;
+            var flat = alphas[i] >= flatAlpha && widest <= flatMax
+                && Math.Min(scales[3 * i], Math.Min(scales[(3 * i) + 1], scales[(3 * i) + 2])) <= flatThin;
+            if (!small && !flat)
             {
                 continue;
             }

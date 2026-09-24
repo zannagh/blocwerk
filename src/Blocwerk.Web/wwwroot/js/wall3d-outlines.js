@@ -5,7 +5,7 @@
 // Photo-real shows them RAISED over the splat instead (wall3d-relief.js, wall3d-overlay.js): the
 // photo is flat, so its outlines stay on the facet, but the splat has the holds' real relief.
 import * as THREE from '../lib/three/three.module.min.js';
-import { holdColor, holdFrame, outlineOf } from './wall3d-holds.js';
+import { holdColor, holdFrame, outlineOf, volumeBase, volumeShift } from './wall3d-holds.js';
 import { raisedSegments } from './wall3d-relief.js';
 
 function rings(h) {
@@ -34,7 +34,8 @@ function segments(list, facets, lift, dimmed, sides) {
     const slots = [];
     const p = new THREE.Vector3();
     for (const h of list) {
-        const m = holdFrame(h, facets.get(h.facetId), lift);
+        // A hold on a detected volume: on the textured volume, where the photo now shows it.
+        const m = holdFrame(h, facets.get(h.facetId), lift + volumeBase(h), volumeShift(h));
         const c = holdColor(h, dimmed);
         const slot = sides.index.get(h.facetId) ?? 0;
         for (const ring of photoRings(h)) {

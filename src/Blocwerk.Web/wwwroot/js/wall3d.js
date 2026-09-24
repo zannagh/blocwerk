@@ -1,16 +1,14 @@
-// Opt-in 3D wall view. Loaded with JS.InvokeAsync<IJSObjectReference>("import", "/js/wall3d.js");
-// `mount(container, view, options)` renders the Wall3DView payload (Blocwerk.Core.Geometry.View3D)
-// into `container` and returns a handle whose `dispose()` frees every GPU resource.
-//
-// The world frame is wall-geometry.json's: millimetres, z up. Rendering is on demand — a frame is
-// drawn only while something moves (damping, a tween, a resize), so an idle view costs nothing —
+// Opt-in 3D wall view. Loaded with JS.InvokeAsync<IJSObjectReference>("import", "/js/wall3d.js"); `mount(container,
+// view, options)` renders the Wall3DView payload (Blocwerk.Core.Geometry.View3D) into `container` and returns a handle
+// whose `dispose()` frees every GPU resource. The world frame is wall-geometry.json's: millimetres, z up. Rendering is
+// on demand — a frame is drawn only while something moves (damping, a tween, a resize), so an idle view costs nothing —
 // except in photo-real mode (wall3d-splat.js), which renders continuously while it is on.
 //
 // Nothing blocks the view: presets pick camera spots in free space with a clear sight line
 // (wall3d-clearance.js), a facet between the orbiting camera and its target is ghosted
 // (wall3d-ghost.js), and the splat fades what is near the camera, the mats in the way and ghosted
-// facets' surroundings (wall3d-splat-clip.js). Photo-real draws the hold outlines over the splat
-// (wall3d-overlay.js); taps pick holds the same way in every mode (wall3d-pick.js).
+// facets' surroundings (wall3d-splat-clip.js). Photo-real draws the hold outlines over the splat (wall3d-overlay.js);
+// taps pick holds the same way in every mode (wall3d-pick.js). Volumes: wall3d-volumes.js.
 import * as THREE from '../lib/three/three.module.min.js';
 import { OrbitControls } from '../lib/three/controls/OrbitControls.js';
 import { buildFacets, buildLabels, buildMarkers, buildTextures, fitLabels } from './wall3d-scene.js';
@@ -27,6 +25,7 @@ import { buildSurroundings, disposeScene } from './wall3d-stage.js';
 import { createGhosting } from './wall3d-ghost.js';
 import { createPhotoOverlay } from './wall3d-overlay.js';
 import { createSplatClip } from './wall3d-splat-clip.js';
+import { buildVolumes } from './wall3d-volumes.js';
 
 /** Colours of a boulder's hold roles; the page passes BoulderHoldColors so they match the 2D views. */
 const DEFAULT_ROLE_COLORS = { Start: '#4CAF50', Top: '#9C27B0', Hand: '#2196F3', Foot: '#FF9800', ColorFoot: '#FF9800' };
@@ -70,7 +69,8 @@ export function mount(container, view, options = {}) {
     const labels = buildLabels(view);
     const textures = buildTextures(view, renderer);
     const markers = buildMarkers(view, sides);
-    scene.add(facets.group, textures, markers, labels, holds.lit, holds.dim, outlines, holds.rings, holds.pick, selection);
+    const volumes = buildVolumes(view, renderer, textures);   // plain: Schematic; photo: Photos (in `textures`)
+    scene.add(facets.group, textures, markers, labels, holds.lit, holds.dim, volumes.plain, outlines, holds.rings, holds.pick, selection);
     const frame = wallFrame(view, facets.group);
     const ghosts = createGhosting({ facets, textures, quads: frame.quads, sides });
     const clip = createSplatClip(frame.quads, frame.floorZ);
@@ -94,7 +94,7 @@ export function mount(container, view, options = {}) {
     // rings (wall3d-overlay.js), the selection and hold taps stay.
     const photo = createPhotoReal({
         renderer, scene, view, clip,
-        facetParts: [facets.group, textures, markers, labels, holds.lit, holds.dim, ...surroundings],
+        facetParts: [facets.group, textures, markers, labels, holds.lit, holds.dim, volumes.plain, ...surroundings],
         photoTextures: textures,
         onGiveUp: message => modeCtl.fail(message),
         onProgress: f => ui.say(f == null ? 'Loading the photo-real view…' : `Loading the photo-real view… ${Math.round(f * 100)}%`),
@@ -110,7 +110,7 @@ export function mount(container, view, options = {}) {
     scene.add(overlay.prepass);
     const modeCtl = createModeController({
         modes, photo, ui, request: () => request(), PhotoRealUnsupportedError, onMode: m => overlay.apply(m),
-        parts: { textures, outlines, slabs: [holds.lit, holds.dim] },
+        parts: { textures, outlines, slabs: [holds.lit, holds.dim, volumes.plain] },
     });
     const failures = watchRenderFailures(renderer, modeCtl, () => request(), photo);
     const plan = createPlanMap(ui.map, view, frame);

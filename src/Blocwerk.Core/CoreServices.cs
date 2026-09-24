@@ -163,6 +163,7 @@ public static class CoreServices
         builder.Services.AddScoped<IHoldFootprintService, HoldFootprintService>();
         builder.Services.AddScoped<IHoldTexturePlacementService, HoldTexturePlacementService>();
         builder.Services.AddScoped<IHoldProtrusionService, HoldProtrusionService>();
+        builder.Services.AddScoped<IWallVolumeService, WallVolumeService>();
         builder.Services.AddSingleton<HoldRefinementQueue>();
         builder.Services.AddSingleton<IHoldRefinementQueue>(sp => sp.GetRequiredService<HoldRefinementQueue>());
         builder.Services.AddHostedService(sp => sp.GetRequiredService<HoldRefinementQueue>());

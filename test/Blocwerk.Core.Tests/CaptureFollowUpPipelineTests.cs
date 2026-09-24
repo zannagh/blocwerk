@@ -24,6 +24,7 @@ public class CaptureFollowUpPipelineTests
     private readonly IHoldTexturePlacementService placement = Substitute.For<IHoldTexturePlacementService>();
     private readonly IHoldFootprintService footprints = Substitute.For<IHoldFootprintService>();
     private readonly IHoldProtrusionService protrusion = Substitute.For<IHoldProtrusionService>();
+    private readonly IWallVolumeService volumes = Substitute.For<IWallVolumeService>();
 
     public CaptureFollowUpPipelineTests()
     {
@@ -31,6 +32,7 @@ public class CaptureFollowUpPipelineTests
             .ReturnsForAnyArgs(new HoldPlacementResult(Guid.NewGuid(), 856, 3, 19, []));
         footprints.RefineFromPipelineAsync(default, default).ReturnsForAnyArgs(new HoldFootprintRunResult(653, 0, 4, 24));
         protrusion.MeasureFromPipelineAsync(default, default).ReturnsForAnyArgs(new HoldProtrusionRunResult(12, 1, 0, 12));
+        volumes.DetectFromPipelineAsync(default, default).ReturnsForAnyArgs(new WallVolumeRunResult(6, 2, 82, 82));
     }
 
     [Fact]
@@ -54,6 +56,7 @@ public class CaptureFollowUpPipelineTests
             footprints.RefineFromPipelineAsync(h.WallId, Arg.Any<CancellationToken>());
         });
         await protrusion.DidNotReceiveWithAnyArgs().MeasureFromPipelineAsync(default, default);
+        await volumes.DidNotReceiveWithAnyArgs().DetectFromPipelineAsync(default, default);
     }
 
     [Fact]
@@ -91,6 +94,9 @@ public class CaptureFollowUpPipelineTests
         Assert.Empty(s.SplatClient.MultipartSubmissions);
         var protrusionEntry = CaptureFollowUpRecord.Parse(capture.FollowUpJson).Find("measure-protrusion");
         Assert.Equal(CaptureFollowUpOutcome.Skipped, protrusionEntry!.Outcome);
+        var volumeEntry = CaptureFollowUpRecord.Parse(capture.FollowUpJson).Find("detect-volumes");
+        Assert.Equal(CaptureFollowUpOutcome.Skipped, volumeEntry!.Outcome);
+        await volumes.DidNotReceiveWithAnyArgs().DetectFromPipelineAsync(default, default);
         await s.Push.DidNotReceive().NotifyWallPhotoRealReadyAsync(Arg.Any<Guid>(), Arg.Any<Guid>());
     }
 
@@ -122,7 +128,7 @@ public class CaptureFollowUpPipelineTests
     }
 
     [Fact]
-    public async Task WithAPhotoRealView_TheHoldsAreMeasuredInIt_AfterItIsStored()
+    public async Task WithAPhotoRealView_VolumesAreFound_ThenTheHoldsAreMeasured()
     {
         using var h = new WallTestHarness();
         using var s = Scenario(h);
@@ -134,15 +140,30 @@ public class CaptureFollowUpPipelineTests
         var summary = (await s.Service.GetCapturesAsync(h.WallId)).Single();
         Assert.Equal(WallCaptureStatus.Succeeded, summary.Status);
         Assert.Equal(
-            "856 holds placed on the 3D model, 653 hold shapes refined from several photos, 12 holds measured in the photo-real view.",
+            "856 holds placed on the 3D model, 653 hold shapes refined from several photos, 6 volumes found, 82 holds placed on them, 12 holds measured in the photo-real view.",
             summary.FollowUp);
+        Received.InOrder(() =>
+        {
+            placement.PlaceFromPipelineAsync(h.WallId, Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+            footprints.RefineFromPipelineAsync(h.WallId, Arg.Any<CancellationToken>());
+            volumes.DetectFromPipelineAsync(h.WallId, Arg.Any<CancellationToken>());
+            protrusion.MeasureFromPipelineAsync(h.WallId, Arg.Any<CancellationToken>());
+        });
         await protrusion.Received(1).MeasureFromPipelineAsync(h.WallId, Arg.Any<CancellationToken>());
     }
+
+    [Theory]
+    [InlineData(6, 82, "6 volumes found, 82 holds placed on them")]
+    [InlineData(1, 1, "1 volume found, 1 hold placed on it")]
+    [InlineData(3, 0, "3 volumes found")]
+    [InlineData(0, 0, "")]
+    public void TheVolumeStep_SaysWhatItFound(int found, int placed, string expected) =>
+        Assert.Equal(expected, DetectVolumesFollowUpStep.Describe(found, placed));
 
     private CaptureScenario Scenario(WallTestHarness h) => new(h, followUps: harness => FollowUpChains.Build(
         harness.RootContextFactory,
         new PlaceHoldsFollowUpStep(placement),
         new RefineFootprintsFollowUpStep(footprints),
         new MeasureProtrusionFollowUpStep(protrusion),
-        new DetectVolumesFollowUpStep()));
+        new DetectVolumesFollowUpStep(volumes)));
 }

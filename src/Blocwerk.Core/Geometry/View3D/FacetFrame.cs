@@ -10,7 +10,7 @@ namespace Blocwerk.Core.Geometry.View3D;
 /// </summary>
 public sealed class FacetFrame
 {
-    private FacetFrame(double[] origin, double[] u, double[] v, double[] normal)
+    internal FacetFrame(double[] origin, double[] u, double[] v, double[] normal)
     {
         Origin = origin;
         U = u;

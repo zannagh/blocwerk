@@ -155,6 +155,14 @@ public partial class Hold
     /// </summary>
     public string? ProtrusionMm { get; set; }
 
+    /// <summary>
+    /// Where the hold really sits when it is on a volume, as JSON (<see cref="Geometry.Volumes.HoldVolumePlacement"/>):
+    /// the point on the volume's surface where the panel photo's ray first meets it. Derived and additive: the
+    /// panel position and <see cref="PlaneAMm"/>/<see cref="PlaneBMm"/> stay as they are; the placement carries the
+    /// flat position it came from, so after a move it is stale and ignored until the next volume run.
+    /// </summary>
+    public string? VolumePlacementJson { get; set; }
+
     public ICollection<BoulderHold> BoulderHolds { get; set; } = [];
 
     /// <summary>
@@ -175,6 +183,7 @@ public partial class Hold
         MetricSource = source.MetricSource;
         FootprintMm = source.FootprintMm;
         ProtrusionMm = source.ProtrusionMm;
+        VolumePlacementJson = source.VolumePlacementJson;
     }
 
     /// <summary>
@@ -216,5 +225,6 @@ public partial class Hold
         MetricSource = MetricSource,
         FootprintMm = FootprintMm,
         ProtrusionMm = ProtrusionMm,
+        VolumePlacementJson = VolumePlacementJson,
     };
 }

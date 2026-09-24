@@ -24,7 +24,7 @@ namespace Blocwerk.Core.Services;
 /// which applies the same view rules and carries the share token into the URLs) and its photo-real
 /// splat, if any.
 /// </summary>
-public sealed class Wall3DViewService(
+public sealed partial class Wall3DViewService(
     IWallService wallService,
     ICurrentUserService currentUserService,
     IDbContextFactory<BlocwerkDbContext> dbContextFactory,
@@ -86,7 +86,8 @@ public sealed class Wall3DViewService(
 
         var view = Wall3DViewBuilder.Build(wall, doc, boulderId, photoMarkers, holdLinks);
         view = await WithImageryAsync(view, shareToken, ct);
-        return new Wall3DViewResult(Wall3DViewStatus.Ok, wall.Name, await WithPhotoOutlinesAsync(wall, view, doc, json, ct));
+        view = await WithPhotoOutlinesAsync(wall, view, doc, json, ct);
+        return new Wall3DViewResult(Wall3DViewStatus.Ok, wall.Name, await WithVolumesAsync(wall, view, json, ct));
     }
 
     /// <inheritdoc />

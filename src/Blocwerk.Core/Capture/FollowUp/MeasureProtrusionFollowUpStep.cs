@@ -7,7 +7,7 @@ using Blocwerk.Core.Abstractions;
 namespace Blocwerk.Core.Capture.FollowUp;
 
 /// <summary>
-/// Step 3 (only with a photo-real view): how far each hold stands out of its facet, measured from the scene
+/// Step 4 (only with a photo-real view, after the volumes): how far each hold stands out of its facet, measured from the scene
 /// (<see cref="IHoldProtrusionService.MeasureFromPipelineAsync"/>). Runs again after a retrain.
 /// </summary>
 public sealed class MeasureProtrusionFollowUpStep(IHoldProtrusionService protrusion) : ICaptureFollowUpStep

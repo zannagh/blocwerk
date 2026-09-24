@@ -47,6 +47,12 @@ public sealed record Wall3DView
     /// </summary>
     public IReadOnlyList<Wall3DTexture> Textures { get; init; } = [];
 
+    /// <summary>
+    /// Volumes found on the facets without markers (<see cref="Volumes.VolumeDetector"/>), not hidden by an admin.
+    /// Empty without a photo-real scene. Holds placed on them carry the move in their <see cref="Wall3DHold.Protrusion"/>.
+    /// </summary>
+    public IReadOnlyList<Wall3DVolume> Volumes { get; init; } = [];
+
     /// <summary>A photo-real Gaussian-splat scene (<c>.spz</c>) of the wall. Null until one exists.</summary>
     public string? SplatUrl { get; init; }
 
@@ -152,10 +158,22 @@ public sealed record Wall3DHold(
 /// (<see cref="HoldProtrusion"/>): the surface it sits on, its body, and its apex (position relative to
 /// the hold's plane centre). <paramref name="Measured"/> is false for a size estimate. On a volume,
 /// <paramref name="ShiftA"/> / <paramref name="ShiftB"/> move the hold from its flat-mapped plane centre onto
-/// the volume (auto-detected, unreviewed); the photo-real overlay draws it there.
+/// the volume (auto-detected, unreviewed); the photo-real overlay draws it there. A hold placed on a detected
+/// <see cref="Wall3DVolume"/> (<paramref name="VolumeId"/>) sits on its surface in every mode, tilted to the surface
+/// <paramref name="Normal"/> (facet coordinates a, b, height).
 /// </summary>
 public sealed record Wall3DHoldProtrusion(
-    double BaseMm, double HeightMm, double ApexA, double ApexB, double ApexMm, bool Measured, bool OnVolume, double ShiftA = 0, double ShiftB = 0);
+    double BaseMm,
+    double HeightMm,
+    double ApexA,
+    double ApexB,
+    double ApexMm,
+    bool Measured,
+    bool OnVolume,
+    double ShiftA = 0,
+    double ShiftB = 0,
+    double[]? Normal = null,
+    Guid? VolumeId = null);
 
 /// <summary>A hold's part in the highlighted boulder. Serialised by name for the renderer.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter<Wall3DHoldRole>))]
