@@ -4,6 +4,7 @@
    (tilt from vertical, optional) and whether it is truly vertical — two vertical segments facing
    different ways give the solver gravity. Rows are edited in place. *@
 
+<h5 class="glyph-subheading">Marker segments</h5>
 <div class="leaderboard-scroll">
     <table class="leaderboard-table capture-declarations">
         <thead>
@@ -31,7 +32,7 @@
                     <td>
                         <label class="checkbox-label">
                             <input type="checkbox" @bind="row.Vertical" disabled="@Disabled" />
-                            <span>Use as gravity reference</span>
+                            <span>Truly vertical (gravity reference)</span>
                         </label>
                     </td>
                 </tr>
@@ -49,7 +50,7 @@
         </tbody>
     </table>
 </div>
-<p class="hint">@(IdsBySegment is null ? string.Empty : "Pre-filled from the marker plan. ")Angle = tilt from vertical as you know it: pick Slab or Overhang, then type the size (e.g. Overhang 45, Slab 12); leave it at “—” if you don’t know it. Tick “vertical” only for pieces that are truly plumb. Leave a row empty for spare markers reused elsewhere — they are attached to whatever surface they sit on.</p>
+<p class="hint">@(IdsBySegment is null ? string.Empty : "Pre-filled from the marker plan. ")Angle = tilt from vertical as you know it: pick Slab or Overhang, then type the size (e.g. Overhang 45, Slab 12); leave it at “—” if you don’t know it. Tick “Truly vertical” only for pieces that are plumb: they tell the solver which way is down. Leave a row empty for spare markers reused elsewhere — they are attached to whatever surface they sit on.</p>
 
 @code {
     /// <summary>No default sizes: a declared angle is only ever one the admin typed.</summary>

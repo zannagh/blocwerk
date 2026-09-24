@@ -44,6 +44,9 @@
        silently keeping the user-agent button chrome their .razor.css exists to strip. Last, so a
        component's own rules win over the global sheets, which is what scoped CSS is for. *@
     <link rel="stylesheet" href="@Assets["Blocwerk.Web.styles.css"]" />
+    @* Phone-width tightening across pages (paddings, tables, tap targets). After the scoped bundle on
+       purpose: its rules only apply at phone widths and override the desktop-first layout there. *@
+    <link rel="stylesheet" href="@Assets["css/mobile.css"]" />
     <script src="@Assets["js/theme.js"]"></script>
     <script src="@Assets["js/nav.js"]"></script>
     <script src="@Assets["js/prefs.js"]"></script>
@@ -147,6 +150,8 @@
        unchanged and the browser cannot double-zoom on top of it. Everywhere else the page now zooms
        like any other website. The function itself is left in viewport.js, unused. *@
     <script src="@Assets["js/cookie-consent.js"]"></script>
+    @* Keeps the page clear of the bottom banners (consent / install / notifications): --bw-banner-h. *@
+    <script src="@Assets["js/bottom-banners.js"]"></script>
 
     @* Order matters: the queue needs its store, the delegated click handler needs the queue, and
        blazor-boot.js starts the circuit last so the offline path is live even if the circuit

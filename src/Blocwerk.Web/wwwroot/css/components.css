@@ -118,7 +118,10 @@
        padding is `max(6px, env(safe-area-inset-bottom))` and — now that viewport-fit=cover
        makes that inset non-zero — a flat 72 under-budgets the bar by the whole home-indicator
        strip, which is how the Attempt/Send buttons ended up under the tab bar. */
-    --bottomnav-h: calc(66px + max(6px, env(safe-area-inset-bottom, 0px)));
+    --bw-tabbar-h: calc(66px + max(6px, env(safe-area-inset-bottom, 0px)));
+    /* What pages keep clear at the bottom: the tab bar plus the bottom banner showing, if any
+       (--bw-banner-h, set by wwwroot/js/bottom-banners.js), so a banner never covers the page. */
+    --bottomnav-h: calc(var(--bw-tabbar-h) + var(--bw-banner-h, 0px));
     --fold-peek: 140px;     /* reserve below the fold for boulder peek */
     /* Vertical space taken by the chrome ABOVE/around each photo box, subtracted from the window
        so the fullscreen/desktop layout can size the photo to fit without scrolling. Deliberately
@@ -233,10 +236,8 @@
 }
 .rule-group-label { font-size: 0.78rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; }
 .rules-block .radio-label { align-items: flex-start; }
-/* The shared .radio-label / .checkbox-label checked state hardcodes a light pink; use
-   the themed token here so the block stays readable in dark mode. */
-.rules-block .radio-label:has(input:checked),
-.rules-block .checkbox-label:has(input:checked) { background: var(--accent-soft); }
+/* The shared .radio-label / .checkbox-label checked state (pages.css) already uses the themed
+   --secondary tint; nothing to override here any more. */
 .radio-text { display: flex; flex-direction: column; gap: 2px; }
 .radio-text small { font-weight: 400; font-size: 0.75rem; color: var(--text-secondary); }
 .rule-sub { display: flex; flex-direction: column; gap: 6px; margin-left: 14px; padding-left: 10px; border-left: 2px solid var(--border); }

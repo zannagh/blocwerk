@@ -150,5 +150,5 @@ public static class CaptureDeclarationRules
 
     private static string MergeWarning(CaptureSegmentDeclaration s) =>
         $"Segment {s.Index} (“{s.Name.Trim()}”) has no angle, so its markers will be merged into the nearest wall face. "
-        + "Give it an angle (or tick “gravity reference”) to keep it as a face of its own.";
+        + "Give it an angle (or tick “Truly vertical”) to keep it as a face of its own.";
 }

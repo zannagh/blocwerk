@@ -1,0 +1,115 @@
+/* Phone widths (360–430 px): the desktop-first layouts, tightened. Loaded last (BlocwerkApp.razor),
+   so every rule here only has to win at phone width. Three themes of fixes:
+     - space: nested cards each added 16–20px of padding per side, leaving ~290px of a 360px phone
+       for the content; the panes and cards give some of it back;
+     - tables: the settings tables were wider than a phone and got cut at the card edge; they wrap,
+       tighten or become one small card per row;
+     - tap targets: summaries, small buttons and native selects get a 44px hit area.
+   The capture tables are styled here rather than in the capture components' own .razor.css so
+   those components stay untouched. */
+
+/* A photo editor's viewport is 70vh tall by default (the full-page editors). In the settings card
+   the border editor's photo is only as tall as the card is wide, which left half a screen of empty
+   box under it; let the box follow the photo there. */
+.settings-card .segment-settings .photo-viewport:not(.photo-section) { height: auto; max-height: 70vh; }
+
+/* In-text links in hints (e.g. "Wall Settings → panels") in the app's link colour, not the
+   browser's default blue. */
+.hint a:not([class]), .capture-scope a { color: var(--accent); font-weight: 600; text-decoration: none; }
+.hint a:not([class]):hover, .capture-scope a:hover { text-decoration: underline; }
+
+/* The capture form: the "Photos" label sat flush under the paragraph above it. */
+.capture-panel .capture-upload { margin-top: 14px; }
+.capture-panel .capture-upload > label { font-weight: 600; }
+
+/* "Use as panel photo" is its own collapsible step. Collapsed, its bare summary read like the title
+   of the marker-segment rows under it; as a bordered disclosure row it cannot be mistaken for one. */
+.capture-panel-use {
+    margin: 14px 0;
+    padding: 0 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    background: var(--bg-surface-alt);
+}
+.capture-panel-use > summary { min-height: 44px; list-style: none; }
+.capture-panel-use > summary::-webkit-details-marker { display: none; }
+.capture-panel-use > summary::after {
+    content: "▾"; margin-left: auto; color: var(--text-secondary); font-size: 0.85rem; transition: transform 0.18s;
+}
+.capture-panel-use[open] > summary::after { transform: rotate(180deg); }
+.capture-panel-use[open] { padding-bottom: 12px; }
+/* The optional fields after the photo lists sat flush under the hint above them. */
+.capture-panel > .form-group { margin-top: 14px; }
+
+@media (max-width: 560px) {
+    /* Carousel panes and their cards: less padding around the content. */
+    .wall-page { padding: 10px 10px; }
+    .settings-panel { padding: 14px 14px; }
+    .settings-panel + .settings-panel { margin-top: 10px; }
+    .settings-card > .settings-card-summary { min-height: 44px; margin: -10px 0; }
+    .settings-card[open] > .settings-card-summary { margin-bottom: -4px; }
+    /* A panel nested in a card's body (kiosk pairing) drops its own card chrome. */
+    .settings-card-body > .settings-panel { margin-top: 0; padding: 0; background: none; border: none; box-shadow: none; }
+
+    /* Tables: no forced width, tighter cells. */
+    .leaderboard-table { min-width: 0; }
+    .leaderboard-table th, .leaderboard-table td { padding: 8px 6px; }
+    .leaderboard-table .sort-btn { padding: 8px 6px; min-height: 44px; }
+    .segment-settings > summary { min-height: 44px; }
+    :is(.capture-history, .glyph-history, .capture-photos) .btn-link { min-height: 44px; }
+    .role-select { min-height: 40px; padding: 4px 6px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-surface); color: var(--text); }
+    .delete-btn { min-width: 44px; min-height: 44px; margin: -12px -6px -12px 0; }
+    .boulder-edit-btn { min-width: 44px; min-height: 44px; }
+
+    /* Capture history, geometry history and the capture photo lists: one small card per row. Direct
+       children only: a capture's photo picker opens as a table inside its history row. */
+    :is(.capture-history, .glyph-history) > .leaderboard-scroll > .leaderboard-table > thead,
+    .capture-photos > thead { display: none; }
+    :is(.capture-history, .glyph-history) > .leaderboard-scroll > .leaderboard-table > tbody > tr,
+    .capture-photos > tbody > tr {
+        display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px;
+        padding: 10px 0; border-bottom: 1px solid var(--border-light);
+    }
+    :is(.capture-history, .glyph-history) > .leaderboard-scroll > .leaderboard-table > tbody > tr:last-child,
+    .capture-photos > tbody > tr:last-child { border-bottom: none; }
+    :is(.capture-history, .glyph-history) > .leaderboard-scroll > .leaderboard-table > tbody > tr > td,
+    .capture-photos > tbody > tr > td { display: block; padding: 0; border: 0; text-align: left; }
+    .capture-history > .leaderboard-scroll > .leaderboard-table > tbody > tr > td:first-child { font-weight: 600; }
+    .capture-history > .leaderboard-scroll > .leaderboard-table > tbody > tr > td.num::after { content: " photos"; color: var(--text-secondary); }
+    .capture-history > .leaderboard-scroll > .leaderboard-table > tbody > tr > td:nth-child(3),
+    .capture-history > .leaderboard-scroll > .leaderboard-table > tbody > tr.capture-photos-row > td { flex: 1 1 100%; }
+    .glyph-history > .leaderboard-scroll > .leaderboard-table > tbody > tr > td:first-child { font-weight: 600; }
+    .glyph-history > .leaderboard-scroll > .leaderboard-table > tbody > tr > td.num::before { content: "error "; color: var(--text-secondary); }
+    .glyph-history > .leaderboard-scroll > .leaderboard-table > tbody > tr > td:nth-child(3) {
+        flex: 1 1 100%; order: 3; font-size: 0.85rem; color: var(--text-secondary);
+    }
+    .glyph-history .glyph-history-action { margin-left: auto; }
+    .capture-photos > tbody > tr > td.capture-photo-name { flex: 1 1 100%; max-width: none; font-weight: 600; word-break: break-all; }
+    .capture-photos > tbody > tr > td.num { color: var(--text-secondary); }
+    .capture-photos .glyph-history-action { margin-left: auto; }
+    .capture-panel-use .capture-photos > tbody > tr > td.num::before { content: "markers "; }
+    .capture-panel-use .capture-photos > tbody > tr > td:last-child { flex: 1 1 100%; }
+
+    /* The measured-geometry table (six columns): the facet and its segment on one line, the four
+       numbers labelled underneath. */
+    .glyph-facet-table > thead { display: none; }
+    .glyph-facet-table > tbody > tr {
+        display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px;
+        padding: 8px 0; border-bottom: 1px solid var(--border-light); font-size: 0.85rem;
+    }
+    .glyph-facet-table > tbody > tr:last-child { border-bottom: none; }
+    .glyph-facet-table > tbody > tr > td { display: block; padding: 0; border: 0; text-align: left; }
+    .glyph-facet-table > tbody > tr > td:first-child { font-weight: 700; }
+    .glyph-facet-table > tbody > tr > td:nth-child(2) { flex: 1 1 60%; font-weight: 600; }
+    .glyph-facet-table > tbody > tr > td.num::before { color: var(--text-secondary); font-weight: 400; }
+    .glyph-facet-table > tbody > tr > td:nth-child(3)::before { content: "declared "; }
+    .glyph-facet-table > tbody > tr > td:nth-child(4)::before { content: "measured "; }
+    .glyph-facet-table > tbody > tr > td:nth-child(5)::before { content: "yaw "; }
+    .glyph-facet-table > tbody > tr > td:nth-child(6)::before { content: "markers "; }
+}
+
+/* The narrowest phones: the four-column wall leaderboard still ran past the card; smaller type. */
+@media (max-width: 400px) {
+    .leaderboard-table { font-size: 0.82rem; }
+    .leaderboard-table th, .leaderboard-table td, .leaderboard-table .sort-btn { padding-left: 4px; padding-right: 4px; }
+}

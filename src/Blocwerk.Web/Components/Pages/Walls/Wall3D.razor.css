@@ -27,6 +27,13 @@
 
 .wall3d-note { font-size: 0.8rem; color: var(--text-secondary); }
 
+/* Phone: the head line (back link, hold counts) took two lines and ~100px above the stage. */
+@media (max-width: 560px) {
+    .wall3d-head { gap: 0 10px; padding: 2px 12px; }
+    .wall3d-head .back-link { display: inline-flex; align-items: center; min-height: 40px; }
+    .wall3d-note { font-size: 0.75rem; }
+}
+
 .wall3d-stage {
     flex: 1;
     min-height: 0;
