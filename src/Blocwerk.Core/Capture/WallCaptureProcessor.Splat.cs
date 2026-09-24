@@ -155,6 +155,7 @@ public sealed partial class WallCaptureProcessor
         // The level-of-detail ladder (SplatLodLadder): the view starts small and steps up while the
         // device keeps up, so a phone never has to survive the full scene. Supersedes the mobile copy.
         var (count, levels) = await LevelsOfDetailAsync(spz, modelId, ct);
+        var uncleaned = await DownloadUncleanedAsync(frameJson, jobId, client, modelId, ct);
         var row = new WallGeometrySplat
         {
             GeometryModelId = modelId,
@@ -162,6 +163,8 @@ public sealed partial class WallCaptureProcessor
             SizeBytes = spz.LongLength,
             SplatCount = count,
             LodLevelsJson = SplatLodLadder.Serialize(levels),
+            UncleanedStoredPath = uncleaned is null ? null : await files.SaveAsync(uncleaned, ".spz", ct),
+            UncleanedSizeBytes = uncleaned?.LongLength,
             FrameJson = frameJson,
         };
 
@@ -178,6 +181,30 @@ public sealed partial class WallCaptureProcessor
         logger.LogInformation(
             "Stored the photo-real view of model {ModelId} ({Bytes} bytes, alignment residual {Residual})",
             modelId, row.SizeBytes, CaptureSplatDocuments.ResidualText(frameJson));
+    }
+
+    /// <summary>
+    /// The scene as trained, before the worker's floater clean-up (kept so the clean-up can be
+    /// reverted), or null when the worker did not clean it. A failed download only loses that copy.
+    /// </summary>
+    private async Task<byte[]?> DownloadUncleanedAsync(
+        string frameJson, string jobId, IComputeJobClient client, Guid modelId, CancellationToken ct)
+    {
+        if (CaptureSplatDocuments.UncleanedFile(frameJson) is not { } name)
+        {
+            return null;
+        }
+
+        try
+        {
+            var bytes = await client.DownloadFileAsync(jobId, name, ct);
+            return bytes.Length >= 32 && bytes[0] == 0x1f && bytes[1] == 0x8b ? bytes : null;
+        }
+        catch (ComputeJobException ex)
+        {
+            logger.LogWarning("No uncleaned copy of the photo-real view of model {ModelId}: {Reason}", modelId, ex.Message);
+            return null;
+        }
     }
 
     /// <summary>The ladder's levels (saved), or none (small scene, or a layout the pruner does not read).</summary>

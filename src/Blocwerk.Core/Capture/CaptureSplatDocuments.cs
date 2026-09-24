@@ -20,6 +20,9 @@ public static class CaptureSplatDocuments
 
     public const string FrameFile = "frame.json";
 
+    /// <summary>The additive <c>frame.json</c> field reporting the worker's floater clean-up (per-rule counts).</summary>
+    public const string CleanupField = "cleanup";
+
     /// <summary>The additive <c>frame.json</c> field holding the fine alignment (its own <c>toWorldMm</c> and residuals).</summary>
     public const string RefinementField = "refinement";
 
@@ -142,6 +145,28 @@ public static class CaptureSplatDocuments
             }
 
             return WorldMatrixOrNull(root);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The worker's file holding the scene BEFORE its floater clean-up (<c>cleanup.rawFile</c>, only
+    /// when the clean-up was applied), or null. Only a bare <c>.spz</c> file name is accepted.
+    /// </summary>
+    public static string? UncleanedFile(string frameJson)
+    {
+        try
+        {
+            var cleanup = JsonNode.Parse(frameJson)?[CleanupField];
+            var applied = cleanup?["applied"] is JsonValue a && a.TryGetValue<bool>(out var on) && on;
+            var name = applied && cleanup?["rawFile"] is JsonValue f && f.TryGetValue<string>(out var s) ? s : null;
+            return name is not null && name.EndsWith(".spz", StringComparison.Ordinal)
+                                    && name == Path.GetFileName(name) && !name.StartsWith('.')
+                ? name
+                : null;
         }
         catch (JsonException)
         {

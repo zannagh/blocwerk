@@ -51,6 +51,17 @@ public class WallGeometrySplat
     /// </summary>
     public string? LodLevelsJson { get; set; }
 
+    /// <summary>
+    /// Stored name of the scene as trained, BEFORE the worker's floater clean-up (the worker's
+    /// <c>wall.raw.spz</c>, <c>docker/splat-worker/splatworker/cleanup.py</c>), kept so the clean-up can
+    /// be reverted; null when the worker did not clean the scene or the row predates the clean-up.
+    /// </summary>
+    [MaxLength(128)]
+    public string? UncleanedStoredPath { get; set; }
+
+    /// <summary>Byte size of <see cref="UncleanedStoredPath"/>; null without it.</summary>
+    public long? UncleanedSizeBytes { get; set; }
+
     /// <summary>The worker's <c>frame.json</c> as returned (matrix, toWorldMm, crop, alignment, stats).</summary>
     [Required]
     public required string FrameJson { get; set; }

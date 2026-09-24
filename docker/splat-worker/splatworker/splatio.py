@@ -125,6 +125,26 @@ def write_spz(splats, path):
     return len(data)
 
 
+def spz_subset(data, keep):
+    """The .spz `data` with only the splats where `keep` is true, byte for byte (no re-quantisation):
+    each per-splat array of the file is filtered as stored. Any SH degree."""
+    raw = gzip.decompress(data)
+    magic, version, n, sh, fb, flags, res = struct.unpack("<IIIBBBB", raw[:16])
+    if magic != SPZ_MAGIC or version != 2:
+        raise ValueError("not an spz v2 file")
+    keep = np.asarray(keep, bool)
+    if len(keep) != n:
+        raise ValueError(f"mask has {len(keep)} entries for {n} splats")
+    sh_bytes = {0: 0, 1: 9, 2: 24, 3: 45}[sh]
+    parts, o = [struct.pack("<IIIBBBB", magic, version, int(keep.sum()), sh, fb, flags, res)], 16
+    for width in (9, 1, 3, 3, 3, sh_bytes):  # positions, alphas, colours, scales, rotations, SH rest
+        block = np.frombuffer(raw[o:o + width * n], np.uint8).reshape(n, width) if width else None
+        o += width * n
+        if block is not None:
+            parts.append(block[keep].tobytes())
+    return gzip.compress(b"".join(parts), compresslevel=9, mtime=0)
+
+
 def read_spz(data):
     """Decoder for tests / sanity checks: returns dict(xyz, alpha, rgb_u8, log_scale, quat_xyz)."""
     raw = gzip.decompress(data)

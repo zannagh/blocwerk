@@ -18,7 +18,7 @@ run on any GPU machine: the realistic one for Blocwerk is the owner's Mac.
 |---|---|
 | `photos` | 3–400 files (`.jpg/.jpeg/.png/.webp/.tif`), ≤ `MAX_PHOTO_MB` each. File name stem = the photo's name; to align, it must equal the geometry camera's `image` (e.g. `IMG_2770.jpg`). A stem starting with **`vf_`** (`vf_0001.jpg`, … in video order) is an **auxiliary video frame** (see below): trained on, never aligned with, not counted towards `MIN_PHOTOS`. |
 | `geometry` | optional: a solved wall-geometry document (`tools/glyph/wall-geometry.schema.md`) → enables `align` and a crop box from the facets |
-| `options` | optional JSON: `quality` (`draft`\|`high`\|`max`; default `high`, see **Quality profiles**), `maxSteps` (the profile's; 100–100000, overrides it), `maxImageEdge` (the profile's photo edge; 480–4096, overrides it), `matcher` (`auto`\|`exhaustive`\|`sequential`\|`pairs`; auto = `pairs` when `vf_` frames came along, else exhaustive up to 150 photos), `cropMarginMm` (400), `spz` (true). Unknown keys → 422. |
+| `options` | optional JSON: `quality` (`draft`\|`high`\|`max`; default `high`, see **Quality profiles**), `maxSteps` (the profile's; 100–100000, overrides it), `maxImageEdge` (the profile's photo edge; 480–4096, overrides it), `matcher` (`auto`\|`exhaustive`\|`sequential`\|`pairs`; auto = `pairs` when `vf_` frames came along, else exhaustive up to 150 photos), `cropMarginMm` (400), `spz` (true), `colourMatch` (true), `cleanup` (true: the floater clean-up below; needs `geometry`). Unknown keys → 422. |
 | `callbackUrl` | optional (protocol) |
 
 `202 {jobId, status}`; then `GET /v1/jobs/{id}` (status, `progress` 0..1, `stage`, `stageDetail`),
@@ -66,6 +66,27 @@ SH degree 0, checked against Spark 2.2's own `writeSpz` and loaded/rendered in a
 COLMAP frame of the run** (rotating SH coefficients is not worth it at degree 0 and the transform is
 one matrix); apply `matrix` in the viewer. Without `geometry`: `aligned: false`, identity matrix,
 crop = 1–99 % bounds of the splats + 15 %.
+
+**Floater clean-up** (`splatworker/cleanup.py`, CPU, numpy only, a few seconds; `options.cleanup`, on
+by default, needs `geometry`). Right after align + refine + crop, every splat gets a verdict in the
+wall world (gravity up). KEPT: splats in a slab of a facet (outline + 60 mm, 60 mm behind to 180 mm in
+front, unless the splat sticks out of it: a hair), in the floor/mat band (the kickboard's bottom edge
+−120 … +450 mm), and the room's side wall (500 mm behind a side facet's plane, past its outline too:
+the window and the clock stay). REMOVED, first rule wins: `aboveWallTop` (above the highest marker
++ 100 mm, over the wall's lateral extent only), `behindWall` (behind a front-facing facet, or below the
+floor), `seenThrough` (a free-space carving: 50 mm cells that ≥ 3 cameras (photos and video frames)
+look through on their way to surface evidence, ending 250 mm short of it; ≥ 8 when the cell holds
+evidence itself), `needle` (long thin splats away from surfaces; very long ones anywhere), `sparse`
+(no surface evidence within 100 mm: evidence = cells whose compact splats' opacities sum to ≥ 1).
+Thresholds: `CleanupParams`. frame.json gets `cleanup {applied, rawFile, splats, kept, removed{rule:
+count}, floorMm, wallTopMm, surfaceCells, carvedCells, cameras, params}` (or `{applied: false,
+reason}`; a failed clean-up keeps every splat), `stats.splatsBeforeCleanup`, and the scene before the
+clean-up is exported too as **`wall.raw.spz`** (the app keeps it to revert). On The Attic (1.27 M
+splats) it removed 1085 above the top, 30382 behind the wall, 6779 seen through, 621 needles and
+2168 sparse (3.2 %, but most of the visible fog and lines). Standalone, on an existing scene (filters
+the `.spz` byte for byte; carves with the geometry's photo cameras):
+`python -m splatworker.cleanup_run --spz wall.spz --frame frame.json --geometry geometry.json --out
+wall.clean.spz [--report r.json] [--set carve_min_cameras=4 …]`.
 
 **Privacy.** Phone photos carry GPS. The photo size is checked from the header before decoding (Pillow's
 decompression-bomb warning is an error here too). Each photo is decoded *while the upload streams in*, the EXIF

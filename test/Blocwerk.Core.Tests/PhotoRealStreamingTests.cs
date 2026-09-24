@@ -27,7 +27,7 @@ public class PhotoRealStreamingTests
         var splat = new WallGeometrySplat
         {
             StoredPath = "full.spz", SizeBytes = 9, MobileStoredPath = "m.spz", MobileSizeBytes = 5, FrameJson = "{}",
-            LodLevelsJson = SplatLodLadder.Serialize([new(40_000, "a.spz", 1)]),
+            LodLevelsJson = SplatLodLadder.Serialize([new(40_000, "a.spz", 1)]), UncleanedStoredPath = "raw.spz",
         };
 
         Assert.Equal(("a.spz", 1L, "geometry-splat-lod40000"), WallGeometrySplats.Select(splat, "40000"));
@@ -35,7 +35,7 @@ public class PhotoRealStreamingTests
         Assert.Equal("full.spz", WallGeometrySplats.Select(splat, "120000").Path);
         Assert.Equal("full.spz", WallGeometrySplats.Select(splat, "-1").Path);
         Assert.Equal("full.spz", WallGeometrySplats.Select(splat, null).Path);
-        Assert.Equal(["full.spz", "m.spz", "a.spz"], SplatLodLadder.Files(splat));
+        Assert.Equal(["full.spz", "m.spz", "a.spz", "raw.spz"], SplatLodLadder.Files(splat));
     }
 
     [Fact]

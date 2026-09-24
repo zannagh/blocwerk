@@ -119,6 +119,9 @@ def test_alignment_uses_the_photos_only(tmp_path, monkeypatch):
     class S:
         xyz = np.zeros((2, 3))
 
+        def __len__(self):
+            return 2
+
         def subset(self, keep):
             return self
 

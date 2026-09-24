@@ -60,7 +60,12 @@ public static class SplatLodLadder
     public static string Serialize(IEnumerable<SplatLodLevel> levels) =>
         JsonSerializer.Serialize(levels.OrderBy(l => l.Splats).ToList(), Json);
 
-    /// <summary>Every stored file of a splat row: the full scene, the legacy mobile copy and the ladder.</summary>
+    /// <summary>
+    /// Every stored file of a splat row: the full scene, the legacy mobile copy, the ladder and the
+    /// scene before the floater clean-up.
+    /// </summary>
     public static IEnumerable<string?> Files(WallGeometrySplat splat) =>
-        new[] { splat.StoredPath, splat.MobileStoredPath }.Concat(Parse(splat.LodLevelsJson).Select(l => l.StoredPath));
+        new[] { splat.StoredPath, splat.MobileStoredPath }
+            .Concat(Parse(splat.LodLevelsJson).Select(l => l.StoredPath))
+            .Append(splat.UncleanedStoredPath);
 }
