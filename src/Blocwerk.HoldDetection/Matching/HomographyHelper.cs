@@ -153,7 +153,7 @@ internal static class HomographyHelper
         && ratioMatches >= MinRescueRatioMatches
         && textureAnchors() >= MinRescueTextureAnchors;
 
-    private static double[,] ToArray(Mat m)
+    internal static double[,] ToArray(Mat m)
     {
         var arr = new double[3, 3];
         for (int r = 0; r < 3; r++)

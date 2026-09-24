@@ -22,8 +22,19 @@ public static class CameraResection
     /// <param name="world">World points, mm.</param>
     /// <param name="image">Their photo positions (any consistent 2D scale).</param>
     /// <returns>The centre.</returns>
-    public static double[]? Centre(IReadOnlyList<double[]> world, IReadOnlyList<(double X, double Y)> image)
+    public static double[]? Centre(IReadOnlyList<double[]> world, IReadOnlyList<(double X, double Y)> image) =>
+        Resect(world, image)?.Centre;
+
+    /// <summary>
+    /// The resection with its fit: the centre, how many pairs survived the trimming, and their median
+    /// reprojection error (in the <paramref name="image"/> units); null like <see cref="Centre"/>.
+    /// </summary>
+    /// <param name="world">World points, mm.</param>
+    /// <param name="image">Their photo positions (any consistent 2D scale).</param>
+    /// <returns>The resection.</returns>
+    public static CameraResectionFit? Resect(IReadOnlyList<double[]> world, IReadOnlyList<(double X, double Y)> image)
     {
+        var median = double.NaN;
         var keep = Enumerable.Range(0, world.Count).ToList();
         double[]? p = null;
         for (var round = 0; round < 4 && keep.Count >= MinPairs; round++)
@@ -35,7 +46,7 @@ public static class CameraResection
             }
 
             var errors = keep.Select(i => (Index: i, Error: ReprojError(p, world[i], image[i]))).ToList();
-            var median = errors.Select(e => e.Error).OrderBy(e => e).ElementAt(errors.Count / 2);
+            median = errors.Select(e => e.Error).OrderBy(e => e).ElementAt(errors.Count / 2);
             var next = errors.Where(e => e.Error <= Math.Max(3 * median, 1e-6)).Select(e => e.Index).ToList();
             if (next.Count == keep.Count)
             {
@@ -45,7 +56,9 @@ public static class CameraResection
             keep = next;
         }
 
-        return p is null || keep.Count < MinPairs ? null : NullSpace(p);
+        return p is null || keep.Count < MinPairs || NullSpace(p) is not { } centre
+            ? null
+            : new CameraResectionFit(centre, keep.Count, median);
     }
 
     /// <summary>Least-squares P (p34 = 1) on Hartley-normalised points, denormalised back.</summary>

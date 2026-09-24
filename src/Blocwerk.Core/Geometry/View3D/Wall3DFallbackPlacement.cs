@@ -23,7 +23,17 @@ public static class Wall3DFallbackPlacement
             .GroupBy(f => f.Id!, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.First().ExtentMm!.Value, StringComparer.Ordinal);
 
-    /// <summary>Places the hold, or null when it has no panel photo or the photo maps onto no known facet.</summary>
+    /// <summary>
+    /// How far outside its facet's extent an approximate placement may land and still be drawn. Beyond it the
+    /// photo mapping is extrapolated onto empty space (The Attic: 27 kickboard holds floated between the two
+    /// kickboard facets), so the hold is counted as not measured instead of drawn in the air.
+    /// </summary>
+    public const double OffFacetMarginMm = 50;
+
+    /// <summary>
+    /// Places the hold, or null when it has no panel photo, the photo maps onto no known facet, or the placement
+    /// lands off its facet's extent.
+    /// </summary>
     /// <param name="hold">An unplaced live hold.</param>
     /// <param name="projector">The wall's projector.</param>
     /// <param name="extents">Known facet extents.</param>
@@ -40,9 +50,12 @@ public static class Wall3DFallbackPlacement
             return null;
         }
 
-        return projector.Place(hold, extents) is { } fit && frames.TryGetValue(fit.FacetId, out var frame)
-            ? (fit, frame)
-            : null;
+        if (projector.Place(hold, extents) is not { } fit || !frames.TryGetValue(fit.FacetId, out var frame))
+        {
+            return null;
+        }
+
+        return extents.TryGetValue(fit.FacetId, out var e) && !OnFacet(e, fit.PlaneAMm, fit.PlaneBMm) ? null : (fit, frame);
     }
 
     /// <summary>The hold as drawn: its outline mapped through the placement, sized from it when unmeasured.</summary>
@@ -60,4 +73,8 @@ public static class Wall3DFallbackPlacement
         var shape = HoldShapeProjector.Project(hold, placed.WidthMm, placed.HeightMm, (fit.Map, fit.Source));
         return placed with { Shape = shape, PlacementApproximate = true };
     }
+
+    private static bool OnFacet(PlaneRectMm e, double a, double b) =>
+        a >= e.AMin - OffFacetMarginMm && a <= e.AMax + OffFacetMarginMm
+        && b >= e.BMin - OffFacetMarginMm && b <= e.BMax + OffFacetMarginMm;
 }

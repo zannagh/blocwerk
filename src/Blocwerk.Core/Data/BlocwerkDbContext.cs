@@ -182,6 +182,7 @@ public partial class BlocwerkDbContext : DbContext
         ConfigureWallCapture(modelBuilder);
         ConfigureWallGeometrySplat(modelBuilder);
         ConfigureHoldOutlineUpgrade(modelBuilder);
+        ConfigureHoldPlacement(modelBuilder);
         ConfigureMarkerPlan(modelBuilder);
     }
 

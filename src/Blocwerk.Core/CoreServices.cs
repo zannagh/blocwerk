@@ -152,13 +152,16 @@ public static class CoreServices
         {
             var inner = sp.GetRequiredService<ApiKeyService>();
             var kioskContext = sp.GetService<IKioskContext>();
-            return kioskContext is null ? inner : new KioskGuardedApiKeyService(inner, kioskContext);
+            return kioskContext is null
+                ? inner
+                : new KioskGuardedApiKeyService(inner, kioskContext, sp.GetService<IApiKeySessionContext>());
         });
         builder.Services.AddScoped<IKioskService, KioskService>();
         builder.Services.AddScoped<IWallSegmentService, WallSegmentService>();
         builder.Services.AddScoped<IWallGlyphService, WallGlyphService>();
         builder.Services.AddScoped<IHoldOutlineUpgradeService, HoldOutlineUpgradeService>();
         builder.Services.AddScoped<IHoldFootprintService, HoldFootprintService>();
+        builder.Services.AddScoped<IHoldTexturePlacementService, HoldTexturePlacementService>();
         builder.Services.AddScoped<IHoldProtrusionService, HoldProtrusionService>();
         builder.Services.AddSingleton<HoldRefinementQueue>();
         builder.Services.AddSingleton<IHoldRefinementQueue>(sp => sp.GetRequiredService<HoldRefinementQueue>());

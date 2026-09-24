@@ -53,6 +53,8 @@
             <button class="btn-secondary" @onclick="RefineFootprintsAsync" disabled="@busy">Refine 3D hold shapes</button>
         </div>
 
+        <WallHoldPlacement WallId="WallId" ShareToken="@ShareToken" />
+
         @if (busy)
         {
             <p class="loading-small">Looking at every wall photo — this can take a minute…</p>

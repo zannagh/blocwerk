@@ -190,11 +190,22 @@ public sealed class Wall3DViewService(
             }
         }
 
-        return maps.Count == 0 ? view : Wall3DPhotoOutlines.Apply(view, doc, maps, SolvedCamera.ParseAll(json), PanelCameraPerHold(wall, doc));
+        if (maps.Count == 0)
+        {
+            return view;
+        }
+
+        var perHold = await PanelCameraPerHoldAsync(db, wall, doc, ct);
+        return Wall3DPhotoOutlines.Apply(view, doc, maps, SolvedCamera.ParseAll(json), perHold);
     }
 
-    /// <summary>Each live hold's panel-photo camera centre, resected from the placed holds of that photo.</summary>
-    private static Dictionary<Guid, double[]> PanelCameraPerHold(Wall wall, WallGeometryDocument doc)
+    /// <summary>
+    /// Each live hold's panel-photo camera centre (<see cref="PanelCameraEstimator"/>): resected from the placed
+    /// holds of that photo, or a planar pose from the photo's size and EXIF focal length when they are coplanar.
+    /// Loaded once per view, reading only each photo's header.
+    /// </summary>
+    private static async Task<Dictionary<Guid, double[]>> PanelCameraPerHoldAsync(
+        BlocwerkDbContext db, Wall wall, WallGeometryDocument doc, CancellationToken ct)
     {
         var frames = doc.Segments.SelectMany(s => s.Facets)
             .Where(f => !string.IsNullOrEmpty(f.Id))
@@ -203,7 +214,9 @@ public sealed class Wall3DViewService(
             .GroupBy(x => x.Id)
             .ToDictionary(g => g.Key, g => g.First().Frame!, StringComparer.Ordinal);
         var live = wall.Holds.Where(h => h.Generation <= wall.CurrentGeneration).ToList();
-        var cameras = HoldFootprintRefiner.PanelCameras(live, frames);
+        var placed = live.Where(h => h.FacetId is { } f && frames.ContainsKey(f) && h.PlaneAMm.HasValue && h.PlaneBMm.HasValue);
+        var photos = await PanelPhotoInfoLoader.LoadAsync(db, wall.Id, placed.Select(HoldPlaneProjector.PhotoOf), ct);
+        var cameras = HoldFootprintRefiner.PanelCameras(live, frames, photos);
         return live
             .Where(h => cameras.ContainsKey(HoldPlaneProjector.PhotoOf(h)))
             .ToDictionary(h => h.Id, h => cameras[HoldPlaneProjector.PhotoOf(h)]);

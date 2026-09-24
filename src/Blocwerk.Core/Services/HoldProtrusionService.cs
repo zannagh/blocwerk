@@ -56,10 +56,9 @@ public sealed class HoldProtrusionService(
         var json = await db.WallGeometryModels.AsNoTracking()
             .Where(m => m.WallId == wallId && m.IsActive).Select(m => m.Json).FirstOrDefaultAsync(ct);
         var splat = await WallGeometrySplats.FindActiveAsync(db, wallId, ct);
-        var generation = await db.Walls.Where(w => w.Id == wallId).Select(w => (int?)w.CurrentGeneration).FirstOrDefaultAsync(ct);
         var matrix = splat is null ? null : CaptureSplatDocuments.WorldMatrix(splat.FrameJson);
         var spz = splat is null ? null : await files.ReadAsync(splat.StoredPath, ct);
-        if (json is null || matrix is null || spz is null || generation is null)
+        if (json is null || matrix is null || spz is null)
         {
             return null;
         }
@@ -69,8 +68,8 @@ public sealed class HoldProtrusionService(
             .Select(f => (f.Id, Frame: FacetFrame.From(f)))
             .Where(f => !string.IsNullOrEmpty(f.Id) && f.Frame is not null)
             .ToDictionary(f => f.Id!, f => f.Frame!);
-        var live = await db.Holds.AsNoTracking()
-            .Where(h => h.WallId == wallId && h.Generation <= generation && h.FacetId != null && h.PlaneAMm != null && h.PlaneBMm != null)
+        var live = await (await LiveWallHolds.QueryAsync(db, wallId, ct)).AsNoTracking()
+            .Where(h => h.FacetId != null && h.PlaneAMm != null && h.PlaneBMm != null)
             .ToListAsync(ct);
         var markers = await Wall3DPhotoMarkerLoader.LoadAsync(db, wallId, ct);
         var projector = HoldPlaneProjector.Create(live.Where(h => frames.ContainsKey(h.FacetId!)), doc, markers);

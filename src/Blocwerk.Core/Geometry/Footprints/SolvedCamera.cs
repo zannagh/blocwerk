@@ -12,7 +12,7 @@ namespace Blocwerk.Core.Geometry.Footprints;
 /// intrinsics <c>K</c> (row-major 3×3, pixels), OpenCV distortion (k1, k2, p1, p2[, k3]) and the
 /// world→camera pose <c>x_cam = R·X + t</c> (world millimetres).
 /// </summary>
-/// <param name="Image">The photo's base name, e.g. <c>IMG_2770</c>.</param>
+/// <param name="Image">The photo's name towards the geometry worker, e.g. <c>p01</c> (<see cref="Capture.CaptureComputeDocuments.PhotoName"/>).</param>
 /// <param name="Width">Pixel width the intrinsics refer to.</param>
 /// <param name="Height">Pixel height the intrinsics refer to.</param>
 /// <param name="K">Intrinsics, row-major.</param>

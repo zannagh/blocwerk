@@ -31,4 +31,10 @@ public sealed record HoldMetric(
     /// placed holds (<see cref="Geometry.View3D.HoldPlaneProjector"/>), when the photo has no markers.
     /// </summary>
     public const string HoldFit = "hold-fit";
+
+    /// <summary>
+    /// Metric source of a hold placed by registering its panel photo onto the 3D model's facet textures
+    /// ("place existing holds on the 3D model"), for photos taken before any marker was on the wall.
+    /// </summary>
+    public const string TextureRegistration = "texture-registration";
 }

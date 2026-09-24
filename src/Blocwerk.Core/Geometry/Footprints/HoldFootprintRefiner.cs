@@ -13,14 +13,20 @@ namespace Blocwerk.Core.Geometry.Footprints;
 /// <param name="MultiView">Holds intersected from ≥ 2 views.</param>
 /// <param name="SingleView">Holds that fell back to the single-view correction.</param>
 /// <param name="Skipped">Traced holds with no mapping or no panel camera.</param>
-public sealed record HoldFootprintRefinement(IReadOnlyDictionary<Guid, HoldFootprint> Footprints, int MultiView, int SingleView, int Skipped);
+/// <param name="PanelCameras">How each hold photo's camera was estimated (for the log).</param>
+public sealed record HoldFootprintRefinement(
+    IReadOnlyDictionary<Guid, HoldFootprint> Footprints,
+    int MultiView,
+    int SingleView,
+    int Skipped,
+    IReadOnlyDictionary<Wall3DPhotoKey, PanelCameraEstimate>? PanelCameras = null);
 
 /// <summary>
 /// Batch step: for every placed, traced hold, its silhouette in the panel photo (mapped onto the facet
 /// the way the 3D view maps it) plus its silhouettes in the capture photos that see it (the capture's
 /// solved cameras locate the hold there; the outline segmenter traces it, seeded at that spot), turned
-/// into a footprint by <see cref="HoldFootprintEstimator"/>. The panel photo's camera is resected from
-/// its placed holds. No I/O: photos are opened through a callback, one at a time.
+/// into a footprint by <see cref="HoldFootprintEstimator"/>. The panel photo's camera is estimated from
+/// its placed holds (<see cref="PanelCameraEstimator"/>). No I/O: photos are opened through a callback, one at a time.
 /// </summary>
 public static class HoldFootprintRefiner
 {
@@ -37,6 +43,7 @@ public static class HoldFootprintRefiner
     /// <param name="open">Opens one capture photo's outline session (at the photo's real size), or null.</param>
     /// <param name="projector">The panel-photo → facet mappings the 3D view uses.</param>
     /// <param name="only">Refine only these holds (the rest still resect the panel cameras); null for all.</param>
+    /// <param name="panelPhotos">Each hold photo's size and EXIF focal length, for a planar camera pose; null for DLT only.</param>
     /// <returns>The refinement.</returns>
     public static HoldFootprintRefinement Refine(
         IReadOnlyList<Hold> live,
@@ -44,10 +51,12 @@ public static class HoldFootprintRefiner
         IReadOnlyList<SolvedCamera> cameras,
         Func<SolvedCamera, IHoldOutlineSession?> open,
         HoldPlaneProjector projector,
-        IReadOnlySet<Guid>? only = null)
+        IReadOnlySet<Guid>? only = null,
+        IReadOnlyDictionary<Wall3DPhotoKey, PanelPhotoInfo>? panelPhotos = null)
     {
         var frames = Frames(doc);
-        var panelCams = PanelCameras(live, frames);
+        var estimates = PanelCameraEstimates(live, frames, panelPhotos);
+        var panelCams = estimates.Where(e => e.Value.Centre is not null).ToDictionary(e => e.Key, e => e.Value.Centre!);
         var primaries = new Dictionary<Guid, (Hold Hold, FacetFrame Frame, FootprintView View)>();
         var skipped = 0;
         foreach (var hold in live.Where(h => only is null || only.Contains(h.Id)))
@@ -79,25 +88,35 @@ public static class HoldFootprintRefiner
         }
 
         var multi = result.Values.Count(f => f.Source == HoldFootprintSource.MultiView);
-        return new HoldFootprintRefinement(result, multi, result.Count - multi, skipped + (primaries.Count - result.Count));
+        return new HoldFootprintRefinement(result, multi, result.Count - multi, skipped + (primaries.Count - result.Count), estimates);
     }
 
-    /// <summary>The camera centre of each hold photo, resected from its placed holds (all facets).</summary>
-    public static Dictionary<Wall3DPhotoKey, double[]> PanelCameras(IReadOnlyList<Hold> live, IReadOnlyDictionary<string, FacetFrame> frames)
-    {
-        var result = new Dictionary<Wall3DPhotoKey, double[]>();
-        var placed = live.Where(h => h.FacetId is { } f && frames.ContainsKey(f) && h.PlaneAMm.HasValue && h.PlaneBMm.HasValue);
-        foreach (var group in placed.GroupBy(HoldPlaneProjector.PhotoOf))
-        {
-            var holds = group.OrderBy(h => h.Id).ToList();
-            var world = holds.Select(h => frames[h.FacetId!].ToWorld(h.PlaneAMm!.Value, h.PlaneBMm!.Value)).ToList();
-            if (CameraResection.Centre(world, holds.Select(h => (h.X, h.Y)).ToList()) is { } c)
-            {
-                result[group.Key] = c;
-            }
-        }
+    /// <summary>The camera centre of each hold photo, estimated from its placed holds (all facets).</summary>
+    /// <param name="live">The wall's live holds.</param>
+    /// <param name="frames">The model's facet frames.</param>
+    /// <param name="photos">Each hold photo's size and focal length (enables the planar pose), or null.</param>
+    /// <returns>The centres of the photos whose estimate passed its checks.</returns>
+    public static Dictionary<Wall3DPhotoKey, double[]> PanelCameras(
+        IReadOnlyList<Hold> live, IReadOnlyDictionary<string, FacetFrame> frames, IReadOnlyDictionary<Wall3DPhotoKey, PanelPhotoInfo>? photos = null) =>
+        PanelCameraEstimates(live, frames, photos)
+            .Where(e => e.Value.Centre is not null)
+            .ToDictionary(e => e.Key, e => e.Value.Centre!);
 
-        return result;
+    /// <summary>Every hold photo's camera estimate, accepted or not (for the log).</summary>
+    /// <param name="live">The wall's live holds.</param>
+    /// <param name="frames">The model's facet frames.</param>
+    /// <param name="photos">Each hold photo's size and focal length, or null.</param>
+    /// <returns>The estimate per photo.</returns>
+    public static Dictionary<Wall3DPhotoKey, PanelCameraEstimate> PanelCameraEstimates(
+        IReadOnlyList<Hold> live, IReadOnlyDictionary<string, FacetFrame> frames, IReadOnlyDictionary<Wall3DPhotoKey, PanelPhotoInfo>? photos = null)
+    {
+        var placed = live.Where(h => h.FacetId is { } f && frames.ContainsKey(f) && h.PlaneAMm.HasValue && h.PlaneBMm.HasValue);
+        return placed.GroupBy(HoldPlaneProjector.PhotoOf).ToDictionary(
+            g => g.Key,
+            g => PanelCameraEstimator.Estimate(
+                g.OrderBy(h => h.Id).Select(h => new PlacedPhotoPoint(h.FacetId!, h.PlaneAMm!.Value, h.PlaneBMm!.Value, h.X, h.Y)).ToList(),
+                frames,
+                photos?.GetValueOrDefault(g.Key)));
     }
 
     private static Dictionary<string, FacetFrame> Frames(WallGeometryDocument doc)

@@ -1,0 +1,69 @@
+@* Wall-settings sub-section (inside the admin "Hold outlines" block, next to "Refine 3D hold shapes"): place the
+   wall's existing holds on its 3D model by matching the panel photos to the model's textures, with the last
+   run's summary and its revert. Hidden on a kiosk tablet and behind a share link — the service refuses both. *@
+
+@if (!Hidden && status is { Enabled: true })
+{
+    <h4 class="glyph-subheading">Existing holds on the 3D model</h4>
+    @if (!status.HasTextures)
+    {
+        <p class="hint">The wall's 3D model has no textures yet, so its photos cannot be matched to it.</p>
+    }
+    else
+    {
+        <p class="hint">
+            Holds drawn on wall photos from before the markers went up are not on the 3D wall. This matches each
+            wall photo to the 3D model's textures and places its holds there. The holds in the photos, the panels
+            and the boulders are not changed; holds already placed by markers are left alone. After every capture this
+            runs by itself for the holds that are not on the model yet; use the button to place all of them again.
+        </p>
+        <div class="staged-actions">
+            <button class="btn-secondary" @onclick="PlaceAsync" disabled="@busy">Place existing holds on the 3D model</button>
+        </div>
+    }
+
+    @if (busy)
+    {
+        <p class="loading-small">Matching every wall photo to the 3D model — this can take a few minutes…</p>
+    }
+
+    @if (failure is not null)
+    {
+        <p class="field-error" role="alert">@failure</p>
+    }
+    else if (message is not null)
+    {
+        <p class="glyph-ok" role="status">@message</p>
+    }
+
+    @if (status.LatestRun is { } run)
+    {
+        <p class="glyph-summary">
+            Last run (<LocalTime Value="@run.CreatedAt" Format="LocalTimeFormat.DateTime" />, @run.Trigger): @RunText(run)
+            @if (run.RevertedAt is not null)
+            {
+                <text> — reverted.</text>
+            }
+        </p>
+        <ul class="glyph-summary">
+            @foreach (var panel in run.Panels)
+            {
+                <li>@PanelText(panel)</li>
+            }
+        </ul>
+        @if (run.RevertedAt is null && run.Placed > 0)
+        {
+            <div class="staged-actions">
+                @if (confirmRevert)
+                {
+                    <button class="btn-danger" @onclick="() => RevertAsync(run.Id)" disabled="@busy">Yes, revert</button>
+                    <button class="btn-secondary" @onclick="() => confirmRevert = false" disabled="@busy">Keep it</button>
+                }
+                else
+                {
+                    <button class="btn-secondary" @onclick="() => confirmRevert = true" disabled="@busy">Revert this placement</button>
+                }
+            </div>
+        }
+    }
+}

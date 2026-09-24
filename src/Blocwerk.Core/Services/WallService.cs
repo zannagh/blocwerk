@@ -2154,19 +2154,8 @@ public class WallService : IWallService
     /// spans generations (an updated position at the new generation, an untouched one at its old
     /// generation) and never the superseded panel rows a re-shoot leaves behind.
     /// </summary>
-    private static async Task<List<Guid>> LoadLivePanelIdsAsync(BlocwerkDbContext db, Guid wallId)
-    {
-        var panels = await db.WallPanels
-            .AsNoTracking()
-            .Where(p => p.WallId == wallId && p.Photo != null)
-            .Select(p => new { p.Id, p.Col, p.Row, p.Generation })
-            .ToListAsync();
-
-        return panels
-            .GroupBy(p => (p.Col, p.Row))
-            .Select(g => g.OrderByDescending(p => p.Generation).First().Id)
-            .ToList();
-    }
+    private static Task<List<Guid>> LoadLivePanelIdsAsync(BlocwerkDbContext db, Guid wallId) =>
+        LiveWallHolds.LoadPanelIdsAsync(db, wallId);
 
     /// <summary>
     /// Every wall is a big wall: keeps the (0,0) center panel in step with a freshly-uploaded photo and
