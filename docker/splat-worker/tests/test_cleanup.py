@@ -191,9 +191,9 @@ def test_spz_subset_is_lossless_and_clean_spz_filters():
     assert report["cameras"] == 0 and report["removed"]["sparse"] > 0
 
 
-def test_option_is_on_by_default_and_boolean():
-    assert parse_options(None).cleanup is True
-    assert parse_options({"cleanup": False}).cleanup is False
+def test_option_is_off_by_default_and_boolean():
+    assert parse_options(None).cleanup is False
+    assert parse_options({"cleanup": True}).cleanup is True
     with pytest.raises(OptionsError):
         parse_options({"cleanup": "yes"})
 
