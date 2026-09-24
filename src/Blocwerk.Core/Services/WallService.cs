@@ -22,6 +22,7 @@ public class WallService : IWallService
     private readonly IPushNotificationService? _pushNotificationService;
     private readonly IChangeJournal? _changeJournal;
     private readonly IHoldEnrichmentService? holdEnrichment;
+    private readonly IHoldRefinementQueue? refinementQueue;
 
     /// <summary>Creates the service.</summary>
     /// <remarks>
@@ -39,8 +40,10 @@ public class WallService : IWallService
         IKioskContext? kioskContext = null,
         IPushNotificationService? pushNotificationService = null,
         IChangeJournal? changeJournal = null,
-        IHoldEnrichmentService? holdEnrichment = null)
+        IHoldEnrichmentService? holdEnrichment = null,
+        IHoldRefinementQueue? refinementQueue = null)
     {
+        this.refinementQueue = refinementQueue;
         _dbContextFactory = dbContextFactory;
         _currentUserService = currentUserService;
         _holdDetectionService = holdDetectionService;
@@ -1535,6 +1538,14 @@ public class WallService : IWallService
             hold.ShapePoints = edit.ShapePoints.Or(hold.ShapePoints);
             hold.Name = edit.Name.Or(hold.Name);
 
+            // Re-place / re-size in the same save: a reshape keeps the facet position, a move gets a new one
+            // from the photo's markers or its placed neighbours, so the hold never drops out of 3D.
+            var geometryEdited = positionChanged || reshaped;
+            if (geometryEdited)
+            {
+                await HoldGlyphRefresher.TryRefreshAsync(db, [hold], _logger);
+            }
+
             if (positionChanged)
             {
                 // Big-wall panel edits pass flagBouldersOnMove:false — between two panel photos taken from
@@ -1582,6 +1593,10 @@ public class WallService : IWallService
             }
 
             await db.SaveChangesAsync();
+            if (geometryEdited)
+            {
+                refinementQueue?.Enqueue(hold.WallId, [hold.Id]);
+            }
 
             // The edited hold is now authoritative: every hold transitively linked to it (the same
             // physical hold seen on other panels) inherits its appearance verbatim. Runs alongside the

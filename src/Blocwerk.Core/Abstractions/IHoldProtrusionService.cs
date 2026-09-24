@@ -16,6 +16,13 @@ public interface IHoldProtrusionService
     /// <param name="ct">Cancellation.</param>
     /// <returns>What was measured and stored, or null when the wall has no scene or the run failed.</returns>
     Task<HoldProtrusionRunResult?> MeasureFromPipelineAsync(Guid wallId, CancellationToken ct = default);
+
+    /// <summary>The same measurement for a few holds only (after an edit); no user check, never throws.</summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="holdIds">The holds to measure.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>What was measured and stored, or null when the wall has no scene or the run failed.</returns>
+    Task<HoldProtrusionRunResult?> MeasureHoldsFromPipelineAsync(Guid wallId, IReadOnlyCollection<Guid> holdIds, CancellationToken ct = default);
 }
 
 /// <summary>The outcome of one protrusion run.</summary>

@@ -28,6 +28,9 @@ public sealed class HoldPlaneProjector
     /// <summary>Plane-space inlier threshold of that fit: centres further off are treated as outliers.</summary>
     public const double HoldFitThresholdMm = 40;
 
+    /// <summary>Margin around the placed holds' bounds a re-placed centre may still fall in.</summary>
+    public const double PlacementMarginMm = 150;
+
     private readonly Dictionary<(Wall3DPhotoKey Photo, string Facet), PhotoToPlane> markerMaps;
     private readonly Dictionary<(Wall3DPhotoKey Photo, string Facet), List<Hold>> holdsByPhotoFacet;
     private readonly Dictionary<(Wall3DPhotoKey Photo, string Facet), PhotoToPlane?> holdFits = [];
@@ -83,14 +86,59 @@ public sealed class HoldPlaneProjector
     /// <summary>The mapping for a hold's photo onto the hold's facet, or null when there is none.</summary>
     /// <param name="hold">A placed hold.</param>
     /// <returns>The mapping and how it was obtained, or null.</returns>
-    public (PhotoToPlane Map, Wall3DShapeSource Source)? For(Hold hold)
+    public (PhotoToPlane Map, Wall3DShapeSource Source)? For(Hold hold) =>
+        hold.FacetId is { } facetId ? For(PhotoOf(hold), facetId) : null;
+
+    /// <summary>
+    /// Places a hold that has no (or a stale) facet position from its photo alone: every facet the photo
+    /// maps onto is tried — the hold's own facet first, then marker-mapped facets, then those with the most
+    /// placed holds — and the first whose mapping lands the centre inside that facet (its extent, else the
+    /// bounds of the photo's placed holds on it plus <see cref="PlacementMarginMm"/>) wins. With no facet
+    /// containing it, the best-ranked finite mapping is returned. Null when the photo maps onto nothing.
+    /// </summary>
+    /// <param name="hold">The hold, with its photo stamp (<see cref="Hold.WallPanelId"/>, generation) and centre.</param>
+    /// <param name="extents">Known facet extents, by facet id; optional.</param>
+    /// <returns>The placement, or null.</returns>
+    public HoldPlaneFit? Place(Hold hold, IReadOnlyDictionary<string, PlaneRectMm>? extents = null)
     {
-        if (hold.FacetId is not { } facetId)
+        var photo = PhotoOf(hold);
+        var facets = markerMaps.Keys.Where(k => k.Photo == photo).Select(k => k.Facet)
+            .Concat(holdsByPhotoFacet.Keys.Where(k => k.Photo == photo).Select(k => k.Facet))
+            .Distinct(StringComparer.Ordinal)
+            .OrderByDescending(f => f == hold.FacetId)
+            .ThenByDescending(f => markerMaps.ContainsKey((photo, f)))
+            .ThenByDescending(f => holdsByPhotoFacet.TryGetValue((photo, f), out var l) ? l.Count : 0)
+            .ThenBy(f => f, StringComparer.Ordinal)
+            .ToList();
+        HoldPlaneFit? fallback = null;
+        foreach (var facet in facets)
         {
-            return null;
+            if (For(photo, facet) is not { } mapping)
+            {
+                continue;
+            }
+
+            var (a, b) = mapping.Map(hold.X, hold.Y);
+            if (!double.IsFinite(a) || !double.IsFinite(b))
+            {
+                continue;
+            }
+
+            var fit = new HoldPlaneFit(facet, a, b, mapping.Map, mapping.Source);
+            if (SupportOf(photo, facet, extents) is not { } support || Inside(support, a, b))
+            {
+                return fit;
+            }
+
+            fallback ??= fit;
         }
 
-        var key = (PhotoOf(hold), facetId);
+        return fallback;
+    }
+
+    private (PhotoToPlane Map, Wall3DShapeSource Source)? For(Wall3DPhotoKey photo, string facetId)
+    {
+        var key = (photo, facetId);
         if (markerMaps.TryGetValue(key, out var byMarkers))
         {
             return (byMarkers, Wall3DShapeSource.Markers);
@@ -104,6 +152,24 @@ public sealed class HoldPlaneProjector
 
         return fitted is null ? null : (fitted, Wall3DShapeSource.HoldFit);
     }
+
+    private PlaneRectMm? SupportOf(Wall3DPhotoKey photo, string facet, IReadOnlyDictionary<string, PlaneRectMm>? extents)
+    {
+        if (extents is not null && extents.TryGetValue(facet, out var extent) && extent.Area > 0)
+        {
+            return extent;
+        }
+
+        if (!holdsByPhotoFacet.TryGetValue((photo, facet), out var holds)
+            || PlaneRectMm.Bounds(holds.Select(h => (h.PlaneAMm!.Value, h.PlaneBMm!.Value))) is not { } r)
+        {
+            return null;
+        }
+
+        return new PlaneRectMm(r.AMin - PlacementMarginMm, r.AMax + PlacementMarginMm, r.BMin - PlacementMarginMm, r.BMax + PlacementMarginMm);
+    }
+
+    private static bool Inside(PlaneRectMm r, double a, double b) => a >= r.AMin && a <= r.AMax && b >= r.BMin && b <= r.BMax;
 
     /// <summary>
     /// A robust homography from the holds' normalised centres to their stored plane positions. Null
@@ -131,3 +197,11 @@ public sealed class HoldPlaneProjector
         return (x, y) => h.Apply(x, y);
     }
 }
+
+/// <summary>Where <see cref="HoldPlaneProjector.Place"/> put a hold, and the mapping it used.</summary>
+/// <param name="FacetId">The facet.</param>
+/// <param name="PlaneAMm">Centre, facet plane a (mm).</param>
+/// <param name="PlaneBMm">Centre, facet plane b (mm).</param>
+/// <param name="Map">The photo → facet mapping, for the outline.</param>
+/// <param name="Source">How the mapping was obtained.</param>
+public sealed record HoldPlaneFit(string FacetId, double PlaneAMm, double PlaneBMm, PhotoToPlane Map, Wall3DShapeSource Source);

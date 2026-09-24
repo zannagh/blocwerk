@@ -84,9 +84,7 @@ public static class HoldMetricPlanner
     /// <param name="metric">The measurement.</param>
     public static void Apply(Hold hold, HoldMetric metric)
     {
-        hold.WidthMm = metric.WidthMm;
-        hold.HeightMm = metric.HeightMm;
-        hold.AreaMm2 = metric.AreaMm2;
+        ApplySize(hold, metric);
 
         // Facet id and plane position belong together; an id the row cannot hold (a model imported
         // before ids were validated) drops the position rather than failing the whole save.
@@ -95,6 +93,19 @@ public static class HoldMetricPlanner
         hold.PlaneAMm = facetOk ? metric.PlaneAMm : null;
         hold.PlaneBMm = facetOk ? metric.PlaneBMm : null;
         hold.MetricSource = metric.MetricSource;
+    }
+
+    /// <summary>
+    /// Writes only the sizes of a measurement (and the fingerprint's rotation-free sizes), leaving the
+    /// facet and plane position alone — for a reshaped hold whose centre did not move.
+    /// </summary>
+    /// <param name="hold">The hold.</param>
+    /// <param name="metric">The measurement.</param>
+    public static void ApplySize(Hold hold, HoldMetric metric)
+    {
+        hold.WidthMm = metric.WidthMm;
+        hold.HeightMm = metric.HeightMm;
+        hold.AreaMm2 = metric.AreaMm2;
 
         // The fingerprint's sizes are rotation-free (long / short side) so a relocated, rotated hold
         // still compares; the hold's own WidthMm/HeightMm stay along the facet's u/v.

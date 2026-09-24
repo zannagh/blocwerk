@@ -31,14 +31,15 @@ public partial class WallBigUpdateService
     /// Writes every reviewed proposal onto its hold. Runs after the carry (so an accepted outline replaces the
     /// warped old one) and before the session closes. Proposal ids are staged hold ids, and a promoted staged
     /// hold keeps its id, so each resolves straight to its live row; a hold the promote deleted is skipped.
-    /// No SaveChanges — the promote commits.
+    /// No SaveChanges — the promote commits. Returns the holds whose outline changed, for the refinement queue.
     /// </summary>
-    private static async Task ApplyShapeDecisionsAsync(BlocwerkDbContext db, Guid wallId, int newGen)
+    private static async Task<List<Guid>> ApplyShapeDecisionsAsync(BlocwerkDbContext db, Guid wallId, int newGen)
     {
+        var reshaped = new List<Guid>();
         var session = await WallUpdateSessions.FindOpenAsync(db, wallId);
         if (session?.ShapeStatus != ShapeRecognitionStatus.Completed)
         {
-            return;
+            return reshaped;
         }
 
         var decided = new[] { ShapeReviewDecision.Accepted, ShapeReviewDecision.Adjusted, ShapeReviewDecision.Circle };
@@ -54,7 +55,12 @@ public partial class WallBigUpdateService
                 continue;
             }
 
-            ShapeDecisionApplier.Apply(hold, row);
+            if (ShapeDecisionApplier.Apply(hold, row) && hold.NeedsGlyphRefresh())
+            {
+                reshaped.Add(hold.Id);
+            }
         }
+
+        return reshaped;
     }
 }

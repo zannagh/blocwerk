@@ -83,13 +83,19 @@ public partial class WallPanelService
         await WallAdminGuard.EnsureWallEditorAsync(db, wallId, user.Id, CancellationToken.None);
 
         var hold = await LoadStagedHoldAsync(db, wallId, holdId);
-        hold.InvalidateGlyphForEdit(
-            Math.Abs(hold.X - Math.Clamp(x, 0, 1)) > Hold.GeometryEditTolerance
-            || Math.Abs(hold.Y - Math.Clamp(y, 0, 1)) > Hold.GeometryEditTolerance,
-            hold.IsReshape(Math.Clamp(radius, 0.003, 0.2), hold.ShapePoints));
+        var moved = Math.Abs(hold.X - Math.Clamp(x, 0, 1)) > Hold.GeometryEditTolerance
+            || Math.Abs(hold.Y - Math.Clamp(y, 0, 1)) > Hold.GeometryEditTolerance;
+        var reshaped = hold.IsReshape(Math.Clamp(radius, 0.003, 0.2), hold.ShapePoints);
+        hold.InvalidateGlyphForEdit(moved, reshaped);
         hold.X = Math.Clamp(x, 0, 1);
         hold.Y = Math.Clamp(y, 0, 1);
         hold.Radius = Math.Clamp(radius, 0.003, 0.2);
+        if (moved || reshaped)
+        {
+            // Re-placed in the same save, so the staged hold keeps its facet position (see Hold.Glyph.cs).
+            await HoldGlyphRefresher.TryRefreshAsync(db, [hold], logger);
+        }
+
         await db.SaveChangesAsync();
 
         logger.LogInformation(

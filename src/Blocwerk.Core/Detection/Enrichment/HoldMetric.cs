@@ -25,4 +25,10 @@ public sealed record HoldMetric(
 
     /// <summary>Metric source of a size taken in the nearest marker's own square (no wall model).</summary>
     public const string LocalMarker = "local-marker";
+
+    /// <summary>
+    /// Metric source of a hold re-placed after an edit through a homography fitted to the photo's other
+    /// placed holds (<see cref="Geometry.View3D.HoldPlaneProjector"/>), when the photo has no markers.
+    /// </summary>
+    public const string HoldFit = "hold-fit";
 }

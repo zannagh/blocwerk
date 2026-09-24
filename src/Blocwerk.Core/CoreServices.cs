@@ -160,6 +160,9 @@ public static class CoreServices
         builder.Services.AddScoped<IHoldOutlineUpgradeService, HoldOutlineUpgradeService>();
         builder.Services.AddScoped<IHoldFootprintService, HoldFootprintService>();
         builder.Services.AddScoped<IHoldProtrusionService, HoldProtrusionService>();
+        builder.Services.AddSingleton<HoldRefinementQueue>();
+        builder.Services.AddSingleton<IHoldRefinementQueue>(sp => sp.GetRequiredService<HoldRefinementQueue>());
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<HoldRefinementQueue>());
         builder.Services.AddScoped<IWallPhotoPrivacyService, WallPhotoPrivacyService>();
 
         // In-app glyph capture: photos in, 3D model out, computed by the GEOMETRYSERVICE__URL worker.

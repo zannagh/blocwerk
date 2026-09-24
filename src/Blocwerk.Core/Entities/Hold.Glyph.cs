@@ -9,13 +9,19 @@ namespace Blocwerk.Core.Entities;
 /// <list type="bullet">
 /// <item>carried into a new generation as the SAME physical hold → keep everything (a hold's size and
 /// wall position do not change when the camera does) — <see cref="Clone"/> copies the fields as-is;</item>
-/// <item>moved by a user → the plane position is stale (<see cref="InvalidateGlyphPosition"/>);</item>
-/// <item>reshaped or resized by a user → position AND size are stale (<see cref="InvalidateGlyphSize"/>), and
-/// the detected pocket holes (<see cref="ShapeHoles"/>) are dropped — they were measured against the detected
-/// outer outline and cannot follow a hand-drawn one; re-detection restores them;</item>
-/// <item>marked "changed" (a physically different hold) → every measurement and the appearance
-/// fingerprint are stale (<see cref="InvalidateGlyphMeasurements"/>).</item>
+/// <item>moved by a user → the plane position is stale (<see cref="InvalidateGlyphPosition"/>); the edit
+/// path re-places it in the same save (<c>HoldGlyphRefresher</c>), so a moved hold never drops out of 3D;</item>
+/// <item>reshaped or resized by a user → only the SIZE is stale (<see cref="InvalidateGlyphSize"/>): the
+/// centre did not move, so the facet and plane position are kept. The detected pocket holes
+/// (<see cref="ShapeHoles"/>) are dropped — they were measured against the detected outer outline and
+/// cannot follow a hand-drawn one; re-detection restores them;</item>
+/// <item>marked "changed" (a physically different hold) → sizes, footprint, protrusion and the appearance
+/// fingerprint are stale (<see cref="InvalidateGlyphMeasurements"/>); it sits where the old one sat, so
+/// the position is kept.</item>
 /// </list>
+/// The stored <see cref="FootprintMm"/> / <see cref="ProtrusionMm"/> survive a move or reshape: they carry
+/// the outline key they were refined from, so the 3D view ignores them (and projects the edited outline)
+/// until the next refinement rewrites them. That is the "stale" mark — nothing is deleted.
 /// </summary>
 public partial class Hold
 {
@@ -24,7 +30,7 @@ public partial class Hold
 
     /// <summary>
     /// Applies the rule for a user geometry edit. Call BEFORE writing the new geometry, or pass the
-    /// flags you already computed.
+    /// flags you already computed. A move un-places the hold until the caller re-places it.
     /// </summary>
     /// <param name="moved">The centre moved.</param>
     /// <param name="reshaped">The drawn shape changed — see <see cref="IsReshape"/>.</param>
@@ -36,27 +42,31 @@ public partial class Hold
             InvalidateGlyphSize();
             OutlineSource = HoldOutlineSource.Manual;
         }
-        else if (moved)
+
+        if (moved)
         {
             InvalidateGlyphPosition();
         }
     }
 
-    /// <summary>Clears the facet and plane position (and how they were derived); sizes stay.</summary>
+    /// <summary>
+    /// Clears the facet and plane position (and how they were derived); sizes stay. The footprint and
+    /// protrusion stay too: their outline key includes the centre, so they are already stale.
+    /// </summary>
     public void InvalidateGlyphPosition()
     {
         FacetId = null;
         PlaneAMm = null;
         PlaneBMm = null;
         MetricSource = null;
-        FootprintMm = null;
-        ProtrusionMm = null;
     }
 
-    /// <summary>Clears the plane position and the metric sizes, including those inside the fingerprint.</summary>
+    /// <summary>
+    /// Clears the metric sizes, including those inside the fingerprint. The facet and plane position
+    /// stay: a reshape does not move the hold's centre.
+    /// </summary>
     public void InvalidateGlyphSize()
     {
-        InvalidateGlyphPosition();
         WidthMm = null;
         HeightMm = null;
         AreaMm2 = null;
@@ -67,12 +77,26 @@ public partial class Hold
         }
     }
 
-    /// <summary>Clears every metric field AND the fingerprint: the hold is physically a different one.</summary>
+    /// <summary>
+    /// A physically different hold at the same spot: clears the sizes, footprint, protrusion AND the
+    /// fingerprint. The plane position stays — it is still where the hold is.
+    /// </summary>
     public void InvalidateGlyphMeasurements()
     {
         InvalidateGlyphSize();
         FingerprintJson = null;
+        FootprintMm = null;
+        ProtrusionMm = null;
     }
+
+    /// <summary>
+    /// Whether this hold is missing a placement or a size that its panel photo could give it again
+    /// (see <c>HoldGlyphRefresher</c>). Virtual holds and holds without a panel have no photo to map from.
+    /// </summary>
+    /// <returns>Whether a refresh could restore something.</returns>
+    public bool NeedsGlyphRefresh() =>
+        WallPanelId is not null && !IsVirtual
+        && (FacetId is null || PlaneAMm is null || PlaneBMm is null || WidthMm is null || HeightMm is null);
 
     /// <summary>
     /// Whether a geometry edit is a reshape (drops the pocket holes and the metric size). A hold drawn

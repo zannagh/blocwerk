@@ -25,11 +25,18 @@ public sealed class HoldProtrusionService(
     ICaptureFileStore? files = null) : IHoldProtrusionService
 {
     /// <inheritdoc />
-    public async Task<HoldProtrusionRunResult?> MeasureFromPipelineAsync(Guid wallId, CancellationToken ct = default)
+    public Task<HoldProtrusionRunResult?> MeasureFromPipelineAsync(Guid wallId, CancellationToken ct = default) =>
+        RunSafelyAsync(wallId, null, ct);
+
+    /// <inheritdoc />
+    public Task<HoldProtrusionRunResult?> MeasureHoldsFromPipelineAsync(Guid wallId, IReadOnlyCollection<Guid> holdIds, CancellationToken ct = default) =>
+        RunSafelyAsync(wallId, holdIds.ToHashSet(), ct);
+
+    private async Task<HoldProtrusionRunResult?> RunSafelyAsync(Guid wallId, IReadOnlySet<Guid>? only, CancellationToken ct)
     {
         try
         {
-            return await RunAsync(wallId, ct);
+            return await RunAsync(wallId, only, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -38,7 +45,7 @@ public sealed class HoldProtrusionService(
         }
     }
 
-    private async Task<HoldProtrusionRunResult?> RunAsync(Guid wallId, CancellationToken ct)
+    private async Task<HoldProtrusionRunResult?> RunAsync(Guid wallId, IReadOnlySet<Guid>? only, CancellationToken ct)
     {
         if (files is null)
         {
@@ -67,7 +74,7 @@ public sealed class HoldProtrusionService(
             .ToListAsync(ct);
         var markers = await Wall3DPhotoMarkerLoader.LoadAsync(db, wallId, ct);
         var projector = HoldPlaneProjector.Create(live.Where(h => frames.ContainsKey(h.FacetId!)), doc, markers);
-        var targets = live.Where(h => frames.ContainsKey(h.FacetId!)).Select(h => new ProtrusionHold(
+        var targets = live.Where(h => frames.ContainsKey(h.FacetId!) && (only is null || only.Contains(h.Id))).Select(h => new ProtrusionHold(
             h.Id, h.FacetId!, h.PlaneAMm!.Value, h.PlaneBMm!.Value, OutlineOf(h, projector), HoldFootprint.KeyOf(h))).ToList();
         var cameras = SolvedCamera.ParseAll(json).Select(c => c.Centre).ToList();
         var extents = doc.Segments.SelectMany(s => s.Facets)

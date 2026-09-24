@@ -21,6 +21,16 @@ public interface IHoldFootprintService
     /// <param name="ct">Cancellation.</param>
     /// <returns>What was stored, or null when it could not run.</returns>
     Task<HoldFootprintRunResult?> RefineFromPipelineAsync(Guid wallId, CancellationToken ct = default);
+
+    /// <summary>
+    /// The same step for a few holds only (after an edit made their footprints stale): the wall's other
+    /// holds still feed the mappings and cameras, but only these are traced and written. Never throws.
+    /// </summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="holdIds">The holds to refine.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>What was stored, or null when it could not run.</returns>
+    Task<HoldFootprintRunResult?> RefineHoldsFromPipelineAsync(Guid wallId, IReadOnlyCollection<Guid> holdIds, CancellationToken ct = default);
 }
 
 /// <summary>The outcome of one footprint refinement.</summary>

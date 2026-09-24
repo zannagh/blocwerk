@@ -9,9 +9,9 @@ using NSubstitute;
 namespace Blocwerk.Core.Tests;
 
 /// <summary>
-/// Stale glyph measurements (the rules on <c>Hold.Glyph.cs</c>): a move drops the plane position, a
-/// reshape/resize also the size, a "changed" mark everything including the fingerprint, and a save
-/// that changes no geometry drops nothing.
+/// Stale glyph measurements (the rules on <c>Hold.Glyph.cs</c>): a move drops the plane position (these
+/// walls have no model to re-place it from), a reshape/resize only the size — never the position — a
+/// "changed" mark the sizes, footprint and fingerprint, and a save that changes no geometry drops nothing.
 /// </summary>
 public class GlyphInvalidationTests
 {
@@ -35,7 +35,7 @@ public class GlyphInvalidationTests
     }
 
     [Fact]
-    public async Task UpdateHold_Resize_ClearsSizeToo_AndStripsFingerprintMillimetres()
+    public async Task UpdateHold_Resize_ClearsSizeButKeepsPosition_AndStripsFingerprintMillimetres()
     {
         using var h = new WallTestHarness();
         var hold = (await h.SeedWallAsync(holdCount: 1))[0];
@@ -45,7 +45,9 @@ public class GlyphInvalidationTests
         await h.WallService.UpdateHoldAsync(hold.Id, Edit(0.1, 0.1, 0.05, ShapePoint.DefaultOctagon(0.05)));
 
         var stored = await LoadAsync(h, hold.Id);
-        Assert.Null(stored.FacetId);
+        Assert.Equal("0", stored.FacetId);
+        Assert.Equal(100, stored.PlaneAMm);
+        Assert.Equal(200, stored.PlaneBMm);
         Assert.Null(stored.WidthMm);
         Assert.Null(stored.HeightMm);
         Assert.Null(stored.AreaMm2);
@@ -71,7 +73,7 @@ public class GlyphInvalidationTests
     }
 
     [Fact]
-    public async Task MarkHoldModified_ClearsEveryMeasurementAndTheFingerprint()
+    public async Task MarkHoldModified_ClearsSizesAndTheFingerprint_ButKeepsThePosition()
     {
         using var h = new WallTestHarness();
         var hold = (await h.SeedWallAsync(holdCount: 1))[0];
@@ -81,11 +83,10 @@ public class GlyphInvalidationTests
 
         var stored = await LoadAsync(h, hold.Id);
         Assert.True(stored.NeedsReview);
-        Assert.Null(stored.FacetId);
-        Assert.Null(stored.PlaneAMm);
+        Assert.Equal("0", stored.FacetId);
+        Assert.Equal(100, stored.PlaneAMm);
         Assert.Null(stored.WidthMm);
         Assert.Null(stored.AreaMm2);
-        Assert.Null(stored.MetricSource);
         Assert.Null(stored.FingerprintJson);
     }
 

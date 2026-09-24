@@ -25,6 +25,7 @@ public partial class WallBigUpdateService : IWallBigUpdateService
     private readonly IChangeJournal? changeJournal;
     private readonly IHoldEnrichmentService? holdEnrichment;
     private readonly IHoldOutlineService? outlineService;
+    private readonly IHoldRefinementQueue? refinementQueue;
 
     public WallBigUpdateService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
@@ -34,8 +35,10 @@ public partial class WallBigUpdateService : IWallBigUpdateService
         ILogger<WallBigUpdateService> logger,
         IChangeJournal? changeJournal = null,
         IHoldEnrichmentService? holdEnrichment = null,
-        IHoldOutlineService? outlineService = null)
+        IHoldOutlineService? outlineService = null,
+        IHoldRefinementQueue? refinementQueue = null)
     {
+        this.refinementQueue = refinementQueue;
         this.dbContextFactory = dbContextFactory;
         this.currentUserService = currentUserService;
         this.holdDetectionService = holdDetectionService;

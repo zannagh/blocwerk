@@ -117,6 +117,10 @@ public sealed record Wall3DMarker(int Id, string FacetId, IReadOnlyList<double[]
 /// the hold is seen on one panel only. A tap or a boulder on any of them resolves to this hold.
 /// </param>
 /// <param name="Protrusion">How far the hold stands out of its facet (measured from the photo-real scene, else estimated from its size).</param>
+/// <param name="PlacementApproximate">
+/// True when the hold has no stored facet position (e.g. an edit could not re-place it yet) and was placed
+/// for this view only, by mapping its panel-photo centre through the photo's projector.
+/// </param>
 public sealed record Wall3DHold(
     Guid Id,
     string FacetId,
@@ -134,7 +138,8 @@ public sealed record Wall3DHold(
     Wall3DHoldRole? Role,
     Wall3DHoldShape? Shape = null,
     IReadOnlyList<Guid>? DuplicateIds = null,
-    Wall3DHoldProtrusion? Protrusion = null);
+    Wall3DHoldProtrusion? Protrusion = null,
+    bool PlacementApproximate = false);
 
 /// <summary>
 /// A hold's relief for the renderer, mm along the facet normal above the facet plane

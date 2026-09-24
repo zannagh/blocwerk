@@ -36,19 +36,21 @@ public static class HoldFootprintRefiner
     /// <param name="cameras">The model's solved capture cameras (may be empty: single-view only).</param>
     /// <param name="open">Opens one capture photo's outline session (at the photo's real size), or null.</param>
     /// <param name="projector">The panel-photo → facet mappings the 3D view uses.</param>
+    /// <param name="only">Refine only these holds (the rest still resect the panel cameras); null for all.</param>
     /// <returns>The refinement.</returns>
     public static HoldFootprintRefinement Refine(
         IReadOnlyList<Hold> live,
         WallGeometryDocument doc,
         IReadOnlyList<SolvedCamera> cameras,
         Func<SolvedCamera, IHoldOutlineSession?> open,
-        HoldPlaneProjector projector)
+        HoldPlaneProjector projector,
+        IReadOnlySet<Guid>? only = null)
     {
         var frames = Frames(doc);
         var panelCams = PanelCameras(live, frames);
         var primaries = new Dictionary<Guid, (Hold Hold, FacetFrame Frame, FootprintView View)>();
         var skipped = 0;
-        foreach (var hold in live)
+        foreach (var hold in live.Where(h => only is null || only.Contains(h.Id)))
         {
             if (Primary(hold, frames, panelCams, projector) is { } p)
             {

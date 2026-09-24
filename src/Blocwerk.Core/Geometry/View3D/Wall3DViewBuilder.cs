@@ -145,18 +145,32 @@ public static class Wall3DViewBuilder
 
         var live = LiveHolds(wall).ToList();
         var projector = HoldPlaneProjector.Create(live.Where(h => h.FacetId is not null && frames.ContainsKey(h.FacetId)), doc, photoMarkers);
+        var extents = Wall3DFallbackPlacement.FacetExtents(doc);
         var holds = new List<HoldTwinCandidate>();
         var unplaced = 0;
         foreach (var hold in live)
         {
+            var role = RoleOf(hold, boulder, boulderHolds);
             if (hold.FacetId is null || hold.PlaneAMm is not { } a || hold.PlaneBMm is not { } b
                 || !frames.TryGetValue(hold.FacetId, out var frame))
             {
-                unplaced++;
+                // Defence in depth: a hold with a panel position but no stored facet position is still
+                // drawn, placed through its photo's projector and flagged approximate, never dropped.
+                if (Wall3DFallbackPlacement.Place(hold, projector, extents, frames) is { } fallback)
+                {
+                    var fit = fallback.Fit;
+                    var drawn = Wall3DFallbackPlacement.Draw(hold, fit, ToHold(hold, fit.FacetId, fallback.Frame, fit.PlaneAMm, fit.PlaneBMm, role));
+                    holds.Add(new HoldTwinCandidate(hold, drawn with { Protrusion = ProtrusionOf(hold, drawn.Shape!) }, null));
+                }
+                else
+                {
+                    unplaced++;
+                }
+
                 continue;
             }
 
-            var placed = ToHold(hold, frame, a, b, 0, RoleOf(hold, boulder, boulderHolds));
+            var placed = ToHold(hold, hold.FacetId, frame, a, b, role);
             var mapping = projector.For(hold);
             var shape = HoldShapeProjector.FromFootprint(HoldFootprint.For(hold))
                 ?? HoldShapeProjector.Project(hold, placed.WidthMm, placed.HeightMm, mapping);
@@ -182,7 +196,7 @@ public static class Wall3DViewBuilder
     private static IEnumerable<Hold> LiveHolds(Wall wall) =>
         wall.Holds.Where(h => h.Generation <= wall.CurrentGeneration);
 
-    private static Wall3DHold ToHold(Hold hold, FacetFrame frame, double a, double b, int usage, Wall3DHoldRole? role)
+    private static Wall3DHold ToHold(Hold hold, string facetId, FacetFrame frame, double a, double b, Wall3DHoldRole? role)
     {
         var isFoot = hold.Category == HoldCategory.Foot;
         var fallback = isFoot ? DefaultFootSizeMm : DefaultHandSizeMm;
@@ -190,7 +204,7 @@ public static class Wall3DViewBuilder
         var color = HoldPalette.Get(hold.Color);
         return new Wall3DHold(
             hold.Id,
-            hold.FacetId!,
+            facetId,
             frame.ToWorld(a, b, HoldLiftMm),
             a,
             b,
@@ -201,7 +215,7 @@ public static class Wall3DViewBuilder
             HoldPalette.DisplayName(hold.Color),
             color.Hex,
             isFoot,
-            usage,
+            0,
             role);
     }
 

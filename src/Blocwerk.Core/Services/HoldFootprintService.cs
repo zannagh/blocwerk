@@ -40,16 +40,23 @@ public sealed class HoldFootprintService(
             await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, ct);
         }
 
-        return await RunAsync(wallId, ct)
+        return await RunAsync(wallId, null, ct)
             ?? throw new InvalidOperationException("This wall has no active geometry model, or outline detection is off.");
     }
 
     /// <inheritdoc />
-    public async Task<HoldFootprintRunResult?> RefineFromPipelineAsync(Guid wallId, CancellationToken ct = default)
+    public Task<HoldFootprintRunResult?> RefineFromPipelineAsync(Guid wallId, CancellationToken ct = default) =>
+        RunSafelyAsync(wallId, null, ct);
+
+    /// <inheritdoc />
+    public Task<HoldFootprintRunResult?> RefineHoldsFromPipelineAsync(Guid wallId, IReadOnlyCollection<Guid> holdIds, CancellationToken ct = default) =>
+        RunSafelyAsync(wallId, holdIds.ToHashSet(), ct);
+
+    private async Task<HoldFootprintRunResult?> RunSafelyAsync(Guid wallId, IReadOnlySet<Guid>? only, CancellationToken ct)
     {
         try
         {
-            return await RunAsync(wallId, ct);
+            return await RunAsync(wallId, only, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -58,7 +65,7 @@ public sealed class HoldFootprintService(
         }
     }
 
-    private async Task<HoldFootprintRunResult?> RunAsync(Guid wallId, CancellationToken ct)
+    private async Task<HoldFootprintRunResult?> RunAsync(Guid wallId, IReadOnlySet<Guid>? only, CancellationToken ct)
     {
         if (outlineService is null)
         {
@@ -83,7 +90,7 @@ public sealed class HoldFootprintService(
         var markers = await Wall3DPhotoMarkerLoader.LoadAsync(db, wallId, ct);
         var projector = HoldPlaneProjector.Create(live, doc, markers);
         var usable = cameras.Where(c => photos.ContainsKey(c.Image)).ToList();
-        var refinement = await Task.Run(() => HoldFootprintRefiner.Refine(live, doc, usable, c => Open(c, photos, ct), projector), ct);
+        var refinement = await Task.Run(() => HoldFootprintRefiner.Refine(live, doc, usable, c => Open(c, photos, ct), projector, only), ct);
         var written = await WriteAsync(db, wallId, refinement, ct);
         logger.LogInformation(
             "Footprints on wall {WallId}: {Multi} multi-view, {Single} single-view, {Skipped} skipped, {Written} written, {Photos} capture photos",

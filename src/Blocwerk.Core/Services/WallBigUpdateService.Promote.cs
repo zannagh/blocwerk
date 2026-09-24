@@ -146,7 +146,7 @@ public partial class WallBigUpdateService
         await CarryHoldLinksAsync(db, wallId, carriedScopeHoldIds);
 
         // The optional shape step's reviewed outlines, last so they win over the carry's warped ones.
-        await ApplyShapeDecisionsAsync(db, wallId, newGen);
+        var reshaped = await ApplyShapeDecisionsAsync(db, wallId, newGen);
 
         wall.Photo = centerPanel.Photo;
         wall.PhotoContentType = centerPanel.PhotoContentType;
@@ -167,6 +167,13 @@ public partial class WallBigUpdateService
         if (changeJournal is not null)
         {
             await changeJournal.SealWallUpdateBatchAsync(wallId);
+        }
+
+        // Reviewed outlines kept their facet position; their size, footprint and protrusion are redone
+        // off the request, against the now-committed generation.
+        if (reshaped.Count > 0)
+        {
+            refinementQueue?.Enqueue(wallId, reshaped);
         }
 
         logger.LogInformation(
