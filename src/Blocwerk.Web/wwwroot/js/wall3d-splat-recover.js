@@ -14,6 +14,10 @@ const LOW_MEMORY_GB = 4;
 const DESKTOP_TEXTURE_SIZE = 8192;
 /** Backing-store pixels of the canvas on a light device while photo-real shows (before any loss). */
 const LIGHT_MAX_PIXELS = 2_000_000;
+/** Pixel ratio cap of a light device while the camera moves (full resolution again once it settles). */
+const LIGHT_MOVING_RATIO = 1.25;
+/** Spark packs splats into 2048-wide texture arrays; anything smaller cannot hold a wall. */
+const MIN_TEXTURE_SIZE = 2048;
 /** Each lost context scales the resolution by this, down to MIN_SCALE. */
 const LOSS_SCALE = 0.75;
 const MIN_SCALE = 0.5;
@@ -42,26 +46,43 @@ export function prefersLightSplat(renderer) {
         || mobileUa || iPadOs || touchOnly;
 }
 
+/** WebGL 2 with texture arrays large enough for Spark. */
+export function supportsPhotoReal(renderer) {
+    const gl = renderer.getContext();
+    return typeof WebGL2RenderingContext !== 'undefined'
+        && gl instanceof WebGL2RenderingContext
+        && gl.getParameter(gl.MAX_TEXTURE_SIZE) >= MIN_TEXTURE_SIZE
+        && gl.getParameter(gl.MAX_ARRAY_TEXTURE_LAYERS) >= 1;
+}
+
 /**
  * The canvas resolution while photo-real shows: up to 2× on a light device with at most LIGHT_MAX_PIXELS
- * backing pixels, the page's own ratio elsewhere; both scaled down after every lost context.
+ * backing pixels, the page's own ratio elsewhere; both scaled down after every lost context. While
+ * the camera moves (`interact(true)`, from the render loop, inside a frame) a light device drops to
+ * LIGHT_MOVING_RATIO: a moving splat shows no fine detail anyway, and the pixels are most of its cost.
  */
 export function createRenderScale(renderer, light) {
     const full = renderer.getPixelRatio();
     let scale = 1;
-    return {
-        lower() { scale = Math.max(MIN_SCALE, scale * LOSS_SCALE); },
-        apply(on) {
-            if (!on) {
-                renderer.setPixelRatio(full);
-                return;
-            }
-            let ratio = (light ? Math.min(full, 2) : full) * scale;
+    let on = false;
+    let moving = false;
+    function update() {
+        let ratio = full;
+        if (on) {
+            ratio = (light ? Math.min(full, 2) : full) * scale;
             const c = renderer.domElement;
             const area = Math.max(1, c.clientWidth * c.clientHeight);
             if (light) ratio = Math.min(ratio, Math.sqrt(LIGHT_MAX_PIXELS * scale * scale / area));
-            renderer.setPixelRatio(Math.max(0.25, ratio));
-        },
+            if (light && moving) ratio = Math.min(ratio, LIGHT_MOVING_RATIO * scale);
+            ratio = Math.max(0.25, ratio);
+        }
+        // setPixelRatio resizes (and clears) the drawing buffer: only when it really changes.
+        if (Math.abs(renderer.getPixelRatio() - ratio) > 1e-3) renderer.setPixelRatio(ratio);
+    }
+    return {
+        lower() { scale = Math.max(MIN_SCALE, scale * LOSS_SCALE); },
+        apply(value) { on = value; update(); },
+        interact(value) { moving = value; update(); },
     };
 }
 

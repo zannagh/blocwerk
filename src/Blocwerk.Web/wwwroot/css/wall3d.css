@@ -30,7 +30,10 @@
     white-space: nowrap;
 }
 .w3d-btn:focus-visible { outline: 2px solid var(--accent, #e94560); outline-offset: 2px; }
-.w3d-btn.active { background: var(--topbar-bg, #16162a); color: var(--topbar-text, #fff); border-color: transparent; }
+/* Active = the heading colour on the surface colour: navy on white in light mode, and light on dark
+   in dark mode (the top bar's navy, used before, is the dark page's own colour there: the active
+   preset and mode could not be told apart). */
+.w3d-btn.active { background: var(--text-heading, #16162a); color: var(--bg-surface, #fff); border-color: transparent; }
 .w3d-btn:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
 
 .w3d-presets {
@@ -45,7 +48,7 @@
     scrollbar-width: none;
 }
 .w3d-presets::-webkit-scrollbar { display: none; }
-.w3d-btn-reset { background: transparent; box-shadow: none; }
+.w3d-btn-reset { background: transparent; box-shadow: none; min-width: 44px; padding: 0 10px; font-size: 1.2rem; }
 
 /* Schematic / Photos / Photo-real: a segmented control in the top-left corner (the map is top-right). */
 .w3d-modes {
@@ -62,6 +65,7 @@
 }
 .w3d-modes[hidden] { display: none; }
 .w3d-mode {
+    position: relative;
     min-height: 36px;
     padding: 0 12px;
     border: none;
@@ -74,7 +78,9 @@
     white-space: nowrap;
     cursor: pointer;
 }
-.w3d-mode.active { background: var(--topbar-bg, #16162a); color: var(--topbar-text, #fff); }
+.w3d-mode.active { background: var(--text-heading, #16162a); color: var(--bg-surface, #fff); }
+/* The pill is 36px inside the switch's 3px padding and border; the hit area reaches its edge (44px). */
+.w3d-mode::after { content: ''; position: absolute; inset: -4px -1px; }
 .w3d-mode:focus-visible { outline: 2px solid var(--accent, #e94560); outline-offset: 1px; }
 .w3d-mode:disabled { cursor: progress; }
 .w3d-mode:disabled:not(.active) { opacity: 0.5; }
@@ -153,7 +159,7 @@
 .w3d-card-head strong { flex: 1; color: var(--text-heading, #16162a); }
 .w3d-swatch { width: 16px; height: 16px; border-radius: 50%; border: 1px solid rgba(0, 0, 0, 0.25); flex: none; }
 .w3d-card-close {
-    width: 32px; height: 32px;
+    width: 44px; height: 44px; margin: -8px -10px -8px 0;
     border: none; background: transparent;
     font-size: 1.3rem; line-height: 1;
     color: var(--text-secondary, #8a8a95);
@@ -166,11 +172,14 @@
 .w3d-card-role.role-Hand { color: #2196F3; }
 .w3d-card-role.role-Foot, .w3d-card-role.role-ColorFoot { color: #FF9800; }
 
-/* On a phone-width viewer the card spans the width above the preset bar. */
+/* On a phone-width viewer the card spans the width above the preset bar, and the preset buttons
+   share the width evenly so all six fit a 360px phone (they used to scroll, "Reset" cut off). */
 @container (max-width: 520px) {
     .w3d-card { left: 10px; right: 10px; width: auto; }
     .w3d-btn { min-width: 0; padding: 0 12px; font-size: 0.9rem; }
-    .w3d-presets { justify-content: flex-start; }
+    .w3d-presets { gap: 4px; padding: 0 6px; }
+    .w3d-presets .w3d-btn { flex: 1 1 0; padding: 0 4px; font-size: 0.85rem; }
+    .w3d-presets .w3d-btn-reset { flex: 0 0 44px; font-size: 1.15rem; }
     .w3d-mode { padding: 0 9px; font-size: 0.8rem; }
 }
 
@@ -190,11 +199,26 @@
     white-space: nowrap;
 }
 
-/* Photo-real "Show holds" toggle (wall3d-overlay.js), under the mode switch. */
-.w3d-holds-toggle {
+/* Photo-real "Show holds" and "Detail" toggles (wall3d-overlay.js), under the mode switch. The
+   visible pill is 36px; the padding around it keeps the tap target at 44px. */
+.w3d-photo-tools {
     position: absolute;
-    top: 56px; left: 10px;
-    min-height: 36px;
-    font-size: 0.85rem;
+    top: 52px; left: 6px;
+    max-width: calc(100% - 12px - 96px - 10px);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0;
 }
-.w3d-holds-toggle[hidden] { display: none; }
+.w3d-photo-tools[hidden], .w3d-photo-tools .w3d-btn[hidden] { display: none; }
+.w3d-photo-tools .w3d-btn {
+    min-height: 36px;
+    min-width: 0;
+    margin: 4px;
+    font-size: 0.85rem;
+    position: relative;
+}
+.w3d-photo-tools .w3d-btn::after { content: ''; position: absolute; inset: -4px; }
+
+/* Landscape phones with a notch: keep the corner controls out of the cut-out. */
+.w3d-modes, .w3d-hint, .w3d-photo-tools, .w3d-scale { margin-left: env(safe-area-inset-left, 0px); }
+.w3d-map, .w3d-card { margin-right: env(safe-area-inset-right, 0px); }

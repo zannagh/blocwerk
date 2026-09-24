@@ -1,5 +1,5 @@
 // Surroundings and teardown of the 3D wall view (wall3d.js): the floor mat, a person for scale, the
-// lights, and freeing every GPU resource of the scene.
+// lights, the stylesheet and theme colours, and freeing every GPU resource of the scene.
 import * as THREE from '../lib/three/three.module.min.js';
 
 /** Floor, a 1.75 m person where a climber stands (scale at a glance), and lights. Returns [floor, person]. */
@@ -42,4 +42,30 @@ export function disposeScene(scene) {
         }
         if (o.isInstancedMesh) o.dispose();
     });
+}
+
+/** Frees the GPU copies of the facet photos (three.js re-uploads them if Photos mode shows again). */
+export function releaseTextures(group) {
+    group?.traverse(o => {
+        const m = o.material;
+        if (!m) return;
+        for (const t of [m.map, m.alphaMap]) t?.dispose();
+    });
+}
+
+/** Injects wall3d.css once; returns the link while it is still loading (null when already there). */
+export function ensureStylesheet() {
+    const href = new URL('../css/wall3d.css', import.meta.url).href;
+    if ([...document.querySelectorAll('link[rel="stylesheet"]')].some(l => l.href === href)) return null;
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = href;
+    document.head.append(link);
+    return link;
+}
+
+/** A CSS custom property of `el`, or `fallback` when unset. */
+export function themeColor(el, name, fallback) {
+    const v = getComputedStyle(el).getPropertyValue(name).trim();
+    return v || fallback;
 }

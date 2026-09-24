@@ -5,45 +5,30 @@
 // (wall-geometry millimetres, z up), where the facets and holds already are.
 //
 // Streaming instead of all-or-nothing: the scene comes as a level-of-detail ladder
-// (wall3d-splat-ladder.js). The smallest level shows first; while frames stay fast the view steps up
-// one level at a time (the next level loads behind the one showing, then replaces it), up to what the
-// device may take. A lost WebGL context (iOS Safari drops it when a frame or the tab is too heavy) is
-// not an error: the view waits for the context to come back and resumes one level lower at a lower
-// resolution (wall3d-splat-recover.js). Only when even the smallest level is lost twice does it give
+// (wall3d-splat-ladder.js). The smallest level shows first; while a short probe finds frames fast the
+// view steps up one level at a time (the next level loads behind the one showing, then replaces it),
+// up to what the device may take (wall3d-splat-policy.js). A lost WebGL context (iOS Safari drops it
+// when a frame or the tab is too heavy) is not an error: the view waits for the context to come back
+// and resumes one level lower at a lower resolution (wall3d-splat-recover.js). Only when even the smallest level is lost twice does it give
 // up, quietly, back to Schematic. Every step is reported to the server log (wall3d-splat-diag.js).
 // A shader that fails (iOS's Metal translator) is retried once on a plainer Spark path.
 //
-// While the mode is on the view renders continuously: Spark sorts splats in a worker and needs the
-// frames after a camera move to show the re-sorted result.
-import { createDetailBadge, createFrameMonitor, ladderOf, levelCap, pinnedLevel, remembered, rememberSuccess, sizeOf } from './wall3d-splat-ladder.js';
+// Rendered on demand (wall3d-loop.js): Spark re-sorts only after a camera move and its `onDirty`
+// asks for the frame showing the finished sort; phones space sorts LIGHT_SORT_MS apart.
+import { createDetailBadge, highDetail, ladderOf, levelCap, pinnedLevel, remembered, rememberSuccess, sizeOf, storeHighDetail } from './wall3d-splat-ladder.js';
+import { createLadderPolicy } from './wall3d-splat-policy.js';
 import { deviceFacts, report } from './wall3d-splat-diag.js';
 import { PHOTO_REAL_FAILED } from './wall3d-modes.js';
-import { createRecovery, createRenderScale, prefersLightSplat } from './wall3d-splat-recover.js';
+import { createRecovery, createRenderScale, prefersLightSplat, supportsPhotoReal as supported } from './wall3d-splat-recover.js';
+import { releaseTextures } from './wall3d-stage.js';
 import { createShaderRetry } from './wall3d-splat-safe.js';
 
 export { prefersLightSplat };
 
-/** Spark packs splats into 2048-wide texture arrays; anything smaller cannot hold a wall. */
-const MIN_TEXTURE_SIZE = 2048;
+/** Minimum time between two splat sorts on a phone (each one reads back and sorts every splat). */
+const LIGHT_SORT_MS = 90;
 
 export class PhotoRealUnsupportedError extends Error {}
-
-function supported(renderer) {
-    const gl = renderer.getContext();
-    return typeof WebGL2RenderingContext !== 'undefined'
-        && gl instanceof WebGL2RenderingContext
-        && gl.getParameter(gl.MAX_TEXTURE_SIZE) >= MIN_TEXTURE_SIZE
-        && gl.getParameter(gl.MAX_ARRAY_TEXTURE_LAYERS) >= 1;
-}
-
-/** Frees the GPU copies of the facet photos (three.js re-uploads them if Photos mode shows again). */
-function releaseTextures(group) {
-    group?.traverse(o => {
-        const m = o.material;
-        if (!m) return;
-        for (const t of [m.map, m.alphaMap]) t?.dispose();
-    });
-}
 
 /**
  * @param ctx.renderer      the view's THREE.WebGLRenderer
@@ -54,14 +39,16 @@ function releaseTextures(group) {
  * @param ctx.onProgress    (fraction 0..1 or null when unknown) while the first level downloads
  * @param ctx.onGiveUp      (message) when even the smallest level cannot be shown on this device
  * @param ctx.clip          the splat clip (wall3d-splat-clip.js): near fade, mats, ghosted facets
+ * @param ctx.request       asks the render loop for a frame (a sort finished, a level swapped in)
  */
-export function createPhotoReal({ renderer, scene, view, facetParts, photoTextures, onProgress, onGiveUp, clip }) {
+export function createPhotoReal({ renderer, scene, view, facetParts, photoTextures, onProgress, onGiveUp, clip, request = () => {} }) {
     const levels = ladderOf(view);
     const light = prefersLightSplat(renderer);
     const facts = { ...deviceFacts(renderer), mobile: light };
     const scale = createRenderScale(renderer, light);
-    const monitor = createFrameMonitor(light);
-    let cap = levels.length > 0 ? levelCap(levels, light) : 0;
+    const policy = createLadderPolicy(light);
+    let high = highDetail();
+    let cap = levels.length > 0 ? levelCap(levels, light, high) : 0;
     let spark = null;               // the Spark module, once imported
     let sparkRenderer = null;
     let mesh = null;
@@ -77,7 +64,7 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
 
     const state = extra => ({
         level: index, levels: levels.length, splats: index >= 0 ? levels[index].splats : null,
-        frameMs: monitor.median || null, elapsedMs: startedAt ? performance.now() - startedAt : null,
+        frameMs: policy.monitor.median || null, elapsedMs: startedAt ? performance.now() - startedAt : null,
         lostCount: recovery.lostCount, safeSplats: remembered().failSplats ?? null, mobile: light, ...extra,
     });
     const say = (event, extra) => report(event, renderer, facts, state(extra));
@@ -110,7 +97,10 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
         if (disposed) return false;
         const myEpoch = epoch;
         if (!sparkRenderer) {
-            sparkRenderer = new spark.SparkRenderer({ renderer, ...clip?.rendererOptions, ...retry.rendererOptions });
+            sparkRenderer = new spark.SparkRenderer({
+                renderer, onDirty: () => request(), minSortIntervalMs: light ? LIGHT_SORT_MS : 0,
+                ...clip?.rendererOptions, ...retry.rendererOptions,
+            });
             clip?.install(sparkRenderer);
             sparkRenderer.visible = active;
             scene.add(sparkRenderer);
@@ -148,7 +138,8 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
         index = i;
         mesh.visible = active;
         if (old) { scene.remove(old); old.dispose(); }
-        monitor.reset();
+        policy.shown(index < cap);
+        request();
         return true;
     }
 
@@ -190,8 +181,7 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
     }
 
     function apply() {
-        // The SparkRenderer draws its last sorted splats itself, so it is hidden too: with only the
-        // mesh hidden, an on-demand redraw after switching back still showed the splat.
+        // The SparkRenderer draws its last sorted splats itself: hidden too, or a redraw shows them.
         if (mesh) mesh.visible = active;
         if (sparkRenderer) sparkRenderer.visible = active;
         for (const part of facetParts) part.visible = !active;
@@ -213,7 +203,6 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
 
     return {
         get available() { return !!(levels.length > 0 && view.splatMatrix && view.splatMatrix.length === 16); },
-        /** Whether this device counts as light (phone-class: capped ladder, 1× pixel ratio). */
         get light() { return light; },
         get active() { return active; },
         get loaded() { return !!mesh && mesh.isInitialized; },
@@ -233,33 +222,51 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
             apply();
         },
 
-        /** Called every rendered frame while the mode shows: measures and steps the ladder. */
+        /** Called every drawn frame while the mode shows: measures and steps the ladder. */
         frame(now) {
             if (!active || !mesh || stepping !== null || recovery.recovering || broken) return;
             const next = index + 1;
             if (next <= cap && sizeOf(levels[next]) <= (remembered().okSplats ?? 0)) {
+                policy.stop();
                 stepTo(next);                     // ran fine here before: no need to measure again
                 return;
             }
-            const decision = monitor.frame(now);
+            const decision = policy.frame(now, !high && index > 1);
             if (decision === 'up') {
                 rememberSuccess(levels[index]);
                 if (next <= cap) stepTo(next);
-            } else if (decision === 'down' && index > 0) {
+            } else if ((decision === 'down' || decision === 'sustained') && index > 0) {
                 cap = index - 1;
-                say('slow', { detail: `median ${monitor.median.toFixed(1)} ms` });
+                say(decision === 'down' ? 'slow' : 'sustained', { detail: `median ${policy.monitor.median.toFixed(1)} ms` });
                 stepTo(index - 1);
             }
+        },
+
+        /** True while the ladder wants back-to-back frames (a probe measuring the level on show). */
+        get wantsFrames() { return active && !!mesh && policy.probing && stepping === null && !recovery.recovering; },
+        /** Whether the loop caps the frame rate (a phone, outside a probe). */
+        get capped() { return active && light && !policy.probing; },
+        /** A camera move started / settled: a phone renders at a lower resolution in between. */
+        interact(moving) { scale.interact(moving); },
+        get highDetail() { return high; },
+        /** Whether Detail: high changes anything here (a phone with levels above the auto cap). */
+        get detailChoice() { return light && levels.length > 0 && levelCap(levels, true, true) > levelCap(levels, true, false); },
+        /** Detail: high lifts a phone's cap (wall3d-splat-ladder.js); auto steps back down to its cap. */
+        setHighDetail(on) {
+            high = !!on;
+            storeHighDetail(high);
+            cap = levelCap(levels, light, high);
+            if (!mesh || broken) return;
+            if (index > cap) stepTo(cap);
+            else policy.shown(index < cap);
+            request();
         },
 
         /** A lost WebGL context: true when photo-real handles it (it had started), else false. */
         contextLost: event => !disposed && !broken && !!loading && recovery.lost(event),
         contextRestored: () => recovery.restored(),
 
-        /**
-         * Gives up after a render failure (shader error, or recovery gave up): every later
-         * `setActive(true)` throws. A pending context restore still goes ahead for the modelled view.
-         */
+        /** Gives up after a render failure: every later `setActive(true)` throws (a restore still runs). */
         fail(reason, shader) {
             if (reason && !broken) say('failed', { detail: reason, shader });
             broken = true;
@@ -270,9 +277,8 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
         },
 
         /**
-         * A shader failed (`failure` from describeShaderFailure): reloads the level on the plainer
-         * Spark path (wall3d-splat-safe.js), once. True while that retry is on; false when photo-real
-         * never started or the retry itself failed (the caller then falls back to Schematic).
+         * A shader failed (describeShaderFailure): reloads the level on the plainer Spark path
+         * (wall3d-splat-safe.js), once. False when there is nothing (left) to retry: Schematic then.
          */
         retrySimple(failure) {
             if (disposed || broken || !loading) return false;

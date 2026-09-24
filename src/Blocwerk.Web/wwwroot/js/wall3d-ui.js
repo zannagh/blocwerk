@@ -74,8 +74,11 @@ export function buildOverlay(root, view, on, modes, { hintOnce = false } = {}) {
         b.addEventListener('click', () => on.preset(name));
         presets.append(b);
     }
-    const reset = el('button', 'w3d-btn w3d-btn-reset', 'Reset');
+    // An icon: six labelled buttons do not fit a 360px phone, and "↺" reads as reset on its own.
+    const reset = el('button', 'w3d-btn w3d-btn-reset', '↺');
     reset.type = 'button';
+    reset.title = 'Reset the view';
+    reset.setAttribute('aria-label', 'Reset the view');
     reset.addEventListener('click', () => on.reset());
     presets.append(reset);
 

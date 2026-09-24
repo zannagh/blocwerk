@@ -1,12 +1,20 @@
 // Level-of-detail ladder of the photo-real view (wall3d-splat.js). The server stores the splat scene
 // pruned to a few sizes (SplatLodLadder: ~40k, 120k, 250k, 800k and 2M splats as the scene allows,
 // then the full scene). A device starts on the smallest — it shows within a second, even on a phone —
-// and steps up one level at a time while frames stay fast, up to a device-dependent cap. A lost WebGL
-// context steps it back down and remembers, in this browser, the size that was too much, so the next
-// visit stops below it.
+// and steps up one level at a time while a short measurement says frames are fast, up to a
+// device-dependent cap. A lost WebGL context steps it back down and remembers, in this browser, the
+// size that was too much, so the next visit stops below it.
+//
+// Phones stop at LIGHT_CAP_SPLATS: a phone that renders 800k splats smoothly still gets hot doing it
+// for minutes. "High detail" (the Detail toggle, remembered per browser) lifts that to
+// LIGHT_HIGH_CAP_SPLATS.
 
-/** Phones and low-memory devices never step past this many splats. */
-const LIGHT_CAP_SPLATS = 800_000;
+/** Phones and low-memory devices never step past this many splats (Detail: auto). */
+const LIGHT_CAP_SPLATS = 250_000;
+/** … and with Detail: high. */
+const LIGHT_HIGH_CAP_SPLATS = 800_000;
+/** A gap this long between two frames ends a measurement run (the view idles between moves). */
+const GAP_MS = 500;
 /** Frames skipped after a level shows (uploads, the first sorts) before its frame time counts. */
 const WARMUP_FRAMES = 20;
 /** Frames measured before deciding to step up. */
@@ -16,6 +24,24 @@ const STEP_UP_MS = { light: 26, desktop: 45 };
 /** Median frame time (ms) above which a level is too slow and the view steps back down. */
 const STEP_DOWN_MS = 90;
 const STORE_KEY = 'bw.photoreal.lod.v1';
+const DETAIL_KEY = 'bw.photoreal.detail';
+
+/** Whether this browser asked for high detail (the photo-real Detail toggle). */
+export function highDetail() {
+    try {
+        return localStorage.getItem(DETAIL_KEY) === 'high';
+    } catch {
+        return false;
+    }
+}
+
+export function storeHighDetail(on) {
+    try {
+        localStorage.setItem(DETAIL_KEY, on ? 'high' : 'auto');
+    } catch {
+        // Private mode / storage off: the toggle holds for this view only.
+    }
+}
 
 /**
  * The view's levels, smallest first: `view.splatLevels` ({ url, splats, sizeBytes }), or for an older
@@ -75,11 +101,12 @@ export function rememberSuccess(level) {
 }
 
 /**
- * Highest level index this device may step up to: light devices stop below LIGHT_CAP_SPLATS, and
- * everyone below a size that lost the context here before (the smallest level is always allowed).
+ * Highest level index this device may step up to: light devices stop below LIGHT_CAP_SPLATS
+ * (LIGHT_HIGH_CAP_SPLATS with `high`), and everyone below a size that lost the context here before
+ * (the smallest level is always allowed).
  * `?splatLevel=N` pins the level (testing); `?splatLod=full|mobile` pins the top / the first.
  */
-export function levelCap(levels, light) {
+export function levelCap(levels, light, high = false) {
     const q = new URLSearchParams(location.search);
     const pinned = pinnedLevel(levels.length, q);
     if (pinned != null) return pinned;
@@ -87,7 +114,7 @@ export function levelCap(levels, light) {
     let cap = 0;
     for (let i = 1; i < levels.length; i++) {
         const size = sizeOf(levels[i]);
-        if (size >= failed || (light && size > LIGHT_CAP_SPLATS)) break;
+        if (size >= failed || (light && size > (high ? LIGHT_HIGH_CAP_SPLATS : LIGHT_CAP_SPLATS))) break;
         cap = i;
     }
     return cap;
@@ -105,7 +132,9 @@ export function pinnedLevel(count, q = new URLSearchParams(location.search)) {
 
 /**
  * Measures frame intervals of the level on show and decides: 'up' (fast enough to step up), 'down'
- * (too slow), or null (keep measuring / stay). `light` picks the stricter threshold.
+ * (too slow), 'stay' (measured, in between) or null (keep measuring). Only back-to-back frames
+ * count: the view renders on demand, so a gap longer than GAP_MS starts a new run. `light` picks
+ * the stricter threshold.
  */
 export function createFrameMonitor(light) {
     let last = 0;
@@ -117,7 +146,7 @@ export function createFrameMonitor(light) {
         /** The last decision's median frame time, for the diagnostics. */
         median: 0,
         frame(now) {
-            if (last) {
+            if (last && now - last <= GAP_MS) {
                 seen++;
                 if (seen > WARMUP_FRAMES) samples.push(now - last);
             }
@@ -128,7 +157,7 @@ export function createFrameMonitor(light) {
             samples = [];
             if (this.median <= upMs) return 'up';
             if (this.median > STEP_DOWN_MS) return 'down';
-            return null;
+            return 'stay';
         },
     };
 }
