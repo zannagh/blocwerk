@@ -19,21 +19,22 @@ By default (blendViews > 1, see blended.py) every photo is first exposure / whit
 (exposure.py), and the per-cell choice penalises photos that disagree with what the other photos see
 there (consensus.py), so occluders not in the model (roof rafters) are not painted onto the wall;
 seams are feathered from the top-N sample slots (blend.py). blendViews = 1 is the plain method above.
-Finally the facets are harmonised where they meet (seams.py): a smooth low-frequency correction per
-facet so no brightness / colour step shows along a shared edge.
+Finally facets at the same overhang are evenly shaded to one common level (flatten.py), and every
+shared edge is smoothed locally (seams.py) so no hard brightness / colour line shows there.
 """
 import math
 
 import cv2
 import numpy as np
 
-from . import blend, consensus, exposure, seams
+from . import blend, consensus, exposure, flatten, seams
 from .markercheck import marker_check
 
 DEFAULTS = {"behindOtherFacetMm": 30.0, "mmPerPx": 2.0, "maxSidePx": 4096, "extraMarginMm": 100.0, "labelCellPx": 8,
             "modeFilterCells": 5, "imageMarginPx": 16, "jpegQuality": 90, "maskFeatherPx": 4.0,
             "blendMaxBytes": 2.0e9, **blend.BLEND_DEFAULTS, **exposure.GAIN_DEFAULTS,
-            **consensus.CONSENSUS_DEFAULTS, **seams.SEAM_DEFAULTS}
+            **consensus.CONSENSUS_DEFAULTS, **flatten.FLATTEN_DEFAULTS,
+            **seams.SEAM_DEFAULTS}
 
 
 # What a client may set in `options`, with its bounds (everything else in DEFAULTS is internal).
@@ -213,8 +214,14 @@ def render_textures(doc, load_photo, available, params=None, progress=None):
         results = blended.render(doc, load_photo, cams, names, facets, p, progress)
     else:
         results = _render_single(doc, load_photo, cams, names, facets, p, progress)
+    fid = {f["id"]: f for f in facets}
+    if p["flattenShading"]:
+        shading = flatten.flatten(results, fid, p)
+        for r in results:
+            if r["facet"] in shading:
+                r["shading"] = shading[r["facet"]]
     if p["seamHarmonise"] and len(results) > 1:
-        report = seams.harmonise(results, {f["id"]: f for f in facets}, p)
+        report = seams.harmonise(results, fid, p)
         for r in results:
             r["seams"] = {k: v for k, v in report.items() if r["facet"] in k.split("-")}
     return results

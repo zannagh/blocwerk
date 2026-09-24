@@ -4,20 +4,20 @@ Even with one global exposure solve, two facets that meet at an edge are usually
 photos (and the light falls on them differently), so the 3D view can show a step along the shared
 edge. Here every pair of facets whose extents meet gets a thin band on each side of the edge
 (`seamBandMm`). Along the edge, in bins of `seamBinMm`, the band's median log colour is compared per
-channel; each side is corrected by half the difference so both meet in the middle (a multiplicative
-gain in log space, so the band's mean and spread are matched together). The per-facet correction is a smooth, low-frequency log-gain
-field: the band values, smoothed along the edge, extended to the whole facet from the nearest band
-pixel and faded out with the distance from the edge (Gaussian, `seamFalloffMm`). So there is no hard
-jump at the seam, while a real lighting difference between facets (one side of the room lit
-brighter) stays as a gentle gradient further in. A few passes settle facets with several seams.
+channel; each side is corrected by half the difference so both meet in the middle AT the edge (a
+multiplicative gain in log space, so the band's mean and spread are matched together). The correction
+is smoothed along the edge and fades out quickly with the distance from the edge (Gaussian,
+`seamFalloffMm`): no hard line at the seam, while each facet keeps its own level everywhere but right
+at the edge (a vertical kickboard lit brighter than the overhang above it; see flatten.py for the
+even shading within facets of the same overhang).
 
 Works on low-resolution copies (`seamDownscale`) and changes only covered pixels.
 """
 import cv2
 import numpy as np
 
-SEAM_DEFAULTS = {"seamHarmonise": True, "seamBandMm": (30.0, 130.0), "seamBinMm": 150.0, "seamSmoothMm": 200.0,
-                 "seamFalloffMm": 700.0, "seamDownscale": 4, "seamPasses": 3, "seamMinPixels": 12,
+SEAM_DEFAULTS = {"seamHarmonise": True, "seamBandMm": (30.0, 130.0), "seamBinMm": 150.0, "seamSmoothMm": 150.0,
+                 "seamFalloffMm": 100.0, "seamDownscale": 4, "seamPasses": 1, "seamMinPixels": 12,
                  "seamMaxLogStep": 0.7, "seamMinEdgeMm": 300.0}
 DARK, BRIGHT = 12.0, 243.0
 
@@ -116,32 +116,34 @@ def _seam_targets(A, B, bandA, bandB, t, p):
     return cA, cB
 
 
-def _field(T, band_vals, p):
-    """Smooth log-gain field of one facet from its band corrections (list of (mask, values))."""
-    num = np.zeros((T.h, T.w, 3), np.float32)
-    den = np.zeros((T.h, T.w), np.float32)
-    for m, v in band_vals:
-        good = ~np.isnan(v[:, 0])
-        ys, xs = np.nonzero(m)
-        np.add.at(num, (ys[good], xs[good]), v[good])
-        np.add.at(den, (ys[good], xs[good]), 1.0)
-    if not den.any():
-        return np.zeros_like(num)
+def _field(T, seam_vals, p):
+    """Log-gain field of one facet from its seams: list of (band mask, band corrections, other facet).
+    Per seam the band values are smoothed along the edge, carried to every pixel from its nearest band
+    pixel and weighted by a Gaussian of the pixel's distance to the edge: full half-step at the edge,
+    gone within a few `seamFalloffMm`, so the facet keeps its own level further in."""
+    out = np.zeros((T.h, T.w, 3), np.float32)
     sig = max(float(p["seamSmoothMm"]) / T.g["res"], 0.5)
-    nb = cv2.GaussianBlur(num, (0, 0), sig)
-    db = cv2.GaussianBlur(den, (0, 0), sig)
-    band = den > 0  # the seam band itself: the fade below starts at its edge
-    val = np.where(band[..., None], nb / np.maximum(db, 1e-9)[..., None], 0)
-    # extend from the nearest band pixel, fading with the distance from the seam
-    src = np.where(band, 0, 255).astype(np.uint8)
-    dist, lab = cv2.distanceTransformWithLabels(src, cv2.DIST_L2, 5, labelType=cv2.DIST_LABEL_PIXEL)
-    by, bx = np.nonzero(band)
-    idx = np.zeros(lab.max() + 1, np.intp)
-    idx[lab[by, bx]] = np.arange(by.size)
-    ext = val[by, bx][idx[lab]]
-    fall = np.exp(-0.5 * (dist * T.g["res"] / float(p["seamFalloffMm"])) ** 2)
-    out = ext * fall[..., None]
-    return cv2.GaussianBlur(out.astype(np.float32), (0, 0), sig)
+    for m, v, other in seam_vals:
+        good = ~np.isnan(v[:, 0])
+        if not good.any():
+            continue
+        num = np.zeros((T.h, T.w, 3), np.float32)
+        den = np.zeros((T.h, T.w), np.float32)
+        ys, xs = np.nonzero(m)
+        num[ys[good], xs[good]] = v[good]
+        den[ys[good], xs[good]] = 1.0
+        nb, db = cv2.GaussianBlur(num, (0, 0), sig), cv2.GaussianBlur(den, (0, 0), sig)
+        band = den > 0
+        val = nb / np.maximum(db, 1e-9)[..., None]
+        src = np.where(band, 0, 255).astype(np.uint8)
+        _, lab = cv2.distanceTransformWithLabels(src, cv2.DIST_L2, 5, labelType=cv2.DIST_LABEL_PIXEL)
+        by, bx = np.nonzero(band)
+        idx = np.zeros(lab.max() + 1, np.intp)
+        idx[lab[by, bx]] = np.arange(by.size)
+        ext = val[by, bx][idx[lab]]
+        fall = np.exp(-0.5 * (_dist_to(other, T.X) / float(p["seamFalloffMm"])) ** 2)
+        out += ext * fall[..., None].astype(np.float32)
+    return out
 
 
 def harmonise(results, facets, params=None):
@@ -157,8 +159,8 @@ def harmonise(results, facets, params=None):
         per = {k: [] for k in range(len(texs))}
         for i, j, bandA, bandB, t in pairs:
             cA, cB = _seam_targets(texs[i], texs[j], bandA, bandB, t, p)
-            per[i].append((bandA, cA))
-            per[j].append((bandB, cB))
+            per[i].append((bandA, cA, texs[j].f))
+            per[j].append((bandB, cB, texs[i].f))
         for k, T in enumerate(texs):
             if per[k]:
                 T.field += _field(T, per[k], p)

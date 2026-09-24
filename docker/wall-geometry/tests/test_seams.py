@@ -70,18 +70,18 @@ def test_chroma_is_pulled_harder_towards_one_than_brightness():
     assert np.all(np.abs(full) < 0.5 * np.abs(np.log(1 / tint)) + 1e-3)
 
 
-def test_seam_offset_between_facets_is_unified():
+def test_seam_offset_between_facets_is_smoothed_locally():
     rng = np.random.default_rng(5)
     wood = _wood(rng)
     facets, res = _two_facets(wood, lambda X, Z: wood(X, Z) * 0.7)  # facet B 30 % darker
-    before = _strip(res[0], 0, 870, 970) / _strip(res[1], 1000, 30, 130)
+    edge = lambda: _strip(res[0], 0, 965, 1000) / _strip(res[1], 1000, 0, 35)
+    far = lambda: _strip(res[0], 0, 0, 100) / _strip(res[1], 1000, 850, 950)
+    before_edge, before_far = edge(), far()
     rep = seams.harmonise(res, facets)
-    after = _strip(res[0], 0, 870, 970) / _strip(res[1], 1000, 30, 130)
-    assert before > 1.35 and abs(after - 1) < 0.04, (before, after)
-    assert rep["A-B"]["after"] < 0.04 < rep["A-B"]["before"]
-    # far from the seam the correction fades: a mild difference stays, the edge itself has no step
-    far = _strip(res[0], 0, 0, 100) / _strip(res[1], 1000, 850, 950)
-    assert 1.05 < far < before
+    assert before_edge > 1.35 and abs(edge() - 1) < 0.06, (before_edge, edge())
+    assert rep["A-B"]["after"] < rep["A-B"]["before"]
+    # away from the edge each facet keeps its own level: only the seam is smoothed
+    assert abs(far() / before_far - 1) < 0.03
 
 
 def test_real_lighting_gradient_across_the_seam_is_kept():
