@@ -124,6 +124,7 @@ public sealed partial class GpuJobQueue
                     .SetProperty(j => j.LeaseExpiresAt, lease)
                     .SetProperty(j => j.Progress, 0)
                     .SetProperty(j => j.Stage, "is downloading the photos")
+                    .SetProperty(j => j.Error, (string?)null)
                     .SetProperty(j => j.Attempts, j => j.Attempts + 1),
                 ct);
         if (claimed == 0)

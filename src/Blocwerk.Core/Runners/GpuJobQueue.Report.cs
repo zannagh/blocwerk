@@ -92,7 +92,8 @@ public sealed partial class GpuJobQueue
                 s => s.SetProperty(j => j.Status, GpuJobStatus.Running)
                     .SetProperty(j => j.LeaseExpiresAt, lease)
                     .SetProperty(j => j.Progress, progress)
-                    .SetProperty(j => j.Stage, stage),
+                    .SetProperty(j => j.Stage, stage)
+                    .SetProperty(j => j.Error, (string?)null),
                 ct);
         return updated == 0 ? RunnerJobOutcome.Gone : RunnerJobOutcome.Ok;
     }
@@ -121,7 +122,13 @@ public sealed partial class GpuJobQueue
             "Runner {RunnerId} ({Name}) gave GPU job {JobId} back ({Kind}; failures {Failures}, shutdowns {Shutdowns}): {Reason}",
             runner.Id, runner.Name, job.Id, kind, job.FailureCount, job.ShutdownCount, reason);
         var text = failure.Shutdown ? "the 3D runner shut down" : $"training on the 3D runner failed: {reason}";
-        return await ReleaseAsync(db, job, kind, text, ct) ? RunnerJobOutcome.Ok : RunnerJobOutcome.Gone;
+        var released = await ReleaseAsync(db, job, kind, text, ct);
+        if (failure.Shutdown)
+        {
+            await MarkStoppedAsync(db, runner.Id, ct);
+        }
+
+        return released ? RunnerJobOutcome.Ok : RunnerJobOutcome.Gone;
     }
 
     /// <summary>
@@ -181,6 +188,17 @@ public sealed partial class GpuJobQueue
             ReleaseKind.LostLease => ++job.LostLeaseCount < options.MaxLostLeases,
             _ => false,
         };
+    }
+
+    /// <summary>
+    /// A runner that said it is shutting down is offline now, not for another <see cref="GpuRunnerOptions.OnlineWindow"/>
+    /// ("1 online, busy" on the job it just handed back). Its next call marks it online again.
+    /// </summary>
+    private async Task MarkStoppedAsync(BlocwerkDbContext db, Guid runnerId, CancellationToken ct)
+    {
+        var offline = Now - options.OnlineWindow - TimeSpan.FromSeconds(1);
+        await db.GpuRunners.Where(r => r.Id == runnerId && r.LastSeenAt > offline)
+            .ExecuteUpdateAsync(s => s.SetProperty(r => r.LastSeenAt, offline), ct);
     }
 
     private static string Describe(RunnerProgress report)

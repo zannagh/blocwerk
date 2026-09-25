@@ -35,6 +35,13 @@ public sealed partial class GpuJobQueue
         return expired.Count;
     }
 
+    /// <summary>The queued job's line for <paramref name="online"/> able runners, <paramref name="busy"/> of them on another job.</summary>
+    internal static string WaitingStage(SplatQuality quality, int online, int busy) =>
+        online == 0 ? $"waiting for a 3D runner that can train {CaptureSplatDocuments.QualityName(quality)} (none online)"
+        : busy >= online ? $"waiting for a 3D runner ({online} online, busy)"
+        : busy == 0 ? $"waiting for a 3D runner ({online} online)"
+        : $"waiting for a 3D runner ({online} online, {busy} busy)";
+
     private async Task ExpireLeaseAsync(BlocwerkDbContext db, GpuJob job, DateTimeOffset now, CancellationToken ct)
     {
         if (job.ClaimedAt is { } claimed && claimed + options.MaxJobDuration <= now)
@@ -123,7 +130,10 @@ public sealed partial class GpuJobQueue
         }
     }
 
-    /// <summary>"waiting for a 3D runner (none online)" / "(1 online, busy)" on every queued job.</summary>
+    /// <summary>
+    /// "waiting for a 3D runner (none online)" / "(1 online, busy)" on every queued job, from the runners' current
+    /// heartbeat (a runner that reported its shutdown is offline at once) and whether each one holds a claim right now.
+    /// </summary>
     private async Task RefreshWaitingAsync(BlocwerkDbContext db, CancellationToken ct)
     {
         var waiting = await db.GpuJobs.AsNoTracking().Where(j => j.Status == GpuJobStatus.Queued).ToListAsync(ct);
@@ -135,15 +145,19 @@ public sealed partial class GpuJobQueue
         var online = Now - options.OnlineWindow;
         var walls = waiting.Select(j => j.WallId).Distinct().ToList();
         var own = await Assignments(db).Where(rw => walls.Contains(rw.WallId) && rw.Runner.LastSeenAt >= online)
-            .Select(rw => new { rw.WallId, rw.Runner.MaxQuality }).ToListAsync(ct);
+            .Select(rw => new { rw.WallId, rw.RunnerId, rw.Runner.MaxQuality }).ToListAsync(ct);
         var shared = await Approvals(db).Where(a => walls.Contains(a.WallId) && a.Runner.LastSeenAt >= online)
-            .Select(a => new { a.WallId, a.Runner.MaxQuality }).ToListAsync(ct);
+            .Select(a => new { a.WallId, a.RunnerId, a.Runner.MaxQuality }).ToListAsync(ct);
+        var busy = (await db.GpuJobs.AsNoTracking()
+                .Where(j => (j.Status == GpuJobStatus.Claimed || j.Status == GpuJobStatus.Running) && j.ClaimedByRunnerId != null)
+                .Select(j => j.ClaimedByRunnerId!.Value).ToListAsync(ct))
+            .ToHashSet();
         foreach (var job in waiting)
         {
-            var able = own.Concat(shared).Where(o => o.WallId == job.WallId).Count(o => QualityCap(o.MaxQuality, null) >= job.Quality);
-            var stage = able == 0
-                ? $"waiting for a 3D runner that can train {CaptureSplatDocuments.QualityName(job.Quality)} (none online)"
-                : $"waiting for a 3D runner ({able} online, busy)";
+            var able = own.Concat(shared)
+                .Where(o => o.WallId == job.WallId && QualityCap(o.MaxQuality, null) >= job.Quality)
+                .Select(o => o.RunnerId).Distinct().ToList();
+            var stage = WaitingStage(job.Quality, able.Count, able.Count(busy.Contains));
             if (stage != job.Stage)
             {
                 // Conditional: a runner may have claimed it meanwhile (its stage then says so).
