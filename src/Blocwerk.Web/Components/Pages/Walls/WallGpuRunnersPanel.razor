@@ -67,21 +67,25 @@
         }
     }
 
-    <label class="gpu-runner-toggle gpu-runner-optin">
-        <input type="checkbox" checked="@acceptsShared" disabled="@busy" @onchange="e => SetAcceptsSharedAsync(e.Value is true)" />
-        Let other admins' shared runners train this wall's photo-real view
-    </label>
     <p class="hint">
-        Off by default. When on, this wall's capture photos (metadata removed) go to a machine another admin owns,
-        but only while none of this wall's own runners is online.
+        Shared runners (offered by a site admin) are listed above too. One trains this wall's photo-real view only
+        once you tick <em>Let this runner train this wall</em> on it, and only while none of this wall's own runners
+        is online. This wall's capture photos (metadata removed) then go to that machine, which someone else owns.
     </p>
 
-    <div class="form-group gpu-runner-create">
-        <label for="gpu-runner-name">New runner</label>
-        <input id="gpu-runner-name" class="form-input" maxlength="100" placeholder="e.g. Gaming PC in the cellar"
-               @bind="name" @bind:event="oninput" />
-    </div>
-    <button type="button" class="btn-submit" disabled="@(busy || string.IsNullOrWhiteSpace(name))" @onclick="CreateAsync">
-        @(busy ? "Working..." : "Create runner")
-    </button>
+    @if (Runners.Enabled)
+    {
+        <div class="form-group gpu-runner-create">
+            <label for="gpu-runner-name">New runner</label>
+            <input id="gpu-runner-name" class="form-input" maxlength="100" placeholder="e.g. Gaming PC in the cellar"
+                   @bind="name" @bind:event="oninput" />
+        </div>
+        <button type="button" class="btn-submit" disabled="@(busy || string.IsNullOrWhiteSpace(name))" @onclick="CreateAsync">
+            @(busy ? "Working..." : "Create runner")
+        </button>
+    }
+    else
+    {
+        <p class="hint">3D runners are turned off on this server (<code>RUNNERS__MODE=off</code>), so no new runner can be created.</p>
+    }
 </div>

@@ -1,6 +1,7 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using System.Globalization;
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
@@ -9,78 +10,75 @@ using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Runners;
 
-/// <summary>Lease expiry, cancellation, and the "waiting for a 3D runner" text of queued jobs.</summary>
+/// <summary>Lease expiry, the queued jobs' lifetime, and the "waiting for a 3D runner" text of queued jobs.</summary>
 public sealed partial class GpuJobQueue
 {
-    /// <summary>Requeues (or fails) every job whose lease ran out; refreshes the queued jobs' text. Returns how many expired.</summary>
+    /// <summary>
+    /// Requeues (or fails) every job whose lease ran out, cancels jobs that waited longer than
+    /// <see cref="GpuRunnerOptions.QueuedLifetime"/>, and refreshes the queued jobs' text. Returns how many leases expired.
+    /// </summary>
     public async Task<int> SweepAsync(CancellationToken ct)
     {
         await using var db = dbContextFactory.CreateDbContext();
         var now = Now;
-        var expired = await db.GpuJobs
+        var expired = await db.GpuJobs.AsNoTracking()
             .Where(j => (j.Status == GpuJobStatus.Claimed || j.Status == GpuJobStatus.Running) && j.LeaseExpiresAt < now)
             .ToListAsync(ct);
         foreach (var job in expired)
         {
-            logger.LogWarning(
-                "GPU job {JobId}: the lease of runner {RunnerId} expired (lost {Lost} of {Max})",
-                job.Id, job.ClaimedByRunnerId, job.LostLeaseCount + 1, options.MaxLostLeases);
-            await ReleaseAsync(db, job, ReleaseKind.LostLease, "the 3D runner stopped responding (its lease expired)", ct);
+            await ExpireLeaseAsync(db, job, now, ct);
         }
 
+        await ExpireQueuedAsync(db, now, ct);
         await RetryUnfinishedAsync(db, now, ct);
         await RefreshWaitingAsync(db, ct);
         return expired.Count;
     }
 
-    /// <summary>Cancels the capture's waiting or running GPU job. The capture keeps its model (and any older photo-real view).</summary>
-    public async Task<bool> CancelForCaptureAsync(Guid captureId, string reason, CancellationToken ct)
+    private async Task ExpireLeaseAsync(BlocwerkDbContext db, GpuJob job, DateTimeOffset now, CancellationToken ct)
     {
-        await using var db = dbContextFactory.CreateDbContext();
-        var jobs = await CancelActiveAsync(db, captureId, reason, Now, ct);
-        await db.SaveChangesAsync(ct);
-        foreach (var job in jobs)
+        if (job.ClaimedAt is { } claimed && claimed + options.MaxJobDuration <= now)
         {
-            logger.LogInformation("GPU job {JobId} of capture {CaptureId} cancelled: {Reason}", job.Id, captureId, reason);
-            DeleteFiles(job);
+            // Heartbeats alone never keep a claim past the wall-clock cap; that costs a training attempt.
+            var hours = options.MaxJobDuration.TotalHours.ToString("0.#", CultureInfo.InvariantCulture);
+            logger.LogWarning("GPU job {JobId}: runner {RunnerId} held it longer than {Hours} h", job.Id, job.ClaimedByRunnerId, hours);
+            await ReleaseAsync(db, job, ReleaseKind.Failure, $"the training took longer than {hours} h", ct);
+            return;
         }
 
-        return jobs.Count > 0;
+        logger.LogWarning(
+            "GPU job {JobId}: the lease of runner {RunnerId} expired (lost {Lost} of {Max})",
+            job.Id, job.ClaimedByRunnerId, job.LostLeaseCount + 1, options.MaxLostLeases);
+        await ReleaseAsync(db, job, ReleaseKind.LostLease, "the 3D runner stopped responding (its lease expired)", ct);
     }
 
     /// <summary>
-    /// Marks the capture's waiting, running or delivered-but-not-installed jobs cancelled (not saved) and returns them, so the caller can delete
-    /// their files after saving. A runner holding one learns it with its next call (410).
+    /// Jobs nobody claimed within <see cref="GpuRunnerOptions.QueuedLifetime"/>: cancelled and their files (the bundle is
+    /// a copy of the capture's photos) deleted, so no runner receives them months later.
     /// </summary>
-    public static async Task<List<GpuJob>> CancelActiveAsync(
-        BlocwerkDbContext db, Guid captureId, string reason, DateTimeOffset now, CancellationToken ct)
+    private async Task ExpireQueuedAsync(BlocwerkDbContext db, DateTimeOffset now, CancellationToken ct)
     {
-        var jobs = await db.GpuJobs
-            .Where(j => j.CaptureId == captureId
-                        && (j.Status == GpuJobStatus.Queued || j.Status == GpuJobStatus.Claimed || j.Status == GpuJobStatus.Running
-                            || (j.Status == GpuJobStatus.Succeeded && j.InstalledAt == null)))
-            .ToListAsync(ct);
-        foreach (var job in jobs)
+        var cutoff = now - options.QueuedLifetime;
+        var stale = await db.GpuJobs.AsNoTracking()
+            .Where(j => j.Status == GpuJobStatus.Queued && j.CreatedAt < cutoff).ToListAsync(ct);
+        foreach (var job in stale)
         {
-            job.Status = GpuJobStatus.Cancelled;
-            job.Error = Clip(reason, 2048);
-            job.CompletedAt = now;
-            job.LeaseExpiresAt = null;
-        }
+            var days = options.QueuedLifetime.TotalDays.ToString("0.#", CultureInfo.InvariantCulture);
+            var reason = $"no 3D runner took the photo-real view within {days} days";
+            var cancelled = await db.GpuJobs.Where(j => j.Id == job.Id && j.Status == GpuJobStatus.Queued)
+                .ExecuteUpdateAsync(
+                    s => s.SetProperty(j => j.Status, GpuJobStatus.Cancelled)
+                        .SetProperty(j => j.Error, reason)
+                        .SetProperty(j => j.CompletedAt, now),
+                    ct);
+            if (cancelled == 0)
+            {
+                continue;
+            }
 
-        return jobs;
-    }
-
-    /// <summary>Requeues whatever a revoked runner held, right away and at no cost (its key already stopped working).</summary>
-    public async Task ReleaseRunnerAsync(Guid runnerId, CancellationToken ct)
-    {
-        await using var db = dbContextFactory.CreateDbContext();
-        var held = await db.GpuJobs
-            .Where(j => j.ClaimedByRunnerId == runnerId && (j.Status == GpuJobStatus.Claimed || j.Status == GpuJobStatus.Running))
-            .ToListAsync(ct);
-        foreach (var job in held)
-        {
-            await ReleaseAsync(db, job, ReleaseKind.Free, "the 3D runner was revoked", ct);
+            logger.LogInformation("GPU job {JobId} of capture {CaptureId} expired: {Reason}", job.Id, job.CaptureId, reason);
+            await MarkCaptureWithoutSplatAsync(db, job.CaptureId, reason, ct);
+            DeleteFiles(job);
         }
     }
 
@@ -128,31 +126,30 @@ public sealed partial class GpuJobQueue
     /// <summary>"waiting for a 3D runner (none online)" / "(1 online, busy)" on every queued job.</summary>
     private async Task RefreshWaitingAsync(BlocwerkDbContext db, CancellationToken ct)
     {
-        var waiting = await db.GpuJobs.Where(j => j.Status == GpuJobStatus.Queued).ToListAsync(ct);
+        var waiting = await db.GpuJobs.AsNoTracking().Where(j => j.Status == GpuJobStatus.Queued).ToListAsync(ct);
         if (waiting.Count == 0)
         {
             return;
         }
 
         var online = Now - options.OnlineWindow;
-        var shared = await db.GpuRunners.Where(r => r.RevokedAt == null && r.SharedWithOtherWalls && r.LastSeenAt >= online)
-            .Select(r => r.MaxQuality).ToListAsync(ct);
         var walls = waiting.Select(j => j.WallId).Distinct().ToList();
         var own = await Assignments(db).Where(rw => walls.Contains(rw.WallId) && rw.Runner.LastSeenAt >= online)
             .Select(rw => new { rw.WallId, rw.Runner.MaxQuality }).ToListAsync(ct);
-        var accepting = options.SharedNeedsOptIn
-            ? await db.GpuRunnerSharedOptIns.Where(o => walls.Contains(o.WallId)).Select(o => o.WallId).ToListAsync(ct)
-            : walls;
+        var shared = await Approvals(db).Where(a => walls.Contains(a.WallId) && a.Runner.LastSeenAt >= online)
+            .Select(a => new { a.WallId, a.Runner.MaxQuality }).ToListAsync(ct);
         foreach (var job in waiting)
         {
-            var able = own.Where(o => o.WallId == job.WallId).Select(o => o.MaxQuality)
-                .Concat(accepting.Contains(job.WallId) ? shared : [])
-                .Count(q => QualityCap(q, null) >= job.Quality);
-            job.Stage = able == 0
+            var able = own.Concat(shared).Where(o => o.WallId == job.WallId).Count(o => QualityCap(o.MaxQuality, null) >= job.Quality);
+            var stage = able == 0
                 ? $"waiting for a 3D runner that can train {CaptureSplatDocuments.QualityName(job.Quality)} (none online)"
                 : $"waiting for a 3D runner ({able} online, busy)";
+            if (stage != job.Stage)
+            {
+                // Conditional: a runner may have claimed it meanwhile (its stage then says so).
+                await db.GpuJobs.Where(j => j.Id == job.Id && j.Status == GpuJobStatus.Queued)
+                    .ExecuteUpdateAsync(s => s.SetProperty(j => j.Stage, stage), ct);
+            }
         }
-
-        await db.SaveChangesAsync(ct);
     }
 }

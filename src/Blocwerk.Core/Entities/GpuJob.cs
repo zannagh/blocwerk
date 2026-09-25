@@ -68,6 +68,12 @@ public class GpuJob
     /// <summary>Claims lost because the runner vanished (lease expired); the job fails at <c>MaxLostLeases</c>.</summary>
     public int LostLeaseCount { get; set; }
 
+    /// <summary>
+    /// Claims given back because the runner shut down. Free up to <c>MaxFreeShutdowns</c>; past that each one costs a
+    /// training attempt, so a runner that claims and "shuts down" in a loop cannot hold a job forever.
+    /// </summary>
+    public int ShutdownCount { get; set; }
+
     /// <summary>The training bundle (zip) in the capture file store: the ONLY thing a runner ever sees.</summary>
     [Required]
     [MaxLength(200)]

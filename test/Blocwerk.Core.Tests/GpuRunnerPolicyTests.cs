@@ -10,7 +10,7 @@ namespace Blocwerk.Core.Tests;
 /// <summary>
 /// The owner-decision defaults of the runner queue: claims respect the runner's quality (draft &lt; high &lt; max &lt;
 /// ultra), a shutdown costs nothing, training failures and vanished runners have separate budgets, shared runners need
-/// the receiving wall's opt-in, and a runner never sees a wall its owner no longer administers.
+/// the receiving wall's approval of that runner, and a runner never sees a wall its owner no longer administers.
 /// </summary>
 public class GpuRunnerPolicyTests
 {
@@ -115,27 +115,22 @@ public class GpuRunnerPolicyTests
     }
 
     [Fact]
-    public async Task SharedRunner_NeedsTheReceivingWallsOptIn_UnlessTheServerTurnsThatOff()
+    public async Task SharedRunner_NeedsTheReceivingWallsApprovalOfThatRunner()
     {
         using var h = new WallTestHarness();
         using var f = await RunnerFixture.CreateAsync(h);
         var other = await f.AddWallAsync("Other wall");
         var (shared, _) = await f.AddRunnerAsync("shared", shared: true, walls: other);
+        var (later, _) = await f.AddRunnerAsync("shared later", shared: true, walls: other);
         var job = await f.AddJobAsync(h.WallId);
 
         Assert.Null(await f.Queue.TryClaimAsync(shared, null, CancellationToken.None));
         Assert.False(await f.Queue.HasEligibleRunnerOnlineAsync(h.WallId, SplatQuality.Draft, CancellationToken.None));
 
-        await f.OptInAsync(h.WallId);
+        await f.ApproveAsync(h.WallId, shared);
         Assert.True(await f.Queue.HasEligibleRunnerOnlineAsync(h.WallId, SplatQuality.Draft, CancellationToken.None));
+        Assert.Null(await f.Queue.TryClaimAsync(later, null, CancellationToken.None)); // the consent names one machine
         Assert.Equal(job.Id, (await f.Queue.TryClaimAsync(shared, null, CancellationToken.None))?.Id);
-
-        using var h2 = new WallTestHarness();
-        using var open = await RunnerFixture.CreateAsync(h2, new GpuRunnerOptions { ClaimWait = TimeSpan.Zero, SharedNeedsOptIn = false });
-        var other2 = await open.AddWallAsync("Other wall");
-        var (shared2, _) = await open.AddRunnerAsync("shared", shared: true, walls: other2);
-        var job2 = await open.AddJobAsync(h2.WallId);
-        Assert.Equal(job2.Id, (await open.Queue.TryClaimAsync(shared2, null, CancellationToken.None))?.Id);
     }
 
     [Fact]

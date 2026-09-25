@@ -65,4 +65,13 @@ public enum RunnerJobOutcome
 
     /// <summary>The upload uses a content encoding other than gzip: 415.</summary>
     UnsupportedEncoding,
+
+    /// <summary>Another upload for this job is still streaming: 409.</summary>
+    UploadInProgress,
+
+    /// <summary>The server takes no more uploads right now: 429 with Retry-After.</summary>
+    ServerBusy,
+
+    /// <summary>The capture store is (or would get) too full: 507.</summary>
+    InsufficientStorage,
 }

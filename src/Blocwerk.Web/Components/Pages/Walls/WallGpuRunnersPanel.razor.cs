@@ -23,7 +23,6 @@ public partial class WallGpuRunnersPanel : IAsyncDisposable
     private string? error;
     private string copyLabel = "Copy key";
     private bool busy;
-    private bool acceptsShared;
 
     [Parameter]
     [EditorRequired]
@@ -109,7 +108,6 @@ public partial class WallGpuRunnersPanel : IAsyncDisposable
         {
             runners = await Runners.ListForWallAsync(WallId);
             jobs = await Runners.ListJobsForWallAsync(WallId);
-            acceptsShared = await Runners.GetSharedOptInAsync(WallId);
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or UserFacingException or KioskRestrictedException or InvalidOperationException)
         {
@@ -128,25 +126,6 @@ public partial class WallGpuRunnersPanel : IAsyncDisposable
             name = string.Empty;
             copyLabel = "Copy key";
             await ReloadAsync();
-        }
-        catch (Exception ex) when (ex is UnauthorizedAccessException or UserFacingException or KioskRestrictedException)
-        {
-            error = ex.Message;
-        }
-        finally
-        {
-            busy = false;
-        }
-    }
-
-    private async Task SetAcceptsSharedAsync(bool accept)
-    {
-        busy = true;
-        error = null;
-        try
-        {
-            await Runners.SetSharedOptInAsync(WallId, accept);
-            acceptsShared = accept;
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or UserFacingException or KioskRestrictedException)
         {

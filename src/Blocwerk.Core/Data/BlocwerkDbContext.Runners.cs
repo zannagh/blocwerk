@@ -18,7 +18,7 @@ public partial class BlocwerkDbContext
 
     public DbSet<GpuJob> GpuJobs => Set<GpuJob>();
 
-    public DbSet<GpuRunnerSharedOptIn> GpuRunnerSharedOptIns => Set<GpuRunnerSharedOptIn>();
+    public DbSet<GpuRunnerApproval> GpuRunnerApprovals => Set<GpuRunnerApproval>();
 
     /// <remarks>
     /// Satellites hang off their principals with <c>WithMany()</c> (repo convention). Deleting a
@@ -53,9 +53,12 @@ public partial class BlocwerkDbContext
             entity.HasIndex(j => j.CaptureId);
         });
 
-        modelBuilder.Entity<GpuRunnerSharedOptIn>(entity =>
+        modelBuilder.Entity<GpuRunnerApproval>(entity =>
         {
-            entity.HasOne(o => o.Wall).WithMany().HasForeignKey(o => o.WallId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasKey(a => new { a.WallId, a.RunnerId });
+            entity.HasOne(a => a.Wall).WithMany().HasForeignKey(a => a.WallId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(a => a.Runner).WithMany().HasForeignKey(a => a.RunnerId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(a => a.RunnerId);
         });
     }
 }

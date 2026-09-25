@@ -20,7 +20,8 @@ public sealed record GpuRunnerInfo(
     DateTimeOffset? LastJobAt,
     GpuRunnerCapabilities Capabilities,
     GpuRunnerCurrentJob? CurrentJob,
-    int WallCount);
+    int WallCount,
+    bool ApprovedForThisWall = false);
 
 /// <summary>What the runner reported about itself in <c>hello</c>.</summary>
 public sealed record GpuRunnerCapabilities(

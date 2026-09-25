@@ -1,4 +1,4 @@
-@* One 3D runner in the wall card (and the site-admin list). The owner can share it, pick its walls and revoke it. *@
+@* One 3D runner in the wall card (and the site-admin list). The owner picks its walls and revokes it; a wall admin approves a shared one; a site admin shares or revokes any. *@
 @using Blocwerk.Core.Runners
 
 <div class="gpu-runner-row @(Runner.IsRevoked ? "revoked" : "")">
@@ -34,11 +34,6 @@
     @if (Runner.IsMine && !Runner.IsRevoked && ShowControls)
     {
         <div class="gpu-runner-controls">
-            <label class="gpu-runner-toggle">
-                <input type="checkbox" checked="@Runner.SharedWithOtherWalls" disabled="@Busy"
-                       @onchange="e => SetSharedAsync(e.Value is true)" />
-                Other walls can use this runner
-            </label>
             <button type="button" class="apikey-btn" @onclick="ToggleWallsAsync">@(walls is null ? "Walls it serves…" : "Hide walls")</button>
             @if (confirmRevoke)
             {
@@ -63,10 +58,29 @@
             </div>
         }
     }
-    else if (!Runner.IsMine && !Runner.IsRevoked && AllowRevokeAsAdmin)
+    else if (!Runner.IsMine && !Runner.IsRevoked && WallId is not null && !Runner.ServesThisWall && Runner.SharedWithOtherWalls)
     {
         <div class="gpu-runner-controls">
-            <button type="button" class="apikey-btn" @onclick="RevokeAsync">Revoke (site admin)</button>
+            <label class="gpu-runner-toggle">
+                <input type="checkbox" checked="@Runner.ApprovedForThisWall" disabled="@Busy"
+                       @onchange="e => SetApprovedAsync(e.Value is true)" />
+                Let this runner train this wall's photo-real view
+            </label>
+        </div>
+    }
+
+    @if (!Runner.IsRevoked && AllowRevokeAsAdmin)
+    {
+        <div class="gpu-runner-controls">
+            <label class="gpu-runner-toggle">
+                <input type="checkbox" checked="@Runner.SharedWithOtherWalls" disabled="@Busy"
+                       @onchange="e => SetSharedAsync(e.Value is true)" />
+                Offer to other walls (each wall's admin still approves it)
+            </label>
+            @if (!Runner.IsMine)
+            {
+                <button type="button" class="apikey-btn" @onclick="RevokeAsync">Revoke (site admin)</button>
+            }
         </div>
     }
 </div>

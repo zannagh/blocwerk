@@ -13,6 +13,9 @@ namespace Blocwerk.Core.Tests;
 /// <summary>Seeds runners, walls, captures and GPU jobs for the 3D-runner tests.</summary>
 internal sealed class RunnerFixture : IDisposable
 {
+    /// <summary>Columns of <see cref="SlimPly"/>.</summary>
+    public const int SlimColumns = 14;
+
     private readonly string storeDir = Path.Combine(Path.GetTempPath(), "blocwerk-runner-tests", Guid.NewGuid().ToString("N"));
 
     private RunnerFixture(WallTestHarness harness, GpuRunnerOptions? options)
@@ -23,7 +26,8 @@ internal sealed class RunnerFixture : IDisposable
         settings.WallImage.StoragePath = storeDir;
         Files = new FileSystemCaptureFileStore(settings);
         Options = options ?? new GpuRunnerOptions { ClaimWait = TimeSpan.Zero };
-        Queue = new GpuJobQueue(harness.RootContextFactory, Files, CaptureQueue, Options, new GpuJobSignal(), NullLogger<GpuJobQueue>.Instance, clock: Clock);
+        Queue = new GpuJobQueue(
+            harness.RootContextFactory, Files, CaptureQueue, Options, new GpuJobSignal(), NullLogger<GpuJobQueue>.Instance, clock: Clock, diskSpace: Disk);
     }
 
     public WallTestHarness Harness { get; }
@@ -31,6 +35,9 @@ internal sealed class RunnerFixture : IDisposable
     public MutableTestClock Clock { get; }
 
     public ICaptureFileStore Files { get; }
+
+    /// <summary>The capture store's free space as the queue sees it (unlimited until a test sets it).</summary>
+    public FakeDiskSpace Disk { get; } = new();
 
     public WallCaptureQueue CaptureQueue { get; } = new();
 
@@ -46,7 +53,10 @@ internal sealed class RunnerFixture : IDisposable
     }
 
     /// <summary>A minimal valid 3DGS PLY (the slim columns the runner uploads) with <paramref name="count"/> splats.</summary>
-    public static byte[] SlimPly(int count = 3)
+    public static byte[] SlimPly(int count = 3) => [.. PlyHeader(count), .. new byte[count * SlimColumns * 4]];
+
+    /// <summary>The header of <see cref="SlimPly"/> for <paramref name="count"/> splats.</summary>
+    public static byte[] PlyHeader(int count)
     {
         string[] cols = ["x", "y", "z", "f_dc_0", "f_dc_1", "f_dc_2", "opacity", "scale_0", "scale_1", "scale_2", "rot_0", "rot_1", "rot_2", "rot_3"];
         var header = new StringBuilder("ply\nformat binary_little_endian 1.0\n")
@@ -57,7 +67,7 @@ internal sealed class RunnerFixture : IDisposable
         }
 
         header.Append("end_header\n");
-        return [.. Encoding.ASCII.GetBytes(header.ToString()), .. new byte[count * cols.Length * 4]];
+        return Encoding.ASCII.GetBytes(header.ToString());
     }
 
     /// <summary><paramref name="bytes"/> gzip-compressed (a runner's <c>Content-Encoding: gzip</c> upload).</summary>
@@ -129,11 +139,11 @@ internal sealed class RunnerFixture : IDisposable
         return wall.Id;
     }
 
-    /// <summary>The wall's admin accepts other admins' shared runners.</summary>
-    public async Task OptInAsync(Guid wallId)
+    /// <summary>The wall's admin (the harness owner, or <paramref name="approverId"/>) approves one shared runner.</summary>
+    public async Task ApproveAsync(Guid wallId, GpuRunner runner, Guid? approverId = null)
     {
         await using var db = Harness.CreateContext();
-        db.GpuRunnerSharedOptIns.Add(new GpuRunnerSharedOptIn { WallId = wallId, OptedInByUserId = Harness.Owner.Id });
+        db.GpuRunnerApprovals.Add(new GpuRunnerApproval { WallId = wallId, RunnerId = runner.Id, ApprovedByUserId = approverId ?? Harness.Owner.Id });
         await db.SaveChangesAsync();
     }
 

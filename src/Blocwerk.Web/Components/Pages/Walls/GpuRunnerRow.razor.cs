@@ -7,7 +7,10 @@ using Microsoft.AspNetCore.Components;
 
 namespace Blocwerk.Web.Components.Pages.Walls;
 
-/// <summary>One runner: state, capabilities, current job; the owner's share / walls / revoke controls.</summary>
+/// <summary>
+/// One runner: state, capabilities, current job; the owner's walls / revoke controls, a wall admin's approval of a
+/// shared runner, and the site admin's share / revoke controls.
+/// </summary>
 public partial class GpuRunnerRow
 {
     private IReadOnlyList<GpuRunnerWallChoice>? walls;
@@ -27,7 +30,7 @@ public partial class GpuRunnerRow
     [Parameter]
     public bool ShowControls { get; set; } = true;
 
-    /// <summary>A site admin may revoke anyone's runner.</summary>
+    /// <summary>Site-admin controls: offer the runner to other walls, and revoke anyone's runner.</summary>
     [Parameter]
     public bool AllowRevokeAsAdmin { get; set; }
 
@@ -55,6 +58,9 @@ public partial class GpuRunnerRow
     }
 
     private Task SetSharedAsync(bool shared) => RunAsync(() => Runners.SetSharedAsync(Runner.Id, shared));
+
+    private Task SetApprovedAsync(bool approve) =>
+        WallId is { } wallId ? RunAsync(() => Runners.SetRunnerApprovalAsync(wallId, Runner.Id, approve)) : Task.CompletedTask;
 
     private Task RevokeAsync() => RunAsync(() => Runners.RevokeAsync(Runner.Id));
 

@@ -13,9 +13,11 @@ using Microsoft.Extensions.Logging;
 namespace Blocwerk.Core.Runners;
 
 /// <summary>
-/// The trained splat arrives: streamed to the capture store under a size cap (the deploy gate is held while it
-/// streams; a gzip body is decoded on the fly and the cap counts the decoded bytes), content-checked, then handed back
-/// to the capture pipeline, which finishes it on the server (crop, cleanup, export, level-of-detail ladder) and
+/// The trained splat arrives: one upload per job and <see cref="GpuRunnerOptions.MaxConcurrentUploads"/> server-wide,
+/// only while the capture store has <see cref="GpuRunnerOptions.MinFreeDiskBytes"/> free. It is streamed to the capture
+/// store under a size cap (the deploy gate is held while it streams; a gzip body is decoded on the fly, the cap counts
+/// the decoded bytes, and a body that inflates past a sane ratio is stopped at once), content-checked, then handed
+/// back to the capture pipeline, which finishes it on the server (crop, cleanup, export, level-of-detail ladder) and
 /// installs it.
 /// </summary>
 public sealed partial class GpuJobQueue
@@ -41,6 +43,19 @@ public sealed partial class GpuJobQueue
         if (found != RunnerJobOutcome.Ok)
         {
             return found;
+        }
+
+        using var slot = uploads.TryAcquire(jobId, out var busy);
+        if (slot is null)
+        {
+            logger.LogWarning("Runner {RunnerId} upload for GPU job {JobId} refused: {Reason}", runner.Id, jobId, busy);
+            return busy;
+        }
+
+        if (FreeBytes() is { } free && free < options.MinFreeDiskBytes)
+        {
+            logger.LogWarning("Runner {RunnerId} upload for GPU job {JobId} refused: only {Free} bytes free", runner.Id, jobId, free);
+            return RunnerJobOutcome.InsufficientStorage;
         }
 
         var (stored, refused) = await StoreUploadAsync(runner, jobId, body, encoding == "gzip", ct);
@@ -99,19 +114,30 @@ public sealed partial class GpuJobQueue
         }
     }
 
+    /// <summary>Free bytes of the capture store's drive, or null when unknown.</summary>
+    private long? FreeBytes() =>
+        files.ResolvePhysicalPath("probe") is { } probe && Path.GetDirectoryName(probe) is { } dir ? disk.FreeBytes(dir) : null;
+
     private async Task<(string? Stored, RunnerJobOutcome Refused)> StoreUploadAsync(
         GpuRunner runner, Guid jobId, Stream body, bool gzip, CancellationToken ct)
     {
         using var hold = busyGate?.Hold(DeployBusyWork.RunnerResultUpload);
-        await using var decoded = gzip ? new GZipStream(body, CompressionMode.Decompress, leaveOpen: true) : null;
+        await using var encoded = gzip ? new CountingReadStream(body) : null;
+        await using var decoded = encoded is null ? null : new GZipStream(encoded, CompressionMode.Decompress, leaveOpen: true);
+        await using var guarded = new GuardedUploadStream(decoded ?? body, encoded, options, FreeBytes);
         try
         {
-            return (await files.SaveStreamAsync(decoded ?? body, ".upl", options.MaxResultBytes, ct), RunnerJobOutcome.Ok);
+            return (await files.SaveStreamAsync(guarded, ".upl", options.MaxResultBytes, ct), RunnerJobOutcome.Ok);
         }
         catch (CaptureFileTooLargeException)
         {
             logger.LogWarning("Runner {RunnerId} sent a result over {Max} bytes for GPU job {JobId}", runner.Id, options.MaxResultBytes, jobId);
             return (null, RunnerJobOutcome.TooLarge);
+        }
+        catch (RunnerUploadRefusedException ex)
+        {
+            logger.LogWarning("Runner {RunnerId} upload for GPU job {JobId} stopped: {Reason}", runner.Id, jobId, ex.Message);
+            return (null, ex.Outcome);
         }
         catch (InvalidDataException ex)
         {
@@ -125,42 +151,49 @@ public sealed partial class GpuJobQueue
         try
         {
             var path = files.ResolvePhysicalPath(stored) ?? throw new InvalidDataException("The upload was not stored.");
-            return SplatResultFormat.Validate(path);
+            return SplatResultFormat.Validate(path, options.MaxResultSplats);
         }
-        catch (Exception ex) when (ex is InvalidDataException or IOException or EndOfStreamException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or EndOfStreamException or OverflowException)
         {
             logger.LogWarning("Runner {RunnerId} sent an invalid result for GPU job {JobId}: {Reason}", runner.Id, jobId, ex.Message);
             return null;
         }
     }
 
+    /// <summary>Conditional: only a job this runner still holds becomes Succeeded (a sweep or a cancel may have won the race).</summary>
     private async Task<RunnerJobOutcome> CompleteAsync(
         GpuRunner runner, Guid jobId, string stored, string format, string? stats, CancellationToken ct)
     {
         await using var db = dbContextFactory.CreateDbContext();
-        var job = await db.GpuJobs.FirstOrDefaultAsync(j => j.Id == jobId && j.ClaimedByRunnerId == runner.Id, ct);
-        if (job is null || job.Status is not (GpuJobStatus.Claimed or GpuJobStatus.Running))
+        var now = Now;
+        var retryAt = now + FinishRetryInterval;
+        long? bytes = files.ResolvePhysicalPath(stored) is { } p ? new FileInfo(p).Length : null;
+        var updated = await db.GpuJobs
+            .Where(j => j.Id == jobId && j.ClaimedByRunnerId == runner.Id
+                        && (j.Status == GpuJobStatus.Claimed || j.Status == GpuJobStatus.Running))
+            .ExecuteUpdateAsync(
+                s => s.SetProperty(j => j.Status, GpuJobStatus.Succeeded)
+                    .SetProperty(j => j.ResultPath, stored)
+                    .SetProperty(j => j.ResultFormat, format)
+                    .SetProperty(j => j.ResultBytes, bytes)
+                    .SetProperty(j => j.ResultStatsJson, stats)
+                    .SetProperty(j => j.Progress, 1)
+                    .SetProperty(j => j.Stage, "trained; finishing on the server")
+                    .SetProperty(j => j.LeaseExpiresAt, retryAt)
+                    .SetProperty(j => j.CompletedAt, now)
+                    .SetProperty(j => j.Error, (string?)null),
+                ct);
+        if (updated == 0)
         {
-            // Cancelled or requeued while the upload streamed.
+            // Cancelled, requeued or taken away while the upload streamed.
             files.Delete(stored);
-            return job is null ? RunnerJobOutcome.NotYours : RunnerJobOutcome.Gone;
+            return RunnerJobOutcome.Gone;
         }
 
-        job.Status = GpuJobStatus.Succeeded;
-        job.ResultPath = stored;
-        job.ResultFormat = format;
-        job.ResultBytes = files.ResolvePhysicalPath(stored) is { } p ? new FileInfo(p).Length : null;
-        job.ResultStatsJson = stats;
-        job.Progress = 1;
-        job.Stage = "trained; finishing on the server";
-        job.LeaseExpiresAt = Now + FinishRetryInterval;
-        job.CompletedAt = Now;
-        job.Error = null;
-        await db.SaveChangesAsync(ct);
+        var captureId = await db.GpuJobs.Where(j => j.Id == jobId).Select(j => j.CaptureId).FirstAsync(ct);
         logger.LogInformation(
-            "Runner {RunnerId} ({Name}) delivered GPU job {JobId}: {Format}, {Bytes} bytes",
-            runner.Id, runner.Name, job.Id, format, job.ResultBytes);
-        await HandBackAsync(db, job.CaptureId, ct);
+            "Runner {RunnerId} ({Name}) delivered GPU job {JobId}: {Format}, {Bytes} bytes", runner.Id, runner.Name, jobId, format, bytes);
+        await HandBackAsync(db, captureId, ct);
         return RunnerJobOutcome.Ok;
     }
 

@@ -107,8 +107,12 @@ public sealed class WallCaptureSweeper(
             capture.VideoFramesJson = null;
         }
 
+        // A photo-real view still waiting for (or on) a 3D runner goes with the photos: its bundle is a copy of them.
+        var gpuJobs = await Runners.GpuJobQueue.CancelActiveAsync(
+            db, expiredIds, "the capture's photos were deleted (photo retention)", now, ct);
+        var gpuFiles = gpuJobs.SelectMany(j => new[] { j.BundlePath, j.PreparedPath, j.ResultPath }).OfType<string>();
         await db.SaveChangesAsync(ct);
-        DeleteFiles(photos.Select(p => p.StoredPath).Concat(videoFiles));
+        DeleteFiles(photos.Select(p => p.StoredPath).Concat(videoFiles).Concat(gpuFiles));
         return photos.Count;
     }
 
@@ -146,8 +150,12 @@ public sealed class WallCaptureSweeper(
                 .ToListAsync(ct))
             .SelectMany(c => CaptureVideoFiles.Of(c.VideoStoredPath, c.VideoFramesJson));
 
-        // .zip/.prep/.upl: the 3D runners' bundles, prepared state and uploaded results (GpuJob).
-        var gpu = (await db.GpuJobs.Select(j => new { j.BundlePath, j.PreparedPath, j.ResultPath }).ToListAsync(ct))
+        // .zip/.prep/.upl: the 3D runners' bundles, prepared state and uploaded results of jobs still in play. A finished,
+        // failed or cancelled job's files are deleted with it; any that survived a failed delete are orphans here.
+        var gpu = (await db.GpuJobs
+                .Where(j => j.Status == GpuJobStatus.Queued || j.Status == GpuJobStatus.Claimed || j.Status == GpuJobStatus.Running
+                            || (j.Status == GpuJobStatus.Succeeded && j.InstalledAt == null))
+                .Select(j => new { j.BundlePath, j.PreparedPath, j.ResultPath }).ToListAsync(ct))
             .SelectMany(j => new[] { j.BundlePath, j.PreparedPath, j.ResultPath }).OfType<string>();
         return new HashSet<string>(
             photos.Concat(textures).Concat(masks).Concat(sourceMaps).Concat(videos).Concat(gpu), StringComparer.Ordinal);

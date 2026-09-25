@@ -21,7 +21,10 @@ public interface IGpuRunnerService
     /// <summary>Revokes a runner (owner or site admin); its key stops working at once and its job is requeued.</summary>
     Task RevokeAsync(Guid runnerId);
 
-    /// <summary>"Other walls can use this runner".</summary>
+    /// <summary>Whether runners are on at all (<see cref="GpuRunnerMode.Off"/> hides creating one).</summary>
+    bool Enabled { get; }
+
+    /// <summary>"Other walls can use this runner" (site admin only; turning it off drops the walls' approvals).</summary>
     Task SetSharedAsync(Guid runnerId, bool shared);
 
     /// <summary>The walls the runner's owner administers, and which of them it serves.</summary>
@@ -30,11 +33,11 @@ public interface IGpuRunnerService
     /// <summary>Adds or removes one of the owner's walls.</summary>
     Task SetServesWallAsync(Guid runnerId, Guid wallId, bool serves);
 
-    /// <summary>Whether the wall lets other admins' shared runners train its photo-real view (wall admin).</summary>
-    Task<bool> GetSharedOptInAsync(Guid wallId);
-
-    /// <summary>Opts the wall in to (or out of) shared runners (wall admin). Its photos then go to their machines.</summary>
-    Task SetSharedOptInAsync(Guid wallId, bool accept);
+    /// <summary>
+    /// Approves (or withdraws) ONE shared runner for the wall (wall admin). The wall's photos then go to that machine;
+    /// a runner shared later needs its own approval.
+    /// </summary>
+    Task SetRunnerApprovalAsync(Guid wallId, Guid runnerId, bool approve);
 
     /// <summary>Every runner on the server (site admin only).</summary>
     Task<IReadOnlyList<GpuRunnerInfo>> ListAllAsync();

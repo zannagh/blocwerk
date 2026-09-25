@@ -1125,29 +1125,44 @@ it: a runner with gsplat on a CUDA GPU with at least 12 GB that may serve the wa
 whose `/health` says `maxQuality: ultra`. The server caps a runner's claim at Max unless it reports
 gsplat and 12 GB.
 
-**Sharing.** **Other walls can use this runner** offers your runner to other walls, but a wall only
-uses shared runners when **its own admin** ticked *Let other admins' shared runners train this
-wall's photo-real view* in its 3D runners card (off by default: that wall's photos, without
-metadata, then go to a machine someone else owns). A wall's own runners always go first; a shared
+**Sharing.** Only a **site admin** can offer a runner to other walls (**Administration → 3D runners** →
+*Offer to other walls*; anyone can create a wall, so a runner's owner alone cannot). A wall then uses
+that runner only when **its own admin** ticked *Let this runner train this wall's photo-real view* on
+**that runner** in its 3D runners card: the consent names one machine, a runner offered later needs
+its own, and it lapses when the approving admin loses the wall (that wall's photos, without
+metadata, go to a machine someone else owns). Un-offering a runner drops all its approvals. A wall's own runners always go first; a shared
 runner only helps a wall none of whose own runners that can train the job is online. A runner only
-ever serves walls its owner **still administers**. Site admins see every runner under
+ever serves walls its owner **still administers**, and does nothing at all once its owner is deleted
+or locked out. All of this is re-checked on every call of the runner, not only when it claims: a
+runner that lost its right gets 410 and the job goes back to the queue. A runner holds one job at a
+time; a user may own at most 10 runner keys. Site admins see every runner under
 **Administration → 3D runners** and can revoke any.
 
 **Leases, failures, shutdowns.** A claimed job is leased for 5 minutes and every progress report
-extends it. Three budgets, counted separately:
+extends it, but never past 6 hours after the claim (`RUNNERS__MAXJOBHOURS`; then the claim costs an
+attempt). Three budgets, counted separately:
 
 - a runner that **reports a training failure** (e.g. out of memory) uses one of 3 attempts
   (`RUNNERS__MAXATTEMPTS`); a failure no retry can fix (a bad bundle) fails the job at once;
 - a runner that **vanishes** (crash, sleep, network) loses the job when its lease runs out; after
   10 lost leases (`RUNNERS__MAXLOSTLEASES`) the job fails;
-- a runner that **shuts down** (it says so) or is **revoked** gives the job back at once, free.
+- a runner that **shuts down** (it says so) or is **revoked** gives the job back at once, free (a
+  shutdown only 5 times per job; after that each one costs an attempt).
+
+A job nobody claims within 14 days (`RUNNERS__QUEUEDJOBDAYS`) is cancelled and its bundle deleted; so
+is a job whose capture's photos expire (`CAPTURE__PHOTORETENTIONDAYS`), and with `RUNNERS__MODE=off`
+every waiting job is cancelled at startup (the runner API is then not served at all).
 
 A delivered result the splat worker cannot finish (the worker unreachable) is handed back every 15
 minutes and given up after a day.
 
 **Uploads.** Runners upload a slim float `.ply` (about 340 MB for an Ultra scene) or an `.spz`,
 optionally with `Content-Encoding: gzip` (decoded while streaming; the cap, `RUNNERS__MAXRESULTMB`,
-counts the decoded bytes). Nothing is held in memory on the server: the bundle from the splat worker,
+counts the decoded bytes, and a body that inflates more than 50x is stopped). One upload per job and
+2 server-wide stream at once (409 / 429), only while the capture store keeps 5 GB free (507), at
+least 16 KB/s and at most 2 hours. The result must be a PLY of known float 3DGS columns whose
+length matches its header exactly (finite values, at most 12 M splats) or an `.spz` whose
+decompressed size matches its header. Nothing is held in memory on the server: the bundle from the splat worker,
 the upload and the hand-over to `splat-finish` all stream through files.
 
 **Server settings.**
@@ -1159,7 +1174,13 @@ the upload and the hand-over to `splat-finish` all stream through files.
 | `Runners:MaxBundleMb` | `RUNNERS__MAXBUNDLEMB` | 6144 | Largest training bundle taken from the splat worker. |
 | `Runners:MaxAttempts` | `RUNNERS__MAXATTEMPTS` | 3 | Training failures a job may have. |
 | `Runners:MaxLostLeases` | `RUNNERS__MAXLOSTLEASES` | 10 | Vanished runners a job may survive. |
-| `Runners:SharedNeedsOptIn` | `RUNNERS__SHAREDNEEDSOPTIN` | `true` | `false` lets shared runners serve every wall without its admin's opt-in. |
+| `Runners:MaxJobHours` | `RUNNERS__MAXJOBHOURS` | 6 | Longest one claim may run, heartbeats or not (then it costs an attempt). |
+| `Runners:QueuedJobDays` | `RUNNERS__QUEUEDJOBDAYS` | 14 | A job nobody claimed by then is cancelled and its bundle deleted. |
+| `Runners:MaxConcurrentUploads` | `RUNNERS__MAXCONCURRENTUPLOADS` | 2 | Result uploads streaming at once, server-wide (one per job always). |
+| `Runners:MaxUploadMinutes` | `RUNNERS__MAXUPLOADMINUTES` | 120 | Longest one result upload may stream. |
+| `Runners:MinFreeDiskMb` | `RUNNERS__MINFREEDISKMB` | 5120 | Free space the capture store keeps; uploads are refused or stopped below it. |
+| `Runners:MaxResultSplats` | `RUNNERS__MAXRESULTSPLATS` | 12000000 | Most splats an uploaded result may have. |
+| `Runners:MaxRunnersPerUser` | `RUNNERS__MAXRUNNERSPERUSER` | 10 | Active runner keys one user may own. |
 
 The splat worker (`SPLATSERVICE__URL`) is still needed for the CPU steps; with `always` it no longer
 needs a GPU.

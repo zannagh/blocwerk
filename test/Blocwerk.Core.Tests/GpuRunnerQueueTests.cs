@@ -68,7 +68,7 @@ public class GpuRunnerQueueTests
         var other = await f.AddWallAsync("Other wall");
         var (own, _) = await f.AddRunnerAsync("own", walls: h.WallId);
         var (shared, _) = await f.AddRunnerAsync("shared", shared: true, walls: other);
-        await f.OptInAsync(h.WallId);
+        await f.ApproveAsync(h.WallId, shared);
         var job = await f.AddJobAsync(h.WallId);
 
         Assert.Null(await f.Queue.TryClaimAsync(shared, null, CancellationToken.None));
@@ -87,7 +87,7 @@ public class GpuRunnerQueueTests
         using var f = await RunnerFixture.CreateAsync(h);
         var other = await f.AddWallAsync("Other wall");
         var (mine, _) = await f.AddRunnerAsync("mine", walls: h.WallId);
-        await f.OptInAsync(other);
+        await f.ApproveAsync(other, mine); // approved, but no site admin shared it
         await f.AddJobAsync(other);
 
         Assert.Null(await f.Queue.TryClaimAsync(mine, null, CancellationToken.None));
@@ -100,11 +100,13 @@ public class GpuRunnerQueueTests
         using var f = await RunnerFixture.CreateAsync(h);
         var other = await f.AddWallAsync("Other wall");
         var (runner, _) = await f.AddRunnerAsync("both", shared: true, walls: h.WallId);
-        await f.OptInAsync(other);
+        await f.ApproveAsync(other, runner);
         var older = await f.AddJobAsync(other);
         var own = await f.AddJobAsync(h.WallId);
 
         Assert.Equal(own.Id, (await f.Queue.TryClaimAsync(runner, null, CancellationToken.None))?.Id);
+        Assert.Null(await f.Queue.TryClaimAsync(runner, null, CancellationToken.None)); // one claim at a time
+        await f.Queue.CancelForCaptureAsync(own.CaptureId, "done", CancellationToken.None);
         Assert.Equal(older.Id, (await f.Queue.TryClaimAsync(runner, null, CancellationToken.None))?.Id);
     }
 

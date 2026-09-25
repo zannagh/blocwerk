@@ -28,19 +28,28 @@ public sealed partial class GpuJobQueue(
     GpuJobSignal signal,
     ILogger<GpuJobQueue> logger,
     IDeployBusyGate? busyGate = null,
-    TimeProvider? clock = null)
+    TimeProvider? clock = null,
+    DiskSpaceProbe? diskSpace = null)
 {
     /// <summary>nvidia-smi's total of a "12 GB" card is 12282 MB; 98 % of 12 GB, like the worker's own ultra gate.</summary>
     public const int UltraMinVramMb = 12042;
 
     private static readonly TimeSpan LastSeenWriteInterval = TimeSpan.FromSeconds(5);
     private readonly TimeProvider time = clock ?? TimeProvider.System;
+    private readonly DiskSpaceProbe disk = diskSpace ?? new DiskSpaceProbe();
+    private readonly RunnerUploadSlots uploads = new(options.MaxConcurrentUploads);
 
     public GpuRunnerOptions Options => options;
 
+    /// <summary>The per-runner rate limit, applied after the key authenticated.</summary>
+    public RunnerCallLimiter Calls { get; } = new();
+
     private DateTimeOffset Now => time.GetUtcNow();
 
-    /// <summary>The runner a bearer key names, or null (unknown, malformed or revoked). Stamps last-seen.</summary>
+    /// <summary>
+    /// The runner a bearer key names, or null (unknown, malformed, revoked, or its owner deleted, the Ghost or locked
+    /// out). Stamps last-seen.
+    /// </summary>
     public async Task<GpuRunner?> AuthenticateAsync(string? token, CancellationToken ct)
     {
         if (!GpuRunnerTokens.LooksLikeRunnerKey(token))
@@ -51,7 +60,8 @@ public sealed partial class GpuJobQueue(
         var hash = GpuRunnerTokens.Hash(token!);
         await using var db = dbContextFactory.CreateDbContext();
         var runner = await db.GpuRunners.FirstOrDefaultAsync(r => r.KeyHash == hash, ct);
-        if (runner is null || !GpuRunnerTokens.HashEquals(runner.KeyHash, hash) || runner.RevokedAt is not null)
+        if (runner is null || !GpuRunnerTokens.HashEquals(runner.KeyHash, hash) || runner.RevokedAt is not null
+            || !await ActiveRunners(db).AnyAsync(r => r.Id == runner.Id, ct))
         {
             return null;
         }
@@ -167,7 +177,7 @@ public sealed partial class GpuJobQueue(
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                logger.LogWarning(ex, "Could not delete {File} of GPU job {JobId}", path, job.Id);
+                logger.LogWarning(ex, "Could not delete {File} of GPU job {JobId}; the capture sweep removes it as an orphan", path, job.Id);
             }
         }
     }

@@ -61,6 +61,7 @@ public sealed partial class GpuRunnerService
                 Runner = r,
                 Owner = r.Owner.CustomDisplayName ?? r.Owner.DisplayName,
                 Walls = db.GpuRunnerWalls.Where(rw => rw.RunnerId == r.Id).Select(rw => rw.WallId).ToList(),
+                Approved = wallId != null && db.GpuRunnerApprovals.Any(a => a.RunnerId == r.Id && a.WallId == wallId),
             })
             .ToListAsync();
         var ids = rows.Select(r => r.Runner.Id).ToList();
@@ -81,7 +82,8 @@ public sealed partial class GpuRunnerService
                 x.RevokedAt is not null, x.KeyPrefix, x.CreatedAt, x.LastSeenAt, x.LastJobAt,
                 new GpuRunnerCapabilities(x.GpuName, x.VramMb, x.MaxQuality, x.MemoryBudgetMb, x.RunnerVersion, x.Platform),
                 job is null ? null : new GpuRunnerCurrentJob(job.Id, job.WallId, sameWall ? job.WallName : null, job.Progress, job.Stage),
-                r.Walls.Count);
+                r.Walls.Count,
+                r.Approved);
         }).ToList();
     }
 }

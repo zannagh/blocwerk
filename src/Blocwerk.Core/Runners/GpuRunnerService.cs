@@ -25,11 +25,24 @@ public sealed partial class GpuRunnerService(
 {
     private const string AdminAction = "Managing 3D runners";
 
+    public bool Enabled => queue.Options.Mode != GpuRunnerMode.Off;
+
     public async Task<GpuRunnerCreated> CreateAsync(Guid wallId, string name)
     {
+        if (!Enabled)
+        {
+            throw new UserFacingException("3D runners are turned off on this server.");
+        }
+
         var (db, userId) = await OpenForWallAdminAsync(wallId);
         await using (db)
         {
+            var max = queue.Options.MaxRunnersPerUser;
+            if (await db.GpuRunners.CountAsync(r => r.OwnerUserId == userId && r.RevokedAt == null) >= max)
+            {
+                throw new UserFacingException($"You already have {max} 3D runners; revoke one before creating another.");
+            }
+
             var clean = GpuJobQueue.Clip(name, 100) ?? "3D runner";
             var (token, prefix) = GpuRunnerTokens.Create();
             var runner = new GpuRunner { Name = clean, OwnerUserId = userId, KeyHash = GpuRunnerTokens.Hash(token), KeyPrefix = prefix };
@@ -63,17 +76,6 @@ public sealed partial class GpuRunnerService(
         await queue.ReleaseRunnerAsync(runnerId, CancellationToken.None);
     }
 
-    public async Task SetSharedAsync(Guid runnerId, bool shared)
-    {
-        var (db, userId, runner) = await OpenRunnerAsync(runnerId, allowAppAdmin: false);
-        await using (db)
-        {
-            runner.SharedWithOtherWalls = shared;
-            await db.SaveChangesAsync();
-            logger.LogInformation("3D runner {RunnerId} shared with other walls: {Shared} (by {UserId})", runner.Id, shared, userId);
-        }
-    }
-
     public async Task<IReadOnlyList<GpuRunnerWallChoice>> GetWallChoicesAsync(Guid runnerId)
     {
         var (db, userId, runner) = await OpenRunnerAsync(runnerId, allowAppAdmin: false);
@@ -105,35 +107,6 @@ public sealed partial class GpuRunnerService(
 
             await db.SaveChangesAsync();
             logger.LogInformation("3D runner {RunnerId} serves wall {WallId}: {Serves} (by {UserId})", runner.Id, wallId, serves, userId);
-        }
-    }
-
-    public async Task<bool> GetSharedOptInAsync(Guid wallId)
-    {
-        var (db, _) = await OpenForWallAdminAsync(wallId);
-        await using (db)
-        {
-            return await db.GpuRunnerSharedOptIns.AnyAsync(o => o.WallId == wallId);
-        }
-    }
-
-    public async Task SetSharedOptInAsync(Guid wallId, bool accept)
-    {
-        var (db, userId) = await OpenForWallAdminAsync(wallId);
-        await using (db)
-        {
-            var row = await db.GpuRunnerSharedOptIns.FirstOrDefaultAsync(o => o.WallId == wallId);
-            if (accept && row is null)
-            {
-                db.GpuRunnerSharedOptIns.Add(new GpuRunnerSharedOptIn { WallId = wallId, OptedInByUserId = userId });
-            }
-            else if (!accept && row is not null)
-            {
-                db.GpuRunnerSharedOptIns.Remove(row);
-            }
-
-            await db.SaveChangesAsync();
-            logger.LogInformation("Wall {WallId} accepts shared 3D runners: {Accept} (by {UserId})", wallId, accept, userId);
         }
     }
 

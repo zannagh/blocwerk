@@ -149,7 +149,7 @@ public class RunnerApiEndpointTests
         // The login's exhausted window does not touch the runners' bucket, and theirs answers with Retry-After.
         Assert.Equal(HttpStatusCode.Unauthorized, (await host.PostJsonAsync($"{Api}/hello", key, "{}")).StatusCode);
         HttpResponseMessage? runner = null;
-        for (var i = 0; i < 70 && runner?.StatusCode != HttpStatusCode.TooManyRequests; i++)
+        for (var i = 0; i < RunnerApiEndpoints.AddressBurst + 10 && runner?.StatusCode != HttpStatusCode.TooManyRequests; i++)
         {
             runner = await host.PostJsonAsync($"{Api}/hello", key, "{}");
         }

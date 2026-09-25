@@ -84,20 +84,53 @@ public class GpuRunnerServiceTests
     }
 
     [Fact]
-    public async Task SharedOptIn_IsTheWallAdminsChoice_AndOffByDefault()
+    public async Task OnlyASiteAdmin_SharesARunner_AndEachWallAdminApprovesThatRunner()
     {
         using var h = new WallTestHarness();
         using var f = await RunnerFixture.CreateAsync(h);
-        var service = Service(h, f);
+        var created = await Service(h, f).CreateAsync(h.WallId, "mine");
+        var id = created.Runner.Id;
 
-        Assert.False(await service.GetSharedOptInAsync(h.WallId));
-        await service.SetSharedOptInAsync(h.WallId, true);
-        Assert.True(await service.GetSharedOptInAsync(h.WallId));
-        await service.SetSharedOptInAsync(h.WallId, false);
-        Assert.False(await service.GetSharedOptInAsync(h.WallId));
+        // The owner (a wall admin, not a site admin) cannot offer it; nobody can approve a runner not offered.
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => Service(h, f).SetSharedAsync(id, true));
+        await Assert.ThrowsAsync<UserFacingException>(() => Service(h, f).SetRunnerApprovalAsync(h.WallId, id, true));
+
+        await MakeSiteAdminAsync(h, h.Owner);
+        await Service(h, f).SetSharedAsync(id, true);
+        await Service(h, f).SetRunnerApprovalAsync(h.WallId, id, true);
+        Assert.True((await Service(h, f).ListForWallAsync(h.WallId)).Single().ApprovedForThisWall);
 
         h.ActingUser = await h.AddMemberAsync("setter@test", Enums.WallRole.Member);
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => Service(h, f).SetSharedOptInAsync(h.WallId, true));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => Service(h, f).SetRunnerApprovalAsync(h.WallId, id, false));
+
+        // Un-sharing drops every approval: a later re-share needs fresh consent.
+        h.ActingUser = h.Owner;
+        await Service(h, f).SetSharedAsync(id, false);
+        await using var db = h.CreateContext();
+        Assert.False(await db.GpuRunnerApprovals.AnyAsync());
+    }
+
+    [Fact]
+    public async Task Create_IsCappedPerUser_AndRefusedWhenRunnersAreOff()
+    {
+        using var h = new WallTestHarness();
+        using var f = await RunnerFixture.CreateAsync(h, new GpuRunnerOptions { ClaimWait = TimeSpan.Zero, MaxRunnersPerUser = 2 });
+        await Service(h, f).CreateAsync(h.WallId, "one");
+        var two = await Service(h, f).CreateAsync(h.WallId, "two");
+        await Assert.ThrowsAsync<UserFacingException>(() => Service(h, f).CreateAsync(h.WallId, "three"));
+        await Service(h, f).RevokeAsync(two.Runner.Id);
+        await Service(h, f).CreateAsync(h.WallId, "three");
+
+        using var h2 = new WallTestHarness();
+        using var off = await RunnerFixture.CreateAsync(h2, new GpuRunnerOptions { Mode = GpuRunnerMode.Off });
+        Assert.False(Service(h2, off).Enabled);
+        await Assert.ThrowsAsync<UserFacingException>(() => Service(h2, off).CreateAsync(h2.WallId, "any"));
+    }
+
+    internal static async Task MakeSiteAdminAsync(WallTestHarness h, User user)
+    {
+        await using var db = h.CreateContext();
+        await db.Users.Where(u => u.Id == user.Id).ExecuteUpdateAsync(s => s.SetProperty(u => u.Role, Enums.IdentityRole.Admin));
     }
 
     private static GpuRunnerService Service(WallTestHarness h, RunnerFixture f, IKioskContext? kiosk = null) =>

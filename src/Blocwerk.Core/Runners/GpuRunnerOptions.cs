@@ -15,14 +15,16 @@ public enum GpuRunnerMode
     /// <summary>Always prepare on the server and queue for a runner (the splat worker runs without a GPU).</summary>
     Always,
 
-    /// <summary>Never: the splat worker trains itself (the pre-runner behaviour).</summary>
+    /// <summary>Never: the splat worker trains itself (the pre-runner behaviour); the runner API is not mapped.</summary>
     Off,
 }
 
 /// <summary>
 /// Settings of the runner job queue, from <c>Blocwerk:Runners:*</c> or <c>RUNNERS__*</c> (<c>RUNNERS__MODE</c>,
 /// <c>RUNNERS__MAXRESULTMB</c>, <c>RUNNERS__MAXBUNDLEMB</c>, <c>RUNNERS__MAXATTEMPTS</c>, <c>RUNNERS__MAXLOSTLEASES</c>,
-/// <c>RUNNERS__SHAREDNEEDSOPTIN</c>).
+/// <c>RUNNERS__MAXJOBHOURS</c>, <c>RUNNERS__QUEUEDJOBDAYS</c>, <c>RUNNERS__MAXCONCURRENTUPLOADS</c>,
+/// <c>RUNNERS__MAXUPLOADMINUTES</c>, <c>RUNNERS__MINFREEDISKMB</c>, <c>RUNNERS__MAXRESULTSPLATS</c>,
+/// <c>RUNNERS__MAXRUNNERSPERUSER</c>).
 /// </summary>
 public sealed class GpuRunnerOptions
 {
@@ -35,23 +37,47 @@ public sealed class GpuRunnerOptions
     /// <summary>How long a claim holds without a progress report.</summary>
     public TimeSpan Lease { get; init; } = TimeSpan.FromMinutes(5);
 
+    /// <summary>Longest a claim may run, heartbeats or not: past it the lease is not renewed and the claim costs an attempt.</summary>
+    public TimeSpan MaxJobDuration { get; init; } = TimeSpan.FromHours(6);
+
+    /// <summary>How long a job may wait for a runner before it is cancelled and its bundle (photo copies) deleted.</summary>
+    public TimeSpan QueuedLifetime { get; init; } = TimeSpan.FromDays(14);
+
     /// <summary>Training failures a runner may report before the job fails for good.</summary>
     public int MaxAttempts { get; init; } = 3;
 
     /// <summary>Claims a job may lose to vanished runners (reboot, sleep, network) before it fails for good.</summary>
     public int MaxLostLeases { get; init; } = 10;
 
-    /// <summary>
-    /// Whether a shared runner needs the receiving wall's opt-in (<see cref="Entities.GpuRunnerSharedOptIn"/>).
-    /// The safe default: a wall's photos only go to a machine its own admin accepted.
-    /// </summary>
-    public bool SharedNeedsOptIn { get; init; } = true;
+    /// <summary>Shutdowns that give a job back for free; each further one costs a training attempt.</summary>
+    public int MaxFreeShutdowns { get; init; } = 5;
+
+    /// <summary>Active (not revoked) runners one user may own.</summary>
+    public int MaxRunnersPerUser { get; init; } = 10;
 
     /// <summary>How long <c>claim</c> waits for work before answering 204.</summary>
     public TimeSpan ClaimWait { get; init; } = TimeSpan.FromSeconds(25);
 
     /// <summary>Largest trained splat a runner may upload (after gzip decoding).</summary>
     public long MaxResultBytes { get; init; } = 2048L * 1024 * 1024;
+
+    /// <summary>Most splats (PLY vertices / SPZ points) an uploaded result may have.</summary>
+    public long MaxResultSplats { get; init; } = 12_000_000;
+
+    /// <summary>Result uploads the whole server accepts at once (one per job in any case).</summary>
+    public int MaxConcurrentUploads { get; init; } = 2;
+
+    /// <summary>Longest a result upload may stream.</summary>
+    public TimeSpan MaxUploadDuration { get; init; } = TimeSpan.FromHours(2);
+
+    /// <summary>Free space the capture store must keep: an upload is refused below it, and aborted when it drops below it.</summary>
+    public long MinFreeDiskBytes { get; init; } = 5L * 1024 * 1024 * 1024;
+
+    /// <summary>A gzip upload is aborted when decoded / encoded bytes exceed this, once past <see cref="GzipRatioGraceBytes"/>.</summary>
+    public int MaxGzipRatio { get; init; } = 50;
+
+    /// <summary>Decoded bytes a gzip upload may produce before <see cref="MaxGzipRatio"/> applies.</summary>
+    public long GzipRatioGraceBytes { get; init; } = 64L * 1024 * 1024;
 
     /// <summary>Largest training bundle taken from the splat worker (ultra: 4096 px photos plus video frames).</summary>
     public long MaxBundleBytes { get; init; } = 6144L * 1024 * 1024;
@@ -69,7 +95,13 @@ public sealed class GpuRunnerOptions
             MaxBundleBytes = Megabytes(configuration, "MaxBundleMb", 64 * 1024) ?? d.MaxBundleBytes,
             MaxAttempts = Int(configuration, "MaxAttempts", 1, 100) ?? d.MaxAttempts,
             MaxLostLeases = Int(configuration, "MaxLostLeases", 1, 1000) ?? d.MaxLostLeases,
-            SharedNeedsOptIn = bool.TryParse(Read(configuration, "SharedNeedsOptIn"), out var o) ? o : d.SharedNeedsOptIn,
+            MaxJobDuration = Int(configuration, "MaxJobHours", 1, 168) is { } h ? TimeSpan.FromHours(h) : d.MaxJobDuration,
+            QueuedLifetime = Int(configuration, "QueuedJobDays", 1, 365) is { } days ? TimeSpan.FromDays(days) : d.QueuedLifetime,
+            MaxConcurrentUploads = Int(configuration, "MaxConcurrentUploads", 1, 32) ?? d.MaxConcurrentUploads,
+            MaxUploadDuration = Int(configuration, "MaxUploadMinutes", 1, 24 * 60) is { } min ? TimeSpan.FromMinutes(min) : d.MaxUploadDuration,
+            MinFreeDiskBytes = Megabytes(configuration, "MinFreeDiskMb", 1024 * 1024) ?? d.MinFreeDiskBytes,
+            MaxResultSplats = Int(configuration, "MaxResultSplats", 1000, 100_000_000) ?? d.MaxResultSplats,
+            MaxRunnersPerUser = Int(configuration, "MaxRunnersPerUser", 1, 1000) ?? d.MaxRunnersPerUser,
         };
     }
 

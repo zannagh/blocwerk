@@ -6,11 +6,27 @@ using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Runners;
 
-/// <summary>Runs <see cref="GpuJobQueue.SweepAsync"/> every <see cref="GpuRunnerOptions.SweepInterval"/>.</summary>
+/// <summary>
+/// Runs <see cref="GpuJobQueue.SweepAsync"/> every <see cref="GpuRunnerOptions.SweepInterval"/>; with
+/// <see cref="GpuRunnerMode.Off"/> it first cancels every waiting or running job.
+/// </summary>
 public sealed class GpuJobSweepWorker(GpuJobQueue queue, ILogger<GpuJobSweepWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (queue.Options.Mode == GpuRunnerMode.Off)
+        {
+            try
+            {
+                // Nothing may train them any more, and their bundles are copies of capture photos.
+                await queue.CancelAllActiveAsync("3D runners were turned off on this server", stoppingToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Could not cancel the waiting GPU jobs after runners were turned off");
+            }
+        }
+
         using var timer = new PeriodicTimer(queue.Options.SweepInterval);
         do
         {

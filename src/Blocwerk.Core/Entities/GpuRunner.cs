@@ -16,9 +16,9 @@ namespace Blocwerk.Core.Entities;
 /// <remarks>
 /// Only the SHA-256 of the key is stored (as for <see cref="ApiKey"/>), so the key exists in full
 /// exactly once, in the answer to the call that created it. A runner serves the walls listed in
-/// <see cref="GpuRunnerWall"/> (walls its owner administers) and, when <see cref="SharedWithOtherWalls"/>
-/// is set, other walls whose admin accepted shared runners (<see cref="GpuRunnerSharedOptIn"/>) and that have no
-/// runner of their own online.
+/// <see cref="GpuRunnerWall"/> (walls its owner administers) and, when a site admin set
+/// <see cref="SharedWithOtherWalls"/>, other walls whose admin approved THIS runner (<see cref="GpuRunnerApproval"/>)
+/// and that have no runner of their own online. A runner whose owner is deleted, the Ghost or locked out does nothing.
 /// </remarks>
 public class GpuRunner
 {
@@ -38,7 +38,10 @@ public class GpuRunner
     [ForeignKey(nameof(OwnerUserId))]
     public User Owner { get; set; } = null!;
 
-    /// <summary>"Other walls can use this runner": walls that opted in and have no runner of their own online may use it.</summary>
+    /// <summary>
+    /// "Other walls can use this runner" (set by site admins only): walls whose admin approved this runner and that have
+    /// no runner of their own online may use it.
+    /// </summary>
     public bool SharedWithOtherWalls { get; set; }
 
     /// <summary>Hex SHA-256 of the full key. The key itself is never stored.</summary>
