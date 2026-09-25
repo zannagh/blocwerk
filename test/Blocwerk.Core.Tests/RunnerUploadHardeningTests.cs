@@ -56,7 +56,12 @@ public class RunnerUploadHardeningTests
         var ply = RunnerFixture.SlimPly();
         using var gated = new GatedUploadStream(ply[..20], ply[20..]);
 
+        // The server-side barrier: the queue asks the disk only once the upload HOLDS its slot. (gated.Started is not
+        // one: the test client pumps the head into the request pipe before the server even looked at the job.)
+        var holding = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        f.Disk.OnRead = _ => holding.TrySetResult();
         var first = host.SendAsync(HttpMethod.Put, $"{Api}/jobs/{jobA.Id}/result", a, new StreamContent(gated));
+        await holding.Task.WaitAsync(TimeSpan.FromSeconds(10));
         await gated.Started.WaitAsync(TimeSpan.FromSeconds(10));
 
         var again = await host.SendAsync(HttpMethod.Put, $"{Api}/jobs/{jobA.Id}/result", a, new ByteArrayContent(ply));

@@ -54,6 +54,10 @@ public static partial class RunnerApiEndpoints
     /// <see cref="RateLimitPolicies"/>, which shares the app's single <c>OnRejected</c> with the API-key login's policy.
     /// </summary>
     public static void AddRunnerRateLimit(this IServiceCollection services) =>
+        AddRunnerRateLimit(services, TimeSpan.FromSeconds(10));
+
+    /// <summary>The same policy with its own refill period (tests pass a long one so a slow run is not refilled mid-burst).</summary>
+    internal static void AddRunnerRateLimit(IServiceCollection services, TimeSpan replenishmentPeriod) =>
         services.AddRateLimitPolicy(
             RateLimitPolicy,
             http => RateLimitPartition.GetTokenBucketLimiter(
@@ -62,7 +66,7 @@ public static partial class RunnerApiEndpoints
                 {
                     TokenLimit = AddressBurst,
                     TokensPerPeriod = 40,
-                    ReplenishmentPeriod = TimeSpan.FromSeconds(10),
+                    ReplenishmentPeriod = replenishmentPeriod,
                     QueueLimit = 0,
                     AutoReplenishment = true,
                 }),

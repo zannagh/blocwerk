@@ -56,7 +56,10 @@ internal sealed class RunnerApiTestHost : IAsyncDisposable
             .AddScheme<AuthenticationSchemeOptions, PermissiveAuthHandler>(ApiKeyAuthenticationHandler.SchemeName, _ => { });
         builder.Services.AddAuthorization();
         builder.Services.AddApiKeyLogin();
-        builder.Services.AddRunnerRateLimit();
+
+        // Program's policy, but refilled hourly instead of every 10 s: on a loaded machine the wall clock must not top
+        // up a burst test halfway through.
+        RunnerApiEndpoints.AddRunnerRateLimit(builder.Services, TimeSpan.FromHours(1));
 
         var app = builder.Build();
         app.UseRateLimiter();
