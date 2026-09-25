@@ -33,6 +33,13 @@ public sealed partial class WallCaptureProcessor
         }
     }
 
+    /// <summary>
+    /// Once the capture shows as done (its model ready, its photo-real view stored or waiting for a runner): the
+    /// slow proposal steps, still on this background worker. A capture handed back to the photo-real stage in the
+    /// meantime skips them here and runs them when it is done again.
+    /// </summary>
+    private Task AfterCompletionAsync(CaptureRun run, CancellationToken ct) => FollowUpAsync(run, CaptureFollowUpPhase.AfterCompletion, ct);
+
     /// <summary>Adds a plain-words note to the capture's follow-up record (e.g. why there is no photo-real view).</summary>
     private static void AddFollowUpNote(WallCapture capture, string note) =>
         capture.FollowUpJson = (CaptureFollowUpRecord.Parse(capture.FollowUpJson) with { Note = note }).ToJson();

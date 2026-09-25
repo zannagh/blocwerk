@@ -164,6 +164,11 @@ public static class CoreServices
         builder.Services.AddScoped<IHoldTexturePlacementService, HoldTexturePlacementService>();
         builder.Services.AddScoped<IHoldProtrusionService, HoldProtrusionService>();
         builder.Services.AddScoped<IWallVolumeService, WallVolumeService>();
+
+        // Multi-view hold proposals: the first AVAILABLE detector wins; the GPU runner stub stays unavailable.
+        builder.Services.AddScoped<ICaptureHoldDetector, ComputeCaptureHoldDetector>();
+        builder.Services.AddScoped<ICaptureHoldDetector, InAppCaptureHoldDetector>();
+        builder.Services.AddScoped<IHoldProposalService, HoldProposalService>();
         builder.Services.AddSingleton<HoldRefinementQueue>();
         builder.Services.AddSingleton<IHoldRefinementQueue>(sp => sp.GetRequiredService<HoldRefinementQueue>());
         builder.Services.AddHostedService(sp => sp.GetRequiredService<HoldRefinementQueue>());

@@ -91,6 +91,20 @@ public sealed record SolvedCamera(string Image, int Width, int Height, double[] 
         return ((K[0] * xd) + (K[1] * yd) + K[2], (K[4] * yd) + K[5]);
     }
 
+    /// <summary>The pixel's viewing ray in world coordinates: unit direction from <see cref="Centre"/>.</summary>
+    /// <param name="px">Pixel x.</param>
+    /// <param name="py">Pixel y.</param>
+    /// <returns>The direction.</returns>
+    public double[] RayDirection(double px, double py)
+    {
+        var yd = (py - K[5]) / K[4];
+        var xd = (px - K[2] - (K[1] * yd)) / K[0];
+        var (x, y) = Undistort(xd, yd);
+        double[] d = [(R[0] * x) + (R[3] * y) + R[6], (R[1] * x) + (R[4] * y) + R[7], (R[2] * x) + (R[5] * y) + R[8]];
+        var len = Math.Sqrt((d[0] * d[0]) + (d[1] * d[1]) + (d[2] * d[2]));
+        return [d[0] / len, d[1] / len, d[2] / len];
+    }
+
     /// <summary>Where the pixel's viewing ray meets the facet plane (a, b mm), or null when it misses.</summary>
     /// <param name="frame">The facet.</param>
     /// <param name="px">Pixel x.</param>

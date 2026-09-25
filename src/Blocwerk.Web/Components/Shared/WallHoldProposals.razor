@@ -1,0 +1,81 @@
+@* Wall-settings sub-section (inside the admin "Hold outlines" block): the 3D model's volumes found without markers
+   (hide a wrong one) and "Find holds from all photos" with its review list — accept creates the hold on its panel,
+   reject is remembered. Hidden on a kiosk tablet and behind a share link; the services refuse both anyway. *@
+@using Blocwerk.Core.Holds
+
+@if (!Hidden && loaded)
+{
+    <h4 class="glyph-subheading">Volumes</h4>
+    @if (volumes.Count == 0)
+    {
+        <p class="hint">No volumes found yet. They are found from the photo-real scene after a capture.</p>
+    }
+    else
+    {
+        <p class="hint">Found from the 3D capture, no markers needed. Holds on them are drawn on the volume in 3D. Hide one that is wrong.</p>
+        <ul class="glyph-summary volume-list">
+            @foreach (var v in volumes)
+            {
+                <li>
+                    Volume @v.Index (facet @v.FacetId): @VolumeText(v)
+                    <button class="btn-link" @onclick="() => ToggleVolumeAsync(v)" disabled="@busy">@(v.IsHidden ? "Show" : "Hide")</button>
+                </li>
+            }
+        </ul>
+    }
+
+    <h4 class="glyph-subheading">Holds seen in the 3D photos</h4>
+    <p class="hint">
+        Looks for holds in every photo of the 3D capture and lists the ones seen from several angles that are not on
+        any wall photo yet (e.g. under volumes). Nothing is added until you accept it.
+    </p>
+    <div class="staged-actions">
+        <button class="btn-secondary" @onclick="FindAsync" disabled="@busy">Find holds from all photos</button>
+    </div>
+
+    @if (busy)
+    {
+        <p class="loading-small">Looking at every 3D photo — this can take several minutes…</p>
+    }
+
+    @if (failure is not null)
+    {
+        <p class="field-error" role="alert">@failure</p>
+    }
+    else if (message is not null)
+    {
+        <p class="glyph-ok" role="status">@message</p>
+    }
+
+    @if (proposals.Count > 0)
+    {
+        <div class="proposal-grid">
+            @foreach (var p in proposals)
+            {
+                <div class="proposal-card">
+                    @if (crops.TryGetValue(p.Id, out var src))
+                    {
+                        <img src="@src" alt="Proposed hold" width="180" height="180" loading="lazy" />
+                    }
+                    <p class="glyph-summary">@ProposalText(p)</p>
+                    @if (p.PanelId is not null)
+                    {
+                        <select @bind="colors[p.Id]" disabled="@busy" aria-label="Colour of the new hold">
+                            <option value="">No colour</option>
+                            @foreach (var c in HoldPalette.All)
+                            {
+                                <option value="@c.Key">@c.DisplayName</option>
+                            }
+                        </select>
+                        <button class="btn-primary" @onclick="() => AcceptAsync(p)" disabled="@busy">Add hold</button>
+                    }
+                    else
+                    {
+                        <p class="hint">Only seen in 3D, not on a wall photo: add it by hand if it is new.</p>
+                    }
+                    <button class="btn-secondary" @onclick="() => RejectAsync(p)" disabled="@busy">Not a new hold</button>
+                </div>
+            }
+        </div>
+    }
+}

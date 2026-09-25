@@ -84,6 +84,7 @@ public sealed partial class WallCaptureProcessor(
         if (run.Capture.Status == WallCaptureStatus.Splatting)
         {
             await SplatAsync(run, ct);
+            await AfterCompletionAsync(run, ct);
             return;
         }
 
@@ -103,6 +104,7 @@ public sealed partial class WallCaptureProcessor(
         await FollowUpAsync(run, CaptureFollowUpPhase.Model, ct);
         await push.NotifyWallModelReadyAsync(run.Capture.WallId, run.User.Id);
         await AfterTexturesAsync(run, textureError, ct);
+        await AfterCompletionAsync(run, ct);
     }
 
     /// <summary>

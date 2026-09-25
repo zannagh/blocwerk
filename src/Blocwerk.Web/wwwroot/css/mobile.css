@@ -106,6 +106,13 @@
     .glyph-facet-table > tbody > tr > td:nth-child(4)::before { content: "measured "; }
     .glyph-facet-table > tbody > tr > td:nth-child(5)::before { content: "yaw "; }
     .glyph-facet-table > tbody > tr > td:nth-child(6)::before { content: "markers "; }
+
+    /* "Holds seen in the 3D photos": one proposal card per row with full-width 44px controls (colour, Add hold,
+       Not a new hold); the volume list's Hide/Show links get the same hit area. */
+    .proposal-grid { grid-template-columns: 1fr; }
+    .proposal-card img { max-width: 320px; }
+    .proposal-card :is(button, select) { min-height: 44px; width: 100%; }
+    .volume-list .btn-link { min-height: 44px; }
 }
 
 /* The narrowest phones: the four-column wall leaderboard still ran past the card; smaller type. */

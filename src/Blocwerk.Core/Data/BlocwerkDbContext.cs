@@ -186,6 +186,7 @@ public partial class BlocwerkDbContext : DbContext
         ConfigureHoldPlacement(modelBuilder);
         ConfigureMarkerPlan(modelBuilder);
         ConfigureWallVolumes(modelBuilder);
+        ConfigureHoldProposals(modelBuilder);
     }
 
     private static void ConfigureTopLogger(ModelBuilder modelBuilder)

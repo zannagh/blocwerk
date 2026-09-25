@@ -28,6 +28,7 @@ public static class CaptureServices
         services.AddScoped<ICaptureFollowUpStep, RefineFootprintsFollowUpStep>();
         services.AddScoped<ICaptureFollowUpStep, DetectVolumesFollowUpStep>();
         services.AddScoped<ICaptureFollowUpStep, MeasureProtrusionFollowUpStep>();
+        services.AddScoped<ICaptureFollowUpStep, FindHoldProposalsFollowUpStep>();
 
         // 3D runners: GPU machines that pull the photo-real training (see GpuJobQueue).
         services.AddSingleton(sp => Runners.GpuRunnerOptions.Bind(sp.GetService<IConfiguration>()));

@@ -26,6 +26,22 @@ public interface ICaptureFollowUpStep
     /// </summary>
     bool NeedsPhotoReal { get; }
 
+    /// <summary>
+    /// True for a slow step that only proposes (nothing live changes): it runs in
+    /// <see cref="CaptureFollowUpPhase.AfterCompletion"/>, once the capture already shows as done, and in no other
+    /// phase.
+    /// </summary>
+    bool RunsAfterCompletion => false;
+
+    /// <summary>
+    /// A fingerprint of what an after-completion step reads besides the photos (e.g. the visible volumes): the
+    /// recorded step runs again only when it changes. Null: it runs once.
+    /// </summary>
+    /// <param name="context">The capture and its model.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>The fingerprint, or null.</returns>
+    Task<string?> InputsKeyAsync(CaptureFollowUpContext context, CancellationToken ct) => Task.FromResult<string?>(null);
+
     /// <summary>Runs the step. Throwing records it as failed; the chain goes on with the next step.</summary>
     /// <param name="context">The capture and its model.</param>
     /// <param name="ct">Cancellation (app shutdown: nothing is recorded and the step runs again on resume).</param>

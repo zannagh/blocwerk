@@ -410,6 +410,9 @@ img.wall-photo {
 .glyph-subheading { font-size: 0.9rem; font-weight: 600; color: var(--text-heading); margin: 14px 0 6px; }
 .glyph-summary { font-size: 0.85rem; color: var(--text); margin-bottom: 6px; }
 .glyph-facet-table { font-size: 0.85rem; }
+.proposal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; margin: 8px 0; }
+.proposal-card { display: flex; flex-direction: column; gap: 6px; padding: 6px; border: 1px solid var(--border); border-radius: var(--r-md); }
+.proposal-card img { width: 100%; height: auto; border-radius: var(--r-sm, 4px); }
 .glyph-ok {
     padding: 8px 12px; margin: 8px 0; border-radius: var(--r-md); font-size: 0.85rem;
     background: var(--success-bg); color: var(--success-text);

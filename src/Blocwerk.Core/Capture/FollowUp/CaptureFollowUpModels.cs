@@ -12,6 +12,12 @@ public enum CaptureFollowUpPhase
 
     /// <summary>At the end of the capture, with or without a photo-real view.</summary>
     Final = 1,
+
+    /// <summary>
+    /// After the capture completed (model ready, photo-real view stored or waiting for a runner): slow steps that
+    /// only propose, so they never hold up the capture's done state or the other steps' results.
+    /// </summary>
+    AfterCompletion = 2,
 }
 
 /// <summary>What a recorded step did. Stored by name; never rename.</summary>
