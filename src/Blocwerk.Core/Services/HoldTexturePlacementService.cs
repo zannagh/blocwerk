@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Detection.Enrichment;
 using Blocwerk.Core.Geometry.TextureRegistration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -120,7 +121,8 @@ public sealed partial class HoldTexturePlacementService : IHoldTexturePlacementS
     /// <summary>
     /// The automatic run's holds: when the model is the wall's active one and has textures, the live panel holds this
     /// action may place (<see cref="HoldTexturePlacer.IsEligible"/>: never one placed by markers or an edit) that are
-    /// not on the model yet — no facet, or a facet the model does not have. Null when the run does not apply.
+    /// not on the model yet — no facet, a facet the model does not have, or placed by texture registration on an
+    /// earlier model. Null when the run does not apply.
     /// </summary>
     private async Task<HashSet<Guid>?> UnplacedHoldIdsAsync(BlocwerkDbContext db, Guid wallId, Guid modelId, CancellationToken ct)
     {
@@ -134,14 +136,35 @@ public sealed partial class HoldTexturePlacementService : IHoldTexturePlacementS
         var facets = Facets(active.Json).Extents.Keys.ToHashSet(StringComparer.Ordinal);
         var live = await (await LiveHoldsQueryAsync(db, wallId, ct)).AsNoTracking().ToListAsync(ct);
         var eligible = live.Where(HoldTexturePlacer.IsEligible).ToList();
+        var onThisModel = await PlacedOnModelAsync(db, wallId, modelId, ct);
         var unplaced = eligible
             .Where(h => h.FacetId is null || h.PlaneAMm is null || h.PlaneBMm is null || !facets.Contains(h.FacetId))
             .Select(h => h.Id)
             .ToHashSet();
+
+        // A new model keeps the facet ids but its planes moved (a re-solve), so what an earlier run placed by
+        // texture registration on an OLDER model is placed again on this one's textures. Marker-placed and
+        // edited holds are not eligible at all; a hold a run on this model already placed is not redone.
+        var replaced = eligible
+            .Where(h => h.MetricSource == HoldMetric.TextureRegistration && !unplaced.Contains(h.Id) && !onThisModel.Contains(h.Id))
+            .Select(h => h.Id)
+            .ToList();
+        unplaced.UnionWith(replaced);
         logger.LogInformation(
-            "Wall {WallId}: model {ModelId} is live; {Live} live holds, {Eligible} placeable here, {Unplaced} not on the model yet",
-            wallId, modelId, live.Count, eligible.Count, unplaced.Count);
+            "Wall {WallId}: model {ModelId} is live; {Live} live holds, {Eligible} placeable here, {Unplaced} to place "
+            + "({Replaced} placed on an earlier model, placed again)",
+            wallId, modelId, live.Count, eligible.Count, unplaced.Count, replaced.Count);
         return unplaced;
+    }
+
+    /// <summary>The holds a run on <paramref name="modelId"/> placed and that was not reverted.</summary>
+    private static async Task<HashSet<Guid>> PlacedOnModelAsync(BlocwerkDbContext db, Guid wallId, Guid modelId, CancellationToken ct)
+    {
+        var runs = await db.HoldPlacementRuns.AsNoTracking()
+            .Where(r => r.WallId == wallId && r.GeometryModelId == modelId && r.RevertedAt == null)
+            .Select(r => r.HoldsJson)
+            .ToListAsync(ct);
+        return runs.SelectMany(HoldPlacementEntry.FromJson).Select(e => e.HoldId).ToHashSet();
     }
 
     /// <summary>Runs <paramref name="action"/> unless the wall already has a run in progress (then null).</summary>

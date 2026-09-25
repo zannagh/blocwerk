@@ -1,6 +1,7 @@
 using Blocwerk.Core.Detection.Enrichment;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Geometry;
+using Blocwerk.Core.Geometry.TextureRegistration;
 using Blocwerk.Core.Geometry.View3D;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
@@ -126,7 +127,7 @@ public class HoldTexturePlacementTests
     }
 
     [Fact]
-    public async Task Pipeline_AddsNewHoldsToAPlacedWall_AndNeverMovesMarkerPlacedOrPlacedOnes()
+    public async Task Pipeline_AddsNewHolds_PlacesAgainWhatWasTexturePlacedOnAnEarlierModel_AndNeverMovesMarkerPlacedOnes()
     {
         using var h = new WallTestHarness();
         var s = await HoldPlacementScenario.CreateAsync(h);
@@ -139,11 +140,19 @@ public class HoldTexturePlacementTests
 
         var result = await s.Service().PlaceFromPipelineAsync(h.WallId, s.ModelId, h.Owner.Id);
 
-        Assert.Equal(2, result!.Placed);
+        // placedBefore was texture-placed with no run on THIS model: an earlier model's placement, so it is placed again.
+        Assert.Equal(3, result!.Placed);
         var holds = await s.LoadHoldsAsync();
         Assert.Equivalent(before[byMarkers], holds[byMarkers]);
         Assert.Equivalent(before[byMarkersOnAnOldFacet], holds[byMarkersOnAnOldFacet]);
-        Assert.Equivalent(before[placedBefore], holds[placedBefore]);
+        Assert.Equal(HoldMetric.TextureRegistration, holds[placedBefore].MetricSource);
+        Assert.NotEqual((9.0, 9.0), (holds[placedBefore].PlaneAMm!.Value, holds[placedBefore].PlaneBMm!.Value));
+        await using (var db = h.CreateContext())
+        {
+            var entries = HoldPlacementEntry.FromJson((await db.HoldPlacementRuns.SingleAsync()).HoldsJson);
+            Assert.Equal(9, entries.Single(e => e.HoldId == placedBefore).PrevMetric!.PlaneAMm);
+        }
+
         AssertPlaced(holds[onAnOldFacet], "0", 1000, 2250);
         AssertPlaced(holds[fresh], "0", 1600, 1500);
         Assert.All(holds.Values, x => AssertPhotoUntouched(before[x.Id], x));

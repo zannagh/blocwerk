@@ -7,7 +7,8 @@ using Blocwerk.Core.Services;
 namespace Blocwerk.Core.Capture.FollowUp;
 
 /// <summary>
-/// Step 1: the wall's live holds that are not on the new model yet are placed on its facet textures from their
+/// Step 1: the wall's live holds that are not on the new model yet (or were placed on an earlier model by this
+/// same texture matching: a re-solve keeps the facet ids but moves their planes) are placed on its facet textures from their
 /// panel photos (<see cref="IHoldTexturePlacementService.PlaceFromPipelineAsync"/>). Holds placed by markers or
 /// by an edit are never touched; a hold's panel position and shape never change. The run is revertable.
 /// </summary>

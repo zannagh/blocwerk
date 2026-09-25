@@ -40,7 +40,7 @@ public interface IHoldTexturePlacementService
     /// <summary>
     /// The capture pipeline's automatic run after <paramref name="modelId"/> went live (the post-capture chain's
     /// first step): only when it is the wall's active model and has textures, and only for the live holds that are
-    /// not on it yet. Holds placed by markers or by an edit are never touched, whatever model they sit on. No user
+    /// not on it yet (including those this action placed on an earlier model: a re-solve moves the planes). Holds placed by markers or by an edit are never touched, whatever model they sit on. No user
     /// check (the pipeline checked its admin), no refinement queued (the chain refines next). A failure throws
     /// (the chain records it and goes on).
     /// </summary>
