@@ -9,6 +9,7 @@ using Blocwerk.Core.Entities;
 using Blocwerk.Core.Geometry;
 using Blocwerk.Core.Geometry.Footprints;
 using Blocwerk.Core.Geometry.View3D;
+using Blocwerk.Core.Geometry.Volumes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -91,8 +92,9 @@ public sealed class HoldFootprintService(
         var usable = cameras.Where(c => photos.ContainsKey(c.Image)).ToList();
         var panelPhotos = await PanelPhotoInfoLoader.LoadAsync(
             db, wallId, live.Where(h => h.FacetId is not null).Select(HoldPlaneProjector.PhotoOf), ct);
+        var volumes = await FacetVolumesAsync(db, model.Id, doc, ct);
         var refinement = await Task.Run(
-            () => HoldFootprintRefiner.Refine(live, doc, usable, c => Open(c, photos, ct), projector, only, panelPhotos), ct);
+            () => HoldFootprintRefiner.Refine(live, doc, usable, c => Open(c, photos, ct), projector, only, panelPhotos, volumes), ct);
         LogPanelCameras(wallId, refinement);
         var written = await WriteAsync(db, wallId, refinement, ct);
         logger.LogInformation(
@@ -118,6 +120,24 @@ public sealed class HoldFootprintService(
             .Select(p => new { p.Index, p.OriginalFileName, p.StoredPath })
             .ToListAsync(ct);
         return CameraPhotoNames.Map(rows.Select(r => (r.Index, r.OriginalFileName, r.StoredPath)));
+    }
+
+    /// <summary>The model's visible volumes per facet (<see cref="VolumeFootprints"/>); empty without any.</summary>
+    private static async Task<Dictionary<string, FacetVolumes>> FacetVolumesAsync(
+        BlocwerkDbContext db, Guid modelId, WallGeometryDocument doc, CancellationToken ct)
+    {
+        var rows = await db.WallVolumes.AsNoTracking().Where(v => v.GeometryModelId == modelId && !v.IsHidden).ToListAsync(ct);
+        var result = new Dictionary<string, FacetVolumes>(StringComparer.Ordinal);
+        foreach (var g in rows.GroupBy(v => v.FacetId))
+        {
+            var surfaces = g.Select(v => VolumeSurface.FromJson(v.SurfaceJson)).OfType<VolumeSurface>().ToList();
+            if (doc.FindFacet(g.Key) is { } found && FacetFrame.From(found.Facet) is { } frame && surfaces.Count > 0)
+            {
+                result[g.Key] = new FacetVolumes(frame, surfaces);
+            }
+        }
+
+        return result;
     }
 
     /// <summary>One capture photo's outline session, or null when unreadable or rotated against its camera.</summary>

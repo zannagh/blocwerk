@@ -44,6 +44,7 @@ public static class HoldFootprintRefiner
     /// <param name="projector">The panel-photo → facet mappings the 3D view uses.</param>
     /// <param name="only">Refine only these holds (the rest still resect the panel cameras); null for all.</param>
     /// <param name="panelPhotos">Each hold photo's size and EXIF focal length, for a planar camera pose; null for DLT only.</param>
+    /// <param name="volumes">Per facet its visible volumes (<see cref="VolumeFootprints"/>); null: facets only, as before.</param>
     /// <returns>The refinement.</returns>
     public static HoldFootprintRefinement Refine(
         IReadOnlyList<Hold> live,
@@ -52,18 +53,19 @@ public static class HoldFootprintRefiner
         Func<SolvedCamera, IHoldOutlineSession?> open,
         HoldPlaneProjector projector,
         IReadOnlySet<Guid>? only = null,
-        IReadOnlyDictionary<Wall3DPhotoKey, PanelPhotoInfo>? panelPhotos = null)
+        IReadOnlyDictionary<Wall3DPhotoKey, PanelPhotoInfo>? panelPhotos = null,
+        IReadOnlyDictionary<string, FacetVolumes>? volumes = null)
     {
         var frames = Frames(doc);
         var estimates = PanelCameraEstimates(live, frames, panelPhotos);
         var panelCams = estimates.Where(e => e.Value.Centre is not null).ToDictionary(e => e.Key, e => e.Value.Centre!);
-        var primaries = new Dictionary<Guid, (Hold Hold, FacetFrame Frame, FootprintView View)>();
+        var primaries = new Dictionary<Guid, Traced>();
         var skipped = 0;
         foreach (var hold in live.Where(h => only is null || only.Contains(h.Id)))
         {
             if (Primary(hold, frames, panelCams, projector) is { } p)
             {
-                primaries[hold.Id] = (hold, p.Frame, p.View);
+                primaries[hold.Id] = Traced.Of(hold, p.Frame, p.View, volumes?.GetValueOrDefault(hold.FacetId!));
             }
             else if (hold.ShapePoints is { Count: >= 3 })
             {
@@ -78,12 +80,13 @@ public static class HoldFootprintRefiner
         }
 
         var result = new Dictionary<Guid, HoldFootprint>();
-        foreach (var (id, (hold, frame, view)) in primaries)
+        foreach (var (id, t) in primaries)
         {
-            var fp = HoldFootprintEstimator.Estimate(frame, (hold.PlaneAMm!.Value, hold.PlaneBMm!.Value), view, others[id], HoldFootprint.KeyOf(hold));
+            var fp = HoldFootprintEstimator.Estimate(t.Frame, t.Centre, t.View, others[id], HoldFootprint.KeyOf(t.Hold));
             if (fp is not null)
             {
-                result[id] = fp;
+                // On a volume the footprint is in the tangent frame; a position shift there is not a facet shift.
+                result[id] = t.OnVolume ? fp with { ShiftA = 0, ShiftB = 0 } : fp;
             }
         }
 
@@ -154,10 +157,10 @@ public static class HoldFootprintRefiner
     private static void TraceIn(
         SolvedCamera declared,
         Func<SolvedCamera, IHoldOutlineSession?> open,
-        IEnumerable<(Hold Hold, FacetFrame Frame, FootprintView View)> primaries,
+        IEnumerable<Traced> primaries,
         Dictionary<Guid, List<FootprintView>> others)
     {
-        var seen = primaries.Where(p => Sees(declared, p.Frame, p.View)).ToList();
+        var seen = primaries.Where(p => Sees(declared, p)).ToList();
         if (seen.Count == 0)
         {
             return;
@@ -170,20 +173,21 @@ public static class HoldFootprintRefiner
         }
 
         var camera = declared.ScaledTo(session.ImageWidth, session.ImageHeight);
-        foreach (var (hold, frame, view) in seen)
+        foreach (var t in seen)
         {
-            if (Trace(camera, session, frame, view) is { } silhouette)
+            if (Trace(camera, session, t.Frame, t.View) is { } silhouette)
             {
-                others[hold.Id].Add(new FootprintView(silhouette, camera.Centre, camera.Image));
+                others[t.Hold.Id].Add(new FootprintView(silhouette, camera.Centre, camera.Image));
             }
         }
     }
 
     /// <summary>Whether the capture camera sees the hold head-on enough and inside the frame.</summary>
-    private static bool Sees(SolvedCamera camera, FacetFrame frame, FootprintView view)
+    private static bool Sees(SolvedCamera camera, Traced t)
     {
-        var centre = Centroid(view.Silhouette);
-        if (HoldFootprintEstimator.ViewOf(frame, centre, camera.Centre) is not { ThetaDeg: <= MaxCaptureThetaDeg })
+        var (frame, centre) = (t.Frame, Centroid(t.View.Silhouette));
+        if (HoldFootprintEstimator.ViewOf(frame, centre, camera.Centre) is not { ThetaDeg: <= MaxCaptureThetaDeg }
+            || (t.Volumes is { } v && VolumeFootprints.Occluded(camera.Centre, frame.ToWorld(centre.A, centre.B, 10), v)))
         {
             return false;
         }
