@@ -3,6 +3,13 @@
 # NVIDIA's driver there). Build context: the REPO ROOT. Context filter: Dockerfile.cuda.dockerignore.
 #   docker build -f docker/splat-worker/Dockerfile.cuda -t blocwerk-splat-worker-cuda .
 #   docker run --gpus all -p 8100:8100 -e COMPUTE_API_KEY=... blocwerk-splat-worker-cuda
+# The same image, two more roles (README "3D runner"):
+#   3D runner (pulls GPU training from a Blocwerk server; no ports; the key only from the env file):
+#     docker run -d --name blocwerk-runner --restart unless-stopped --gpus all --env-file runner.env \
+#       blocwerk-splat-worker-cuda python -m splatworker.gpurunner --server https://blocwerk.app
+#   CPU half next to the app (splat-prepare + splat-finish only, no GPU):
+#     -e SPLAT_WORKER_MODE=cpu -e COLMAP_USE_GPU=0 (and no --gpus)
+# HEALTHCHECK: the worker's /health, or for a runner its liveness file (splatworker/gpurunner/health.py).
 #
 # Size: no CUDA toolkit and no nvidia/cuda base. The prebuilt gsplat wheel (compiled kernels, no JIT)
 # only needs the CUDA runtime libraries the torch wheel ships, and the driver comes from the NVIDIA
@@ -119,5 +126,5 @@ RUN useradd --system --uid 10001 --no-create-home --home-dir /app app \
 USER app
 EXPOSE 8100
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8100/health', timeout=4).status == 200 else 1)"
+    CMD ["python", "-m", "splatworker.gpurunner.health"]
 CMD ["python", "-m", "splatworker"]

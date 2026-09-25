@@ -261,6 +261,17 @@ give the job memory to match (`SPLAT_MAX_MEMORY_MB` unset, container limit ≥ 1
 | `COLMAP_MAPPER` | `incremental` (`Dockerfile.cuda`: `global`) | `incremental` (`mapper`) or `global` (`global_mapper`, GLOMAP merged into COLMAP 4.x; falls back to incremental on COLMAP 3.9) |
 | `COLMAP_VOCAB_TREE_IMAGES` / `COLMAP_VOCAB_TREE_PATH` | 0 / unset (`Dockerfile.cuda`: `/opt/colmap/share/vocab_tree_sift.bin`) | > 0: after the `pairs` list, every `vf_*` video frame is also matched with its N most similar images by vocabulary-tree retrieval (`vocab_tree_matcher`, loop closure for walks; pairs already matched are skipped; a failure is logged, not fatal). The tree is COLMAP's pinned faiss SIFT tree (flickr100K, 256K words, sha256-checked at build time); COLMAP 3.9 cannot read it |
 | `GSPLAT_EVAL_EVERY` | 0 | gsplat only: hold out every Nth PHOTO (sorted by name: 0, N, 2N, …; `vf_*` video frames always train) and score it at the end: `stats.evalPsnr` / `evalSsim` / `evalViews`, and with a wall geometry `evalWallPsnr` / `evalWallSsim` over the pixels showing a facet. A measurement mode (the held-out views do not train), so off by default; Brush ignores it |
+| `SPLAT_WORKER_MODE` | `all` | `cpu` = the CPU half for 3D runners: `splat-prepare` + `splat-finish` only (COLMAP needed; no trainer, no GPU; `splat` answers 503). In the CUDA image also set `COLMAP_USE_GPU=0` |
+| `SPLAT_MAX_RESULT_MB` | 2048 | `splat-finish`: the largest trained scene (`splat.ply` / `splat.spz`) accepted |
+
+3D runner (`python -m splatworker.gpurunner`, below) on top of the trainer settings above:
+
+| var | default | |
+|---|---|---|
+| `BWR_KEY` | (required) | the runner key `bwr_…`; read from the environment only (`--env-file runner.env`), removed from it at start, never logged; a `--key` argument is refused |
+| `RUNNER_WORK_DIR` | `<tmp>/blocwerk-runner` | bundles, training, the `alive` liveness file |
+| `RUNNER_MAX_QUALITY` | unset | caps what the runner claims (`draft` … `ultra`) |
+| `RUNNER_UPLOAD_GZIP` | 1 | `0` = upload the slim `.ply` uncompressed (also `--no-gzip`); a server answering 415 gets it uncompressed anyway |
 
 ## Run natively on a Mac (the "external GPU")
 
@@ -475,6 +486,48 @@ OpenImageIO's dependency tree). **This image therefore needs an NVIDIA GPU for C
 GPU SfM is ~10× faster in matching, doubles the sparse points at a lower reprojection error; held-out
 PSNR is equal within run-to-run noise (±0.5 dB between two identical runs), SSIM +0.04. DSP + affine
 costs 30× the extraction time and 2× the mapping and scored worse here, so the image leaves it off.
+
+## 3D runner and the CPU half (`splat-prepare` / `splat-finish`)
+
+A **3D runner** trains the photo-real view on a GPU somewhere else, pulling work from the Blocwerk app
+(no inbound port; docs/marker-walls.md "3D runners" for the app side). The job is split in three:
+
+1. `splat-prepare` (this worker, CPU is enough): the all-in-one job's own ingest, COLMAP and undistort
+   (`prepare.py`), then `bundle.zip` = the undistorted, metadata-free images + sparse model, `train.json`
+   (the requested profile, ultra included: the runner's GPU decides) and, with a wall geometry,
+   `zones.json` (the wall zones the gsplat trainer focuses on, exactly as the all-in-one job writes them);
+   and `prepared.json` (camera centres of photos AND video frames, SfM stats, options, geometry, zones;
+   stays on the server). The app rebuilds the bundle with an allow-list before a runner sees it.
+2. The runner (`gpurunner/`): hello (GPU, VRAM, trainer, CUDA, the highest quality: `ultra` only with
+   gsplat on >= 12 GB), long-poll claim, resumable bundle download (Range, sha256), training through the
+   worker's own `pipeline.Run.train` (gsplat fitted to the VRAM with the zones and one out-of-memory retry,
+   or Brush fitted to memory; `trainers.select()` / `job_profile()`), progress heartbeats (the lease), and a
+   slim `.ply` upload, gzip-compressed. SIGTERM kills the trainer and hands the job back
+   (`fail` with `shutdown: true`, no attempt used); 404 / 410 drop the job; 401 exits with code 3.
+3. `splat-finish` (this worker): the runner's scene + `prepared.json` through the all-in-one job's own
+   `frame_and_crop` and `export` (`finish.py`): alignment + refinement, the wall-zone cut when the runner
+   trained with the zones, the clean-up over every camera, `wall.raw.spz`. Same files as `splat`
+   (tests/test_roundtrip.py checks they are byte-identical).
+
+```
+# NVIDIA (the CUDA image; runner.env holds one line BWR_KEY=bwr_...)
+docker run -d --name blocwerk-runner --restart unless-stopped --stop-timeout 30 --gpus all \
+  --env-file runner.env blocwerk-splat-worker-cuda:local python -m splatworker.gpurunner --server https://blocwerk.app
+# AMD / Intel (Brush on Vulkan)
+docker run -d --name blocwerk-runner --restart unless-stopped --stop-timeout 30 --device /dev/dri \
+  --env-file runner.env ghcr.io/zannagh/blocwerk-splat-worker:latest python -m splatworker.gpurunner --server https://blocwerk.app
+# Apple Silicon (Brush on Metal, natively; untested)
+set -a; . ./runner.env; set +a; caffeinate -i docker/splat-worker/run-runner-native.sh --server https://blocwerk.app
+# the CPU half next to the app: same images, no GPU
+docker run -e SPLAT_WORKER_MODE=cpu -e COMPUTE_API_KEY=... ghcr.io/zannagh/blocwerk-splat-worker:latest
+```
+
+Plain `http://` is refused except for localhost (`--insecure-http` overrides). Exit codes: 0 stopped,
+2 misconfigured (no key, trainer missing), 3 key refused. The image's HEALTHCHECK
+(`python -m splatworker.gpurunner.health`) checks the runner's `alive` file (touched every loop turn and
+by the heartbeat; unhealthy after 120 s) and falls back to the worker's `/health` when there is none.
+`/health` lists `splat-prepare` and `splat-finish` in `kinds` (the app uses the split only then) and, on a
+worker that trains ultra itself (gsplat, >= 12 GB), `maxQuality: "ultra"`.
 
 ## Exposing it safely
 

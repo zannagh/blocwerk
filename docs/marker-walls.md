@@ -1050,7 +1050,8 @@ A **3D runner** is a machine with a GPU (a gaming PC, a rented GPU box, an Apple
 takes the photo-real training off the server. It **connects out** to Blocwerk, so it works behind a
 home router with no open ports and no tunnel. It never sees the database or any other wall: it only
 downloads the training bundle of the one job it claimed (metadata-free images at the quality's size,
-the COLMAP camera model and the training options) and uploads the trained splat.
+the COLMAP camera model, the training options and, on a wall with a geometry, the wall zones: the
+facets' planes and outlines the trainer focuses on) and uploads the trained splat.
 
 Runners are **optional**. Without one nothing changes: the capture behaves exactly as before.
 

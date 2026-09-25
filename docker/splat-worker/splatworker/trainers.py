@@ -9,6 +9,7 @@ select() and job_profile() only need the settings and the request options, so th
 bundle of images + COLMAP sparse model instead of a whole job) can reuse them with gsplat_trainer.plans
 and gsplat_trainer.train (or brush.train).
 """
+import json
 import os
 
 import numpy as np
@@ -112,6 +113,10 @@ def write_zones(run):
     Sets run.zones (the spec, for the export cut). A geometry the photos cannot be aligned to trains
     unzoned: the align stage then reports why."""
     run.zones = None
+    if getattr(run, "zones_file", None):  # a 3D runner: the zones its bundle brings (prepare.py, bundle.py)
+        with open(run.zones_file) as fh:
+            run.zones = json.load(fh)
+        return run.zones_file
     if not getattr(run, "geometry", None):
         return None
     path = os.path.join(run.dir, "zones.json")

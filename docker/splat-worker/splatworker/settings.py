@@ -64,3 +64,8 @@ settings.vram_mb = env_int("SPLAT_VRAM_MB", 0)
 # GSPLAT_EVAL_EVERY > 0: every that-many-th view (sorted by name) is held out of gsplat's training and
 # scored (PSNR / SSIM) at the end: stats.eval* (gsplat_train.py). 0 = off: every view trains.
 settings.gsplat_eval_every = max(0, env_int("GSPLAT_EVAL_EVERY", 0))
+# The worker's role: "all" (default: every kind, the trainer required) or "cpu" (the server-side half for 3D
+# runners: splat-prepare + splat-finish only; no GPU and no trainer needed, kind `splat` is refused).
+settings.worker_mode = os.environ.get("SPLAT_WORKER_MODE", "all").strip().lower() or "all"
+# kind splat-finish: the largest trained scene (a runner's .ply / .spz) accepted.
+settings.max_result_bytes = env_int("SPLAT_MAX_RESULT_MB", 2048) << 20

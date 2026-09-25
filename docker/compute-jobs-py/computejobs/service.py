@@ -70,15 +70,17 @@ def media_type(name):
 class ComputeService:
     """name/version for /health; kinds {kind: handler}; runner + timeout_for for the JobManager;
     elsewhere {kind: detail} answers 501 (kind served by another worker); info_extra() -> dict for the
-    authenticated GET /v1/info; ready() -> bool turns /health's status into "degraded" when False."""
+    authenticated GET /v1/info; ready() -> bool turns /health's status into "degraded" when False;
+    health_extra() -> dict adds small public capability fields to /health (e.g. the splat worker's maxQuality)."""
 
     def __init__(self, *, name, version, kinds, runner, timeout_for, elsewhere=None, info_extra=None,
-                 on_startup=None, ready=None):
+                 on_startup=None, ready=None, health_extra=None):
         self.name, self.version, self.kinds = name, version, kinds
         self.runner, self.timeout_for = runner, timeout_for
         self.elsewhere = elsewhere or {}
         self.info_extra = info_extra
         self.ready = ready
+        self.health_extra = health_extra
         self.on_startup = on_startup
         self.manager = None
         self.log = logging.getLogger(name)
@@ -138,8 +140,11 @@ class ComputeService:
         """Unauthenticated: only what a load balancer / the app's probe needs. No paths, tool versions,
         limits or queue state (those are in the authenticated /v1/info)."""
         status = "ok" if self.ready is None or self.ready() else "degraded"
-        return {"status": status, "service": self.name, "protocol": PROTOCOL, "version": self.version,
+        body = {"status": status, "service": self.name, "protocol": PROTOCOL, "version": self.version,
                 "kinds": list(self.kinds)}
+        if self.health_extra:
+            body.update({k: v for k, v in (self.health_extra() or {}).items() if k not in body})
+        return body
 
     def info(self):
         body = {**self.health(), "gitSha": settings.git_sha, "auth": bool(settings.api_key),

@@ -15,7 +15,8 @@ namespace Blocwerk.Core.Runners;
 /// </summary>
 /// <remarks>
 /// Allowed: <c>train.json</c> (known keys only, <see cref="RunnerTrainOptions"/>), <c>dataset/images/…/*.jpg|jpeg|png</c>,
-/// <c>dataset/sparse/…/*.bin|txt</c>.
+/// <c>dataset/sparse/…/*.bin|txt</c>, and an optional <c>zones.json</c> (the wall zones gsplat trains with, known
+/// shape only, <see cref="RunnerZones"/>).
 /// Anything else, a path that escapes (<c>..</c>, rooted, backslashes), too many entries or too many
 /// bytes refuses the bundle. Works stream to stream (files on disk): only one entry is ever in memory.
 /// </remarks>
@@ -31,6 +32,7 @@ public static class RunnerBundle
     private enum EntryKind
     {
         Options,
+        Zones,
         Image,
         Sparse,
     }
@@ -70,6 +72,10 @@ public static class RunnerBundle
             else if (kind == EntryKind.Options)
             {
                 RunnerTrainOptions.Validate(bytes);
+            }
+            else if (kind == EntryKind.Zones)
+            {
+                RunnerZones.Validate(bytes);
             }
 
             var copy = archive.CreateEntry(entry.FullName, kind == EntryKind.Image ? CompressionLevel.NoCompression : CompressionLevel.Optimal);
@@ -113,6 +119,11 @@ public static class RunnerBundle
         if (name == "train.json")
         {
             return EntryKind.Options;
+        }
+
+        if (name == RunnerZones.FileName)
+        {
+            return EntryKind.Zones;
         }
 
         if (name.StartsWith("dataset/images/", StringComparison.Ordinal) && ImageExtensions.Contains(ext))

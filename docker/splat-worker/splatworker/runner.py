@@ -3,5 +3,10 @@ from computejobs.child import run_in_child
 
 
 def run_job(kind, job_dir, conn):
-    from .pipeline import run
-    run_in_child(run, job_dir, conn, (ValueError,))
+    if kind == "splat-prepare":
+        from .prepare import run_prepare as body
+    elif kind == "splat-finish":
+        from .finish import run_finish as body
+    else:
+        from .pipeline import run as body
+    run_in_child(body, job_dir, conn, (ValueError,))

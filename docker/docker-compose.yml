@@ -256,6 +256,52 @@ services:
               capabilities: [gpu]
     restart: unless-stopped
 
+  # The splat worker's CPU half for 3D runners (docs/marker-walls.md "3D runners"): splat-prepare (COLMAP,
+  # the training bundle) and splat-finish (alignment, the wall-zone cut, clean-up, export), no GPU and no
+  # trainer (SPLAT_WORKER_MODE=cpu refuses the all-in-one `splat` kind). The training runs on the runners:
+  # set RUNNERS_MODE=always and SPLATSERVICE_URL=http://splat-cpu:8100. Profile `compute`. Internal only.
+  splat-cpu:
+    image: ghcr.io/zannagh/blocwerk-splat-worker:latest
+    profiles: ["compute"]
+    environment:
+      COMPUTE_API_KEY: ${SPLAT_API_KEY:-}
+      COMPUTE_CALLBACK_SECRET: ${SPLAT_CALLBACK_SECRET:-}
+      CALLBACK_ALLOWED_HOSTS: blocwerk
+      SPLAT_WORKER_MODE: cpu
+      RESULT_TTL_S: "3600"
+      SPLAT_TIMEOUT_S: "14400"
+      SPLAT_MAX_MEMORY_MB: ${SPLAT_MAX_MEMORY_MB:-0}
+      SPLAT_MAX_SWAP_GROWTH_MB: ${SPLAT_MAX_SWAP_GROWTH_MB:-2048}
+      COLMAP_MAX_IMAGE_SIZE: ${COLMAP_MAX_IMAGE_SIZE:-2400}
+      COLMAP_MAX_FEATURES: ${COLMAP_MAX_FEATURES:-8192}
+      COLMAP_MAX_MATCHES: ${COLMAP_MAX_MATCHES:-8192}
+      COLMAP_THREADS: ${COLMAP_THREADS:-4}
+    restart: unless-stopped
+
+  # A 3D runner on THIS host's NVIDIA GPU (the CUDA image; it pulls jobs from the app like any runner, so
+  # SERVER is the app's public https URL). The key comes from runner.env next to this file (one line
+  # BWR_KEY=bwr_..., created in the wall's 3D runners settings); never put it into .env or here.
+  # `docker compose --profile gpu-runner up -d gpu-runner`. No ports.
+  gpu-runner:
+    image: blocwerk-splat-worker-cuda:local
+    profiles: ["gpu-runner"]
+    command: ["python", "-m", "splatworker.gpurunner", "--server", "${RUNNER_SERVER_URL:-https://blocwerk.app}"]
+    env_file:
+      - path: runner.env
+        required: false
+    environment:
+      SPLAT_VRAM_MB: ${SPLAT_VRAM_MB:-0}
+      RUNNER_MAX_QUALITY: ${RUNNER_MAX_QUALITY:-}
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
   # Receives the GitHub releases/packages webhook and, on a new published image, pulls and
   # recreates the blocwerk service. See docker/deploy-hook/ (and .env.example for required vars).
   # SECURITY: this drives the host docker daemon via the mounted socket, so it is effectively

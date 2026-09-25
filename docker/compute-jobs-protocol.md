@@ -166,7 +166,7 @@ the result with the geometry and never counted towards the photo minimum.
 The same job split in two CPU halves around the GPU training, which a **3D runner** does elsewhere
 (the runner pulls work from the app; it never talks to this worker). `splat-prepare` takes exactly the
 `splat` request and returns `bundle.zip` (undistorted, metadata-free images + COLMAP sparse model +
-`train.json`: what the runner trains) and `prepared.json` (the state the finish needs; server-only).
+`train.json`: what the runner trains, and optional `zones.json`: the wall zones gsplat trains with) and `prepared.json` (the state the finish needs; server-only).
 `splat-finish` takes multipart `prepared` (that JSON), `splat` (one file `splat.ply` or `splat.spz`,
 the trained scene; `SPLAT_MAX_RESULT_MB`, default 2048) and optional `trainStats` (JSON), and returns
 the same `wall.splat` / `wall.spz` / `frame.json` as `splat`. Details: `splat-worker/README.md`.

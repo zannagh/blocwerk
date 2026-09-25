@@ -4,6 +4,11 @@
 #   docker build -f docker/splat-worker/Dockerfile --target test .                       # runs the tests
 #   docker run --gpus all -p 8100:8100 -e COMPUTE_API_KEY=... blocwerk-splat-worker     # NVIDIA
 #   docker run --device /dev/dri -p 8100:8100 -e COMPUTE_API_KEY=... blocwerk-splat-worker  # AMD / Intel
+# The same image, two more roles (README "3D runner"):
+#   3D runner (Brush on Vulkan; pulls training from a Blocwerk server; no ports):
+#     docker run -d --name blocwerk-runner --restart unless-stopped --device /dev/dri --env-file runner.env \
+#       blocwerk-splat-worker python -m splatworker.gpurunner --server https://blocwerk.app
+#   CPU half next to the app (splat-prepare + splat-finish only, no GPU): -e SPLAT_WORKER_MODE=cpu
 #
 # linux/amd64 only: Brush publishes no Linux arm64 build. On macOS use run-native.sh instead (Docker
 # Desktop's VM has no GPU; see README).
@@ -52,8 +57,9 @@ RUN useradd --system --uid 10001 --no-create-home --home-dir /app app \
     && chown -R app /var/lib/splat-worker
 USER app
 EXPOSE 8100
+# the worker's /health, or for a 3D runner its liveness file (splatworker/gpurunner/health.py)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8100/health', timeout=4).status == 200 else 1)"
+    CMD ["python", "-m", "splatworker.gpurunner.health"]
 # ONE process on purpose (in-memory queue). Refuses to start on 0.0.0.0 without COMPUTE_API_KEY
 # unless ALLOW_OPEN_BIND=1 (only for a port reachable on a private network).
 CMD ["python", "-m", "splatworker"]
