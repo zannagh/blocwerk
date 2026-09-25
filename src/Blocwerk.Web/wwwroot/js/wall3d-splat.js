@@ -7,7 +7,8 @@
 // Streaming instead of all-or-nothing: the scene comes as a level-of-detail ladder
 // (wall3d-splat-ladder.js). The smallest level shows first; while a short probe finds frames fast the
 // view steps up one level at a time (the next level loads behind the one showing, then replaces it),
-// up to what the device may take (wall3d-splat-policy.js). A lost WebGL context (iOS Safari drops it
+// up to what the device may take (wall3d-splat-policy.js; Detail: Ultra climbs to the full scene
+// without measuring, wall3d-splat-detail.js). A lost WebGL context (iOS Safari drops it
 // when a frame or the tab is too heavy) is not an error: the view waits for the context to come back
 // and resumes one level lower at a lower resolution (wall3d-splat-recover.js). Only when even the smallest level is lost twice does it give
 // up, quietly, back to Schematic. Every step is reported to the server log (wall3d-splat-diag.js).
@@ -15,7 +16,8 @@
 //
 // Rendered on demand (wall3d-loop.js): Spark re-sorts only after a camera move and its `onDirty`
 // asks for the frame showing the finished sort; phones space sorts LIGHT_SORT_MS apart.
-import { createDetailBadge, highDetail, ladderOf, levelCap, pinnedLevel, remembered, rememberSuccess, sizeOf, storeHighDetail } from './wall3d-splat-ladder.js';
+import { createDetailBadge, ladderOf, levelCap, pinnedLevel, remembered, rememberSuccess, sizeOf } from './wall3d-splat-ladder.js';
+import { storeDetail, storedDetail } from './wall3d-splat-detail.js';
 import { createLadderPolicy } from './wall3d-splat-policy.js';
 import { deviceFacts, report } from './wall3d-splat-diag.js';
 import { PHOTO_REAL_FAILED } from './wall3d-modes.js';
@@ -47,8 +49,9 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
     const facts = { ...deviceFacts(renderer), mobile: light };
     const scale = createRenderScale(renderer, light);
     const policy = createLadderPolicy(light);
-    let high = highDetail();
-    let cap = levels.length > 0 ? levelCap(levels, light, high) : 0;
+    let detailMode = storedDetail();    // 'auto' | 'high' | 'ultra' (wall3d-splat-detail.js)
+    let onLevel = null;             // the Detail toggle's label follows the level drawn
+    let cap = levels.length > 0 ? levelCap(levels, light, detailMode) : 0;
     let spark = null;               // the Spark module, once imported
     let sparkRenderer = null;
     let mesh = null;
@@ -138,7 +141,8 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
         index = i;
         mesh.visible = active;
         if (old) { scene.remove(old); old.dispose(); }
-        policy.shown(index < cap);
+        policy.shown(index < cap && detailMode !== 'ultra');
+        onLevel?.();
         request();
         return true;
     }
@@ -226,12 +230,14 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
         frame(now) {
             if (!active || !mesh || stepping !== null || recovery.recovering || broken) return;
             const next = index + 1;
-            if (next <= cap && sizeOf(levels[next]) <= (remembered().okSplats ?? 0)) {
+            const ultra = detailMode === 'ultra';
+            if (next <= cap && (ultra || sizeOf(levels[next]) <= (remembered().okSplats ?? 0))) {
                 policy.stop();
-                stepTo(next);                     // ran fine here before: no need to measure again
+                stepTo(next);                     // Ultra, or ran fine here before: no need to measure
                 return;
             }
-            const decision = policy.frame(now, !high && index > 1);
+            if (ultra) return;                    // Ultra keeps the full level: no step-down for load
+            const decision = policy.frame(now, detailMode === 'auto' && index > 1);
             if (decision === 'up') {
                 rememberSuccess(levels[index]);
                 if (next <= cap) stepTo(next);
@@ -248,17 +254,21 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
         get capped() { return active && light && !policy.probing; },
         /** A camera move started / settled: a phone renders at a lower resolution in between. */
         interact(moving) { scale.interact(moving); },
-        get highDetail() { return high; },
-        /** Whether Detail: high changes anything here (a phone with levels above the auto cap). */
-        get detailChoice() { return light && levels.length > 0 && levelCap(levels, true, true) > levelCap(levels, true, false); },
-        /** Detail: high lifts a phone's cap (wall3d-splat-ladder.js); auto steps back down to its cap. */
-        setHighDetail(on) {
-            high = !!on;
-            storeHighDetail(high);
-            cap = levelCap(levels, light, high);
+        /** The Detail choice: 'auto' | 'high' | 'ultra' (wall3d-splat-detail.js). */
+        get detail() { return detailMode; },
+        /** Whether the Detail toggle shows: a ladder to choose on; High only lifts a phone's cap. */
+        get detailChoice() { return levels.length > 1; },
+        get highLifts() { return light && levels.length > 0 && levelCap(levels, true, 'high') > levelCap(levels, true, 'auto'); },
+        /** Called when the level drawn changes (the toggle's label). */
+        set onLevel(fn) { onLevel = fn; },
+        /** A new Detail choice: moves the cap and steps down to it, or lets the ladder climb. */
+        setDetail(mode) {
+            detailMode = mode;
+            storeDetail(mode);
+            cap = levelCap(levels, light, detailMode);
             if (!mesh || broken) return;
             if (index > cap) stepTo(cap);
-            else policy.shown(index < cap);
+            else policy.shown(index < cap && mode !== 'ultra');
             request();
         },
 

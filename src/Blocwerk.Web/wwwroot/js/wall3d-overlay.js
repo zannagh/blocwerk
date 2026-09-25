@@ -1,7 +1,8 @@
 // The hold overlay of the photo-real mode (wall3d.js): the outline layer (wall3d-outlines.js), raised
 // to each hold's relief (wall3d-relief.js), and the boulder role rings drawn over the splat, with a
-// "Show holds" toggle (on by default, remembered per browser) and, on a phone, the "Detail: Auto /
-// High" toggle of the photo-real ladder (wall3d-splat-ladder.js; remembered per browser).
+// "Show holds" toggle (on by default, remembered per browser) and the "Detail: Auto / High / Ultra"
+// toggle of the photo-real ladder (wall3d-splat-detail.js; remembered per browser; High only where
+// it lifts a phone's cap). Its label names the level drawn, e.g. "Ultra · 1.6M".
 //
 // Occlusion: the splat draws without depth test (wall3d-splat-clip.js), so it is never cut by the
 // modelled facets. The facets themselves go into the depth buffer first, invisibly (colour writes off,
@@ -9,8 +10,11 @@
 // outlines of a facet the camera is behind are dropped already (wall3d-sides.js). A facet ghosted
 // out of the camera's way (wall3d-ghost.js) writes no depth, so the holds behind it show.
 import * as THREE from '../lib/three/three.module.min.js';
+import { detailChoices, detailLabel, nextDetail } from './wall3d-splat-detail.js';
 
 const SHOW_KEY = 'bw.wall3d.photoHolds';
+/** How long the phone's "Full detail" hint stays after choosing Ultra. */
+const HINT_MS = 6000;
 
 function storedShow() {
     try {
@@ -72,12 +76,34 @@ export function createPhotoOverlay({ root, facets, outlines, rings, request, pho
         apply(mode);
         request();
     });
-    const detail = button('w3d-detail-toggle', '', 'Auto keeps the phone cool; High loads more detail (warmer, more battery)', () => {
-        photo?.setHighDetail(!photo.highDetail);
+    const detail = button('w3d-detail-toggle', '', 'Detail: Auto keeps the device cool, High loads more, Ultra draws the full scene', () => {
+        if (!photo) return;
+        const next = nextDetail(photo.detail, detailChoices(photo.highLifts));
+        photo.setDetail(next);
+        showHint(next === 'ultra' && photo.light);
         apply(mode);
     });
-    tools.append(toggle, detail);
+    const hint = document.createElement('div');
+    hint.className = 'w3d-detail-hint';
+    hint.hidden = true;
+    hint.setAttribute('role', 'status');
+    hint.textContent = 'Full detail: uses more battery and may get warm';
+    let hintTimer = 0;
+    function showHint(on) {
+        clearTimeout(hintTimer);
+        hint.hidden = !on;
+        if (on) hintTimer = setTimeout(() => { hint.hidden = true; }, HINT_MS);
+    }
+    tools.append(toggle, detail, hint);
     root.append(tools);
+    if (photo) photo.onLevel = () => labelDetail();
+
+    function labelDetail() {
+        const level = photo?.level;
+        const splats = level && level.index >= 0 ? level.splats : null;
+        detail.textContent = detailLabel(photo?.detail ?? 'auto', splats);
+        detail.setAttribute('aria-pressed', photo?.detail && photo.detail !== 'auto' ? 'true' : 'false');
+    }
 
     function apply(next) {
         mode = next;
@@ -92,8 +118,8 @@ export function createPhotoOverlay({ root, facets, outlines, rings, request, pho
         toggle.setAttribute('aria-pressed', show ? 'true' : 'false');
         toggle.classList.toggle('active', show);
         detail.hidden = !photo?.detailChoice;
-        detail.textContent = photo?.highDetail ? 'Detail: High' : 'Detail: Auto';
-        detail.setAttribute('aria-pressed', photo?.highDetail ? 'true' : 'false');
+        if (!photoReal) showHint(false);
+        labelDetail();
     }
 
     return {
@@ -106,6 +132,6 @@ export function createPhotoOverlay({ root, facets, outlines, rings, request, pho
             }
         },
         get showing() { return mode === 'photoreal' && show; },
-        dispose() { tools.remove(); },
+        dispose() { clearTimeout(hintTimer); tools.remove(); },
     };
 }

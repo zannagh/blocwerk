@@ -6,8 +6,8 @@
 // size that was too much, so the next visit stops below it.
 //
 // Phones stop at LIGHT_CAP_SPLATS: a phone that renders 800k splats smoothly still gets hot doing it
-// for minutes. "High detail" (the Detail toggle, remembered per browser) lifts that to
-// LIGHT_HIGH_CAP_SPLATS.
+// for minutes. The Detail toggle (wall3d-splat-detail.js) lifts that: High to LIGHT_HIGH_CAP_SPLATS,
+// Ultra to the full scene on any device.
 
 /** Phones and low-memory devices never step past this many splats (Detail: auto). */
 const LIGHT_CAP_SPLATS = 250_000;
@@ -24,24 +24,6 @@ const STEP_UP_MS = { light: 26, desktop: 45 };
 /** Median frame time (ms) above which a level is too slow and the view steps back down. */
 const STEP_DOWN_MS = 90;
 const STORE_KEY = 'bw.photoreal.lod.v1';
-const DETAIL_KEY = 'bw.photoreal.detail';
-
-/** Whether this browser asked for high detail (the photo-real Detail toggle). */
-export function highDetail() {
-    try {
-        return localStorage.getItem(DETAIL_KEY) === 'high';
-    } catch {
-        return false;
-    }
-}
-
-export function storeHighDetail(on) {
-    try {
-        localStorage.setItem(DETAIL_KEY, on ? 'high' : 'auto');
-    } catch {
-        // Private mode / storage off: the toggle holds for this view only.
-    }
-}
 
 /**
  * The view's levels, smallest first: `view.splatLevels` ({ url, splats, sizeBytes }), or for an older
@@ -102,14 +84,17 @@ export function rememberSuccess(level) {
 
 /**
  * Highest level index this device may step up to: light devices stop below LIGHT_CAP_SPLATS
- * (LIGHT_HIGH_CAP_SPLATS with `high`), and everyone below a size that lost the context here before
- * (the smallest level is always allowed).
+ * (LIGHT_HIGH_CAP_SPLATS with detail 'high'), and everyone below a size that lost the context here
+ * before (the smallest level is always allowed). Detail 'ultra' is the top level: an explicit choice,
+ * so neither the phone cap nor an earlier visit's lost context holds it back.
  * `?splatLevel=N` pins the level (testing); `?splatLod=full|mobile` pins the top / the first.
  */
-export function levelCap(levels, light, high = false) {
+export function levelCap(levels, light, detail = 'auto') {
     const q = new URLSearchParams(location.search);
     const pinned = pinnedLevel(levels.length, q);
     if (pinned != null) return pinned;
+    if (detail === 'ultra') return Math.max(0, levels.length - 1);
+    const high = detail === 'high';
     const failed = readStore().failSplats ?? Number.MAX_SAFE_INTEGER;
     let cap = 0;
     for (let i = 1; i < levels.length; i++) {
