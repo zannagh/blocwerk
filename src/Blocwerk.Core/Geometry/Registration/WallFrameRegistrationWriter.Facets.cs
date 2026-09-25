@@ -84,40 +84,9 @@ public static partial class WallFrameRegistrationWriter
         return $"f{Guid.NewGuid():N}"[..16];
     }
 
-    /// <summary>Claimed facets take the reference facet's id, frame and measured angles; their extent grows to cover both.</summary>
-    private static void AdoptReferenceFrames(
-        JsonObject root,
-        JsonObject referenceRoot,
-        WallGeometryDocument reference,
-        Dictionary<string, string> claims,
-        Dictionary<string, string> renamed,
-        Dictionary<int, double[][]> world)
-    {
-        var referenceNodes = Facets(referenceRoot).ToDictionary(f => f["id"]!.GetValue<string>(), StringComparer.Ordinal);
-        foreach (var facet in Facets(root))
-        {
-            var id = facet["id"]!.GetValue<string>();
-            facet["id"] = renamed[id];
-            if (!claims.TryGetValue(id, out var target))
-            {
-                continue;
-            }
-
-            var source = referenceNodes[target];
-            foreach (var key in new[] { "origin", "u", "v", "normal", "measuredAngleDeg", "yawDeg", "angleToReferenceFacetDeg" })
-            {
-                facet[key] = source[key]?.DeepClone();
-            }
-
-            var frame = reference.FindFacet(target)!.Value.Facet;
-            var plane = MarkerIdsOn(root, id).Where(world.ContainsKey).SelectMany(m => world[m].Select(x => ToPlane(frame, x)));
-            facet["extentMm"] = Extent(frame.ExtentMm, plane);
-        }
-    }
-
-    /// <summary>Markers move to their facet's final id; on a claimed facet their plane corners are re-projected.</summary>
+    /// <summary>Markers move to their facet's final id; on a claimed facet their plane corners are re-projected into its rebased frame.</summary>
     private static void RewriteMarkers(
-        JsonObject root, WallGeometryDocument reference, Dictionary<string, string> claims, Dictionary<string, string> renamed, Dictionary<int, double[][]> world)
+        JsonObject root, Dictionary<string, WallGeometryFacet> rebased, Dictionary<string, string> renamed, Dictionary<int, double[][]> world)
     {
         foreach (var marker in (root["markers"] as JsonArray ?? []).OfType<JsonObject>())
         {
@@ -135,9 +104,8 @@ public static partial class WallFrameRegistrationWriter
             }
 
             marker["cornersWorldMm"] = new JsonArray(corners.Select(c => (JsonNode?)Array(c, 2)).ToArray());
-            if (claims.TryGetValue(facet, out var target))
+            if (rebased.TryGetValue(facet, out var frame))
             {
-                var frame = reference.FindFacet(target)!.Value.Facet;
                 marker["cornersPlaneMm"] = new JsonArray(corners.Select(c => (JsonNode?)Array(ToPlane(frame, c), 2)).ToArray());
             }
         }
@@ -197,23 +165,18 @@ public static partial class WallFrameRegistrationWriter
         }
     }
 
-    private static IEnumerable<int> MarkerIdsOn(JsonObject root, string originalFacetId) =>
-        (root["markers"] as JsonArray ?? []).OfType<JsonObject>()
-            .Where(m => m["facet"]?.GetValue<string>() == originalFacetId)
-            .Select(m => m["id"]!.GetValue<int>());
-
     private static double[] ToPlane(WallGeometryFacet frame, double[] x)
     {
         var d = Vec3.Sub(x, frame.Origin!);
         return [Vec3.Dot(d, frame.U!), Vec3.Dot(d, frame.V!)];
     }
 
-    private static JsonObject Extent(PlaneRectMm? old, IEnumerable<double[]> plane)
+    private static JsonObject Extent(PlaneRectMm? old, IEnumerable<double[]> plane, double margin)
     {
         var points = plane.Select(p => (p[0], p[1])).ToList();
         var bounds = PlaneRectMm.Bounds(points);
         var grown = bounds is { } b
-            ? new PlaneRectMm(b.AMin - ExtentMarginMm, b.AMax + ExtentMarginMm, b.BMin - ExtentMarginMm, b.BMax + ExtentMarginMm)
+            ? new PlaneRectMm(b.AMin - margin, b.AMax + margin, b.BMin - margin, b.BMax + margin)
             : (PlaneRectMm?)null;
         var union = (old, grown) switch
         {

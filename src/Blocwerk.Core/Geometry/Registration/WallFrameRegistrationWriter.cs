@@ -17,11 +17,14 @@ public sealed record RegistrationStamp(Guid ReferenceModelId, int? ReferencePlan
 /// <see cref="WallFrameRegistration"/>), keeping every field it does not touch:
 /// <list type="bullet">
 /// <item>world coordinates (facet frames, marker world corners, cameras) are mapped by the fitted transform;</item>
-/// <item>a new facet carrying the reference facet's unchanged markers TAKES that facet's id and plane frame,
-/// so a hold's (facet, a, b) means the same spot on the wall as before; its markers are re-projected into it;</item>
+/// <item>a new facet carrying the reference facet's unchanged markers TAKES that facet's id, so holds, volumes and
+/// textures keep referring to it, but KEEPS its own solved plane and measured angles (a re-solve must be able to
+/// improve the geometry); only its plane frame is rebased onto the reference one, so a hold's (facet, a, b)
+/// still means (nearly) the same spot on the wall; its markers are re-projected into it;</item>
 /// <item>reference facets and unchanged markers this capture did not photograph are carried over (a partial
 /// re-capture of the changed areas keeps the rest of the wall);</item>
-/// <item>the reference's <c>world</c> block is kept and <c>quality.registration</c> says what was done.</item>
+/// <item>the reference's <c>world</c> block is kept (its <c>up</c> is the new solve's, turned into the frame) and
+/// <c>quality.registration</c> says what was done.</item>
 /// </list>
 /// </summary>
 public static partial class WallFrameRegistrationWriter
@@ -52,12 +55,12 @@ public static partial class WallFrameRegistrationWriter
             .Select(f => f.Id)
             .ToList();
         var renamed = FinalIds(root, claims, carried);
-        AdoptReferenceFrames(root, referenceRoot, reference, claims, renamed, world);
-        RewriteMarkers(root, reference, claims, renamed, world);
+        var rebased = RebaseClaimedFrames(root, reference, claims, renamed);
+        RewriteMarkers(root, rebased, renamed, world);
         var carriedMarkers = Carry(root, referenceRoot, reference, carried, carryIds);
         RefreshMarkerIds(root);
 
-        root["world"] = referenceRoot["world"]?.DeepClone();
+        root["world"] = World(root, referenceRoot, transform);
         ChildObject(root, "quality")["registration"] = Stamp(registration, stamp, renamed, carried, carriedMarkers);
         return root.ToJsonString();
     }
@@ -118,6 +121,9 @@ public static partial class WallFrameRegistrationWriter
             ["renamedFacets"] = new JsonObject(renamed.Where(kv => kv.Key != kv.Value).Select(kv => KeyValuePair.Create(kv.Key, (JsonNode?)kv.Value))),
             ["carriedFacets"] = new JsonArray(carried.Select(f => (JsonNode?)f).ToArray()),
             ["carriedMarkerIds"] = Ints(carriedMarkers),
+
+            // Claimed facets keep the new solve's planes in rebased frames (older models adopted the reference's).
+            ["facetFrames"] = "solved-rebased",
         };
     }
 }
