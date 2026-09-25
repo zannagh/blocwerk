@@ -31,7 +31,7 @@ def test_select_defaults_to_brush_and_rejects_unknown(monkeypatch):
 def test_ultra_is_a_quality_and_needs_gsplat_and_12_gb(gsplat, monkeypatch):
     assert parse_options({"quality": "ultra"}).quality == "ultra"
     p, note = trainers.job_profile(SplatOptions(quality="ultra"), gpu_info=BIG)
-    assert (p.name, p.edge, p.steps, p.max_splats, p.sh_degree, note) == ("ultra", 4096, 50000, 6_000_000, 0, None)
+    assert (p.name, p.edge, p.steps, p.max_splats, p.sh_degree, note) == ("ultra", 4096, 30000, 3_000_000, 0, None)
     p, note = trainers.job_profile(SplatOptions(quality="ultra"), gpu_info=SMALL)
     assert p.name == "max" and "12 GB" in note
     p, note = trainers.job_profile(SplatOptions(quality="ultra"), gpu_info={})  # no GPU visible
@@ -61,7 +61,7 @@ def test_brush_without_override_keeps_the_requested_profile(monkeypatch):
 
 @pytest.mark.parametrize("quality,steps,edge,cap,stop", [
     ("draft", 5000, 1800, 1_000_000, 0.5), ("high", 15000, 2400, 2_000_000, 0.6),
-    ("max", 30000, 4032, 5_000_000, 0.5), ("ultra", 50000, 4096, 6_000_000, 0.5)])
+    ("max", 30000, 4032, 5_000_000, 0.5), ("ultra", 30000, 4096, 3_000_000, 0.5)])
 def test_profile_maps_to_gsplat_arguments_on_a_16_gb_card(quality, steps, edge, cap, stop):
     p = profiles.resolve(quality)
     plan = gsplat_trainer.plans(BIG["freeMb"], PHOTOS, p, 16384)[0]
@@ -74,13 +74,13 @@ def test_profile_maps_to_gsplat_arguments_on_a_16_gb_card(quality, steps, edge, 
 
 def test_small_vram_lowers_the_cap_then_the_profile_and_the_retry_is_smaller():
     ultra = profiles.resolve("ultra")
-    plan, retry = gsplat_trainer.plans(3000, PHOTOS, ultra, 16384)
-    assert plan.profile.name != "ultra" and plan.estimate_mb <= 3000 * gsplat_trainer.HEADROOM
+    plan, retry = gsplat_trainer.plans(2000, PHOTOS, ultra, 16384)
+    assert plan.profile.name != "ultra" and plan.estimate_mb <= 2000 * gsplat_trainer.HEADROOM
     assert retry.max_splats < plan.max_splats and retry.edge < plan.edge and retry.cache_mb == 0
     nothing = gsplat_trainer.plans(500, PHOTOS, ultra, 16384)[0]
     assert not nothing.fits and nothing.profile.name == "draft"
     unknown = gsplat_trainer.plans(0, PHOTOS, ultra, 0)[0]  # no nvidia-smi: as asked
-    assert (unknown.profile.name, unknown.edge, unknown.max_splats) == ("ultra", 4096, 6_000_000)
+    assert (unknown.profile.name, unknown.edge, unknown.max_splats) == ("ultra", 4096, 3_000_000)
 
 
 def test_image_cache_follows_the_host_budget():

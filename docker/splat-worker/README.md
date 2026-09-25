@@ -258,7 +258,7 @@ give the job memory to match (`SPLAT_MAX_MEMORY_MB` unset, container limit ≥ 1
 | `COLMAP_USE_GPU` | 0 (`Dockerfile.cuda`: 1) | SIFT extraction + matching on the NVIDIA GPU (needs a CUDA build of COLMAP: `Dockerfile.cuda`). Matching is then planned against the free VRAM (`nvidia-smi`), not the host budget: GPU guided → GPU unguided + triangulate → CPU unguided (if a GPU run fails); never a CPU guided tier. No GPU visible → CPU, logged. See "GPU SfM" below |
 | `COLMAP_GPU_INDEX` | 0 | the CUDA device COLMAP uses (`-1` = all) |
 | `COLMAP_DSP_SIFT` / `COLMAP_AFFINE_SHAPE` | 1 / 1 (`Dockerfile.cuda`: 0 / 0) | domain-size pooling / affine-covariant SIFT (`SiftExtraction.domain_size_pooling` / `estimate_affine_shape`). COLMAP extracts these on the **CPU only** (4.2 silently switches `use_gpu` off), so with either on, extraction runs on the CPU and only matching uses the GPU |
-| `COLMAP_MAPPER` | `incremental` | `incremental` (`mapper`) or `global` (`global_mapper`, GLOMAP merged into COLMAP 4.x; falls back to incremental on COLMAP 3.9) |
+| `COLMAP_MAPPER` | `incremental` (`Dockerfile.cuda`: `global`) | `incremental` (`mapper`) or `global` (`global_mapper`, GLOMAP merged into COLMAP 4.x; falls back to incremental on COLMAP 3.9) |
 | `COLMAP_VOCAB_TREE_IMAGES` / `COLMAP_VOCAB_TREE_PATH` | 0 / unset (`Dockerfile.cuda`: `/opt/colmap/share/vocab_tree_sift.bin`) | > 0: after the `pairs` list, every `vf_*` video frame is also matched with its N most similar images by vocabulary-tree retrieval (`vocab_tree_matcher`, loop closure for walks; pairs already matched are skipped; a failure is logged, not fatal). The tree is COLMAP's pinned faiss SIFT tree (flickr100K, 256K words, sha256-checked at build time); COLMAP 3.9 cannot read it |
 | `GSPLAT_EVAL_EVERY` | 0 | gsplat only: hold out every Nth PHOTO (sorted by name: 0, N, 2N, …; `vf_*` video frames always train) and score it at the end: `stats.evalPsnr` / `evalSsim` / `evalViews`, and with a wall geometry `evalWallPsnr` / `evalWallSsim` over the pixels showing a facet. A measurement mode (the held-out views do not train), so off by default; Brush ignores it |
 
@@ -368,7 +368,33 @@ docker compose --profile gpu-cuda up -d --build splat-worker-cuda   # compose: h
   ≥ 5× the middle axis) and faint haze (α < 0.08, ≥ 40 mm); the wall slab keeps everything (removing
   its large flat splats thinned the surface, the old clean-up's darkening). `frame.json` gets a `zones`
   block (per-zone counts, removals), `stats.zones` where the trained splats ended up. Brush and jobs
-  without geometry keep the plain crop.
+  without geometry keep the plain crop. The **air** in front of a facet (past the 250 mm slab, above
+  the 450 mm floor band) counts as outside: a post holding the overhang, a rope, a person are not
+  trained into the box or exported (the wall behind them shows instead).
+- **Zoned recipe** (`gsplat_trainer.ZONED_ARGS`, only with zones): needle penalty on the longest /
+  middle axis ratio beyond 6 (flat discs stay free), opacity regulariser 0.0005 instead of MCMC's 0.01
+  (at 0.01 only 0.8 M of 3 M splats were alive at the end), a per-frame colour gain/offset for the `vf_*`
+  frames (photos stay identity, so the colours are the photos'), a pose correction during the first
+  `min(5000, steps/6)` steps (its gradient is costly, then frozen), D-SSIM on a random 1024 px crop
+  (full-image SSIM at 12 MP cost more than the render; separable blur too). Held-out views
+  (`GSPLAT_EVAL_EVERY`) are photos only.
+
+**Tuning on The Attic** (353 images = 53 photos + 300 video frames, RTX 4070 Ti SUPER, 2026-09-25; held-out
+= every 8th photo; "wall" = only the pixels whose ray hits a facet; full table and renders from fixed
+viewpoints outside the repo):
+
+| run | wall PSNR / SSIM | exported splats | needles in the surroundings | train |
+|---|---|---|---|---|
+| before: `ultra` 50k steps, 4096 px, 6 M, plain MCMC, ±400 mm crop | 21.08 / 0.781 | 1.11 M (82 % of the cap outside) | 8967 | 61 min (last night; 123 min here on a shared GPU) |
+| zones, 30k, 3072 px, 3 M | 21.89 / 0.786 | 2.68 M | 0 | 36 min (shared) |
+| + needle penalty, pose, frame appearance, D-SSIM crop, air = outside | 22.45 / 0.775 | 0.82 M | 0 | 20 min |
+| + 4096 px (native) | 22.50 / 0.781 | 0.80 M | 0 | 21 min |
+| + opacity reg 0.002 | 22.78 / 0.786 | 1.24 M | 0 | 21 min |
+| **+ opacity reg 0.0005 (the default)** | **23.04 / 0.785** | 1.53 M | 0 | **20 min** |
+| same with a 5 M cap | 22.53 / 0.785 | 1.92 M | 0 | 28 min |
+
+GLOMAP (`COLMAP_MAPPER=global`, now the CUDA image's default) registered all 353 images in 7 min where
+the incremental mapper took 16 (same inputs, 1.01 vs 1.03 px); GPU SIFT + guided GPU matching took 6 min.
 - **Memory**: gsplat needs VRAM, not host memory, so Brush's host model does not apply. The plan
   (`gsplat_trainer.plans`) fits the cap (then the edge, then the next profile down) to 90 % of the free
   VRAM (`nvidia-smi`, or `SPLAT_VRAM_MB`): 0.7 GB + 0.45 MB per 1000 splats + 160 MB per megapixel of
@@ -381,9 +407,9 @@ docker compose --profile gpu-cuda up -d --build splat-worker-cuda   # compose: h
 
 | `options.quality` → gsplat | `draft` | `high` | `max` | `ultra` |
 |---|---|---|---|---|
-| steps (`maxSteps` overrides) | 5000 | 15000 | 30000 | 50000 |
+| steps (`maxSteps` overrides) | 5000 | 15000 | 30000 | 30000 |
 | photos' long edge (`maxImageEdge` overrides) / video frames | 1800 / 1800 | 2400 / 1280 | 4032 / 1920 | 4096 (the ingest cap, i.e. native) / 1920 |
-| MCMC `cap_max` (fitted to VRAM, floor) | 1 M (250k) | 2 M (800k) | 5 M (2 M) | 6 M (3 M) |
+| MCMC `cap_max` (fitted to VRAM, floor) | 1 M (250k) | 2 M (800k) | 5 M (2 M) | 3 M (1.5 M) |
 | growth stops at | 50 % | 60 % | 50 % | 50 % |
 | SH degree | 0 | 0 | 0 | 0 |
 
@@ -403,7 +429,7 @@ value, `CaptureSplatDocuments.QualityName` / `NextQuality`, and the UI). Until t
 Host RSS of the trainer: 1.7 GB (`high`). Both `.spz` came out in the COLMAP frame (`stats.frameCheck`:
 splat median inside the sparse points' 2–98 % box, spread ratio 1.1–1.9); training the spike's own
 South Building model directly gave splat p2/p50/p98 within a few cm of the sparse points' (scene
-diagonal 40 units) and a median splat-to-nearest-sparse-point distance of 0.011. A full 50k-step
+diagonal 40 units) and a median splat-to-nearest-sparse-point distance of 0.011. (`ultra` was 50k steps up to 6 M splats then; with the wall zones it is 30k steps up to 3 M, see below.) A full 50k-step
 `ultra` would take roughly 1.7–2 h on this card.
 
 ### GPU SfM (COLMAP with CUDA, `COLMAP_USE_GPU`)

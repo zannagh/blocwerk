@@ -33,7 +33,7 @@ def test_default_is_high_and_overrides_apply():
 def test_profiles_get_sharper_and_longer():
     d, h, m, u = (profiles.PROFILES[q] for q in profiles.QUALITIES)
     assert d.edge < h.edge < m.edge and d.steps < h.steps < m.steps and d.max_splats < h.max_splats < m.max_splats
-    assert m.edge < u.edge and m.steps < u.steps and m.max_splats < u.max_splats and u.sh_degree == 0
+    assert m.edge < u.edge and m.steps <= u.steps and u.sh_degree == 0  # ultra: sharpest photos, a wall-focused cap
     assert d.sh_degree == 3 and h.sh_degree == 0 and m.sh_degree == 0  # the exports keep only the DC colour
     assert d.mb_per_ksplat == 1.0 and h.mb_per_ksplat == 2.0  # measured on the M4 (profiles.py)
     assert h.frame_edge < h.edge  # frames stay small: memory without detail
