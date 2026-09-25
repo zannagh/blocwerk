@@ -1,0 +1,98 @@
+// <copyright file="HoldTexturePlacementService.Carry.cs" company="Blocwerk">
+// Copyright (c) Blocwerk. All rights reserved.
+// </copyright>
+
+using Blocwerk.Core.Data;
+using Blocwerk.Core.Entities;
+using Blocwerk.Core.Geometry.TextureRegistration;
+using Blocwerk.Core.Geometry.View3D;
+using Microsoft.EntityFrameworkCore;
+
+namespace Blocwerk.Core.Services;
+
+/// <summary>
+/// Previous placements on the active model: a hold this action placed on an EARLIER model keeps a good position
+/// even when a re-capture's textures cannot be registered to its photo (each capture renders new textures, and
+/// the registration of an oblique photo is not stable across them). The position is known in the earlier model's
+/// facet frame; <see cref="PlacementCarrier"/> moves it onto the active model through the shared wall frame.
+/// </summary>
+public sealed partial class HoldTexturePlacementService
+{
+    /// <summary>
+    /// Every eligible hold with a texture placement on an earlier model, moved onto the active model. The earlier
+    /// model is the one of the newest unreverted run that wrote the hold's current placement (its hash matches);
+    /// a hold whose placement no run wrote, or one already on the active model, is not carried.
+    /// </summary>
+    private async Task<Dictionary<Guid, CarriedPosition>> CarriedPositionsAsync(
+        BlocwerkDbContext db, Guid wallId, ActiveModel active, List<Hold> holds, CancellationToken ct)
+    {
+        var candidates = holds
+            .Where(h => HoldTexturePlacer.IsEligible(h) && HoldTexturePlacer.IsTexturePlaced(h))
+            .Where(h => h.FacetId is not null && h.PlaneAMm is not null && h.PlaneBMm is not null)
+            .ToDictionary(h => h.Id);
+        var sourceModel = await PlacementModelsAsync(db, wallId, candidates, ct);
+        var models = sourceModel.Values.Where(id => id != active.Id).Distinct().ToList();
+        var frames = new Dictionary<Guid, Dictionary<string, FacetFrame>>();
+        foreach (var model in await db.WallGeometryModels.AsNoTracking().Where(m => models.Contains(m.Id)).Select(m => new { m.Id, m.Json }).ToListAsync(ct))
+        {
+            frames[model.Id] = Facets(model.Json).Frames;
+        }
+
+        var carried = new Dictionary<Guid, CarriedPosition>();
+        foreach (var (holdId, modelId) in sourceModel)
+        {
+            var hold = candidates[holdId];
+            if (frames.TryGetValue(modelId, out var previous) && Carry(hold, previous, active) is { } position)
+            {
+                carried[holdId] = position;
+            }
+        }
+
+        return carried;
+    }
+
+    /// <summary>The previous placement of <paramref name="hold"/> on the active model's facet with the same id, or null.</summary>
+    private static CarriedPosition? Carry(Hold hold, Dictionary<string, FacetFrame> previous, ActiveModel active)
+    {
+        var facet = hold.FacetId!;
+        if (!previous.TryGetValue(facet, out var from) || !active.Frames.TryGetValue(facet, out var to)
+            || !active.Extents.TryGetValue(facet, out var extent))
+        {
+            return null;
+        }
+
+        return PlacementCarrier.Carry(from, to, extent, hold.PlaneAMm!.Value, hold.PlaneBMm!.Value) is { } p
+            ? new CarriedPosition(facet, p.A, p.B)
+            : null;
+    }
+
+    /// <summary>For each candidate, the model of the newest unreverted run that wrote its current placement.</summary>
+    private static async Task<Dictionary<Guid, Guid>> PlacementModelsAsync(
+        BlocwerkDbContext db, Guid wallId, Dictionary<Guid, Hold> candidates, CancellationToken ct)
+    {
+        var result = new Dictionary<Guid, Guid>();
+        if (candidates.Count == 0)
+        {
+            return result;
+        }
+
+        // Few rows per wall; ordered in memory because SQLite cannot ORDER BY a DateTimeOffset.
+        var runs = await db.HoldPlacementRuns.AsNoTracking()
+            .Where(r => r.WallId == wallId && r.RevertedAt == null)
+            .Select(r => new { r.CreatedAt, r.GeometryModelId, r.HoldsJson })
+            .ToListAsync(ct);
+        var hashes = candidates.ToDictionary(kv => kv.Key, kv => HoldPlacementEntry.HashPlacement(kv.Value));
+        foreach (var run in runs.OrderByDescending(r => r.CreatedAt))
+        {
+            foreach (var entry in HoldPlacementEntry.FromJson(run.HoldsJson))
+            {
+                if (!result.ContainsKey(entry.HoldId) && hashes.TryGetValue(entry.HoldId, out var hash) && hash == entry.PlacementHash)
+                {
+                    result[entry.HoldId] = run.GeometryModelId;
+                }
+            }
+        }
+
+        return result;
+    }
+}

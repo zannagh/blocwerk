@@ -24,10 +24,15 @@ public static class HoldTexturePlacer
 
     /// <summary>Whether a hold may be (re)placed: nothing but this action placed it so far.</summary>
     /// <param name="hold">The hold.</param>
-    /// <returns>True for no metric source or a texture-registration one.</returns>
+    /// <returns>True for no metric source or a texture-registration one (registered or carried over).</returns>
     public static bool IsEligible(Hold hold) =>
-        !hold.IsVirtual && hold.WallPanelId is not null
-        && (hold.MetricSource is null || hold.MetricSource == HoldMetric.TextureRegistration);
+        !hold.IsVirtual && hold.WallPanelId is not null && (hold.MetricSource is null || IsTexturePlaced(hold));
+
+    /// <summary>Whether this action placed the hold: registered, or carried over from an earlier model.</summary>
+    /// <param name="hold">The hold.</param>
+    /// <returns>True for either texture-registration metric source.</returns>
+    public static bool IsTexturePlaced(Hold hold) =>
+        hold.MetricSource is HoldMetric.TextureRegistration or HoldMetric.TextureRegistrationCarried;
 
     /// <summary>The placement, or null when no accepted facet contains the hold's centre.</summary>
     /// <param name="hold">The hold (its normalised centre on its panel photo).</param>

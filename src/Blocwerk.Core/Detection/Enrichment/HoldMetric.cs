@@ -37,4 +37,12 @@ public sealed record HoldMetric(
     /// ("place existing holds on the 3D model"), for photos taken before any marker was on the wall.
     /// </summary>
     public const string TextureRegistration = "texture-registration";
+
+    /// <summary>
+    /// Metric source of a <see cref="TextureRegistration"/> placement carried over from an earlier model when a
+    /// re-captured model's textures could not be registered to the hold's panel photo: the previous plane position,
+    /// moved through the shared wall frame onto the same facet of the new model (the size is kept). Re-placed like
+    /// a texture-registration placement whenever a later run can register the photo.
+    /// </summary>
+    public const string TextureRegistrationCarried = "texture-registration-carried";
 }

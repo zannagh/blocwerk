@@ -18,8 +18,8 @@ public sealed partial class HoldTexturePlacementService
     private static Task<IQueryable<Hold>> LiveHoldsQueryAsync(BlocwerkDbContext db, Guid wallId, CancellationToken ct) =>
         LiveWallHolds.QueryAsync(db, wallId, ct);
 
-    /// <summary>The active model's id and its facet textures (with their extents and 3D frames), read from the capture store.</summary>
-    private async Task<(Guid ModelId, List<RegistrationTexture> Textures)> LoadTexturesAsync(BlocwerkDbContext db, Guid wallId, CancellationToken ct)
+    /// <summary>The active model: its facets and its facet textures (with their extents and 3D frames), read from the capture store.</summary>
+    private async Task<ActiveModel> LoadActiveModelAsync(BlocwerkDbContext db, Guid wallId, CancellationToken ct)
     {
         var model = await db.WallGeometryModels.AsNoTracking()
             .Where(m => m.WallId == wallId && m.IsActive)
@@ -49,7 +49,7 @@ public sealed partial class HoldTexturePlacementService
             throw new UserFacingException("The active 3D model has no facet textures yet, so there is nothing to match the photos to.");
         }
 
-        return (model.Id, textures);
+        return new ActiveModel(model.Id, textures, extents, facets);
     }
 
     /// <summary>The model's facet extents and 3D frames by facet id (empty when it does not parse).</summary>
@@ -73,9 +73,9 @@ public sealed partial class HoldTexturePlacementService
         }
     }
 
-    /// <summary>Registers one panel photo onto every texture and plans its eligible holds.</summary>
+    /// <summary>Registers one panel photo onto every texture (seeding missed facets from <paramref name="anchors"/>) and plans its eligible holds.</summary>
     private async Task<PanelPlan> PlanPanelAsync(
-        BlocwerkDbContext db, Guid panelId, List<Hold> holds, List<RegistrationTexture> textures, CancellationToken ct)
+        BlocwerkDbContext db, Guid panelId, List<Hold> holds, List<RegistrationTexture> textures, List<PlaneAnchor> anchors, CancellationToken ct)
     {
         var panel = await db.WallPanels.AsNoTracking().Where(p => p.Id == panelId)
             .Select(p => new { p.Col, p.Row, p.Photo }).FirstOrDefaultAsync(ct);
@@ -91,7 +91,7 @@ public sealed partial class HoldTexturePlacementService
         List<FacetRegistration> registrations;
         try
         {
-            registrations = await Task.Run(() => Register(panel.Photo, textures, $"c{col} r{row}", ct), ct);
+            registrations = await Task.Run(() => Register(panel.Photo, textures, $"c{col} r{row}", anchors, ct), ct);
         }
         catch (ArgumentException ex)
         {
@@ -116,10 +116,11 @@ public sealed partial class HoldTexturePlacementService
     }
 
     /// <summary>One matcher session for the photo, registered onto every texture (CPU-bound; run off the request thread).</summary>
-    private List<FacetRegistration> Register(byte[] photo, List<RegistrationTexture> textures, string label, CancellationToken ct)
+    private List<FacetRegistration> Register(
+        byte[] photo, List<RegistrationTexture> textures, string label, List<PlaneAnchor> anchors, CancellationToken ct)
     {
         using var session = matcher!.OpenPhoto(photo);
         var focal = ExifCameraReader.Read(photo).Focal35mm is { } f35 ? f35 / 36.0 * Math.Max(session.Width, session.Height) : (double?)null;
-        return new PhotoRegistrar(session, logger, label, focal).RegisterAll(textures, ct);
+        return new PhotoRegistrar(session, logger, label, focal, anchors).RegisterAll(textures, ct);
     }
 }

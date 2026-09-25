@@ -47,6 +47,7 @@ public sealed record HoldPlacementRunInfo(
 /// <param name="Failed">Holds no registered facet contained (all of them when the photo registered nowhere).</param>
 /// <param name="Facets">Each facet texture's registration evidence.</param>
 /// <param name="Problem">Why the photo could not be used at all, or null.</param>
+/// <param name="Carried">Of <paramref name="Placed"/>, the holds the photo could not be registered for that kept their previous placement, carried over from the earlier model.</param>
 public sealed record HoldPlacementPanelSummary(
     Guid PanelId,
     int Col,
@@ -55,7 +56,8 @@ public sealed record HoldPlacementPanelSummary(
     int Skipped,
     int Failed,
     IReadOnlyList<FacetRegistrationSummary> Facets,
-    string? Problem)
+    string? Problem,
+    int Carried = 0)
 {
     /// <summary>Gets the short name admins know the panel by, e.g. "c0" or "c1 r1".</summary>
     public string Label => Row == 0 ? $"c{Col}" : $"c{Col} r{Row}";

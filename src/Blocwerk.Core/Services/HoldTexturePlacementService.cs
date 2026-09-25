@@ -2,7 +2,6 @@ using System.Collections.Concurrent;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Data;
-using Blocwerk.Core.Detection.Enrichment;
 using Blocwerk.Core.Geometry.TextureRegistration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -146,7 +145,7 @@ public sealed partial class HoldTexturePlacementService : IHoldTexturePlacementS
         // texture registration on an OLDER model is placed again on this one's textures. Marker-placed and
         // edited holds are not eligible at all; a hold a run on this model already placed is not redone.
         var replaced = eligible
-            .Where(h => h.MetricSource == HoldMetric.TextureRegistration && !unplaced.Contains(h.Id) && !onThisModel.Contains(h.Id))
+            .Where(h => HoldTexturePlacer.IsTexturePlaced(h) && !unplaced.Contains(h.Id) && !onThisModel.Contains(h.Id))
             .Select(h => h.Id)
             .ToList();
         unplaced.UnionWith(replaced);

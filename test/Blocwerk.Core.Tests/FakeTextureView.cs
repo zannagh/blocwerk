@@ -12,4 +12,9 @@ namespace Blocwerk.Core.Tests;
 /// <param name="X1">Right edge of the view in photo px.</param>
 /// <param name="Step">Grid step in photo px (smaller = more inliers).</param>
 /// <param name="PhotoToTexture">The true mapping, photo px → texture px.</param>
-internal sealed record FakeTextureView(byte Photo, byte Texture, double X0, double X1, double Step, PlaneHomography PhotoToTexture);
+/// <param name="NeedsSeed">
+/// When true the coarse search misses this view: it is only found around a seed (a predicted photo px → texture
+/// px homography) that lands within <see cref="FakePhotoTextureMatcher.SeedTolerancePx"/> of the true mapping.
+/// </param>
+internal sealed record FakeTextureView(
+    byte Photo, byte Texture, double X0, double X1, double Step, PlaneHomography PhotoToTexture, bool NeedsSeed = false);

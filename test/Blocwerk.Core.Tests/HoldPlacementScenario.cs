@@ -99,7 +99,7 @@ internal sealed class HoldPlacementScenario
     }
 
     /// <summary>photo px → texture px: a translation by (dx, 99.5) (1 px/mm both, texture margin 100 mm).</summary>
-    private static PlaneHomography Shift(double dx) => PlaneHomography.FromCoefficients([1, 0, dx, 0, 1, 99.5, 0, 0, 1]);
+    internal static PlaneHomography Shift(double dx) => PlaneHomography.FromCoefficients([1, 0, dx, 0, 1, 99.5, 0, 0, 1]);
 
     private static WallGeometryTexture Texture(Guid modelId, string facet, string path) => new()
     {

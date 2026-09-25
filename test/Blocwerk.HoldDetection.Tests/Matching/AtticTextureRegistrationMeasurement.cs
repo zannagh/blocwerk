@@ -43,7 +43,7 @@ public class AtticTextureRegistrationMeasurement(ITestOutputHelper output)
         }
     }
 
-    private static List<RegistrationTexture> LoadTextures(string dir, string texturesJson)
+    internal static List<RegistrationTexture> LoadTextures(string dir, string texturesJson)
     {
         var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
         var rows = JsonSerializer.Deserialize<List<AtticExportedTexture>>(File.ReadAllText(texturesJson), options)!;

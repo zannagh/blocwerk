@@ -30,6 +30,15 @@ internal sealed class AtticExportedHold
     [JsonPropertyName("panelRow")]
     public int? PanelRow { get; set; }
 
+    /// <summary>Gets or sets the facet the hold is placed on (placement exports only).</summary>
+    public string? FacetId { get; set; }
+
+    public double? PlaneAMm { get; set; }
+
+    public double? PlaneBMm { get; set; }
+
+    public string? MetricSource { get; set; }
+
     public Hold ToHold() => new()
     {
         Id = Id,
@@ -41,5 +50,9 @@ internal sealed class AtticExportedHold
         IsAutoDetected = IsAutoDetected,
         IsVirtual = IsVirtual,
         ShapePoints = ShapePoints,
+        FacetId = FacetId,
+        PlaneAMm = PlaneAMm,
+        PlaneBMm = PlaneBMm,
+        MetricSource = MetricSource,
     };
 }

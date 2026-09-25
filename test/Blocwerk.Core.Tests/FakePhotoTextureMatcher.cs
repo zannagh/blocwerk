@@ -12,17 +12,28 @@ internal sealed class FakePhotoTextureMatcher : IPhotoTextureMatcher
     public const int Width = 4000;
     public const int Height = 3000;
 
+    /// <summary>How far a seed may be off the true mapping (photo corners and centre, texture px) and still find a seed-only view.</summary>
+    public const double SeedTolerancePx = 60;
+
     public List<FakeTextureView> Views { get; } = [];
+
+    /// <summary>Gets the seeds the matcher was given, per (photo, texture).</summary>
+    public List<(byte Photo, byte Texture)> Seeded { get; } = [];
 
     public IPhotoTextureSession OpenPhoto(byte[] encodedPhoto) =>
         encodedPhoto.Length == 0 || encodedPhoto[0] == 255
             ? throw new ArgumentException("The photo could not be decoded.", nameof(encodedPhoto))
             : new FakePhotoTextureSession(this, encodedPhoto[0]);
 
-    public PhotoTextureMatch Match(byte photo, byte texture)
+    public PhotoTextureMatch Match(byte photo, byte texture, double[]? seed = null)
     {
+        if (seed is not null)
+        {
+            Seeded.Add((photo, texture));
+        }
+
         var view = Views.FirstOrDefault(v => v.Photo == photo && v.Texture == texture);
-        if (view is null)
+        if (view is null || (view.NeedsSeed && !Close(seed, view.PhotoToTexture)))
         {
             return PhotoTextureMatch.Failed("no overlap found (3 coarse inliers of 20 matches)", 3);
         }
@@ -38,5 +49,22 @@ internal sealed class FakePhotoTextureMatcher : IPhotoTextureMatcher
         }
 
         return new PhotoTextureMatch(pairs, 120, null);
+    }
+
+    private static bool Close(double[]? seed, PlaneHomography truth)
+    {
+        if (seed is null)
+        {
+            return false;
+        }
+
+        var predicted = PlaneHomography.FromCoefficients(seed);
+        (double X, double Y)[] probes = [(0, 0), (Width, 0), (0, Height), (Width, Height), (Width / 2.0, Height / 2.0)];
+        return probes.All(p =>
+        {
+            var (px, py) = predicted.Apply(p.X, p.Y);
+            var (tx, ty) = truth.Apply(p.X, p.Y);
+            return Math.Sqrt(((px - tx) * (px - tx)) + ((py - ty) * (py - ty))) <= SeedTolerancePx;
+        });
     }
 }

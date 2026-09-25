@@ -13,21 +13,17 @@ public sealed partial class HoldTexturePlacementService
     private async Task<HoldPlacementResult> ExecuteAsync(
         BlocwerkDbContext db, Guid wallId, Guid userId, string trigger, bool enqueue, CancellationToken ct, IReadOnlySet<Guid>? only = null)
     {
-        var (modelId, textures) = await LoadTexturesAsync(db, wallId, ct);
+        var model = await LoadActiveModelAsync(db, wallId, ct);
         var live = await (await LiveHoldsQueryAsync(db, wallId, ct)).AsNoTracking().ToListAsync(ct);
 
         // The automatic run after a capture: only the holds not on the model yet (see UnplacedHoldIdsAsync).
         live = only is null ? live : live.Where(h => only.Contains(h.Id)).ToList();
         var noPanel = live.Count(h => h.WallPanelId is null);
-        var plans = new List<PanelPlan>();
-        foreach (var panel in live.Where(h => h.WallPanelId is not null).GroupBy(h => h.WallPanelId!.Value).OrderBy(g => g.Key))
-        {
-            plans.Add(await PlanPanelAsync(db, panel.Key, panel.ToList(), textures, ct));
-        }
+        var plans = await PlanPanelsAsync(db, wallId, live, model, ct);
 
         // The run row exists before the first hold is written, and every batch updates its entry list in the SAME
         // SaveChanges as the holds, so whatever was written is always revertable, even if the run is cut short.
-        var run = new HoldPlacementRun { WallId = wallId, GeometryModelId = modelId, CreatedByUserId = userId, Trigger = trigger };
+        var run = new HoldPlacementRun { WallId = wallId, GeometryModelId = model.Id, CreatedByUserId = userId, Trigger = trigger };
         db.HoldPlacementRuns.Add(run);
         await db.SaveChangesAsync(ct);
 
@@ -58,8 +54,9 @@ public sealed partial class HoldTexturePlacementService
 
         logger.LogInformation(
             "Hold placement {RunId} ({Trigger}) on wall {WallId} by {UserId}, model {ModelId}: {Placed} placed, {Skipped} skipped, "
-            + "{Failed} failed over {Panels} panel photos and {Textures} facet textures",
-            run.Id, trigger, wallId, userId, modelId, run.PlacedCount, run.SkippedCount, run.FailedCount, plans.Count, textures.Count);
+            + "{Failed} failed over {Panels} panel photos and {Textures} facet textures ({Carried} placed holds carried over from an earlier model)",
+            run.Id, trigger, wallId, userId, model.Id, run.PlacedCount, run.SkippedCount, run.FailedCount, plans.Count, model.Textures.Count,
+            panels.Sum(p => p.Carried));
         return new HoldPlacementResult(run.Id, run.PlacedCount, run.SkippedCount, run.FailedCount, panels);
     }
 
@@ -119,7 +116,7 @@ public sealed partial class HoldTexturePlacementService
             hold.FacetId = placement.Fit.FacetId;
             hold.PlaneAMm = placement.Fit.PlaneAMm;
             hold.PlaneBMm = placement.Fit.PlaneBMm;
-            hold.MetricSource = HoldMetric.TextureRegistration;
+            hold.MetricSource = placement.Carried ? HoldMetric.TextureRegistrationCarried : HoldMetric.TextureRegistration;
         }
 
         return entry with

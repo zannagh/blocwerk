@@ -10,7 +10,9 @@ namespace Blocwerk.Core.Capture.FollowUp;
 /// Step 1: the wall's live holds that are not on the new model yet (or were placed on an earlier model by this
 /// same texture matching: a re-solve keeps the facet ids but moves their planes) are placed on its facet textures from their
 /// panel photos (<see cref="IHoldTexturePlacementService.PlaceFromPipelineAsync"/>). Holds placed by markers or
-/// by an edit are never touched; a hold's panel position and shape never change. The run is revertable.
+/// by an edit are never touched; a hold's panel position and shape never change. A photo the new textures cannot
+/// be registered to is seeded from its holds' previous placements and from holds linked to other photos; what
+/// still fails keeps its previous placement, carried onto the new model. The run is revertable.
 /// </summary>
 public sealed class PlaceHoldsFollowUpStep(IHoldTexturePlacementService placement) : ICaptureFollowUpStep
 {
@@ -35,8 +37,15 @@ public sealed class PlaceHoldsFollowUpStep(IHoldTexturePlacementService placemen
             return CaptureFollowUpStepResult.Skipped("no unplaced holds (or placing is not available here)");
         }
 
-        return result.Placed > 0
-            ? CaptureFollowUpStepResult.Done($"{CaptureFollowUpText.Count(result.Placed, "hold", "holds")} placed on the 3D model")
-            : CaptureFollowUpStepResult.Done("no existing hold could be matched to the 3D model's photos");
+        if (result.Placed == 0)
+        {
+            return CaptureFollowUpStepResult.Done("no existing hold could be matched to the 3D model's photos");
+        }
+
+        // Carried: a photo the new textures could not be registered to kept its holds' previous placements.
+        var carried = result.Panels.Sum(p => p.Carried);
+        var placed = $"{CaptureFollowUpText.Count(result.Placed, "hold", "holds")} placed on the 3D model";
+        return CaptureFollowUpStepResult.Done(
+            carried > 0 ? $"{placed} ({carried} kept from the previous model)" : placed);
     }
 }
