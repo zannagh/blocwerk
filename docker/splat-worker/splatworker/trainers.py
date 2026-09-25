@@ -18,7 +18,7 @@ from computejobs.child import JobError
 from . import gpu, gsplat_trainer, zone_run
 from .groups import image_sizes
 from .procs import MemoryLimitError
-from .profiles import PROFILES, QUALITIES, resolve
+from .profiles import PROFILES, QUALITIES, resolve, zoned
 from .settings import settings
 from .splatio import read_ply
 
@@ -64,8 +64,9 @@ def train_gsplat(run, dataset):
     info = gpu.vram()
     budget = run.sfm_run.train_budget_mb()  # host memory: the image cache + the watchdog's ceiling
     sizes = image_sizes(os.path.join(dataset, "images"))
-    plans = gsplat_trainer.plans((info or {}).get("freeMb") or 0, sizes, run.profile, budget)
     zones = write_zones(run)
+    profile = zoned(run.profile) if zones else run.profile  # opt-in wall zones: their own ultra cap and steps
+    plans = gsplat_trainer.plans((info or {}).get("freeMb") or 0, sizes, profile, budget)
     if getattr(run, "profile_note", None):
         _log(run, run.profile_note)
     retries = []
@@ -108,16 +109,25 @@ def eval_stats(parser):
             "evalEvery": settings.gsplat_eval_every, "evalWallPsnr": wall.get("psnr"), "evalWallSsim": wall.get("ssim")}
 
 
+def wall_zones_wanted(opts):
+    """The wall zones are opt-in: SPLAT_WALL_ZONES=1 or the request's options.wallZones. Off: plain gsplat."""
+    return settings.wall_zones or bool(getattr(opts, "wallZones", False))
+
+
 def write_zones(run):
-    """zones.json for the trainer (zone_run.write_zones) when the job has a wall geometry, else None.
+    """zones.json for the trainer (zone_run.write_zones) when the job opted into the wall zones
+    (wall_zones_wanted) and has a wall geometry, else None (plain training, the crop box at export).
     Sets run.zones (the spec, for the export cut). A geometry the photos cannot be aligned to trains
     unzoned: the align stage then reports why."""
     run.zones = None
-    if getattr(run, "zones_file", None):  # a 3D runner: the zones its bundle brings (prepare.py, bundle.py)
+    if getattr(run, "zones_file", None):  # a 3D runner: the zones its bundle brings, only when opted in (bundle.py)
         with open(run.zones_file) as fh:
             run.zones = json.load(fh)
         return run.zones_file
     if not getattr(run, "geometry", None):
+        return None
+    if not wall_zones_wanted(getattr(run, "opts", None)):
+        _log(run, "zones: off (plain gsplat; SPLAT_WALL_ZONES=1 or options.wallZones opts in)")
         return None
     path = os.path.join(run.dir, "zones.json")
     try:

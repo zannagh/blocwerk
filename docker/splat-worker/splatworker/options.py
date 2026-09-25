@@ -25,6 +25,7 @@ class SplatOptions:
     spz: bool = True
     colourMatch: bool = True  # ingest matches the video frames' colours to the photos' (colour.py)
     cleanup: bool = False  # remove floaters with the wall geometry (cleanup.py); needs `geometry`. Off until it stops darkening the wall.
+    wallZones: bool = False  # gsplat: train + export with the wall zones (zones.py); needs `geometry`. SPLAT_WALL_ZONES=1 turns it on for all.
 
     def to_dict(self):
         return asdict(self)
@@ -69,7 +70,7 @@ def parse_options(doc):
         if not isinstance(doc["spz"], bool):
             raise OptionsError("options.spz must be true or false")
         o.spz = doc["spz"]
-    for flag in ("colourMatch", "cleanup"):
+    for flag in ("colourMatch", "cleanup", "wallZones"):
         if flag in doc:
             if not isinstance(doc[flag], bool):
                 raise OptionsError(f"options.{flag} must be true or false")

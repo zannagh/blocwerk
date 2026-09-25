@@ -38,6 +38,7 @@ def write_zones(path, model, geometry, params):
     if zs is None:
         return frame, None
     zs["toWorldMm"] = frame["toWorldMm"]
+    zs["params"]["wallZones"] = True  # the job opted in (trainers.write_zones): a runner applies only these
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as fh:
         json.dump(zs, fh)

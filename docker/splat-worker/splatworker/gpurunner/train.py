@@ -1,6 +1,7 @@
 """Training a bundle through the all-in-one job's OWN trainer path: pipeline.Run.train (gsplat fitted to the
-VRAM with one out-of-memory retry and, with the bundle's zones.json, the tuned wall-zone training; or
-Brush fitted to the memory budget), with trainers.select() / trainers.job_profile() as on the worker."""
+VRAM with one out-of-memory retry and, with an opted-in zones.json (bundle.zones_opted_in), the wall-zone
+training, else plain; or Brush fitted to the memory budget), with trainers.select() / trainers.job_profile() as
+on the worker."""
 import os
 import time
 from types import SimpleNamespace

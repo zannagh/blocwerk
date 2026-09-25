@@ -247,6 +247,8 @@ services:
       COLMAP_VOCAB_TREE_IMAGES: ${COLMAP_VOCAB_TREE_IMAGES:-0}
       # > 0: hold out every Nth view and report stats.evalPsnr / evalSsim (a measurement; those views don't train).
       GSPLAT_EVAL_EVERY: ${GSPLAT_EVAL_EVERY:-0}
+      # 1 = the wall-zone recipe for every job with a wall geometry (README "Wall zones"); 0 = plain gsplat.
+      SPLAT_WALL_ZONES: ${SPLAT_WALL_ZONES:-0}
     deploy:
       resources:
         reservations:
@@ -257,9 +259,10 @@ services:
     restart: unless-stopped
 
   # The splat worker's CPU half for 3D runners (docs/marker-walls.md "3D runners"): splat-prepare (COLMAP,
-  # the training bundle) and splat-finish (alignment, the wall-zone cut, clean-up, export), no GPU and no
-  # trainer (SPLAT_WORKER_MODE=cpu refuses the all-in-one `splat` kind). The training runs on the runners:
-  # set RUNNERS_MODE=always and SPLATSERVICE_URL=http://splat-cpu:8100. Profile `compute`. Internal only.
+  # the training bundle) and splat-finish (alignment, the crop box or the opt-in wall-zone cut, clean-up,
+  # export), no GPU and no trainer (SPLAT_WORKER_MODE=cpu refuses the all-in-one `splat` kind). The training
+  # runs on the runners: set RUNNERS_MODE=always and SPLATSERVICE_URL=http://splat-cpu:8100. Profile
+  # `compute`. Internal only.
   splat-cpu:
     image: ghcr.io/zannagh/blocwerk-splat-worker:latest
     profiles: ["compute"]
@@ -292,6 +295,8 @@ services:
     environment:
       SPLAT_VRAM_MB: ${SPLAT_VRAM_MB:-0}
       RUNNER_MAX_QUALITY: ${RUNNER_MAX_QUALITY:-}
+      # 1 = apply a bundle's zones.json even when the job did not opt in; 0 = plain unless it did.
+      SPLAT_WALL_ZONES: ${SPLAT_WALL_ZONES:-0}
     stop_grace_period: 30s
     deploy:
       resources:

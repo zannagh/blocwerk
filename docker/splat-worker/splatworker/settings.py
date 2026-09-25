@@ -64,6 +64,11 @@ settings.vram_mb = env_int("SPLAT_VRAM_MB", 0)
 # GSPLAT_EVAL_EVERY > 0: every that-many-th view (sorted by name) is held out of gsplat's training and
 # scored (PSNR / SSIM) at the end: stats.eval* (gsplat_train.py). 0 = off: every view trains.
 settings.gsplat_eval_every = max(0, env_int("GSPLAT_EVAL_EVERY", 0))
+# SPLAT_WALL_ZONES=1: every gsplat job with a wall geometry trains with the wall zones and their recipe
+# (trainers.write_zones, gsplat_trainer.ZONED_ARGS) and exports with the zone cut; a request opts in on its own
+# with options.wallZones. 0 (default): the plain gsplat recipe and the facet crop box. On a 3D runner: the
+# bundle's zones.json is applied only with this set or when the prepare side opted in (its params.wallZones).
+settings.wall_zones = env_int("SPLAT_WALL_ZONES", 0) > 0
 # The worker's role: "all" (default: every kind, the trainer required) or "cpu" (the server-side half for 3D
 # runners: splat-prepare + splat-finish only; no GPU and no trainer needed, kind `splat` is refused).
 settings.worker_mode = os.environ.get("SPLAT_WORKER_MODE", "all").strip().lower() or "all"

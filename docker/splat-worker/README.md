@@ -18,7 +18,7 @@ run on any GPU machine: the realistic one for Blocwerk is the owner's Mac.
 |---|---|
 | `photos` | 3–400 files (`.jpg/.jpeg/.png/.webp/.tif`), ≤ `MAX_PHOTO_MB` each. File name stem = the photo's name; to align, it must equal the geometry camera's `image` (e.g. `IMG_2770.jpg`). A stem starting with **`vf_`** (`vf_0001.jpg`, … in video order) is an **auxiliary video frame** (see below): trained on, never aligned with, not counted towards `MIN_PHOTOS`. |
 | `geometry` | optional: a solved wall-geometry document (`tools/glyph/wall-geometry.schema.md`) → enables `align` and a crop box from the facets |
-| `options` | optional JSON: `quality` (`draft`\|`high`\|`max`; default `high`, see **Quality profiles**), `maxSteps` (the profile's; 100–100000, overrides it), `maxImageEdge` (the profile's photo edge; 480–4096, overrides it), `matcher` (`auto`\|`exhaustive`\|`sequential`\|`pairs`; auto = `pairs` when `vf_` frames came along, else exhaustive up to 150 photos), `cropMarginMm` (400), `spz` (true), `colourMatch` (true), `cleanup` (false: the floater clean-up below, opt-in until it stops darkening the wall; needs `geometry`). Unknown keys → 422. |
+| `options` | optional JSON: `quality` (`draft`\|`high`\|`max`; default `high`, see **Quality profiles**), `maxSteps` (the profile's; 100–100000, overrides it), `maxImageEdge` (the profile's photo edge; 480–4096, overrides it), `matcher` (`auto`\|`exhaustive`\|`sequential`\|`pairs`; auto = `pairs` when `vf_` frames came along, else exhaustive up to 150 photos), `cropMarginMm` (400), `spz` (true), `colourMatch` (true), `cleanup` (false: the floater clean-up below, opt-in until it stops darkening the wall; needs `geometry`), `wallZones` (false: gsplat trains and exports with the wall zones, "Wall zones" below; needs `geometry`; `SPLAT_WALL_ZONES=1` turns it on for every job). Unknown keys → 422. |
 | `callbackUrl` | optional (protocol) |
 
 `202 {jobId, status}`; then `GET /v1/jobs/{id}` (status, `progress` 0..1, `stage`, `stageDetail`),
@@ -258,9 +258,10 @@ give the job memory to match (`SPLAT_MAX_MEMORY_MB` unset, container limit ≥ 1
 | `COLMAP_USE_GPU` | 0 (`Dockerfile.cuda`: 1) | SIFT extraction + matching on the NVIDIA GPU (needs a CUDA build of COLMAP: `Dockerfile.cuda`). Matching is then planned against the free VRAM (`nvidia-smi`), not the host budget: GPU guided → GPU unguided + triangulate → CPU unguided (if a GPU run fails); never a CPU guided tier. No GPU visible → CPU, logged. See "GPU SfM" below |
 | `COLMAP_GPU_INDEX` | 0 | the CUDA device COLMAP uses (`-1` = all) |
 | `COLMAP_DSP_SIFT` / `COLMAP_AFFINE_SHAPE` | 1 / 1 (`Dockerfile.cuda`: 0 / 0) | domain-size pooling / affine-covariant SIFT (`SiftExtraction.domain_size_pooling` / `estimate_affine_shape`). COLMAP extracts these on the **CPU only** (4.2 silently switches `use_gpu` off), so with either on, extraction runs on the CPU and only matching uses the GPU |
-| `COLMAP_MAPPER` | `incremental` (`Dockerfile.cuda`: `global`) | `incremental` (`mapper`) or `global` (`global_mapper`, GLOMAP merged into COLMAP 4.x; falls back to incremental on COLMAP 3.9) |
+| `COLMAP_MAPPER` | `incremental` | `incremental` (`mapper`) or `global` (`global_mapper`, GLOMAP merged into COLMAP 4.x; falls back to incremental on COLMAP 3.9) |
 | `COLMAP_VOCAB_TREE_IMAGES` / `COLMAP_VOCAB_TREE_PATH` | 0 / unset (`Dockerfile.cuda`: `/opt/colmap/share/vocab_tree_sift.bin`) | > 0: after the `pairs` list, every `vf_*` video frame is also matched with its N most similar images by vocabulary-tree retrieval (`vocab_tree_matcher`, loop closure for walks; pairs already matched are skipped; a failure is logged, not fatal). The tree is COLMAP's pinned faiss SIFT tree (flickr100K, 256K words, sha256-checked at build time); COLMAP 3.9 cannot read it |
 | `GSPLAT_EVAL_EVERY` | 0 | gsplat only: hold out every Nth PHOTO (sorted by name: 0, N, 2N, …; `vf_*` video frames always train) and score it at the end: `stats.evalPsnr` / `evalSsim` / `evalViews`, and with a wall geometry `evalWallPsnr` / `evalWallSsim` over the pixels showing a facet. A measurement mode (the held-out views do not train), so off by default; Brush ignores it |
+| `SPLAT_WALL_ZONES` | 0 | 1 = every gsplat job with a wall geometry trains with the wall zones and their recipe and exports with the zone cut (README "Wall zones"); a request opts in on its own with `options.wallZones: true`. 0 = the plain gsplat recipe and the crop box. On a 3D runner: also apply a bundle's zones.json that the job did not opt into |
 | `SPLAT_WORKER_MODE` | `all` | `cpu` = the CPU half for 3D runners: `splat-prepare` + `splat-finish` only (COLMAP needed; no trainer, no GPU; `splat` answers 503). In the CUDA image also set `COLMAP_USE_GPU=0` |
 | `SPLAT_MAX_RESULT_MB` | 2048 | `splat-finish`: the largest trained scene (`splat.ply` / `splat.spz`) accepted |
 
@@ -364,7 +365,9 @@ docker compose --profile gpu-cuda up -d --build splat-worker-cuda   # compose: h
   **SH degree 0** for every profile: the exports keep only the DC colour; baking a higher-degree
   result would drop view-dependent colour the DC was never fitted without. Loss: L1 + 0.2 D-SSIM (torch
   SSIM, no compiled fused-ssim) + MCMC's opacity/scale regularisers.
-- **Wall zones** (`zones.py`, `zone_run.py`, `gsplat_zones.py`; jobs with a wall geometry): plain MCMC
+- **Wall zones** (opt-in: `SPLAT_WALL_ZONES=1` or `options.wallZones: true`, and a wall geometry; off by
+  default: the owner preferred the plain result on the real wall, see "Default" below; `zones.py`,
+  `zone_run.py`, `gsplat_zones.py`): plain MCMC
   samples new and relocated splats by opacity, i.e. wherever the photos are busy, and a room around a
   wall is most of every photo: on The Attic 82 % of a 6 M cap ended outside the ±400 mm crop, and what
   stayed inside grew a shell of needles and fog. Right after SfM the photos' COLMAP cameras are aligned
@@ -392,7 +395,8 @@ docker compose --profile gpu-cuda up -d --build splat-worker-cuda   # compose: h
   trained into the box or exported (the wall behind them shows instead). What lies behind another
   facet's slab is never air (a side wall's prism in front of it ran through the main wall: 2 M of 3 M
   splats, the space right behind it included, were outside).
-- **Zoned recipe** (`gsplat_trainer.ZONED_ARGS`, only with zones): needle penalty on the longest /
+- **Zoned recipe** (`gsplat_trainer.ZONED_ARGS`, only with the opt-in zones; `ultra` then trains 30k steps
+  up to 3 M, `profiles.zoned`): needle penalty on the longest /
   middle axis ratio beyond 6 (flat discs stay free), 10x stronger beyond 3 in the **air**
   (`--aniso-air-reg 1 --aniso-air-max 3`: the surround, and > 20 mm behind a facet; mask refreshed every
   100 steps; wall needles 3562 -> 523, held-out wall PSNR +0.35 dB raw, within the run-to-run noise), opacity regulariser 0.0005 instead of MCMC's 0.01
@@ -419,13 +423,20 @@ viewpoints outside the repo):
 | + needle penalty, pose, frame appearance, D-SSIM crop, air = outside | 22.45 / 0.775 | 0.82 M | 0 | 20 min |
 | + 4096 px (native) | 22.50 / 0.781 | 0.80 M | 0 | 21 min |
 | + opacity reg 0.002 | 22.78 / 0.786 | 1.24 M | 0 | 21 min |
-| **+ opacity reg 0.0005 (the default)** | **23.04 / 0.785** | 1.53 M | 0 | **20 min** |
+| **+ opacity reg 0.0005** | **23.04 / 0.785** | 1.53 M | 0 | **20 min** |
 | same with a 5 M cap | 22.53 / 0.785 | 1.92 M | 0 | 28 min |
 | opaque facets (`--behind-reg 1`) | 22.04 / 0.772 | 1.62 M | 0 | 22 min |
-| **+ air needle penalty, 3σ box cut, wall needles not on the surface (the default)** | **22.39 / 0.775** | 1.62 M | 0 | **22 min** |
+| **+ air needle penalty, 3σ box cut, wall needles not on the surface (the opt-in recipe)** | **22.39 / 0.775** | 1.62 M | 0 | **22 min** |
 
-GLOMAP (`COLMAP_MAPPER=global`, now the CUDA image's default) registered all 353 images in 7 min where
+GLOMAP (`COLMAP_MAPPER=global`, available, not the default: the plain baseline used the incremental mapper) registered all 353 images in 7 min where
 the incremental mapper took 16 (same inputs, 1.01 vs 1.03 px); GPU SIFT + guided GPU matching took 6 min.
+
+**Default: plain gsplat** (since 2026-09-25 evening). Compared on the real wall in the app, the owner
+preferred the plain `ultra` result (the first row) to the cleaned-up zoned one: better input (more photos,
+videos, markers) over wall-specific training tricks. So by default: MCMC, `ultra` = 50k steps, <= 4096 px,
+cap 6 M, opacity / scale regularisers 0.01, full-image D-SSIM, no zones, no opaque-facet or needle penalty, no
+pose or appearance correction, export = the facets ± `cropMarginMm` (400) crop box, clean-up off, and the
+incremental mapper. The zoned recipe above stays available behind `SPLAT_WALL_ZONES=1` / `options.wallZones`.
 - **Memory**: gsplat needs VRAM, not host memory, so Brush's host model does not apply. The plan
   (`gsplat_trainer.plans`) fits the cap (then the edge, then the next profile down) to 90 % of the free
   VRAM (`nvidia-smi`, or `SPLAT_VRAM_MB`): 0.7 GB + 0.45 MB per 1000 splats + 160 MB per megapixel of
@@ -438,9 +449,9 @@ the incremental mapper took 16 (same inputs, 1.01 vs 1.03 px); GPU SIFT + guided
 
 | `options.quality` → gsplat | `draft` | `high` | `max` | `ultra` |
 |---|---|---|---|---|
-| steps (`maxSteps` overrides) | 5000 | 15000 | 30000 | 30000 |
+| steps (`maxSteps` overrides) | 5000 | 15000 | 30000 | 50000 (opt-in zones: 30000) |
 | photos' long edge (`maxImageEdge` overrides) / video frames | 1800 / 1800 | 2400 / 1280 | 4032 / 1920 | 4096 (the ingest cap, i.e. native) / 1920 |
-| MCMC `cap_max` (fitted to VRAM, floor) | 1 M (250k) | 2 M (800k) | 5 M (2 M) | 3 M (1.5 M) |
+| MCMC `cap_max` (fitted to VRAM, floor) | 1 M (250k) | 2 M (800k) | 5 M (2 M) | 6 M (3 M; opt-in zones: 3 M (1.5 M)) |
 | growth stops at | 50 % | 60 % | 50 % | 50 % |
 | SH degree | 0 | 0 | 0 | 0 |
 
@@ -460,7 +471,7 @@ value, `CaptureSplatDocuments.QualityName` / `NextQuality`, and the UI). Until t
 Host RSS of the trainer: 1.7 GB (`high`). Both `.spz` came out in the COLMAP frame (`stats.frameCheck`:
 splat median inside the sparse points' 2–98 % box, spread ratio 1.1–1.9); training the spike's own
 South Building model directly gave splat p2/p50/p98 within a few cm of the sparse points' (scene
-diagonal 40 units) and a median splat-to-nearest-sparse-point distance of 0.011. (`ultra` was 50k steps up to 6 M splats then; with the wall zones it is 30k steps up to 3 M, see below.) A full 50k-step
+diagonal 40 units) and a median splat-to-nearest-sparse-point distance of 0.011. (With the opt-in wall zones `ultra` is 30k steps up to 3 M, see above.) A full 50k-step
 `ultra` would take roughly 1.7–2 h on this card.
 
 ### GPU SfM (COLMAP with CUDA, `COLMAP_USE_GPU`)
@@ -514,13 +525,17 @@ A **3D runner** trains the photo-real view on a GPU somewhere else, pulling work
 
 1. `splat-prepare` (this worker, CPU is enough): the all-in-one job's own ingest, COLMAP and undistort
    (`prepare.py`), then `bundle.zip` = the undistorted, metadata-free images + sparse model, `train.json`
-   (the requested profile, ultra included: the runner's GPU decides) and, with a wall geometry,
-   `zones.json` (the wall zones the gsplat trainer focuses on, exactly as the all-in-one job writes them);
+   (the requested profile, ultra included: the runner's GPU decides) and, only when the job opted into the
+   wall zones (`SPLAT_WALL_ZONES=1` / `options.wallZones`, with a wall geometry),
+   `zones.json` (the wall zones the gsplat trainer focuses on, exactly as the all-in-one job writes them,
+   marked `params.wallZones`; a runner ignores a zones.json without that mark unless its own
+   `SPLAT_WALL_ZONES=1`, so it trains plain by default);
    and `prepared.json` (camera centres of photos AND video frames, SfM stats, options, geometry, zones;
    stays on the server). The app rebuilds the bundle with an allow-list before a runner sees it.
 2. The runner (`gpurunner/`): hello (GPU, VRAM, trainer, CUDA, the highest quality: `ultra` only with
    gsplat on >= 12 GB), long-poll claim, resumable bundle download (Range, sha256), training through the
-   worker's own `pipeline.Run.train` (gsplat fitted to the VRAM with the zones and one out-of-memory retry,
+   worker's own `pipeline.Run.train` (gsplat fitted to the VRAM, plain or with the opted-in zones, and one
+   out-of-memory retry,
    or Brush fitted to memory; `trainers.select()` / `job_profile()`), progress heartbeats (the lease), and a
    slim `.ply` upload, gzip-compressed. SIGTERM kills the trainer and hands the job back
    (`fail` with `shutdown: true`, no attempt used); 404 / 410 drop the job; 401 exits with code 3.

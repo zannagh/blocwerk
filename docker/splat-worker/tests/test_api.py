@@ -86,7 +86,8 @@ def test_accepts_job_and_strips_metadata_on_arrival(client, gps_jpeg):
         assert_clean(open(os.path.join(d, "arrived", name), "rb").read())
     inputs = json.load(open(os.path.join(d, "inputs.json")))
     assert inputs["options"] == {"quality": "high", "maxSteps": 5000, "maxImageEdge": None, "matcher": "auto",
-                                 "cropMarginMm": 400.0, "spz": True, "colourMatch": True, "cleanup": False}
+                                 "cropMarginMm": 400.0, "spz": True, "colourMatch": True, "cleanup": False,
+                                 "wallZones": False}
     assert inputs["photos"]["a"]["focal35"] == 14.0 and "TestPhone" not in json.dumps(inputs)
     assert json.load(open(os.path.join(d, "geometry.json"))) == GEOMETRY
     for root, _, files in os.walk(d):  # nothing anywhere in the job dir still holds the GPS tags

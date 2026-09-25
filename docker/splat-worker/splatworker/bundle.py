@@ -3,8 +3,9 @@
   dataset/images/<group>/<stem>.jpg   the undistorted images (metadata-free: no APPn but JFIF, no COM)
   dataset/sparse/0/*.bin              COLMAP's undistorted sparse model (the layout Brush / gsplat expect)
   train.json                          the quality profile to train (train_doc / profile_from_doc)
-  zones.json                          optional: the wall zones (zones.spec + toWorldMm) for gsplat's
-                                      wall-focused training, as the all-in-one job writes them
+  zones.json                          optional, only when the job opted in: the wall zones (zones.spec +
+                                      toWorldMm) for gsplat's wall-focused training, as the all-in-one job
+                                      writes them (params.wallZones marks the opt-in, zones_opted_in)
 
 Nothing else: no original file names (stems only), no geometry document, no GPS, no photo metadata.
 The server rebuilds the zip with the same allow-list (Blocwerk.Core RunnerBundle) before a runner sees it.
@@ -19,11 +20,13 @@ from dataclasses import fields
 from computejobs.child import JobError
 
 from .profiles import QUALITIES, Profile
+from .settings import settings
 
 TRAIN_DOC_VERSION = 1
 IMAGE_EXT = (".jpg", ".jpeg")
 ZONES_FILE = "zones.json"
 MAX_ZONES_BYTES = 1 << 20
+OPT_IN = "wallZones"  # zones.json params flag: the job opted into the wall zones (zones_opted_in)
 # train.json key <-> Profile field (the server's RunnerTrainOptions.AllowedKeys)
 PROFILE_KEYS = {"quality": "name", "edge": "edge", "frameEdge": "frame_edge", "minEdge": "min_edge",
                 "steps": "steps", "maxSplats": "max_splats", "minSplats": "min_splats",
@@ -196,12 +199,20 @@ def extract_bundle(zip_path, out_dir, max_bytes=8 << 30):
     if not os.path.isdir(os.path.join(dataset, "images")) or not os.path.isdir(os.path.join(dataset, "sparse", "0")):
         raise BundleError("bundle without dataset/images or dataset/sparse/0")
     zones = os.path.join(out_dir, ZONES_FILE)
+    wanted = False
     if os.path.exists(zones):
         if os.path.getsize(zones) > MAX_ZONES_BYTES:
             raise BundleError("zones.json too large")
         try:
             with open(zones) as fh:
-                check_zones(json.load(fh))
+                wanted = zones_opted_in(check_zones(json.load(fh)))
         except json.JSONDecodeError as e:
             raise BundleError(f"zones.json: {e}") from e
-    return dataset, profile_from_doc(doc), zones if os.path.exists(zones) else None
+    return dataset, profile_from_doc(doc), zones if wanted else None
+
+
+def zones_opted_in(doc):
+    """The wall zones are opt-in on a runner too: its own SPLAT_WALL_ZONES=1, or zones the prepare side wrote
+    because the job opted in (params.wallZones, zone_run.write_zones). Older prepare jobs sent zones.json with
+    every wall geometry: without either, the runner trains plain gsplat (the bundle's zones are ignored)."""
+    return settings.wall_zones or doc["params"].get(OPT_IN) is True

@@ -58,10 +58,21 @@ def test_bundle_has_only_the_layout_and_no_metadata(tmp_path, gps_jpeg):
 def test_an_ultra_bundle_with_zones_round_trips(tmp_path, gps_jpeg):
     ds = make_dataset(tmp_path, gps_jpeg)
     prof = profiles.PROFILES["ultra"]
-    info = bundle.build_bundle(str(ds), str(tmp_path / "b.zip"), bundle.train_doc(prof), lambda *a: None, ZONES)
+    marked = {**ZONES, "params": {bundle.OPT_IN: True}}  # zone_run.write_zones: the job opted in
+    info = bundle.build_bundle(str(ds), str(tmp_path / "b.zip"), bundle.train_doc(prof), lambda *a: None, marked)
     assert info["zones"] is True
     _, back, zones = bundle.extract_bundle(str(tmp_path / "b.zip"), str(tmp_path / "out"))
-    assert back == prof and back.edge == 4096 and json.load(open(zones)) == ZONES
+    assert back == prof and back.edge == 4096 and json.load(open(zones)) == marked
+
+
+def test_a_runner_ignores_zones_the_job_did_not_opt_into(tmp_path, gps_jpeg, monkeypatch):
+    ds = make_dataset(tmp_path, gps_jpeg)
+    bundle.build_bundle(str(ds), str(tmp_path / "b.zip"), bundle.train_doc(profiles.PROFILES["ultra"]),
+                        lambda *a: None, ZONES)  # an older prepare: zones.json with every wall geometry
+    monkeypatch.setattr(settings, "wall_zones", False)
+    assert bundle.extract_bundle(str(tmp_path / "b.zip"), str(tmp_path / "o1"))[2] is None  # plain by default
+    monkeypatch.setattr(settings, "wall_zones", True)  # the runner's own SPLAT_WALL_ZONES=1
+    assert bundle.extract_bundle(str(tmp_path / "b.zip"), str(tmp_path / "o2"))[2].endswith("zones.json")
 
 
 def test_strip_keeps_the_pixels(gps_jpeg):

@@ -83,7 +83,7 @@ def run_prepare(job_dir, progress):
     img_dir = r.ingest()
     dataset = r.sfm(img_dir)
     r.begin("bundle")
-    trainers.write_zones(r)  # the same zones as the all-in-one job's gsplat training (None without facets)
+    trainers.write_zones(r)  # as the all-in-one job: None unless the job opted in (wall zones) and has facets
     info = build_bundle(dataset, os.path.join(job_dir, "bundle.zip"), train_doc(r.profile), r.report, r.zones)
     r.end()
     state = r.prepared_state()

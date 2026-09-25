@@ -121,7 +121,7 @@ def colmap(monkeypatch):
 
 
 def test_prepare_then_finish_equals_the_all_in_one_job(tmp_path, colmap):
-    options = {**SplatOptions().to_dict(), "cleanup": True, "quality": "max"}
+    options = {**SplatOptions().to_dict(), "cleanup": True, "quality": "max", "wallZones": True}  # zones opted in
     prep = job_dir(tmp_path, "prep", options)
     res = run_prepare(str(prep), lambda *a: None)
     assert res["files"] == ["bundle.zip", "prepared.json"] and res["bundle"]["zones"] is True
@@ -157,7 +157,8 @@ def test_prepare_then_finish_equals_the_all_in_one_job(tmp_path, colmap):
 
 def test_unzoned_runner_scene_gets_the_crop_box(tmp_path, colmap):
     prep = job_dir(tmp_path, "prep", {**SplatOptions().to_dict(), "quality": "draft"})
-    run_prepare(str(prep), lambda *a: None)
+    res = run_prepare(str(prep), lambda *a: None)
+    assert res["bundle"]["zones"] is False  # a wall geometry, but no opt-in: no zones.json, the runner trains plain
     fin = tmp_path / "finish"
     fin.mkdir()
     write_slim_ply(scene(), str(fin / "splat.ply"))

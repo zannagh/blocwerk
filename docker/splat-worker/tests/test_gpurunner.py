@@ -115,10 +115,7 @@ def test_happy_path_trains_through_the_worker_path_and_uploads_a_gzipped_slim_pl
     assert [p.name for p in (tmp_path / "work").iterdir()] == []  # job dir and alive file are gone
 
 
-@pytest.mark.parametrize("vram,trained", [(16376, "ultra"), (8192, "max")])
-def test_gsplat_trains_with_the_bundles_zones_and_the_vram_gate(tmp_path, fast, server, monkeypatch, vram, trained):
-    seen = {}
-
+def gsplat_runner(monkeypatch, vram, seen):
     def fake_train(python, dataset, out, plan, log, report, *a, zones=None, **k):
         seen.update(zones=zones, plan=plan, stop=procs.current_stop)
         return full_ply(f"{out}/splat.ply"), Parser()
@@ -127,16 +124,38 @@ def test_gsplat_trains_with_the_bundles_zones_and_the_vram_gate(tmp_path, fast, 
     monkeypatch.setattr(gpu, "vram", lambda: {"name": "RTX", "totalMb": vram, "freeMb": vram - 500})
     monkeypatch.setattr(gsplat_trainer, "train", fake_train)
     monkeypatch.setattr(gsplat_trainer, "check_frame", lambda *a: {"spreadRatio": 1.1, "splatMedian": [0, 0, 0]})
-    srv = server(make_bundle(tmp_path, "ultra", ZONES), quality="ultra")
+
+
+@pytest.mark.parametrize("vram,trained", [(16376, "ultra"), (8192, "max")])
+def test_gsplat_trains_with_the_bundles_opted_in_zones_and_the_vram_gate(tmp_path, fast, server, monkeypatch, vram,
+                                                                         trained):
+    seen = {}
+    gsplat_runner(monkeypatch, vram, seen)
+    marked = {**ZONES, "params": {**ZONES["params"], bundle.OPT_IN: True}}  # the job opted in (zone_run)
+    srv = server(make_bundle(tmp_path, "ultra", marked), quality="ultra")
     runner, code = run_runner(srv, tmp_path)
     assert runner.outcomes == ["succeeded"]
     assert seen["zones"].endswith("zones.json") and seen["plan"].profile.name == trained
+    if trained == "ultra":  # the wall zones' own ultra (profiles.zoned)
+        assert (seen["plan"].profile.steps, seen["plan"].max_splats) == (30000, 3_000_000)
     assert seen["stop"] is not None  # a cancel / shutdown kills gsplat (procs.current_stop)
     stats = json.loads(srv.results[0]["headers"]["X-Blocwerk-Stats"])
     assert stats["trainer"] == "gsplat" and stats["zoned"] is True and stats["zonesWall"] == 4
     assert stats["quality"] == trained and stats["qualityRequested"] == "ultra"
     assert stats["frameCheckSpreadRatio"] == 1.1 and "frameCheck" not in stats and "zones" not in stats
     assert (stats["profileNote"] is None) == (trained == "ultra")
+
+
+def test_gsplat_trains_plain_when_the_job_did_not_opt_into_zones(tmp_path, fast, server, monkeypatch):
+    seen = {}
+    gsplat_runner(monkeypatch, 16376, seen)
+    monkeypatch.setattr(settings, "wall_zones", False)
+    srv = server(make_bundle(tmp_path, "ultra", ZONES), quality="ultra")  # unmarked: an older prepare job
+    runner, code = run_runner(srv, tmp_path)
+    assert runner.outcomes == ["succeeded"] and seen["zones"] is None
+    assert (seen["plan"].profile.name, seen["plan"].profile.steps, seen["plan"].max_splats) == ("ultra", 50000, 6_000_000)
+    stats = json.loads(srv.results[0]["headers"]["X-Blocwerk-Stats"])
+    assert stats["zoned"] is False
 
 
 def test_uncompressed_upload_and_the_415_fallback(tmp_path, fast, server, monkeypatch):
