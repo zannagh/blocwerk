@@ -27,6 +27,10 @@ from .profiles import Profile, ladder
 GUIDED_BYTES_PER_PAIR = 16
 GUIDED_BASE, GUIDED_PER_THREAD = 1.95, 0.5
 UNGUIDED_MB = 400
+# CPU guided matching time (guided_seconds): ~1 s per pair of 8192-feature images on one thread (a
+# conservative figure: the 16k-feature, 1-thread tier took hours on a few thousand pairs). Guided tiers
+# estimated above GUIDED_MAX_S are skipped for unguided + triangulate.
+GUIDED_S_PER_PAIR, GUIDED_MAX_S = 1.0, 2400
 EXTRACT_MB_PER_THREAD, EXTRACT_BASE_MB = 620, 150
 HEADROOM = 0.9  # plan to use at most 90 % of the budget
 # CUDA matching (SiftGPU, COLMAP 4.2 src/thirdparty/SiftGPU/SiftMatchCU.cpp): each matcher allocates a
@@ -75,16 +79,29 @@ def guided_mb(feature_counts, threads):
     return int(unit * (GUIDED_BASE + GUIDED_PER_THREAD * threads))
 
 
-def matching_tiers(budget_mb, feature_counts, max_threads):
+def guided_seconds(feature_counts, threads, pairs):
+    """Rough wall-clock of CPU guided matching: GUIDED_S_PER_PAIR per pair at 8192 x 8192 features,
+    growing with the product of the pair's feature counts (brute-force descriptor distances), split
+    over the threads."""
+    if not pairs or not feature_counts:
+        return 0
+    f = sorted(feature_counts)[len(feature_counts) // 2]
+    return int(pairs * GUIDED_S_PER_PAIR * (f / 8192) ** 2 / max(1, threads))
+
+
+def matching_tiers(budget_mb, feature_counts, max_threads, pairs=0):
     """The tiers to try, best first: [guided t, guided 1 (if t > 1), unguided + triangulate]; the
-    guided ones only when they fit HEADROOM x budget."""
+    guided ones only when they fit HEADROOM x budget AND (pairs given) their estimated time stays within
+    GUIDED_MAX_S: a guided tier that fits the memory on 1-2 threads only can take hours on hundreds of
+    images, where unguided + triangulate takes minutes (the time-blind choice that once ran for hours)."""
     usable = budget_mb * HEADROOM
     tiers = []
     for t in range(max(1, max_threads), 0, -1):
         est = guided_mb(feature_counts, t)
         if est <= usable:
-            tiers.append(Tier(True, t, est))
-            if t > 1:
+            if guided_seconds(feature_counts, t, pairs) <= GUIDED_MAX_S:
+                tiers.append(Tier(True, t, est))
+            if t > 1 and guided_seconds(feature_counts, 1, pairs) <= GUIDED_MAX_S:
                 tiers.append(Tier(True, 1, guided_mb(feature_counts, 1)))
             break
     tiers.append(Tier(False, max(1, max_threads), UNGUIDED_MB, loose=True))

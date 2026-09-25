@@ -19,7 +19,7 @@ from .colmap import Colmap, help_options
 from .procs import MemoryLimitError
 from .resources import memory_budget, system_memory
 from .settings import settings
-from .tuning import extraction_threads, gpu_matching_tiers, matching_tiers
+from .tuning import extraction_threads, gpu_matching_tiers, guided_seconds, matching_tiers
 
 MAPPERS = ("incremental", "global")
 
@@ -89,11 +89,16 @@ class Sfm:
             self._log(f"GPU feature extraction failed ({e.message}) -> retrying on the CPU")
             self.cm.extract(db, img_dir, batches, r.report, max_features)
 
-    def tiers(self, db):
+    def tiers(self, db, pairs=0):
+        """pairs: how many image pairs will be matched (the CPU tiers' time guard)."""
         counts = self.cm.feature_counts(db)
         if self.gpu:
             return gpu_matching_tiers(self.gpu.get("freeMb") or 0, counts, settings.colmap_max_matches, self.threads)
-        return matching_tiers(self.budget_mb, counts, self.threads)
+        tiers = matching_tiers(self.budget_mb, counts, self.threads, pairs)
+        if not tiers[0].guided and matching_tiers(self.budget_mb, counts, self.threads)[0].guided:
+            self._log(f"guided matching skipped: ~{guided_seconds(counts, self.threads, pairs) // 60} min for "
+                      f"{pairs} pairs on the CPU; unguided + triangulate instead")
+        return tiers
 
     def _tier_note(self, tier):
         if tier.gpu:
@@ -105,7 +110,8 @@ class Sfm:
         the vocabulary-tree loop closure (COLMAP_VOCAB_TREE_IMAGES)."""
         r = self.run
         r.begin("sfm-matching")
-        tiers = self.tiers(db)
+        n_pairs = len(pairs) if pairs is not None else (n * (n - 1) // 2 if matcher == "exhaustive" else n * 10)
+        tiers = self.tiers(db, n_pairs)
         for i, tier in enumerate(tiers):
             self.tier = tier
             r.note = self._tier_note(tier)

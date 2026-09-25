@@ -236,3 +236,15 @@ def test_swap_guard_reacts_to_growth_rate_not_level():
 def test_swap_meter_reads_something():
     used = resources.SwapMeter().used_mb()
     assert used is None or used >= 0
+
+
+def test_guided_tiers_are_skipped_when_they_would_take_hours():
+    """A job of hundreds of images (a walk-along video): guided CPU matching that fits the memory on one
+    thread would run for hours; unguided + triangulate takes minutes."""
+    counts = [16384] * 353
+    tiers = tuning.matching_tiers(7000, counts, 8, pairs=12273)
+    assert [t.name for t in tiers] == ["unguided + triangulate"]
+    assert tuning.guided_seconds(counts, 1, 12273) > 10 * 3600
+    few = tuning.matching_tiers(16000, B3, 4, pairs=91)  # 14 photos, exhaustive: minutes either way
+    assert [t.name for t in few] == ["guided, 4 threads", "guided, 1 thread", "unguided + triangulate"]
+    assert tuning.matching_tiers(16000, B3, 4, pairs=0) == tuning.matching_tiers(16000, B3, 4)  # unknown: memory only
