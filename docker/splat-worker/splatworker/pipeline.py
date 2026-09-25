@@ -23,6 +23,7 @@ from .refine import refine_frame
 from .settings import settings
 from .sfm import Sfm
 from .splatio import Splats, crop_mask, read_ply, write_splat, write_spz
+from .zone_run import export_cut
 
 # overall progress band per stage (train dominates; bands only need to be monotone)
 BANDS = {"ingest": (0.0, 0.02), "sfm-features": (0.02, 0.08), "sfm-matching": (0.08, 0.22),
@@ -216,7 +217,10 @@ class Run:
         else:
             frame = unaligned_frame(splats.xyz)
         self.begin("crop")
-        keep = crop_mask(splats, frame["toViewer"], frame["crop"])
+        if getattr(self, "zones", None) and frame.get("aligned"):  # trained with zones: cut to wall + box
+            keep, frame["zones"] = export_cut(splats, frame, self.zones, self.geometry)
+        else:
+            keep = crop_mask(splats, frame["toViewer"], frame["crop"])
         if not keep.any():
             raise JobError("crop", "no splat inside the crop box: the alignment is probably wrong "
                                    f"(camera residual {frame.get('alignment')})")

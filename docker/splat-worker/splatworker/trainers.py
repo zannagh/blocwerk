@@ -14,7 +14,7 @@ import os
 import numpy as np
 from computejobs.child import JobError
 
-from . import gpu, gsplat_trainer
+from . import gpu, gsplat_trainer, zone_run
 from .groups import image_sizes
 from .procs import MemoryLimitError
 from .profiles import PROFILES, QUALITIES, resolve
@@ -64,6 +64,7 @@ def train_gsplat(run, dataset):
     budget = run.sfm_run.train_budget_mb()  # host memory: the image cache + the watchdog's ceiling
     sizes = image_sizes(os.path.join(dataset, "images"))
     plans = gsplat_trainer.plans((info or {}).get("freeMb") or 0, sizes, run.profile, budget)
+    zones = write_zones(run)
     if getattr(run, "profile_note", None):
         _log(run, run.profile_note)
     retries = []
@@ -74,7 +75,8 @@ def train_gsplat(run, dataset):
         try:
             ply, parser = gsplat_trainer.train(settings.gsplat_python, dataset, os.path.join(run.dir, "train"),
                                                plan, os.path.join(run.dir, "train.log"), run.report,
-                                               budget, settings.max_swap_growth_mb, eval_every=settings.gsplat_eval_every)
+                                               budget, settings.max_swap_growth_mb, eval_every=settings.gsplat_eval_every,
+                                               zones=zones)
             break
         except (gsplat_trainer.CudaOomError, MemoryLimitError) as e:
             if i == len(plans) - 1:
@@ -92,7 +94,7 @@ def train_gsplat(run, dataset):
                        "trainImages": len(sizes) - (parser.eval or {}).get("views", 0),  # held-out views don't train
                        "quality": plan.profile.name, "qualityRequested": settings.profile_override or run.opts.quality,
                        "maxSplats": plan.max_splats, "trainEstimateMb": plan.estimate_mb,
-                       "frameCheck": frame_check, **eval_stats(parser)}
+                       "frameCheck": frame_check, "zones": parser.zones, **eval_stats(parser)}
     return ply
 
 
@@ -100,5 +102,25 @@ def eval_stats(parser):
     """stats.eval* of the held-out views (GSPLAT_EVAL_EVERY), or {} when it was off."""
     if not parser.eval:
         return {}
+    wall = parser.eval.get("wall") or {}
     return {"evalPsnr": parser.eval["psnr"], "evalSsim": parser.eval["ssim"], "evalViews": parser.eval["views"],
-            "evalEvery": settings.gsplat_eval_every}
+            "evalEvery": settings.gsplat_eval_every, "evalWallPsnr": wall.get("psnr"), "evalWallSsim": wall.get("ssim")}
+
+
+def write_zones(run):
+    """zones.json for the trainer (zone_run.write_zones) when the job has a wall geometry, else None.
+    Sets run.zones (the spec, for the export cut). A geometry the photos cannot be aligned to trains
+    unzoned: the align stage then reports why."""
+    run.zones = None
+    if not getattr(run, "geometry", None):
+        return None
+    path = os.path.join(run.dir, "zones.json")
+    try:
+        _, run.zones = zone_run.write_zones(path, run.model, run.geometry, zone_run.zone_params(run.opts))
+    except (JobError, ValueError, KeyError) as e:
+        _log(run, f"zones: off ({e})")
+        return None
+    if run.zones is None:
+        return None
+    _log(run, f"zones: box {run.zones['boxLo']} .. {run.zones['boxHi']} mm, {len(run.zones['facets'])} facets")
+    return path

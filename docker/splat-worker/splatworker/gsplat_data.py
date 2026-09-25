@@ -26,12 +26,16 @@ def scene_scale(centres):
     return float(np.linalg.norm(c - c.mean(0), axis=1).max()) if len(c) > 1 else 1.0
 
 
-def eval_split(n, every):
-    """(train indices, held-out indices) of n views sorted by name: every `every`-th view (0, every,
-    2 x every, ...: the mip-NeRF 360 / 3DGS convention) is held out; every <= 0 or n < 2: none."""
+def eval_split(names, every):
+    """(train indices, held-out indices) of views sorted by name: every `every`-th PHOTO (0, every,
+    2 x every, ... among the non-`vf_` views: the mip-NeRF 360 / 3DGS convention) is held out; the
+    walk-along video frames always train (a held-out frame's neighbours show nearly the same view, so it
+    would flatter the score). No photos: every `every`-th view. every <= 0 or fewer than 2 views: none."""
+    n = len(names)
     if every <= 0 or n < 2:
         return list(range(n)), []
-    held = [i for i in range(n) if i % every == 0]
+    photos = [i for i, nm in enumerate(names) if not nm.rsplit("/", 1)[-1].startswith("vf_")] or list(range(n))
+    held = [i for k, i in enumerate(photos) if k % every == 0]
     if len(held) >= n:  # every == 1 would leave nothing to train on: hold out all but one
         held = held[:-1]
     keep = set(held)

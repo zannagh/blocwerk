@@ -62,7 +62,7 @@ cut the bare-wall point-to-plane median from 8.3 to 5.9 mm) and `stats =
 memoryBudgetMb, trainMemoryBudgetMb, extractionThreads, matchingTier, memoryRetries[] (below),
 colmapGpu (GPU name or null), colmapGpuExtraction, colmapMapper, siftDsp, siftAffineShape, vocabTreeMatching,
 splatsTrained, splatCount, steps, trainingSeconds, stageSeconds{…}, alignmentResidualMm, fileBytes}`
-(+ with gsplat and `GSPLAT_EVAL_EVERY`: `evalPsnr`, `evalSsim`, `evalViews`, `evalEvery`).
+(+ with gsplat and `GSPLAT_EVAL_EVERY`: `evalPsnr`, `evalSsim`, `evalViews`, `evalEvery`, `evalWallPsnr`, `evalWallSsim`; with zones `zones`).
 Files: `wall.splat` (antimatter15, 32 B/splat, sorted by importance), `wall.spz` (Niantic v2, gzip,
 SH degree 0, checked against Spark 2.2's own `writeSpz` and loaded/rendered in a Spark 2.2 viewer), `frame.json`. **The splat files stay in the
 COLMAP frame of the run** (rotating SH coefficients is not worth it at degree 0 and the transform is
@@ -260,7 +260,7 @@ give the job memory to match (`SPLAT_MAX_MEMORY_MB` unset, container limit ≥ 1
 | `COLMAP_DSP_SIFT` / `COLMAP_AFFINE_SHAPE` | 1 / 1 (`Dockerfile.cuda`: 0 / 0) | domain-size pooling / affine-covariant SIFT (`SiftExtraction.domain_size_pooling` / `estimate_affine_shape`). COLMAP extracts these on the **CPU only** (4.2 silently switches `use_gpu` off), so with either on, extraction runs on the CPU and only matching uses the GPU |
 | `COLMAP_MAPPER` | `incremental` | `incremental` (`mapper`) or `global` (`global_mapper`, GLOMAP merged into COLMAP 4.x; falls back to incremental on COLMAP 3.9) |
 | `COLMAP_VOCAB_TREE_IMAGES` / `COLMAP_VOCAB_TREE_PATH` | 0 / unset (`Dockerfile.cuda`: `/opt/colmap/share/vocab_tree_sift.bin`) | > 0: after the `pairs` list, every `vf_*` video frame is also matched with its N most similar images by vocabulary-tree retrieval (`vocab_tree_matcher`, loop closure for walks; pairs already matched are skipped; a failure is logged, not fatal). The tree is COLMAP's pinned faiss SIFT tree (flickr100K, 256K words, sha256-checked at build time); COLMAP 3.9 cannot read it |
-| `GSPLAT_EVAL_EVERY` | 0 | gsplat only: hold out every Nth view (sorted by name: 0, N, 2N, …) from training and score it at the end: `stats.evalPsnr` / `evalSsim` / `evalViews`. A measurement mode (the held-out views do not train), so off by default; Brush ignores it |
+| `GSPLAT_EVAL_EVERY` | 0 | gsplat only: hold out every Nth PHOTO (sorted by name: 0, N, 2N, …; `vf_*` video frames always train) and score it at the end: `stats.evalPsnr` / `evalSsim` / `evalViews`, and with a wall geometry `evalWallPsnr` / `evalWallSsim` over the pixels showing a facet. A measurement mode (the held-out views do not train), so off by default; Brush ignores it |
 
 ## Run natively on a Mac (the "external GPU")
 
@@ -353,6 +353,22 @@ docker compose --profile gpu-cuda up -d --build splat-worker-cuda   # compose: h
   **SH degree 0** for every profile: the exports keep only the DC colour; baking a higher-degree
   result would drop view-dependent colour the DC was never fitted without. Loss: L1 + 0.2 D-SSIM (torch
   SSIM, no compiled fused-ssim) + MCMC's opacity/scale regularisers.
+- **Wall zones** (`zones.py`, `zone_run.py`, `gsplat_zones.py`; jobs with a wall geometry): plain MCMC
+  samples new and relocated splats by opacity, i.e. wherever the photos are busy, and a room around a
+  wall is most of every photo: on The Attic 82 % of a 6 M cap ended outside the ±400 mm crop, and what
+  stayed inside grew a shell of needles and fog. Right after SfM the photos' COLMAP cameras are aligned
+  to the geometry (the same fit as `align.py`) and three zones go to the trainer (`zones.json`):
+  **wall** = each facet's outline + 100 mm, 60 mm behind to 250 mm in front of its plane (holds,
+  volumes); **surround** = one axis-aligned, gravity-up box = facets + markers ± `cropMarginMm` (the old
+  crop box), floor 150 mm below the lowest facet corner; **outside** = the rest. `ZonedMCMC` samples
+  relocation and growth by opacity × zone weight: wall 1, surround 1 until it holds 10 % of the cap, outside
+  0 (outside splats keep their sparse init and train, so occluders and the room stay explained instead
+  of being painted into the wall). Export cuts hard to wall + surround (`frame.crop` = the box) and, in
+  the surround only, drops splats whose 2σ ellipsoid pokes > 30 mm out of the box, needles (≥ 60 mm,
+  ≥ 5× the middle axis) and faint haze (α < 0.08, ≥ 40 mm); the wall slab keeps everything (removing
+  its large flat splats thinned the surface, the old clean-up's darkening). `frame.json` gets a `zones`
+  block (per-zone counts, removals), `stats.zones` where the trained splats ended up. Brush and jobs
+  without geometry keep the plain crop.
 - **Memory**: gsplat needs VRAM, not host memory, so Brush's host model does not apply. The plan
   (`gsplat_trainer.plans`) fits the cap (then the edge, then the next profile down) to 90 % of the free
   VRAM (`nvidia-smi`, or `SPLAT_VRAM_MB`): 0.7 GB + 0.45 MB per 1000 splats + 160 MB per megapixel of

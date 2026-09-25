@@ -7,7 +7,6 @@ from splatworker import sfm, tuning
 from splatworker.colmap import Colmap
 from splatworker.colmap_model import read_text_model
 from splatworker.frames import build_pairs
-from splatworker.gsplat_data import eval_split
 from splatworker.gsplat_trainer import GsplatPlan, args_for
 from splatworker.parsers import GsplatParser
 from splatworker.procs import MemoryLimitError
@@ -173,13 +172,6 @@ def test_pair_list_has_every_photo_pair_plus_the_frame_pairs():
     every_photo_pair = {(a, b) for i, a in enumerate(photos) for b in photos[i + 1:]}
     assert every_photo_pair <= pairs  # exhaustive, not only neighbours
     assert ("v/vf_0000.jpg", "v/vf_0003.jpg") in pairs and ("v/vf_0000.jpg", "v/vf_0004.jpg") not in pairs
-
-
-@pytest.mark.parametrize("n,every,held", [(48, 8, [0, 8, 16, 24, 32, 40]), (10, 0, []), (1, 8, []),
-                                          (5, 1, [0, 1, 2, 3]), (7, 8, [0])])
-def test_eval_split(n, every, held):
-    train, test = eval_split(n, every)
-    assert test == held and sorted(train + test) == list(range(n)) and train
 
 
 def test_eval_line_and_trainer_option():

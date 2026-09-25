@@ -34,6 +34,16 @@ HOST_BASE_MB = 3072  # torch + CUDA libraries resident in host memory, before th
 MIN_EDGE = 960
 EDGE_STEP = 256
 RETRY_CAP, RETRY_EDGE = 0.6, 0.75  # the one retry after an out-of-memory
+# The trainer's options when the job has a wall geometry (zones.json), tuned on The Attic (README, "Wall
+# zones"): 10 % of the cap for the surroundings, the needle penalty, per-frame appearance, D-SSIM on a 1024 px
+# crop (the full-image SSIM cost more than the render), and a pose correction during the first steps
+# (pose_steps: its gradient is an atomic sum over every splat, so it is frozen after that).
+ZONED_ARGS = ["--surround-share", "0.1", "--aniso-reg", "0.1", "--appearance-lr", "1e-3", "--ssim-crop", "1024",
+              "--pose-lr", "1e-5"]
+
+
+def pose_steps(steps):
+    return max(500, min(5000, steps // 6))
 
 
 class CudaOomError(JobError):
@@ -94,13 +104,15 @@ def plans(vram_budget_mb, sizes, profile, host_budget_mb=0):
     return [plan, retry]
 
 
-def args_for(plan, eval_every=0):
-    """The trainer script's options for a plan (profile -> steps, edge, cap, growth stop), and the
-    held-out evaluation (GSPLAT_EVAL_EVERY; 0 = off)."""
+def args_for(plan, eval_every=0, zones=None):
+    """The trainer script's options for a plan (profile -> steps, edge, cap, growth stop), the held-out
+    evaluation (GSPLAT_EVAL_EVERY; 0 = off), and with a zones.json (zone_run.write_zones) the
+    wall-focused recipe (ZONED_ARGS)."""
     p = plan.profile
     return ["--steps", str(p.steps), "--max-edge", str(plan.edge), "--cap", str(plan.max_splats),
             "--refine-stop", str(p.growth_stop or 0.5), "--cache-mb", str(plan.cache_mb)] + \
-        (["--eval-every", str(eval_every)] if eval_every > 0 else [])
+        (["--eval-every", str(eval_every)] if eval_every > 0 else []) + \
+        (["--zones", zones, *ZONED_ARGS, "--pose-steps", str(pose_steps(p.steps))] if zones else [])
 
 
 def check_camera_models(dataset_dir):
@@ -125,9 +137,11 @@ def tool_version(python):
     return f"gsplat {parts[0]}, torch {parts[1]}, {' '.join(parts[2:-1])}"
 
 
-def train(python, dataset_dir, out_dir, plan, log_path, report, max_memory_mb=0, swap_limit_mb=0, eval_every=0):
+def train(python, dataset_dir, out_dir, plan, log_path, report, max_memory_mb=0, swap_limit_mb=0, eval_every=0,
+          zones=None):
     """Train one plan on a COLMAP dataset (images/ + sparse/0, pinhole); returns (ply path, parser).
-    Raises CudaOomError on a CUDA out-of-memory, procs.MemoryLimitError on a watchdog kill."""
+    zones: a zones.json (zone_run.write_zones) to focus the splats on the wall. Raises CudaOomError on a
+    CUDA out-of-memory, procs.MemoryLimitError on a watchdog kill."""
     check_camera_models(dataset_dir)
     shutil.rmtree(out_dir, ignore_errors=True)
     os.makedirs(out_dir, exist_ok=True)
@@ -139,7 +153,7 @@ def train(python, dataset_dir, out_dir, plan, log_path, report, max_memory_mb=0,
         if r:
             report(*r)
 
-    cmd = [python, "-m", "splatworker.gsplat_train", "--data", dataset_dir, "--out", ply, *args_for(plan, eval_every)]
+    cmd = [python, "-m", "splatworker.gsplat_train", "--data", dataset_dir, "--out", ply, *args_for(plan, eval_every, zones)]
     env = {"PYTHONPATH": HERE, "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"}
     try:  # no RLIMIT_AS: CUDA reserves huge virtual ranges; the RSS watchdog sees host memory only
         ToolRun("train", cmd, out_dir, log_path, on_line, env=env, log_filter=_worth_logging,

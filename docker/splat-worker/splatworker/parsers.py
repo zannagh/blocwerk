@@ -3,6 +3,7 @@
 Each parser is fed one cleaned line at a time and returns a fraction in [0, 1] (plus a short detail
 text) when the line tells us something, else None. Samples: tests/fixtures/*.log.
 """
+import json
 import re
 
 EXTRACT = re.compile(r"Processed file \[(\d+)/(\d+)\]")
@@ -21,6 +22,8 @@ GSPLAT_TOOK = re.compile(r"^Training took (\S+)")
 GSPLAT_DONE = re.compile(r"^wrote (\d+) splats; peak VRAM (\d+) MB")
 GSPLAT_OOM = re.compile(r"^GSPLAT_OOM (.*)")
 GSPLAT_EVAL = re.compile(r"^eval psnr ([0-9.]+) ssim ([0-9.]+) views (\d+)")
+GSPLAT_EVAL_WALL = re.compile(r"^eval wall psnr ([0-9.]+) ssim ([0-9.]+) views (\d+)")
+GSPLAT_ZONES = re.compile(r"^zones (\{.*\})")
 
 
 class ExtractParser:
@@ -109,7 +112,8 @@ class GsplatParser:
     def __init__(self):
         self.step, self.total, self.splats, self.took, self.views = 0, None, None, None, None
         self.peak_vram_mb, self.oom = None, None
-        self.eval = None  # {"psnr", "ssim", "views"} of the held-out views (GSPLAT_EVAL_EVERY)
+        self.eval = None  # {"psnr", "ssim", "views"[, "wall": {...}]} of the held-out views (GSPLAT_EVAL_EVERY)
+        self.zones = None  # {"wall", "surround", "outside"}: where the trained splats ended up (--zones)
 
     def __call__(self, line):
         m = GSPLAT_OOM.search(line)
@@ -134,7 +138,16 @@ class GsplatParser:
             return 1.0, "writing splats"
         m = GSPLAT_EVAL.search(line)
         if m:
-            self.eval = {"psnr": float(m.group(1)), "ssim": float(m.group(2)), "views": int(m.group(3))}
+            self.eval = {**(self.eval or {}), "psnr": float(m.group(1)), "ssim": float(m.group(2)), "views": int(m.group(3))}
+            return None
+        m = GSPLAT_EVAL_WALL.search(line)
+        if m:
+            self.eval = {**(self.eval or {}), "wall": {"psnr": float(m.group(1)), "ssim": float(m.group(2)),
+                                                       "views": int(m.group(3))}}
+            return None
+        m = GSPLAT_ZONES.search(line)
+        if m:
+            self.zones = json.loads(m.group(1))
             return None
         m = GSPLAT_DONE.search(line)
         if m:

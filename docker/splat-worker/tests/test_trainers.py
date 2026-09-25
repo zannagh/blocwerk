@@ -119,8 +119,9 @@ def test_pipeline_dispatches_to_gsplat_and_retries_once_after_cuda_oom(tmp_path,
     class Parser:
         step, splats, took, peak_vram_mb = 50000, 6_000_000, "3600.0s", 9000
         eval = {"psnr": 27.5, "ssim": 0.86, "views": 7}
+        zones = None
 
-    def fake_train(python, dataset, out, plan, log, report, budget, swap, eval_every=0):
+    def fake_train(python, dataset, out, plan, log, report, budget, swap, eval_every=0, zones=None):
         assert eval_every == 8
         calls.append(plan)
         if len(calls) == 1:
@@ -166,3 +167,38 @@ def test_brush_stays_the_default_path(tmp_path, monkeypatch):
 
     r.sfm_run = Sfm()
     assert r.train(str(tmp_path / "dataset")) == "b.ply"
+
+
+def test_a_job_with_a_wall_geometry_trains_with_zones(tmp_path, gsplat, monkeypatch):
+    import numpy as np
+    from test_zones import wall_doc
+    monkeypatch.setattr(trainers.gpu, "vram", lambda: BIG)
+    r = _run(tmp_path)
+    r.sfm_run = FakeSfm()
+    cams = {"IMG_0": (0, -2000, 500), "IMG_1": (2000, -2000, 500), "IMG_2": (1000, -2500, 1500)}
+    r.geometry = {**wall_doc(), "cameras": [{"image": k, "R": np.eye(3).flatten().tolist(),
+                                             "t": (-np.array(c, float)).tolist()} for k, c in cams.items()]}
+    r.model = {"images": {f"g/{k}.jpg": np.array(c, float) / 1000 for k, c in cams.items()}}
+    seen = {}
+
+    class Parser:
+        step, splats, took, peak_vram_mb, eval = 100, 10, "1s", 100, None
+        zones = {"wall": 9, "surround": 1, "outside": 0}
+
+    def fake_train(python, dataset, out, plan, log, report, budget, swap, eval_every=0, zones=None):
+        seen["zones"] = zones
+        seen["args"] = gsplat_trainer.args_for(plan, 0, zones)
+        return "x.ply", Parser()
+
+    monkeypatch.setattr(gsplat_trainer, "train", fake_train)
+    monkeypatch.setattr(trainers, "read_ply", lambda p: {"x": [0.0], "y": [0.0], "z": [0.0]})
+    monkeypatch.setattr(gsplat_trainer, "check_frame", lambda xyz, d: None)
+    r.train(str(tmp_path / "dataset"))
+    assert seen["zones"] == os.path.join(str(tmp_path), "zones.json") and os.path.exists(seen["zones"])
+    args = seen["args"]
+    assert args[args.index("--zones") + 1] == seen["zones"] and "--aniso-reg" in args
+    assert args[args.index("--pose-steps") + 1] == "5000" and gsplat_trainer.pose_steps(5000) == 833
+    assert r.zones["boxLo"] == [-400, -400, -150] and r.brush_stats["zones"] == Parser.zones
+    r.geometry = None  # no geometry (or Brush): no zones, the plain crop box
+    r.train(str(tmp_path / "dataset"))
+    assert seen["zones"] is None and r.zones is None
