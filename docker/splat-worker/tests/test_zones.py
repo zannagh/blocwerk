@@ -65,32 +65,64 @@ def splat_set(rows):
     return xyz, scale, alpha, np.tile([1.0, 0, 0, 0], (len(rows), 1))
 
 
-def test_cut_keeps_the_wall_whole_and_tidies_the_surroundings():
-    zs = spec(wall_doc())
+def no_lonely(zs):
+    zs["params"] = ZoneParams(lonely_alpha=0).to_dict()
+    return zs
+
+
+def test_cut_keeps_the_wall_surface_and_tidies_the_surroundings():
+    zs = no_lonely(spec(wall_doc()))
     xyz, scale, alpha, quat = splat_set([
-        ((1000, -100, 500), (200, 10, 1), 0.05),  # WALL: a faint needle, kept (the slab keeps everything)
+        ((1000, -5, 500), (200, 10, 1), 0.9),  # WALL: a needle lying in the facet (wood grain): the surface, kept
+        ((1000, -5, 500), (200, 10, 1), 0.1),  # WALL: the same, faint: dropped
+        ((1000, 40, 500), (200, 10, 1), 0.9),  # WALL: a needle 40 mm behind the facet: dropped
+        ((1000, -5, 600), (10, 70, 1), 0.9),  # WALL: a needle sticking off the flat facet (along y): dropped
+        ((1000, -150, 500), (10, 70, 1), 0.9),  # WALL: the same 150 mm proud (a hold's edge): kept
         ((1000, -100, 600), (10, 10, 1), 0.01),  # WALL: dead (MCMC left it at ~0 opacity): dropped
         ((2300, -300, 500), (10, 10, 10), 0.9),  # SURROUND: a compact splat, kept
-        ((2300, -300, 1550), (10, 10, 60), 0.9),  # SURROUND: reaches 120 mm (2 sigma) up, 70 past the top
+        ((2300, -300, 1550), (10, 10, 20), 0.9),  # SURROUND: reaches 60 mm (3 sigma) up, 10 past the top
         ((2300, -300, 800), (10, 10, 100), 0.9),  # SURROUND: a needle
-        ((2300, -300, 300), (50, 50, 5), 0.03),  # SURROUND: faint haze
+        ((1000, -300, 100), (30, 8, 5), 0.9),  # SURROUND: a spike on the floor
+        ((2000, -300, 300), (50, 5, 50), 0.03),  # SURROUND: faint haze
         ((1000, -1000, 500), (10, 10, 10), 0.9),  # OUTSIDE
     ])
     keep, rep = cut_mask(xyz, scale, alpha, quat, np.eye(3), zs)
-    assert keep.tolist() == [True, False, True, False, False, False, False]
-    assert rep["removed"] == {"outside": 1, "dead": 1, "fray": 1, "needle": 1, "haze": 1}
-    assert rep["zones"] == {"wall": 2, "surround": 4, "outside": 1} and rep["kept"] == 2
+    assert keep.tolist() == [True, False, False, False, True, False, True, False, False, False, False, False]
+    assert rep["removed"] == {"outside": 1, "dead": 1, "fray": 1, "needle": 2, "haze": 1, "lonely": 0, "wallNeedle": 3}
+    assert rep["zones"] == {"wall": 6, "surround": 5, "outside": 1} and rep["kept"] == 3
+
+
+def test_cut_drops_wall_needles_past_the_outline():
+    zs = no_lonely(spec(wall_doc()))
+    xyz, scale, alpha, quat = splat_set([((-50, -5, 500), (80, 10, 1), 0.9), ((50, -5, 500), (80, 10, 1), 0.9)])
+    assert cut_mask(xyz, scale, alpha, quat, np.eye(3), zs)[0].tolist() == [False, True]
 
 
 def test_cut_measures_the_fray_along_the_rotated_axes():
     zs = spec(wall_doc())
-    # 60 mm along x (2 sigma = 120 mm): rotated 90 degrees about y it points up, out of the top by 70 mm
-    xyz, scale, alpha, _ = splat_set([((2300, -300, 1550), (60, 10, 10), 0.9)])
+    # 60 mm along x (3 sigma = 180 mm): rotated 90 degrees about y it points up, out of the top by 130 mm
+    xyz, scale, alpha, _ = splat_set([((2000, -300, 1550), (60, 10, 10), 0.9)])
     quat = np.array([[np.cos(np.pi / 4), 0, np.sin(np.pi / 4), 0]])
-    zp = ZoneParams(needle_ratio=100)  # not a needle here: only the fray counts
-    zs["params"] = zp.to_dict()
+    zs["params"] = ZoneParams(needle_ratio=100, lonely_alpha=0).to_dict()  # not a needle here: only the fray counts
     assert not cut_mask(xyz, scale, alpha, quat, np.eye(3), zs)[0][0]
     assert cut_mask(xyz, scale, alpha, np.array([[1.0, 0, 0, 0]]), np.eye(3), zs)[0][0]  # lying flat: inside
+
+
+def test_cut_drops_lone_floaters_above_the_floor_band():
+    zs = spec(wall_doc())
+    cluster = [((1000 + dx, 100, 500 + dz), (10, 10, 10), 0.9) for dx in (-20, 0, 20) for dz in (-20, 0, 20)]
+    xyz, scale, alpha, quat = splat_set(cluster + [((1500, 100, 1300), (10, 10, 10), 0.9),  # alone in the air
+                                                   ((1500, -300, 200), (10, 10, 10), 0.9)])  # alone on the floor
+    keep, rep = cut_mask(xyz, scale, alpha, quat, np.eye(3), zs)
+    assert keep.tolist() == [True] * 9 + [False, True] and rep["removed"]["lonely"] == 1
+
+
+def test_cut_reads_an_older_spec_without_the_new_rules():
+    zs = spec(wall_doc())
+    new = ("wall_", "spike_", "lonely_", "fray_sigma")
+    zs["params"] = dict({k: v for k, v in zs["params"].items() if not k.startswith(new)}, fray_mm=30.0)
+    xyz, scale, alpha, quat = splat_set([((1000, 40, 500), (200, 10, 1), 0.9), ((2300, -300, 1550), (10, 10, 60), 0.9)])
+    assert cut_mask(xyz, scale, alpha, quat, np.eye(3), zs)[0].tolist() == [True, False]  # 2 sigma + 30 mm fray
 
 
 def test_write_zones_aligns_the_photos_and_export_cut_sets_the_crop(tmp_path):

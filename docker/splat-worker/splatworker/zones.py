@@ -15,9 +15,11 @@ along the reference facet, y into the wall, z = gravity up), from the solved fac
 
 Training (gsplat_zones.py): MCMC's relocation and growth only sample WALL and SURROUND, SURROUND up to
 surround_share of the cap; OUTSIDE keeps its sparse init (occluders stay explained, so they are not painted
-into the wall) and is never grown. Export (cut_mask): WALL + SURROUND only, a hard box cut, and in the
-SURROUND only splats that neither fray out of the box nor are needles / faint haze (the WALL keeps
-everything: removing its large flat splats thins the surface, the old clean-up's darkening).
+into the wall) and is never grown. Export (cut_mask): WALL + SURROUND only, a hard box cut that also drops
+every splat whose 3-sigma ellipsoid pokes out of the box; in the SURROUND no needles, floor spikes, lone
+floaters or faint haze; the WALL keeps its surface (removing its large flat splats thins it, the old
+clean-up's darkening) minus the needles that are not it (behind the facet, off a flat facet, faint, past
+the outline).
 
 numpy only; classify() also takes torch tensors (the trainer's copy on the GPU) through `xp`.
 """
@@ -39,11 +41,22 @@ class ZoneParams:
     floor_band_mm: float = 450.0  # the floor / mats: up to this above the lowest facet corner
     air_outside: bool = True  # the air in front of a facet (past the slab, above the floor band) is OUTSIDE
     surround_share: float = 0.10  # at most this share of the splat cap trains in the surroundings
-    fray_mm: float = 30.0  # export: a surroundings splat reaching this far out of the box (2 sigma) goes
+    fray_mm: float = 0.0  # export: a splat whose fray_sigma ellipsoid reaches this far out of the box goes (any zone)
+    fray_sigma: float = 3.0  # ... 3 sigma: its visible extent, so nothing pokes through the box faces
     needle_len_mm: float = 60.0  # export: a surroundings splat this long (1 sigma) ...
     needle_ratio: float = 5.0  # ... and this many times its middle axis is a needle
+    spike_len_mm: float = 20.0  # export: in the floor band (floor, mats: flat) a surroundings splat this long ...
+    spike_ratio: float = 3.0  # ... and this elongated is a spike (the streaks rimming the floor)
+    lonely_cell_mm: float = 50.0  # export: above the floor band a surroundings splat with less opacity than ...
+    lonely_alpha: float = 2.0  # ... this summed over the 3x3x3 cells around it is a floater (surfaces are dense)
     haze_alpha: float = 0.08  # export: a surroundings splat fainter than this ...
     haze_len_mm: float = 40.0  # ... and at least this long is haze
+    wall_needle_len_mm: float = 60.0  # export: a WALL splat this long (1 sigma) ...
+    wall_needle_ratio: float = 5.0  # ... and this elongated is a needle; it goes when it is not the surface:
+    wall_behind_mm: float = 20.0  # behind its facet's plane by more (hidden from the front, a spike from aside),
+    wall_off_cos: float = 0.5  # pointing off a flat facet (|cos(axis, normal)| above this, <= wall_flat_mm proud),
+    wall_flat_mm: float = 30.0
+    wall_needle_alpha: float = 0.2  # fainter than this, or outside every facet's outline (a hair on an edge)
     min_alpha: float = 0.02  # export: fainter splats are dropped everywhere (as the plain crop does)
 
     def to_dict(self):
@@ -132,28 +145,85 @@ def _axes_world(quat_wxyz, lin):
     return R
 
 
+def _box_out(world, R, scale_mm, lo, hi, sigmas):
+    """How far (mm) each splat's `sigmas` ellipsoid reaches out of the box (<= 0: inside)."""
+    half = np.sqrt(np.einsum("nik,nk->ni", R ** 2, (sigmas * scale_mm) ** 2))
+    return np.maximum(lo - (world - half), (world + half) - hi).max(1)
+
+
+def _neighbourhood_mass(pts, world, alpha, lo, hi, cell):
+    """Summed opacity of `world` splats in the 3x3x3 cells (of `cell` mm) around each of `pts`."""
+    shape = np.maximum(np.ceil((hi - lo) / cell).astype(int), 1) + 2  # one empty cell of padding around
+    grid = np.zeros(shape)
+
+    def ijk(x):
+        return np.clip(((x - lo) // cell).astype(int) + 1, 0, shape - 1)
+
+    np.add.at(grid, tuple(ijk(world).T), alpha)
+    for ax in range(3):  # separable 3-cell box sum (the padding keeps np.roll from wrapping mass around)
+        grid = np.roll(grid, 1, ax) + grid + np.roll(grid, -1, ax)
+    return grid[tuple(ijk(pts).T)]
+
+
+def _wall_needles(world, axis, alpha, zs):
+    """Of WALL needles (world centres, unit long axes): the ones that are not the wall's surface."""
+    p = zs["params"]
+    m = p["slab_margin_mm"]
+    best = np.full(len(world), np.inf)
+    d, cos, inside_any = np.zeros(len(world)), np.zeros(len(world)), np.zeros(len(world), bool)
+    for f in zs["facets"]:
+        o, u, v, n = (np.array(f[k]) for k in ("o", "u", "v", "n"))
+        rel = world - o
+        a, b, dist = rel @ u, rel @ v, rel @ n
+        a0, a1, b0, b1 = f["ext"]
+        inside_any |= (a > a0) & (a < a1) & (b > b0) & (b < b1)
+        near = (a > a0 - m) & (a < a1 + m) & (b > b0 - m) & (b < b1 + m) & (np.abs(dist) < best)
+        best = np.where(near, np.abs(dist), best)
+        d = np.where(near, dist, d)
+        cos = np.where(near, np.abs(axis @ n), cos)
+    off = (d < p["wall_flat_mm"]) & (cos > p["wall_off_cos"])
+    return (d < -p["wall_behind_mm"]) | off | (alpha < p["wall_needle_alpha"]) | ~inside_any
+
+
 def cut_mask(world, scale_mm, alpha, quat_wxyz, lin, zs):
-    """Export filter: (keep mask, report). Keeps the WALL whole and the SURROUND minus splats that fray out
-    of the box (their 2-sigma ellipsoid pokes out by > fray_mm), needles and faint haze."""
+    """Export filter: (keep mask, report). A clean box: every splat whose 3-sigma ellipsoid pokes out of it
+    goes. The WALL keeps its surface, minus needles that are not it (behind the facet, sticking off a flat
+    facet, faint, or past the outline). The SURROUND drops needles, spikes on the floor, lone floaters above
+    it and haze."""
     p = zs["params"]
     zone = classify(world, zs)
     s = np.sort(scale_mm, axis=1)
     longest, ratio = s[:, 2], s[:, 2] / np.maximum(s[:, 1], 1e-6)
-    sur = zone == SURROUND
-    R = _axes_world(quat_wxyz[sur], lin)
-    # half-extent of each 2-sigma ellipsoid along the world axes: sqrt(sum_k (2 s_k R_ik)^2)
-    half = np.sqrt(np.einsum("nik,nk->ni", R ** 2, (2 * scale_mm[sur]) ** 2))
-    lo, hi = np.array(zs["boxLo"]), np.array(zs["boxHi"])
-    out = np.maximum(lo - (world[sur] - half), (world[sur] + half) - hi).max(1)
-    fray = np.zeros(len(world), bool)
-    fray[sur] = out > p["fray_mm"]
-    needle = sur & (longest >= p["needle_len_mm"]) & (ratio >= p["needle_ratio"])
-    haze = sur & (alpha < p["haze_alpha"]) & (longest >= p["haze_len_mm"])
     dead = alpha <= p["min_alpha"]  # MCMC's dead splats (never relocated after growth stops): invisible
-    keep = ~dead & ((zone == WALL) | (sur & ~fray & ~needle & ~haze))
+    live = (zone != OUTSIDE) & ~dead
+    idx = np.flatnonzero(live)
+    R = _axes_world(quat_wxyz[idx], lin)
+    lo, hi = np.array(zs["boxLo"]), np.array(zs["boxHi"])
+    fray = np.zeros(len(world), bool)
+    fray[idx] = _box_out(world[idx], R, scale_mm[idx], lo, hi, p.get("fray_sigma", 2.0)) > p["fray_mm"]
+    sur = live & (zone == SURROUND) & ~fray
+    air = world[:, 2] > zs["floorMm"] + p["floor_band_mm"]
+    needle = sur & (longest >= p["needle_len_mm"]) & (ratio >= p["needle_ratio"])
+    needle |= sur & ~air & (longest >= p.get("spike_len_mm", np.inf)) & (ratio >= p.get("spike_ratio", np.inf))
+    haze = sur & ~needle & (alpha < p["haze_alpha"]) & (longest >= p["haze_len_mm"])
+    wall_needle = np.zeros(len(world), bool)
+    lonely = np.zeros(len(world), bool)
+    if p.get("lonely_alpha", 0) > 0:  # a floater: little else around it (surfaces are dense)
+        lonely[sur & air] = _neighbourhood_mass(world[sur & air], world[live], alpha[live], lo, hi,
+                                                p["lonely_cell_mm"]) < p["lonely_alpha"]
+        lonely &= ~needle & ~haze
+    cand = live & (zone == WALL) & ~fray & (longest >= p.get("wall_needle_len_mm", np.inf)) \
+        & (ratio >= p.get("wall_needle_ratio", np.inf))
+    if cand.any():
+        pos = np.searchsorted(idx, np.flatnonzero(cand))
+        axis = R[pos, :, np.argmax(scale_mm[cand], 1)]
+        wall_needle[cand] = _wall_needles(world[cand], axis, alpha[cand], zs)
+    keep = live & ~fray & ~needle & ~haze & ~lonely & ~wall_needle
     report = {"zones": counts(zone), "outsideShare": round(float((zone == OUTSIDE).mean()), 4) if len(zone) else 0,
-              "removed": {"outside": int((zone == OUTSIDE).sum()), "dead": int((dead & (zone != OUTSIDE)).sum()), "fray": int(fray.sum()),
-                          "needle": int((needle & ~fray).sum()), "haze": int((haze & ~fray & ~needle).sum())},
+              "removed": {"outside": int((zone == OUTSIDE).sum()), "dead": int((dead & (zone != OUTSIDE)).sum()),
+                          "fray": int(fray.sum()), "needle": int(needle.sum()), "haze": int(haze.sum()),
+                          "lonely": int(lonely.sum()),
+                          "wallNeedle": int(wall_needle.sum())},
               "kept": int(keep.sum())}
     return keep, report
 

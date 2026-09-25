@@ -40,9 +40,10 @@ RETRY_CAP, RETRY_EDGE = 0.6, 0.75  # the one retry after an out-of-memory
 # crop (the full-image SSIM cost more than the render), a pose correction during the first steps
 # (pose_steps: its gradient is an atomic sum over every splat, so it is frozen after that), and opaque facets
 # (--behind-reg: without it plain plywood was fitted by a translucent slab + room splats behind the wall,
-# which the export cuts: a bleached patch).
+# which the export cuts: a bleached patch), and a 10x needle penalty beyond a 3:1 ratio in the air (the
+# surroundings and > 20 mm behind a facet: needles there are floaters, not texture; 3.6 k -> 0.5 k wall needles).
 ZONED_ARGS = ["--surround-share", "0.1", "--aniso-reg", "0.1", "--appearance-lr", "1e-3", "--ssim-crop", "1024",
-              "--opacity-reg", "0.0005", "--behind-reg", "1",
+              "--opacity-reg", "0.0005", "--behind-reg", "1", "--aniso-air-reg", "1.0", "--aniso-air-max", "3",
               "--pose-lr", "1e-5"]
 
 

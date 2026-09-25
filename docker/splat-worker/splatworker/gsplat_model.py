@@ -61,14 +61,21 @@ def make_optimizers(params, scene_scale):
     return {k: torch.optim.Adam([{"params": params[k], "lr": lr, "name": k}], eps=1e-15) for k, lr in lrs.items()}
 
 
-def regularisers(params, a):
+def regularisers(params, a, air=None):
     """MCMC's opacity and scale regularisers (means over all splats) and the needle penalty: the log of
-    each splat's longest / middle axis beyond log(a.aniso_max) (flat discs stay free: a wall is flat)."""
+    each splat's longest / middle axis beyond log(a.aniso_max) (flat discs stay free: a wall is flat).
+    `air` (n,) bool (zones: where no surface is): there the penalty is a.aniso_air_reg beyond
+    log(a.aniso_air_max) instead, a needle in the air being a floater, not texture."""
     log_s = params["scales"]
     loss = a.opacity_reg * torch.sigmoid(params["opacities"]).mean() + a.scale_reg * torch.exp(log_s).mean()
     if a.aniso_reg > 0:
         top = torch.topk(log_s, 2, dim=1).values
-        loss = loss + a.aniso_reg * F.relu(top[:, 0] - top[:, 1] - float(np.log(a.aniso_max))).mean()
+        excess = top[:, 0] - top[:, 1]
+        pen = a.aniso_reg * F.relu(excess - float(np.log(a.aniso_max)))
+        if air is not None and getattr(a, "aniso_air_reg", 0) > 0 and len(air) == len(pen):
+            air_pen = a.aniso_air_reg * F.relu(excess - float(np.log(a.aniso_air_max)))
+            pen = torch.where(air, air_pen, pen)
+        loss = loss + pen.mean()
     return loss
 
 

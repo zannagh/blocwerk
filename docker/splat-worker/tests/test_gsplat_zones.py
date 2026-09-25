@@ -54,3 +54,19 @@ def test_behind_and_see_through(tmp_path):
     assert float(see_through(img, hit[1::2, 1::2], 2)) == pytest.approx(0.5 * 8 / 12)
     img[..., 0] = 0.8  # 20 % background shows through everywhere, too
     assert float(see_through(img, hit)) == pytest.approx(0.2 + 0.5 * 32 / 48)
+
+
+def test_air_mask_is_the_surroundings_and_behind_a_facet(tmp_path):
+    zm = zone_map(tmp_path)
+    pts = torch.tensor([[1000.0, -5, 500], [1000, 40, 500], [1000, -300, 300], [1000, -150, 500]])
+    assert zm.air_mask(pts).tolist() == [False, True, True, False]
+
+
+def test_needle_penalty_is_stronger_in_the_air():
+    from types import SimpleNamespace
+    from splatworker.gsplat_model import regularisers
+    a = SimpleNamespace(opacity_reg=0.0, scale_reg=0.0, aniso_reg=0.1, aniso_max=6.0, aniso_air_reg=1.0, aniso_air_max=3.0)
+    params = {"opacities": torch.zeros(2), "scales": torch.log(torch.tensor([[40.0, 10, 1], [40.0, 10, 1]]))}
+    assert float(regularisers(params, a)) == 0.0  # ratio 4: free on the wall
+    air = float(regularisers(params, a, torch.tensor([True, False])))
+    assert air == pytest.approx(np.log(4 / 3) / 2, rel=1e-4)

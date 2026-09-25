@@ -36,6 +36,7 @@ OOM_EXIT = 75
 # --behind-reg: every BEHIND_EVERY-th step (its 4 + facets channels cost ~2/3 of a render), over every
 # BEHIND_STRIDE-th pixel's ray (a penalty, not a picture: 1/16 of the pixels is plenty)
 BEHIND_EVERY, BEHIND_STRIDE = 4, 4
+AIR_EVERY = 100  # --aniso-air-reg: the air mask (gsplat_zones.ZoneMap.air_mask) is refreshed this often
 
 
 @torch.no_grad()
@@ -87,7 +88,7 @@ def extras(a, views, train_ids, device):
     return pose, app, opts
 
 
-def step_loss(a, params, K, vm, gt, packed, appearance=None, zones=None, opaque=False):
+def step_loss(a, params, K, vm, gt, packed, appearance=None, zones=None, opaque=False, air=None):
     """One view's loss: L1 + 0.2 D-SSIM + the regularisers; `opaque` (zones given) adds --behind-reg x what
     shows through the facets (they are opaque: nothing behind the one a pixel's ray hits may show)."""
     h, w = gt.shape[:2]
@@ -97,7 +98,7 @@ def step_loss(a, params, K, vm, gt, packed, appearance=None, zones=None, opaque=
         out, behind = out[..., :3], out[..., 3:]
     if appearance is not None:
         out = appearance(out)
-    loss = 0.8 * (out - gt).abs().mean() + 0.2 * d_ssim(out, gt, a.ssim_crop) + regularisers(params, a)
+    loss = 0.8 * (out - gt).abs().mean() + 0.2 * d_ssim(out, gt, a.ssim_crop) + regularisers(params, a, air)
     if opaque:
         from .gsplat_zones import see_through
         hit = zones.facet_hit(K, vm.detach(), w, h, BEHIND_STRIDE)
@@ -119,7 +120,10 @@ def train(a, views, device, train_ids, zones=None):
     packed = a.cap > 2_000_000  # packed rasterisation: less memory for big scenes, a little slower
     order, every, t0 = [], max(1, a.steps // 200), time.time()
     rng = np.random.default_rng(0)
+    air = None
     for step in range(a.steps):
+        if zones is not None and a.aniso_air_reg > 0 and (step % AIR_EVERY == 0 or len(air) != len(params["means"])):
+            air = zones.air_mask(params["means"])  # the splats move slowly: refreshed now and then
         if not order:
             order = [train_ids[i] for i in rng.permutation(len(train_ids))]
         i = order.pop()
@@ -129,7 +133,7 @@ def train(a, views, device, train_ids, zones=None):
         if pose is not None:  # its gradient (atomics over every splat) is costly: learnt early, then frozen
             vm = pose(i, vm) if step < a.pose_steps else pose(i, vm).detach()
         loss = step_loss(a, params, torch.from_numpy(K).to(device), vm, gt, packed,
-                         None if app is None else (lambda o: app(i, o)), zones, step % BEHIND_EVERY == 0)
+                         None if app is None else (lambda o: app(i, o)), zones, step % BEHIND_EVERY == 0, air)
         loss.backward()
         for opt in list(opts.values()) + extra_opts:
             opt.step()
@@ -165,6 +169,9 @@ def parse_args(argv):
     p.add_argument("--scale-reg", type=float, default=0.01)
     p.add_argument("--aniso-reg", type=float, default=0.0, help="needle penalty weight (0 = off)")
     p.add_argument("--aniso-max", type=float, default=6.0, help="longest / middle axis ratio allowed freely")
+    p.add_argument("--aniso-air-reg", type=float, default=0.0,
+                   help="with --zones: needle penalty weight in the air (surroundings, behind a facet; 0 = as --aniso-reg)")
+    p.add_argument("--aniso-air-max", type=float, default=3.0, help="longest / middle axis ratio allowed freely there")
     p.add_argument("--pose-lr", type=float, default=0.0, help="per-view pose correction (0 = off)")
     p.add_argument("--pose-reg", type=float, default=1e-6)
     p.add_argument("--pose-steps", type=int, default=5000, help="optimise the poses for this many steps, then freeze")

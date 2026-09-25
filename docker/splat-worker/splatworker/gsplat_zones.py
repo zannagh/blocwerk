@@ -83,6 +83,21 @@ class ZoneMap:
         return torch.cat([torch.ones_like(far[:, :1]), far], 1)
 
 
+    @torch.no_grad()
+    def air_mask(self, means, behind_mm=20.0):
+        """(n,) bool: splats where no surface is: the SURROUND, and the WALL slab's back more than behind_mm
+        behind a facet's plane (inside its outline + margin). A needle there is a floater, not texture."""
+        world = self.world(means.detach())
+        zone = classify(world, self.spec, torch)
+        m = float(self.spec["params"]["slab_margin_mm"])
+        back = torch.zeros(len(world), dtype=torch.bool, device=world.device)
+        for o, u, v, n, ext in self.planes:
+            rel = world - o
+            a, b, d = rel @ u, rel @ v, rel @ n
+            a0, a1, b0, b1 = ext
+            back |= (a > a0 - m) & (a < a1 + m) & (b > b0 - m) & (b < b1 + m) & (d < -behind_mm)
+        return (zone == SURROUND) | ((zone == WALL) & back)
+
 def _weights(zone, cap, share):
     w = torch.ones(len(zone), device=zone.device)
     w[zone == OUTSIDE] = 0

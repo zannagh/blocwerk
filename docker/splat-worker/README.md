@@ -374,10 +374,18 @@ docker compose --profile gpu-cuda up -d --build splat-worker-cuda   # compose: h
   crop box), floor 150 mm below the lowest facet corner; **outside** = the rest. `ZonedMCMC` samples
   relocation and growth by opacity × zone weight: wall 1, surround 1 until it holds 10 % of the cap, outside
   0 (outside splats keep their sparse init and train, so occluders and the room stay explained instead
-  of being painted into the wall). Export cuts hard to wall + surround (`frame.crop` = the box) and, in
-  the surround only, drops splats whose 2σ ellipsoid pokes > 30 mm out of the box, needles (≥ 60 mm,
-  ≥ 5× the middle axis) and faint haze (α < 0.08, ≥ 40 mm); the wall slab keeps everything (removing
-  its large flat splats thinned the surface, the old clean-up's darkening). `frame.json` gets a `zones`
+  of being painted into the wall). Export cuts hard to wall + surround (`frame.crop` = the box): any
+  splat whose **3σ ellipsoid** pokes out of the box goes (its visible extent: centre-inside splats with
+  2σ + 30 mm slack left a rim of spikes on the box faces). In the surround it drops needles (≥ 60 mm,
+  ≥ 5× the middle axis), spikes on the floor band (≥ 20 mm, ≥ 3×: the streaks rimming the floor),
+  **lone floaters** above the floor band (< 2 α summed over the 3×3×3 cells of 50 mm around them;
+  surfaces are dense) and faint haze (α < 0.08, ≥ 40 mm). The wall slab keeps its surface (removing
+  its large flat splats thinned it, the old clean-up's darkening) minus **needles that are not the
+  surface** (≥ 60 mm, ≥ 5×): > 20 mm behind their facet's plane (hidden from the front, spikes from
+  aside; 2.1 k of g12's 3.6 k wall needles sat 20–60 mm behind the plywood, where the opaque-facet
+  penalty had pushed them), pointing off a flat facet (|cos(axis, normal)| > 0.5 within 30 mm of it),
+  faint (α < 0.2) or past every facet's outline. On g12 (export only): wall needles 3562 → 835, opaque facet pixels
+  99.52 → 99.42 %, held-out wall PSNR of the export −0.04 dB. `frame.json` gets a `zones`
   block (per-zone counts, removals), `stats.zones` where the trained splats ended up. Brush and jobs
   without geometry keep the plain crop. The **air** in front of a facet (past the 250 mm slab, above
   the 450 mm floor band) counts as outside: a post holding the overhang, a rope, a person are not
@@ -385,7 +393,9 @@ docker compose --profile gpu-cuda up -d --build splat-worker-cuda   # compose: h
   facet's slab is never air (a side wall's prism in front of it ran through the main wall: 2 M of 3 M
   splats, the space right behind it included, were outside).
 - **Zoned recipe** (`gsplat_trainer.ZONED_ARGS`, only with zones): needle penalty on the longest /
-  middle axis ratio beyond 6 (flat discs stay free), opacity regulariser 0.0005 instead of MCMC's 0.01
+  middle axis ratio beyond 6 (flat discs stay free), 10x stronger beyond 3 in the **air**
+  (`--aniso-air-reg 1 --aniso-air-max 3`: the surround, and > 20 mm behind a facet; mask refreshed every
+  100 steps; wall needles 3562 -> 523, held-out wall PSNR +0.35 dB raw, within the run-to-run noise), opacity regulariser 0.0005 instead of MCMC's 0.01
   (at 0.01 only 0.8 M of 3 M splats were alive at the end), a per-frame colour gain/offset for the `vf_*`
   frames (photos stay identity, so the colours are the photos'), a pose correction during the first
   `min(5000, steps/6)` steps (its gradient is costly, then frozen), D-SSIM on a random 1024 px crop
@@ -411,6 +421,8 @@ viewpoints outside the repo):
 | + opacity reg 0.002 | 22.78 / 0.786 | 1.24 M | 0 | 21 min |
 | **+ opacity reg 0.0005 (the default)** | **23.04 / 0.785** | 1.53 M | 0 | **20 min** |
 | same with a 5 M cap | 22.53 / 0.785 | 1.92 M | 0 | 28 min |
+| opaque facets (`--behind-reg 1`) | 22.04 / 0.772 | 1.62 M | 0 | 22 min |
+| **+ air needle penalty, 3σ box cut, wall needles not on the surface (the default)** | **22.39 / 0.775** | 1.62 M | 0 | **22 min** |
 
 GLOMAP (`COLMAP_MAPPER=global`, now the CUDA image's default) registered all 353 images in 7 min where
 the incremental mapper took 16 (same inputs, 1.01 vs 1.03 px); GPU SIFT + guided GPU matching took 6 min.
