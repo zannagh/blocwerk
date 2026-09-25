@@ -14,18 +14,23 @@ namespace Blocwerk.Core.Runners;
 /// <summary>
 /// <see cref="IGpuRunnerService"/>. Creating a runner and listing a wall's runners is a wall-admin
 /// action; changing a runner is its owner's (or a site admin's). Everything is refused from a kiosk
-/// tablet, like minting API keys.
+/// tablet, like minting API keys. Every key or sharing change is also refused in a session signed in
+/// with an API key: a leaked key must not mint runner keys or consent to a wall's photos going to
+/// another machine. Cancelling a capture's job stays a normal wall-admin data action.
 /// </summary>
 public sealed partial class GpuRunnerService(
     IDbContextFactory<BlocwerkDbContext> dbContextFactory,
     ICurrentUserService currentUserService,
     GpuJobQueue queue,
     ILogger<GpuRunnerService> logger,
-    IKioskContext? kioskContext = null) : IGpuRunnerService
+    IKioskContext? kioskContext = null,
+    IApiKeySessionContext? apiKeySession = null) : IGpuRunnerService
 {
     private const string AdminAction = "Managing 3D runners";
 
     public bool Enabled => queue.Options.Mode != GpuRunnerMode.Off;
+
+    public bool CanChangeRunners => apiKeySession is not { IsApiKeySession: true };
 
     public async Task<GpuRunnerCreated> CreateAsync(Guid wallId, string name)
     {
@@ -34,6 +39,7 @@ public sealed partial class GpuRunnerService(
             throw new UserFacingException("3D runners are turned off on this server.");
         }
 
+        ApiKeySessionGuard.EnsureNotApiKeySession(apiKeySession);
         var (db, userId) = await OpenForWallAdminAsync(wallId);
         await using (db)
         {
@@ -65,6 +71,7 @@ public sealed partial class GpuRunnerService(
 
     public async Task RevokeAsync(Guid runnerId)
     {
+        ApiKeySessionGuard.EnsureNotApiKeySession(apiKeySession);
         var (db, userId, runner) = await OpenRunnerAsync(runnerId, allowAppAdmin: true);
         await using (db)
         {
@@ -91,6 +98,7 @@ public sealed partial class GpuRunnerService(
 
     public async Task SetServesWallAsync(Guid runnerId, Guid wallId, bool serves)
     {
+        ApiKeySessionGuard.EnsureNotApiKeySession(apiKeySession);
         var (db, userId, runner) = await OpenRunnerAsync(runnerId, allowAppAdmin: false);
         await using (db)
         {

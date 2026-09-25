@@ -16,6 +16,7 @@ public sealed partial class GpuRunnerService
 {
     public async Task SetSharedAsync(Guid runnerId, bool shared)
     {
+        ApiKeySessionGuard.EnsureNotApiKeySession(apiKeySession);
         var user = await currentUserService.GetCurrentUserAsync();
         await using var db = await dbContextFactory.CreateDbContextAsync();
         db.CurrentUserId = user.Id;
@@ -36,6 +37,7 @@ public sealed partial class GpuRunnerService
 
     public async Task SetRunnerApprovalAsync(Guid wallId, Guid runnerId, bool approve)
     {
+        ApiKeySessionGuard.EnsureNotApiKeySession(apiKeySession);
         var (db, userId) = await OpenForWallAdminAsync(wallId);
         await using (db)
         {

@@ -1,5 +1,6 @@
 @* 3D runners: GPU machines that pull this wall's photo-real training. Wall admins only; hidden on a kiosk. *@
 @using Blocwerk.Core.Runners
+@using Blocwerk.Core.Services
 
 <div class="gpu-runners">
     <p class="apikey-blurb">
@@ -73,7 +74,11 @@
         is online. This wall's capture photos (metadata removed) then go to that machine, which someone else owns.
     </p>
 
-    @if (Runners.Enabled)
+    @if (Runners.Enabled && !Runners.CanChangeRunners)
+    {
+        <p class="hint">@ApiKeySessionRestrictedException.UserMessage Sign in normally to create, revoke, share or approve a 3D runner.</p>
+    }
+    else if (Runners.Enabled)
     {
         <div class="form-group gpu-runner-create">
             <label for="gpu-runner-name">New runner</label>

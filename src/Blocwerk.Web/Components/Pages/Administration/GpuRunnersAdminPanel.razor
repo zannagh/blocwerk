@@ -18,6 +18,11 @@
         <div class="error-msg">@error</div>
     }
 
+    @if (!Runners.CanChangeRunners)
+    {
+        <p class="hint">@Blocwerk.Core.Services.ApiKeySessionRestrictedException.UserMessage Sharing and revoking runners is disabled.</p>
+    }
+
     @if (runners is null)
     {
         <p class="loading-small">Loading...</p>

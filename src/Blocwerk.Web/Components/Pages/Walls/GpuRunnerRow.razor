@@ -37,12 +37,12 @@
             <button type="button" class="apikey-btn" @onclick="ToggleWallsAsync">@(walls is null ? "Walls it serves…" : "Hide walls")</button>
             @if (confirmRevoke)
             {
-                <button type="button" class="apikey-btn danger" @onclick="RevokeAsync">Really revoke</button>
+                <button type="button" class="apikey-btn danger" disabled="@Locked" title="@LockHint" @onclick="RevokeAsync">Really revoke</button>
                 <button type="button" class="apikey-btn" @onclick="() => confirmRevoke = false">Keep</button>
             }
             else
             {
-                <button type="button" class="apikey-btn" @onclick="() => confirmRevoke = true">Revoke</button>
+                <button type="button" class="apikey-btn" disabled="@Locked" title="@LockHint" @onclick="() => confirmRevoke = true">Revoke</button>
             }
         </div>
         @if (walls is not null)
@@ -51,7 +51,7 @@
                 @foreach (var wall in walls)
                 {
                     <label class="gpu-runner-toggle">
-                        <input type="checkbox" checked="@wall.Serves" @onchange="e => SetWallAsync(wall.WallId, e.Value is true)" />
+                        <input type="checkbox" checked="@wall.Serves" disabled="@Locked" title="@LockHint" @onchange="e => SetWallAsync(wall.WallId, e.Value is true)" />
                         @wall.Name
                     </label>
                 }
@@ -62,7 +62,7 @@
     {
         <div class="gpu-runner-controls">
             <label class="gpu-runner-toggle">
-                <input type="checkbox" checked="@Runner.ApprovedForThisWall" disabled="@Busy"
+                <input type="checkbox" checked="@Runner.ApprovedForThisWall" disabled="@(Busy || Locked)" title="@LockHint"
                        @onchange="e => SetApprovedAsync(e.Value is true)" />
                 Let this runner train this wall's photo-real view
             </label>
@@ -73,13 +73,13 @@
     {
         <div class="gpu-runner-controls">
             <label class="gpu-runner-toggle">
-                <input type="checkbox" checked="@Runner.SharedWithOtherWalls" disabled="@Busy"
+                <input type="checkbox" checked="@Runner.SharedWithOtherWalls" disabled="@(Busy || Locked)" title="@LockHint"
                        @onchange="e => SetSharedAsync(e.Value is true)" />
                 Offer to other walls (each wall's admin still approves it)
             </label>
             @if (!Runner.IsMine)
             {
-                <button type="button" class="apikey-btn" @onclick="RevokeAsync">Revoke (site admin)</button>
+                <button type="button" class="apikey-btn" disabled="@Locked" title="@LockHint" @onclick="RevokeAsync">Revoke (site admin)</button>
             }
         </div>
     }

@@ -24,6 +24,12 @@ public interface IGpuRunnerService
     /// <summary>Whether runners are on at all (<see cref="GpuRunnerMode.Off"/> hides creating one).</summary>
     bool Enabled { get; }
 
+    /// <summary>
+    /// False in a session signed in with an API key: creating, revoking, sharing, approving and re-scoping runners
+    /// is then refused (<see cref="Services.ApiKeySessionRestrictedException"/>), so the UI disables those buttons.
+    /// </summary>
+    bool CanChangeRunners { get; }
+
     /// <summary>"Other walls can use this runner" (site admin only; turning it off drops the walls' approvals).</summary>
     Task SetSharedAsync(Guid runnerId, bool shared);
 

@@ -43,6 +43,11 @@ public partial class GpuRunnerRow
     [Inject]
     private IGpuRunnerService Runners { get; set; } = default!;
 
+    /// <summary>In an API-key session every key or sharing change is refused, so its controls are disabled.</summary>
+    private bool Locked => !Runners.CanChangeRunners;
+
+    private string? LockHint => Locked ? ApiKeySessionRestrictedException.UserMessage : null;
+
     private string Capabilities()
     {
         var c = Runner.Capabilities;
@@ -94,6 +99,7 @@ public partial class GpuRunnerRow
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or UserFacingException or KioskRestrictedException)
         {
+            // ApiKeySessionRestrictedException is a UserFacingException: its message is the hint shown here.
             await OnError.InvokeAsync(ex.Message);
         }
     }
