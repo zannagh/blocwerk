@@ -67,6 +67,8 @@ public sealed partial class WallCapturesController(
     /// image, too big, a duplicate, the limit reached) is reported in its item and the next one still goes in.
     /// </summary>
     [HttpPost("{captureId:guid}/photos")]
+    [DisableFormValueModelBinding]
+    [IgnoreAntiforgeryToken]
     public Task<IActionResult> UploadPhotos(Guid wallId, Guid captureId, CancellationToken ct) =>
         ForCaptureAsync(wallId, captureId, async () =>
         {

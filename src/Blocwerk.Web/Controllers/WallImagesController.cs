@@ -49,6 +49,7 @@ public sealed class WallImagesController : WallScopedApiController
     /// </remarks>
     [HttpPost]
     [IgnoreAntiforgeryToken]
+    [DisableFormValueModelBinding]
     public async Task<IActionResult> Upload(Guid wallId, CancellationToken cancellationToken)
     {
         var guard = GuardWall(wallId);
