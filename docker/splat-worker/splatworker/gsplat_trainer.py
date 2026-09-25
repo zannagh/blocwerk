@@ -37,10 +37,12 @@ RETRY_CAP, RETRY_EDGE = 0.6, 0.75  # the one retry after an out-of-memory
 # The trainer's options when the job has a wall geometry (zones.json), tuned on The Attic (README, "Wall
 # zones"): 10 % of the cap for the surroundings, the needle penalty, per-frame appearance, a 20x weaker opacity
 # regulariser than MCMC's 0.01 (it killed most of the wall's splats: 0.8 M of 3 M alive), D-SSIM on a 1024 px
-# crop (the full-image SSIM cost more than the render), and a pose correction during the first steps
-# (pose_steps: its gradient is an atomic sum over every splat, so it is frozen after that).
+# crop (the full-image SSIM cost more than the render), a pose correction during the first steps
+# (pose_steps: its gradient is an atomic sum over every splat, so it is frozen after that), and opaque facets
+# (--behind-reg: without it plain plywood was fitted by a translucent slab + room splats behind the wall,
+# which the export cuts: a bleached patch).
 ZONED_ARGS = ["--surround-share", "0.1", "--aniso-reg", "0.1", "--appearance-lr", "1e-3", "--ssim-crop", "1024",
-              "--opacity-reg", "0.0005",
+              "--opacity-reg", "0.0005", "--behind-reg", "1",
               "--pose-lr", "1e-5"]
 
 

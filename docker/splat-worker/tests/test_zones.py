@@ -39,6 +39,24 @@ def test_classify(p, zone):
     assert classify(np.array([p], float), zs)[0] == zone
 
 
+def corner_doc():
+    """wall_doc plus a side wall at x = 0 facing +x (into the room), 1 m deep in front of the main wall."""
+    doc = wall_doc()
+    doc["segments"].append({"facets": [{"id": "2", "origin": [0, -1000, 0], "u": [0, 1, 0], "v": [0, 0, 1],
+                                        "normal": [1, 0, 0],
+                                        "extentMm": {"aMin": 0, "aMax": 1000, "bMin": 0, "bMax": 1000}}]})
+    return doc
+
+
+@pytest.mark.parametrize("p,zone", [((1000, 80, 500), SURROUND),  # behind the main wall's slab, in front of the side wall
+                                    ((1000, -300, 500), OUTSIDE),  # in front of both: air
+                                    ((500, -800, 500), OUTSIDE),  # in front of the side wall only: air
+                                    ((1000, -100, 500), WALL)])
+def test_side_wall_air_stops_behind_the_main_wall(p, zone):
+    zs = spec(corner_doc())
+    assert classify(np.array([p], float), zs)[0] == zone
+
+
 def splat_set(rows):
     """rows: (world centre, scale mm (3,), alpha); identity rotation."""
     xyz = np.array([r[0] for r in rows], float)

@@ -1,0 +1,56 @@
+"""The opaque-facet penalty's pieces (gsplat_zones: facet_hit, behind, see_through) in the trainer's Python
+(torch + gsplat; skipped where they are missing)."""
+import json
+
+import numpy as np
+import pytest
+
+from test_zones import corner_doc
+from splatworker.zones import spec
+
+torch = pytest.importorskip("torch")
+pytest.importorskip("gsplat")
+
+
+def zone_map(tmp_path):
+    from splatworker.gsplat_zones import ZoneMap
+    zs = spec(corner_doc())
+    zs["toWorldMm"] = np.eye(4).tolist()
+    path = tmp_path / "zones.json"
+    path.write_text(json.dumps(zs))
+    return ZoneMap(str(path), torch.device("cpu"))
+
+
+def camera(centre):
+    """Looking along +y (at the main wall) from `centre`: K, world-to-camera 4x4 for a 40 x 30 image."""
+    R = torch.tensor([[1.0, 0, 0], [0, 0, -1], [0, 1, 0]])
+    vm = torch.eye(4)
+    vm[:3, :3], vm[:3, 3] = R, -R @ torch.tensor(centre)
+    return torch.tensor([[20.0, 0, 20], [0, 20, 15], [0, 0, 1]]), vm
+
+
+def test_facet_hit_takes_the_nearest_facet_and_strides(tmp_path):
+    zm = zone_map(tmp_path)
+    K, vm = camera([1000.0, -2000, 500])
+    hit = zm.facet_hit(K, vm, 40, 30)
+    assert hit[15, 20] == 0  # straight ahead: the main wall
+    assert hit[15, 0] == 1  # far left: the side wall (x = 0) comes first
+    assert (zm.facet_hit(K, vm, 40, 30, 4) == hit[2::4, 2::4]).all()
+    assert hit[15, 39] == -1  # far right: past the main wall's edge
+    assert (zm.wall_pixels(K, vm, 40, 30) == (hit >= 0)).all()
+
+
+def test_behind_and_see_through(tmp_path):
+    zm = zone_map(tmp_path)
+    pts = torch.tensor([[1000.0, 300, 500], [1000.0, 40, 500], [500.0, -300, 500]])
+    assert zm.behind(pts).tolist() == [[1, 1, 0], [1, 0, 0], [1, 0, 0]]  # 300 mm behind the main wall only
+    from splatworker.gsplat_zones import see_through
+    img = torch.zeros(8, 8, 3)
+    img[..., 0] = 1.0  # opaque everywhere ...
+    img[..., 1] = 0.5  # ... half of it from behind facet 0, none from behind facet 1
+    hit = torch.full((8, 8), -1, dtype=torch.long)
+    hit[:4], hit[4:6] = 0, 1  # 32 pixels on facet 0, 16 on facet 1, 16 on no facet
+    assert float(see_through(img, hit)) == pytest.approx(0.5 * 32 / 48)
+    assert float(see_through(img, hit[1::2, 1::2], 2)) == pytest.approx(0.5 * 8 / 12)
+    img[..., 0] = 0.8  # 20 % background shows through everywhere, too
+    assert float(see_through(img, hit)) == pytest.approx(0.2 + 0.5 * 32 / 48)

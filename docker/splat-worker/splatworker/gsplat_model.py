@@ -90,13 +90,18 @@ def write_ply(params, path, keep=None):
     return len(cols)
 
 
-def render(params, K, viewmat, w, h, packed):
+def render(params, K, viewmat, w, h, packed, extra=None):
+    """(h, w, 3) colours; with extra ((n, k) per-splat values) (h, w, 3 + k): the extra channels composited
+    like the colours (gsplat's degree-0 colour, evaluated here so both go through one rasterisation)."""
     from gsplat import rasterization
-    colors, _, _ = rasterization(
+    colors, sh = params["sh0"], 0
+    if extra is not None:
+        colors, sh = torch.cat([torch.clamp_min(params["sh0"][:, 0] * SH_C0 + 0.5, 0.0), extra], 1), None
+    out, _, _ = rasterization(
         params["means"], params["quats"], torch.exp(params["scales"]), torch.sigmoid(params["opacities"]),
-        params["sh0"], viewmat[None], K[None], w, h, sh_degree=0, packed=packed, near_plane=0.01,
+        colors, viewmat[None], K[None], w, h, sh_degree=sh, packed=packed, near_plane=0.01,
         far_plane=1e10, rasterize_mode="classic")
-    return colors[0]
+    return out[0]
 
 
 def d_ssim(out, gt, crop=0):

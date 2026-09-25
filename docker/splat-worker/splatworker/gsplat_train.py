@@ -19,6 +19,8 @@ Carlo, Kheradmand et al. 2024), trimmed to what the worker needs:
 - SH degree 0: the exports keep only the DC colour (splatio.py).
 - L1 + 0.2 D-SSIM (plain torch SSIM), opacity and scale regularisers (0.01 each, as MCMC), optionally a
   needle penalty (--aniso-reg), per-view pose correction and per-frame appearance (gsplat_extras.py).
+- --behind-reg (with --zones): the facets are opaque; what a facet pixel shows from behind that facet's
+  plane (room splats or the background) is penalised (gsplat_zones.see_through).
 """
 import argparse
 import json
@@ -31,6 +33,9 @@ import torch
 from .gsplat_model import d_ssim, init_params, make_optimizers, regularisers, render, ssim, write_ply
 
 OOM_EXIT = 75
+# --behind-reg: every BEHIND_EVERY-th step (its 4 + facets channels cost ~2/3 of a render), over every
+# BEHIND_STRIDE-th pixel's ray (a penalty, not a picture: 1/16 of the pixels is plenty)
+BEHIND_EVERY, BEHIND_STRIDE = 4, 4
 
 
 @torch.no_grad()
@@ -82,6 +87,24 @@ def extras(a, views, train_ids, device):
     return pose, app, opts
 
 
+def step_loss(a, params, K, vm, gt, packed, appearance=None, zones=None, opaque=False):
+    """One view's loss: L1 + 0.2 D-SSIM + the regularisers; `opaque` (zones given) adds --behind-reg x what
+    shows through the facets (they are opaque: nothing behind the one a pixel's ray hits may show)."""
+    h, w = gt.shape[:2]
+    opaque = opaque and zones is not None and a.behind_reg > 0
+    out = render(params, K, vm, w, h, packed, zones.behind(params["means"]) if opaque else None)
+    if opaque:
+        out, behind = out[..., :3], out[..., 3:]
+    if appearance is not None:
+        out = appearance(out)
+    loss = 0.8 * (out - gt).abs().mean() + 0.2 * d_ssim(out, gt, a.ssim_crop) + regularisers(params, a)
+    if opaque:
+        from .gsplat_zones import see_through
+        hit = zones.facet_hit(K, vm.detach(), w, h, BEHIND_STRIDE)
+        loss = loss + a.behind_reg * see_through(behind, hit, BEHIND_STRIDE)
+    return loss
+
+
 def train(a, views, device, train_ids, zones=None):
     torch.manual_seed(0)
     params = init_params(views.points, views.colors, a.cap, device)
@@ -105,11 +128,8 @@ def train(a, views, device, train_ids, zones=None):
         vm = torch.from_numpy(vm).to(device)
         if pose is not None:  # its gradient (atomics over every splat) is costly: learnt early, then frozen
             vm = pose(i, vm) if step < a.pose_steps else pose(i, vm).detach()
-        out = render(params, torch.from_numpy(K).to(device), vm, img.shape[1], img.shape[0], packed)
-        if app is not None:
-            out = app(i, out)
-        l1 = (out - gt).abs().mean()
-        loss = 0.8 * l1 + 0.2 * d_ssim(out, gt, a.ssim_crop) + regularisers(params, a)
+        loss = step_loss(a, params, torch.from_numpy(K).to(device), vm, gt, packed,
+                         None if app is None else (lambda o: app(i, o)), zones, step % BEHIND_EVERY == 0)
         loss.backward()
         for opt in list(opts.values()) + extra_opts:
             opt.step()
@@ -138,6 +158,8 @@ def parse_args(argv):
     p.add_argument("--zones", help="zones.json (zones.py): spend the cap on the wall, not the room")
     p.add_argument("--surround-share", type=float, default=0.1, help="share of the cap for the surroundings")
     p.add_argument("--plain-mcmc", action="store_true", help="zones for the wall-only scores only (a baseline)")
+    p.add_argument("--behind-reg", type=float, default=0.0,
+                   help="with --zones: weight of the opacity seen through the facets (0 = off)")
     p.add_argument("--ssim-crop", type=int, default=0, help="D-SSIM over a random crop of this size (0 = whole image)")
     p.add_argument("--opacity-reg", type=float, default=0.01)
     p.add_argument("--scale-reg", type=float, default=0.01)

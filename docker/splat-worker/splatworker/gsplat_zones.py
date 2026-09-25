@@ -6,6 +6,11 @@ and a room around a wall is most of any photo: without zones ~80 % of the cap we
 sampling weight is opacity x the zone's weight: WALL 1, SURROUND 1 until it holds surround_share of the
 cap (then 0), OUTSIDE 0. OUTSIDE splats keep their sparse init and are trained, never multiplied: they
 explain the room and whatever stands in front of the wall, so that is not painted into the wall.
+
+The facets are opaque (see_through, gsplat_train --behind-reg): on a pixel whose ray hits a facet, what
+shows through it (1 - the opacity in front of the facet's slab back) is penalised. Without it, plain
+plywood was fitted by a translucent slab plus big room splats far behind the wall that the export cuts: a
+see-through, bleached wall.
 """
 import json
 
@@ -26,6 +31,11 @@ class ZoneMap:
         M = torch.tensor(self.spec["toWorldMm"], dtype=torch.float32, device=device)
         self.lin, self.shift = M[:3, :3], M[:3, 3]
         self.device = device
+        f = self.spec["facets"]
+        self.normals = torch.tensor([x["n"] for x in f], dtype=torch.float32, device=device)  # (facets, 3)
+        self.offsets = (torch.tensor([x["o"] for x in f], dtype=torch.float32, device=device) * self.normals).sum(1)
+        self.planes = [(*(torch.tensor(x[k], dtype=torch.float32, device=device) for k in ("o", "u", "v", "n")), x["ext"])
+                       for x in f]
 
     def world(self, xyz):
         return xyz @ self.lin.T + self.shift
@@ -35,25 +45,42 @@ class ZoneMap:
         return classify(self.world(means.detach()), self.spec, torch)
 
     @torch.no_grad()
-    def wall_pixels(self, K, viewmat, w, h):
-        """(h, w) bool: pixels whose ray hits a facet inside its outline (occlusion ignored): the pixels the
-        wall-only metrics score."""
+    def facet_hit(self, K, viewmat, w, h, stride=1):
+        """(h, w) long: per pixel the facet its ray hits first inside the facet's outline, -1 for none. With
+        stride > 1 only every stride-th pixel's (from stride // 2), i.e. image[stride // 2::stride, ...]'s."""
         R, t = viewmat[:3, :3], viewmat[:3, 3]
-        ys, xs = torch.meshgrid(torch.arange(h, device=self.device, dtype=torch.float32) + 0.5,
-                                torch.arange(w, device=self.device, dtype=torch.float32) + 0.5, indexing="ij")
+        gh, gw = -(-(h - stride // 2) // stride), -(-(w - stride // 2) // stride)  # the pixels stride // 2 + i stride
+        off = stride // 2 + 0.5
+        ys, xs = torch.meshgrid(torch.arange(gh, device=self.device, dtype=torch.float32) * stride + off,
+                                torch.arange(gw, device=self.device, dtype=torch.float32) * stride + off, indexing="ij")
         d_cam = torch.stack([(xs - K[0, 2]) / K[0, 0], (ys - K[1, 2]) / K[1, 1], torch.ones_like(xs)], -1)
         d = (d_cam.reshape(-1, 3) @ R) @ self.lin.T  # camera -> COLMAP (R^T d) -> world directions
         c = self.world((-R.T @ t)[None])[0]
-        hit = torch.zeros(h * w, dtype=torch.bool, device=self.device)
-        for f in self.spec["facets"]:
-            o, u, v, n = (torch.tensor(f[k], dtype=torch.float32, device=self.device) for k in ("o", "u", "v", "n"))
+        best = torch.full((gh * gw,), float("inf"), device=self.device)
+        hit = torch.full((gh * gw,), -1, dtype=torch.long, device=self.device)
+        for i, (o, u, v, n, ext) in enumerate(self.planes):
             denom = d @ n
             s = ((o - c) @ n) / torch.where(denom.abs() < 1e-9, torch.full_like(denom, 1e-9), denom)
             p = c + s[:, None] * d - o
             a, b = p @ u, p @ v
-            a0, a1, b0, b1 = f["ext"]
-            hit |= (s > 0) & (a > a0) & (a < a1) & (b > b0) & (b < b1)
-        return hit.reshape(h, w)
+            a0, a1, b0, b1 = ext
+            first = (s > 0) & (a > a0) & (a < a1) & (b > b0) & (b < b1) & (s < best)
+            best = torch.where(first, s, best)
+            hit = torch.where(first, torch.full_like(hit, i), hit)
+        return hit.reshape(gh, gw)
+
+    def wall_pixels(self, K, viewmat, w, h):
+        """(h, w) bool: pixels whose ray hits a facet inside its outline (occlusion ignored): the pixels the
+        wall-only metrics score."""
+        return self.facet_hit(K, viewmat, w, h) >= 0
+
+    @torch.no_grad()
+    def behind(self, means):
+        """(n, 1 + facets) float: 1, then per facet 1 where a splat lies more than slab_back_mm behind its plane.
+        Rendered as extra channels: the opacity, and per facet the part of it from behind that facet."""
+        back = float(self.spec["params"]["slab_back_mm"])
+        far = ((self.world(means.detach()) @ self.normals.T - self.offsets) < -back).float()
+        return torch.cat([torch.ones_like(far[:, :1]), far], 1)
 
 
 def _weights(zone, cap, share):
@@ -137,6 +164,16 @@ class ZonedMCMC(MCMCStrategy):
 def zone_counts(zones, means):
     zone = zones.classify(means)
     return {name: int((zone == i).sum()) for i, name in enumerate(("wall", "surround", "outside"))}
+
+
+def see_through(behind_img, hit, stride=1):
+    """Mean over the wall pixels of what shows through the facet the pixel's ray hits: 1 - the opacity in front
+    of it (its slab back), from the (h, w, 1 + facets) channels of ZoneMap.behind and facet_hit(..., stride).
+    0 where the facets are opaque, as the real wall is: not the room behind, nor the background."""
+    img = behind_img[stride // 2::stride, stride // 2::stride][:hit.shape[0], :hit.shape[1]]
+    mask = (hit >= 0).float()
+    seen = 1 - img[..., 0] + img[..., 1:].gather(-1, hit.clamp_min(0)[..., None])[..., 0]
+    return (seen * mask).sum() / mask.sum().clamp_min(1)
 
 
 def masked_scores(out, gt, mask):

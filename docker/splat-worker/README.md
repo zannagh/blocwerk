@@ -381,14 +381,22 @@ docker compose --profile gpu-cuda up -d --build splat-worker-cuda   # compose: h
   block (per-zone counts, removals), `stats.zones` where the trained splats ended up. Brush and jobs
   without geometry keep the plain crop. The **air** in front of a facet (past the 250 mm slab, above
   the 450 mm floor band) counts as outside: a post holding the overhang, a rope, a person are not
-  trained into the box or exported (the wall behind them shows instead).
+  trained into the box or exported (the wall behind them shows instead). What lies behind another
+  facet's slab is never air (a side wall's prism in front of it ran through the main wall: 2 M of 3 M
+  splats, the space right behind it included, were outside).
 - **Zoned recipe** (`gsplat_trainer.ZONED_ARGS`, only with zones): needle penalty on the longest /
   middle axis ratio beyond 6 (flat discs stay free), opacity regulariser 0.0005 instead of MCMC's 0.01
   (at 0.01 only 0.8 M of 3 M splats were alive at the end), a per-frame colour gain/offset for the `vf_*`
   frames (photos stay identity, so the colours are the photos'), a pose correction during the first
   `min(5000, steps/6)` steps (its gradient is costly, then frozen), D-SSIM on a random 1024 px crop
-  (full-image SSIM at 12 MP cost more than the render; separable blur too). Held-out views
-  (`GSPLAT_EVAL_EVERY`) are photos only.
+  (full-image SSIM at 12 MP cost more than the render; separable blur too), and **opaque facets**
+  (`--behind-reg 1`): extra render channels (the opacity, and per facet 1 for splats more than 60 mm
+  behind its plane); on the pixels whose ray hits a facet, 1 - the opacity in front of that facet is
+  penalised (every 4th step, every 4th pixel; ~+2 % time). Without it plain plywood was fitted by a
+  translucent slab plus huge room splats far behind the wall, which the export cuts: the wall was
+  see-through (exported, 9 viewpoints: 61 % of the facet pixels at alpha >= 0.98 in g7, 99.5 % with it;
+  held-out wall PSNR -0.7 dB raw, -0.1 dB after a per-image colour fit: the translucent layers had
+  soaked up the photos' exposure differences). Held-out views (`GSPLAT_EVAL_EVERY`) are photos only.
 
 **Tuning on The Attic** (353 images = 53 photos + 300 video frames, RTX 4070 Ti SUPER, 2026-09-25; held-out
 = every 8th photo; "wall" = only the pixels whose ray hits a facet; full table and renders from fixed

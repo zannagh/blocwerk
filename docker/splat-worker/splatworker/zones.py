@@ -8,7 +8,9 @@ along the reference facet, y into the wall, z = gravity up), from the solved fac
                 lowest facet corner (the floor / mats band). Minus the slab, and minus the AIR: what lies in
                 front of a facet (within its outline, past the slab) above the floor band: a post holding the
                 overhang, a rope, a person. That is OUTSIDE, so it gets no budget and is not exported: the
-                wall behind it shows instead of a smeared, half-seen post.
+                wall behind it shows instead of a smeared, half-seen post. A point behind another facet's
+                slab (within that one's outline) is never air: a side wall's prism in front of it runs
+                through the main wall, and a plain wall's surface is often fitted a little behind its plane.
   OUTSIDE (c)   everything else: the room, poles and lamps in front of the box, the ceiling.
 
 Training (gsplat_zones.py): MCMC's relocation and growth only sample WALL and SURROUND, SURROUND up to
@@ -92,7 +94,7 @@ def classify(world, zs, xp=np):
         zone = xp.full((len(world),), OUTSIDE, dtype=xp.int8, device=world.device)
     lo, hi = t(zs["boxLo"]), t(zs["boxHi"])
     in_box = ((world >= lo) & (world <= hi)).all(1)
-    wall, air = in_box & False, in_box & False
+    wall, air, behind = in_box & False, in_box & False, in_box & False
     m = p["slab_margin_mm"]
     for f in zs["facets"]:
         rel = world - t(f["o"])
@@ -101,8 +103,9 @@ def classify(world, zs, xp=np):
         inside = (a > a0 - m) & (a < a1 + m) & (b > b0 - m) & (b < b1 + m)
         wall = wall | (inside & (d > -p["slab_back_mm"]) & (d < p["slab_front_mm"]))
         air = air | (inside & (d >= p["slab_front_mm"]))
-    if p["air_outside"]:  # in front of the wall, above the floor band: posts, ropes, people
-        air = air & (world[:, 2] > zs["floorMm"] + p["floor_band_mm"])
+        behind = behind | (inside & (d <= -p["slab_back_mm"]))
+    if p["air_outside"]:  # in front of the wall, above the floor band, not behind a facet: posts, ropes, people
+        air = air & ~behind & (world[:, 2] > zs["floorMm"] + p["floor_band_mm"])
         in_box = in_box & ~air
     zone[in_box] = SURROUND
     zone[wall] = WALL
