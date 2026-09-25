@@ -17,6 +17,17 @@ public interface ICaptureFileStore
     /// </summary>
     Task<string> SaveStreamAsync(Stream content, string extension, long maxBytes, CancellationToken ct);
 
+    /// <summary>
+    /// Lets <paramref name="write"/> produce a new file (a temp file, committed when it returns); returns the stored
+    /// (bare) name. For large generated files that must never be held in memory. The default buffers (test stores).
+    /// </summary>
+    async Task<string> SaveWithAsync(string extension, Func<Stream, CancellationToken, Task> write, CancellationToken ct)
+    {
+        using var buffer = new MemoryStream();
+        await write(buffer, ct);
+        return await SaveAsync(buffer.ToArray(), extension, ct);
+    }
+
     /// <summary>Reads a stored file, or null when it is missing or the name escapes the store.</summary>
     Task<byte[]?> ReadAsync(string storedName, CancellationToken ct);
 

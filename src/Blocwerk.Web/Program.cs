@@ -234,6 +234,10 @@ public static class Program
         builder.Services.AddScoped<ImageVariantWarmer>();
         builder.Services.AddScoped<AvatarNormalizer>();
 
+        // The 3D runners' rate limit. Registered through RateLimitPolicies like the API-key login's, so the
+        // app keeps ONE OnRejected that dispatches per policy (a second AddRateLimiter would overwrite it).
+        builder.Services.AddRunnerRateLimit();
+
         // Health checks: "busy" (Degraded while editing, not Unhealthy) gates deploys; "database"
         // probes PostgreSQL. Both are surfaced anonymously via MapHealthChecks below.
         builder.Services.AddHealthChecks()
@@ -292,6 +296,9 @@ public static class Program
         // Personal-API-key browser login for automation. OFF by default: unmapped (a plain 404)
         // unless Blocwerk:Auth:ApiKeyLogin:Enabled is set. See ApiKeyLoginEndpoints.
         app.MapApiKeyLogin(settings);
+
+        // The 3D runners' pull API (runner keys, never user sessions); rate-limited per caller.
+        app.MapRunnerApi();
 
         // Prometheus/OpenMetrics scrape endpoint for the custom + runtime + ASP.NET metrics.
         // Handy for a quick `curl http://<host>:5050/metrics` when the dashboard isn't in reach.

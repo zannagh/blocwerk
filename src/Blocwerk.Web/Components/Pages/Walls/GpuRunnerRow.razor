@@ -1,0 +1,72 @@
+@* One 3D runner in the wall card (and the site-admin list). The owner can share it, pick its walls and revoke it. *@
+@using Blocwerk.Core.Runners
+
+<div class="gpu-runner-row @(Runner.IsRevoked ? "revoked" : "")">
+    <div class="gpu-runner-title">
+        <span class="gpu-runner-dot @(Runner.IsOnline ? "online" : "offline")" title="@(Runner.IsOnline ? "Online" : "Offline")"></span>
+        <strong>@Runner.Name</strong>
+        <span class="hint">@(Runner.IsOnline ? "online" : $"offline · last seen {WallGpuRunnersPanel.Ago(Runner.LastSeenAt)}")</span>
+        @if (Runner.IsRevoked)
+        {
+            <span class="capture-failed">revoked</span>
+        }
+        else if (WallId is null)
+        {
+            <span class="hint">· owned by @Runner.OwnerName@(Runner.SharedWithOtherWalls ? " · shared with other walls" : "")</span>
+        }
+        else if (!Runner.IsMine)
+        {
+            <span class="hint">· @(Runner.ServesThisWall ? "serves this wall" : "shared") by @Runner.OwnerName</span>
+        }
+    </div>
+    <div class="hint">
+        @Capabilities() · key @(Runner.KeyPrefix)… · @Runner.WallCount wall(s)
+    </div>
+    @if (Runner.CurrentJob is { } job)
+    {
+        <div class="gpu-runner-job">Working@(job.WallName is null ? "" : $" on {job.WallName}"): @job.Stage (@job.Progress.ToString("P0"))</div>
+    }
+    else if (Runner.IsOnline)
+    {
+        <div class="hint">Idle, waiting for work.</div>
+    }
+
+    @if (Runner.IsMine && !Runner.IsRevoked && ShowControls)
+    {
+        <div class="gpu-runner-controls">
+            <label class="gpu-runner-toggle">
+                <input type="checkbox" checked="@Runner.SharedWithOtherWalls" disabled="@Busy"
+                       @onchange="e => SetSharedAsync(e.Value is true)" />
+                Other walls can use this runner
+            </label>
+            <button type="button" class="apikey-btn" @onclick="ToggleWallsAsync">@(walls is null ? "Walls it serves…" : "Hide walls")</button>
+            @if (confirmRevoke)
+            {
+                <button type="button" class="apikey-btn danger" @onclick="RevokeAsync">Really revoke</button>
+                <button type="button" class="apikey-btn" @onclick="() => confirmRevoke = false">Keep</button>
+            }
+            else
+            {
+                <button type="button" class="apikey-btn" @onclick="() => confirmRevoke = true">Revoke</button>
+            }
+        </div>
+        @if (walls is not null)
+        {
+            <div class="gpu-runner-walls">
+                @foreach (var wall in walls)
+                {
+                    <label class="gpu-runner-toggle">
+                        <input type="checkbox" checked="@wall.Serves" @onchange="e => SetWallAsync(wall.WallId, e.Value is true)" />
+                        @wall.Name
+                    </label>
+                }
+            </div>
+        }
+    }
+    else if (!Runner.IsMine && !Runner.IsRevoked && AllowRevokeAsAdmin)
+    {
+        <div class="gpu-runner-controls">
+            <button type="button" class="apikey-btn" @onclick="RevokeAsync">Revoke (site admin)</button>
+        </div>
+    }
+</div>

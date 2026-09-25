@@ -673,8 +673,8 @@ refreshes about every two seconds.
 | Finding markers | Reading photos and detecting markers. |
 | Computing the 3D model | The geometry service is solving. |
 | Rendering textures | The model is already active; surface images are being made. |
-| Model ready · making the photo-real view | Model and textures are live; the splat worker is training. |
-| Model ready | Done. |
+| Model ready · making the photo-real view | Model and textures are live; the splat worker is training (or finishing a runner's result). |
+| Model ready | Done. A quiet "Photo-real view pending: …" line underneath means its photo-real view waits for (or trains on) a [3D runner](#3d-runners-gpu-training-on-another-machine); it is added whenever one delivers it. |
 | Model ready (no textures) | The model is active, but textures failed. The 3D view works without photos on the surfaces. The error is shown underneath. |
 | Model ready (no photo-real view) | The model and textures are live; only the photo-real step failed (the worker answered, but training failed or was refused). |
 | Failed | Nothing was activated. The error is shown in plain words in **Capture history**. When the new model could not be lined up with the current one (too few unchanged markers), it is kept in the model history, inactive. |
@@ -1044,6 +1044,126 @@ SPLAT_MAX_STEPS=            # optional, e.g. 5000 for faster, softer results
 Without a splat worker, leave all three empty. `SPLAT_API_KEY` is only sent when `SPLATSERVICE_URL`
 is set.
 
+### 3D runners (GPU training on another machine)
+
+A **3D runner** is a machine with a GPU (a gaming PC, a rented GPU box, an Apple Silicon Mac) that
+takes the photo-real training off the server. It **connects out** to Blocwerk, so it works behind a
+home router with no open ports and no tunnel. It never sees the database or any other wall: it only
+downloads the training bundle of the one job it claimed (metadata-free images at the quality's size,
+the COLMAP camera model and the training options) and uploads the trained splat.
+
+Runners are **optional**. Without one nothing changes: the capture behaves exactly as before.
+
+**What runs where**
+
+| Step | Where |
+|---|---|
+| Photos, video frames, colour matching, COLMAP (camera positions), undistort | Server: the splat worker (`splat-prepare`, CPU is enough) |
+| Training (gsplat on CUDA, Brush on Vulkan/Metal): the GPU part | **The runner** |
+| Alignment to the wall model, crop, clean-up, `.spz` export, level-of-detail ladder | Server: the splat worker (`splat-finish`) and the app |
+
+**A capture never waits for a runner.** When the photo-real training goes to a runner, the server
+prepares it, queues it and the capture **completes as "Model ready"** right away (model, textures,
+holds and the post-capture steps are all done). The capture history then shows a quiet line such as
+*"Photo-real view pending: waiting for a 3D runner (none online)"* or *"… 3D runner “Cellar PC” is
+training (step 1200/30000) (4 %)"*, with **Cancel it**. The job waits as long as it takes; when a
+runner delivers, the capture briefly shows *Model ready · making the photo-real view* while the
+server finishes it, the new view replaces the old one, the photo-real post-capture steps run again
+for it, and the wall gets the usual "photo-real view ready" notification. If a runner's training
+fails for good, the capture reads *Model ready (no photo-real view)* exactly like a failed training
+on the splat worker; the model stays as it is.
+
+**When a runner is used** (`RUNNERS__MODE`):
+
+- `auto` (default): only when a runner that may train this wall at the chosen quality is **online
+  right now** (or, for Ultra, when an ultra runner exists at all: the splat worker would only train
+  Max). Otherwise the splat worker trains itself, as before.
+- `always`: every photo-real view is queued for a runner (the splat worker then needs no GPU,
+  `SPLAT_WORKER_MODE=cpu`).
+- `off`: never.
+
+Both need a splat worker whose `/health` lists the kinds `splat-prepare` and `splat-finish`; a worker
+without them keeps training all-in-one, whatever the mode. Without any splat worker nothing is
+prepared or queued at all.
+
+**Set one up** (wall admin, not from a kiosk tablet):
+
+1. Open the wall's settings → **Wall Shape** → **3D runners (photo-real view)**.
+2. **Create runner** with a name. The key (`bwr_…`) is shown **once**, together with ready-to-copy
+   commands. It serves this wall and every wall you own; **Walls it serves…** narrows that down.
+3. On the runner machine, put the key into a file `runner.env` (one line: `BWR_KEY=bwr_…`, readable
+   only by you). The commands read it with `--env-file`, so the key never shows up in the shell
+   history or the process list:
+   - NVIDIA GPU (Linux, or Windows with Docker Desktop; the NVIDIA container toolkit is needed). The
+     CUDA image is **built from a Blocwerk checkout** for now (it is not published):
+
+     ```
+     docker build -f docker/splat-worker/Dockerfile.cuda -t blocwerk-splat-worker-cuda:local .
+     docker run -d --name blocwerk-runner --restart unless-stopped --gpus all --env-file runner.env \
+       blocwerk-splat-worker-cuda:local python -m splatworker.gpurunner --server https://blocwerk.app
+     ```
+
+   - AMD or Intel GPU on Linux (the published Brush image):
+
+     ```
+     docker run -d --name blocwerk-runner --restart unless-stopped --device /dev/dri --env-file runner.env \
+       ghcr.io/zannagh/blocwerk-splat-worker:latest python -m splatworker.gpurunner --server https://blocwerk.app
+     ```
+
+   - Apple Silicon Mac, from a Blocwerk checkout (Docker on a Mac has no GPU):
+
+     ```
+     set -a; . ./runner.env; set +a; caffeinate -i docker/splat-worker/run-runner-native.sh --server https://blocwerk.app
+     ```
+4. The runner appears as **online** (a green dot, seen within the last minute) with its GPU, memory,
+   trainer and the highest quality it can train. It picks up waiting jobs within seconds.
+
+**Quality.** A runner claims only jobs up to the quality it reported (draft < high < max < ultra; a
+runner that never said counts as high). **Ultra** (50000 steps on the photos at up to 4096 px, up
+to 6 M splats) is only offered in the capture panel and the retrain button when something can train
+it: a runner with gsplat on a CUDA GPU with at least 12 GB that may serve the wall, or a splat worker
+whose `/health` says `maxQuality: ultra`. The server caps a runner's claim at Max unless it reports
+gsplat and 12 GB.
+
+**Sharing.** **Other walls can use this runner** offers your runner to other walls, but a wall only
+uses shared runners when **its own admin** ticked *Let other admins' shared runners train this
+wall's photo-real view* in its 3D runners card (off by default: that wall's photos, without
+metadata, then go to a machine someone else owns). A wall's own runners always go first; a shared
+runner only helps a wall none of whose own runners that can train the job is online. A runner only
+ever serves walls its owner **still administers**. Site admins see every runner under
+**Administration → 3D runners** and can revoke any.
+
+**Leases, failures, shutdowns.** A claimed job is leased for 5 minutes and every progress report
+extends it. Three budgets, counted separately:
+
+- a runner that **reports a training failure** (e.g. out of memory) uses one of 3 attempts
+  (`RUNNERS__MAXATTEMPTS`); a failure no retry can fix (a bad bundle) fails the job at once;
+- a runner that **vanishes** (crash, sleep, network) loses the job when its lease runs out; after
+  10 lost leases (`RUNNERS__MAXLOSTLEASES`) the job fails;
+- a runner that **shuts down** (it says so) or is **revoked** gives the job back at once, free.
+
+A delivered result the splat worker cannot finish (the worker unreachable) is handed back every 15
+minutes and given up after a day.
+
+**Uploads.** Runners upload a slim float `.ply` (about 340 MB for an Ultra scene) or an `.spz`,
+optionally with `Content-Encoding: gzip` (decoded while streaming; the cap, `RUNNERS__MAXRESULTMB`,
+counts the decoded bytes). Nothing is held in memory on the server: the bundle from the splat worker,
+the upload and the hand-over to `splat-finish` all stream through files.
+
+**Server settings.**
+
+| Setting | Env var | Default | What |
+|---|---|---|---|
+| `Runners:Mode` | `RUNNERS__MODE` | `auto` | `auto`, `always` or `off` (above). |
+| `Runners:MaxResultMb` | `RUNNERS__MAXRESULTMB` | 2048 | Largest trained splat a runner may upload (decoded). |
+| `Runners:MaxBundleMb` | `RUNNERS__MAXBUNDLEMB` | 6144 | Largest training bundle taken from the splat worker. |
+| `Runners:MaxAttempts` | `RUNNERS__MAXATTEMPTS` | 3 | Training failures a job may have. |
+| `Runners:MaxLostLeases` | `RUNNERS__MAXLOSTLEASES` | 10 | Vanished runners a job may survive. |
+| `Runners:SharedNeedsOptIn` | `RUNNERS__SHAREDNEEDSOPTIN` | `true` | `false` lets shared runners serve every wall without its admin's opt-in. |
+
+The splat worker (`SPLATSERVICE__URL`) is still needed for the CPU steps; with `always` it no longer
+needs a GPU.
+
 ### Polling vs callbacks
 
 The app **polls** each job (starting at 1 s, backing off to 10 s). The services can also send
@@ -1091,6 +1211,7 @@ There's no per-wall setting for outlines; they're server-wide.
 | `SplatService:RequestTimeoutSeconds` | `SPLATSERVICE__REQUESTTIMEOUTSECONDS` | 300 | As above. |
 | `SplatService:JobTimeoutMinutes` | `SPLATSERVICE__JOBTIMEOUTMINUTES` | 240 | Training is slow; 4 h by default. |
 | `SplatService:MaxSteps` | `SPLATSERVICE__MAXSTEPS` | the quality profile's | Training steps per job, overriding the capture's quality profile (Draft 5000, High 15000, Max 30000). Leave it unset. |
+| `Runners:*` | `RUNNERS__*` | | 3D runners; see *3D runners* for all settings. |
 
 The compose file maps `docker/.env` values onto these: `GEOMETRYSERVICE_URL` → `GEOMETRYSERVICE__URL`,
 `COMPUTE_API_KEY` → `GEOMETRYSERVICE__APIKEY`,

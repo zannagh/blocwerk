@@ -56,6 +56,15 @@
                                 {
                                     <div class="hint">@capture.FollowUpNote</div>
                                 }
+                                @if (capture.PhotoRealPending is not null)
+                                {
+                                    @* Quiet on purpose: the capture is done; the view is added whenever a 3D runner delivers it. *@
+                                    <div class="hint capture-photo-real-pending">
+                                        @capture.PhotoRealPending ·
+                                        <a href="#wall-3d-runners">3D runners</a> ·
+                                        <button class="btn-link" @onclick="() => CancelRunnerJobAsync(capture.Id)" disabled="@retraining">Cancel it</button>
+                                    </div>
+                                }
                                 @if (capture.Notes is not null)
                                 {
                                     <div class="hint">@capture.Notes</div>
@@ -77,7 +86,7 @@
                                         @(openCaptureId == capture.Id ? "Hide photos" : "Use as panel photos…")
                                     </button>
                                 }
-                                @if (running is null && CanRetrain(capture) && CaptureSplatDocuments.NextQuality(capture.SplatQuality) is { } better)
+                                @if (running is null && CanRetrain(capture) && BetterQuality(capture) is { } better)
                                 {
                                     <button class="btn-link" @onclick="() => RetrainAsync(capture.Id, better)" disabled="@retraining"
                                             title="Trains the photo-real view again from this capture's photos; the current one stays until the new one is ready.">

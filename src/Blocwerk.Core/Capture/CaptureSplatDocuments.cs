@@ -61,7 +61,18 @@ public static class CaptureSplatDocuments
     {
         SplatQuality.Draft => "draft",
         SplatQuality.Max => "max",
+        SplatQuality.Ultra => "ultra",
         _ => "high",
+    };
+
+    /// <summary>The quality a worker/runner name stands for (<c>draft</c>, <c>high</c>, <c>max</c>, <c>ultra</c>), or null.</summary>
+    public static SplatQuality? ParseQuality(string? name) => name?.Trim().ToLowerInvariant() switch
+    {
+        "draft" => SplatQuality.Draft,
+        "high" => SplatQuality.High,
+        "max" => SplatQuality.Max,
+        "ultra" => SplatQuality.Ultra,
+        _ => null,
     };
 
     /// <summary>

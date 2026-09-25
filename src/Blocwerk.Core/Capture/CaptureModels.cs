@@ -43,7 +43,8 @@ public sealed record CapturePhotoResult(
 /// post-capture chain did in plain words ("856 holds placed on the 3D model, …"); <c>FollowUpNote</c> what it could
 /// not do, or a quiet note such as a skipped photo-real view. Both null until the chain ran. <c>WallId</c> is the
 /// capture's wall (from its row). <c>ModelChecks</c> is what the solver said about the model this capture made
-/// (measured segment angles, warnings, ignored detections), empty without a model.
+/// (measured segment angles, warnings, ignored detections), empty without a model. <c>PhotoRealPending</c>: the
+/// capture is done, but its photo-real view waits for (or trains on) a 3D runner; a quiet one-liner, else null.
 /// </summary>
 public sealed record WallCaptureSummary(
     Guid Id,
@@ -61,7 +62,8 @@ public sealed record WallCaptureSummary(
     string? FollowUp = null,
     string? FollowUpNote = null,
     Guid WallId = default,
-    IReadOnlyList<WallGeometryModelCheck>? ModelChecks = null)
+    IReadOnlyList<WallGeometryModelCheck>? ModelChecks = null,
+    string? PhotoRealPending = null)
 {
     public bool IsRunning => Status is WallCaptureStatus.Queued or WallCaptureStatus.Detecting
         or WallCaptureStatus.Solving or WallCaptureStatus.Texturing or WallCaptureStatus.Splatting;

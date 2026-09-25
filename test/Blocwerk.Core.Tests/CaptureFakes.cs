@@ -51,7 +51,10 @@ internal sealed class FakeComputeJobClient : IComputeJobClient
 
     public List<string> Cancelled { get; } = [];
 
-    public Task<ComputeHealth> GetHealthAsync(CancellationToken ct) => Task.FromResult(new ComputeHealth { Status = "ok" });
+    /// <summary>The kinds <c>/health</c> lists (the runner split needs <c>splat-prepare</c> and <c>splat-finish</c>).</summary>
+    public List<string> Kinds { get; set; } = [];
+
+    public Task<ComputeHealth> GetHealthAsync(CancellationToken ct) => Task.FromResult(new ComputeHealth { Status = "ok", Kinds = Kinds });
 
     public Task<string> SubmitJsonAsync(string kind, string json, CancellationToken ct)
     {

@@ -42,7 +42,10 @@ public sealed class ComputeJobClient(
         using var content = new MultipartFormDataContent();
         foreach (var part in parts)
         {
-            var bytes = new ByteArrayContent(part.Content);
+            // A file part streams from disk (a runner's trained splat can be GBs); the multipart content disposes it.
+            HttpContent bytes = part.SourcePath is { } path
+                ? new StreamContent(File.OpenRead(path), 81920)
+                : new ByteArrayContent(part.Content);
             bytes.Headers.ContentType = new MediaTypeHeaderValue(part.ContentType);
             if (part.FileName is null)
             {
@@ -100,6 +103,15 @@ public sealed class ComputeJobClient(
         }
 
         return buffer.ToArray();
+    }
+
+    public async Task<T> ReadFileAsync<T>(string jobId, string name, Func<Stream, CancellationToken, Task<T>> read, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get, Url($"v1/jobs/{Uri.EscapeDataString(jobId)}/files/{Uri.EscapeDataString(name)}"));
+        using var response = await SendRawAsync(request, $"download {name}", authenticate: true, ct);
+        await using var body = await response.Content.ReadAsStreamAsync(ct);
+        return await read(body, ct);
     }
 
     public async Task CancelAsync(string jobId, CancellationToken ct)

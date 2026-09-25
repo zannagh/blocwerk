@@ -25,6 +25,7 @@ public partial class WallCapturePanel
     private string? levelPairs;
     private string? notes;
     private SplatQuality splatQuality = SplatQuality.High;
+    private bool ultraAvailable;
     private List<string> planNotes = [];
     private WallCaptureStatusList? statusList;
 
@@ -56,6 +57,9 @@ public partial class WallCapturePanel
     [Inject]
     private WallCapturePipelineOptions PipelineOptions { get; set; } = default!;
 
+    [Inject]
+    private Blocwerk.Core.Runners.SplatQualityOffer QualityOffer { get; set; } = default!;
+
     private long MaxPhotoMb => PipelineOptions.MaxPhotoBytes / (1024 * 1024);
 
     // Loaded per wall here, not in OnInitializedAsync: the wall page is retained across walls.
@@ -73,10 +77,13 @@ public partial class WallCapturePanel
         draft = null;
         declarations = [];
         confirmDiscard = false;
+        ultraAvailable = false;
         if (configured)
         {
             await RunAsync(async () =>
             {
+                // Ultra only when a 3D runner (or the splat worker) can really train it.
+                ultraAvailable = Captures.IsSplatConfigured && await QualityOffer.UltraAvailableAsync(WallId, CancellationToken.None);
                 draft = await Captures.GetDraftAsync(WallId);
                 await RefreshDeclarationsAsync(keepEdits: false);
             });

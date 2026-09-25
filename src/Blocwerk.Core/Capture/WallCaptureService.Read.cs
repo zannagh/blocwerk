@@ -120,6 +120,7 @@ public sealed partial class WallCaptureService
             .Select(g => new { g.Key, Count = g.Count() })
             .ToDictionaryAsync(g => g.Key, g => g.Count);
         var modelChecks = await ModelChecksAsync(db, captures);
+        var pending = await Runners.GpuJobText.PendingAsync(db, ids);
         return captures.Select(c => new WallCaptureSummary(
             c.Id, c.CreatedAt, c.Status, c.Progress, c.Stage, c.Error, c.Notes,
             counts.GetValueOrDefault(c.Id), c.GeometryModelId, c.CompletedAt, ReadPlacementCheck(c.PlacementCheckJson),
@@ -127,7 +128,8 @@ public sealed partial class WallCaptureService
             CaptureFollowUpText.Summary(CaptureFollowUpRecord.Parse(c.FollowUpJson)),
             CaptureFollowUpText.Note(CaptureFollowUpRecord.Parse(c.FollowUpJson)),
             c.WallId,
-            c.GeometryModelId is { } modelId ? modelChecks.GetValueOrDefault(modelId, []) : [])).ToList();
+            c.GeometryModelId is { } modelId ? modelChecks.GetValueOrDefault(modelId, []) : [],
+            pending.GetValueOrDefault(c.Id))).ToList();
     }
 
     /// <summary>What the solver said about each capture's model (its stored JSON), by model id.</summary>

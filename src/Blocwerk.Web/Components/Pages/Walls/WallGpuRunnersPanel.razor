@@ -1,0 +1,87 @@
+@* 3D runners: GPU machines that pull this wall's photo-real training. Wall admins only; hidden on a kiosk. *@
+@using Blocwerk.Core.Runners
+
+<div class="gpu-runners">
+    <p class="apikey-blurb">
+        Optional. The photo-real view needs a GPU. A <strong>3D runner</strong> is a machine with one (a gaming PC, a
+        rented GPU box, a Mac) that connects <em>out</em> to Blocwerk with a runner key, takes the training and sends
+        back only the result; no open ports needed. Everything else (photos, camera positions, alignment, export)
+        stays on this server. Without a runner nothing changes: captures finish as before, and a photo-real view that
+        waits for a runner is added whenever one picks it up.
+    </p>
+
+    @if (created is not null)
+    {
+        <div class="apikey-reveal">
+            <h2>Runner key for &ldquo;@created.Runner.Name&rdquo;</h2>
+            <p class="apikey-reveal-warning">
+                This is the only time the key is shown. On the runner machine, put it into a file
+                <code>runner.env</code> (readable only by you, never shared or committed) with this one line:
+            </p>
+            <code class="apikey-token">@EnvLine(created.Key)</code>
+            <p class="hint">NVIDIA GPU (Linux, or Windows with Docker Desktop): build the CUDA image once from a Blocwerk checkout, then start it.</p>
+            <code class="apikey-token gpu-runner-cmd">@CudaCommand</code>
+            <p class="hint">AMD or Intel GPU (Linux):</p>
+            <code class="apikey-token gpu-runner-cmd">@VulkanCommand</code>
+            <p class="hint">Mac with Apple Silicon (Metal), from a Blocwerk checkout:</p>
+            <code class="apikey-token gpu-runner-cmd">@NativeCommand</code>
+            <div class="apikey-reveal-actions">
+                <button type="button" class="apikey-btn primary" @onclick="() => CopyAsync(EnvLine(created.Key))">@copyLabel</button>
+                <button type="button" class="apikey-btn" @onclick="() => CopyAsync(CudaCommand)">Copy NVIDIA commands</button>
+                <button type="button" class="apikey-btn" @onclick="Dismiss">I have stored it</button>
+            </div>
+        </div>
+    }
+
+    @if (error is not null)
+    {
+        <div class="error-msg">@error</div>
+    }
+
+    @if (jobs is { Count: > 0 })
+    {
+        <h3 class="gpu-runner-heading">Photo-real views waiting for a runner</h3>
+        @foreach (var job in jobs)
+        {
+            <div class="gpu-job-row">
+                <span class="gpu-job-status">@JobLabel(job)</span>
+                <span class="hint">@job.Quality quality · queued @Ago(job.CreatedAt)@(job.Attempts > 1 ? $" · claim {job.Attempts}" : "")</span>
+            </div>
+        }
+    }
+
+    <h3 class="gpu-runner-heading">Runners</h3>
+    @if (runners is null)
+    {
+        <p class="loading-small">Loading...</p>
+    }
+    else if (runners.Count == 0)
+    {
+        <p class="apikey-empty">No 3D runner serves this wall. That is fine: create one below only if you have a machine with a GPU.</p>
+    }
+    else
+    {
+        @foreach (var runner in runners)
+        {
+            <GpuRunnerRow @key="runner.Id" Runner="runner" WallId="WallId" Busy="busy" OnChanged="ReloadAsync" OnError="ShowError" />
+        }
+    }
+
+    <label class="gpu-runner-toggle gpu-runner-optin">
+        <input type="checkbox" checked="@acceptsShared" disabled="@busy" @onchange="e => SetAcceptsSharedAsync(e.Value is true)" />
+        Let other admins' shared runners train this wall's photo-real view
+    </label>
+    <p class="hint">
+        Off by default. When on, this wall's capture photos (metadata removed) go to a machine another admin owns,
+        but only while none of this wall's own runners is online.
+    </p>
+
+    <div class="form-group gpu-runner-create">
+        <label for="gpu-runner-name">New runner</label>
+        <input id="gpu-runner-name" class="form-input" maxlength="100" placeholder="e.g. Gaming PC in the cellar"
+               @bind="name" @bind:event="oninput" />
+    </div>
+    <button type="button" class="btn-submit" disabled="@(busy || string.IsNullOrWhiteSpace(name))" @onclick="CreateAsync">
+        @(busy ? "Working..." : "Create runner")
+    </button>
+</div>

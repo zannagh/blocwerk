@@ -89,6 +89,14 @@ public static class ApiKeySurface
         }
 
         var bearer = authHeader["Bearer ".Length..].TrimStart();
+
+        // A 3D runner key names a machine, never a user: it authenticates nothing here (the runner
+        // API checks it itself), so it must not reach the JWT handler either.
+        if (bearer.StartsWith(GpuRunner.TokenPrefix, StringComparison.Ordinal))
+        {
+            return CookieAuthenticationDefaults.AuthenticationScheme;
+        }
+
         if (!bearer.StartsWith(ApiKey.TokenPrefix, StringComparison.Ordinal))
         {
             return JwtBearerDefaults.AuthenticationScheme;

@@ -19,4 +19,10 @@ public enum SplatQuality
 
     /// <summary>30000 steps at the photos' native size. Meant for a dedicated GPU.</summary>
     Max = 2,
+
+    /// <summary>
+    /// 50000 steps on the photos at up to 4096 px, up to 6 M splats. gsplat on a CUDA GPU with at least 12 GB only:
+    /// offered when a 3D runner (or the splat worker) reports it can train it; a worker without it trains Max instead.
+    /// </summary>
+    Ultra = 3,
 }

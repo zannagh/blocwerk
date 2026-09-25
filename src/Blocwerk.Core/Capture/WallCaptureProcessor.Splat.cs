@@ -26,7 +26,8 @@ namespace Blocwerk.Core.Capture;
 /// <see cref="WallCaptureStatus.Splatting"/>, holding the texture outcome in <c>Error</c>, so a restart
 /// resumes right here from <see cref="WallCapture.SplatJobId"/> without redoing model or textures.
 /// The single capture worker is busy for the whole training run (up to an hour); captures are rare
-/// admin actions, so the next one simply queues behind it.
+/// admin actions, so the next one simply queues behind it. With a 3D runner (<c>WallCaptureProcessor.Runner.cs</c>)
+/// the worker only prepares; the capture completes as "Model ready" and the view is added when a runner delivers it.
 /// </remarks>
 public sealed partial class WallCaptureProcessor
 {
@@ -35,6 +36,24 @@ public sealed partial class WallCaptureProcessor
         "The photo-real view was skipped: the GPU worker could not be reached. Everything else is done; you can retrain the photo-real view later.";
 
     private const string SplatKind = "splat";
+
+    /// <summary>
+    /// Ends a capture whose photo-real stage failed (or was stopped): succeeded without the splat, or
+    /// still without textures when those failed first — both reasons kept in <c>Error</c>.
+    /// </summary>
+    internal static void EndWithoutSplat(WallCapture c, string reason)
+    {
+        const string polled = "Photo-real view failed: ";
+        reason = reason.StartsWith(polled, StringComparison.Ordinal) ? reason[polled.Length..] : reason;
+        var textureError = c.Error;
+        var splatError = $"The 3D model is active, but its photo-real view could not be made: {reason}";
+        var error = textureError is null ? splatError : $"{textureError} {splatError}";
+        c.Status = textureError is null ? WallCaptureStatus.SucceededWithoutSplat : WallCaptureStatus.SucceededWithoutTextures;
+        c.Progress = 1;
+        c.Stage = textureError is null ? "Done (without the photo-real view)" : "Done (without textures)";
+        c.Error = error.Length <= 2048 ? error : error[..2048];
+        c.CompletedAt = DateTimeOffset.UtcNow;
+    }
 
     /// <summary>Completes the capture, or hands it to the photo-real stage when a splat worker is configured.</summary>
     private async Task AfterTexturesAsync(CaptureRun run, string? textureError, CancellationToken ct)
@@ -71,21 +90,11 @@ public sealed partial class WallCaptureProcessor
             return;
         }
 
+        SplatOutcome outcome;
         try
         {
-            if (capture.SplatJobId is null)
-            {
-                await PrepareVideoFramesAsync(capture.Id, ct);
-            }
-
-            var status = await RunJobAsync(
-                capture.SplatJobId,
-                () => SubmitSplatAsync(capture.Id, modelId, capture.SplatQuality, client, ct),
-                jobId => UpdateAsync(capture.Id, c => c.SplatJobId = jobId, ct),
-                client,
-                new JobStage(capture.Id, WallCaptureStatus.Splatting, VideoBand, 0.98, "Photo-real view", CaptureSplatDocuments.Describe),
-                ct);
-            await StoreSplatAsync(capture.Id, modelId, status.JobId!, client, ct);
+            // The GPU half may go to a 3D runner: then the capture completes now and the view follows later.
+            outcome = await SplatOnServerOrRunnerAsync(capture, modelId, client, ct);
         }
         catch (ComputeJobException ex) when (IsWorkerAbsent(ex))
         {
@@ -102,7 +111,15 @@ public sealed partial class WallCaptureProcessor
 
         await FollowUpAsync(run, CaptureFollowUpPhase.Final, ct);
         await CompleteAsync(capture.Id, TextureOutcome(textureError), textureError, ct);
-        await push.NotifyWallPhotoRealReadyAsync(capture.WallId, run.User.Id);
+        if (outcome == SplatOutcome.Stored)
+        {
+            await push.NotifyWallPhotoRealReadyAsync(capture.WallId, run.User.Id);
+            return;
+        }
+
+        // Model ready now; the photo-real view follows when a runner delivers it (the result may already be here).
+        logger.LogInformation("Capture {CaptureId} is done; its photo-real view waits for a 3D runner", capture.Id);
+        await gpuJobs!.ResumeIfDeliveredAsync(capture.Id, ct);
     }
 
     /// <summary>
@@ -122,29 +139,29 @@ public sealed partial class WallCaptureProcessor
         await CompleteAsync(capture.Id, TextureOutcome(capture.Error), capture.Error, ct);
     }
 
-    /// <summary>
-    /// Ends a capture whose photo-real stage failed (or was stopped): succeeded without the splat, or
-    /// still without textures when those failed first — both reasons kept in <c>Error</c>.
-    /// </summary>
-    private static void EndWithoutSplat(WallCapture c, string reason)
-    {
-        const string polled = "Photo-real view failed: ";
-        reason = reason.StartsWith(polled, StringComparison.Ordinal) ? reason[polled.Length..] : reason;
-        var textureError = c.Error;
-        var splatError = $"The 3D model is active, but its photo-real view could not be made: {reason}";
-        var error = textureError is null ? splatError : $"{textureError} {splatError}";
-        c.Status = textureError is null ? WallCaptureStatus.SucceededWithoutSplat : WallCaptureStatus.SucceededWithoutTextures;
-        c.Progress = 1;
-        c.Stage = textureError is null ? "Done (without the photo-real view)" : "Done (without textures)";
-        c.Error = error.Length <= 2048 ? error : error[..2048];
-        c.CompletedAt = DateTimeOffset.UtcNow;
-    }
-
     private static WallCaptureStatus TextureOutcome(string? textureError) =>
         textureError is null ? WallCaptureStatus.Succeeded : WallCaptureStatus.SucceededWithoutTextures;
 
+    /// <summary>The all-in-one path: the splat worker trains itself (no runners involved).</summary>
+    private async Task SplatAllInOneAsync(WallCapture capture, Guid modelId, IComputeJobClient client, CancellationToken ct)
+    {
+        if (capture.SplatJobId is null)
+        {
+            await PrepareVideoFramesAsync(capture.Id, ct);
+        }
+
+        var status = await RunJobAsync(
+            capture.SplatJobId,
+            () => SubmitSplatAsync(capture.Id, modelId, capture.SplatQuality, client, ct),
+            jobId => UpdateAsync(capture.Id, c => c.SplatJobId = jobId, ct),
+            client,
+            new JobStage(capture.Id, WallCaptureStatus.Splatting, VideoBand, 0.98, "Photo-real view", CaptureSplatDocuments.Describe),
+            ct);
+        await StoreSplatAsync(capture.Id, modelId, status.JobId!, client, ct);
+    }
+
     private async Task<string> SubmitSplatAsync(
-        Guid captureId, Guid modelId, SplatQuality? quality, IComputeJobClient client, CancellationToken ct)
+        Guid captureId, Guid modelId, SplatQuality? quality, IComputeJobClient client, CancellationToken ct, string jobKind = SplatKind)
     {
         await using var db = dbContextFactory.CreateDbContext();
         var geometry = await db.WallGeometryModels.Where(m => m.Id == modelId).Select(m => m.Json).FirstAsync(ct);
@@ -168,7 +185,7 @@ public sealed partial class WallCaptureProcessor
         // The walk-along video's frames (if any): auxiliary images for coverage, never for alignment.
         parts.AddRange(await FramePartsAsync(captureId, ct));
         parts.Add(ComputeJobPart.Json("options", CaptureSplatDocuments.BuildOptions(settings.SplatMaxSteps, quality)));
-        return await client.SubmitMultipartAsync(SplatKind, parts, ct);
+        return await client.SubmitMultipartAsync(jobKind, parts, ct);
     }
 
     private async Task StoreSplatAsync(Guid captureId, Guid modelId, string jobId, IComputeJobClient client, CancellationToken ct)

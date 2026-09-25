@@ -108,6 +108,10 @@
                         <option value="@SplatQuality.Draft">Draft: fast, soft (minutes)</option>
                         <option value="@SplatQuality.High">High: sharp (about an hour on a laptop)</option>
                         <option value="@SplatQuality.Max">Max: sharpest, needs a strong GPU</option>
+                        @if (ultraAvailable)
+                        {
+                            <option value="@SplatQuality.Ultra">Ultra: finest detail, on a 3D runner with a 12 GB NVIDIA GPU</option>
+                        }
                     </select>
                     <p class="hint">The 3D model and its photo textures do not depend on this; only the photo-real view does.</p>
                 </div>

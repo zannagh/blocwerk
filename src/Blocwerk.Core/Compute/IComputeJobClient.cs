@@ -40,6 +40,16 @@ public interface IComputeJobClient
         return bytes.LongLength <= maxBytes ? bytes : throw ComputeJobException.TooLarge(name, maxBytes);
     }
 
+    /// <summary>
+    /// <c>GET /v1/jobs/{id}/files/{name}</c> as a stream handed to <paramref name="read"/> (a multi-GB file never becomes
+    /// one array). The default buffers the whole file (test clients).
+    /// </summary>
+    async Task<T> ReadFileAsync<T>(string jobId, string name, Func<Stream, CancellationToken, Task<T>> read, CancellationToken ct)
+    {
+        using var buffer = new MemoryStream(await DownloadFileAsync(jobId, name, ct), writable: false);
+        return await read(buffer, ct);
+    }
+
     /// <summary><c>DELETE /v1/jobs/{id}</c>. Best effort: failures are logged, never thrown.</summary>
     Task CancelAsync(string jobId, CancellationToken ct);
 }

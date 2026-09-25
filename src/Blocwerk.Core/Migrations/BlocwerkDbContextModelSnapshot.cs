@@ -701,6 +701,220 @@ namespace Blocwerk.Core.Migrations
                     b.ToTable("ExternalGyms");
                 });
 
+            modelBuilder.Entity("Blocwerk.Core.Entities.GpuJob", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("BundleBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("BundlePath")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("BundleSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid>("CaptureId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("ClaimedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ClaimedByRunnerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
+
+                    b.Property<int>("FailureCount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("FinishJobId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<Guid>("GeometryModelId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("InstalledAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("LeaseExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("LostLeaseCount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("PreparedPath")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<double>("Progress")
+                        .HasColumnType("double precision");
+
+                    b.Property<int>("Quality")
+                        .HasColumnType("integer");
+
+                    b.Property<long?>("ResultBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ResultFormat")
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)");
+
+                    b.Property<string>("ResultPath")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ResultStatsJson")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Stage")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("WallId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CaptureId");
+
+                    b.HasIndex("ClaimedByRunnerId");
+
+                    b.HasIndex("WallId");
+
+                    b.HasIndex("Status", "CreatedAt");
+
+                    b.ToTable("GpuJobs");
+                });
+
+            modelBuilder.Entity("Blocwerk.Core.Entities.GpuRunner", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("GpuName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("KeyHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("KeyPrefix")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<DateTimeOffset?>("LastJobAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("LastSeenAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("MaxQuality")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<int?>("MemoryBudgetMb")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<Guid>("OwnerUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Platform")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RunnerVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<bool>("SharedWithOtherWalls")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Trainer")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<int?>("VramMb")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("KeyHash")
+                        .IsUnique();
+
+                    b.HasIndex("OwnerUserId");
+
+                    b.ToTable("GpuRunners");
+                });
+
+            modelBuilder.Entity("Blocwerk.Core.Entities.GpuRunnerSharedOptIn", b =>
+                {
+                    b.Property<Guid>("WallId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("OptedInByUserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("WallId");
+
+                    b.ToTable("GpuRunnerSharedOptIns");
+                });
+
+            modelBuilder.Entity("Blocwerk.Core.Entities.GpuRunnerWall", b =>
+                {
+                    b.Property<Guid>("RunnerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("WallId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("RunnerId", "WallId");
+
+                    b.HasIndex("WallId");
+
+                    b.ToTable("GpuRunnerWalls");
+                });
+
             modelBuilder.Entity("Blocwerk.Core.Entities.GradeProposal", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2857,6 +3071,73 @@ namespace Blocwerk.Core.Migrations
                     b.Navigation("ExternalGym");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Blocwerk.Core.Entities.GpuJob", b =>
+                {
+                    b.HasOne("Blocwerk.Core.Entities.WallCapture", "Capture")
+                        .WithMany()
+                        .HasForeignKey("CaptureId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Blocwerk.Core.Entities.GpuRunner", "ClaimedByRunner")
+                        .WithMany()
+                        .HasForeignKey("ClaimedByRunnerId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Blocwerk.Core.Entities.Wall", "Wall")
+                        .WithMany()
+                        .HasForeignKey("WallId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Capture");
+
+                    b.Navigation("ClaimedByRunner");
+
+                    b.Navigation("Wall");
+                });
+
+            modelBuilder.Entity("Blocwerk.Core.Entities.GpuRunner", b =>
+                {
+                    b.HasOne("Blocwerk.Core.Entities.User", "Owner")
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Owner");
+                });
+
+            modelBuilder.Entity("Blocwerk.Core.Entities.GpuRunnerSharedOptIn", b =>
+                {
+                    b.HasOne("Blocwerk.Core.Entities.Wall", "Wall")
+                        .WithMany()
+                        .HasForeignKey("WallId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Wall");
+                });
+
+            modelBuilder.Entity("Blocwerk.Core.Entities.GpuRunnerWall", b =>
+                {
+                    b.HasOne("Blocwerk.Core.Entities.GpuRunner", "Runner")
+                        .WithMany()
+                        .HasForeignKey("RunnerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Blocwerk.Core.Entities.Wall", "Wall")
+                        .WithMany()
+                        .HasForeignKey("WallId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Runner");
+
+                    b.Navigation("Wall");
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.GradeProposal", b =>

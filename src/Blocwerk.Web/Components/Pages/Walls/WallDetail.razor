@@ -215,6 +215,14 @@ else
                        rest of this card; the component hides itself on a kiosk tablet. *@
                     <WallMarkerSettings WallId="_wall.Id" OnPanelStaged="OnCapturePanelStaged"
                                         OnStartWallUpdate="OnCaptureWallUpdate" OnShowPanels="RevealPanelsAsync" />
+                    @* GPU machines that pull this wall's photo-real training. Admin desk task, never a tablet one. *@
+                    @if (_isAdmin && !KioskContext.IsKiosk)
+                    {
+                        <details class="segment-settings" id="wall-3d-runners">
+                            <summary>3D runners (photo-real view)</summary>
+                            <WallGpuRunnersPanel WallId="_wall.Id" />
+                        </details>
+                    }
                     <WallOutlineUpgrade WallId="_wall.Id" ShareToken="@ShareToken" />
                     <WallPhotoPrivacy WallId="_wall.Id" ShareToken="@ShareToken" />
                     </div>

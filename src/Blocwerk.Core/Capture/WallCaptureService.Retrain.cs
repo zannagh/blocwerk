@@ -48,7 +48,16 @@ public sealed partial class WallCaptureService
             capture.Attempts = 0;
             capture.CompletedAt = null;
             capture.FollowUpJson = WithoutNote(capture.FollowUpJson);
+
+            // A photo-real view still waiting for (or on) a 3D runner is superseded by the new one.
+            var superseded = await Runners.GpuJobQueue.CancelActiveAsync(
+                db, capture.Id, "superseded by a retrain", DateTimeOffset.UtcNow, CancellationToken.None);
             await db.SaveChangesAsync();
+            foreach (var path in superseded.SelectMany(j => new[] { j.BundlePath, j.PreparedPath, j.ResultPath }))
+            {
+                files.Delete(path);
+            }
+
             queue.Enqueue(capture.Id);
             logger.LogInformation(
                 "Photo-real view of capture {CaptureId} queued for retraining at {Quality} by {UserId}", capture.Id, quality, userId);

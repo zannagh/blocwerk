@@ -5,7 +5,6 @@ using Blocwerk.Core.Configuration;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -56,19 +55,10 @@ public static class ApiKeyLoginEndpoints
             CookieAuthenticationDefaults.AuthenticationScheme,
             ApiKeySessionValidator.Configure);
 
-        services.AddRateLimiter(options =>
-        {
-            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-            options.OnRejected = (context, _) =>
-            {
-                context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>()
-                    .CreateLogger(LoggerCategory)
-                    .LogWarning(
-                        "API key login rate limit hit from {RemoteIp}",
-                        context.HttpContext.Connection.RemoteIpAddress);
-                return ValueTask.CompletedTask;
-            };
-            options.AddPolicy(RateLimitPolicy, context => RateLimitPartition.GetFixedWindowLimiter(
+        // Through RateLimitPolicies: the app's single OnRejected is shared with the 3D runners' policy.
+        services.AddRateLimitPolicy(
+            RateLimitPolicy,
+            context => RateLimitPartition.GetFixedWindowLimiter(
                 context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
                 _ => new FixedWindowRateLimiterOptions
                 {
@@ -76,8 +66,16 @@ public static class ApiKeyLoginEndpoints
                     Window = RateLimitWindow,
                     QueueLimit = 0,
                     AutoReplenishment = true,
-                }));
-        });
+                }),
+            (context, _) =>
+            {
+                context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>()
+                    .CreateLogger(LoggerCategory)
+                    .LogWarning(
+                        "API key login rate limit hit from {RemoteIp}",
+                        context.HttpContext.Connection.RemoteIpAddress);
+                return ValueTask.CompletedTask;
+            });
 
         return services;
     }

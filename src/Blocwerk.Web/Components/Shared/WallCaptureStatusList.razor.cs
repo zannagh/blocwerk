@@ -24,6 +24,7 @@ public partial class WallCaptureStatusList : IAsyncDisposable
     private string? failure;
     private Task? pollLoop;
     private bool retraining;
+    private bool ultraAvailable;
 
     [Parameter]
     public Guid WallId { get; set; }
@@ -37,6 +38,12 @@ public partial class WallCaptureStatusList : IAsyncDisposable
 
     [Inject]
     private ILogger<WallCaptureStatusList> Logger { get; set; } = default!;
+
+    [Inject]
+    private Blocwerk.Core.Runners.IGpuRunnerService GpuRunners { get; set; } = default!;
+
+    [Inject]
+    private Blocwerk.Core.Runners.SplatQualityOffer QualityOffer { get; set; } = default!;
 
     /// <summary>Re-reads the history now and starts polling if a capture is running.</summary>
     public async Task RefreshAsync()
@@ -105,6 +112,33 @@ public partial class WallCaptureStatusList : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// The retrain offer after the capture's quality: the next profile, and Ultra after Max only when a runner (or the
+    /// splat worker) can really train it.
+    /// </summary>
+    private SplatQuality? BetterQuality(WallCaptureSummary capture) =>
+        CaptureSplatDocuments.NextQuality(capture.SplatQuality)
+        ?? (capture.SplatQuality == SplatQuality.Max && ultraAvailable ? SplatQuality.Ultra : null);
+
+    /// <summary>Stops waiting for a 3D runner: the capture keeps its model (and any older photo-real view).</summary>
+    private async Task CancelRunnerJobAsync(Guid captureId)
+    {
+        retraining = true;
+        try
+        {
+            await GpuRunners.CancelCaptureJobAsync(captureId);
+            await LoadAsync();
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or UserFacingException or KioskRestrictedException)
+        {
+            failure = ex.Message;
+        }
+        finally
+        {
+            retraining = false;
+        }
+    }
+
     private static string StatusClass(WallCaptureStatus status) => status switch
     {
         WallCaptureStatus.Succeeded => "glyph-active-badge",
@@ -119,6 +153,7 @@ public partial class WallCaptureStatusList : IAsyncDisposable
             history = await Captures.GetCapturesAsync(WallId);
             running = history.FirstOrDefault(c => c.IsRunning);
             failure = null;
+            ultraAvailable = Captures.IsSplatConfigured && await QualityOffer.UltraAvailableAsync(WallId, CancellationToken.None);
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidOperationException or KioskRestrictedException)
         {

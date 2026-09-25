@@ -181,6 +181,7 @@ public partial class BlocwerkDbContext : DbContext
         ConfigureGlyphGeometry(modelBuilder);
         ConfigureWallCapture(modelBuilder);
         ConfigureWallGeometrySplat(modelBuilder);
+        ConfigureGpuRunners(modelBuilder);
         ConfigureHoldOutlineUpgrade(modelBuilder);
         ConfigureHoldPlacement(modelBuilder);
         ConfigureMarkerPlan(modelBuilder);

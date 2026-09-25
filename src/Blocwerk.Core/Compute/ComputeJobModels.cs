@@ -62,16 +62,27 @@ public sealed record ComputeHealth
 
     [JsonPropertyName("kinds")]
     public IReadOnlyList<string> Kinds { get; init; } = [];
+
+    /// <summary>The highest quality profile the worker trains itself (<c>ultra</c> with gsplat on a 12 GB GPU), when it says.</summary>
+    [JsonPropertyName("maxQuality")]
+    public string? MaxQuality { get; init; }
 }
 
-/// <summary>One part of a multipart job submission: a JSON field or a file.</summary>
-public sealed record ComputeJobPart(string Name, byte[] Content, string ContentType, string? FileName = null)
+/// <summary>
+/// One part of a multipart job submission: a JSON field or a file. <c>SourcePath</c>, when set, is a file on disk the client streams instead of <c>Content</c>
+/// (which is then empty).
+/// </summary>
+public sealed record ComputeJobPart(string Name, byte[] Content, string ContentType, string? FileName = null, string? SourcePath = null)
 {
     public static ComputeJobPart Json(string name, string json) =>
         new(name, System.Text.Encoding.UTF8.GetBytes(json), "application/json", $"{name}.json");
 
     public static ComputeJobPart File(string name, string fileName, byte[] content, string contentType) =>
         new(name, content, contentType, fileName);
+
+    /// <summary>A file part streamed from <paramref name="path"/> (never read into memory).</summary>
+    public static ComputeJobPart FromDisk(string name, string fileName, string path, string contentType) =>
+        new(name, [], contentType, fileName, path);
 }
 
 /// <summary>What went wrong talking to a worker, so callers can decide to retry.</summary>

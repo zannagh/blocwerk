@@ -50,6 +50,30 @@ public sealed class FileSystemCaptureFileStore : ICaptureFileStore
         }
     }
 
+    public async Task<string> SaveWithAsync(string extension, Func<Stream, CancellationToken, Task> write, CancellationToken ct)
+    {
+        var ext = Normalize(extension);
+        var temp = Path.Combine(tempRoot, $"{Guid.NewGuid():N}{ext}");
+        try
+        {
+            await using (var target = new FileStream(temp, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 81920, useAsync: true))
+            {
+                await write(target, ct);
+            }
+
+            var name = $"{Guid.NewGuid():N}{ext}";
+            File.Move(temp, Path.Combine(root, name), overwrite: true);
+            return name;
+        }
+        finally
+        {
+            if (File.Exists(temp))
+            {
+                File.Delete(temp);
+            }
+        }
+    }
+
     public async Task<byte[]?> ReadAsync(string storedName, CancellationToken ct)
     {
         var path = ResolvePhysicalPath(storedName);
