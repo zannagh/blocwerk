@@ -73,7 +73,10 @@ def regularisers(params, a, air=None):
         excess = top[:, 0] - top[:, 1]
         pen = a.aniso_reg * F.relu(excess - float(np.log(a.aniso_max)))
         if air is not None and getattr(a, "aniso_air_reg", 0) > 0 and len(air) == len(pen):
-            air_pen = a.aniso_air_reg * F.relu(excess - float(np.log(a.aniso_air_max)))
+            # Shortens the longest axis only: fattening the middle one inflated the air splats, and MCMC's
+            # position noise grows with the covariance, so they diffused out of the box (18 % outside).
+            air_excess = top[:, 0] - top[:, 1].detach()
+            air_pen = a.aniso_air_reg * F.relu(air_excess - float(np.log(a.aniso_air_max)))
             pen = torch.where(air, air_pen, pen)
         loss = loss + pen.mean()
     return loss

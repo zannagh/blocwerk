@@ -70,3 +70,28 @@ def test_needle_penalty_is_stronger_in_the_air():
     assert float(regularisers(params, a)) == 0.0  # ratio 4: free on the wall
     air = float(regularisers(params, a, torch.tensor([True, False])))
     assert air == pytest.approx(np.log(4 / 3) / 2, rel=1e-4)
+
+
+def test_air_needle_penalty_shortens_never_fattens():
+    """The air penalty must not grow the middle axis: a fatter splat gets more of MCMC's covariance-scaled
+    position noise and diffuses out of the box (capture 0cc5e3ae: 18 % of the splats outside)."""
+    from types import SimpleNamespace
+    from splatworker.gsplat_model import regularisers
+    a = SimpleNamespace(opacity_reg=0.0, scale_reg=0.0, aniso_reg=0.1, aniso_max=6.0, aniso_air_reg=1.0, aniso_air_max=3.0)
+    scales = torch.log(torch.tensor([[40.0, 10, 1], [40.0, 10, 1]])).requires_grad_()
+    regularisers({"opacities": torch.zeros(2), "scales": scales}, a, torch.tensor([True, False])).backward()
+    g = scales.grad[0]
+    assert float(g[0]) > 0  # gradient descent shortens the longest axis
+    assert float(g[1]) == 0.0 and float(g[2]) == 0.0  # and leaves the others alone
+    assert scales.grad[1].abs().sum() == 0  # ratio 4 on the wall: free
+
+
+def test_air_mask_is_refreshed_right_after_the_mcmc_relocation():
+    """gsplat's MCMC relocates at the end of every step % refine_every == 0 (same splat count): the mask has
+    to follow on the next step, not 99 steps later."""
+    from splatworker.gsplat_train import air_due
+    mask = torch.zeros(10, dtype=torch.bool)
+    assert air_due(0, None, 10, 100)
+    assert air_due(101, mask, 10, 100) and air_due(201, mask, 10, 100)
+    assert not air_due(100, mask, 10, 100) and not air_due(150, mask, 10, 100)
+    assert air_due(150, mask, 12, 100)  # growth appended splats

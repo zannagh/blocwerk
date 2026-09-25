@@ -39,6 +39,13 @@ BEHIND_EVERY, BEHIND_STRIDE = 4, 4
 AIR_EVERY = 100  # --aniso-air-reg: the air mask (gsplat_zones.ZoneMap.air_mask) is refreshed this often
 
 
+def air_due(step, air, n, every=AIR_EVERY):
+    """Whether the air mask must be recomputed before `step`: first, after growth (n changed), and on the step
+    right after MCMC's refine step (step % every == 0 relocates dead splats onto live ones at the same count:
+    refreshed before it, a relocated wall splat kept its old slot's air flag, and its penalty, for 99 steps)."""
+    return air is None or len(air) != n or step % every == 1
+
+
 @torch.no_grad()
 def evaluate(params, views, ids, device, packed, zones=None):
     """{"psnr", "ssim", "views"} of the held-out views `ids` (never trained on) from their COLMAP poses,
@@ -122,7 +129,7 @@ def train(a, views, device, train_ids, zones=None):
     rng = np.random.default_rng(0)
     air = None
     for step in range(a.steps):
-        if zones is not None and a.aniso_air_reg > 0 and (step % AIR_EVERY == 0 or len(air) != len(params["means"])):
+        if zones is not None and a.aniso_air_reg > 0 and air_due(step, air, len(params["means"]), strategy.refine_every):
             air = zones.air_mask(params["means"])  # the splats move slowly: refreshed now and then
         if not order:
             order = [train_ids[i] for i in rng.permutation(len(train_ids))]
