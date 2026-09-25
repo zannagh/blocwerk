@@ -55,6 +55,17 @@ internal static partial class ApiDocsData
         + "followUp says what the new model did for the existing holds; followUpNote what it could not do (or a skipped photo-real view). "
         + "modelChecks is what the solver said about the model (measured angles, warnings, ignored detections); level is info or warning.";
 
+    private const string CaptureCoverageJson =
+        "{\n  \"version\": 1,\n  \"captureId\": \"<guid>\",\n  \"photoViews\": 53,\n  \"videoViews\": 0,\n  \"advice\": [\n    { \"kind\": \"volume\", "
+        + "\"text\": \"Shoot the undersides of the 3 volumes on the right of the main wall (volumes 4, 5 and 6) from below\", \"facetId\": \"0\" }\n  ],"
+        + "\n  \"facets\": [ { \"facetId\": \"0\", \"name\": \"Main wall\", \"cols\": 33, \"rows\": 17, \"cells\": \"ggdd…\", \"counts\": { … }, "
+        + "\"markers\": { … } } ],\n  \"volumes\": [ { \"index\": 4, \"faces\": [ { \"face\": \"underside\", \"status\": \"never\" } ] } ],"
+        + "\n  \"video\": { \"hasVideo\": true, \"framesExtracted\": 300, \"framesRegistered\": 300, \"posesFrom\": \"photos\", \"passes\": [ … ] }\n}";
+
+    private const string CaptureCoverageNote =
+        "cells: one letter per 200 mm cell, row by row from the bottom: g good, d seen from fewer than 3 directions, a only at a steep angle, "
+        + "r only from far away (coarser than 2 mm per pixel), n never seen, . not surface (under a volume or inside the wall). 404 until the capture is done.";
+
     private static ApiParamDoc[] CaptureWall => [new("wallId", "path", "The wall.")];
 
     private static ApiParamDoc[] CaptureOnWall =>
@@ -84,6 +95,8 @@ internal static partial class ApiDocsData
             "{\n  \"captureId\": \"<guid>\",\n  \"warnings\": []\n}", CaptureStartNote),
         new("GET", CaptureBase + "/{captureId}", "One capture's status; poll it after starting.", CaptureOnWall, null, CaptureStatusJson,
             CaptureStatusNote),
+        new("GET", CaptureBase + "/{captureId}/coverage", "What the capture saw and what the next capture should add.", CaptureOnWall, null,
+            CaptureCoverageJson, CaptureCoverageNote),
         new("GET", CaptureBase, "The wall's captures, newest first.", CaptureWall, null, "[ … same shape as GET /{captureId} … ]"),
         new("DELETE", CaptureBase + "/{captureId}", "Deletes an open draft and its photos.", CaptureOnWall, null, null, "204 No Content."),
     ];

@@ -1,0 +1,31 @@
+.capture-coverage { margin-top: 4px; }
+.capture-coverage-prominent {
+    margin: 10px 0; padding: 8px 12px; border: 1px solid var(--border-light);
+    border-radius: var(--r-md); background: var(--bg-surface-alt);
+}
+.capture-coverage-toggle { min-height: 44px; font-weight: 600; text-align: left; }
+.capture-coverage-advice { margin: 4px 0 8px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.capture-coverage-item {
+    padding: 10px 12px; min-height: 44px; display: flex; align-items: center;
+    border: 1px solid var(--border-light); border-left-width: 4px; border-radius: var(--r-sm);
+    background: var(--bg-surface); font-size: 0.9rem; line-height: 1.35;
+}
+.capture-coverage-volume { border-left-color: var(--status-danger, #d0463b); }
+.capture-coverage-surface { border-left-color: var(--status-warning, #d9a400); }
+.capture-coverage-markers { border-left-color: var(--accent); }
+.capture-coverage-video { border-left-color: var(--status-info, #3a7bd5); }
+.capture-coverage-maps { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; margin: 6px 0; }
+.capture-coverage-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 0.78rem; }
+.capture-coverage-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.cov-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+.cov-swatch-n { background: var(--status-danger, #d0463b); }
+.cov-swatch-d { background: var(--status-warning, #d9a400); }
+.cov-swatch-a { background: var(--status-review, #d97a00); }
+.cov-swatch-r { background: var(--status-info, #3a7bd5); }
+.cov-swatch-ring { border: 2px solid var(--accent); border-radius: 50%; }
+
+@media (max-width: 560px) {
+    .capture-coverage-toggle { width: 100%; }
+    .capture-coverage-maps { grid-template-columns: 1fr; }
+    .capture-coverage-prominent { padding: 6px 10px; }
+}

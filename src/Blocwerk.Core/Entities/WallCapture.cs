@@ -101,6 +101,12 @@ public class WallCapture
     /// </summary>
     public string? FollowUpJson { get; set; }
 
+    /// <summary>
+    /// What the capture saw of the wall and what the next capture should add (<c>CaptureCoverageReport</c> as JSON),
+    /// written by the post-capture chain once the capture is done. Null until then.
+    /// </summary>
+    public string? CoverageJson { get; set; }
+
     [MaxLength(2048)]
     public string? Notes { get; set; }
 

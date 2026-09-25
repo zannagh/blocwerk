@@ -1,0 +1,69 @@
+@using System.Globalization
+@using Blocwerk.Core.Capture.Coverage
+@* One facet's coverage as a small SVG heatmap: a square per 200 mm cell, coloured by its rating (weak cells stand
+   out, good ones stay quiet), the volumes' outlines coloured by their weakest face, the markers as small squares and
+   the suggested new markers as rings. Seen from the front, the facet's bottom at the bottom. *@
+
+<figure class="coverage-heatmap">
+    <svg viewBox="@ViewBox" role="img" aria-label="@AriaLabel" preserveAspectRatio="xMidYMid meet">
+        @for (var k = 0; k < Facet.Cells.Length; k++)
+        {
+            var cell = Facet.Cells[k];
+            if (cell == '.')
+            {
+                continue;
+            }
+
+            <rect x="@Num(k % Facet.Cols)" y="@Num(Facet.Rows - 1 - (k / Facet.Cols))" width="1" height="1" class="@($"cov-{cell}")" />
+        }
+        @foreach (var volume in Volumes)
+        {
+            <polygon points="@Points(volume.Footprint)" class="cov-volume cov-volume-@Worst(volume)" />
+        }
+        @foreach (var marker in Facet.Markers.Markers)
+        {
+            <rect x="@Num(X(marker.A) - 0.25)" y="@Num(Y(marker.B) - 0.25)" width="0.5" height="0.5"
+                  class="@(marker.Photos < MarkerCoverageRater.MinPhotos ? "cov-marker cov-marker-weak" : "cov-marker")" />
+        }
+        @if (Facet.Markers.Suggestion is { } suggestion)
+        {
+            @foreach (var p in suggestion.Points)
+            {
+                <circle cx="@Num(X(p[0]))" cy="@Num(Y(p[1]))" r="0.45" class="cov-suggested" />
+            }
+        }
+    </svg>
+    <figcaption>
+        <strong>@Facet.Name</strong>
+        <span class="hint">@Caption</span>
+    </figcaption>
+</figure>
+
+@code {
+    [Parameter, EditorRequired]
+    public FacetCoverage Facet { get; set; } = default!;
+
+    [Parameter]
+    public IReadOnlyList<VolumeCoverage> Volumes { get; set; } = [];
+
+    private string ViewBox => $"0 0 {Num(Facet.Cols)} {Num(Facet.Rows)}";
+
+    private string AriaLabel =>
+        $"Coverage of {Facet.Name}: {Facet.Counts.Weak} of {Facet.Counts.Total} areas weak, {Facet.Markers.Markers.Count} markers";
+
+    private string Caption => Facet.Counts.Total == 0
+        ? "not rated"
+        : string.Create(CultureInfo.InvariantCulture, $"{100 * Facet.Counts.Good / Facet.Counts.Total}% well covered · {Facet.Markers.Markers.Count} markers");
+
+    private double X(double a) => (a - Facet.ALo) / Facet.CellMm;
+
+    private double Y(double b) => Facet.Rows - ((b - Facet.BLo) / Facet.CellMm);
+
+    private string Points(IReadOnlyList<double[]> footprint) =>
+        string.Join(" ", footprint.Select(p => $"{Num(X(p[0]))},{Num(Y(p[1]))}"));
+
+    private static char Worst(VolumeCoverage volume) =>
+        CoverageCellCodes.Code(volume.Faces.Select(f => f.Status).DefaultIfEmpty(CoverageCellStatus.Good).Max());
+
+    private static string Num(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
+}

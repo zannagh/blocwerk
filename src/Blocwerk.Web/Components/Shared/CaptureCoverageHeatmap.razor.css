@@ -1,0 +1,21 @@
+.coverage-heatmap { margin: 0; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.coverage-heatmap svg {
+    width: 100%; max-height: 160px; background: var(--bg-surface-alt);
+    border: 1px solid var(--border-light); border-radius: var(--r-sm);
+}
+.coverage-heatmap figcaption { display: flex; flex-wrap: wrap; gap: 2px 8px; font-size: 0.8rem; }
+.coverage-heatmap rect { shape-rendering: crispEdges; }
+.cov-g { fill: var(--status-success, #3a9d5d); opacity: 0.18; }
+.cov-d { fill: var(--status-warning, #d9a400); opacity: 0.75; }
+.cov-a { fill: var(--status-review, #d97a00); opacity: 0.8; }
+.cov-r { fill: var(--status-info, #3a7bd5); opacity: 0.6; }
+.cov-n { fill: var(--status-danger, #d0463b); opacity: 0.85; }
+.cov-volume { stroke-width: 0.12; fill-opacity: 0.25; }
+.cov-volume-g { stroke: var(--text-secondary); fill: var(--text-secondary); }
+.cov-volume-d { stroke: var(--status-warning, #d9a400); fill: var(--status-warning, #d9a400); }
+.cov-volume-a { stroke: var(--status-review, #d97a00); fill: var(--status-review, #d97a00); }
+.cov-volume-r { stroke: var(--status-info, #3a7bd5); fill: var(--status-info, #3a7bd5); }
+.cov-volume-n { stroke: var(--status-danger, #d0463b); fill: var(--status-danger, #d0463b); }
+.cov-marker { fill: var(--text); }
+.cov-marker-weak { fill: var(--status-danger, #d0463b); }
+.cov-suggested { fill: none; stroke: var(--accent); stroke-width: 0.15; }

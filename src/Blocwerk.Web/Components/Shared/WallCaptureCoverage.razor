@@ -1,0 +1,55 @@
+@using Blocwerk.Core.Capture.Coverage
+@* "Next capture: what to add" for one capture: the plain-words list from its coverage report, then a small heatmap
+   per facet. Collapsed it is one 44 px button; the report is read when it is opened (computed on first read for a
+   capture done before reports existed). *@
+
+<div class="capture-coverage @(Prominent ? "capture-coverage-prominent" : null)">
+    <button type="button" class="btn-link capture-coverage-toggle" @onclick="ToggleAsync" aria-expanded="@(open ? "true" : "false")">
+        @(open ? "Hide what to add next time" : Title)
+    </button>
+    @if (open)
+    {
+        @if (loading)
+        {
+            <p class="hint" role="status">Checking what the capture covered…</p>
+        }
+        else if (failure is not null)
+        {
+            <p class="field-error" role="alert">@failure</p>
+        }
+        else if (report is null)
+        {
+            <p class="hint">No coverage report yet: it is made once the capture is done.</p>
+        }
+        else
+        {
+            @if (report.Advice.Count == 0)
+            {
+                <p class="hint">This capture covered the wall well: nothing to add.</p>
+            }
+            else
+            {
+                <ol class="capture-coverage-advice">
+                    @foreach (var line in report.Advice)
+                    {
+                        <li class="capture-coverage-item capture-coverage-@line.Kind">@line.Text</li>
+                    }
+                </ol>
+            }
+            <p class="hint">@SourceLine(report)</p>
+            <div class="capture-coverage-maps">
+                @foreach (var facet in report.Facets)
+                {
+                    <CaptureCoverageHeatmap Facet="facet" Volumes="@report.Volumes.Where(v => v.FacetId == facet.FacetId).ToList()" />
+                }
+            </div>
+            <p class="capture-coverage-legend hint">
+                <span><i class="cov-swatch cov-swatch-n"></i>never seen</span>
+                <span><i class="cov-swatch cov-swatch-d"></i>fewer than 3 directions</span>
+                <span><i class="cov-swatch cov-swatch-a"></i>only steep views</span>
+                <span><i class="cov-swatch cov-swatch-r"></i>only from far</span>
+                <span><i class="cov-swatch cov-swatch-ring"></i>add a marker here</span>
+            </p>
+        }
+    }
+</div>

@@ -20,6 +20,11 @@
     <p class="field-error" role="alert">@failure</p>
 }
 
+@if (LatestDone is { } latest)
+{
+    <WallCaptureCoverage WallId="WallId" CaptureId="latest.Id" StartOpen="true" Prominent="true" />
+}
+
 @if (history.Count > 0)
 {
     <details class="segment-settings capture-history" open="@(running is null && history[0].Error is not null)">
@@ -55,6 +60,10 @@
                                 @if (capture.FollowUpNote is not null)
                                 {
                                     <div class="hint">@capture.FollowUpNote</div>
+                                }
+                                @if (IsDone(capture) && capture.Id != LatestDone?.Id)
+                                {
+                                    <WallCaptureCoverage WallId="WallId" CaptureId="capture.Id" />
                                 }
                                 @if (capture.PhotoRealPending is not null)
                                 {
