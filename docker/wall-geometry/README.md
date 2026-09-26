@@ -185,7 +185,9 @@ Deterministic for the same input (`options.seed`).
 **The Attic** (353-image model, placed holds as detections, `tests/test_sfm_real.py` with the owner's data):
 exactly main wall, side panel and kickboard; main wall 0.09 deg from the marker model, 45.36 deg with the device
 gravity (marker model 45.18); anchored on 15 photos: 14.5 mm rms / 28 mm max, ICP 0.28 deg, main wall 45.17 deg.
-Without detections, anchored or not, on this model and on the photos-only one (P53): exactly the same three.
+Without detections, anchored or not, on this model and on the photos-only one (P53): exactly the same three; the
+third real markerless capture of the copy wall (`markerless/run3`) too, with its YOLO detections or without (the
+old rules took two spurious slabs there without them).
 
 ## Textures (`POST /v1/jobs/textures`, multipart)
 

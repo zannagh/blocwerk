@@ -1,6 +1,6 @@
 """Regression on the real Attic: solve-sfm on the 353-image sparse model (53 photos + 300 video frames) against the
 marker model. Needs the owner's data folder (BLOCWERK_DATA_DIR, default ~/blocwerk-data: tune/work/sfm/sparse/0 and
-markerless/{active_model.json, device_gravity.json, holds.csv, anchors/anchor_list.txt}); skipped without it.
+markerless/{active_model.json, device_gravity.json, holds.csv, anchors/anchor_list.txt}, run3/); skipped without it.
 Nothing of it is committed. Hold detections are the placed holds projected into the photos (8 px noise), as in
 Phase 0."""
 import json
@@ -126,3 +126,29 @@ def test_attic_facets_without_hold_detections_are_the_big_three(attic, sparse, a
     assert doc["world"]["anchored"] == anchored
     rows = [(r["reason"], r["centreMm"]) for r in doc["quality"]["sfm"]["planes"]]
     assert facet_set(doc, attic) == ["0", "1b", "2"], rows
+
+
+RUN3 = os.path.join(ML, "run3")  # the third real markerless capture: its sparse.zip and the app's solve request
+
+
+@pytest.mark.parametrize("holds", [True, False], ids=["yolo-holds", "no-holds"])
+def test_real_markerless_capture_gives_the_big_three(tmp_path, holds):
+    """The copy wall's markerless capture (53 photos + frames + 15 anchors, the app's tiled-YOLO detections): main
+    wall, side panel and kickboard on their reference facets. Without detections the old rules added two spurious
+    near-vertical slabs in front of the main wall (the first real run's "Surface 5 / 6")."""
+    import zipfile
+    if not os.path.isfile(os.path.join(RUN3, "sparse.zip")):
+        pytest.skip("no run-3 capture here")
+    zipfile.ZipFile(os.path.join(RUN3, "sparse.zip")).extractall(tmp_path)
+    model = next(r for r, _, f in os.walk(tmp_path) if "points3D.bin" in f)
+    req = json.load(open(os.path.join(RUN3, "request.json"), encoding="utf-8"))
+    if not holds:
+        for p in req["photos"]:
+            p.pop("holds", None)
+    doc, _ = solve_sfm_document(req, model)
+    rows = doc["quality"]["sfm"]["planes"]
+    assert doc["world"]["anchored"] and doc["world"]["scaleSource"] == "anchors"
+    assert sorted(r["referenceFacet"] for r in rows if r["accepted"]) == ["0", "1b", "2"], rows
+    assert doc["segments"][0]["facets"][0]["measuredAngleDeg"] == pytest.approx(45.18, abs=0.3)
+    if holds:
+        assert max(r["holdHitShare"] for r in rows) > 0.5  # the main wall carries most detections
