@@ -126,6 +126,12 @@ public class Wall
     /// </summary>
     public double? MarkerSizeMm { get; set; }
 
+    /// <summary>
+    /// "Volumes on this wall have flat sides" (default off): newly detected volumes get flat faces automatically when
+    /// they fit well (<see cref="WallVolume.HasFlatSides"/>); each volume can still be switched back.
+    /// </summary>
+    public bool VolumesHaveFlatSides { get; set; }
+
     public ICollection<WallMember> Members { get; set; } = [];
 
     public ICollection<Hold> Holds { get; set; } = [];

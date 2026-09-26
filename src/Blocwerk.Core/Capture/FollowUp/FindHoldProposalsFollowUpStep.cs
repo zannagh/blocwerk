@@ -40,7 +40,7 @@ public sealed class FindHoldProposalsFollowUpStep(IHoldProposalService proposals
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);
         var volumes = await db.WallVolumes.AsNoTracking()
-            .Where(v => v.GeometryModelId == context.ModelId && !v.IsHidden)
+            .Where(v => v.GeometryModelId == context.ModelId && !v.IsHidden && !v.IsRemoved)
             .Select(v => new { v.FacetId, v.SurfaceJson })
             .ToListAsync(ct);
         if (volumes.Count == 0)

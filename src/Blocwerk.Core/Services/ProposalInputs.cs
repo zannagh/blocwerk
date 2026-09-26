@@ -38,7 +38,7 @@ public sealed record ProposalInputs(
     /// <returns>The inputs.</returns>
     public static async Task<ProposalInputs> LoadAsync(BlocwerkDbContext db, Guid wallId, Guid modelId, WallGeometryDocument doc, CancellationToken ct)
     {
-        var volumes = (await db.WallVolumes.AsNoTracking().Where(v => v.GeometryModelId == modelId && !v.IsHidden).ToListAsync(ct))
+        var volumes = (await db.WallVolumes.AsNoTracking().Where(v => v.GeometryModelId == modelId && !v.IsHidden && !v.IsRemoved).ToListAsync(ct))
             .Select(v => (v.FacetId, Surface: VolumeSurface.FromJson(v.SurfaceJson)))
             .Where(v => v.Surface is not null)
             .ToList();

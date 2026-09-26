@@ -19,12 +19,17 @@ public sealed partial class WallVolumeService
     /// (Re)places every live placed hold: a hold whose panel ray meets a visible volume gets its placement, any
     /// other loses a stored one. Also stores each volume's hold count. Returns (holds on volumes, holds changed).
     /// </summary>
-    internal static async Task<(int Placed, int Changed)> PlaceHoldsAsync(BlocwerkDbContext db, Guid wallId, Guid modelId, CancellationToken ct)
+    internal static Task<(int Placed, int Changed)> PlaceHoldsAsync(BlocwerkDbContext db, Guid wallId, Guid modelId, CancellationToken ct) =>
+        PlaceHoldsAsync(db, wallId, modelId, null, ct);
+
+    /// <summary>As <see cref="PlaceHoldsAsync(BlocwerkDbContext, Guid, Guid, CancellationToken)"/>, collecting the ids of the holds that changed.</summary>
+    internal static async Task<(int Placed, int Changed)> PlaceHoldsAsync(
+        BlocwerkDbContext db, Guid wallId, Guid modelId, ICollection<Guid>? changedIds, CancellationToken ct)
     {
         var json = await db.WallGeometryModels.AsNoTracking().Where(m => m.Id == modelId).Select(m => m.Json).FirstAsync(ct);
         var (frames, _) = FacetsOf(WallGeometryDocument.Parse(json));
         var rows = await db.WallVolumes.Where(v => v.GeometryModelId == modelId).ToListAsync(ct);
-        var volumes = rows.Where(v => !v.IsHidden)
+        var volumes = rows.Where(v => !v.IsHidden && !v.IsRemoved)
             .Select(v => VolumeSurface.FromJson(v.SurfaceJson) is { } s ? new PlacedVolume(v.Id, v.FacetId, s) : null)
             .OfType<PlacedVolume>()
             .GroupBy(v => v.FacetId, StringComparer.Ordinal)
@@ -54,6 +59,7 @@ public sealed partial class WallVolumeService
             {
                 hold.VolumePlacementJson = value;
                 changed++;
+                changedIds?.Add(hold.Id);
             }
         }
 

@@ -3,7 +3,6 @@
 // </copyright>
 
 using System.Diagnostics;
-using System.Text.Json;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Data;
@@ -27,14 +26,10 @@ public sealed partial class WallVolumeService(
     ICurrentUserService currentUserService,
     ILogger<WallVolumeService> logger,
     ICaptureFileStore? files = null,
-    IKioskContext? kioskContext = null) : IWallVolumeService
+    IKioskContext? kioskContext = null,
+    IHoldRefinementQueue? refinementQueue = null) : IWallVolumeService
 {
     private const string KioskRefusal = "Finding volumes";
-
-    /// <summary>A re-detected volume keeps the hidden flag of an old one whose footprint centre is this near, mm.</summary>
-    private const double SameVolumeMm = 120;
-
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     /// <inheritdoc />
     public async Task<WallVolumeRunResult?> DetectFromPipelineAsync(Guid wallId, CancellationToken ct = default)
@@ -64,11 +59,8 @@ public sealed partial class WallVolumeService(
         await EnsureAdminAsync(wallId, ct);
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);
         var modelId = await ActiveModelIdAsync(db, wallId, ct);
-        return await db.WallVolumes.AsNoTracking()
-            .Where(v => v.GeometryModelId == modelId)
-            .OrderBy(v => v.Index)
-            .Select(v => new WallVolumeSummary(v.Id, v.Index, v.FacetId, v.AreaM2, v.HeightMm, v.Confidence, v.HoldCount, v.IsHidden))
-            .ToListAsync(ct);
+        var rows = await db.WallVolumes.AsNoTracking().Where(v => v.GeometryModelId == modelId).OrderBy(v => v.Index).ToListAsync(ct);
+        return rows.Select(WallVolumeShapes.Summary).ToList();
     }
 
     /// <inheritdoc />
@@ -80,7 +72,7 @@ public sealed partial class WallVolumeService(
             ?? throw new UserFacingException("That volume does not exist on this wall.");
         volume.IsHidden = hidden;
         await db.SaveChangesAsync(ct);
-        var (placed, changed) = await PlaceHoldsAsync(db, wallId, volume.GeometryModelId, ct);
+        var (placed, changed) = await ReplaceHoldsAsync(db, wallId, volume.GeometryModelId, ct);
         var total = await db.WallVolumes.CountAsync(v => v.GeometryModelId == volume.GeometryModelId, ct);
         return new WallVolumeRunResult(total, 0, placed, changed);
     }
@@ -120,13 +112,13 @@ public sealed partial class WallVolumeService(
         var holds = KnownHolds(live, frames);
         var found = await Task.Run(() => VolumeDetector.Detect(evidence.Points, frames, extents, holds, evidence.Options), ct);
         var accepted = found.Where(v => v.IsAccepted).ToList();
-        await ReplaceVolumesAsync(db, wallId, model.Id, accepted, ct);
+        var stored = await ReplaceVolumesAsync(db, wallId, model.Id, accepted, ct);
         var (placed, changed) = await PlaceHoldsAsync(db, wallId, model.Id, ct);
         logger.LogInformation(
             "Volumes on wall {WallId} ({Source}): {Accepted} found ({Rejected} raised candidates rejected), {Placed} holds on them ({Changed} changed), {Ms} ms",
-            wallId, evidence.Sparse ? "sparse points" : "photo-real view", accepted.Count, found.Count - accepted.Count, placed, changed,
+            wallId, evidence.Sparse ? "sparse points" : "photo-real view", stored, found.Count - accepted.Count, placed, changed,
             watch.ElapsedMilliseconds);
-        return new WallVolumeRunResult(accepted.Count, found.Count - accepted.Count, placed, changed, evidence.Sparse);
+        return new WallVolumeRunResult(stored, found.Count - accepted.Count, placed, changed, evidence.Sparse);
     }
 
     /// <summary>
@@ -178,51 +170,4 @@ public sealed partial class WallVolumeService(
                     h.PlaneAMm!.Value, h.PlaneBMm!.Value, (h.WidthMm ?? fallbackMm) / 2, (h.HeightMm ?? fallbackMm) / 2)).ToList(),
                 StringComparer.Ordinal);
     }
-
-    private async Task ReplaceVolumesAsync(BlocwerkDbContext db, Guid wallId, Guid modelId, List<DetectedVolume> accepted, CancellationToken ct)
-    {
-        var old = await db.WallVolumes.Where(v => v.GeometryModelId == modelId).ToListAsync(ct);
-        var hidden = old.Where(v => v.IsHidden).Select(v => (v.FacetId, Centre: Centre(Footprint(v.FootprintJson)))).ToList();
-        db.WallVolumes.RemoveRange(old);
-        var index = 0;
-        foreach (var v in accepted.OrderBy(v => v.FacetId, StringComparer.Ordinal).ThenBy(v => v.Footprint.Average(p => p.A)))
-        {
-            var centre = Centre(v.Footprint);
-            db.WallVolumes.Add(new WallVolume
-            {
-                WallId = wallId,
-                GeometryModelId = modelId,
-                FacetId = v.FacetId,
-                Index = ++index,
-                FootprintJson = JsonSerializer.Serialize(v.Footprint.Select(p => new[] { Math.Round(p.A, 1), Math.Round(p.B, 1) }), Json),
-                SurfaceJson = v.Surface!.ToJson(),
-                AreaM2 = v.AreaM2,
-                HeightMm = v.HeightMm,
-                Confidence = v.Confidence,
-                IsHidden = hidden.Any(h => h.FacetId == v.FacetId && Distance(h.Centre, centre) < SameVolumeMm),
-            });
-        }
-
-        await db.SaveChangesAsync(ct);
-    }
-
-    /// <summary>A stored footprint; empty when malformed.</summary>
-    private static List<(double A, double B)> Footprint(string json)
-    {
-        try
-        {
-            return (JsonSerializer.Deserialize<double[][]>(json, Json) ?? [])
-                .Where(p => p.Length == 2).Select(p => (p[0], p[1])).ToList();
-        }
-        catch (JsonException)
-        {
-            return [];
-        }
-    }
-
-    private static (double A, double B) Centre(IReadOnlyList<(double A, double B)> ring) =>
-        ring.Count == 0 ? (0, 0) : (ring.Average(p => p.A), ring.Average(p => p.B));
-
-    private static double Distance((double A, double B) p, (double A, double B) q) =>
-        Math.Sqrt(((p.A - q.A) * (p.A - q.A)) + ((p.B - q.B) * (p.B - q.B)));
 }

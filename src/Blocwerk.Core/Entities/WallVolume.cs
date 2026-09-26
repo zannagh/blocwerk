@@ -63,5 +63,26 @@ public class WallVolume
     /// <summary>Hidden by a wall admin: not drawn and not used to place holds.</summary>
     public bool IsHidden { get; set; }
 
+    /// <summary>
+    /// Removed by a wall admin as falsely detected: not drawn, not used, and a re-detection on the model does not create
+    /// it again (a candidate overlapping its footprint by IoU ≥ 0.5 is skipped). Kept so it can be restored.
+    /// </summary>
+    public bool IsRemoved { get; set; }
+
+    /// <summary>When it was removed.</summary>
+    public DateTimeOffset? RemovedAt { get; set; }
+
+    /// <summary>
+    /// "Has flat sides": <see cref="SurfaceJson"/> holds planar faces (<see cref="Geometry.Volumes.FlatSidedFitter"/>) and the
+    /// measured height field waits in <see cref="HeightFieldJson"/> until it is switched off again.
+    /// </summary>
+    public bool HasFlatSides { get; set; }
+
+    /// <summary>The measured height field while <see cref="HasFlatSides"/> is on; null otherwise.</summary>
+    public string? HeightFieldJson { get; set; }
+
+    /// <summary>How far the flat faces are from the measured height field (trimmed RMS), mm; null without flat sides.</summary>
+    public double? FlatFitRmsMm { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

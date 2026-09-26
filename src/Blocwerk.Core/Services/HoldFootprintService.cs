@@ -127,7 +127,7 @@ public sealed class HoldFootprintService(
     private static async Task<Dictionary<string, FacetVolumes>> FacetVolumesAsync(
         BlocwerkDbContext db, Guid modelId, WallGeometryDocument doc, CancellationToken ct)
     {
-        var rows = await db.WallVolumes.AsNoTracking().Where(v => v.GeometryModelId == modelId && !v.IsHidden).ToListAsync(ct);
+        var rows = await db.WallVolumes.AsNoTracking().Where(v => v.GeometryModelId == modelId && !v.IsHidden && !v.IsRemoved).ToListAsync(ct);
         var result = new Dictionary<string, FacetVolumes>(StringComparer.Ordinal);
         foreach (var g in rows.GroupBy(v => v.FacetId))
         {

@@ -147,7 +147,7 @@ public sealed class CaptureCoverageService(
     private static async Task<IReadOnlyList<CoverageVolume>> VolumesAsync(BlocwerkDbContext db, Guid modelId, CancellationToken ct)
     {
         var rows = await db.WallVolumes.AsNoTracking()
-            .Where(v => v.GeometryModelId == modelId && !v.IsHidden)
+            .Where(v => v.GeometryModelId == modelId && !v.IsHidden && !v.IsRemoved)
             .OrderBy(v => v.Index)
             .Select(v => new { v.Index, v.FacetId, v.SurfaceJson, v.FootprintJson })
             .ToListAsync(ct);

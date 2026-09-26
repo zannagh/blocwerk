@@ -43,7 +43,7 @@ public sealed class CoverageReportFollowUpStep(ICaptureCoverageService coverage,
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);
         var volumes = await db.WallVolumes.AsNoTracking()
-            .Where(v => v.GeometryModelId == context.ModelId && !v.IsHidden)
+            .Where(v => v.GeometryModelId == context.ModelId && !v.IsHidden && !v.IsRemoved)
             .Select(v => new { v.FacetId, v.Index, v.SurfaceJson })
             .ToListAsync(ct);
         var text = string.Join('\n', volumes.Select(v => $"{v.FacetId}\t{v.Index}\t{v.SurfaceJson}").Order(StringComparer.Ordinal));

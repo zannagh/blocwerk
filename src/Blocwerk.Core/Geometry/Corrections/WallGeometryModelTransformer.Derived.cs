@@ -78,6 +78,11 @@ public static partial class WallGeometryModelTransformer
         HoldCount = volume.HoldCount,
         Source = volume.Source,
         IsHidden = volume.IsHidden,
+        IsRemoved = volume.IsRemoved,
+        RemovedAt = volume.RemovedAt,
+        HasFlatSides = volume.HasFlatSides,
+        HeightFieldJson = volume.HeightFieldJson is null ? null : TransformSurface(volume.HeightFieldJson, t.Scale),
+        FlatFitRmsMm = volume.FlatFitRmsMm * t.Scale,
         CreatedAt = volume.CreatedAt,
     };
 
@@ -117,6 +122,12 @@ public static partial class WallGeometryModelTransformer
         }
 
         node["heights"] = Convert.ToBase64String(bytes);
+        if (node["faces"] is JsonArray faces)
+        {
+            // A flat-sided volume's faces: every corner (a, b, height) scales.
+            node["faces"] = new JsonArray(faces.Select(f => f is JsonArray ? JsonNode.Parse(ScaleArray(f.ToJsonString(), s)) : f?.DeepClone()).ToArray());
+        }
+
         return ScaleFields(node, [("aLo", s), ("bLo", s), ("cellMm", s)]);
     }
 

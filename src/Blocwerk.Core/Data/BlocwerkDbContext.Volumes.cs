@@ -27,6 +27,7 @@ public partial class BlocwerkDbContext
 
             entity.Property(v => v.FootprintJson).HasColumnType("text");
             entity.Property(v => v.SurfaceJson).HasColumnType("text");
+            entity.Property(v => v.HeightFieldJson).HasColumnType("text");
             entity.HasIndex(v => new { v.GeometryModelId, v.Index });
             entity.HasIndex(v => v.WallId);
         });

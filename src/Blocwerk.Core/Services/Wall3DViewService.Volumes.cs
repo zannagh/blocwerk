@@ -18,7 +18,7 @@ public sealed partial class Wall3DViewService
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);
         var volumes = await db.WallVolumes.AsNoTracking()
-            .Where(v => v.WallId == wall.Id && !v.IsHidden && v.GeometryModel.IsActive)
+            .Where(v => v.WallId == wall.Id && !v.IsHidden && !v.IsRemoved && v.GeometryModel.IsActive)
             .ToListAsync(ct);
         if (volumes.Count == 0)
         {

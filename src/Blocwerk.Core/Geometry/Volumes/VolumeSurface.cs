@@ -11,7 +11,8 @@ namespace Blocwerk.Core.Geometry.Volumes;
 /// centre of each grid cell, 0 outside the volume. Together with the facet plane under it this is a closed
 /// solid (top surface, side walls down to the wall where the height drops to 0, and the base on the wall).
 /// Heights are whole millimetres, stored as little-endian int16 in base64 (a 0.2 m² volume at 20 mm cells is
-/// about 1 KB).
+/// about 1 KB). A volume with "flat sides" also carries its <see cref="Polyhedron"/> (format version 2): heights and
+/// normals then come from its planar faces exactly, and the grid holds the same shape rasterised.
 /// </summary>
 public sealed class VolumeSurface
 {
@@ -25,7 +26,8 @@ public sealed class VolumeSurface
     /// <summary>Initializes a new instance of the <see cref="VolumeSurface"/> class.</summary>
     /// <param name="grid">The grid (cell centres carry the heights).</param>
     /// <param name="heights">Height per cell, mm; row-major along a.</param>
-    public VolumeSurface(CellGrid grid, short[] heights)
+    /// <param name="polyhedron">The flat-sided shape, when the volume has flat sides.</param>
+    public VolumeSurface(CellGrid grid, short[] heights, VolumePolyhedron? polyhedron = null)
     {
         if (heights.Length != grid.Cols * grid.Rows)
         {
@@ -34,16 +36,20 @@ public sealed class VolumeSurface
 
         Grid = grid;
         this.heights = heights;
+        Polyhedron = polyhedron;
     }
 
     /// <summary>The grid.</summary>
     public CellGrid Grid { get; }
 
+    /// <summary>The flat-sided shape, or null for a plain height field.</summary>
+    public VolumePolyhedron? Polyhedron { get; }
+
     /// <summary>The heights, mm, row-major along a.</summary>
     public IReadOnlyList<short> Heights => heights;
 
     /// <summary>The tallest cell, mm.</summary>
-    public double MaxHeightMm => heights.Length == 0 ? 0 : heights.Max();
+    public double MaxHeightMm => Math.Max(heights.Length == 0 ? 0 : heights.Max(), Polyhedron?.TopHeightMm ?? 0);
 
     /// <summary>The height at plane point (a, b): bilinear between cell centres, 0 outside the grid.</summary>
     /// <param name="a">Along u, mm.</param>
@@ -51,6 +57,11 @@ public sealed class VolumeSurface
     /// <returns>Height above the facet, mm.</returns>
     public double HeightAt(double a, double b)
     {
+        if (Polyhedron is not null)
+        {
+            return Polyhedron.HeightAt(a, b);
+        }
+
         var x = ((a - Grid.ALo) / Grid.CellMm) - 0.5;
         var y = ((b - Grid.BLo) / Grid.CellMm) - 0.5;
         if (x < 0 || y < 0 || x > Grid.Cols - 1 || y > Grid.Rows - 1 || Grid.Cols < 2 || Grid.Rows < 2)
@@ -70,6 +81,11 @@ public sealed class VolumeSurface
     /// <returns>The normal; (0, 0, 1) on flat ground.</returns>
     public double[] NormalAt(double a, double b)
     {
+        if (Polyhedron is not null)
+        {
+            return Polyhedron.NormalAt(a, b);
+        }
+
         var d = Grid.CellMm;
         var ga = (HeightAt(a + d, b) - HeightAt(a - d, b)) / (2 * d);
         var gb = (HeightAt(a, b + d) - HeightAt(a, b - d)) / (2 * d);
@@ -121,8 +137,10 @@ public sealed class VolumeSurface
             bytes[(2 * k) + 1] = (byte)((heights[k] >> 8) & 0xff);
         }
 
+        var faces = Polyhedron?.ToArrays();
         return JsonSerializer.Serialize(
-            new VolumeSurfaceDocument(1, Grid.ALo, Grid.BLo, Grid.CellMm, Grid.Cols, Grid.Rows, Convert.ToBase64String(bytes)), Json);
+            new VolumeSurfaceDocument(faces is null ? 1 : 2, Grid.ALo, Grid.BLo, Grid.CellMm, Grid.Cols, Grid.Rows, Convert.ToBase64String(bytes), faces),
+            Json);
     }
 
     /// <summary>Parses the storage form; null when malformed.</summary>
@@ -138,7 +156,7 @@ public sealed class VolumeSurface
         try
         {
             var d = JsonSerializer.Deserialize<VolumeSurfaceDocument>(json, Json);
-            if (d is null || d.Version != 1 || d.Cols <= 0 || d.Rows <= 0 || (long)d.Cols * d.Rows > MaxCells || !(d.CellMm > 0))
+            if (d is null || d.Version is not (1 or 2) || d.Cols <= 0 || d.Rows <= 0 || (long)d.Cols * d.Rows > MaxCells || !(d.CellMm > 0))
             {
                 return null;
             }
@@ -155,12 +173,32 @@ public sealed class VolumeSurface
                 h[k] = (short)(bytes[2 * k] | (bytes[(2 * k) + 1] << 8));
             }
 
-            return new VolumeSurface(new CellGrid(d.ALo, d.BLo, d.CellMm, d.Cols, d.Rows), h);
+            var polyhedron = d.Version == 2 ? VolumePolyhedron.FromArrays(d.Faces) : null;
+            return d.Version == 2 && polyhedron is null ? null : new VolumeSurface(new CellGrid(d.ALo, d.BLo, d.CellMm, d.Cols, d.Rows), h, polyhedron);
         }
         catch (Exception ex) when (ex is JsonException or FormatException)
         {
             return null;
         }
+    }
+
+    /// <summary>A flat-sided volume's surface: the grid covers its base (one cell of margin), heights rasterised from the faces.</summary>
+    /// <param name="polyhedron">The shape.</param>
+    /// <param name="cellMm">Grid cell side, mm.</param>
+    /// <returns>The surface.</returns>
+    public static VolumeSurface FlatSided(VolumePolyhedron polyhedron, double cellMm)
+    {
+        var ring = polyhedron.Base;
+        var grid = CellGrid.Covering(
+            ring.Min(p => p.A) - cellMm, ring.Max(p => p.A) + cellMm, ring.Min(p => p.B) - cellMm, ring.Max(p => p.B) + cellMm, cellMm);
+        var h = new short[grid.Cols * grid.Rows];
+        for (var k = 0; k < h.Length; k++)
+        {
+            var (a, b) = grid.Centre(k);
+            h[k] = (short)Math.Clamp(Math.Round(polyhedron.HeightAt(a, b)), 0, short.MaxValue);
+        }
+
+        return new VolumeSurface(grid, h, polyhedron);
     }
 
     private double At(int i, int j) => heights[(j * Grid.Cols) + i];
