@@ -46,7 +46,8 @@ public static class Wall3DVolumes
             var g = surface.Grid;
             drawn.Add(new Wall3DVolume(
                 v.Id, v.Index, v.FacetId, g.ALo, g.BLo, g.CellMm, g.Cols, g.Rows, surface.Heights, footprint.Select(p => new[] { p.A, p.B }).ToList(),
-                TextureCamera(frame, footprint, sourceMaps.GetValueOrDefault(v.FacetId), cameras)));
+                TextureCamera(frame, footprint, sourceMaps.GetValueOrDefault(v.FacetId), cameras),
+                surface.Polyhedron?.ToArrays()));
         }
 
         if (drawn.Count == 0)

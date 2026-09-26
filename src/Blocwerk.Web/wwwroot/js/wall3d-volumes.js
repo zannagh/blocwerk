@@ -4,10 +4,13 @@
 // rectified photo). The photo painted a volume point where the TEXTURE CAMERA's ray through it meets the
 // facet plane, so projecting each vertex from that camera onto the plane gives its texture coordinate and
 // the photo lands back on the volume. Photo-real shows the captured volumes themselves, so neither is drawn.
+// A volume with "flat sides" comes as planar faces instead (`faces`): flat triangles, and in Schematic its sheet edges.
 import * as THREE from '../lib/three/three.module.min.js';
 import { v3 } from './wall3d-scene.js';
 
 const PLAIN_WOOD = 0xe4d2b0;
+/** The sheet edges of flat-sided volumes (Schematic). */
+const EDGE_MAT = new THREE.LineBasicMaterial({ color: 0x6b5232 });
 /** Lift over the facet, mm: the rim cells meet the wall under the photo (3 mm) and markers. */
 const LIFT = 3.5;
 
@@ -79,6 +82,38 @@ function geometryOf(vol, f, texture) {
 }
 
 /**
+ * A flat-sided volume (Wall3DVolume.faces: planar faces, corners [a, b, h] mm) as flat triangles: each face fanned
+ * from its first corner, wound so it faces away from the wall whatever the facet frame's handedness.
+ */
+function flatGeometryOf(vol, f, texture) {
+    const pos = [];
+    const uv = [];
+    const out = v3(f.normal);
+    for (const face of vol.faces) {
+        const pts = face.map(c => worldOf(f, c[0], c[1], c[2]));
+        const n = new THREE.Vector3().subVectors(pts[1], pts[0]).cross(new THREE.Vector3().subVectors(pts[2], pts[0]));
+        const flip = n.dot(out) < 0;
+        for (let k = 1; k + 1 < face.length; k++) {
+            const tri = flip ? [0, k + 1, k] : [0, k, k + 1];
+            for (const i of tri) {
+                pos.push(pts[i].x, pts[i].y, pts[i].z);
+                if (texture) uv.push(...uvOf(face[i][0], face[i][1], face[i][2], vol.textureCamera, texture.bounds));
+            }
+        }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    if (texture) g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.computeVertexNormals();
+    return g;
+}
+
+/** The sheet edges of a flat-sided volume (Schematic): lines where neighbouring faces meet at an angle, and its rim. */
+function edgesOf(geometry) {
+    return new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 8), EDGE_MAT);
+}
+
+/**
  * { plain, photo }: two groups with every volume of `view` (either may be empty); `photo` is added to the
  * facet photo group `textures`, so it shows and hides with the photos. `renderer` asks for a frame when a
  * photo lands. Volumes are one-sided (front only): from behind the wall they are hidden.
@@ -94,7 +129,9 @@ export function buildVolumes(view, renderer, textures) {
     for (const vol of view.volumes || []) {
         const f = facets.get(vol.facetId);
         if (!f || !vol.heights || vol.heights.length !== vol.cols * vol.rows) continue;
-        const plainMesh = new THREE.Mesh(geometryOf(vol, f, null), plainMat);
+        const flat = Array.isArray(vol.faces) && vol.faces.length >= 3;
+        const plainMesh = new THREE.Mesh(flat ? flatGeometryOf(vol, f, null) : geometryOf(vol, f, null), plainMat);
+        if (flat) plainMesh.add(edgesOf(plainMesh.geometry));
         plainMesh.userData = { facetId: f.id, volumeId: vol.id };
         plain.add(plainMesh);
         const tex = photoOf.get(vol.facetId);
@@ -105,7 +142,7 @@ export function buildVolumes(view, renderer, textures) {
             map.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
             photos.set(tex.url, new THREE.MeshBasicMaterial({ map, side: THREE.FrontSide }));
         }
-        const photoMesh = new THREE.Mesh(geometryOf(vol, f, tex), photos.get(tex.url));
+        const photoMesh = new THREE.Mesh(flat ? flatGeometryOf(vol, f, tex) : geometryOf(vol, f, tex), photos.get(tex.url));
         photoMesh.userData = { facetId: f.id, volumeId: vol.id };
         photo.add(photoMesh);
     }

@@ -22,6 +22,7 @@ namespace Blocwerk.Core.Geometry.View3D;
 /// <param name="Heights">Height per cell, mm.</param>
 /// <param name="Footprint">Convex outline on the facet, [a, b] mm.</param>
 /// <param name="TextureCamera">The texture's source camera for the volume, or null (then it is drawn plain).</param>
+/// <param name="Faces">A flat-sided volume's planar faces, each a list of [a, b, height] corners (mm), counter-clockwise seen from outside; null for a height field.</param>
 public sealed record Wall3DVolume(
     Guid Id,
     int Index,
@@ -33,4 +34,5 @@ public sealed record Wall3DVolume(
     int Rows,
     IReadOnlyList<short> Heights,
     IReadOnlyList<double[]> Footprint,
-    double[]? TextureCamera);
+    double[]? TextureCamera,
+    double[][][]? Faces = null);
