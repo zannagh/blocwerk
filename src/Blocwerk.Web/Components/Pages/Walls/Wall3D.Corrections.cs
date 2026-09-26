@@ -19,8 +19,9 @@ public partial class Wall3D
     private bool correcting;
     private string? correctionMessage;
 
+    /// <summary>"1" (or "true") turns the correction mode on.</summary>
     [SupplyParameterFromQuery(Name = "correct")]
-    public bool Correct { get; set; }
+    public string? Correct { get; set; }
 
     [Inject]
     private IWallGeometryCorrectionService Corrections { get; set; } = null!;
@@ -33,7 +34,7 @@ public partial class Wall3D
     {
         correction = null;
         tappedFacet = null;
-        if (!Correct || !string.IsNullOrEmpty(ShareToken) || _result?.Status != Wall3DViewStatus.Ok)
+        if (Correct is not ("1" or "true") || !string.IsNullOrEmpty(ShareToken) || _result?.Status != Wall3DViewStatus.Ok)
         {
             return;
         }
