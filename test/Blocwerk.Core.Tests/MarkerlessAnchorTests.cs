@@ -13,7 +13,8 @@ namespace Blocwerk.Core.Tests;
 /// <summary>
 /// A markerless re-capture of a wall that already has a model: photos of the active model's capture go along as anchors,
 /// and the new model is activated only when the solver anchored it and its surfaces continue the active facets. A
-/// refused anchoring stores the model inactive, like a marker model that could not be registered.
+/// refused anchoring stores the model inactive and ends the capture without an error
+/// (StoredNotActivated), like a marker model that could not be registered.
 /// </summary>
 public class MarkerlessAnchorTests
 {
@@ -65,9 +66,17 @@ public class MarkerlessAnchorTests
 
         await using var db = h.CreateContext();
         var capture = await db.WallCaptures.SingleAsync(c => c.Id == second);
-        Assert.Equal(WallCaptureStatus.Failed, capture.Status);
+        Assert.Equal(WallCaptureStatus.StoredNotActivated, capture.Status);
+        Assert.Equal("Done: model stored, not activated", capture.Stage);
+        Assert.NotNull(capture.CompletedAt);
         Assert.Contains("3 anchors registered (need 6)", capture.Error);
         Assert.Contains("NOT activated", capture.Error);
+
+        // Nothing runs for an inactive model: no textures, no follow-ups, no photo-real view.
+        Assert.Null(capture.TexturesJobId);
+        Assert.Null(capture.FollowUpJson);
+        Assert.Null(capture.SplatJobId);
+
         Assert.Equal(first, capture.AnchorCaptureId);
         Assert.Equal(markerModel, await ActiveModelIdAsync(h));
         var stored = await db.WallGeometryModels.SingleAsync(m => m.Id == capture.GeometryModelId);
@@ -105,7 +114,7 @@ public class MarkerlessAnchorTests
 
         await using var check = h.CreateContext();
         var capture = await check.WallCaptures.SingleAsync(c => c.Id == second);
-        Assert.Equal(WallCaptureStatus.Failed, capture.Status);
+        Assert.Equal(WallCaptureStatus.StoredNotActivated, capture.Status);
         Assert.Contains("No photos of the current 3D model's capture are stored", capture.Error);
         Assert.Null(capture.AnchorCaptureId);
         Assert.False((await check.WallGeometryModels.SingleAsync(m => m.Id == capture.GeometryModelId)).IsActive);

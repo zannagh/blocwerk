@@ -61,7 +61,7 @@ public class CaptureRegistrationTests
         await using var db = h.CreateContext();
         var capture = await db.WallCaptures.SingleAsync(c => c.Id == captureId);
         var models = await db.WallGeometryModels.Where(m => m.WallId == h.WallId).ToListAsync();
-        Assert.Equal(WallCaptureStatus.Failed, capture.Status);
+        Assert.Equal(WallCaptureStatus.StoredNotActivated, capture.Status);
         Assert.Contains("Only 2 marker(s) kept their place (0, 2)", capture.Error);
         Assert.Contains("NOT activated", capture.Error);
         Assert.Equal(2, models.Count);

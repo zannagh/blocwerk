@@ -38,4 +38,10 @@ public enum WallCaptureStatus
     /// capture itself succeeded; a texture failure still reports as <see cref="SucceededWithoutTextures"/>.
     /// </summary>
     SucceededWithoutSplat = 9,
+
+    /// <summary>
+    /// Done without an error: the model was computed and stored, but NOT activated, because it could not be tied to the
+    /// active model's frame (see Error for the reason). Nothing downstream ran; an admin may activate it by hand.
+    /// </summary>
+    StoredNotActivated = 10,
 }

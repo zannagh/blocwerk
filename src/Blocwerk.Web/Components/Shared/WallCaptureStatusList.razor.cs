@@ -80,12 +80,14 @@ public partial class WallCaptureStatusList : IAsyncDisposable
         WallCaptureStatus.Succeeded => "Model ready",
         WallCaptureStatus.SucceededWithoutTextures => "Model ready (no textures)",
         WallCaptureStatus.SucceededWithoutSplat => "Model ready (no photo-real view)",
+        WallCaptureStatus.StoredNotActivated => "Model stored, not activated",
         WallCaptureStatus.Failed => "Failed",
         _ => "Uploading",
     };
 
     private bool CanRetrain(WallCaptureSummary capture) => Captures.IsSplatConfigured && !capture.IsRunning
-        && capture.GeometryModelId is not null && capture.PhotoCount >= 2 && capture.Status != WallCaptureStatus.Failed;
+        && capture.GeometryModelId is not null && capture.PhotoCount >= 2
+        && capture.Status is not (WallCaptureStatus.Failed or WallCaptureStatus.StoredNotActivated);
 
     /// <summary>Queues a retrain of the capture's photo-real view; the current view stays until the new one is stored.</summary>
     private async Task RetrainAsync(Guid captureId, SplatQuality quality)

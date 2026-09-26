@@ -49,6 +49,10 @@ public sealed partial class WallCaptureProcessor(
 
             await RunStagesAsync(context, ct);
         }
+        catch (CaptureNotActivatedException ex)
+        {
+            await EndNotActivatedAsync(captureId, ex.Message, ct);
+        }
         catch (CaptureFailedException ex)
         {
             await FailAsync(captureId, ex.Message, ct);
@@ -189,6 +193,23 @@ public sealed partial class WallCaptureProcessor(
         {
             logger.LogError(ex, "Could not record the failure of capture {CaptureId}", captureId);
         }
+    }
+
+    /// <summary>
+    /// The model is stored, just not activated: a finished capture, not a failed one. Textures, the follow-ups and the
+    /// photo-real view never run for an inactive model; the reason stays in Error for the capture history.
+    /// </summary>
+    private async Task EndNotActivatedAsync(Guid captureId, string message, CancellationToken ct)
+    {
+        logger.LogInformation("Capture {CaptureId} stored its model without activating it: {Reason}", captureId, message);
+        await UpdateAsync(captureId, c =>
+        {
+            c.Status = WallCaptureStatus.StoredNotActivated;
+            c.Progress = 1;
+            c.Error = message.Length <= 2048 ? message : message[..2048];
+            c.Stage = "Done: model stored, not activated";
+            c.CompletedAt = DateTimeOffset.UtcNow;
+        }, ct);
     }
 
     private async Task RefundAttemptAsync(Guid captureId)

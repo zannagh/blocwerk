@@ -27,9 +27,10 @@ internal sealed record CaptureAnchors(
 
 /// <summary>
 /// Markerless stage 2b: the anchors going in, and the gate coming out. A feature model is activated only when it is the
-/// wall's first model, or when the solver fitted it into the active model's frame on the anchors (its gate: at least 6
-/// anchors, rms ≤ 25 mm, each ≤ 60 mm, plane-ICP ≤ 80 mm / 3°) and at least one of its surfaces continues an active
-/// facet. Otherwise it is stored inactive with a reason, exactly like a marker model that could not be registered.
+/// wall's first model, or when the solver fitted it into the active model's frame on the anchors (<c>world.anchored</c>;
+/// the gate lives ONLY in wall-geometry's <c>wallgeometry/sfm/anchors.py</c>) and at least one of its surfaces continues
+/// an active facet. Otherwise it is stored inactive with a reason and the capture ends as
+/// <see cref="WallCaptureStatus.StoredNotActivated"/>, exactly like a marker model that could not be registered.
 /// </summary>
 public sealed partial class WallCaptureProcessor
 {

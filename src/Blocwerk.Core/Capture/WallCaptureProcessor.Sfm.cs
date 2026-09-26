@@ -63,7 +63,7 @@ public sealed partial class WallCaptureProcessor
             await UpdateAsync(capture.Id, c => c.GeometryModelId = existing.Id, ct);
             if (!existing.IsActive)
             {
-                throw new CaptureFailedException(FeaturesNotActivatedMessage(null));
+                throw new CaptureNotActivatedException(FeaturesNotActivatedMessage(null));
             }
 
             return;
@@ -87,7 +87,7 @@ public sealed partial class WallCaptureProcessor
         await UpdateAsync(capture.Id, c => c.GeometryModelId = imported.Model.Id, ct);
         if (!frame.Activate)
         {
-            throw new CaptureFailedException(FeaturesNotActivatedMessage(frame.Refusal));
+            throw new CaptureNotActivatedException(FeaturesNotActivatedMessage(frame.Refusal));
         }
     }
 

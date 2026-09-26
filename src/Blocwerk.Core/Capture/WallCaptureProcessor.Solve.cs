@@ -29,7 +29,7 @@ public sealed partial class WallCaptureProcessor
             await CheckPlacementAsync(run, null, ct);
             if (!existing.IsActive)
             {
-                throw new CaptureFailedException(NotActivatedMessage(null));
+                throw new CaptureNotActivatedException(NotActivatedMessage(null));
             }
 
             return;
@@ -67,7 +67,7 @@ public sealed partial class WallCaptureProcessor
         await CheckPlacementAsync(run, json, ct);
         if (!frame.Activate)
         {
-            throw new CaptureFailedException(NotActivatedMessage(frame.Refusal));
+            throw new CaptureNotActivatedException(NotActivatedMessage(frame.Refusal));
         }
     }
 

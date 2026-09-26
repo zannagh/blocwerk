@@ -82,7 +82,8 @@ public sealed class WallCaptureSweeper(
         var activeModels = await db.WallGeometryModels.Where(m => m.IsActive).Select(m => m.Id).ToListAsync(ct);
         var ended = await db.WallCaptures
             .Where(c => c.Status == WallCaptureStatus.Succeeded || c.Status == WallCaptureStatus.SucceededWithoutTextures
-                        || c.Status == WallCaptureStatus.SucceededWithoutSplat || c.Status == WallCaptureStatus.Failed)
+                        || c.Status == WallCaptureStatus.SucceededWithoutSplat || c.Status == WallCaptureStatus.Failed
+                        || c.Status == WallCaptureStatus.StoredNotActivated)
             .Select(c => new { c.Id, c.GeometryModelId, c.CompletedAt, c.CreatedAt })
             .ToListAsync(ct);
         var expiredIds = ended
