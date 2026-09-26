@@ -56,13 +56,20 @@ public partial class WallGlyphService
                 CreatedByUserId = userId,
                 IsActive = options.Activate,
                 PlanRevision = options.PlanRevision,
+                FrameSource = document.IsFeatureFrame ? WallGeometryFrameSource.Features : WallGeometryFrameSource.Markers,
+                DerivedFromModelId = options.DerivedFromModelId,
                 WidthMm = span?.WidthMm,
                 HeightMm = span?.HeightMm,
                 ReprojRmsPx = document.Quality?.ReprojRmsPx,
                 Notes = TrimNotes(notes),
             };
 
-            wall.MarkerSizeMm ??= document.MarkerSizeMm;
+            if (!document.IsFeatureFrame)
+            {
+                // A feature model's marker size is only an echo of the request, not a measured sheet.
+                wall.MarkerSizeMm ??= document.MarkerSizeMm;
+            }
+
             if (options.Activate)
             {
                 await SwapActiveModelAsync(db, wallId, document, keep: null, () => db.WallGeometryModels.Add(model));
@@ -219,4 +226,5 @@ public partial class WallGlyphService
 /// <summary>How <see cref="WallGlyphService.ImportGeometryAsync(Guid, string, string?, string?, GeometryImportOptions)"/> stores a model.</summary>
 /// <param name="PlanRevision">The marker plan revision it was solved with (null: legacy or unknown).</param>
 /// <param name="Activate">False stores it as inactive history only.</param>
-public sealed record GeometryImportOptions(int? PlanRevision = null, bool Activate = true);
+/// <param name="DerivedFromModelId">The model it was derived from, if any (<see cref="WallGeometryModel.DerivedFromModelId"/>).</param>
+public sealed record GeometryImportOptions(int? PlanRevision = null, bool Activate = true, Guid? DerivedFromModelId = null);

@@ -54,8 +54,31 @@ public class WallCapture
     /// <summary>The planned-vs-observed marker check made after the solve (<c>PlacementCheck</c> as JSON).</summary>
     public string? PlacementCheckJson { get; set; }
 
+    /// <summary>Markers (the default, and every older capture) or a feature reconstruction; decided after detection.</summary>
+    public WallCaptureGeometryMode GeometryMode { get; set; }
+
+    /// <summary>The marker solve job, or in mode <see cref="WallCaptureGeometryMode.Features"/> the <c>solve-sfm</c> job.</summary>
     [MaxLength(128)]
     public string? SolveJobId { get; set; }
+
+    /// <summary>
+    /// Mode <see cref="WallCaptureGeometryMode.Features"/>: the splat worker's <c>splat-prepare</c> job that reconstructed the
+    /// photos (sparse.zip for the solve, and later the training bundle of the photo-real view).
+    /// </summary>
+    [MaxLength(128)]
+    public string? SfmJobId { get; set; }
+
+    /// <summary>
+    /// An optional measured distance for the feature solve's scale (<c>CaptureScaleReference</c> as JSON: a photo, two
+    /// pixel points and the millimetres between them). Null = none given.
+    /// </summary>
+    public string? ScaleReferenceJson { get; set; }
+
+    /// <summary>
+    /// Mode <see cref="WallCaptureGeometryMode.Features"/>: the capture whose retained photos went along as anchors (the
+    /// active model's capture), so the new model lands in the wall's existing frame. Null = no anchors.
+    /// </summary>
+    public Guid? AnchorCaptureId { get; set; }
 
     [MaxLength(128)]
     public string? TexturesJobId { get; set; }

@@ -38,6 +38,10 @@ public sealed record WallGeometryDocument
 
     public WallGeometryQuality? Quality { get; init; }
 
+    /// <summary>True for a model solved from photo features (no markers define its frame).</summary>
+    [JsonIgnore]
+    public bool IsFeatureFrame => World?.IsFeatureFrame == true;
+
     /// <summary>Parses a <c>wall-geometry.json</c> payload.</summary>
     /// <exception cref="JsonException">The JSON is malformed or not an object.</exception>
     public static WallGeometryDocument Parse(string json)

@@ -55,4 +55,10 @@ public class WallGeometryModel
     /// the legacy <c>segment*6+role</c> convention or an uploaded file.
     /// </summary>
     public int? PlanRevision { get; set; }
+
+    /// <summary>What defined the model's frame: markers (default) or a feature reconstruction.</summary>
+    public WallGeometryFrameSource FrameSource { get; set; }
+
+    /// <summary>The model this one was derived from (a correction or a re-derivation); null for a solve or an upload.</summary>
+    public Guid? DerivedFromModelId { get; set; }
 }

@@ -128,7 +128,12 @@ public static partial class WallGeometryValidator
     {
         if (document.Markers.Count == 0)
         {
-            errors.Add("The file contains no markers — at least one placed marker is needed.");
+            // A model solved from photo features (world.frameSource = "features") has no markers by design.
+            if (!document.IsFeatureFrame)
+            {
+                errors.Add("The file contains no markers — at least one placed marker is needed.");
+            }
+
             return;
         }
 

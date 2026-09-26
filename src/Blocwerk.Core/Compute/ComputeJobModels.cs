@@ -66,6 +66,13 @@ public sealed record ComputeHealth
     /// <summary>The highest quality profile the worker trains itself (<c>ultra</c> with gsplat on a 12 GB GPU), when it says.</summary>
     [JsonPropertyName("maxQuality")]
     public string? MaxQuality { get; init; }
+
+    /// <summary>
+    /// What the splat worker's <c>splat-prepare</c> returns and accepts beyond the bundle (<c>sparse.zip</c>, <c>anchors</c>):
+    /// markerless captures need both. Empty on older workers and on wall-geometry.
+    /// </summary>
+    [JsonPropertyName("prepareOutputs")]
+    public IReadOnlyList<string> PrepareOutputs { get; init; } = [];
 }
 
 /// <summary>

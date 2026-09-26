@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Blocwerk.Core.Geometry;
 
 /// <summary>An axis-aligned rectangle in a facet's plane frame (mm; <c>a</c> across, <c>b</c> up).</summary>
@@ -41,6 +43,29 @@ public sealed record WallGeometryWorld
 
     /// <summary>False when no vertical reference could be used, so absolute angles were not measured; null from older solvers.</summary>
     public bool? GravityKnown { get; init; }
+
+    /// <summary><c>"features"</c> for a model solved without markers (<c>solve-sfm</c>); null (markers) otherwise.</summary>
+    public string? FrameSource { get; init; }
+
+    /// <summary>Where "up" came from in a feature solve: anchors, device, declared, floor or cameras.</summary>
+    public string? GravitySource { get; init; }
+
+    /// <summary>False when the millimetres are an estimate (<see cref="ScaleSource"/> = estimate); null from marker solves.</summary>
+    public bool? ScaleKnown { get; init; }
+
+    /// <summary>Where the scale came from in a feature solve: anchors, measured or estimate.</summary>
+    public string? ScaleSource { get; init; }
+
+    /// <summary>True when a feature solve was fitted into a reference model's frame on anchor photos.</summary>
+    public bool? Anchored { get; init; }
+
+    /// <summary>True for a model solved from photo features instead of markers.</summary>
+    [JsonIgnore]
+    public bool IsFeatureFrame => string.Equals(FrameSource, "features", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>True when the millimetres are only an estimate (show them with "≈").</summary>
+    [JsonIgnore]
+    public bool ScaleIsEstimate => ScaleKnown == false || string.Equals(ScaleSource, "estimate", StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed record WallGeometrySegment
