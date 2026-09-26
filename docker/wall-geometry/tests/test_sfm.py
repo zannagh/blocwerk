@@ -1,6 +1,6 @@
 """solve-sfm on synthetic scenes (sfm_scene.py): which planes become facets, the gravity chain (device in all four
-holdings -> declared angles -> floor -> camera prior), the scale chain (anchors -> measured distance -> estimate),
-anchors (similarity + plane-ICP, the gate), determinism and the document's shape."""
+holdings -> declared angles -> floor -> camera prior), the scale chain (anchors -> measured distance -> anchor fit
+-> estimate), anchors (similarity + plane-ICP, the gate), determinism and the document's shape."""
 import copy
 
 import numpy as np
@@ -9,9 +9,11 @@ import sfm_scene as sc
 
 from computejobs.geometry import check_geometry
 from wallgeometry.sfm import solve_sfm_document
+from wallgeometry.sfm import anchors as anchoring
 from wallgeometry.sfm.gravity import device_up_cam
 
 R0, T0 = sc.rot([0.3, -1, 0.5], 70), np.array([1200.0, -300.0, 800.0])  # true world -> COLMAP frame
+NOISE_FLOOR_SIGMA, REFUSED_SIGMA = 16.0, 31.0  # anchor rms ~30 mm (accepted now) and ~45 mm (refused, measures)
 
 
 @pytest.fixture(scope="module")
@@ -159,6 +161,45 @@ def test_too_few_anchors_fall_back_to_features(scene):
     assert not a["ok"] and "need 6" in a["reason"] and not doc["world"]["anchored"]
     assert doc["world"]["gravitySource"] == "device" and doc["world"]["scaleSource"] == "estimate"
     assert any("anchors not used" in x for x in doc["quality"]["checks"]["warnings"])
+
+
+def noisy(scene, sigma, seed):
+    """Anchors whose reference camera centres disagree with the model by N(0, sigma) mm per axis."""
+    req = anchored(scene)
+    rng = np.random.default_rng(seed)
+    for c in req["reference"]["cameras"]:
+        R = np.array(c["R"]).reshape(3, 3)
+        c["t"] = list(np.array(c["t"]) - R @ rng.normal(0, sigma, 3))
+    return req
+
+
+def test_the_gate_is_35_mm_rms_and_80_mm_each():
+    assert (anchoring.MAX_RMS_MM, anchoring.MAX_SINGLE_MM, anchoring.SCALE_RMS_MM) == (35.0, 80.0, 60.0)
+
+
+def test_anchors_at_the_solver_noise_floor_are_accepted(scene):
+    doc, sol = solve_sfm_document(noisy(scene, NOISE_FLOOR_SIGMA, seed=3), scene["dir"])
+    a = doc["quality"]["sfm"]["anchors"]
+    assert 25 < a["rmsMm"] <= 35 and a["maxMm"] <= 80, str(a)  # refused by the old 25 / 60 mm gate
+    assert a["ok"] and doc["world"]["anchored"] and doc["world"]["scaleSource"] == "anchors"
+
+
+def test_a_refused_anchor_fit_still_gives_scale_and_gravity(scene):
+    doc, sol = solve_sfm_document(noisy(scene, REFUSED_SIGMA, seed=3), scene["dir"])
+    w, a = doc["world"], doc["quality"]["sfm"]["anchors"]
+    assert 35 < a["rmsMm"] <= 60 and not a["ok"] and a["usedFor"] == "scale and gravity", str(a)
+    assert not w["anchored"] and (w["scaleSource"], w["gravitySource"]) == ("anchor-fit", "anchor-fit")
+    assert w["scaleKnown"] and w["gravityKnown"] and doc["quality"]["sfm"]["scale"]["rmsMm"] == a["rmsMm"]
+    assert sol["s"] == pytest.approx(sc.S0, rel=0.02)
+    assert facets(doc)["0"]["measuredAngleDeg"] == pytest.approx(45.0, abs=0.6)
+    assert any("anchors not used for the frame" in x for x in doc["quality"]["checks"]["warnings"])
+
+
+def test_an_anchor_fit_beyond_60_mm_falls_back_to_the_estimate(scene):
+    doc, _ = solve_sfm_document(noisy(scene, 70.0, seed=3), scene["dir"])
+    a = doc["quality"]["sfm"]["anchors"]
+    assert a["rmsMm"] > 60 and not a.get("scaleOk") and "usedFor" not in a, str(a)
+    assert (doc["world"]["scaleSource"], doc["world"]["gravitySource"]) == ("estimate", "device")
 
 
 def test_without_hold_detections_facing_and_area_decide(scene):

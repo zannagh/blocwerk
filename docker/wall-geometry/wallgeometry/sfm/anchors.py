@@ -1,7 +1,11 @@
 """Anchors: photos of the active capture, reconstructed with the new ones, tie the model to the wall frame.
 
 1. A similarity (robust Umeyama) from the anchors' model camera centres to their camera centres in the reference
-   geometry document. Gate: >= 6 anchors kept, rms <= 25 mm, each <= 60 mm (Phase 0: 14.5-18.8 mm rms).
+   geometry document. Gate: >= 6 anchors kept, rms <= 35 mm, each <= 80 mm. Phase 0 fitted 14.5-18.8 mm rms, but
+   measured 22-28 mm of pure solver disagreement between two reconstructions of the same anchors, and the first real
+   re-capture fitted 15/15 anchors at 29.9 mm rms / 68.1 mm max. This module is the only place the gate lives: the
+   app just reads `world.anchored`. A fit the gate refuses but within SCALE_RMS_MM still gives scale and gravity
+   (solve.py), not the frame.
 2. A rigid point-to-plane ICP of the sparse points onto the reference facets (the scale stays the anchors': a
    similarity ICP collapses it), with splat-worker refine.py's schedule and limits: a correction beyond 80 mm or
    3 deg means the anchors themselves are wrong, and the anchoring fails (Phase 0: 0.3 deg, 20-29 mm).
@@ -11,8 +15,9 @@ import itertools
 import numpy as np
 
 MIN_ANCHORS = 6
-MAX_RMS_MM = 25.0
-MAX_SINGLE_MM = 60.0
+MAX_RMS_MM = 35.0
+MAX_SINGLE_MM = 80.0
+SCALE_RMS_MM = 60.0  # a refused fit this close still measures scale and "up" far better than any estimate
 GATES_MM = (60.0, 40.0, 25.0, 15.0, 15.0, 15.0)
 EDGE_MM = 60.0
 MIN_ICP_POINTS = 300
@@ -93,6 +98,7 @@ def fit_anchors(model, anchors, reference):
     elif rms > MAX_RMS_MM or worst > MAX_SINGLE_MM:
         out["reason"] = (f"anchor residual {rms:.1f} mm rms / {worst:.1f} mm max "
                          f"(limits {MAX_RMS_MM:g} / {MAX_SINGLE_MM:g})")
+        out["scaleOk"] = rms <= SCALE_RMS_MM
     else:
         out["ok"] = True
     return out

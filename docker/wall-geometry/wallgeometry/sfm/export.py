@@ -1,7 +1,8 @@
 """The solve-sfm result as the SAME wall-geometry document v1 as the marker solve (tools/glyph/wall-geometry.schema.md,
 wallgeometry/export.py conventions) with `markers: []`, `idScheme: "plan"` (no ids carry meaning), and:
-world.frameSource "features", gravitySource (anchors | device | declared | floor | cameras), scaleKnown,
-scaleSource (anchors | measured | estimate), anchored; quality.sfm {points, planes, anchors, residuals, gravity,
+world.frameSource "features", gravitySource (anchors | anchor-fit | device | declared | floor | cameras), scaleKnown,
+scaleSource (anchors | measured | anchor-fit | estimate), anchored (anchor-fit: the anchors' similarity, refused
+for the frame by the gate but close enough to measure with); quality.sfm {points, planes, anchors, residuals, gravity,
 scale}. Cameras: the photos only (not the video frames, not the anchors), K / dist at the stored resolution.
 """
 import numpy as np
@@ -79,7 +80,9 @@ def _warnings(sol):
     if not sol["gravity"]["known"]:
         w.append("gravity unknown: the reference facet is treated as vertical, angles are not measured")
     a = sol["anchors"]
-    if a is not None and not a.get("ok"):
+    if a is not None and not a.get("ok") and a.get("usedFor"):
+        w.append(f"anchors not used for the frame: {a.get('reason')}; their fit gave the {a['usedFor']}")
+    elif a is not None and not a.get("ok"):
         w.append(f"anchors not used: {a.get('reason')}")
     return w
 
@@ -90,7 +93,8 @@ def _quality(sol):
     asked = set(sol["req"].gravity) | set(sol["req"].holds)
     return {"reprojRmsPx": _r(np.sqrt((m["err"] ** 2).mean())) if len(m["err"]) else None,
             "gravity": {"device": "device accelerometer", "declared": "declared segment angles",
-                        "floor": "floor plane", "anchors": "anchors (the reference model's gravity)"}
+                        "floor": "floor plane", "anchors": "anchors (the reference model's gravity)",
+                        "anchor-fit": "anchor fit (the reference model's gravity, frame refused)"}
             .get(g["source"], "unknown") if g["known"] else "unknown",
             "gravityDetail": {k: v for k, v in g.items() if k != "known"},
             "checks": {"declaredVsMeasuredDeg": {}, "warnings": _warnings(sol)},

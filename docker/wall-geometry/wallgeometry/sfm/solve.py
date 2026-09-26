@@ -45,10 +45,18 @@ def photos_of(model):
 
 
 def anchor_frame(model, req, pts):
-    """The anchors' world transform {"ok", "s", "A", "b", report} (metric frame Y = s X -> world)."""
+    """The anchors' world transform {"ok", "s", "A", "b", report} (metric frame Y = s X -> world); a refused fit
+    within anchors.SCALE_RMS_MM comes back as {"ok": False, "fit": {"s", "R"}, report} for scale and gravity only."""
     fit = anchoring.fit_anchors(model, req.anchors, req.reference)
     report = {k: v for k, v in fit.items() if k not in ("s", "R", "t")}
     if not fit["ok"]:
+        # Refused for the FRAME (activation), yet a similarity over >= 6 consistent anchors within 60 mm rms, spread
+        # over metres of camera positions, pins the scale to ~1-2 % and "up" to a fraction of a degree: far better
+        # than the camera-height estimate (+-10 %, +9.3 % on the first real re-capture) or a phone's accelerometer.
+        # So the model is still measured with it, recorded as "anchor-fit"; it is just not placed in the old frame.
+        if fit.get("scaleOk"):
+            return {"ok": False, "fit": {"s": fit["s"], "R": fit["R"]},
+                    "report": {**report, "usedFor": "scale and gravity"}}
         return {"ok": False, "report": report}
     s, R, t = fit["s"], fit["R"], fit["t"]
     P, N = pts["Q"] @ (s * R).T + t, pts["N"] @ R.T
@@ -60,7 +68,7 @@ def anchor_frame(model, req, pts):
 
 
 def choose_scale(model, req, raw, pts, floor, anchor, up0):
-    """(mm per unit, source, known, info) by the chain anchors -> measured -> estimate."""
+    """(mm per unit, source, known, info) by the chain anchors -> measured -> anchor fit (frame refused) -> estimate."""
     tried = {}
     if anchor and anchor["ok"]:
         return anchor["s"], "anchors", True, {"method": "anchors"}
@@ -69,6 +77,10 @@ def choose_scale(model, req, raw, pts, floor, anchor, up0):
         if s:
             return s, "measured", True, info
         tried["measured"] = info["reason"]
+    if anchor and anchor.get("fit"):
+        rep = anchor["report"]
+        info = {"method": "anchor fit (frame refused)", "rmsMm": rep["rmsMm"], "maxMm": rep["maxMm"], "notUsed": tried}
+        return anchor["fit"]["s"], "anchor-fit", True, info
     photos = np.array([im["C"] for im in model["images"] if im["role"] == "photo"])
     ground, how = (floor, "plane") if floor else (floor_from_points(pts["Q"], pts["N"], up0, photos), "height histogram")
     s, info = (None, {"reason": "no floor"})
@@ -82,10 +94,14 @@ def choose_scale(model, req, raw, pts, floor, anchor, up0):
 
 
 def choose_gravity(model, req, planes, floor, dev, cam_up, anchor):
-    """(up in the metric frame, source, known, info) by the chain device -> declared -> floor -> cameras."""
+    """(up in the metric frame, source, known, info) by the chain anchors -> anchor fit -> device -> declared -> floor
+    -> cameras."""
     if anchor and anchor["ok"]:
         up_w = unit(req.reference["world"].get("up") or [0, 0, 1])
         return anchor["A"].T @ up_w, "anchors", bool(req.reference["world"].get("gravityKnown", True)), {}
+    if anchor and anchor.get("fit") and req.reference["world"].get("gravityKnown", True):
+        up_w = unit(req.reference["world"].get("up") or [0, 0, 1])
+        return anchor["fit"]["R"].T @ up_w, "anchor-fit", True, {"rmsMm": anchor["report"]["rmsMm"]}
     up, info = dev
     if up is not None:
         return up, "device", True, {"device": info}

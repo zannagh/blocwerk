@@ -47,13 +47,13 @@ public sealed record WallGeometryWorld
     /// <summary><c>"features"</c> for a model solved without markers (<c>solve-sfm</c>); null (markers) otherwise.</summary>
     public string? FrameSource { get; init; }
 
-    /// <summary>Where "up" came from in a feature solve: anchors, device, declared, floor or cameras.</summary>
+    /// <summary>Where "up" came from in a feature solve: anchors, anchor-fit, device, declared, floor or cameras.</summary>
     public string? GravitySource { get; init; }
 
     /// <summary>False when the millimetres are an estimate (<see cref="ScaleSource"/> = estimate); null from marker solves.</summary>
     public bool? ScaleKnown { get; init; }
 
-    /// <summary>Where the scale came from in a feature solve: anchors, measured or estimate.</summary>
+    /// <summary>Where the scale came from in a feature solve: anchors, measured, anchor-fit (the anchors refused for the frame, not for the scale) or estimate.</summary>
     public string? ScaleSource { get; init; }
 
     /// <summary>True when a feature solve was fitted into a reference model's frame on anchor photos.</summary>
