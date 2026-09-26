@@ -12,7 +12,7 @@ using Microsoft.AspNetCore.Components;
 namespace Blocwerk.Web.Components.Shared;
 
 /// <summary>
-/// Code-behind of the volumes and hold-proposal review: lists through <see cref="IWallVolumeService"/> and
+/// Code-behind of the hold-proposal review (the volumes are <see cref="WallVolumeList"/>): lists through
 /// <see cref="IHoldProposalService"/>; a proposal's crop comes as a data URL (a ~20 KB JPEG each).
 /// </summary>
 public partial class WallHoldProposals
@@ -24,7 +24,6 @@ public partial class WallHoldProposals
     private bool busy;
     private string? message;
     private string? failure;
-    private IReadOnlyList<WallVolumeSummary> volumes = [];
     private IReadOnlyList<HoldProposal> proposals = [];
 
     /// <summary>The wall being administered.</summary>
@@ -36,9 +35,6 @@ public partial class WallHoldProposals
     public string? ShareToken { get; set; }
 
     [Inject]
-    private IWallVolumeService Volumes { get; set; } = default!;
-
-    [Inject]
     private IHoldProposalService Proposals { get; set; } = default!;
 
     [Inject]
@@ -48,10 +44,6 @@ public partial class WallHoldProposals
     private ILogger<WallHoldProposals> Logger { get; set; } = default!;
 
     private bool Hidden => KioskContext.IsKiosk || !string.IsNullOrEmpty(ShareToken);
-
-    /// <summary>A volume in a few words: size, height, holds on it.</summary>
-    internal static string VolumeText(WallVolumeSummary v) =>
-        string.Create(CultureInfo.InvariantCulture, $"{v.AreaM2:0.00} m², {v.HeightMm:0} mm high, {v.HoldCount} holds on it{(v.IsHidden ? " (hidden)" : string.Empty)}.");
 
     /// <summary>A proposal in a few words: photos, size, where.</summary>
     internal static string ProposalText(HoldProposal p) =>
@@ -75,7 +67,6 @@ public partial class WallHoldProposals
     {
         try
         {
-            volumes = await Volumes.ListAsync(WallId);
             proposals = await Proposals.ListAsync(WallId);
             foreach (var p in proposals.Where(p => !crops.ContainsKey(p.Id)))
             {
@@ -90,7 +81,7 @@ public partial class WallHoldProposals
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidOperationException or KioskRestrictedException)
         {
-            Logger.LogWarning(ex, "Could not load the volumes / hold proposals of wall {WallId}", WallId);
+            Logger.LogWarning(ex, "Could not load the hold proposals of wall {WallId}", WallId);
             loaded = false;
         }
     }
@@ -112,12 +103,6 @@ public partial class WallHoldProposals
     {
         await Proposals.RejectAsync(WallId, p.Id);
         return "Noted: that spot will not be proposed again.";
-    });
-
-    private Task ToggleVolumeAsync(WallVolumeSummary v) => RunAsync(async () =>
-    {
-        var r = await Volumes.SetHiddenAsync(WallId, v.Id, !v.IsHidden);
-        return $"{r.HoldsPlaced} holds are on the visible volumes now.";
     });
 
     private async Task RunAsync(Func<Task<string>> action)

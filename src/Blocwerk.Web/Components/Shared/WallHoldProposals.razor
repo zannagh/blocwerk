@@ -1,28 +1,11 @@
-@* Wall-settings sub-section (inside the admin "Hold outlines" block): the 3D model's volumes found without markers
-   (hide a wrong one) and "Find holds from all photos" with its review list — accept creates the hold on its panel,
+@* Wall-settings sub-section (inside the admin "Hold outlines" block): the 3D model's volumes (WallVolumeList:
+   flat sides, hide, remove) and "Find holds from all photos" with its review list — accept creates the hold on its panel,
    reject is remembered. Hidden on a kiosk tablet and behind a share link; the services refuse both anyway. *@
 @using Blocwerk.Core.Holds
 
 @if (!Hidden && loaded)
 {
-    <h4 class="glyph-subheading">Volumes</h4>
-    @if (volumes.Count == 0)
-    {
-        <p class="hint">No volumes found yet. They are found from the photo-real scene after a capture.</p>
-    }
-    else
-    {
-        <p class="hint">Found from the 3D capture, no markers needed. Holds on them are drawn on the volume in 3D. Hide one that is wrong.</p>
-        <ul class="glyph-summary volume-list">
-            @foreach (var v in volumes)
-            {
-                <li>
-                    Volume @v.Index (facet @v.FacetId): @VolumeText(v)
-                    <button class="btn-link" @onclick="() => ToggleVolumeAsync(v)" disabled="@busy">@(v.IsHidden ? "Show" : "Hide")</button>
-                </li>
-            }
-        </ul>
-    }
+    <WallVolumeList WallId="WallId" ShareToken="@ShareToken" />
 
     <h4 class="glyph-subheading">Holds seen in the 3D photos</h4>
     <p class="hint">

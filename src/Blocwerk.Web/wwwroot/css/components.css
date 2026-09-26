@@ -413,6 +413,15 @@ img.wall-photo {
 .proposal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; margin: 8px 0; }
 .proposal-card { display: flex; flex-direction: column; gap: 6px; padding: 6px; border: 1px solid var(--border); border-radius: var(--r-md); }
 .proposal-card img { width: 100%; height: auto; border-radius: var(--r-sm, 4px); }
+.volume-settings { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 6px 0 10px; }
+.volume-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; margin: 8px 0; }
+.volume-card { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-md); }
+.volume-card-removed { opacity: 0.75; border-style: dashed; }
+.volume-card .glyph-summary { margin-bottom: 0; }
+.volume-title { font-weight: 600; color: var(--text-heading); font-size: 0.9rem; }
+.volume-title .hint { font-weight: 400; margin-left: 4px; }
+.volume-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin-top: 2px; }
+.volume-check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.85rem; }
 .glyph-ok {
     padding: 8px 12px; margin: 8px 0; border-radius: var(--r-md); font-size: 0.85rem;
     background: var(--success-bg); color: var(--success-text);
