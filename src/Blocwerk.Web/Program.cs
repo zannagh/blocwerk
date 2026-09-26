@@ -407,6 +407,9 @@ public static class Program
         // A capture draft's optional walk-along video (photo-real view only), streamed to disk.
         app.MapCaptureVideoUpload();
 
+        // A capture photo for the "Make sizes exact" picker (wall admin only, see CapturePhotoEndpoint).
+        app.MapCapturePhotos();
+
         // HLS adaptive-bitrate ladder for a Ready clip that has one. Same wall/share-token gate as the
         // byte route above (see BetaVideoHlsEndpoints); a denial or an MP4-only clip is a 404 and the
         // player falls back to the byte route.

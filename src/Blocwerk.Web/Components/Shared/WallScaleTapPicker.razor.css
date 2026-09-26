@@ -1,0 +1,13 @@
+.scale-tap { display: flex; flex-direction: column; gap: 8px; }
+.scale-tap-frame { max-width: 100%; overflow: auto; border: 1px solid var(--border); border-radius: 6px; max-height: 70vh; }
+.scale-tap-image { position: relative; width: 100%; cursor: crosshair; touch-action: manipulation; }
+.scale-tap-zoomed .scale-tap-image { width: 300%; }
+.scale-tap-image img { display: block; width: 100%; height: auto; user-select: none; -webkit-user-select: none; }
+.scale-tap-image svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.scale-tap-image circle { fill: rgba(255, 196, 0, 0.35); stroke: #ffc400; }
+.scale-tap-image line { stroke: #ffc400; }
+.scale-tap-row { display: flex; flex-wrap: wrap; align-items: end; gap: 8px 12px; }
+.scale-tap-row .btn-secondary { min-height: 44px; }
+.scale-tap-mm { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; }
+.scale-tap-mm .form-input { min-height: 44px; width: 9em; }
+.scale-tap .staged-actions button { min-height: 44px; }

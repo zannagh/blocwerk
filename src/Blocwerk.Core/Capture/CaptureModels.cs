@@ -71,7 +71,12 @@ public sealed record WallCaptureSummary(
 
 /// <summary>A draft capture with its photos (and the marker plan it runs with), so an open upload can be resumed.</summary>
 public sealed record WallCaptureDraft(
-    Guid CaptureId, string? Notes, IReadOnlyList<CapturePhotoResult> Photos, CapturePlanInfo? Plan = null, CaptureVideoInfo? Video = null);
+    Guid CaptureId,
+    string? Notes,
+    IReadOnlyList<CapturePhotoResult> Photos,
+    CapturePlanInfo? Plan = null,
+    CaptureVideoInfo? Video = null,
+    CaptureScaleReference? ScaleReference = null);
 
 /// <summary>The draft's walk-along video (photo-real view only): as uploaded, before its frames are taken.</summary>
 public sealed record CaptureVideoInfo(string? FileName, long SizeBytes, double? DurationSeconds);

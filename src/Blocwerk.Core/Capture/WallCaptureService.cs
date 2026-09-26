@@ -106,7 +106,8 @@ public sealed partial class WallCaptureService(
         var video = draft.VideoStoredPath is null
             ? null
             : new CaptureVideoInfo(draft.VideoFileName, draft.VideoSizeBytes ?? 0, draft.VideoDurationSeconds);
-        return new WallCaptureDraft(draft.Id, draft.Notes, photos.Select(p => ToResult(p, [])).ToList(), plan, video);
+        return new WallCaptureDraft(
+            draft.Id, draft.Notes, photos.Select(p => ToResult(p, [])).ToList(), plan, video, CaptureSfmDocuments.ParseScale(draft.ScaleReferenceJson));
     }
 
     private static CapturePhotoResult ToResult(WallCapturePhoto p, IReadOnlyList<string> warnings) => new(

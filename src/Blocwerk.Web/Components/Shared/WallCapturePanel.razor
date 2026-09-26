@@ -17,6 +17,15 @@
             wall model here. You can still import a wall-geometry.json below.
         </p>
     }
+    else if (Markerless)
+    {
+        <p class="hint">
+            Upload 20–60 photos (JPEG, PNG or HEIC, up to @MaxPhotoMb MB each). No markers needed: the 3D model is measured
+            from the photos themselves. The server does the rest (it also places the wall's existing holds on the new
+            model) and notifies you when the model is ready.
+        </p>
+        <WallCaptureGuidance Video="Captures.IsSplatConfigured" />
+    }
     else
     {
         <p class="hint">
@@ -25,7 +34,10 @@
             the wall's existing holds on the new model and refines their 3D shapes) and
             notifies you when the model is ready.
         </p>
+    }
 
+    @if (configured)
+    {
         <div class="form-group capture-upload">
             <label for="capture-photos">Photos</label>
             <InputFile id="capture-photos" OnChange="UploadAsync" multiple accept="image/jpeg,image/png,image/heic,image/heif,.heic,.heif"
@@ -36,31 +48,34 @@
             }
         </div>
 
-        <div class="form-group capture-upload">
-            <label for="capture-plan">Marker plan (JSON, optional)</label>
-            <InputFile id="capture-plan" OnChange="UploadPlanAsync" accept=".json,application/json" class="form-input" disabled="@busy" />
-            <p class="hint">
-                The marker-plan.json from the marker planner. With it the server knows which marker sits on which
-                surface, how big each one is and how steep each surface is — and tells you afterwards if a marker
-                isn't where the plan puts it. A plan that differs from the wall's is saved as its next revision; the new
-                model is lined up with the current one through the markers that did not change.
-            </p>
-            @if (draft?.Plan is { } plan)
-            {
-                <p class="hint capture-plan-status" role="status">
-                    Using @(plan.Uploaded ? "the uploaded" : "this wall's saved") marker plan@(plan.Revision is { } rev ? $" (revision {rev})" : string.Empty):
-                    @plan.Segments surfaces, @plan.Markers markers.
-                    @if (plan.Uploaded)
-                    {
-                        <button class="btn-link" @onclick="RemovePlanAsync" disabled="@busy">Don't use it</button>
-                    }
+        @if (!Markerless)
+        {
+            <div class="form-group capture-upload">
+                <label for="capture-plan">Marker plan (JSON, optional)</label>
+                <InputFile id="capture-plan" OnChange="UploadPlanAsync" accept=".json,application/json" class="form-input" disabled="@busy" />
+                <p class="hint">
+                    The marker-plan.json from the marker planner. With it the server knows which marker sits on which
+                    surface, how big each one is and how steep each surface is — and tells you afterwards if a marker
+                    isn't where the plan puts it. A plan that differs from the wall's is saved as its next revision; the new
+                    model is lined up with the current one through the markers that did not change.
                 </p>
-            }
-            @foreach (var note in planNotes)
-            {
-                <p class="hint" role="status">@note</p>
-            }
-        </div>
+                @if (draft?.Plan is { } plan)
+                {
+                    <p class="hint capture-plan-status" role="status">
+                        Using @(plan.Uploaded ? "the uploaded" : "this wall's saved") marker plan@(plan.Revision is { } rev ? $" (revision {rev})" : string.Empty):
+                        @plan.Segments surfaces, @plan.Markers markers.
+                        @if (plan.Uploaded)
+                        {
+                            <button class="btn-link" @onclick="RemovePlanAsync" disabled="@busy">Don't use it</button>
+                        }
+                    </p>
+                }
+                @foreach (var note in planNotes)
+                {
+                    <p class="hint" role="status">@note</p>
+                }
+            </div>
+        }
 
         @if (errors.Count > 0)
         {
@@ -83,7 +98,7 @@
                                     OnPanelStaged="OnPanelStaged" OnStartWallUpdate="OnStartWallUpdate" />
 
             @* The declarations table and level pairs belong to the marker solve: only when markers were detected. *@
-            @if (declarations.Count > 0)
+            @if (declarations.Count > 0 && !FeatureMode)
             {
                 <WallCaptureDeclarationTable Rows="declarations" Disabled="busy" IdsBySegment="draft.Plan?.IdsBySegment" />
                 <div class="form-group">
@@ -92,6 +107,19 @@
                            @bind="levelPairs" disabled="@busy" />
                     <p class="hint">Pairs of marker ids you know are level with each other; they help find “up”.</p>
                 </div>
+            }
+
+            @if (FeatureMode)
+            {
+                <details class="segment-settings capture-scale" open="@(draft.ScaleReference is not null)">
+                    <summary>Make sizes exact (optional)@(draft.ScaleReference is { } s ? $" · {s.Mm:0} mm measured" : string.Empty)</summary>
+                    <p class="hint">
+                        Without a measured distance the sizes are estimated (about ±10 %). Measure one distance on the wall
+                        (the longer the better) and mark it on one photo to make them exact.
+                    </p>
+                    <WallScaleTapPicker CaptureId="draft.CaptureId" Photos="draft.Photos" Initial="draft.ScaleReference" Disabled="busy"
+                                        ShowClear="draft.ScaleReference is not null" OnSave="SetScaleAsync" OnClear="() => SetScaleAsync(null)" />
+                </details>
             }
 
             <div class="form-group">

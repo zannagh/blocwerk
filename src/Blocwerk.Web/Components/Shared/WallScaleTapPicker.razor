@@ -1,0 +1,59 @@
+@using Blocwerk.Core.Capture
+@using Blocwerk.Web.Endpoints
+@* "Make sizes exact": pick one photo, tap two points on the wall whose distance is known, enter it in mm. Used on a
+   draft (the feature solve's scale) and after the fact (a correction of the active model). Points are stored in
+   stored-photo pixels. *@
+
+<div class="scale-tap">
+    <div class="form-group">
+        <label for="@($"scale-photo-{idSuffix}")">Photo</label>
+        <select id="@($"scale-photo-{idSuffix}")" class="form-input" value="@(photo?.PhotoId.ToString() ?? string.Empty)"
+                @onchange="ChoosePhoto" disabled="@Disabled">
+            <option value="">Choose a photo…</option>
+            @foreach (var p in Photos)
+            {
+                <option value="@p.PhotoId">@Name(p)</option>
+            }
+        </select>
+    </div>
+
+    @if (photo is not null)
+    {
+        <p class="hint">
+            Tap two points on the wall whose distance you know, e.g. the two ends of a tape measure or two bolt holes far
+            apart. A third tap starts over. Zoom in to place them precisely.
+        </p>
+        <div class="scale-tap-frame @(zoomed ? "scale-tap-zoomed" : null)">
+            <div class="scale-tap-image" @ref="imageBox" @onclick="TapAsync">
+                <img src="@CapturePhotoEndpoint.Url(CaptureId, photo.PhotoId)" alt="@Name(photo)" draggable="false" />
+                <svg viewBox="0 0 @photo.Width @photo.Height" preserveAspectRatio="none" aria-hidden="true">
+                    @if (a is not null && b is not null)
+                    {
+                        <line x1="@Px(a[0])" y1="@Px(a[1])" x2="@Px(b[0])" y2="@Px(b[1])" stroke-width="@Px(Stroke)" />
+                    }
+                    @foreach (var point in Points)
+                    {
+                        <circle cx="@Px(point[0])" cy="@Px(point[1])" r="@Px(Stroke * 4)" stroke-width="@Px(Stroke)" />
+                    }
+                </svg>
+            </div>
+        </div>
+        <p class="hint scale-tap-status" role="status">@Status</p>
+        <div class="scale-tap-row">
+            <button type="button" class="btn-secondary" @onclick="() => zoomed = !zoomed" disabled="@Disabled">
+                @(zoomed ? "Fit the photo" : "Zoom in")
+            </button>
+            <label class="scale-tap-mm">
+                Distance (mm)
+                <input type="number" class="form-input" min="1" step="1" inputmode="numeric" @bind="mm" disabled="@Disabled" />
+            </label>
+        </div>
+        <div class="staged-actions">
+            <button type="button" class="btn-primary" @onclick="SaveAsync" disabled="@(Disabled || !Ready)">@SaveLabel</button>
+            @if (ShowClear)
+            {
+                <button type="button" class="btn-secondary" @onclick="() => OnClear.InvokeAsync()" disabled="@Disabled">Don't use a distance</button>
+            }
+        </div>
+    }
+</div>

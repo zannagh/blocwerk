@@ -70,13 +70,19 @@ public sealed partial class WallCaptureService
 
     public async Task RemovePhotoAsync(Guid captureId, Guid photoId)
     {
-        var (db, _, _) = await OpenDraftAsync(captureId);
+        var (db, _, capture) = await OpenDraftAsync(captureId);
         await using (db)
         {
             var photo = await db.WallCapturePhotos.FirstOrDefaultAsync(p => p.Id == photoId && p.CaptureId == captureId);
             if (photo is null)
             {
                 return;
+            }
+
+            // A measured distance on this photo goes with it.
+            if (CaptureSfmDocuments.ParseScale(capture.ScaleReferenceJson)?.PhotoIndex == photo.Index)
+            {
+                capture.ScaleReferenceJson = null;
             }
 
             db.WallCapturePhotos.Remove(photo);

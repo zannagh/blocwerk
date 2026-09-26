@@ -56,6 +56,13 @@ public interface IWallCaptureService
     Task DiscardDraftAsync(Guid captureId);
 
     /// <summary>
+    /// "Make sizes exact" on a draft: two points on one of its photos (stored-photo pixels) and the millimetres between them,
+    /// for the feature solve's scale (<see cref="WallCapture.ScaleReferenceJson"/>); null removes it. Refused with a reason
+    /// (<see cref="Services.UserFacingException"/>) when the photo is not in the draft or the points are unusable.
+    /// </summary>
+    Task SetScaleReferenceAsync(Guid captureId, CaptureScaleReference? reference);
+
+    /// <summary>
     /// Uses an uploaded marker plan JSON for this draft (null/empty removes it again). Refused with the
     /// parse/validation errors when it is not a usable plan. When it differs from the wall's current plan
     /// it is saved as the wall's next plan revision; the draft records the revision either way.

@@ -48,6 +48,18 @@ public partial class WallCapturePanel
     [Parameter]
     public EventCallback OnShowPanels { get; set; }
 
+    /// <summary>The wall has no markers: the model is measured from photo features (guidance, no plan, optional distance).</summary>
+    [Parameter]
+    public bool Markerless { get; set; }
+
+    /// <summary>The server can measure walls without markers (a marker wall's photos without markers go that way too).</summary>
+    [Parameter]
+    public bool MarkerlessAvailable { get; set; }
+
+    // The same choice the service makes at start: fewer than two photos with markers → features.
+    private bool FeatureMode => Markerless
+        || (MarkerlessAvailable && draft is { Photos.Count: > 0 } d && d.Photos.Count(p => p.MarkerIds.Count > 0) < 2);
+
     [Inject]
     private IWallCaptureService Captures { get; set; } = default!;
 
@@ -192,6 +204,13 @@ public partial class WallCapturePanel
     });
 
     private async Task ReloadDraftAsync() => draft = await Captures.GetDraftAsync(WallId);
+
+    /// <summary>Saves (or with null removes) the draft's measured distance for the feature solve's scale.</summary>
+    private Task SetScaleAsync(CaptureScaleReference? reference) => RunAsync(async () =>
+    {
+        await Captures.SetScaleReferenceAsync(draft!.CaptureId, reference);
+        await ReloadDraftAsync();
+    });
 
     private Task DiscardAsync() => RunAsync(async () =>
     {

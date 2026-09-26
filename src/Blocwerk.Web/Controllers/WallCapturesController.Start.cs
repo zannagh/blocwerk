@@ -26,6 +26,27 @@ public sealed partial class WallCapturesController
             return result.Accepted ? Ok(result) : UnprocessableEntity(result);
         });
 
+    /// <summary>
+    /// "Make sizes exact" for a markerless capture: two points on one of the draft's photos ({photoIndex, a: [x, y],
+    /// b: [x, y]} in stored-photo pixels) and the millimetres between them ({mm}). 409 with the reason when unusable.
+    /// </summary>
+    [HttpPut("{captureId:guid}/scale-reference")]
+    public Task<IActionResult> SetScaleReference(Guid wallId, Guid captureId, [FromBody] CaptureScaleReference reference) =>
+        ForCaptureAsync(wallId, captureId, async () =>
+        {
+            await captures.SetScaleReferenceAsync(captureId, reference);
+            return NoContent();
+        });
+
+    /// <summary>Removes the draft's measured distance (the solve then estimates the sizes).</summary>
+    [HttpDelete("{captureId:guid}/scale-reference")]
+    public Task<IActionResult> RemoveScaleReference(Guid wallId, Guid captureId) =>
+        ForCaptureAsync(wallId, captureId, async () =>
+        {
+            await captures.SetScaleReferenceAsync(captureId, null);
+            return NoContent();
+        });
+
     /// <summary>The declarations the server suggests for the photos so far, with the warnings they raise.</summary>
     [HttpGet("{captureId:guid}/declarations")]
     public Task<IActionResult> Declarations(Guid wallId, Guid captureId) =>
