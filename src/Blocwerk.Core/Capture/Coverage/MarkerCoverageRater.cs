@@ -27,6 +27,9 @@ public static class MarkerCoverageRater
     /// <summary>Only a facet side longer than this can have its markers bunched, mm.</summary>
     public const double SpreadSideMm = 800;
 
+    /// <summary>No markers and nothing to suggest (a model solved from photo features).</summary>
+    public static MarkerCoverage None { get; } = new([], 0, false, false, [], null);
+
     /// <summary>Photo distance assumed without any camera seeing the facet, mm.</summary>
     private const double DefaultDistanceMm = 2500;
 

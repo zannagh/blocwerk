@@ -20,6 +20,12 @@ public interface IWallCaptureService
     bool IsSplatConfigured { get; }
 
     /// <summary>
+    /// True when walls WITHOUT markers can be captured here (<see cref="MarkerlessCaptureSupport"/>: <c>solve-sfm</c> and a
+    /// splat worker that returns sparse.zip and takes anchors). Asks both workers; false when either is missing.
+    /// </summary>
+    Task<bool> IsMarkerlessAvailableAsync();
+
+    /// <summary>
     /// Streams the draft's optional walk-along video to disk (replacing an earlier one) and checks it
     /// is a readable video. Its frames later feed ONLY the photo-real stage: no markers, no solve, no
     /// panel photos, not counted against <see cref="WallCapturePipelineOptions.MaxPhotos"/>. Admin only,

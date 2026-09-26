@@ -87,7 +87,10 @@ public static class CaptureSplatDocuments
     };
 
     /// <summary>"Photo-real view: training (step 1200/15000)" from the worker's <c>stage</c>/<c>stageDetail</c>.</summary>
-    public static string Describe(ComputeJobStatus status)
+    public static string Describe(ComputeJobStatus status) => Describe(status, "Photo-real view");
+
+    /// <summary>As <see cref="Describe(ComputeJobStatus)"/>, under another label (the markerless reconstruction).</summary>
+    public static string Describe(ComputeJobStatus status, string label)
     {
         var stage = status.Stage switch
         {
@@ -104,8 +107,8 @@ public static class CaptureSplatDocuments
             _ => status.Stage,
         };
         return string.IsNullOrWhiteSpace(status.StageDetail)
-            ? $"Photo-real view: {stage}"
-            : $"Photo-real view: {stage} ({status.StageDetail})";
+            ? $"{label}: {stage}"
+            : $"{label}: {stage} ({status.StageDetail})";
     }
 
     /// <summary>

@@ -40,6 +40,8 @@ public sealed partial class WallCaptureService(
 
     public bool IsSplatConfigured => computeClients.Get(ComputeServiceKind.Splat).IsConfigured && videoFrames is not null;
 
+    public Task<bool> IsMarkerlessAvailableAsync() => MarkerlessCaptureSupport.IsAvailableAsync(computeClients, CancellationToken.None);
+
     public async Task<WallCaptureDraft?> GetDraftAsync(Guid wallId)
     {
         var (db, userId) = await OpenForAdminAsync(wallId);
@@ -58,7 +60,7 @@ public sealed partial class WallCaptureService(
         await using (db)
         {
             var glyphs = await db.Walls.Where(w => w.Id == wallId).Select(w => w.GlyphsEnabled).FirstOrDefaultAsync();
-            if (!glyphs)
+            if (!glyphs && !await IsMarkerlessAvailableAsync())
             {
                 throw new UserFacingException("Switch on printed markers for this wall first.");
             }

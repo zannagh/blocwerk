@@ -54,7 +54,7 @@ public sealed partial class WallCaptureService
         await using (db)
         {
             var layout = await DraftLayoutAsync(db, capture);
-            var errors = await StartProblemsAsync(db, capture, declarations, layout);
+            var errors = await StartProblemsAsync(db, capture, declarations, layout, await IsMarkerlessAvailableAsync());
             if (errors.Count > 0)
             {
                 return errors;
@@ -82,7 +82,7 @@ public sealed partial class WallCaptureService
     }
 
     private static async Task<List<string>> StartProblemsAsync(
-        BlocwerkDbContext db, WallCapture capture, CaptureDeclarations declarations, WallMarkerLayout layout)
+        BlocwerkDbContext db, WallCapture capture, CaptureDeclarations declarations, WallMarkerLayout layout, bool markerless)
     {
         var photos = await db.WallCapturePhotos.AsNoTracking().Where(p => p.CaptureId == capture.Id).ToListAsync();
         var withMarkers = photos.Where(p => CaptureComputeDocuments.UsableMarkers(layout, p.MarkersJson).Count > 0).ToList();
@@ -91,7 +91,7 @@ public sealed partial class WallCaptureService
         {
             errors.Add("Upload at least two photos of the wall.");
         }
-        else if (withMarkers.Count < 2 && photos.All(p => p.MarkersJson is not null))
+        else if (withMarkers.Count < 2 && photos.All(p => p.MarkersJson is not null) && !markerless)
         {
             errors.Add("At least two photos must show markers.");
         }
@@ -99,10 +99,16 @@ public sealed partial class WallCaptureService
         errors.AddRange(withMarkers.Where(p => p.Focal35mm is null)
             .Select(p => $"{p.OriginalFileName ?? $"Photo {p.Index}"} has no focal length in its EXIF; upload the camera original."));
 
-        // With a plan whose markers are still to be found (the pipeline detects them), "seen" is unknown yet.
-        var pending = layout.IsFromPlan && photos.Any(p => p.MarkersJson is null);
-        errors.AddRange(CaptureDeclarationRules.Validate(declarations, pending ? null : SeenSegments(photos, layout)));
-        errors.AddRange(UnplannedLevelPairs(declarations, layout));
+        // Without (enough) markers the capture is measured from photo features: the declarations table and level
+        // pairs belong to the marker solve, so they are neither needed nor checked then.
+        var features = markerless && withMarkers.Count < 2 && photos.All(p => p.MarkersJson is not null);
+        if (!features)
+        {
+            // With a plan whose markers are still to be found (the pipeline detects them), "seen" is unknown yet.
+            var pending = layout.IsFromPlan && photos.Any(p => p.MarkersJson is null);
+            errors.AddRange(CaptureDeclarationRules.Validate(declarations, pending ? null : SeenSegments(photos, layout)));
+            errors.AddRange(UnplannedLevelPairs(declarations, layout));
+        }
 
         var running = await db.WallCaptures.AnyAsync(c => c.WallId == capture.WallId && c.Id != capture.Id
             && (c.Status == WallCaptureStatus.Queued || c.Status == WallCaptureStatus.Detecting

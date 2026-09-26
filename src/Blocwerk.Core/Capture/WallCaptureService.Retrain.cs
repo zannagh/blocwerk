@@ -41,6 +41,9 @@ public sealed partial class WallCaptureService
             var textureError = capture.Status == WallCaptureStatus.SucceededWithoutTextures ? TexturePart(capture.Error) : null;
             capture.SplatQuality = quality;
             capture.SplatJobId = null;
+
+            // A markerless capture's reconstruction was prepared at the old quality: the retrain takes the normal route.
+            capture.SfmJobId = null;
             capture.Status = WallCaptureStatus.Splatting;
             capture.Stage = $"Photo-real view: waiting to retrain ({CaptureSplatDocuments.QualityName(quality)} quality)";
             capture.Progress = 0;

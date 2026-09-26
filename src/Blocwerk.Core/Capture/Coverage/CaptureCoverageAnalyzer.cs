@@ -29,7 +29,12 @@ public static class CaptureCoverageAnalyzer
         var cameras = inputs.Photos.Concat(inputs.VideoFrames).ToList();
         var scene = new CoverageScene(Facets(doc, inputs.HoldBounds), inputs.Volumes);
         var rated = FacetCoverageRater.Rate(scene, cameras);
-        var markers = rated.ToDictionary(r => r.Facet.Id, r => MarkerCoverageRater.Rate(doc, r, cameras), StringComparer.Ordinal);
+
+        // A model solved from photo features has no markers by design: no marker rows, no "add markers" advice.
+        var markers = rated.ToDictionary(
+            r => r.Facet.Id,
+            r => doc.IsFeatureFrame ? MarkerCoverageRater.None : MarkerCoverageRater.Rate(doc, r, cameras),
+            StringComparer.Ordinal);
         var volumes = VolumeCoverageRater.Rate(scene, cameras);
         var (recipeCameras, source) = inputs.VideoFrames.Count > 0 ? (inputs.VideoFrames, CoveragePoseSource.Video)
             : inputs.Photos.Count > 0 ? (inputs.Photos, CoveragePoseSource.Photos)

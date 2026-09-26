@@ -11,7 +11,7 @@ public sealed partial class WallCaptureProcessor
     {
         var captureId = run.Capture.Id;
         var pending = (await LoadPhotosAsync(captureId, ct)).Where(p => p.MarkersJson is null).ToList();
-        if (run.Capture.SolveJobId is not null || pending.Count == 0)
+        if (run.Capture.SolveJobId is not null || run.Capture.SfmJobId is not null || pending.Count == 0)
         {
             return;
         }

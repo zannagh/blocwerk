@@ -75,7 +75,8 @@ public sealed partial class WallCaptureService
         var (db, userId, capture) = await OpenDraftAsync(captureId);
         await using (db)
         {
-            if (!await db.Walls.Where(w => w.Id == capture.WallId).Select(w => w.GlyphsEnabled).FirstOrDefaultAsync())
+            if (!await db.Walls.Where(w => w.Id == capture.WallId).Select(w => w.GlyphsEnabled).FirstOrDefaultAsync()
+                && !await IsMarkerlessAvailableAsync())
             {
                 throw new UserFacingException("Switch on printed markers for this wall first.");
             }

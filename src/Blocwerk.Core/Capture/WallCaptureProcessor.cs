@@ -97,7 +97,14 @@ public sealed partial class WallCaptureProcessor(
         if (run.Capture.GeometryModelId is null)
         {
             await DetectMarkersAsync(run, ct);
-            await SolveAndImportAsync(run, client, ct);
+            if (await DecideModeAsync(run, ct) == WallCaptureGeometryMode.Features)
+            {
+                await SfmAndImportAsync(run, client, ct);
+            }
+            else
+            {
+                await SolveAndImportAsync(run, client, ct);
+            }
         }
 
         var textureError = await TextureAsync(run, client, ct);

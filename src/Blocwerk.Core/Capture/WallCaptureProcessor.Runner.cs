@@ -49,12 +49,21 @@ public sealed partial class WallCaptureProcessor
 
         /// <summary>Queued for a 3D runner: the capture completes now, the view follows when a runner delivers it.</summary>
         AwaitingRunner,
+
+        /// <summary>A markerless capture's view needs a 3D runner and none is set up: the capture ends without it, quietly.</summary>
+        NoRunner,
     }
 
     private async Task<SplatOutcome> SplatOnServerOrRunnerAsync(WallCapture capture, Guid modelId, IComputeJobClient client, CancellationToken ct)
     {
+        var reconstructed = FromReconstruction(capture);
         if (gpuJobs is null || gpuJobs.Options.Mode == GpuRunnerMode.Off)
         {
+            if (reconstructed)
+            {
+                return SplatOutcome.NoRunner;
+            }
+
             await SplatAllInOneAsync(capture, modelId, client, ct);
             return SplatOutcome.Stored;
         }
@@ -68,6 +77,12 @@ public sealed partial class WallCaptureProcessor
 
         if (job is { Status: GpuJobStatus.Queued or GpuJobStatus.Claimed or GpuJobStatus.Running })
         {
+            return SplatOutcome.AwaitingRunner;
+        }
+
+        if (reconstructed)
+        {
+            await PrepareFromReconstructionAsync(capture, modelId, client, ct);
             return SplatOutcome.AwaitingRunner;
         }
 
@@ -131,6 +146,11 @@ public sealed partial class WallCaptureProcessor
         await SetStageAsync(capture.Id, WallCaptureStatus.Splatting, PrepareEnd, "Photo-real view: packing the photos for a 3D runner", ct);
         var (bundle, bytes, sha) = await StoreBundleAsync(status.JobId!, client, ct);
         var prepared = await client.DownloadFileAsync(status.JobId!, PreparedFile, MaxPreparedBytes, ct);
+        if (capture.GeometryMode == WallCaptureGeometryMode.Features)
+        {
+            prepared = await WithGeometryAsync(prepared, modelId, ct);
+        }
+
         await gpuJobs!.EnqueueAsync(
             new GpuJob
             {

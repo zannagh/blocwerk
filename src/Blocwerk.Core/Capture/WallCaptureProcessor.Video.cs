@@ -31,7 +31,10 @@ public sealed partial class WallCaptureProcessor
     /// Extracts the frames once (a resumed capture whose frames exist skips this). A video that
     /// cannot be read costs only its frames: the splat is then trained from the photos alone.
     /// </summary>
-    private async Task PrepareVideoFramesAsync(Guid captureId, CancellationToken ct)
+    private Task PrepareVideoFramesAsync(Guid captureId, CancellationToken ct) => PrepareVideoFramesAsync(captureId, WallCaptureStatus.Splatting, ct);
+
+    /// <summary>As above, reported under <paramref name="status"/> (the markerless reconstruction extracts them earlier).</summary>
+    private async Task PrepareVideoFramesAsync(Guid captureId, WallCaptureStatus status, CancellationToken ct)
     {
         await using var db = dbContextFactory.CreateDbContext();
         var row = await db.WallCaptures.AsNoTracking().Where(c => c.Id == captureId)
@@ -44,8 +47,8 @@ public sealed partial class WallCaptureProcessor
         // Resumable (no frames stored → extracted again), but a deploy mid-run throws away up to
         // VideoExtractTimeout of ffmpeg work, so the gate stays busy until the frames are stored.
         using var busy = busyGate?.Hold(DeployBusyWork.CaptureVideoFrames);
-        await SetStageAsync(captureId, WallCaptureStatus.Splatting, 0, VideoStage, ct);
-        var frames = await ExtractFramesAsync(captureId, video, ct);
+        await SetStageAsync(captureId, status, status == WallCaptureStatus.Splatting ? 0 : 0.2, VideoStage, ct);
+        var frames = await ExtractFramesAsync(captureId, video, status, ct);
         var names = new List<string>(frames.Count);
         foreach (var frame in frames)
         {
@@ -61,7 +64,7 @@ public sealed partial class WallCaptureProcessor
         logger.LogInformation("Capture {CaptureId}: {Frames} video frame(s) extracted for the photo-real view", captureId, names.Count);
     }
 
-    private async Task<IReadOnlyList<byte[]>> ExtractFramesAsync(Guid captureId, string video, CancellationToken ct)
+    private async Task<IReadOnlyList<byte[]>> ExtractFramesAsync(Guid captureId, string video, WallCaptureStatus status, CancellationToken ct)
     {
         var path = files.ResolvePhysicalPath(video);
         if (path is null || !File.Exists(path))
@@ -75,7 +78,8 @@ public sealed partial class WallCaptureProcessor
         while (await Task.WhenAny(extraction, Task.Delay(TimeSpan.FromSeconds(2), ct)) != extraction)
         {
             var percent = (latest.Value * 100).ToString("0", CultureInfo.InvariantCulture);
-            await SetStageAsync(captureId, WallCaptureStatus.Splatting, VideoBand * latest.Value, $"{VideoStage} ({percent} %)", ct);
+            var progress = status == WallCaptureStatus.Splatting ? VideoBand * latest.Value : 0.2;
+            await SetStageAsync(captureId, status, progress, $"{VideoStage} ({percent} %)", ct);
         }
 
         try

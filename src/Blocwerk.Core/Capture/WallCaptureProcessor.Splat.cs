@@ -109,6 +109,12 @@ public sealed partial class WallCaptureProcessor
             return;
         }
 
+        if (outcome == SplatOutcome.NoRunner)
+        {
+            await EndWithoutRunnerAsync(run, ct);
+            return;
+        }
+
         await FollowUpAsync(run, CaptureFollowUpPhase.Final, ct);
         await CompleteAsync(capture.Id, TextureOutcome(textureError), textureError, ct);
         if (outcome == SplatOutcome.Stored)
@@ -166,26 +172,32 @@ public sealed partial class WallCaptureProcessor
         await using var db = dbContextFactory.CreateDbContext();
         var geometry = await db.WallGeometryModels.Where(m => m.Id == modelId).Select(m => m.Json).FirstAsync(ct);
         var parts = new List<ComputeJobPart> { ComputeJobPart.Json("geometry", geometry) };
-        foreach (var photo in await LoadPhotosAsync(captureId, ct))
-        {
-            var bytes = await files.ReadAsync(photo.StoredPath, ct)
-                        ?? throw new CaptureFailedException($"Photo {photo.Index} is missing on the server.");
-
-            // Nothing leaves this server with metadata: no GPS, no camera serials, no orientation.
-            // The file name stem is the camera name the solve used, so the worker can align to it.
-            var clean = ImageMetadataStripper.Strip(bytes);
-            var kind = CapturePhotoFormat.Sniff(clean);
-            parts.Add(ComputeJobPart.File(
-                "photos",
-                CaptureComputeDocuments.PhotoName(photo.Index) + CapturePhotoFormat.Extension(kind),
-                clean,
-                CapturePhotoFormat.ContentType(kind)));
-        }
+        parts.AddRange(await PhotoPartsAsync(await LoadPhotosAsync(captureId, ct), CaptureComputeDocuments.PhotoName, ct));
 
         // The walk-along video's frames (if any): auxiliary images for coverage, never for alignment.
         parts.AddRange(await FramePartsAsync(captureId, ct));
         parts.Add(ComputeJobPart.Json("options", CaptureSplatDocuments.BuildOptions(settings.SplatMaxSteps, quality)));
         return await client.SubmitMultipartAsync(jobKind, parts, ct);
+    }
+
+    /// <summary>
+    /// Stored photos as <c>photos</c> file parts, metadata stripped: no GPS, no camera serials, no orientation. The stem
+    /// (<paramref name="name"/> of the photo index) is the camera name the solve used, so the worker can align to it.
+    /// </summary>
+    private async Task<List<ComputeJobPart>> PhotoPartsAsync(
+        IEnumerable<WallCapturePhoto> photos, Func<int, string> name, CancellationToken ct)
+    {
+        var parts = new List<ComputeJobPart>();
+        foreach (var photo in photos)
+        {
+            var bytes = await files.ReadAsync(photo.StoredPath, ct)
+                        ?? throw new CaptureFailedException($"Photo {photo.Index} is missing on the server.");
+            var clean = ImageMetadataStripper.Strip(bytes);
+            var kind = CapturePhotoFormat.Sniff(clean);
+            parts.Add(ComputeJobPart.File("photos", name(photo.Index) + CapturePhotoFormat.Extension(kind), clean, CapturePhotoFormat.ContentType(kind)));
+        }
+
+        return parts;
     }
 
     private async Task StoreSplatAsync(Guid captureId, Guid modelId, string jobId, IComputeJobClient client, CancellationToken ct)

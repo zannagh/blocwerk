@@ -54,7 +54,11 @@ internal sealed class FakeComputeJobClient : IComputeJobClient
     /// <summary>The kinds <c>/health</c> lists (the runner split needs <c>splat-prepare</c> and <c>splat-finish</c>).</summary>
     public List<string> Kinds { get; set; } = [];
 
-    public Task<ComputeHealth> GetHealthAsync(CancellationToken ct) => Task.FromResult(new ComputeHealth { Status = "ok", Kinds = Kinds });
+    /// <summary>What <c>/health</c> says splat-prepare returns (<c>sparse.zip</c>, <c>anchors</c>: markerless captures).</summary>
+    public List<string> PrepareOutputs { get; set; } = [];
+
+    public Task<ComputeHealth> GetHealthAsync(CancellationToken ct) =>
+        Task.FromResult(new ComputeHealth { Status = "ok", Kinds = Kinds, PrepareOutputs = PrepareOutputs });
 
     public Task<string> SubmitJsonAsync(string kind, string json, CancellationToken ct)
     {
@@ -164,7 +168,7 @@ internal sealed class FakeComputeJobClient : IComputeJobClient
 
     private ComputeJobStatus Succeeded(string jobId, string kind)
     {
-        var result = kind == "solve"
+        var result = kind is "solve" or "solve-sfm"
             ? new JsonObject { ["geometry"] = JsonNode.Parse(GeometryJson) }
             : new JsonObject
             {
