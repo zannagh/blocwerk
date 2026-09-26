@@ -530,8 +530,9 @@ A **3D runner** trains the photo-real view on a GPU somewhere else, pulling work
    `zones.json` (the wall zones the gsplat trainer focuses on, exactly as the all-in-one job writes them,
    marked `params.wallZones`; a runner ignores a zones.json without that mark unless its own
    `SPLAT_WALL_ZONES=1`, so it trains plain by default);
-   and `prepared.json` (camera centres of photos AND video frames, SfM stats, options, geometry, zones;
-   stays on the server). The app rebuilds the bundle with an allow-list before a runner sees it.
+   `prepared.json` (camera centres of photos AND video frames, SfM stats, options, geometry, zones,
+   `anchorCentres`; stays on the server); and `sparse.zip` (below). The app rebuilds the bundle with an
+   allow-list before a runner sees it.
 2. The runner (`gpurunner/`): hello (GPU, VRAM, trainer, CUDA, the highest quality: `ultra` only with
    gsplat on >= 12 GB), long-poll claim, resumable bundle download (Range, sha256), training through the
    worker's own `pipeline.Run.train` (gsplat fitted to the VRAM, plain or with the opted-in zones, and one
@@ -563,6 +564,25 @@ Plain `http://` is refused except for localhost (`--insecure-http` overrides). E
 by the heartbeat; unhealthy after 120 s) and falls back to the worker's `/health` when there is none.
 `/health` lists `splat-prepare` and `splat-finish` in `kinds` (the app uses the split only then) and, on a
 worker that trains ultra itself (gsplat, >= 12 GB), `maxQuality: "ultra"`.
+`prepareOutputs: ["sparse.zip", "anchors"]` says this worker's splat-prepare writes sparse.zip and takes
+anchor photos (markerless captures need both).
+
+### sparse.zip and anchor photos (markerless captures)
+
+`splat-prepare` also returns `sparse.zip` (`sparse_export.py`) for wall-geometry's `solve-sfm`: the mapper's
+**distorted** COLMAP model (`cameras.bin`, `images.bin`, `points3D.bin`) plus `stems.json`
+(`{"version": 1, "images": {<COLMAP image name>: {"stem", "role": "photo" | "frame" | "anchor", "width",
+"height"}}}`). Every image's intrinsics and 2D points are rescaled from the size COLMAP saw (the profile's
+edge) to the photo's **stored** resolution (the size it was uploaded at, `storedWidth`/`storedHeight` of
+the arrival), so hold detections and taps in the stored photos' pixels apply as they are; one camera per
+(COLMAP camera, stored size); 2D points without a 3D point are dropped. No pixels, no metadata.
+
+**Anchor photos**: `photos` named `a00.jpg`, `a01.jpg`, … (`anchors.py`; photos of the wall's active
+capture whose wall-frame poses the app knows). They are extracted, matched (as photos in the pair list) and
+mapped like photos, but never count towards the photo minimum. After mapping, their camera centres go to
+`prepared.json` `anchorCentres` (+ `anchorStems`) and they stay in sparse.zip (role `anchor`); then COLMAP
+`image_deleter` removes them from the model **before** undistortion, so anchor pixels never reach the
+bundle or training. Kind `splat` refuses anchor photos (`422`).
 
 ## Exposing it safely
 

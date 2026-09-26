@@ -234,6 +234,15 @@ class Colmap:
         os.makedirs(out_dir, exist_ok=True)
         self._run("sfm-mapping", self.triangulate_args(db, image_dir, model_dir, out_dir))
 
+    def delete_images(self, model_dir, out_dir, names):
+        """image_deleter: the model without `names` (COLMAP image names), written to out_dir."""
+        os.makedirs(out_dir, exist_ok=True)
+        path = os.path.join(self.cwd, "delete-images.txt")
+        with open(path, "w") as fh:
+            fh.write("\n".join(names) + "\n")
+        self._run("sfm-mapping", ["image_deleter", "--input_path", model_dir, "--output_path", out_dir,
+                                  "--image_names_path", path])
+
     def feature_counts(self, db):
         """SIFT features per image in the database (after extraction)."""
         con = sqlite3.connect(db)

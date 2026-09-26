@@ -45,6 +45,9 @@ class Run:
         self.log = os.path.join(job_dir, "tools.log")
         # photos (marker stills: align + registration minimum) vs auxiliary video frames (coverage only)
         self.photo_stems, self.frame_stems = split(self.inputs["photos"])
+        # anchor photos (splat-prepare, anchors.py): matched and mapped like photos, never counted or trained
+        self.anchor_stems = sorted(self.inputs.get("anchors") or [])
+        self.photo_stems = [s for s in self.photo_stems if s not in set(self.anchor_stems)]
         self.suffix = None  # appended to every stage detail once known ("87/120 video frames registered")
         self.note = None  # appended to the details of the current stage ("memory budget 5.2 GB (...)")
         self.sfm_run = None
@@ -132,12 +135,15 @@ class Run:
         sfm.match(db, self.matcher, n, pairs, self.frame_names() if pairs else None)
         best = sfm.map(db, img_dir, n)
         self.check_registered(best[1] if best else {"images": {}})
-        model_dir, model = best
-        self.model = model
+        model_dir, self.model = self.after_mapping(img_dir, *best)
         self.begin("undistort")
         undist = os.path.join(self.dir, "dataset")
         sfm.cm.undistort(img_dir, model_dir, undist, self.profile.edge, self.report)
         return undist
+
+    def after_mapping(self, img_dir, model_dir, model):
+        """Hook between mapping and undistortion (prepare.PrepareRun: sparse.zip + anchor removal)."""
+        return model_dir, model
 
     def check_registered(self, model):
         """The registration minimum counts the PHOTOS only; frames that did not register are dropped
@@ -167,7 +173,8 @@ class Run:
     def pair_list(self):
         """frames.build_pairs over the image names as COLMAP knows them (<group>/<stem>.jpg)."""
         names = self.colmap_names()
-        return build_pairs([names[s] for s in self.photo_stems if s in names],
+        stills = sorted(self.photo_stems + self.anchor_stems)  # anchors are matched like photos
+        return build_pairs([names[s] for s in stills if s in names],
                            [names[s] for s in self.frame_stems if s in names],
                            settings.frame_neighbours, settings.frame_photo_stride)
 

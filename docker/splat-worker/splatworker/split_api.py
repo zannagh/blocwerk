@@ -1,6 +1,6 @@
 """The 3D-runner split over HTTP: which kinds a worker in which role serves (SPLAT_WORKER_MODE), and the
 `splat-finish` upload (prepared.json + trainStats + the runner's trained scene). `splat-prepare` takes the
-`splat` request as is (main._photos_job)."""
+`splat` request as is, plus anchor photos (main._photos_job, anchors.py)."""
 import json
 import os
 
@@ -37,7 +37,9 @@ def check_prepared(doc):
         parse_options({k: v for k, v in doc["options"].items() if v is not None})
         if doc.get("geometry") is not None:
             validate_geometry(doc["geometry"])
-        for key in ("photoCentres", "frameCentres"):
+        for key in ("photoCentres", "frameCentres", "anchorCentres"):
+            if key == "anchorCentres" and key not in doc:  # additive: older prepare jobs have none
+                continue
             centres = doc[key]
             if not isinstance(centres, dict) or any(
                     not isinstance(c, list) or len(c) != 3 or not all(isinstance(v, (int, float)) for v in c)

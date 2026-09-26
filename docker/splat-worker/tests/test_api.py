@@ -62,7 +62,8 @@ def test_health_is_minimal_and_info_has_the_details(client, monkeypatch):
     h = client.get("/health").json()
     assert h["service"] == "splat-worker" and h["protocol"] == "blocwerk-compute/1"
     assert h["kinds"] == ["splat", "splat-prepare", "splat-finish"]  # the app keys the runner split on these
-    assert set(h) == {"status", "service", "protocol", "version", "kinds"} and h["status"] == "ok"
+    assert set(h) == {"status", "service", "protocol", "version", "kinds", "prepareOutputs"} and h["status"] == "ok"
+    assert h["prepareOutputs"] == ["sparse.zip", "anchors"]  # the app keys markerless captures on these
     info = client.get("/v1/info").json()
     assert info["tools"]["ok"] is True and info["limits"]["maxPhotos"] == 400
     monkeypatch.setitem(main.TOOLS, "maxQuality", "ultra")  # gsplat on a >= 12 GB GPU (main._probe_tools)

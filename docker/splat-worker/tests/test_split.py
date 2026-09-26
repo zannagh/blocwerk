@@ -236,7 +236,7 @@ def test_probe_tools_reports_ultra_for_gsplat_on_a_12_gb_gpu(monkeypatch):
             monkeypatch.setattr(gpu, "vram", lambda t=total: {"name": "RTX", "totalMb": t, "freeMb": t})
             main.TOOLS.clear()
             main._probe_tools()
-            assert main._health_extra() == {"maxQuality": want}
+            assert main._health_extra()["maxQuality"] == want
     finally:
         main.TOOLS.clear()
         main.TOOLS.update(saved)

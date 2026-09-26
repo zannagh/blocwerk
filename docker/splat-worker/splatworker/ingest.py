@@ -64,6 +64,7 @@ def sanitize(raw, max_edge, quality=95):
             raise PhotoError(f"image too large ({im.width}x{im.height} > "
                              f"{settings.max_image_pixels // 1_000_000} MP)")
         focal35, lens_key = _exif_facts(im)
+        stored = im.size  # the size as uploaded (sparse.zip rescales COLMAP's intrinsics to it)
         if im.format in ("JPEG", "MPO"):
             im.draft("RGB", (max_edge, max_edge))  # fast DCT downscale; never below max_edge
         im = ImageOps.exif_transpose(im)
@@ -74,8 +75,11 @@ def sanitize(raw, max_edge, quality=95):
         raise PhotoError("image too large (pixel count)") from e
     except Exception as e:  # noqa: BLE001 - anything Pillow cannot decode
         raise PhotoError(f"cannot decode image ({type(e).__name__})") from e
+    if (rgb.width >= rgb.height) != (stored[0] >= stored[1]):  # the EXIF orientation turned it
+        stored = stored[::-1]
     rgb = downscale(rgb, max_edge)
     return clean_jpeg(rgb, quality), {"width": rgb.width, "height": rgb.height,
+                                      "storedWidth": stored[0], "storedHeight": stored[1],
                                       "focal35": focal35, "lensKey": lens_key}
 
 

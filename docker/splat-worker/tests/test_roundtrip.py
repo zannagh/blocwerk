@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 from test_align import rot
 from test_api import jpeg
+from sparse_fixture import synthetic_model
 from test_pipeline import FakeColmap
 
 from splatworker import bundle, gpu, pipeline, sfm, trainers
@@ -47,7 +48,10 @@ class WallColmap(FakeColmap):
     def best_model(self, sparse):
         imgs = {f"g/IMG_{i}.jpg": to_colmap(c) for i, c in enumerate(CAMS)}
         imgs["v/vf_0001.jpg"] = to_colmap([2000, -2500, 1500])
-        return ("m", {"images": imgs, "points": 500, "meanReprojErrorPx": 0.6, "meanTrackLength": 4.2})
+        path = os.path.join(sparse, "0") if sparse else "m"  # a real tiny model: prepare exports it (sparse.zip)
+        if sparse:
+            synthetic_model(path, sorted(imgs), {n: self.size for n in imgs})
+        return (path, {"images": imgs, "points": 500, "meanReprojErrorPx": 0.6, "meanTrackLength": 4.2})
 
     def undistort(self, image_dir, model_dir, out_dir, max_size, report):
         WallColmap.undistort_edge = max_size
@@ -124,8 +128,8 @@ def test_prepare_then_finish_equals_the_all_in_one_job(tmp_path, colmap):
     options = {**SplatOptions().to_dict(), "cleanup": True, "quality": "max", "wallZones": True}  # zones opted in
     prep = job_dir(tmp_path, "prep", options)
     res = run_prepare(str(prep), lambda *a: None)
-    assert res["files"] == ["bundle.zip", "prepared.json"] and res["bundle"]["zones"] is True
-    assert sorted(os.listdir(prep)) == ["bundle.zip", "prepared.json", "tools.log"]
+    assert res["files"] == ["bundle.zip", "prepared.json", "sparse.zip"] and res["bundle"]["zones"] is True
+    assert sorted(os.listdir(prep)) == ["bundle.zip", "prepared.json", "sparse.zip", "tools.log"]
     prepared = json.load(open(prep / "prepared.json"))
     assert prepared["version"] == 2 and sorted(prepared["frameCentres"]) == ["vf_0001"]
     assert len(prepared["photoCentres"]) == len(CAMS) and prepared["zones"]["facets"][0]["id"] == "0"

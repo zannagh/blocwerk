@@ -1,9 +1,9 @@
 """HTTP API: Blocwerk compute job protocol v1 (docker/compute-jobs-protocol.md).
 
 Kinds: `splat` (all-in-one: photos -> splat on this machine) and the split for 3D runners (split_api.py):
-`splat-prepare` (photos -> training bundle + prepared.json) and `splat-finish` (a runner's trained scene +
-prepared.json -> the same files as `splat`), both CPU only. SPLAT_WORKER_MODE=cpu serves the split only
-and needs no GPU and no trainer.
+`splat-prepare` (photos [+ anchor photos] -> training bundle + prepared.json + sparse.zip) and
+`splat-finish` (a runner's trained scene + prepared.json -> the same files as `splat`), both CPU only.
+SPLAT_WORKER_MODE=cpu serves the split only and needs no GPU and no trainer.
 """
 import json
 import os
@@ -15,6 +15,7 @@ from computejobs.upload import json_field, text_field
 from fastapi import Request
 
 from . import __version__, brush, colmap, gpu, gsplat_trainer, split_api, trainers
+from .anchors import split_anchors
 from .frames import split
 from .options import OptionsError, parse_options, validate_geometry
 from .runner import run_job
@@ -22,6 +23,7 @@ from .settings import settings
 from .upload import SplatUpload
 
 TOOLS = {}
+PREPARE_OUTPUTS = ("sparse.zip", "anchors")
 
 
 def _probe(key, path, version):
@@ -69,8 +71,13 @@ def _probe_tools():
 
 
 def _health_extra():
-    """maxQuality on /health: the app offers Ultra without a 3D runner when this worker trains it."""
-    return {"maxQuality": TOOLS["maxQuality"]} if TOOLS.get("ok") and TOOLS.get("maxQuality") else {}
+    """maxQuality on /health: the app offers Ultra without a 3D runner when this worker trains it.
+    prepareOutputs: what splat-prepare returns and accepts beyond the bundle (the app keys markerless captures
+    on it): sparse.zip for solve-sfm, and anchor photos."""
+    extra = {"prepareOutputs": list(PREPARE_OUTPUTS)}
+    if TOOLS.get("ok") and TOOLS.get("maxQuality"):
+        extra["maxQuality"] = TOOLS["maxQuality"]
+    return extra
 
 
 def _info_extra():
@@ -88,6 +95,9 @@ async def _photos_job(svc, request: Request, kind):
     try:
         fields, photos = await SplatUpload(job.dir).read(request)
         stills, frames = split(photos)  # vf_* = auxiliary video frames (frames.py): never aligned, never counted
+        stills, anchors = split_anchors(stills)  # a00, a01, ... = anchor photos (anchors.py): prepare only
+        if anchors and kind != "splat-prepare":
+            bad(f"anchor photos ({', '.join(anchors[:3])}, ...) are only accepted by splat-prepare", 422)
         try:
             options = parse_options(json_field(fields, "options"))
             geometry = json_field(fields, "geometry")
@@ -105,7 +115,7 @@ async def _photos_job(svc, request: Request, kind):
             with open(os.path.join(job.dir, "geometry.json"), "w") as fh:
                 json.dump(geometry, fh)
         with open(os.path.join(job.dir, "inputs.json"), "w") as fh:
-            json.dump({"photos": photos, "options": options.to_dict()}, fh)
+            json.dump({"photos": photos, "anchors": anchors, "options": options.to_dict()}, fh)
     except BaseException:
         svc.jobs().discard(job)
         raise
@@ -129,7 +139,7 @@ service = ComputeService(
     name="splat-worker", version=__version__,
     kinds={"splat": _splat, "splat-prepare": _prepare, "splat-finish": _finish}, runner=run_job,
     timeout_for=lambda kind: settings.splat_timeout_s,
-    elsewhere={k: f"kind '{k}' is served by wall-geometry, not the splat-worker" for k in ("solve", "textures")},
+    elsewhere={k: f"kind '{k}' is served by wall-geometry, not the splat-worker" for k in ("solve", "solve-sfm", "textures")},
     info_extra=_info_extra, on_startup=_probe_tools, ready=lambda: not TOOLS or bool(TOOLS.get("ok")),
     health_extra=_health_extra)
 app = service.app
