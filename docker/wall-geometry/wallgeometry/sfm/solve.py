@@ -2,7 +2,8 @@
 
 points (track >= 3, error < 2 px, PCA normals) -> planes in model units (scale-free tolerances: 1.2 % of the
 median point-to-nearest-camera distance) -> anchors (similarity + plane-ICP) -> scale -> metric frame (mm) ->
-merged planes, gravity, wall-facet decisions -> world frame, facets -> document (export.py).
+merged planes, gravity, wall-facet decisions (score.py, then sanity.py: duplicates, cuts, floating planes,
+the anchored reference facets) -> world frame, facets -> document (export.py).
 """
 import numpy as np
 from scipy.spatial import cKDTree
@@ -12,6 +13,7 @@ from . import anchors as anchoring
 from .gravity import camera_up, declared_up, device_up, floor_plane, is_horizontal, unit
 from .planes import fit_planes, merge_parallel, point_normals, refine
 from .scale import camera_height, floor_from_points, measured, nearest_camera
+from . import sanity
 from .score import credit_hosts, describe, hold_hits, hosts, judge, reject_features_on
 from .world import build_facets, order_facets, shift_origin
 
@@ -165,6 +167,8 @@ def solve_sfm(req, model, progress=None):
     host = hosts(planes, Y)
     judge(planes, up, g_known, credit_hosts(hits, host), rays, req.options["minFacetAreaM2"])
     reject_features_on(planes, host)
+    refs = sanity.reference_facets(req.reference, anchor["A"], anchor["b"]) if anchor and anchor["ok"] else None
+    sanity.check(planes, Y, up, np.array([im["C"] for im in photos]) * s, D * s, refs)
     refine([p for p in planes if p["accepted"]], Y, pts["N"], TOL * D * s)
     if not any(p["accepted"] for p in planes):
         raise SfmError("no wall surface found in the reconstruction (no plane passed the wall-facet rules)")

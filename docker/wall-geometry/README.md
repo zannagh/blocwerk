@@ -142,14 +142,22 @@ sampling (3 points within 0.385 D), normal-consistent inliers (<= 25 deg), toler
 distance from a point to its nearest photo; The Attic: D = 0.91 m -> 16 mm), the largest connected part
 (0.33 D cells), Tukey IRLS; near-parallel slabs (< 3 deg) within 30 mm whose footprints touch are one surface.
 Then, in mm:
-- **Wall-facet decision** per plane: hold hits (each detection cast as a ray, the first plane within 80 mm of its
-  points along the ray gets it; a hit on a feature lying on a facet counts for that facet), camera facing,
+- **Wall-facet decision** per plane: hold hits (each detection cast as a ray; of the planes with points within 80 mm
+  of where the ray meets them, the biggest within 150 mm behind the first one gets it, so a hold layer in front of
+  its panel does not take the panel's holds; a hit on a feature lying on a facet counts for that facet), camera facing,
   area. Rejected: area < `minFacetAreaM2`, occupying < 40 % of its 1-99 % box (a plane through scattered clutter),
   horizontal (< 20 deg) when gravity is known, hold share < 1 % (with detections; without: not facing the photos),
   score < 0.5 (0.6 holds + 0.25 facing + 0.15 area), and a smaller plane within 40 deg of parallel lying in
   front of a bigger accepted one (> 60 % of its points over the big one's convex outline, within 300 mm: hold
   layers, volume faces). Small or folded facets (kickboard pieces, a 0.7 deg fold) are not separated from sparse
   points: they merge or stay out, for declared / user-corrected geometry (Phase 0).
+- **Geometric sanity** of the accepted planes, biggest first (`sanity.py`; the first real markerless run had 8
+  facets for 5): a near-coplanar slab (<= 5 deg, <= 60 mm) over a bigger facet is a feature on it whatever its size;
+  a plane crossing a bigger facet inside both outlines (>= 10 % of its points > 50 mm on either side) is rejected
+  unless it has >= 10 % of the hold hits; a near-parallel plane > 150 mm behind a bigger facet (the room wall past a
+  panel), and a plane with no accepted plane (nor the floor) within 150 mm, unless it has >= 3 % (and >= 10 hits).
+  Anchored, the reference facets are the prior: a plane on one (<= 5 deg, <= 50 mm, half of its points over its
+  extent + 150 mm) is never "floating" (`planes[].referenceFacet`); one on none needs >= 3 % of the hold hits.
 - **Gravity**, first that works: `device` (each photo's vector in its stored image's camera frame, portrait
   `(-aX, aY, aZ)` / landscape `(aY, aX, aZ)`, the other holdings by the vector's sign, never the EXIF Orientation;
   robust mean over >= 3 photos) -> `declared` (planes take the nearest declared angle under the prior, the worst
@@ -177,6 +185,7 @@ Deterministic for the same input (`options.seed`).
 **The Attic** (353-image model, placed holds as detections, `tests/test_sfm_real.py` with the owner's data):
 exactly main wall, side panel and kickboard; main wall 0.09 deg from the marker model, 45.36 deg with the device
 gravity (marker model 45.18); anchored on 15 photos: 14.5 mm rms / 28 mm max, ICP 0.28 deg, main wall 45.17 deg.
+Without detections, anchored or not, on this model and on the photos-only one (P53): exactly the same three.
 
 ## Textures (`POST /v1/jobs/textures`, multipart)
 

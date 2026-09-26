@@ -15,6 +15,7 @@ from wallgeometry.sfm.colmap_io import read_images
 
 DATA = os.environ.get("BLOCWERK_DATA_DIR") or os.path.expanduser("~/blocwerk-data")
 SPARSE = os.path.join(DATA, "tune", "work", "sfm", "sparse", "0")
+P53 = os.path.join(DATA, "markerless", "anchors", "photos53", "sparse", "0")  # photos only, self-calibrated
 ML = os.path.join(DATA, "markerless")
 pytestmark = pytest.mark.skipif(not (os.path.isfile(os.path.join(SPARSE, "points3D.bin"))
                                      and os.path.isfile(os.path.join(ML, "device_gravity.json"))),
@@ -49,9 +50,9 @@ def attic():
             "anchors": open(os.path.join(ML, "anchors", "anchor_list.txt")).read().split()}
 
 
-def stems(anchors=()):
+def stems(anchors=(), sparse=SPARSE):
     out = {}
-    for im in read_images(os.path.join(SPARSE, "images.bin")):
+    for im in read_images(os.path.join(sparse, "images.bin")):
         stem = os.path.splitext(os.path.basename(im["name"]))[0]
         out[im["name"]] = {"stem": stem, "role": "frame" if stem.startswith("vf_") else
                            "anchor" if stem in anchors else "photo"}
@@ -92,3 +93,36 @@ def test_attic_anchored_to_the_marker_model(attic):
     main = doc["segments"][0]["facets"][0]
     assert angle(main["normal"], attic["facets"]["0"]["normal"]) < 0.5  # in the marker model's own frame
     assert main["measuredAngleDeg"] == pytest.approx(45.2, abs=1.0)
+
+
+def facet_set(doc, attic):
+    """The marker model's facet each accepted facet lies on (the nearest normal; unanchored documents are turned
+    into the marker frame by their camera centres)."""
+    R = np.eye(3)
+    if not doc["world"]["anchored"]:
+        marker = {c["image"]: centre(c) for c in attic["model"]["cameras"]}
+        ours = {c["image"]: centre(c) for c in doc["cameras"]}
+        common = sorted(set(marker) & set(ours))
+        _, R, _, _, _ = robust_umeyama(np.array([ours[p] for p in common]), np.array([marker[p] for p in common]))
+    out = []
+    for s in doc["segments"]:
+        n = R @ np.array(s["facets"][0]["normal"])
+        out.append(min(attic["facets"], key=lambda k: angle(n, attic["facets"][k]["normal"])))
+    return sorted(out)
+
+
+@pytest.mark.parametrize("sparse", [SPARSE, P53], ids=["T353", "P53"])
+@pytest.mark.parametrize("anchored", [True, False], ids=["anchored", "free"])
+def test_attic_facets_without_hold_detections_are_the_big_three(attic, sparse, anchored):
+    """No detections (the first real markerless run): main wall, side panel and kickboard, nothing spurious (P53's
+    room wall 300 mm behind the side panel came through as a 4th facet before the sanity rules)."""
+    if not os.path.isfile(os.path.join(sparse, "points3D.bin")):
+        pytest.skip("no such model here")
+    anchors = attic["anchors"] if anchored else ()
+    req = {"photos": [{"name": p["name"]} for p in attic["photos"]]}
+    if anchored:
+        req.update(anchors={a: a for a in anchors}, reference=attic["model"])
+    doc, _ = solve_sfm_document(req, sparse, stems=stems(anchors, sparse))
+    assert doc["world"]["anchored"] == anchored
+    rows = [(r["reason"], r["centreMm"]) for r in doc["quality"]["sfm"]["planes"]]
+    assert facet_set(doc, attic) == ["0", "1b", "2"], rows

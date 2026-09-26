@@ -1,8 +1,9 @@
 """Which planes are climbing-wall facets (Phase 0: exactly main wall, side panel and kickboard on The Attic; floor,
 mats, room walls, rafters and hold / volume slabs rejected every time).
 
-Per plane (metric frame, mm): hold hits (the photos' hold detections cast as rays, the first supported plane
-along each ray gets the hit; a hit on a feature lying on a facet counts for that facet), camera facing (share of the photos in front of it looking at it), area (occupied
+Per plane (metric frame, mm): hold hits (the photos' hold detections cast as rays; the biggest supported plane
+within 150 mm behind the first one along each ray gets the hit; a hit on a feature lying on a facet counts for
+that facet), camera facing (share of the photos in front of it looking at it), area (occupied
 100 mm cells). Hard rules: area >= minFacetAreaM2 (0.4 m2), filling >= 40 % of its 1-99 % box (a plane
 through scattered hold clutter is a sparse band), not horizontal when gravity is known, and a smaller plane
 lying in front of a bigger accepted one (its points over the big one's footprint, within 300 mm) is a feature
@@ -17,6 +18,7 @@ from .planes import plane_ab
 
 CELL_MM = 100.0
 HOLD_SUPPORT_MM = 80.0
+HIT_DEPTH_MM = 150.0
 FEATURE_ON_MM = 300.0
 HULL_MARGIN_MM = 50.0
 ON_COS = np.cos(np.radians(40.0))  # "in front of" means roughly parallel: a fold neighbour (kickboard) is not
@@ -64,28 +66,34 @@ def describe(planes, pts, photos):
 
 
 def hold_hits(planes, model, holds, to_metric):
-    """Hits per plane of the hold rays (first supported plane along each ray) and the number of rays."""
+    """Hits per plane of the hold rays and the number of rays. A ray's hit goes to the BIGGEST supported plane
+    within HIT_DEPTH_MM behind the first one along it: a hold stands <= 80 mm proud of its panel, so a small
+    plane just in front (a hold layer, a tilted piece of it) must not take the panel's holds."""
     hits, rays = np.zeros(len(planes), int), 0
+    size = np.array([pl["npts"] for pl in planes], float)
     for im in model["images"]:
         xy = holds.get(im["stem"]) if im["role"] == "photo" else None
-        if not xy:
+        if not xy or not planes:
             continue
         centre, dirs = world_rays(im, model["cams"][im["cam"]], xy)
         centre, dirs = to_metric(centre[None])[0], to_metric(dirs, direction=True)
         rays += len(dirs)
-        best_t, best_k = np.full(len(dirs), np.inf), np.full(len(dirs), -1)
+        T = np.full((len(planes), len(dirs)), np.inf)
         for k, pl in enumerate(planes):
             den = dirs @ pl["n"]
             with np.errstate(divide="ignore", invalid="ignore"):
                 t = ((pl["c"] - centre) @ pl["n"]) / den
-            ok = (np.abs(den) > 1e-9) & (t > 0) & (t < best_t)
+            ok = (np.abs(den) > 1e-9) & (t > 0)
             if not ok.any():
                 continue
             x = centre + t[ok, None] * dirs[ok]
             d = pl["tree"].query(plane_ab(x, pl["c"], pl["n"]), distance_upper_bound=HOLD_SUPPORT_MM)[0]
             sel = np.flatnonzero(ok)[d < HOLD_SUPPORT_MM]
-            best_t[sel], best_k[sel] = t[sel], k
-        np.add.at(hits, best_k[best_k >= 0], 1)
+            T[k, sel] = t[sel]
+        first = T.min(0)
+        near = T <= first + HIT_DEPTH_MM
+        best = np.where(near, size[:, None], -1.0).argmax(0)
+        np.add.at(hits, best[np.isfinite(first)], 1)
     return hits, rays
 
 
@@ -96,6 +104,7 @@ def judge(planes, up, gravity_known, hits, rays, min_area):
     for k, pl in enumerate(planes):
         share = hits[k] / total_hits
         pl["holdHitShare"] = float(share) if use_holds else None
+        pl["holdHits"] = int(hits[k])
         if use_holds:
             pl["score"] = 0.6 * min(share / 0.02, 1) + 0.25 * pl["facing"] + 0.15 * min(pl["areaM2"] / 2, 1)
         else:  # no detections: facing, area and point support (weaker; README)

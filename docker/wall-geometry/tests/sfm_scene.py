@@ -152,3 +152,21 @@ def reference(cams):
     refcams = [{"image": f"p9{c['stem'][1:]}", "R": c["R"].ravel().tolist(), "t": list(-c["R"] @ c["C"])}
                for c in cams if c["role"] == "anchor"]
     return {"version": 1, "world": {"up": [0, 0, 1], "gravityKnown": True}, "segments": segs, "cameras": refcams}
+
+
+BOARD_O = np.array([4100.0, -1800, 800])  # a board beside the wall (>= 0.3 m from it), facing the climber
+
+
+def spurious(rng, noise=12.0):
+    """(points, {kind: hold centres}) of planes that pass the score but are no facet: a vertical plane CUTTING
+    through the main wall (1.5 x 1.2 m at y = -1200, crossing it at z = 1500: a fifth in front, the rest behind),
+    a floating board (1.2 x 1 m, right of the wall and in front of its plane, 0.8 m above the floor), and hold
+    detections on both."""
+    up = np.array([0.0, 0, 1])
+    cut_o = np.array([1000.0, -1200, 1250])
+    pts = [_patch(rng, cut_o, MAIN_U, up, (0, 1500), (0, 1200), 1500, KICK_N, noise),
+           _patch(rng, BOARD_O, MAIN_U, up, (0, 1200), (0, 1000), 1500, KICK_N, noise)]
+    holds = {"cut": [cut_o + 750 * MAIN_U + 120 * up + 50 * KICK_N],
+             "board": [BOARD_O + a * MAIN_U + b * up + 50 * KICK_N
+                       for a, b in ((150, 250), (300, 700), (450, 400), (600, 850), (250, 500), (500, 150))]}
+    return np.vstack(pts), {k: np.array(v) for k, v in holds.items()}

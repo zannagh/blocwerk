@@ -57,6 +57,7 @@ def _plane_rows(sol):
         rows.append({"index": k, "facet": ids.get(id(pl)), "accepted": pl["accepted"], "reason": pl["reason"],
                      "points": pl["npts"], "areaM2": _r(pl["areaM2"], 2), "rmsMm": _r(pl["rmsMm"], 1),
                      "facing": _r(pl["facing"], 2), "holdHitShare": _r(pl["holdHitShare"], 3),
+                     "holdHits": pl.get("holdHits"), "referenceFacet": pl.get("refFacet"),
                      "score": _r(pl["score"], 2), "mergedSlabs": pl.get("members", 1),
                      "normal": _l(sol["A"] @ pl["n"], 4), "centreMm": _l(c, 0),
                      "tiltDeg": _r(np.degrees(np.arcsin(np.clip(-(sol["A"] @ pl["n"]) @ sol["up"], -1, 1))), 2)})
