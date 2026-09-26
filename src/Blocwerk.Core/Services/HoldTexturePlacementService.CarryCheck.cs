@@ -65,6 +65,25 @@ public sealed partial class HoldTexturePlacementService
         return plan with { Summary = summary, Placements = [.. plan.Placements, .. kept], Cleared = [.. plan.Cleared ?? [], .. cleared] };
     }
 
+    /// <summary>
+    /// The plan plus the holds placed in an earlier frame (<see cref="OtherFrameAsync"/>) that it did not place again: they lose that
+    /// placement (<see cref="PanelPlan.Cleared"/>), revertable like the rest of the run.
+    /// </summary>
+    private PanelPlan WithoutOtherFrame(PanelPlan plan, List<Hold> holds, IReadOnlySet<Guid> otherFrame)
+    {
+        var placed = plan.Placements.Select(p => p.Hold.Id).Concat(plan.Cleared?.Select(h => h.Id) ?? []).ToHashSet();
+        var stale = holds.Where(h => otherFrame.Contains(h.Id) && !placed.Contains(h.Id) && HoldTexturePlacer.IsEligible(h)).ToList();
+        if (stale.Count == 0)
+        {
+            return plan;
+        }
+
+        logger.LogInformation(
+            "Panel {Panel}: {Count} holds placed in an earlier frame were not placed again on the new one; they are not measured",
+            plan.Summary.Label, stale.Count);
+        return plan with { Cleared = [.. plan.Cleared ?? [], .. stale] };
+    }
+
     /// <summary>The largest disagreement of a carried placement with the photo's registration of its facet and its placed linked holds.</summary>
     private static double? Disagreement(Hold hold, CarriedPosition position, IReadOnlyList<FacetRegistration> registrations, CarryContext context)
     {

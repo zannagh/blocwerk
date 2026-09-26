@@ -2,6 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Capture;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Detection.Enrichment;
 using Blocwerk.Core.Entities;
@@ -26,7 +27,7 @@ public sealed partial class HoldTexturePlacementService
     /// always moves through world space (<see cref="PlacementCarrier"/>), never as raw (a, b): a re-solved or rebased facet
     /// frame gives the same point other plane coordinates.
     /// </summary>
-    private async Task<Dictionary<Guid, CarriedPosition>> CarriedPositionsAsync(
+    private async Task<(Dictionary<Guid, CarriedPosition> Carried, HashSet<Guid> OtherFrame)> CarriedPositionsAsync(
         BlocwerkDbContext db, Guid wallId, ActiveModel active, List<Hold> holds, CancellationToken ct)
     {
         var candidates = holds
@@ -42,6 +43,12 @@ public sealed partial class HoldTexturePlacementService
             .Select(kv => kv.Key)
             .ToList();
         foreach (var id in settled)
+        {
+            sourceModel.Remove(id);
+        }
+
+        var otherFrame = await OtherFrameAsync(db, wallId, active.Id, candidates.Keys, sourceModel, settled, ct);
+        foreach (var id in otherFrame)
         {
             sourceModel.Remove(id);
         }
@@ -63,7 +70,30 @@ public sealed partial class HoldTexturePlacementService
             }
         }
 
-        return carried;
+        return (carried, otherFrame);
+    }
+
+    /// <summary>
+    /// After a frame reset (<see cref="FrameLineage"/>): the candidates whose placement was written in an earlier frame (by a run on
+    /// a model outside the active one's frame, or by no known run). Their coordinates mean nothing on the active model, so they
+    /// are never carried, and lose their placement unless this run places them again. Empty without a reset.
+    /// </summary>
+    private static async Task<HashSet<Guid>> OtherFrameAsync(
+        BlocwerkDbContext db,
+        Guid wallId,
+        Guid activeId,
+        IEnumerable<Guid> candidates,
+        Dictionary<Guid, Guid> sourceModel,
+        List<Guid> settled,
+        CancellationToken ct)
+    {
+        if (await FrameLineage.SameFrameAsync(db, wallId, activeId, ct) is not { } sameFrame)
+        {
+            return [];
+        }
+
+        bool Other(Guid id) => sourceModel.TryGetValue(id, out var model) ? !sameFrame.Contains(model) : !settled.Contains(id);
+        return candidates.Where(Other).ToHashSet();
     }
 
     /// <summary>The previous placement of <paramref name="hold"/> on the active model's facet with the same id, or null.</summary>

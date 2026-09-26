@@ -34,10 +34,19 @@ public sealed partial class WallCaptureProcessor
             .Where(m => m.WallId == capture.WallId && m.IsActive)
             .Select(m => new { m.Id, m.Json, m.PlanRevision })
             .FirstOrDefaultAsync(ct);
-        if (active is null || TryParse(active.Json) is not { } reference || MarkerWorldCorners.Of(reference).Count == 0)
+        if (active is null)
         {
-            // The wall's first model (or one without facet frames to tie to): it defines the frame.
+            // The wall's first model: it defines the frame.
             return new FrameOutcome(solvedJson, true, null);
+        }
+
+        if (TryParse(active.Json) is not { } reference || MarkerWorldCorners.Of(reference).Count == 0)
+        {
+            // Nothing to tie to (a model without markers: the upgrade of a wall to markers): this model defines a NEW frame.
+            // The old one stays in the history; the follow-ups derive the holds' 3D data again instead of carrying it over.
+            logger.LogInformation(
+                "Capture {CaptureId}: the active model {ModelId} has no markers to tie to; the new model starts a new frame", capture.Id, active.Id);
+            return new FrameOutcome(FrameLineage.StampReset(solvedJson, active.Id, "the active model has no markers to tie to"), true, null);
         }
 
         var eligible = await UnchangedIdsAsync(db, run, active.PlanRevision, ct);

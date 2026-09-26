@@ -23,6 +23,8 @@ namespace Blocwerk.Core.Services;
 /// positions the other photos' registrations just placed them, and the better plan kept;</item>
 /// <item>whatever is still unplaced keeps its previous placement, carried over and marked
 /// <see cref="HoldMetric.TextureRegistrationCarried"/> (revertable like the rest of the run).</item>
+/// <item>after a frame reset (<see cref="Capture.FrameLineage"/>) a placement from the earlier frame is never carried: a hold this
+/// run does not place again loses it (not measured) instead of keeping coordinates of another frame.</item>
 /// </list>
 /// </summary>
 public sealed partial class HoldTexturePlacementService
@@ -31,7 +33,7 @@ public sealed partial class HoldTexturePlacementService
     private async Task<List<PanelPlan>> PlanPanelsAsync(
         BlocwerkDbContext db, Guid wallId, List<Hold> live, ActiveModel model, CancellationToken ct)
     {
-        var carried = await CarriedPositionsAsync(db, wallId, model, live, ct);
+        var (carried, otherFrame) = await CarriedPositionsAsync(db, wallId, model, live, ct);
         var panels = live.Where(h => h.WallPanelId is not null)
             .GroupBy(h => h.WallPanelId!.Value)
             .OrderBy(g => g.Key)
@@ -58,7 +60,9 @@ public sealed partial class HoldTexturePlacementService
         // The evidence a carried placement must agree with: what the photos registered in this run placed.
         var placed = plans.SelectMany(p => p.Placements).ToDictionary(p => p.Hold.Id, p => p.Fit);
         var context = new CarryContext(model.Frames, placed, links);
-        return plans.Select((p, i) => WithCarried(p, panels[i].Holds, carried, context, dropped)).ToList();
+        return plans
+            .Select((p, i) => WithoutOtherFrame(WithCarried(p, panels[i].Holds, carried, context, dropped), panels[i].Holds, otherFrame))
+            .ToList();
     }
 
     /// <summary>
