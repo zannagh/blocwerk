@@ -91,20 +91,8 @@ public class HoldTexturePlacementRecoveryTests
         Assert.All(c1Holds.Append(unlinked), id => Assert.Null(after[id].FacetId));
     }
 
-    /// <summary>Photo y (px) of the i-th linked hold: spread over the photo, not on one line with x.</summary>
-    private static double Y(int i) => 400 + ((i * 7 % 10) * 240);
-
-    private static void AssertCarried(Hold hold, Hold before, string facet, double a, double b)
-    {
-        Assert.Equal(facet, hold.FacetId);
-        Assert.Equal(a, hold.PlaneAMm!.Value, 3);
-        Assert.Equal(b, hold.PlaneBMm!.Value, 3);
-        Assert.Equal(HoldMetric.TextureRegistrationCarried, hold.MetricSource);
-        Assert.Equal((before.WidthMm, before.HeightMm, before.AreaMm2), (hold.WidthMm, hold.HeightMm, hold.AreaMm2));
-    }
-
     /// <summary>A new active model (<see cref="RecapturedJson"/>) with new textures photo c0 does not match; returns its id.</summary>
-    private static async Task<Guid> RecaptureAsync(WallTestHarness h, HoldPlacementScenario s)
+    internal static async Task<Guid> RecaptureAsync(WallTestHarness h, HoldPlacementScenario s)
     {
         s.Files.ReadAsync("n0.jpg", Arg.Any<CancellationToken>()).Returns(new byte[] { 2 });
         s.Files.ReadAsync("n1.jpg", Arg.Any<CancellationToken>()).Returns(new byte[] { 3 });
@@ -123,5 +111,17 @@ public class HoldTexturePlacementRecoveryTests
 
         await db.SaveChangesAsync();
         return model.Id;
+    }
+
+    /// <summary>Photo y (px) of the i-th linked hold: spread over the photo, not on one line with x.</summary>
+    private static double Y(int i) => 400 + ((i * 7 % 10) * 240);
+
+    private static void AssertCarried(Hold hold, Hold before, string facet, double a, double b)
+    {
+        Assert.Equal(facet, hold.FacetId);
+        Assert.Equal(a, hold.PlaneAMm!.Value, 3);
+        Assert.Equal(b, hold.PlaneBMm!.Value, 3);
+        Assert.Equal(HoldMetric.TextureRegistrationCarried, hold.MetricSource);
+        Assert.Equal((before.WidthMm, before.HeightMm, before.AreaMm2), (hold.WidthMm, hold.HeightMm, hold.AreaMm2));
     }
 }

@@ -3,6 +3,7 @@
 // </copyright>
 
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Detection.Enrichment;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Geometry.TextureRegistration;
 using Blocwerk.Core.Geometry.View3D;
@@ -21,7 +22,9 @@ public sealed partial class HoldTexturePlacementService
     /// <summary>
     /// Every eligible hold with a texture placement on an earlier model, moved onto the active model. The earlier
     /// model is the one of the newest unreverted run that wrote the hold's current placement (its hash matches);
-    /// a hold whose placement no run wrote, or one already on the active model, is not carried.
+    /// a hold whose placement no run wrote, or one a run registered on the active model, is not carried. The position
+    /// always moves through world space (<see cref="PlacementCarrier"/>), never as raw (a, b): a re-solved or rebased facet
+    /// frame gives the same point other plane coordinates.
     /// </summary>
     private async Task<Dictionary<Guid, CarriedPosition>> CarriedPositionsAsync(
         BlocwerkDbContext db, Guid wallId, ActiveModel active, List<Hold> holds, CancellationToken ct)
@@ -31,8 +34,20 @@ public sealed partial class HoldTexturePlacementService
             .Where(h => h.FacetId is not null && h.PlaneAMm is not null && h.PlaneBMm is not null)
             .ToDictionary(h => h.Id);
         var sourceModel = await PlacementModelsAsync(db, wallId, candidates, ct);
+
+        // A placement a run wrote on the active model is kept as it is, except one that run only carried over: that is
+        // carried again (in place) so it is checked against this run's evidence like any other carried placement.
+        var settled = sourceModel
+            .Where(kv => kv.Value == active.Id && candidates[kv.Key].MetricSource != HoldMetric.TextureRegistrationCarried)
+            .Select(kv => kv.Key)
+            .ToList();
+        foreach (var id in settled)
+        {
+            sourceModel.Remove(id);
+        }
+
         var models = sourceModel.Values.Where(id => id != active.Id).Distinct().ToList();
-        var frames = new Dictionary<Guid, Dictionary<string, FacetFrame>>();
+        var frames = new Dictionary<Guid, Dictionary<string, FacetFrame>> { [active.Id] = active.Frames };
         foreach (var model in await db.WallGeometryModels.AsNoTracking().Where(m => models.Contains(m.Id)).Select(m => new { m.Id, m.Json }).ToListAsync(ct))
         {
             frames[model.Id] = Facets(model.Json).Frames;

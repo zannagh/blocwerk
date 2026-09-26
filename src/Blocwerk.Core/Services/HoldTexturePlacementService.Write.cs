@@ -30,6 +30,7 @@ public sealed partial class HoldTexturePlacementService
         await db.SaveChangesAsync(ct);
 
         var entries = new List<HoldPlacementEntry>();
+        var cleared = new HashSet<Guid>();
         var panels = new List<HoldPlacementPanelSummary>();
         foreach (var plan in plans)
         {
@@ -39,19 +40,21 @@ public sealed partial class HoldTexturePlacementService
                 changed += await WriteBatchAsync(db, run, batch, model.Extents, entries, ct);
             }
 
+            cleared.UnionWith(await ClearAsync(db, run, plan.Cleared ?? [], entries, ct));
+
             var s = plan.Summary;
             panels.Add(s with { Placed = s.Placed - changed, Skipped = s.Skipped + changed });
         }
 
-        run.PlacedCount = entries.Count;
+        run.PlacedCount = entries.Count - cleared.Count;
         run.SkippedCount = panels.Sum(p => p.Skipped) + noPanel;
         run.FailedCount = panels.Sum(p => p.Failed);
         run.PanelsJson = PanelSummaries.ToJson(panels);
         await db.SaveChangesAsync(ct);
-        if (enqueue && refinementQueue is not null && entries.Count > 0)
+        if (enqueue && refinementQueue is not null && entries.Count > cleared.Count)
         {
             // New facet positions: the multi-view footprints (and protrusion) can now be refined for these holds.
-            refinementQueue.Enqueue(wallId, entries.Select(e => e.HoldId));
+            refinementQueue.Enqueue(wallId, entries.Select(e => e.HoldId).Where(id => !cleared.Contains(id)));
         }
 
         logger.LogInformation(
@@ -94,6 +97,47 @@ public sealed partial class HoldTexturePlacementService
         run.HoldsJson = HoldPlacementEntry.ToJson(entries);
         await db.SaveChangesAsync(ct);
         return skipped;
+    }
+
+    /// <summary>
+    /// Takes the placement (facet, plane position, size, source) and the footprint and protrusion measured at it
+    /// from holds whose previous placement this run's evidence contradicts, recorded in the run like a placement
+    /// so a revert restores them.
+    /// A hold changed since it was planned is left alone. Returns the holds cleared.
+    /// </summary>
+    private static async Task<List<Guid>> ClearAsync(
+        BlocwerkDbContext db, HoldPlacementRun run, IReadOnlyList<Hold> planned, List<HoldPlacementEntry> entries, CancellationToken ct)
+    {
+        if (planned.Count == 0)
+        {
+            return [];
+        }
+
+        var ids = planned.Select(p => p.Id).ToList();
+        var holds = await db.Holds.Where(h => ids.Contains(h.Id)).ToDictionaryAsync(h => h.Id, ct);
+        var cleared = new List<Guid>();
+        foreach (var p in planned)
+        {
+            if (!holds.TryGetValue(p.Id, out var hold) || ChangedSincePlanned(hold, p))
+            {
+                continue;
+            }
+
+            var entry = HoldPlacementEntry.Before(hold);
+            (hold.FacetId, hold.PlaneAMm, hold.PlaneBMm, hold.MetricSource) = (null, null, null, null);
+            (hold.WidthMm, hold.HeightMm, hold.AreaMm2) = (null, null, null);
+            (hold.FootprintMm, hold.ProtrusionMm) = (null, null);
+            entries.Add(entry with
+            {
+                PlacementHash = HoldPlacementEntry.HashPlacement(hold),
+                FingerprintHash = HoldPlacementEntry.HashFingerprint(hold.FingerprintJson),
+            });
+            cleared.Add(hold.Id);
+        }
+
+        run.HoldsJson = HoldPlacementEntry.ToJson(entries);
+        await db.SaveChangesAsync(ct);
+        return cleared;
     }
 
     /// <summary>Whether the placement (and the outline drawn at it) sits on its target facet.</summary>

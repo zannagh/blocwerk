@@ -7,7 +7,6 @@ using Blocwerk.Core.Detection.Enrichment;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Geometry.TextureRegistration;
-using Blocwerk.Core.Geometry.View3D;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -43,16 +42,20 @@ public sealed partial class HoldTexturePlacementService
             plans.Add(await PlanPanelAsync(db, id, holds, model.Textures, OwnAnchors(holds, carried), ct));
         }
 
+        var links = plans.Any(p => p.Summary.Failed > 0) || carried.Count > 0
+            ? await LinkedHoldsAsync(db, wallId, ct)
+            : Array.Empty<(Guid, Guid)>().ToLookup(x => x.Item1, x => x.Item2);
         if (plans.Any(p => p.Summary.Failed > 0))
         {
-            var links = await LinkedHoldsAsync(db, wallId, ct);
             for (var i = 0; i < plans.Count; i++)
             {
                 plans[i] = await RetryWithLinksAsync(db, panels[i].Id, panels[i].Holds, plans, i, links, model, carried, ct);
             }
         }
 
-        return plans.Select((p, i) => WithCarried(p, panels[i].Holds, carried)).ToList();
+        // The evidence a carried placement must agree with: what the photos registered in this run placed.
+        var placed = plans.SelectMany(p => p.Placements).ToDictionary(p => p.Hold.Id, p => p.Fit);
+        return plans.Select((p, i) => WithCarried(p, panels[i].Holds, carried, new CarryContext(model.Frames, placed, links))).ToList();
     }
 
     /// <summary>The panel planned again with its linked holds as anchors, when that places more holds; else its plan.</summary>
@@ -103,34 +106,4 @@ public sealed partial class HoldTexturePlacementService
         holds.Where(h => carried.ContainsKey(h.Id))
             .Select(h => new PlaneAnchor(h.X, h.Y, carried[h.Id].FacetId, carried[h.Id].A, carried[h.Id].B))
             .ToList();
-
-    /// <summary>The plan plus the carried-over previous placements of the eligible holds it could not place.</summary>
-    private static PanelPlan WithCarried(PanelPlan plan, List<Hold> holds, Dictionary<Guid, CarriedPosition> carried)
-    {
-        var placed = plan.Placements.Select(p => p.Hold.Id).ToHashSet();
-        var kept = holds
-            .Where(h => HoldTexturePlacer.IsEligible(h) && !placed.Contains(h.Id) && carried.ContainsKey(h.Id))
-            .Select(h => CarriedPlacement(h, carried[h.Id]))
-            .ToList();
-        if (kept.Count == 0)
-        {
-            return plan;
-        }
-
-        var s = plan.Summary;
-        var summary = s with { Placed = s.Placed + kept.Count, Failed = s.Failed - kept.Count, Carried = kept.Count };
-        return new PanelPlan(summary, [.. plan.Placements, .. kept]);
-    }
-
-    /// <summary>A carried placement: the new position with the hold's size as it was (a re-solve barely changes it).</summary>
-    private static PlannedPlacement CarriedPlacement(Hold hold, CarriedPosition position)
-    {
-        var fit = new HoldPlaneFit(position.FacetId, position.A, position.B, (_, _) => (double.NaN, double.NaN), Wall3DShapeSource.HoldFit);
-        var metric = hold is { WidthMm: > 0, HeightMm: > 0, AreaMm2: > 0 }
-            ? new HoldMetric(
-                hold.WidthMm.Value, hold.HeightMm.Value, hold.AreaMm2.Value, position.FacetId, position.A, position.B,
-                HoldMetric.TextureRegistrationCarried)
-            : null;
-        return new PlannedPlacement(hold, fit, metric, Carried: true);
-    }
 }

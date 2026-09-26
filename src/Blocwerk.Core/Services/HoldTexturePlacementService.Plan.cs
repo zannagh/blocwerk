@@ -112,7 +112,7 @@ public sealed partial class HoldTexturePlacementService
         var none = registrations.Any(r => r.Accepted) ? null : "the photo matched none of the model's textures";
         var summary = new HoldPlacementPanelSummary(
             panelId, col, row, placements.Count, skipped, eligible.Count - placements.Count, facets, none);
-        return new PanelPlan(summary, placements);
+        return new PanelPlan(summary, placements, registrations);
     }
 
     /// <summary>One matcher session for the photo, registered onto every texture (CPU-bound; run off the request thread).</summary>

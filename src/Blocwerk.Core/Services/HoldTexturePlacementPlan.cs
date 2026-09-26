@@ -17,7 +17,13 @@ internal sealed record PlannedPlacement(Hold Hold, HoldPlaneFit Fit, HoldMetric?
 /// <summary>One panel photo's plan: its summary so far and the placements to write.</summary>
 /// <param name="Summary">Counts before writing (placed = planned).</param>
 /// <param name="Placements">The placements.</param>
-internal sealed record PanelPlan(HoldPlacementPanelSummary Summary, List<PlannedPlacement> Placements);
+/// <param name="Registrations">The photo's registrations (the evidence a carried placement is checked against).</param>
+/// <param name="Cleared">Holds whose previous placement the evidence contradicts: they lose it (counted as failed).</param>
+internal sealed record PanelPlan(
+    HoldPlacementPanelSummary Summary,
+    List<PlannedPlacement> Placements,
+    IReadOnlyList<FacetRegistration>? Registrations = null,
+    IReadOnlyList<Hold>? Cleared = null);
 
 /// <summary>JSON of <see cref="HoldPlacementRun.PanelsJson"/>.</summary>
 internal static class PanelSummaries
