@@ -36,6 +36,13 @@
                     }
                 </ol>
             }
+            @if (report.FromFeatures && !tipDismissed)
+            {
+                <p class="hint capture-coverage-tip" role="note">
+                    Printed markers make sizes exact and re-captures more stable (optional).
+                    <button type="button" class="btn-link" @onclick="DismissTipAsync" aria-label="Dismiss this tip">Dismiss</button>
+                </p>
+            }
             <p class="hint">@SourceLine(report)</p>
             <div class="capture-coverage-maps">
                 @foreach (var facet in report.Facets)
@@ -48,7 +55,10 @@
                 <span><i class="cov-swatch cov-swatch-d"></i>fewer than 3 directions</span>
                 <span><i class="cov-swatch cov-swatch-a"></i>only steep views</span>
                 <span><i class="cov-swatch cov-swatch-r"></i>only from far</span>
-                <span><i class="cov-swatch cov-swatch-ring"></i>add a marker here</span>
+                @if (!report.FromFeatures)
+                {
+                    <span><i class="cov-swatch cov-swatch-ring"></i>add a marker here</span>
+                }
             </p>
         }
     }

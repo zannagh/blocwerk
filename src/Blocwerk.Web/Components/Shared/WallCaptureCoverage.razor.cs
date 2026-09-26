@@ -6,17 +6,21 @@ using System.Globalization;
 using Blocwerk.Core.Capture.Coverage;
 using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Components;
+using Microsoft.JSInterop;
 
 namespace Blocwerk.Web.Components.Shared;
 
 /// <summary>A capture's "Next capture: what to add" list with its per-facet heatmaps, read when opened.</summary>
 public partial class WallCaptureCoverage
 {
+    private const string TipKey = "blocwerk-markerless-markers-tip";
+
     private Guid loadedCaptureId;
     private CaptureCoverageReport? report;
     private string? failure;
     private bool open;
     private bool loading;
+    private bool tipDismissed;
 
     [Parameter]
     public Guid WallId { get; set; }
@@ -38,6 +42,9 @@ public partial class WallCaptureCoverage
 
     [Inject]
     private ICaptureCoverageService Coverage { get; set; } = default!;
+
+    [Inject]
+    private IJSRuntime JS { get; set; } = default!;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -89,6 +96,7 @@ public partial class WallCaptureCoverage
         {
             var lookup = await Coverage.GetAsync(WallId, CaptureId);
             report = lookup.Report;
+            tipDismissed = report?.FromFeatures == true && await ReadTipDismissedAsync();
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or UserFacingException or KioskRestrictedException)
         {
@@ -97,6 +105,32 @@ public partial class WallCaptureCoverage
         finally
         {
             loading = false;
+        }
+    }
+
+    // A per-viewer convenience: the optional markers tip, once dismissed, stays away (browser storage may be unavailable).
+    private async Task<bool> ReadTipDismissedAsync()
+    {
+        try
+        {
+            return await JS.InvokeAsync<string?>("localStorage.getItem", TipKey) == "1";
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
+    private async Task DismissTipAsync()
+    {
+        tipDismissed = true;
+        try
+        {
+            await JS.InvokeVoidAsync("localStorage.setItem", TipKey, "1");
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException)
+        {
+            // Not remembered; dismissed for now.
         }
     }
 }

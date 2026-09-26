@@ -47,7 +47,7 @@ public static class CaptureCoverageAnalyzer
             CoverageCellCodes.Count(r.Status), markers[r.Facet.Id])).ToList();
         return new CaptureCoverageReport(
             CaptureCoverageReport.CurrentVersion, inputs.CaptureId, inputs.ModelId, now, FacetCoverageRater.DefaultCellMm,
-            inputs.Photos.Count, inputs.VideoFrames.Count, advice, facets, volumes, video);
+            inputs.Photos.Count, inputs.VideoFrames.Count, advice, facets, volumes, video, doc.IsFeatureFrame);
     }
 
     /// <summary>The model's facets with their regions: the solver's extent (or the markers' bounds) widened by the placed holds.</summary>
