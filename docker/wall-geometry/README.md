@@ -5,6 +5,8 @@ Server-side 3D work for Blocwerk, so users never run anything locally:
 - **solve**: ArUco marker observations (already edge-refined by the app) from any number of photos
   → metric wall geometry: facets (planes) in mm, gravity, measured angles, per-marker plane
   coordinates, camera poses. Output format: `tools/glyph/wall-geometry.schema.md` (extra fields OK).
+- **solve-sfm**: a feature reconstruction (the splat-worker's sparse.zip, no markers) → the same document
+  (planes from the sparse points, gravity / scale / anchor chains; "Solve from features").
 - **textures**: photos + a solved geometry → one rectified orthophoto JPEG per facet (default
   2 mm/px) plus its coverage mask (8-bit PNG), for the app's 3D view.
 
@@ -112,6 +114,70 @@ average 125.4 mm, within ±3 mm except the bent marker 32 (2 photos, 133.7 mm).
 - **World frame.** x along the reference facet (lowest-index declared non-reference segment, its
   biggest facet), z up, origin = that facet's origin (bottom-left of its markers' bbox).
 
+## Solve from features (`POST /v1/jobs/solve-sfm`, multipart)
+
+Walls without markers (`wallgeometry/sfm/`, design: markerless captures). Input: the splat-worker's
+`splat-prepare` result `sparse.zip` (the distorted COLMAP model, intrinsics at each photo's stored resolution,
+`stems.json` with every image's stem and role `photo` / `frame` / `anchor`; splat-worker README) plus a request.
+Parts: `request` (JSON), `sparse` (the zip, at most `SFM_MAX_SPARSE_MB`), optional `callbackUrl`.
+
+```jsonc
+{
+  "photos": [ { "name": "p01",                          // the stem in stems.json
+                "deviceGravity": [-0.038, -0.987, -0.113],   // optional: iPhone AccelerationVector (g)
+                "holds": [[1520.5, 2210.0], ...] } ],      // optional: hold detection centres, stored px
+  "segments": [ { "index": 0, "name": "Main wall", "declaredAngleDeg": 45 } ],   // optional angle hints
+  "measuredDistance": { "photo": "p05", "a": [x, y], "b": [x, y], "mm": 1234 },  // optional: 2 taps + mm
+  "anchors": { "a00": "p05", ... },                    // optional: anchor stem -> reference camera image
+  "reference": { ... },                                // the geometry document the anchors are known in
+  "dictionary": "DICT_4X4_50", "markerSizeMm": 125,    // optional echoes for the document (no markers used)
+  "options": { "cameraHeightMm": 1450, "minFacetAreaM2": 0.4, "seed": 7 }
+}
+```
+
+Pixel coordinates use the geometry document's OpenCV convention (the top-left pixel's centre is (0, 0)).
+
+**Pipeline.** Points with track >= 3 and error < 2 px, PCA normals (20 neighbours). Sequential RANSAC with local
+sampling (3 points within 0.385 D), normal-consistent inliers (<= 25 deg), tolerance 0.0175 D (D = the median
+distance from a point to its nearest photo; The Attic: D = 0.91 m -> 16 mm), the largest connected part
+(0.33 D cells), Tukey IRLS; near-parallel slabs (< 3 deg) within 30 mm whose footprints touch are one surface.
+Then, in mm:
+- **Wall-facet decision** per plane: hold hits (each detection cast as a ray, the first plane within 80 mm of its
+  points along the ray gets it; a hit on a feature lying on a facet counts for that facet), camera facing,
+  area. Rejected: area < `minFacetAreaM2`, occupying < 40 % of its 1-99 % box (a plane through scattered clutter),
+  horizontal (< 20 deg) when gravity is known, hold share < 1 % (with detections; without: not facing the photos),
+  score < 0.5 (0.6 holds + 0.25 facing + 0.15 area), and a smaller plane within 40 deg of parallel lying in
+  front of a bigger accepted one (> 60 % of its points over the big one's convex outline, within 300 mm: hold
+  layers, volume faces). Small or folded facets (kickboard pieces, a 0.7 deg fold) are not separated from sparse
+  points: they merge or stay out, for declared / user-corrected geometry (Phase 0).
+- **Gravity**, first that works: `device` (each photo's vector in its stored image's camera frame, portrait
+  `(-aX, aY, aZ)` / landscape `(aY, aX, aZ)`, the other holdings by the vector's sign, never the EXIF Orientation;
+  robust mean over >= 3 photos) -> `declared` (planes take the nearest declared angle under the prior, the worst
+  fits are dropped, >= 2 planes >= 20 deg apart) -> `floor` (the biggest horizontal plane below the cameras) ->
+  `cameras` (the image-up prior: `gravityKnown: false`, the reference facet treated as vertical, angles null).
+- **Scale**, first that works: `anchors` -> `measured` (both taps cast onto the planes) -> `estimate`: the median
+  photo height above the floor (the RANSAC floor plane, else the height histogram of horizontal points below the
+  cameras) = 1.45 m, refused unless it puts the photos 0.4-3 m from the wall; else D = 1.0 m.
+  `scaleKnown` is false for the estimate (The Attic: -0.1 .. +7.4 %).
+- **Anchors** (photos of the active capture, reconstructed with the new ones): a similarity from their model
+  camera centres to their centres in `reference` (LMedS start, then 3 x MAD trimming), gate >= 6 anchors, rms
+  <= 25 mm, each <= 60 mm; then a rigid plane-ICP of the points onto the reference facets (splat-worker
+  refine.py's schedule; beyond 80 mm / 3 deg the anchoring fails). Anchored: the document is in the
+  reference's world (its up, its origin) and takes its gravity; failed: the chains above, and a warning.
+
+**Result** (`result.geometry`, file `wall-geometry.json`): the SAME document v1 as `solve` with `markers: []`,
+`idScheme: "plan"`, one segment per facet (`"0"` = the reference = the biggest facet; the others by x, then z),
+facet extents = the 1-99 % box of its points clipped at the fold lines with adjacent facets, origin at its
+corner; cameras = the photos (not frames, not anchors). `world` adds `frameSource: "features"`,
+`gravitySource`, `scaleKnown`, `scaleSource`, `anchored`. `quality.sfm`: `points` (total, used,
+`medianNearestCameraMm`, `tolMm`, `holdRays`), `images` per role, `planes` (every candidate with its decision
+and reason), `anchors` (per-anchor residuals, outliers, ICP), `residuals` (per facet), `gravity`, `scale`.
+Deterministic for the same input (`options.seed`).
+
+**The Attic** (353-image model, placed holds as detections, `tests/test_sfm_real.py` with the owner's data):
+exactly main wall, side panel and kickboard; main wall 0.09 deg from the marker model, 45.36 deg with the device
+gravity (marker model 45.18); anchored on 15 photos: 14.5 mm rms / 28 mm max, ICP 0.28 deg, main wall 45.17 deg.
+
 ## Textures (`POST /v1/jobs/textures`, multipart)
 
 Parts: `geometry` (JSON), `photos` (JPEG or PNG, named `<camera image>.<jpg|jpeg|png>`; size must equal
@@ -179,7 +245,8 @@ Not handled: occlusion by holds/volumes, exposure differences between photos (vi
 | `RESULT_TTL_S` | 3600 | finished jobs + files are deleted after this |
 | `MAX_REQUEST_MB` / `MAX_PHOTO_MB` / `MAX_PHOTOS` | 400 / 40 / 60 | limits (`413`). A textures request carries every photo: 50 full-size 48 MP JPEGs (12–22 MB each) need `MAX_REQUEST_MB` ≈ 1200 |
 | `MAX_QUEUED_JOBS` | 16 | `429` beyond this |
-| `SOLVE_TIMEOUT_S` / `TEXTURES_TIMEOUT_S` | 600 / 900 | per job; the job's process is killed |
+| `SOLVE_TIMEOUT_S` / `TEXTURES_TIMEOUT_S` / `SFM_TIMEOUT_S` | 600 / 900 / 900 | per job; the job's process is killed |
+| `SFM_MAX_SPARSE_MB` | 256 | solve-sfm: the sparse.zip part (`413` beyond; unpacked at most twice that) |
 | `WORK_DIR` | /tmp/wall-geometry-jobs | job inputs/outputs |
 
 Single instance, one worker, in-memory queue: jobs are lost on restart (clients re-submit on `404`).
@@ -207,7 +274,8 @@ curl -s -H 'Authorization: Bearer dev-key' localhost:8000/v1/jobs/<jobId>
 Tests: `docker build -f docker/wall-geometry/Dockerfile --target test .` (runs these tests and the
 shared package's), or in a venv `pip install -r requirements-dev.txt && python -m pytest tests
 ../compute-jobs-py/tests` (the tests put `../compute-jobs-py` on the path; set `GLYPH_PNG_DIR` to capture
-1's PNGs to also run the real-photo texture check).
+1's PNGs to also run the real-photo texture check, and `BLOCWERK_DATA_DIR` to the owner's data folder (default
+`~/blocwerk-data`) to run solve-sfm on the real Attic sparse model, `tests/test_sfm_real.py`; never committed).
 
 ## Production (manual step)
 

@@ -45,7 +45,7 @@ def _wait(client, job_id, timeout=240, headers=None):
 def test_health(client):
     h = client.get("/health").json()
     assert h["status"] == "ok" and h["protocol"] == "blocwerk-compute/1"
-    assert set(h["kinds"]) == {"solve", "textures"} and "version" in h
+    assert set(h["kinds"]) == {"solve", "solve-sfm", "textures"} and "version" in h
     # nothing operational on the unauthenticated endpoint; that is in /v1/info (auth)
     assert set(h) == {"status", "service", "protocol", "version", "kinds"}
     info = client.get("/v1/info").json()

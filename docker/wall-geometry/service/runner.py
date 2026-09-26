@@ -66,10 +66,17 @@ def _textures(job_dir, progress):
     return {**manifest, "files": files + ["textures.json"]}
 
 
-KINDS = {"solve": _solve, "textures": _textures}
+def _solve_sfm(job_dir, progress):
+    from .sfm import run_solve_sfm
+    return run_solve_sfm(job_dir, progress)
+
+
+KINDS = {"solve": _solve, "solve-sfm": _solve_sfm, "textures": _textures}
 
 
 def run_job(kind, job_dir, conn):
     from wallgeometry.request import RequestError
+    from wallgeometry.sfm.colmap_io import ModelError
+    from wallgeometry.sfm.solve import SfmError
     from wallgeometry.textures import TextureError
-    run_in_child(KINDS[kind], job_dir, conn, (RequestError, TextureError))
+    run_in_child(KINDS[kind], job_dir, conn, (RequestError, TextureError, ModelError, SfmError))

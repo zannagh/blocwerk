@@ -156,6 +156,10 @@ services:
       TEXTURES_TIMEOUT_S: ${TEXTURES_TIMEOUT_S:-}
       TEXTURES_MAX_MEGAPIXELS: ${TEXTURES_MAX_MEGAPIXELS:-}
       TEXTURES_BLEND_MAX_BYTES: ${TEXTURES_BLEND_MAX_BYTES:-}
+      # solve-sfm (markerless captures): splat-prepare's sparse.zip cap (default 256 MB; The Attic's 353 images:
+      # 37 MB) and the job timeout (default 900 s; The Attic: ~25 s).
+      SFM_MAX_SPARSE_MB: ${SFM_MAX_SPARSE_MB:-}
+      SFM_TIMEOUT_S: ${SFM_TIMEOUT_S:-}
     # Job inputs/outputs live in the container's /tmp (writable layer, not RAM) and are deleted
     # RESULT_TTL_S after each job finishes; nothing there is authoritative, so no volume.
     restart: unless-stopped

@@ -10,3 +10,7 @@ settings.textures_max_pixels = env_int("TEXTURES_MAX_MEGAPIXELS", 200) * 1_000_0
 # a bigger job renders single-view instead. 2 GB fits ~36 MP of textures (a wall at 2 mm/px); raise it
 # with mmPerPx 1 (4x the pixels) on a machine with the RAM for it.
 settings.textures_blend_max_bytes = env_int("TEXTURES_BLEND_MAX_BYTES", 2_000_000_000)
+# kind solve-sfm: SfM on a feature reconstruction (splat-prepare's sparse.zip, at most SFM_MAX_SPARSE_MB zipped
+# and twice that unpacked; The Attic's 353 images: 37 MB) within SFM_TIMEOUT_S (The Attic: ~25 s).
+settings.sfm_timeout_s = env_int("SFM_TIMEOUT_S", 900)
+settings.sfm_max_sparse_bytes = env_int("SFM_MAX_SPARSE_MB", 256) << 20

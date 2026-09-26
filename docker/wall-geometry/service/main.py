@@ -1,7 +1,7 @@
-"""HTTP API: Blocwerk compute job protocol v1 (docker/compute-jobs-protocol.md), kinds solve + textures.
+"""HTTP API: Blocwerk compute job protocol v1 (docker/compute-jobs-protocol.md): solve, solve-sfm, textures.
 
 The protocol machinery (queue, auth, callbacks, limits, status/files/cancel, streaming upload) is the
-shared package docker/compute-jobs-py; this module only parses the two kinds' requests.
+shared package docker/compute-jobs-py; this module only parses the kinds' requests (solve-sfm: sfm.py).
 """
 import json
 import os
@@ -18,6 +18,7 @@ from wallgeometry.textures import TextureError, output_pixels, validate_params
 from .photos import BadPhoto, strip
 from .runner import run_job
 from .settings import settings
+from .sfm import solve_sfm_job
 
 PHOTO_EXT = {".jpg", ".jpeg", ".png"}  # sniffed from the bytes; the extension only has to be one of these
 TEXTURE_FIELDS = {"geometry", "options", "callbackUrl"}
@@ -119,12 +120,18 @@ async def _textures(svc, request: Request):
     return {"jobId": job.id, "status": job.status}
 
 
+async def _solve_sfm(svc, request: Request):
+    return await solve_sfm_job(svc, request)
+
+
 def _timeout(kind):
-    return settings.solve_timeout_s if kind == "solve" else settings.textures_timeout_s
+    timeouts = {"solve": settings.solve_timeout_s, "solve-sfm": settings.sfm_timeout_s}
+    return timeouts.get(kind, settings.textures_timeout_s)
 
 
 service = ComputeService(
-    name="wall-geometry", version=__version__, kinds={"solve": _solve, "textures": _textures},
+    name="wall-geometry", version=__version__,
+    kinds={"solve": _solve, "solve-sfm": _solve_sfm, "textures": _textures},
     runner=run_job, timeout_for=_timeout,
     elsewhere={"splat": "kind 'splat' is not served here: it is implemented by the separate splat-worker "
                         "(same protocol, see compute-jobs-protocol.md)"},
@@ -132,5 +139,7 @@ service = ComputeService(
                                    "maxPhotoMb": settings.max_photo_bytes >> 20,
                                    "maxRequestMb": settings.max_request_bytes >> 20,
                                    "maxImageMegapixels": settings.max_image_pixels // 1_000_000,
-                                   "texturesMaxMegapixels": settings.textures_max_pixels // 1_000_000}})
+                                   "texturesMaxMegapixels": settings.textures_max_pixels // 1_000_000,
+                                   "sfmMaxSparseMb": settings.sfm_max_sparse_bytes >> 20,
+                                   "sfmTimeoutS": settings.sfm_timeout_s}})
 app = service.app
