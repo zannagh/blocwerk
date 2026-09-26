@@ -40,36 +40,44 @@
             <p class="glyph-ok" role="status">@message</p>
         }
 
-        @if (settings.Enabled)
+        @if (settings.Enabled || markerless)
         {
             <h4 class="glyph-subheading">Measured geometry</h4>
             @if (active is null)
             {
-                <p class="empty-msg">No geometry yet. Compute one from photos below, or import a wall-geometry.json.</p>
+                <p class="empty-msg">No geometry yet. Compute one from photos below@(settings.Enabled ? ", or import a wall-geometry.json" : string.Empty).</p>
             }
             else
             {
                 <WallGlyphGeometryTable Active="active" />
             }
 
+            @if (!settings.Enabled)
+            {
+                <p class="hint">No markers needed: photos of the wall are enough. The 3D model is then measured from the photos' features, so its sizes may be estimates (shown with ≈).</p>
+            }
+
             <WallCapturePanel WallId="WallId" OnModelActivated="ReloadAfterCaptureAsync"
                               OnPanelStaged="OnPanelStaged" OnStartWallUpdate="OnStartWallUpdate" OnShowPanels="OnShowPanels" />
 
-            <div class="form-group glyph-import">
-                <label for="glyph-import-notes">Import wall-geometry.json</label>
-                <input id="glyph-import-notes" class="form-input" placeholder="Notes (optional), e.g. capture date"
-                       maxlength="2048" @bind="importNotes" disabled="@busy" />
-                <InputFile OnChange="ImportAsync" accept=".json,application/json" class="form-input" disabled="@busy" />
-                @if (importErrors.Count > 0)
-                {
-                    <ul class="field-error glyph-errors" role="alert">
-                        @foreach (var error in importErrors)
-                        {
-                            <li>@error</li>
-                        }
-                    </ul>
-                }
-            </div>
+            @if (settings.Enabled)
+            {
+                <div class="form-group glyph-import">
+                    <label for="glyph-import-notes">Import wall-geometry.json</label>
+                    <input id="glyph-import-notes" class="form-input" placeholder="Notes (optional), e.g. capture date"
+                           maxlength="2048" @bind="importNotes" disabled="@busy" />
+                    <InputFile OnChange="ImportAsync" accept=".json,application/json" class="form-input" disabled="@busy" />
+                    @if (importErrors.Count > 0)
+                    {
+                        <ul class="field-error glyph-errors" role="alert">
+                            @foreach (var error in importErrors)
+                            {
+                                <li>@error</li>
+                            }
+                        </ul>
+                    }
+                </div>
+            }
 
             @if (active is not null && segments.Count > 0)
             {

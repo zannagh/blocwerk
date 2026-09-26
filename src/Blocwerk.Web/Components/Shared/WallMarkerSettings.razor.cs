@@ -29,6 +29,7 @@ public partial class WallMarkerSettings
     private List<WallSegment> segments = [];
     private List<string> importErrors = [];
     private string? importNotes;
+    private bool markerless;
 
     /// <summary>The wall being administered.</summary>
     [Parameter]
@@ -54,6 +55,9 @@ public partial class WallMarkerSettings
 
     [Inject]
     private IKioskContext KioskContext { get; set; } = default!;
+
+    [Inject]
+    private IWallCaptureService Captures { get; set; } = default!;
 
     [Inject]
     private ILogger<WallMarkerSettings> Logger { get; set; } = default!;
@@ -87,6 +91,9 @@ public partial class WallMarkerSettings
             settings = await Glyphs.GetGlyphSettingsAsync(WallId);
             draftEnabled = settings.Enabled;
             draftSizeMm = settings.MarkerSizeMm ?? WallGlyphSettings.DefaultMarkerSizeMm;
+
+            // Walls without markers can be captured too when the server measures from photo features.
+            markerless = !settings.Enabled && await Captures.IsMarkerlessAvailableAsync();
             active = await Glyphs.GetActiveGeometryAsync(WallId);
             history = await Glyphs.GetGeometryHistoryAsync(WallId);
             segments = (await SegmentService.GetSegmentsAsync(WallId))

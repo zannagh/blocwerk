@@ -82,17 +82,17 @@
             <WallCapturePanelPicker WallId="WallId" CaptureId="draft.CaptureId" Photos="draft.Photos" Disabled="busy"
                                     OnPanelStaged="OnPanelStaged" OnStartWallUpdate="OnStartWallUpdate" />
 
+            @* The declarations table and level pairs belong to the marker solve: only when markers were detected. *@
             @if (declarations.Count > 0)
             {
                 <WallCaptureDeclarationTable Rows="declarations" Disabled="busy" IdsBySegment="draft.Plan?.IdsBySegment" />
+                <div class="form-group">
+                    <label for="capture-level-pairs">Markers at equal height (optional)</label>
+                    <input id="capture-level-pairs" class="form-input" placeholder="e.g. 14-15, 8-9"
+                           @bind="levelPairs" disabled="@busy" />
+                    <p class="hint">Pairs of marker ids you know are level with each other; they help find “up”.</p>
+                </div>
             }
-
-            <div class="form-group">
-                <label for="capture-level-pairs">Markers at equal height (optional)</label>
-                <input id="capture-level-pairs" class="form-input" placeholder="e.g. 14-15, 8-9"
-                       @bind="levelPairs" disabled="@busy" />
-                <p class="hint">Pairs of marker ids you know are level with each other; they help find “up”.</p>
-            </div>
 
             <div class="form-group">
                 <label for="capture-notes">Notes (optional)</label>

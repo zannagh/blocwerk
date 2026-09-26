@@ -92,7 +92,8 @@ public partial class WallGlyphService(
                 document.Markers.Count,
                 document.MarkerSizeMm,
                 WallGeometrySummary.FacetRows(document),
-                WallGeometryModelChecks.From(document));
+                WallGeometryModelChecks.From(document),
+                document.World);
         }
     }
 

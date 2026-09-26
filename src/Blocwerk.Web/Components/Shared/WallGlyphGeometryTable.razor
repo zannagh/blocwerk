@@ -5,9 +5,24 @@
 <p class="glyph-summary">
     @(Active.Model.Source.StartsWith("capture ", StringComparison.Ordinal) ? "Measured from photos" : "Imported")
     <LocalTime Value="@Active.Model.CreatedAt" Format="LocalTimeFormat.DateDmy" />
-    &middot; @Active.MarkerCount markers of @GlyphFormat.Millimetres(Active.MarkerSizeMm)
+    @if (Active.FromFeatures)
+    {
+        <text>&middot; from photo features (no markers)</text>
+    }
+    else
+    {
+        <text>&middot; @Active.MarkerCount markers of @GlyphFormat.Millimetres(Active.MarkerSizeMm)</text>
+    }
     &middot; reprojection error @GlyphFormat.Pixels(Active.Model.ReprojRmsPx)@SpanText
 </p>
+@if (Active.ScaleIsEstimate)
+{
+    <p class="hint">Sizes marked ≈ are estimated (about ±10–15 %): no markers or measured distance fixed the scale.</p>
+}
+@if (!Active.AnglesKnown)
+{
+    <p class="hint">Angles are not shown: “up” could not be determined for this model.</p>
+}
 @if (!string.IsNullOrEmpty(Active.Model.Notes))
 {
     <p class="hint">@Active.Model.Notes</p>
@@ -38,8 +53,8 @@ else
                         <td>@facet.FacetId</td>
                         <td>@facet.SegmentIndex @(string.IsNullOrEmpty(facet.SegmentName) ? "" : $"· {facet.SegmentName}")</td>
                         <td class="num">@GlyphFormat.Degrees(facet.DeclaredAngleDeg)</td>
-                        <td class="num">@GlyphFormat.Degrees(facet.MeasuredAngleDeg)</td>
-                        <td class="num">@GlyphFormat.Degrees(facet.YawDeg)</td>
+                        <td class="num">@Angle(facet.MeasuredAngleDeg)</td>
+                        <td class="num">@Angle(facet.YawDeg)</td>
                         <td class="num">@facet.MarkerCount</td>
                     </tr>
                 }
@@ -61,5 +76,10 @@ else
     // The widest facet's marker extent — explicitly NOT the wall's size.
     private string SpanText => Active.Model.WidthMm is null
         ? string.Empty
-        : $" · marker span {GlyphFormat.Metres(Active.Model.WidthMm)} × {GlyphFormat.Metres(Active.Model.HeightMm)}";
+        : $" · {(Active.FromFeatures ? "surface" : "marker")} span {Approx}{GlyphFormat.Metres(Active.Model.WidthMm)} × {Approx}{GlyphFormat.Metres(Active.Model.HeightMm)}";
+
+    private string Approx => Active.ScaleIsEstimate ? "≈" : string.Empty;
+
+    // Without a known "up" the absolute angles were not measured.
+    private string Angle(double? degrees) => Active.AnglesKnown ? GlyphFormat.Degrees(degrees) : "–";
 }
