@@ -50,6 +50,15 @@ public sealed record GeometrySimilarity(double Scale, double[] Rotation, double[
         return [(Scale * r[0]) + Translation[0], (Scale * r[1]) + Translation[1], (Scale * r[2]) + Translation[2]];
     }
 
+    /// <summary>The inverse: <c>x = (1/s)·Qᵀ·(x' − t)</c>.</summary>
+    /// <returns>The similarity that undoes this one.</returns>
+    public GeometrySimilarity Inverse()
+    {
+        double[] qt = [Rotation[0], Rotation[3], Rotation[6], Rotation[1], Rotation[4], Rotation[7], Rotation[2], Rotation[5], Rotation[8]];
+        var back = Multiply(qt, Translation);
+        return new GeometrySimilarity(1 / Scale, qt, [-back[0] / Scale, -back[1] / Scale, -back[2] / Scale]);
+    }
+
     /// <summary>Rotates a direction (no scale, no translation).</summary>
     /// <param name="v">The direction.</param>
     /// <returns>The rotated direction.</returns>

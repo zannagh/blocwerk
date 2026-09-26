@@ -9,6 +9,9 @@ namespace Blocwerk.Core.Capture.FollowUp;
 /// <summary>The chain's record in plain words, for the capture history and the API.</summary>
 public static class CaptureFollowUpText
 {
+    /// <summary>The summary of the steps a correction carried over instead of running them again.</summary>
+    public const string KeptFromPreviousVersion = "holds, shapes and volumes carried over from the previous model version";
+
     /// <summary>
     /// What the chain changed, e.g. "856 holds placed on the 3D model, 653 hold shapes refined from several
     /// photos." Null when it changed nothing worth saying (or has not run).

@@ -36,6 +36,9 @@ public sealed class CoverageReportFollowUpStep(ICaptureCoverageService coverage,
     public bool RunsAfterCompletion => true;
 
     /// <inheritdoc />
+    public bool KeptByCorrection => false;
+
+    /// <inheritdoc />
     public async Task<string?> InputsKeyAsync(CaptureFollowUpContext context, CancellationToken ct)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);

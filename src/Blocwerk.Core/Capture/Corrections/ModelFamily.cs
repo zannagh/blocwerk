@@ -1,6 +1,7 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using Blocwerk.Core.Capture.FollowUp;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -32,13 +33,15 @@ public static class ModelFamily
     /// <summary>
     /// Points the finished capture of <paramref name="modelId"/>'s family at <paramref name="modelId"/> (a revert to the
     /// model a correction was derived from, or back to a correction) and clears its follow-up record so the chain runs
-    /// again. Saves. Null when no capture was repointed.
+    /// again (a record marked carried from <paramref name="carriedFrom"/> when the data was carried over). Saves. Null
+    /// when no capture was repointed.
     /// </summary>
     /// <param name="db">An admin context of the wall.</param>
     /// <param name="wallId">The wall.</param>
     /// <param name="modelId">The model just activated.</param>
+    /// <param name="carriedFrom">The model whose derived data was carried onto it (<see cref="CorrectionCarry"/>), or null.</param>
     /// <returns>The repointed capture, or null.</returns>
-    public static async Task<Guid?> RepointCaptureAsync(BlocwerkDbContext db, Guid wallId, Guid modelId)
+    public static async Task<Guid?> RepointCaptureAsync(BlocwerkDbContext db, Guid wallId, Guid modelId, Guid? carriedFrom = null)
     {
         var parents = await db.WallGeometryModels.Where(m => m.WallId == wallId)
             .Select(m => new { m.Id, m.DerivedFromModelId })
@@ -60,7 +63,7 @@ public static class ModelFamily
         }
 
         capture.GeometryModelId = modelId;
-        capture.FollowUpJson = null;
+        capture.FollowUpJson = carriedFrom is { } from ? CaptureFollowUpRecord.Carried(from).ToJson() : null;
         capture.CoverageJson = null;
         await db.SaveChangesAsync();
         return capture.Id;

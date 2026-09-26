@@ -1,6 +1,7 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using Blocwerk.Core.Capture.FollowUp;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Geometry;
@@ -52,7 +53,9 @@ public sealed partial class WallGeometryCorrectionService
     /// <summary>
     /// Stores <paramref name="json"/> as the wall's new ACTIVE model derived from the current one, with the current one's
     /// textures (bounds mapped, files shared) and photo-real view (frame mapped, files shared); points the capture at it
-    /// and queues its follow-up chain. One transaction; the old model stays in the history.
+    /// and queues its follow-up chain. One transaction; the old model stays in the history. The holds' placements,
+    /// footprints and protrusions, the volumes and the hold proposals are carried over by the similarity
+    /// (<see cref="CorrectionCarry"/>), so the chain records those steps as kept instead of registering the photos again.
     /// </summary>
     private async Task<GeometryCorrectionResult> SaveVersionAsync(
         CorrectionContext context, string json, GeometrySimilarity t, string? dropped, GeometryCorrectionKind kind, string summary)
@@ -95,15 +98,16 @@ public sealed partial class WallGeometryCorrectionService
             }
         });
 
-        var captureId = await RepointCaptureAsync(db, context.CaptureId, model.Id);
+        var carried = await CorrectionCarry.CarryAsync(db, old.WallId, old.Id, model.Id, context.UserId);
+        var captureId = await RepointCaptureAsync(db, context.CaptureId, model.Id, carried is null ? null : old.Id);
         if (captureId is { } id)
         {
             followUps.Enqueue(id);
         }
 
         logger.LogInformation(
-            "Wall {WallId}: model {ModelId} corrected ({Kind}) into {NewModelId} by {UserId}: {Summary}",
-            old.WallId, old.Id, kind, model.Id, context.UserId, summary);
+            "Wall {WallId}: model {ModelId} corrected ({Kind}) into {NewModelId} by {UserId}: {Summary}; carried over: {Carried}",
+            old.WallId, old.Id, kind, model.Id, context.UserId, summary, carried);
         return new GeometryCorrectionResult(kind, model.Id, old.Id, t.Scale, t.RotationDeg, summary);
     }
 
@@ -155,8 +159,11 @@ public sealed partial class WallGeometryCorrectionService
             };
     }
 
-    /// <summary>The capture now belongs to the new version; its follow-up record and coverage report are redone for it.</summary>
-    private static async Task<Guid?> RepointCaptureAsync(BlocwerkDbContext db, Guid? captureId, Guid modelId)
+    /// <summary>
+    /// The capture now belongs to the new version; its follow-up record and coverage report are redone for it (a record
+    /// marked carried from <paramref name="carriedFrom"/> when the data was carried over).
+    /// </summary>
+    private static async Task<Guid?> RepointCaptureAsync(BlocwerkDbContext db, Guid? captureId, Guid modelId, Guid? carriedFrom)
     {
         var capture = captureId is { } id ? await db.WallCaptures.FirstOrDefaultAsync(c => c.Id == id) : null;
         if (capture is null)
@@ -165,7 +172,7 @@ public sealed partial class WallGeometryCorrectionService
         }
 
         capture.GeometryModelId = modelId;
-        capture.FollowUpJson = null;
+        capture.FollowUpJson = carriedFrom is { } from ? CaptureFollowUpRecord.Carried(from).ToJson() : null;
         capture.CoverageJson = null;
         await db.SaveChangesAsync();
         return capture.Id;

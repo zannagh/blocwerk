@@ -58,7 +58,7 @@ public class GeometryCorrectionTests
 
         var capture = await db.WallCaptures.SingleAsync(c => c.Id == captureId);
         Assert.Equal(model.Id, capture.GeometryModelId);
-        Assert.Null(capture.FollowUpJson);
+        Assert.Equal(oldId, Capture.FollowUp.CaptureFollowUpRecord.Parse(capture.FollowUpJson).CarriedFrom); // the chain keeps what was carried over
         Assert.Equal(captureId, await Dequeued(queue));
     }
 

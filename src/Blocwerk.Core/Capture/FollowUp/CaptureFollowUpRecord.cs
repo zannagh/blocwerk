@@ -13,14 +13,24 @@ namespace Blocwerk.Core.Capture.FollowUp;
 /// </summary>
 /// <param name="Steps">The recorded steps, in the order they ran.</param>
 /// <param name="Note">A plain-words note for the admin (e.g. why there is no photo-real view), or null.</param>
+/// <param name="CarriedFrom">
+/// The model version whose derived data was carried onto the capture's model by a correction or a re-activation
+/// (<see cref="Corrections.CorrectionCarry"/>): the steps that derive it are recorded as kept instead of running again.
+/// </param>
 public sealed record CaptureFollowUpRecord(
     [property: JsonPropertyName("steps")] IReadOnlyList<CaptureFollowUpEntry> Steps,
-    [property: JsonPropertyName("note")] string? Note = null)
+    [property: JsonPropertyName("note")] string? Note = null,
+    [property: JsonPropertyName("carriedFrom"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? CarriedFrom = null)
 {
     private static readonly JsonSerializerOptions Json = new() { Converters = { new JsonStringEnumConverter() } };
 
     /// <summary>Nothing recorded yet.</summary>
     public static CaptureFollowUpRecord Empty { get; } = new([]);
+
+    /// <summary>A fresh record for a model the data of <paramref name="modelId"/> was carried onto.</summary>
+    /// <param name="modelId">The model it came from.</param>
+    /// <returns>The record.</returns>
+    public static CaptureFollowUpRecord Carried(Guid modelId) => new([], null, modelId);
 
     /// <summary>Reads a stored record; empty when there is none or it does not parse.</summary>
     /// <param name="json">The stored JSON.</param>

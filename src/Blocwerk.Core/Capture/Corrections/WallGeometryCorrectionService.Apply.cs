@@ -117,6 +117,7 @@ public sealed partial class WallGeometryCorrectionService
         ["fromModelId"] = context.Model.Id.ToString(),
         ["scale"] = Math.Round(t.Scale, 6),
         ["rotationDeg"] = Math.Round(t.RotationDeg, 3),
+        ["similarity"] = CorrectionEdge.ToJson(t),
         ["summary"] = summary,
         ["at"] = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture),
     };

@@ -111,11 +111,18 @@ public partial class WallGlyphService
                 throw new InvalidOperationException("This stored geometry can no longer be read, so it cannot be activated.");
             }
 
+            var previous = await db.WallGeometryModels.Where(m => m.WallId == wallId && m.IsActive).Select(m => (Guid?)m.Id).FirstOrDefaultAsync();
             await SwapActiveModelAsync(db, wallId, document, keep: modelId, () => model.IsActive = true);
-            logger.LogInformation("Wall {WallId} geometry model {ModelId} activated by {UserId}", wallId, modelId, userId);
-            if (await ModelFamily.RepointCaptureAsync(db, wallId, modelId) is { } captureId)
+
+            // Along corrections the holds' data is carried by the known similarity (back to a parent: its own placements
+            // restored exactly), so the chain keeps it instead of registering the photos again.
+            var carried = previous is { } from ? await CorrectionCarry.CarryAsync(db, wallId, from, modelId, userId) : null;
+            logger.LogInformation(
+                "Wall {WallId} geometry model {ModelId} activated by {UserId}; carried over from {PreviousId}: {Carried}",
+                wallId, modelId, userId, previous, carried);
+            if (await ModelFamily.RepointCaptureAsync(db, wallId, modelId, carried is null ? null : previous) is { } captureId)
             {
-                // A correction's model (or the one it was derived from) is live again: re-derive the holds on it.
+                // A correction's model (or the one it was derived from) is live again: re-derive (or keep) the holds on it.
                 followUpQueue?.Enqueue(captureId);
             }
         }

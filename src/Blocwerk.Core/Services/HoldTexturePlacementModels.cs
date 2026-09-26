@@ -11,6 +11,12 @@ public static class HoldPlacementTrigger
 
     /// <summary>Automatically, after a capture's model went live.</summary>
     public const string Capture = "capture";
+
+    /// <summary>
+    /// A model version derived by a correction (or re-activated along such versions): the placements were carried over
+    /// by the known similarity, not registered again (<see cref="Blocwerk.Core.Capture.Corrections.CorrectionCarry"/>).
+    /// </summary>
+    public const string Correction = "correction";
 }
 
 /// <summary>Whether the action can run on a wall, and its latest run.</summary>

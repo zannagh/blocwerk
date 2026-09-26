@@ -35,4 +35,13 @@ public interface IWallGeometryCorrectionService
     /// <param name="facetId">The surface.</param>
     /// <returns>What was done.</returns>
     Task<GeometryCorrectionResult> DropSurfaceAsync(Guid wallId, string facetId);
+
+    /// <summary>
+    /// Brings the active corrected version to its parent's derived data: what its follow-ups registered on it is reverted
+    /// and the parent's placements, footprints, protrusions, volumes and proposals are carried over by the correction's
+    /// similarity (<see cref="CorrectionCarry"/>). For a version corrected before corrections carried their data.
+    /// </summary>
+    /// <param name="wallId">The wall.</param>
+    /// <returns>What was carried.</returns>
+    Task<CorrectionCarryResult> CarryFromParentAsync(Guid wallId);
 }

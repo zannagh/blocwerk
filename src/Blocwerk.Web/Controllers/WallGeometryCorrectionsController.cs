@@ -47,4 +47,13 @@ public sealed class WallGeometryCorrectionsController(
     [HttpPost("drop")]
     public Task<IActionResult> Drop(Guid wallId, [FromBody] GeometryFacetRequest request) =>
         RunAsync(wallId, async () => Ok(await corrections.DropSurfaceAsync(wallId, request.FacetId)));
+
+    /// <summary>
+    /// Brings the active corrected version to its parent's holds: what its follow-ups registered on it is reverted and the
+    /// parent's placements, shapes, volumes and proposals are carried over by the correction's similarity. 409 when the
+    /// active model is no correction.
+    /// </summary>
+    [HttpPost("carry-from-parent")]
+    public Task<IActionResult> CarryFromParent(Guid wallId) =>
+        RunAsync(wallId, async () => Ok(await corrections.CarryFromParentAsync(wallId)));
 }

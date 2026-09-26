@@ -50,7 +50,9 @@ public sealed class CaptureFollowUpChain(RootDbContextFactory dbContextFactory, 
                 continue;
             }
 
-            var entry = await RunStepAsync(step, context, ct) with { InputsKey = inputsKey };
+            var entry = IsKept(step, record)
+                ? Kept(step, context, inputsKey, record)
+                : await RunStepAsync(step, context, ct) with { InputsKey = inputsKey };
             record = record.With(entry);
             await SaveAsync(captureId, c => c.FollowUpJson = record.ToJson(), ct);
         }
@@ -75,6 +77,26 @@ public sealed class CaptureFollowUpChain(RootDbContextFactory dbContextFactory, 
         }
 
         return phase == CaptureFollowUpPhase.Final && (recorded is null || recorded.SplatId != context.SplatId);
+    }
+
+    /// <summary>
+    /// Whether the step's result was carried onto the model (a correction or a re-activation, see
+    /// <see cref="CaptureFollowUpRecord.CarriedFrom"/>) and it has not run on it since: it is recorded as kept, not run.
+    /// A later reason to run (a new photo-real view, changed volumes) finds the entry and runs it normally.
+    /// </summary>
+    internal static bool IsKept(ICaptureFollowUpStep step, CaptureFollowUpRecord record) =>
+        record.CarriedFrom is not null && step.KeptByCorrection && record.Find(step.Key) is null;
+
+    private CaptureFollowUpEntry Kept(ICaptureFollowUpStep step, CaptureFollowUpContext context, string? inputsKey, CaptureFollowUpRecord record)
+    {
+        // Said once (on the first kept step), so the capture's summary does not repeat it per step.
+        var said = record.Steps.Any(s => s.Summary == CaptureFollowUpText.KeptFromPreviousVersion);
+        logger.LogInformation(
+            "Capture {CaptureId} follow-up {Step}: kept from model {FromModelId}, carried onto {ModelId} by its similarity",
+            context.CaptureId, step.Key, record.CarriedFrom, context.ModelId);
+        return new CaptureFollowUpEntry(
+            step.Key, CaptureFollowUpOutcome.Done, said ? string.Empty : CaptureFollowUpText.KeptFromPreviousVersion, DateTimeOffset.UtcNow,
+            step.NeedsPhotoReal ? context.SplatId : null, inputsKey);
     }
 
     private static bool IsCompleted(WallCaptureStatus status) =>

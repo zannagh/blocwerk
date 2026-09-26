@@ -39,6 +39,18 @@ public sealed record HoldPlacementEntry
     /// <summary>Gets the protrusion before the run (likewise).</summary>
     public string? PrevProtrusionMm { get; init; }
 
+    /// <summary>
+    /// Gets the model a correction carry mapped the hold from (<see cref="Services.HoldPlacementTrigger.Correction"/>), or
+    /// null for a registration run. Re-activating that model reverts the carry exactly.
+    /// </summary>
+    public Guid? CarriedFromModelId { get; init; }
+
+    /// <summary>Gets a value indicating whether a revert restores <see cref="PrevVolumePlacementJson"/> (carries only).</summary>
+    public bool RestoresVolumePlacement { get; init; }
+
+    /// <summary>Gets the volume placement before the carry (see <see cref="RestoresVolumePlacement"/>).</summary>
+    public string? PrevVolumePlacementJson { get; init; }
+
     /// <summary>Captures what a hold carries before it is placed.</summary>
     /// <param name="hold">The hold, before the write.</param>
     /// <returns>The entry, hashes still empty.</returns>
@@ -112,6 +124,11 @@ public sealed record HoldPlacementEntry
 
         hold.FootprintMm = PrevFootprintMm;
         hold.ProtrusionMm = PrevProtrusionMm;
+        if (RestoresVolumePlacement)
+        {
+            hold.VolumePlacementJson = PrevVolumePlacementJson;
+        }
+
         return true;
     }
 

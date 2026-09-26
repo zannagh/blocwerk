@@ -19,7 +19,7 @@ public sealed partial class WallVolumeService
     /// (Re)places every live placed hold: a hold whose panel ray meets a visible volume gets its placement, any
     /// other loses a stored one. Also stores each volume's hold count. Returns (holds on volumes, holds changed).
     /// </summary>
-    private static async Task<(int Placed, int Changed)> PlaceHoldsAsync(BlocwerkDbContext db, Guid wallId, Guid modelId, CancellationToken ct)
+    internal static async Task<(int Placed, int Changed)> PlaceHoldsAsync(BlocwerkDbContext db, Guid wallId, Guid modelId, CancellationToken ct)
     {
         var json = await db.WallGeometryModels.AsNoTracking().Where(m => m.Id == modelId).Select(m => m.Json).FirstAsync(ct);
         var (frames, _) = FacetsOf(WallGeometryDocument.Parse(json));

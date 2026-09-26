@@ -34,6 +34,13 @@ public interface ICaptureFollowUpStep
     bool RunsAfterCompletion => false;
 
     /// <summary>
+    /// True when a correction carries what the step derives (placements, shapes, volumes, proposals are mapped by the
+    /// correction's similarity, <see cref="Corrections.CorrectionCarry"/>): on a model the data was carried onto, the step
+    /// is recorded as kept instead of running. False for a step that must look at the new version itself.
+    /// </summary>
+    bool KeptByCorrection => true;
+
+    /// <summary>
     /// A fingerprint of what an after-completion step reads besides the photos (e.g. the visible volumes): the
     /// recorded step runs again only when it changes. Null: it runs once.
     /// </summary>
