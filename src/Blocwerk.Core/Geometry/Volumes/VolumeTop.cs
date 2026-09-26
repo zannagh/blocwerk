@@ -26,7 +26,18 @@ public static class VolumeTop
     /// <param name="cells">The volume's cells (a, b, height).</param>
     /// <param name="baseRing">The base polygon.</param>
     /// <returns>The top vertices.</returns>
-    public static List<(double A, double B, double H)> Find(IReadOnlyList<(double A, double B, double H)> cells, IReadOnlyList<(double A, double B)> baseRing)
+    public static List<(double A, double B, double H)> Find(IReadOnlyList<(double A, double B, double H)> cells, IReadOnlyList<(double A, double B)> baseRing) =>
+        Candidates(cells, baseRing).FirstOrDefault().Top ?? [];
+
+    /// <summary>
+    /// Both readings of the high points: first the one the band's length decides (ridge when longer than
+    /// <see cref="RidgeShare"/> of the base, else apex), then the other one (when the band allows a ridge at all).
+    /// </summary>
+    /// <param name="cells">The volume's cells (a, b, height).</param>
+    /// <param name="baseRing">The base polygon.</param>
+    /// <returns>The candidates, the decided one first.</returns>
+    public static List<(List<(double A, double B, double H)> Top, bool Decided)> Candidates(
+        IReadOnlyList<(double A, double B, double H)> cells, IReadOnlyList<(double A, double B)> baseRing)
     {
         if (cells.Count == 0)
         {
@@ -45,21 +56,23 @@ public static class VolumeTop
         var s = band.Select(c => ((c.A - ca) * ea) + ((c.B - cb) * eb)).ToList();
         double lo = Quantile(s, 0.05), hi = Quantile(s, 0.95);
         var (baseMin, baseMax) = PlanePolygon.Extent(baseRing, ea, eb);
-        if (band.Count >= 6 && hi - lo > RidgeShare * (baseMax - baseMin))
+        List<(double A, double B, double H)> apex = [(ca, cb, Quantile(band.Select(c => c.H).ToList(), TopQuantile))];
+        if (band.Count < 6)
         {
-            var mid = (lo + hi) / 2;
-            var hLo = Quantile(band.Where((_, k) => s[k] <= mid).Select(c => c.H).ToList(), TopQuantile);
-            var hHi = Quantile(band.Where((_, k) => s[k] > mid).Select(c => c.H).ToList(), TopQuantile);
-            if (Math.Abs(hLo - hHi) < LevelRidgeMm)
-            {
-                // A level ridge: one height keeps a long side that runs along it one flat sheet.
-                hLo = hHi = (hLo + hHi) / 2;
-            }
-
-            return [(ca + (lo * ea), cb + (lo * eb), hLo), (ca + (hi * ea), cb + (hi * eb), hHi)];
+            return [(apex, true)];
         }
 
-        return [(ca, cb, Quantile(band.Select(c => c.H).ToList(), TopQuantile))];
+        var mid = (lo + hi) / 2;
+        var hLo = Quantile(band.Where((_, k) => s[k] <= mid).Select(c => c.H).ToList(), TopQuantile);
+        var hHi = Quantile(band.Where((_, k) => s[k] > mid).Select(c => c.H).ToList(), TopQuantile);
+        if (Math.Abs(hLo - hHi) < LevelRidgeMm)
+        {
+            // A level ridge: one height keeps a long side that runs along it one flat sheet.
+            hLo = hHi = (hLo + hHi) / 2;
+        }
+
+        List<(double A, double B, double H)> ridge = [(ca + (lo * ea), cb + (lo * eb), hLo), (ca + (hi * ea), cb + (hi * eb), hHi)];
+        return hi - lo > RidgeShare * (baseMax - baseMin) ? [(ridge, true), (apex, false)] : [(apex, true), (ridge, false)];
     }
 
     /// <summary>The <paramref name="q"/> quantile (nearest rank) of the values; 0 when empty.</summary>

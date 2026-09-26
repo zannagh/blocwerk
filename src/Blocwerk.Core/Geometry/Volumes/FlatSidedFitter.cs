@@ -30,11 +30,16 @@ public static class FlatSidedFitter
     public const double GoodRmsShare = 0.12;
 
     private const int Passes = 3;
+    private const double SlackMm = 2;
+    private const double SlackShare = 0.1;
     private const int MinCells = 12;
     private const double InsetMm = 20;
 
     /// <summary>Shorter base edges are cut-off corners (a volume side is at least ~190 mm), mm.</summary>
     private const double MinEdgeMm = 2.5 * SimplifyMm;
+
+    /// <summary>Outline tolerances tried, mm: the ~20 mm of a clean outline up to the coarse one of a noisy scan.</summary>
+    private static readonly double[] Tolerances = [SimplifyMm, 30, 45, 60];
 
     /// <summary>The flat-sided shape of a volume, or null when its height field is too small or flat.</summary>
     /// <param name="field">The volume's height field.</param>
@@ -42,19 +47,49 @@ public static class FlatSidedFitter
     /// <returns>The fit or null.</returns>
     public static FlatSidedFit? Fit(VolumeSurface field, IReadOnlyList<(double A, double B)> footprint)
     {
-        var outline = VolumeRings.DropShortEdges(VolumeRings.Simplify(footprint, SimplifyMm), MinEdgeMm);
         var cells = Cells(field, footprint);
-        if (outline.Count < 3 || cells.Count < MinCells)
+        if (cells.Count < MinCells)
         {
             return null;
         }
 
-        var top = VolumeTop.Find(cells, outline);
-        if (top.Count == 0 || top.Max(t => t.H) < 10)
+        // The simplest shape that describes the measurement about as well as the best one: fewer sides first (the
+        // outline simplified more coarsely), and the other reading of the top (apex / ridge) only when clearly better.
+        var candidates = new List<(FlatSidedFit Fit, bool Decided)>();
+        foreach (var tolerance in Tolerances)
+        {
+            var outline = VolumeRings.DropShortEdges(VolumeRings.Simplify(footprint, tolerance), MinEdgeMm);
+            if (outline.Count < 3)
+            {
+                continue;
+            }
+
+            foreach (var (top, decided) in VolumeTop.Candidates(cells, outline))
+            {
+                if (top.Max(t => t.H) >= 10 && FitOne(outline, top, cells) is { } fit)
+                {
+                    candidates.Add((fit, decided));
+                }
+            }
+        }
+
+        if (candidates.Count == 0)
         {
             return null;
         }
 
+        var best = candidates.Min(c => c.Fit.RmsMm);
+        var slack = Math.Max(SlackMm, SlackShare * best);
+        return candidates.Where(c => c.Fit.RmsMm <= best + slack)
+            .OrderBy(c => c.Fit.Polyhedron.SideCount)
+            .ThenBy(c => c.Fit.RmsMm + (c.Decided ? 0 : slack))
+            .First().Fit;
+    }
+
+    /// <summary>The flat-sided shape over one outline and one reading of the top.</summary>
+    private static FlatSidedFit? FitOne(
+        List<(double A, double B)> outline, List<(double A, double B, double H)> top, List<(double A, double B, double H)> cells)
+    {
         var sides = new FlatSidedBase(outline);
         for (var pass = 0; pass < Passes; pass++)
         {
@@ -82,7 +117,7 @@ public static class FlatSidedFitter
     /// <param name="top">The top vertices.</param>
     /// <param name="ring">The base, convex, counter-clockwise.</param>
     /// <returns>The top vertices inside.</returns>
-    internal static List<(double A, double B, double H)> Inside(IReadOnlyList<(double A, double B, double H)> top, IReadOnlyList<(double A, double B)> ring)
+    private static List<(double A, double B, double H)> Inside(IReadOnlyList<(double A, double B, double H)> top, IReadOnlyList<(double A, double B)> ring)
     {
         var centre = (A: ring.Average(p => p.A), B: ring.Average(p => p.B));
         var margin = Math.Min(InsetMm, 0.5 * MinInward(ring, centre));
