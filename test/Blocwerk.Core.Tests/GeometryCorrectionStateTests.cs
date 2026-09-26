@@ -33,6 +33,7 @@ public class GeometryCorrectionStateTests
     [Theory]
     [InlineData("floor", true, "from the floor", true)]
     [InlineData("declared", true, "from the declared vertical surface", true)]
+    [InlineData("device", true, "from your phone's motion sensor (±1°)", true)]
     [InlineData("cameras", false, "not measured", false)]
     public void GravitySource_InWords(string source, bool known, string expected, bool measured)
     {

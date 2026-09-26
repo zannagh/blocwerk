@@ -156,7 +156,7 @@ def solve_sfm(req, model, progress=None):
     raw = fit_planes(pts["Q"], pts["N"], TOL * D, RADIUS * D, CELL * D, rng,
                      min_pts=int(np.clip(0.004 * len(pts["Q"]), 40, 150)))
     progress(0.6, "gravity and scale")
-    dev, cam_up = device_up(model, req.gravity), camera_up(model)
+    dev, cam_up = device_up(model, req.gravity, req.sizes), camera_up(model)
     up0 = dev[0] if dev[0] is not None else cam_up
     floor = floor_plane(raw, pts["Q"], up0, np.array([im["C"] for im in photos]), D)
     anchor = anchor_frame(model, req, pts) if req.anchors else None

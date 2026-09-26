@@ -51,6 +51,19 @@ public class WallCapturePhoto
     [MaxLength(256)]
     public string? CameraGroup { get; set; }
 
+    /// <summary>
+    /// The phone's accelerometer at the shot (iPhone maker note AccelerationVector, g, device frame; see
+    /// <see cref="Capture.DeviceGravity"/>): read from the upload before stripping, the only maker-note value kept.
+    /// Null for other phones.
+    /// </summary>
+    public double? DeviceGravityX { get; set; }
+
+    /// <summary>aY of <see cref="DeviceGravityX"/>.</summary>
+    public double? DeviceGravityY { get; set; }
+
+    /// <summary>aZ of <see cref="DeviceGravityX"/>.</summary>
+    public double? DeviceGravityZ { get; set; }
+
     /// <summary>Validated, refined markers (<c>CaptureMarker[]</c> as JSON, pixel corners), null until detected.</summary>
     public string? MarkersJson { get; set; }
 

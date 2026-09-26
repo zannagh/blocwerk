@@ -152,7 +152,7 @@ public sealed partial class WallCaptureProcessor
         var photos = await LoadPhotosAsync(capture.Id, ct);
         var holds = await PhotoHoldsAsync(capture.Id, photos, ct);
         var request = CaptureSfmDocuments.BuildRequest(
-            photos.Select(p => p.Index),
+            photos.Select(CaptureSfmPhoto.From),
             holds,
             await AngleHintsAsync(capture.WallId, ct),
             CaptureSfmDocuments.ParseScale(capture.ScaleReferenceJson),

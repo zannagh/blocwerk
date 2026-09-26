@@ -1,7 +1,8 @@
 """The `solve-sfm` request document (README "Solve from features"): validation into an SfmRequest.
 
-Everything is optional except what a feature needs: per-photo device gravity and hold detections, segment
-angle hints, one measured distance, anchors (+ the reference geometry they are known in), options.
+Everything is optional except what a feature needs: per-photo device gravity (+ the stored image size that picks its
+axis mapping) and hold detections, segment angle hints, one measured distance, anchors (+ the reference geometry they
+are known in), options.
 Pixel coordinates are in the photo's stored resolution, OpenCV convention (as the geometry document).
 """
 import math
@@ -30,6 +31,7 @@ class SegmentHint:
 @dataclass
 class SfmRequest:
     gravity: dict = field(default_factory=dict)      # stem -> (aX, aY, aZ)
+    sizes: dict = field(default_factory=dict)        # stem -> (width, height) of the stored image
     holds: dict = field(default_factory=dict)        # stem -> [(x, y)]
     segments: list = field(default_factory=list)     # [SegmentHint]
     measured: dict | None = None                     # {"photo", "a", "b", "mm"}
@@ -74,6 +76,11 @@ def _photos(req, photos):
             if not isinstance(g, list) or len(g) != 3:
                 raise RequestError(f"photos[{i}].deviceGravity must be [aX, aY, aZ]")
             req.gravity[name] = tuple(_num(x, f"photos[{i}].deviceGravity", -20, 20) for x in g)
+        size = p.get("imageSize")
+        if size is not None:
+            if not isinstance(size, list) or len(size) != 2:
+                raise RequestError(f"photos[{i}].imageSize must be [width, height]")
+            req.sizes[name] = tuple(_num(x, f"photos[{i}].imageSize", 1, 1e5) for x in size)
         holds = p.get("holds")
         if holds is not None:
             if not isinstance(holds, list) or len(holds) > MAX_HOLDS:

@@ -46,8 +46,9 @@ def robust_mean(U, iters=5):
     return m, e
 
 
-def device_up(model, vectors):
-    """(up in the model frame or None, info). vectors: {stem: (aX, aY, aZ)} of the photos."""
+def device_up(model, vectors, sizes=None):
+    """(up in the model frame or None, info). vectors: {stem: (aX, aY, aZ)} of the photos; sizes: {stem: (w, h)} of the
+    stored images (the request's imageSize; the COLMAP camera's size when a photo has none)."""
     ups, skipped = [], 0
     for im in model["images"]:
         a = vectors.get(im["stem"]) if im["role"] == "photo" else None
@@ -57,7 +58,8 @@ def device_up(model, vectors):
             skipped += 1
             continue
         cam = model["cams"][im["cam"]]
-        ups.append(im["R"].T @ device_up_cam(a, cam["width"], cam["height"]))
+        w, h = (sizes or {}).get(im["stem"]) or (cam["width"], cam["height"])
+        ups.append(im["R"].T @ device_up_cam(a, w, h))
     info = {"photos": len(ups), "skippedMoving": skipped}
     if len(ups) < MIN_DEVICE_PHOTOS:
         info["reason"] = f"device gravity for {len(ups)} registered photos (need {MIN_DEVICE_PHOTOS})"

@@ -16,6 +16,7 @@ public sealed partial class WallCaptureService
     {
         var name = fileName is { Length: > 256 } ? fileName[..256] : fileName;
         var kind = ValidateUpload(name, bytes, photoConverter is not null, PipelineOptions.MaxPhotoBytes);
+        var uploaded = bytes;
         if (kind == CapturePhotoKind.Heic)
         {
             bytes = await ConvertHeicAsync(name, bytes, ct);
@@ -34,10 +35,11 @@ public sealed partial class WallCaptureService
                 throw new UserFacingException($"A capture takes at most {WallCapturePipelineOptions.MaxPhotos} photos.");
             }
 
-            // The stripper validates the structure first; EXIF is then read from the original, and what
-            // is stored has none of it (no GPS on disk either).
+            // The stripper validates the structure first; EXIF (camera facts, the iPhone gravity vector) is then read
+            // from the original, and what is stored has none of it (no GPS or maker note on disk either).
             var clean = StripOrRefuse(bytes, name);
             var exif = ExifCameraReader.Read(bytes);
+            var gravity = ReadDeviceGravity(bytes, uploaded);
             var hash = Convert.ToHexStringLower(SHA256.HashData(clean));
             if (existing.Any(p => p.ContentHash == hash))
             {
@@ -60,6 +62,9 @@ public sealed partial class WallCaptureService
                 Height = height,
                 Focal35mm = exif.Focal35mm,
                 CameraGroup = exif.CameraGroup(width, height),
+                DeviceGravityX = gravity?.X,
+                DeviceGravityY = gravity?.Y,
+                DeviceGravityZ = gravity?.Z,
                 MarkersJson = markers is null ? null : JsonSerializer.Serialize(markers),
             };
             db.WallCapturePhotos.Add(photo);
@@ -90,6 +95,13 @@ public sealed partial class WallCaptureService
             files.Delete(photo.StoredPath);
         }
     }
+
+    /// <summary>
+    /// The iPhone gravity vector from the pre-strip bytes: heif-convert copies the HEIC's EXIF (maker note included) into
+    /// its JPEG; should a converter drop it, the HEIC itself is read.
+    /// </summary>
+    private static DeviceGravity? ReadDeviceGravity(byte[] preStrip, byte[] uploaded) =>
+        DeviceGravityReader.Read(preStrip) ?? (ReferenceEquals(preStrip, uploaded) ? null : DeviceGravityReader.Read(uploaded));
 
     /// <summary>HEIC → upright JPEG (EXIF kept until the strip below reads and drops it).</summary>
     private async Task<byte[]> ConvertHeicAsync(string? name, byte[] heic, CancellationToken ct)

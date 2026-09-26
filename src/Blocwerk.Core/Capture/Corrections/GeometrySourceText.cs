@@ -58,7 +58,7 @@ public static class GeometrySourceText
         {
             "floor" => "from the floor",
             "declared" => "from the declared vertical surface",
-            "device" => "from the phone's motion sensor",
+            "device" => "from your phone's motion sensor (±1°)",
             "anchors" or "anchor-fit" => CarriedOver(carriedFrom),
             _ => "not measured",
         };

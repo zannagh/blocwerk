@@ -54,6 +54,42 @@ internal sealed class ExifTiffReader(byte[] data, bool little)
         return den == 0 ? null : (uint)U32(at) / (double)den;
     }
 
+    /// <summary>An UNDEFINED (type 7) value's bytes, e.g. a maker note; null when absent or longer than <paramref name="maxLength"/>.</summary>
+    public byte[]? Undefined(Dictionary<ushort, ExifEntry> ifd, ushort tag, int maxLength)
+    {
+        if (!ifd.TryGetValue(tag, out var e) || e.Type != 7 || e.Count == 0 || e.Count > maxLength)
+        {
+            return null;
+        }
+
+        var at = e.Count <= 4 ? e.ValueOffset : U32(e.ValueOffset);
+        return data.AsSpan(at, (int)e.Count).ToArray();
+    }
+
+    /// <summary>Exactly <paramref name="count"/> SRATIONAL (type 10) values; null when absent, of another shape or a denominator is 0.</summary>
+    public double[]? SignedRationals(Dictionary<ushort, ExifEntry> ifd, ushort tag, int count)
+    {
+        if (!ifd.TryGetValue(tag, out var e) || e.Type != 10 || e.Count != count)
+        {
+            return null;
+        }
+
+        var at = U32(e.ValueOffset);
+        var values = new double[count];
+        for (var i = 0; i < count; i++)
+        {
+            var den = U32(at + (i * 8) + 4);
+            if (den == 0)
+            {
+                return null;
+            }
+
+            values[i] = U32(at + (i * 8)) / (double)den;
+        }
+
+        return values;
+    }
+
     private ushort U16(int at) => little
         ? BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(at, 2))
         : BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(at, 2));

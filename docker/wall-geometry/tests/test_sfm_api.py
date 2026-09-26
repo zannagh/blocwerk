@@ -88,6 +88,7 @@ def test_a_model_without_stems_is_refused(tmp_path, sparse_zip):
 
 @pytest.mark.parametrize("bad", [
     {"photos": [{"name": "p1", "deviceGravity": [0, 1]}]}, {"photos": [{"name": "p1"}, {"name": "p1"}]},
+    {"photos": [{"name": "p1", "imageSize": [4032]}]}, {"photos": [{"name": "p1", "imageSize": [0, 3024]}]},
     {"measuredDistance": {"photo": "p1", "a": [0, 0], "b": [1, 1], "mm": -3}}, {"anchors": {"a00": "p1"}},
     {"anchors": {"a00": "nope"}, "reference": {"cameras": [{"image": "p1", "R": [1, 0, 0, 0, 1, 0, 0, 0, 1],
                                                             "t": [0, 0, 0]}], "segments": []}},

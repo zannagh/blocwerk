@@ -39,6 +39,53 @@ public class WallCaptureHeicUploadTests
     }
 
     [Fact]
+    public async Task IphoneJpeg_KeepsOnlyTheGravityVector_TheStoredPhotoHasNoMakerNote()
+    {
+        using var h = new WallTestHarness();
+        using var s = new CaptureScenario(h);
+        var draft = await OpenDraftAsync(h, s);
+        var tiff = AppleMakerNoteExif.Tiff(AppleMakerNoteExif.MakerNote((-0.25, -0.95, -0.125)));
+
+        await s.Service.AddPhotoAsync(draft, "IMG_1.jpg", AppleMakerNoteExif.Jpeg(CaptureScenario.TinyJpeg(), tiff), CancellationToken.None);
+
+        await using var db = h.CreateContext();
+        var photo = await db.WallCapturePhotos.SingleAsync();
+        Assert.Equal((-0.25, -0.95, -0.125), (photo.DeviceGravityX, photo.DeviceGravityY, photo.DeviceGravityZ));
+        var stored = await File.ReadAllBytesAsync(s.Files.ResolvePhysicalPath(photo.StoredPath)!);
+        Assert.Equal(-1, stored.AsSpan().IndexOf("Apple iOS"u8));
+        Assert.Null(DeviceGravityReader.Read(stored));
+    }
+
+    [Fact]
+    public async Task HeicUpload_ReadsTheGravityFromTheHeic_WhenTheConversionDroppedIt()
+    {
+        using var h = new WallTestHarness();
+        var heic = AppleMakerNoteExif.Heic(AppleMakerNoteExif.Tiff(AppleMakerNoteExif.MakerNote((-0.5, 0.25, -0.75))));
+        using var s = new CaptureScenario(h, photoConverter: new FakeConverter(ExifJpeg.Build(CaptureScenario.TinyJpeg())));
+        var draft = await OpenDraftAsync(h, s);
+
+        await s.Service.AddPhotoAsync(draft, "IMG_2.HEIC", heic, CancellationToken.None);
+
+        await using var db = h.CreateContext();
+        var photo = await db.WallCapturePhotos.SingleAsync();
+        Assert.Equal((-0.5, 0.25, -0.75), (photo.DeviceGravityX, photo.DeviceGravityY, photo.DeviceGravityZ));
+    }
+
+    [Fact]
+    public async Task PhotoWithoutAppleMakerNote_HasNoGravity()
+    {
+        using var h = new WallTestHarness();
+        using var s = new CaptureScenario(h);
+        var draft = await OpenDraftAsync(h, s);
+
+        await s.Service.AddPhotoAsync(draft, "android.jpg", ExifJpeg.Build(CaptureScenario.TinyJpeg()), CancellationToken.None);
+
+        await using var db = h.CreateContext();
+        var photo = await db.WallCapturePhotos.SingleAsync();
+        Assert.Null(photo.DeviceGravityX ?? photo.DeviceGravityY ?? photo.DeviceGravityZ);
+    }
+
+    [Fact]
     public async Task FailedConversion_IsRefused_WithAClearMessage()
     {
         using var h = new WallTestHarness();

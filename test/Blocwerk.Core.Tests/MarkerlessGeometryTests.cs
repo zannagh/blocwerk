@@ -60,7 +60,7 @@ public class MarkerlessGeometryTests
     {
         var scale = CaptureSfmDocuments.ParseScale("{\"photoIndex\":2,\"a\":[10,20],\"b\":[110,20],\"mm\":500}");
         var request = JsonNode.Parse(CaptureSfmDocuments.BuildRequest(
-            [1, 2],
+            [new CaptureSfmPhoto(1, 3024, 4032, null), new CaptureSfmPhoto(2, 4032, 3024, null)],
             new Dictionary<int, IReadOnlyList<double[]>> { [2] = [[12.5, 40], [300, 7.25]] },
             [new CaptureAngleHint(0, "Main", 45)], scale, CaptureSfmDocuments.AnchorMap(["p03"]), MarkerlessFixture.MarkerDoc(), 125))!;
 

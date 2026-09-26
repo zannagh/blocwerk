@@ -125,6 +125,7 @@ Parts: `request` (JSON), `sparse` (the zip, at most `SFM_MAX_SPARSE_MB`), option
 {
   "photos": [ { "name": "p01",                          // the stem in stems.json
                 "deviceGravity": [-0.038, -0.987, -0.113],   // optional: iPhone AccelerationVector (g)
+                "imageSize": [3024, 4032],                 // optional: the stored image (w, h); picks the axis mapping
                 "holds": [[1520.5, 2210.0], ...] } ],      // optional: hold detection centres, stored px
   "segments": [ { "index": 0, "name": "Main wall", "declaredAngleDeg": 45 } ],   // optional angle hints
   "measuredDistance": { "photo": "p05", "a": [x, y], "b": [x, y], "mm": 1234 },  // optional: 2 taps + mm
@@ -159,7 +160,8 @@ Then, in mm:
   Anchored, the reference facets are the prior: a plane on one (<= 5 deg, <= 50 mm, half of its points over its
   extent + 150 mm) is never "floating" (`planes[].referenceFacet`); one on none needs >= 3 % of the hold hits.
 - **Gravity**, first that works: `device` (each photo's vector in its stored image's camera frame, portrait
-  `(-aX, aY, aZ)` / landscape `(aY, aX, aZ)`, the other holdings by the vector's sign, never the EXIF Orientation;
+  `(-aX, aY, aZ)` / landscape `(aY, aX, aZ)` by the request's `imageSize` (else the camera's size), the other holdings
+  by the vector's sign, never the EXIF Orientation;
   robust mean over >= 3 photos) -> `declared` (planes take the nearest declared angle under the prior, the worst
   fits are dropped, >= 2 planes >= 20 deg apart) -> `floor` (the biggest horizontal plane below the cameras) ->
   `cameras` (the image-up prior: `gravityKnown: false`, the reference facet treated as vertical, angles null).

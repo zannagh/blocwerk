@@ -18,6 +18,23 @@ namespace Blocwerk.Core.Capture;
 /// <param name="Mm">The distance, mm.</param>
 public sealed record CaptureScaleReference(int PhotoIndex, double[] A, double[] B, double Mm);
 
+/// <summary>One photo of a <c>solve-sfm</c> request: its index, stored size and the phone's gravity vector.</summary>
+/// <param name="Index">The capture photo's index (names it: <c>p01</c>…).</param>
+/// <param name="Width">The stored image's width, px (with the height, picks the portrait/landscape axis mapping).</param>
+/// <param name="Height">The stored image's height, px.</param>
+/// <param name="Gravity">The iPhone accelerometer vector, or null.</param>
+public sealed record CaptureSfmPhoto(int Index, int Width, int Height, DeviceGravity? Gravity)
+{
+    /// <summary>The request facts of a stored photo.</summary>
+    /// <param name="photo">The photo.</param>
+    /// <returns>Its entry.</returns>
+    public static CaptureSfmPhoto From(Entities.WallCapturePhoto photo) => new(
+        photo.Index,
+        photo.Width,
+        photo.Height,
+        photo is { DeviceGravityX: { } x, DeviceGravityY: { } y, DeviceGravityZ: { } z } ? new DeviceGravity(x, y, z) : null);
+}
+
 /// <summary>A declared angle the feature solve may use to find "up" (a wall segment's or the wall's own angle).</summary>
 /// <param name="Index">The segment index.</param>
 /// <param name="Name">Its name.</param>
@@ -26,8 +43,8 @@ public sealed record CaptureAngleHint(int Index, string Name, double AngleDeg);
 
 /// <summary>
 /// The <c>solve-sfm</c> request (<c>docker/wall-geometry/README.md</c>, "Solve from features") and the anchor naming of a
-/// markerless capture: the photos with their hold detections (the wall-facet score's hold hits). No device gravity yet
-/// (that waits for the owner's privacy decision).
+/// markerless capture: the photos with their stored size, the phone's gravity vector (iPhones) and hold detections (the
+/// wall-facet score's hold hits).
 /// </summary>
 public static class CaptureSfmDocuments
 {
@@ -45,7 +62,7 @@ public static class CaptureSfmDocuments
         referenceImages.Select((image, i) => (Stem: AnchorName(i), Image: image)).ToDictionary(x => x.Stem, x => x.Image, StringComparer.Ordinal);
 
     /// <summary>The request JSON.</summary>
-    /// <param name="photoIndexes">The capture's photos (their indexes).</param>
+    /// <param name="photos">The capture's photos.</param>
     /// <param name="holds">Photo index → hold centres [x, y] px on the stored photo; photos without an entry send none.</param>
     /// <param name="hints">Declared angles.</param>
     /// <param name="scale">A measured distance, or null.</param>
@@ -54,7 +71,7 @@ public static class CaptureSfmDocuments
     /// <param name="markerSizeMm">Echoed into the document.</param>
     /// <returns>The request.</returns>
     public static string BuildRequest(
-        IEnumerable<int> photoIndexes,
+        IEnumerable<CaptureSfmPhoto> photos,
         IReadOnlyDictionary<int, IReadOnlyList<double[]>> holds,
         IReadOnlyList<CaptureAngleHint> hints,
         CaptureScaleReference? scale,
@@ -64,7 +81,7 @@ public static class CaptureSfmDocuments
     {
         var request = new JsonObject
         {
-            ["photos"] = new JsonArray(photoIndexes.Select(i => (JsonNode?)PhotoEntry(i, holds.GetValueOrDefault(i))).ToArray()),
+            ["photos"] = new JsonArray(photos.Select(p => (JsonNode?)PhotoEntry(p, holds.GetValueOrDefault(p.Index))).ToArray()),
             ["segments"] = new JsonArray(hints.Select(h => (JsonNode?)new JsonObject
             {
                 ["index"] = h.Index,
@@ -130,9 +147,19 @@ public static class CaptureSfmDocuments
         }
     }
 
-    private static JsonObject PhotoEntry(int index, IReadOnlyList<double[]>? holds)
+    private static JsonObject PhotoEntry(CaptureSfmPhoto photo, IReadOnlyList<double[]>? holds)
     {
-        var entry = new JsonObject { ["name"] = CaptureComputeDocuments.PhotoName(index) };
+        var entry = new JsonObject { ["name"] = CaptureComputeDocuments.PhotoName(photo.Index) };
+        if (photo is { Width: > 0, Height: > 0 })
+        {
+            entry["imageSize"] = new JsonArray(photo.Width, photo.Height);
+        }
+
+        if (photo.Gravity is { } g && double.IsFinite(g.X) && double.IsFinite(g.Y) && double.IsFinite(g.Z))
+        {
+            entry["deviceGravity"] = new JsonArray(g.X, g.Y, g.Z);
+        }
+
         if (holds is { Count: > 0 })
         {
             entry["holds"] = new JsonArray(holds.Select(h => (JsonNode?)new JsonArray(h[0], h[1])).ToArray());
