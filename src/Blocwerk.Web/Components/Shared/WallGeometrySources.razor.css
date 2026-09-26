@@ -1,0 +1,4 @@
+.geometry-sources { margin: 8px 0 12px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; }
+.geometry-source { margin: 2px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; }
+.geometry-source-label { font-weight: 600; }
+.geometry-source-action { min-height: 44px; padding: 0 4px; }

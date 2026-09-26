@@ -1,0 +1,5 @@
+.wall3d-correct { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 12px; border-top: 1px solid var(--border); }
+.wall3d-correct-prompt { font-weight: 600; }
+.wall3d-correct-actions { display: flex; flex-wrap: wrap; gap: 6px 8px; }
+.wall3d-correct-actions button { min-height: 44px; }
+.wall3d-correct-message { flex: 1 1 100%; font-size: 0.85rem; color: var(--text-secondary); }

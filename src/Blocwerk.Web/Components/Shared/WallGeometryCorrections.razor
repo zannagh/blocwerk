@@ -1,0 +1,72 @@
+@* Corrections of the active 3D model, under its facet table: the result card (where sizes and angles come from),
+   "Make sizes exact" on a photo of the model's capture, and per surface "This surface is vertical" / "Not part of the
+   wall". Each correction becomes a new active model version; the old one stays in the history below. Admin only. *@
+
+@if (state is not null)
+{
+    <WallGeometrySources State="state" Disabled="busy" OnMakeExact="() => scaleOpen = true" OnWhichVertical="() => surfacesOpen = true" />
+
+    @if (failure is not null)
+    {
+        <p class="field-error" role="alert">@failure</p>
+    }
+
+    @if (state.FromFeatures)
+    {
+        <div class="segment-settings geometry-correction">
+            <button type="button" class="btn-link geometry-correction-toggle" aria-expanded="@(scaleOpen ? "true" : "false")" @onclick="() => scaleOpen = !scaleOpen">Make sizes exact</button>
+            @if (scaleOpen)
+            {
+                if (state.CaptureId is { } captureId)
+                {
+                    <p class="hint">
+                        Measure one distance on the wall (the longer the better), then mark its two ends on a photo of this
+                        model's capture. Every size of the model is scaled to match; the textures and photo-real view come along.
+                    </p>
+                    <WallScaleTapPicker CaptureId="captureId" Photos="state.Photos" Disabled="busy" SaveLabel="Make sizes exact" OnSave="MakeExactAsync" />
+                }
+                else
+                {
+                    <p class="hint">The photos of this model's capture are no longer stored, so a distance can't be marked on them.</p>
+                }
+            }
+        </div>
+    }
+
+    <div class="segment-settings geometry-correction">
+        <button type="button" class="btn-link geometry-correction-toggle" aria-expanded="@(surfacesOpen ? "true" : "false")" @onclick="() => surfacesOpen = !surfacesOpen">Correct a surface</button>
+        @if (surfacesOpen)
+        {
+            <p class="hint">
+                Declare a surface you know is plumb, or drop one that isn't part of the climbing wall (a rafter or the ceiling
+                accepted by mistake). You can also <a href="/walls/@WallId/3d?correct=1">tap it in the 3D view</a>.
+            </p>
+            <ul class="geometry-surfaces">
+                @foreach (var facet in state.Facets)
+                {
+                    <li class="geometry-surface">
+                        <span class="geometry-surface-name">
+                            Surface @facet.Id · @facet.Name@(facet.AngleDeg is { } deg ? $" · {deg:0.0}°" : string.Empty)
+                            @if (facet.IsVertical)
+                            {
+                                <span class="hint"> (declared vertical)</span>
+                            }
+                        </span>
+                        <span class="geometry-surface-actions">
+                            <button type="button" class="btn-secondary" @onclick="() => VerticalAsync(facet.Id)" disabled="@busy">This surface is vertical</button>
+                            @if (confirmDrop == facet.Id)
+                            {
+                                <button type="button" class="btn-danger" @onclick="() => DropAsync(facet.Id)" disabled="@busy">Yes, drop it</button>
+                                <button type="button" class="btn-secondary" @onclick="() => confirmDrop = null" disabled="@busy">Keep it</button>
+                            }
+                            else if (!facet.IsReference)
+                            {
+                                <button type="button" class="btn-secondary" @onclick="() => confirmDrop = facet.Id" disabled="@busy">Not part of the wall</button>
+                            }
+                        </span>
+                    </li>
+                }
+            </ul>
+        }
+    </div>
+}

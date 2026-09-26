@@ -204,7 +204,6 @@ export function mount(container, view, options = {}) {
     const onStart = () => { tweener.cancel(); ui.hideHint(); ui.setActive(null); framed = null; loop.interact(); };
     controls.addEventListener('start', onStart);
     controls.addEventListener('change', request);
-
     const ro = new ResizeObserver(resize);
     ro.observe(container);
     window.addEventListener('orientationchange', resize);
@@ -248,6 +247,7 @@ export function mount(container, view, options = {}) {
         },
         /** The hold pick at a client point ({ holdId, hold, facetId, point, plane } or null); no side effects. */
         pickAt: (clientX, clientY) => picker.pickAt(clientX, clientY),
+        onFacetTap: listener => picker.onFacetTap(listener), // listener(facetId | null) on every tap: the model corrections
         /** Calls `listener(pick)` on every hold tap; returns the unsubscribe function. */
         onPick(listener) {
             pickListeners.add(listener);

@@ -68,6 +68,7 @@ public partial class Wall3D
         try
         {
             _result = await ViewService.BuildAsync(WallId, BoulderId, ShareToken);
+            await LoadCorrectionAsync();
         }
         catch (UnauthorizedAccessException)
         {

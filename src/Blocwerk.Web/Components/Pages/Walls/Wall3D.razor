@@ -42,8 +42,12 @@ else
                 <span class="wall3d-note">@UnplacedText(view.UnplacedHoldCount)</span>
             }
         </div>
+        @if (correction is not null)
+        {
+            <Wall3DCorrectionBar Facet="tappedFacet" Busy="correcting" Message="@correctionMessage" OnVertical="VerticalAsync" OnDrop="DropAsync" />
+        }
         <div class="wall3d-stage">
-            <Wall3DStage View="view" InitialMode="@Mode" />
+            <Wall3DStage View="view" InitialMode="@Mode" OnFacetTap="FacetTap" />
         </div>
     </div>
 }

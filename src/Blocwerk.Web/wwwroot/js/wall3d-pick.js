@@ -40,12 +40,20 @@ export function screenPointOf(hold, facet, camera, canvas) {
 /**
  * Wires pointer taps on `canvas`. `onPick(pick)` / `onMiss()` get the result; `onDown()` runs on every
  * press. `walls()` returns the facet meshes a tap may not pass through. Returns
- * { pickAt(clientX, clientY) → pick | null, dispose() }.
+ * { pickAt(clientX, clientY) → pick | null, facetAt(clientX, clientY) → facet id | null, onFacetTap(listener), dispose() }.
  */
 export function createPicker({ canvas, camera, holds, walls, sides, onPick, onMiss, onDown }) {
     const raycaster = new THREE.Raycaster();
     const camPos = new THREE.Vector3();
+    const facetListeners = new Set();
     let down = null;
+
+    /** The id of the surface a tap at a client point lands on (the nearest facet mesh), or null. */
+    function facetAt(clientX, clientY) {
+        const r = canvas.getBoundingClientRect();
+        raycaster.setFromCamera(new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1), camera);
+        return raycaster.intersectObjects(walls(), false)[0]?.object.userData.facet?.id ?? null;
+    }
 
     function pickAt(clientX, clientY) {
         const r = canvas.getBoundingClientRect();
@@ -72,6 +80,10 @@ export function createPicker({ canvas, camera, holds, walls, sides, onPick, onMi
             return;
         }
         down = null;
+        if (facetListeners.size) {
+            const facetId = facetAt(e.clientX, e.clientY);
+            for (const listener of facetListeners) listener(facetId);
+        }
         const pick = pickAt(e.clientX, e.clientY);
         if (pick) {
             onPick(pick);
@@ -83,7 +95,14 @@ export function createPicker({ canvas, camera, holds, walls, sides, onPick, onMi
     canvas.addEventListener('pointerup', onPointerUp);
     return {
         pickAt,
+        facetAt,
+        /** Calls `listener(facetId | null)` on every tap (the model corrections); returns the unsubscribe function. */
+        onFacetTap(listener) {
+            facetListeners.add(listener);
+            return () => facetListeners.delete(listener);
+        },
         dispose() {
+            facetListeners.clear();
             canvas.removeEventListener('pointerdown', onPointerDown);
             canvas.removeEventListener('pointerup', onPointerUp);
         },

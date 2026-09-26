@@ -50,6 +50,7 @@
             else
             {
                 <WallGlyphGeometryTable Active="active" />
+                <WallGeometryCorrections WallId="WallId" ModelId="active.Model.Id" OnCorrected="ReloadAfterCorrectionAsync" />
             }
 
             @if (!settings.Enabled)
@@ -57,7 +58,7 @@
                 <p class="hint">No markers needed: photos of the wall are enough. The 3D model is then measured from the photos' features, so its sizes may be estimates (shown with ≈).</p>
             }
 
-            <WallCapturePanel WallId="WallId" OnModelActivated="ReloadAfterCaptureAsync"
+            <WallCapturePanel WallId="WallId" Markerless="!settings.Enabled" MarkerlessAvailable="markerlessAvailable" OnModelActivated="ReloadAfterCaptureAsync"
                               OnPanelStaged="OnPanelStaged" OnStartWallUpdate="OnStartWallUpdate" OnShowPanels="OnShowPanels" />
 
             @if (settings.Enabled)

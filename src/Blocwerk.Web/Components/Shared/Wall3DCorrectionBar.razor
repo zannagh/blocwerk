@@ -1,0 +1,68 @@
+@using Blocwerk.Core.Capture.Corrections
+@* The 3D view's correction mode (/walls/{id}/3d?correct=1, wall admins only): tap a surface, then declare it vertical
+   or drop it. Each correction is a new active model version; the view reloads with it. *@
+
+<div class="wall3d-correct" role="region" aria-label="Correct the 3D model">
+    @if (Facet is null)
+    {
+        <span class="wall3d-correct-prompt">Tap a surface of the model to correct it.</span>
+    }
+    else
+    {
+        <span class="wall3d-correct-prompt">Surface @Facet.Id · @Facet.Name@(Facet.AngleDeg is { } deg ? $" · {deg:0.0}°" : string.Empty)</span>
+        <span class="wall3d-correct-actions">
+            <button type="button" class="btn-secondary" @onclick="() => OnVertical.InvokeAsync(Facet.Id)" disabled="@Busy">This surface is vertical</button>
+            @if (confirmDrop)
+            {
+                <button type="button" class="btn-danger" @onclick="DropAsync" disabled="@Busy">Yes, drop it</button>
+                <button type="button" class="btn-secondary" @onclick="() => confirmDrop = false" disabled="@Busy">Keep it</button>
+            }
+            else if (!Facet.IsReference)
+            {
+                <button type="button" class="btn-secondary" @onclick="() => confirmDrop = true" disabled="@Busy">Not part of the wall</button>
+            }
+        </span>
+    }
+    @if (Message is not null)
+    {
+        <span class="wall3d-correct-message" role="status">@Message</span>
+    }
+</div>
+
+@code {
+    private string? shownFacet;
+    private bool confirmDrop;
+
+    /// <summary>The tapped surface, or null.</summary>
+    [Parameter]
+    public GeometryCorrectionFacet? Facet { get; set; }
+
+    [Parameter]
+    public bool Busy { get; set; }
+
+    /// <summary>What the last correction did, or why it could not.</summary>
+    [Parameter]
+    public string? Message { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnVertical { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnDrop { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        // Another surface tapped: its own "drop" needs its own confirmation.
+        if (Facet?.Id != shownFacet)
+        {
+            shownFacet = Facet?.Id;
+            confirmDrop = false;
+        }
+    }
+
+    private async Task DropAsync()
+    {
+        confirmDrop = false;
+        await OnDrop.InvokeAsync(Facet!.Id);
+    }
+}

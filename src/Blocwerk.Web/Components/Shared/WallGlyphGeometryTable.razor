@@ -3,7 +3,7 @@
    markers cover (plus the solver's margin) on the widest facet — NOT the size of the wall. *@
 
 <p class="glyph-summary">
-    @(Active.Model.Source.StartsWith("capture ", StringComparison.Ordinal) ? "Measured from photos" : "Imported")
+    @SourceText
     <LocalTime Value="@Active.Model.CreatedAt" Format="LocalTimeFormat.DateDmy" />
     @if (Active.FromFeatures)
     {
@@ -77,6 +77,13 @@ else
     private string SpanText => Active.Model.WidthMm is null
         ? string.Empty
         : $" · {(Active.FromFeatures ? "surface" : "marker")} span {Approx}{GlyphFormat.Metres(Active.Model.WidthMm)} × {Approx}{GlyphFormat.Metres(Active.Model.HeightMm)}";
+
+    private string SourceText => Active.Model.Source switch
+    {
+        var s when s.StartsWith("capture ", StringComparison.Ordinal) => "Measured from photos",
+        var s when s.StartsWith(Blocwerk.Core.Capture.Corrections.WallGeometryCorrectionService.SourcePrefix, StringComparison.Ordinal) => "Corrected",
+        _ => "Imported",
+    };
 
     private string Approx => Active.ScaleIsEstimate ? "≈" : string.Empty;
 

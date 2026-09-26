@@ -26,6 +26,8 @@ public partial class Wall3DStage : IAsyncDisposable
     private ElementReference stage;
     private IJSObjectReference? module;
     private IJSObjectReference? viewer;
+    private IJSObjectReference? bridge;
+    private DotNetObjectReference<Wall3DStage>? selfRef;
     private Wall3DView? mounted;
     private bool mountFailed;
 
@@ -46,6 +48,10 @@ public partial class Wall3DStage : IAsyncDisposable
     [Parameter]
     public bool HintOnce { get; set; }
 
+    /// <summary>Raised with the surface (facet id, or null for none) under every tap; set only for the model corrections.</summary>
+    [Parameter]
+    public EventCallback<string?> OnFacetTap { get; set; }
+
     [Inject]
     private IJSRuntime JS { get; set; } = null!;
 
@@ -55,6 +61,19 @@ public partial class Wall3DStage : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await UnmountAsync();
+        selfRef?.Dispose();
+        if (bridge is not null)
+        {
+            try
+            {
+                await bridge.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+                // Circuit already torn down.
+            }
+        }
+
         if (module is not null)
         {
             try
@@ -69,6 +88,12 @@ public partial class Wall3DStage : IAsyncDisposable
 
         GC.SuppressFinalize(this);
     }
+
+    /// <summary>Called from wwwroot/js/wall3d-bridge.js with the surface under a tap.</summary>
+    /// <param name="facetId">The facet id, or null.</param>
+    /// <returns>A task.</returns>
+    [JSInvokable]
+    public Task FacetTapped(string? facetId) => OnFacetTap.InvokeAsync(facetId);
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -94,6 +119,7 @@ public partial class Wall3DStage : IAsyncDisposable
                     ["initialMode"] = InitialMode ?? "schematic",
                     ["hintOnce"] = HintOnce,
                 });
+            await ListenFacetTapsAsync();
         }
         catch (JSDisconnectedException)
         {
@@ -105,6 +131,18 @@ public partial class Wall3DStage : IAsyncDisposable
             mountFailed = true;
             StateHasChanged();
         }
+    }
+
+    private async Task ListenFacetTapsAsync()
+    {
+        if (!OnFacetTap.HasDelegate || viewer is null)
+        {
+            return;
+        }
+
+        selfRef ??= DotNetObjectReference.Create(this);
+        bridge ??= await JS.InvokeAsync<IJSObjectReference>("import", "/js/wall3d-bridge.js");
+        await bridge.InvokeVoidAsync("listenFacetTaps", viewer, selfRef);
     }
 
     private async Task UnmountAsync()

@@ -30,6 +30,7 @@ public partial class WallMarkerSettings
     private List<string> importErrors = [];
     private string? importNotes;
     private bool markerless;
+    private bool markerlessAvailable;
 
     /// <summary>The wall being administered.</summary>
     [Parameter]
@@ -93,7 +94,8 @@ public partial class WallMarkerSettings
             draftSizeMm = settings.MarkerSizeMm ?? WallGlyphSettings.DefaultMarkerSizeMm;
 
             // Walls without markers can be captured too when the server measures from photo features.
-            markerless = !settings.Enabled && await Captures.IsMarkerlessAvailableAsync();
+            markerlessAvailable = await Captures.IsMarkerlessAvailableAsync();
+            markerless = !settings.Enabled && markerlessAvailable;
             active = await Glyphs.GetActiveGeometryAsync(WallId);
             history = await Glyphs.GetGeometryHistoryAsync(WallId);
             segments = (await SegmentService.GetSegmentsAsync(WallId))
@@ -158,6 +160,13 @@ public partial class WallMarkerSettings
     {
         await ReloadAsync();
         message = "A new 3D model was computed from your photos and is now active.";
+    }
+
+    /// <summary>A correction made a new model version active: show it.</summary>
+    private async Task ReloadAfterCorrectionAsync(string summary)
+    {
+        await ReloadAsync();
+        message = $"{summary}. The corrected model is now active; the previous one stays in the history.";
     }
 
     /// <summary>Runs one action with the busy flag set, then reloads; failures become the status line.</summary>
