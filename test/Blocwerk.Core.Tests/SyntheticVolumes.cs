@@ -31,6 +31,30 @@ internal static class SyntheticVolumes
         return Math.Max(0, h);
     }
 
+    /// <summary>A truncated pyramid on [1200, 1700] × [800, 1250]: sides rising 120 mm over 150 mm to a flat top [1350, 1550] × [950, 1100] at 120 mm.</summary>
+    public static double Truncated(double a, double b) =>
+        Math.Max(0, 120 * Math.Min(1, Math.Min(Math.Min((a - 1200) / 150, (1700 - a) / 150), Math.Min((b - 800) / 150, (1250 - b) / 150))));
+
+    /// <summary>A roof with a flat ridge plank on [1000, 1800] × [800, 1300]: the plank [1200, 1600] × [950, 1150] at 130 mm.</summary>
+    public static double FlatRidge(double a, double b) =>
+        Math.Max(0, 130 * Math.Min(1, Math.Min(Math.Min((a - 1000) / 200, (1800 - a) / 200), Math.Min((b - 800) / 150, (1300 - b) / 150))));
+
+    /// <summary>Two pyramids detected as one on [1000, 1750] × [800, 1150]: apexes (1200, 975) at 150 mm and (1550, 975) at 120 mm.</summary>
+    public static double TwoPeaks(double a, double b)
+    {
+        var ub = Math.Min((b - 800) / 175, (1150 - b) / 175);
+        var first = 150 * Math.Min(ub, Math.Min((a - 1000) / 200, (1400 - a) / 200));
+        var second = 120 * Math.Min(ub, Math.Min((a - 1350) / 200, (1750 - a) / 200));
+        return Math.Max(0, Math.Max(first, second));
+    }
+
+    /// <summary>A crater (no flat sheets at all) round (1400, 1000): a rim 150 mm high at 150 mm from the centre, 0 at 50 and 250 mm.</summary>
+    public static double Crater(double a, double b)
+    {
+        var r = Dist((a, b), (1400, 1000));
+        return Math.Max(0, 150 * (1 - (Math.Abs(r - 150) / 100)));
+    }
+
     /// <summary>The stored height field and footprint of a shape (±<paramref name="noiseMm"/>, <paramref name="missing"/> of the cells lost).</summary>
     public static (VolumeSurface Field, List<(double A, double B)> Footprint) Detected(
         Func<double, double, double> shape, double aLo, double aHi, double bLo, double bHi, double noiseMm = 6, double missing = 0.05, int seed = 11)

@@ -15,6 +15,7 @@ namespace Blocwerk.Core.Geometry.Volumes;
 /// <param name="Rows">Cells along b.</param>
 /// <param name="Heights">Base64 of little-endian int16 heights, mm, row-major along a.</param>
 /// <param name="Faces">Version 2: the flat faces, each a list of [a, b, height] corners (mm); null otherwise.</param>
+/// <param name="Shape">Version 2: "pyramid", "roof", "plateau" or "multi-peak"; null when derived from the faces.</param>
 public sealed record VolumeSurfaceDocument(
     int Version,
     double ALo,
@@ -23,4 +24,5 @@ public sealed record VolumeSurfaceDocument(
     int Cols,
     int Rows,
     string Heights,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double[][][]? Faces = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double[][][]? Faces = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Shape = null);

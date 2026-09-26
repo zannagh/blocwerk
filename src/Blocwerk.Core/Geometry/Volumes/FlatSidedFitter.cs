@@ -16,7 +16,8 @@ public sealed record FlatSidedFit(VolumePolyhedron Polyhedron, double RmsMm, boo
 /// "Has flat sides": the owner's volumes are pyramids and roofs of flat wood sheets, so instead of the noisy height
 /// field the volume becomes the convex hull of where it meets the wall (the detected outline simplified with
 /// Douglas–Peucker, ~20 mm, then each edge moved out to where its side's fitted slope reaches the wall) and its
-/// detected high points (<see cref="VolumeTop"/>: an apex or a ridge). Everything in between is a flat face.
+/// detected high points (<see cref="VolumeTop"/>: an apex, a ridge, a flat top's outline or the high points of several
+/// peaks). Everything in between is a flat face.
 /// </summary>
 public static class FlatSidedFitter
 {
@@ -64,11 +65,11 @@ public static class FlatSidedFitter
                 continue;
             }
 
-            foreach (var (top, decided) in VolumeTop.Candidates(cells, outline))
+            foreach (var top in VolumeTop.Candidates(cells, outline, field.Grid.CellMm))
             {
-                if (top.Max(t => t.H) >= 10 && FitOne(outline, top, cells) is { } fit)
+                if (top.Top.Max(t => t.H) >= 10 && FitOne(outline, top, cells) is { } fit)
                 {
-                    candidates.Add((fit, decided));
+                    candidates.Add((fit, top.Decided));
                 }
             }
         }
@@ -76,6 +77,12 @@ public static class FlatSidedFitter
         if (candidates.Count == 0)
         {
             return null;
+        }
+
+        // Separated peaks are not smoothed over by one apex: all of them go into the hull, and the list says so.
+        if (candidates.Any(c => c.Decided && c.Fit.Polyhedron.Shape == "multi-peak"))
+        {
+            candidates = candidates.Where(c => c.Fit.Polyhedron.Shape == "multi-peak").ToList();
         }
 
         var best = candidates.Min(c => c.Fit.RmsMm);
@@ -87,8 +94,7 @@ public static class FlatSidedFitter
     }
 
     /// <summary>The flat-sided shape over one outline and one reading of the top.</summary>
-    private static FlatSidedFit? FitOne(
-        List<(double A, double B)> outline, List<(double A, double B, double H)> top, List<(double A, double B, double H)> cells)
+    private static FlatSidedFit? FitOne(List<(double A, double B)> outline, VolumeTopCandidate candidate, List<(double A, double B, double H)> cells)
     {
         var sides = new FlatSidedBase(outline);
         for (var pass = 0; pass < Passes; pass++)
@@ -99,7 +105,7 @@ public static class FlatSidedFitter
                 return null;
             }
 
-            sides.Refit(ring, lines, Inside(top, ring), cells);
+            sides.Refit(ring, lines, Inside(candidate, ring), cells);
         }
 
         var final = VolumeRings.DropShortEdges(sides.Polygon().Ring, MinEdgeMm);
@@ -108,9 +114,19 @@ public static class FlatSidedFitter
             return null;
         }
 
-        var polyhedron = new VolumePolyhedron(VolumeHull.Build(final, Inside(top, final)).Select(f => f.Vertices));
+        var inside = Inside(candidate, final);
+        var faces = VolumeHull.Build(final, inside).Select(f => f.Vertices).ToList();
+        var shape = candidate.Shape == "multi-peak" && inside.Count < 2 ? null : candidate.Shape;
+        var polyhedron = new VolumePolyhedron(faces, shape);
         var rms = TrimmedRms(polyhedron, cells);
         return new FlatSidedFit(polyhedron, Math.Round(rms, 1), rms <= Math.Max(GoodRmsMm, GoodRmsShare * polyhedron.TopHeightMm));
+    }
+
+    /// <summary>A reading's top vertices moved inside the base; a plateau's stay on its plane.</summary>
+    private static List<(double A, double B, double H)> Inside(VolumeTopCandidate candidate, IReadOnlyList<(double A, double B)> ring)
+    {
+        var moved = Inside(candidate.Top, ring);
+        return candidate.Plane is not { } p ? moved : moved.Select(t => (t.A, t.B, (p.Alpha * t.A) + (p.Beta * t.B) + p.Gamma)).ToList();
     }
 
     /// <summary>The top vertices moved inside the base (≥ 20 mm from its edges, less on a small base); two that end up together become one apex.</summary>

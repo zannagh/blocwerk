@@ -8,7 +8,8 @@ namespace Blocwerk.Core.Geometry.Volumes;
 
 /// <summary>
 /// A flat-sided volume: planar faces over its facet in facet coordinates (a, b, height; mm), the convex hull of its
-/// base polygon on the wall (height 0) and one apex (a pyramid) or two ridge ends (a roof). Only the faces pointing
+/// base polygon on the wall (height 0) and its top vertices: one apex (a pyramid), two ridge ends (a roof), a plateau
+/// outline (a flat top) or the high points of several peaks. Only the faces pointing
 /// away from the wall are kept (the base face is the wall). Because the solid is convex and every kept face looks
 /// away from the wall, its surface height is the lowest of the face planes, and 0 outside the base.
 /// </summary>
@@ -17,13 +18,19 @@ public sealed class VolumePolyhedron
     /// <summary>Faces whose normals differ less than this (cosine) count as one flat side.</summary>
     private const double SameSideCos = 0.9994;
 
+    /// <summary>Most top vertices accepted from storage.</summary>
+    private const int MaxTopVertices = 32;
+
     private readonly (double A, double B, double H)[][] faces;
     private readonly (double Na, double Nb, double Nh, double D)[] planes;
+    private readonly string? shape;
 
     /// <summary>Initializes a new instance of the <see cref="VolumePolyhedron"/> class.</summary>
     /// <param name="faces">The faces, each a planar polygon (a, b, height).</param>
-    public VolumePolyhedron(IEnumerable<(double A, double B, double H)[]> faces)
+    /// <param name="shape">"pyramid", "roof", "plateau" or "multi-peak"; derived from the top vertices when null.</param>
+    public VolumePolyhedron(IEnumerable<(double A, double B, double H)[]> faces, string? shape = null)
     {
+        this.shape = shape;
         this.faces = faces.Where(f => f.Length >= 3).ToArray();
         planes = this.faces.Select(Plane).Where(p => p.Nh > 1e-6).ToArray();
         Top = this.faces.SelectMany(f => f).Where(v => v.H > 0.5).Distinct().ToList();
@@ -36,11 +43,19 @@ public sealed class VolumePolyhedron
     /// <summary>The base polygon on the wall, counter-clockwise.</summary>
     public IReadOnlyList<(double A, double B)> Base { get; }
 
-    /// <summary>The top vertices: one apex or two ridge ends.</summary>
+    /// <summary>The top vertices: one apex, two ridge ends, a plateau outline or the high points of several peaks.</summary>
     public IReadOnlyList<(double A, double B, double H)> Top { get; }
 
-    /// <summary>"pyramid" (one apex) or "roof" (a ridge).</summary>
-    public string Shape => Top.Count == 1 ? "pyramid" : "roof";
+    /// <summary>"pyramid" (one apex), "roof" (a ridge), "plateau" (a flat top) or "multi-peak" (several high regions).</summary>
+    public string Shape => shape ?? Top.Count switch
+    {
+        1 => "pyramid",
+        2 => "roof",
+        _ => "plateau",
+    };
+
+    /// <summary>The shape as given when built (and stored), null when derived from the top vertices.</summary>
+    public string? StoredShape => shape;
 
     /// <summary>The highest vertex above the wall, mm.</summary>
     public double TopHeightMm => Top.Count == 0 ? 0 : Top.Max(t => t.H);
@@ -90,8 +105,9 @@ public sealed class VolumePolyhedron
 
     /// <summary>Parses the storage form; null when malformed.</summary>
     /// <param name="arrays">The arrays.</param>
+    /// <param name="shape">The stored shape, if any.</param>
     /// <returns>The polyhedron or null.</returns>
-    public static VolumePolyhedron? FromArrays(double[][][]? arrays)
+    public static VolumePolyhedron? FromArrays(double[][][]? arrays, string? shape = null)
     {
         if (arrays is null || arrays.Length < 3 || arrays.Length > 64
             || arrays.Any(f => f is null || f.Length < 3 || f.Any(v => v is null || v.Length != 3 || !v.All(double.IsFinite))))
@@ -99,8 +115,8 @@ public sealed class VolumePolyhedron
             return null;
         }
 
-        var p = new VolumePolyhedron(arrays.Select(f => f.Select(v => (v[0], v[1], v[2])).ToArray()));
-        return p.planes.Length >= 3 && p.Top.Count is 1 or 2 && p.Base.Count >= 3 ? p : null;
+        var p = new VolumePolyhedron(arrays.Select(f => f.Select(v => (v[0], v[1], v[2])).ToArray()), shape is "pyramid" or "roof" or "plateau" or "multi-peak" ? shape : null);
+        return p.planes.Length >= 3 && p.Top.Count is >= 1 and <= MaxTopVertices && p.Base.Count >= 3 ? p : null;
     }
 
     private (double H, int Face) Lowest(double a, double b)

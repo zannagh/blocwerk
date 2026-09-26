@@ -152,7 +152,7 @@ public sealed class VolumeSurface
 
         var faces = Polyhedron?.ToArrays();
         return JsonSerializer.Serialize(
-            new VolumeSurfaceDocument(faces is null ? 1 : 2, Grid.ALo, Grid.BLo, Grid.CellMm, Grid.Cols, Grid.Rows, Convert.ToBase64String(bytes), faces),
+            new VolumeSurfaceDocument(faces is null ? 1 : 2, Grid.ALo, Grid.BLo, Grid.CellMm, Grid.Cols, Grid.Rows, Convert.ToBase64String(bytes), faces, Polyhedron?.StoredShape),
             Json);
     }
 
@@ -186,7 +186,7 @@ public sealed class VolumeSurface
                 h[k] = (short)(bytes[2 * k] | (bytes[(2 * k) + 1] << 8));
             }
 
-            var polyhedron = d.Version == 2 ? VolumePolyhedron.FromArrays(d.Faces) : null;
+            var polyhedron = d.Version == 2 ? VolumePolyhedron.FromArrays(d.Faces, d.Shape) : null;
             return d.Version == 2 && polyhedron is null ? null : new VolumeSurface(new CellGrid(d.ALo, d.BLo, d.CellMm, d.Cols, d.Rows), h, polyhedron);
         }
         catch (Exception ex) when (ex is JsonException or FormatException)
