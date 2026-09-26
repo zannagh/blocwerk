@@ -98,7 +98,7 @@ public static class PhotoTextureRegistration
         var reason = Refusal(new FitEvidence(inliers.Count, rmsMm, coverage, spread, extent), Mirrored(fit.Homography, cx, cy));
         return new FacetRegistration(
             id, reason is null, match.Pairs.Count, inliers.Count, match.CoarseInliers, coverage.Coverage, coverage.PhotoShare,
-            rmsMm, reason, toPlane, extent, depthSign);
+            rmsMm, reason, toPlane, extent, depthSign, [.. inliers.Select(p => (p.SrcX / photoWidth, p.SrcY / photoHeight))]);
     }
 
     /// <summary>Why a fit is refused, or null when it is accepted.</summary>

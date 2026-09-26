@@ -48,6 +48,8 @@ public sealed record HoldPlacementRunInfo(
 /// <param name="Facets">Each facet texture's registration evidence.</param>
 /// <param name="Problem">Why the photo could not be used at all, or null.</param>
 /// <param name="Carried">Of <paramref name="Placed"/>, the holds the photo could not be registered for that kept their previous placement, carried over from the earlier model.</param>
+/// <param name="Disagreed">Of <paramref name="Failed"/>, the holds left unmeasured because this photo and an overlapping one placed them at different spots and this photo's evidence was the weaker (or neither was clearly better).</param>
+/// <param name="Unsupported">Of <paramref name="Failed"/>, the holds left unmeasured because they lie far beyond the photo's matches on their facet and no overlapping photo confirmed them.</param>
 public sealed record HoldPlacementPanelSummary(
     Guid PanelId,
     int Col,
@@ -57,7 +59,9 @@ public sealed record HoldPlacementPanelSummary(
     int Failed,
     IReadOnlyList<FacetRegistrationSummary> Facets,
     string? Problem,
-    int Carried = 0)
+    int Carried = 0,
+    int Disagreed = 0,
+    int Unsupported = 0)
 {
     /// <summary>Gets the short name admins know the panel by, e.g. "c0" or "c1 r1".</summary>
     public string Label => Row == 0 ? $"c{Col}" : $"c{Col} r{Row}";

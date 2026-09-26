@@ -45,7 +45,8 @@ public sealed class PlaceHoldsFollowUpStep(IHoldTexturePlacementService placemen
         // Carried: a photo the new textures could not be registered to kept its holds' previous placements.
         var carried = result.Panels.Sum(p => p.Carried);
         var placed = $"{CaptureFollowUpText.Count(result.Placed, "hold", "holds")} placed on the 3D model";
-        return CaptureFollowUpStepResult.Done(
-            carried > 0 ? $"{placed} ({carried} kept from the previous model)" : placed);
+        var text = carried > 0 ? $"{placed} ({carried} kept from the previous model)" : placed;
+        var unmeasured = HoldPlacementUnmeasured.Text(result.Panels);
+        return CaptureFollowUpStepResult.Done(unmeasured.Length > 0 ? $"{text}. {unmeasured}" : text);
     }
 }

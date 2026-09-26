@@ -42,9 +42,7 @@ public sealed partial class HoldTexturePlacementService
             plans.Add(await PlanPanelAsync(db, id, holds, model.Textures, OwnAnchors(holds, carried), ct));
         }
 
-        var links = plans.Any(p => p.Summary.Failed > 0) || carried.Count > 0
-            ? await LinkedHoldsAsync(db, wallId, ct)
-            : Array.Empty<(Guid, Guid)>().ToLookup(x => x.Item1, x => x.Item2);
+        var links = await LinkedHoldsAsync(db, wallId, ct);
         if (plans.Any(p => p.Summary.Failed > 0))
         {
             for (var i = 0; i < plans.Count; i++)
@@ -53,9 +51,13 @@ public sealed partial class HoldTexturePlacementService
             }
         }
 
+        // Placements the linked holds or the registration's own inliers contradict are not written (the hold is not measured).
+        plans = Consistent(plans, links, model, out var dropped);
+
         // The evidence a carried placement must agree with: what the photos registered in this run placed.
         var placed = plans.SelectMany(p => p.Placements).ToDictionary(p => p.Hold.Id, p => p.Fit);
-        return plans.Select((p, i) => WithCarried(p, panels[i].Holds, carried, new CarryContext(model.Frames, placed, links))).ToList();
+        var context = new CarryContext(model.Frames, placed, links);
+        return plans.Select((p, i) => WithCarried(p, panels[i].Holds, carried, context, dropped)).ToList();
     }
 
     /// <summary>The panel planned again with its linked holds as anchors, when that places more holds; else its plan.</summary>

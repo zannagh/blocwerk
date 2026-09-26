@@ -37,14 +37,19 @@ public partial class WallHoldPlacement
 
     private bool Hidden => KioskContext.IsKiosk || !string.IsNullOrEmpty(ShareToken);
 
-    /// <summary>The run in one sentence, e.g. 861 placed, 0 left alone, 19 not found on any facet.</summary>
+    /// <summary>The run in one sentence, e.g. 861 placed, 0 left alone, 19 not measured.</summary>
     internal static string RunText(HoldPlacementRunInfo run) =>
-        $"{run.Placed} holds placed, {run.Skipped} left alone, {run.Failed} not found on any facet.";
+        WithUnmeasured($"{run.Placed} holds placed, {run.Skipped} left alone, {run.Failed} not measured.", run.Panels);
 
     /// <summary>One panel line: its counts, then each facet's verdict with the evidence behind it.</summary>
     internal static string PanelText(HoldPlacementPanelSummary p)
     {
         var text = $"{p.Label}: {p.Placed} placed, {p.Skipped} left alone, {p.Failed} failed";
+        if (p.Disagreed + p.Unsupported > 0)
+        {
+            text += $" ({p.Disagreed} where the other photo disagrees, {p.Unsupported} beyond this photo's matches)";
+        }
+
         if (p.Problem is not null)
         {
             text += $" ({p.Problem})";
@@ -55,6 +60,10 @@ public partial class WallHoldPlacement
             : $"facet {f.FacetId} ✗ {f.Reason}");
         return p.Facets.Count == 0 ? text : $"{text} — {string.Join("; ", facets)}";
     }
+
+    /// <summary>The sentence plus, when the run left holds unmeasured on purpose, why (<see cref="HoldPlacementUnmeasured"/>).</summary>
+    internal static string WithUnmeasured(string text, IEnumerable<HoldPlacementPanelSummary> panels) =>
+        HoldPlacementUnmeasured.Text(panels) is { Length: > 0 } unmeasured ? $"{text} {unmeasured}" : text;
 
     // Route data is loaded here, not in OnInitializedAsync: WallDetail is retained across enhanced
     // navigation between walls, and so is this component.
@@ -88,7 +97,7 @@ public partial class WallHoldPlacement
     private Task PlaceAsync() => RunAsync(async () =>
     {
         var r = await Placement.PlaceAsync(WallId);
-        message = $"{r.Placed} holds placed on the 3D model, {r.Skipped} left alone, {r.Failed} not found on any facet.";
+        message = WithUnmeasured($"{r.Placed} holds placed on the 3D model, {r.Skipped} left alone, {r.Failed} not measured.", r.Panels);
         if (r.Placed > 0)
         {
             message += " Their 3D shapes are refined in the background.";

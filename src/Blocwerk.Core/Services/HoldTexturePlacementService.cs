@@ -136,8 +136,11 @@ public sealed partial class HoldTexturePlacementService : IHoldTexturePlacementS
         var live = await (await LiveHoldsQueryAsync(db, wallId, ct)).AsNoTracking().ToListAsync(ct);
         var eligible = live.Where(HoldTexturePlacer.IsEligible).ToList();
         var onThisModel = await PlacedOnModelAsync(db, wallId, modelId, ct);
+
+        // A hold a run on this model left unmeasured on purpose stays so: this run would see the same evidence.
         var unplaced = eligible
             .Where(h => h.FacetId is null || h.PlaneAMm is null || h.PlaneBMm is null || !facets.Contains(h.FacetId))
+            .Where(h => !HoldTexturePlacer.IsRejected(h) || !onThisModel.Contains(h.Id))
             .Select(h => h.Id)
             .ToHashSet();
 

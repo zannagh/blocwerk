@@ -20,6 +20,7 @@ namespace Blocwerk.Core.Geometry.TextureRegistration;
 /// <param name="PhotoToPlane">Normalised photo → plane mm; null without a fit.</param>
 /// <param name="Extent">The facet's extent a placed hold must fall into.</param>
 /// <param name="DepthSign">Sign of the mapping's projective depth on the inliers; points with the other sign lie beyond its horizon.</param>
+/// <param name="InlierPoints">The inliers' normalised photo points (where the fit is supported); null when unknown.</param>
 public sealed record FacetRegistration(
     string FacetId,
     bool Accepted,
@@ -32,7 +33,8 @@ public sealed record FacetRegistration(
     string? Reason,
     PlaneHomography? PhotoToPlane,
     PlaneRectMm Extent,
-    int DepthSign = 1)
+    int DepthSign = 1,
+    IReadOnlyList<(double X, double Y)>? InlierPoints = null)
 {
     /// <summary>A rejected registration without a fit.</summary>
     /// <param name="facetId">The facet.</param>

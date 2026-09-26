@@ -5,6 +5,7 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Detection.Outlines;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Geometry.TextureRegistration;
 
 namespace Blocwerk.Core.Services;
 
@@ -77,7 +78,7 @@ public static class HoldRelocationProposer
     /// could place on no facet: its pixels lie off every wall plane. Unmeasured holds get the benefit of
     /// the doubt — the marker pass simply did not see them.
     /// </summary>
-    private static bool IsOnWall(Hold hold) => hold.MetricSource is null || hold.FacetId is not null;
+    private static bool IsOnWall(Hold hold) => hold.MetricSource is null || hold.FacetId is not null || HoldTexturePlacer.IsRejected(hold);
 
     private static List<RelocationCandidate> Candidates(
         IReadOnlyList<Hold> holds,

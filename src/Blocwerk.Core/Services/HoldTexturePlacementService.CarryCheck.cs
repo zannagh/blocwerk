@@ -26,12 +26,16 @@ public sealed partial class HoldTexturePlacementService
 {
     /// <summary>
     /// The plan plus the carried-over previous placements of the eligible holds it could not place. A carried
-    /// placement the evidence contradicts is dropped, and the hold loses it (<see cref="PanelPlan.Cleared"/>).
+    /// placement the evidence contradicts is dropped, and the hold loses it (<see cref="PanelPlan.Cleared"/>). A hold whose
+    /// registered placement the consistency check dropped (<paramref name="dropped"/>) keeps no previous placement either.
     /// </summary>
-    private PanelPlan WithCarried(PanelPlan plan, List<Hold> holds, Dictionary<Guid, CarriedPosition> carried, CarryContext context)
+    private PanelPlan WithCarried(
+        PanelPlan plan, List<Hold> holds, Dictionary<Guid, CarriedPosition> carried, CarryContext context, IReadOnlySet<Guid> dropped)
     {
         var placed = plan.Placements.Select(p => p.Hold.Id).ToHashSet();
-        var candidates = holds.Where(h => HoldTexturePlacer.IsEligible(h) && !placed.Contains(h.Id) && carried.ContainsKey(h.Id)).ToList();
+        var candidates = holds
+            .Where(h => HoldTexturePlacer.IsEligible(h) && !placed.Contains(h.Id) && carried.ContainsKey(h.Id) && !dropped.Contains(h.Id))
+            .ToList();
         var kept = new List<PlannedPlacement>();
         var cleared = new List<Hold>();
         foreach (var hold in candidates)
@@ -58,7 +62,7 @@ public sealed partial class HoldTexturePlacementService
 
         var s = plan.Summary;
         var summary = s with { Placed = s.Placed + kept.Count, Failed = s.Failed - kept.Count, Carried = kept.Count };
-        return plan with { Summary = summary, Placements = [.. plan.Placements, .. kept], Cleared = cleared };
+        return plan with { Summary = summary, Placements = [.. plan.Placements, .. kept], Cleared = [.. plan.Cleared ?? [], .. cleared] };
     }
 
     /// <summary>The largest disagreement of a carried placement with the photo's registration of its facet and its placed linked holds.</summary>

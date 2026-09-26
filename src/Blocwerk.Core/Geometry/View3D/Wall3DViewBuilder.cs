@@ -3,6 +3,7 @@
 
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Geometry.TextureRegistration;
 using Blocwerk.Core.Holds;
 using Blocwerk.Core.Services;
 
@@ -158,8 +159,9 @@ public static class Wall3DViewBuilder
                 || !frames.TryGetValue(hold.FacetId, out var frame))
             {
                 // Defence in depth: a hold with a panel position but no stored facet position is still
-                // drawn, placed through its photo's projector and flagged approximate, never dropped.
-                if (Wall3DFallbackPlacement.Place(hold, projector, extents, frames) is { } fallback)
+                // drawn, placed through its photo's projector and flagged approximate — unless the placement run
+                // left it unmeasured on purpose because its photos contradict each other (a guess would be wrong too).
+                if (!HoldTexturePlacer.IsRejected(hold) && Wall3DFallbackPlacement.Place(hold, projector, extents, frames) is { } fallback)
                 {
                     var fit = fallback.Fit;
                     var drawn = Wall3DFallbackPlacement.Draw(hold, fit, ToHold(hold, fit.FacetId, fallback.Frame, fit.PlaneAMm, fit.PlaneBMm, role));

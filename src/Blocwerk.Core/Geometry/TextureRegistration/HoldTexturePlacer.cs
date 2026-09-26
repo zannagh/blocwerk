@@ -24,9 +24,15 @@ public static class HoldTexturePlacer
 
     /// <summary>Whether a hold may be (re)placed: nothing but this action placed it so far.</summary>
     /// <param name="hold">The hold.</param>
-    /// <returns>True for no metric source or a texture-registration one (registered or carried over).</returns>
+    /// <returns>True for no metric source or a texture-registration one (registered, carried over or rejected).</returns>
     public static bool IsEligible(Hold hold) =>
-        !hold.IsVirtual && hold.WallPanelId is not null && (hold.MetricSource is null || IsTexturePlaced(hold));
+        !hold.IsVirtual && hold.WallPanelId is not null
+        && (hold.MetricSource is null || IsRejected(hold) || IsTexturePlaced(hold));
+
+    /// <summary>Whether a run deliberately left the hold unmeasured (<see cref="HoldMetric.TextureRegistrationRejected"/>).</summary>
+    /// <param name="hold">The hold.</param>
+    /// <returns>True when it did.</returns>
+    public static bool IsRejected(Hold hold) => hold.MetricSource == HoldMetric.TextureRegistrationRejected;
 
     /// <summary>Whether this action placed the hold: registered, or carried over from an earlier model.</summary>
     /// <param name="hold">The hold.</param>
@@ -44,13 +50,11 @@ public static class HoldTexturePlacer
         var bestInliers = -1;
         foreach (var r in registrations.Where(r => r.Accepted))
         {
-            var (a, b) = r.Map(hold.X, hold.Y);
-            if (!double.IsFinite(a) || !double.IsFinite(b) || !Inside(r.Extent, a, b))
+            if (On(hold, r) is not { } fit)
             {
                 continue;
             }
 
-            var fit = new HoldPlaneFit(r.FacetId, a, b, r.Map, Wall3DShapeSource.HoldFit);
             if (r.FacetId == hold.FacetId)
             {
                 return fit;
@@ -64,6 +68,18 @@ public static class HoldTexturePlacer
         }
 
         return best;
+    }
+
+    /// <summary>The hold placed through one registration, or null when its centre does not land inside that facet's extent.</summary>
+    /// <param name="hold">The hold.</param>
+    /// <param name="r">An accepted registration of its photo.</param>
+    /// <returns>The placement.</returns>
+    public static HoldPlaneFit? On(Hold hold, FacetRegistration r)
+    {
+        var (a, b) = r.Map(hold.X, hold.Y);
+        return double.IsFinite(a) && double.IsFinite(b) && Inside(r.Extent, a, b)
+            ? new HoldPlaneFit(r.FacetId, a, b, r.Map, Wall3DShapeSource.HoldFit)
+            : null;
     }
 
     /// <summary>The hold's size through its placement, tagged <see cref="HoldMetric.TextureRegistration"/>; null when unmeasurable.</summary>

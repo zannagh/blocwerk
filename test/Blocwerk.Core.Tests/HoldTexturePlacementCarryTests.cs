@@ -74,7 +74,7 @@ public class HoldTexturePlacementCarryTests
         Assert.Equal(1000, holds[right].PlaneAMm!.Value, 3);
         Assert.Null(holds[wrong].FacetId);
         Assert.Null(holds[wrong].PlaneAMm);
-        Assert.Null(holds[wrong].MetricSource);
+        Assert.Equal(HoldMetric.TextureRegistrationRejected, holds[wrong].MetricSource);
 
         await service.RevertAsync(h.WallId, result.RunId);
         var after = await s.LoadHoldsAsync();

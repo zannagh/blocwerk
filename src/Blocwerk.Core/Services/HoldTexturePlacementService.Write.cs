@@ -59,9 +59,10 @@ public sealed partial class HoldTexturePlacementService
 
         logger.LogInformation(
             "Hold placement {RunId} ({Trigger}) on wall {WallId} by {UserId}, model {ModelId}: {Placed} placed, {Skipped} skipped, "
-            + "{Failed} failed over {Panels} panel photos and {Textures} facet textures ({Carried} placed holds carried over from an earlier model)",
+            + "{Failed} failed over {Panels} panel photos and {Textures} facet textures ({Carried} placed holds carried over from an earlier model; "
+            + "{Disagreed} not measured because two photos disagree, {Unsupported} because their photo's matches do not reach them)",
             run.Id, trigger, wallId, userId, model.Id, run.PlacedCount, run.SkippedCount, run.FailedCount, plans.Count, model.Textures.Count,
-            panels.Sum(p => p.Carried));
+            panels.Sum(p => p.Carried), panels.Sum(p => p.Disagreed), panels.Sum(p => p.Unsupported));
         return new HoldPlacementResult(run.Id, run.PlacedCount, run.SkippedCount, run.FailedCount, panels);
     }
 
@@ -101,8 +102,9 @@ public sealed partial class HoldTexturePlacementService
 
     /// <summary>
     /// Takes the placement (facet, plane position, size, source) and the footprint and protrusion measured at it
-    /// from holds whose previous placement this run's evidence contradicts, recorded in the run like a placement
-    /// so a revert restores them.
+    /// from holds whose placement this run's evidence contradicts, and marks them
+    /// <see cref="HoldMetric.TextureRegistrationRejected"/> (not measured: the 3D view guesses no position for them),
+    /// recorded in the run like a placement so a revert restores them. One already marked so is left as it is.
     /// A hold changed since it was planned is left alone. Returns the holds cleared.
     /// </summary>
     private static async Task<List<Guid>> ClearAsync(
@@ -118,13 +120,14 @@ public sealed partial class HoldTexturePlacementService
         var cleared = new List<Guid>();
         foreach (var p in planned)
         {
-            if (!holds.TryGetValue(p.Id, out var hold) || ChangedSincePlanned(hold, p))
+            if (!holds.TryGetValue(p.Id, out var hold) || ChangedSincePlanned(hold, p)
+                || (HoldTexturePlacer.IsRejected(hold) && hold.FacetId is null))
             {
                 continue;
             }
 
             var entry = HoldPlacementEntry.Before(hold);
-            (hold.FacetId, hold.PlaneAMm, hold.PlaneBMm, hold.MetricSource) = (null, null, null, null);
+            (hold.FacetId, hold.PlaneAMm, hold.PlaneBMm, hold.MetricSource) = (null, null, null, HoldMetric.TextureRegistrationRejected);
             (hold.WidthMm, hold.HeightMm, hold.AreaMm2) = (null, null, null);
             (hold.FootprintMm, hold.ProtrusionMm) = (null, null);
             entries.Add(entry with

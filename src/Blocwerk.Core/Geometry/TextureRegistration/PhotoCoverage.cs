@@ -97,24 +97,8 @@ internal static class PhotoCoverage
         return hull;
     }
 
-    private static double Span(IEnumerable<double> values)
-    {
-        var sorted = values.OrderBy(v => v).ToList();
-        return sorted[(int)Math.Floor(0.95 * (sorted.Count - 1))] - sorted[(int)Math.Ceiling(0.05 * (sorted.Count - 1))];
-    }
-
-    private static bool InView(PlaneHomography toPlane, int depthSign, PlaneRectMm extent, double x, double y)
-    {
-        if (Math.Sign(toPlane.Depth(x, y)) != depthSign)
-        {
-            return false;
-        }
-
-        var (a, b) = toPlane.Apply(x, y);
-        return a >= extent.AMin && a <= extent.AMax && b >= extent.BMin && b <= extent.BMax;
-    }
-
-    private static bool Inside(List<(double X, double Y)> hull, double x, double y)
+    /// <summary>Whether (x, y) lies inside a hull from <see cref="ConvexHull"/> (false for a degenerate one).</summary>
+    internal static bool Inside(List<(double X, double Y)> hull, double x, double y)
     {
         if (hull.Count < 3)
         {
@@ -130,6 +114,23 @@ internal static class PhotoCoverage
         }
 
         return true;
+    }
+
+    private static double Span(IEnumerable<double> values)
+    {
+        var sorted = values.OrderBy(v => v).ToList();
+        return sorted[(int)Math.Floor(0.95 * (sorted.Count - 1))] - sorted[(int)Math.Ceiling(0.05 * (sorted.Count - 1))];
+    }
+
+    private static bool InView(PlaneHomography toPlane, int depthSign, PlaneRectMm extent, double x, double y)
+    {
+        if (Math.Sign(toPlane.Depth(x, y)) != depthSign)
+        {
+            return false;
+        }
+
+        var (a, b) = toPlane.Apply(x, y);
+        return a >= extent.AMin && a <= extent.AMax && b >= extent.BMin && b <= extent.BMax;
     }
 
     private static double Cross((double X, double Y) o, (double X, double Y) a, (double X, double Y) b) =>
