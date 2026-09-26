@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Blocwerk.Core.Capture.Corrections;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Geometry;
@@ -112,6 +113,11 @@ public partial class WallGlyphService
 
             await SwapActiveModelAsync(db, wallId, document, keep: modelId, () => model.IsActive = true);
             logger.LogInformation("Wall {WallId} geometry model {ModelId} activated by {UserId}", wallId, modelId, userId);
+            if (await ModelFamily.RepointCaptureAsync(db, wallId, modelId) is { } captureId)
+            {
+                // A correction's model (or the one it was derived from) is live again: re-derive the holds on it.
+                followUpQueue?.Enqueue(captureId);
+            }
         }
     }
 
@@ -146,6 +152,39 @@ public partial class WallGlyphService
         return errors.Count == 0 ? (document, []) : (null, errors);
     }
 
+    /// <summary>
+    /// Retires the wall's active model, runs <paramref name="activate"/> to put the new one in place,
+    /// and copies <paramref name="document"/>'s measured angles onto the bound segments — all in ONE
+    /// transaction.
+    /// </summary>
+    /// <remarks>
+    /// The filtered unique index admits one active row per wall, and the store checks it per
+    /// statement. A single SaveChanges would be atomic but NOT ordered: EF sorts same-table UPDATEs by
+    /// primary key and knows nothing about the index filter, so "activate B" could run before
+    /// "deactivate A" whenever B's id sorts first. So the retirement is flushed first and the rest
+    /// follows in the same transaction — equally all-or-nothing, and deterministic.
+    /// </remarks>
+    internal static async Task SwapActiveModelAsync(
+        BlocwerkDbContext db, Guid wallId, WallGeometryDocument document, Guid? keep, Action activate)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var active = await db.WallGeometryModels
+            .Where(m => m.WallId == wallId && m.IsActive && m.Id != keep)
+            .ToListAsync();
+        foreach (var previous in active)
+        {
+            previous.IsActive = false;
+        }
+
+        await db.SaveChangesAsync();
+
+        activate();
+        var segments = await db.WallSegments.Where(s => s.WallId == wallId).ToListAsync();
+        WallGeometrySummary.ApplyMeasured(document, segments);
+        await db.SaveChangesAsync();
+        await transaction.CommitAsync();
+    }
+
     /// <summary>The active model's parsed document, or null when there is none or it no longer parses.</summary>
     private static async Task<WallGeometryDocument?> LoadActiveDocumentAsync(BlocwerkDbContext db, Guid wallId)
     {
@@ -166,39 +205,6 @@ public partial class WallGlyphService
         {
             return null;
         }
-    }
-
-    /// <summary>
-    /// Retires the wall's active model, runs <paramref name="activate"/> to put the new one in place,
-    /// and copies <paramref name="document"/>'s measured angles onto the bound segments — all in ONE
-    /// transaction.
-    /// </summary>
-    /// <remarks>
-    /// The filtered unique index admits one active row per wall, and the store checks it per
-    /// statement. A single SaveChanges would be atomic but NOT ordered: EF sorts same-table UPDATEs by
-    /// primary key and knows nothing about the index filter, so "activate B" could run before
-    /// "deactivate A" whenever B's id sorts first. So the retirement is flushed first and the rest
-    /// follows in the same transaction — equally all-or-nothing, and deterministic.
-    /// </remarks>
-    private static async Task SwapActiveModelAsync(
-        BlocwerkDbContext db, Guid wallId, WallGeometryDocument document, Guid? keep, Action activate)
-    {
-        await using var transaction = await db.Database.BeginTransactionAsync();
-        var active = await db.WallGeometryModels
-            .Where(m => m.WallId == wallId && m.IsActive && m.Id != keep)
-            .ToListAsync();
-        foreach (var previous in active)
-        {
-            previous.IsActive = false;
-        }
-
-        await db.SaveChangesAsync();
-
-        activate();
-        var segments = await db.WallSegments.Where(s => s.WallId == wallId).ToListAsync();
-        WallGeometrySummary.ApplyMeasured(document, segments);
-        await db.SaveChangesAsync();
-        await transaction.CommitAsync();
     }
 
     private async Task<Guid> ResolveModelWallAsync(Guid modelId)

@@ -217,23 +217,17 @@ public sealed partial class WallCaptureProcessor
         db.WallGeometryTextures.RemoveRange(old);
         db.WallGeometryTextures.AddRange(rows);
         await db.SaveChangesAsync(ct);
-        DeleteTextureFiles(old);
+        var shared = await Corrections.SharedCaptureFiles.ReferencedAsync(db, ct);
+        DeleteTextureFiles(old, shared);
     }
 
-    private void DeleteTextureFiles(IEnumerable<WallGeometryTexture> textures)
+    /// <summary>Deletes the textures' files, except those still in <paramref name="shared"/> (a corrected model version's).</summary>
+    private void DeleteTextureFiles(IEnumerable<WallGeometryTexture> textures, IReadOnlySet<string>? shared = null)
     {
-        foreach (var texture in textures)
+        var names = textures.SelectMany(t => new[] { t.StoredPath, t.MaskStoredPath, t.SourceMapStoredPath }).OfType<string>();
+        foreach (var name in names.Where(n => shared?.Contains(n) != true))
         {
-            files.Delete(texture.StoredPath);
-            if (texture.MaskStoredPath is { } mask)
-            {
-                files.Delete(mask);
-            }
-
-            if (texture.SourceMapStoredPath is { } sourceMap)
-            {
-                files.Delete(sourceMap);
-            }
+            files.Delete(name);
         }
     }
 

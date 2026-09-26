@@ -55,3 +55,7 @@ public sealed record CapturePhotoUploadResponse(int Stored, int Refused, IReadOn
 /// <summary>Scope of an outline upgrade request.</summary>
 /// <param name="IncludeManual">Also outline circles drawn by hand (default: auto-detected ones only).</param>
 public sealed record OutlineUpgradeRequest(bool IncludeManual = false);
+
+/// <summary>A surface of the active model, named by its facet id (the model corrections).</summary>
+/// <param name="FacetId">The facet id, e.g. "1b".</param>
+public sealed record GeometryFacetRequest(string FacetId);

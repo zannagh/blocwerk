@@ -234,7 +234,8 @@ public sealed partial class WallCaptureProcessor
         db.WallGeometrySplats.RemoveRange(old);
         db.WallGeometrySplats.Add(row);
         await db.SaveChangesAsync(ct);
-        foreach (var file in old.SelectMany(SplatLodLadder.Files))
+        var shared = await Corrections.SharedCaptureFiles.ReferencedAsync(db, ct);
+        foreach (var file in old.SelectMany(SplatLodLadder.Files).OfType<string>().Where(f => !shared.Contains(f)))
         {
             files.Delete(file);
         }

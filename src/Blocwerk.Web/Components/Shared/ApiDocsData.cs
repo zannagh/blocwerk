@@ -18,6 +18,7 @@ internal static partial class ApiDocsData
         WallUpdateShapesSurface,
         WallGeometryPlacementSurface,
         WallCaptureSurface,
+        WallGeometryCorrectionSurface,
         WallHoldShapesSurface,
     };
 

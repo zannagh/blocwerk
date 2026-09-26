@@ -19,7 +19,8 @@ public partial class WallGlyphService(
     IDbContextFactory<BlocwerkDbContext> dbContextFactory,
     ICurrentUserService currentUserService,
     ILogger<WallGlyphService> logger,
-    IKioskContext? kioskContext = null) : IWallGlyphService
+    IKioskContext? kioskContext = null,
+    Capture.Corrections.CorrectionFollowUpQueue? followUpQueue = null) : IWallGlyphService
 {
     public async Task<WallGlyphSettings> GetGlyphSettingsAsync(Guid wallId)
     {

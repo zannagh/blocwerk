@@ -32,6 +32,11 @@ public static class CaptureServices
         services.AddScoped<ICaptureFollowUpStep, CoverageReportFollowUpStep>();
         services.AddScoped<Coverage.ICaptureCoverageService, Coverage.CaptureCoverageService>();
 
+        // Corrections of the active model (new model versions) and the chain re-run on the corrected version.
+        services.AddSingleton<Corrections.CorrectionFollowUpQueue>();
+        services.AddHostedService<Corrections.CorrectionFollowUpWorker>();
+        services.AddScoped<Corrections.IWallGeometryCorrectionService, Corrections.WallGeometryCorrectionService>();
+
         // 3D runners: GPU machines that pull the photo-real training (see GpuJobQueue).
         services.AddSingleton(sp => Runners.GpuRunnerOptions.Bind(sp.GetService<IConfiguration>()));
         services.AddSingleton<Runners.GpuJobSignal>();
