@@ -14,12 +14,17 @@ namespace Blocwerk.Core.Geometry.Footprints;
 /// <param name="SingleView">Holds that fell back to the single-view correction.</param>
 /// <param name="Skipped">Traced holds with no mapping or no panel camera.</param>
 /// <param name="PanelCameras">How each hold photo's camera was estimated (for the log).</param>
+/// <param name="Guarded">
+/// Holds whose multi-view footprint lay away from their placement (<see cref="HoldFootprintGuard"/>), with the
+/// offset, mm, and whether the single-view fallback replaced it (else no footprint was produced).
+/// </param>
 public sealed record HoldFootprintRefinement(
     IReadOnlyDictionary<Guid, HoldFootprint> Footprints,
     int MultiView,
     int SingleView,
     int Skipped,
-    IReadOnlyDictionary<Wall3DPhotoKey, PanelCameraEstimate>? PanelCameras = null);
+    IReadOnlyDictionary<Wall3DPhotoKey, PanelCameraEstimate>? PanelCameras = null,
+    IReadOnlyList<(Guid HoldId, double OffsetMm, bool FellBack)>? Guarded = null);
 
 /// <summary>
 /// Batch step: for every placed, traced hold, its silhouette in the panel photo (mapped onto the facet
@@ -80,10 +85,10 @@ public static class HoldFootprintRefiner
         }
 
         var result = new Dictionary<Guid, HoldFootprint>();
+        var guarded = new List<(Guid HoldId, double OffsetMm, bool FellBack)>();
         foreach (var (id, t) in primaries)
         {
-            var fp = HoldFootprintEstimator.Estimate(t.Frame, t.Centre, t.View, others[id], HoldFootprint.KeyOf(t.Hold));
-            if (fp is not null)
+            if (Footprint(t, others[id], guarded) is { } fp)
             {
                 // On a volume the footprint is in the tangent frame; a position shift there is not a facet shift.
                 result[id] = t.OnVolume ? fp with { ShiftA = 0, ShiftB = 0 } : fp;
@@ -91,7 +96,8 @@ public static class HoldFootprintRefiner
         }
 
         var multi = result.Values.Count(f => f.Source == HoldFootprintSource.MultiView);
-        return new HoldFootprintRefinement(result, multi, result.Count - multi, skipped + (primaries.Count - result.Count), estimates);
+        return new HoldFootprintRefinement(
+            result, multi, result.Count - multi, skipped + (primaries.Count - result.Count), estimates, guarded);
     }
 
     /// <summary>The camera centre of each hold photo, estimated from its placed holds (all facets).</summary>
@@ -122,6 +128,26 @@ public static class HoldFootprintRefiner
                 photos?.GetValueOrDefault(g.Key)));
     }
 
+    /// <summary>
+    /// The hold's footprint from all its views; one whose centroid lies away from the placement
+    /// (<see cref="HoldFootprintGuard"/>) is replaced by the single-view correction of the panel silhouette, or
+    /// dropped when that fails the guard too. Either case is noted in <paramref name="guarded"/>.
+    /// </summary>
+    private static HoldFootprint? Footprint(Traced t, List<FootprintView> others, List<(Guid HoldId, double OffsetMm, bool FellBack)> guarded)
+    {
+        var key = HoldFootprint.KeyOf(t.Hold);
+        var fp = HoldFootprintEstimator.Estimate(t.Frame, t.Centre, t.View, others, key);
+        if (fp is null || HoldFootprintGuard.Near(fp, t.Hold))
+        {
+            return fp;
+        }
+
+        var single = HoldFootprintEstimator.Corrected(t.Frame, t.Centre, t.View, key);
+        var fallback = single is not null && HoldFootprintGuard.Near(single, t.Hold) ? single : null;
+        guarded.Add((t.Hold.Id, HoldFootprintGuard.OffsetMm(fp), fallback is not null));
+        return fallback;
+    }
+
     private static Dictionary<string, FacetFrame> Frames(WallGeometryDocument doc)
     {
         var frames = new Dictionary<string, FacetFrame>(StringComparer.Ordinal);
@@ -136,18 +162,25 @@ public static class HoldFootprintRefiner
         return frames;
     }
 
-    /// <summary>The panel-photo silhouette on the facet, exactly as the 3D view maps it today.</summary>
+    /// <summary>
+    /// The panel-photo silhouette on the facet, exactly as the 3D view maps it (<see cref="HoldShapeProjector"/>):
+    /// every vertex through the photo's mapping relative to the MAPPED centre, drawn around the hold's placed centre.
+    /// The mapping is fitted to the photo's holds; a hold whose placement disagrees with it (one carried over from an
+    /// earlier model while its neighbours were re-registered) would otherwise get a silhouette where the mapping puts
+    /// it, not where it is placed.
+    /// </summary>
     private static (FacetFrame Frame, FootprintView View)? Primary(
         Hold hold, Dictionary<string, FacetFrame> frames, Dictionary<Wall3DPhotoKey, double[]> panelCams, HoldPlaneProjector projector)
     {
-        if (hold.ShapePoints is not { Count: >= 3 } outline || hold.FacetId is not { } facetId || !hold.PlaneAMm.HasValue
-            || !hold.PlaneBMm.HasValue || !frames.TryGetValue(facetId, out var frame)
+        if (hold.ShapePoints is not { Count: >= 3 } outline || hold.FacetId is not { } facetId || hold.PlaneAMm is not { } a
+            || hold.PlaneBMm is not { } b || !frames.TryGetValue(facetId, out var frame)
             || !panelCams.TryGetValue(HoldPlaneProjector.PhotoOf(hold), out var camera) || projector.For(hold) is not { } mapping)
         {
             return null;
         }
 
-        var ring = outline.Select(p => mapping.Map(hold.X + p.Dx, hold.Y + p.Dy)).ToList();
+        var (ca, cb) = mapping.Map(hold.X, hold.Y);
+        var ring = outline.Select(p => mapping.Map(hold.X + p.Dx, hold.Y + p.Dy)).Select(p => (A: p.A - ca + a, B: p.B - cb + b)).ToList();
         return ring.All(p => double.IsFinite(p.A) && double.IsFinite(p.B))
             ? (frame, new FootprintView(ring, camera, "panel"))
             : null;

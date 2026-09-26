@@ -96,6 +96,7 @@ public sealed class HoldFootprintService(
         var refinement = await Task.Run(
             () => HoldFootprintRefiner.Refine(live, doc, usable, c => Open(c, photos, ct), projector, only, panelPhotos, volumes), ct);
         LogPanelCameras(wallId, refinement);
+        LogGuarded(wallId, refinement);
         var written = await WriteAsync(db, wallId, refinement, Wall3DFallbackPlacement.FacetExtents(doc), ct);
         logger.LogInformation(
             "Footprints on wall {WallId}: {Multi} multi-view, {Single} single-view, {Skipped} skipped, {Written} written, {Photos} capture photos",
@@ -188,25 +189,39 @@ public sealed class HoldFootprintService(
         }
     }
 
+    private void LogGuarded(Guid wallId, HoldFootprintRefinement refinement)
+    {
+        foreach (var (holdId, offset, fellBack) in refinement.Guarded ?? [])
+        {
+            logger.LogWarning(
+                "Footprints on wall {WallId}: hold {HoldId}'s footprint lay {Offset:F0} mm from its placement; {Action}",
+                wallId, holdId, offset, fellBack ? "the single-view correction is used instead" : "its previous footprint is kept");
+        }
+    }
+
     /// <summary>
     /// Stores the footprints on holds whose outline still matches; clears stale ones. A footprint that would be drawn off
-    /// the hold's facet (<see cref="Wall3DHoldGuard.PlacementOnFacet"/>) is not stored, and clears the old one. Returns how many were written.
+    /// the hold's facet (<see cref="Wall3DHoldGuard.PlacementOnFacet"/>) is not stored, and clears the old one. One whose
+    /// centroid lies away from the placement (<see cref="HoldFootprintGuard"/>) is not stored either: the previous one
+    /// is kept when it passes that guard, else cleared. Returns how many were written.
     /// </summary>
-    private static async Task<int> WriteAsync(
+    private async Task<int> WriteAsync(
         BlocwerkDbContext db, Guid wallId, HoldFootprintRefinement refinement, IReadOnlyDictionary<string, PlaneRectMm> extents, CancellationToken ct)
     {
-        var ids = refinement.Footprints.Keys.ToList();
+        // Holds the guard left without any footprint: their previous one is re-checked too.
+        var dropped = (refinement.Guarded ?? []).Where(g => !g.FellBack).Select(g => g.HoldId);
+        var ids = refinement.Footprints.Keys.Concat(dropped).ToList();
         var holds = await db.Holds.Where(h => h.WallId == wallId && ids.Contains(h.Id)).ToListAsync(ct);
         var written = 0;
         foreach (var hold in holds)
         {
-            var fp = refinement.Footprints[hold.Id];
-            if (fp.OutlineKey != HoldFootprint.KeyOf(hold))
+            var fp = refinement.Footprints.GetValueOrDefault(hold.Id);
+            if (fp is not null && fp.OutlineKey != HoldFootprint.KeyOf(hold))
             {
                 continue;
             }
 
-            var json = OnFacet(hold, fp, extents) ? fp.ToJson() : null;
+            var json = Stored(wallId, hold, fp, extents);
             if (hold.FootprintMm != json)
             {
                 hold.FootprintMm = json;
@@ -216,6 +231,32 @@ public sealed class HoldFootprintService(
 
         await db.SaveChangesAsync(ct);
         return written;
+    }
+
+    /// <summary>
+    /// What to store for <paramref name="hold"/>: the new footprint when it is on the facet and near the placement;
+    /// null when it is off the facet; else (or without a new one) the previous footprint when that is near, or null.
+    /// </summary>
+    private string? Stored(Guid wallId, Hold hold, HoldFootprint? fp, IReadOnlyDictionary<string, PlaneRectMm> extents)
+    {
+        if (fp is not null && !OnFacet(hold, fp, extents))
+        {
+            return null;
+        }
+
+        if (fp is not null && HoldFootprintGuard.Near(fp, hold))
+        {
+            return fp.ToJson();
+        }
+
+        if (fp is not null)
+        {
+            logger.LogWarning(
+                "Footprints on wall {WallId}: hold {HoldId}'s footprint lies {Offset:F0} mm from its placement; not stored",
+                wallId, hold.Id, HoldFootprintGuard.OffsetMm(fp));
+        }
+
+        return HoldFootprint.For(hold) is { } previous && HoldFootprintGuard.Near(previous, hold) ? hold.FootprintMm : null;
     }
 
     private static bool OnFacet(Hold hold, HoldFootprint fp, IReadOnlyDictionary<string, PlaneRectMm> extents) =>
