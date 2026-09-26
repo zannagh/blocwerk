@@ -30,4 +30,5 @@ public interface IHoldProtrusionService
 /// <param name="Estimated">Holds with too few scene points (size estimate).</param>
 /// <param name="OnVolumes">Measured holds standing on a volume (auto-detected, unreviewed).</param>
 /// <param name="Written">Holds whose stored value changed.</param>
-public sealed record HoldProtrusionRunResult(int Measured, int Estimated, int OnVolumes, int Written);
+/// <param name="FromSparsePoints">Measured in the capture's sparse points (no photo-real view): coarser.</param>
+public sealed record HoldProtrusionRunResult(int Measured, int Estimated, int OnVolumes, int Written, bool FromSparsePoints = false);

@@ -21,8 +21,9 @@ public interface ICaptureFollowUpStep
     string Title { get; }
 
     /// <summary>
-    /// True when the step works on the photo-real view: it runs only in <see cref="CaptureFollowUpPhase.Final"/>
-    /// and again whenever the model gets a different photo-real view (a retrain).
+    /// True when the step works on the photo-real view (or, without one, on the capture's sparse points): it runs only in
+    /// <see cref="CaptureFollowUpPhase.Final"/> and again whenever the model gets a different photo-real view (one delivered
+    /// by a runner, a retrain).
     /// </summary>
     bool NeedsPhotoReal { get; }
 

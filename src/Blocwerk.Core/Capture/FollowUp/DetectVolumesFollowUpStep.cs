@@ -7,9 +7,10 @@ using Blocwerk.Core.Abstractions;
 namespace Blocwerk.Core.Capture.FollowUp;
 
 /// <summary>
-/// Step 3 (only with a photo-real view): volumes without markers are found in the scene and the holds on them
-/// are placed onto their faces (<see cref="IWallVolumeService.DetectFromPipelineAsync"/>). Runs before the
-/// protrusion step so both read the same splat in one go; runs again after a retrain. Derived data only: panels,
+/// Step 3 (at the end of the capture): volumes without markers are found in the scene and the holds on them
+/// are placed onto their faces (<see cref="IWallVolumeService.DetectFromPipelineAsync"/>): in the photo-real view when there
+/// is one, else in the capture's sparse points (coarser). Runs before the protrusion step; runs again when a photo-real
+/// view arrives or is retrained. Derived data only: panels,
 /// panel hold positions and boulders are never touched.
 /// </summary>
 public sealed class DetectVolumesFollowUpStep(IWallVolumeService volumes) : ICaptureFollowUpStep
@@ -21,7 +22,7 @@ public sealed class DetectVolumesFollowUpStep(IWallVolumeService volumes) : ICap
     public int Order => 250;
 
     /// <inheritdoc />
-    public string Title => "Photo-real view: finding volumes";
+    public string Title => "Finding volumes";
 
     /// <inheritdoc />
     public bool NeedsPhotoReal => true;
@@ -29,18 +30,15 @@ public sealed class DetectVolumesFollowUpStep(IWallVolumeService volumes) : ICap
     /// <inheritdoc />
     public async Task<CaptureFollowUpStepResult> RunAsync(CaptureFollowUpContext context, CancellationToken ct)
     {
-        if (context.SplatId is null)
-        {
-            return CaptureFollowUpStepResult.Skipped("no photo-real view");
-        }
-
         var result = await volumes.DetectFromPipelineAsync(context.WallId, ct);
         if (result is null)
         {
-            return CaptureFollowUpStepResult.Skipped("the photo-real view could not be searched for volumes");
+            return CaptureFollowUpStepResult.Skipped(
+                context.SplatId is null ? "no photo-real view and no sparse points" : "the photo-real view could not be searched for volumes");
         }
 
-        return CaptureFollowUpStepResult.Done(Describe(result.Volumes, result.HoldsPlaced));
+        var text = Describe(result.Volumes, result.HoldsPlaced);
+        return CaptureFollowUpStepResult.Done(result.FromSparsePoints && text.Length > 0 ? $"{text} (from the sparse points, coarser)" : text);
     }
 
     /// <summary>"6 volumes found, 82 holds placed on them" (empty when none were found).</summary>

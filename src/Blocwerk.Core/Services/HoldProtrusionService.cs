@@ -17,7 +17,8 @@ namespace Blocwerk.Core.Services;
 /// <summary>
 /// Runs <see cref="HoldProtrusionEstimator"/> on a wall: its live placed holds (outlines as the 3D view
 /// draws them), its active model's facets and its active splat (centres moved into the wall world by the
-/// frame's matrix, fine alignment included). Writes only <see cref="Hold.ProtrusionMm"/>.
+/// frame's matrix, fine alignment included); without a splat, the sparse points of the model's capture
+/// (<see cref="SparseWorldPoints"/>, coarser). Writes only <see cref="Hold.ProtrusionMm"/>.
 /// </summary>
 public sealed class HoldProtrusionService(
     IDbContextFactory<BlocwerkDbContext> dbContextFactory,
@@ -53,16 +54,14 @@ public sealed class HoldProtrusionService(
         }
 
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);
-        var json = await db.WallGeometryModels.AsNoTracking()
-            .Where(m => m.WallId == wallId && m.IsActive).Select(m => m.Json).FirstOrDefaultAsync(ct);
-        var splat = await WallGeometrySplats.FindActiveAsync(db, wallId, ct);
-        var matrix = splat is null ? null : CaptureSplatDocuments.WorldMatrix(splat.FrameJson);
-        var spz = splat is null ? null : await files.ReadAsync(splat.StoredPath, ct);
-        if (json is null || matrix is null || spz is null)
+        var model = await db.WallGeometryModels.AsNoTracking()
+            .Where(m => m.WallId == wallId && m.IsActive).Select(m => new { m.Id, m.Json }).FirstOrDefaultAsync(ct);
+        if (model is null || await EvidenceAsync(db, wallId, model.Id, model.Json, ct) is not { } evidence)
         {
             return null;
         }
 
+        var json = model.Json;
         var doc = WallGeometryDocument.Parse(json);
         var frames = doc.Segments.SelectMany(s => s.Facets)
             .Select(f => (f.Id, Frame: FacetFrame.From(f)))
@@ -79,17 +78,40 @@ public sealed class HoldProtrusionService(
         var extents = doc.Segments.SelectMany(s => s.Facets)
             .Where(f => !string.IsNullOrEmpty(f.Id) && f.ExtentMm is not null)
             .ToDictionary(f => f.Id!, f => f.ExtentMm!.Value);
-        var measured = await Task.Run(() => HoldProtrusionEstimator.Measure(SpzPoints.Read(spz, matrix), frames, targets, cameras, extents), ct);
-        var written = await WriteAsync(db, wallId, measured, ct);
+        var measured = await Task.Run(() => HoldProtrusionEstimator.Measure(evidence.Points, frames, targets, cameras, extents, evidence.Tuning), ct);
+        var sparse = evidence.Tuning.Source == HoldProtrusionSource.Sparse;
+        var written = await WriteAsync(db, wallId, measured, sparse, ct);
         var result = new HoldProtrusionRunResult(
-            measured.Values.Count(p => p.Source == HoldProtrusionSource.Splat),
+            measured.Values.Count(p => p.Source == evidence.Tuning.Source),
             measured.Values.Count(p => p.Source == HoldProtrusionSource.Estimate),
             measured.Values.Count(p => p.OnVolume),
-            written);
+            written,
+            sparse);
         logger.LogInformation(
-            "Hold protrusion on wall {WallId}: {Measured} measured, {Estimated} estimated, {OnVolumes} on volumes ({Moved} moved onto them), {Written} written",
-            wallId, result.Measured, result.Estimated, result.OnVolumes, measured.Values.Count(p => p.ShiftA != 0 || p.ShiftB != 0), result.Written);
+            "Hold protrusion on wall {WallId} ({Source}): {Measured} measured, {Estimated} estimated, {OnVolumes} on volumes ({Moved} moved onto them), {Written} written",
+            wallId, sparse ? "sparse points" : "photo-real view", result.Measured, result.Estimated, result.OnVolumes,
+            measured.Values.Count(p => p.ShiftA != 0 || p.ShiftB != 0), result.Written);
         return result;
+    }
+
+    /// <summary>
+    /// The points to measure in: the active photo-real view's splat centres when there is one (preferred), else the sparse
+    /// points of the model's capture (<see cref="SparseWorldPoints"/>, coarser); null when there is neither.
+    /// </summary>
+    private async Task<(IReadOnlyList<(float X, float Y, float Z)> Points, HoldProtrusionTuning Tuning)?> EvidenceAsync(
+        BlocwerkDbContext db, Guid wallId, Guid modelId, string json, CancellationToken ct)
+    {
+        var splat = await WallGeometrySplats.FindActiveAsync(db, wallId, ct);
+        var matrix = splat is null ? null : CaptureSplatDocuments.WorldMatrix(splat.FrameJson);
+        var spz = splat is null || matrix is null ? null : await files!.ReadAsync(splat.StoredPath, ct);
+        if (matrix is not null && spz is not null)
+        {
+            return (SpzPoints.Read(spz, matrix), HoldProtrusionTuning.Splat);
+        }
+
+        return await SparseWorldPoints.LoadAsync(db, files!, modelId, json, logger, ct) is { } sparse
+            ? (sparse.Points, HoldProtrusionTuning.Sparse)
+            : null;
     }
 
     /// <summary>The outline the 3D view draws: the stored footprint, else the photo outline projected onto the facet.</summary>
@@ -102,8 +124,12 @@ public sealed class HoldProtrusionService(
         return shape.Outline;
     }
 
-    /// <summary>Stores the measurements on holds whose outline still matches. Returns how many changed.</summary>
-    private static async Task<int> WriteAsync(BlocwerkDbContext db, Guid wallId, Dictionary<Guid, HoldProtrusion> measured, CancellationToken ct)
+    /// <summary>
+    /// Stores the measurements on holds whose outline still matches. A coarser sparse-point run never replaces a value measured
+    /// in a photo-real view for the same outline. Returns how many changed.
+    /// </summary>
+    private static async Task<int> WriteAsync(
+        BlocwerkDbContext db, Guid wallId, Dictionary<Guid, HoldProtrusion> measured, bool sparse, CancellationToken ct)
     {
         var ids = measured.Keys.ToList();
         var holds = await db.Holds.Where(h => h.WallId == wallId && ids.Contains(h.Id)).ToListAsync(ct);
@@ -112,7 +138,8 @@ public sealed class HoldProtrusionService(
         {
             var p = measured[hold.Id];
             var json = p.ToJson();
-            if (p.OutlineKey == HoldFootprint.KeyOf(hold) && hold.ProtrusionMm != json)
+            var keep = sparse && HoldProtrusion.For(hold)?.Source == HoldProtrusionSource.Splat;
+            if (!keep && p.OutlineKey == HoldFootprint.KeyOf(hold) && hold.ProtrusionMm != json)
             {
                 hold.ProtrusionMm = json;
                 written++;

@@ -103,4 +103,7 @@ public enum HoldProtrusionSource
 
     /// <summary>Too few scene points: estimated from the footprint size.</summary>
     Estimate,
+
+    /// <summary>Measured from the capture's sparse points (no photo-real view): coarser, a few points per hold.</summary>
+    Sparse,
 }

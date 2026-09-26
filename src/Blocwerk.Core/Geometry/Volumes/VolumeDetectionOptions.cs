@@ -10,6 +10,18 @@ namespace Blocwerk.Core.Geometry.Volumes;
 /// </summary>
 public sealed record VolumeDetectionOptions
 {
+    /// <summary>
+    /// For a capture's COLMAP sparse points instead of splat centres (no photo-real view): far fewer points, so a
+    /// coarser grid (35 mm: on the copy wall's run 3 it finds all six splat volumes, 40 mm merges and misses one), and
+    /// the points lie ON the surface (no scatter into the body), so the surface is their median.
+    /// </summary>
+    public static VolumeDetectionOptions Sparse { get; } = new()
+    {
+        CellMm = 35,
+        MinCellPoints = 3,
+        SurfaceQuantile = 0.5,
+    };
+
     /// <summary>Grid cell on the facet plane, mm.</summary>
     public double CellMm { get; init; } = 20;
 

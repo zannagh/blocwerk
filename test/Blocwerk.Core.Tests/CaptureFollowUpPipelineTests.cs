@@ -31,8 +31,10 @@ public class CaptureFollowUpPipelineTests
         placement.PlaceFromPipelineAsync(default, default, default, default)
             .ReturnsForAnyArgs(new HoldPlacementResult(Guid.NewGuid(), 856, 3, 19, []));
         footprints.RefineFromPipelineAsync(default, default).ReturnsForAnyArgs(new HoldFootprintRunResult(653, 0, 4, 24));
-        protrusion.MeasureFromPipelineAsync(default, default).ReturnsForAnyArgs(new HoldProtrusionRunResult(12, 1, 0, 12));
-        volumes.DetectFromPipelineAsync(default, default).ReturnsForAnyArgs(new WallVolumeRunResult(6, 2, 82, 82));
+
+        // Without a photo-real view or sparse points the services find nothing to measure in (the real ones return null).
+        protrusion.MeasureFromPipelineAsync(default, default).ReturnsForAnyArgs((HoldProtrusionRunResult?)null);
+        volumes.DetectFromPipelineAsync(default, default).ReturnsForAnyArgs((WallVolumeRunResult?)null);
     }
 
     [Fact]
@@ -55,8 +57,6 @@ public class CaptureFollowUpPipelineTests
             placement.PlaceFromPipelineAsync(h.WallId, Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
             footprints.RefineFromPipelineAsync(h.WallId, Arg.Any<CancellationToken>());
         });
-        await protrusion.DidNotReceiveWithAnyArgs().MeasureFromPipelineAsync(default, default);
-        await volumes.DidNotReceiveWithAnyArgs().DetectFromPipelineAsync(default, default);
     }
 
     [Fact]
@@ -96,7 +96,6 @@ public class CaptureFollowUpPipelineTests
         Assert.Equal(CaptureFollowUpOutcome.Skipped, protrusionEntry!.Outcome);
         var volumeEntry = CaptureFollowUpRecord.Parse(capture.FollowUpJson).Find("detect-volumes");
         Assert.Equal(CaptureFollowUpOutcome.Skipped, volumeEntry!.Outcome);
-        await volumes.DidNotReceiveWithAnyArgs().DetectFromPipelineAsync(default, default);
         await s.Push.DidNotReceive().NotifyWallPhotoRealReadyAsync(Arg.Any<Guid>(), Arg.Any<Guid>());
     }
 
@@ -131,6 +130,7 @@ public class CaptureFollowUpPipelineTests
     public async Task WithAPhotoRealView_VolumesAreFound_ThenTheHoldsAreMeasured()
     {
         using var h = new WallTestHarness();
+        Scene(sparse: false);
         using var s = Scenario(h);
         s.SplatClient.IsConfigured = true;
         var captureId = await s.StartCaptureAsync();
@@ -152,6 +152,29 @@ public class CaptureFollowUpPipelineTests
         await protrusion.Received(1).MeasureFromPipelineAsync(h.WallId, Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task WithoutAPhotoRealView_TheSparsePointsGiveVolumesAndProtrusion_AndTheHistorySaysSo()
+    {
+        using var h = new WallTestHarness();
+        Scene(sparse: true);
+        using var s = Scenario(h);
+        var captureId = await s.StartCaptureAsync();
+
+        await s.Processor.ProcessAsync(captureId, CancellationToken.None);
+
+        var summary = (await s.Service.GetCapturesAsync(h.WallId)).Single();
+        Assert.Equal(WallCaptureStatus.Succeeded, summary.Status);
+        Assert.Equal(
+            "856 holds placed on the 3D model, 653 hold shapes refined from several photos, 6 volumes found, 82 holds placed on them "
+            + "(from the sparse points, coarser), 12 holds measured from the sparse points (coarser).",
+            summary.FollowUp);
+        Received.InOrder(() =>
+        {
+            volumes.DetectFromPipelineAsync(h.WallId, Arg.Any<CancellationToken>());
+            protrusion.MeasureFromPipelineAsync(h.WallId, Arg.Any<CancellationToken>());
+        });
+    }
+
     [Theory]
     [InlineData(6, 82, "6 volumes found, 82 holds placed on them")]
     [InlineData(1, 1, "1 volume found, 1 hold placed on it")]
@@ -159,6 +182,13 @@ public class CaptureFollowUpPipelineTests
     [InlineData(0, 0, "")]
     public void TheVolumeStep_SaysWhatItFound(int found, int placed, string expected) =>
         Assert.Equal(expected, DetectVolumesFollowUpStep.Describe(found, placed));
+
+    /// <summary>The services find a scene to measure in: the photo-real view, or (without one) the sparse points.</summary>
+    private void Scene(bool sparse)
+    {
+        protrusion.MeasureFromPipelineAsync(default, default).ReturnsForAnyArgs(new HoldProtrusionRunResult(12, 1, 0, 12, sparse));
+        volumes.DetectFromPipelineAsync(default, default).ReturnsForAnyArgs(new WallVolumeRunResult(6, 2, 82, 82, sparse));
+    }
 
     private CaptureScenario Scenario(WallTestHarness h) => new(h, followUps: harness => FollowUpChains.Build(
         harness.RootContextFactory,

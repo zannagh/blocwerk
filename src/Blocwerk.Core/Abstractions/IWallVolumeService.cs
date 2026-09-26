@@ -7,8 +7,8 @@ namespace Blocwerk.Core.Abstractions;
 /// <summary>
 /// Volumes without markers: finds them on the wall's active model from its photo-real scene
 /// (<see cref="Geometry.Volumes.VolumeDetector"/>), stores them (<see cref="Entities.WallVolume"/>) and places the
-/// holds that sit on them (<see cref="Entities.Hold.VolumePlacementJson"/>). Needs a splat: a wall without one
-/// (no GPU runner) simply has no volumes and everything behaves as before. Derived data only; panels, panel hold
+/// holds that sit on them (<see cref="Entities.Hold.VolumePlacementJson"/>). Prefers the splat; without one it searches the sparse points of
+/// the model's capture (coarser); a wall with neither simply has no volumes and everything behaves as before. Derived data only; panels, panel hold
 /// positions and boulders are never touched.
 /// </summary>
 public interface IWallVolumeService
@@ -45,7 +45,8 @@ public interface IWallVolumeService
 /// <param name="Rejected">Raised candidates rejected (holds, edges, steps).</param>
 /// <param name="HoldsPlaced">Live holds now placed on a (visible) volume.</param>
 /// <param name="HoldsChanged">Holds whose stored placement changed.</param>
-public sealed record WallVolumeRunResult(int Volumes, int Rejected, int HoldsPlaced, int HoldsChanged);
+/// <param name="FromSparsePoints">Found in the capture's sparse points (no photo-real view): a coarser grid.</param>
+public sealed record WallVolumeRunResult(int Volumes, int Rejected, int HoldsPlaced, int HoldsChanged, bool FromSparsePoints = false);
 
 /// <summary>One volume for the admin list.</summary>
 /// <param name="Id">The volume.</param>

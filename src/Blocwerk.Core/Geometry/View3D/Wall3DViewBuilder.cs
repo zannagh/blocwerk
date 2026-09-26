@@ -207,7 +207,7 @@ public static class Wall3DViewBuilder
             shape.Outline.Max(v => v[1]) - shape.Outline.Min(v => v[1]),
             string.Empty);
         return new Wall3DHoldProtrusion(
-            p.BaseMm, p.HeightMm, p.ApexA, p.ApexB, p.ApexMm, p.Source == HoldProtrusionSource.Splat, p.OnVolume, p.ShiftA, p.ShiftB);
+            p.BaseMm, p.HeightMm, p.ApexA, p.ApexB, p.ApexMm, p.Source != HoldProtrusionSource.Estimate, p.OnVolume, p.ShiftA, p.ShiftB);
     }
 
     /// <summary>The wall's live holds: everything at or below the wall generation (staged gen+1 rows excluded).</summary>

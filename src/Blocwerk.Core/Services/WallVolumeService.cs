@@ -55,7 +55,7 @@ public sealed partial class WallVolumeService(
     {
         await EnsureAdminAsync(wallId, ct);
         return await RunAsync(wallId, ct)
-            ?? throw new UserFacingException("This wall has no active 3D model with a photo-real scene to find volumes in.");
+            ?? throw new UserFacingException("This wall has no active 3D model with a photo-real scene or sparse points to find volumes in.");
     }
 
     /// <inheritdoc />
@@ -107,10 +107,7 @@ public sealed partial class WallVolumeService(
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);
         var model = await db.WallGeometryModels.AsNoTracking()
             .Where(m => m.WallId == wallId && m.IsActive).Select(m => new { m.Id, m.Json }).FirstOrDefaultAsync(ct);
-        var splat = await WallGeometrySplats.FindActiveAsync(db, wallId, ct);
-        var matrix = splat is null ? null : CaptureSplatDocuments.WorldMatrix(splat.FrameJson);
-        var spz = splat is null ? null : await files.ReadAsync(splat.StoredPath, ct);
-        if (model is null || matrix is null || spz is null)
+        if (model is null || await EvidenceAsync(db, wallId, model.Id, model.Json, ct) is not { } evidence)
         {
             return null;
         }
@@ -121,14 +118,36 @@ public sealed partial class WallVolumeService(
         var live = await (await LiveWallHolds.QueryAsync(db, wallId, ct)).AsNoTracking()
             .Where(h => h.FacetId != null && h.PlaneAMm != null && h.PlaneBMm != null).ToListAsync(ct);
         var holds = KnownHolds(live, frames);
-        var found = await Task.Run(() => VolumeDetector.Detect(SpzPoints.Read(spz, matrix, includeFlat: true), frames, extents, holds), ct);
+        var found = await Task.Run(() => VolumeDetector.Detect(evidence.Points, frames, extents, holds, evidence.Options), ct);
         var accepted = found.Where(v => v.IsAccepted).ToList();
         await ReplaceVolumesAsync(db, wallId, model.Id, accepted, ct);
         var (placed, changed) = await PlaceHoldsAsync(db, wallId, model.Id, ct);
         logger.LogInformation(
-            "Volumes on wall {WallId}: {Accepted} found ({Rejected} raised candidates rejected), {Placed} holds on them ({Changed} changed), {Ms} ms",
-            wallId, accepted.Count, found.Count - accepted.Count, placed, changed, watch.ElapsedMilliseconds);
-        return new WallVolumeRunResult(accepted.Count, found.Count - accepted.Count, placed, changed);
+            "Volumes on wall {WallId} ({Source}): {Accepted} found ({Rejected} raised candidates rejected), {Placed} holds on them ({Changed} changed), {Ms} ms",
+            wallId, evidence.Sparse ? "sparse points" : "photo-real view", accepted.Count, found.Count - accepted.Count, placed, changed,
+            watch.ElapsedMilliseconds);
+        return new WallVolumeRunResult(accepted.Count, found.Count - accepted.Count, placed, changed, evidence.Sparse);
+    }
+
+    /// <summary>
+    /// The points to search: the active photo-real view's surface-like splat centres (incl. the wide flat splats of smooth
+    /// faces) when there is one (preferred), else the sparse points of the model's capture on a coarser grid
+    /// (<see cref="SparseWorldPoints"/>, <see cref="VolumeDetectionOptions.Sparse"/>); null when there is neither.
+    /// </summary>
+    private async Task<(IReadOnlyList<(float X, float Y, float Z)> Points, VolumeDetectionOptions? Options, bool Sparse)?> EvidenceAsync(
+        BlocwerkDbContext db, Guid wallId, Guid modelId, string json, CancellationToken ct)
+    {
+        var splat = await WallGeometrySplats.FindActiveAsync(db, wallId, ct);
+        var matrix = splat is null ? null : CaptureSplatDocuments.WorldMatrix(splat.FrameJson);
+        var spz = splat is null || matrix is null ? null : await files!.ReadAsync(splat.StoredPath, ct);
+        if (matrix is not null && spz is not null)
+        {
+            return (SpzPoints.Read(spz, matrix, includeFlat: true), null, false);
+        }
+
+        return await SparseWorldPoints.LoadAsync(db, files!, modelId, json, logger, ct) is { } sparse
+            ? (sparse.Points, VolumeDetectionOptions.Sparse, true)
+            : null;
     }
 
     /// <summary>The model's facet frames and extents.</summary>

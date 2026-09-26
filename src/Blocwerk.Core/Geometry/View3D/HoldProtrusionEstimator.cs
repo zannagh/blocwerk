@@ -24,14 +24,11 @@ public sealed record ProtrusionHold(Guid Id, string FacetId, double A, double B,
 /// </summary>
 public static class HoldProtrusionEstimator
 {
-    /// <summary>Fewest points inside a footprint for a measurement.</summary>
+    /// <summary>Fewest points inside a footprint for a measurement (splat centres).</summary>
     public const int MinPoints = 15;
 
     private const double CellMm = 50;
-    private const double InsideGrowMm = 10;
     private const double RingInnerMm = 25;
-    private const double RingOuterMm = 60;
-    private const int MinRingPoints = 20;
     private const double MaxOffPlaneMm = 400;
     private const double OtherSurfaceMm = 30;
 
@@ -44,14 +41,17 @@ public static class HoldProtrusionEstimator
     /// <param name="holds">The holds to measure.</param>
     /// <param name="cameras">Solved capture camera centres (world mm) for moving holds on volumes; none: no move.</param>
     /// <param name="extents">The facets' plane rectangles, to tell a neighbouring facet's surface from a volume.</param>
+    /// <param name="tuning">What the points are (splat centres by default, or sparse points: <see cref="HoldProtrusionTuning.Sparse"/>).</param>
     /// <returns>A protrusion per hold whose facet is known.</returns>
     public static Dictionary<Guid, HoldProtrusion> Measure(
         IReadOnlyList<(float X, float Y, float Z)> points,
         IReadOnlyDictionary<string, FacetFrame> frames,
         IEnumerable<ProtrusionHold> holds,
         IReadOnlyList<double[]>? cameras = null,
-        IReadOnlyDictionary<string, PlaneRectMm>? extents = null)
+        IReadOnlyDictionary<string, PlaneRectMm>? extents = null,
+        HoldProtrusionTuning? tuning = null)
     {
+        tuning ??= HoldProtrusionTuning.Splat;
         var grids = new Dictionary<string, Dictionary<(int I, int J), List<(double A, double B, double D)>>>();
         var result = new Dictionary<Guid, HoldProtrusion>();
         foreach (var hold in holds)
@@ -71,11 +71,11 @@ public static class HoldProtrusionEstimator
                 grids[hold.FacetId] = grid;
             }
 
-            var p = MeasureOne(hold, grid);
+            var p = MeasureOne(hold, grid, tuning);
             if (p.OnVolume && cameras is { Count: > 0 } && HoldVolumeRemap.Shift(hold.A, hold.B, frame, grid, CellMm, cameras) is { } shift)
             {
-                var moved = MeasureOne(hold with { A = hold.A + shift.A, B = hold.B + shift.B }, grid);
-                if (moved.Source == HoldProtrusionSource.Splat)
+                var moved = MeasureOne(hold with { A = hold.A + shift.A, B = hold.B + shift.B }, grid, tuning);
+                if (moved.Source != HoldProtrusionSource.Estimate)
                 {
                     p = moved with
                     {
@@ -93,12 +93,13 @@ public static class HoldProtrusionEstimator
         return result;
     }
 
-    private static HoldProtrusion MeasureOne(ProtrusionHold hold, Dictionary<(int I, int J), List<(double A, double B, double D)>> grid)
+    private static HoldProtrusion MeasureOne(
+        ProtrusionHold hold, Dictionary<(int I, int J), List<(double A, double B, double D)>> grid, HoldProtrusionTuning tuning)
     {
         var poly = hold.Outline.Select(p => new[] { p[0] + hold.A, p[1] + hold.B }).ToList();
-        var inner = Grow(poly, InsideGrowMm);
+        var inner = Grow(poly, tuning.InsideGrowMm);
         var ringIn = Grow(poly, RingInnerMm);
-        var ringOut = Grow(poly, RingOuterMm);
+        var ringOut = Grow(poly, tuning.RingOuterMm);
         var inside = new List<(double A, double B, double D)>();
         var ring = new List<double>();
         foreach (var p in Near(grid, ringOut))
@@ -115,19 +116,19 @@ public static class HoldProtrusionEstimator
 
         var width = poly.Max(p => p[0]) - poly.Min(p => p[0]);
         var height = poly.Max(p => p[1]) - poly.Min(p => p[1]);
-        var baseMm = ring.Count >= MinRingPoints ? Percentile(ring.Order().ToArray(), 0.3) : 0;
-        if (inside.Count < MinPoints || baseMm > MaxBaseMm)
+        var baseMm = ring.Count >= tuning.MinRingPoints ? Percentile(ring.Order().ToArray(), 0.3) : 0;
+        if (inside.Count < tuning.MinPoints || baseMm > MaxBaseMm)
         {
             return HoldProtrusion.Estimate(width, height, hold.OutlineKey);
         }
 
         var heights = inside.Select(p => p.D).Order().ToArray();
-        var body = Percentile(heights, 0.8);
+        var body = Percentile(heights, tuning.BodyQuantile);
         var apexH = Percentile(heights, 0.95);
         var topCut = Percentile(heights, 0.9);
         var top = inside.Where(p => p.D >= topCut).ToList();
         return new HoldProtrusion(
-            HoldProtrusionSource.Splat,
+            tuning.Source,
             inside.Count,
             Math.Round(baseMm, 1),
             Math.Round(body, 1),

@@ -7,8 +7,9 @@ using Blocwerk.Core.Abstractions;
 namespace Blocwerk.Core.Capture.FollowUp;
 
 /// <summary>
-/// Step 4 (only with a photo-real view, after the volumes): how far each hold stands out of its facet, measured from the scene
-/// (<see cref="IHoldProtrusionService.MeasureFromPipelineAsync"/>). Runs again after a retrain.
+/// Step 4 (at the end of the capture, after the volumes): how far each hold stands out of its facet, measured from the scene
+/// (<see cref="IHoldProtrusionService.MeasureFromPipelineAsync"/>): the photo-real view when there is one, else the capture's
+/// sparse points (coarser, marked so). Runs again when a photo-real view arrives or is retrained.
 /// </summary>
 public sealed class MeasureProtrusionFollowUpStep(IHoldProtrusionService protrusion) : ICaptureFollowUpStep
 {
@@ -19,7 +20,7 @@ public sealed class MeasureProtrusionFollowUpStep(IHoldProtrusionService protrus
     public int Order => 300;
 
     /// <inheritdoc />
-    public string Title => "Photo-real view: measuring the holds";
+    public string Title => "Measuring how far the holds stand out";
 
     /// <inheritdoc />
     public bool NeedsPhotoReal => true;
@@ -27,19 +28,16 @@ public sealed class MeasureProtrusionFollowUpStep(IHoldProtrusionService protrus
     /// <inheritdoc />
     public async Task<CaptureFollowUpStepResult> RunAsync(CaptureFollowUpContext context, CancellationToken ct)
     {
-        if (context.SplatId is null)
-        {
-            return CaptureFollowUpStepResult.Skipped("no photo-real view");
-        }
-
         var result = await protrusion.MeasureFromPipelineAsync(context.WallId, ct);
         if (result is null)
         {
-            return CaptureFollowUpStepResult.Skipped("the photo-real view could not be measured");
+            return CaptureFollowUpStepResult.Skipped(
+                context.SplatId is null ? "no photo-real view and no sparse points" : "the photo-real view could not be measured");
         }
 
+        var where = result.FromSparsePoints ? "from the sparse points (coarser)" : "in the photo-real view";
         return result.Measured > 0
-            ? CaptureFollowUpStepResult.Done($"{CaptureFollowUpText.Count(result.Measured, "hold", "holds")} measured in the photo-real view")
+            ? CaptureFollowUpStepResult.Done($"{CaptureFollowUpText.Count(result.Measured, "hold", "holds")} measured {where}")
             : CaptureFollowUpStepResult.Done(string.Empty);
     }
 }
