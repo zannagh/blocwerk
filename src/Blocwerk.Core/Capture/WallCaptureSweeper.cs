@@ -16,6 +16,7 @@ public sealed record CaptureSweepResult(int Drafts, int ExpiredPhotos, int Orpha
 /// after it ended — unless that capture produced the wall's ACTIVE model;</item>
 /// <item>stored images no photo or texture row references (a deleted wall or model cascades its rows
 /// in the database, not its files), once older than <see cref="WallCapturePipelineOptions.OrphanGrace"/>.</item>
+/// <item>a capture's sparse points (<see cref="WallCapture.SparsePointsStoredPath"/>) follow its photos.</item>
 /// </list>
 /// A capture's walk-along video and its extracted frames (<see cref="CaptureVideoFiles"/>) follow its
 /// photos: removed with a draft, and with the photos once they expire.
@@ -30,7 +31,7 @@ public sealed class WallCaptureSweeper(
     ILogger<WallCaptureSweeper> logger)
 {
     // .json: the textures' source-view maps (nothing else in the capture store is JSON)
-    private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png", ".mp4", ".mov", ".m4v", ".json", ".zip", ".prep", ".upl" };
+    private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png", ".mp4", ".mov", ".m4v", ".json", ".zip", ".prep", ".upl", Geometry.Sparse.SparseCloudFile.Extension };
 
     public async Task<CaptureSweepResult> SweepAsync(CancellationToken ct)
     {
@@ -99,13 +100,15 @@ public sealed class WallCaptureSweeper(
         var photos = await db.WallCapturePhotos.Where(p => expiredIds.Contains(p.CaptureId)).ToListAsync(ct);
         db.WallCapturePhotos.RemoveRange(photos);
         var withVideo = await db.WallCaptures
-            .Where(c => expiredIds.Contains(c.Id) && (c.VideoStoredPath != null || c.VideoFramesJson != null))
+            .Where(c => expiredIds.Contains(c.Id) && (c.VideoStoredPath != null || c.VideoFramesJson != null || c.SparsePointsStoredPath != null))
             .ToListAsync(ct);
         var videoFiles = withVideo.SelectMany(CaptureVideoFiles.Of).ToList();
+        var sparseFiles = withVideo.Select(c => c.SparsePointsStoredPath).OfType<string>().ToList();
         foreach (var capture in withVideo)
         {
             capture.VideoStoredPath = null;
             capture.VideoFramesJson = null;
+            capture.SparsePointsStoredPath = null;
         }
 
         // A photo-real view still waiting for (or on) a 3D runner goes with the photos: its bundle is a copy of them.
@@ -113,7 +116,7 @@ public sealed class WallCaptureSweeper(
             db, expiredIds, "the capture's photos were deleted (photo retention)", now, ct);
         var gpuFiles = gpuJobs.SelectMany(j => new[] { j.BundlePath, j.PreparedPath, j.ResultPath }).OfType<string>();
         await db.SaveChangesAsync(ct);
-        DeleteFiles(photos.Select(p => p.StoredPath).Concat(videoFiles).Concat(gpuFiles));
+        DeleteFiles(photos.Select(p => p.StoredPath).Concat(videoFiles).Concat(sparseFiles).Concat(gpuFiles));
         return photos.Count;
     }
 
@@ -150,6 +153,7 @@ public sealed class WallCaptureSweeper(
                 .Select(c => new { c.VideoStoredPath, c.VideoFramesJson })
                 .ToListAsync(ct))
             .SelectMany(c => CaptureVideoFiles.Of(c.VideoStoredPath, c.VideoFramesJson));
+        var sparse = await db.WallCaptures.Where(c => c.SparsePointsStoredPath != null).Select(c => c.SparsePointsStoredPath!).ToListAsync(ct);
 
         // .zip/.prep/.upl: the 3D runners' bundles, prepared state and uploaded results of jobs still in play. A finished,
         // failed or cancelled job's files are deleted with it; any that survived a failed delete are orphans here.
@@ -159,7 +163,7 @@ public sealed class WallCaptureSweeper(
                 .Select(j => new { j.BundlePath, j.PreparedPath, j.ResultPath }).ToListAsync(ct))
             .SelectMany(j => new[] { j.BundlePath, j.PreparedPath, j.ResultPath }).OfType<string>();
         return new HashSet<string>(
-            photos.Concat(textures).Concat(masks).Concat(sourceMaps).Concat(videos).Concat(gpu), StringComparer.Ordinal);
+            photos.Concat(textures).Concat(masks).Concat(sourceMaps).Concat(videos).Concat(sparse).Concat(gpu), StringComparer.Ordinal);
     }
 
     private void DeleteFiles(IEnumerable<string> names)

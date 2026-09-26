@@ -80,6 +80,14 @@ public class WallCapture
     /// </summary>
     public Guid? AnchorCaptureId { get; set; }
 
+    /// <summary>
+    /// The capture's COLMAP sparse points and photo camera centres (<c>SparseCloudFile</c>, a bare name in the capture
+    /// store), kept from the <c>splat-prepare</c> reconstruction so volumes and hold protrusion can be measured without a
+    /// photo-real view. No pixels. Deleted with the photos (retention). Null when no reconstruction ran.
+    /// </summary>
+    [MaxLength(128)]
+    public string? SparsePointsStoredPath { get; set; }
+
     [MaxLength(128)]
     public string? TexturesJobId { get; set; }
 

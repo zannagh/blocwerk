@@ -146,6 +146,7 @@ public sealed partial class WallCaptureProcessor
         await SetStageAsync(capture.Id, WallCaptureStatus.Splatting, PrepareEnd, "Photo-real view: packing the photos for a 3D runner", ct);
         var (bundle, bytes, sha) = await StoreBundleAsync(status.JobId!, client, ct);
         var prepared = await client.DownloadFileAsync(status.JobId!, PreparedFile, MaxPreparedBytes, ct);
+        await KeepSparsePointsAsync(capture, status.JobId!, client, ct);
         if (capture.GeometryMode == WallCaptureGeometryMode.Features)
         {
             prepared = await WithGeometryAsync(prepared, modelId, ct);

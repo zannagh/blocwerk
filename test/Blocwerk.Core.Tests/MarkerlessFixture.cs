@@ -33,7 +33,7 @@ internal static class MarkerlessFixture
         {
             "bundle.zip" => RunnerFixture.Bundle(),
             "prepared.json" => "{\"version\":2,\"photoCentres\":{}}"u8.ToArray(),
-            "sparse.zip" => [0x50, 0x4B, 0x05, 0x06, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            "sparse.zip" => SparseFixture.Zip(SparseFixture.Surface((_, _) => 0, stepMm: 250)),
             "frame.json" => System.Text.Encoding.UTF8.GetBytes(s.SplatClient.FrameJson),
             "wall.spz" => s.SplatClient.Spz,
             _ => CaptureScenario.TinyJpeg(),
