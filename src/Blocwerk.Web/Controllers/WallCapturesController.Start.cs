@@ -44,15 +44,19 @@ public sealed partial class WallCapturesController
         ForCaptureAsync(wallId, captureId, async () =>
         {
             var declarations = await DeclarationsFor(captureId, request);
+            var geometry = request?.GeometryMode ?? CaptureGeometryOverride.Auto;
             var problems = await captures.StartAsync(
                 captureId,
                 declarations,
                 request?.Notes,
                 request?.Quality ?? SplatQuality.High,
-                request?.GeometryMode ?? CaptureGeometryOverride.Auto);
+                geometry);
+
+            // The declarations only steer the marker solve: a forced feature reconstruction merges no marker segments.
+            IReadOnlyList<string> warnings = geometry == CaptureGeometryOverride.Features ? [] : CaptureDeclarationRules.MergeWarnings(declarations);
             return problems.Count > 0
                 ? UnprocessableEntity(new CaptureStartProblems(problems))
-                : Accepted(new CaptureStartResponse(captureId, CaptureDeclarationRules.MergeWarnings(declarations)));
+                : Accepted(new CaptureStartResponse(captureId, warnings));
         });
 
     /// <summary>The route's wall guard, then 404 unless the capture belongs to that wall, then the action.</summary>

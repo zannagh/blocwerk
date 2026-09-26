@@ -90,6 +90,26 @@ public class CaptureGeometryOverrideTests
         Assert.Contains(problems.Problems, p => p.Contains("photo features", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task Api_ForcedFeatures_GivesNoMarkerMergeWarnings()
+    {
+        using var h = new WallTestHarness();
+        using var s = MarkerlessFixture.Scenario(h, new SwitchableMarkerDetector());
+        var draftId = await DraftAsync(s, glyphs: true);
+        var api = new WallCapturesController(s.Service, s.Options, NullLogger<WallCapturesController>.Instance)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = ApiKeys.Personal() } },
+        };
+        var spare = new CaptureSegmentDeclaration(4, "Spares", null, false);
+        Assert.NotNull(CaptureDeclarationRules.MergeWarningFor(spare));
+
+        var result = await api.Start(
+            h.WallId, draftId, new CaptureStartRequest([spare], [], GeometryMode: CaptureGeometryOverride.Features));
+
+        var started = Assert.IsType<CaptureStartResponse>(Assert.IsType<AcceptedResult>(result).Value);
+        Assert.Empty(started.Warnings);
+    }
+
     private static async Task<Guid> DraftAsync(CaptureScenario s, bool glyphs)
     {
         await s.Harness.SeedWallAsync(holdCount: 0);
