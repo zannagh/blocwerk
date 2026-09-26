@@ -195,6 +195,22 @@ def test_a_refused_anchor_fit_still_gives_scale_and_gravity(scene):
     assert any("anchors not used for the frame" in x for x in doc["quality"]["checks"]["warnings"])
 
 
+@pytest.mark.parametrize("sigma", [NOISE_FLOOR_SIGMA, REFUSED_SIGMA], ids=["anchored", "anchor-fit"])
+def test_a_marker_walls_scale_and_up_carry_over_without_the_sensor(scene, sigma):
+    """A markerless re-capture of a marker wall (the reference: the marker model, gravity known) with no device gravity
+    at all: scale and up still come from the marker model through the anchors, anchored or only fitted."""
+    req = noisy(scene, sigma, seed=3)
+    for p in req["photos"]:
+        p.pop("deviceGravity", None)
+    doc, sol = solve_sfm_document(req, scene["dir"])
+    w = doc["world"]
+    source = "anchors" if w["anchored"] else "anchor-fit"
+    assert (w["scaleSource"], w["gravitySource"]) == (source, source) and w["scaleKnown"] and w["gravityKnown"], str(w)
+    assert w["anchored"] == (sigma == NOISE_FLOOR_SIGMA)
+    assert sol["s"] == pytest.approx(sc.S0, rel=0.02)
+    assert facets(doc)["0"]["measuredAngleDeg"] == pytest.approx(45.0, abs=0.6)
+
+
 def test_an_anchor_fit_beyond_60_mm_falls_back_to_the_estimate(scene):
     doc, _ = solve_sfm_document(noisy(scene, 70.0, seed=3), scene["dir"])
     a = doc["quality"]["sfm"]["anchors"]

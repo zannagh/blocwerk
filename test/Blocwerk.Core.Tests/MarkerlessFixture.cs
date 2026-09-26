@@ -5,6 +5,7 @@
 using System.Text.Json.Nodes;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Capture;
+using Blocwerk.Core.Capture.FollowUp;
 using Blocwerk.Core.Compute;
 using Blocwerk.Core.Runners;
 
@@ -22,9 +23,9 @@ internal static class MarkerlessFixture
     /// <summary>A capture scenario whose workers can run markerless captures (unless <paramref name="sfm"/> is false).</summary>
     public static CaptureScenario Scenario(
         WallTestHarness h, SwitchableMarkerDetector detector, bool sfm = true, GpuRunnerOptions? runners = null, MutableTestClock? clock = null,
-        IHoldDetectionService? holds = null)
+        IHoldDetectionService? holds = null, Func<WallTestHarness, CaptureFollowUpChain>? followUps = null)
     {
-        var s = new CaptureScenario(h, detector, runnerOptions: runners, clock: clock, holdDetection: holds);
+        var s = new CaptureScenario(h, detector, runnerOptions: runners, clock: clock, holdDetection: holds, followUps: followUps);
         s.Client.Kinds = sfm ? ["solve", MarkerlessCaptureSupport.SolveKind, "textures"] : ["solve", "textures"];
         s.SplatClient.IsConfigured = true;
         s.SplatClient.Kinds = [.. SplitKinds];
