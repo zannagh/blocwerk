@@ -96,7 +96,7 @@ public sealed class HoldFootprintService(
         var refinement = await Task.Run(
             () => HoldFootprintRefiner.Refine(live, doc, usable, c => Open(c, photos, ct), projector, only, panelPhotos, volumes), ct);
         LogPanelCameras(wallId, refinement);
-        var written = await WriteAsync(db, wallId, refinement, ct);
+        var written = await WriteAsync(db, wallId, refinement, Wall3DFallbackPlacement.FacetExtents(doc), ct);
         logger.LogInformation(
             "Footprints on wall {WallId}: {Multi} multi-view, {Single} single-view, {Skipped} skipped, {Written} written, {Photos} capture photos",
             wallId, refinement.MultiView, refinement.SingleView, refinement.Skipped, written, usable.Count);
@@ -188,8 +188,12 @@ public sealed class HoldFootprintService(
         }
     }
 
-    /// <summary>Stores the footprints on holds whose outline still matches; clears stale ones. Returns how many were written.</summary>
-    private static async Task<int> WriteAsync(BlocwerkDbContext db, Guid wallId, HoldFootprintRefinement refinement, CancellationToken ct)
+    /// <summary>
+    /// Stores the footprints on holds whose outline still matches; clears stale ones. A footprint that would be drawn off
+    /// the hold's facet (<see cref="Wall3DHoldGuard.PlacementOnFacet"/>) is not stored, and clears the old one. Returns how many were written.
+    /// </summary>
+    private static async Task<int> WriteAsync(
+        BlocwerkDbContext db, Guid wallId, HoldFootprintRefinement refinement, IReadOnlyDictionary<string, PlaneRectMm> extents, CancellationToken ct)
     {
         var ids = refinement.Footprints.Keys.ToList();
         var holds = await db.Holds.Where(h => h.WallId == wallId && ids.Contains(h.Id)).ToListAsync(ct);
@@ -202,7 +206,7 @@ public sealed class HoldFootprintService(
                 continue;
             }
 
-            var json = fp.ToJson();
+            var json = OnFacet(hold, fp, extents) ? fp.ToJson() : null;
             if (hold.FootprintMm != json)
             {
                 hold.FootprintMm = json;
@@ -213,4 +217,8 @@ public sealed class HoldFootprintService(
         await db.SaveChangesAsync(ct);
         return written;
     }
+
+    private static bool OnFacet(Hold hold, HoldFootprint fp, IReadOnlyDictionary<string, PlaneRectMm> extents) =>
+        hold.FacetId is not { } facet || hold.PlaneAMm is not { } a || hold.PlaneBMm is not { } b
+        || Wall3DHoldGuard.PlacementOnFacet(facet, a, b, extents, fp.Outline);
 }

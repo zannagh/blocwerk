@@ -39,9 +39,16 @@ public static class Wall3DPhotoOutlines
             .Select(f => (f.Id, Frame: FacetFrame.From(f)))
             .Where(x => x.Frame is not null)
             .ToDictionary(x => x.Id, x => x.Frame!, StringComparer.Ordinal);
-        var holds = view.Holds.Select(h => WithPhotoOutline(h, frames, maps, byName, cameras, panelCameras?.GetValueOrDefault(h.Id))).ToList();
+        var extents = view.Facets.GroupBy(f => f.Id, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First().Extent, StringComparer.Ordinal);
+        var holds = view.Holds.Select(h => OnFacet(WithPhotoOutline(h, frames, maps, byName, cameras, panelCameras?.GetValueOrDefault(h.Id)), extents)).ToList();
         return view with { Holds = holds };
     }
+
+    /// <summary>A photo outline drawn off the hold's facet (<see cref="Wall3DHoldGuard"/>) is dropped: the shape is drawn instead.</summary>
+    private static Wall3DHold OnFacet(Wall3DHold hold, Dictionary<string, PlaneRectMm> extents) =>
+        hold.PhotoOutline is { Count: >= 3 } ring && extents.TryGetValue(hold.FacetId, out var extent) && !Wall3DHoldGuard.OnFacet(hold, ring, extent)
+            ? hold with { PhotoOutline = null }
+            : hold;
 
     private static Wall3DHold WithPhotoOutline(
         Wall3DHold hold,

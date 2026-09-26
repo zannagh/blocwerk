@@ -1,7 +1,9 @@
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Detection.Enrichment;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Geometry;
 using Blocwerk.Core.Geometry.TextureRegistration;
+using Blocwerk.Core.Geometry.View3D;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -34,7 +36,7 @@ public sealed partial class HoldTexturePlacementService
             var changed = 0;
             foreach (var batch in plan.Placements.Chunk(BatchSize))
             {
-                changed += await WriteBatchAsync(db, run, batch, entries, ct);
+                changed += await WriteBatchAsync(db, run, batch, model.Extents, entries, ct);
             }
 
             var s = plan.Summary;
@@ -62,29 +64,41 @@ public sealed partial class HoldTexturePlacementService
 
     /// <summary>
     /// Re-reads the batch's holds tracked, skips any that changed since they were planned, writes the rest and
-    /// saves them together with the run's grown entry list. Returns the number skipped.
+    /// saves them together with the run's grown entry list. A placement off its target facet's extent is never written
+    /// (<see cref="Wall3DHoldGuard.PlacementOnFacet"/>). Returns the number skipped.
     /// </summary>
     private static async Task<int> WriteBatchAsync(
-        BlocwerkDbContext db, HoldPlacementRun run, PlannedPlacement[] batch, List<HoldPlacementEntry> entries, CancellationToken ct)
+        BlocwerkDbContext db,
+        HoldPlacementRun run,
+        PlannedPlacement[] batch,
+        IReadOnlyDictionary<string, PlaneRectMm> extents,
+        List<HoldPlacementEntry> entries,
+        CancellationToken ct)
     {
         var ids = batch.Select(p => p.Hold.Id).ToList();
         var holds = await db.Holds.Where(h => ids.Contains(h.Id)).ToDictionaryAsync(h => h.Id, ct);
         var skipped = 0;
         foreach (var placement in batch)
         {
-            if (!holds.TryGetValue(placement.Hold.Id, out var hold) || ChangedSincePlanned(hold, placement.Hold))
+            var fit = placement.Fit;
+            if (!holds.TryGetValue(placement.Hold.Id, out var hold) || ChangedSincePlanned(hold, placement.Hold)
+                || !OnFacet(fit, extents, null))
             {
                 skipped++;
                 continue;
             }
 
-            entries.Add(Write(hold, placement));
+            entries.Add(Write(hold, placement, extents));
         }
 
         run.HoldsJson = HoldPlacementEntry.ToJson(entries);
         await db.SaveChangesAsync(ct);
         return skipped;
     }
+
+    /// <summary>Whether the placement (and the outline drawn at it) sits on its target facet.</summary>
+    private static bool OnFacet(HoldPlaneFit fit, IReadOnlyDictionary<string, PlaneRectMm> extents, IReadOnlyList<double[]>? outline) =>
+        Wall3DHoldGuard.PlacementOnFacet(fit.FacetId, fit.PlaneAMm, fit.PlaneBMm, extents, outline);
 
     /// <summary>An edit landed between planning and writing: the plan no longer describes this hold.</summary>
     private static bool ChangedSincePlanned(Hold current, Hold planned) =>
@@ -98,9 +112,10 @@ public sealed partial class HoldTexturePlacementService
 
     /// <summary>
     /// Writes one placement: the facet, the plane position, the metric source and the size (with the
-    /// fingerprint's rotation-free sizes, as every metric writer does). Nothing else is touched.
+    /// fingerprint's rotation-free sizes, as every metric writer does), and drops a footprint that would be drawn off
+    /// the facet at the new position. Nothing else is touched.
     /// </summary>
-    private static HoldPlacementEntry Write(Hold hold, PlannedPlacement placement)
+    private static HoldPlacementEntry Write(Hold hold, PlannedPlacement placement, IReadOnlyDictionary<string, PlaneRectMm> extents)
     {
         var entry = HoldPlacementEntry.Before(hold);
         if (placement.Metric is { } metric)
@@ -117,6 +132,12 @@ public sealed partial class HoldTexturePlacementService
             hold.PlaneAMm = placement.Fit.PlaneAMm;
             hold.PlaneBMm = placement.Fit.PlaneBMm;
             hold.MetricSource = placement.Carried ? HoldMetric.TextureRegistrationCarried : HoldMetric.TextureRegistration;
+        }
+
+        // A footprint refined around the old position that would now be drawn off the facet goes (revertable via the entry).
+        if (hold.FootprintMm is not null && !OnFacet(placement.Fit, extents, HoldFootprint.For(hold)?.Outline))
+        {
+            hold.FootprintMm = null;
         }
 
         return entry with

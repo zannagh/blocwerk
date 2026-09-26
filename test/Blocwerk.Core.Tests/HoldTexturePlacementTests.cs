@@ -85,6 +85,25 @@ public class HoldTexturePlacementTests
     }
 
     [Fact]
+    public async Task Placement_DropsAFootprintThatWouldBeDrawnOffTheFacetAtTheNewPosition()
+    {
+        using var h = new WallTestHarness();
+        var s = await HoldPlacementScenario.CreateAsync(h);
+
+        // Both land on facet 0 (b = 1500 and 2250, bMax 3000); a footprint 1000 mm up only fits the lower one.
+        var kept = await s.AddHoldAsync(0.25, 0.5, configure: x => x.FootprintMm = Wall3DHoldGuardTests.Footprint(x, 0, 1000));
+        var dropped = await s.AddHoldAsync(0.25, 0.25, configure: x => x.FootprintMm = Wall3DHoldGuardTests.Footprint(x, 0, 1000));
+
+        await s.Service().PlaceAsync(h.WallId);
+
+        var holds = await s.LoadHoldsAsync();
+        AssertPlaced(holds[kept], "0", 1000, 1500);
+        AssertPlaced(holds[dropped], "0", 1000, 2250);
+        Assert.NotNull(holds[kept].FootprintMm);
+        Assert.Null(holds[dropped].FootprintMm);
+    }
+
+    [Fact]
     public async Task Builder_DrawsThePlacedHolds_ThatItCountedAsUnplacedBefore()
     {
         using var h = new WallTestHarness();

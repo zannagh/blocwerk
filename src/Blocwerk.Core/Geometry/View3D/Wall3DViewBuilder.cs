@@ -52,7 +52,9 @@ public static class Wall3DViewBuilder
         var markers = BuildMarkers(doc);
 
         var boulder = boulderId is { } bid ? wall.Boulders.FirstOrDefault(b => b.Id == bid) : null;
-        var (candidates, unplaced) = BuildHolds(wall, doc, frames, boulder, photoMarkers);
+        var bounds = facets.GroupBy(f => f.Id, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => (frames[g.Key], g.First().Extent), StringComparer.Ordinal);
+        var (candidates, unplaced) = BuildHolds(wall, doc, frames, bounds, boulder, photoMarkers);
         var twins = HoldTwinMerger.Group(candidates, holdLinks);
         var bouldersByHold = LiveBouldersByHold(wall);
         var holds = twins.Groups.Select(g => Fold(g, bouldersByHold)).ToList();
@@ -133,11 +135,12 @@ public static class Wall3DViewBuilder
             .GroupBy(p => p.HoldId)
             .ToDictionary(g => g.Key, g => g.Select(p => p.BoulderId).ToHashSet());
 
-    /// <summary>Places every live hold row on its facet with its outline; counts the ones that cannot be placed.</summary>
+    /// <summary>Places every live hold row on its facet with its outline; counts the ones that cannot be placed or drawn on a facet.</summary>
     private static (List<HoldTwinCandidate> Holds, int Unplaced) BuildHolds(
         Wall wall,
         WallGeometryDocument doc,
         Dictionary<string, FacetFrame> frames,
+        IReadOnlyDictionary<string, (FacetFrame Frame, PlaneRectMm Extent)> bounds,
         Boulder? boulder,
         IReadOnlyDictionary<Wall3DPhotoKey, Wall3DPhotoMarkers>? photoMarkers)
     {
@@ -160,7 +163,7 @@ public static class Wall3DViewBuilder
                 {
                     var fit = fallback.Fit;
                     var drawn = Wall3DFallbackPlacement.Draw(hold, fit, ToHold(hold, fit.FacetId, fallback.Frame, fit.PlaneAMm, fit.PlaneBMm, role));
-                    holds.Add(new HoldTwinCandidate(hold, drawn with { Protrusion = ProtrusionOf(hold, drawn.Shape!) }, null));
+                    unplaced += Add(holds, bounds, hold, drawn with { Protrusion = ProtrusionOf(hold, drawn.Shape!) }, null);
                 }
                 else
                 {
@@ -175,10 +178,23 @@ public static class Wall3DViewBuilder
             var shape = HoldShapeProjector.FromFootprint(HoldFootprint.For(hold))
                 ?? HoldShapeProjector.Project(hold, placed.WidthMm, placed.HeightMm, mapping);
             var tilt = mapping is { } m ? PhotoViewTilt.At(m.Map, hold.X, hold.Y) : null;
-            holds.Add(new HoldTwinCandidate(hold, placed with { Shape = shape, Protrusion = ProtrusionOf(hold, shape) }, tilt));
+            unplaced += Add(holds, bounds, hold, placed with { Shape = shape, Protrusion = ProtrusionOf(hold, shape) }, tilt);
         }
 
         return (holds, unplaced);
+    }
+
+    /// <summary>Adds the hold as drawn when it stays on a facet; returns 1 (not measured) when it does not.</summary>
+    private static int Add(
+        List<HoldTwinCandidate> holds, IReadOnlyDictionary<string, (FacetFrame Frame, PlaneRectMm Extent)> bounds, Hold hold, Wall3DHold drawn, double? tilt)
+    {
+        if (Wall3DHoldGuard.Keep(drawn, bounds) is not { } kept)
+        {
+            return 1;
+        }
+
+        holds.Add(new HoldTwinCandidate(hold, kept, tilt));
+        return 0;
     }
 
     /// <summary>The stored protrusion when it still matches the hold, else an estimate from the drawn outline's size.</summary>
