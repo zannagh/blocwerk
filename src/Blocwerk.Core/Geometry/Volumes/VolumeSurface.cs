@@ -19,6 +19,9 @@ public sealed class VolumeSurface
     /// <summary>Largest grid accepted from storage.</summary>
     public const int MaxCells = 250_000;
 
+    /// <summary>How far above a flat face a hold's photo ray may pass and still put the hold on it, mm (a hold's body).</summary>
+    public const double FlatGraceMm = 30;
+
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     private readonly short[] heights;
@@ -96,6 +99,8 @@ public sealed class VolumeSurface
     /// <summary>
     /// Where the straight line from <paramref name="from"/> (facet coordinates, in front of the wall) to the
     /// plane point (a, b, 0) first meets the surface; null when it never does above <paramref name="minHeightMm"/>.
+    /// On flat faces a ray that passes less than <see cref="FlatGraceMm"/> above a face without meeting it lands where
+    /// it came closest: the hold's own body stands on the sheet, and the scanned height field included it.
     /// </summary>
     /// <param name="from">The ray's origin (a camera), (a, b, height).</param>
     /// <param name="a">Target along u.</param>
@@ -111,19 +116,27 @@ public sealed class VolumeSurface
             return null;
         }
 
-        var top = MaxHeightMm + 1;
+        var clearance = Polyhedron is null ? -1 : FlatGraceMm;
+        var top = MaxHeightMm + 1 + Math.Max(0, clearance);
         var t = Math.Max(0, (from.H - top) / from.H);
         var step = 1.0 / length;
+        (double A, double B, double H)? closest = null;
         for (; t <= 1; t += step)
         {
             double pa = from.A + (t * da), pb = from.B + (t * db), ph = from.H + (t * dh);
-            if (ph <= HeightAt(pa, pb))
+            var h = HeightAt(pa, pb);
+            if (ph <= h)
             {
-                return ph >= minHeightMm ? (pa, pb, ph) : null;
+                return ph >= minHeightMm ? (pa, pb, ph) : closest;
+            }
+
+            if (h >= minHeightMm && ph - h <= clearance)
+            {
+                (clearance, closest) = (ph - h, (pa, pb, h));
             }
         }
 
-        return null;
+        return closest;
     }
 
     /// <summary>The storage form.</summary>

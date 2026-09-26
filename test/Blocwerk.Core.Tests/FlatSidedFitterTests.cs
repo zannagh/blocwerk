@@ -134,6 +134,22 @@ public class FlatSidedFitterTests
         Assert.Equal(n[0], n2[0], 6);
     }
 
+    [Fact]
+    public void RayGrazingAFlatFace_PutsTheHoldOnIt_ButNotOneFarAbove()
+    {
+        // A 400 mm square pyramid, apex (200, 200) at 150 mm; rays falling 1:10 along a over the apex.
+        var p = new VolumePolyhedron(VolumeHull.Build([(0, 0), (400, 0), (400, 400), (0, 400)], [(200, 200, 150)]).Select(f => f.Vertices));
+        var surface = VolumeSurface.FlatSided(p, 20);
+
+        var grazing = surface.RayHit((-2800, 200, 470), 200 + 1700, 200, 15);
+        var above = surface.RayHit((-2800, 200, 490), 200 + 1900, 200, 15);
+
+        Assert.NotNull(grazing);
+        Assert.InRange(grazing.Value.A, 190, 210);
+        Assert.InRange(grazing.Value.H, 140, 151);
+        Assert.Null(above);
+    }
+
     private static void AssertCloseToTruth(VolumePolyhedron p, Func<double, double, double> truth, double a0, double a1, double b0, double b1)
     {
         var errors = new List<double>();
