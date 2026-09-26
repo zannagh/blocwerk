@@ -25,14 +25,24 @@ internal sealed class FakePhotoTextureMatcher : IPhotoTextureMatcher
             ? throw new ArgumentException("The photo could not be decoded.", nameof(encodedPhoto))
             : new FakePhotoTextureSession(this, encodedPhoto[0]);
 
-    public PhotoTextureMatch Match(byte photo, byte texture, double[]? seed = null)
+    /// <summary>Gets the retries (<see cref="PhotoTextureAttempt.CoarsePass"/> set) the matcher was asked for, per (photo, texture).</summary>
+    public List<(byte Photo, byte Texture, PhotoTextureAttempt Attempt)> Retries { get; } = [];
+
+    public PhotoTextureMatch Match(byte photo, byte texture, double[]? seed = null, PhotoTextureAttempt? attempt = null)
     {
         if (seed is not null)
         {
             Seeded.Add((photo, texture));
         }
 
-        var view = Views.FirstOrDefault(v => v.Photo == photo && v.Texture == texture);
+        var retry = attempt?.CoarsePass is not null;
+        if (retry)
+        {
+            Retries.Add((photo, texture, attempt!));
+        }
+
+        var view = (retry ? Views.FirstOrDefault(v => v.Photo == photo && v.Texture == texture && v.OnlyOnRetry) : null)
+                   ?? Views.FirstOrDefault(v => v.Photo == photo && v.Texture == texture && !v.OnlyOnRetry);
         if (view is null || (view.NeedsSeed && !Close(seed, view.PhotoToTexture)))
         {
             return PhotoTextureMatch.Failed("no overlap found (3 coarse inliers of 20 matches)", 3);

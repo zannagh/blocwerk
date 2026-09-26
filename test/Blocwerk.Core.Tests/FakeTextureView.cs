@@ -16,5 +16,6 @@ namespace Blocwerk.Core.Tests;
 /// When true the coarse search misses this view: it is only found around a seed (a predicted photo px → texture
 /// px homography) that lands within <see cref="FakePhotoTextureMatcher.SeedTolerancePx"/> of the true mapping.
 /// </param>
+/// <param name="OnlyOnRetry">When true the view is only found by a retry (<see cref="Blocwerk.Core.Abstractions.PhotoTextureAttempt.CoarsePass"/> set), in place of the plain view.</param>
 internal sealed record FakeTextureView(
-    byte Photo, byte Texture, double X0, double X1, double Step, PlaneHomography PhotoToTexture, bool NeedsSeed = false);
+    byte Photo, byte Texture, double X0, double X1, double Step, PlaneHomography PhotoToTexture, bool NeedsSeed = false, bool OnlyOnRetry = false);

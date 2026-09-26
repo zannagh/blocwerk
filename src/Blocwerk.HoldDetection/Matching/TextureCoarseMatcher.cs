@@ -1,3 +1,4 @@
+using Blocwerk.Core.Abstractions;
 using OpenCvSharp;
 
 namespace Blocwerk.HoldDetection.Matching;
@@ -27,13 +28,16 @@ internal static class TextureCoarseMatcher
     /// <param name="photo">The photo, 8-bit gray, full resolution.</param>
     /// <param name="texture">The texture, 8-bit gray, full resolution.</param>
     /// <param name="textureMmPerPx">The texture's resolution.</param>
+    /// <param name="attempt">The variant: one pass only (its scale jittered) or both, and the RANSAC seed; null is the default.</param>
     /// <returns>The best pass: its homography (null when none held), inliers and ratio matches.</returns>
-    public static (double[,]? H, int Inliers, int RatioMatches) Find(Mat photo, Mat texture, double textureMmPerPx)
+    public static (double[,]? H, int Inliers, int RatioMatches) Find(Mat photo, Mat texture, double textureMmPerPx, PhotoTextureAttempt? attempt = null)
     {
+        var a = attempt ?? PhotoTextureAttempt.Default;
         (double[,]? H, int Inliers, int RatioMatches) best = (null, 0, 0);
-        foreach (var (side, mm) in Passes)
+        (int PhotoSide, double TextureMmPerPx)[] passes = a.CoarsePass is { } only ? [Passes[Math.Clamp(only, 0, Passes.Length - 1)]] : Passes;
+        foreach (var (side, mm) in passes)
         {
-            var pass = Pass(photo, texture, textureMmPerPx, side, mm);
+            var pass = Pass(photo, texture, textureMmPerPx, side, mm * a.ScaleJitter, a.RansacSeed);
             if ((pass.H is not null && (best.H is null || pass.Inliers > best.Inliers))
                 || (best.H is null && pass.H is null && pass.Inliers > best.Inliers))
             {
@@ -79,13 +83,13 @@ internal static class TextureCoarseMatcher
     }
 
     private static (double[,]? H, int Inliers, int RatioMatches) Pass(
-        Mat photo, Mat texture, double textureMmPerPx, int photoSide, double coarseMmPerPx)
+        Mat photo, Mat texture, double textureMmPerPx, int photoSide, double coarseMmPerPx, int ransacSeed)
     {
         var sp = Math.Min(1, photoSide / (double)Math.Max(photo.Width, photo.Height));
         var st = Math.Min(1, Math.Min(textureMmPerPx / coarseMmPerPx, MaxTextureSide / (double)Math.Max(texture.Width, texture.Height)));
         using var coarsePhoto = ToBgr(photo, sp);
         using var coarseTexture = ToBgr(texture, st);
-        var (hc, _, _, ratioMatches, inliers) = HomographyHelper.Coarse(coarsePhoto, coarseTexture, null, 1.0);
+        var (hc, _, _, ratioMatches, inliers) = HomographyHelper.Coarse(coarsePhoto, coarseTexture, null, 1.0, ransacSeed: ransacSeed);
         if (hc is null)
         {
             return (null, inliers, ratioMatches);

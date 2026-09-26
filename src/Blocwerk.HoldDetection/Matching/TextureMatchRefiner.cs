@@ -28,16 +28,17 @@ internal static class TextureMatchRefiner
     /// <param name="h">The starting homography, photo px → texture px.</param>
     /// <param name="textureMmPerPx">The texture's resolution.</param>
     /// <param name="firstRadiusMm">The first round's search radius (later rounds use the fine default).</param>
+    /// <param name="ransacSeed">Seeds the refits' sample order (0 = as matched), see <see cref="HomographyHelper.Shuffle"/>.</param>
     /// <returns>The best round's pairs.</returns>
     public static List<PointCorrespondence> Match(
-        Mat photo, Mat texture, Mat? mask, double[,] h, double textureMmPerPx, double firstRadiusMm = TextureFineMatcher.SearchRadiusMm)
+        Mat photo, Mat texture, Mat? mask, double[,] h, double textureMmPerPx, double firstRadiusMm = TextureFineMatcher.SearchRadiusMm, int ransacSeed = 0)
     {
         var pairs = TextureFineMatcher.Match(photo, texture, mask, h, textureMmPerPx, firstRadiusMm);
-        var (fit, inliers) = Refit(pairs, textureMmPerPx);
+        var (fit, inliers) = Refit(pairs, textureMmPerPx, ransacSeed);
         for (var round = 0; round < MaxRounds && fit is not null && inliers >= MinSteeringInliers; round++)
         {
             var next = TextureFineMatcher.Match(photo, texture, mask, fit, textureMmPerPx);
-            var (nextFit, nextInliers) = Refit(next, textureMmPerPx);
+            var (nextFit, nextInliers) = Refit(next, textureMmPerPx, ransacSeed);
             if (nextInliers <= inliers * 1.02)
             {
                 break;
@@ -50,7 +51,7 @@ internal static class TextureMatchRefiner
     }
 
     /// <summary>RANSAC homography over the pairs (photo px → texture px) and its inlier count.</summary>
-    internal static (double[,]? H, int Inliers) Refit(IReadOnlyList<PointCorrespondence> pairs, double textureMmPerPx)
+    internal static (double[,]? H, int Inliers) Refit(IReadOnlyList<PointCorrespondence> pairs, double textureMmPerPx, int ransacSeed = 0)
     {
         if (pairs.Count < 8)
         {
@@ -59,6 +60,7 @@ internal static class TextureMatchRefiner
 
         var src = pairs.Select(p => new Point2d(p.SrcX, p.SrcY)).ToList();
         var dst = pairs.Select(p => new Point2d(p.DstX, p.DstY)).ToList();
+        HomographyHelper.Shuffle(src, dst, ransacSeed);
         using var mask = new Mat();
         using var h = Cv2.FindHomography(src, dst, HomographyMethods.Ransac, ThresholdMm / textureMmPerPx, mask, 4000, 0.999);
         return h.Empty() ? (null, 0) : (HomographyHelper.ToArray(h), Cv2.CountNonZero(mask));

@@ -41,13 +41,14 @@ internal static class HomographyHelper
     /// </param>
     /// <param name="s">Downscale for the coarse AKAZE pass.</param>
     /// <param name="ratio">Lowe ratio-test threshold.</param>
+    /// <param name="ransacSeed">Non-zero: the ratio matches are shuffled with this seed first, so RANSAC draws other samples (see <see cref="Shuffle"/>).</param>
     /// <returns>
     /// (H, keypoint counts, ratio-match count, RANSAC inlier count). H is null when too few
     /// matches were found; the counts are still populated as far as the run got, so a failed
     /// run stays diagnosable.
     /// </returns>
     public static (double[,]? H, int KaKeypoints, int KbKeypoints, int RatioMatches, int Inliers) Coarse(
-        Mat imgL, Mat imgR, Func<int>? textureAnchors = null, double s = 0.35, double ratio = 0.75)
+        Mat imgL, Mat imgR, Func<int>? textureAnchors = null, double s = 0.35, double ratio = 0.75, int ransacSeed = 0)
     {
         using var a = new Mat();
         using var b = new Mat();
@@ -94,6 +95,7 @@ internal static class HomographyHelper
             return (null, ka.Length, kb.Length, ratioMatches, 0);
         }
 
+        Shuffle(src, dst, ransacSeed);
         using var mask = new Mat();
         using Mat h = Cv2.FindHomography(src, dst, HomographyMethods.Ransac, 5.0, mask);
         if (h.Empty())
@@ -141,6 +143,30 @@ internal static class HomographyHelper
 
         using Mat inv = m.Inv();
         return ToArray(inv);
+    }
+
+    /// <summary>
+    /// Shuffles two parallel correspondence lists in place with a seeded generator (nothing for seed 0). OpenCV's
+    /// RANSAC draws its samples from a fixed-seed generator, so the input order IS its seed: the same order always
+    /// gives the same fit, another order other samples.
+    /// </summary>
+    /// <param name="src">Source points.</param>
+    /// <param name="dst">Destination points, parallel to <paramref name="src"/>.</param>
+    /// <param name="seed">The seed; 0 keeps the order.</param>
+    internal static void Shuffle(List<Point2d> src, List<Point2d> dst, int seed)
+    {
+        if (seed == 0)
+        {
+            return;
+        }
+
+        var rng = new Random(seed);
+        for (var i = src.Count - 1; i > 0; i--)
+        {
+            var j = rng.Next(i + 1);
+            (src[i], src[j]) = (src[j], src[i]);
+            (dst[i], dst[j]) = (dst[j], dst[i]);
+        }
     }
 
     /// <summary>

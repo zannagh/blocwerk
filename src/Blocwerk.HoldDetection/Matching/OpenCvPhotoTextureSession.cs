@@ -14,6 +14,8 @@ internal sealed class OpenCvPhotoTextureSession : IPhotoTextureSession
     internal const double SeededSearchRadiusMm = 90;
 
     private readonly Mat photo;
+    private byte[]? decodedFrom;
+    private Mat? decoded;
 
     public OpenCvPhotoTextureSession(Mat gray)
     {
@@ -24,7 +26,8 @@ internal sealed class OpenCvPhotoTextureSession : IPhotoTextureSession
 
     public int Height => photo.Height;
 
-    public PhotoTextureMatch Match(byte[] encodedTexture, byte[]? encodedMask, double textureMmPerPx, double[]? seed = null)
+    public PhotoTextureMatch Match(
+        byte[] encodedTexture, byte[]? encodedMask, double textureMmPerPx, double[]? seed = null, PhotoTextureAttempt? attempt = null)
     {
         ArgumentNullException.ThrowIfNull(encodedTexture);
         if (ImagePixelLimit.IsTooLarge(encodedTexture))
@@ -32,7 +35,7 @@ internal sealed class OpenCvPhotoTextureSession : IPhotoTextureSession
             return PhotoTextureMatch.Failed("the texture is too large to decode");
         }
 
-        using var texture = Cv2.ImDecode(encodedTexture, ImreadModes.Grayscale | ImreadModes.IgnoreOrientation);
+        var texture = Texture(encodedTexture);
         if (texture.Empty())
         {
             return PhotoTextureMatch.Failed("the texture could not be decoded");
@@ -42,14 +45,14 @@ internal sealed class OpenCvPhotoTextureSession : IPhotoTextureSession
         var mmPerPx = textureMmPerPx > 0 ? textureMmPerPx : 1;
         var (h, inliers, ratioMatches) = seed is { Length: 9 }
             ? (FromRowMajor(seed), 0, 0)
-            : TextureCoarseMatcher.Find(photo, texture, mmPerPx);
+            : TextureCoarseMatcher.Find(photo, texture, mmPerPx, attempt);
         if (h is null)
         {
             return PhotoTextureMatch.Failed($"no overlap found ({inliers} coarse inliers of {ratioMatches} matches)", inliers);
         }
 
         var radius = seed is null ? TextureFineMatcher.SearchRadiusMm : SeededSearchRadiusMm;
-        var pairs = TextureMatchRefiner.Match(photo, texture, mask, h, mmPerPx, radius);
+        var pairs = TextureMatchRefiner.Match(photo, texture, mask, h, mmPerPx, radius, attempt?.RansacSeed ?? 0);
         var stage = seed is null ? "after the coarse overlap" : "around the predicted view";
         return pairs.Count < 4
             ? PhotoTextureMatch.Failed($"{pairs.Count} fine matches {stage}", inliers)
@@ -59,6 +62,21 @@ internal sealed class OpenCvPhotoTextureSession : IPhotoTextureSession
     public void Dispose()
     {
         photo.Dispose();
+        decoded?.Dispose();
+    }
+
+    /// <summary>The texture decoded (gray); the last one is kept, since a weak match is tried again on the same texture.</summary>
+    private Mat Texture(byte[] encoded)
+    {
+        if (decoded is not null && ReferenceEquals(decodedFrom, encoded))
+        {
+            return decoded;
+        }
+
+        decoded?.Dispose();
+        decoded = Cv2.ImDecode(encoded, ImreadModes.Grayscale | ImreadModes.IgnoreOrientation);
+        decodedFrom = encoded;
+        return decoded;
     }
 
     private static double[,] FromRowMajor(double[] m)

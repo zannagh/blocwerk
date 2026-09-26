@@ -73,9 +73,18 @@ public sealed partial class HoldTexturePlacementService
         }
     }
 
-    /// <summary>Registers one panel photo onto every texture (seeding missed facets from <paramref name="anchors"/>) and plans its eligible holds.</summary>
+    /// <summary>
+    /// Registers one panel photo onto every texture (seeding missed and weak facets from <paramref name="anchors"/>) and plans
+    /// its eligible holds. <paramref name="direct"/>: the photo's registrations from an earlier pass, reused as the starting point.
+    /// </summary>
     private async Task<PanelPlan> PlanPanelAsync(
-        BlocwerkDbContext db, Guid panelId, List<Hold> holds, List<RegistrationTexture> textures, List<PlaneAnchor> anchors, CancellationToken ct)
+        BlocwerkDbContext db,
+        Guid panelId,
+        List<Hold> holds,
+        List<RegistrationTexture> textures,
+        List<PlaneAnchor> anchors,
+        CancellationToken ct,
+        IReadOnlyList<FacetRegistration>? direct = null)
     {
         var panel = await db.WallPanels.AsNoTracking().Where(p => p.Id == panelId)
             .Select(p => new { p.Col, p.Row, p.Photo }).FirstOrDefaultAsync(ct);
@@ -91,7 +100,7 @@ public sealed partial class HoldTexturePlacementService
         List<FacetRegistration> registrations;
         try
         {
-            registrations = await Task.Run(() => Register(panel.Photo, textures, $"c{col} r{row}", anchors, ct), ct);
+            registrations = await Task.Run(() => Register(panel.Photo, textures, $"c{col} r{row}", anchors, direct, ct), ct);
         }
         catch (ArgumentException ex)
         {
@@ -117,10 +126,15 @@ public sealed partial class HoldTexturePlacementService
 
     /// <summary>One matcher session for the photo, registered onto every texture (CPU-bound; run off the request thread).</summary>
     private List<FacetRegistration> Register(
-        byte[] photo, List<RegistrationTexture> textures, string label, List<PlaneAnchor> anchors, CancellationToken ct)
+        byte[] photo,
+        List<RegistrationTexture> textures,
+        string label,
+        List<PlaneAnchor> anchors,
+        IReadOnlyList<FacetRegistration>? direct,
+        CancellationToken ct)
     {
         using var session = matcher!.OpenPhoto(photo);
         var focal = ExifCameraReader.Read(photo).Focal35mm is { } f35 ? f35 / 36.0 * Math.Max(session.Width, session.Height) : (double?)null;
-        return new PhotoRegistrar(session, logger, label, focal, anchors).RegisterAll(textures, ct);
+        return new PhotoRegistrar(session, logger, label, focal, anchors, direct).RegisterAll(textures, ct);
     }
 }

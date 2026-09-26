@@ -38,8 +38,9 @@ public interface IPhotoTextureSession : IDisposable
     /// A predicted photo px → texture px homography (row-major 3×3) to match around instead of searching the
     /// whole texture; null runs the coarse search.
     /// </param>
+    /// <param name="attempt">Which deterministic variant to run (<see cref="PhotoTextureAttempt"/>); null is <see cref="PhotoTextureAttempt.Default"/>.</param>
     /// <returns>The correspondences, photo px → texture px, both at full resolution.</returns>
-    PhotoTextureMatch Match(byte[] encodedTexture, byte[]? encodedMask, double textureMmPerPx, double[]? seed = null);
+    PhotoTextureMatch Match(byte[] encodedTexture, byte[]? encodedMask, double textureMmPerPx, double[]? seed = null, PhotoTextureAttempt? attempt = null);
 }
 
 /// <summary>What one photo × texture match found.</summary>

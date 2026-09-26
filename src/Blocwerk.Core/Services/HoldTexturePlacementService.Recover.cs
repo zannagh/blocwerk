@@ -17,9 +17,10 @@ namespace Blocwerk.Core.Services;
 /// <list type="number">
 /// <item>each photo is registered with its own holds' previous placements (<see cref="CarriedPositionsAsync"/>) as
 /// anchors, so a facet the coarse search misses is searched around the view they predict;</item>
-/// <item>a photo that still leaves holds unplaced is registered again with the holds LINKED to it
+/// <item>a photo that still leaves holds unplaced, or registered a facet only weakly
+/// (<see cref="RegistrationAttempts.IsStrong"/>: under 300 inliers or 30 % coverage), is registered again with the holds LINKED to it
 /// (<see cref="HoldLink"/>, the same physical hold on an overlapping panel) as further anchors, at the
-/// positions the other photos' registrations just placed them;</item>
+/// positions the other photos' registrations just placed them, and the better plan kept;</item>
 /// <item>whatever is still unplaced keeps its previous placement, carried over and marked
 /// <see cref="HoldMetric.TextureRegistrationCarried"/> (revertable like the rest of the run).</item>
 /// </list>
@@ -43,7 +44,7 @@ public sealed partial class HoldTexturePlacementService
         }
 
         var links = await LinkedHoldsAsync(db, wallId, ct);
-        if (plans.Any(p => p.Summary.Failed > 0))
+        if (plans.Any(p => p.Summary.Failed > 0 || WeakFacets(p).Count > 0))
         {
             for (var i = 0; i < plans.Count; i++)
             {
@@ -60,7 +61,10 @@ public sealed partial class HoldTexturePlacementService
         return plans.Select((p, i) => WithCarried(p, panels[i].Holds, carried, context, dropped)).ToList();
     }
 
-    /// <summary>The panel planned again with its linked holds as anchors, when that places more holds; else its plan.</summary>
+    /// <summary>
+    /// The panel planned again with its linked holds as anchors (its registrations so far as the starting point), when it
+    /// left holds unplaced or has a weak facet the links reach, and that plan is better; else its plan.
+    /// </summary>
     private async Task<PanelPlan> RetryWithLinksAsync(
         BlocwerkDbContext db,
         Guid panelId,
@@ -74,22 +78,40 @@ public sealed partial class HoldTexturePlacementService
     {
         var plan = plans[index];
         var placedElsewhere = plans.Where((_, j) => j != index).SelectMany(p => p.Placements).ToDictionary(p => p.Hold.Id, p => p.Fit);
-        var accepted = plan.Summary.Facets.Where(f => f.Accepted).Select(f => f.FacetId).ToHashSet(StringComparer.Ordinal);
+        var weak = WeakFacets(plan);
         var linked = holds
             .SelectMany(h => links[h.Id].Where(placedElsewhere.ContainsKey).Select(o => (Hold: h, Fit: placedElsewhere[o])))
             .Select(x => new PlaneAnchor(x.Hold.X, x.Hold.Y, x.Fit.FacetId, x.Fit.PlaneAMm, x.Fit.PlaneBMm))
             .ToList();
-        var useful = linked.Where(a => !accepted.Contains(a.FacetId)).GroupBy(a => a.FacetId).Any(g => g.Count() >= AnchorSeed.MinAnchors);
-        if (plan.Summary.Failed == 0 || !useful)
+        var useful = linked.Where(a => weak.Contains(a.FacetId)).GroupBy(a => a.FacetId).Any(g => g.Count() >= AnchorSeed.MinAnchors);
+        if (!useful)
         {
             return plan;
         }
 
         logger.LogInformation(
-            "Panel {Panel}: {Failed} holds unplaced; registering again with {Linked} linked holds placed from other photos",
-            plan.Summary.Label, plan.Summary.Failed, linked.Count);
-        var retry = await PlanPanelAsync(db, panelId, holds, model.Textures, [.. OwnAnchors(holds, carried), .. linked], ct);
-        return retry.Placements.Count > plan.Placements.Count ? retry : plan;
+            "Panel {Panel}: {Failed} holds unplaced, weak facets {Weak}; registering again with {Linked} linked holds placed from other photos",
+            plan.Summary.Label, plan.Summary.Failed, string.Join(", ", weak.Order(StringComparer.Ordinal)), linked.Count);
+        var retry = await PlanPanelAsync(db, panelId, holds, model.Textures, [.. OwnAnchors(holds, carried), .. linked], ct, plan.Registrations);
+        return Better(retry, plan) ? retry : plan;
+    }
+
+    /// <summary>The facets a plan's photo registered only weakly or not at all (none when it registered nothing: there is nothing to retry).</summary>
+    private static HashSet<string> WeakFacets(PanelPlan plan) =>
+        plan.Registrations is { } registrations
+            ? registrations.Where(r => !RegistrationAttempts.IsStrong(r)).Select(r => r.FacetId).ToHashSet(StringComparer.Ordinal)
+            : [];
+
+    /// <summary>More placements wins; on a tie the stronger registrations (inliers × coverage, summed).</summary>
+    private static bool Better(PanelPlan candidate, PanelPlan current)
+    {
+        if (candidate.Placements.Count != current.Placements.Count)
+        {
+            return candidate.Placements.Count > current.Placements.Count;
+        }
+
+        static double Score(PanelPlan p) => p.Registrations?.Where(r => r.Accepted).Sum(RegistrationAttempts.Score) ?? 0;
+        return Score(candidate) > Score(current);
     }
 
     /// <summary>The same-hold links of the wall, both ways.</summary>

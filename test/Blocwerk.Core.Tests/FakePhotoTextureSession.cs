@@ -9,8 +9,9 @@ internal sealed class FakePhotoTextureSession(FakePhotoTextureMatcher matcher, b
 
     public int Height => FakePhotoTextureMatcher.Height;
 
-    public PhotoTextureMatch Match(byte[] encodedTexture, byte[]? encodedMask, double textureMmPerPx, double[]? seed = null) =>
-        matcher.Match(photo, encodedTexture[0], seed);
+    public PhotoTextureMatch Match(
+        byte[] encodedTexture, byte[]? encodedMask, double textureMmPerPx, double[]? seed = null, PhotoTextureAttempt? attempt = null) =>
+        matcher.Match(photo, encodedTexture[0], seed, attempt);
 
     public void Dispose()
     {
