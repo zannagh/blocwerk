@@ -149,8 +149,10 @@ public sealed partial class WallCaptureProcessor
         var capture = run.Capture;
         var sparse = await splat.DownloadFileAsync(sfmJobId, SparseFile, MaxSparseBytes, ct);
         var photos = await LoadPhotosAsync(capture.Id, ct);
+        var holds = await PhotoHoldsAsync(capture.Id, photos, ct);
         var request = CaptureSfmDocuments.BuildRequest(
             photos.Select(p => p.Index),
+            holds,
             await AngleHintsAsync(capture.WallId, ct),
             CaptureSfmDocuments.ParseScale(capture.ScaleReferenceJson),
             anchors?.Map ?? new Dictionary<string, string>(),

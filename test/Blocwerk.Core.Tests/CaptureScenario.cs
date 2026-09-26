@@ -25,7 +25,7 @@ internal sealed class CaptureScenario : IDisposable
     public CaptureScenario(
         WallTestHarness harness, IMarkerDetectionService? detector = null, IKioskContext? kiosk = null, WallCapturePipelineOptions? options = null,
         IDeployBusyGate? busyGate = null, ICapturePhotoConverter? photoConverter = null, Func<WallTestHarness, CaptureFollowUpChain>? followUps = null,
-        GpuRunnerOptions? runnerOptions = null, TimeProvider? clock = null)
+        GpuRunnerOptions? runnerOptions = null, TimeProvider? clock = null, IHoldDetectionService? holdDetection = null)
     {
         Harness = harness;
         Options = options ?? Options;
@@ -45,7 +45,8 @@ internal sealed class CaptureScenario : IDisposable
                 harness.RootContextFactory, Files, Queue, runnerOptions, new GpuJobSignal(), NullLogger<GpuJobQueue>.Instance, busyGate, clock);
         Processor = new WallCaptureProcessor(
             harness.RootContextFactory, Settings, new FakeComputeJobClientFactory(Client, SplatClient), Files, Push,
-            NullLoggerFactory.Instance, Options, Detector, Video, busyGate, followUps?.Invoke(harness), gpuJobs: Runners);
+            NullLoggerFactory.Instance, Options, Detector, Video, busyGate, followUps?.Invoke(harness), gpuJobs: Runners,
+            holdDetection: holdDetection);
     }
 
     public WallTestHarness Harness { get; }

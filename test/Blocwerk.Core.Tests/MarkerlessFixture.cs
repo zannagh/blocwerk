@@ -21,9 +21,10 @@ internal static class MarkerlessFixture
 
     /// <summary>A capture scenario whose workers can run markerless captures (unless <paramref name="sfm"/> is false).</summary>
     public static CaptureScenario Scenario(
-        WallTestHarness h, SwitchableMarkerDetector detector, bool sfm = true, GpuRunnerOptions? runners = null, MutableTestClock? clock = null)
+        WallTestHarness h, SwitchableMarkerDetector detector, bool sfm = true, GpuRunnerOptions? runners = null, MutableTestClock? clock = null,
+        IHoldDetectionService? holds = null)
     {
-        var s = new CaptureScenario(h, detector, runnerOptions: runners, clock: clock);
+        var s = new CaptureScenario(h, detector, runnerOptions: runners, clock: clock, holdDetection: holds);
         s.Client.Kinds = sfm ? ["solve", MarkerlessCaptureSupport.SolveKind, "textures"] : ["solve", "textures"];
         s.SplatClient.IsConfigured = true;
         s.SplatClient.Kinds = [.. SplitKinds];

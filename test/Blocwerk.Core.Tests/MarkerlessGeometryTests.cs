@@ -56,13 +56,17 @@ public class MarkerlessGeometryTests
     }
 
     [Fact]
-    public void Request_CarriesHintsScaleAndAnchors()
+    public void Request_CarriesHoldsHintsScaleAndAnchors()
     {
         var scale = CaptureSfmDocuments.ParseScale("{\"photoIndex\":2,\"a\":[10,20],\"b\":[110,20],\"mm\":500}");
         var request = JsonNode.Parse(CaptureSfmDocuments.BuildRequest(
-            [1, 2], [new CaptureAngleHint(0, "Main", 45)], scale, CaptureSfmDocuments.AnchorMap(["p03"]), MarkerlessFixture.MarkerDoc(), 125))!;
+            [1, 2],
+            new Dictionary<int, IReadOnlyList<double[]>> { [2] = [[12.5, 40], [300, 7.25]] },
+            [new CaptureAngleHint(0, "Main", 45)], scale, CaptureSfmDocuments.AnchorMap(["p03"]), MarkerlessFixture.MarkerDoc(), 125))!;
 
         Assert.Equal(["p01", "p02"], request["photos"]!.AsArray().Select(p => p!["name"]!.GetValue<string>()));
+        Assert.Null(request["photos"]![0]!["holds"]);
+        Assert.Equal([300, 7.25], request["photos"]![1]!["holds"]![1]!.AsArray().Select(v => v!.GetValue<double>()));
         Assert.Equal(45, request["segments"]![0]!["declaredAngleDeg"]!.GetValue<double>());
         Assert.Equal("p02", request["measuredDistance"]!["photo"]!.GetValue<string>());
         Assert.Equal("p03", request["anchors"]!["a00"]!.GetValue<string>());

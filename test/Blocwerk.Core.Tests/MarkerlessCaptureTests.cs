@@ -4,11 +4,13 @@
 
 using System.Text;
 using System.Text.Json.Nodes;
+using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Runners;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
+using NSubstitute;
 
 namespace Blocwerk.Core.Tests;
 
@@ -57,6 +59,28 @@ public class MarkerlessCaptureTests
         Assert.Equal(model.Id, job.GeometryModelId);
         var prepared = JsonNode.Parse(await File.ReadAllBytesAsync(s.Files.ResolvePhysicalPath(job.PreparedPath)!))!;
         Assert.Equal("features", prepared["geometry"]?["world"]?["frameSource"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task FeatureSolve_ScoresThePlanesWithThePhotosHoldDetections()
+    {
+        using var h = new WallTestHarness();
+        var yolo = Substitute.For<IHoldDetectionService>();
+        yolo.DetectHoldsAsync(Arg.Any<byte[]>(), Arg.Any<HoldDetectionParameters?>()).Returns(
+        [
+            new DetectedHold(0.5, 0.25, 0.01, "red", 0.9),
+            new DetectedHold(0.1, 0.1, 0.05, "white", 0.8), // a volume: not a hold
+        ]);
+        using var s = MarkerlessFixture.Scenario(h, new SwitchableMarkerDetector { Ids = [] }, holds: yolo);
+        s.Client.GeometryJson = MarkerlessFixture.FeatureDoc(anchored: false, gravityKnown: false);
+        var captureId = await MarkerlessFixture.StartAsync(s);
+
+        await s.Processor.ProcessAsync(captureId, CancellationToken.None);
+
+        var photos = JsonNode.Parse(RequestOf(s.Client.MultipartSubmissions.First()))!["photos"]!.AsArray();
+        Assert.Equal(3, photos.Count);
+        Assert.All(photos, p => Assert.Equal(
+            [32.0, 12.0], Assert.Single(p!["holds"]!.AsArray())!.AsArray().Select(v => v!.GetValue<double>())));
     }
 
     [Fact]

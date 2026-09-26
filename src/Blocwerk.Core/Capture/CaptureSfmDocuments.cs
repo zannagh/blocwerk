@@ -26,7 +26,8 @@ public sealed record CaptureAngleHint(int Index, string Name, double AngleDeg);
 
 /// <summary>
 /// The <c>solve-sfm</c> request (<c>docker/wall-geometry/README.md</c>, "Solve from features") and the anchor naming of a
-/// markerless capture. No device gravity yet (that waits for the owner's privacy decision) and no hold detections.
+/// markerless capture: the photos with their hold detections (the wall-facet score's hold hits). No device gravity yet
+/// (that waits for the owner's privacy decision).
 /// </summary>
 public static class CaptureSfmDocuments
 {
@@ -45,6 +46,7 @@ public static class CaptureSfmDocuments
 
     /// <summary>The request JSON.</summary>
     /// <param name="photoIndexes">The capture's photos (their indexes).</param>
+    /// <param name="holds">Photo index → hold centres [x, y] px on the stored photo; photos without an entry send none.</param>
     /// <param name="hints">Declared angles.</param>
     /// <param name="scale">A measured distance, or null.</param>
     /// <param name="anchors">Anchor stem → reference camera image; empty = no anchors.</param>
@@ -53,6 +55,7 @@ public static class CaptureSfmDocuments
     /// <returns>The request.</returns>
     public static string BuildRequest(
         IEnumerable<int> photoIndexes,
+        IReadOnlyDictionary<int, IReadOnlyList<double[]>> holds,
         IReadOnlyList<CaptureAngleHint> hints,
         CaptureScaleReference? scale,
         IReadOnlyDictionary<string, string> anchors,
@@ -61,7 +64,7 @@ public static class CaptureSfmDocuments
     {
         var request = new JsonObject
         {
-            ["photos"] = new JsonArray(photoIndexes.Select(i => (JsonNode?)new JsonObject { ["name"] = CaptureComputeDocuments.PhotoName(i) }).ToArray()),
+            ["photos"] = new JsonArray(photoIndexes.Select(i => (JsonNode?)PhotoEntry(i, holds.GetValueOrDefault(i))).ToArray()),
             ["segments"] = new JsonArray(hints.Select(h => (JsonNode?)new JsonObject
             {
                 ["index"] = h.Index,
@@ -125,5 +128,16 @@ public static class CaptureSfmDocuments
         {
             return null;
         }
+    }
+
+    private static JsonObject PhotoEntry(int index, IReadOnlyList<double[]>? holds)
+    {
+        var entry = new JsonObject { ["name"] = CaptureComputeDocuments.PhotoName(index) };
+        if (holds is { Count: > 0 })
+        {
+            entry["holds"] = new JsonArray(holds.Select(h => (JsonNode?)new JsonArray(h[0], h[1])).ToArray());
+        }
+
+        return entry;
     }
 }

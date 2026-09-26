@@ -30,7 +30,8 @@ public sealed partial class WallCaptureProcessor(
     ICaptureVideoFrameExtractor? videoFrames = null,
     IDeployBusyGate? busyGate = null,
     CaptureFollowUpChain? followUps = null,
-    Runners.GpuJobQueue? gpuJobs = null)
+    Runners.GpuJobQueue? gpuJobs = null,
+    IHoldDetectionService? holdDetection = null)
 {
     private readonly ILogger logger = loggerFactory.CreateLogger<WallCaptureProcessor>();
 
