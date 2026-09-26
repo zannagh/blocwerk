@@ -195,7 +195,7 @@ public sealed class HoldFootprintService(
         {
             logger.LogWarning(
                 "Footprints on wall {WallId}: hold {HoldId}'s footprint lay {Offset:F0} mm from its placement; {Action}",
-                wallId, holdId, offset, fellBack ? "the single-view correction is used instead" : "its previous footprint is kept");
+                wallId, holdId, offset, fellBack ? "the single-view correction is used instead" : "none is stored from this run (a previous one only if it lies near)");
         }
     }
 
