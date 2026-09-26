@@ -45,7 +45,7 @@
             </button>
             <label class="scale-tap-mm">
                 Distance (mm)
-                <input type="number" class="form-input" min="1" step="1" inputmode="numeric" @bind="mm" disabled="@Disabled" />
+                <input type="number" class="form-input" min="1" step="1" inputmode="numeric" @bind="mm" @bind:event="oninput" disabled="@Disabled" />
             </label>
         </div>
         <div class="staged-actions">
