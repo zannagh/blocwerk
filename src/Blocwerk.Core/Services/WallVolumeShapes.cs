@@ -19,7 +19,8 @@ public static class WallVolumeShapes
 {
     /// <summary>
     /// Switches flat sides on or off. On: fitted afresh from the measured height field, and applied when the fit is good
-    /// or <paramref name="force"/> (an admin asked for this volume); otherwise the volume is left as it was. Returns the fit
+    /// or <paramref name="force"/> (an admin asked for it: ticked on the volume or applied to all; the fit error is then
+    /// only shown); otherwise the volume is left as it was. Returns the fit
     /// (null when off or impossible); whether it was applied is <see cref="WallVolume.HasFlatSides"/>.
     /// </summary>
     /// <param name="volume">The volume (changed in place).</param>

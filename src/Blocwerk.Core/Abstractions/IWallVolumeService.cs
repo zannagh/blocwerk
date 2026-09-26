@@ -66,7 +66,7 @@ public interface IWallVolumeService
 
     /// <summary>
     /// Sets "Volumes on this wall have flat sides" (wall admin); with <paramref name="applyToAll"/> also switches every volume
-    /// of the active model (on: only where the flat faces fit well; off: all back to their height field).
+    /// of the active model (on: all of them, whatever the fit, as the admin asked for it; off: all back to their height field).
     /// </summary>
     /// <param name="wallId">The wall.</param>
     /// <param name="value">The setting.</param>
@@ -102,7 +102,7 @@ public sealed record WallVolumeRunResult(int Volumes, int Rejected, int HoldsPla
 /// <param name="IsHidden">Hidden by an admin.</param>
 /// <param name="IsRemoved">Removed as falsely detected (can be restored).</param>
 /// <param name="HasFlatSides">Drawn and used as flat faces.</param>
-/// <param name="Shape">With flat sides: "pyramid" or "roof".</param>
+/// <param name="Shape">With flat sides: "pyramid", "roof", "plateau" or "multi-peak" (possibly several volumes).</param>
 /// <param name="Faces">With flat sides: the number of flat sides.</param>
 /// <param name="FitRmsMm">With flat sides: how far the faces are from the measurement (trimmed RMS), mm.</param>
 /// <param name="CentreA">Footprint centre on the facet along u, mm.</param>

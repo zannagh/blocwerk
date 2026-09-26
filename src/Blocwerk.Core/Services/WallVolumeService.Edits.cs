@@ -66,13 +66,13 @@ public sealed partial class WallVolumeService
         {
             foreach (var volume in await db.WallVolumes.Where(v => v.GeometryModelId == model && !v.IsRemoved).ToListAsync(ct))
             {
-                var fit = WallVolumeShapes.SetFlatSides(volume, value, force: false);
+                // The admin asked for all of them: forced like a ticked volume; only newly detected ones keep the quality limit.
+                WallVolumeShapes.SetFlatSides(volume, value, force: true);
                 if (value && !volume.HasFlatSides)
                 {
                     kept++;
                     logger.LogInformation(
-                        "Volume {Index} on wall {WallId} stays on its height field: {Why}",
-                        volume.Index, wallId, fit is null ? "no fit" : $"flat faces {fit.RmsMm:0.0} mm RMS from the measurement");
+                        "Volume {Index} on wall {WallId} stays on its height field: too small or flat for flat sides", volume.Index, wallId);
                 }
             }
         }

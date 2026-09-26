@@ -51,8 +51,16 @@ public partial class WallVolumeList
 
     /// <summary>The flat-sided shape, or null for a height field.</summary>
     internal static string? ShapeText(WallVolumeSummary v) => v.HasFlatSides
-        ? string.Create(CultureInfo.InvariantCulture, $"Flat sides: {v.Shape}, {v.Faces} faces, within ±{v.FitRmsMm ?? 0:0} mm of the scan.")
+        ? string.Create(CultureInfo.InvariantCulture, $"Flat sides: {ShapeName(v.Shape)}, {v.Faces} faces, ±{v.FitRmsMm ?? 0:0} mm vs scan.")
         : null;
+
+    /// <summary>The shape in words; several peaks are likely volumes detected as one.</summary>
+    internal static string? ShapeName(string? shape) => shape switch
+    {
+        "plateau" => "flat top",
+        "multi-peak" => "several peaks (possibly several volumes: Remove and re-detect)",
+        _ => shape,
+    };
 
     // Loaded here, not in OnInitializedAsync: WallDetail is retained across enhanced navigation between walls.
     protected override async Task OnParametersSetAsync()
@@ -100,7 +108,7 @@ public partial class WallVolumeList
     private Task ApplyToAllAsync() => RunAsync(async () =>
     {
         var r = await Volumes.SetWallFlatSidesAsync(WallId, wallFlat, applyToAll: true);
-        var kept = r.KeptHeightField > 0 ? $" {r.KeptHeightField} did not fit flat sides and follow the scan." : string.Empty;
+        var kept = r.KeptHeightField > 0 ? $" {r.KeptHeightField} are too small or flat for flat sides and follow the scan." : string.Empty;
         return $"{r.FlatSided} volumes have flat sides; {r.HoldsChanged} holds moved.{kept}";
     });
 
