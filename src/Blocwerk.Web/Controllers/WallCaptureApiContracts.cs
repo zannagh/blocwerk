@@ -17,11 +17,14 @@ namespace Blocwerk.Web.Controllers;
 /// <param name="LevelPairs">Marker id pairs known to be level, e.g. [[14, 15]].</param>
 /// <param name="Notes">Free text for the capture history.</param>
 /// <param name="Quality">The photo-real view's quality profile: Draft, High or Max.</param>
+/// <param name="GeometryMode">auto (default), markers or features: forces the marker solve or the feature reconstruction (wall admins only).</param>
 public sealed record CaptureStartRequest(
     IReadOnlyList<CaptureSegmentDeclaration>? Segments = null,
     IReadOnlyList<int[]>? LevelPairs = null,
     string? Notes = null,
-    [property: JsonConverter(typeof(JsonStringEnumConverter<SplatQuality>))] SplatQuality Quality = SplatQuality.High);
+    [property: JsonConverter(typeof(JsonStringEnumConverter<SplatQuality>))] SplatQuality Quality = SplatQuality.High,
+    [property: JsonConverter(typeof(JsonStringEnumConverter<CaptureGeometryOverride>))]
+    CaptureGeometryOverride GeometryMode = CaptureGeometryOverride.Auto);
 
 /// <summary>A started capture: poll <c>GET …/captures/{captureId}</c> for its status.</summary>
 /// <param name="CaptureId">The capture.</param>

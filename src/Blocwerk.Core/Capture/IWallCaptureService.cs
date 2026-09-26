@@ -78,9 +78,14 @@ public interface IWallCaptureService
     /// <summary>
     /// Submits the draft to the pipeline. Returns the problems that prevent it (empty = started).
     /// <paramref name="splatQuality"/> is the photo-real view's quality profile (used only when a splat worker is configured).
+    /// <paramref name="geometry"/> forces the marker or the feature path instead of the automatic choice.
     /// </summary>
     Task<IReadOnlyList<string>> StartAsync(
-        Guid captureId, CaptureDeclarations declarations, string? notes, SplatQuality splatQuality = SplatQuality.High);
+        Guid captureId,
+        CaptureDeclarations declarations,
+        string? notes,
+        SplatQuality splatQuality = SplatQuality.High,
+        CaptureGeometryOverride geometry = CaptureGeometryOverride.Auto);
 
     /// <summary>
     /// Retrains a finished capture's photo-real view at <paramref name="quality"/> from its stored photos

@@ -43,7 +43,11 @@ public sealed partial class WallCaptureService
     }
 
     public async Task<IReadOnlyList<string>> StartAsync(
-        Guid captureId, CaptureDeclarations declarations, string? notes, SplatQuality splatQuality = SplatQuality.High)
+        Guid captureId,
+        CaptureDeclarations declarations,
+        string? notes,
+        SplatQuality splatQuality = SplatQuality.High,
+        CaptureGeometryOverride geometry = CaptureGeometryOverride.Auto)
     {
         if (!IsComputeConfigured)
         {
@@ -54,7 +58,7 @@ public sealed partial class WallCaptureService
         await using (db)
         {
             var layout = await DraftLayoutAsync(db, capture);
-            var errors = await StartProblemsAsync(db, capture, declarations, layout, await IsMarkerlessAvailableAsync());
+            var errors = await StartProblemsAsync(db, capture, declarations, layout, geometry, await IsMarkerlessAvailableAsync());
             if (errors.Count > 0)
             {
                 return errors;
@@ -70,6 +74,11 @@ public sealed partial class WallCaptureService
             capture.DeclarationsJson = CaptureDeclarationRules.Serialize(declarations);
             capture.Notes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim()[..Math.Min(notes.Trim().Length, 2048)];
             capture.SplatQuality = splatQuality;
+
+            // Forced features: the processor keeps a mode that is already Features and skips its own choice.
+            capture.GeometryMode = geometry == CaptureGeometryOverride.Features
+                ? WallCaptureGeometryMode.Features
+                : WallCaptureGeometryMode.Markers;
             capture.Status = WallCaptureStatus.Queued;
             capture.Stage = "Waiting to start";
             capture.Progress = 0;
@@ -82,26 +91,43 @@ public sealed partial class WallCaptureService
     }
 
     private static async Task<List<string>> StartProblemsAsync(
-        BlocwerkDbContext db, WallCapture capture, CaptureDeclarations declarations, WallMarkerLayout layout, bool markerless)
+        BlocwerkDbContext db,
+        WallCapture capture,
+        CaptureDeclarations declarations,
+        WallMarkerLayout layout,
+        CaptureGeometryOverride geometry,
+        bool markerless)
     {
         var photos = await db.WallCapturePhotos.AsNoTracking().Where(p => p.CaptureId == capture.Id).ToListAsync();
         var withMarkers = photos.Where(p => CaptureComputeDocuments.UsableMarkers(layout, p.MarkersJson).Count > 0).ToList();
+        var detected = photos.All(p => p.MarkersJson is not null);
+
+        // Without (enough) markers the capture is measured from photo features: the declarations table and level
+        // pairs belong to the marker solve, so they are neither needed nor checked then. A wall admin may force either.
+        var features = geometry switch
+        {
+            CaptureGeometryOverride.Features => true,
+            CaptureGeometryOverride.Markers => false,
+            _ => markerless && withMarkers.Count < 2 && detected,
+        };
         var errors = new List<string>();
         if (photos.Count < 2)
         {
             errors.Add("Upload at least two photos of the wall.");
         }
-        else if (withMarkers.Count < 2 && photos.All(p => p.MarkersJson is not null) && !markerless)
+        else if (withMarkers.Count < 2 && detected && !features)
         {
             errors.Add("At least two photos must show markers.");
+        }
+
+        if (geometry == CaptureGeometryOverride.Features && !markerless)
+        {
+            errors.Add("Measuring the wall from photo features is not available on this server.");
         }
 
         errors.AddRange(withMarkers.Where(p => p.Focal35mm is null)
             .Select(p => $"{p.OriginalFileName ?? $"Photo {p.Index}"} has no focal length in its EXIF; upload the camera original."));
 
-        // Without (enough) markers the capture is measured from photo features: the declarations table and level
-        // pairs belong to the marker solve, so they are neither needed nor checked then.
-        var features = markerless && withMarkers.Count < 2 && photos.All(p => p.MarkersJson is not null);
         if (!features)
         {
             // With a plan whose markers are still to be found (the pipeline detects them), "seen" is unknown yet.

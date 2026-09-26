@@ -44,7 +44,12 @@ public sealed partial class WallCapturesController
         ForCaptureAsync(wallId, captureId, async () =>
         {
             var declarations = await DeclarationsFor(captureId, request);
-            var problems = await captures.StartAsync(captureId, declarations, request?.Notes, request?.Quality ?? SplatQuality.High);
+            var problems = await captures.StartAsync(
+                captureId,
+                declarations,
+                request?.Notes,
+                request?.Quality ?? SplatQuality.High,
+                request?.GeometryMode ?? CaptureGeometryOverride.Auto);
             return problems.Count > 0
                 ? UnprocessableEntity(new CaptureStartProblems(problems))
                 : Accepted(new CaptureStartResponse(captureId, CaptureDeclarationRules.MergeWarnings(declarations)));
