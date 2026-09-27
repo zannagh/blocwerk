@@ -9,6 +9,7 @@ namespace Blocwerk.Core.Geometry.Volumes;
 /// <param name="Footprint">Convex outline on the facet, (a, b) mm.</param>
 /// <param name="AreaM2">Area of the raised cells, m².</param>
 /// <param name="HeightMm">90th-percentile height of its points above the wall, mm.</param>
+/// <param name="MedianHeightMm">Median height of its points above the wall, mm (how high it typically stands).</param>
 /// <param name="Points">Evidence points in it.</param>
 /// <param name="HoldCover">Share of the footprint covered by known hold outlines.</param>
 /// <param name="SingleHoldCover">Largest share covered by one hold.</param>
@@ -20,6 +21,7 @@ public sealed record DetectedVolume(
     IReadOnlyList<(double A, double B)> Footprint,
     double AreaM2,
     double HeightMm,
+    double MedianHeightMm,
     int Points,
     double HoldCover,
     double SingleHoldCover,

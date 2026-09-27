@@ -102,6 +102,51 @@ public class VolumeDetectorTests
     }
 
     [Fact]
+    public void LargeShallowSheet_IsRejected_TheRealVolumeKept()
+    {
+        // A 900 × 900 mm field next to the pyramid: 45 mm proud with 50 mm hold-like domes every 150 mm (a sheet of
+        // holds on a slight bump, like the false volume on The Attic). A plain flat sheet is taken up by the wall fit.
+        var points = Scene(withMacro: false).Select(p =>
+        {
+            var (a, b, h) = FacetCloud.Local(HoldFootprintEstimatorTests.Wall, p.X, p.Y, p.Z);
+            var sheet = a is > 1900 and < 2800 && b is > 900 and < 1800 ? SheetAt(a - 1900, b - 900) : 0;
+            var w = HoldFootprintEstimatorTests.Wall.ToWorld(a, b, h + sheet);
+            return ((float)w[0], (float)w[1], (float)w[2]);
+        }).ToList();
+
+        var found = VolumeDetector.Detect(points, Frames, Extents, NoHolds);
+
+        var accepted = Assert.Single(found, v => v.IsAccepted);
+        Assert.InRange(accepted.Footprint.Average(p => p.A), 1350, 1450);
+        var sheetCandidate = Assert.Single(found, v => v.Status == "rejected:shallow-sheet");
+        Assert.InRange(sheetCandidate.Footprint.Average(p => p.A), 2150, 2550);
+
+        // Without the rule the sheet would pass as a volume.
+        var noRule = new VolumeDetectionOptions { SheetMinAreaM2 = 100, SheetMinFacetShare = 1 };
+        Assert.Equal(2, VolumeDetector.Detect(points, Frames, Extents, NoHolds, noRule).Count(v => v.IsAccepted));
+    }
+
+    [Fact]
+    public void ShallowSheetRule_KeepsRealSizedAndTallVolumes()
+    {
+        var options = new VolumeDetectionOptions();
+        (double A, double B)[] Square(double side) => [(1000, 500), (1000 + side, 500), (1000 + side, 500 + side), (1000, 500 + side)];
+        DetectedVolume Volume(double side, double h90, double median) =>
+            new("0", Square(side), side * side / 1e6, h90, median, 500, 0.2, 0, 0.8, string.Empty, null);
+
+        // The Attic's false one: 0.86 m², 94 mm (90th percentile), 58 mm median.
+        Assert.True(VolumeChecks.IsShallowSheet(Volume(930, 94, 58), Extent, options));
+
+        // Its real ones: at most 0.25 m² (medians down to 34 mm), and a big volume that stands tall.
+        Assert.False(VolumeChecks.IsShallowSheet(Volume(500, 135, 42), Extent, options));
+        Assert.False(VolumeChecks.IsShallowSheet(Volume(400, 61, 34), Extent, options));
+        Assert.False(VolumeChecks.IsShallowSheet(Volume(900, 140, 90), Extent, options));
+
+        // On a small facet a big share counts as large too (15 % of 1 × 1 m).
+        Assert.True(VolumeChecks.IsShallowSheet(Volume(450, 80, 50), new PlaneRectMm(0, 1000, 0, 1000), options));
+    }
+
+    [Fact]
     public void Surface_SurvivesItsStorageForm()
     {
         var surface = new VolumeSurface(new CellGrid(100, 200, 20, 3, 2), [0, 50, 0, 10, 120, 7]);
@@ -113,6 +158,13 @@ public class VolumeDetectorTests
         Assert.Equal(120, back.HeightAt(130, 230));
         Assert.Null(VolumeSurface.FromJson("{\"version\":2}"));
         Assert.Null(VolumeSurface.FromJson("not json"));
+    }
+
+    private static double SheetAt(double a, double b)
+    {
+        double da = (a % 150) - 75, db = (b % 150) - 75;
+        var r2 = ((da * da) + (db * db)) / (45.0 * 45);
+        return 45 + (r2 < 1 ? 50 * Math.Sqrt(1 - r2) : 0);
     }
 
     private static double Macro(double a, double b, bool on)

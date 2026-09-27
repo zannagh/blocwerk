@@ -61,6 +61,21 @@ public sealed record VolumeDetectionOptions
     /// <summary>The hold-cluster rule only applies below this height, mm (a real volume carries holds too).</summary>
     public double ClusterMaxHeightMm { get; init; } = 75;
 
+    /// <summary>
+    /// A candidate whose outline covers more than this (m²) is large: on The Attic (2026-09-27) real volumes span at
+    /// most 0.25 m², a shallow sheet of holds and bumps (a false volume) 0.86 m².
+    /// </summary>
+    public double SheetMinAreaM2 { get; init; } = 0.5;
+
+    /// <summary>Or more than this share of its facet.</summary>
+    public double SheetMinFacetShare { get; init; } = 0.15;
+
+    /// <summary>A large candidate whose median height is below this is a shallow sheet, not a volume, mm.</summary>
+    public double SheetMaxMedianMm { get; init; } = 70;
+
+    /// <summary>And whose 90th-percentile height is below this (a real volume's top stands higher), mm.</summary>
+    public double SheetMaxHeightMm { get; init; } = 120;
+
     /// <summary>A small candidate without any hold on it is a step in the wall, not a volume.</summary>
     public double BareMaxAreaM2 { get; init; } = 0.05;
 

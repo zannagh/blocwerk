@@ -15,8 +15,8 @@ public readonly record struct KnownHoldEllipse(double A, double B, double HalfWi
 
 /// <summary>
 /// The tests that tell a volume from other raised things (see <see cref="VolumeDetectionOptions"/>): a lone big
-/// hold or a hold cluster (known hold outlines), the wall's edge or what is beyond it, and something that does
-/// not sit on this facet at all (no bare wall around it).
+/// hold or a hold cluster (known hold outlines), a large but shallow sheet of bumps, the wall's edge or what is
+/// beyond it, and something that does not sit on this facet at all (no bare wall around it).
 /// </summary>
 public static class VolumeChecks
 {
@@ -107,12 +107,29 @@ public static class VolumeChecks
             _ when c.AreaM2 < options.MinAreaM2 => "rejected:small",
             _ when f.Min(p => p.A) < extent.AMin + band || f.Max(p => p.A) > extent.AMax - band
                 || f.Min(p => p.B) < extent.BMin + band || f.Max(p => p.B) > extent.BMax - band => "rejected:edge",
+            _ when IsShallowSheet(c, extent, options) => "rejected:shallow-sheet",
             _ when c.WallSupport < options.MinWallSupport => "rejected:no-wall-around",
             _ when c.SingleHoldCover > options.MaxSingleHoldCover => "rejected:single-hold",
             _ when c.HoldCover > options.MaxHoldCover && c.HeightMm < options.ClusterMaxHeightMm => "rejected:hold-cluster",
             _ when c.HoldCover < 0.05 && c.AreaM2 < options.BareMaxAreaM2 => "rejected:bare-step",
             _ => DetectedVolume.Accepted,
         };
+    }
+
+    /// <summary>
+    /// Large (outline over <see cref="VolumeDetectionOptions.SheetMinAreaM2"/> or a big share of the facet) and shallow
+    /// (median and 90th-percentile height low): a field of holds and bumps grouped into one region, not a volume.
+    /// </summary>
+    /// <param name="c">The measured candidate.</param>
+    /// <param name="extent">The facet's extent.</param>
+    /// <param name="options">Tuning.</param>
+    /// <returns>Whether it is such a sheet.</returns>
+    public static bool IsShallowSheet(DetectedVolume c, PlaneRectMm extent, VolumeDetectionOptions options)
+    {
+        var outline = PlanePolygon.Area(c.Footprint) / 1e6;
+        var facet = (extent.AMax - extent.AMin) * (extent.BMax - extent.BMin) / 1e6;
+        var large = outline > options.SheetMinAreaM2 || outline > options.SheetMinFacetShare * facet;
+        return large && c.MedianHeightMm < options.SheetMaxMedianMm && c.HeightMm < options.SheetMaxHeightMm;
     }
 
     private static double DistanceToRing(IReadOnlyList<(double A, double B)> ring, double a, double b)

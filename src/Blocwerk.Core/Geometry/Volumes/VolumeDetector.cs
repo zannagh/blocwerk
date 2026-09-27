@@ -113,6 +113,7 @@ public static class VolumeDetector
 
         var heights = members.Select(p => cloud.H[p]).Order().ToList();
         var height = heights[(int)(HeightQuantile * (heights.Count - 1))];
+        var median = heights[heights.Count / 2];
         if (height < options.MinHeightMm)
         {
             return null;
@@ -122,7 +123,7 @@ public static class VolumeDetector
         var footprint = PlanePolygon.ConvexHull(corners);
         var (any, single) = VolumeChecks.HoldCover(footprint, holds);
         var candidate = new DetectedVolume(
-            cloud.FacetId, footprint, Math.Round(area, 4), Math.Round(height, 1), members.Count, Math.Round(any, 3), Math.Round(single, 3),
+            cloud.FacetId, footprint, Math.Round(area, 4), Math.Round(height, 1), Math.Round(median, 1), members.Count, Math.Round(any, 3), Math.Round(single, 3),
             Math.Round(VolumeChecks.WallSupport(cloud, footprint, options), 3), string.Empty, null);
         var status = VolumeChecks.Judge(candidate, cloud.Extent, options);
         var surface = status == DetectedVolume.Accepted ? VolumeSurfaceBuilder.Build(cloud, footprint, options) : null;
