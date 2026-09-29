@@ -51,6 +51,7 @@ source exists once (the previous `docker/wall-stitch/` rotted from copies).
   "options": { "validate": false,              // leave-one-photo-out (slow)
                "autoDownweight": true,         // see "Outlier markers"
                "rejectOutliers": true,         // see "False detections"
+               "plausibilityRounds": true,     // see "Implausible models"
                "facets": { "foldDeg": 5, "mergeDeg": 5, "mergeMm": 40, "minMarkersPerFacet": 2 } },
   "callbackUrl": "https://…"                   // optional (protocol)
 }
@@ -100,6 +101,18 @@ average 125.4 mm, within ±3 mm except the bent marker 32 (2 photos, 133.7 mm).
   observations and never a photo's last one. Each removal is reported in `quality.rejectedObservations`.
   On The Attic's 53-photo capture this removes a false id 17 on a black hold (left triangle: 267 → 1.4 mm
   coplanarity) and marker 33 in two blurred grazing photos; capture 1 (14 photos) has none.
+- **Implausible models** (`wallgeometry/plausible.py`). A false id that neighbouring photos decode
+  alike (the same hold, the same id) passes the check above and can wreck the whole solve: The Attic's
+  142-photo capture of 2026-09-29 came out with the main wall at 17° slab (declared 45°), markers 52 m
+  too big and a camera 881 km away. When a model fails a plausibility check (mean marker side off by
+  > 5 % of the printed size or spread > 8 %, a facet > 10° from its segment's declared angle, a camera
+  > 50 m from the nearest marker) its worst offenders (the removed detections, worst residual first,
+  then the worst remaining ones; ≤ 2 % of the observations, and each implausibly far camera's worst
+  one) are dropped and the whole solve runs again FROM SCRATCH, up to 2 more times; the most plausible
+  result wins. Dropped detections join `quality.rejectedObservations` with reason
+  `"implausible-model"`, `detail` and `round`; `quality.plausibility` says what was wrong first and
+  what still is. Never a photo's last detection. The app refuses to activate a model that is still
+  implausible (`WallGeometrySanityGate`).
 - **Gravity.** Least-squares `up` ⟂ every facet normal of a `verticalReference` segment and ⟂ every
   `levelPairs` centre-to-centre direction (unit weights; with exactly two references and no pairs
   this is `n1 × n2`). A reference segment that split into several facets counts ONCE, with its

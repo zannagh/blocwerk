@@ -80,7 +80,9 @@ normalized 0..1 pipeline is reinterpreted.
         "residualPx": 10.33,                 // its free-solve reprojection RMS
         "thresholdPx": 8.09,                 // max(4, median + 10 x MAD) over all observations
         "otherViewsResidualPx": null,        // vs the pose its OTHER photos give (null: seen once)
-        "reason": "single-view-misfit",      // or "inconsistent-with-other-views"
+        "reason": "single-view-misfit",      // or "inconsistent-with-other-views"; "implausible-model" (dropped
+                                             // and re-solved, with "detail" + "round"); added by the app before
+                                             // import: "no-quiet-zone", "plan-layout" (with "detail")
         "markerDropped": true                // it was the id's only detection: the id is not in markers[]
       }
     ]
