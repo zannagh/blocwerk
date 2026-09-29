@@ -53,6 +53,9 @@ public static class CaptureServices
         services.AddScoped<IWallCaptureService, WallCaptureService>();
         services.AddScoped<ICapturePanelPhotoService, CapturePanelPhotoService>();
 
+        // Replaying a finished capture on another instance without training (app admins; see CapturePackageService).
+        services.AddScoped<Replay.ICapturePackageService, Replay.CapturePackageService>();
+
         // Retention: stale drafts, expired photos and files no row references (see WallCaptureSweeper).
         services.AddSingleton<WallCaptureSweeper>();
         services.AddHostedService<WallCaptureSweepWorker>();
