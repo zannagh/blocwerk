@@ -2,8 +2,6 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
-using System.Security.Cryptography;
-using System.Text;
 using Blocwerk.Core.Capture.Coverage;
 using Blocwerk.Core.Data;
 using Microsoft.EntityFrameworkCore;
@@ -42,12 +40,7 @@ public sealed class CoverageReportFollowUpStep(ICaptureCoverageService coverage,
     public async Task<string?> InputsKeyAsync(CaptureFollowUpContext context, CancellationToken ct)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);
-        var volumes = await db.WallVolumes.AsNoTracking()
-            .Where(v => v.GeometryModelId == context.ModelId && !v.IsHidden && !v.IsRemoved)
-            .Select(v => new { v.FacetId, v.Index, v.SurfaceJson })
-            .ToListAsync(ct);
-        var text = string.Join('\n', volumes.Select(v => $"{v.FacetId}\t{v.Index}\t{v.SurfaceJson}").Order(StringComparer.Ordinal));
-        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)))[..16];
+        var hash = await CoverageVolumesFingerprint.ComputeAsync(db, context.ModelId, ct);
         return $"coverage:{context.SplatId?.ToString("N") ?? "none"}:{hash}";
     }
 

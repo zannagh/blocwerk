@@ -25,6 +25,7 @@ namespace Blocwerk.Core.Capture.Coverage;
 /// <param name="Volumes">Per volume: its faces.</param>
 /// <param name="Video">The walk-along video against the recipe.</param>
 /// <param name="FromFeatures">The model was solved from photo features (no markers): no marker rows, at most one optional tip.</param>
+/// <param name="VolumesFingerprint">The visible volumes it was computed from (<see cref="CoverageVolumesFingerprint"/>); a mismatch makes it stale.</param>
 public sealed record CaptureCoverageReport(
     int Version,
     Guid CaptureId,
@@ -37,7 +38,8 @@ public sealed record CaptureCoverageReport(
     IReadOnlyList<FacetCoverage> Facets,
     IReadOnlyList<VolumeCoverage> Volumes,
     VideoCoverage Video,
-    bool FromFeatures = false)
+    bool FromFeatures = false,
+    string? VolumesFingerprint = null)
 {
     /// <summary>The current format.</summary>
     public const int CurrentVersion = 2;

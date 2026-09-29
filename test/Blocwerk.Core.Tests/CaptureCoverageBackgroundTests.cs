@@ -3,6 +3,7 @@
 // </copyright>
 
 using Blocwerk.Core.Capture.Coverage;
+using Blocwerk.Core.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -36,6 +37,37 @@ public class CaptureCoverageBackgroundTests
         Assert.NotNull(stored.Report);
         Assert.False(stored.Computing);
         Assert.NotNull(CaptureCoverageReport.Parse(await CoverageJsonAsync(h, captureId)));
+    }
+
+    [Fact]
+    public async Task AReportDrawnWithOtherVolumes_IsStale_AndComputedAgainInTheBackground()
+    {
+        using var h = new WallTestHarness();
+        var (captureId, modelId) = await CaptureFollowUpChainTests.SeedAsync(h);
+        await CoverageReportFollowUpStepTests.SetDoneAsync(h, captureId);
+        var service = CoverageReportFollowUpStepTests.Service(h);
+        var before = await service.ComputeFromPipelineAsync(captureId);
+        Assert.NotNull((await service.GetAsync(h.WallId, captureId)).Report);
+
+        var volumeId = await AddVolumeAsync(h, modelId);
+        var stale = await service.GetAsync(h.WallId, captureId);
+        Assert.Null(stale.Report);
+        Assert.True(stale.Computing);
+        await (CoverageBackgroundCompute.Pending(captureId) ?? Task.CompletedTask);
+        var withVolume = await service.GetAsync(h.WallId, captureId);
+        Assert.NotNull(withVolume.Report);
+        Assert.NotEqual(before!.VolumesFingerprint, withVolume.Report.VolumesFingerprint);
+
+        await using (var db = h.CreateContext())
+        {
+            (await db.WallVolumes.SingleAsync(v => v.Id == volumeId)).IsRemoved = true;
+            await db.SaveChangesAsync();
+        }
+
+        Assert.True((await service.GetAsync(h.WallId, captureId)).Computing);
+        await (CoverageBackgroundCompute.Pending(captureId) ?? Task.CompletedTask);
+        var withoutVolume = await service.GetAsync(h.WallId, captureId);
+        Assert.Equal(before.VolumesFingerprint, withoutVolume.Report?.VolumesFingerprint);
     }
 
     [Fact]
@@ -86,6 +118,19 @@ public class CaptureCoverageBackgroundTests
         await Task.Delay(50);
 
         Assert.False(CoverageBackgroundCompute.Ensure(captureId, () => Task.CompletedTask, NullLogger.Instance));
+    }
+
+    private static async Task<Guid> AddVolumeAsync(WallTestHarness h, Guid modelId)
+    {
+        await using var db = h.CreateContext();
+        var volume = new WallVolume
+        {
+            WallId = h.WallId, GeometryModelId = modelId, FacetId = "0", Index = 1, FootprintJson = "[]",
+            SurfaceJson = CoverageFixtures.Block(1, 500, 500).Surface.ToJson(),
+        };
+        db.WallVolumes.Add(volume);
+        await db.SaveChangesAsync();
+        return volume.Id;
     }
 
     private static async Task<string?> CoverageJsonAsync(WallTestHarness h, Guid captureId)

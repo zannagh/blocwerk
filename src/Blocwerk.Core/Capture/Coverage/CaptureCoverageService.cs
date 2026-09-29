@@ -33,6 +33,11 @@ public sealed class CaptureCoverageService(
     /// <inheritdoc />
     public async Task<CaptureCoverageReport?> ComputeFromPipelineAsync(Guid captureId, CancellationToken ct = default)
     {
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+        var modelId = await db.WallCaptures.AsNoTracking().Where(c => c.Id == captureId).Select(c => c.GeometryModelId).FirstOrDefaultAsync(ct);
+
+        // Taken before the volumes are loaded: a change in between leaves the report stale rather than wrongly current.
+        var fingerprint = modelId is { } model ? await CoverageVolumesFingerprint.ComputeAsync(db, model, ct) : null;
         var inputs = await LoadAsync(captureId, ct);
         if (inputs is null)
         {
@@ -40,8 +45,7 @@ public sealed class CaptureCoverageService(
         }
 
         var now = (clock ?? TimeProvider.System).GetUtcNow();
-        var report = await Task.Run(() => CaptureCoverageAnalyzer.Analyze(inputs, now), ct);
-        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+        var report = await Task.Run(() => CaptureCoverageAnalyzer.Analyze(inputs, now), ct) with { VolumesFingerprint = fingerprint };
         var capture = await db.WallCaptures.FirstAsync(c => c.Id == captureId, ct);
         capture.CoverageJson = report.ToJson();
         await db.SaveChangesAsync(ct);
@@ -68,10 +72,16 @@ public sealed class CaptureCoverageService(
             return new CaptureCoverageLookup(false, null);
         }
 
-        // A capture done before the report existed gets it computed in the background: never on the page load itself.
-        var report = CaptureCoverageReport.Parse(row.CoverageJson);
-        var computing = report is null && row.GeometryModelId is not null && IsDone(row.Status)
-            && CoverageBackgroundCompute.Ensure(captureId, () => ComputeInBackgroundAsync(captureId), logger);
+        if (row.GeometryModelId is not { } modelId || !IsDone(row.Status))
+        {
+            return new CaptureCoverageLookup(true, CaptureCoverageReport.Parse(row.CoverageJson));
+        }
+
+        // A missing report, or one drawn with other volumes, is computed in the background: never on the page load itself.
+        var fingerprint = await CoverageVolumesFingerprint.ComputeAsync(db, modelId, ct);
+        var report = CaptureCoverageReport.Parse(row.CoverageJson) is { } stored && stored.VolumesFingerprint == fingerprint ? stored : null;
+        var computing = report is null
+            && CoverageBackgroundCompute.Ensure(captureId, () => ComputeInBackgroundAsync(captureId), logger, fingerprint);
         return new CaptureCoverageLookup(true, report, computing);
     }
 
