@@ -39,7 +39,7 @@ RETRY_CAP, RETRY_EDGE = 0.6, 0.75  # the one retry after an out-of-memory
 PLAN_FILE = "plan.json"  # a runner job's plan, next to its checkpoints
 CHECKPOINT_BYTES_PER_SPLAT = 14 * 3 * 4  # 14 floats per splat, each with two Adam moments
 # The trainer's options when the job opted into the wall zones (zones.json; SPLAT_WALL_ZONES / options.wallZones;
-# without them: plain gsplat MCMC, opacity and scale regularisers 0.01), tuned on The Attic (README, "Wall
+# without them: plain gsplat MCMC, opacity regulariser 0.0005, scale 0.01), tuned on The Attic (README, "Wall
 # zones"): 10 % of the cap for the surroundings, the needle penalty, per-frame appearance, a 20x weaker opacity
 # regulariser than MCMC's 0.01 (it killed most of the wall's splats: 0.8 M of 3 M alive), D-SSIM on a 1024 px
 # crop (the full-image SSIM cost more than the render), a pose correction during the first steps

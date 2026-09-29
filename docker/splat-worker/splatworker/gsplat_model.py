@@ -82,11 +82,18 @@ def regularisers(params, a, air=None):
     return loss
 
 
-def write_ply(params, path, keep=None):
-    """Standard 3DGS layout (x y z f_dc_* opacity scale_* rot_*), binary little-endian floats."""
+def write_ply(params, path, keep=None, frame=None):
+    """Standard 3DGS layout (x y z f_dc_* opacity scale_* rot_*), binary little-endian floats. frame (centre, s):
+    the splats were trained in the unit frame x' = (x - centre) x s (gsplat_data.unit_frame): written back in
+    COLMAP's (means / s + centre, scales / s; rotations, colours and opacities are frame-free)."""
     with torch.no_grad():
-        cols = torch.cat([params["means"], params["sh0"][:, 0, :], params["opacities"][:, None],
-                          params["scales"], F.normalize(params["quats"], dim=-1)], 1)
+        means, scales = params["means"], params["scales"]
+        if frame is not None:
+            centre, s = frame
+            means = means / float(s) + torch.as_tensor(np.asarray(centre), dtype=means.dtype, device=means.device)
+            scales = scales - float(np.log(s))
+        cols = torch.cat([means, params["sh0"][:, 0, :], params["opacities"][:, None],
+                          scales, F.normalize(params["quats"], dim=-1)], 1)
         if keep is not None:
             cols = cols[keep]
         cols = cols.float().cpu().numpy()

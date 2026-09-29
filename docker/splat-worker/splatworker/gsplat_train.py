@@ -13,15 +13,20 @@ end, and a run with the same options resumes from the newest one ("resumed from 
 
 The recipe is gsplat's examples/simple_trainer.py with the MCMC strategy (3DGS as Markov Chain Monte
 Carlo, Kheradmand et al. 2024), trimmed to what the worker needs:
-- NO world-space normalisation: poses and points are COLMAP's as read (colmap_model.py); the scene
-  scale only scales the position learning rate. The written .ply is in the COLMAP frame.
+- Plain training (no --zones) runs in the unit frame, as simple_trainer: poses and points moved and scaled so the
+  cameras' mean is the origin and the farthest camera at distance 1 (gsplat_data.unit_frame), where gsplat's
+  hyperparameters hold (in COLMAP's frame at scene scale 6.6 MCMC's position noise was ~44x too strong: the splats
+  died at the cap and drifted out of the scene). Every written .ply (final, previews) is back in the COLMAP frame
+  (write_ply(frame=...)); checkpoints stay in the unit frame and carry it (a resume must match it).
+- --zones: world units as read (zones.json, the pose correction and the air mask are in them); there the scene
+  scale scales the position learning rate and gsplat_noise.mcmc_noise_lr the MCMC noise.
 - MCMC with cap_max = the profile's splat cap: the count grows 5 % per refine up to the cap and never
   beyond (the default densification strategy has no hard cap, so VRAM would not be plannable).
 - --zones (zones.json, from the wall geometry): ZonedMCMC (gsplat_zones.py) spends the cap on the wall
   and a small share on its surroundings, never on the room.
 - SH degree 0: the exports keep only the DC colour (splatio.py).
-- L1 + 0.2 D-SSIM (plain torch SSIM), opacity and scale regularisers (0.01 each, as MCMC), optionally a
-  needle penalty (--aniso-reg), per-view pose correction and per-frame appearance (gsplat_extras.py).
+- L1 + 0.2 D-SSIM (plain torch SSIM), opacity (0.0005: 20x weaker than MCMC's) and scale (0.01)
+  regularisers, optionally a needle penalty (--aniso-reg), per-view pose correction and per-frame appearance (gsplat_extras.py).
 - --behind-reg (with --zones): the facets are opaque; what a facet pixel shows from behind that facet's
   plane (room splats or the background) is penalised (gsplat_zones.see_through).
 """
@@ -126,12 +131,20 @@ def initial(a, views, device, train_ids, zones):
     torch.manual_seed(0)
     params = init_params(views.points, views.colors, a.cap, device)
     print(f"init {len(params['means'])} splats from {len(views.points)} sparse points; "
-          f"scene scale {views.scene_scale:.3f} (world space NOT normalised)", flush=True)
+          f"scene scale {views.scene_scale:.3f} ({frame_note(views.frame)})", flush=True)
     strategy = make_strategy(a, zones, views.scene_scale)
     pose, app, extra_opts = extras(a, views, train_ids, device)
     return SimpleNamespace(params=params, opts=make_optimizers(params, views.scene_scale * 1.1), strategy=strategy,
                            state=strategy.initialize_state(), pose=pose, app=app, extra_opts=extra_opts,
-                           rng=np.random.default_rng(0), order=[], step=0, sched_state=None, saved=None)
+                           rng=np.random.default_rng(0), order=[], step=0, sched_state=None, saved=None,
+                           frame=views.frame)
+
+
+def frame_note(frame):
+    if frame is None:
+        return "world space NOT normalised"
+    centre, s = frame
+    return f"unit frame: centre {np.round(centre, 3).tolist()}, x {s:.4f}"
 
 
 def setup(a, views, device, train_ids, zones):
@@ -190,7 +203,7 @@ def after_step(a, t, previews):
     if a.preview_dir and t.step in previews:
         os.makedirs(a.preview_dir, exist_ok=True)
         path = os.path.join(a.preview_dir, checkpoints.preview_name(t.step, a.steps))
-        write_ply(t.params, path + ".part")
+        write_ply(t.params, path + ".part", frame=t.frame)
         os.replace(path + ".part", path)
         print(f"preview {t.step}/{a.steps} {path}", flush=True)
     due = a.checkpoint_every > 0 and (t.step % a.checkpoint_every == 0 or t.step == a.steps)
@@ -234,7 +247,8 @@ def parse_args(argv):
     p.add_argument("--behind-reg", type=float, default=0.0,
                    help="with --zones: weight of the opacity seen through the facets (0 = off)")
     p.add_argument("--ssim-crop", type=int, default=0, help="D-SSIM over a random crop of this size (0 = whole image)")
-    p.add_argument("--opacity-reg", type=float, default=0.01)
+    p.add_argument("--opacity-reg", type=float, default=0.0005,
+                   help="MCMC's 0.01 killed the splats at the 6 M cap (The Attic, 2026-09-29: 0.4 % left >= 0.05 at 7.5k steps)")
     p.add_argument("--scale-reg", type=float, default=0.01)
     p.add_argument("--aniso-reg", type=float, default=0.0, help="needle penalty weight (0 = off)")
     p.add_argument("--aniso-max", type=float, default=6.0, help="longest / middle axis ratio allowed freely")
@@ -263,7 +277,7 @@ def main(argv=None):
     free, total = torch.cuda.mem_get_info()
     print(f"device {torch.cuda.get_device_name(0)}, {free >> 20} of {total >> 20} MB free", flush=True)
     views = Views(a.data, a.max_edge, a.cache_mb,
-                  lambda i, n: print(f"loaded {i}/{n} images", flush=True))
+                  lambda i, n: print(f"loaded {i}/{n} images", flush=True), normalise=not a.zones)
     print(f"{len(views)} views at <= {a.max_edge} px ({len(views.cache)} cached)", flush=True)
     zones = None
     if a.zones:
@@ -284,7 +298,7 @@ def main(argv=None):
                 w = r["wall"]
                 print(f"eval wall psnr {w['psnr']:.3f} ssim {w['ssim']:.4f} views {w['views']}", flush=True)
         print("writing splats", flush=True)
-        n = write_ply(params, a.out)
+        n = write_ply(params, a.out, frame=views.frame)
     except torch.cuda.OutOfMemoryError as e:
         print(f"GSPLAT_OOM {str(e).splitlines()[0][:200]}", flush=True)
         return OOM_EXIT

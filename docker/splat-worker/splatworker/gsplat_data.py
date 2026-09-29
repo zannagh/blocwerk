@@ -42,8 +42,27 @@ def eval_split(names, every):
     return [i for i in range(n) if i not in keep], held
 
 
+def unit_frame(centres):
+    """(centre (3,), s): the similarity x' = (x - centre) x s that puts the cameras' mean at the origin and the
+    farthest camera at distance 1 (gsplat's simple_trainer trains in such a frame; its hyperparameters, MCMC's
+    position noise above all, assume it)."""
+    c = np.asarray(centres, float)
+    return c.mean(0), 1.0 / max(scene_scale(c), 1e-9)
+
+
+def normalise_view(view, centre, s):
+    """The view seen in the unit frame: rotation kept, translation s x (R centre + t) (the camera frame scaled
+    by s too, so the viewmat stays rigid and the projection is unchanged)."""
+    vm = view["viewmat"].astype(np.float64)
+    vm[:3, 3] = s * (vm[:3, :3] @ centre + vm[:3, 3])
+    return {**view, "viewmat": vm.astype(np.float32), "centre": (np.asarray(view["centre"], float) - centre) * s}
+
+
 class Views:
-    def __init__(self, dataset_dir, max_edge, cache_mb=0, progress=None):
+    """normalise: poses and points in the unit frame (unit_frame; self.frame = (centre, s), else None). The
+    trained splats are then in that frame too; gsplat_model.write_ply(frame=...) writes them back in COLMAP's."""
+
+    def __init__(self, dataset_dir, max_edge, cache_mb=0, progress=None, normalise=False):
         cams, images, self.points, self.colors = read_model(dataset_dir)
         self.image_dir = os.path.join(dataset_dir, "images")
         self.max_edge, self.views = max_edge, []
@@ -57,6 +76,12 @@ class Views:
                                "viewmat": viewmat(im).astype(np.float32), "centre": camera_centre(im)})
         if not self.views:
             raise ValueError("the COLMAP model has no registered images")
+        self.frame = None
+        if normalise:
+            centre, s = unit_frame([v["centre"] for v in self.views])
+            self.views = [normalise_view(v, centre, s) for v in self.views]
+            self.points = (np.asarray(self.points, float) - centre) * s
+            self.frame = (centre, s)
         self.scene_scale = scene_scale([v["centre"] for v in self.views])
         self.cache = {}
         self._fill_cache(cache_mb, progress)

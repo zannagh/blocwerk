@@ -137,3 +137,37 @@ def test_mcmc_position_noise_is_scaled_to_the_scene():
     from splatworker.gsplat_noise import mcmc_noise_lr
     assert mcmc_noise_lr(1.0) == 5e5  # gsplat's value for a unit-normalised scene
     assert mcmc_noise_lr(6.63) == pytest.approx(5e5 / 6.63 ** 2)
+
+
+def _project(K, vm, p):
+    c = vm[:3, :3] @ p + vm[:3, 3]
+    return (K @ c)[:2] / c[2]
+
+
+def test_plain_views_train_in_the_unit_frame_with_unchanged_projections(tmp_path):
+    ds = make_dataset(str(tmp_path))
+    world, unit = Views(ds, 200), Views(ds, 200, normalise=True)
+    centre, s = unit.frame
+    assert world.frame is None and np.isclose(unit.scene_scale, 1.0)
+    assert np.allclose(np.mean([v["centre"] for v in unit.views], 0), 0, atol=1e-9)
+    assert np.allclose(unit.points, (world.points - centre) * s)
+    for w, u in zip(world.views, unit.views):  # every sparse point lands on the same pixel in both frames
+        vm = u["viewmat"].astype(float)
+        assert np.allclose(vm[:3, :3] @ vm[:3, :3].T, np.eye(3), atol=1e-5)
+        for p, q in zip(world.points[:20], unit.points[:20]):
+            assert np.allclose(_project(w["K"], w["viewmat"].astype(float), p), _project(u["K"], vm, q), atol=1e-2)
+
+
+def test_unit_frame_splats_are_written_back_in_the_colmap_frame(tmp_path):
+    torch = pytest.importorskip("torch")
+    from splatworker.gsplat_model import write_ply
+    from splatworker.splatio import read_ply
+    centre, s = np.array([10.0, -5.0, 30.0]), 0.25
+    world = np.array([[10.0, -5.0, 30.0], [14.0, -5.0, 30.0], [10.0, -1.0, 26.0]])
+    params = {"means": torch.tensor((world - centre) * s, dtype=torch.float32),
+              "sh0": torch.zeros(3, 1, 3), "opacities": torch.zeros(3),
+              "scales": torch.log(torch.full((3, 3), 0.01)), "quats": torch.tensor([[1.0, 0, 0, 0]] * 3)}
+    write_ply(params, str(tmp_path / "s.ply"), frame=(centre, s))
+    cols = read_ply(str(tmp_path / "s.ply"))
+    assert np.allclose(np.stack([cols["x"], cols["y"], cols["z"]], 1), world, atol=1e-4)
+    assert np.allclose(np.exp(cols["scale_0"]), 0.01 / s, rtol=1e-5)  # 1 cm in the unit frame = 4 cm in COLMAP's

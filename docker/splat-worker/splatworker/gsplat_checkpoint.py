@@ -10,6 +10,19 @@ from . import checkpoints
 from .gsplat_model import make_optimizers
 
 
+def frame_doc(frame):
+    """The training frame (gsplat_data.unit_frame: (centre, s), or None = COLMAP's) as plain numbers."""
+    return None if frame is None else {"centre": [float(v) for v in frame[0]], "scale": float(frame[1])}
+
+
+def same_frame(a, b, tol=1e-6):
+    """Whether two frame_doc()s are the same frame (a checkpoint resumes only in the frame it was trained in)."""
+    if a is None or b is None:
+        return a is None and b is None
+    return abs(a["scale"] - b["scale"]) <= tol * max(1.0, abs(b["scale"])) and \
+        all(abs(x - y) <= tol * max(1.0, abs(y)) for x, y in zip(a["centre"], b["centre"]))
+
+
 def save(t, directory, sig):
     """Writes the checkpoint after t.step steps (atomically) and drops the older ones."""
     os.makedirs(directory, exist_ok=True)
@@ -21,7 +34,7 @@ def save(t, directory, sig):
            "app": None if t.app is None else t.app.state_dict(),
            "rng": {"numpy": t.rng.bit_generator.state, "torch": torch.get_rng_state(),
                    "cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else []},
-           "order": [int(i) for i in t.order]}
+           "order": [int(i) for i in t.order], "frame": frame_doc(getattr(t, "frame", None))}
     with open(pt + ".part", "wb") as fh:
         torch.save(doc, fh)
         checkpoints.durable(fh)
@@ -32,6 +45,8 @@ def save(t, directory, sig):
 def restore(t, pt, device, lr_scale):
     """Replaces t's fresh state with the checkpoint's; t.sched_state is loaded once the scheduler exists."""
     doc = torch.load(pt, map_location=device, weights_only=False)
+    if not same_frame(doc.get("frame"), frame_doc(getattr(t, "frame", None))):
+        raise ValueError(f"checkpoint trained in another frame ({doc.get('frame')})")
     t.params = torch.nn.ParameterDict({k: torch.nn.Parameter(v.to(device)) for k, v in doc["params"].items()})
     t.opts = make_optimizers(t.params, lr_scale)
     for k, opt in t.opts.items():

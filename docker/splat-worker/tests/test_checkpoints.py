@@ -5,6 +5,8 @@ import json
 import os
 import time
 
+import pytest
+
 from splatworker import checkpoints, gsplat_trainer, profiles
 from splatworker.gpurunner.resume import ResumeSettings
 from splatworker.parsers import GsplatParser
@@ -184,3 +186,13 @@ def test_checkpoints_and_previews_take_their_host_copy_from_the_image_cache():
     assert gsplat_trainer.with_checkpoint_headroom(planned, None) == planned
     assert gsplat_trainer.with_checkpoint_headroom(planned, checkpoints.TrainResume(preview_dir="/p"))[0].cache_mb \
         < planned[0].cache_mb
+
+
+def test_a_checkpoint_resumes_only_in_the_frame_it_was_trained_in():
+    pytest.importorskip("torch")
+    from splatworker.gsplat_checkpoint import frame_doc, same_frame
+    unit = frame_doc(([10.0, -5.0, 30.0], 0.15))
+    assert same_frame(unit, frame_doc(([10.0, -5.0, 30.0], 0.15))) and same_frame(None, frame_doc(None))
+    assert not same_frame(unit, None) and not same_frame(None, unit)  # a world-frame checkpoint never resumes a unit one
+    assert not same_frame(unit, frame_doc(([10.0, -5.0, 30.5], 0.15)))
+    assert not same_frame(unit, frame_doc(([10.0, -5.0, 30.0], 0.2)))
