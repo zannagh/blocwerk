@@ -28,6 +28,12 @@ public sealed record WallGeometryRejectedObservation
     /// <summary>Solver reason: dropped as a worst offender after the model came out implausible, then re-solved.</summary>
     public const string ImplausibleModel = "implausible-model";
 
+    /// <summary>Solver reason: a marker the plan does not list that the solve could not confirm on a solved surface.</summary>
+    public const string UnplannedMisfit = "unplanned-misfit";
+
+    /// <summary>App reason: a marker the plan does not list, decoded in too few photos to go to the solver.</summary>
+    public const string UnplannedFewPhotos = "unplanned-few-photos";
+
     /// <summary>The photo's name in the solve request.</summary>
     public string Photo { get; init; } = string.Empty;
 

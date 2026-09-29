@@ -25,6 +25,8 @@ from .ba import Problem
 from .camera import N_INTR
 
 DEFAULTS = {"foldDeg": 5.0, "mergeDeg": 5.0, "mergeMm": 40.0, "minMarkersPerFacet": 2}
+# Declared angles further apart than this rule out a shared plane (owners declare angles roughly: +-10 deg each).
+PLAN_CONTRADICTION_DEG = 20.0
 
 
 def marker_normals(prob, x):
@@ -103,6 +105,7 @@ class _Assigner:
         self.p = {**DEFAULTS, **(params or {})}
         self.mw, self.nm = prob.marker_world(x), marker_normals(prob, x)
         self.declared, self.suspect, self.log = declared, set(suspect), []
+        self.angles = declared if isinstance(declared, dict) else {}  # segment -> declared angle (deg) or None
         self.nominal_of = nominal_of or (lambda m: m // 6)
         nominal = {}
         for m in prob.mids:
@@ -167,6 +170,28 @@ class _Assigner:
                                  "ownFitDeg": round(a_own, 3), "ownOffsetMm": round(off_own, 2),
                                  "normalAngleDeg": round(a, 3), "maxOffsetMm": round(off, 2)})
 
+    def move_lone_misplaced(self):
+        """A declared facet of ONE marker that lies on another declared facet (normal < mergeDeg, corners < mergeMm)
+        whose declared angle differs by more than PLAN_CONTRADICTION_DEG: two surfaces that far apart cannot share a
+        plane, so the marker was stuck on the host instead of where the plan says (The Attic, 2026-09-29: marker 39
+        planned on the -45 deg panel, stuck on the 45 deg main wall). move_misfits cannot see it: it has no other
+        marker of its own segment to disagree with."""
+        for f in list(self.facets):
+            seg, ms = self.facets[f]
+            host = self.best_host(ms, exclude={f}) if seg in self.declared and len(ms) == 1 else None
+            if not host:
+                continue
+            hf, a, off = host
+            own, other = self.angles.get(seg), self.angles.get(self.facets[hf][0])
+            if own is None or other is None or abs(own - other) <= PLAN_CONTRADICTION_DEG:
+                continue
+            self.facets[hf] = (self.facets[hf][0], sorted(self.facets[hf][1] + ms))
+            del self.facets[f]
+            self.declared_fids.remove(f)
+            self.log.append({"kind": "move", "marker": ms[0], "fromFacet": f, "intoFacet": hf,
+                             "reason": "declared angles contradict the plan", "declaredAngleDeg": own,
+                             "hostDeclaredAngleDeg": other, "normalAngleDeg": round(a, 3), "maxOffsetMm": round(off, 2)})
+
     def coplanar_notes(self):
         """Facets of different segments that are coplanar (kept apart on purpose)."""
         for f, g in itertools.combinations(sorted(self.facets), 2):
@@ -188,6 +213,7 @@ def assign_facets(prob, x, declared, params=None, suspect=(), nominal_of=None):
     a = _Assigner(prob, x, declared, params, suspect, nominal_of)
     a.merge_undeclared()
     a.move_misfits()
+    a.move_lone_misplaced()
     a.coplanar_notes()
     members = {f: sorted(ms) for f, (_, ms) in a.facets.items()}
     return members, {f: s for f, (s, _) in a.facets.items()}, a.log

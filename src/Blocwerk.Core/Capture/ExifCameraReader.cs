@@ -10,22 +10,24 @@ public sealed record ExifCameraInfo(string? Make, string? Model, string? LensMod
     public static ExifCameraInfo Empty { get; } = new(null, null, null, null, null);
 
     /// <summary>
-    /// A key shared by photos with the same intrinsics: body + lens + raw resolution. Photos in one
-    /// group are solved with one camera model, so the resolution must be part of it. Only a hash of
-    /// that text is stored and sent to the worker — grouping needs equality, not the device's name.
+    /// A key shared by photos with the same intrinsics: body + lens + focal length + raw resolution. Photos in one
+    /// group are solved with one camera model, so the resolution must be part of it; so is the focal length, since
+    /// the lens tag alone does not tell the phone's lenses apart (an add-on lens app wrote "Moment Tele 58mm" on
+    /// The Attic's 0.5x and 1x shots alike). Only a hash of that text is stored and sent to the worker — grouping
+    /// needs equality, not the device's name.
     /// </summary>
     public string CameraGroup(int width, int height)
     {
         var body = string.Join(' ', new[] { Make, Model }.Where(s => !string.IsNullOrWhiteSpace(s)));
-        var lens = LensModel ?? (FocalLengthMm is { } f ? $"f={f:0.###}mm" : Focal35mm is { } e ? $"f35={e:0.#}" : "unknown lens");
-        var group = $"{(body.Length > 0 ? body : "unknown camera")}|{lens}|{width}x{height}";
+        var focal = FormattableString.Invariant($"f={FocalLengthMm:0.###}|f35={Focal35mm:0.#}");
+        var group = $"{(body.Length > 0 ? body : "unknown camera")}|{LensModel ?? "unknown lens"}|{focal}|{width}x{height}";
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(group));
         return "cam-" + Convert.ToHexStringLower(hash.AsSpan(0, 12));
     }
 }
 
 /// <summary>
-/// A small, dependency-free EXIF reader (JPEG APP1 and PNG eXIf): Make, Model, LensModel,
+/// A small, dependency-free EXIF reader (JPEG APP1, PNG eXIf, WebP, HEIC Exif item): Make, Model, LensModel,
 /// FocalLength and FocalLengthIn35mmFilm. Never throws — a missing or malformed block is "no EXIF".
 /// </summary>
 public static class ExifCameraReader
@@ -45,7 +47,7 @@ public static class ExifCameraReader
             return tiff.IsEmpty ? ExifCameraInfo.Empty : ParseTiff(tiff);
         }
         catch (Exception ex) when (ex is ArgumentOutOfRangeException or IndexOutOfRangeException or ArgumentException
-                                       or InvalidDataException)
+                                       or InvalidDataException or OverflowException)
         {
             return ExifCameraInfo.Empty;
         }
@@ -55,6 +57,7 @@ public static class ExifCameraReader
     {
         CapturePhotoKind.Jpeg => FindJpegTiff(image),
         CapturePhotoKind.Png => FindPngTiff(image),
+        CapturePhotoKind.Heic => HeifExifLocator.FindTiff(image),
         _ when WebpMetadataStripper.IsWebp(image) => WebpMetadataStripper.FindExif(image),
         _ => [],
     };

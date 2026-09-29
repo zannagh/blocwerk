@@ -44,13 +44,21 @@ class SolveRequest:
     options: dict
     size_overrides_mm: dict = field(default_factory=dict)
     marker_segments: dict = field(default_factory=dict)
+    unplanned: frozenset = frozenset()
 
     def marker_size(self, mid):
         return self.size_overrides_mm.get(mid, self.marker_size_mm)
 
     def segment_of(self, mid):
-        """Nominal segment: the plan's assignment when given, else the legacy `id // 6`."""
+        """Nominal segment: the plan's assignment when given, else the legacy `id // 6`. An unplanned marker has a
+        segment of its own that is never declared, so facet assignment adopts it into the facet it lies on."""
+        if mid in self.unplanned:
+            return unplanned_segment(mid)
         return self.marker_segments.get(mid, mid // ROLES_PER_SEGMENT)
+
+    def nominal_segment(self, mid):
+        """The segment the request placed the marker on; None for an unplanned one."""
+        return None if mid in self.unplanned else self.segment_of(mid)
 
     def role_of(self, mid):
         """Legacy role name; a plan's ids carry no role."""
@@ -59,6 +67,11 @@ class SolveRequest:
     def segment_name(self, idx):
         s = self.segments.get(idx)
         return s.name if s else f"segment {idx} (undeclared)"
+
+
+def unplanned_segment(mid):
+    """The nominal segment of an unplanned marker: negative, so no declared segment ever has it."""
+    return -1 - mid
 
 
 def marker_object_points(size_mm):
@@ -172,6 +185,7 @@ def parse_request(doc, limits=None):
         overrides[int(k)] = _num(v, f"markerSizeOverridesMm[{k}]", 5, 2000)
     segments = _parse_segments(doc.get("segments"))
     marker_segments = _parse_marker_segments(doc.get("markerSegments"), scheme, max_id)
+    unplanned = _parse_unplanned(doc.get("unplannedMarkerIds"), scheme, max_id, marker_segments)
     photos_raw = doc.get("photos")
     if not isinstance(photos_raw, list) or not photos_raw:
         raise RequestError("'photos' must be a non-empty list")
@@ -179,9 +193,9 @@ def parse_request(doc, limits=None):
         raise RequestError(f"too many photos (max {limits.get('max_photos', 200)})")
     photos = [_parse_photo(p, i, max_id, limits) for i, p in enumerate(photos_raw)]
     if scheme == PLAN_SCHEME:
-        unplanned = sorted({m["id"] for p in photos for m in p["markers"]} - set(marker_segments))
-        if unplanned:
-            raise RequestError(f"marker id(s) {unplanned} are not in 'markerSegments' (send planned markers only)")
+        unknown = sorted({m["id"] for p in photos for m in p["markers"]} - set(marker_segments) - unplanned)
+        if unknown:
+            raise RequestError(f"marker id(s) {unknown} are not in 'markerSegments' (nor in 'unplannedMarkerIds')")
     names = [p["name"] for p in photos]
     if len(set(names)) != len(names):
         raise RequestError("photo names must be unique")
@@ -196,7 +210,24 @@ def parse_request(doc, limits=None):
             raise RequestError(f"levelPairs[{i}] must be two distinct marker ids")
         pairs.append((pr[0], pr[1]))
     options = _parse_options(doc.get("options"))
-    return SolveRequest(size, dictionary, scheme, segments, pairs, photos, options, overrides, marker_segments)
+    return SolveRequest(size, dictionary, scheme, segments, pairs, photos, options, overrides, marker_segments,
+                        unplanned)
+
+
+def _parse_unplanned(raw, scheme, max_id, marker_segments):
+    """Optional ("plan" only) [marker id, ...]: markers on the wall that the plan does not list (stuck on later)."""
+    if raw is None:
+        return frozenset()
+    if scheme != PLAN_SCHEME:
+        raise RequestError("'unplannedMarkerIds' needs idScheme 'plan'")
+    if not isinstance(raw, list) or len(raw) > max_id:
+        raise RequestError(f"'unplannedMarkerIds' must be a list of at most {max_id} marker ids")
+    for v in raw:
+        if isinstance(v, bool) or not isinstance(v, int) or not 0 <= v < max_id:
+            raise RequestError(f"unplannedMarkerIds must be marker ids in [0, {max_id - 1}]")
+        if v in marker_segments:
+            raise RequestError(f"marker {v} is in both 'markerSegments' and 'unplannedMarkerIds'")
+    return frozenset(raw)
 
 
 def _parse_marker_segments(raw, scheme, max_id):

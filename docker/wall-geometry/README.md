@@ -36,6 +36,7 @@ source exists once (the previous `docker/wall-stitch/` rotted from copies).
   "markerSizeOverridesMm": { "40": 80 },       // optional, per marker id
   "dictionary": "DICT_4X4_50", "idScheme": "segment*6+role",   // or "plan"
   "markerSegments": { "44": 0 },               // optional; REQUIRED for "plan": marker id -> segment index
+  "unplannedMarkerIds": [48],                  // optional, "plan" only: markers on the wall the plan lacks
   "segments": [                                // what the owner declares; only these are "declared"
     { "index": 0, "name": "main wall", "declaredAngleDeg": 45, "verticalReference": false },
     { "index": 1, "name": "kickboard", "declaredAngleDeg": 0,  "verticalReference": true }
@@ -58,7 +59,7 @@ source exists once (the previous `docker/wall-stitch/` rotted from copies).
 ```
 
 Validation (`422` with a message): ids within the dictionary's `segment*6+role` range (with `"plan"`:
-the whole dictionary, and every observed id must be in `markerSegments`), no duplicate id within a photo, 4 finite corners, a focal length per photo, unique photo names, sane sizes.
+the whole dictionary, and every observed id must be in `markerSegments` or `unplannedMarkerIds`), no duplicate id within a photo, 4 finite corners, a focal length per photo, unique photo names, sane sizes.
 
 **Response** (`result.geometry` of the finished job, also file `wall-geometry.json`): the schema's
 document plus: per segment `declared`, `declaredVsMeasuredDeg`; per facet `markerIds`,
@@ -101,6 +102,12 @@ average 125.4 mm, within ±3 mm except the bent marker 32 (2 photos, 133.7 mm).
   observations and never a photo's last one. Each removal is reported in `quality.rejectedObservations`.
   On The Attic's 53-photo capture this removes a false id 17 on a black hold (left triangle: 267 → 1.4 mm
   coplanarity) and marker 33 in two blurred grazing photos; capture 1 (14 photos) has none.
+- **Unplanned markers** (`wallgeometry/unplanned.py`). An id of `unplannedMarkerIds` (stuck on after the plan was
+  printed) has no segment and no planned position; facet assignment adopts it into the declared facet it lies on
+  (`mergeDeg` / `mergeMm`). It stays only when it is still seen in ≥ 2 photos after the checks above, is not
+  down-weighted and was adopted; otherwise all its detections are dropped (one `quality.rejectedObservations`
+  record, reason `"unplanned-misfit"`, `markerDropped: true`) and the structure is solved again without it. A
+  kept one is listed with `"unplanned": true` and `nominalSegment: null`.
 - **Implausible models** (`wallgeometry/plausible.py`). A false id that neighbouring photos decode
   alike (the same hold, the same id) passes the check above and can wreck the whole solve: The Attic's
   142-photo capture of 2026-09-29 came out with the main wall at 17° slab (declared 45°), markers 52 m

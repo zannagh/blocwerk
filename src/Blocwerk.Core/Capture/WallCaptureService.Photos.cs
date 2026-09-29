@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Helpers;
+using Blocwerk.Core.MarkerPlanning;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -38,7 +39,7 @@ public sealed partial class WallCaptureService
             // The stripper validates the structure first; EXIF (camera facts, the iPhone gravity vector) is then read
             // from the original, and what is stored has none of it (no GPS or maker note on disk either).
             var clean = StripOrRefuse(bytes, name);
-            var exif = ExifCameraReader.Read(bytes);
+            var exif = ReadCamera(bytes, uploaded);
             var gravity = ReadDeviceGravity(bytes, uploaded);
             var hash = Convert.ToHexStringLower(SHA256.HashData(clean));
             if (existing.Any(p => p.ContentHash == hash))
@@ -66,11 +67,12 @@ public sealed partial class WallCaptureService
                 DeviceGravityX = gravity?.X,
                 DeviceGravityY = gravity?.Y,
                 DeviceGravityZ = gravity?.Z,
+                Sharpness = await Task.Run(() => CaptureFrameSharpness.Score(clean, PipelineOptions.PhotoSharpnessEdge), ct),
                 MarkersJson = markers is null ? null : JsonSerializer.Serialize(markers),
             };
             db.WallCapturePhotos.Add(photo);
             await db.SaveChangesAsync(ct);
-            return ToResult(photo, Warnings(photo, markers));
+            return ToResult(photo, Warnings(photo, markers, layout));
         }
     }
 
@@ -103,6 +105,16 @@ public sealed partial class WallCaptureService
     /// </summary>
     private static DeviceGravity? ReadDeviceGravity(byte[] preStrip, byte[] uploaded) =>
         DeviceGravityReader.Read(preStrip) ?? (ReferenceEquals(preStrip, uploaded) ? null : DeviceGravityReader.Read(uploaded));
+
+    /// <summary>
+    /// The camera facts (focal length, lens, body) from the pre-strip bytes; for a HEIC upload whose converted JPEG
+    /// carries none (a converter that drops EXIF), from the HEIC's own Exif item.
+    /// </summary>
+    private static ExifCameraInfo ReadCamera(byte[] preStrip, byte[] uploaded)
+    {
+        var exif = ExifCameraReader.Read(preStrip);
+        return exif.Focal35mm is null && !ReferenceEquals(preStrip, uploaded) ? ExifCameraReader.Read(uploaded) : exif;
+    }
 
     /// <summary>HEIC → upright JPEG (EXIF kept until the strip below reads and drops it).</summary>
     private async Task<byte[]> ConvertHeicAsync(string? name, byte[] heic, CancellationToken ct)
@@ -185,7 +197,7 @@ public sealed partial class WallCaptureService
         }
     }
 
-    private static List<string> Warnings(WallCapturePhoto photo, IReadOnlyList<CaptureMarker>? markers)
+    private static List<string> Warnings(WallCapturePhoto photo, IReadOnlyList<CaptureMarker>? markers, WallMarkerLayout layout)
     {
         var warnings = new List<string>();
         if (markers is not null && markers.All(m => m.Ignored is not null))
@@ -196,6 +208,12 @@ public sealed partial class WallCaptureService
         foreach (var ignored in markers?.Where(m => m.Ignored is not null) ?? [])
         {
             warnings.Add($"Ignored a detection of marker {ignored.Id}: {ignored.IgnoredDetail ?? ignored.Ignored}.");
+        }
+
+        foreach (var unplanned in markers?.Where(m => m.Ignored is null && layout.IsFromPlan && !layout.AllowedIds.Contains(m.Id)) ?? [])
+        {
+            warnings.Add($"Marker {unplanned.Id} is not in the marker plan; it is used when {CaptureUnplannedMarkers.MinPhotos} or more "
+                         + "photos show it and it lies on the wall's surfaces.");
         }
 
         if (photo.Focal35mm is null)

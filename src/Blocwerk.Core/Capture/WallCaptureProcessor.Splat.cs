@@ -178,7 +178,7 @@ public sealed partial class WallCaptureProcessor
         var geometry = await db.WallGeometryModels.Where(m => m.Id == modelId).Select(m => m.Json).FirstAsync(ct);
         var parts = new List<ComputeJobPart> { ComputeJobPart.Json("geometry", geometry) };
         using var photoParts = new ComputePhotoParts(files);
-        parts.AddRange(await PhotoPartsAsync(photoParts, await LoadPhotosAsync(captureId, ct), CaptureComputeDocuments.PhotoName, ct));
+        parts.AddRange(await PhotoPartsAsync(photoParts, await LoadUsablePhotosAsync(captureId, ct), CaptureComputeDocuments.PhotoName, ct));
 
         // The walk-along video's frames (if any): auxiliary images for coverage, never for alignment.
         parts.AddRange(await FramePartsAsync(photoParts, captureId, ct));

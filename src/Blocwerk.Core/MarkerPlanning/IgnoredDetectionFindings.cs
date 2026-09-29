@@ -46,6 +46,8 @@ public static class IgnoredDetectionFindings
                 $"{head}: no white border around it — probably a hold or a shadow read as a marker.",
             WallGeometryRejectedObservation.ImplausibleModel =>
                 $"{head}: the model came out implausible with it{detail}, so it was left out and the model solved again.",
+            WallGeometryRejectedObservation.UnplannedMisfit or WallGeometryRejectedObservation.UnplannedFewPhotos =>
+                $"{head}: {rejected.Detail ?? "not in the marker plan"} — left out; add it to the plan if it is a real marker.",
             _ when rejected.Reason == WallGeometryRejectedObservation.SingleViewMisfit || rejected.MarkerDropped =>
                 $"{head}: no other photo shows it and it doesn't fit a flat square marker — probably a false detection (a hold or a shadow read as a marker).",
             _ => $"{head}: doesn't match where the other photos place it — probably a false detection.",

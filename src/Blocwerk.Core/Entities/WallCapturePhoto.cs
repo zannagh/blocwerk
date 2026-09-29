@@ -64,6 +64,18 @@ public class WallCapturePhoto
     /// <summary>aZ of <see cref="DeviceGravityX"/>.</summary>
     public double? DeviceGravityZ { get; set; }
 
+    /// <summary>
+    /// Sharpness: variance of the Laplacian of the photo's luma at <c>PhotoSharpnessEdge</c> px on the long edge
+    /// (<see cref="Capture.CaptureFrameSharpness"/>); null until scored.
+    /// </summary>
+    public double? Sharpness { get; set; }
+
+    /// <summary>
+    /// True when the pipeline left the photo out as clearly blurry (<see cref="Capture.CaptureBlurFilter"/>): far less
+    /// sharp than the capture's sharp photos and no marker decoded in it. It then never reaches feature matching or training.
+    /// </summary>
+    public bool ExcludedBlurry { get; set; }
+
     /// <summary>Validated, refined markers (<c>CaptureMarker[]</c> as JSON, pixel corners), null until detected.</summary>
     public string? MarkersJson { get; set; }
 

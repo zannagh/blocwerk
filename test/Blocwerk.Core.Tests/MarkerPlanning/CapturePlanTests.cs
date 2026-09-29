@@ -35,7 +35,7 @@ public class CapturePlanTests
         Assert.NotNull(await s.MarkerPlans.GetPlanAsync(h.WallId));
         var detector = (FakeMarkerDetectionService)s.Detector;
         Assert.All(detector.Calls, o => Assert.Contains(33, o!.AllowedIds));
-        Assert.All(detector.Calls, o => Assert.DoesNotContain(11, o!.AllowedIds));
+        Assert.All(detector.Calls, o => Assert.Contains(49, o!.AllowedIds)); // unplanned ids are decoded too
 
         var draft = (await s.Service.GetDraftAsync(h.WallId))!;
         Assert.Equal((true, 4, 21), (draft.Plan!.Uploaded, draft.Plan.Segments, draft.Plan.Markers));
@@ -50,6 +50,7 @@ public class CapturePlanTests
         var request = JsonNode.Parse(s.Client.JsonSubmissions.Single(j => j.Kind == "solve").Json)!;
         Assert.Equal("plan", (string?)request["idScheme"]);
         Assert.Equal(0, (int)request["markerSegments"]!["24"]!);
+        Assert.Null(request["unplannedMarkerIds"]);
         var summary = await s.Service.GetCaptureAsync(draftId);
         Assert.NotNull(summary!.PlacementCheck);
         Assert.Equal(21, summary.PlacementCheck!.PlannedMarkers);

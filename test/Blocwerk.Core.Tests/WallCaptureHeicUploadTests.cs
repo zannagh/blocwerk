@@ -72,6 +72,24 @@ public class WallCaptureHeicUploadTests
     }
 
     [Fact]
+    public async Task HeicUpload_ReadsTheCameraFactsFromTheHeic_WhenTheConversionDroppedThem_AndScoresTheSharpness()
+    {
+        using var h = new WallTestHarness();
+        var heic = AppleMakerNoteExif.Heic(ExifCameraReader.FindTiff(ExifJpeg.Build(CaptureScenario.TinyJpeg())).ToArray());
+        using var s = new CaptureScenario(h, photoConverter: new FakeConverter(CaptureScenario.TinyJpeg()));
+        var draft = await OpenDraftAsync(h, s);
+
+        var result = await s.Service.AddPhotoAsync(draft, "IMG_3.HEIC", heic, CancellationToken.None);
+
+        Assert.Equal(14, result.Focal35mm);
+        await using var db = h.CreateContext();
+        var photo = await db.WallCapturePhotos.SingleAsync();
+        Assert.StartsWith("cam-", photo.CameraGroup, StringComparison.Ordinal);
+        Assert.NotNull(photo.Sharpness);
+        Assert.False(photo.ExcludedBlurry);
+    }
+
+    [Fact]
     public async Task PhotoWithoutAppleMakerNote_HasNoGravity()
     {
         using var h = new WallTestHarness();

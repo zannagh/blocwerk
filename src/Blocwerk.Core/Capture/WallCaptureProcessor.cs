@@ -102,6 +102,7 @@ public sealed partial class WallCaptureProcessor(
         if (run.Capture.GeometryModelId is null)
         {
             await DetectMarkersAsync(run, ct);
+            await MarkBlurryPhotosAsync(run, ct);
             if (await DecideModeAsync(run, ct) == WallCaptureGeometryMode.Features)
             {
                 await SfmAndImportAsync(run, client, ct);
@@ -236,4 +237,8 @@ public sealed partial class WallCaptureProcessor(
             .OrderBy(p => p.Index)
             .ToListAsync(ct);
     }
+
+    /// <summary>The photos feature matching and training get: all but those left out as blurry (<see cref="MarkBlurryPhotosAsync"/>).</summary>
+    private async Task<List<WallCapturePhoto>> LoadUsablePhotosAsync(Guid captureId, CancellationToken ct) =>
+        (await LoadPhotosAsync(captureId, ct)).Where(p => !p.ExcludedBlurry).ToList();
 }

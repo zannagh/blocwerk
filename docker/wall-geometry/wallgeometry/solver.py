@@ -1,6 +1,7 @@
 """One full solve: free BA -> outlier down-weighting -> facet assignment -> facet BA -> frame."""
 import numpy as np
 
+from . import unplanned
 from .facets import assign_facets, build_facet_problem, coplanarity, marker_normals
 from .ba import Problem, pack_free, unpack_free
 from .freeba import ROBUST, build_cameras, free_mask, per_marker_rms, per_obs_err, rms, run_free
@@ -74,6 +75,12 @@ def facet_solve(prob, x, members, free_intr):
     return fprob, fx
 
 
+def declared_angles(req):
+    """{declared segment: its declared angle (deg; a vertical reference without one: 0) or None}."""
+    return {i: s.declared_angle_deg if s.declared_angle_deg is not None else (0.0 if s.vertical_reference else None)
+            for i, s in req.segments.items()}
+
+
 def solve_structure(req, progress=_noop, drop_image=None, members=None):
     """Everything up to (not including) gravity. Returns the solution dict."""
     obs = observations(req)
@@ -94,13 +101,18 @@ def solve_structure(req, progress=_noop, drop_image=None, members=None):
     if req.options.get("rejectOutliers", True):
         prob, x, obs, flagged, rejected = reject_false_detections(prob, x, obs, free_intr, flagged,
                                                                   auto_downweight)
-    declared = set(req.segments)
+    declared = declared_angles(req)
     decisions = []
     facet_segment = None
     if members is None:
         progress(0.55, "facet assignment")
         members, facet_segment, decisions = assign_facets(prob, x, declared, req.options.get("facets"),
                                                           suspect=set(flagged), nominal_of=req.segment_of)
+        off = unplanned.misfits(req, obs, members, facet_segment, flagged)
+        if off:
+            sol = solve_structure(unplanned.without(req, off), progress)
+            sol["rejected"] = unplanned.records(req, off) + sol["rejected"]
+            return sol
     members = {k: [m for m in v if m in prob.mids] for k, v in members.items()}
     members = {k: v for k, v in members.items() if v}
     if facet_segment is None:

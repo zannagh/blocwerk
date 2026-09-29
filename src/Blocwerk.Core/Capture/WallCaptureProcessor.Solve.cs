@@ -46,7 +46,7 @@ public sealed partial class WallCaptureProcessor
 
         var solved = CaptureComputeDocuments.GeometryFromSolveResult(status.Result)
                      ?? throw new CaptureFailedException("The 3D computation finished without a wall model.");
-        var json = CaptureIgnoredDetections.AddToModel(solved, await LoadPhotosAsync(capture.Id, ct));
+        var json = CaptureIgnoredDetections.AddToModel(solved, await LoadPhotosAsync(capture.Id, ct), run.Layout);
         await SetStageAsync(capture.Id, WallCaptureStatus.Solving, 0.72, "Activating the 3D model", ct);
 
         // The import runs AS the capture's creator, through the same wall-admin gate as the UI.
@@ -102,7 +102,8 @@ public sealed partial class WallCaptureProcessor
     private async Task<string> SubmitSolveAsync(CaptureRun run, IComputeJobClient client, CancellationToken ct)
     {
         var photos = await LoadPhotosAsync(run.Capture.Id, ct);
-        var usable = photos.Where(p => CaptureComputeDocuments.UsableMarkers(run.Layout, p.MarkersJson).Count > 0).ToList();
+        var unplanned = CaptureUnplannedMarkers.Consistent(run.Layout, photos);
+        var usable = photos.Where(p => CaptureUnplannedMarkers.SolveMarkers(run.Layout, p.MarkersJson, unplanned).Count > 0).ToList();
         if (usable.Count < 2)
         {
             throw new CaptureFailedException(

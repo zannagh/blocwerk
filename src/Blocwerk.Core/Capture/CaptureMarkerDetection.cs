@@ -5,7 +5,8 @@ using Microsoft.Extensions.Logging;
 namespace Blocwerk.Core.Capture;
 
 /// <summary>
-/// Marker detection for capture photos: validated (the wall's layout ids — 0..35 without a plan —
+/// Marker detection for capture photos: validated (every dictionary id with a plan, unplanned ones included — see
+/// <see cref="CaptureUnplannedMarkers"/>; 0..35 without a plan —
 /// duplicates rejected by the detector) and edge-refined corners, in PIXELS of the RAW grid (EXIF orientation ignored).
 /// With a plan, every photo's markers are then checked against the planned layout (<see cref="CapturePlanLayoutCheck"/>).
 /// Detections that are not printed markers (no quiet zone, or not fitting the plan) are stored flagged
@@ -32,7 +33,7 @@ internal static class CaptureMarkerDetection
 
         // The OpenCV detector is synchronous behind its Task (decode + ArUco + refinement of a photo up to
         // 20 MB); run it on the pool so an upload never blocks the caller's thread (a Blazor circuit).
-        var result = await Task.Run(() => detector.DetectAsync(bytes, layout.DetectionOptions, ct), ct);
+        var result = await Task.Run(() => detector.DetectAsync(bytes, CaptureUnplannedMarkers.DetectionOptions(layout), ct), ct);
         var markers = result.Markers
             .Select(m => new CaptureMarker(m.Id, Corners(m.CornersPx), m.Synthetic, Math.Round(m.SidePx, 2)))
             .ToList();

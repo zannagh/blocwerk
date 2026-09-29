@@ -85,8 +85,10 @@ def offenders(doc, sol, request_doc, dropped):
     """The next round's worst offenders as {(photo, id): residualPx}, never a photo's last detection."""
     n = sum(len(p["markers"]) for p in request_doc["photos"])
     budget = max(MIN_DROP, int(math.ceil(DROP_SHARE * n)))
-    ranked = [((r["photo"], int(r["id"])), float(r.get("residualPx") or 0.0))
-              for r in sorted(sol["rejected"], key=lambda r: -(r.get("residualPx") or 0.0))]
+    # records without a residual (an unplanned marker the solve dropped) are already out of the solve
+    ranked = [((r["photo"], int(r["id"])), float(r["residualPx"]))
+              for r in sorted(sol["rejected"], key=lambda r: -(r.get("residualPx") or 0.0))
+              if r.get("residualPx") is not None]
     err = sol["err_facet"]
     rms = [float(np.sqrt(np.mean(np.square(e)))) for e in err]
     by_rms = sorted(range(len(sol["obs"])), key=lambda k: -rms[k])

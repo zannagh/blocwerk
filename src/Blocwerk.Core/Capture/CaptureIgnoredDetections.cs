@@ -5,6 +5,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.MarkerPlanning;
 
 namespace Blocwerk.Core.Capture;
 
@@ -18,12 +19,18 @@ internal static class CaptureIgnoredDetections
     /// <summary>The solved model JSON with the capture's ignored detections appended; unchanged when there are none.</summary>
     /// <param name="solvedJson">The solver's model JSON.</param>
     /// <param name="photos">The capture's photos.</param>
-    public static string AddToModel(string solvedJson, IEnumerable<WallCapturePhoto> photos)
+    /// <param name="layout">The capture's marker layout: with a plan, unplanned ids too few photos decode are listed as well.</param>
+    public static string AddToModel(string solvedJson, IEnumerable<WallCapturePhoto> photos, WallMarkerLayout? layout = null)
     {
-        var records = photos
-            .OrderBy(p => p.Index)
-            .SelectMany(p => CaptureComputeDocuments.IgnoredMarkers(p.MarkersJson).Select(m => Record(p.Index, m)))
+        var ordered = photos.OrderBy(p => p.Index).ToList();
+        var records = ordered
+            .SelectMany(p => CaptureComputeDocuments.IgnoredMarkers(p.MarkersJson).Select(m => Record(p.Index, m, false)))
             .ToList();
+        if (layout is not null)
+        {
+            records.AddRange(CaptureUnplannedMarkers.TooFewPhotos(layout, ordered).Select(u => Record(u.PhotoIndex, u.Marker, true)));
+        }
+
         if (records.Count == 0)
         {
             return solvedJson;
@@ -57,12 +64,12 @@ internal static class CaptureIgnoredDetections
         }
     }
 
-    private static JsonObject Record(int photoIndex, CaptureMarker marker) => new()
+    private static JsonObject Record(int photoIndex, CaptureMarker marker, bool markerDropped) => new()
     {
         ["photo"] = CaptureComputeDocuments.PhotoName(photoIndex),
         ["id"] = marker.Id,
         ["reason"] = marker.Ignored,
         ["detail"] = marker.IgnoredDetail,
-        ["markerDropped"] = false,
+        ["markerDropped"] = markerDropped,
     };
 }

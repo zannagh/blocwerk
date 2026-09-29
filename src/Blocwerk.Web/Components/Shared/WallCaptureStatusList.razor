@@ -46,7 +46,13 @@
                     {
                         <tr @key="capture.Id">
                             <td><LocalTime Value="@capture.CreatedAt" Format="LocalTimeFormat.DateTime" /></td>
-                            <td class="num">@capture.PhotoCount</td>
+                            <td class="num">
+                                @capture.PhotoCount
+                                @if (capture.BlurryPhotoCount > 0)
+                                {
+                                    <div class="capture-blurry" title="Left out of feature matching and training: far less sharp than the capture's other photos, and no marker found in them.">@capture.BlurryPhotoCount too blurry</div>
+                                }
+                            </td>
                             <td>
                                 <span class="@StatusClass(capture.Status)">@StatusLabel(capture.Status)</span>
                                 @if (capture.Error is not null)

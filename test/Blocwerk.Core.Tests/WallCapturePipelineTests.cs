@@ -94,7 +94,7 @@ public class WallCapturePipelineTests
             Assert.Equal(64, p!["width"]!.GetValue<int>());
             Assert.Equal(48, p["height"]!.GetValue<int>());
             Assert.Equal(14, p["focal35mm"]!.GetValue<double>());
-            Assert.Matches("^cam-[0-9a-f]{24}$", p["cameraGroup"]!.GetValue<string>());
+            Assert.Matches(@"^cam-[0-9a-f]{24}\|f35=14$", p["cameraGroup"]!.GetValue<string>());
             Assert.Equal(6, p["markers"]!.AsArray().Count);
             Assert.Equal(4, p["markers"]![0]!["corners"]!.AsArray().Count);
             Assert.True(p["markers"]![0]!["refined"]!.GetValue<bool>());

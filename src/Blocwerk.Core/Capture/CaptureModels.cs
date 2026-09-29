@@ -64,6 +64,7 @@ public sealed record CapturePhotoResult(
 /// (measured segment angles, warnings, ignored detections), empty without a model. <c>PhotoRealPending</c>: the
 /// capture is done, but its photo-real view waits for (or trains on) a 3D runner; a quiet one-liner, else null.
 /// <c>CanRefinish</c>: a 3D runner's trained view is kept on the server and can be finished again without training.
+/// <c>BlurryPhotoCount</c>: photos the pipeline left out as too blurry (<see cref="CaptureBlurFilter"/>), part of <c>PhotoCount</c>.
 /// </summary>
 public sealed record WallCaptureSummary(
     Guid Id,
@@ -83,7 +84,8 @@ public sealed record WallCaptureSummary(
     Guid WallId = default,
     IReadOnlyList<WallGeometryModelCheck>? ModelChecks = null,
     string? PhotoRealPending = null,
-    bool CanRefinish = false)
+    bool CanRefinish = false,
+    int BlurryPhotoCount = 0)
 {
     public bool IsRunning => Status is WallCaptureStatus.Queued or WallCaptureStatus.Detecting
         or WallCaptureStatus.Solving or WallCaptureStatus.Texturing or WallCaptureStatus.Splatting;

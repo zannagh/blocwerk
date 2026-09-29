@@ -45,13 +45,15 @@ public static class CaptureComputeDocuments
     /// The solve request. Only photos that saw a marker take part; width/height are the RAW pixel
     /// grid the corners were detected in. With a plan the ids carry no meaning, so the request also
     /// says where each marker sits (<c>markerSegments</c>) and how big each was printed
-    /// (<c>markerSizeOverridesMm</c>, relative to <paramref name="markerSizeMm"/>), and only the
-    /// plan's markers are sent.
+    /// (<c>markerSizeOverridesMm</c>, relative to <paramref name="markerSizeMm"/>); besides the plan's markers only
+    /// unplanned ones that several photos decode are sent (<c>unplannedMarkerIds</c>, <see cref="CaptureUnplannedMarkers"/>).
     /// </summary>
     public static string BuildSolveRequest(
         WallMarkerLayout layout, double markerSizeMm, CaptureDeclarations declarations, IEnumerable<WallCapturePhoto> photos)
     {
-        var photoNodes = PhotoNodes(layout, photos);
+        var photoList = photos.ToList();
+        var unplanned = CaptureUnplannedMarkers.Consistent(layout, photoList);
+        var photoNodes = PhotoNodes(layout, photoList, unplanned);
 
         // Only rows that actually declare something (an angle, or "vertical") are sent. A segment the
         // solver hears about is taken as a real surface and never merged, so an empty row for spare
@@ -70,6 +72,11 @@ public static class CaptureComputeDocuments
         if (layout.IsFromPlan)
         {
             AddPlanFields(request, layout, markerSizeMm);
+        }
+
+        if (unplanned.Count > 0)
+        {
+            request["unplannedMarkerIds"] = new JsonArray(unplanned.Order().Select(id => (JsonNode?)id).ToArray());
         }
 
         request["segments"] = new JsonArray(declared.Select(s => (JsonNode?)new JsonObject
@@ -96,6 +103,16 @@ public static class CaptureComputeDocuments
         var markers = ParseMarkers(markersJson).Where(m => m.Ignored is null);
         return layout.IsFromPlan ? markers.Where(m => layout.AllowedIds.Contains(m.Id)).ToList() : markers.ToList();
     }
+
+    /// <summary>
+    /// The solver's intrinsics group of a photo: the stored EXIF body + lens + size key, split by the 35 mm focal
+    /// length. An iPhone's 1.2x/1.5x shot is a crop of the main lens (same lens model, same pixel size) at another
+    /// focal length, so without it the crop would share the 1x photos' intrinsics.
+    /// </summary>
+    /// <param name="photo">The photo.</param>
+    public static string? SolveCameraGroup(WallCapturePhoto photo) => photo.CameraGroup is { } group && photo.Focal35mm is { } f35
+        ? $"{group}|f35={f35.ToString("0.#", CultureInfo.InvariantCulture)}"
+        : photo.CameraGroup;
 
     /// <summary>A photo's ignored detections (a hold read as a marker, a marker that does not fit the plan).</summary>
     public static IReadOnlyList<CaptureMarker> IgnoredMarkers(string? markersJson) =>
@@ -178,12 +195,12 @@ public static class CaptureComputeDocuments
         };
     }
 
-    private static JsonArray PhotoNodes(WallMarkerLayout layout, IEnumerable<WallCapturePhoto> photos)
+    private static JsonArray PhotoNodes(WallMarkerLayout layout, IEnumerable<WallCapturePhoto> photos, IReadOnlySet<int> unplanned)
     {
         var photoNodes = new JsonArray();
         foreach (var photo in photos.OrderBy(p => p.Index))
         {
-            var markers = UsableMarkers(layout, photo.MarkersJson);
+            var markers = CaptureUnplannedMarkers.SolveMarkers(layout, photo.MarkersJson, unplanned);
             if (markers.Count == 0)
             {
                 continue;
@@ -195,7 +212,7 @@ public static class CaptureComputeDocuments
                 ["width"] = photo.Width,
                 ["height"] = photo.Height,
                 ["focal35mm"] = photo.Focal35mm,
-                ["cameraGroup"] = photo.CameraGroup,
+                ["cameraGroup"] = SolveCameraGroup(photo),
                 ["markers"] = new JsonArray(markers.Select(MarkerNode).ToArray<JsonNode?>()),
             });
         }

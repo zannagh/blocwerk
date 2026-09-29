@@ -117,21 +117,22 @@ public sealed partial class WallCaptureService
         var ids = captures.Select(c => c.Id).ToList();
         var counts = await db.WallCapturePhotos.Where(p => ids.Contains(p.CaptureId))
             .GroupBy(p => p.CaptureId)
-            .Select(g => new { g.Key, Count = g.Count() })
-            .ToDictionaryAsync(g => g.Key, g => g.Count);
+            .Select(g => new { g.Key, Count = g.Count(), Blurry = g.Count(p => p.ExcludedBlurry) })
+            .ToDictionaryAsync(g => g.Key, g => (g.Count, g.Blurry));
         var modelChecks = await ModelChecksAsync(db, captures);
         var pending = await Runners.GpuJobText.PendingAsync(db, ids);
         var refinishable = await Runners.GpuJobQueue.RefinishableAsync(db, files, ids);
         return captures.Select(c => new WallCaptureSummary(
             c.Id, c.CreatedAt, c.Status, c.Progress, c.Stage, c.Error, c.Notes,
-            counts.GetValueOrDefault(c.Id), c.GeometryModelId, c.CompletedAt, ReadPlacementCheck(c.PlacementCheckJson),
+            counts.GetValueOrDefault(c.Id).Count, c.GeometryModelId, c.CompletedAt, ReadPlacementCheck(c.PlacementCheckJson),
             c.SplatQuality,
             CaptureFollowUpText.Summary(CaptureFollowUpRecord.Parse(c.FollowUpJson)),
             CaptureFollowUpText.Note(CaptureFollowUpRecord.Parse(c.FollowUpJson)),
             c.WallId,
             c.GeometryModelId is { } modelId ? modelChecks.GetValueOrDefault(modelId, []) : [],
             pending.GetValueOrDefault(c.Id),
-            refinishable.Contains(c.Id))).ToList();
+            refinishable.Contains(c.Id),
+            counts.GetValueOrDefault(c.Id).Blurry)).ToList();
     }
 
     /// <summary>What the solver said about each capture's model (its stored JSON), by model id.</summary>

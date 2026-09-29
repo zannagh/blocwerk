@@ -50,6 +50,20 @@ public sealed class WallCapturePipelineOptions
     /// </summary>
     public int SharpnessEdge { get; init; } = CaptureFrameSharpness.ScoreEdge;
 
+    /// <summary>
+    /// Long edge a capture photo's sharpness is scored at on upload (larger than a frame's: a photo is judged on its
+    /// own detail, not against its neighbours). Setting <c>Blocwerk:Capture:PhotoSharpnessEdge</c> /
+    /// <c>CAPTURE__PHOTOSHARPNESSEDGE</c> (240–4096); default 1024.
+    /// </summary>
+    public int PhotoSharpnessEdge { get; init; } = 1024;
+
+    /// <summary>
+    /// A photo without any decoded marker is left out as blurry when its sharpness is below this share of the
+    /// capture's sharp photos (<see cref="CaptureBlurFilter"/>). Setting <c>Blocwerk:Capture:BlurExcludeRatio</c> /
+    /// <c>CAPTURE__BLUREXCLUDERATIO</c> (0–1, 0 = never); default 0.2.
+    /// </summary>
+    public double BlurExcludeRatio { get; init; } = CaptureBlurFilter.DefaultRatio;
+
     /// <summary>First wait between two job-status polls; grows by half each time.</summary>
     public TimeSpan PollInitialDelay { get; init; } = TimeSpan.FromSeconds(1);
 
@@ -122,10 +136,7 @@ public sealed class WallCapturePipelineOptions
         var videoMb = ReadInt(configuration, "MaxVideoMb", 1, 16 * 1024);
         var photoMb = ReadInt(configuration, "MaxPhotoMb", 1, 200);
         var frames = ReadInt(configuration, "MaxVideoFrames", 3, 400);
-        var fps = Read(configuration, "VideoFramesPerSecond") is { } rawFps
-                  && double.TryParse(rawFps, NumberStyles.Float, CultureInfo.InvariantCulture, out var f) && f is >= 0.1 and <= 10
-            ? f
-            : defaults.VideoFramesPerSecond;
+        var fps = ReadDouble(configuration, "VideoFramesPerSecond", 0.1, 10) ?? defaults.VideoFramesPerSecond;
         return new WallCapturePipelineOptions
         {
             MaxPhotos = ReadInt(configuration, "MaxPhotos", 2, 1000) ?? defaults.MaxPhotos,
@@ -136,6 +147,8 @@ public sealed class WallCapturePipelineOptions
             FrameSharpnessWindow = ReadInt(configuration, "FrameSharpnessWindow", 1, 10) ?? defaults.FrameSharpnessWindow,
             FrameJpegQ = ReadInt(configuration, "FrameJpegQ", 2, 31) ?? defaults.FrameJpegQ,
             SharpnessEdge = ReadInt(configuration, "SharpnessEdge", 120, 1920) ?? defaults.SharpnessEdge,
+            PhotoSharpnessEdge = ReadInt(configuration, "PhotoSharpnessEdge", 240, 4096) ?? defaults.PhotoSharpnessEdge,
+            BlurExcludeRatio = ReadDouble(configuration, "BlurExcludeRatio", 0, 1) ?? defaults.BlurExcludeRatio,
             MaxVideoFrames = frames ?? defaults.MaxVideoFrames,
             VideoFramesPerSecond = fps,
             HeifConvertPath = Read(configuration, "HeifConvertPath") is { Length: > 0 } heif ? heif : defaults.HeifConvertPath,
@@ -144,6 +157,12 @@ public sealed class WallCapturePipelineOptions
 
     private static string? Read(IConfiguration? configuration, string key) =>
         configuration?[$"Blocwerk:Capture:{key}"] ?? Environment.GetEnvironmentVariable($"CAPTURE__{key.ToUpperInvariant()}");
+
+    private static double? ReadDouble(IConfiguration? configuration, string key, double min, double max) =>
+        double.TryParse(Read(configuration, key), NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
+        && value >= min && value <= max
+            ? value
+            : null;
 
     private static int? ReadInt(IConfiguration? configuration, string key, int min, int max) =>
         int.TryParse(Read(configuration, key), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)

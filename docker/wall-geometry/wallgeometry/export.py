@@ -95,7 +95,7 @@ def _markers(sol, per_mk, measured):
     out = []
     for m in sorted(fid_of):
         f = fid_of[m]
-        rec = {"id": m, "segment": sol["facet_segment"][f], "nominalSegment": req.segment_of(m), "role": req.role_of(m),
+        rec = {"id": m, "segment": sol["facet_segment"][f], "nominalSegment": req.nominal_segment(m), "role": req.role_of(m),
                "facet": f, "sizeMm": req.marker_size(m),
                "cornersPlaneMm": [_l(p, 2) for p in wd["facets"][f]["ab"][m]],
                "cornersWorldMm": [_l(p, 2) for p in wd["corners"][m]],
@@ -106,6 +106,8 @@ def _markers(sol, per_mk, measured):
                "synthetic": m in syn, "syntheticCorners": syn.get(m, [])}
         if m in sol["downweighted"]:
             rec["downweightedSigmaPx"] = sol["downweighted"][m]["sigmaPx"]
+        if m in req.unplanned:
+            rec["unplanned"] = True
         out.append(rec)
     return out
 

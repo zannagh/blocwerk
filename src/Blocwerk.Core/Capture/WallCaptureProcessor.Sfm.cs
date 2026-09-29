@@ -132,7 +132,7 @@ public sealed partial class WallCaptureProcessor
         var captureId = run.Capture.Id;
         await PrepareVideoFramesAsync(captureId, WallCaptureStatus.Solving, ct);
         using var photoParts = new ComputePhotoParts(files);
-        var parts = await PhotoPartsAsync(photoParts, await LoadPhotosAsync(captureId, ct), CaptureComputeDocuments.PhotoName, ct);
+        var parts = await PhotoPartsAsync(photoParts, await LoadUsablePhotosAsync(captureId, ct), CaptureComputeDocuments.PhotoName, ct);
         parts.AddRange(await FramePartsAsync(photoParts, captureId, ct));
         if (anchors is not null)
         {
@@ -150,7 +150,7 @@ public sealed partial class WallCaptureProcessor
         var capture = run.Capture;
         var sparse = await splat.DownloadFileAsync(sfmJobId, SparseFile, MaxSparseBytes, ct);
         await KeepSparsePointsAsync(capture, sparse, ct);
-        var photos = await LoadPhotosAsync(capture.Id, ct);
+        var photos = await LoadUsablePhotosAsync(capture.Id, ct);
         var holds = await PhotoHoldsAsync(capture.Id, photos, ct);
         var request = CaptureSfmDocuments.BuildRequest(
             photos.Select(CaptureSfmPhoto.From),
