@@ -150,7 +150,7 @@ public partial class WallBigUpdateService
             {
                 staged.Generation = newGen;
                 CopyCuratedFields(oldHold, staged);
-                staged.NeedsReview = changed;
+                staged.NeedsReview = changed || oldHold.NeedsReview;
 
                 // Warp-carry (shapes): a matched twin is a fresh detection with NO custom outline. If the
                 // old hold carried one, transform it onto the twin (using the twin's OWN detected centre)
@@ -370,6 +370,7 @@ public partial class WallBigUpdateService
         to.Category = from.Category;
         to.HandType = from.HandType;
         to.IsOnKickboard = from.IsOnKickboard;
+        to.IsAutoDetected = from.IsAutoDetected;
         if (from.IsVirtual)
         {
             to.IsVirtual = true;
@@ -386,7 +387,7 @@ public partial class WallBigUpdateService
         clone.Id = Guid.NewGuid();
         clone.WallPanelId = destinationPanelId;
         clone.Generation = newGen;
-        clone.NeedsReview = changed;
+        clone.NeedsReview = changed || oldHold.NeedsReview;
         clone.AlignmentSourceHoldId = null;
         return clone;
     }
