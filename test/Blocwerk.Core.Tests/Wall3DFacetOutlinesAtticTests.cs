@@ -28,6 +28,9 @@ public class Wall3DFacetOutlinesAtticTests
         ]
         """;
 
+    /// <summary>"closing up end": right angle at the top, back (the corner); its hypotenuse runs down the overhang's plane.</summary>
+    private static readonly double[][] ClosingUpEnd = [[2241.9, 1976.8], [-50, 1976.8], [-50, -212.4]];
+
     private static readonly Dictionary<int, int> Parents = new() { [5] = 2, [7] = 6 };
 
     private static readonly Dictionary<string, string> Segments = new()
@@ -43,33 +46,48 @@ public class Wall3DFacetOutlinesAtticTests
     [Fact]
     public void ClosingUpEnd_IsCutAlongTheOverhang_WhenItsPlanParentOnlyShavesAnEdge()
     {
-        var outline = Facet(Build("0", "2", "3", "5", "6", "7"), "7").Outline;
+        var view = Build("0", "2", "3", "5", "6", "7");
+        var end = Facet(view, "7");
 
-        Assert.NotNull(outline);
+        Assert.NotNull(end.Outline);
 
-        // Right angle at the floor, room side; the hypotenuse runs up the overhang's plane (its top end is
-        // 4 mm from the extent's corner, so merged into it).
-        AssertPoints([[120, -50], [2245.7, -50], [2245.7, 1976.8]], outline!, 1);
+        // Behind the overhang, not the air in front of it: marker 28 on the floor in front must not flip it.
+        AssertPoints(ClosingUpEnd, end.Outline!, 1);
+        AssertBehind(end, Facet(view, "2"));
     }
 
     [Fact]
     public void ClosingUpEnd_IsCutAlongTheOverhang_WithoutAnyCornerFacet()
     {
-        var outline = Facet(Build("0", "2", "3", "5", "7"), "7").Outline;
+        var view = Build("0", "2", "3", "5", "7");
+        var end = Facet(view, "7");
 
-        Assert.NotNull(outline);
-        AssertPoints([[120, -50], [2245.7, -50], [2245.7, 1976.8]], outline!, 1);
+        Assert.NotNull(end.Outline);
+        AssertPoints(ClosingUpEnd, end.Outline!, 1);
+        AssertBehind(end, Facet(view, "2"));
+    }
+
+    [Fact]
+    public void LeftoverBit_FacesTheRoom()
+    {
+        var view = Build("0", "2", "5", "7");
+
+        // The overhang leans toward −y, so the climber stands at −y below it.
+        Assert.True(Facet(view, "2").Normal[1] < -0.5);
+        Assert.True(Facet(view, "0").Normal[1] < -0.5);
     }
 
     [Fact]
     public void ClosingUpSpace_StaysCutAgainstItsPlanParent_AsATriangle()
     {
-        var outline = Facet(Build("0", "2", "3", "5", "6", "7"), "5").Outline;
+        var view = Build("0", "2", "3", "5", "6", "7");
+        var space = Facet(view, "5");
 
-        Assert.NotNull(outline);
+        Assert.NotNull(space.Outline);
 
         // Right angle at the top, back; completed past the extent's 50 mm margin at the hypotenuse's ends.
-        AssertPoints([[2112.9, -181.9], [2112.9, 2024.8], [-197.3, 2024.8]], outline!, 1);
+        AssertPoints([[2112.9, -181.9], [2112.9, 2024.8], [-197.3, 2024.8]], space.Outline!, 1);
+        AssertBehind(space, Facet(view, "2"));
     }
 
     [Fact]
@@ -108,6 +126,16 @@ public class Wall3DFacetOutlinesAtticTests
     }
 
     private static Wall3DFacet Facet(Wall3DView view, string id) => view.Facets.Single(f => f.Id == id);
+
+    /// <summary>Every corner lies on or behind <paramref name="plane"/> (against its room-facing normal), within 3 mm.</summary>
+    private static void AssertBehind(Wall3DFacet facet, Wall3DFacet plane)
+    {
+        foreach (var p in facet.Corners)
+        {
+            var d = Enumerable.Range(0, 3).Sum(i => plane.Normal[i] * (p[i] - plane.Origin[i]));
+            Assert.True(d < 3, $"corner ({p[0]:F0}, {p[1]:F0}, {p[2]:F0}) is {d:F1} mm in front of {plane.Name}");
+        }
+    }
 
     private static void AssertPoints(double[][] expected, IReadOnlyList<double[]> actual, double tolerance)
     {

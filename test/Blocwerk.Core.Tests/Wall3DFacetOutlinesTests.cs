@@ -9,8 +9,8 @@ using Blocwerk.Core.MarkerPlanning;
 namespace Blocwerk.Core.Tests;
 
 /// <summary>
-/// A plan triangle's facet is cut where its solved plane meets its parent's, on its markers' side
-/// (<see cref="Wall3DFacetOutlines"/>); anything unreliable keeps the rectangle.
+/// A plan triangle's facet is cut where its solved plane meets its parent's
+/// (<see cref="Wall3DFacetOutlines"/>) on the side behind the parent; anything unreliable keeps the rectangle.
 /// </summary>
 public class Wall3DFacetOutlinesTests
 {
@@ -81,22 +81,48 @@ public class Wall3DFacetOutlinesTests
     }
 
     [Fact]
-    public void CentroidOnTheSeam_FallsBackToTheRectangle()
+    public void WithoutAFacingNormal_CentroidOnTheSeam_FallsBackToTheRectangle()
     {
-        var parent = Facet("2", [0, 0, 0], [1, 0, 0], [0, -S, S], [0, -S, -S]);
+        var parent = Facet("2", [0, 0, 0], [1, 0, 0], [0, -S, S], [0, 0, 0]);
         var child = Facet("5", [1000, 0, 0], [0, -1, 0], [0, 0, 1], [-1, 0, 0]);
 
         Assert.Null(Wall3DFacetOutlines.Clip(child, parent, (500, 503)));
+        Assert.Null(Wall3DFacetOutlines.Clip(child, parent, null));
         Assert.NotNull(Wall3DFacetOutlines.Clip(child, parent, (500, 700)));
     }
 
     [Fact]
-    public void MarkersBelowTheSeam_KeepTheLowerTriangle()
+    public void WithoutAFacingNormal_MarkersBelowTheSeam_KeepTheLowerTriangle()
     {
-        var parent = Facet("2", [0, 0, 0], [1, 0, 0], [0, -S, S], [0, -S, -S]);
+        var parent = Facet("2", [0, 0, 0], [1, 0, 0], [0, -S, S], [0, 0, 0]);
         var child = Facet("5", [1000, 0, 0], [0, -1, 0], [0, 0, 1], [-1, 0, 0]);
 
         AssertPoints([[0, 0], [1000, 0], [1000, 1000]], Wall3DFacetOutlines.Clip(child, parent, (700, 200))!);
+    }
+
+    [Fact]
+    public void MarkersInFrontOfTheParent_StillKeepTheSideBehindIt()
+    {
+        // (700, 200) is (1000, −700, 200): in the room under the overhang, where the centroid rule would keep the lower half.
+        var parent = Facet("2", [0, 0, 0], [1, 0, 0], [0, -S, S], [0, -S, -S]);
+        var child = Facet("5", [1000, 0, 0], [0, -1, 0], [0, 0, 1], [-1, 0, 0]);
+
+        AssertPoints([[0, 0], [1000, 1000], [0, 1000]], Wall3DFacetOutlines.Clip(child, parent, (700, 200))!);
+        AssertPoints([[0, 0], [1000, 1000], [0, 1000]], Wall3DFacetOutlines.Clip(child, parent, null)!);
+    }
+
+    [Fact]
+    public void StrayFloorMarkers_DoNotFlipTheTriangleIntoTheRoom()
+    {
+        const string Stray = """
+            { "id": 44, "segment": 5, "facet": "5", "cornersPlaneMm": [[700, 125], [825, 125], [825, 0], [700, 0]] },
+            { "id": 45, "segment": 5, "facet": "5", "cornersPlaneMm": [[850, 125], [975, 125], [975, 0], [850, 0]] },
+            """;
+        var json = Json.Replace("\"markers\": [", "\"markers\": [" + Stray, StringComparison.Ordinal);
+        var parents = new Dictionary<int, int> { [5] = 2 };
+        var view = Wall3DViewBuilder.Build(new Wall { Name = "Attic" }, WallGeometryDocument.Parse(json), null, hypotenuseParents: parents);
+
+        AssertPoints([[0, 0], [1000, 1000], [0, 1000]], view.Facets.Single(f => f.Id == "5").Outline!);
     }
 
     [Fact]

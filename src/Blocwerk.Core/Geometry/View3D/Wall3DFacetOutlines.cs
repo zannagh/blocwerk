@@ -9,7 +9,8 @@ namespace Blocwerk.Core.Geometry.View3D;
 /// Cuts a triangular segment's facet to its shape. The marker plan only says WHICH segments are right
 /// triangles and which parent their hypotenuse lies against (its millimetres need not match the solve);
 /// the hypotenuse itself is where the facet's solved plane meets the parent facet's. The facet's extent
-/// rectangle is clipped by that line, keeping the side its markers are on. When the parent's seam cuts
+/// rectangle is clipped by that line, keeping the side behind the other facet (a closing piece fills the space
+/// behind a slope, not the room in front of it; markers may sit on the floor in front). When the parent's seam cuts
 /// nothing (the plan's parent need not be the facet the hypotenuse rests on), the seam with the nearest
 /// other facet that does cut it is used instead.
 /// </summary>
@@ -18,7 +19,7 @@ public static class Wall3DFacetOutlines
     /// <summary>Planes closer to parallel than this (sine of their angle, ~10°) give no reliable seam.</summary>
     public const double MinPlaneAngleSin = 0.17;
 
-    /// <summary>A marker centroid this close to the seam does not say which side the facet is on.</summary>
+    /// <summary>Without a facing normal, a marker centroid this close to the seam does not say which side the facet is on.</summary>
     public const double MinCentroidDistanceMm = 10;
 
     /// <summary>A seam must cut at least this share of the extent off; less is a sliver at an edge, not a hypotenuse.</summary>
@@ -52,30 +53,24 @@ public static class Wall3DFacetOutlines
     }
 
     /// <summary>
-    /// The facet's extent clipped where its plane meets <paramref name="parent"/>'s, keeping the side of
-    /// <paramref name="inside"/> ([a, b] points, counter-clockwise); null when the clip is unreliable or cuts
-    /// less than <see cref="MinCutFraction"/> off. A clip that only leaves stubs of the extent's margin at the
-    /// hypotenuse's ends is completed to the right triangle (<see cref="MaxTriangleGrowth"/>).
+    /// The facet's extent clipped where its plane meets <paramref name="other"/>'s, keeping the side behind
+    /// <paramref name="other"/> (against its normal, away from the climber); only when that normal gives no
+    /// orientation, the side of <paramref name="centroid"/> ([a, b] mm). Null when the clip is unreliable or
+    /// either side is less than <see cref="MinCutFraction"/> of the extent. A clip that only leaves stubs of the
+    /// extent's margin at the hypotenuse's ends is completed to the right triangle (<see cref="MaxTriangleGrowth"/>).
     /// </summary>
-    public static IReadOnlyList<double[]>? Clip(Wall3DFacet facet, Wall3DFacet parent, (double A, double B) inside)
+    public static IReadOnlyList<double[]>? Clip(Wall3DFacet facet, Wall3DFacet other, (double A, double B)? centroid)
     {
-        if (SeamSide(facet, parent) is not { } side)
+        if (SeamSide(facet, other) is not { } side || KeptSign(other, side, centroid) is not { } sign)
         {
             return null;
         }
 
-        var keep = side(inside.A, inside.B);
-        if (Math.Abs(keep) < MinCentroidDistanceMm)
-        {
-            return null;
-        }
-
-        var sign = Math.Sign(keep);
         double KeepSide(double a, double b) => sign * side(a, b);
         var outline = ClipRect(facet.Extent, KeepSide);
         var e = facet.Extent;
-        var rectArea = (e.AMax - e.AMin) * (e.BMax - e.BMin);
-        return outline is not null && Area(outline) <= (1 - MinCutFraction) * rectArea ? AsTriangle(outline, KeepSide) : null;
+        var share = outline is null ? 1 : Area(outline) / ((e.AMax - e.AMin) * (e.BMax - e.BMin));
+        return share >= MinCutFraction && share <= 1 - MinCutFraction ? AsTriangle(outline!, KeepSide) : null;
     }
 
     /// <summary>
@@ -173,11 +168,7 @@ public static class Wall3DFacetOutlines
             return facet;
         }
 
-        if (MarkerCentroid(doc, facet.Id) is not { } centroid)
-        {
-            return facet;
-        }
-
+        var centroid = MarkerCentroid(doc, facet.Id);
         var parent = facets
             .Where(f => f.Segment == parentIndex && f.Id != facet.Id)
             .MinBy(f => Distance(Centre(f), Centre(facet)));
@@ -188,7 +179,7 @@ public static class Wall3DFacetOutlines
     }
 
     private static IReadOnlyList<double[]>? NearestSeamOutline(
-        Wall3DFacet facet, List<Wall3DFacet> facets, Wall3DFacet? parent, (double A, double B) centroid) =>
+        Wall3DFacet facet, List<Wall3DFacet> facets, Wall3DFacet? parent, (double A, double B)? centroid) =>
         facets
             .Where(f => f.Id != facet.Id && f.Id != parent?.Id)
             .Select(f => (Other: f, Outline: Clip(facet, f, centroid)))
@@ -202,7 +193,7 @@ public static class Wall3DFacetOutlines
     /// <summary>Signed distance (mm) in the facet's plane from the line where it meets <paramref name="other"/>'s plane.</summary>
     private static Func<double, double, double>? SeamSide(Wall3DFacet facet, Wall3DFacet other)
     {
-        var n = other.Normal;
+        var n = PlaneNormal(other);
         var alpha = Dot(n, facet.U);
         var beta = Dot(n, facet.V);
         var norm = Math.Sqrt((alpha * alpha) + (beta * beta));
@@ -213,6 +204,33 @@ public static class Wall3DFacetOutlines
 
         var gamma = Dot(n, other.Origin) - Dot(n, facet.Origin);
         return (a, b) => ((alpha * a) + (beta * b) - gamma) / norm;
+    }
+
+    /// <summary>−1 (behind <paramref name="other"/>) when its normal faces the climber, else the centroid's side; null when neither says.</summary>
+    private static int? KeptSign(Wall3DFacet other, Func<double, double, double> side, (double A, double B)? centroid)
+    {
+        if (IsUnit(other.Normal))
+        {
+            return -1;
+        }
+
+        var keep = centroid is { } c ? side(c.A, c.B) : 0;
+        return Math.Abs(keep) < MinCentroidDistanceMm ? null : Math.Sign(keep);
+    }
+
+    private static bool IsUnit(double[]? n) => n is { Length: 3 } && Math.Abs(Math.Sqrt(Dot(n, n)) - 1) < 1e-3;
+
+    /// <summary>The plane's unit normal: <see cref="Wall3DFacet.Normal"/>, else U × V.</summary>
+    private static double[] PlaneNormal(Wall3DFacet f)
+    {
+        if (IsUnit(f.Normal))
+        {
+            return f.Normal;
+        }
+
+        double[] n = [(f.U[1] * f.V[2]) - (f.U[2] * f.V[1]), (f.U[2] * f.V[0]) - (f.U[0] * f.V[2]), (f.U[0] * f.V[1]) - (f.U[1] * f.V[0])];
+        var length = Math.Sqrt(Dot(n, n));
+        return length < 1e-9 ? n : [n[0] / length, n[1] / length, n[2] / length];
     }
 
     private static double RectDistance(PlaneRectMm r, double a, double b) =>
