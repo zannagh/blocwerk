@@ -10,9 +10,11 @@ from computejobs.child import run_in_child
 
 def _solve(job_dir, progress):
     from wallgeometry import solve_document
+
+    from .settings import settings
     with open(os.path.join(job_dir, "request.json")) as fh:
         req = json.load(fh)
-    doc, _ = solve_document(req, progress)
+    doc, _ = solve_document(req, progress, {"max_photos": settings.max_photos})
     with open(os.path.join(job_dir, "wall-geometry.json"), "w") as fh:
         json.dump(doc, fh)
     return {"geometry": doc, "files": ["wall-geometry.json"]}
