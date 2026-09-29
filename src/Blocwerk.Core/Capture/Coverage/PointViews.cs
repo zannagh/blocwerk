@@ -2,6 +2,8 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Geometry.Volumes;
+
 namespace Blocwerk.Core.Capture.Coverage;
 
 /// <summary>
@@ -42,9 +44,10 @@ public readonly record struct PointViews(int Views, int Directions, double Sprea
     /// <param name="facetId">Its facet (for the occlusion test).</param>
     /// <param name="cameras">The posed cameras.</param>
     /// <param name="scene">The wall geometry.</param>
+    /// <param name="ownConvex">The convex volume the point lies on, if any (it cannot block a front-facing view of its own surface).</param>
     /// <returns>The views.</returns>
     public static PointViews Evaluate(
-        double[] point, double[] normal, string facetId, IReadOnlyList<CoverageCamera> cameras, CoverageScene scene)
+        double[] point, double[] normal, string facetId, IReadOnlyList<CoverageCamera> cameras, CoverageScene scene, VolumeSurface? ownConvex = null)
     {
         var minDot = Math.Cos(DirectionSeparationDeg * Math.PI / 180);
         var directions = new List<double[]>();
@@ -55,7 +58,7 @@ public readonly record struct PointViews(int Views, int Directions, double Sprea
             double[] v = [cam.Centre[0] - point[0], cam.Centre[1] - point[1], cam.Centre[2] - point[2]];
             var dist = Math.Sqrt(Dot(v, v));
             var cos = dist <= 0 ? 0 : Dot(v, normal) / dist;
-            if (cos <= 0.035 || !cam.InFrame(point) || scene.Occluded(cam.Centre, point, facetId))
+            if (cos <= 0.035 || !cam.InFrame(point) || scene.Occluded(cam.Centre, point, facetId, ownConvex))
             {
                 continue;
             }

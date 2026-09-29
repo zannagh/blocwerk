@@ -10,6 +10,7 @@ using Blocwerk.Core.Geometry;
 using Blocwerk.Core.Geometry.Volumes;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Capture.Coverage;
@@ -24,7 +25,8 @@ public sealed class CaptureCoverageService(
     ICurrentUserService currentUserService,
     ILogger<CaptureCoverageService> logger,
     IKioskContext? kioskContext = null,
-    TimeProvider? clock = null) : ICaptureCoverageService
+    TimeProvider? clock = null,
+    IServiceScopeFactory? scopeFactory = null) : ICaptureCoverageService
 {
     private const string AdminAction = "Reading a capture's coverage";
 
@@ -66,14 +68,11 @@ public sealed class CaptureCoverageService(
             return new CaptureCoverageLookup(false, null);
         }
 
-        // A capture done before the report existed gets it on first read (seconds, derived data only).
+        // A capture done before the report existed gets it computed in the background: never on the page load itself.
         var report = CaptureCoverageReport.Parse(row.CoverageJson);
-        if (report is null && row.GeometryModelId is not null && IsDone(row.Status))
-        {
-            report = await ComputeSafelyAsync(captureId, ct);
-        }
-
-        return new CaptureCoverageLookup(true, report);
+        var computing = report is null && row.GeometryModelId is not null && IsDone(row.Status)
+            && CoverageBackgroundCompute.Ensure(captureId, () => ComputeInBackgroundAsync(captureId), logger);
+        return new CaptureCoverageLookup(true, report, computing);
     }
 
     /// <summary>The frames the photo-real stage placed, from its <c>frame.json</c> stats; null when not reported.</summary>
@@ -92,17 +91,17 @@ public sealed class CaptureCoverageService(
         }
     }
 
-    private async Task<CaptureCoverageReport?> ComputeSafelyAsync(Guid captureId, CancellationToken ct)
+    // Outlives the request: its own scope (and so its own context and services) when the app provides one.
+    private async Task ComputeInBackgroundAsync(Guid captureId)
     {
-        try
+        if (scopeFactory is null)
         {
-            return await ComputeFromPipelineAsync(captureId, ct);
+            await ComputeFromPipelineAsync(captureId);
+            return;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            logger.LogWarning(ex, "Capture {CaptureId}: the coverage report could not be computed", captureId);
-            return null;
-        }
+
+        await using var scope = scopeFactory.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<ICaptureCoverageService>().ComputeFromPipelineAsync(captureId);
     }
 
     private static bool IsDone(Entities.WallCaptureStatus status) =>

@@ -14,6 +14,8 @@ namespace Blocwerk.Web.Components.Shared;
 public partial class WallCaptureCoverage
 {
     private const string TipKey = "blocwerk-markerless-markers-tip";
+    private const int MaxPolls = 12;
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(10);
 
     private Guid loadedCaptureId;
     private CaptureCoverageReport? report;
@@ -21,6 +23,9 @@ public partial class WallCaptureCoverage
     private bool open;
     private bool loading;
     private bool tipDismissed;
+    private bool computing;
+    private int pollsLeft;
+    private CancellationTokenSource? polling;
 
     [Parameter]
     public Guid WallId { get; set; }
@@ -46,6 +51,8 @@ public partial class WallCaptureCoverage
     [Inject]
     private IJSRuntime JS { get; set; } = default!;
 
+    public void Dispose() => StopPolling();
+
     protected override async Task OnParametersSetAsync()
     {
         if (CaptureId == loadedCaptureId)
@@ -54,6 +61,8 @@ public partial class WallCaptureCoverage
         }
 
         loadedCaptureId = CaptureId;
+        StopPolling();
+        computing = false;
         report = null;
         failure = null;
         open = StartOpen;
@@ -89,23 +98,72 @@ public partial class WallCaptureCoverage
         }
     }
 
-    private async Task LoadAsync()
+    private async Task LoadAsync(bool quiet = false)
     {
-        loading = true;
+        loading = !quiet;
         try
         {
             var lookup = await Coverage.GetAsync(WallId, CaptureId);
             report = lookup.Report;
+            computing = report is null && lookup.Computing;
             tipDismissed = report?.FromFeatures == true && await ReadTipDismissedAsync();
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or UserFacingException or KioskRestrictedException)
         {
             failure = ex.Message;
+            computing = false;
         }
         finally
         {
             loading = false;
         }
+
+        if (computing && polling is null)
+        {
+            StartPolling();
+        }
+    }
+
+    // A missing report is computed in the background: look again every few seconds, a few times.
+    private void StartPolling()
+    {
+        polling = new CancellationTokenSource();
+        pollsLeft = MaxPolls;
+        _ = PollAsync(polling.Token);
+    }
+
+    private async Task PollAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (computing && pollsLeft > 0)
+            {
+                await Task.Delay(PollInterval, ct);
+                pollsLeft--;
+                await InvokeAsync(async () =>
+                {
+                    await LoadAsync(quiet: true);
+                    StateHasChanged();
+                });
+            }
+
+            if (!ct.IsCancellationRequested)
+            {
+                polling = null;
+            }
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+            // The component went away or moved to another capture.
+        }
+    }
+
+    private void StopPolling()
+    {
+        polling?.Cancel();
+        polling?.Dispose();
+        polling = null;
+        pollsLeft = 0;
     }
 
     // A per-viewer convenience: the optional markers tip, once dismissed, stays away (browser storage may be unavailable).

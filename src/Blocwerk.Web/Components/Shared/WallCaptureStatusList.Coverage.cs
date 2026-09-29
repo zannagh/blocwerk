@@ -13,7 +13,7 @@ public partial class WallCaptureStatusList
     /// <summary>The newest done capture: its list is shown open above the history.</summary>
     private WallCaptureSummary? LatestDone => running is null ? history.FirstOrDefault(IsDone) : null;
 
-    /// <summary>A done capture with a model has a coverage report (or gets one on first read).</summary>
+    /// <summary>A done capture with a model has a coverage report (or gets one computed in the background when first read).</summary>
     private static bool IsDone(WallCaptureSummary capture) =>
         capture.GeometryModelId is not null
         && capture.Status is WallCaptureStatus.Succeeded or WallCaptureStatus.SucceededWithoutTextures or WallCaptureStatus.SucceededWithoutSplat;

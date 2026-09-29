@@ -14,6 +14,9 @@ public static class VolumeCoverageRater
     /// <summary>Sample spacing over a volume, mm.</summary>
     public const double SampleMm = 30;
 
+    /// <summary>A volume is sampled more coarsely than <see cref="SampleMm"/> rather than at more points than this (a big volume is rated by its shares, not its count).</summary>
+    public const int MaxSamples = 1200;
+
     /// <summary>A face is weak when at least this share of its samples is.</summary>
     public const double WeakShare = 0.4;
 
@@ -69,11 +72,13 @@ public static class VolumeCoverageRater
     private static VolumeCoverage Rate(CoverageVolume volume, CoverageFacet facet, CoverageScene scene, IReadOnlyList<CoverageCamera> cameras)
     {
         var byFace = new Dictionary<VolumeFace, List<CoverageCellStatus>>();
+        var own = volume.Surface.Polyhedron is not null ? volume.Surface : null;
         var g = volume.Surface.Grid;
         double aEnd = g.ALo + (g.Cols * g.CellMm), bEnd = g.BLo + (g.Rows * g.CellMm);
-        for (var b = g.BLo + (SampleMm / 2); b < bEnd; b += SampleMm)
+        var spacing = Math.Max(SampleMm, Math.Sqrt(g.Cols * g.Rows / (double)MaxSamples) * g.CellMm);
+        for (var b = g.BLo + (spacing / 2); b < bEnd; b += spacing)
         {
-            for (var a = g.ALo + (SampleMm / 2); a < aEnd; a += SampleMm)
+            for (var a = g.ALo + (spacing / 2); a < aEnd; a += spacing)
             {
                 var h = volume.Surface.HeightAt(a, b);
                 if (h < MinHeightMm)
@@ -83,7 +88,7 @@ public static class VolumeCoverageRater
 
                 var n = volume.Surface.NormalAt(a, b);
                 var world = facet.Frame.ToWorld(a, b, h);
-                var views = PointViews.Evaluate(world, WorldNormal(facet, n), facet.Id, cameras, scene);
+                var views = PointViews.Evaluate(world, WorldNormal(facet, n), facet.Id, cameras, scene, own);
                 var face = FaceOf(n);
                 if (!byFace.TryGetValue(face, out var list))
                 {

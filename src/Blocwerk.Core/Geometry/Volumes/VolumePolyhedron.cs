@@ -33,6 +33,7 @@ public sealed class VolumePolyhedron
         this.shape = shape;
         this.faces = faces.Where(f => f.Length >= 3).ToArray();
         planes = this.faces.Select(Plane).Where(p => p.Nh > 1e-6).ToArray();
+        MaxSlope = planes.Length == 0 ? 0 : planes.Max(p => Math.Sqrt((p.Na * p.Na) + (p.Nb * p.Nb)) / p.Nh);
         Top = this.faces.SelectMany(f => f).Where(v => v.H > 0.5).Distinct().ToList();
         Base = PlanePolygon.ConvexHull(this.faces.SelectMany(f => f).Where(v => v.H <= 0.5).Select(v => (v.A, v.B)));
     }
@@ -45,6 +46,9 @@ public sealed class VolumePolyhedron
 
     /// <summary>The top vertices: one apex, two ridge ends, a plateau outline or the high points of several peaks.</summary>
     public IReadOnlyList<(double A, double B, double H)> Top { get; }
+
+    /// <summary>The steepest face's slope (height change per mm along the wall): a bound on how fast the surface height can change.</summary>
+    public double MaxSlope { get; }
 
     /// <summary>"pyramid" (one apex), "roof" (a ridge), "plateau" (a flat top) or "multi-peak" (several high regions).</summary>
     public string Shape => shape ?? Top.Count switch

@@ -20,7 +20,7 @@ namespace Blocwerk.Core.Tests;
 /// <summary>
 /// GET /api/walls/{wallId}/captures/{captureId}/coverage: authorised like the other capture routes (a wall key for the
 /// wall or a personal key with write access, whose owner is a wall admin; members, read-only keys and kiosk sessions
-/// are refused), a capture only under its own wall, and a done capture's report computed on first read.
+/// are refused), a capture only under its own wall, and a done capture's report computed in the background after the first read.
 /// </summary>
 public class WallCaptureCoverageControllerTests
 {
@@ -38,12 +38,14 @@ public class WallCaptureCoverageControllerTests
     }
 
     [Fact]
-    public async Task AnAdminsKey_GetsTheReport_ComputedOnFirstReadForADoneCapture()
+    public async Task AnAdminsKey_GetsTheReport_OnceItIsComputedInTheBackgroundForADoneCapture()
     {
         using var h = new WallTestHarness();
         var (captureId, modelId) = await CaptureFollowUpChainTests.SeedAsync(h);
         await CoverageReportFollowUpStepTests.SetDoneAsync(h, captureId);
 
+        Assert.IsType<NotFoundObjectResult>(await Api(h, ApiKeys.Personal()).Get(h.WallId, captureId, default));
+        await (CoverageBackgroundCompute.Pending(captureId) ?? Task.CompletedTask);
         var personal = Assert.IsType<ContentResult>(await Api(h, ApiKeys.Personal()).Get(h.WallId, captureId, default));
         var wallKey = Assert.IsType<ContentResult>(await Api(h, ApiKeys.Wall(h.WallId)).Get(h.WallId, captureId, default));
 

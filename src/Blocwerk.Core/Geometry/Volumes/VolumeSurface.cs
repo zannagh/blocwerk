@@ -25,6 +25,8 @@ public sealed class VolumeSurface
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     private readonly short[] heights;
+    private readonly double maxHeightMm;
+    private readonly double maxSlope;
 
     /// <summary>Initializes a new instance of the <see cref="VolumeSurface"/> class.</summary>
     /// <param name="grid">The grid (cell centres carry the heights).</param>
@@ -40,6 +42,8 @@ public sealed class VolumeSurface
         Grid = grid;
         this.heights = heights;
         Polyhedron = polyhedron;
+        maxHeightMm = Math.Max(heights.Length == 0 ? 0 : heights.Max(), polyhedron?.TopHeightMm ?? 0);
+        maxSlope = polyhedron?.MaxSlope ?? GridSlope();
     }
 
     /// <summary>The grid.</summary>
@@ -52,7 +56,7 @@ public sealed class VolumeSurface
     public IReadOnlyList<short> Heights => heights;
 
     /// <summary>The tallest cell, mm.</summary>
-    public double MaxHeightMm => Math.Max(heights.Length == 0 ? 0 : heights.Max(), Polyhedron?.TopHeightMm ?? 0);
+    public double MaxHeightMm => maxHeightMm;
 
     /// <summary>The height at plane point (a, b): bilinear between cell centres, 0 outside the grid.</summary>
     /// <param name="a">Along u, mm.</param>
@@ -106,8 +110,10 @@ public sealed class VolumeSurface
     /// <param name="a">Target along u.</param>
     /// <param name="b">Target along v.</param>
     /// <param name="minHeightMm">Hits lower than this are the wall around the volume, not the volume.</param>
+    /// <param name="endT">Where the walk ends, as a share of the way from <paramref name="from"/> to the plane point (1 = all the way).</param>
     /// <returns>The hit (a, b, height).</returns>
-    public (double A, double B, double H)? RayHit((double A, double B, double H) from, double a, double b, double minHeightMm)
+    public (double A, double B, double H)? RayHit(
+        (double A, double B, double H) from, double a, double b, double minHeightMm, double endT = 1)
     {
         double da = a - from.A, db = b - from.B, dh = -from.H;
         var length = Math.Sqrt((da * da) + (db * db) + (dh * dh));
@@ -120,8 +126,17 @@ public sealed class VolumeSurface
         var top = MaxHeightMm + 1 + Math.Max(0, clearance);
         var t = Math.Max(0, (from.H - top) / from.H);
         var step = 1.0 / length;
+        var tEnd = Math.Min(1.0, endT);
+        if (!ClipToGrid(from.A, da, ref t, ref tEnd, step, Grid.ALo, Grid.ALo + (Grid.Cols * Grid.CellMm))
+            || !ClipToGrid(from.B, db, ref t, ref tEnd, step, Grid.BLo, Grid.BLo + (Grid.Rows * Grid.CellMm)))
+        {
+            return null;
+        }
+
+        // The gap above the surface closes no faster than this per mm along the ray: safe to skip that far (down to the flat-face band), at least 1 mm.
+        var closing = (Math.Sqrt((da * da) + (db * db)) * maxSlope / length) + (from.H / length);
         (double A, double B, double H)? closest = null;
-        for (; t <= 1; t += step)
+        while (t <= tEnd)
         {
             double pa = from.A + (t * da), pb = from.B + (t * db), ph = from.H + (t * dh);
             var h = HeightAt(pa, pb);
@@ -134,6 +149,8 @@ public sealed class VolumeSurface
             {
                 (clearance, closest) = (ph - h, (pa, pb, h));
             }
+
+            t += Math.Max(1, (ph - h - Math.Max(clearance, 0)) / closing) * step;
         }
 
         return closest;
@@ -215,4 +232,43 @@ public sealed class VolumeSurface
     }
 
     private double At(int i, int j) => heights[(j * Grid.Cols) + i];
+
+    /// <summary>
+    /// Narrows the ray's walk to where it is over the grid along one axis (elsewhere the height is 0 and nothing can be
+    /// hit); the walk keeps its step lattice, so the result is that of walking the whole ray.
+    /// </summary>
+    private static bool ClipToGrid(double origin, double delta, ref double t, ref double tEnd, double step, double lo, double hi)
+    {
+        if (Math.Abs(delta) < 1e-12)
+        {
+            return origin >= lo && origin <= hi;
+        }
+
+        double t1 = (lo - origin) / delta, t2 = (hi - origin) / delta;
+        var tIn = Math.Min(t1, t2) - step;
+        tEnd = Math.Min(tEnd, Math.Max(t1, t2) + step);
+        if (tIn > t)
+        {
+            t += Math.Floor((tIn - t) / step) * step;
+        }
+
+        return t <= tEnd;
+    }
+
+    /// <summary>A bound on the height field's slope: the steepest step between neighbouring cells, and the fall to 0 outside the grid.</summary>
+    private double GridSlope()
+    {
+        var steepest = 0.0;
+        for (var j = 0; j < Grid.Rows; j++)
+        {
+            for (var i = 0; i < Grid.Cols; i++)
+            {
+                double h = At(i, j), right = i + 1 < Grid.Cols ? At(i + 1, j) : 0, up = j + 1 < Grid.Rows ? At(i, j + 1) : 0;
+                double left = i == 0 ? 0 : At(i - 1, j), down = j == 0 ? 0 : At(i, j - 1);
+                steepest = Math.Max(steepest, Math.Max(Math.Max(Math.Abs(h - right), Math.Abs(h - up)), Math.Max(Math.Abs(h - left), Math.Abs(h - down))));
+            }
+        }
+
+        return 2 * steepest / Grid.CellMm;
+    }
 }

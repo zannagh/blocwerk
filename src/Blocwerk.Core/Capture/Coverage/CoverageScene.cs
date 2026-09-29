@@ -28,6 +28,7 @@ public sealed class CoverageScene
     private const double BehindMm = 30;
 
     private readonly Dictionary<string, List<CoverageVolume>> volumesByFacet;
+    private readonly SceneVolumeGroup[] groups;
 
     /// <summary>Initializes a new instance of the <see cref="CoverageScene"/> class.</summary>
     /// <param name="facets">The facets.</param>
@@ -37,6 +38,7 @@ public sealed class CoverageScene
         Facets = facets;
         Volumes = volumes.Where(v => facets.Any(f => f.Id == v.FacetId)).ToList();
         volumesByFacet = Volumes.GroupBy(v => v.FacetId).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+        groups = volumesByFacet.Select(kv => new SceneVolumeGroup(Facet(kv.Key)!.Frame, kv.Value)).ToArray();
     }
 
     /// <summary>The facets.</summary>
@@ -84,8 +86,9 @@ public sealed class CoverageScene
     /// <param name="camera">Camera centre, world mm.</param>
     /// <param name="target">The target point, world mm.</param>
     /// <param name="facetId">The target's facet (its own board never blocks it).</param>
+    /// <param name="ownConvex">The convex volume the target lies on, if any: seen from the front of its surface it cannot block itself.</param>
     /// <returns>True when blocked.</returns>
-    public bool Occluded(double[] camera, double[] target, string facetId)
+    public bool Occluded(double[] camera, double[] target, string facetId, VolumeSurface? ownConvex = null)
     {
         foreach (var f in Facets)
         {
@@ -95,11 +98,29 @@ public sealed class CoverageScene
             }
         }
 
-        foreach (var (id, list) in volumesByFacet)
+        foreach (var group in groups)
         {
-            var frame = Facet(id)!.Frame;
-            var hits = list.Where(v => MayCross(frame, v, camera, target)).Select(v => v.Surface).ToList();
-            if (hits.Count > 0 && VolumeFootprints.Occluded(camera, target, new FacetVolumes(frame, hits)))
+            if (VolumeOccludes(group, camera, target, ownConvex))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool VolumeOccludes(SceneVolumeGroup group, double[] camera, double[] target, VolumeSurface? ownConvex)
+    {
+        var from = FacetCloud.Local(group.Frame, camera[0], camera[1], camera[2]);
+        var to = FacetCloud.Local(group.Frame, target[0], target[1], target[2]);
+        if (from.H <= to.H || from.H <= 0)
+        {
+            return false;
+        }
+
+        foreach (var v in group.Volumes)
+        {
+            if (!ReferenceEquals(v.Surface, ownConvex) && v.MayCross(from, to) && VolumeFootprints.Occluded(camera, target, v.Single))
             {
                 return true;
             }
@@ -127,27 +148,6 @@ public sealed class CoverageScene
         double a = from.A + (t * (to.A - from.A)), b = from.B + (t * (to.B - from.B));
         var r = f.Region;
         return a > r.AMin + EdgeMarginMm && a < r.AMax - EdgeMarginMm && b > r.BMin + EdgeMarginMm && b < r.BMax - EdgeMarginMm;
-    }
-
-    /// <summary>A cheap bounding-box test: whether the line of sight can pass over the volume's grid below its top.</summary>
-    private static bool MayCross(FacetFrame frame, CoverageVolume v, double[] camera, double[] target)
-    {
-        var from = FacetCloud.Local(frame, camera[0], camera[1], camera[2]);
-        var to = FacetCloud.Local(frame, target[0], target[1], target[2]);
-        var top = v.Surface.MaxHeightMm + 1;
-        if (from.H <= to.H || from.H <= 0)
-        {
-            return false;
-        }
-
-        // Where the line of sight (continued to the facet plane) is at the volume's top, and where it meets the plane.
-        var tTop = Math.Clamp((from.H - top) / (from.H - to.H), 0, 1);
-        var tEnd = from.H / (from.H - to.H);
-        double a0 = from.A + (tTop * (to.A - from.A)), b0 = from.B + (tTop * (to.B - from.B));
-        double a1 = from.A + (tEnd * (to.A - from.A)), b1 = from.B + (tEnd * (to.B - from.B));
-        var g = v.Surface.Grid;
-        double gA1 = g.ALo + (g.Cols * g.CellMm), gB1 = g.BLo + (g.Rows * g.CellMm);
-        return Math.Max(a0, a1) >= g.ALo && Math.Min(a0, a1) <= gA1 && Math.Max(b0, b1) >= g.BLo && Math.Min(b0, b1) <= gB1;
     }
 
     private static double Sq(double x) => x * x;

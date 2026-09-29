@@ -63,4 +63,5 @@ public sealed record RatedFacet(CoverageFacet Facet, CellGrid Grid, PointViews[]
 /// <summary>A capture looked up for its coverage report.</summary>
 /// <param name="CaptureFound">False when the wall has no such capture.</param>
 /// <param name="Report">The report, or null when it has not been computed (yet).</param>
-public sealed record CaptureCoverageLookup(bool CaptureFound, CaptureCoverageReport? Report);
+/// <param name="Computing">True when the report is missing and being computed in the background: ask again shortly.</param>
+public sealed record CaptureCoverageLookup(bool CaptureFound, CaptureCoverageReport? Report, bool Computing = false);

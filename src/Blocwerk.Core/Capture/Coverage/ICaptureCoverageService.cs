@@ -19,7 +19,10 @@ public interface ICaptureCoverageService
     /// <returns>The stored report, or null.</returns>
     Task<CaptureCoverageReport?> ComputeFromPipelineAsync(Guid captureId, CancellationToken ct = default);
 
-    /// <summary>The stored report of a capture of the wall, for a wall admin (kiosk sessions are refused).</summary>
+    /// <summary>
+    /// The stored report of a capture of the wall, for a wall admin (kiosk sessions are refused). Never computes: a
+    /// finished capture without a report gets one computed in the background (<see cref="CaptureCoverageLookup.Computing"/>).
+    /// </summary>
     /// <param name="wallId">The wall.</param>
     /// <param name="captureId">The capture (must belong to the wall).</param>
     /// <param name="ct">Cancellation.</param>

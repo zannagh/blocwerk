@@ -82,9 +82,18 @@ public static class VolumeFootprints
         // The line of sight, continued to the facet plane: where the volume's ray walk starts from.
         var t = from.H / (from.H - at.H);
         double a = from.A + ((at.A - from.A) * t), b = from.B + ((at.B - from.B) * t);
+
+        // A hit within the margin of the target, or lower than the height that still counts, decides nothing: stop the walk there.
+        var rayMm = Length(a - from.A, b - from.B, from.H);
+        var endT = Math.Min((1 / t) - (OcclusionMarginMm / rayMm), (from.H - at.H - (OcclusionMarginMm * 0.5)) / from.H);
+        if (endT <= 0)
+        {
+            return false;
+        }
+
         foreach (var v in volumes.Volumes)
         {
-            if (v.RayHit(from, a, b, 5) is { } hit && hit.H > at.H + OcclusionMarginMm * 0.5
+            if (v.RayHit(from, a, b, 5, endT) is { } hit && hit.H > at.H + OcclusionMarginMm * 0.5
                 && Length(hit.A - at.A, hit.B - at.B, hit.H - at.H) > OcclusionMarginMm)
             {
                 return true;
