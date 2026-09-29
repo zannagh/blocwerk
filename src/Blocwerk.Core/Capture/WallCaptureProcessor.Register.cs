@@ -49,6 +49,15 @@ public sealed partial class WallCaptureProcessor
             return new FrameOutcome(FrameLineage.StampReset(solvedJson, active.Id, "the active model has no markers to tie to"), true, null);
         }
 
+        if (WallGeometrySanityGate.Problems(active.Json) is { Count: > 0 } broken)
+        {
+            // Never tie a new model to a broken one (it would inherit its wrong frame): start a new frame instead.
+            logger.LogWarning(
+                "Capture {CaptureId}: the active model {ModelId} fails the sanity checks ({Problems}); the new model starts a new frame",
+                capture.Id, active.Id, string.Join("; ", broken));
+            return new FrameOutcome(FrameLineage.StampReset(solvedJson, active.Id, "the active model failed the sanity checks"), true, null);
+        }
+
         var eligible = await UnchangedIdsAsync(db, run, active.PlanRevision, ct);
         var result = WallFrameRegistration.Register(reference, WallGeometryDocument.Parse(solvedJson), eligible);
         if (!result.Accepted)

@@ -1,5 +1,6 @@
 using Blocwerk.Core.Compute;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Geometry;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -43,8 +44,9 @@ public sealed partial class WallCaptureProcessor
             new JobStage(capture.Id, WallCaptureStatus.Solving, 0.2, 0.7, "Solving the 3D model"),
             ct);
 
-        var json = CaptureComputeDocuments.GeometryFromSolveResult(status.Result)
-                   ?? throw new CaptureFailedException("The 3D computation finished without a wall model.");
+        var solved = CaptureComputeDocuments.GeometryFromSolveResult(status.Result)
+                     ?? throw new CaptureFailedException("The 3D computation finished without a wall model.");
+        var json = CaptureIgnoredDetections.AddToModel(solved, await LoadPhotosAsync(capture.Id, ct));
         await SetStageAsync(capture.Id, WallCaptureStatus.Solving, 0.72, "Activating the 3D model", ct);
 
         // The import runs AS the capture's creator, through the same wall-admin gate as the UI.
@@ -53,7 +55,9 @@ public sealed partial class WallCaptureProcessor
         var notes = string.IsNullOrWhiteSpace(capture.Notes) ? "In-app capture" : $"In-app capture: {capture.Notes}";
         await CheckShownRevisionAsync(run, json, ct);
         var frame = await RegisterToActiveAsync(run, json, ct);
-        var options = new GeometryImportOptions(capture.PlanJson is null ? null : capture.PlanRevision, frame.Activate);
+        var problems = WallGeometrySanityGate.Problems(json);
+        var activate = frame.Activate && problems.Count == 0;
+        var options = new GeometryImportOptions(capture.PlanJson is null ? null : capture.PlanRevision, activate);
         var imported = await glyphs.ImportGeometryAsync(capture.WallId, frame.Json, notes, ModelSource(capture.Id), options);
         if (!imported.Succeeded)
         {
@@ -65,6 +69,14 @@ public sealed partial class WallCaptureProcessor
 
         // The placement check compares the plan with what THIS solve measured (not with carried-over markers).
         await CheckPlacementAsync(run, json, ct);
+        if (problems.Count > 0)
+        {
+            logger.LogWarning("Capture {CaptureId}: model {ModelId} not activated: {Problems}", capture.Id, imported.Model.Id, string.Join("; ", problems));
+            throw new CaptureNotActivatedException(
+                WallGeometrySanityGate.Describe(problems) + " It was saved but NOT activated, so hold positions stay as they are. "
+                + "Check the ignored detections in the solver notes and re-capture the parts they name.");
+        }
+
         if (!frame.Activate)
         {
             throw new CaptureNotActivatedException(NotActivatedMessage(frame.Refusal));
