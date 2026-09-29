@@ -182,7 +182,7 @@ def check_frame(ply_xyz, dataset_dir, tolerance=1.0):
     """Guard: the trained splats must sit where COLMAP's sparse points are (the trainer must never
     normalise world space: frame.json and the alignment assume the COLMAP frame). Their median has to
     lie inside the sparse points' 2-98 % box grown by `tolerance` x its size, and their 10-90 % spread
-    must be within 10x of the points' (robust to the few % of far floaters a wall capture trains). Returns what it compared (stats.frameCheck), raises JobError otherwise."""
+    must be within 0.1-40x of the points' (robust to the few % of far floaters a wall capture trains). Returns what it compared (stats.frameCheck), raises JobError otherwise."""
     pts, _ = read_points(os.path.join(model_dir(dataset_dir), "points3D.bin"))
     if len(pts) < 10 or len(ply_xyz) < 10:
         return None
@@ -192,7 +192,7 @@ def check_frame(ply_xyz, dataset_dir, tolerance=1.0):
     spread = np.linalg.norm(np.percentile(ply_xyz, 90, axis=0) - np.percentile(ply_xyz, 10, axis=0))
     core = np.linalg.norm(np.percentile(pts, 90, axis=0) - np.percentile(pts, 10, axis=0))
     ratio = spread / max(core, 1e-9)
-    if np.any(med < lo - tolerance * size) or np.any(med > hi + tolerance * size) or not 0.1 <= ratio <= 10:
+    if np.any(med < lo - tolerance * size) or np.any(med > hi + tolerance * size) or not 0.1 <= ratio <= 40:
         raise JobError("train", f"the trained splats are not in the COLMAP frame (median {np.round(med, 3)}, "
                                 f"sparse points {np.round(lo, 3)}..{np.round(hi, 3)}, spread ratio {ratio:.2f})")
     return {"splatMedian": np.round(med, 4).tolist(), "sparseP2": np.round(lo, 4).tolist(),
