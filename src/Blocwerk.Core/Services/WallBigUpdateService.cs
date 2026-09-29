@@ -1,4 +1,5 @@
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Capture;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
@@ -26,6 +27,8 @@ public partial class WallBigUpdateService : IWallBigUpdateService
     private readonly IHoldEnrichmentService? holdEnrichment;
     private readonly IHoldOutlineService? outlineService;
     private readonly IHoldRefinementQueue? refinementQueue;
+    private readonly ICapturePhotoConverter? photoConverter;
+    private readonly IHoldPresenceProbe? presenceProbe;
 
     public WallBigUpdateService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
@@ -36,8 +39,12 @@ public partial class WallBigUpdateService : IWallBigUpdateService
         IChangeJournal? changeJournal = null,
         IHoldEnrichmentService? holdEnrichment = null,
         IHoldOutlineService? outlineService = null,
-        IHoldRefinementQueue? refinementQueue = null)
+        IHoldRefinementQueue? refinementQueue = null,
+        ICapturePhotoConverter? photoConverter = null,
+        IHoldPresenceProbe? presenceProbe = null)
     {
+        this.photoConverter = photoConverter;
+        this.presenceProbe = presenceProbe;
         this.refinementQueue = refinementQueue;
         this.dbContextFactory = dbContextFactory;
         this.currentUserService = currentUserService;
@@ -250,7 +257,8 @@ public partial class WallBigUpdateService : IWallBigUpdateService
             wall.Id, centerPanelId, carryover, removedCandidates, newCenter, neighbours,
             autoMatchStatus, autoMatchMessage, carriedWarp, carriedShapes,
             await BuildCarriedPanelsAsync(db, wall.Id, stagedGen, oldByPosition, unalignedCarry),
-            oldHolds.Select(h => h.Id).ToList());
+            oldHolds.Select(h => h.Id).ToList(),
+            await SuggestNewDiscardsAsync(db, wall, stagedGen, carryover, oldHolds, oldPanelPhotosById));
     }
 
     /// <summary>

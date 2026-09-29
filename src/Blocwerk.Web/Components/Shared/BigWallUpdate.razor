@@ -129,6 +129,7 @@
                                      Col="n.Col" Row="n.Row" Proposals="n.Proposals" NeighbourStaged="true"
                                      AlignmentFailed="n.AlignmentFailed"
                                      Restored="RestoredFor(n.PanelId)"
+                                     SuggestedRemovals="_session!.SuggestedNewDiscards?.Keys.ToList()"
                                      OnConfirm="OnNeighbourConfirm" OnProgress="OnNeighbourProgress"
                                      OnDiscard="OnNeighbourSkip" />
             }

@@ -19,6 +19,7 @@ public static class HoldDetectionServices
 
         // Cross-panel hold re-recognition for big walls. Stateless in-process OpenCV, so a singleton.
         builder.Services.AddSingleton<IHoldOverlapMatcher, OpenCvHoldOverlapMatcher>();
+        builder.Services.AddSingleton<IHoldPresenceProbe, OpenCvHoldPresenceProbe>();
 
         // Panel photo ↔ 3D-model facet texture registration ("place existing holds on the 3D model").
         builder.Services.AddSingleton<IPhotoTextureMatcher, OpenCvPhotoTextureMatcher>();

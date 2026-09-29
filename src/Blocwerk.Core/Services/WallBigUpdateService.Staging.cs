@@ -29,7 +29,7 @@ public partial class WallBigUpdateService
             ?? throw new InvalidOperationException("Wall not found");
 
         ValidateStagedPhotos(wall, photos);
-        photos = [.. photos.Select(p => p with { Image = StoredPhotoSanitizer.Sanitize(p.Image) })];
+        photos = await PrepareStagedPhotosAsync(photos);
 
         var stagedGen = wall.CurrentGeneration + 1;
 

@@ -46,6 +46,10 @@ namespace Blocwerk.Core.Services;
 /// same-panel twin and promotes in place instead of cloning a duplicate alongside it). Null on the pre-match
 /// staged session.
 /// </param>
+/// <param name="SuggestedNewDiscards">
+/// Unpaired staged detections (any re-photographed panel) the review discards by default, with why: on a
+/// printed marker, outside what the old photo covered, or unchanged since the old photo. Null before matching.
+/// </param>
 public record BigUpdateSession(
     Guid WallId,
     Guid CenterPanelId,
@@ -58,4 +62,5 @@ public record BigUpdateSession(
     IReadOnlyDictionary<Guid, HoldPositionNorm>? CarriedWarpPositions = null,
     IReadOnlyDictionary<Guid, IReadOnlyList<HoldPositionNorm>>? CarriedWarpShapes = null,
     IReadOnlyList<CarriedPanelOldHolds>? CarriedPanels = null,
-    IReadOnlyList<Guid>? CarriedOldHoldIds = null);
+    IReadOnlyList<Guid>? CarriedOldHoldIds = null,
+    IReadOnlyDictionary<Guid, NewHoldDiscardReason>? SuggestedNewDiscards = null);

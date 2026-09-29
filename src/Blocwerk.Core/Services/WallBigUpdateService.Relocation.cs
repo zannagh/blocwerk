@@ -103,7 +103,8 @@ public partial class WallBigUpdateService
             fingerprints[id] = fingerprint;
         }
 
-        return HoldRelocationProposer.Propose(disappeared, appeared, fingerprints, wall.GlyphsEnabled);
+        var proposed = HoldRelocationProposer.Propose(disappeared, appeared, fingerprints, wall.GlyphsEnabled);
+        return await GuardDisplacementAsync(db, session, proposed, disappeared, appeared, stagedPhoto);
     }
 
     /// <summary>

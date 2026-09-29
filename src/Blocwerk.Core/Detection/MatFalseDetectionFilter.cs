@@ -120,7 +120,7 @@ public static class MatFalseDetectionFilter
     {
         if (detections is null || detections.Count < MinimumPopulationSize)
         {
-            return new MatFilterResult(detections ?? Array.Empty<DetectedHold>(), Array.Empty<DetectedHold>());
+            return new MatFilterResult(detections ?? Array.Empty<DetectedHold>(), Array.Empty<DetectedHold>(), Array.Empty<DetectedHold>());
         }
 
         double radiusMedian = Median(detections.Select(d => d.Radius));
@@ -132,7 +132,7 @@ public static class MatFalseDetectionFilter
         // outlier, so we keep everything.
         if (radiusMad <= 0)
         {
-            return new MatFilterResult(detections, Array.Empty<DetectedHold>());
+            return new MatFilterResult(detections, Array.Empty<DetectedHold>(), Array.Empty<DetectedHold>());
         }
 
         // Position-only floor separation, computed once for the whole population. Null when
@@ -141,6 +141,7 @@ public static class MatFalseDetectionFilter
 
         var kept = new List<DetectedHold>(detections.Count);
         var dropped = new List<DetectedHold>();
+        var radiusMats = new List<DetectedHold>();
 
         foreach (var hold in detections)
         {
@@ -149,6 +150,11 @@ public static class MatFalseDetectionFilter
 
             // Union of both rules; a hold is dropped if EITHER fires, so the two lists stay
             // a clean partition of the input with no duplicates.
+            if (isRadiusPositionMat)
+            {
+                radiusMats.Add(hold);
+            }
+
             if (isRadiusPositionMat || isBelowFloorGap)
             {
                 dropped.Add(hold);
@@ -159,7 +165,7 @@ public static class MatFalseDetectionFilter
             }
         }
 
-        return new MatFilterResult(kept, dropped);
+        return new MatFilterResult(kept, dropped, radiusMats);
     }
 
     /// <summary>

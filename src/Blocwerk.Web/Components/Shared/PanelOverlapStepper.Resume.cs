@@ -31,6 +31,9 @@ public partial class PanelOverlapStepper
     /// </summary>
     [Parameter] public EventCallback<PanelConfirmation> OnProgress { get; set; }
 
+    /// <summary>Staged holds the service suggests discarding (any panel; only this panel's are used).</summary>
+    [Parameter] public IReadOnlyCollection<Guid>? SuggestedRemovals { get; set; }
+
     /// <summary>
     /// Replays a restored outcome onto this walk: a link whose neighbour hold is one of the proposals
     /// re-occupies that proposal's slot (whichever new hold it ended up pointing at, so a "moved" pick
@@ -48,6 +51,7 @@ public partial class PanelOverlapStepper
     {
         if (Restored is not { } restored)
         {
+            SeedSuggestedRemovals();
             return;
         }
 
@@ -67,6 +71,19 @@ public partial class PanelOverlapStepper
             {
                 _manualLinks.Add(link);
             }
+        }
+    }
+
+    /// <summary>
+    /// On a first pass, this panel's unpaired detections the service judged not to be new holds (on a
+    /// marker, outside the old photo, unchanged since it) start out removed. A resumed walk restores the
+    /// removals it saved instead, which already hold these.
+    /// </summary>
+    private void SeedSuggestedRemovals()
+    {
+        foreach (var holdId in (SuggestedRemovals ?? []).Where(_stagedHolds.ContainsKey))
+        {
+            _removed.Add(holdId);
         }
     }
 

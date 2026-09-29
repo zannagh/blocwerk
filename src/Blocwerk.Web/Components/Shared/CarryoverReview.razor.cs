@@ -37,8 +37,8 @@ public partial class CarryoverReview
     private bool _loading = true;
     private CarryReviewMode? _reviewMode;
 
-    // Every old live hold starts carried in place (default-KEEP); the new-centre holds are all
-    // accepted unless the user explicitly discards one.
+    // Every old live hold starts carried in place (default-KEEP); the new-centre holds are accepted
+    // unless the service suggested discarding one (SeedSuggestedDiscards) or the user discards it.
     private readonly Dictionary<Guid, CarryoverDecision> _decisions = [];
     private readonly HashSet<Guid> _newDiscarded = [];
 
@@ -110,6 +110,8 @@ public partial class CarryoverReview
                 _decisions[p.OldHoldId] = new CarryoverDecision(p.OldHoldId, CarryKind.Carried, p.NewHoldId);
             }
         }
+
+        SeedSuggestedDiscards();
 
         // Finally, lay back anything already decided on the session (a resumed update): the user's own
         // verdicts outrank both the carry-all seed and the matcher's suggestions. See the Persistence

@@ -127,7 +127,7 @@ public class CarryoverPaneOldHoldScopeTests
         // The crash-mat signature the filter is built to reject: a radius outlier in the bottom margin.
         var mat = new Hold
         {
-            WallId = wall.Id, WallPanelId = centre.Id, X = 0.50, Y = 0.97, Radius = 0.12, Generation = 2,
+            WallId = wall.Id, WallPanelId = centre.Id, X = 0.50, Y = 0.97, Radius = 0.12, Generation = 2, IsAutoDetected = true,
         };
         var neighbourHold = new Hold { WallId = wall.Id, WallPanelId = neighbour.Id, X = 0.55, Y = 0.40, Radius = 0.02, Generation = 2 };
         var farHold = new Hold { WallId = wall.Id, WallPanelId = far.Id, X = 0.80, Y = 0.50, Radius = 0.02, Generation = 2 };
