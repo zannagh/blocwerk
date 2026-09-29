@@ -11,6 +11,8 @@ and gsplat_trainer.train (or brush.train).
 """
 import json
 import os
+import shutil
+import tempfile
 
 import numpy as np
 from computejobs.child import JobError
@@ -87,7 +89,13 @@ def train_gsplat(run, dataset):
             retries.append({"stage": "train", "reason": e.kind, "from": plan.name, "to": plans[i + 1].name})
             _log(run, f"{e.message} -> retrying as {plans[i + 1].name}")
     cols = read_ply(ply)
-    frame_check = gsplat_trainer.check_frame(np.stack([cols["x"], cols["y"], cols["z"]], 1), dataset)
+    try:
+        frame_check = gsplat_trainer.check_frame(np.stack([cols["x"], cols["y"], cols["z"]], 1), dataset)
+    except JobError:
+        kept = os.path.join(tempfile.gettempdir(), f"frame-check-failed-{os.path.basename(run.dir)}.ply")
+        shutil.copyfile(ply, kept)  # an hour of training: keep it to look at
+        _log(run, f"COLMAP-frame check failed; the trained splats are kept at {kept}")
+        raise
     _log(run, f"COLMAP-frame check: {frame_check}")
     run.sfm_run.retries.extend(retries)
     run.brush_stats = {"trainer": "gsplat", "gpu": (info or {}).get("name"), "steps": parser.step,

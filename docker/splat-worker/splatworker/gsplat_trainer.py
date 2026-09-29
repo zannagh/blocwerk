@@ -180,20 +180,28 @@ def _worth_logging(line):
 
 def check_frame(ply_xyz, dataset_dir, tolerance=1.0):
     """Guard: the trained splats must sit where COLMAP's sparse points are (the trainer must never
-    normalise world space: frame.json and the alignment assume the COLMAP frame). Their median has to
-    lie inside the sparse points' 2-98 % box grown by `tolerance` x its size, and their 10-90 % spread
-    must be within 0.1-40x of the points' (robust to the few % of far floaters a wall capture trains). Returns what it compared (stats.frameCheck), raises JobError otherwise."""
+    normalise world space: frame.json and the alignment assume the COLMAP frame). Judged on the splats
+    inside the sparse points' 2-98 % box grown by `tolerance` x its size (a wall capture also trains a
+    far halo of floaters, sometimes most of the splats, which the export cuts away): at least 5 % of all
+    splats must be there and their 10-90 % spread within 0.2-5x of the points'. Returns what it compared
+    (stats.frameCheck), raises JobError otherwise."""
     pts, _ = read_points(os.path.join(model_dir(dataset_dir), "points3D.bin"))
     if len(pts) < 10 or len(ply_xyz) < 10:
         return None
+    xyz = np.asarray(ply_xyz, float)
     lo, hi = np.percentile(pts, 2, axis=0), np.percentile(pts, 98, axis=0)
     size = np.maximum(hi - lo, 1e-9)
-    med = np.median(np.asarray(ply_xyz, float), axis=0)
-    spread = np.linalg.norm(np.percentile(ply_xyz, 90, axis=0) - np.percentile(ply_xyz, 10, axis=0))
+    inside = xyz[np.all((xyz >= lo - tolerance * size) & (xyz <= hi + tolerance * size), axis=1)]
+    share = len(inside) / len(xyz)
+    med = np.median(xyz, axis=0)
     core = np.linalg.norm(np.percentile(pts, 90, axis=0) - np.percentile(pts, 10, axis=0))
-    ratio = spread / max(core, 1e-9)
-    if np.any(med < lo - tolerance * size) or np.any(med > hi + tolerance * size) or not 0.1 <= ratio <= 40:
-        raise JobError("train", f"the trained splats are not in the COLMAP frame (median {np.round(med, 3)}, "
-                                f"sparse points {np.round(lo, 3)}..{np.round(hi, 3)}, spread ratio {ratio:.2f})")
+    ratio = 0.0
+    if len(inside) >= 10:
+        ratio = np.linalg.norm(np.percentile(inside, 90, axis=0) - np.percentile(inside, 10, axis=0)) / max(core, 1e-9)
+    if share < 0.05 or not 0.2 <= ratio <= 5:
+        raise JobError("train", f"the trained splats are not in the COLMAP frame ({share:.1%} of them inside the "
+                                f"sparse points {np.round(lo, 3)}..{np.round(hi, 3)}, median {np.round(med, 3)}, "
+                                f"spread ratio {ratio:.2f})")
     return {"splatMedian": np.round(med, 4).tolist(), "sparseP2": np.round(lo, 4).tolist(),
-            "sparseP98": np.round(hi, 4).tolist(), "spreadRatio": round(float(ratio), 3)}
+            "sparseP98": np.round(hi, 4).tolist(), "spreadRatio": round(float(ratio), 3),
+            "insideShare": round(float(share), 3)}

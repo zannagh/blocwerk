@@ -78,6 +78,9 @@ def test_frame_guard_accepts_colmap_frame_and_rejects_normalised_splats(tmp_path
     floaters = splats.copy()
     floaters[:len(floaters) // 20] += 500  # a few % of far floaters must not fail a correct frame
     assert gsplat_trainer.check_frame(floaters, ds)["spreadRatio"] < 2
+    halo = np.concatenate([splats, splats + 60])  # half of all splats in a far halo: the export cuts it away
+    assert gsplat_trainer.check_frame(halo, ds)["insideShare"] == 0.5
+    assert gsplat_trainer.check_frame(np.concatenate([splats, splats + 60, splats - 90]), ds)["insideShare"] < 0.4
     normalised = (splats - splats.mean(0)) / np.abs(splats - splats.mean(0)).max()  # what normalize_world_space does
     with pytest.raises(gsplat_trainer.JobError, match="COLMAP frame"):
         gsplat_trainer.check_frame(normalised, ds)
