@@ -249,7 +249,7 @@ def check_frame(ply_xyz, dataset_dir, tolerance=1.0):
     """Guard: the trained splats must sit where COLMAP's sparse points are (the trainer must never
     normalise world space: frame.json and the alignment assume the COLMAP frame). Judged on the splats
     inside the sparse points' 2-98 % box grown by `tolerance` x its size (a wall capture also trains a
-    far halo of floaters, sometimes most of the splats, which the export cuts away): at least 5 % of all
+    far halo of floaters, which the export cuts away): at least half of all
     splats must be there and their 10-90 % spread within 0.2-5x of the points'. Returns what it compared
     (stats.frameCheck), raises JobError otherwise."""
     pts, _ = read_points(os.path.join(model_dir(dataset_dir), "points3D.bin"))
@@ -265,7 +265,7 @@ def check_frame(ply_xyz, dataset_dir, tolerance=1.0):
     ratio = 0.0
     if len(inside) >= 10:
         ratio = np.linalg.norm(np.percentile(inside, 90, axis=0) - np.percentile(inside, 10, axis=0)) / max(core, 1e-9)
-    if share < 0.05 or not 0.2 <= ratio <= 5:
+    if share < 0.5 or not 0.2 <= ratio <= 5:
         raise JobError("train", f"the trained splats are not in the COLMAP frame ({share:.1%} of them inside the "
                                 f"sparse points {np.round(lo, 3)}..{np.round(hi, 3)}, median {np.round(med, 3)}, "
                                 f"spread ratio {ratio:.2f})")

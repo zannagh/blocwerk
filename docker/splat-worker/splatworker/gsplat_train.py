@@ -76,13 +76,15 @@ def evaluate(params, views, ids, device, packed, zones=None):
     return res
 
 
-def make_strategy(a, zones):
+def make_strategy(a, zones, scene_scale):
     from gsplat.strategy import MCMCStrategy
     stop = max(1000, int(a.steps * a.refine_stop))
+    from .gsplat_noise import mcmc_noise_lr
+    noise = mcmc_noise_lr(scene_scale)
     if zones is None or a.plain_mcmc:
-        return MCMCStrategy(cap_max=a.cap, refine_stop_iter=stop, verbose=False)
+        return MCMCStrategy(cap_max=a.cap, refine_stop_iter=stop, noise_lr=noise, verbose=False)
     from .gsplat_zones import ZonedMCMC
-    s = ZonedMCMC(cap_max=a.cap, refine_stop_iter=stop, verbose=False)
+    s = ZonedMCMC(cap_max=a.cap, refine_stop_iter=stop, noise_lr=noise, verbose=False)
     s.zones, s.share = zones, a.surround_share
     return s
 
@@ -125,7 +127,7 @@ def initial(a, views, device, train_ids, zones):
     params = init_params(views.points, views.colors, a.cap, device)
     print(f"init {len(params['means'])} splats from {len(views.points)} sparse points; "
           f"scene scale {views.scene_scale:.3f} (world space NOT normalised)", flush=True)
-    strategy = make_strategy(a, zones)
+    strategy = make_strategy(a, zones, views.scene_scale)
     pose, app, extra_opts = extras(a, views, train_ids, device)
     return SimpleNamespace(params=params, opts=make_optimizers(params, views.scene_scale * 1.1), strategy=strategy,
                            state=strategy.initialize_state(), pose=pose, app=app, extra_opts=extra_opts,

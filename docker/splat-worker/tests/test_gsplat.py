@@ -80,7 +80,8 @@ def test_frame_guard_accepts_colmap_frame_and_rejects_normalised_splats(tmp_path
     assert gsplat_trainer.check_frame(floaters, ds)["spreadRatio"] < 2
     halo = np.concatenate([splats, splats + 60])  # half of all splats in a far halo: the export cuts it away
     assert gsplat_trainer.check_frame(halo, ds)["insideShare"] == 0.5
-    assert gsplat_trainer.check_frame(np.concatenate([splats, splats + 60, splats - 90]), ds)["insideShare"] < 0.4
+    with pytest.raises(gsplat_trainer.JobError, match="COLMAP frame"):  # most splats drifted away: a collapsed training
+        gsplat_trainer.check_frame(np.concatenate([splats, splats + 60, splats - 90]), ds)
     normalised = (splats - splats.mean(0)) / np.abs(splats - splats.mean(0)).max()  # what normalize_world_space does
     with pytest.raises(gsplat_trainer.JobError, match="COLMAP frame"):
         gsplat_trainer.check_frame(normalised, ds)
@@ -130,3 +131,9 @@ def test_nvidia_smi_parsing_and_override(monkeypatch):
     assert gpu.parse_nvidia_smi("No devices were found") == []
     monkeypatch.setattr(gpu.settings, "vram_mb", 12000)
     assert gpu.vram()["totalMb"] == 12000
+
+
+def test_mcmc_position_noise_is_scaled_to_the_scene():
+    from splatworker.gsplat_noise import mcmc_noise_lr
+    assert mcmc_noise_lr(1.0) == 5e5  # gsplat's value for a unit-normalised scene
+    assert mcmc_noise_lr(6.63) == pytest.approx(5e5 / 6.63 ** 2)
