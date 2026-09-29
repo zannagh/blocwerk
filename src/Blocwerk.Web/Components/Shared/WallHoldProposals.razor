@@ -33,7 +33,7 @@
     @if (proposals.Count > 0)
     {
         <div class="proposal-grid">
-            @foreach (var p in proposals)
+            @foreach (var p in proposals.Take(shown))
             {
                 <div class="proposal-card">
                     @if (crops.TryGetValue(p.Id, out var src))
@@ -60,5 +60,11 @@
                 </div>
             }
         </div>
+        @if (proposals.Count > shown)
+        {
+            <div class="staged-actions">
+                <button class="btn-secondary" @onclick="() => shown += PageSize">Show more (@(proposals.Count - shown) left)</button>
+            </div>
+        }
     }
 }

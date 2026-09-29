@@ -17,7 +17,12 @@ namespace Blocwerk.Web.Components.Shared;
 /// </summary>
 public partial class WallHoldProposals
 {
+    private const int PageSize = 24;
+    private const int CropBatch = 6;
     private readonly Dictionary<Guid, string> crops = [];
+    private readonly HashSet<Guid> cropFailed = [];
+    private int shown = PageSize;
+    private bool cropping;
     private readonly Dictionary<Guid, string> colors = [];
     private Guid loadedWallId;
     private bool loaded;
@@ -68,13 +73,9 @@ public partial class WallHoldProposals
         try
         {
             proposals = await Proposals.ListAsync(WallId);
-            foreach (var p in proposals.Where(p => !crops.ContainsKey(p.Id)))
+            foreach (var p in proposals)
             {
                 colors.TryAdd(p.Id, string.Empty);
-                if (await Proposals.CropAsync(WallId, p.Id) is { } jpeg)
-                {
-                    crops[p.Id] = "data:image/jpeg;base64," + Convert.ToBase64String(jpeg);
-                }
             }
 
             loaded = true;
@@ -83,6 +84,56 @@ public partial class WallHoldProposals
         {
             Logger.LogWarning(ex, "Could not load the hold proposals of wall {WallId}", WallId);
             loaded = false;
+        }
+    }
+
+    // Crops decode a full photo each, so only the shown page is cropped, a few at a time, and never while prerendering.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (cropping || !loaded || Hidden)
+        {
+            return;
+        }
+
+        var next = proposals.Take(shown).Where(p => !crops.ContainsKey(p.Id) && !cropFailed.Contains(p.Id)).Take(CropBatch).ToList();
+        if (next.Count == 0)
+        {
+            return;
+        }
+
+        cropping = true;
+        try
+        {
+            foreach (var p in next)
+            {
+                if (await CropOrNullAsync(p.Id) is { } jpeg)
+                {
+                    crops[p.Id] = "data:image/jpeg;base64," + Convert.ToBase64String(jpeg);
+                }
+                else
+                {
+                    cropFailed.Add(p.Id);
+                }
+            }
+        }
+        finally
+        {
+            cropping = false;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task<byte[]?> CropOrNullAsync(Guid proposalId)
+    {
+        try
+        {
+            return await Proposals.CropAsync(WallId, proposalId);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidOperationException or KioskRestrictedException)
+        {
+            Logger.LogWarning(ex, "Could not crop hold proposal {ProposalId}", proposalId);
+            return null;
         }
     }
 
