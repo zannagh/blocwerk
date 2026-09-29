@@ -37,6 +37,14 @@ public sealed class ArucoMarkerDetectionService : IMarkerDetectionService
         using var dictionary = ArucoInterop.CreateDict4X4With50();
         var parameters = ArucoInterop.CreateTunedParameters();
         ArucoInterop.Detect(gray, dictionary, parameters, out var corners, out var ids, out var undecoded);
+        if (options.BrightenedPass)
+        {
+            using var bright = Brighten(gray);
+            ArucoInterop.Detect(bright, dictionary, ArucoInterop.CreateTunedParameters(), out var c2, out var i2, out var u2);
+            corners = [.. corners, .. c2];
+            ids = [.. ids, .. i2];
+            undecoded = [.. undecoded, .. u2];
+        }
 
         var candidates = new List<MarkerCandidate>(ids.Length);
         for (var i = 0; i < ids.Length; i++)
@@ -63,5 +71,19 @@ public sealed class ArucoMarkerDetectionService : IMarkerDetectionService
             Suspicious = outcome.Suspicious,
             Warnings = outcome.Warnings,
         };
+    }
+
+    /// <summary>Gamma 0.5: lifts a dark kickboard or volume so its markers binarise, leaves white paper white.</summary>
+    private static Mat Brighten(Mat gray)
+    {
+        using var lut = new Mat(1, 256, MatType.CV_8UC1);
+        for (var v = 0; v < 256; v++)
+        {
+            lut.Set(0, v, (byte)Math.Round(255 * Math.Sqrt(v / 255.0)));
+        }
+
+        var bright = new Mat();
+        Cv2.LUT(gray, lut, bright);
+        return bright;
     }
 }

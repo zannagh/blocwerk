@@ -44,6 +44,12 @@ public sealed record MarkerDetectionOptions
     /// id 37, bolt holes) scored −0.39…0.08.
     /// </summary>
     public const double PlanMinQuietZoneContrast = 0.1;
+
+    /// <summary>
+    /// Also decode on a brightened (gamma 0.5) copy of the photo and merge: markers on a dark kickboard or
+    /// volume that the plain pass cannot read. Off by default; the quiet-zone check still runs on the photo itself.
+    /// </summary>
+    public bool BrightenedPass { get; init; }
 }
 
 /// <summary>A validated marker. Corners are in ArUco order TL, TR, BR, BL of the printed marker.</summary>

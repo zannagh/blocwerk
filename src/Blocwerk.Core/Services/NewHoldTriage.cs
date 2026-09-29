@@ -15,25 +15,27 @@ public readonly record struct TriageCandidate(Guid Id, double X, double Y);
 /// <param name="NewToOld">Matched pairs, staged photo → old photo. Empty when the panel was not aligned.</param>
 /// <param name="OldSize">The old photo's size, or null when there is none.</param>
 /// <param name="MarkerQuads">Printed-marker corners detected on the staged photo.</param>
+/// <param name="Owner">For a neighbour panel: the centre panel that owns the overlap with it. Null for the centre.</param>
 public sealed record NewHoldTriageInput(
     IReadOnlyList<TriageCandidate> Candidates,
     IReadOnlyList<PointPair> NewToOld,
     (int Width, int Height)? OldSize,
-    IReadOnlyList<IReadOnlyList<(double X, double Y)>> MarkerQuads);
+    IReadOnlyList<IReadOnlyList<(double X, double Y)>> MarkerQuads,
+    OverlapOwner? Owner = null);
 
 /// <summary>
 /// Picks the unpaired staged detections that are most likely NOT new holds, so the review discards them
 /// by default (the user can still keep any of them). Conservative on purpose: a detection is only
-/// suggested when it sits on a printed marker, when the aligned old photo clearly did not cover it, or
-/// when the old photo shows the same thing at the aligned spot.
+/// suggested when it sits on a printed marker, when (on a neighbour panel) the centre photo shows that spot,
+/// when the aligned old photo did not cover it, or when the old photo shows the same thing at the aligned spot.
 /// </summary>
 public static class NewHoldTriage
 {
     /// <summary>How far (fraction of the old photo) outside its frame a spot must map to count as uncovered.</summary>
-    public const double OutsideMargin = 0.02;
+    public const double OutsideMargin = 0;
 
     /// <summary>Correlation at or above which the old photo already showed the same thing.</summary>
-    public const double SameAsOldScore = 0.7;
+    public const double SameAsOldScore = 0.6;
 
     /// <summary>The marker quad grown by this factor also covers its white print border.</summary>
     public const double MarkerGrowth = 1.35;
@@ -52,6 +54,12 @@ public static class NewHoldTriage
             if (input.MarkerQuads.Any(q => InsideGrown(q, c.X, c.Y)))
             {
                 result[c.Id] = NewHoldDiscardReason.OnMarker;
+                continue;
+            }
+
+            if (input.Owner is { } owner && NeighbourPanelRule.ShownByOwner(owner, c.X, c.Y))
+            {
+                result[c.Id] = NewHoldDiscardReason.SeenOnNeighbourPanel;
                 continue;
             }
 

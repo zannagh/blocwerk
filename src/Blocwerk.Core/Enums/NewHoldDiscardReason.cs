@@ -15,4 +15,7 @@ public enum NewHoldDiscardReason
 
     /// <summary>The old photo shows the same thing at the aligned spot: a hold that was there but never registered.</summary>
     UnchangedSinceOldPhoto,
+
+    /// <summary>The overlap maps it onto the centre photo, which shows that spot itself (a hold of the centre, or nothing).</summary>
+    SeenOnNeighbourPanel,
 }

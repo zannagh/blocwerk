@@ -16,6 +16,6 @@ public readonly record struct PresenceQuery(double NewX, double NewY, double Old
 /// </summary>
 public interface IHoldPresenceProbe
 {
-    /// <summary>Per query, the score in [-1, 1], or null when the patch or window leaves a photo.</summary>
+    /// <summary>Per query, the score in [-1, 1], or null when too little of either photo surrounds the spot.</summary>
     IReadOnlyList<double?> Score(byte[] oldImage, byte[] newImage, IReadOnlyList<PresenceQuery> queries);
 }

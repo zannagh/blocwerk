@@ -2,7 +2,6 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
-using System.Text.Json;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
@@ -15,6 +14,7 @@ namespace Blocwerk.Core.Services;
 /// <summary>
 /// The default verdict on each staged panel's unpaired detections: which ones the review should discard
 /// unless the user keeps them (see <see cref="NewHoldTriage"/>). A suggestion only — never applied here.
+/// The centre goes first, so a neighbour's triage knows which of the centre's detections are new holds.
 /// </summary>
 public partial class WallBigUpdateService
 {
@@ -24,14 +24,18 @@ public partial class WallBigUpdateService
         int stagedGen,
         IReadOnlyList<CarryoverProposal> carryover,
         IReadOnlyList<Hold> oldHolds,
-        IReadOnlyDictionary<Guid, byte[]> oldPanelPhotosById)
+        IReadOnlyDictionary<Guid, byte[]> oldPanelPhotosById,
+        IReadOnlyList<NeighbourOverlap> neighbours)
     {
         var result = new Dictionary<Guid, NewHoldDiscardReason>();
-        var panels = await db.WallPanels
-            .Where(p => p.WallId == wall.Id && p.Generation == stagedGen && p.StagedPhoto != null)
-            .Select(p => new { p.Id, p.Col, p.Row })
-            .ToListAsync();
+        var panels = (await db.WallPanels
+                .Where(p => p.WallId == wall.Id && p.Generation == stagedGen && p.StagedPhoto != null)
+                .Select(p => new { p.Id, p.Col, p.Row })
+                .ToListAsync())
+            .OrderBy(p => p is { Col: 0, Row: 0 } ? 0 : 1)
+            .ToList();
         var oldById = oldHolds.ToDictionary(h => h.Id);
+        TriagedCentre? centre = null;
         foreach (var panel in panels)
         {
             try
@@ -39,18 +43,21 @@ public partial class WallBigUpdateService
                 var staged = await db.Holds
                     .Where(h => h.WallPanelId == panel.Id && h.Generation == stagedGen)
                     .ToListAsync();
-                var twins = carryover
-                    .Where(p => oldById.ContainsKey(p.OldHoldId))
-                    .Select(p => (Old: oldById[p.OldHoldId], New: staged.FirstOrDefault(h => h.Id == p.NewHoldId)))
-                    .Where(p => p.New is not null)
-                    .Select(p => (p.Old, New: p.New!))
-                    .ToList();
-                var oldPhoto = panel is { Col: 0, Row: 0 }
+                var twins = Twins(carryover, oldById, staged);
+                var isCentre = panel is { Col: 0, Row: 0 };
+                var oldPhoto = isCentre
                     ? wall.Photo
                     : twins.Select(t => t.Old.WallPanelId).OfType<Guid>().Select(oldPanelPhotosById.GetValueOrDefault).FirstOrDefault();
-                foreach (var (id, reason) in await TriagePanelAsync(db, panel.Id, staged, twins, oldPhoto))
+                var overlap = isCentre ? null : neighbours.FirstOrDefault(n => n.PanelId == panel.Id);
+                var outcome = await TriagePanelAsync(db, panel.Id, staged, twins, oldPhoto, OwnerSource(centre, overlap, staged));
+                foreach (var (id, reason) in outcome?.Discards ?? [])
                 {
                     result[id] = reason;
+                }
+
+                if (isCentre && outcome is { } o)
+                {
+                    centre = new TriagedCentre(staged.ToDictionary(h => h.Id), o.Size, o.KeptNew);
                 }
             }
             catch (Exception ex)
@@ -62,17 +69,28 @@ public partial class WallBigUpdateService
         return result;
     }
 
-    private async Task<Dictionary<Guid, NewHoldDiscardReason>> TriagePanelAsync(
+    private static List<(Hold Old, Hold New)> Twins(
+        IReadOnlyList<CarryoverProposal> carryover, IReadOnlyDictionary<Guid, Hold> oldById, IReadOnlyList<Hold> staged)
+    {
+        var stagedById = staged.ToDictionary(h => h.Id);
+        return carryover
+            .Where(p => oldById.ContainsKey(p.OldHoldId) && stagedById.ContainsKey(p.NewHoldId))
+            .Select(p => (oldById[p.OldHoldId], stagedById[p.NewHoldId]))
+            .ToList();
+    }
+
+    private async Task<PanelTriage?> TriagePanelAsync(
         BlocwerkDbContext db,
         Guid panelId,
         IReadOnlyList<Hold> staged,
         IReadOnlyList<(Hold Old, Hold New)> twins,
-        byte[]? oldPhoto)
+        byte[]? oldPhoto,
+        Func<(int Width, int Height), OverlapOwner?> owner)
     {
         var newPhoto = await db.WallPanels.Where(p => p.Id == panelId).Select(p => p.StagedPhoto).FirstAsync();
         if (newPhoto is null || OverlapSeedLoader.RawSize(newPhoto) is not { } newSize)
         {
-            return [];
+            return null;
         }
 
         var oldSize = oldPhoto is null ? null : OverlapSeedLoader.RawSize(oldPhoto);
@@ -86,7 +104,8 @@ public partial class WallBigUpdateService
             : twins.Select(t => new PointPair(
                 t.New.X * newSize.Width, t.New.Y * newSize.Height, t.Old.X * os.Width, t.Old.Y * os.Height)).ToList();
         var markers = await StagedMarkerQuadsAsync(db, panelId, newSize);
-        var input = new NewHoldTriageInput(candidates, pairs, oldSize, markers);
+        markers.AddRange(await RescuedMarkerQuadsAsync(newPhoto));
+        var input = new NewHoldTriageInput(candidates, pairs, oldSize, markers, owner(newSize));
         Func<IReadOnlyList<PresenceQuery>, IReadOnlyList<double?>>? presence =
             presenceProbe is null || oldPhoto is null ? null : q => presenceProbe.Score(oldPhoto, newPhoto, q);
         var result = NewHoldTriage.Classify(input, presence);
@@ -94,32 +113,7 @@ public partial class WallBigUpdateService
             "New-hold triage on panel {PanelId}: {Discarded} of {Candidates} unpaired detections discarded by default ({Reasons})",
             panelId, result.Count, candidates.Count,
             string.Join(", ", result.GroupBy(r => r.Value).Select(g => $"{g.Key} {g.Count()}")));
-        return result;
-    }
-
-    private static async Task<List<IReadOnlyList<(double X, double Y)>>> StagedMarkerQuadsAsync(
-        BlocwerkDbContext db, Guid panelId, (int Width, int Height) size)
-    {
-        var rows = await db.WallMarkerObservations
-            .Where(o => o.WallPanelId == panelId && o.FromStagedPhoto && !o.Synthetic)
-            .Select(o => o.CornersJson)
-            .ToListAsync();
-        var quads = new List<IReadOnlyList<(double X, double Y)>>();
-        foreach (var json in rows)
-        {
-            try
-            {
-                if (JsonSerializer.Deserialize<double[][]>(json) is { Length: 4 } corners && corners.All(c => c.Length >= 2))
-                {
-                    quads.Add(corners.Select(c => (c[0] * size.Width, c[1] * size.Height)).ToList());
-                }
-            }
-            catch (JsonException)
-            {
-                // An unreadable row is simply not a marker to avoid.
-            }
-        }
-
-        return quads;
+        var kept = candidates.Where(c => !result.ContainsKey(c.Id)).Select(c => (c.X, c.Y)).ToList();
+        return new PanelTriage(result, newSize, kept);
     }
 }

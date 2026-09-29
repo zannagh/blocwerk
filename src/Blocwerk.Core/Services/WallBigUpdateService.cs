@@ -29,6 +29,7 @@ public partial class WallBigUpdateService : IWallBigUpdateService
     private readonly IHoldRefinementQueue? refinementQueue;
     private readonly ICapturePhotoConverter? photoConverter;
     private readonly IHoldPresenceProbe? presenceProbe;
+    private readonly IMarkerDetectionService? markerDetection;
 
     public WallBigUpdateService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
@@ -41,10 +42,12 @@ public partial class WallBigUpdateService : IWallBigUpdateService
         IHoldOutlineService? outlineService = null,
         IHoldRefinementQueue? refinementQueue = null,
         ICapturePhotoConverter? photoConverter = null,
-        IHoldPresenceProbe? presenceProbe = null)
+        IHoldPresenceProbe? presenceProbe = null,
+        IMarkerDetectionService? markerDetection = null)
     {
         this.photoConverter = photoConverter;
         this.presenceProbe = presenceProbe;
+        this.markerDetection = markerDetection;
         this.refinementQueue = refinementQueue;
         this.dbContextFactory = dbContextFactory;
         this.currentUserService = currentUserService;
@@ -258,7 +261,7 @@ public partial class WallBigUpdateService : IWallBigUpdateService
             autoMatchStatus, autoMatchMessage, carriedWarp, carriedShapes,
             await BuildCarriedPanelsAsync(db, wall.Id, stagedGen, oldByPosition, unalignedCarry),
             oldHolds.Select(h => h.Id).ToList(),
-            await SuggestNewDiscardsAsync(db, wall, stagedGen, carryover, oldHolds, oldPanelPhotosById));
+            await SuggestNewDiscardsAsync(db, wall, stagedGen, carryover, oldHolds, oldPanelPhotosById, neighbours));
     }
 
     /// <summary>

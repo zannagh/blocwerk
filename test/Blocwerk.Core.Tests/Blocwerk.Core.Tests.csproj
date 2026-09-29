@@ -42,6 +42,9 @@
     <Content Include="MarkerRevisions\capture1-rev2-geometry.json" CopyToOutputDirectory="PreserveNewest" />
     <!-- Re-solves of the same 14-photo Attic capture (subsets, markers left out, fillers 4/5 declared 100 mm). -->
     <Content Include="MarkerRevisions\Resolves\*.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The Attic panel update of 2026-09-29 (centre + oblique right panel): every unpaired detection with the
+         operator's real/junk label, matched pairs, markers, presence scores and overlap pairs. No photos. -->
+    <Content Include="Triage\panel-update-attic.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
