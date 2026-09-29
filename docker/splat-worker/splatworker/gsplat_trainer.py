@@ -181,16 +181,17 @@ def _worth_logging(line):
 def check_frame(ply_xyz, dataset_dir, tolerance=1.0):
     """Guard: the trained splats must sit where COLMAP's sparse points are (the trainer must never
     normalise world space: frame.json and the alignment assume the COLMAP frame). Their median has to
-    lie inside the sparse points' 2-98 % box grown by `tolerance` x its size, and their spread must be
-    within 10x of the points'. Returns what it compared (stats.frameCheck), raises JobError otherwise."""
+    lie inside the sparse points' 2-98 % box grown by `tolerance` x its size, and their 10-90 % spread
+    must be within 10x of the points' (robust to the few % of far floaters a wall capture trains). Returns what it compared (stats.frameCheck), raises JobError otherwise."""
     pts, _ = read_points(os.path.join(model_dir(dataset_dir), "points3D.bin"))
     if len(pts) < 10 or len(ply_xyz) < 10:
         return None
     lo, hi = np.percentile(pts, 2, axis=0), np.percentile(pts, 98, axis=0)
     size = np.maximum(hi - lo, 1e-9)
     med = np.median(np.asarray(ply_xyz, float), axis=0)
-    spread = np.linalg.norm(np.percentile(ply_xyz, 98, axis=0) - np.percentile(ply_xyz, 2, axis=0))
-    ratio = spread / max(np.linalg.norm(size), 1e-9)
+    spread = np.linalg.norm(np.percentile(ply_xyz, 90, axis=0) - np.percentile(ply_xyz, 10, axis=0))
+    core = np.linalg.norm(np.percentile(pts, 90, axis=0) - np.percentile(pts, 10, axis=0))
+    ratio = spread / max(core, 1e-9)
     if np.any(med < lo - tolerance * size) or np.any(med > hi + tolerance * size) or not 0.1 <= ratio <= 10:
         raise JobError("train", f"the trained splats are not in the COLMAP frame (median {np.round(med, 3)}, "
                                 f"sparse points {np.round(lo, 3)}..{np.round(hi, 3)}, spread ratio {ratio:.2f})")

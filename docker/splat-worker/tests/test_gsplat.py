@@ -75,6 +75,9 @@ def test_frame_guard_accepts_colmap_frame_and_rejects_normalised_splats(tmp_path
     pts, _ = colmap_model.read_points(os.path.join(ds, "sparse", "0", "points3D.bin"))
     splats = pts + np.random.default_rng(2).normal(0, 0.3, pts.shape)
     assert 0.5 < gsplat_trainer.check_frame(splats, ds)["spreadRatio"] < 2  # passes
+    floaters = splats.copy()
+    floaters[:len(floaters) // 20] += 500  # a few % of far floaters must not fail a correct frame
+    assert gsplat_trainer.check_frame(floaters, ds)["spreadRatio"] < 2
     normalised = (splats - splats.mean(0)) / np.abs(splats - splats.mean(0)).max()  # what normalize_world_space does
     with pytest.raises(gsplat_trainer.JobError, match="COLMAP frame"):
         gsplat_trainer.check_frame(normalised, ds)
