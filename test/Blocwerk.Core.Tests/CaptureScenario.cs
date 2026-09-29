@@ -125,11 +125,11 @@ internal sealed class CaptureScenario : IDisposable
         }
     }
 
-    /// <summary>A small valid JPEG whose pixels differ by <paramref name="seed"/> (distinct hashes).</summary>
+    /// <summary>A small valid JPEG whose pixels differ by <paramref name="seed"/> (distinct hashes; the first 128 as they always were).</summary>
     public static byte[] TinyJpeg(int seed = 0)
     {
         using var bitmap = new SKBitmap(64, 48);
-        bitmap.Erase(new SKColor((byte)(40 + (seed * 30)), 120, 200));
+        bitmap.Erase(new SKColor((byte)(40 + (seed * 30)), (byte)(120 + ((seed / 128) * 40)), 200)); // distinct past 128 seeds too
         using var image = SKImage.FromBitmap(bitmap);
         using var data = image.Encode(SKEncodedImageFormat.Jpeg, 90);
         return data.ToArray();

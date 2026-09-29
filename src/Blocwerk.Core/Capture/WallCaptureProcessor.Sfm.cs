@@ -131,12 +131,13 @@ public sealed partial class WallCaptureProcessor
     {
         var captureId = run.Capture.Id;
         await PrepareVideoFramesAsync(captureId, WallCaptureStatus.Solving, ct);
-        var parts = await PhotoPartsAsync(await LoadPhotosAsync(captureId, ct), CaptureComputeDocuments.PhotoName, ct);
-        parts.AddRange(await FramePartsAsync(captureId, ct));
+        using var photoParts = new ComputePhotoParts(files);
+        var parts = await PhotoPartsAsync(photoParts, await LoadPhotosAsync(captureId, ct), CaptureComputeDocuments.PhotoName, ct);
+        parts.AddRange(await FramePartsAsync(photoParts, captureId, ct));
         if (anchors is not null)
         {
             // Anchor pixels never reach training: the worker drops them from the model before the bundle.
-            parts.AddRange(await PhotoPartsAsync(anchors.Photos, i => anchors.StemByIndex[i], ct));
+            parts.AddRange(await PhotoPartsAsync(photoParts, anchors.Photos, i => anchors.StemByIndex[i], ct));
         }
 
         parts.Add(ComputeJobPart.Json("options", CaptureSplatDocuments.BuildOptions(settings.SplatMaxSteps, run.Capture.SplatQuality)));

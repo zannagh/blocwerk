@@ -3,8 +3,8 @@ import os
 
 from computejobs.settings import env_int, settings
 
-settings.load(work_dir=os.path.join(os.environ.get("TMPDIR", "/tmp"), "splat-jobs"), max_request_mb=4096,
-              max_photo_mb=40, max_photos=400, max_queued=4, result_ttl_s=3600)
+settings.load(work_dir=os.path.join(os.environ.get("TMPDIR", "/tmp"), "splat-jobs"), max_request_mb=8192,
+              max_photo_mb=40, max_photos=600, max_queued=4, result_ttl_s=3600)
 settings.brush_bin = os.environ.get("BRUSH_BIN", "brush_app")
 settings.colmap_bin = os.environ.get("COLMAP_BIN", "colmap")
 settings.splat_timeout_s = env_int("SPLAT_TIMEOUT_S", 4 * 3600)

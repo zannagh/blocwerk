@@ -68,7 +68,8 @@ internal sealed class FakeComputeJobClient : IComputeJobClient
 
     public Task<string> SubmitMultipartAsync(string kind, IReadOnlyList<ComputeJobPart> parts, CancellationToken ct)
     {
-        MultipartSubmissions.Add((kind, parts));
+        // A part streamed from disk is read now, as the real client does while sending (its spool is gone afterwards).
+        MultipartSubmissions.Add((kind, parts.Select(p => p.SourcePath is { } path && File.Exists(path) ? p with { Content = File.ReadAllBytes(path) } : p).ToList()));
         return Submit(kind);
     }
 

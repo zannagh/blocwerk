@@ -237,7 +237,7 @@ give the job memory to match (`SPLAT_MAX_MEMORY_MB` unset, container limit ≥ 1
 | `MAX_IMAGE_MEGAPIXELS` | 100 | photos with a bigger header size are refused |
 | `HOST` / `PORT` | 127.0.0.1 / 8100 (image: 0.0.0.0) | listen address |
 | `BRUSH_BIN` / `COLMAP_BIN` | `brush_app` / `colmap` | tool paths (the image and `run-native.sh` set them) |
-| `MAX_PHOTOS` / `MAX_PHOTO_MB` / `MAX_REQUEST_MB` | 400 / 40 / 4096 | `413` beyond |
+| `MAX_PHOTOS` / `MAX_PHOTO_MB` / `MAX_REQUEST_MB` | 600 / 40 / 8192 | `413` beyond. `MAX_PHOTOS` counts every image: up to 200 photos + 300 video frames + ~15 anchors |
 | `MAX_QUEUED_JOBS` | 4 | `429` beyond; ONE job runs at a time |
 | `SPLAT_TIMEOUT_S` | 14400 | per job; the whole process group is killed |
 | `RESULT_TTL_S` | 3600 | finished jobs + files are deleted after this; restart loses everything (re-submit on `404`) |

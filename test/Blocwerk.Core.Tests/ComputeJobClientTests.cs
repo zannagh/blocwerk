@@ -105,6 +105,19 @@ public class ComputeJobClientTests
         Assert.False(settings.SplatService.IsConfigured);
     }
 
+    [Fact]
+    public void GeometryJobTimeout_DefaultsTo60Minutes_ForTexturesOverEveryPhoto()
+    {
+        var settings = new BlocwerkSettings(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Blocwerk:GeometryService:Url"] = "http://wall-geometry:8000",
+        }).Build());
+
+        // Above wall-geometry's own TEXTURES_TIMEOUT_S (45 min): a textures job over 200 full-size photos runs long.
+        Assert.Equal(TimeSpan.FromMinutes(60), settings.GeometryService.JobTimeout);
+        Assert.Equal(TimeSpan.FromHours(4), settings.SplatService.JobTimeout);
+    }
+
     [Theory]
     [InlineData("https://splat.example.ts.net", true)]
     [InlineData("http://wall-geometry:8000", true)]

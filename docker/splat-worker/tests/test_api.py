@@ -65,7 +65,7 @@ def test_health_is_minimal_and_info_has_the_details(client, monkeypatch):
     assert set(h) == {"status", "service", "protocol", "version", "kinds", "prepareOutputs"} and h["status"] == "ok"
     assert h["prepareOutputs"] == ["sparse.zip", "anchors"]  # the app keys markerless captures on these
     info = client.get("/v1/info").json()
-    assert info["tools"]["ok"] is True and info["limits"]["maxPhotos"] == 400
+    assert info["tools"]["ok"] is True and info["limits"]["maxPhotos"] == 600
     monkeypatch.setitem(main.TOOLS, "maxQuality", "ultra")  # gsplat on a >= 12 GB GPU (main._probe_tools)
     assert client.get("/health").json()["maxQuality"] == "ultra"
     monkeypatch.setitem(main.TOOLS, "ok", False)
@@ -134,7 +134,7 @@ def test_not_multipart_and_other_kinds(client):
 def test_limits(client, monkeypatch):
     monkeypatch.setattr(settings, "max_photos", 2)
     assert client.post("/v1/jobs/splat", files=form(three())).status_code == 413
-    monkeypatch.setattr(settings, "max_photos", 400)
+    monkeypatch.setattr(settings, "max_photos", 600)
     monkeypatch.setattr(settings, "max_photo_bytes", 100)
     r = client.post("/v1/jobs/splat", files=form(three()))
     assert r.status_code == 413 and "exceeds" in r.json()["detail"]

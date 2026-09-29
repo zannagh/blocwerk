@@ -6,11 +6,18 @@ namespace Blocwerk.Core.Capture;
 /// <summary>Timing and limits of the capture pipeline (tests shrink the delays).</summary>
 public sealed class WallCapturePipelineOptions
 {
+    /// <summary>Default of <see cref="MaxPhotos"/>.</summary>
+    public const int DefaultMaxPhotos = 200;
+
     /// <summary>
-    /// Photos per capture. Matches the compute services' own per-job cap (wall-geometry and textures take 60):
-    /// a big wall shot with the main lens (24 mm) needs ~50 photos for the same coverage 14 ultra-wide ones give.
+    /// Photos per capture; every step uses all of them (more views, better model, textures and hold shapes). Must not
+    /// exceed the compute services' own per-job caps (wall-geometry's and the splat worker's <c>MAX_PHOTOS</c>,
+    /// 200 / 600 by default), and wall-geometry's <c>MAX_REQUEST_MB</c> must fit them all in one textures request.
+    /// A big wall shot with the main lens (24 mm) needs ~50 photos for the coverage 14 ultra-wide ones give, a careful
+    /// walk along a large wall well over 100. Setting <c>Blocwerk:Capture:MaxPhotos</c> / <c>CAPTURE__MAXPHOTOS</c>
+    /// (2–1000); default 200.
     /// </summary>
-    public const int MaxPhotos = 60;
+    public int MaxPhotos { get; init; } = DefaultMaxPhotos;
 
     /// <summary>
     /// Largest photo a capture takes, checked on upload and again after a HEIC → JPEG conversion (a 48 MP
@@ -121,6 +128,7 @@ public sealed class WallCapturePipelineOptions
             : defaults.VideoFramesPerSecond;
         return new WallCapturePipelineOptions
         {
+            MaxPhotos = ReadInt(configuration, "MaxPhotos", 2, 1000) ?? defaults.MaxPhotos,
             PhotoRetention = days is { } d ? (d == 0 ? null : TimeSpan.FromDays(d)) : defaults.PhotoRetention,
             MaxVideoBytes = videoMb is { } mb ? mb * 1024L * 1024 : defaults.MaxVideoBytes,
             MaxPhotoBytes = photoMb is { } pmb ? pmb * 1024L * 1024 : defaults.MaxPhotoBytes,

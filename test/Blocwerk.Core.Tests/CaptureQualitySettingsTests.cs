@@ -87,6 +87,21 @@ public class CaptureQualitySettingsTests
         Assert.Equal((3, 3, 480), (request.Window, request.JpegQ, request.ScoreEdge));
     }
 
+    [Theory]
+    [InlineData(null, 200)] // default: a 145-photo capture fits
+    [InlineData("300", 300)]
+    [InlineData("2", 2)]
+    [InlineData("1", 200)] // out of range (2-1000): the default
+    [InlineData("1001", 200)]
+    [InlineData("many", 200)]
+    public void PipelineOptions_BindThePhotoLimit(string? value, int expected)
+    {
+        var options = WallCapturePipelineOptions.Bind(Root(new Dictionary<string, string?> { ["Blocwerk:Capture:MaxPhotos"] = value }));
+
+        Assert.Equal(expected, options.MaxPhotos);
+        Assert.Equal(WallCapturePipelineOptions.DefaultMaxPhotos, new WallCapturePipelineOptions().MaxPhotos);
+    }
+
     [Fact]
     public void PipelineOptions_BindTheQualityKnobs_AndIgnoreValuesOutOfRange()
     {

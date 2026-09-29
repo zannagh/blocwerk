@@ -59,22 +59,17 @@ public sealed partial class WallCaptureProcessor
             parts.Add(ComputeJobPart.Json("options", textureOptions));
         }
 
+        // Every photo the model solved, streamed from disk (all of a 200-photo capture would not fit in memory);
+        // nothing leaves this server with metadata: no GPS, no camera serials, no orientation.
+        using var photoParts = new ComputePhotoParts(files);
         foreach (var photo in await LoadPhotosAsync(captureId, ct))
         {
             var name = CaptureComputeDocuments.PhotoName(photo.Index);
-            if (!cameras.Contains(name))
+            if (cameras.Contains(name))
             {
-                continue;
+                parts.Add(await photoParts.PartAsync("photos", name, photo.StoredPath, asJpeg: false, ct)
+                          ?? throw new CaptureFailedException($"Photo {photo.Index} is missing on the server."));
             }
-
-            var bytes = await files.ReadAsync(photo.StoredPath, ct)
-                        ?? throw new CaptureFailedException($"Photo {photo.Index} is missing on the server.");
-
-            // Nothing leaves this server with metadata: no GPS, no camera serials, no orientation.
-            var clean = ImageMetadataStripper.Strip(bytes);
-            var kind = CapturePhotoFormat.Sniff(clean);
-            parts.Add(ComputeJobPart.File(
-                "photos", name + CapturePhotoFormat.Extension(kind), clean, CapturePhotoFormat.ContentType(kind)));
         }
 
         if (!parts.Exists(p => p.Name == "photos"))

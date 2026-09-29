@@ -999,7 +999,7 @@ quality are all optional) and `GET …/{captureId}` to poll. The outline upgrade
 shapes" are under `/api/walls/{wallId}/holds/outline-upgrade[/preview|/{runId}/revert]` and
 `/api/walls/{wallId}/holds/refine-shapes`. Use a personal API key created with write access (or a
 wall key for that wall); its owner must be an admin of the wall. Kiosk tablets are refused. A photo
-batch can be large (up to 60 photos at `CAPTURE__MAXPHOTOMB` each), so a reverse proxy must allow
+batch can be large (up to `CAPTURE__MAXPHOTOS` photos, 200 by default, at `CAPTURE__MAXPHOTOMB` each), so a reverse proxy must allow
 that body size on `/api/walls/*/captures/*/photos` too.
 
 **On a Mac (native).** Docker on macOS has no GPU access, so on a Mac the worker runs natively and
@@ -1227,7 +1227,7 @@ There's no per-wall setting for outlines; they're server-wide.
 | `GeometryService:Url` | `GEOMETRYSERVICE__URL` | empty | The `wall-geometry` base URL. Empty = in-app capture off. Must be `https://`, or `http://` to localhost or a single-word host such as `wall-geometry`. |
 | `GeometryService:ApiKey` | `GEOMETRYSERVICE__APIKEY` | empty | Bearer key; must equal the service's `COMPUTE_API_KEY`. |
 | `GeometryService:RequestTimeoutSeconds` | `GEOMETRYSERVICE__REQUESTTIMEOUTSECONDS` | 300 | Timeout for a single HTTP request (photo uploads take a while). |
-| `GeometryService:JobTimeoutMinutes` | `GEOMETRYSERVICE__JOBTIMEOUTMINUTES` | 30 | How long the app waits for one job. |
+| `GeometryService:JobTimeoutMinutes` | `GEOMETRYSERVICE__JOBTIMEOUTMINUTES` | 60 | How long the app waits for one job (a textures job over 200 full-size photos takes long; keep it above wall-geometry's `TEXTURES_TIMEOUT_S`). |
 | `SplatService:Url` | `SPLATSERVICE__URL` | empty | The splat worker's base URL. **Setting it turns the photo-real view on.** Same URL rules. |
 | `SplatService:ApiKey` | `SPLATSERVICE__APIKEY` | empty | Must equal the worker's `COMPUTE_API_KEY`. |
 | `SplatService:RequestTimeoutSeconds` | `SPLATSERVICE__REQUESTTIMEOUTSECONDS` | 300 | As above. |
@@ -1248,8 +1248,15 @@ The compose file maps `docker/.env` values onto these: `GEOMETRYSERVICE_URL` →
 | `Capture:MaxVideoMb` | `CAPTURE__MAXVIDEOMB` | 2048 | Largest walk-along video (streamed to disk, 1–16384). A reverse proxy in front of the app must allow bodies this big on `/api/captures/*/video` (section 9). |
 | `Capture:MaxVideoFrames` | `CAPTURE__MAXVIDEOFRAMES` | 120 | Most frames taken from the video (3–400). |
 | `Capture:VideoFramesPerSecond` | `CAPTURE__VIDEOFRAMESPERSECOND` | 2.5 | Target frame rate (ffmpeg decodes 3 candidates per kept frame; the sharpest wins); lowered for long videos to stay under the cap. |
+| `Capture:MaxPhotos` | `CAPTURE__MAXPHOTOS` | 200 | Photos per capture (2–1000; the upload form says so). Every step uses all of them. Keep it within wall-geometry's `MAX_PHOTOS` (200) and `MAX_REQUEST_MB` (4096: the textures request carries every photo, ~15–22 MB each at 48 MP), and the splat worker's `MAX_PHOTOS` (600, which also counts the video frames and ~15 anchors). |
 
-Fixed limits (not configurable): 40 photos per capture, 20 MB per photo, a 10-minute video, 3 attempts per capture,
+**Many photos.** The textures and splat requests stream the photos from disk (each one metadata-stripped on its
+own), so the app never holds a capture's photos in memory at once. Run time grows about linearly with the photo
+count: hold proposals take ~7–9 s per photo on 4 CPUs (145 photos: ~20 min), footprints and textures likewise
+scale ~2.5× from 60 to 145 photos. None of the follow-ups has a time limit; the textures job has
+wall-geometry's `TEXTURES_TIMEOUT_S` (2700 s) and the app's `GEOMETRYSERVICE__JOBTIMEOUTMINUTES` (60).
+
+Fixed limits (not configurable): 3 attempts per capture,
 drafts removed after 1 day, sweep every 6 hours. Capture photos are stored under the wall-image
 storage path (`WALLIMAGE__STORAGEPATH`), in `captures/`.
 
@@ -1261,8 +1268,8 @@ storage path (`WALLIMAGE__STORAGEPATH`), in `captures/`.
 | `COMPUTE_CALLBACK_SECRET` | both | unset | Signs optional callbacks. The app doesn't use them. |
 | `ALLOW_OPEN_BIND` | both | unset | `1` = start without a key. Only on a private network. |
 | `MAX_IMAGE_MEGAPIXELS` | both | 100 | Photos above this are refused before decoding. |
-| `MAX_PHOTOS` | both | 60 / 400 | Photos per job (geometry / splat). |
-| `SOLVE_TIMEOUT_S` / `TEXTURES_TIMEOUT_S` | geometry | 600 / 900 | Per-job limit. |
+| `MAX_PHOTOS` | both | 200 / 600 | Images per job (geometry / splat: photos + video frames + anchors). |
+| `SOLVE_TIMEOUT_S` / `TEXTURES_TIMEOUT_S` | geometry | 1800 / 2700 | Per-job limit (sized for 200 photos). |
 | `TEXTURES_MAX_MEGAPIXELS` | geometry | 200 | Total output size of one textures job. |
 | `SPLAT_TIMEOUT_S` | splat | 14400 | Per-job limit (4 h). |
 | `MAX_QUEUED_JOBS` | both | 16 / 4 | Queue length. The splat worker runs one job at a time. |

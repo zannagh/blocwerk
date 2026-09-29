@@ -142,7 +142,7 @@ public sealed partial class WallCapturesController
     {
         if (HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } size)
         {
-            size.MaxRequestBodySize = (WallCapturePipelineOptions.MaxPhotos * (options.MaxPhotoBytes + (64 * 1024))) + (1024 * 1024);
+            size.MaxRequestBodySize = (options.MaxPhotos * (options.MaxPhotoBytes + (64 * 1024))) + (1024 * 1024);
         }
     }
 }

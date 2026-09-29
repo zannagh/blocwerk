@@ -181,7 +181,8 @@ public class BlocwerkSettings
                 section["Smtp:Security"] ?? Environment.GetEnvironmentVariable("SMTP__SECURITY")),
         };
 
-        GeometryService = ComputeServiceSettings.Bind(section, "GeometryService", "GEOMETRYSERVICE");
+        // A textures job over 200 full-size photos runs well past the old 30 min (wall-geometry: TEXTURES_TIMEOUT_S 45 min).
+        GeometryService = ComputeServiceSettings.Bind(section, "GeometryService", "GEOMETRYSERVICE", TimeSpan.FromMinutes(60));
         GeometryTextures = GeometryTextureSettings.Bind(section);
         SplatService = ComputeServiceSettings.Bind(section, "SplatService", "SPLATSERVICE", TimeSpan.FromHours(4));
         SplatMaxSteps = int.TryParse(

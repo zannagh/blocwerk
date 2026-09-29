@@ -94,8 +94,8 @@ public sealed partial class WallCaptureProcessor
         }
     }
 
-    /// <summary>The capture's stored frames as splat-request parts (<c>vf_0001.jpg</c>, … in video order).</summary>
-    private async Task<List<ComputeJobPart>> FramePartsAsync(Guid captureId, CancellationToken ct)
+    /// <summary>The capture's stored frames as splat-request parts (<c>vf_0001.jpg</c>, … in video order), streamed from disk.</summary>
+    private async Task<List<ComputeJobPart>> FramePartsAsync(ComputePhotoParts photoParts, Guid captureId, CancellationToken ct)
     {
         string? json;
         await using (var db = dbContextFactory.CreateDbContext())
@@ -106,14 +106,10 @@ public sealed partial class WallCaptureProcessor
         var parts = new List<ComputeJobPart>();
         foreach (var name in CaptureVideoFiles.Frames(json))
         {
-            var bytes = await files.ReadAsync(name, ct);
-            if (bytes is null)
+            if (await photoParts.PartAsync("photos", CaptureSplatDocuments.FrameName(parts.Count + 1), name, asJpeg: true, ct) is { } part)
             {
-                continue;
+                parts.Add(part);
             }
-
-            parts.Add(ComputeJobPart.File(
-                "photos", CaptureSplatDocuments.FrameName(parts.Count + 1) + ".jpg", ImageMetadataStripper.Strip(bytes), "image/jpeg"));
         }
 
         return parts;

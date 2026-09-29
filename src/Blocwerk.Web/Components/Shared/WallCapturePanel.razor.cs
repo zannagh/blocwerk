@@ -110,7 +110,7 @@ public partial class WallCapturePanel
         await RunAsync(async () =>
         {
             draft ??= await Captures.CreateDraftAsync(WallId);
-            var room = Math.Max(0, WallCapturePipelineOptions.MaxPhotos - draft.Photos.Count);
+            var room = Math.Max(0, PipelineOptions.MaxPhotos - draft.Photos.Count);
             var selected = picked.Take(room).ToList();
             for (var i = 0; i < selected.Count; i++)
             {
@@ -129,9 +129,9 @@ public partial class WallCapturePanel
         uploadStatus = null;
     }
 
-    private static string TooManyPhotosNote(int picked, int room) => room == 0
-        ? $"This capture already has {WallCapturePipelineOptions.MaxPhotos} photos, the most it takes. Remove some before adding more."
-        : $"A capture takes at most {WallCapturePipelineOptions.MaxPhotos} photos, so only the first {room} of the {picked} you picked were added.";
+    private string TooManyPhotosNote(int picked, int room) => room == 0
+        ? $"This capture already has {PipelineOptions.MaxPhotos} photos, the most it takes. Remove some before adding more."
+        : $"A capture takes at most {PipelineOptions.MaxPhotos} photos, so only the first {room} of the {picked} you picked were added.";
 
     private async Task UploadOneAsync(IBrowserFile file)
     {

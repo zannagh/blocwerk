@@ -172,29 +172,28 @@ public sealed partial class WallCaptureProcessor
         await using var db = dbContextFactory.CreateDbContext();
         var geometry = await db.WallGeometryModels.Where(m => m.Id == modelId).Select(m => m.Json).FirstAsync(ct);
         var parts = new List<ComputeJobPart> { ComputeJobPart.Json("geometry", geometry) };
-        parts.AddRange(await PhotoPartsAsync(await LoadPhotosAsync(captureId, ct), CaptureComputeDocuments.PhotoName, ct));
+        using var photoParts = new ComputePhotoParts(files);
+        parts.AddRange(await PhotoPartsAsync(photoParts, await LoadPhotosAsync(captureId, ct), CaptureComputeDocuments.PhotoName, ct));
 
         // The walk-along video's frames (if any): auxiliary images for coverage, never for alignment.
-        parts.AddRange(await FramePartsAsync(captureId, ct));
+        parts.AddRange(await FramePartsAsync(photoParts, captureId, ct));
         parts.Add(ComputeJobPart.Json("options", CaptureSplatDocuments.BuildOptions(settings.SplatMaxSteps, quality)));
         return await client.SubmitMultipartAsync(jobKind, parts, ct);
     }
 
     /// <summary>
-    /// Stored photos as <c>photos</c> file parts, metadata stripped: no GPS, no camera serials, no orientation. The stem
-    /// (<paramref name="name"/> of the photo index) is the camera name the solve used, so the worker can align to it.
+    /// Stored photos as <c>photos</c> file parts, streamed from disk and metadata stripped (<see cref="ComputePhotoParts"/>):
+    /// no GPS, no camera serials, no orientation. The stem (<paramref name="name"/> of the photo index) is the camera name
+    /// the solve used, so the worker can align to it.
     /// </summary>
-    private async Task<List<ComputeJobPart>> PhotoPartsAsync(
-        IEnumerable<WallCapturePhoto> photos, Func<int, string> name, CancellationToken ct)
+    private static async Task<List<ComputeJobPart>> PhotoPartsAsync(
+        ComputePhotoParts photoParts, IEnumerable<WallCapturePhoto> photos, Func<int, string> name, CancellationToken ct)
     {
         var parts = new List<ComputeJobPart>();
         foreach (var photo in photos)
         {
-            var bytes = await files.ReadAsync(photo.StoredPath, ct)
-                        ?? throw new CaptureFailedException($"Photo {photo.Index} is missing on the server.");
-            var clean = ImageMetadataStripper.Strip(bytes);
-            var kind = CapturePhotoFormat.Sniff(clean);
-            parts.Add(ComputeJobPart.File("photos", name(photo.Index) + CapturePhotoFormat.Extension(kind), clean, CapturePhotoFormat.ContentType(kind)));
+            parts.Add(await photoParts.PartAsync("photos", name(photo.Index), photo.StoredPath, asJpeg: false, ct)
+                      ?? throw new CaptureFailedException($"Photo {photo.Index} is missing on the server."));
         }
 
         return parts;

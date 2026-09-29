@@ -5,6 +5,7 @@
 using System.Text;
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Tests;
@@ -72,20 +73,26 @@ public class CaptureVideoPipelineTests
     public async Task AVideo_DoesNotCountAgainstMaxPhotos()
     {
         using var h = new WallTestHarness();
-        using var s = new CaptureScenario(h);
+        const int limit = 12;
+        using var s = new CaptureScenario(h, options: new WallCapturePipelineOptions { MaxPhotos = limit });
         s.SplatClient.IsConfigured = true;
         await h.SeedWallAsync(holdCount: 0);
         await WallGlyphSettingsTests.Service(h).SetGlyphSettingsAsync(h.WallId, true, 125);
         var draft = await s.Service.CreateDraftAsync(h.WallId);
         await AddVideoAsync(s, draft.CaptureId);
 
-        for (var i = 0; i < WallCapturePipelineOptions.MaxPhotos; i++)
+        for (var i = 0; i < limit; i++)
         {
             await s.Service.AddPhotoAsync(draft.CaptureId, $"IMG_{i}.jpg", ExifJpeg.Build(CaptureScenario.TinyJpeg(seed: i)), CancellationToken.None);
         }
 
+        // The configured limit, not a built-in one, refuses the next photo.
+        var refused = await Assert.ThrowsAsync<UserFacingException>(() => s.Service.AddPhotoAsync(
+            draft.CaptureId, "IMG_extra.jpg", ExifJpeg.Build(CaptureScenario.TinyJpeg(seed: 99)), CancellationToken.None));
+        Assert.Contains($"at most {limit} photos", refused.Message, StringComparison.Ordinal);
+
         var reloaded = await s.Service.GetDraftAsync(h.WallId);
-        Assert.Equal(WallCapturePipelineOptions.MaxPhotos, reloaded!.Photos.Count);
+        Assert.Equal(limit, reloaded!.Photos.Count);
         Assert.NotNull(reloaded.Video);
         Assert.Equal(42, reloaded.Video!.DurationSeconds);
     }

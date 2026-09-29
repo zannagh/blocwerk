@@ -30,9 +30,9 @@ public sealed partial class WallCaptureService
         {
             var existing = await db.WallCapturePhotos.Where(p => p.CaptureId == captureId)
                 .Select(p => new { p.Index, p.ContentHash }).ToListAsync(ct);
-            if (existing.Count >= WallCapturePipelineOptions.MaxPhotos)
+            if (existing.Count >= PipelineOptions.MaxPhotos)
             {
-                throw new UserFacingException($"A capture takes at most {WallCapturePipelineOptions.MaxPhotos} photos.");
+                throw new UserFacingException($"A capture takes at most {PipelineOptions.MaxPhotos} photos.");
             }
 
             // The stripper validates the structure first; EXIF (camera facts, the iPhone gravity vector) is then read

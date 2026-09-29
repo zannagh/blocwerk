@@ -256,9 +256,9 @@ Not handled: occlusion by holds/volumes, exposure differences between photos (vi
 | `TEXTURES_BLEND_MAX_BYTES` | 2000000000 | memory the multi-view blend may take (`(blendViews + 2) × 7` bytes per output pixel); a bigger job renders single-view. Raise it for `mmPerPx` < 2 on a machine with the RAM |
 | `HOST` / `PORT` | 127.0.0.1 / 8000 (image: 0.0.0.0) | listen address |
 | `RESULT_TTL_S` | 3600 | finished jobs + files are deleted after this |
-| `MAX_REQUEST_MB` / `MAX_PHOTO_MB` / `MAX_PHOTOS` | 400 / 40 / 60 | limits (`413`). A textures request carries every photo: 50 full-size 48 MP JPEGs (12–22 MB each) need `MAX_REQUEST_MB` ≈ 1200 |
+| `MAX_REQUEST_MB` / `MAX_PHOTO_MB` / `MAX_PHOTOS` | 4096 / 40 / 200 | limits (`413`). A textures request carries every photo of the capture: 200 full-size 48 MP JPEGs (12–22 MB each) need up to ~4.4 GB, the usual ~15 MB each ~3 GB; each photo is written to the job dir as it arrives |
 | `MAX_QUEUED_JOBS` | 16 | `429` beyond this |
-| `SOLVE_TIMEOUT_S` / `TEXTURES_TIMEOUT_S` / `SFM_TIMEOUT_S` | 600 / 900 / 900 | per job; the job's process is killed |
+| `SOLVE_TIMEOUT_S` / `TEXTURES_TIMEOUT_S` / `SFM_TIMEOUT_S` | 1800 / 2700 / 900 | per job; the job's process is killed |
 | `SFM_MAX_SPARSE_MB` | 256 | solve-sfm: the sparse.zip part (`413` beyond; unpacked at most twice that) |
 | `WORK_DIR` | /tmp/wall-geometry-jobs | job inputs/outputs |
 
