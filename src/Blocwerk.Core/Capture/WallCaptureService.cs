@@ -117,7 +117,7 @@ public sealed partial class WallCaptureService(
         p.Width,
         p.Height,
         p.Focal35mm,
-        CaptureComputeDocuments.ParseMarkers(p.MarkersJson).Select(m => m.Id).ToList(),
+        CaptureComputeDocuments.ParseMarkers(p.MarkersJson).Where(m => m.Ignored is null).Select(m => m.Id).ToList(),
         warnings);
 
     /// <summary>A context after the admin check for <paramref name="wallId"/>; refused from a kiosk. Caller disposes.</summary>

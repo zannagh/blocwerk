@@ -23,7 +23,9 @@ public sealed partial class WallCaptureProcessor
                 $"Finding markers in photo {i + 1} of {pending.Count}", ct);
             var bytes = await files.ReadAsync(pending[i].StoredPath, ct)
                         ?? throw new CaptureFailedException($"Photo {pending[i].Index} is missing on the server. Please upload it again.");
-            var markersJson = JsonSerializer.Serialize(await CaptureMarkerDetection.DetectAsync(markerDetection, bytes, run.Layout.DetectionOptions, ct));
+            var focalPx = CapturePlanLayoutCheck.FocalPx(pending[i].Focal35mm, pending[i].Width, pending[i].Height);
+            var markers = await CaptureMarkerDetection.DetectAsync(markerDetection, bytes, run.Layout, focalPx, ct);
+            var markersJson = JsonSerializer.Serialize(markers);
             await using var db = dbContextFactory.CreateDbContext();
             await db.WallCapturePhotos
                 .Where(p => p.Id == pending[i].Id)

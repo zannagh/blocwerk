@@ -88,13 +88,18 @@ public static class CaptureComputeDocuments
 
     /// <summary>
     /// A photo's stored markers that may go to the solver: all of them without a plan (they were
-    /// detected against the legacy ids already), only the plan's ids with one.
+    /// detected against the legacy ids already), only the plan's ids with one; never an ignored detection
+    /// (<see cref="CaptureMarker.Ignored"/>).
     /// </summary>
     public static IReadOnlyList<CaptureMarker> UsableMarkers(WallMarkerLayout layout, string? markersJson)
     {
-        var markers = ParseMarkers(markersJson);
-        return layout.IsFromPlan ? markers.Where(m => layout.AllowedIds.Contains(m.Id)).ToList() : markers;
+        var markers = ParseMarkers(markersJson).Where(m => m.Ignored is null);
+        return layout.IsFromPlan ? markers.Where(m => layout.AllowedIds.Contains(m.Id)).ToList() : markers.ToList();
     }
+
+    /// <summary>A photo's ignored detections (a hold read as a marker, a marker that does not fit the plan).</summary>
+    public static IReadOnlyList<CaptureMarker> IgnoredMarkers(string? markersJson) =>
+        ParseMarkers(markersJson).Where(m => m.Ignored is not null).ToList();
 
     public static IReadOnlyList<CaptureMarker> ParseMarkers(string? json)
     {

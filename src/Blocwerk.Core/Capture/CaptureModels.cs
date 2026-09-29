@@ -20,12 +20,30 @@ public sealed record CaptureDeclarations(
     public static CaptureDeclarations Empty { get; } = new([], []);
 }
 
-/// <summary>One validated, refined marker of a capture photo (pixel corners TL, TR, BR, BL), as stored.</summary>
+/// <summary>
+/// One validated, refined marker of a capture photo (pixel corners TL, TR, BR, BL), as stored. A detection that
+/// turned out not to be a printed marker stays in the photo's list with <see cref="Ignored"/> set, so the solver
+/// notes can say why it was left out; it never reaches the solver.
+/// </summary>
 public sealed record CaptureMarker(
     [property: JsonPropertyName("id")] int Id,
     [property: JsonPropertyName("corners")] double[][] Corners,
     [property: JsonPropertyName("synthetic")] bool Synthetic,
-    [property: JsonPropertyName("sidePx")] double SidePx);
+    [property: JsonPropertyName("sidePx")] double SidePx)
+{
+    /// <summary>
+    /// Why the detection is ignored (<see cref="CapturePlanLayoutCheck.Reason"/>,
+    /// <see cref="CaptureMarkerDetection.NoQuietZoneReason"/>); null for a usable marker.
+    /// </summary>
+    [JsonPropertyName("ignored")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Ignored { get; init; }
+
+    /// <summary>The ignored detection's details in plain words ("mirrored against markers 13 and 15 …").</summary>
+    [JsonPropertyName("ignoredDetail")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? IgnoredDetail { get; init; }
+}
 
 /// <summary>What an upload produced, for the upload list and the declarations table.</summary>
 public sealed record CapturePhotoResult(

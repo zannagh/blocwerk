@@ -37,9 +37,19 @@ public static class IgnoredDetectionFindings
     public static string Describe(WallGeometryRejectedObservation rejected, string photo)
     {
         var head = $"Ignored marker {rejected.Id} in {photo}";
-        return rejected.Reason == WallGeometryRejectedObservation.SingleViewMisfit || rejected.MarkerDropped
-            ? $"{head}: no other photo shows it and it doesn't fit a flat square marker — probably a false detection (a hold or a shadow read as a marker)."
-            : $"{head}: doesn't match where the other photos place it — probably a false detection.";
+        var detail = string.IsNullOrWhiteSpace(rejected.Detail) ? string.Empty : $" ({rejected.Detail})";
+        return rejected.Reason switch
+        {
+            WallGeometryRejectedObservation.PlanLayout =>
+                $"{head}: doesn't fit the plan layout{detail} — probably a false detection.",
+            WallGeometryRejectedObservation.NoQuietZone =>
+                $"{head}: no white border around it — probably a hold or a shadow read as a marker.",
+            WallGeometryRejectedObservation.ImplausibleModel =>
+                $"{head}: the model came out implausible with it{detail}, so it was left out and the model solved again.",
+            _ when rejected.Reason == WallGeometryRejectedObservation.SingleViewMisfit || rejected.MarkerDropped =>
+                $"{head}: no other photo shows it and it doesn't fit a flat square marker — probably a false detection (a hold or a shadow read as a marker).",
+            _ => $"{head}: doesn't match where the other photos place it — probably a false detection.",
+        };
     }
 
     private static MarkerPlacementFinding Finding(WallMarkerLayout layout, WallGeometryRejectedObservation rejected, string photo)

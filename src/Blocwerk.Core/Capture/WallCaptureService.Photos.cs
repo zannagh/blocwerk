@@ -48,7 +48,8 @@ public sealed partial class WallCaptureService
 
             // The draft's layout decides which ids are real: the plan's, or the legacy 0..35.
             var layout = await DraftLayoutAsync(db, capture);
-            var markers = await CaptureMarkerDetection.DetectOrNullAsync(markerDetection, clean, layout.DetectionOptions, logger, ct);
+            var focalPx = CapturePlanLayoutCheck.FocalPx(exif.Focal35mm, width, height);
+            var markers = await CaptureMarkerDetection.DetectOrNullAsync(markerDetection, clean, layout, focalPx, logger, ct);
             var photo = new WallCapturePhoto
             {
                 CaptureId = capture.Id,
@@ -187,9 +188,14 @@ public sealed partial class WallCaptureService
     private static List<string> Warnings(WallCapturePhoto photo, IReadOnlyList<CaptureMarker>? markers)
     {
         var warnings = new List<string>();
-        if (markers is { Count: 0 })
+        if (markers is not null && markers.All(m => m.Ignored is not null))
         {
             warnings.Add("No markers found — this photo will not be used.");
+        }
+
+        foreach (var ignored in markers?.Where(m => m.Ignored is not null) ?? [])
+        {
+            warnings.Add($"Ignored a detection of marker {ignored.Id}: {ignored.IgnoredDetail ?? ignored.Ignored}.");
         }
 
         if (photo.Focal35mm is null)
