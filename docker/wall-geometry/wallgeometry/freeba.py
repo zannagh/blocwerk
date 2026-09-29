@@ -38,8 +38,8 @@ def free_mask(prob, free_intr=None):
     return m
 
 
-def pick_root(obs):
-    """Gauge photo: most markers, then most co-visible marker links to other photos, then name."""
+def root_order(obs):
+    """Gauge photo candidates, best first: most markers, then most co-visible marker links, then name."""
     by_img = {}
     for o in obs:
         by_img.setdefault(o["image"], set()).add(o["id"])
@@ -47,14 +47,52 @@ def pick_root(obs):
     def score(img):
         links = sum(len(by_img[img] & s) for k, s in by_img.items() if k != img)
         return (len(by_img[img]), links, img)
-    return max(by_img, key=score)
+    return sorted(by_img, key=score, reverse=True)
+
+
+def pick_root(obs):
+    """Gauge photo: most markers, then most co-visible marker links to other photos, then name."""
+    return root_order(obs)[0]
 
 
 def run_free(obs, cams, intr, free_intr, prior, obj, root=None, log=None):
-    """Initialise + free BA. Returns (prob, x, obs, unreached_images)."""
+    """
+    Initialise + free BA. Returns (prob, x, obs, unreached_images).
+
+    The greedy chain from one root can drift into a wrong basin on a large capture (a wrong IPPE branch early on
+    is carried through every camera placed from it). With many photos it is started from several roots and the
+    poses-only start that fits the photos best (per observation, robust) is kept.
+    """
     ippe_candidates(obs, cams, intr)
     select_branches(obs, {o["id"]: o.get("seg", o["id"] // 6) for o in obs})  # nominal segment votes
-    root = root or pick_root(obs)
+    roots = [root] if root else root_order(obs)[:_starts(len({o["image"] for o in obs}))]
+    best = None
+    for r in roots:
+        start = _pose_start(obs, cams, intr, prior, obj, r)
+        if log:
+            log(f"free BA start from {r}: robust cost per observation {start[0]:.2f}")
+        if best is None or start[0] < best[0]:
+            best = start
+    _, prob, x, obs, unreached = best
+    x, _ = prob.solve(x, free_mask(prob, free_intr), loss="linear", max_nfev=300)
+    x, _ = prob.solve(x, free_mask(prob, free_intr), max_nfev=300, **ROBUST)
+    return prob, x, obs, unreached
+
+
+# Captures with more photos than this get extra roots (one more per MULTI_START_PER photos, up to MULTI_START_MAX).
+MULTI_START_FROM = 40
+MULTI_START_PER = 40
+MULTI_START_MAX = 4
+
+
+def _starts(n_images):
+    if n_images <= MULTI_START_FROM:
+        return 1
+    return min(MULTI_START_MAX, 1 + (n_images - 1) // MULTI_START_PER)
+
+
+def _pose_start(obs, cams, intr, prior, obj, root):
+    """Chain from `root` + poses-only BA. Returns (robust cost per observation, prob, x, obs, unreached)."""
     cam_pose, mk_pose = chain(obs, cams, intr, root)
     unreached = sorted(set(cams) - set(cam_pose))
     obs = [o for o in obs if o["image"] in cam_pose and o["id"] in mk_pose]
@@ -74,9 +112,10 @@ def run_free(obs, cams, intr, free_intr, prior, obj, root=None, log=None):
         _, mp3 = chain_fixed(obs, cams, i2, cp2)
         x = pack_free(prob, i2, cp2, mp3)
     x = best[1]
-    x, _ = prob.solve(x, free_mask(prob, free_intr), loss="linear", max_nfev=300)
-    x, _ = prob.solve(x, free_mask(prob, free_intr), max_nfev=300, **ROBUST)
-    return prob, x, obs, unreached
+    # Starts can reach different photos: compare a robust per-observation cost, plus a penalty per lost photo.
+    e = per_obs_err(prob, x)
+    score = float(np.mean(np.log1p((e / 2.0) ** 2))) + 1.0 * len(unreached)
+    return score, prob, x, obs, unreached
 
 
 def per_obs_err(prob, x):

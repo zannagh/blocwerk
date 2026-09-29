@@ -61,12 +61,12 @@ def chain(obs, cams, intr, root):
             progressed = True
         # 2) add the unknown camera with the most placed markers
         cand = []
-        for img in all_imgs - set(cam_pose):
+        for img in sorted(all_imgs - set(cam_pose)):
             placed = [o for o in by_img[img] if o["id"] in mk_pose]
             if placed:
                 cand.append((len(placed), img, placed))
         if cand:
-            cand.sort(key=lambda x: -x[0])
+            cand.sort(key=lambda x: (-x[0], x[1]))  # ties by name: the same order in every process
             _, img, placed = cand[0]
             cam_pose[img] = _pnp_camera(img, placed, mk_pose, cams, intr)
             progressed = True
