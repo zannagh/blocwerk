@@ -69,3 +69,26 @@ def test_groups_keep_their_natural_relative_brightness():
     flatten.flatten(res, facets)
     after = _wood_level(res[1], 200, 1300) / _wood_level(res[0], 200, 1300)
     assert abs(after / before - 1) < 0.03
+
+
+def _barely_covered(fid, x0, cells):
+    """A texture whose photo coverage is only a `cells` x `cells` patch of the flatten grid (8 px each)."""
+    r = _texture(fid, x0, lambda x: np.full_like(x, 1.0), holds=False, seed=5)
+    r["mask"][:] = 0
+    r["mask"][:8 * cells, :8 * cells] = 255
+    return r
+
+
+def test_group_of_only_small_or_uncovered_facets_is_left_as_rendered():
+    # regression: a group whose facets all have too little plywood for a field (a small triangle
+    # segment at its own angle) raised "need at least one array to concatenate"; one with no plywood
+    # at all failed to unpack; both must leave that group untouched and still even out the others
+    lamp = lambda x: 1.15 - 0.45 * x / 3000.0
+    facets = {"A": _facet("A", 0.0, 45.4), "B": _facet("B", 1500.0, 45.2),
+              "T": _facet("T", 0.0, 20.0), "E": _facet("E", 0.0, 0.0)}
+    res = [_texture("A", 0.0, lamp, seed=1), _texture("B", 1500.0, lamp, seed=2),
+           _barely_covered("T", 0.0, 5), _barely_covered("E", 0.0, 0)]
+    small = [r["image"].copy() for r in res[2:]]
+    report = flatten.flatten(res, facets)
+    assert set(report) == {"A", "B"}
+    assert all(np.array_equal(a, r["image"]) for a, r in zip(small, res[2:]))

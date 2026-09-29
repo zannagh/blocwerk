@@ -78,9 +78,9 @@ def _fields(texs, p):
     """Per facet: smooth log-luminance field (h, w) and the wall mask used; plus the group target."""
     ys = [_luma(T) for T in texs]
     ms = [_wall_pixels(T, p) for T in texs]
-    pooled = np.concatenate([y[m] for y, m in zip(ys, ms)]) if any(m.any() for m in ms) else np.zeros(0)
+    pooled = _pool([y[m] for y, m in zip(ys, ms)])
     if pooled.size == 0:
-        return None, None
+        return None, None, None
     level = float(np.median(pooled))
     ms = [m & (y > level - float(p["flattenDarkLog"])) for y, m in zip(ys, ms)]
     fields = [None] * len(texs)
@@ -92,8 +92,18 @@ def _fields(texs, p):
             sigma = float(p["flattenSigmaMm"]) / T.g["res"]
             fields[k] = _smooth(ys[k], ms[k], sigma)
             ms[k] &= np.abs(ys[k] - fields[k]) < float(p["flattenOutlierLog"])
-    pooled = np.concatenate([fields[k][ms[k]] for k in range(len(texs)) if fields[k] is not None])
+    # a group of only small or barely covered facets (e.g. a triangle segment at its own angle) can end
+    # up with no field at all: nothing to even out then, its textures stay as rendered
+    pooled = _pool([fields[k][ms[k]] for k in range(len(texs)) if fields[k] is not None])
+    if pooled.size == 0:
+        return None, None, None
     return fields, float(np.median(pooled)), ms
+
+
+def _pool(parts):
+    """The non-empty parts concatenated; an empty array when there are none."""
+    parts = [a for a in parts if a.size]
+    return np.concatenate(parts) if parts else np.zeros(0, np.float32)
 
 
 def flatten(results, facets, params=None):
