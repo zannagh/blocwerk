@@ -21,14 +21,25 @@ const YAWS = [0, 15, -15, 30, -30, 45, -45, 60, -60, 75, -75];
 const PITCHES = [0, 10, -10, 20, -20, 30, -30, 40, -40];
 const MAX_ELEVATION = 84 * DEG;
 
-/** Facet quads for the segment tests: { id, facet, a, b, c, d, center }. */
+/** Facet polygons for the segment tests: { id, facet, points (convex, world), center }. */
 export function facetQuads(facets) {
-    return facets.filter(f => (f.corners || []).length === 4).map(f => {
-        const e = f.extent;
-        const center = v3(f.origin).addScaledVector(v3(f.u), (e.aMin + e.aMax) / 2).addScaledVector(v3(f.v), (e.bMin + e.bMax) / 2);
-        const [a, b, c, d] = f.corners.map(v3);
-        return { id: f.id, facet: f, a, b, c, d, center, normal: v3(f.normal) };
+    return facets.filter(f => (f.corners || []).length >= 3).map(f => {
+        const points = f.corners.map(v3);
+        const center = points.reduce((s, p) => s.add(p), new THREE.Vector3()).divideScalar(points.length);
+        return { id: f.id, facet: f, points, center, normal: v3(f.normal) };
     });
+}
+
+/** Where the ray hits polygon `q` (a triangle fan), or null. */
+function hitPolygon(q) {
+    const p = q.points;
+    for (let i = 1; i < p.length - 1; i++) {
+        const hit = ray.intersectTriangle(p[0], p[i], p[i + 1], false, hitPoint);
+        if (hit) {
+            return hit;
+        }
+    }
+    return null;
 }
 
 function inFront(q, p) {
@@ -55,7 +66,7 @@ function crossing(q, from, to) {
         return null;
     }
     ray.set(from, dir.divideScalar(len));
-    const p = ray.intersectTriangle(q.a, q.b, q.c, false, hitPoint) || ray.intersectTriangle(q.a, q.c, q.d, false, hitPoint);
+    const p = hitPolygon(q);
     if (!p) {
         return null;
     }

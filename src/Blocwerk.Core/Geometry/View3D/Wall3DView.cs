@@ -76,7 +76,7 @@ public sealed record Wall3DView
     public IReadOnlyList<double>? SplatMatrix { get; init; }
 }
 
-/// <summary>One planar facet of the wall, with its drawable quad.</summary>
+/// <summary>One planar facet of the wall, with its drawable quad (or polygon).</summary>
 /// <param name="Id">Facet id from the geometry document ("0", "5a", …).</param>
 /// <param name="Segment">Segment index the facet belongs to.</param>
 /// <param name="Name">Human label (segment name, plus the facet id on folded segments).</param>
@@ -84,9 +84,16 @@ public sealed record Wall3DView
 /// <param name="U">Unit vector across the surface (right).</param>
 /// <param name="V">Unit vector up the surface.</param>
 /// <param name="Normal">Unit normal, out of the wall toward the climber.</param>
-/// <param name="Corners">Quad corners in world mm: (aMin,bMin), (aMax,bMin), (aMax,bMax), (aMin,bMax).</param>
-/// <param name="Extent">The plane rectangle the quad spans.</param>
+/// <param name="Corners">
+/// Outline corners in world mm: the quad (aMin,bMin), (aMax,bMin), (aMax,bMax), (aMin,bMax), or the
+/// <paramref name="Outline"/> polygon's corners when it has one.
+/// </param>
+/// <param name="Extent">The plane rectangle the quad spans (the outline's bounding rectangle).</param>
 /// <param name="AngleDeg">Tilt from vertical in degrees as the solve measured it (declared as a fallback); null when unknown.</param>
+/// <param name="Outline">
+/// A convex polygon inside <paramref name="Extent"/>, <c>[a, b]</c> mm counter-clockwise, when the facet is not the
+/// whole rectangle (a triangle cut along its seam, <see cref="Wall3DFacetOutlines"/>); null for a plain rectangle.
+/// </param>
 public sealed record Wall3DFacet(
     string Id,
     int Segment,
@@ -97,7 +104,8 @@ public sealed record Wall3DFacet(
     double[] Normal,
     IReadOnlyList<double[]> Corners,
     PlaneRectMm Extent,
-    double? AngleDeg);
+    double? AngleDeg,
+    IReadOnlyList<double[]>? Outline = null);
 
 /// <summary>A placed ArUco marker, corners TL, TR, BR, BL in world mm.</summary>
 public sealed record Wall3DMarker(int Id, string FacetId, IReadOnlyList<double[]> Corners, bool Synthetic);

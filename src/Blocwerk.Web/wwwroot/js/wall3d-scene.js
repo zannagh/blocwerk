@@ -41,17 +41,46 @@ function gridTexture(renderer) {
     return tex;
 }
 
-/** Two triangles over a facet's corner quad, UVs in plane mm / scale (+ offset). */
-function quadGeometry(corners, extent, uvFn) {
+const rectPoints = r => [[r.aMin, r.bMin], [r.aMax, r.bMin], [r.aMax, r.bMax], [r.aMin, r.bMax]];
+
+/** A facet's plane outline, [a, b] counter-clockwise: its polygon (a triangle cut at its seam) or its extent rectangle. */
+export function facetOutline(f) {
+    return f.outline && f.outline.length >= 3 ? f.outline : rectPoints(f.extent);
+}
+
+/** The part of convex polygon `poly` ([a, b] points) inside rectangle `r` (Sutherland–Hodgman). */
+function clipToRect(poly, r) {
+    const edges = [[0, r.aMin, 1], [0, r.aMax, -1], [1, r.bMin, 1], [1, r.bMax, -1]];
+    let out = poly;
+    for (const [k, v, s] of edges) {
+        const src = out;
+        out = [];
+        src.forEach((p, i) => {
+            const q = src[(i + 1) % src.length];
+            const sp = s * (p[k] - v), sq = s * (q[k] - v);
+            if (sp >= 0) out.push(p);
+            if ((sp >= 0) !== (sq >= 0)) {
+                const t = sp / (sp - sq);
+                out.push([p[0] + t * (q[0] - p[0]), p[1] + t * (q[1] - p[1])]);
+            }
+        });
+        if (out.length < 3) return [];
+    }
+    return out;
+}
+
+/** A triangle fan over a convex polygon: `corners` world points, `planes` their [a, b]; UVs from uvFn(a, b). */
+function polygonGeometry(corners, planes, uvFn) {
     const g = new THREE.BufferGeometry();
     const pos = [];
     corners.forEach(c => pos.push(c[0], c[1], c[2]));
-    const planes = [[extent.aMin, extent.bMin], [extent.aMax, extent.bMin], [extent.aMax, extent.bMax], [extent.aMin, extent.bMax]];
     const uv = [];
     planes.forEach(([a, b]) => uv.push(...uvFn(a, b)));
+    const idx = [];
+    for (let i = 1; i < corners.length - 1; i++) idx.push(0, i, i + 1);
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-    g.setIndex([0, 1, 2, 0, 2, 3]);
+    g.setIndex(idx);
     g.computeVertexNormals();
     return g;
 }
@@ -72,7 +101,7 @@ export function buildFacets(view, renderer) {
     const edgeMat = new THREE.LineBasicMaterial({ color: 0x5b4630 });
     const meshes = new Map();
     for (const f of view.facets) {
-        const geo = quadGeometry(f.corners, f.extent, (a, b) => [a / GRID_MM, b / GRID_MM]);
+        const geo = polygonGeometry(f.corners, facetOutline(f), (a, b) => [a / GRID_MM, b / GRID_MM]);
         const mesh = new THREE.Mesh(geo, material);
         mesh.userData.facet = f;
         const back = new THREE.Mesh(geo, backMaterial);
@@ -90,7 +119,7 @@ export function buildFacets(view, renderer) {
  * Rectified photos on their facets. A texture covers `bounds` of its facet plane (the worker's
  * convention: column i → a = aMin + (i + ½)·mmPerPx left to right, row j → b = bMax − (j + ½)·mmPerPx
  * top to bottom), so with three's default flipY the plane rect maps to UV 0..1 without any flip:
- * u = (a − aMin) / width, v = (b − bMin) / height. The quad is clipped to the facet's extent — the
+ * u = (a − aMin) / width, v = (b − bMin) / height. The quad is clipped to the facet's outline — the
  * texture's extra margin would otherwise overlap the neighbouring facets — and drawn a hair above
  * the plywood and the marker squares.
  */
@@ -102,17 +131,13 @@ export function buildTextures(view, renderer) {
         const f = byId.get(t.facetId);
         const b = t.bounds;
         if (!f || !b || !(b.aMax > b.aMin) || !(b.bMax > b.bMin)) continue;
-        const e = f.extent;
-        const r = {
-            aMin: Math.max(b.aMin, e.aMin), aMax: Math.min(b.aMax, e.aMax),
-            bMin: Math.max(b.bMin, e.bMin), bMax: Math.min(b.bMax, e.bMax),
-        };
-        if (!(r.aMax > r.aMin) || !(r.bMax > r.bMin)) continue;
+        const planes = clipToRect(facetOutline(f), b);
+        if (planes.length < 3) continue;
         // Above the drawn marker squares (1.5 mm): the photo shows the real printed markers.
         const lift = v3(f.normal).multiplyScalar(3);
-        const corners = [[r.aMin, r.bMin], [r.aMax, r.bMin], [r.aMax, r.bMax], [r.aMin, r.bMax]]
+        const corners = planes
             .map(([a, bb]) => v3(f.origin).addScaledVector(v3(f.u), a).addScaledVector(v3(f.v), bb).add(lift).toArray());
-        const geo = quadGeometry(corners, r, (a, bb) => [(a - b.aMin) / (b.aMax - b.aMin), (bb - b.bMin) / (b.bMax - b.bMin)]);
+        const geo = polygonGeometry(corners, planes, (a, bb) => [(a - b.aMin) / (b.aMax - b.aMin), (bb - b.bMin) / (b.bMax - b.bMin)]);
         const tex = loader.load(t.url, () => renderer.__wall3dRequest?.());
         tex.colorSpace = THREE.SRGBColorSpace;
         tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
