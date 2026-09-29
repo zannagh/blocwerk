@@ -58,10 +58,12 @@
                 }
             </div>
             <p class="capture-coverage-legend hint">
+                <span><i class="cov-swatch cov-swatch-g"></i>seen well</span>
                 <span><i class="cov-swatch cov-swatch-n"></i>never seen</span>
                 <span><i class="cov-swatch cov-swatch-d"></i>fewer than 3 directions</span>
                 <span><i class="cov-swatch cov-swatch-a"></i>only steep views</span>
                 <span><i class="cov-swatch cov-swatch-r"></i>only from far</span>
+                <span><i class="cov-swatch cov-swatch-hidden"></i>not rated (under a volume or inside the wall)</span>
                 @if (!report.FromFeatures)
                 {
                     <span><i class="cov-swatch cov-swatch-ring"></i>add a marker here</span>

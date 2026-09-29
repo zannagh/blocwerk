@@ -108,5 +108,7 @@ public class CaptureCoverageViewTests
         Assert.Equal(report.Advice.Select(a => a.Text), back.Advice.Select(a => a.Text));
         Assert.Contains("\"posesFrom\":\"photos\"", json, StringComparison.Ordinal);
         Assert.Null(CaptureCoverageReport.Parse("{not json"));
+        Assert.Null(CaptureCoverageReport.Parse(json.Replace(
+            $"\"version\":{CaptureCoverageReport.CurrentVersion},", "\"version\":1,", StringComparison.Ordinal)));
     }
 }

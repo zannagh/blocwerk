@@ -27,4 +27,19 @@ public class CaptureCoverageScaleTests(ITestOutputHelper output)
         Assert.Equal(10, report.Volumes.Count);
         Assert.True(clock.Elapsed < TimeSpan.FromSeconds(20), $"took {clock.Elapsed.TotalSeconds:F1} s");
     }
+
+    [Fact]
+    public void TheAtticMainWall_IsOnlyNotRatedUnderItsVolumes()
+    {
+        var inputs = AtticCoverageFixture.Inputs(60);
+        var scene = new CoverageScene(CaptureCoverageAnalyzer.Facets(inputs.Document, inputs.HoldBounds), inputs.Volumes);
+
+        var main = CaptureCoverageAnalyzer.Analyze(inputs, DateTimeOffset.UnixEpoch).Facets.Single(f => f.FacetId == "0");
+
+        for (var k = 0; k < main.Cells.Length; k++)
+        {
+            double a = main.ALo + (((k % main.Cols) + 0.5) * main.CellMm), b = main.BLo + (((k / main.Cols) + 0.5) * main.CellMm);
+            Assert.True(main.Cells[k] != '.' || scene.UnderVolume("0", a, b), $"cell ({a}, {b}) not rated");
+        }
+    }
 }

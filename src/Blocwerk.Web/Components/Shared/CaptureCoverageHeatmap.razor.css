@@ -5,7 +5,8 @@
 }
 .coverage-heatmap figcaption { display: flex; flex-wrap: wrap; gap: 2px 8px; font-size: 0.8rem; }
 .coverage-heatmap rect { shape-rendering: crispEdges; }
-.cov-g { fill: var(--status-success, #3a9d5d); opacity: 0.18; }
+.cov-g { fill: var(--status-success, #3a9d5d); opacity: 0.45; }
+.cov-hidden { fill: var(--text-secondary); opacity: 0.08; }
 .cov-d { fill: var(--status-warning, #d9a400); opacity: 0.75; }
 .cov-a { fill: var(--status-review, #d97a00); opacity: 0.8; }
 .cov-r { fill: var(--status-info, #3a7bd5); opacity: 0.6; }
@@ -19,3 +20,7 @@
 .cov-marker { fill: var(--text); }
 .cov-marker-weak { fill: var(--status-danger, #d0463b); }
 .cov-suggested { fill: none; stroke: var(--accent); stroke-width: 0.15; }
+.cov-volume-label {
+    font-size: 1.3px; font-weight: 700; fill: var(--text); text-anchor: middle; dominant-baseline: central;
+    paint-order: stroke; stroke: var(--bg-surface-alt); stroke-width: 0.3px; stroke-linejoin: round; pointer-events: none;
+}

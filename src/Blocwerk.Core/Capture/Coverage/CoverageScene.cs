@@ -2,6 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Geometry;
 using Blocwerk.Core.Geometry.Footprints;
 using Blocwerk.Core.Geometry.View3D;
 using Blocwerk.Core.Geometry.Volumes;
@@ -27,7 +28,11 @@ public sealed class CoverageScene
     /// <summary>A point this far behind another facet's board is inside the wall, mm.</summary>
     private const double BehindMm = 30;
 
+    /// <summary>Another facet's plane must meet a facet's region widened by this to hide any of it, mm.</summary>
+    private const double MeetMarginMm = 100;
+
     private readonly Dictionary<string, List<CoverageVolume>> volumesByFacet;
+    private readonly Dictionary<string, CoverageFacet[]> hidersByFacet;
     private readonly SceneVolumeGroup[] groups;
 
     /// <summary>Initializes a new instance of the <see cref="CoverageScene"/> class.</summary>
@@ -39,6 +44,9 @@ public sealed class CoverageScene
         Volumes = volumes.Where(v => facets.Any(f => f.Id == v.FacetId)).ToList();
         volumesByFacet = Volumes.GroupBy(v => v.FacetId).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
         groups = volumesByFacet.Select(kv => new SceneVolumeGroup(Facet(kv.Key)!.Frame, kv.Value)).ToArray();
+        hidersByFacet = facets
+            .GroupBy(f => f.Id, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => facets.Where(o => o.Id != g.Key && PlaneMeetsRegion(g.First(), o)).ToArray(), StringComparer.Ordinal);
     }
 
     /// <summary>The facets.</summary>
@@ -63,13 +71,19 @@ public sealed class CoverageScene
     /// <summary>
     /// Whether a point of a facet's region lies behind another facet's board (inside the wall): the region is a
     /// rectangle, so a triangular side panel's region reaches behind the wall it meets. Such a point is no surface.
+    /// Only a facet whose plane meets the region can hide part of it: a distant or parallel panel never does.
     /// </summary>
     /// <param name="facetId">The point's facet.</param>
     /// <param name="point">The point, world mm.</param>
     /// <returns>True inside the wall.</returns>
     public bool InsideWall(string facetId, double[] point)
     {
-        foreach (var f in Facets.Where(f => f.Id != facetId))
+        if (!hidersByFacet.TryGetValue(facetId, out var hiders))
+        {
+            return false;
+        }
+
+        foreach (var f in hiders)
         {
             var (a, b, h) = FacetCloud.Local(f.Frame, point[0], point[1], point[2]);
             var r = f.Region;
@@ -149,6 +163,23 @@ public sealed class CoverageScene
         var r = f.Region;
         return a > r.AMin + EdgeMarginMm && a < r.AMax - EdgeMarginMm && b > r.BMin + EdgeMarginMm && b < r.BMax - EdgeMarginMm;
     }
+
+    /// <summary>Whether <paramref name="other"/>'s plane cuts <paramref name="facet"/>'s region (widened by the margin).</summary>
+    private static bool PlaneMeetsRegion(CoverageFacet facet, CoverageFacet other)
+    {
+        var n = other.Frame.Normal;
+        if (Math.Abs(Dot(facet.Frame.U, n)) < 1e-6 && Math.Abs(Dot(facet.Frame.V, n)) < 1e-6)
+        {
+            return false;
+        }
+
+        var r = facet.Region;
+        var wide = new PlaneRectMm(r.AMin - MeetMarginMm, r.AMax + MeetMarginMm, r.BMin - MeetMarginMm, r.BMax + MeetMarginMm);
+        var heights = facet.Frame.Corners(wide).Select(p => FacetCloud.Local(other.Frame, p[0], p[1], p[2]).H).ToList();
+        return heights.Min() <= 0 && heights.Max() >= 0;
+    }
+
+    private static double Dot(double[] a, double[] b) => (a[0] * b[0]) + (a[1] * b[1]) + (a[2] * b[2]);
 
     private static double Sq(double x) => x * x;
 }

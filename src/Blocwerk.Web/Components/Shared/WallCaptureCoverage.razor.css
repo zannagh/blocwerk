@@ -22,6 +22,8 @@
 .cov-swatch-d { background: var(--status-warning, #d9a400); }
 .cov-swatch-a { background: var(--status-review, #d97a00); }
 .cov-swatch-r { background: var(--status-info, #3a7bd5); }
+.cov-swatch-g { background: var(--status-success, #3a9d5d); opacity: 0.45; }
+.cov-swatch-hidden { background: var(--text-secondary); opacity: 0.15; border: 1px dashed var(--text-secondary); }
 .cov-swatch-ring { border: 2px solid var(--accent); border-radius: 50%; }
 
 @media (max-width: 560px) {

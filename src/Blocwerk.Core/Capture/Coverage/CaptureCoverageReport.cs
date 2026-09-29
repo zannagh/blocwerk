@@ -40,7 +40,7 @@ public sealed record CaptureCoverageReport(
     bool FromFeatures = false)
 {
     /// <summary>The current format.</summary>
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
