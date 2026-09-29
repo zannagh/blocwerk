@@ -73,12 +73,12 @@ public sealed partial class Wall3DViewService(
 
         Dictionary<Wall3DPhotoKey, Wall3DPhotoMarkers> photoMarkers;
         List<HoldLinkPair> holdLinks;
-        IReadOnlyDictionary<int, int> triangles;
+        IReadOnlyDictionary<int, PlanTriangle> triangles;
         await using (var db = await dbContextFactory.CreateDbContextAsync(ct))
         {
             photoMarkers = await Wall3DPhotoMarkerLoader.LoadAsync(db, wall.Id, ct);
             var planJson = await WallMarkerLayoutResolver.CurrentPlanJsonAsync(db, wall.Id, ct);
-            triangles = Wall3DFacetOutlines.HypotenuseParents(MarkerPlanJson.FromJson(planJson, out _));
+            triangles = Wall3DFacetOutlines.PlanTriangles(MarkerPlanJson.FromJson(planJson, out _));
 
             // Overlapping panels each store their own copy of a hold; these links say which copies are one.
             holdLinks = await db.HoldLinks

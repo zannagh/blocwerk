@@ -40,7 +40,7 @@ public static class Wall3DViewBuilder
     /// The wall's stored "same physical hold" links (<see cref="HoldLink"/>), so a hold photographed on two
     /// overlapping panels is drawn once. Optional: without them only the geometric fallback merges copies.
     /// </param>
-    /// <param name="hypotenuseParents">Plan triangles' segment → parent segment (<see cref="Wall3DFacetOutlines"/>); optional.</param>
+    /// <param name="planTriangles">Plan triangles by segment: parent and right angle (<see cref="Wall3DFacetOutlines"/>); optional.</param>
     /// <returns>The view.</returns>
     public static Wall3DView Build(
         Wall wall,
@@ -48,10 +48,10 @@ public static class Wall3DViewBuilder
         Guid? boulderId,
         IReadOnlyDictionary<Wall3DPhotoKey, Wall3DPhotoMarkers>? photoMarkers = null,
         IEnumerable<HoldLinkPair>? holdLinks = null,
-        IReadOnlyDictionary<int, int>? hypotenuseParents = null)
+        IReadOnlyDictionary<int, PlanTriangle>? planTriangles = null)
     {
         var frames = new Dictionary<string, FacetFrame>(StringComparer.Ordinal);
-        var facets = Wall3DFacetOutlines.Apply(BuildFacets(doc, wall, frames), doc, hypotenuseParents);
+        var facets = Wall3DFacetOutlines.Apply(BuildFacets(doc, wall, frames), doc, planTriangles);
         var markers = BuildMarkers(doc);
 
         var boulder = boulderId is { } bid ? wall.Boulders.FirstOrDefault(b => b.Id == bid) : null;

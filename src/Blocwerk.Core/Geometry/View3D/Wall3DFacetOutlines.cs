@@ -6,21 +6,18 @@ using Blocwerk.Core.MarkerPlanning;
 namespace Blocwerk.Core.Geometry.View3D;
 
 /// <summary>
-/// Cuts a triangular segment's facet to its shape. The marker plan only says WHICH segments are right
-/// triangles and which parent their hypotenuse lies against (its millimetres need not match the solve);
-/// the hypotenuse itself is where the facet's solved plane meets the parent facet's. The facet's extent
-/// rectangle is clipped by that line, keeping the side behind the other facet (a closing piece fills the space
-/// behind a slope, not the room in front of it; markers may sit on the floor in front). When the parent's seam cuts
-/// nothing (the plan's parent need not be the facet the hypotenuse rests on), the seam with the nearest
-/// other facet that does cut it is used instead.
+/// Cuts a triangular segment's facet to its shape. The marker plan says WHICH segments are right triangles, which
+/// parent their hypotenuse lies against and where their right angle is (its millimetres need not match the solve);
+/// the hypotenuse itself is where the facet's solved plane meets the parent facet's. The facet's extent rectangle is
+/// clipped by that line, keeping the half with the plan's right-angle corner (<see cref="TriangleKeptSide"/>): a side
+/// wall under an overhang reaches down to the floor, a closing piece fills the space behind the slope. When the parent's
+/// seam cuts nothing (the plan's parent need not be the facet the hypotenuse rests on), the seam with the nearest other
+/// facet that does cut it is used instead; that cut is not the plan's hypotenuse, so its corner is not trusted there.
 /// </summary>
 public static class Wall3DFacetOutlines
 {
     /// <summary>Planes closer to parallel than this (sine of their angle, ~10°) give no reliable seam.</summary>
     public const double MinPlaneAngleSin = 0.17;
-
-    /// <summary>Without a facing normal, a marker centroid this close to the seam does not say which side the facet is on.</summary>
-    public const double MinCentroidDistanceMm = 10;
 
     /// <summary>A seam must cut at least this share of the extent off; less is a sliver at an edge, not a hypotenuse.</summary>
     public const double MinCutFraction = 0.15;
@@ -34,34 +31,36 @@ public static class Wall3DFacetOutlines
     /// <summary>A clipped outline becomes a right triangle when that adds at most this share of its area.</summary>
     public const double MaxTriangleGrowth = 0.1;
 
-    /// <summary>Triangle segment index → the parent segment its hypotenuse is attached to.</summary>
-    public static IReadOnlyDictionary<int, int> HypotenuseParents(MarkerPlan? plan) =>
+    /// <summary>Triangle segment index → the parent its hypotenuse is attached to and its right-angle corner.</summary>
+    public static IReadOnlyDictionary<int, PlanTriangle> PlanTriangles(MarkerPlan? plan) =>
         plan?.Segments
             .Where(s => s.Shape == SegmentShape.Triangle && s.AttachedTo is { OwnEdge: SegmentEdge.Hypotenuse })
-            .ToDictionary(s => s.Index, s => s.AttachedTo!.ParentIndex)
-        ?? new Dictionary<int, int>();
+            .ToDictionary(s => s.Index, s => new PlanTriangle(s.AttachedTo!.ParentIndex, s.RightAngle))
+        ?? new Dictionary<int, PlanTriangle>();
 
     /// <summary>The facets, each triangle's with its clipped <see cref="Wall3DFacet.Outline"/> where one can be found.</summary>
-    public static List<Wall3DFacet> Apply(List<Wall3DFacet> facets, WallGeometryDocument doc, IReadOnlyDictionary<int, int>? parents)
+    public static List<Wall3DFacet> Apply(List<Wall3DFacet> facets, WallGeometryDocument doc, IReadOnlyDictionary<int, PlanTriangle>? triangles)
     {
-        if (parents is not { Count: > 0 })
+        if (triangles is not { Count: > 0 })
         {
             return facets;
         }
 
-        return facets.Select(f => WithOutline(f, facets, doc, parents)).ToList();
+        return facets.Select(f => WithOutline(f, facets, doc, triangles)).ToList();
     }
 
     /// <summary>
-    /// The facet's extent clipped where its plane meets <paramref name="other"/>'s, keeping the side behind
-    /// <paramref name="other"/> (against its normal, away from the climber); only when that normal gives no
-    /// orientation, the side of <paramref name="centroid"/> ([a, b] mm). Null when the clip is unreliable or
+    /// The facet's extent clipped where its plane meets <paramref name="other"/>'s, keeping the half with the
+    /// <paramref name="rightAngle"/> corner, else the side behind <paramref name="other"/>, else the side of
+    /// <paramref name="centroid"/> ([a, b] mm; <see cref="TriangleKeptSide"/>). Null when the clip is unreliable or
     /// either side is less than <see cref="MinCutFraction"/> of the extent. A clip that only leaves stubs of the
     /// extent's margin at the hypotenuse's ends is completed to the right triangle (<see cref="MaxTriangleGrowth"/>).
     /// </summary>
-    public static IReadOnlyList<double[]>? Clip(Wall3DFacet facet, Wall3DFacet other, (double A, double B)? centroid)
+    public static IReadOnlyList<double[]>? Clip(
+        Wall3DFacet facet, Wall3DFacet other, (double A, double B)? centroid, TriangleCorner? rightAngle = null)
     {
-        if (SeamSide(facet, other) is not { } side || KeptSign(other, side, centroid) is not { } sign)
+        if (SeamSide(facet, other) is not { } side
+            || TriangleKeptSide.Sign(side, facet.Extent, rightAngle, other.Normal, centroid) is not { } sign)
         {
             return null;
         }
@@ -161,18 +160,20 @@ public static class Wall3DFacetOutlines
     }
 
     private static Wall3DFacet WithOutline(
-        Wall3DFacet facet, List<Wall3DFacet> facets, WallGeometryDocument doc, IReadOnlyDictionary<int, int> parents)
+        Wall3DFacet facet, List<Wall3DFacet> facets, WallGeometryDocument doc, IReadOnlyDictionary<int, PlanTriangle> triangles)
     {
-        if (!parents.TryGetValue(facet.Segment, out var parentIndex))
+        if (!triangles.TryGetValue(facet.Segment, out var triangle))
         {
             return facet;
         }
 
         var centroid = MarkerCentroid(doc, facet.Id);
         var parent = facets
-            .Where(f => f.Segment == parentIndex && f.Id != facet.Id)
+            .Where(f => f.Segment == triangle.ParentIndex && f.Id != facet.Id)
             .MinBy(f => Distance(Centre(f), Centre(facet)));
-        var outline = (parent is null ? null : Clip(facet, parent, centroid)) ?? NearestSeamOutline(facet, facets, parent, centroid);
+        var rightAngle = TriangleKeptSide.Mapped(facet, doc.World?.Up, triangle.RightAngle);
+        var outline = (parent is null ? null : Clip(facet, parent, centroid, rightAngle))
+                      ?? NearestSeamOutline(facet, facets, parent, centroid);
         return outline is null
             ? facet
             : facet with { Corners = outline.Select(p => World(facet, p[0], p[1])).ToList(), Outline = outline };
@@ -206,19 +207,7 @@ public static class Wall3DFacetOutlines
         return (a, b) => ((alpha * a) + (beta * b) - gamma) / norm;
     }
 
-    /// <summary>−1 (behind <paramref name="other"/>) when its normal faces the climber, else the centroid's side; null when neither says.</summary>
-    private static int? KeptSign(Wall3DFacet other, Func<double, double, double> side, (double A, double B)? centroid)
-    {
-        if (IsUnit(other.Normal))
-        {
-            return -1;
-        }
-
-        var keep = centroid is { } c ? side(c.A, c.B) : 0;
-        return Math.Abs(keep) < MinCentroidDistanceMm ? null : Math.Sign(keep);
-    }
-
-    private static bool IsUnit(double[]? n) => n is { Length: 3 } && Math.Abs(Math.Sqrt(Dot(n, n)) - 1) < 1e-3;
+    internal static bool IsUnit(double[]? n) => n is { Length: 3 } && Math.Abs(Math.Sqrt(Dot(n, n)) - 1) < 1e-3;
 
     /// <summary>The plane's unit normal: <see cref="Wall3DFacet.Normal"/>, else U × V.</summary>
     private static double[] PlaneNormal(Wall3DFacet f)
@@ -271,7 +260,7 @@ public static class Wall3DFacetOutlines
         f.Origin[2] + (a * f.U[2]) + (b * f.V[2]),
     ];
 
-    private static double Dot(double[] p, double[] q) => (p[0] * q[0]) + (p[1] * q[1]) + (p[2] * q[2]);
+    internal static double Dot(double[] p, double[] q) => (p[0] * q[0]) + (p[1] * q[1]) + (p[2] * q[2]);
 
     private static double Distance(double[] p, double[] q) =>
         Math.Sqrt(((p[0] - q[0]) * (p[0] - q[0])) + ((p[1] - q[1]) * (p[1] - q[1])) + ((p[2] - q[2]) * (p[2] - q[2])));

@@ -10,7 +10,8 @@ namespace Blocwerk.Core.Tests;
 
 /// <summary>
 /// A plan triangle's facet is cut where its solved plane meets its parent's
-/// (<see cref="Wall3DFacetOutlines"/>) on the side behind the parent; anything unreliable keeps the rectangle.
+/// (<see cref="Wall3DFacetOutlines"/>) on the side of its plan right angle, else behind the parent; anything unreliable
+/// keeps the rectangle.
 /// </summary>
 public class Wall3DFacetOutlinesTests
 {
@@ -46,8 +47,8 @@ public class Wall3DFacetOutlinesTests
     [Fact]
     public void Triangle_IsCutAtTheSeamWithItsParent_OnItsMarkersSide()
     {
-        var parents = new Dictionary<int, int> { [5] = 2 };
-        var view = Wall3DViewBuilder.Build(new Wall { Name = "Attic" }, WallGeometryDocument.Parse(Json), null, hypotenuseParents: parents);
+        var triangles = new Dictionary<int, PlanTriangle> { [5] = new(2, TriangleCorner.TopLeft) };
+        var view = Wall3DViewBuilder.Build(new Wall { Name = "Attic" }, WallGeometryDocument.Parse(Json), null, planTriangles: triangles);
 
         var triangle = view.Facets.Single(f => f.Id == "5");
         Assert.NotNull(triangle.Outline);
@@ -62,8 +63,8 @@ public class Wall3DFacetOutlinesTests
     [Fact]
     public void NonTriangleSegment_KeepsItsRectangle()
     {
-        var parents = new Dictionary<int, int> { [5] = 2 };
-        var view = Wall3DViewBuilder.Build(new Wall { Name = "Attic" }, WallGeometryDocument.Parse(Json), null, hypotenuseParents: parents);
+        var triangles = new Dictionary<int, PlanTriangle> { [5] = new(2, TriangleCorner.TopLeft) };
+        var view = Wall3DViewBuilder.Build(new Wall { Name = "Attic" }, WallGeometryDocument.Parse(Json), null, planTriangles: triangles);
 
         var plain = view.Facets.Single(f => f.Id == "7");
         Assert.Null(plain.Outline);
@@ -119,8 +120,8 @@ public class Wall3DFacetOutlinesTests
             { "id": 45, "segment": 5, "facet": "5", "cornersPlaneMm": [[850, 125], [975, 125], [975, 0], [850, 0]] },
             """;
         var json = Json.Replace("\"markers\": [", "\"markers\": [" + Stray, StringComparison.Ordinal);
-        var parents = new Dictionary<int, int> { [5] = 2 };
-        var view = Wall3DViewBuilder.Build(new Wall { Name = "Attic" }, WallGeometryDocument.Parse(json), null, hypotenuseParents: parents);
+        var triangles = new Dictionary<int, PlanTriangle> { [5] = new(2, TriangleCorner.BottomLeft) };
+        var view = Wall3DViewBuilder.Build(new Wall { Name = "Attic" }, WallGeometryDocument.Parse(json), null, planTriangles: triangles);
 
         AssertPoints([[0, 0], [1000, 1000], [0, 1000]], view.Facets.Single(f => f.Id == "5").Outline!);
     }
@@ -136,7 +137,7 @@ public class Wall3DFacetOutlinesTests
     }
 
     [Fact]
-    public void HypotenuseParents_ListsOnlyTrianglesAttachedByTheirHypotenuse()
+    public void PlanTriangles_ListsOnlyTrianglesAttachedByTheirHypotenuse_WithTheirRightAngle()
     {
         PlanSegment[] segments =
         [
@@ -150,10 +151,10 @@ public class Wall3DFacetOutlinesTests
         ];
         var plan = new MarkerPlan(1, "DICT_4X4_50", null!, segments, []);
 
-        var parents = Wall3DFacetOutlines.HypotenuseParents(plan);
+        var triangles = Wall3DFacetOutlines.PlanTriangles(plan);
 
-        Assert.Equal(new Dictionary<int, int> { [5] = 2 }, parents);
-        Assert.Empty(Wall3DFacetOutlines.HypotenuseParents(null));
+        Assert.Equal(new Dictionary<int, PlanTriangle> { [5] = new(2, TriangleCorner.BottomRight) }, triangles);
+        Assert.Empty(Wall3DFacetOutlines.PlanTriangles(null));
     }
 
     private static Wall3DFacet Facet(string id, double[] origin, double[] u, double[] v, double[] normal) =>

@@ -4,19 +4,29 @@
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Geometry;
 using Blocwerk.Core.Geometry.View3D;
+using Blocwerk.Core.MarkerPlanning;
 
 namespace Blocwerk.Core.Tests;
 
 /// <summary>
-/// The Attic's two side triangles, with the solved planes, extents and marker corners of the real model.
-/// "closing up space" (5) rests on its plan parent "leftover bit" (2). "closing up end" (7) is attached in the
-/// plan to "corner" (6), whose seam only shaves the extent's edge; its hypotenuse really runs along the
-/// 45° overhang, which "leftover bit" continues ~570 mm away (<see cref="Wall3DFacetOutlines"/>).
+/// The Attic's three plan triangles, with the solved planes, extents and marker corners of the real model; the plan
+/// draws each with its right angle at the bottom. "sidewall" (1) stands under the main wall's overhang and reaches the
+/// floor, as its plan corner says. "closing up space" (5) rests on its plan parent "leftover bit" (2); its plan corner
+/// lies on that seam, so it keeps the side behind the overhang. "closing up end" (7) is attached in the plan to
+/// "corner" (6), whose seam only shaves the extent's edge; its hypotenuse really runs along the 45° overhang, which
+/// "leftover bit" continues ~570 mm away, so its plan corner is not trusted and it too keeps the side behind
+/// (<see cref="Wall3DFacetOutlines"/>).
 /// </summary>
 public class Wall3DFacetOutlinesAtticTests
 {
     private const string Markers = """
         [
+          { "id": 12, "segment": 1, "facet": "1", "cornersPlaneMm": [[44.57, 100], [144.56, 100.52], [145.08, 0.52], [45.08, 0]] },
+          { "id": 13, "segment": 1, "facet": "1", "cornersPlaneMm": [[1962.46, 154.52], [2062.24, 161.13], [2068.85, 61.35], [1969.07, 54.74]] },
+          { "id": 14, "segment": 1, "facet": "1", "cornersPlaneMm": [[0, 2009.67], [99.97, 2012.29], [102.59, 1912.32], [2.62, 1909.7]] },
+          { "id": 15, "segment": 1, "facet": "1", "cornersPlaneMm": [[1043.24, 95.49], [1123.21, 97.89], [1125.61, 17.93], [1045.65, 15.52]] },
+          { "id": 16, "segment": 1, "facet": "1", "cornersPlaneMm": [[893.01, 1189.74], [972.76, 1196], [979.02, 1116.24], [899.26, 1109.99]] },
+          { "id": 17, "segment": 1, "facet": "1", "cornersPlaneMm": [[37.44, 1156.03], [117.43, 1157.37], [118.76, 1077.38], [38.77, 1076.04]] },
           { "id": 27, "segment": 7, "facet": "7", "cornersPlaneMm": [[0, 99.94], [99.94, 103.33], [103.33, 3.39], [3.39, 0]] },
           { "id": 28, "segment": 7, "facet": "7", "cornersPlaneMm": [[841.03, 107.74], [941.03, 107.83], [941.12, 7.83], [841.12, 7.74]] },
           { "id": 29, "segment": 7, "facet": "7", "cornersPlaneMm": [[1645.63, 1462.34], [1725.62, 1463.85], [1727.12, 1383.86], [1647.14, 1382.35]] },
@@ -31,11 +41,18 @@ public class Wall3DFacetOutlinesAtticTests
     /// <summary>"closing up end": right angle at the top, back (the corner); its hypotenuse runs down the overhang's plane.</summary>
     private static readonly double[][] ClosingUpEnd = [[2241.9, 1976.8], [-50, 1976.8], [-50, -212.4]];
 
-    private static readonly Dictionary<int, int> Parents = new() { [5] = 2, [7] = 6 };
+    /// <summary>The plan's triangles: all three drawn with their right angle at the bottom.</summary>
+    private static readonly Dictionary<int, PlanTriangle> Triangles = new()
+    {
+        [1] = new(0, TriangleCorner.BottomLeft),
+        [5] = new(2, TriangleCorner.BottomRight),
+        [7] = new(6, TriangleCorner.BottomRight),
+    };
 
     private static readonly Dictionary<string, string> Segments = new()
     {
         ["0"] = """{ "index": 0, "name": "main wall", "facets": [ { "id": "0", "origin": [0, 0, 0], "u": [1, 0, 0], "v": [0, -0.722935, 0.690916], "normal": [0, -0.690916, -0.722935], "extentMm": { "aMin": -50, "aMax": 5130.4, "bMin": -50, "bMax": 3313.1 } } ] }""",
+        ["1"] = """{ "index": 1, "name": "sidewall", "facets": [ { "id": "1", "origin": [-15.33, -2114.41, -107.28], "u": [-0.000859, 1, 0], "v": [0.007327, 0.000006, 0.999973], "normal": [0.999973, 0.000859, -0.007327], "extentMm": { "aMin": -50, "aMax": 2118.8, "bMin": -50, "bMax": 2062.3 } } ] }""",
         ["2"] = """{ "index": 2, "name": "leftover bit", "facets": [ { "id": "2", "origin": [5053.54, -6.37, 5.34], "u": [0.99998, 0.006392, 0], "v": [0.004622, -0.723117, 0.69071], "normal": [0.004415, -0.690696, -0.723132], "extentMm": { "aMin": -50, "aMax": 694.3, "bMin": -50, "bMax": 2397.3 } } ] }""",
         ["3"] = """{ "index": 3, "name": "kickboard", "facets": [ { "id": "3", "origin": [-10.21, -2.98, -273.69], "u": [0.999997, 0.002303, 0], "v": [0.000051, -0.022101, 0.999756], "normal": [0.002302, -0.999753, -0.022101], "extentMm": { "aMin": -50, "aMax": 5759.4, "bMin": -50, "bMax": 319.4 } } ] }""",
         ["5"] = """{ "index": 5, "name": "closing up space", "facets": [ { "id": "5", "origin": [5721.89, -1632.33, -273.83], "u": [-0.003002, 0.999995, 0], "v": [0.003233, 0.00001, 0.999995], "normal": [0.99999, 0.003002, -0.003233], "extentMm": { "aMin": -50, "aMax": 2112.9, "bMin": -50, "bMax": 2024.8 } } ] }""",
@@ -75,6 +92,19 @@ public class Wall3DFacetOutlinesAtticTests
         // The overhang leans toward −y, so the climber stands at −y below it.
         Assert.True(Facet(view, "2").Normal[1] < -0.5);
         Assert.True(Facet(view, "0").Normal[1] < -0.5);
+    }
+
+    [Fact]
+    public void Sidewall_ReachesTheFloorUnderTheMainWall_WithItsLongEdgeAlongIt()
+    {
+        var view = Build("0", "1", "2", "3", "5", "6", "7");
+        var side = Facet(view, "1");
+
+        Assert.NotNull(side.Outline);
+
+        // Right angle at the front, at the floor (a runs from the room toward the wall); the hypotenuse on the main wall.
+        AssertPoints([[-50, 2175.9], [-50, -50], [2279.0, -50]], side.Outline!, 1);
+        AssertInFront(side, Facet(view, "0"));
     }
 
     [Fact]
@@ -122,7 +152,7 @@ public class Wall3DFacetOutlinesAtticTests
               "segments": [ {{string.Join(",\n", ids.Select(id => Segments[id]))}} ],
               "markers": {{Markers}} }
             """;
-        return Wall3DViewBuilder.Build(new Wall { Name = "The Attic" }, WallGeometryDocument.Parse(json), null, hypotenuseParents: Parents);
+        return Wall3DViewBuilder.Build(new Wall { Name = "The Attic" }, WallGeometryDocument.Parse(json), null, planTriangles: Triangles);
     }
 
     private static Wall3DFacet Facet(Wall3DView view, string id) => view.Facets.Single(f => f.Id == id);
@@ -134,6 +164,16 @@ public class Wall3DFacetOutlinesAtticTests
         {
             var d = Enumerable.Range(0, 3).Sum(i => plane.Normal[i] * (p[i] - plane.Origin[i]));
             Assert.True(d < 3, $"corner ({p[0]:F0}, {p[1]:F0}, {p[2]:F0}) is {d:F1} mm in front of {plane.Name}");
+        }
+    }
+
+    /// <summary>Every corner lies on or in front of <paramref name=plane/> (along its room-facing normal), within 3 mm.</summary>
+    private static void AssertInFront(Wall3DFacet facet, Wall3DFacet plane)
+    {
+        foreach (var p in facet.Corners)
+        {
+            var d = Enumerable.Range(0, 3).Sum(i => plane.Normal[i] * (p[i] - plane.Origin[i]));
+            Assert.True(d > -3, $"corner ({p[0]:F0}, {p[1]:F0}, {p[2]:F0}) is {-d:F1} mm behind {plane.Name}");
         }
     }
 
