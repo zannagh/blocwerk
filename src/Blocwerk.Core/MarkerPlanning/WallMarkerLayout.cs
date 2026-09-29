@@ -82,7 +82,11 @@ public sealed class WallMarkerLayout
 
     /// <summary>Detection options: the plan's ids, or exactly the legacy defaults.</summary>
     public MarkerDetectionOptions DetectionOptions => IsFromPlan
-        ? MarkerDetectionOptions.Default with { AllowedIds = AllowedIds }
+        ? MarkerDetectionOptions.Default with
+        {
+            AllowedIds = AllowedIds,
+            MinQuietZoneContrast = MarkerDetectionOptions.PlanMinQuietZoneContrast,
+        }
         : MarkerDetectionOptions.Default;
 
     /// <summary>

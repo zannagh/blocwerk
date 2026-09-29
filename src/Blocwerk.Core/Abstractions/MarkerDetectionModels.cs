@@ -29,6 +29,21 @@ public sealed record MarkerDetectionOptions
     /// come from these corners, so leave this on except for diagnostics.
     /// </summary>
     public bool RefineCorners { get; init; } = true;
+
+    /// <summary>
+    /// Lowest quiet-zone contrast (ring just outside the quad vs the marker's own black and white) a marker may
+    /// have. The default suits hand-cut legacy prints whose white margin is often trimmed away (real ones down to
+    /// −0.09); markers printed from a plan carry a full one-module margin and use
+    /// <see cref="PlanMinQuietZoneContrast"/>.
+    /// </summary>
+    public double MinQuietZoneContrast { get; init; } = -0.5;
+
+    /// <summary>
+    /// The quiet-zone floor for plan-printed markers: on The Attic's plan rev 1 (1110 real detections in 142 photos)
+    /// the lowest real contrast was 0.15; black holds that decoded as ids (a ring hold as id 17, a purple one as
+    /// id 37, bolt holes) scored −0.39…0.08.
+    /// </summary>
+    public const double PlanMinQuietZoneContrast = 0.1;
 }
 
 /// <summary>A validated marker. Corners are in ArUco order TL, TR, BR, BL of the printed marker.</summary>

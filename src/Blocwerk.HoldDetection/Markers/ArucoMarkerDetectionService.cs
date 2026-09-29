@@ -52,7 +52,7 @@ public sealed class ArucoMarkerDetectionService : IMarkerDetectionService
         var refined = options.RefineCorners ? MarkerCornerRefiner.RefineAll(gray, outcome.Accepted) : outcome.Accepted;
 
         // A printed marker is a dark square on white paper; a dark hold that decodes as an id is not.
-        var (markers, noQuietZone) = MarkerQuietZoneCheck.Filter(gray, refined);
+        var (markers, noQuietZone) = MarkerQuietZoneCheck.Filter(gray, refined, options.MinQuietZoneContrast);
         return new MarkerDetectionResult
         {
             ImageWidth = gray.Width,

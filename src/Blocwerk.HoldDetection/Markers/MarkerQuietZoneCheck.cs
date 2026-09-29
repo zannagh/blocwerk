@@ -14,30 +14,42 @@ namespace Blocwerk.HoldDetection.Markers;
 /// marker's own frame (unit square, the black border is its outer 1/6):
 /// <c>contrast = (P25(ring just outside) − mean(border)) / (P90(interior) − mean(border))</c>.
 /// On 319 real detections of 67 wall photos the lowest contrast was −0.09 (a marker at the frame edge),
-/// the false id 17 scored −1.19; <see cref="MinContrast"/> sits between.
+/// the false id 17 scored −1.19; <see cref="MinContrast"/> sits between. Plan-printed markers carry a full
+/// white margin and use a stricter floor (<see cref="MarkerDetectionOptions.PlanMinQuietZoneContrast"/>).
+/// A contrast far ABOVE 1 means the quad's own "white" cells are barely lighter than its black border (a green
+/// hold read as id 17 scored 2.59 with 9 grey levels between them); real markers never exceeded 1.03 in
+/// 3930 detections, so <see cref="MaxContrast"/> rejects those too.
 /// </summary>
 internal static class MarkerQuietZoneCheck
 {
-    /// <summary>Candidates with a lower contrast are rejected.</summary>
+    /// <summary>Candidates with a lower contrast are rejected (the default floor for legacy prints).</summary>
     public const double MinContrast = -0.5;
+
+    /// <summary>Candidates with a higher contrast are rejected: no black-and-white pattern inside.</summary>
+    public const double MaxContrast = 1.6;
 
     /// <summary>Sampling step in the unit-square marker frame (60 samples per side).</summary>
     private const double Step = 1.0 / 60;
 
     /// <summary>Splits <paramref name="markers"/> into kept ones and ones without a quiet zone.</summary>
+    /// <param name="gray">The 8-bit grayscale image.</param>
+    /// <param name="markers">Refined markers.</param>
+    /// <param name="minContrast">The floor (see <see cref="MarkerDetectionOptions.MinQuietZoneContrast"/>).</param>
     public static (IReadOnlyList<DetectedMarker> Kept, IReadOnlyList<RejectedMarkerCandidate> Rejected) Filter(
-        Mat gray, IReadOnlyList<DetectedMarker> markers)
+        Mat gray, IReadOnlyList<DetectedMarker> markers, double minContrast = MinContrast)
     {
         var kept = new List<DetectedMarker>(markers.Count);
         var rejected = new List<RejectedMarkerCandidate>();
         foreach (var marker in markers)
         {
             var contrast = marker.Synthetic ? null : Contrast(gray, marker.CornersPx);
-            if (contrast is { } c && c < MinContrast)
+            if (contrast is { } c && (c < minContrast || c > MaxContrast))
             {
+                var detail = c < minContrast
+                    ? $"id {marker.Id}: no white border around it (contrast {c:F2} < {minContrast:F2}); not a printed marker"
+                    : $"id {marker.Id}: no black-and-white pattern inside (contrast {c:F2} > {MaxContrast:F2}); not a printed marker";
                 rejected.Add(new RejectedMarkerCandidate(
-                    marker.Id, marker.CornersPx, marker.SidePx, marker.EdgeRatio, MarkerRejectionReason.NoQuietZone,
-                    $"id {marker.Id}: surroundings as dark as its border (contrast {c:F2} < {MinContrast:F2}); not a printed marker"));
+                    marker.Id, marker.CornersPx, marker.SidePx, marker.EdgeRatio, MarkerRejectionReason.NoQuietZone, detail));
             }
             else
             {
