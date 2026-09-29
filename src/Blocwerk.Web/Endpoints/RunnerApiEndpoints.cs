@@ -12,7 +12,7 @@ namespace Blocwerk.Web.Endpoints;
 /// <summary>
 /// The pull API of the 3D runners (<see cref="GpuRunner"/>): a runner connects OUT with its
 /// <c>bwr_</c> key, says hello, long-polls for work, downloads its claimed job's bundle, reports
-/// progress (the lease heartbeat) and uploads the trained splat. Nothing here authenticates a user:
+/// progress (the lease heartbeat), uploads previews while it trains and then the trained splat. Nothing here authenticates a user:
 /// the key names a runner, never a person, and every job-scoped call re-checks that the job is the
 /// runner's own claim (a 404 otherwise, a 410 once it was taken away or the runner may no longer train its wall).
 /// Not mapped at all with <c>RUNNERS__MODE=off</c>.
@@ -44,6 +44,7 @@ public static partial class RunnerApiEndpoints
         group.MapGet("/jobs/{jobId:guid}/bundle", BundleAsync);
         group.MapPost("/jobs/{jobId:guid}/progress", ProgressAsync);
         group.MapPut("/jobs/{jobId:guid}/result", ResultAsync);
+        group.MapPut("/jobs/{jobId:guid}/preview", PreviewAsync);
         group.MapPost("/jobs/{jobId:guid}/fail", FailAsync);
     }
 
@@ -123,6 +124,9 @@ public static partial class RunnerApiEndpoints
         RunnerJobOutcome.ServerBusy => TooManyRequests(http, "The server takes no more uploads right now; retry shortly."),
         RunnerJobOutcome.InsufficientStorage => Results.Problem(
             "The server is short of disk space; retry later.", statusCode: StatusCodes.Status507InsufficientStorage),
+        RunnerJobOutcome.PreviewRefused => Results.Problem(
+            "This preview is not taken (previews are off, or a newer one or the final result is already here).",
+            statusCode: StatusCodes.Status422UnprocessableEntity),
         _ => Results.NotFound(),
     };
 }

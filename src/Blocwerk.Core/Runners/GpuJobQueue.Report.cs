@@ -155,7 +155,8 @@ public sealed partial class GpuJobQueue
                     .SetProperty(j => j.ShutdownCount, job.ShutdownCount)
                     .SetProperty(j => j.Progress, progress)
                     .SetProperty(j => j.Stage, stage)
-                    .SetProperty(j => j.CompletedAt, completed),
+                    .SetProperty(j => j.CompletedAt, completed)
+                    .SetProperty(j => j.PreviewPath, j => retry ? j.PreviewPath : null),
                 ct);
         if (changed == 0)
         {
@@ -168,8 +169,9 @@ public sealed partial class GpuJobQueue
             return true;
         }
 
-        await MarkCaptureWithoutSplatAsync(db, job.CaptureId, reason, ct);
-        DeleteFiles(job);
+        // A preview still pending went with the failure (same update); an installed one stays as the job's leftover.
+        await MarkCaptureWithoutSplatAsync(db, job, reason, ct);
+        DeleteSpent(await db.GpuJobs.AsNoTracking().FirstAsync(j => j.Id == job.Id, ct), job.PreviewPath);
         return true;
     }
 

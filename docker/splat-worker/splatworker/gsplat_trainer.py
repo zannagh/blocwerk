@@ -10,6 +10,7 @@ and edge to the free VRAM (vram_mb below); host memory only holds the decoded im
 sized from the host budget) plus torch, and the RSS watchdog still guards that. A CUDA out-of-memory
 (or a watchdog kill) is retried once with a smaller cap and edge and no image cache.
 """
+import json
 import os
 import re
 import shutil
@@ -19,6 +20,7 @@ from dataclasses import dataclass, replace
 import numpy as np
 from computejobs.child import JobError, tool_env
 
+from . import checkpoints
 from .colmap_model import PINHOLE_MODELS, model_dir, read_cameras, read_points
 from .parsers import GsplatParser
 from .procs import ToolRun
@@ -34,6 +36,8 @@ HOST_BASE_MB = 3072  # torch + CUDA libraries resident in host memory, before th
 MIN_EDGE = 960
 EDGE_STEP = 256
 RETRY_CAP, RETRY_EDGE = 0.6, 0.75  # the one retry after an out-of-memory
+PLAN_FILE = "plan.json"  # a runner job's plan, next to its checkpoints
+CHECKPOINT_BYTES_PER_SPLAT = 14 * 3 * 4  # 14 floats per splat, each with two Adam moments
 # The trainer's options when the job opted into the wall zones (zones.json; SPLAT_WALL_ZONES / options.wallZones;
 # without them: plain gsplat MCMC, opacity and scale regularisers 0.01), tuned on The Attic (README, "Wall
 # zones"): 10 % of the cap for the surroundings, the needle penalty, per-frame appearance, a 20x weaker opacity
@@ -104,10 +108,70 @@ def plans(vram_budget_mb, sizes, profile, host_budget_mb=0):
             low = chain[-1]
             plan = GsplatPlan(low, low.min_edge, low.min_splats, vram_mb(sizes, low.min_edge, low.min_splats),
                               cache, False)
+    return [plan, _retry(plan, sizes)]
+
+
+def _retry(plan, sizes):
+    """The one retry after an out-of-memory: a smaller cap and edge, no image cache."""
     retry = replace(plan, max_splats=int(plan.max_splats * RETRY_CAP),
                     edge=max(min(MIN_EDGE, plan.edge), int(plan.edge * RETRY_EDGE)), cache_mb=0)
-    retry = replace(retry, estimate_mb=vram_mb(sizes, retry.edge, retry.max_splats))
-    return [plan, retry]
+    return replace(retry, estimate_mb=vram_mb(sizes, retry.edge, retry.max_splats))
+
+
+def resumed_plans(planned, resume, sizes):
+    """A runner job's plans when its checkpoint directory remembers the plan it trained (remember_plan) with the
+    same profile: that plan first (a checkpoint resumes only the same cap and edge), then its retry; else as
+    planned."""
+    try:
+        with open(os.path.join(resume.checkpoint_dir, PLAN_FILE)) as fh:
+            doc = json.load(fh)
+        edge, cap = int(doc["edge"]), int(doc["maxSplats"])
+    except (AttributeError, TypeError, OSError, ValueError, KeyError):
+        return planned
+    first = planned[0]
+    if doc.get("quality") != first.profile.name or doc.get("steps") != first.profile.steps:
+        return planned
+    plan = replace(first, edge=edge, max_splats=cap, estimate_mb=vram_mb(sizes, edge, cap))
+    return [plan, _retry(plan, sizes)]
+
+
+def checkpoint_mb(splats):
+    """Host memory a checkpoint (or preview) takes for a moment: the splats and their two Adam moments, copied off
+    the GPU by torch.save, plus slack."""
+    return int(splats * CHECKPOINT_BYTES_PER_SPLAT / 2 ** 20) + 256
+
+
+def with_checkpoint_headroom(planned, resume):
+    """A runner job that saves checkpoints or previews gives the image cache up for that copy, so the RSS watchdog
+    (the host budget) never takes a checkpoint for a memory blow-up and retries on a smaller plan."""
+    saves = resume is not None and ((resume.checkpoint_dir and resume.checkpoint_every > 0) or resume.preview_dir)
+    if not saves:
+        return planned
+    return [replace(p, cache_mb=max(0, p.cache_mb - checkpoint_mb(p.max_splats))) for p in planned]
+
+
+def remember_plan(resume, plan):
+    """Stores the plan a runner job trains next to its checkpoints (resumed_plans)."""
+    directory = getattr(resume, "checkpoint_dir", None)
+    if not directory or getattr(resume, "checkpoint_every", 0) <= 0:
+        return
+    os.makedirs(directory, exist_ok=True)
+    with open(os.path.join(directory, PLAN_FILE), "w") as fh:
+        json.dump({"quality": plan.profile.name, "steps": plan.profile.steps, "edge": plan.edge,
+                   "maxSplats": plan.max_splats}, fh)
+
+
+def resume_args(resume, steps):
+    """The trainer's checkpoint and preview options of a runner job (checkpoints.TrainResume), or []."""
+    if resume is None:
+        return []
+    args = []
+    if resume.checkpoint_dir and resume.checkpoint_every > 0:
+        args += ["--checkpoint-dir", resume.checkpoint_dir, "--checkpoint-every", str(resume.checkpoint_every)]
+    at = checkpoints.preview_steps(steps, resume.preview_fractions)
+    if resume.preview_dir and at:
+        args += ["--preview-dir", resume.preview_dir, "--preview-at", ",".join(str(s) for s in at)]
+    return args
 
 
 def args_for(plan, eval_every=0, zones=None):
@@ -144,10 +208,11 @@ def tool_version(python):
 
 
 def train(python, dataset_dir, out_dir, plan, log_path, report, max_memory_mb=0, swap_limit_mb=0, eval_every=0,
-          zones=None):
+          zones=None, resume=None):
     """Train one plan on a COLMAP dataset (images/ + sparse/0, pinhole); returns (ply path, parser).
-    zones: a zones.json (zone_run.write_zones) to focus the splats on the wall. Raises CudaOomError on a
-    CUDA out-of-memory, procs.MemoryLimitError on a watchdog kill."""
+    zones: a zones.json (zone_run.write_zones) to focus the splats on the wall. resume: a runner job's
+    checkpoints and previews (checkpoints.TrainResume). Raises CudaOomError on a CUDA out-of-memory,
+    procs.MemoryLimitError on a watchdog kill."""
     check_camera_models(dataset_dir)
     shutil.rmtree(out_dir, ignore_errors=True)
     os.makedirs(out_dir, exist_ok=True)
@@ -159,7 +224,9 @@ def train(python, dataset_dir, out_dir, plan, log_path, report, max_memory_mb=0,
         if r:
             report(*r)
 
-    cmd = [python, "-m", "splatworker.gsplat_train", "--data", dataset_dir, "--out", ply, *args_for(plan, eval_every, zones)]
+    cmd = [python, "-m", "splatworker.gsplat_train", "--data", dataset_dir, "--out", ply,
+           *args_for(plan, eval_every, zones), *resume_args(resume, plan.profile.steps)]
+    remember_plan(resume, plan)
     env = {"PYTHONPATH": HERE, "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"}
     try:  # no RLIMIT_AS: CUDA reserves huge virtual ranges; the RSS watchdog sees host memory only
         ToolRun("train", cmd, out_dir, log_path, on_line, env=env, log_filter=_worth_logging,

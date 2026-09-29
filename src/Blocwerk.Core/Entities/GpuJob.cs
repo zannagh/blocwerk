@@ -110,6 +110,48 @@ public class GpuJob
     /// <summary>When the finished splat was installed on the model.</summary>
     public DateTimeOffset? InstalledAt { get; set; }
 
+    /// <summary>
+    /// The newest preview (the splats after <see cref="PreviewStep"/> steps) a runner uploaded while training, while it
+    /// waits to be installed; null once installed (then <see cref="InstalledPreviewPath"/>) or dropped.
+    /// </summary>
+    [MaxLength(200)]
+    public string? PreviewPath { get; set; }
+
+    /// <summary>
+    /// The model's view (a <see cref="WallGeometrySplat"/> id, null = none) when the pending preview arrived: it installs
+    /// only over that view, never over one installed since (a newer view of any origin wins).
+    /// </summary>
+    public Guid? PreviewBaseSplatId { get; set; }
+
+    /// <summary>The uploaded splat of the preview installed on the model (<see cref="PreviewInstalledStep"/>).</summary>
+    [MaxLength(200)]
+    public string? InstalledPreviewPath { get; set; }
+
+    /// <summary>
+    /// While a re-finish of this job runs: the job's and its capture's state before it (JSON), restored when the re-finish
+    /// fails, so the view that is still installed keeps its status.
+    /// </summary>
+    public string? RefinishStateJson { get; set; }
+
+    public long? PreviewBytes { get; set; }
+
+    /// <summary><c>ply</c> or <c>spz</c> (content-checked on upload).</summary>
+    [MaxLength(8)]
+    public string? PreviewFormat { get; set; }
+
+    /// <summary>The training step of <see cref="PreviewPath"/>; a later preview must have a higher one.</summary>
+    public int? PreviewStep { get; set; }
+
+    /// <summary>The training's total steps, as the runner reports them with a preview.</summary>
+    public int? TotalSteps { get; set; }
+
+    /// <summary>The step of the preview installed on the model (null: none); only ever grows.</summary>
+    public int? PreviewInstalledStep { get; set; }
+
+    /// <summary>The CPU worker's finish job of the pending preview, so a restart resumes it.</summary>
+    [MaxLength(100)]
+    public string? PreviewFinishJobId { get; set; }
+
     [MaxLength(2048)]
     public string? Error { get; set; }
 }

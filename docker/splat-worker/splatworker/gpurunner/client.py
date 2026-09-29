@@ -211,27 +211,35 @@ class Client:
     def upload_result(self, job_id, path, stats, stop=None):
         """PUT the trained scene (gzip-compressed on the fly to a temp file unless disabled or refused with
         415). Returns the bytes sent."""
+        return self._upload(f"/api/runners/jobs/{job_id}/result", path, stats, stop)
+
+    def upload_preview(self, job_id, path, step, total, stats, stop=None):
+        """PUT the splats after `step` of `total` steps as a preview, like upload_result."""
+        query = f"step={int(step)}&total={int(total)}"
+        return self._upload(f"/api/runners/jobs/{job_id}/preview?{query}", path, stats, stop)
+
+    def _upload(self, url_path, path, stats, stop):
         if self.gzip_upload:
             gz = path + ".gz"
             if not os.path.exists(gz):
                 gzip_file(path, gz + ".part", stop)
                 os.replace(gz + ".part", gz)
             try:
-                return self._put(job_id, gz, stats, {"Content-Encoding": "gzip"}, stop)
+                return self._put(url_path, gz, stats, {"Content-Encoding": "gzip"}, stop)
             except Rejected as e:
                 if e.status != 415:
                     raise
                 log.warning("the server refused a gzip upload (415): sending it uncompressed")
                 self.gzip_upload = False
-        return self._put(job_id, path, stats, {}, stop)
+        return self._put(url_path, path, stats, {}, stop)
 
-    def _put(self, job_id, path, stats, extra, stop):
+    def _put(self, url_path, path, stats, extra, stop):
         size = os.path.getsize(path)
         headers = {"Content-Type": "application/octet-stream", "Content-Length": str(size),
                    "X-Blocwerk-Stats": json.dumps(stats, separators=(",", ":")), **extra}
         with open(path, "rb") as fh:
             body = StoppableReader(fh, stop)
-            with self._request("PUT", f"/api/runners/jobs/{job_id}/result", body, headers, UPLOAD_TIMEOUT_S) as r:
+            with self._request("PUT", url_path, body, headers, UPLOAD_TIMEOUT_S) as r:
                 r.read()
         return size
 

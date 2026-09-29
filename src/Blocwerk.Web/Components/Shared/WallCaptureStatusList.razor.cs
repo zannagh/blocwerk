@@ -90,12 +90,17 @@ public partial class WallCaptureStatusList : IAsyncDisposable
         && capture.Status is not (WallCaptureStatus.Failed or WallCaptureStatus.StoredNotActivated);
 
     /// <summary>Queues a retrain of the capture's photo-real view; the current view stays until the new one is stored.</summary>
-    private async Task RetrainAsync(Guid captureId, SplatQuality quality)
+    private Task RetrainAsync(Guid captureId, SplatQuality quality) => QueuePhotoRealAsync(() => Captures.RetrainPhotoRealAsync(captureId, quality));
+
+    /// <summary>Queues finishing the capture's trained photo-real view again (and its follow-up steps); nothing is trained.</summary>
+    private Task RefinishAsync(Guid captureId) => QueuePhotoRealAsync(() => Captures.RefinishPhotoRealAsync(captureId));
+
+    private async Task QueuePhotoRealAsync(Func<Task<IReadOnlyList<string>>> queue)
     {
         retraining = true;
         try
         {
-            var problems = await Captures.RetrainPhotoRealAsync(captureId, quality);
+            var problems = await queue();
             if (problems.Count > 0)
             {
                 failure = string.Join(" ", problems);

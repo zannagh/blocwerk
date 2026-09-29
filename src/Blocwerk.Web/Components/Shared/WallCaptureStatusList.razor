@@ -102,6 +102,13 @@
                                         Retrain photo-real at higher quality (@CaptureSplatDocuments.QualityName(better))
                                     </button>
                                 }
+                                @if (running is null && capture.CanRefinish && capture.PhotoRealPending is null)
+                                {
+                                    <button class="btn-link" @onclick="() => RefinishAsync(capture.Id)" disabled="@retraining"
+                                            title="Finishes the trained photo-real view again on the server (crop, clean-up, export) and re-runs every follow-up step. Nothing is trained; takes minutes.">
+                                        Re-finish photo-real view (no retraining)
+                                    </button>
+                                }
                             </td>
                         </tr>
                         @if (openCaptureId == capture.Id && openPhotos is not null)

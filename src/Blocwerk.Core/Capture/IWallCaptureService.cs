@@ -103,6 +103,14 @@ public interface IWallCaptureService
     Task<IReadOnlyList<string>> RetrainPhotoRealAsync(Guid captureId, SplatQuality quality);
 
     /// <summary>
+    /// Finishes a capture's trained photo-real view again from the 3D runner's result kept on the server (crop, clean-up,
+    /// export, install) and runs the whole post-capture chain on it; nothing is trained. Admin only, never from a kiosk.
+    /// Returns the problems that prevent it (empty = queued): no splat worker, not finished, no kept result, another
+    /// capture of the wall running.
+    /// </summary>
+    Task<IReadOnlyList<string>> RefinishPhotoRealAsync(Guid captureId);
+
+    /// <summary>
     /// The photos of any capture (draft or finished), for reuse as panel photos. Admin only, never a
     /// kiosk; the wall comes from the capture row. Reading never changes the capture.
     /// </summary>

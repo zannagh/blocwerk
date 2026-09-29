@@ -114,7 +114,8 @@ public sealed class WallCaptureSweeper(
         // A photo-real view still waiting for (or on) a 3D runner goes with the photos: its bundle is a copy of them.
         var gpuJobs = await Runners.GpuJobQueue.CancelActiveAsync(
             db, expiredIds, "the capture's photos were deleted (photo retention)", now, ct);
-        var gpuFiles = gpuJobs.SelectMany(j => new[] { j.BundlePath, j.PreparedPath, j.ResultPath }).OfType<string>();
+        var gpuFiles = gpuJobs.SelectMany(Runners.GpuJobQueue.FilesOf)
+            .Concat(await Runners.GpuJobQueue.DropLeftoversAsync(db, expiredIds, null, ct)).ToList();
         await db.SaveChangesAsync(ct);
         DeleteFiles(photos.Select(p => p.StoredPath).Concat(videoFiles).Concat(sparseFiles).Concat(gpuFiles));
         return photos.Count;
@@ -155,13 +156,10 @@ public sealed class WallCaptureSweeper(
             .SelectMany(c => CaptureVideoFiles.Of(c.VideoStoredPath, c.VideoFramesJson));
         var sparse = await db.WallCaptures.Where(c => c.SparsePointsStoredPath != null).Select(c => c.SparsePointsStoredPath!).ToListAsync(ct);
 
-        // .zip/.prep/.upl: the 3D runners' bundles, prepared state and uploaded results of jobs still in play. A finished,
-        // failed or cancelled job's files are deleted with it; any that survived a failed delete are orphans here.
-        var gpu = (await db.GpuJobs
-                .Where(j => j.Status == GpuJobStatus.Queued || j.Status == GpuJobStatus.Claimed || j.Status == GpuJobStatus.Running
-                            || (j.Status == GpuJobStatus.Succeeded && j.InstalledAt == null))
-                .Select(j => new { j.BundlePath, j.PreparedPath, j.ResultPath }).ToListAsync(ct))
-            .SelectMany(j => new[] { j.BundlePath, j.PreparedPath, j.ResultPath }).OfType<string>();
+        // .zip/.prep/.upl: the 3D runners' bundles, prepared state, uploaded results and previews of jobs still in play, and
+        // every job's leftover (its trained result or installed preview, kept to finish again). Anything else of a finished,
+        // failed or cancelled job is deleted with it; what survived a failed delete is an orphan here.
+        var gpu = await Runners.GpuJobQueue.ReferencedFilesAsync(db, ct);
         return new HashSet<string>(
             photos.Concat(textures).Concat(masks).Concat(sourceMaps).Concat(videos).Concat(sparse).Concat(gpu), StringComparer.Ordinal);
     }

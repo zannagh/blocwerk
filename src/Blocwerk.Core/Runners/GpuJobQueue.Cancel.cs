@@ -67,8 +67,12 @@ public sealed partial class GpuJobQueue
         await db.SaveChangesAsync(ct);
         foreach (var job in jobs)
         {
-            await MarkCaptureWithoutSplatAsync(db, job.CaptureId, reason, ct);
             DeleteFiles(job);
+        }
+
+        foreach (var job in jobs)
+        {
+            await MarkCaptureWithoutSplatAsync(db, job, reason, ct);
         }
 
         logger.LogInformation("3D runners are off: cancelled {Count} waiting or running GPU job(s)", jobs.Count);

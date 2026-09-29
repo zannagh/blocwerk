@@ -17,7 +17,7 @@ import tempfile
 import numpy as np
 from computejobs.child import JobError
 
-from . import gpu, gsplat_trainer, zone_run
+from . import checkpoints, gpu, gsplat_trainer, zone_run
 from .groups import image_sizes
 from .procs import MemoryLimitError
 from .profiles import PROFILES, QUALITIES, resolve, zoned
@@ -68,7 +68,9 @@ def train_gsplat(run, dataset):
     sizes = image_sizes(os.path.join(dataset, "images"))
     zones = write_zones(run)
     profile = zoned(run.profile) if zones else run.profile  # opt-in wall zones: their own ultra cap and steps
+    resume = getattr(run, "resume", None)  # a runner job: checkpoints and previews (checkpoints.TrainResume)
     plans = gsplat_trainer.plans((info or {}).get("freeMb") or 0, sizes, profile, budget)
+    plans = gsplat_trainer.with_checkpoint_headroom(gsplat_trainer.resumed_plans(plans, resume, sizes), resume)
     if getattr(run, "profile_note", None):
         _log(run, run.profile_note)
     retries = []
@@ -80,7 +82,7 @@ def train_gsplat(run, dataset):
             ply, parser = gsplat_trainer.train(settings.gsplat_python, dataset, os.path.join(run.dir, "train"),
                                                plan, os.path.join(run.dir, "train.log"), run.report,
                                                budget, settings.max_swap_growth_mb, eval_every=settings.gsplat_eval_every,
-                                               zones=zones)
+                                               zones=zones, resume=resume)
             break
         except (gsplat_trainer.CudaOomError, MemoryLimitError) as e:
             if i == len(plans) - 1:
@@ -88,15 +90,7 @@ def train_gsplat(run, dataset):
                                         "use fewer photos or a lower quality, or free the GPU") from e
             retries.append({"stage": "train", "reason": e.kind, "from": plan.name, "to": plans[i + 1].name})
             _log(run, f"{e.message} -> retrying as {plans[i + 1].name}")
-    cols = read_ply(ply)
-    try:
-        frame_check = gsplat_trainer.check_frame(np.stack([cols["x"], cols["y"], cols["z"]], 1), dataset)
-    except JobError:
-        kept = os.path.join(tempfile.gettempdir(), f"frame-check-failed-{os.path.basename(run.dir)}.ply")
-        shutil.copyfile(ply, kept)  # an hour of training: keep it to look at
-        _log(run, f"COLMAP-frame check failed; the trained splats are kept at {kept}")
-        raise
-    _log(run, f"COLMAP-frame check: {frame_check}")
+    frame_check = _frame_check(run, ply, dataset)
     run.sfm_run.retries.extend(retries)
     run.brush_stats = {"trainer": "gsplat", "gpu": (info or {}).get("name"), "steps": parser.step,
                        "trainerSplatCount": parser.splats, "trainerReportedTime": parser.took,
@@ -104,8 +98,29 @@ def train_gsplat(run, dataset):
                        "trainImages": len(sizes) - (parser.eval or {}).get("views", 0),  # held-out views don't train
                        "quality": plan.profile.name, "qualityRequested": settings.profile_override or run.opts.quality,
                        "maxSplats": plan.max_splats, "trainEstimateMb": plan.estimate_mb,
-                       "frameCheck": frame_check, "zones": parser.zones, **eval_stats(parser)}
+                       "frameCheck": frame_check, "zones": parser.zones, "resumedFromStep": parser.resumed,
+                       **eval_stats(parser)}
     return ply
+
+
+def _frame_check(run, ply, dataset):
+    """gsplat_trainer.check_frame of the trained splats; a failure keeps them to look at. A runner job keeps them next
+    to its checkpoint directory and drops its checkpoints: resuming the finished training would only fail the same way."""
+    cols = read_ply(ply)
+    try:
+        frame_check = gsplat_trainer.check_frame(np.stack([cols["x"], cols["y"], cols["z"]], 1), dataset)
+    except JobError:
+        ck = getattr(getattr(run, "resume", None), "checkpoint_dir", None)
+        where = os.path.join(os.path.dirname(ck), "frame-check-failed") if ck else tempfile.gettempdir()
+        os.makedirs(where, exist_ok=True)
+        name = os.path.basename(ck) if ck else f"frame-check-failed-{os.path.basename(run.dir)}"
+        kept = os.path.join(where, f"{name}.ply")
+        shutil.copyfile(ply, kept)  # an hour of training: keep it to look at
+        checkpoints.discard(ck)
+        _log(run, f"COLMAP-frame check failed; the trained splats are kept at {kept}")
+        raise
+    _log(run, f"COLMAP-frame check: {frame_check}")
+    return frame_check
 
 
 def eval_stats(parser):

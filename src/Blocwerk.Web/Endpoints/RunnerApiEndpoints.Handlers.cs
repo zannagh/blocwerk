@@ -144,6 +144,41 @@ public static partial class RunnerApiEndpoints
         }
     }
 
+    /// <summary><c>PUT .../preview?step=7000&amp;total=50000</c>: the splats so far, like a result (see GpuJobQueue.Preview).</summary>
+    private static async Task<IResult> PreviewAsync(
+        Guid jobId, int step, int total, HttpContext http, [FromServices] GpuJobQueue queue, [FromServices] ILogger<GpuJobQueue> logger)
+    {
+        var (runner, refused) = await RunnerAsync(http, queue, logger);
+        if (runner is null)
+        {
+            return refused;
+        }
+
+        var max = queue.Options.MaxResultBytes;
+        if (http.Request.ContentLength > max)
+        {
+            return Outcome(http, RunnerJobOutcome.TooLarge);
+        }
+
+        PrepareBody(http, max);
+        var encoding = http.Request.Headers.ContentEncoding.FirstOrDefault();
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(http.RequestAborted);
+        deadline.CancelAfter(queue.Options.MaxUploadDuration);
+        try
+        {
+            return Outcome(http, await queue.AcceptPreviewAsync(runner, jobId, step, total, http.Request.Body, encoding, deadline.Token));
+        }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested && !http.RequestAborted.IsCancellationRequested)
+        {
+            return Results.Problem("The upload took too long.", statusCode: StatusCodes.Status408RequestTimeout);
+        }
+        catch (BadHttpRequestException ex)
+        {
+            logger.LogInformation(ex, "Runner {RunnerId} preview upload for GPU job {JobId} aborted", runner.Id, jobId);
+            return Results.Problem("The upload was interrupted.", statusCode: StatusCodes.Status400BadRequest);
+        }
+    }
+
     /// <summary>Lets a body up to the cap in (the queue enforces the exact cap), and demands a minimum rate on HTTP/1.x.</summary>
     private static void PrepareBody(HttpContext http, long max)
     {

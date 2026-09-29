@@ -24,7 +24,7 @@ public enum GpuRunnerMode
 /// <c>RUNNERS__MAXRESULTMB</c>, <c>RUNNERS__MAXBUNDLEMB</c>, <c>RUNNERS__MAXATTEMPTS</c>, <c>RUNNERS__MAXLOSTLEASES</c>,
 /// <c>RUNNERS__MAXJOBHOURS</c>, <c>RUNNERS__QUEUEDJOBDAYS</c>, <c>RUNNERS__MAXCONCURRENTUPLOADS</c>,
 /// <c>RUNNERS__MAXUPLOADMINUTES</c>, <c>RUNNERS__MINFREEDISKMB</c>, <c>RUNNERS__MAXRESULTSPLATS</c>,
-/// <c>RUNNERS__MAXRUNNERSPERUSER</c>).
+/// <c>RUNNERS__MAXRUNNERSPERUSER</c>, <c>RUNNERS__PREVIEWS</c>).
 /// </summary>
 public sealed class GpuRunnerOptions
 {
@@ -85,6 +85,12 @@ public sealed class GpuRunnerOptions
     /// <summary>How often the sweep requeues expired leases and refreshes the waiting jobs' text.</summary>
     public TimeSpan SweepInterval { get; init; } = TimeSpan.FromSeconds(15);
 
+    /// <summary>
+    /// Whether runners upload intermediate splats while they train (<c>RUNNERS__PREVIEWS</c>, default on): each is
+    /// finished and installed as a preview until the final result replaces it.
+    /// </summary>
+    public bool Previews { get; init; } = true;
+
     public static GpuRunnerOptions Bind(IConfiguration? configuration)
     {
         var d = new GpuRunnerOptions();
@@ -102,6 +108,7 @@ public sealed class GpuRunnerOptions
             MinFreeDiskBytes = Megabytes(configuration, "MinFreeDiskMb", 1024 * 1024) ?? d.MinFreeDiskBytes,
             MaxResultSplats = Int(configuration, "MaxResultSplats", 1000, 100_000_000) ?? d.MaxResultSplats,
             MaxRunnersPerUser = Int(configuration, "MaxRunnersPerUser", 1, 1000) ?? d.MaxRunnersPerUser,
+            Previews = bool.TryParse(Read(configuration, "Previews"), out var previews) ? previews : d.Previews,
         };
     }
 

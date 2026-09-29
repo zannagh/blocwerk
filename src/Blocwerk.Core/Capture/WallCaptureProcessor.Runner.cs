@@ -57,6 +57,14 @@ public sealed partial class WallCaptureProcessor
     private async Task<SplatOutcome> SplatOnServerOrRunnerAsync(WallCapture capture, Guid modelId, IComputeJobClient client, CancellationToken ct)
     {
         var reconstructed = FromReconstruction(capture);
+        var job = gpuJobs is null ? null : await gpuJobs.LatestForCaptureAsync(capture.Id, ct);
+        if (job is { Status: GpuJobStatus.Succeeded, InstalledAt: null })
+        {
+            // Delivered, or reopened to be finished again (RefinishPhotoRealAsync): whatever the route is now.
+            await FinishRunnerJobAsync(capture, modelId, job, client, ct);
+            return SplatOutcome.Stored;
+        }
+
         if (gpuJobs is null || gpuJobs.Options.Mode == GpuRunnerMode.Off)
         {
             if (reconstructed)
@@ -65,13 +73,6 @@ public sealed partial class WallCaptureProcessor
             }
 
             await SplatAllInOneAsync(capture, modelId, client, ct);
-            return SplatOutcome.Stored;
-        }
-
-        var job = await gpuJobs.LatestForCaptureAsync(capture.Id, ct);
-        if (job is { Status: GpuJobStatus.Succeeded, InstalledAt: null })
-        {
-            await FinishRunnerJobAsync(capture, modelId, job, client, ct);
             return SplatOutcome.Stored;
         }
 
@@ -214,31 +215,48 @@ public sealed partial class WallCaptureProcessor
                                    || (ex is ComputeJobException c && !IsWorkerAbsent(c)))
         {
             // An unreachable worker keeps the delivered result: the sweep hands it back later (GpuJobQueue.SweepAsync).
-            await gpuJobs!.CloseAsync(job.Id, ex.Message, ct);
+            // A failed re-finish is restored by SplatAsync (RestoreAfterRefinishAsync): the view before is still installed.
+            if (job.RefinishStateJson is null)
+            {
+                await gpuJobs!.CloseAsync(job.Id, ex.Message, ct);
+            }
+
             throw;
+        }
+
+        if (job.RefinishStateJson is not null)
+        {
+            // A re-finished view: every post-capture step runs again on it.
+            await UpdateAsync(capture.Id, c => c.FollowUpJson = null, ct);
         }
 
         await gpuJobs!.CloseAsync(job.Id, null, ct);
     }
 
-    private async Task<string> SubmitFinishAsync(GpuJob job, IComputeJobClient client, CancellationToken ct)
+    private Task<string> SubmitFinishAsync(GpuJob job, IComputeJobClient client, CancellationToken ct) =>
+        SubmitFinishAsync(job, job.ResultPath, job.ResultFormat, job.ResultStatsJson, client, ct);
+
+    /// <summary>A <c>splat-finish</c> of the job's trained splat <paramref name="stored"/> (its result, or a preview).</summary>
+    private async Task<string> SubmitFinishAsync(
+        GpuJob job, string? stored, string? storedFormat, string? statsJson, IComputeJobClient client, CancellationToken ct)
     {
         var prepared = await files.ReadAsync(job.PreparedPath, ct)
                        ?? throw new CaptureFailedException("The prepared photo-real data is missing on the server.");
-        var splat = job.ResultPath is null ? null : files.ResolvePhysicalPath(job.ResultPath);
+        var splat = stored is null ? null : files.ResolvePhysicalPath(stored);
         if (splat is null || !File.Exists(splat))
         {
             throw new CaptureFailedException("The trained photo-real view is missing on the server.");
         }
 
-        var format = job.ResultFormat == SplatResultFormat.Spz ? SplatResultFormat.Spz : SplatResultFormat.Ply;
+        var format = storedFormat == SplatResultFormat.Spz ? SplatResultFormat.Spz : SplatResultFormat.Ply;
         var parts = new List<ComputeJobPart>
         {
             ComputeJobPart.Json("prepared", System.Text.Encoding.UTF8.GetString(prepared)),
-            ComputeJobPart.Json("trainStats", job.ResultStatsJson ?? "{}"),
+            ComputeJobPart.Json("trainStats", statsJson ?? "{}"),
             ComputeJobPart.FromDisk("splat", $"splat.{format}", splat, "application/octet-stream"),
         };
-        logger.LogInformation("Finishing GPU job {JobId} on the splat worker ({Bytes} bytes of {Format})", job.Id, job.ResultBytes, format);
+        logger.LogInformation(
+            "Finishing GPU job {JobId} on the splat worker ({Bytes} bytes of {Format})", job.Id, new FileInfo(splat).Length, format);
         return await client.SubmitMultipartAsync(FinishKind, parts, ct);
     }
 }

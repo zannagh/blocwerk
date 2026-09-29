@@ -69,6 +69,9 @@ def main(argv=None):
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     log.info("Blocwerk 3D runner %s -> %s (%s, work dir %s)", caps.version, server, caps.trainer, runner.work_dir)
+    r = runner.resume
+    log.info("checkpoints: %s; previews: %s", f"every {r.every} steps in {r.root}" if r.every else "off",
+             ", ".join(f"{f:.0%}" for f in r.previews) or "off")
     return runner.run()
 
 

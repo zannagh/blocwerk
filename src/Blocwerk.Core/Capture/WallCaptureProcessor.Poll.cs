@@ -7,7 +7,7 @@ namespace Blocwerk.Core.Capture;
 /// <summary>
 /// A pipeline stage backed by one compute job, mapped onto a slice of the overall progress.
 /// <paramref name="Describe"/> turns a running job's status into the progress label (default:
-/// "Label: stage").
+/// "Label: stage"). <paramref name="Silent"/>: the capture row is never touched (a preview install runs beside a finished capture).
 /// </summary>
 internal sealed record JobStage(
     Guid CaptureId,
@@ -15,7 +15,8 @@ internal sealed record JobStage(
     double From,
     double To,
     string Label,
-    Func<ComputeJobStatus, string>? Describe = null);
+    Func<ComputeJobStatus, string>? Describe = null,
+    bool Silent = false);
 
 /// <summary>Polling a compute job with back-off, a job timeout and a transient-error budget.</summary>
 public sealed partial class WallCaptureProcessor
@@ -64,7 +65,7 @@ public sealed partial class WallCaptureProcessor
 
             var label = stage.Describe?.Invoke(status)
                         ?? (string.IsNullOrWhiteSpace(status.Stage) ? stage.Label : $"{stage.Label}: {status.Stage}");
-            if (label != lastLabel || status.Progress is not null)
+            if (!stage.Silent && (label != lastLabel || status.Progress is not null))
             {
                 var progress = stage.From + ((stage.To - stage.From) * Math.Clamp(status.Progress ?? 0, 0, 1));
                 await SetStageAsync(stage.CaptureId, stage.Status, progress, label, ct);

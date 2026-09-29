@@ -46,7 +46,7 @@ public sealed partial class GpuJobQueue
             {
                 return new RunnerClaim(
                     job.Id, CaptureSplatDocuments.QualityName(job.Quality),
-                    (int)options.Lease.TotalSeconds, job.BundleBytes, job.BundleSha256);
+                    (int)options.Lease.TotalSeconds, job.BundleBytes, job.BundleSha256, options.Previews);
             }
 
             var left = deadline - Now;

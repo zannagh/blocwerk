@@ -26,23 +26,35 @@ public static class GpuJobText
             .Where(j => captureIds.Contains(j.CaptureId)
                         && (j.Status == GpuJobStatus.Queued || j.Status == GpuJobStatus.Claimed || j.Status == GpuJobStatus.Running
                             || (j.Status == GpuJobStatus.Succeeded && j.InstalledAt == null)))
-            .Select(j => new { j.CaptureId, j.Status, j.Stage, j.Progress, j.CreatedAt, Runner = j.ClaimedByRunner == null ? null : j.ClaimedByRunner.Name })
+            .Select(j => new
+            {
+                j.CaptureId, j.Status, j.Stage, j.Progress, j.CreatedAt, j.PreviewInstalledStep, j.TotalSteps,
+                Runner = j.ClaimedByRunner == null ? null : j.ClaimedByRunner.Name,
+            })
             .ToListAsync();
         return jobs.GroupBy(j => j.CaptureId)
             .ToDictionary(g => g.Key, g =>
             {
                 var j = g.OrderByDescending(x => x.CreatedAt).First();
-                return Pending(j.Status, j.Stage, j.Progress, j.Runner);
+                return Pending(j.Status, j.Stage, j.Progress, j.Runner, j.PreviewInstalledStep, j.TotalSteps);
             });
     }
 
-    /// <summary>The line for one job.</summary>
-    public static string Pending(GpuJobStatus status, string? stage, double progress, string? runnerName) => status switch
+    /// <summary>
+    /// The line for one job; with a preview installed it leads with that ("Photo-real preview (step 7000 of 50000) —
+    /// refining: 3D runner “Cellar PC” is training …").
+    /// </summary>
+    public static string Pending(
+        GpuJobStatus status, string? stage, double progress, string? runnerName, int? previewStep = null, int? totalSteps = null)
     {
-        GpuJobStatus.Queued => $"Photo-real view pending: {stage ?? "waiting for a 3D runner"}",
-        GpuJobStatus.Succeeded => "Photo-real view pending: trained, finishing on the server",
-        _ => string.Create(
-            CultureInfo.InvariantCulture,
-            $"Photo-real view pending: 3D runner “{runnerName ?? "?"}” {stage ?? "is training"} ({progress:P0})"),
-    };
+        var what = status switch
+        {
+            GpuJobStatus.Queued => stage ?? "waiting for a 3D runner",
+            GpuJobStatus.Succeeded => "trained, finishing on the server",
+            _ => string.Create(CultureInfo.InvariantCulture, $"3D runner “{runnerName ?? "?"}” {stage ?? "is training"} ({progress:P0})"),
+        };
+        return previewStep is { } step
+            ? $"{GpuJobPreviews.Label(step, totalSteps)} — refining: {what}"
+            : $"Photo-real view pending: {what}";
+    }
 }

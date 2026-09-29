@@ -29,7 +29,8 @@ public sealed partial class GpuJobQueue(
     ILogger<GpuJobQueue> logger,
     IDeployBusyGate? busyGate = null,
     TimeProvider? clock = null,
-    DiskSpaceProbe? diskSpace = null)
+    DiskSpaceProbe? diskSpace = null,
+    GpuPreviewQueue? previews = null)
 {
     /// <summary>nvidia-smi's total of a "12 GB" card is 12282 MB; 98 % of 12 GB, like the worker's own ultra gate.</summary>
     public const int UltraMinVramMb = 12042;
@@ -128,7 +129,11 @@ public sealed partial class GpuJobQueue(
         await db.GpuJobs.Where(j => j.Id == jobId).ExecuteUpdateAsync(s => s.SetProperty(j => j.FinishJobId, finishJobId), ct);
     }
 
-    /// <summary>Marks a finished job installed (or failed at finish) and deletes its files.</summary>
+    /// <summary>
+    /// Marks a finished job installed (or failed at finish) and deletes what it no longer needs. Its trained result stays
+    /// as the job's leftover (<see cref="Leftover"/>) either way; an install supersedes its preview and the leftovers of the
+    /// capture's older jobs.
+    /// </summary>
     public async Task CloseAsync(Guid jobId, string? error, CancellationToken ct)
     {
         await using var db = dbContextFactory.CreateDbContext();
@@ -138,9 +143,19 @@ public sealed partial class GpuJobQueue(
             return;
         }
 
+        var spent = new List<string>(new[] { job.PreviewPath }.OfType<string>());
+        job.PreviewPath = null;
+        job.PreviewFinishJobId = null;
         if (error is null)
         {
+            // The final view supersedes any preview: the capture's view is no longer one.
             job.InstalledAt = Now;
+            job.Error = null;
+            job.RefinishStateJson = null;
+            job.PreviewInstalledStep = null;
+            spent.AddRange(new[] { job.InstalledPreviewPath }.OfType<string>());
+            job.InstalledPreviewPath = null;
+            spent.AddRange(await DropLeftoversAsync(db, [job.CaptureId], job.Id, ct));
         }
         else
         {
@@ -149,7 +164,11 @@ public sealed partial class GpuJobQueue(
         }
 
         await db.SaveChangesAsync(ct);
-        DeleteFiles(job);
+        DeleteSpent(job);
+        foreach (var path in spent.Except(Leftover(job)))
+        {
+            DeleteQuietly(path, job.Id);
+        }
     }
 
     /// <summary>
@@ -166,19 +185,4 @@ public sealed partial class GpuJobQueue(
 
     internal static string? Clip(string? value, int max) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim().Length <= max ? value.Trim() : value.Trim()[..max];
-
-    private void DeleteFiles(GpuJob job)
-    {
-        foreach (var path in new[] { job.BundlePath, job.PreparedPath, job.ResultPath })
-        {
-            try
-            {
-                files.Delete(path);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                logger.LogWarning(ex, "Could not delete {File} of GPU job {JobId}; the capture sweep removes it as an orphan", path, job.Id);
-            }
-        }
-    }
 }

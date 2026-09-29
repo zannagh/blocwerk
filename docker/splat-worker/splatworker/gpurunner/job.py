@@ -1,6 +1,8 @@
 """One claimed job: download the bundle (resumable) -> train (train.py: the worker's own trainer path) ->
 upload the slim .ply (gzip). Outcomes: succeeded, failed (reported), cancelled / gone (dropped), shutdown
-(handed back with `shutdown: true`, no attempt used), abandoned (network lost for too long)."""
+(handed back with `shutdown: true`, no attempt used), abandoned (network lost for too long). A gsplat job saves
+checkpoints (a retry of the same job and bundle resumes from them; dropped once the job is over for good) and
+uploads previews while it trains (previews.py; resume.py)."""
 import json
 import logging
 import os
@@ -12,7 +14,7 @@ import time
 
 from computejobs.child import JobError
 
-from .. import procs
+from .. import checkpoints, procs
 from ..bundle import BundleError, extract_bundle
 from ..procs import ToolStopped
 from ..slimply import write_slim_ply
@@ -20,6 +22,7 @@ from ..splatio import read_ply
 from . import client as http
 from .client import Backoff, Gone, Rejected, Stopped, Transient, Unauthorized
 from .heartbeat import Heartbeat
+from .previews import PreviewUploader
 from .train import train_bundle
 
 log = logging.getLogger("gpurunner")
@@ -61,12 +64,15 @@ def trim_stats(stats):
 
 
 class JobRun:
-    def __init__(self, client, job, work_dir, caps, shutdown, alive=None):
+    def __init__(self, client, job, work_dir, caps, shutdown, alive=None, resume=None):
         self.client, self.job, self.caps, self.shutdown = client, job, caps or {}, shutdown
         self.id = str(job["jobId"])
         self.dir = tempfile.mkdtemp(prefix="job-", dir=work_dir)
         self.stop = threading.Event()
         self.hb = Heartbeat(client, self.id, self.stop, alive)
+        # checkpoints (kept for a retry unless the job is over for good) and previews: resume.py
+        self.resume = resume.for_job(job, self.dir) if resume else checkpoints.TrainResume()
+        self.over = False
 
     def run(self):
         """Returns the outcome. Raises Unauthorized only when the key was refused (the loop exits then)."""
@@ -74,12 +80,16 @@ class JobRun:
         watcher = threading.Thread(target=self._watch_shutdown, daemon=True)
         watcher.start()
         procs.current_stop = self.stop  # kills Brush / gsplat on cancel or shutdown
+        outcome = None
         try:
-            return self._run()
+            outcome = self._run()
+            return outcome
         finally:
             procs.current_stop = None
             self.hb.close()
             shutil.rmtree(self.dir, ignore_errors=True)
+            if outcome in ("succeeded", "cancelled") or self.over:
+                checkpoints.discard(self.resume.checkpoint_dir)
 
     def _watch_shutdown(self):
         while not self.stop.is_set() and not self.hb.done.is_set():
@@ -120,7 +130,17 @@ class JobRun:
         self.hb.set(stage="train", fraction=0.0, detail=f"{profile.name}{', wall zones' if zones else ''}")
         train_dir = os.path.join(self.dir, "t")
         os.makedirs(train_dir)
-        ply, stats = train_bundle(dataset, train_dir, profile, zones, self._report)
+        previews = None
+        if self.resume.preview_dir:
+            os.makedirs(self.resume.preview_dir, exist_ok=True)
+            previews = PreviewUploader(self.client, self.id, self.resume.preview_dir, dataset, self.stop).start()
+        try:
+            ply, stats = train_bundle(dataset, train_dir, profile, zones, self._report, self.resume)
+        finally:
+            if previews is not None:
+                previews.close()  # an unfinished preview upload yields to the final result
+        if previews is not None:
+            stats["previewsUploaded"] = len(previews.uploaded)
         slim = os.path.join(self.dir, "splat.ply")
         write_slim_ply(read_ply(ply), slim)
         shutil.rmtree(train_dir, ignore_errors=True)
@@ -148,6 +168,7 @@ class JobRun:
 
     def _fail(self, reason, retryable):
         log.warning("job %s failed: %s", self.id, reason)
+        self.over = not retryable
         self._report_failure(reason, retryable)
         return "failed"
 

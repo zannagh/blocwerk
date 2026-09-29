@@ -7,6 +7,9 @@ loss 0.0612"), and on CUDA out-of-memory the line "GSPLAT_OOM <message>" with ex
 --eval-every n (GSPLAT_EVAL_EVERY): photos 0, n, 2n, ... (by name; video frames always train) never
 train and are scored at the end ("eval psnr 27.412 ssim 0.8631 views 6"; with --zones also over the
 wall's pixels only: "eval wall psnr ..."): how well the splat renders unseen viewpoints.
+--checkpoint-dir / --checkpoint-every (a 3D runner's job): the whole state is saved every n steps and at the
+end, and a run with the same options resumes from the newest one ("resumed from step 20000/50000");
+--preview-dir / --preview-at: the splats so far are written at those steps ("preview 7000/50000 <path>").
 
 The recipe is gsplat's examples/simple_trainer.py with the MCMC strategy (3DGS as Markov Chain Monte
 Carlo, Kheradmand et al. 2024), trimmed to what the worker needs:
@@ -24,12 +27,15 @@ Carlo, Kheradmand et al. 2024), trimmed to what the worker needs:
 """
 import argparse
 import json
+import os
 import sys
 import time
+from types import SimpleNamespace
 
 import numpy as np
 import torch
 
+from . import checkpoints, gsplat_checkpoint
 from .gsplat_model import d_ssim, init_params, make_optimizers, regularisers, render, ssim, write_ply
 
 OOM_EXIT = 75
@@ -113,47 +119,101 @@ def step_loss(a, params, K, vm, gt, packed, appearance=None, zones=None, opaque=
     return loss
 
 
-def train(a, views, device, train_ids, zones=None):
+def initial(a, views, device, train_ids, zones):
+    """The training's state at step 0."""
     torch.manual_seed(0)
     params = init_params(views.points, views.colors, a.cap, device)
     print(f"init {len(params['means'])} splats from {len(views.points)} sparse points; "
           f"scene scale {views.scene_scale:.3f} (world space NOT normalised)", flush=True)
-    opts = make_optimizers(params, views.scene_scale * 1.1)
-    sched = torch.optim.lr_scheduler.ExponentialLR(opts["means"], gamma=0.01 ** (1.0 / a.steps))
     strategy = make_strategy(a, zones)
-    strategy.check_sanity(params, opts)
-    state = strategy.initialize_state()
     pose, app, extra_opts = extras(a, views, train_ids, device)
+    return SimpleNamespace(params=params, opts=make_optimizers(params, views.scene_scale * 1.1), strategy=strategy,
+                           state=strategy.initialize_state(), pose=pose, app=app, extra_opts=extra_opts,
+                           rng=np.random.default_rng(0), order=[], step=0, sched_state=None, saved=None)
+
+
+def setup(a, views, device, train_ids, zones):
+    """The training's state at the newest matching checkpoint in --checkpoint-dir, else at step 0 (a checkpoint that
+    cannot be loaded is dropped: checkpoints.resume_or_drop)."""
+    t = initial(a, views, device, train_ids, zones)
+    tried = []
+
+    def restore(pt):
+        tried.append(pt)
+        gsplat_checkpoint.restore(t, pt, device, views.scene_scale * 1.1)
+
+    sig = checkpoints.signature(vars(a))
+    step = checkpoints.resume_or_drop(a.checkpoint_dir, sig, restore, lambda m: print(m, flush=True)) \
+        if a.checkpoint_dir else None
+    if step is None and tried:
+        t = initial(a, views, device, train_ids, zones)  # a half-restored state is not trusted
+    elif step is not None:
+        print(f"resumed from step {t.step}/{a.steps} ({len(t.params['means'])} splats)", flush=True)
+        t.saved = t.step
+    t.sig = sig
+    t.sched = torch.optim.lr_scheduler.ExponentialLR(t.opts["means"], gamma=0.01 ** (1.0 / a.steps))
+    if t.sched_state is not None:
+        t.sched.load_state_dict(t.sched_state)
+    t.strategy.check_sanity(t.params, t.opts)
+    return t
+
+
+def one_step(a, t, views, device, train_ids, zones, packed, step, air):
+    """Trains one view; returns (air mask, loss)."""
+    n = len(t.params["means"])
+    if zones is not None and a.aniso_air_reg > 0 and air_due(step, air, n, t.strategy.refine_every):
+        air = zones.air_mask(t.params["means"])  # the splats move slowly: refreshed now and then
+    if not t.order:
+        t.order = [train_ids[i] for i in t.rng.permutation(len(train_ids))]
+    i = t.order.pop()
+    img, K, vm = views.get(i)
+    gt = torch.from_numpy(img).to(device, non_blocking=True).float().div_(255)
+    vm = torch.from_numpy(vm).to(device)
+    if t.pose is not None:  # its gradient (atomics over every splat) is costly: learnt early, then frozen
+        vm = t.pose(i, vm) if step < a.pose_steps else t.pose(i, vm).detach()
+    app = t.app
+    loss = step_loss(a, t.params, torch.from_numpy(K).to(device), vm, gt, packed,
+                     None if app is None else (lambda o: app(i, o)), zones, step % BEHIND_EVERY == 0, air)
+    loss.backward()
+    for opt in list(t.opts.values()) + t.extra_opts:
+        opt.step()
+        opt.zero_grad(set_to_none=True)
+    t.sched.step()
+    t.strategy.step_post_backward(t.params, t.opts, t.state, step, {}, lr=t.sched.get_last_lr()[0])
+    return air, loss
+
+
+def after_step(a, t, previews):
+    """A preview (--preview-at) and a checkpoint (--checkpoint-every, and at the end) once t.step is due."""
+    if a.preview_dir and t.step in previews:
+        os.makedirs(a.preview_dir, exist_ok=True)
+        path = os.path.join(a.preview_dir, checkpoints.preview_name(t.step, a.steps))
+        write_ply(t.params, path + ".part")
+        os.replace(path + ".part", path)
+        print(f"preview {t.step}/{a.steps} {path}", flush=True)
+    due = a.checkpoint_every > 0 and (t.step % a.checkpoint_every == 0 or t.step == a.steps)
+    if a.checkpoint_dir and due and t.saved != t.step:
+        gsplat_checkpoint.save(t, a.checkpoint_dir, t.sig)
+        t.saved = t.step
+        print(f"checkpoint {t.step}/{a.steps}", flush=True)
+
+
+def train(a, views, device, train_ids, zones=None):
+    t = setup(a, views, device, train_ids, zones)
+    previews = {int(s) for s in (a.preview_at or "").split(",") if s.strip().isdigit()}
     packed = a.cap > 2_000_000  # packed rasterisation: less memory for big scenes, a little slower
-    order, every, t0 = [], max(1, a.steps // 200), time.time()
-    rng = np.random.default_rng(0)
-    air = None
-    for step in range(a.steps):
-        if zones is not None and a.aniso_air_reg > 0 and air_due(step, air, len(params["means"]), strategy.refine_every):
-            air = zones.air_mask(params["means"])  # the splats move slowly: refreshed now and then
-        if not order:
-            order = [train_ids[i] for i in rng.permutation(len(train_ids))]
-        i = order.pop()
-        img, K, vm = views.get(i)
-        gt = torch.from_numpy(img).to(device, non_blocking=True).float().div_(255)
-        vm = torch.from_numpy(vm).to(device)
-        if pose is not None:  # its gradient (atomics over every splat) is costly: learnt early, then frozen
-            vm = pose(i, vm) if step < a.pose_steps else pose(i, vm).detach()
-        loss = step_loss(a, params, torch.from_numpy(K).to(device), vm, gt, packed,
-                         None if app is None else (lambda o: app(i, o)), zones, step % BEHIND_EVERY == 0, air)
-        loss.backward()
-        for opt in list(opts.values()) + extra_opts:
-            opt.step()
-            opt.zero_grad(set_to_none=True)
-        sched.step()
-        strategy.step_post_backward(params, opts, state, step, {}, lr=sched.get_last_lr()[0])
-        if (step + 1) % every == 0 or step + 1 == a.steps:  # .item() syncs with the GPU: only here
-            print(f"step {step + 1}/{a.steps} splats {len(params['means'])} loss {loss.item():.4f}", flush=True)
+    every, t0, air = max(1, a.steps // 200), time.time(), None
+    for step in range(t.step, a.steps):
+        air, loss = one_step(a, t, views, device, train_ids, zones, packed, step, air)
+        t.step = step + 1
+        if t.step % every == 0 or t.step == a.steps:  # .item() syncs with the GPU: only here
+            print(f"step {t.step}/{a.steps} splats {len(t.params['means'])} loss {loss.item():.4f}", flush=True)
+        after_step(a, t, previews)
     print(f"Training took {time.time() - t0:.1f}s", flush=True)
-    for name, mod in (("pose", pose), ("appearance", app)):
+    for name, mod in (("pose", t.pose), ("appearance", t.app)):
         if mod is not None:
             print(f"{name} correction {json.dumps(mod.report())}", flush=True)
-    return params
+    return t.params
 
 
 def parse_args(argv):
@@ -183,6 +243,10 @@ def parse_args(argv):
     p.add_argument("--pose-reg", type=float, default=1e-6)
     p.add_argument("--pose-steps", type=int, default=5000, help="optimise the poses for this many steps, then freeze")
     p.add_argument("--appearance-lr", type=float, default=0.0, help="per-frame colour gain/offset (0 = off)")
+    p.add_argument("--checkpoint-dir", help="save the training state here and resume from it (checkpoints.py)")
+    p.add_argument("--checkpoint-every", type=int, default=0, help="steps between checkpoints (0 = none)")
+    p.add_argument("--preview-dir", help="write the splats so far here at the --preview-at steps")
+    p.add_argument("--preview-at", default="", help="comma-separated steps")
     return p.parse_args(argv)
 
 

@@ -112,7 +112,7 @@ public sealed partial class WallCaptureService
         return await db.Walls.AnyAsync(w => w.Id == wallId);
     }
 
-    private static async Task<List<WallCaptureSummary>> SummarizeAsync(BlocwerkDbContext db, List<WallCapture> captures)
+    private async Task<List<WallCaptureSummary>> SummarizeAsync(BlocwerkDbContext db, List<WallCapture> captures)
     {
         var ids = captures.Select(c => c.Id).ToList();
         var counts = await db.WallCapturePhotos.Where(p => ids.Contains(p.CaptureId))
@@ -121,6 +121,7 @@ public sealed partial class WallCaptureService
             .ToDictionaryAsync(g => g.Key, g => g.Count);
         var modelChecks = await ModelChecksAsync(db, captures);
         var pending = await Runners.GpuJobText.PendingAsync(db, ids);
+        var refinishable = await Runners.GpuJobQueue.RefinishableAsync(db, files, ids);
         return captures.Select(c => new WallCaptureSummary(
             c.Id, c.CreatedAt, c.Status, c.Progress, c.Stage, c.Error, c.Notes,
             counts.GetValueOrDefault(c.Id), c.GeometryModelId, c.CompletedAt, ReadPlacementCheck(c.PlacementCheckJson),
@@ -129,7 +130,8 @@ public sealed partial class WallCaptureService
             CaptureFollowUpText.Note(CaptureFollowUpRecord.Parse(c.FollowUpJson)),
             c.WallId,
             c.GeometryModelId is { } modelId ? modelChecks.GetValueOrDefault(modelId, []) : [],
-            pending.GetValueOrDefault(c.Id))).ToList();
+            pending.GetValueOrDefault(c.Id),
+            refinishable.Contains(c.Id))).ToList();
     }
 
     /// <summary>What the solver said about each capture's model (its stored JSON), by model id.</summary>

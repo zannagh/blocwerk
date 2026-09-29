@@ -42,7 +42,7 @@ def full_ply(path, n=5):
 
 
 class Parser:
-    step, splats, took, peak_vram_mb, eval, oom = 5000, 5, "1s", 9000, None, None
+    step, splats, took, peak_vram_mb, eval, oom, resumed = 5000, 5, "1s", 9000, None, None, None
     zones = {"wall": 4, "surround": 1, "outside": 0}
 
 

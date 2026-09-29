@@ -32,7 +32,7 @@ class BundleRun(Run):
     come as a file, trainers.write_zones)."""
     begin, report = banded(TRAIN_BANDS)
 
-    def __init__(self, work_dir, progress, profile, profile_note, zones_file, requested=None):  # noqa: no photos
+    def __init__(self, work_dir, progress, profile, profile_note, zones_file, requested=None, resume=None):  # noqa
         self.dir, self.progress = work_dir, progress
         self.timings, self.stage, self.t0 = {}, None, None
         self.log = os.path.join(work_dir, "tools.log")
@@ -41,6 +41,7 @@ class BundleRun(Run):
         self.opts = SimpleNamespace(quality=requested or profile.name)  # stats.qualityRequested
         self.geometry, self.model, self.zones, self.zones_file = None, None, None, zones_file
         self.sfm_run = RunnerSfm()
+        self.resume = resume  # checkpoints + previews (checkpoints.TrainResume; gsplat only)
 
 
 def runner_profile(doc_profile, trainer=None, gpu_info=None):
@@ -67,12 +68,13 @@ def flat_stats(stats):
     return out
 
 
-def train_bundle(dataset, work_dir, doc_profile, zones_file, progress):
-    """Trains the unpacked bundle; returns (ply path, stats). progress(fraction, stage, detail=None)."""
+def train_bundle(dataset, work_dir, doc_profile, zones_file, progress, resume=None):
+    """Trains the unpacked bundle; returns (ply path, stats). progress(fraction, stage, detail=None); resume: the
+    job's checkpoints and previews (checkpoints.TrainResume, gsplat only)."""
     trainer = trainers.select()
     info = gpu.vram() if trainer == "gsplat" else None
     profile, note = runner_profile(doc_profile, trainer, info)
-    run = BundleRun(work_dir, progress, profile, note, zones_file, doc_profile.name)
+    run = BundleRun(work_dir, progress, profile, note, zones_file, doc_profile.name, resume)
     t0 = time.time()
     ply = run.train(dataset)
     run.end()

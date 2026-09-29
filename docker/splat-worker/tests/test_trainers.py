@@ -122,11 +122,11 @@ def test_pipeline_dispatches_to_gsplat_and_retries_once_after_cuda_oom(tmp_path,
     calls, checked = [], []
 
     class Parser:
-        step, splats, took, peak_vram_mb = 50000, 6_000_000, "3600.0s", 9000
+        step, splats, took, peak_vram_mb, resumed = 50000, 6_000_000, "3600.0s", 9000, None
         eval = {"psnr": 27.5, "ssim": 0.86, "views": 7}
         zones = None
 
-    def fake_train(python, dataset, out, plan, log, report, budget, swap, eval_every=0, zones=None):
+    def fake_train(python, dataset, out, plan, log, report, budget, swap, eval_every=0, zones=None, resume=None):
         assert eval_every == 8
         calls.append(plan)
         if len(calls) == 1:
@@ -187,10 +187,10 @@ def test_a_job_with_a_wall_geometry_trains_plain_unless_it_opts_into_zones(tmp_p
     seen = {}
 
     class Parser:
-        step, splats, took, peak_vram_mb, eval = 100, 10, "1s", 100, None
+        step, splats, took, peak_vram_mb, eval, resumed = 100, 10, "1s", 100, None, None
         zones = {"wall": 9, "surround": 1, "outside": 0}
 
-    def fake_train(python, dataset, out, plan, log, report, budget, swap, eval_every=0, zones=None):
+    def fake_train(python, dataset, out, plan, log, report, budget, swap, eval_every=0, zones=None, resume=None):
         seen["zones"] = zones
         seen["args"] = gsplat_trainer.args_for(plan, 0, zones)
         return "x.ply", Parser()

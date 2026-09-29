@@ -14,8 +14,10 @@ class FakeServer:
     def __init__(self, bundle=b"", job_id="j1", key=None, quality="draft"):
         self.bundle, self.job_id, self.key, self.quality = bundle, job_id, key, quality
         self.requests, self.results, self.progress, self.fails, self.hellos, self.claims = [], [], [], [], [], []
+        self.previews = []  # {"query", "body", "headers"} of every preview upload
+        self.offer_previews = False  # the claim's "previews" flag
         self.jobs_left = 1
-        self.errors = {"hello": [], "claim": [], "bundle": [], "progress": [], "result": [], "fail": []}
+        self.errors = {"hello": [], "claim": [], "bundle": [], "progress": [], "result": [], "fail": [], "preview": []}
         self.drop_bundle_after = None  # bytes: the first download breaks off there (resume test)
         self.gone_on_stage = None  # progress with this stage answers 410
         self.on_progress = None  # callable(doc), e.g. to signal the runner mid-training
@@ -30,10 +32,12 @@ class FakeServer:
 
     def job(self):
         return {"jobId": self.job_id, "quality": self.quality, "leaseSeconds": 300, "bundleBytes": len(self.bundle),
-                "bundleSha256": hashlib.sha256(self.bundle).hexdigest()}
+                "bundleSha256": hashlib.sha256(self.bundle).hexdigest(),
+                **({"previews": True} if self.offer_previews else {})}
 
     def route(self, path):
-        m = re.fullmatch(r"/api/runners/(hello|claim)|/api/runners/jobs/([^/]+)/(bundle|progress|result|fail)", path)
+        m = re.fullmatch(r"/api/runners/(hello|claim)|/api/runners/jobs/([^/]+)/(bundle|progress|result|fail|preview)",
+                         path.split("?")[0])
         if not m:
             return None, None
         return (m.group(1), None) if m.group(1) else (m.group(3), m.group(2))
@@ -90,6 +94,12 @@ class FakeServer:
         encoding = (headers.get("Content-Encoding") or "").lower()
         decoded = gzip.decompress(body) if encoding == "gzip" else body
         self.results.append({"raw": body, "body": decoded, "headers": dict(headers)})
+        return 200, {"ok": True}, {}
+
+    def _preview(self, handler, body, headers):
+        encoding = (headers.get("Content-Encoding") or "").lower()
+        decoded = gzip.decompress(body) if encoding == "gzip" else body
+        self.previews.append({"query": handler.path.split("?", 1)[-1], "body": decoded, "headers": dict(headers)})
         return 200, {"ok": True}, {}
 
     def _fail(self, _h, body, _headers):

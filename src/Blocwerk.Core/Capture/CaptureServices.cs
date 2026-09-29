@@ -42,6 +42,10 @@ public static class CaptureServices
         services.AddSingleton<Runners.GpuJobSignal>();
         services.AddSingleton<Runners.GpuJobQueue>();
         services.AddHostedService<Runners.GpuJobSweepWorker>();
+
+        // Photo-real previews a runner uploads while it trains: installed beside the capture worker (GpuPreviewWorker).
+        services.AddSingleton<Runners.GpuPreviewQueue>();
+        services.AddHostedService<GpuPreviewWorker>();
         services.AddScoped<Runners.IGpuRunnerService, Runners.GpuRunnerService>();
         services.AddSingleton<Runners.SplatQualityOffer>();
 

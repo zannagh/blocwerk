@@ -24,6 +24,7 @@ GSPLAT_OOM = re.compile(r"^GSPLAT_OOM (.*)")
 GSPLAT_EVAL = re.compile(r"^eval psnr ([0-9.]+) ssim ([0-9.]+) views (\d+)")
 GSPLAT_EVAL_WALL = re.compile(r"^eval wall psnr ([0-9.]+) ssim ([0-9.]+) views (\d+)")
 GSPLAT_ZONES = re.compile(r"^zones (\{.*\})")
+GSPLAT_RESUMED = re.compile(r"^resumed from step (\d+)/(\d+)")
 
 
 class ExtractParser:
@@ -114,12 +115,19 @@ class GsplatParser:
         self.peak_vram_mb, self.oom = None, None
         self.eval = None  # {"psnr", "ssim", "views"[, "wall": {...}]} of the held-out views (GSPLAT_EVAL_EVERY)
         self.zones = None  # {"wall", "surround", "outside"}: where the trained splats ended up (--zones)
+        self.resumed = None  # the step a runner job resumed from (a checkpoint, gsplat_checkpoint.py)
 
     def __call__(self, line):
         m = GSPLAT_OOM.search(line)
         if m:
             self.oom = m.group(1)
             return None
+        m = GSPLAT_RESUMED.search(line)
+        if m:
+            self.resumed = self.step = int(m.group(1))
+            self.total = int(m.group(2))
+            return self.LOAD_SHARE + (1 - self.LOAD_SHARE) * self.step / max(1, self.total), \
+                f"step {self.step}/{self.total}, resumed"
         m = GSPLAT_LOADED.search(line)
         if m:
             i, n = int(m.group(1)), int(m.group(2))

@@ -14,6 +14,7 @@ from . import client as http
 from .alive import Alive
 from .client import Backoff, Rejected, Transient, Unauthorized
 from .job import JobRun
+from .resume import ResumeSettings
 
 log = logging.getLogger("gpurunner")
 EXIT_OK, EXIT_UNAUTHORIZED = 0, 3
@@ -22,7 +23,7 @@ MIN_CLAIM_INTERVAL_S = 2.0  # a server answering 204 at once must not be hammere
 
 
 class Runner:
-    def __init__(self, client, work_dir, capabilities, max_jobs=None, clock=time.monotonic):
+    def __init__(self, client, work_dir, capabilities, max_jobs=None, clock=time.monotonic, resume=None):
         self.client, self.work_dir, self.capabilities = client, work_dir, capabilities
         self.max_jobs, self.clock = max_jobs, clock
         self.shutdown = threading.Event()
@@ -30,6 +31,7 @@ class Runner:
         self.caps, self.hello_at, self.jobs_done = None, None, 0
         self.outcomes = []
         self.alive = Alive(work_dir)
+        self.resume = resume or ResumeSettings(work_dir)
 
     def run(self):
         """Returns the process exit code (0 on shutdown / max_jobs, 3 when the key is refused)."""
@@ -51,9 +53,11 @@ class Runner:
         return EXIT_OK
 
     def _clean_stale(self):
-        """Job dirs a killed runner left behind (their bundles can be gigabytes)."""
+        """Job dirs a killed runner left behind (their bundles can be gigabytes) and checkpoints past their TTL."""
         for d in glob.glob(os.path.join(self.work_dir, "job-*")):
             shutil.rmtree(d, ignore_errors=True)
+        if self.resume.prune():
+            log.info("removed checkpoints older than %d h", self.resume.ttl_s // 3600)
 
     def _wait(self, error):
         delay = self.backoff.next(getattr(error, "retry_after", None))
@@ -87,8 +91,9 @@ class Runner:
                 http.pause(self.shutdown, MIN_CLAIM_INTERVAL_S)
             return True
         log.info("claimed job %s (%s)", job.get("jobId"), job.get("quality"))
-        outcome = JobRun(self.client, job, self.work_dir, self.caps, self.shutdown, self.alive).run()
+        outcome = JobRun(self.client, job, self.work_dir, self.caps, self.shutdown, self.alive, self.resume).run()
         self.outcomes.append(outcome)
         self.jobs_done += 1
         log.info("job %s %s", job.get("jobId"), outcome)
+        self.resume.prune()  # checkpoints of jobs that never came back, also on a runner that runs for weeks
         return self.max_jobs is None or self.jobs_done < self.max_jobs

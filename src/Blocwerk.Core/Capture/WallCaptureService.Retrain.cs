@@ -56,7 +56,7 @@ public sealed partial class WallCaptureService
             var superseded = await Runners.GpuJobQueue.CancelActiveAsync(
                 db, capture.Id, "superseded by a retrain", DateTimeOffset.UtcNow, CancellationToken.None);
             await db.SaveChangesAsync();
-            foreach (var path in superseded.SelectMany(j => new[] { j.BundlePath, j.PreparedPath, j.ResultPath }))
+            foreach (var path in superseded.SelectMany(Runners.GpuJobQueue.FilesOf))
             {
                 files.Delete(path);
             }

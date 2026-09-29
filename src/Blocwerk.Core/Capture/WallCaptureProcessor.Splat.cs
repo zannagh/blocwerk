@@ -1,7 +1,6 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
-using System.Text;
 using Blocwerk.Core.Capture.FollowUp;
 using Blocwerk.Core.Compute;
 using Blocwerk.Core.Entities;
@@ -104,8 +103,13 @@ public sealed partial class WallCaptureProcessor
         catch (Exception ex) when (ex is CaptureFailedException or ComputeJobException or InvalidDataException or IOException)
         {
             logger.LogInformation("Photo-real view of capture {CaptureId} failed: {Reason}", capture.Id, ex.Message);
+            if (await RestoreAfterRefinishAsync(capture.Id, ex.Message, ct))
+            {
+                return;
+            }
+
             await FollowUpAsync(run, CaptureFollowUpPhase.Final, ct);
-            await UpdateAsync(capture.Id, c => EndWithoutSplat(c, ex.Message), ct);
+            await EndWithoutViewAsync(capture.Id, ex.Message, ct);
             return;
         }
 
@@ -164,6 +168,7 @@ public sealed partial class WallCaptureProcessor
             new JobStage(capture.Id, WallCaptureStatus.Splatting, VideoBand, 0.98, "Photo-real view", CaptureSplatDocuments.Describe),
             ct);
         await StoreSplatAsync(capture.Id, modelId, status.JobId!, client, ct);
+        await DropRunnerLeftoversAsync(capture.Id, ct);
     }
 
     private async Task<string> SubmitSplatAsync(
@@ -197,89 +202,5 @@ public sealed partial class WallCaptureProcessor
         }
 
         return parts;
-    }
-
-    private async Task StoreSplatAsync(Guid captureId, Guid modelId, string jobId, IComputeJobClient client, CancellationToken ct)
-    {
-        await SetStageAsync(captureId, WallCaptureStatus.Splatting, 0.99, "Photo-real view: saving", ct);
-        var frameJson = Encoding.UTF8.GetString(await client.DownloadFileAsync(jobId, CaptureSplatDocuments.FrameFile, ct));
-        CaptureSplatDocuments.Validate(frameJson);
-        var spz = await client.DownloadFileAsync(jobId, CaptureSplatDocuments.SpzFile, ct);
-
-        // .spz is a gzip stream (Niantic SPZ v2).
-        if (spz.Length < 32 || spz[0] != 0x1f || spz[1] != 0x8b)
-        {
-            throw new InvalidDataException("the photo-real scene is not an .spz file.");
-        }
-
-        // The level-of-detail ladder (SplatLodLadder): the view starts small and steps up while the
-        // device keeps up, so a phone never has to survive the full scene. Supersedes the mobile copy.
-        var (count, levels) = await LevelsOfDetailAsync(spz, modelId, ct);
-        var uncleaned = await DownloadUncleanedAsync(frameJson, jobId, client, modelId, ct);
-        var row = new WallGeometrySplat
-        {
-            GeometryModelId = modelId,
-            StoredPath = await files.SaveAsync(spz, ".spz", ct),
-            SizeBytes = spz.LongLength,
-            SplatCount = count,
-            LodLevelsJson = SplatLodLadder.Serialize(levels),
-            UncleanedStoredPath = uncleaned is null ? null : await files.SaveAsync(uncleaned, ".spz", ct),
-            UncleanedSizeBytes = uncleaned?.LongLength,
-            FrameJson = frameJson,
-        };
-
-        await using var db = dbContextFactory.CreateDbContext();
-        var old = await db.WallGeometrySplats.Where(s => s.GeometryModelId == modelId).ToListAsync(ct);
-        db.WallGeometrySplats.RemoveRange(old);
-        db.WallGeometrySplats.Add(row);
-        await db.SaveChangesAsync(ct);
-        var shared = await Corrections.SharedCaptureFiles.ReferencedAsync(db, ct);
-        foreach (var file in old.SelectMany(SplatLodLadder.Files).OfType<string>().Where(f => !shared.Contains(f)))
-        {
-            files.Delete(file);
-        }
-
-        logger.LogInformation(
-            "Stored the photo-real view of model {ModelId} ({Bytes} bytes, alignment residual {Residual})",
-            modelId, row.SizeBytes, CaptureSplatDocuments.ResidualText(frameJson));
-    }
-
-    /// <summary>
-    /// The scene as trained, before the worker's floater clean-up (kept so the clean-up can be
-    /// reverted), or null when the worker did not clean it. A failed download only loses that copy.
-    /// </summary>
-    private async Task<byte[]?> DownloadUncleanedAsync(
-        string frameJson, string jobId, IComputeJobClient client, Guid modelId, CancellationToken ct)
-    {
-        if (CaptureSplatDocuments.UncleanedFile(frameJson) is not { } name)
-        {
-            return null;
-        }
-
-        try
-        {
-            var bytes = await client.DownloadFileAsync(jobId, name, ct);
-            return bytes.Length >= 32 && bytes[0] == 0x1f && bytes[1] == 0x8b ? bytes : null;
-        }
-        catch (ComputeJobException ex)
-        {
-            logger.LogWarning("No uncleaned copy of the photo-real view of model {ModelId}: {Reason}", modelId, ex.Message);
-            return null;
-        }
-    }
-
-    /// <summary>The ladder's levels (saved), or none (small scene, or a layout the pruner does not read).</summary>
-    private async Task<(int? Count, List<SplatLodLevel> Levels)> LevelsOfDetailAsync(byte[] spz, Guid modelId, CancellationToken ct)
-    {
-        try
-        {
-            return await SplatLodBackfill.SaveLadderAsync(spz, files, ct);
-        }
-        catch (InvalidDataException ex)
-        {
-            // The full scene still works everywhere a desktop GPU is; phones just get it whole.
-            logger.LogWarning("No level-of-detail ladder for the photo-real view of model {ModelId}: {Reason}", modelId, ex.Message);
-            return (null, []);
-        }
     }
 }

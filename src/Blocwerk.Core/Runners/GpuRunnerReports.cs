@@ -37,13 +37,14 @@ public sealed record RunnerFailure(
     [property: JsonPropertyName("retryable")] bool Retryable,
     [property: JsonPropertyName("shutdown")] bool Shutdown = false);
 
-/// <summary>A claimed job as the runner receives it.</summary>
+/// <summary>A claimed job as the runner receives it. <c>Previews</c>: the server takes intermediate splats (<c>PUT .../preview</c>).</summary>
 public sealed record RunnerClaim(
     [property: JsonPropertyName("jobId")] Guid JobId,
     [property: JsonPropertyName("quality")] string Quality,
     [property: JsonPropertyName("leaseSeconds")] int LeaseSeconds,
     [property: JsonPropertyName("bundleBytes")] long BundleBytes,
-    [property: JsonPropertyName("bundleSha256")] string BundleSha256);
+    [property: JsonPropertyName("bundleSha256")] string BundleSha256,
+    [property: JsonPropertyName("previews")] bool Previews = false);
 
 /// <summary>What a job-scoped runner call found.</summary>
 public enum RunnerJobOutcome
@@ -74,4 +75,7 @@ public enum RunnerJobOutcome
 
     /// <summary>The capture store is (or would get) too full: 507.</summary>
     InsufficientStorage,
+
+    /// <summary>A preview the server does not take (previews off, or a newer preview or the final result is here): 422.</summary>
+    PreviewRefused,
 }

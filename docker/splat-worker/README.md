@@ -273,6 +273,10 @@ give the job memory to match (`SPLAT_MAX_MEMORY_MB` unset, container limit ≥ 1
 | `RUNNER_WORK_DIR` | `<tmp>/blocwerk-runner` | bundles, training, the `alive` liveness file |
 | `RUNNER_MAX_QUALITY` | unset | caps what the runner claims (`draft` … `ultra`) |
 | `RUNNER_UPLOAD_GZIP` | 1 | `0` = upload the slim `.ply` uncompressed (also `--no-gzip`); a server answering 415 gets it uncompressed anyway |
+| `RUNNER_CHECKPOINT_EVERY` | 5000 | gsplat saves its whole state every n steps and at the end; a retry of the same job (same bundle) resumes there. `0` = off |
+| `RUNNER_CHECKPOINT_DIR` | `<work dir>/checkpoints` | one directory per job id + bundle sha (~1 GB at ultra). Inside the container `/tmp` survives `docker restart`, not a recreate: mount a volume here to keep them across both |
+| `RUNNER_CHECKPOINT_TTL_H` | 72 | checkpoint directories untouched for longer are removed at start (a job that succeeded, was cancelled or failed for good drops its own at once) |
+| `RUNNER_PREVIEWS` | `0.14,0.4` | fractions of the steps at which the splats so far are frame-checked and uploaded as a preview (ultra: 7000 and 20000; none before step 3000), when the server offers previews (`RUNNERS__PREVIEWS`). `0` = off |
 
 ## Run natively on a Mac (the "external GPU")
 

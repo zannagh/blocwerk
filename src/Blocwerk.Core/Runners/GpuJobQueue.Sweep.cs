@@ -84,7 +84,7 @@ public sealed partial class GpuJobQueue
             }
 
             logger.LogInformation("GPU job {JobId} of capture {CaptureId} expired: {Reason}", job.Id, job.CaptureId, reason);
-            await MarkCaptureWithoutSplatAsync(db, job.CaptureId, reason, ct);
+            await MarkCaptureWithoutSplatAsync(db, job, reason, ct);
             DeleteFiles(job);
         }
     }
@@ -103,10 +103,20 @@ public sealed partial class GpuJobQueue
             if (job.CompletedAt < now - FinishGiveUp)
             {
                 logger.LogWarning("GPU job {JobId}: the delivered result could not be finished for a day; giving up", job.Id);
-                job.Status = GpuJobStatus.Failed;
-                job.Error = "the trained view could not be finished on the server (the splat worker was unreachable)";
+                var pending = job.PreviewPath;
+                job.PreviewPath = null;
+                if (GpuJobRefinishState.Parse(job.RefinishStateJson) is { } before)
+                {
+                    before.RestoreJob(job);
+                }
+                else
+                {
+                    job.Status = GpuJobStatus.Failed;
+                    job.Error = "the trained view could not be finished on the server (the splat worker was unreachable)";
+                }
+
                 await db.SaveChangesAsync(ct);
-                DeleteFiles(job);
+                DeleteSpent(job, pending);
                 continue;
             }
 
@@ -118,16 +128,29 @@ public sealed partial class GpuJobQueue
 
     /// <summary>
     /// A job that failed for good: a finished capture whose view it was to be says so (Model ready, no photo-real view),
-    /// exactly like a failed training on the splat worker. A capture that moved on (a retrain) is left alone.
+    /// exactly like a failed training on the splat worker; with a preview installed it says the preview stays instead. A
+    /// capture that moved on (a retrain) is left alone.
     /// </summary>
-    private static async Task MarkCaptureWithoutSplatAsync(BlocwerkDbContext db, Guid captureId, string reason, CancellationToken ct)
+    private static async Task MarkCaptureWithoutSplatAsync(BlocwerkDbContext db, GpuJob job, string reason, CancellationToken ct)
     {
-        var capture = await db.WallCaptures.FirstOrDefaultAsync(c => c.Id == captureId, ct);
-        if (capture is { Status: WallCaptureStatus.Succeeded or WallCaptureStatus.SucceededWithoutTextures })
+        var capture = await db.WallCaptures.FirstOrDefaultAsync(c => c.Id == job.CaptureId, ct);
+        if (capture is not { Status: WallCaptureStatus.Succeeded or WallCaptureStatus.SucceededWithoutTextures })
+        {
+            return;
+        }
+
+        var preview = await db.GpuJobs.AsNoTracking().Where(j => j.Id == job.Id)
+            .Select(j => new { j.PreviewInstalledStep, j.TotalSteps }).FirstOrDefaultAsync(ct);
+        if (preview?.PreviewInstalledStep is { } step)
+        {
+            WallCaptureProcessor.KeepPreview(capture, reason, step, preview.TotalSteps);
+        }
+        else
         {
             WallCaptureProcessor.EndWithoutSplat(capture, reason);
-            await db.SaveChangesAsync(ct);
         }
+
+        await db.SaveChangesAsync(ct);
     }
 
     /// <summary>

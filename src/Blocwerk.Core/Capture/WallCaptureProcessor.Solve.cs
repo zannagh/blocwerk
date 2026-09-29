@@ -142,7 +142,11 @@ public sealed partial class WallCaptureProcessor
         {
             if (jobId is null)
             {
-                await SetStageAsync(stage.CaptureId, stage.Status, stage.From, $"{stage.Label}: sending", ct);
+                if (!stage.Silent)
+                {
+                    await SetStageAsync(stage.CaptureId, stage.Status, stage.From, $"{stage.Label}: sending", ct);
+                }
+
                 jobId = await submit();
                 await persistJobId(jobId);
             }
