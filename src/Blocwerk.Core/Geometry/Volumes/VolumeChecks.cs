@@ -15,7 +15,7 @@ public readonly record struct KnownHoldEllipse(double A, double B, double HalfWi
 
 /// <summary>
 /// The tests that tell a volume from other raised things (see <see cref="VolumeDetectionOptions"/>): a lone big
-/// hold or a hold cluster (known hold outlines), a large but shallow sheet of bumps, the wall's edge or what is
+/// hold or a hold cluster (known hold outlines), a large but shallow sheet or a low scatter of bumps, the wall's edge or what is
 /// beyond it, and something that does not sit on this facet at all (no bare wall around it).
 /// </summary>
 public static class VolumeChecks
@@ -96,24 +96,38 @@ public static class VolumeChecks
     /// <param name="c">The measured candidate (status and surface not yet set).</param>
     /// <param name="extent">The facet's extent.</param>
     /// <param name="options">Tuning.</param>
+    /// <param name="seams">Where a neighbouring facet continues the wall beyond the extent (null: nowhere).</param>
+    /// <param name="holdsLocated">Whether any hold is located on the facet (else the bare-step rule cannot tell).</param>
     /// <returns>The status.</returns>
-    public static string Judge(DetectedVolume c, PlaneRectMm extent, VolumeDetectionOptions options)
+    public static string Judge(
+        DetectedVolume c, PlaneRectMm extent, VolumeDetectionOptions options, FacetSeams? seams = null, bool holdsLocated = true)
     {
-        var band = options.EdgeBandMm;
-        var f = c.Footprint;
         return c switch
         {
             _ when c.HeightMm > options.MaxHeightMm => "rejected:too-tall",
             _ when c.AreaM2 < options.MinAreaM2 => "rejected:small",
-            _ when f.Min(p => p.A) < extent.AMin + band || f.Max(p => p.A) > extent.AMax - band
-                || f.Min(p => p.B) < extent.BMin + band || f.Max(p => p.B) > extent.BMax - band => "rejected:edge",
+            _ when AtEdge(c.Footprint, extent, options.EdgeBandMm, seams) => "rejected:edge",
             _ when IsShallowSheet(c, extent, options) => "rejected:shallow-sheet",
+            _ when IsSparse(c, options) => "rejected:sparse",
             _ when c.WallSupport < options.MinWallSupport => "rejected:no-wall-around",
             _ when c.SingleHoldCover > options.MaxSingleHoldCover => "rejected:single-hold",
             _ when c.HoldCover > options.MaxHoldCover && c.HeightMm < options.ClusterMaxHeightMm => "rejected:hold-cluster",
-            _ when c.HoldCover < 0.05 && c.AreaM2 < options.BareMaxAreaM2 => "rejected:bare-step",
+            _ when holdsLocated && c.HoldCover < 0.05 && c.AreaM2 < options.BareMaxAreaM2 => "rejected:bare-step",
             _ => DetectedVolume.Accepted,
         };
+    }
+
+    /// <summary>
+    /// Low (median below <see cref="VolumeDetectionOptions.SparseMaxMedianMm"/>) and its raised cells fill little of its
+    /// convex outline (below <see cref="VolumeDetectionOptions.MinFillRatio"/>): an L or a scatter of bumps, not a volume.
+    /// </summary>
+    /// <param name="c">The measured candidate.</param>
+    /// <param name="options">Tuning.</param>
+    /// <returns>Whether it is that sparse.</returns>
+    public static bool IsSparse(DetectedVolume c, VolumeDetectionOptions options)
+    {
+        var outline = PlanePolygon.Area(c.Footprint) / 1e6;
+        return outline > 0 && c.MedianHeightMm < options.SparseMaxMedianMm && c.AreaM2 / outline < options.MinFillRatio;
     }
 
     /// <summary>
@@ -130,6 +144,20 @@ public static class VolumeChecks
         var facet = (extent.AMax - extent.AMin) * (extent.BMax - extent.BMin) / 1e6;
         var large = outline > options.SheetMinAreaM2 || outline > options.SheetMinFacetShare * facet;
         return large && c.MedianHeightMm < options.SheetMaxMedianMm && c.HeightMm < options.SheetMaxHeightMm;
+    }
+
+    private static bool AtEdge(IReadOnlyList<(double A, double B)> footprint, PlaneRectMm e, double band, FacetSeams? seams)
+    {
+        foreach (var (a, b) in footprint)
+        {
+            var inBand = a < e.AMin + band || a > e.AMax - band || b < e.BMin + band || b > e.BMax - band;
+            if (inBand && seams?.ContinuesAcross(a, b, band) != true)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static double DistanceToRing(IReadOnlyList<(double A, double B)> ring, double a, double b)

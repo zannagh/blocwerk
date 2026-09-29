@@ -43,6 +43,18 @@ public sealed record VolumeDetectionOptions
     /// <summary>A candidate reaching into this band along the facet's extent is the wall's edge or what lies beyond it, mm.</summary>
     public double EdgeBandMm { get; init; } = 60;
 
+    /// <summary>
+    /// Unless the edge is a seam (<see cref="FacetSeams"/>): a neighbouring facet whose normal is within this angle
+    /// continues the wall there (on The Attic, 2026-09-29, the main wall's facet ends mid-wall and cut a roof off), degrees.
+    /// </summary>
+    public double SeamMaxAngleDeg { get; init; } = 10;
+
+    /// <summary>Just beyond the seam the facet's plane is within this of the neighbour's plane, mm.</summary>
+    public double SeamMaxOffsetMm { get; init; } = 50;
+
+    /// <summary>How far beyond the edge the neighbour's extent must reach (a gap between the extents up to this), mm.</summary>
+    public double SeamReachMm { get; init; } = 150;
+
     /// <summary>Least share of bare wall in the ring around a volume (else it is not sitting on this facet).</summary>
     public double MinWallSupport { get; init; } = 0.35;
 
@@ -76,7 +88,20 @@ public sealed record VolumeDetectionOptions
     /// <summary>And whose 90th-percentile height is below this (a real volume's top stands higher), mm.</summary>
     public double SheetMaxHeightMm { get; init; } = 120;
 
-    /// <summary>A small candidate without any hold on it is a step in the wall, not a volume.</summary>
+    /// <summary>
+    /// A low candidate whose raised cells fill less than this share of its convex outline is a scatter of bumps, not a
+    /// volume (a volume is convex: pyramids and roofs fill their outline). On The Attic (2026-09-29) false ones filled
+    /// 46–55 %.
+    /// </summary>
+    public double MinFillRatio { get; init; } = 0.6;
+
+    /// <summary>The fill rule applies only below this median height, mm (a tall candidate is kept).</summary>
+    public double SparseMaxMedianMm { get; init; } = 80;
+
+    /// <summary>
+    /// A small candidate without any hold on it is a step in the wall, not a volume (only judged when the facet has
+    /// holds located on it at all).
+    /// </summary>
     public double BareMaxAreaM2 { get; init; } = 0.05;
 
     /// <summary>Percentile of the points per cell taken as the volume's surface (splat centres scatter into the body).</summary>

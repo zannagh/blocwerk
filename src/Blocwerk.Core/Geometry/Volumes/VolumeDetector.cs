@@ -45,7 +45,8 @@ public static class VolumeDetector
 
             var others = frames.Where(f => f.Key != id && extents.ContainsKey(f.Key)).Select(f => (f.Value, extents[f.Key])).ToList();
             var cloud = FacetCloud.Build(points, id, frame, extent, others, options.OtherSurfaceMm);
-            result.AddRange(DetectOnFacet(cloud, holds.GetValueOrDefault(id) ?? [], options));
+            var seams = FacetSeams.Of(frame, extent, others, options);
+            result.AddRange(DetectOnFacet(cloud, holds.GetValueOrDefault(id) ?? [], options, seams));
         }
 
         return result;
@@ -55,8 +56,10 @@ public static class VolumeDetector
     /// <param name="cloud">The facet's cloud.</param>
     /// <param name="holds">Its known holds.</param>
     /// <param name="options">Tuning.</param>
+    /// <param name="seams">Where a neighbouring facet continues the wall beyond the extent (null: nowhere).</param>
     /// <returns>The candidates.</returns>
-    public static List<DetectedVolume> DetectOnFacet(FacetCloud cloud, IReadOnlyList<KnownHoldEllipse> holds, VolumeDetectionOptions options)
+    public static List<DetectedVolume> DetectOnFacet(
+        FacetCloud cloud, IReadOnlyList<KnownHoldEllipse> holds, VolumeDetectionOptions options, FacetSeams? seams = null)
     {
         var result = new List<DetectedVolume>();
         if (cloud.Count < 50)
@@ -72,7 +75,7 @@ public static class VolumeDetector
         var members = Members(cloud, grid, labels, count);
         for (var k = 1; k <= count; k++)
         {
-            if (Candidate(cloud, grid, labels, k, members[k], holds, options) is { } candidate)
+            if (Candidate(cloud, grid, labels, k, members[k], holds, options, seams) is { } candidate)
             {
                 result.Add(candidate);
             }
@@ -102,7 +105,14 @@ public static class VolumeDetector
     }
 
     private static DetectedVolume? Candidate(
-        FacetCloud cloud, CellGrid grid, int[] labels, int label, List<int> members, IReadOnlyList<KnownHoldEllipse> holds, VolumeDetectionOptions options)
+        FacetCloud cloud,
+        CellGrid grid,
+        int[] labels,
+        int label,
+        List<int> members,
+        IReadOnlyList<KnownHoldEllipse> holds,
+        VolumeDetectionOptions options,
+        FacetSeams? seams)
     {
         var cells = Enumerable.Range(0, labels.Length).Where(i => labels[i] == label).ToList();
         var area = cells.Count * options.CellMm * options.CellMm / 1e6;
@@ -125,7 +135,7 @@ public static class VolumeDetector
         var candidate = new DetectedVolume(
             cloud.FacetId, footprint, Math.Round(area, 4), Math.Round(height, 1), Math.Round(median, 1), members.Count, Math.Round(any, 3), Math.Round(single, 3),
             Math.Round(VolumeChecks.WallSupport(cloud, footprint, options), 3), string.Empty, null);
-        var status = VolumeChecks.Judge(candidate, cloud.Extent, options);
+        var status = VolumeChecks.Judge(candidate, cloud.Extent, options, seams, holds.Count > 0);
         var surface = status == DetectedVolume.Accepted ? VolumeSurfaceBuilder.Build(cloud, footprint, options) : null;
         return candidate with { Status = status, Surface = surface };
     }
