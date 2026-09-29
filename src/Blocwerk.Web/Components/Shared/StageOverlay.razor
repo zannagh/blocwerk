@@ -20,7 +20,13 @@
    correct under a rotated stage. Not marking it simply never arms it.
 
    `bw-stage-overlay` is also listed in takeoverSurfaceOpen() in wwwroot/js/keyboard-shortcuts.js, so
-   the page's letter shortcuts stand down while this is up. *@
+   the page's letter shortcuts stand down while this is up.
+
+   The host is the overlay's ONLY Blazor parent and has no other child: attach() moves the overlay
+   to <body> (a portal, so no sticky or transformed ancestor of the call site can trap it under the
+   page) and detach() puts it back or removes it. Blazor never has to insert a sibling next to the
+   moved node, which is what keeps the move safe for its diffing. *@
+<div class="bw-stage-host">
 <div class="bw-stage-overlay" @ref="rootRef" tabindex="-1" role="dialog" aria-modal="true"
      aria-label="@Label">
     <div class="bw-stage-viewport" @ref="viewportRef">
@@ -28,13 +34,15 @@
             <div class="bw-stage-world" @ref="worldRef">
                 @ChildContent
             </div>
-            @* Chrome lives INSIDE the rotated layer so it reads upright once the photo does. *@
-            <button type="button" class="bw-stage-close" @onclick="CloseAsync"
+            @* Chrome lives INSIDE the rotated layer so it reads upright once the photo does. A
+               labelled, touch-sized pill: on a keyboard-less kiosk it is the only way out. *@
+            <button type="button" class="bw-stage-close" data-bw-stage-close @onclick="CloseAsync"
                     title="Close full screen" aria-label="Close full screen">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                     width="20" height="20" stroke-linecap="round" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                     width="28" height="28" stroke-linecap="round" aria-hidden="true">
                     <path d="M6 6l12 12M18 6L6 18" />
                 </svg>
+                <span class="bw-stage-close-label">Close</span>
             </button>
             @if (Chrome is not null)
             {
@@ -42,6 +50,7 @@
             }
         </div>
     </div>
+</div>
 </div>
 
 @code {

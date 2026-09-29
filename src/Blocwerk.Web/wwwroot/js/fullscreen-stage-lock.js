@@ -94,6 +94,14 @@ window.bwStageLock = (function () {
         const btn = e.target && e.target.closest && e.target.closest('[data-bw-stage-open]');
         if (btn) {
             request();
+            return;
+        }
+
+        // The close pill leaves real fullscreen in the SAME task as the tap rather than waiting
+        // for the circuit to dispose the overlay, so the browser is never left fullscreen over an
+        // ordinary page. release() is a no-op when fullscreen was already left some other way.
+        if (e.target && e.target.closest && e.target.closest('[data-bw-stage-close]')) {
+            release();
         }
     }, true);
 
