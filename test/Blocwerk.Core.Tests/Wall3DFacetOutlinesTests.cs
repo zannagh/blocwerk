@@ -100,6 +100,16 @@ public class Wall3DFacetOutlinesTests
     }
 
     [Fact]
+    public void TrapezoidClip_IsNotForcedIntoATriangle()
+    {
+        static double Side(double a, double b) => a - (0.2 * b) - 300;
+        var outline = Wall3DFacetOutlines.ClipRect(new PlaneRectMm(0, 1000, 0, 1000), Side)!;
+
+        Assert.Same(outline, Wall3DFacetOutlines.AsTriangle(outline, Side));
+        Assert.Equal(4, outline.Count);
+    }
+
+    [Fact]
     public void HypotenuseParents_ListsOnlyTrianglesAttachedByTheirHypotenuse()
     {
         PlanSegment[] segments =
