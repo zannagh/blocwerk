@@ -9,7 +9,8 @@ using Microsoft.Extensions.Logging;
 namespace Blocwerk.Core.Capture;
 
 /// <summary>
-/// After detection: every photo has a sharpness score (uploads score on the way in; older ones are scored here), and the
+/// After detection: every photo has a sharpness score (uploads score on the way in; older ones, and the
+/// bogus 0 of photos scored before the scorer read colour JPEGs, are scored here: <see cref="CapturePhotoSharpness"/>), and the
 /// clearly blurry photos without a decoded marker are flagged <see cref="WallCapturePhoto.ExcludedBlurry"/>
 /// (<see cref="CaptureBlurFilter"/>), so feature matching and training never see them. The marker solve is unaffected:
 /// a photo it can use has markers and is never flagged.
@@ -44,18 +45,17 @@ public sealed partial class WallCaptureProcessor
         }
     }
 
+    /// <summary>Scores the photos without a real score: null, or the 0 stored before the scorer read colour JPEGs.</summary>
     private async Task ScoreMissingSharpnessAsync(List<WallCapturePhoto> photos, CancellationToken ct)
     {
-        foreach (var photo in photos.Where(p => p.Sharpness is null))
+        foreach (var photo in photos.Where(p => !CapturePhotoSharpness.IsScored(p.Sharpness)))
         {
-            var bytes = await files.ReadAsync(photo.StoredPath, ct);
-            if (bytes is null)
+            if (!await CapturePhotoSharpness.ScoreIfMissingAsync(photo, files, options.PhotoSharpnessEdge, ct))
             {
                 continue;
             }
 
-            var score = await Task.Run(() => CaptureFrameSharpness.Score(bytes, options.PhotoSharpnessEdge), ct);
-            photo.Sharpness = score;
+            var score = photo.Sharpness;
             await using var db = dbContextFactory.CreateDbContext();
             await db.WallCapturePhotos
                 .Where(p => p.Id == photo.Id)

@@ -25,6 +25,7 @@ public sealed partial class CapturePackageService
         var warnings = new List<string>();
         var rows = await LoadRowsAsync(db, captureId, warnings, ct);
         DropMissingOptionalFiles(rows.Capture, warnings);
+        await ScoreUnscoredPhotosAsync(rows.Photos, ct);
         var packageFiles = await DescribeFilesAsync(rows, ct);
         var capture = rows.Capture;
         var planJson = capture.PlanRevision is { } revision

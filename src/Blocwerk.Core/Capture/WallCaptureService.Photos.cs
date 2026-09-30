@@ -67,7 +67,8 @@ public sealed partial class WallCaptureService
                 DeviceGravityX = gravity?.X,
                 DeviceGravityY = gravity?.Y,
                 DeviceGravityZ = gravity?.Z,
-                Sharpness = await Task.Run(() => CaptureFrameSharpness.Score(clean, PipelineOptions.PhotoSharpnessEdge), ct),
+                Sharpness = CapturePhotoSharpness.Stored(
+                    await Task.Run(() => CaptureFrameSharpness.Score(clean, PipelineOptions.PhotoSharpnessEdge), ct)),
                 MarkersJson = markers is null ? null : JsonSerializer.Serialize(markers),
             };
             db.WallCapturePhotos.Add(photo);

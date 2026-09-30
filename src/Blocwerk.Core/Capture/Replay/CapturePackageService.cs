@@ -30,7 +30,8 @@ public sealed partial class CapturePackageService(
     IComputeJobClientFactory computeClients,
     ILogger<CapturePackageService> logger,
     GpuRunnerOptions? runnerOptions = null,
-    DiskSpaceProbe? diskSpace = null) : ICapturePackageService
+    DiskSpaceProbe? diskSpace = null,
+    WallCapturePipelineOptions? pipelineOptions = null) : ICapturePackageService
 {
     private readonly CapturePackageStaging staging = new(files);
     private readonly DiskSpaceProbe disk = diskSpace ?? new DiskSpaceProbe();

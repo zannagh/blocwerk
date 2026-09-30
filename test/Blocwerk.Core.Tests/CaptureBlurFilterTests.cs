@@ -22,12 +22,12 @@ public class CaptureBlurFilterTests
         var photos = new List<WallCapturePhoto>
         {
             Photo(1, 900, true), Photo(2, 1000, false), Photo(3, 1100, false), Photo(4, 950, false),
-            Photo(5, 150, false), Photo(6, 120, true), Photo(7, 400, false), Photo(8, null, false),
+            Photo(5, 150, false), Photo(6, 120, true), Photo(7, 400, false), Photo(8, null, false), Photo(9, 0, false),
         };
 
         var blurry = CaptureBlurFilter.Blurry(photos, CaptureBlurFilter.DefaultRatio);
 
-        // Reference: the 75th percentile of the scores (950); below 190 and no marker: photo 5 only.
+        // Reference: the 75th percentile of the scores (950); below 190 and no marker: photo 5 only (a 0 is no score).
         Assert.Equal([5], blurry.Order());
         Assert.Empty(CaptureBlurFilter.Blurry(photos, 0));
         Assert.Empty(CaptureBlurFilter.Blurry(photos.Skip(3).Take(4).ToList(), CaptureBlurFilter.DefaultRatio)); // 4 scored: not judged

@@ -30,7 +30,7 @@ public static class CaptureBlurFilter
     /// <param name="ratio">Share of the reference sharpness below which a photo without markers is left out.</param>
     public static IReadOnlySet<int> Blurry(IReadOnlyCollection<WallCapturePhoto> photos, double ratio)
     {
-        var scores = photos.Where(p => p.Sharpness is > 0).Select(p => p.Sharpness!.Value).Order().ToList();
+        var scores = photos.Where(p => CapturePhotoSharpness.IsScored(p.Sharpness)).Select(p => p.Sharpness!.Value).Order().ToList();
         if (ratio <= 0 || scores.Count < MinScoredPhotos)
         {
             return new HashSet<int>();
@@ -38,7 +38,7 @@ public static class CaptureBlurFilter
 
         var threshold = ratio * scores[(int)Math.Floor(ReferencePercentile * (scores.Count - 1))];
         return photos
-            .Where(p => p.Sharpness is { } s && s < threshold && p.MarkersJson is not null && !HasUsableMarker(p))
+            .Where(p => CapturePhotoSharpness.IsScored(p.Sharpness) && p.Sharpness < threshold &&p.MarkersJson is not null && !HasUsableMarker(p))
             .Select(p => p.Index)
             .ToHashSet();
     }

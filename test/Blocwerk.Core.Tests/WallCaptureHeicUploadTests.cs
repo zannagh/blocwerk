@@ -76,7 +76,7 @@ public class WallCaptureHeicUploadTests
     {
         using var h = new WallTestHarness();
         var heic = AppleMakerNoteExif.Heic(ExifCameraReader.FindTiff(ExifJpeg.Build(CaptureScenario.TinyJpeg())).ToArray());
-        using var s = new CaptureScenario(h, photoConverter: new FakeConverter(CaptureScenario.TinyJpeg()));
+        using var s = new CaptureScenario(h, photoConverter: new FakeConverter(CaptureFrameSharpnessTests.ColourJpeg(blurSigma: 0)));
         var draft = await OpenDraftAsync(h, s);
 
         var result = await s.Service.AddPhotoAsync(draft, "IMG_3.HEIC", heic, CancellationToken.None);
@@ -85,7 +85,7 @@ public class WallCaptureHeicUploadTests
         await using var db = h.CreateContext();
         var photo = await db.WallCapturePhotos.SingleAsync();
         Assert.StartsWith("cam-", photo.CameraGroup, StringComparison.Ordinal);
-        Assert.NotNull(photo.Sharpness);
+        Assert.True(photo.Sharpness > 0, $"sharpness {photo.Sharpness}");
         Assert.False(photo.ExcludedBlurry);
     }
 

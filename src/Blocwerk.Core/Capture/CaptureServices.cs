@@ -71,6 +71,10 @@ public static class CaptureServices
         // Level-of-detail ladders of photo-real scenes stored before the ladder existed.
         services.AddSingleton<SplatLodBackfill>();
         services.AddHostedService(sp => sp.GetRequiredService<SplatLodBackfill>());
+
+        // Sharpness of capture photos stored unscored, or with the 0 every photo got before the scorer read colour JPEGs.
+        services.AddSingleton<CapturePhotoSharpnessBackfill>();
+        services.AddHostedService(sp => sp.GetRequiredService<CapturePhotoSharpnessBackfill>());
         return services;
     }
 }

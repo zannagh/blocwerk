@@ -30,7 +30,7 @@ public class CaptureFrameSharpnessTests
         Assert.Equal(0, CaptureFrameSharpness.Score([1, 2, 3, 4]));
     }
 
-    private static byte[] ColourJpeg(float blurSigma)
+    internal static byte[] ColourJpeg(float blurSigma)
     {
         using var surface = SKSurface.Create(new SKImageInfo(640, 480));
         var canvas = surface.Canvas;

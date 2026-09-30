@@ -42,6 +42,7 @@ public sealed partial class CapturePackageService
         var moved = MoveIntoStore(importId, report.Files);
         try
         {
+            await ScoreUnscoredPhotosAsync(manifest.Rows.Photos, ct);
             await InsertAsync(manifest, ct);
         }
         catch
