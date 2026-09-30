@@ -2,6 +2,8 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Detection.Enrichment;
+using Blocwerk.Core.Entities;
 using Blocwerk.Core.Geometry;
 using Blocwerk.Core.Geometry.Footprints;
 using Blocwerk.Core.Geometry.Proposals;
@@ -19,6 +21,8 @@ public class HoldProposalFinderTests
     private static readonly FacetFrame Wall = HoldFootprintEstimatorTests.Wall;
 
     private static readonly CastFacet[] Facets = [new CastFacet("0", Wall, new PlaneRectMm(0, 3000, 0, 2000), [])];
+
+    private static readonly Dictionary<string, FacetFrame> Frames = new() { ["0"] = Wall };
 
     private static readonly Dictionary<string, SolvedCamera> Cameras = new()
     {
@@ -69,6 +73,53 @@ public class HoldProposalFinderTests
 
         Assert.Empty(candidates);
     }
+
+    [Fact]
+    public void HoldPlacedOnlyThroughItsPanelPhoto_IsNotProposed_ANewHoldFarAwayIs()
+    {
+        var panel = Guid.NewGuid();
+        var peers = new[] { 300.0, 1500, 2700 }.SelectMany(a => new[] { 300.0, 1600, 1900 }.Select(b => Photo(panel, a, b, placed: true)));
+        var markerOnly = Photo(panel, 1000, 900, placed: false);
+        var refs = KnownHoldReferences.Build([.. peers, markerOnly], new WallGeometryDocument(), Frames, new Dictionary<Wall3DPhotoKey, double[]>(), null);
+        var existing = Wall.ToWorld(1000, 900, 25);
+        var fresh = Wall.ToWorld(1800, 1100, 25);
+
+        var (candidates, _) = HoldProposalFinder.Find(Cameras, Detect(existing, 60).Concat(Detect(fresh, 60)), Facets, refs, []);
+
+        Assert.Contains(refs, r => r.Id == markerOnly.Id);
+        var c = Assert.Single(candidates);
+        Assert.InRange(RayMath.Length(c.World, fresh), 0, 5);
+    }
+
+    [Fact]
+    public void TwoCandidatesOfOneHold_AreMerged_TheStrongerStays()
+    {
+        var strong = Candidate(Wall.ToWorld(1000, 900, 25), views: 5);
+        var split = Candidate(Wall.ToWorld(1020, 910, 25), views: 3);
+        var other = Candidate(Wall.ToWorld(1300, 900, 25), views: 3);
+
+        var kept = HoldProposalFinder.Distinct([strong, split, other]);
+
+        Assert.Equal([strong, other], kept);
+    }
+
+    /// <summary>A hold drawn on the test panel photo, which maps a to x and b to 1 − y over 3000 × 2000 mm.</summary>
+    private static Hold Photo(Guid panel, double a, double b, bool placed) => new()
+    {
+        WallPanelId = panel,
+        X = a / 3000,
+        Y = 1 - (b / 2000),
+        Radius = 0.01,
+        FacetId = placed ? "0" : null,
+        PlaneAMm = placed ? a : null,
+        PlaneBMm = placed ? b : null,
+        WidthMm = 50,
+        HeightMm = 50,
+        MetricSource = placed ? HoldMetric.TextureRegistration : HoldMetric.LocalMarker,
+    };
+
+    private static HoldProposalCandidate Candidate(double[] world, int views) =>
+        new("0", 0, 0, 25, world, 60, views, 0.9, 1, new CaptureDetection("p1", 0, 0, 10, 0.9), []);
 
     private static IEnumerable<CaptureDetection> Detect(double[] point, double sizeMm) =>
         Cameras.Values.Select(c => DetectIn(c, point, sizeMm)).OfType<CaptureDetection>();

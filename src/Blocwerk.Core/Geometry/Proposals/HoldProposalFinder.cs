@@ -67,7 +67,27 @@ public static class HoldProposalFinder
             }
         }
 
-        return (result.OrderByDescending(c => c.Views).ThenByDescending(c => c.Confidence).ToList(), clusters.Count);
+        return (Distinct(result.OrderByDescending(c => c.Views).ThenByDescending(c => c.Confidence)), clusters.Count);
+    }
+
+    /// <summary>
+    /// One candidate per physical hold: a candidate within <see cref="MatchMm"/> (or half the larger size) of a
+    /// stronger one is the same hold seen by other photos, which the greedy clusterer can split in two.
+    /// </summary>
+    /// <param name="ranked">The candidates, strongest first.</param>
+    /// <returns>The kept candidates, in order.</returns>
+    public static List<HoldProposalCandidate> Distinct(IEnumerable<HoldProposalCandidate> ranked)
+    {
+        var kept = new List<HoldProposalCandidate>();
+        foreach (var c in ranked)
+        {
+            if (!kept.Any(k => Distance(k.World, c.World) <= Math.Max(MatchMm, Math.Max(k.SizeMm, c.SizeMm) / 2)))
+            {
+                kept.Add(c);
+            }
+        }
+
+        return kept;
     }
 
     private static HoldProposalCandidate? Candidate(
