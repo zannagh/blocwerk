@@ -16,7 +16,8 @@ namespace Blocwerk.Core.Capture.Coverage;
 /// <param name="SpreadDeg">The widest angle between two view rays, degrees.</param>
 /// <param name="BestAngleDeg">The most face-on view's angle off the surface normal, degrees (90 without views).</param>
 /// <param name="BestMmPerPx">The finest resolution, mm per pixel (infinity without views).</param>
-public readonly record struct PointViews(int Views, int Directions, double SpreadDeg, double BestAngleDeg, double BestMmPerPx)
+/// <param name="Blocked">Cameras that frame it from its front but whose line of sight another facet blocks.</param>
+public readonly record struct PointViews(int Views, int Directions, double SpreadDeg, double BestAngleDeg, double BestMmPerPx, int Blocked = 0)
 {
     /// <summary>Fewer distinct directions than this: "seen from &lt; 3 directions".</summary>
     public const int MinDirections = 3;
@@ -30,9 +31,12 @@ public readonly record struct PointViews(int Views, int Directions, double Sprea
     /// <summary>Two rays closer than this are the same direction, degrees.</summary>
     public const double DirectionSeparationDeg = 15;
 
-    /// <summary>The rating: never seen, then only grazing, then too few directions, then only far away.</summary>
+    /// <summary>
+    /// The rating: hidden behind other facets from every camera that frames it (inside the wall), never seen, then only
+    /// grazing, then too few directions, then only far away.
+    /// </summary>
     public CoverageCellStatus Status =>
-        Views == 0 ? CoverageCellStatus.Never
+        Views == 0 ? (Blocked > 0 ? CoverageCellStatus.Hidden : CoverageCellStatus.Never)
         : BestAngleDeg > GrazingDeg ? CoverageCellStatus.Grazing
         : Directions < MinDirections ? CoverageCellStatus.FewDirections
         : BestMmPerPx > MaxMmPerPx ? CoverageCellStatus.LowResolution
@@ -51,14 +55,25 @@ public readonly record struct PointViews(int Views, int Directions, double Sprea
     {
         var minDot = Math.Cos(DirectionSeparationDeg * Math.PI / 180);
         var directions = new List<double[]>();
-        int views = 0;
+        int views = 0, blocked = 0;
         double bestCos = 0, bestMm = double.PositiveInfinity;
         foreach (var cam in cameras)
         {
             double[] v = [cam.Centre[0] - point[0], cam.Centre[1] - point[1], cam.Centre[2] - point[2]];
             var dist = Math.Sqrt(Dot(v, v));
             var cos = dist <= 0 ? 0 : Dot(v, normal) / dist;
-            if (cos <= 0.035 || !cam.InFrame(point) || scene.Occluded(cam.Centre, point, facetId, ownConvex))
+            if (cos <= 0.035 || !cam.InFrame(point))
+            {
+                continue;
+            }
+
+            if (scene.BlockedByFacet(cam.Centre, point, facetId))
+            {
+                blocked++;
+                continue;
+            }
+
+            if (scene.BlockedByVolume(cam.Centre, point, ownConvex))
             {
                 continue;
             }
@@ -73,7 +88,8 @@ public readonly record struct PointViews(int Views, int Directions, double Sprea
             }
         }
 
-        return new PointViews(views, directions.Count, Spread(directions), Math.Acos(Math.Clamp(bestCos, 0, 1)) * 180 / Math.PI, bestMm);
+        var bestDeg = Math.Acos(Math.Clamp(bestCos, 0, 1)) * 180 / Math.PI;
+        return new PointViews(views, directions.Count, Spread(directions), bestDeg, bestMm, blocked);
     }
 
     private static double Spread(List<double[]> rays)

@@ -42,7 +42,7 @@ public sealed record CaptureCoverageReport(
     string? VolumesFingerprint = null)
 {
     /// <summary>The current format.</summary>
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {

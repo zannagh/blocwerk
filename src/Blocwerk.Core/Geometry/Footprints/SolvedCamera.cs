@@ -21,6 +21,23 @@ namespace Blocwerk.Core.Geometry.Footprints;
 /// <param name="T">Translation.</param>
 public sealed record SolvedCamera(string Image, int Width, int Height, double[] K, double[] Dist, double[] R, double[] T)
 {
+    /// <summary>The fold search covers normalized radii up to this.</summary>
+    private const double FoldSearchRadius = 10;
+
+    private readonly double[] dist = Dist;
+    private readonly double foldRadius2 = FoldRadius2(Dist);
+
+    /// <summary>Distortion coefficients (k1, k2, p1, p2[, k3]).</summary>
+    public double[] Dist
+    {
+        get => dist;
+        init
+        {
+            dist = value;
+            foldRadius2 = FoldRadius2(value);
+        }
+    }
+
     /// <summary>The camera centre in world millimetres (−Rᵀt).</summary>
     public double[] Centre =>
     [
@@ -74,7 +91,7 @@ public sealed record SolvedCamera(string Image, int Width, int Height, double[] 
         return this with { Width = width, Height = height, K = [K[0] * sx, K[1] * sx, K[2] * sx, K[3], K[4] * sy, K[5] * sy, 0, 0, 1] };
     }
 
-    /// <summary>The pixel of a world point, or null when it lies behind the camera.</summary>
+    /// <summary>The pixel of a world point, or null when it lies behind the camera or past the lens model's fold (<see cref="FoldRadius2"/>).</summary>
     /// <param name="world">World point, mm.</param>
     /// <returns>The distorted pixel position.</returns>
     public (double X, double Y)? Project(double[] world)
@@ -87,8 +104,38 @@ public sealed record SolvedCamera(string Image, int Width, int Height, double[] 
             return null;
         }
 
-        var (xd, yd) = Distort(xc / zc, yc / zc);
+        double x = xc / zc, y = yc / zc;
+        if ((x * x) + (y * y) > foldRadius2)
+        {
+            return null;
+        }
+
+        var (xd, yd) = Distort(x, y);
         return ((K[0] * xd) + (K[1] * yd) + K[2], (K[4] * yd) + K[5]);
+    }
+
+    /// <summary>
+    /// The squared normalized radius up to which the radial distortion r·(1 + k1 r² + k2 r⁴ + k3 r⁶) still grows; past
+    /// it the polynomial folds back (k1 &gt; 0, k2 &lt; 0 at a wide angle) and points far outside the field of view land
+    /// inside the image again, mirrored. Infinity when it does not fold within <see cref="FoldSearchRadius"/>.
+    /// </summary>
+    /// <param name="dist">Distortion coefficients (k1, k2, p1, p2[, k3]).</param>
+    /// <returns>The squared radius.</returns>
+    public static double FoldRadius2(double[] dist)
+    {
+        double k1 = At(dist, 0), k2 = At(dist, 1), k3 = At(dist, 4);
+        const int Steps = 20000;
+        for (var i = 1; i <= Steps; i++)
+        {
+            var r = FoldSearchRadius * i / Steps;
+            var s = r * r;
+            if (1 + (3 * k1 * s) + (5 * k2 * s * s) + (7 * k3 * s * s * s) <= 0)
+            {
+                return s;
+            }
+        }
+
+        return double.PositiveInfinity;
     }
 
     /// <summary>The pixel's viewing ray in world coordinates: unit direction from <see cref="Centre"/>.</summary>
@@ -158,7 +205,9 @@ public sealed record SolvedCamera(string Image, int Width, int Height, double[] 
         return (x, y);
     }
 
-    private double D(int i) => i < Dist.Length ? Dist[i] : 0;
+    private static double At(double[] dist, int i) => i < dist.Length ? dist[i] : 0;
+
+    private double D(int i) => At(Dist, i);
 
     private static double[] Numbers(JsonElement e, string name) =>
         e.TryGetProperty(name, out var a) && a.ValueKind == JsonValueKind.Array

@@ -40,7 +40,9 @@ public sealed record CoverageVideoInput(bool HasVideo, int FramesExtracted, int?
 /// <param name="Region">Its extent (markers and placed holds), mm.</param>
 /// <param name="OverhangDeg">Tilt from vertical (positive = overhanging), or 0 when unknown.</param>
 /// <param name="YawDeg">Turn relative to the reference facet, or 0.</param>
-public sealed record CoverageFacet(string Id, string Name, FacetFrame Frame, PlaneRectMm Region, double OverhangDeg, double YawDeg);
+/// <param name="MarkerCorners">Its markers' corners, [a, b] mm (they say which side of a seam the facet is on).</param>
+public sealed record CoverageFacet(
+    string Id, string Name, FacetFrame Frame, PlaneRectMm Region, double OverhangDeg, double YawDeg, IReadOnlyList<double[]>? MarkerCorners = null);
 
 /// <summary>A visible volume: its number, its facet, its height field and outline.</summary>
 /// <param name="Index">Its number ("Volume 3").</param>

@@ -38,13 +38,13 @@ public static class FacetCoverageRater
         for (var k = 0; k < views.Length; k++)
         {
             var (a, b) = grid.Centre(k);
-            var point = facet.Frame.ToWorld(a, b);
-            if (scene.UnderVolume(facet.Id, a, b) || scene.InsideWall(facet.Id, point))
+            if (scene.UnderVolume(facet.Id, a, b))
             {
                 status[k] = CoverageCellStatus.Hidden;
                 continue;
             }
 
+            var point = facet.Frame.ToWorld(a, b);
             views[k] = PointViews.Evaluate(point, facet.Frame.Normal, facet.Id, cameras, scene);
             status[k] = views[k].Status;
         }

@@ -69,7 +69,7 @@ public static class CaptureCoverageAnalyzer
                 var name = segment.Name ?? $"Segment {segment.Index}";
                 name = segment.Facets.Count > 1 ? $"{name} ({facet.Id})" : name;
                 var overhang = facet.MeasuredAngleDeg ?? segment.MeasuredAngleDeg ?? segment.DeclaredAngleDeg ?? 0;
-                result.Add(new CoverageFacet(facet.Id, name, frame, region, overhang, facet.YawDeg ?? 0));
+                result.Add(new CoverageFacet(facet.Id, name, frame, region, overhang, facet.YawDeg ?? 0, MarkerCorners(doc, facet.Id)));
             }
         }
 
@@ -92,15 +92,14 @@ public static class CaptureCoverageAnalyzer
 
     private static PlaneRectMm? MarkerBounds(WallGeometryDocument doc, string facetId)
     {
-        var bounds = PlaneRectMm.Bounds(doc.Markers
-            .Where(m => m.Facet == facetId)
-            .SelectMany(m => m.CornersPlaneMm)
-            .Where(c => c.Length >= 2)
-            .Select(c => (c[0], c[1])));
+        var bounds = PlaneRectMm.Bounds(MarkerCorners(doc, facetId).Select(c => (c[0], c[1])));
         return bounds is { } b
             ? new PlaneRectMm(b.AMin - MarkerMarginMm, b.AMax + MarkerMarginMm, b.BMin - MarkerMarginMm, b.BMax + MarkerMarginMm)
             : null;
     }
+
+    private static List<double[]> MarkerCorners(WallGeometryDocument doc, string facetId) =>
+        doc.Markers.Where(m => m.Facet == facetId).SelectMany(m => m.CornersPlaneMm).Where(c => c.Length >= 2).ToList();
 
     private static double[] Up(WallGeometryDocument doc)
     {

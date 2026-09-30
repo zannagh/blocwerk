@@ -2,80 +2,49 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
-using System.Text.Json;
 using Blocwerk.Core.Capture.Coverage;
 using Blocwerk.Core.Geometry;
+using static Blocwerk.Core.Tests.CoverageSceneFixtures;
 
 namespace Blocwerk.Core.Tests;
 
 /// <summary>
-/// Which parts of a facet's region lie inside the wall: only a facet whose plane meets the region hides part of it
-/// (an adjacent side panel's rectangle poking behind the wall it meets), never a distant or parallel panel.
+/// Which parts of a facet's region are not rated: only where another facet's real board blocks every camera that frames
+/// it, or where it lies beyond the facet's marker-confirmed seam. A distant, parallel or behind panel never hides it.
 /// </summary>
 public class CoverageSceneInsideWallTests
 {
-    private static readonly object MainWall = Facet("main", [0, 0, 0], [1, 0, 0], [0, -1, 0], 0, 5130);
+    private static readonly CoverageFacet MainWall =
+        Facet("main", [0, 0, 0], [1, 0, 0], [0, 0, 1], [0, -1, 0], new PlaneRectMm(0, 5130, 0, 3500));
+
+    private static readonly List<CoverageCamera> FrontCameras = Cameras(
+        [[1000, -3000, 1500], [2500, -3000, 1500], [4000, -3000, 1500]],
+        [[1200, 0, 1000], [2500, 0, 2500], [3800, 0, 1000]]);
 
     [Fact]
     public void AFarSidePanel_DoesNotHideTheMainWall()
     {
-        var scene = Scene(MainWall, Facet("far", [5721, 0, 0], [0, -1, 0], [1, 0, 0], -3000, 3000));
+        var scene = new CoverageScene([MainWall, Facet("far", [5721, 0, 0], [0, -1, 0], [0, 0, 1], [1, 0, 0], new PlaneRectMm(-3000, 3000, 0, 3500))], []);
 
-        Assert.All(MainWallPoints(), p => Assert.False(scene.InsideWall("main", p), $"({p[0]}, {p[2]}) hidden"));
+        Assert.DoesNotContain(CoverageCellStatus.Hidden, Rate(scene, "main", FrontCameras).Status);
     }
 
     [Fact]
-    public void AParallelPanel_DoesNotHideTheMainWall()
+    public void AParallelPanelBehindTheWall_DoesNotHideIt()
     {
-        var scene = Scene(MainWall, Facet("front", [0, -2000, 0], [1, 0, 0], [0, -1, 0], 0, 5130));
+        var scene = new CoverageScene([MainWall, Facet("back", [0, 2000, 0], [1, 0, 0], [0, 0, 1], [0, -1, 0], new PlaneRectMm(0, 5130, 0, 3500))], []);
 
-        Assert.All(MainWallPoints(), p => Assert.False(scene.InsideWall("main", p), $"({p[0]}, {p[2]}) hidden"));
+        Assert.DoesNotContain(CoverageCellStatus.Hidden, Rate(scene, "main", FrontCameras).Status);
     }
 
     [Fact]
     public void AnAdjacentSidePanel_IsHiddenWhereItsRegionReachesBehindTheWall()
     {
-        var scene = Scene(
-            MainWall,
-            Facet("side", [5000, 0, 0], [0, -1, 0], [1, 0, 0], -1000, 3000),
-            Facet("far", [8000, 0, 0], [0, -1, 0], [1, 0, 0], -3000, 3000));
+        var side = Facet("side", [5000, 0, 0], [0, 1, 0], [0, 0, 1], [-1, 0, 0], new PlaneRectMm(-3000, 1000, 0, 3500));
+        var scene = new CoverageScene([MainWall, side], []);
+        List<CoverageCamera> cameras = [CoverageFixtures.Photo([2500, -2500, 1500], [5000, -500, 1500])];
 
-        Assert.True(scene.InsideWall("side", [5000, 500, 1500]));
-        Assert.False(scene.InsideWall("side", [5000, -1500, 1500]));
+        Assert.Equal(CoverageCellStatus.Hidden, PointViews.Evaluate([5000, 500, 1500], [-1, 0, 0], "side", cameras, scene).Status);
+        Assert.Equal(1, PointViews.Evaluate([5000, -1500, 1500], [-1, 0, 0], "side", cameras, scene).Views);
     }
-
-    private static IEnumerable<double[]> MainWallPoints()
-    {
-        for (var x = 300.0; x < 5000; x += 400)
-        {
-            for (var z = 300.0; z < 3500; z += 400)
-            {
-                yield return [x, 0, z];
-            }
-        }
-    }
-
-    private static CoverageScene Scene(params object[] facets)
-    {
-        var doc = WallGeometryDocument.Parse(JsonSerializer.Serialize(new
-        {
-            version = 1,
-            units = "mm",
-            world = new { up = new[] { 0.0, 0, 1 } },
-            segments = facets.Select((f, i) => new { index = i, name = $"S{i}", measuredAngleDeg = 0.0, facets = new[] { f } }),
-            markers = Array.Empty<object>(),
-        }));
-        return new CoverageScene(CaptureCoverageAnalyzer.Facets(doc, new Dictionary<string, PlaneRectMm>()), []);
-    }
-
-    private static object Facet(string id, double[] origin, double[] u, double[] normal, double aMin, double aMax) => new
-    {
-        id,
-        origin,
-        u,
-        v = new[] { 0.0, 0, 1 },
-        normal,
-        yawDeg = 0.0,
-        extentMm = new { aMin, aMax, bMin = 0, bMax = 3500 },
-    };
 }
