@@ -65,7 +65,7 @@ public sealed partial class CapturePackageService
             problems.Add("A photo or texture row belongs to another capture or model.");
         }
 
-        if (job.CaptureId != capture.Id || job.GeometryModelId != model.Id || job.WallId != m.WallId || job.ResultPath is null)
+        if (job.CaptureId != capture.Id || !ViewFitsModel(m) || job.WallId != m.WallId || job.ResultPath is null)
         {
             problems.Add("The GPU job row does not belong to the capture, or carries no trained result.");
         }

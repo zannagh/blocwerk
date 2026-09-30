@@ -19,6 +19,11 @@ public sealed partial class CapturePackageService
     {
         var blockers = new List<string>();
         var warnings = m.Warnings.Select(w => $"Source: {w}").ToList();
+        if (m.Rows.GpuJob.GeometryModelId != m.Rows.Model.Id)
+        {
+            warnings.Add($"The capture's model {m.Rows.Model.Id} was solved again after training; the trained view (trained for model {m.Rows.GpuJob.GeometryModelId}, same frame) is installed for it.");
+        }
+
         bool already;
         await using (var db = dbContextFactory.CreateDbContext())
         {
@@ -106,21 +111,7 @@ public sealed partial class CapturePackageService
             warnings.Add("Printed markers are switched off for this wall here; switch them on (marker size) as on the source.");
         }
 
-        if (m.PlanRevision is not { } revision)
-        {
-            return;
-        }
-
-        var plan = await db.WallMarkerPlans.AsNoTracking().Where(p => p.WallId == m.WallId && p.Revision == revision)
-            .Select(p => p.Json).FirstOrDefaultAsync(ct);
-        if (plan is null)
-        {
-            blockers.Add($"Marker plan revision {revision} of the wall does not exist here: save the plan here first (the panel update).");
-        }
-        else if (m.PlanJson is not null && !SameJson(plan, m.PlanJson))
-        {
-            warnings.Add($"Marker plan revision {revision} differs here from the source's.");
-        }
+        await PlanProblemsAsync(db, m, blockers, warnings, ct);
     }
 
     private static async Task ModelProblemsAsync(
@@ -142,7 +133,7 @@ public sealed partial class CapturePackageService
 
         if (m.ReferenceModelId is { } reference && !await db.WallGeometryModels.AnyAsync(x => x.Id == reference, ct))
         {
-            warnings.Add($"The model was registered to model {reference}, which is not here; it becomes this wall's frame on its own.");
+            warnings.Add($"The model was registered to model {reference}, which is not here; it becomes this wall's frame as it is (the registration is kept as history only).");
         }
     }
 

@@ -12,6 +12,8 @@ namespace Blocwerk.Core.Capture.Replay;
 /// The commit: checked again, the staged files moved into the capture store (stamped as new, so the orphan sweep's grace
 /// covers the moment before the rows exist), then every row in ONE transaction through the normal activation swap
 /// (<see cref="WallGlyphService.SwapActiveModelAsync"/>), then the capture is queued. A failed insert moves the files back.
+/// The capture and model take this server's number of the same marker plan; a model registered to a model that is not here
+/// keeps that registration as history only.
 /// </summary>
 public sealed partial class CapturePackageService
 {
@@ -93,14 +95,22 @@ public sealed partial class CapturePackageService
         await using var db = dbContextFactory.CreateDbContext();
         var wall = await db.Walls.IgnoreQueryFilters().FirstAsync(w => w.Id == m.WallId, ct);
         var previous = await db.WallGeometryModels.Where(x => x.WallId == m.WallId && x.IsActive).Select(x => (Guid?)x.Id).FirstOrDefaultAsync(ct);
-        var model = CapturePackageRowCopies.Model(rows.Model, previous, m.ReferenceModelId);
+        var referenceHere = m.ReferenceModelId is { } reference && await db.WallGeometryModels.AnyAsync(x => x.Id == reference, ct);
+        var model = CapturePackageRowCopies.Model(rows.Model, previous, m.ReferenceModelId, referenceHere);
+        var capture = CapturePackageRowCopies.Capture(rows.Capture);
+        if (m.PlanRevision is not null && (await TargetPlanRevisionAsync(db, m, ct)).Revision is { } planRevision)
+        {
+            capture.PlanRevision = planRevision;
+            model.PlanRevision = planRevision;
+        }
+
         await WallGlyphService.SwapActiveModelAsync(db, m.WallId, document, keep: null, () =>
         {
             db.WallGeometryModels.Add(model);
-            db.WallCaptures.Add(CapturePackageRowCopies.Capture(rows.Capture));
+            db.WallCaptures.Add(capture);
             db.WallCapturePhotos.AddRange(rows.Photos);
             db.WallGeometryTextures.AddRange(rows.Textures);
-            db.GpuJobs.Add(CapturePackageRowCopies.DeliveredJob(rows.GpuJob, now));
+            db.GpuJobs.Add(CapturePackageRowCopies.DeliveredJob(rows.GpuJob, model.Id, now));
             if (!document.IsFeatureFrame)
             {
                 wall.MarkerSizeMm ??= document.MarkerSizeMm;

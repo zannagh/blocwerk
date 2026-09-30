@@ -12,8 +12,8 @@ namespace Blocwerk.Core.Capture.Replay;
 
 /// <summary>
 /// The export: a finished capture whose trained photo-real view is still kept on the server (its newest GPU job, installed,
-/// with the runner's result and the prepared state) and whose model stands on its own (no correction of an earlier model,
-/// no facets carried over from one). Optional files that are gone (video, frames, sparse points) are left out with a
+/// with the runner's result and the prepared state; after a re-solve, the view its current model shares) and whose model
+/// stands on its own (no correction of an earlier model, no facets carried over from one). Optional files that are gone (video, frames, sparse points) are left out with a
 /// warning; a missing photo, texture or GPU file refuses the export.
 /// </summary>
 public sealed partial class CapturePackageService
@@ -108,6 +108,7 @@ public sealed partial class CapturePackageService
                 "The capture has no trained photo-real view kept on this server (a 3D runner's installed result with its prepared state), so it cannot be replayed without training.");
         }
 
+        await BindViewToModelAsync(db, job, model, warnings, ct);
         if (!model.IsActive)
         {
             warnings.Add("The capture's model is not the wall's active model here, so its photos fall under the photo retention (deleted 30 days after the capture ended by default): replay it soon.");

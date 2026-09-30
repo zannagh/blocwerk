@@ -14,10 +14,20 @@ internal static class CapturePackageRowCopies
 {
     internal const string ImportStage = "Photo-real view: finishing on the server (imported capture)";
 
-    /// <summary>The model, active. Replacing a model it is not tied to, it starts a new frame (hold positions derived again).</summary>
-    public static WallGeometryModel Model(WallGeometryModel model, Guid? previousActive, Guid? referenceModelId)
+    /// <summary>
+    /// The model, active. Registered to a model that is not here (<paramref name="referenceHere"/> false), it is this server's
+    /// frame as it is (the registration kept as history). Replacing a model it is not tied to, it starts a new frame (hold
+    /// positions derived again).
+    /// </summary>
+    public static WallGeometryModel Model(WallGeometryModel model, Guid? previousActive, Guid? referenceModelId, bool referenceHere)
     {
         model.IsActive = true;
+        if (referenceModelId is not null && !referenceHere)
+        {
+            model.Json = RegisteredGeometry.DetachFromReference(model.Json, "imported from another Blocwerk instance; the model it was registered to is not here");
+            referenceModelId = null;
+        }
+
         if (previousActive is { } previous && previous != referenceModelId)
         {
             model.Json = FrameLineage.StampReset(model.Json, previous, "imported from another Blocwerk instance, not tied to the model it replaced");
@@ -47,8 +57,10 @@ internal static class CapturePackageRowCopies
     /// The trained view as delivered by a runner and not installed, claimed by nobody: the capture pipeline finishes it
     /// (<c>splat-finish</c>) on this server's splat worker. Completed now, so the sweep's one-day give-up counts from here.
     /// </summary>
-    public static GpuJob DeliveredJob(GpuJob job, DateTimeOffset now)
+    /// <remarks>Bound to the capture's model: after a re-solve on the source the job still names the model it was trained for.</remarks>
+    public static GpuJob DeliveredJob(GpuJob job, Guid modelId, DateTimeOffset now)
     {
+        job.GeometryModelId = modelId;
         job.Status = GpuJobStatus.Succeeded;
         job.ClaimedByRunnerId = null;
         job.CompletedAt = now;
