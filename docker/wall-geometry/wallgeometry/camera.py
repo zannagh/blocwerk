@@ -32,6 +32,18 @@ def distort_norm(xn, yn, k):
     return xn * d, yn * d
 
 
+def max_valid_radius2(k, r_limit=10.0, steps=20001):
+    """Squared normalized radius up to which the radial model is monotonic (r * d(r) still grows).
+
+    Past it the polynomial folds back (a negative k2 at a wide angle): points far outside the field of
+    view land INSIDE the image again, mirrored and squeezed, and a texture sampled there is a streaky
+    smear. np.inf when it never folds within `r_limit`."""
+    r2 = np.linspace(0.0, r_limit, steps) ** 2
+    slope = 1 + 3 * k[0] * r2 + 5 * k[1] * r2 * r2 + 7 * k[2] * r2 * r2 * r2  # d(r * d(r)) / dr
+    bad = np.nonzero(slope <= 0)[0]
+    return float(r2[bad[0]]) if bad.size else np.inf
+
+
 def project(pc, intr, w, h, portrait_sign):
     """pc: (...,3) camera-frame points -> (...,2) pixels."""
     z = pc[..., 2]

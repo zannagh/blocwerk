@@ -28,6 +28,7 @@ import cv2
 import numpy as np
 
 from . import blend, consensus, exposure, flatten, occlusion, scale, seams, sourcemap
+from .camera import max_valid_radius2
 from .markercheck import marker_check
 
 DEFAULTS = {"behindOtherFacetMm": 30.0, "mmPerPx": 2.0, "maxSidePx": 4096, "extraMarginMm": 100.0, "labelCellPx": 8,
@@ -75,13 +76,15 @@ def output_pixels(doc, params):
 def _cam(c):
     K = np.array(c["K"], float).reshape(3, 3)
     d = np.array(c["dist"], float)
-    return {"K": K, "k": (d[0], d[1], d[4] if len(d) > 4 else 0.0),
+    k = (d[0], d[1], d[4] if len(d) > 4 else 0.0)
+    return {"K": K, "k": k, "r2max": max_valid_radius2(k),
             "R": np.array(c["R"], float).reshape(3, 3), "t": np.array(c["t"], float),
             "w": int(c["width"]), "h": int(c["height"])}
 
 
 def project(cam, X):
-    """World points (...,3) -> (pixels (...,2), depth (...), camera-frame points)."""
+    """World points (...,3) -> (pixels (...,2), depth (...), camera-frame points). A point past the
+    radius where the lens model folds back (camera.max_valid_radius2) gets a pixel far outside the image."""
     Xc = X @ cam["R"].T + cam["t"]
     z = Xc[..., 2]
     zs = np.where(z > 1e-6, z, 1e-6)
@@ -91,6 +94,7 @@ def project(cam, X):
     d = 1 + k1 * r2 + k2 * r2 * r2 + k3 * r2 * r2 * r2
     K = cam["K"]
     px = np.stack([K[0, 0] * xn * d + K[0, 2], K[1, 1] * yn * d + K[1, 2]], -1)
+    px[r2 >= cam.get("r2max", np.inf)] = -1e6
     return px, z, Xc
 
 

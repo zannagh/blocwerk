@@ -29,14 +29,35 @@ public static class CaptureFrameSharpness
 
         var scale = Math.Min(1f, Math.Max(1, edge) / (float)Math.Max(codec.Info.Width, codec.Info.Height));
         var size = codec.GetScaledDimensions(scale);
-        using var bitmap = new SKBitmap(new SKImageInfo(size.Width, size.Height, SKColorType.Gray8, SKAlphaType.Opaque));
+
+        // decoded as colour: Skia converts a JPEG to Gray8 only when the JPEG itself is greyscale, so a colour
+        // photo asked for as Gray8 fails the conversion (every photo then scored 0 and no blur was ever seen)
+        using var bitmap = new SKBitmap(new SKImageInfo(size.Width, size.Height, SKColorType.Rgba8888, SKAlphaType.Premul));
         var result = codec.GetPixels(bitmap.Info, bitmap.GetPixels());
         if (result is not (SKCodecResult.Success or SKCodecResult.IncompleteInput))
         {
             return 0;
         }
 
-        return LaplacianVariance(bitmap.GetPixelSpan(), bitmap.Width, bitmap.Height, bitmap.RowBytes);
+        var luma = Luma(bitmap.GetPixelSpan(), bitmap.Width, bitmap.Height, bitmap.RowBytes);
+        return LaplacianVariance(luma, bitmap.Width, bitmap.Height, bitmap.Width);
+    }
+
+    /// <summary>Rec. 601 luma of an RGBA8888 image, one byte per pixel, rows packed.</summary>
+    private static byte[] Luma(ReadOnlySpan<byte> rgba, int width, int height, int stride)
+    {
+        var grey = new byte[width * height];
+        for (var y = 0; y < height; y++)
+        {
+            var row = y * stride;
+            for (var x = 0; x < width; x++)
+            {
+                var i = row + (4 * x);
+                grey[(y * width) + x] = (byte)(((299 * rgba[i]) + (587 * rgba[i + 1]) + (114 * rgba[i + 2]) + 500) / 1000);
+            }
+        }
+
+        return grey;
     }
 
     /// <summary>Variance of the Laplacian over the interior pixels of an 8-bit grey image.</summary>
