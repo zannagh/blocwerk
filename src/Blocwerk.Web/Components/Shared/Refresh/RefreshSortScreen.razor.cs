@@ -2,6 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Capture;
 using Blocwerk.Core.Refresh;
 using Microsoft.AspNetCore.Components;
 
@@ -20,10 +21,17 @@ public partial class RefreshSortScreen
 
     private string VideoText => View.Videos.Count == 0 ? string.Empty : $" and {View.Videos.Count} videos";
 
-    private static string PanelName(PanelPick pick) =>
-        pick is { Col: 0, Row: 0 } ? "Centre panel" : $"Panel {pick.Col},{pick.Row}";
+    private static string PanelName(PanelPick pick) => PanelPositionName.Describe(pick.Col, pick.Row);
 
     private static string Percent(double share) => $"{Math.Round(share * 100):0} %";
+
+    private List<CapturePhotoResult> Others(PanelPick pick) =>
+        View.Photos.Where(p => pick.Candidates.All(c => c.PhotoId != p.PhotoId)).ToList();
+
+    private static string NewCaption(PanelPick pick, Guid? chosen) =>
+        pick.Candidates.FirstOrDefault(c => c.PhotoId == chosen) is { } candidate
+            ? $"New · shows {Percent(candidate.Coverage)} of the panel"
+            : "New";
 
     private Guid? Chosen(PanelPick pick) =>
         changes.TryGetValue((pick.Col, pick.Row), out var changed) ? changed : pick.PhotoId;
@@ -40,7 +48,7 @@ public partial class RefreshSortScreen
         return pick.Confidence switch
         {
             PanelPickConfidence.High => "Good match",
-            PanelPickConfidence.Medium => "Likely ?",
+            PanelPickConfidence.Medium => "Check this match",
             _ => "No match found",
         };
     }

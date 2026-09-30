@@ -130,11 +130,7 @@ else
                                     <span>Opening it continues where they left off.</span>
                                 </p>
                             }
-                            @if (_isAdmin && !KioskContext.IsKiosk)
-                            {
-                                <a class="btn-primary refresh-entry" href="/walls/@WallId/update">Update panels + 3D</a>
-                                <p class="field-hint">Drop all photos and videos from a visit: the app sorts them to the panels, updates the panels and the 3D model, and asks you to confirm before anything changes.</p>
-                            }
+                            @* "Update panels + 3D" sits in the wall rail beside the panels; this is the step-by-step flow. *@
                             <button class="btn-secondary bigupdate-entry" @onclick="OpenBigUpdate">
                                 @(_openUpdate is null ? "Update wall with new photos" : "Continue the wall update")
                             </button>
@@ -595,6 +591,15 @@ else
                         </svg>
                         View in 3D
                     </Wall3DLink>
+
+                    @* Wall admins' main way to bring the wall up to date after a visit. Not on share links or the
+                       wall tablet (the page refuses kiosks too); the step-by-step "Update wall with new photos"
+                       stays in the Wall Settings card. *@
+                    @if (_isAdmin && !KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
+                    {
+                        <a class="btn-primary refresh-entry" href="/walls/@WallId/update">Update panels + 3D</a>
+                        <p class="field-hint refresh-entry-hint">After a visit: drop all its photos and videos, check the panels, confirm.</p>
+                    }
 
                     @if (_showInviteLink && !string.IsNullOrEmpty(_shareLink))
                     {

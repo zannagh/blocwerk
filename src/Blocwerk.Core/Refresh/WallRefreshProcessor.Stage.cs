@@ -124,7 +124,7 @@ public sealed partial class WallRefreshProcessor
             linkedNew.Count,
             quick.OverlapsLeftOut,
             boulders,
-            photos.Select(p => $"({p.Col},{p.Row})").ToList());
+            photos.Select(p => PanelPositionName.Describe(p.Col, p.Row)).ToList());
     }
 
     private async Task<int> CountNeighbourNewAsync(

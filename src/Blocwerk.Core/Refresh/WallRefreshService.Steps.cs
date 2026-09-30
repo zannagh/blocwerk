@@ -96,7 +96,8 @@ public sealed partial class WallRefreshService
             if (!positions.Contains(toward))
             {
                 throw new UserFacingException(
-                    $"Panel ({col},{row}) can only get a new photo together with panel ({toward.Col},{toward.Row}), which is closer to the centre.");
+                    $"{PanelPositionName.Describe(col, row)} can only get a new photo together with "
+                    + $"{PanelPositionName.InSentence(toward.Col, toward.Row)}, which is closer to the centre.");
             }
         }
 

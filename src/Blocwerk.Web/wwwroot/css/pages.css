@@ -577,6 +577,12 @@ a.wall3d-link {
     display: flex; align-items: center; justify-content: center; gap: 8px;
     box-sizing: border-box; text-decoration: none; margin-bottom: 20px;
 }
+/* "Update panels + 3D" for wall admins, right under "View in 3D" in the wall rail. */
+a.refresh-entry {
+    display: flex; align-items: center; justify-content: center;
+    width: 100%; padding: 12px; box-sizing: border-box; text-decoration: none; margin-bottom: 4px;
+}
+.refresh-entry-hint { margin: 0 0 20px; text-align: center; }
 .stat-label {
     font-size: 0.7rem;
     font-weight: 600;

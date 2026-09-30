@@ -22,6 +22,7 @@ public partial class WallRefresh : IDisposable
     private WallRefreshView? view;
     private bool loading = true;
     private bool busy;
+    private bool confirmDiscard;
     private string? error;
     private string? blocked;
     private PeriodicTimer? timer;
@@ -38,6 +39,34 @@ public partial class WallRefresh : IDisposable
     private IKioskContext KioskContext { get; set; } = default!;
 
     private bool CanDiscard => view is { Status: WallRefreshStatus.Uploading or WallRefreshStatus.ReadyToStart or WallRefreshStatus.ReadyToApply };
+
+    private string DiscardQuestion
+    {
+        get
+        {
+            if (view is { Status: WallRefreshStatus.ReadyToApply })
+            {
+                return "Discard this panel update? The panels keep their current photos and holds.";
+            }
+
+            var photos = view?.Photos.Count ?? 0;
+            var videos = view?.Videos.Count ?? 0;
+            var parts = new List<string>();
+            if (photos > 0)
+            {
+                parts.Add(photos == 1 ? "1 photo" : $"{photos} photos");
+            }
+
+            if (videos > 0)
+            {
+                parts.Add(videos == 1 ? "1 video" : $"{videos} videos");
+            }
+
+            return parts.Count == 0
+                ? "Discard this update?"
+                : $"Discard {string.Join(" and ", parts)}? They are deleted; the wall stays as it is.";
+        }
+    }
 
     public void Dispose()
     {
@@ -95,7 +124,11 @@ public partial class WallRefresh : IDisposable
 
     private Task ApplyAsync() => ActAsync(id => Refreshes.ApplyAsync(id));
 
-    private Task DiscardAsync() => ActAsync(id => Refreshes.DiscardAsync(id));
+    private async Task DiscardAsync()
+    {
+        confirmDiscard = false;
+        await ActAsync(id => Refreshes.DiscardAsync(id));
+    }
 
     private async Task StartOverAsync()
     {

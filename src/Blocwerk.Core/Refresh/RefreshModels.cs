@@ -13,7 +13,7 @@ public enum PanelPickConfidence
     /// <summary>No photo matches well enough: the panel keeps its current photo unless the user picks one.</summary>
     None = 0,
 
-    /// <summary>Likely, but a close runner-up or partial coverage: shown with a "?" badge.</summary>
+    /// <summary>Likely, but a close runner-up or partial coverage: shown as "Check this match".</summary>
     Medium = 1,
 
     /// <summary>Covers the panel, frontal, clearly better than any other photo.</summary>
@@ -63,7 +63,7 @@ public sealed record RefreshVideo(string StoredName, string? FileName, long Size
 /// <param name="OverlapLinks">Holds linked across neighbouring panels (matches of 90 % or more).</param>
 /// <param name="OverlapsLeftOut">Overlap suggestions below 90 %, left unlinked.</param>
 /// <param name="BouldersOnKeptHolds">Boulders using a hold that was not found again.</param>
-/// <param name="Panels">The panels that get a new photo, as "(col,row)".</param>
+/// <param name="Panels">The panels that get a new photo, named for people ("Centre panel", "Right panel").</param>
 public sealed record RefreshSummary(
     int Refound,
     int KeptInPlace,

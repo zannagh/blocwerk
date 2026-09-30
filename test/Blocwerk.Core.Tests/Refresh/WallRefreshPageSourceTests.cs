@@ -20,9 +20,32 @@ public class WallRefreshPageSourceTests
         var markup = Read("src/Blocwerk.Web/Components/Pages/Walls/WallDetail.razor");
 
         var entry = markup.IndexOf("href=\"/walls/@WallId/update\">Update panels + 3D</a>", StringComparison.Ordinal);
-        var guard = markup.LastIndexOf("@if (_isAdmin && !KioskContext.IsKiosk)", entry, StringComparison.Ordinal);
+        var guard = markup.LastIndexOf("@if (_isAdmin && !KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))", entry, StringComparison.Ordinal);
         Assert.True(entry > 0, "entry link missing");
-        Assert.True(guard > 0 && entry - guard < 200, "entry must sit right inside the admin/kiosk guard");
+        Assert.True(guard > 0 && entry - guard < 200, "entry must sit right inside the admin/kiosk/share-link guard");
+        Assert.Equal(entry, markup.LastIndexOf("href=\"/walls/@WallId/update\"", StringComparison.Ordinal));
+        Assert.Contains("\"Update wall with new photos\"", markup);
+    }
+
+    [Fact]
+    public void Discard_AsksFirst_InThePage()
+    {
+        var page = Read("src/Blocwerk.Web/Components/Pages/Walls/WallRefresh.razor");
+
+        Assert.Contains("@onclick=\"() => confirmDiscard = true\" disabled=\"@busy\">Discard this update</button>", page);
+        Assert.Contains("@onclick=\"DiscardAsync\" disabled=\"@busy\">Discard</button>", page);
+        Assert.Contains("@onclick=\"() => confirmDiscard = false\" disabled=\"@busy\">Keep</button>", page);
+        Assert.DoesNotContain("confirm(", page);
+    }
+
+    [Fact]
+    public void SortScreen_NamesPanelsByPlace_AndSaysWhatToCheck()
+    {
+        var sort = Read("src/Blocwerk.Web/Components/Shared/Refresh/RefreshSortScreen.razor.cs");
+
+        Assert.Contains("PanelPositionName.Describe(pick.Col, pick.Row)", sort);
+        Assert.Contains("\"Check this match\"", sort);
+        Assert.DoesNotContain("?\"", sort);
     }
 
     [Fact]

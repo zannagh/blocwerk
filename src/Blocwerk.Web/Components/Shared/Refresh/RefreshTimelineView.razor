@@ -47,11 +47,11 @@
     private static string Mark(RefreshStepState state) => state switch
     {
         RefreshStepState.Done => "✓",
-        RefreshStepState.Running => "…",
+        RefreshStepState.Running => string.Empty,
         RefreshStepState.Failed => "!",
         RefreshStepState.Skipped => "–",
         RefreshStepState.Waiting => "?",
-        _ => "·",
+        _ => string.Empty,
     };
 
     private static string StateText(RefreshStepState state) => state switch

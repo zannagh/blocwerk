@@ -148,7 +148,8 @@ public class WallRefreshFlowTests
         ];
 
         var ex = Assert.Throws<UserFacingException>(() => WallRefreshService.ApplyChoices(picks, []));
-        Assert.Contains("(1,0)", ex.Message);
+        Assert.Contains("Right panel", ex.Message);
+        Assert.Contains("the centre panel", ex.Message);
         Assert.Throws<UserFacingException>(() => WallRefreshService.ApplyChoices(picks, [new PanelChoice(0, 0, photo)]));
     }
 

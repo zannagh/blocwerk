@@ -58,9 +58,15 @@
         }
 
         <div class="refresh-actions">
-            @if (CanDiscard)
+            @if (CanDiscard && confirmDiscard)
             {
-                <button class="btn-secondary" @onclick="DiscardAsync" disabled="@busy">Discard this update</button>
+                <span class="refresh-discard-question" role="alert">@DiscardQuestion</span>
+                <button class="btn-danger" @onclick="DiscardAsync" disabled="@busy">Discard</button>
+                <button class="btn-secondary" @onclick="() => confirmDiscard = false" disabled="@busy">Keep</button>
+            }
+            else if (CanDiscard)
+            {
+                <button class="btn-secondary" @onclick="() => confirmDiscard = true" disabled="@busy">Discard this update</button>
             }
             @if (view is { Status: WallRefreshStatus.Done or WallRefreshStatus.Failed })
             {
