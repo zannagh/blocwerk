@@ -1,6 +1,7 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using Blocwerk.Core.Capture.FollowUp;
 using Blocwerk.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
@@ -11,7 +12,7 @@ namespace Blocwerk.Core.Capture;
 /// <summary>
 /// The single consumer of <see cref="WallModelResolveQueue"/>: solves finished captures' 3D models again one at a time
 /// (<see cref="WallCaptureProcessor.ResolveModelAsync"/>), beside the capture worker. On start it re-enqueues every
-/// re-solve a previous process left marked.
+/// re-solve a previous process left marked, and every adopted one whose follow-ups it left unfinished.
 /// </summary>
 public sealed class WallModelResolveWorker(
     WallModelResolveQueue queue, WallCaptureProcessor processor, RootDbContextFactory dbContextFactory, ILogger<WallModelResolveWorker> logger)
@@ -53,7 +54,8 @@ public sealed class WallModelResolveWorker(
         {
             await using var db = dbContextFactory.CreateDbContext();
             var marked = await db.WallCaptures
-                .Where(c => c.SolveJobId != null && c.SolveJobId.StartsWith(CaptureResolveMark.Mark))
+                .Where(c => (c.SolveJobId != null && c.SolveJobId.StartsWith(CaptureResolveMark.Mark))
+                    || (c.FollowUpJson != null && c.FollowUpJson.Contains(CaptureFollowUpRecord.RederiveMarker)))
                 .Select(c => c.Id)
                 .ToListAsync(ct);
             foreach (var captureId in marked)

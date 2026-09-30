@@ -17,12 +17,20 @@ namespace Blocwerk.Core.Capture.FollowUp;
 /// The model version whose derived data was carried onto the capture's model by a correction or a re-activation
 /// (<see cref="Corrections.CorrectionCarry"/>): the steps that derive it are recorded as kept instead of running again.
 /// </param>
+/// <param name="Rederive">
+/// The capture's model was replaced (solved again): every step runs again for the new model
+/// (<see cref="CaptureFollowUpChain.RunMissingAsync"/>), resumed after a restart until it is cleared.
+/// </param>
 public sealed record CaptureFollowUpRecord(
     [property: JsonPropertyName("steps")] IReadOnlyList<CaptureFollowUpEntry> Steps,
     [property: JsonPropertyName("note")] string? Note = null,
-    [property: JsonPropertyName("carriedFrom"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? CarriedFrom = null)
+    [property: JsonPropertyName("carriedFrom"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? CarriedFrom = null,
+    [property: JsonPropertyName("rederive"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool Rederive = false)
 {
     private static readonly JsonSerializerOptions Json = new() { Converters = { new JsonStringEnumConverter() } };
+
+    /// <summary>How a record marked <see cref="Rederive"/> reads in the stored JSON (to find the ones left to resume).</summary>
+    public const string RederiveMarker = "\"rederive\":true";
 
     /// <summary>Nothing recorded yet.</summary>
     public static CaptureFollowUpRecord Empty { get; } = new([]);

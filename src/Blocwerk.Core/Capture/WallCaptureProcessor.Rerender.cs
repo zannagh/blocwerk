@@ -14,7 +14,8 @@ namespace Blocwerk.Core.Capture;
 /// the capture worker (<see cref="WallTextureRerenderWorker"/>): only the textures job for the capture's active model,
 /// tracked on <see cref="WallCapture.TexturesJobId"/> (<see cref="CaptureTextureOutcome.RerenderMark"/>). The capture's
 /// status, stage and photo-real state (splat job, GPU jobs) are never touched, so a running photo-real stage goes on;
-/// only the texture half of <c>Error</c> changes. New textures re-place the holds (the chain's step that reads them).
+/// only the texture half of <c>Error</c> changes. New textures re-place the holds (the chain's step that reads them); after a
+/// re-solve (<see cref="CaptureFollowUpRecord.Rederive"/>) every other follow-up then runs again too.
 /// </summary>
 public sealed partial class WallCaptureProcessor
 {
@@ -49,6 +50,7 @@ public sealed partial class WallCaptureProcessor
         if (followUps is not null)
         {
             await followUps.RerunAsync(captureId, PlaceHoldsFollowUpStep.StepKey, ct);
+            await followUps.RunMissingAsync(captureId, ct);
         }
     }
 

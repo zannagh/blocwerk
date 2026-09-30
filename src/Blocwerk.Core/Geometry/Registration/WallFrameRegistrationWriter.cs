@@ -58,6 +58,7 @@ public static partial class WallFrameRegistrationWriter
         var rebased = RebaseClaimedFrames(root, reference, claims, renamed);
         RewriteMarkers(root, rebased, renamed, world);
         var carriedMarkers = Carry(root, referenceRoot, reference, carried, carryIds);
+        CoverCarried(root, rebased.Keys.Select(k => renamed[k]).ToHashSet(StringComparer.Ordinal), carriedMarkers);
         RefreshMarkerIds(root);
 
         root["world"] = World(root, referenceRoot, transform);

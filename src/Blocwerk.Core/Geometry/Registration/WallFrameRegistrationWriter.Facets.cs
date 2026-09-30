@@ -152,6 +152,27 @@ public static partial class WallFrameRegistrationWriter
         return carriedMarkers;
     }
 
+    /// <summary>A claimed facet's (solved) extent grows over the reference markers carried onto it (not re-photographed, still there).</summary>
+    private static void CoverCarried(JsonObject root, HashSet<string> claimed, List<int> carriedMarkers)
+    {
+        var carried = carriedMarkers.ToHashSet();
+        var markers = (root["markers"] as JsonArray ?? []).OfType<JsonObject>().Where(m => carried.Contains(m["id"]!.GetValue<int>())).ToList();
+        foreach (var facet in Facets(root).Where(f => claimed.Contains(f["id"]!.GetValue<string>())))
+        {
+            var id = facet["id"]!.GetValue<string>();
+            var corners = markers.Where(m => m["facet"]?.GetValue<string>() == id)
+                .SelectMany(m => (m["cornersPlaneMm"] as JsonArray ?? []).Select(Numbers).OfType<double[]>().Where(c => c.Length == 2))
+                .ToList();
+            if (corners.Count == 0 || facet["extentMm"] is not JsonObject e)
+            {
+                continue;
+            }
+
+            var old = new PlaneRectMm(Num(e, "aMin"), Num(e, "aMax"), Num(e, "bMin"), Num(e, "bMax"));
+            facet["extentMm"] = Extent(old, corners, ExtentMarginMm);
+        }
+    }
+
     private static void RefreshMarkerIds(JsonObject root)
     {
         var markers = (root["markers"] as JsonArray ?? []).OfType<JsonObject>()

@@ -34,7 +34,8 @@ public static partial class WallFrameRegistrationWriter
     /// its own measured angles: a re-solve (a better gravity, more photos) must be able to change the geometry.
     /// Only its plane FRAME is rebased onto the reference one — origin = the reference origin projected onto the
     /// new plane, u/v = the reference axes turned by the smallest rotation from the old normal to the new — so
-    /// a hold's (facet, a, b) still lands within millimetres of where it was. The extent covers both.
+    /// a hold's (facet, a, b) still lands within millimetres of where it was. The extent is the solved one only: the
+    /// reference extent may hold markers that moved to another facet, and a union would overlap that facet.
     /// </summary>
     /// <returns>Original (solved) facet id → its rebased frame, for re-projecting its markers.</returns>
     private static Dictionary<string, WallGeometryFacet> RebaseClaimedFrames(
@@ -58,7 +59,7 @@ public static partial class WallFrameRegistrationWriter
             facet["v"] = Array(frame.V!, 6);
             Set(facet, "normal", frame.Normal, 6);
             var extent = solved is null ? [] : Corners(solved).Select(x => ToPlane(frame, x));
-            facet["extentMm"] = Extent(old.ExtentMm, extent, 0);
+            facet["extentMm"] = Extent(solved?.ExtentMm is null ? old.ExtentMm : null, extent, 0);
             frames[id] = frame;
         }
 

@@ -31,6 +31,7 @@ public sealed partial class WallCaptureProcessor
     {
         if (await ResolveRunAsync(captureId, ct) is not { } run)
         {
+            await ResumeRederiveAsync(captureId, ct);
             return;
         }
 
@@ -49,7 +50,7 @@ public sealed partial class WallCaptureProcessor
                 CaptureFailedException or ComputeJobException or InvalidDataException => ex.Message,
                 _ => "something went wrong on the server.",
             };
-            await EndResolveAsync(captureId, null, $"Solving the 3D model again failed ({reason}); the active model stays.", ct);
+            await EndResolveAsync(captureId, null, Noted(run, $"Solving the 3D model again failed ({reason}); the active model stays."), ct);
             return;
         }
 
@@ -58,7 +59,7 @@ public sealed partial class WallCaptureProcessor
             await EndResolveAsync(
                 captureId,
                 outcome.JobId,
-                $"The 3D model was solved again and stored, but NOT activated: {outcome.Refusal} The active model stays.",
+                Noted(run, $"The 3D model was solved again and stored, but NOT activated: {outcome.Refusal} The active model stays."),
                 ct);
             return;
         }
@@ -150,8 +151,10 @@ public sealed partial class WallCaptureProcessor
         }
 
         var markerSize = await db.Walls.IgnoreQueryFilters().Where(w => w.Id == capture.WallId).Select(w => w.MarkerSizeMm).FirstOrDefaultAsync(ct);
-        return new CaptureRun(capture, user!, WallMarkerLayoutResolver.Resolve(capture.PlanJson, markerSize));
+        return await WithCurrentPlanAsync(db, new CaptureRun(capture, user!, WallMarkerLayoutResolver.Resolve(capture.PlanJson, markerSize)), markerSize, ct);
     }
+
+    private static string Noted(CaptureRun run, string note) => run.PlanNote is null ? note : $"{note} {run.PlanNote}";
 
     /// <summary>Drops the mark (a finished job id stays as the capture's solve job) and tells the admin what happened.</summary>
     private Task EndResolveAsync(Guid captureId, string? jobId, string note, CancellationToken ct) =>

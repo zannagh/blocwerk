@@ -21,17 +21,18 @@ public sealed partial class WallCaptureProcessor
     {
         var captureId = run.Capture.Id;
         var kept = await ShareViewAsync(previousId, outcome.ModelId, ct);
-        var note = "The 3D model was solved again from this capture's photos and activated"
-                   + (kept ? "; the photo-real view is kept." : ".");
+        var note = Noted(run, "The 3D model was solved again from this capture's photos and activated" + (kept ? "; the photo-real view is kept." : "."));
         await UpdateAsync(
             captureId,
             c =>
             {
                 c.GeometryModelId = outcome.ModelId;
+                c.PlanJson = run.Capture.PlanJson;
+                c.PlanRevision = run.Capture.PlanRevision;
                 c.SolveJobId = outcome.JobId;
                 c.TexturesJobId = CaptureTextureOutcome.RerenderMark;
                 c.CoverageJson = null;
-                c.FollowUpJson = (CaptureFollowUpRecord.Empty with { Note = note }).ToJson();
+                c.FollowUpJson = (CaptureFollowUpRecord.Empty with { Note = note, Rederive = true }).ToJson();
             },
             ct);
         logger.LogInformation(
@@ -43,6 +44,29 @@ public sealed partial class WallCaptureProcessor
         {
             await followUps.RunMissingAsync(captureId, ct);
         }
+    }
+
+    /// <summary>
+    /// Finishes the follow-ups of an adopted re-solve a previous process left unfinished (the record is still marked
+    /// <see cref="CaptureFollowUpRecord.Rederive"/>). A pending texture re-render finishes them itself once it is done.
+    /// </summary>
+    private async Task ResumeRederiveAsync(Guid captureId, CancellationToken ct)
+    {
+        if (followUps is null)
+        {
+            return;
+        }
+
+        await using (var db = dbContextFactory.CreateDbContext())
+        {
+            var textures = await db.WallCaptures.AsNoTracking().Where(c => c.Id == captureId).Select(c => c.TexturesJobId).FirstOrDefaultAsync(ct);
+            if (CaptureTextureOutcome.IsRerendering(textures))
+            {
+                return;
+            }
+        }
+
+        await followUps.RunMissingAsync(captureId, ct);
     }
 
     /// <summary>Gives <paramref name="toModelId"/> the view of <paramref name="fromModelId"/> (same files, same frame).</summary>

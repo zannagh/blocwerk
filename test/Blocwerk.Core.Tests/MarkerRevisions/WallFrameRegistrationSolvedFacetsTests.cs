@@ -61,6 +61,24 @@ public class WallFrameRegistrationSolvedFacetsTests
     }
 
     [Fact]
+    public void AClaimedFacet_TakesTheSolvedExtent_NotTheUnionWithTheReferenceOne()
+    {
+        // The reference facet reached 1 m further left (a marker since moved to its coplanar neighbour stretched it).
+        var root = JsonNode.Parse(Rev1Json)!.AsObject();
+        var extent = Facet(root, "0")["extentMm"]!.AsObject();
+        var solvedMin = extent["aMin"]!.GetValue<double>();
+        extent["aMin"] = solvedMin - 1000;
+        var reference = root.ToJsonString();
+        var solved = Move(Rev1Json, Transform(2, 0.5, [150, -40, 20]));
+
+        var result = WallFrameRegistration.Register(Doc(reference), Doc(solved), null);
+        var json = WallFrameRegistrationWriter.Rewrite(solved, reference, result, null, WallFrameRegistrationTests.Stamp());
+
+        Assert.True(result.Accepted, result.Message);
+        Assert.InRange(Doc(json).FindFacet("0")!.Value.Facet.ExtentMm!.Value.AMin, solvedMin - 5, solvedMin + 5);
+    }
+
+    [Fact]
     public void RebasedFrame_IsOrthonormal_OnTheNewPlane_AndKeepsTheOldOrigin()
     {
         var old = new WallGeometryFacet { Id = "0", Origin = [0, 0, 0], U = [1, 0, 0], V = [0, 0, 1], Normal = [0, -1, 0] };

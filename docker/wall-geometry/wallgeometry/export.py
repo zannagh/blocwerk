@@ -4,6 +4,7 @@ import numpy as np
 from .camera import K_matrix
 from .extents import stray_markers
 from .frame import facet_axes, world_transform
+from .overlaps import clip_overlaps
 from .refplanes import borderline_decisions, warnings
 
 EXTENT_MARGIN_MM = 50.0
@@ -23,10 +24,14 @@ def to_world(sol):
         ab = {m: np.stack([(W0(sol["corners_ba"][m]) - pw) @ u, (W0(sol["corners_ba"][m]) - pw) @ v], 1)
               for m in ms}
         raw[fid] = {"origin_w": pw, "u": u, "v": v, "normal": n, "ab": ab}
-    stray = stray_markers(raw, {m: W0(c) for m, c in sol["corners_ba"].items()}, EXTENT_MARGIN_MM,
-                          sol["req"].options.get("facets") if sol.get("req") else None)
+    params = sol["req"].options.get("facets") if sol.get("req") else None
+    stray = stray_markers(raw, {m: W0(c) for m, c in sol["corners_ba"].items()}, EXTENT_MARGIN_MM, params)
     facets = {fid: _facet(f, stray.get(fid, [])) for fid, f in raw.items()}
+    core = {fid: [m for m in f["ab"] if m not in stray.get(fid, [])] for fid, f in raw.items()}
+    clipped = clip_overlaps(facets, core, params)
     shift = facets[sol["ref_facet"]]["origin"].copy()
+    for rec in clipped:
+        rec["clippedAtWorldMm"] = _l(rec["clippedAtWorldMm"] - shift, 1)
     for f in facets.values():
         f["origin"] = f["origin"] - shift
     o_ba = R.T @ shift  # world origin, BA frame
@@ -36,7 +41,8 @@ def to_world(sol):
         Rw = Rc @ R.T
         t = Rc @ o_ba + tc
         cams[img] = {"R": Rw, "t": t, "centre": -Rw.T @ t}
-    sol["world"] = {"R": R, "facets": facets, "corners": corners, "cams": cams, "stray": stray}
+    sol["world"] = {"R": R, "facets": facets, "corners": corners, "cams": cams, "stray": stray,
+                    "overlapClipped": clipped}
     return sol
 
 
@@ -166,7 +172,8 @@ def build_document(sol, checks):
                     "markerSideMeanErrMm": _r(checks["side"]["meanErrMm"]),
                     "levelPairs": _level_checks(sol),
                     "borderlineFacetDecisions": borderline_decisions(sol["decisions"]),
-                    "warnings": warnings(sol)},
+                    "warnings": warnings(sol),
+                    "overlapClipped": sol["world"].get("overlapClipped", [])},
          "facetDecisions": sol["decisions"] + _extent_decisions(sol),
          "downweightedMarkers": {str(k): v for k, v in sol["downweighted"].items()},
          "rejectedObservations": sol.get("rejected", []),

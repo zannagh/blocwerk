@@ -69,7 +69,8 @@ document plus: per segment `declared`, `declaredVsMeasuredDeg`; per facet `marke
 `gravityDetail` (per-constraint residual degrees), `checks.declaredVsMeasuredDeg`,
 `checks.levelPairs` (height differences), `checks.borderlineFacetDecisions` (split decisions whose
 plane angle is within 0.5° of `foldDeg`), `checks.warnings` (human-readable sentences: a folded
-gravity reference, borderline facet decisions), `facetDecisions`, `downweightedMarkers`, `rejectedObservations`, `unusedPhotos`,
+gravity reference, borderline facet decisions), `checks.overlapClipped` (nearly coplanar facets whose
+extents overlapped in-plane, both clipped at the midline between their marker clusters), `facetDecisions`, `downweightedMarkers`, `rejectedObservations`, `unusedPhotos`,
 `intrinsics`, optional `leaveOnePhotoOut`.
 
 **Measured marker size.** The solved corners are always exactly the declared `sizeMm` square, so
@@ -91,7 +92,8 @@ average 125.4 mm, within ±3 mm except the bent marker 32 (2 photos, 133.7 mm).
   with each other; coplanar ones get a `coplanarNote`. When several (nearly coplanar) facets fit a
   merged or moved marker, the one whose markers are nearest wins (`hostChoice`). A facet's extent
   leaves out a member that lies outside its other markers' box and inside a coplanar facet's box
-  (`extentExcluded`; still solved and observed, origin unchanged). Every decision is in `quality.facetDecisions`.
+  (`extentExcluded`; still solved and observed, origin unchanged). Nearly coplanar facets whose extents still overlap
+  are clipped apart at the midline between their marker clusters (`checks.overlapClipped`). Every decision is in `quality.facetDecisions`.
 - **Outlier markers.** A marker whose free-solve RMS is > 3 px and > 4× the median is down-weighted
   (sigma = its RMS / median, max 10 px).
 - **False detections** (`wallgeometry/reject.py`). Down-weighting suits a marker that is wrong in every

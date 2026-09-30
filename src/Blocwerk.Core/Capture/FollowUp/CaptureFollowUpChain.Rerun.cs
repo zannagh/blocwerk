@@ -38,16 +38,17 @@ public sealed partial class CaptureFollowUpChain
     }
 
     /// <summary>
-    /// Runs every step (of every phase, in order) the capture's record does not have yet, without touching its stage: a
-    /// finished capture's model was replaced (solved again) and its record started over. No-op when its model is not active.
+    /// For a record marked <see cref="CaptureFollowUpRecord.Rederive"/> (the capture's model was solved again and its
+    /// record started over): runs every step (of every phase, in order) it does not have yet, without touching the stage,
+    /// then clears the mark. No-op for an unmarked record or when the capture's model is not active.
     /// </summary>
     /// <param name="captureId">The capture.</param>
-    /// <param name="ct">Cancellation.</param>
+    /// <param name="ct">Cancellation (the mark stays, so a restart resumes the rest).</param>
     /// <returns>The record after this run.</returns>
     public async Task<CaptureFollowUpRecord> RunMissingAsync(Guid captureId, CancellationToken ct)
     {
         var (context, record, _) = await LoadAsync(captureId, ct);
-        if (context is null)
+        if (context is null || !record.Rederive)
         {
             return record;
         }
@@ -61,6 +62,7 @@ public sealed partial class CaptureFollowUpChain
             await SaveAsync(captureId, c => c.FollowUpJson = CaptureFollowUpRecord.Parse(c.FollowUpJson).With(entry).ToJson(), ct);
         }
 
-        return record;
+        await SaveAsync(captureId, c => c.FollowUpJson = (CaptureFollowUpRecord.Parse(c.FollowUpJson) with { Rederive = false }).ToJson(), ct);
+        return record with { Rederive = false };
     }
 }
