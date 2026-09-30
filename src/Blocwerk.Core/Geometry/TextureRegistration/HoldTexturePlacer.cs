@@ -22,12 +22,24 @@ public static class HoldTexturePlacer
     /// </summary>
     public const double ExtentMarginMm = 25;
 
-    /// <summary>Whether a hold may be (re)placed: nothing but this action placed it so far.</summary>
+    /// <summary>Whether a hold may be (re)placed: nothing but this action gave it a position so far.</summary>
     /// <param name="hold">The hold.</param>
-    /// <returns>True for no metric source or a texture-registration one (registered, carried over or rejected).</returns>
+    /// <returns>
+    /// True for no metric source, a texture-registration one (registered, carried over or rejected), or a size-only
+    /// marker measurement (<see cref="IsSizedWithoutPosition"/>).
+    /// </returns>
     public static bool IsEligible(Hold hold) =>
         !hold.IsVirtual && hold.WallPanelId is not null
-        && (hold.MetricSource is null || IsRejected(hold) || IsTexturePlaced(hold));
+        && (hold.MetricSource is null || IsRejected(hold) || IsTexturePlaced(hold) || IsSizedWithoutPosition(hold));
+
+    /// <summary>
+    /// Whether the marker pass measured only the hold's size, in its nearest marker's own square
+    /// (<see cref="HoldMetric.LocalMarker"/>): its panel photo's markers were not mapped onto a wall model, so it has no position.
+    /// </summary>
+    /// <param name="hold">The hold.</param>
+    /// <returns>True for a local-marker size without a facet position.</returns>
+    public static bool IsSizedWithoutPosition(Hold hold) =>
+        hold.MetricSource == HoldMetric.LocalMarker && (hold.FacetId is null || hold.PlaneAMm is null || hold.PlaneBMm is null);
 
     /// <summary>Whether a run deliberately left the hold unmeasured (<see cref="HoldMetric.TextureRegistrationRejected"/>).</summary>
     /// <param name="hold">The hold.</param>

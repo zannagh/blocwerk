@@ -177,6 +177,31 @@ public class HoldTexturePlacementTests
         Assert.All(holds.Values, x => AssertPhotoUntouched(before[x.Id], x));
     }
 
+    [Fact]
+    public async Task Pipeline_PlacesHoldsTheMarkerPassOnlySized_KeepingTheirSizeForRevert()
+    {
+        using var h = new WallTestHarness();
+        var s = await HoldPlacementScenario.CreateAsync(h);
+        var sizedOnly = await s.AddHoldAsync(0.4, 0.5, configure: x =>
+        {
+            x.MetricSource = HoldMetric.LocalMarker;
+            x.WidthMm = 42;
+        });
+        var byMarkers = await s.AddHoldAsync(0.25, 0.5, configure: x => Place(x, "0", 5, 5, HoldMetric.LocalMarker));
+        var before = await s.LoadHoldsAsync();
+
+        var result = await s.Service().PlaceFromPipelineAsync(h.WallId, s.ModelId, h.Owner.Id);
+
+        Assert.Equal(1, result!.Placed);
+        var holds = await s.LoadHoldsAsync();
+        AssertPlaced(holds[sizedOnly], "0", 1600, 1500);
+        Assert.Equivalent(before[byMarkers], holds[byMarkers]);
+        await using var db = h.CreateContext();
+        var entry = HoldPlacementEntry.FromJson((await db.HoldPlacementRuns.SingleAsync()).HoldsJson).Single();
+        Assert.Equal((sizedOnly, HoldMetric.LocalMarker), (entry.HoldId, entry.PrevMetric!.MetricSource));
+        Assert.Equal(42, entry.PrevMetric.WidthMm);
+    }
+
     internal static void AssertPlaced(Hold hold, string facet, double a, double b)
     {
         Assert.Equal(facet, hold.FacetId);
