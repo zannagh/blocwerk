@@ -7,10 +7,10 @@
 // is hidden or the view off screen, so an idle view costs nothing.
 //
 // Nothing blocks the view: presets pick camera spots in free space with a clear sight line
-// (wall3d-clearance.js), a facet between the orbiting camera and its target is ghosted
-// (wall3d-ghost.js), and the splat fades what is near the camera, the mats in the way and ghosted
-// facets' surroundings (wall3d-splat-clip.js). Photo-real draws the hold outlines over the splat (wall3d-overlay.js);
-// taps pick holds the same way in every mode (wall3d-pick.js). Volumes: wall3d-volumes.js.
+// (wall3d-clearance.js), a facet between the camera and its target is ghosted (wall3d-ghost.js) and
+// the splat fades what is near the camera and the mats in the way (wall3d-splat-clip.js). The wall is
+// a solid body (wall3d-body.js) the camera cannot enter or pass (wall3d-reach.js). Photo-real draws the
+// hold outlines over the splat (wall3d-overlay.js); taps pick holds in every mode (wall3d-pick.js).
 import * as THREE from '../lib/three/three.module.min.js';
 import { OrbitControls } from '../lib/three/controls/OrbitControls.js';
 import { buildFacets, buildLabels, buildMarkers, buildTextures, fitLabels } from './wall3d-scene.js';
@@ -28,6 +28,7 @@ import { createGhosting } from './wall3d-ghost.js';
 import { createPhotoOverlay } from './wall3d-overlay.js';
 import { createSplatClip } from './wall3d-splat-clip.js';
 import { buildVolumes } from './wall3d-volumes.js';
+import { buildBody } from './wall3d-body.js';
 import { createRenderLoop } from './wall3d-loop.js';
 
 /** Colours of a boulder's hold roles; the page passes BoulderHoldColors so they match the 2D views. */
@@ -46,7 +47,6 @@ export function mount(container, view, options = {}) {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.domElement.className = 'w3d-canvas';
     container.prepend(renderer.domElement);
-
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(50, 1, 20, 200000);
     camera.up.set(0, 0, 1);
@@ -60,8 +60,9 @@ export function mount(container, view, options = {}) {
     const textures = buildTextures(view, renderer);
     const markers = buildMarkers(view, sides);
     const volumes = buildVolumes(view, renderer, textures);   // plain: Schematic; photo: Photos (in `textures`)
-    scene.add(facets.group, textures, markers, labels, holds.lit, holds.dim, volumes.plain, outlines, holds.rings, holds.pick, selection);
-    const frame = wallFrame(view, facets.group);
+    const body = buildBody(view);                             // solid in every mode, photo-real too
+    scene.add(body.group, facets.group, textures, markers, labels, holds.lit, holds.dim, volumes.plain, outlines, holds.rings, holds.pick, selection);
+    const frame = wallFrame(view, facets.group, body.pieces);
     const ghosts = createGhosting({ facets, textures, quads: frame.quads, sides });
     const clip = createSplatClip(frame.quads, frame.floorZ);
     const surroundings = buildSurroundings(scene, frame, themeColor(container, '--bg', '#f5f4f1'));
@@ -70,7 +71,7 @@ export function mount(container, view, options = {}) {
     controls.enableDamping = true;
     controls.dampingFactor = DAMPING;
     controls.screenSpacePanning = true;
-    controls.minDistance = 300;
+    controls.minDistance = frame.reach.minDistance;
     controls.maxDistance = frame.radius * 8;
     controls.zoomToCursor = true;
     const tweener = createTweener(camera, controls, () => reducedMq.matches);
@@ -102,8 +103,7 @@ export function mount(container, view, options = {}) {
         closeCard: () => { ui.hideCard(); selection.visible = false; request(); },
         mode: name => modeCtl.set(name),
     }, modes, { hintOnce: !!options.hintOnce });
-    const overlay = createPhotoOverlay({ root: container, facets, outlines, rings: holds.rings, request: () => request(), photo });
-    scene.add(overlay.prepass);
+    const overlay = createPhotoOverlay({ root: container, outlines, rings: holds.rings, request: () => request(), photo });
     const modeCtl = createModeController({
         modes, photo, ui, request: () => request(), PhotoRealUnsupportedError, onMode: m => overlay.apply(m),
         parts: { textures, outlines, slabs: [holds.lit, holds.dim, volumes.plain] },
@@ -143,11 +143,11 @@ export function mount(container, view, options = {}) {
     function tick(now) {
         controls.dampingFactor = photo.capped ? CAPPED_DAMPING : DAMPING;
         const tweening = tweener.step(now);
-        const moving = controls.update();
+        const moving = frame.reach.step(camera, controls, tweening);   // controls.update(), then out of the wall
         camera.updateMatrixWorld();
         sides.update(camera);
         if (ghosts.update(camera.position, controls.target)) {
-            overlay.setGhosted(ghosts.ids);
+            body.setGhosted(ghosts.ids);
         }
         if (photo.active) {
             clip.update(camera, controls.target, ghosts.ids);

@@ -10,12 +10,13 @@
 //                 like the facet does.
 // Spark 2.2's SplatEdit SDFs could hide boxes too, but every edit change regenerates the whole splat
 // set; this runs in the draw instead. The injection goes into the SparkRenderer material's source
-// (already the iOS-patched one, tools/vendor/patch-spark-ios.py) before its first compile; the
-// splat draws without depth test so the overlay's depth pre-pass (wall3d-overlay.js) cannot cut it.
+// (already the iOS-patched one, tools/vendor/patch-spark-ios.py) before its first compile. The splat
+// draws with depth test: the opaque wall body (wall3d-body.js), a hand's width behind the facets,
+// hides what the capture put behind the wall without cutting the wall's own surface.
 import * as THREE from '../lib/three/three.module.min.js';
 import { FLOOR_CLEARANCE_MM } from './wall3d-clearance.js';
 
-const MAX_FACETS = 8;
+const MAX_FACETS = 16;
 /**
  * Splats up to this far above the floor plane count as the floor / mats. The floor plane is the
  * kickboard's bottom edge; the mats in front of it are ~30 cm thick (The Attic: their top is between
@@ -128,7 +129,7 @@ export function createSplatClip(quads, floorZ) {
     };
     let installed = false;
     return {
-        rendererOptions: { extraUniforms: uniforms, depthTest: false },
+        rendererOptions: { extraUniforms: uniforms, depthTest: true },
         get installed() { return installed; },
         install(sparkRenderer) {
             const m = sparkRenderer.material;

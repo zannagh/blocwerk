@@ -2,6 +2,7 @@
 import * as THREE from '../lib/three/three.module.min.js';
 import { v3 } from './wall3d-scene.js';
 import { clearPose, facetQuads } from './wall3d-clearance.js';
+import { createReach } from './wall3d-reach.js';
 
 export const PRESETS = ['front', 'below', 'left', 'right', 'top'];
 
@@ -12,7 +13,7 @@ const UP = new THREE.Vector3(0, 0, 1);
  * "front" direction (horizontal, from the wall toward the climber — the main facet's normal
  * flattened) and the spot a climber stands on in front of it.
  */
-export function wallFrame(view, facetGroup) {
+export function wallFrame(view, facetGroup, pieces = []) {
     const box = new THREE.Box3().setFromObject(facetGroup);
     if (box.isEmpty()) box.set(new THREE.Vector3(-1000, -1000, 0), new THREE.Vector3(1000, 1000, 2000));
     const main = view.facets.find(f => f.id === '0')
@@ -49,7 +50,8 @@ export function wallFrame(view, facetGroup) {
     }
     // floorZ is the lowest facet edge (the kickboard's bottom ≈ the mats' top): the floor plane.
     const quads = facetQuads(view.facets);
-    return { box, center, front, right, floorZ, stand, under, points, quads, radius: box.getBoundingSphere(new THREE.Sphere()).radius };
+    const reach = createReach(pieces, main, floorZ, front);
+    return { box, center, front, right, floorZ, stand, under, points, quads, reach, radius: box.getBoundingSphere(new THREE.Sphere()).radius };
 }
 
 function area(f) {
@@ -119,7 +121,10 @@ export function presetPose(name, frame, camera, insets, size) {
     const poseAlong = name === 'below'
         ? dir => ({ target: base.target.clone(), position: base.target.clone().addScaledVector(dir, distance) })
         : along;
-    return clearPose(base, poseAlong, frame.quads || [], frame.floorZ);
+    // 'top' is placed in free space by design (in front of the wall, under its top edge).
+    const pose = name === 'top' ? base : clearPose(base, poseAlong, frame.quads || [], frame.floorZ);
+    frame.reach?.keepOut(pose.position);
+    return pose;
 }
 
 function designedPose(name, frame, along) {
@@ -138,11 +143,37 @@ function designedPose(name, frame, along) {
         case 'right':
             return along(right.clone().multiplyScalar(0.8).addScaledVector(front, 0.6).addScaledVector(UP, 0.15));
         case 'top':
-            // Not exactly overhead: OrbitControls degenerates at the pole.
-            return along(UP.clone().addScaledVector(front, 0.25));
+            // From high up in front, under the wall's top edge: above it is the ceiling (the capture
+            // has only floaters there) and over an overhang there is no room at all.
+            return underCeiling(along(front.clone().addScaledVector(UP, 0.4)), frame.box.max.z - CEILING_GAP_MM);
         default: // front, from about eye height
             return along(front.clone().addScaledVector(UP, 0.1));
     }
+}
+
+/** The Top preset's camera stays this far below the wall's highest edge. */
+const CEILING_GAP_MM = 300;
+
+/** Keeps no more than this share of the framed distance when the camera comes down under the ceiling. */
+const MIN_KEPT_DISTANCE = 0.6;
+
+/**
+ * Brings the camera down to `maxZ`: slides it toward its target, or, where that would come too close
+ * (a narrow phone frames from far away), keeps MIN_KEPT_DISTANCE of the distance and looks down less.
+ */
+function underCeiling(pose, maxZ) {
+    const p = pose.position, t = pose.target;
+    if (p.z <= maxZ || p.z <= t.z) return pose;
+    const k = (p.z - maxZ) / (p.z - t.z);
+    if (k <= 1 - MIN_KEPT_DISTANCE) {
+        p.lerp(t, k);
+        return pose;
+    }
+    const keep = MIN_KEPT_DISTANCE * p.distanceTo(t);
+    const flat = p.clone().sub(t).setZ(0).normalize();
+    const rise = Math.min(maxZ - t.z, keep);
+    p.copy(t).addScaledVector(flat, Math.sqrt(keep * keep - rise * rise)).setZ(t.z + rise);
+    return pose;
 }
 
 const ease = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);

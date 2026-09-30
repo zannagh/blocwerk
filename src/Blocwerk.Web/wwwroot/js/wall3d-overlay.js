@@ -4,12 +4,9 @@
 // toggle of the photo-real ladder (wall3d-splat-detail.js; remembered per browser; High only where
 // it lifts a phone's cap). Its label names the level drawn, e.g. "Ultra · 1.6M".
 //
-// Occlusion: the splat draws without depth test (wall3d-splat-clip.js), so it is never cut by the
-// modelled facets. The facets themselves go into the depth buffer first, invisibly (colour writes off,
-// depth writes on, both sides), so an outline or ring behind another facet fails its depth test;
-// outlines of a facet the camera is behind are dropped already (wall3d-sides.js). A facet ghosted
-// out of the camera's way (wall3d-ghost.js) writes no depth, so the holds behind it show.
-import * as THREE from '../lib/three/three.module.min.js';
+// Occlusion: the opaque wall body (wall3d-body.js) stays in photo-real, so an outline or ring behind
+// another part of the wall fails its depth test; outlines of a facet the camera is behind are dropped
+// already (wall3d-sides.js).
 import { detailChoices, detailLabel, nextDetail } from './wall3d-splat-detail.js';
 
 const SHOW_KEY = 'bw.wall3d.photoHolds';
@@ -32,20 +29,6 @@ function storeShow(on) {
     }
 }
 
-/** Invisible copies of the facet quads that only write depth; drawn before everything else. */
-function buildDepthPrepass(facets) {
-    const group = new THREE.Group();
-    const material = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: true, side: THREE.DoubleSide });
-    for (const mesh of facets.meshes.values()) {
-        const m = new THREE.Mesh(mesh.geometry, material);
-        m.userData.facetId = mesh.userData.facet.id;
-        m.renderOrder = -10;
-        group.add(m);
-    }
-    group.visible = false;
-    return group;
-}
-
 function button(cls, text, title, onClick) {
     const b = document.createElement('button');
     b.type = 'button';
@@ -57,13 +40,11 @@ function button(cls, text, title, onClick) {
 }
 
 /**
- * `root`: the view's container (the toggles go in its overlay), `facets`: buildFacets' result,
- * `outlines`: buildOutlines' group, `rings`: the boulder role rings, `request`: asks for a frame,
- * `photo`: the photo-real controller (its detail choice).
- * Returns { prepass (add it to the scene), apply(mode), setGhosted(ids), get showing }.
+ * `root`: the view's container (the toggles go in its overlay), `outlines`: buildOutlines' group,
+ * `rings`: the boulder role rings, `request`: asks for a frame, `photo`: the photo-real controller (its detail choice).
+ * Returns { apply(mode), get showing, dispose() }.
  */
-export function createPhotoOverlay({ root, facets, outlines, rings, request, photo }) {
-    const prepass = buildDepthPrepass(facets);
+export function createPhotoOverlay({ root, outlines, rings, request, photo }) {
     let show = storedShow();
     let mode = null;
 
@@ -112,7 +93,6 @@ export function createPhotoOverlay({ root, facets, outlines, rings, request, pho
         outlines.visible = mode === 'photos' || (photoReal && show);
         outlines.userData.setRaised?.(photoReal);
         rings.userData.setRaised?.(photoReal);
-        prepass.visible = photoReal && show;
         rings.visible = holds;
         tools.hidden = !photoReal;
         toggle.setAttribute('aria-pressed', show ? 'true' : 'false');
@@ -123,14 +103,7 @@ export function createPhotoOverlay({ root, facets, outlines, rings, request, pho
     }
 
     return {
-        prepass,
         apply,
-        /** Ghosted facets write no depth, so the holds behind them stay visible. */
-        setGhosted(ids) {
-            for (const m of prepass.children) {
-                m.visible = !ids.includes(m.userData.facetId);
-            }
-        },
         get showing() { return mode === 'photoreal' && show; },
         dispose() { clearTimeout(hintTimer); tools.remove(); },
     };
