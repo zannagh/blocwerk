@@ -46,10 +46,32 @@ public sealed class PlaceHoldsFollowUpStep(IHoldTexturePlacementService placemen
         }
 
         // Carried: a photo the new textures could not be registered to kept its holds' previous placements.
-        var carried = result.Panels.Sum(p => p.Carried);
-        var placed = $"{CaptureFollowUpText.Count(result.Placed, "hold", "holds")} placed on the 3D model";
-        var text = carried > 0 ? $"{placed} ({carried} kept from the previous model)" : placed;
+        var text = Describe(result.Placed, result.Panels.Sum(p => p.Carried));
         var unmeasured = HoldPlacementUnmeasured.Text(result.Panels);
         return CaptureFollowUpStepResult.Done(unmeasured.Length > 0 ? $"{text}. {unmeasured}" : text);
+    }
+
+    /// <summary>"856 holds placed on the 3D model (12 kept from the previous model)".</summary>
+    /// <param name="placed">Holds placed on the model from their photos.</param>
+    /// <param name="carried">Of those, the ones whose previous placement was kept.</param>
+    /// <returns>The phrase.</returns>
+    internal static string Describe(int placed, int carried)
+    {
+        var text = $"{CaptureFollowUpText.Count(placed, "hold", "holds")} placed on the 3D model";
+        return carried > 0 ? $"{text} ({carried} kept from the previous model)" : text;
+    }
+
+    /// <summary>
+    /// The live form for the capture history: <see cref="Describe"/> of the holds placed from photos now, plus how many
+    /// are left unmeasured on purpose (the reasons are known only when the step runs).
+    /// </summary>
+    /// <param name="placed">Live holds placed on the model from their photos.</param>
+    /// <param name="carried">Of those, the ones carried from the previous model.</param>
+    /// <param name="unmeasured">Live holds a run left unmeasured on purpose.</param>
+    /// <returns>The phrase.</returns>
+    internal static string DescribeLive(int placed, int carried, int unmeasured)
+    {
+        var text = placed == 0 ? "no hold placed on the 3D model from the photos" : Describe(placed, carried);
+        return unmeasured > 0 ? $"{text}. {CaptureFollowUpText.Count(unmeasured, "hold", "holds")} left unmeasured" : text;
     }
 }

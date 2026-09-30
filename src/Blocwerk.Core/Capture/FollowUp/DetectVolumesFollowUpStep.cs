@@ -15,8 +15,14 @@ namespace Blocwerk.Core.Capture.FollowUp;
 /// </summary>
 public sealed class DetectVolumesFollowUpStep(IWallVolumeService volumes) : ICaptureFollowUpStep
 {
+    /// <summary>The step's key in the follow-up record.</summary>
+    public const string StepKey = "detect-volumes";
+
+    /// <summary>Added to the summary when the volumes were found in the sparse points.</summary>
+    internal const string SparseSuffix = " (from the sparse points, coarser)";
+
     /// <inheritdoc />
-    public string Key => "detect-volumes";
+    public string Key => StepKey;
 
     /// <inheritdoc />
     public int Order => 250;
@@ -38,7 +44,7 @@ public sealed class DetectVolumesFollowUpStep(IWallVolumeService volumes) : ICap
         }
 
         var text = Describe(result.Volumes, result.HoldsPlaced);
-        return CaptureFollowUpStepResult.Done(result.FromSparsePoints && text.Length > 0 ? $"{text} (from the sparse points, coarser)" : text);
+        return CaptureFollowUpStepResult.Done(result.FromSparsePoints && text.Length > 0 ? text + SparseSuffix : text);
     }
 
     /// <summary>"6 volumes found, 82 holds placed on them" (empty when none were found).</summary>

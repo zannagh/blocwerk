@@ -49,7 +49,7 @@ public class CaptureFollowUpPipelineTests
         var summary = (await s.Service.GetCapturesAsync(h.WallId)).Single();
         Assert.Equal(WallCaptureStatus.Succeeded, summary.Status);
         Assert.Null(summary.Error);
-        Assert.Equal("856 holds placed on the 3D model, 653 hold shapes refined from several photos.", summary.FollowUp);
+        Assert.Equal("856 holds placed on the 3D model, 653 hold shapes refined from several photos.", await StoredFollowUpAsync(h, captureId));
         Assert.Null(summary.FollowUpNote);
         await placement.Received(1).PlaceFromPipelineAsync(h.WallId, summary.GeometryModelId!.Value, h.Owner.Id, Arg.Any<CancellationToken>());
         Received.InOrder(() =>
@@ -118,7 +118,7 @@ public class CaptureFollowUpPipelineTests
         Assert.Null(summary.Error);
         Assert.False(summary.IsRunning);
         Assert.Equal(WallCaptureProcessor.NoWorkerNote, summary.FollowUpNote);
-        Assert.Equal("856 holds placed on the 3D model, 653 hold shapes refined from several photos.", summary.FollowUp);
+        Assert.Equal("856 holds placed on the 3D model, 653 hold shapes refined from several photos.", await StoredFollowUpAsync(h, captureId));
         await using var db = h.CreateContext();
         Assert.Empty(await db.WallGeometrySplats.ToListAsync());
         Assert.True((await db.WallGeometryModels.SingleAsync()).IsActive);
@@ -141,7 +141,7 @@ public class CaptureFollowUpPipelineTests
         Assert.Equal(WallCaptureStatus.Succeeded, summary.Status);
         Assert.Equal(
             "856 holds placed on the 3D model, 653 hold shapes refined from several photos, 6 volumes found, 82 holds placed on them, 12 holds measured in the photo-real view.",
-            summary.FollowUp);
+            await StoredFollowUpAsync(h, captureId));
         Received.InOrder(() =>
         {
             placement.PlaceFromPipelineAsync(h.WallId, Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
@@ -167,7 +167,7 @@ public class CaptureFollowUpPipelineTests
         Assert.Equal(
             "856 holds placed on the 3D model, 653 hold shapes refined from several photos, 6 volumes found, 82 holds placed on them "
             + "(from the sparse points, coarser), 12 holds measured from the sparse points (coarser).",
-            summary.FollowUp);
+            await StoredFollowUpAsync(h, captureId));
         Received.InOrder(() =>
         {
             volumes.DetectFromPipelineAsync(h.WallId, Arg.Any<CancellationToken>());
@@ -188,6 +188,17 @@ public class CaptureFollowUpPipelineTests
     {
         protrusion.MeasureFromPipelineAsync(default, default).ReturnsForAnyArgs(new HoldProtrusionRunResult(12, 1, 0, 12, sparse));
         volumes.DetectFromPipelineAsync(default, default).ReturnsForAnyArgs(new WallVolumeRunResult(6, 2, 82, 82, sparse));
+    }
+
+    /// <summary>
+    /// The history text as the steps stored it: the history itself shows live counts for the active model
+    /// (<see cref="CaptureLiveCountTests"/>), and the substituted services wrote no holds or volumes.
+    /// </summary>
+    private static async Task<string?> StoredFollowUpAsync(WallTestHarness h, Guid captureId)
+    {
+        await using var db = h.CreateContext();
+        var json = await db.WallCaptures.Where(c => c.Id == captureId).Select(c => c.FollowUpJson).SingleAsync();
+        return CaptureFollowUpText.Summary(CaptureFollowUpRecord.Parse(json));
     }
 
     private CaptureScenario Scenario(WallTestHarness h) => new(h, followUps: harness => FollowUpChains.Build(

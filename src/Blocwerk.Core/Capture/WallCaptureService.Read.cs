@@ -5,7 +5,6 @@ using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Geometry;
 using Blocwerk.Core.MarkerPlanning;
-using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Capture;
@@ -124,12 +123,12 @@ public sealed partial class WallCaptureService
         var pending = await Runners.GpuJobText.PendingAsync(db, ids);
         var refinishable = await Runners.GpuJobQueue.RefinishableAsync(db, files, ids);
         var activeModels = await ActiveModelIdsAsync(db, captures);
-        var listed = await ListedProposalsAsync(db, captures, activeModels);
+        var live = await LiveCountsAsync(db, captures, activeModels);
         return captures.Select(c => new WallCaptureSummary(
             c.Id, c.CreatedAt, c.Status, c.Progress, c.Stage, c.Error, c.Notes,
             counts.GetValueOrDefault(c.Id).Count, c.GeometryModelId, c.CompletedAt, ReadPlacementCheck(c.PlacementCheckJson),
             c.SplatQuality,
-            CaptureFollowUpText.Summary(CaptureFollowUpRecord.Parse(c.FollowUpJson), listed.TryGetValue(c.Id, out var n) ? n : (int?)null),
+            CaptureFollowUpText.Summary(CaptureFollowUpRecord.Parse(c.FollowUpJson), live.GetValueOrDefault(c.Id)),
             CaptureFollowUpText.Note(CaptureFollowUpRecord.Parse(c.FollowUpJson)),
             c.WallId,
             c.GeometryModelId is { } modelId ? modelChecks.GetValueOrDefault(modelId, []) : [],
@@ -144,17 +143,23 @@ public sealed partial class WallCaptureService
     }
 
     /// <summary>
-    /// For each capture of the active model whose record reports hold proposals: how many the review list shows now
-    /// (pending and not covered by a live hold), so the stored count from the search time does not go stale.
+    /// For each capture of the active model whose record reports a count the wall now shows differently (proposals to review,
+    /// holds placed from photos, volumes and the holds on them): the live counts, read once per model, so the numbers stored
+    /// when the steps ran do not go stale.
     /// </summary>
-    private async Task<Dictionary<Guid, int>> ListedProposalsAsync(BlocwerkDbContext db, List<WallCapture> captures, HashSet<Guid> activeModels)
+    private async Task<Dictionary<Guid, CaptureLiveCounts>> LiveCountsAsync(BlocwerkDbContext db, List<WallCapture> captures, HashSet<Guid> activeModels)
     {
-        var result = new Dictionary<Guid, int>();
-        foreach (var c in captures.Where(c => c.GeometryModelId is { } m && activeModels.Contains(m)))
+        var result = new Dictionary<Guid, CaptureLiveCounts>();
+        var wanted = captures
+            .Where(c => c.GeometryModelId is { } m && activeModels.Contains(m)
+                && CaptureLiveCountsLoader.IsWanted(CaptureFollowUpRecord.Parse(c.FollowUpJson)))
+            .GroupBy(c => (c.WallId, ModelId: c.GeometryModelId!.Value));
+        foreach (var group in wanted)
         {
-            if (CaptureFollowUpText.ReportsProposals(CaptureFollowUpRecord.Parse(c.FollowUpJson)))
+            var live = await CaptureLiveCountsLoader.LoadAsync(db, group.Key.WallId, group.Key.ModelId, logger, CancellationToken.None);
+            foreach (var c in group)
             {
-                result[c.Id] = await ProposalCoverage.ListedCountAsync(db, c.WallId, c.GeometryModelId!.Value, logger, CancellationToken.None);
+                result[c.Id] = live;
             }
         }
 
