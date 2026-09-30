@@ -79,6 +79,27 @@ public class WallFrameRegistrationSolvedFacetsTests
     }
 
     [Fact]
+    public void ASegmentWhoseMarkersAllChanged_StaysOneFacet_UnderItsOldId()
+    {
+        // Plan revision 2 mirrored a triangle: none of facet 2's markers may tie it, yet it is still segment 2's surface.
+        var changed = Doc(Rev1Json).Markers.Where(m => m.Facet == "2").Select(m => m.Id).ToHashSet();
+        var eligible = Doc(Rev1Json).Markers.Select(m => m.Id).Where(id => !changed.Contains(id)).ToHashSet();
+        var solved = Move(Rev1Json, Transform(1, 0.3, [80, -30, 10]));
+
+        var result = WallFrameRegistration.Register(Doc(Rev1Json), Doc(solved), eligible);
+        Assert.True(result.Accepted, result.Message);
+        var json = WallFrameRegistrationWriter.Rewrite(solved, Rev1Json, result, eligible, WallFrameRegistrationTests.Stamp());
+        var rewritten = Doc(json);
+
+        var segment = Doc(Rev1Json).FindFacet("2")!.Value.Segment.Index;
+        Assert.Equal(["2"], rewritten.Segments.Where(s => s.Index == segment).SelectMany(s => s.Facets).Select(f => f.Id));
+        Assert.All(changed, id => Assert.Equal("2", rewritten.Markers.Single(m => m.Id == id).Facet));
+        Assert.Equal(
+            Doc(Rev1Json).Segments.SelectMany(s => s.Facets).Select(f => f.Id).Order(),
+            rewritten.Segments.SelectMany(s => s.Facets).Select(f => f.Id).Order());
+    }
+
+    [Fact]
     public void RebasedFrame_IsOrthonormal_OnTheNewPlane_AndKeepsTheOldOrigin()
     {
         var old = new WallGeometryFacet { Id = "0", Origin = [0, 0, 0], U = [1, 0, 0], V = [0, 0, 1], Normal = [0, -1, 0] };

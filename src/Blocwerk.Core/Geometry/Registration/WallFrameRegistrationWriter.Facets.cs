@@ -42,7 +42,29 @@ public static partial class WallFrameRegistrationWriter
             claims[facet.Id] = target.Id;
         }
 
+        ClaimBySegment(solved, reference, claims, t);
         return claims;
+    }
+
+    /// <summary>
+    /// A new facet none of whose markers could tie it (all of them changed in the plan: moved, mirrored) continues its
+    /// segment's reference facet when that is the segment's only unclaimed one facing the same way: a segment is one
+    /// surface, so a re-solve never leaves it as two facets (the old one carried over beside the new one).
+    /// </summary>
+    private static void ClaimBySegment(
+        WallGeometryDocument solved, WallGeometryDocument reference, Dictionary<string, string> claims, RigidTransform3D t)
+    {
+        foreach (var segment in solved.Segments)
+        {
+            var open = segment.Facets.Where(f => !claims.ContainsKey(f.Id)).ToList();
+            var free = reference.Segments.Where(s => s.Index == segment.Index).SelectMany(s => s.Facets)
+                .Where(f => MarkerWorldCorners.HasFrame(f) && !claims.ContainsValue(f.Id))
+                .ToList();
+            if (open.Count == 1 && free.Count == 1 && SameFacing(open[0], free[0], t))
+            {
+                claims[open[0].Id] = free[0].Id;
+            }
+        }
     }
 
     private static bool SameFacing(WallGeometryFacet facet, WallGeometryFacet target, RigidTransform3D t) =>

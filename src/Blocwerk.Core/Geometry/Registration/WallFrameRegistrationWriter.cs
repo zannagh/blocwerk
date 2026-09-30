@@ -50,8 +50,12 @@ public static partial class WallFrameRegistrationWriter
         TransformCameras(root, transform);
 
         var claims = MatchFacets(solved, reference, registration.UsedIds, transform);
+
+        // Only segments this capture did not solve at all are carried over: a solved segment is never duplicated.
+        var solvedSegments = solved.Segments.Where(s => s.Facets.Count > 0).Select(s => s.Index).ToHashSet();
         var carried = reference.Segments.SelectMany(s => s.Facets)
             .Where(f => MarkerWorldCorners.HasFrame(f) && !claims.Values.Contains(f.Id))
+            .Where(f => !solvedSegments.Contains(reference.FindFacet(f.Id)!.Value.Segment.Index))
             .Select(f => f.Id)
             .ToList();
         var renamed = FinalIds(root, claims, carried);
