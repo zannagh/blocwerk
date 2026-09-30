@@ -42,6 +42,16 @@ else
                 <span class="wall3d-note">@UnplacedText(view.UnplacedHoldCount)</span>
             }
         </div>
+        @if (canReviewLinks)
+        {
+            <div class="wall3d-links">
+                @if (linksChanged)
+                {
+                    <p class="wall3d-note">Linked holds show as one after <button type="button" class="btn-link" @onclick="UpdateViewAsync">Update view</button></p>
+                }
+                <HoldLinkSuggestionsHint WallId="WallId" ShareToken="@ShareToken" OnLinked="LinksLinked" />
+            </div>
+        }
         @if (correction is not null)
         {
             <Wall3DCorrectionBar Facet="tappedFacet" Busy="correcting" Message="@correctionMessage" OnVertical="VerticalAsync" OnDrop="DropAsync" />

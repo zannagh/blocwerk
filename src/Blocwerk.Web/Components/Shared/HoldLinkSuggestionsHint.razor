@@ -1,0 +1,68 @@
+@using System.Globalization
+@using Blocwerk.Core.HoldLinks
+
+@* A one-line hint for wall admins: holds of two panel photos that sit on the same spot of the 3D model but are not
+   linked. Nothing renders without suggestions (or without a 3D model, on a kiosk tablet, behind a share link).
+   "Review" opens a compact list in place: both photos' crops side by side, "Link" (the normal cross-panel link)
+   or "Not the same" (remembered). Never modal, never links by itself. *@
+
+@if (!Hidden && !dismissed && count > 0)
+{
+    <div class="link-hint" role="status">
+        <div class="link-hint-line">
+            <span class="link-hint-text">@HintText(count)</span>
+            <button type="button" class="btn-link" @onclick="ToggleAsync" aria-expanded="@(open ? "true" : "false")">
+                @(open ? "Hide" : "Review")
+            </button>
+            <button type="button" class="link-hint-close" title="Hide until next time" aria-label="Hide this hint"
+                    @onclick="() => dismissed = true">&times;</button>
+        </div>
+
+        @if (open)
+        {
+            @if (failure is not null)
+            {
+                <p class="field-error" role="alert">@failure</p>
+            }
+
+            @if (rows is null)
+            {
+                <p class="loading-small">Loading…</p>
+            }
+            else
+            {
+                <ul class="link-hint-list">
+                    @foreach (var s in rows)
+                    {
+                        <li class="link-hint-row" @key="(s.A.HoldId, s.B.HoldId)">
+                            <span class="link-hint-pair">
+                                @Thumb(s.A)
+                                <span class="link-hint-eq" aria-hidden="true">=</span>
+                                @Thumb(s.B)
+                            </span>
+                            <span class="link-hint-meta">
+                                <span>@s.A.PanelName and @s.B.PanelName.ToLowerInvariant()</span>
+                                <span class="hint">@Apart(s.DistanceMm) apart on the 3D model</span>
+                            </span>
+                            <span class="link-hint-actions">
+                                <button type="button" class="btn-primary" disabled="@busy" @onclick="() => LinkAsync(s)">Link</button>
+                                <button type="button" class="btn-secondary" disabled="@busy" @onclick="() => RejectAsync(s)">Not the same</button>
+                            </span>
+                        </li>
+                    }
+                </ul>
+            }
+        }
+    </div>
+}
+
+@code {
+    private RenderFragment Thumb(HoldLinkSuggestionSide side) =>
+        @<span class="link-hint-thumb" style="@HoldRingColor.Style(side.Color)" title="@side.PanelName">
+            <img src="@PhotoUrl(side.PanelId)" alt="The hold on the @side.PanelName.ToLowerInvariant()" loading="lazy" style="@ImgStyle(side)" />
+            <i class="link-hint-ring"></i>
+        </span>;
+
+    private static string Apart(double mm) =>
+        mm < 10 ? "Less than 1 cm" : $"{(mm / 10).ToString("0", CultureInfo.InvariantCulture)} cm";
+}

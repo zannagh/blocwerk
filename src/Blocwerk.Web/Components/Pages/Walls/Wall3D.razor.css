@@ -44,3 +44,7 @@
 
 .wall3d-message { padding: 16px; }
 .wall3d-message .empty-state p { margin: 0 0 12px; }
+
+.wall3d-links { padding: 0 12px; }
+.wall3d-links:empty { display: none; }
+.wall3d-links .wall3d-note { margin: 4px 0 0; }

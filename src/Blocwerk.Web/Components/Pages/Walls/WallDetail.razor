@@ -639,6 +639,13 @@ else
                             </button>
                         </div>
                     }
+
+                    @* Holds of two panel photos on the same spot of the 3D model that are not linked yet: one quiet line
+                       with an in-place review. Wall admins only; renders nothing without suggestions or a 3D model. *@
+                    @if (_isAdmin && !KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
+                    {
+                        <HoldLinkSuggestionsHint WallId="WallId" ShareToken="@ShareToken" OnLinked="LoadHoldLinkCount" />
+                    }
                     </div>
                 }
             </div>
