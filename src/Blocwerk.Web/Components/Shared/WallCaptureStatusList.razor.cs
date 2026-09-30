@@ -26,8 +26,8 @@ public partial class WallCaptureStatusList : IAsyncDisposable
     private bool retraining;
     private bool ultraAvailable;
 
-    /// <summary>A capture is running, or its wall textures are being rendered again.</summary>
-    private bool ShouldPoll => running is not null || history.Any(c => c.TexturesRerendering);
+    /// <summary>A capture is running, or its wall textures are being rendered (or its model solved) again.</summary>
+    private bool ShouldPoll => running is not null || history.Any(c => c.TexturesRerendering || c.ModelResolving);
 
     [Parameter]
     public Guid WallId { get; set; }
@@ -100,6 +100,9 @@ public partial class WallCaptureStatusList : IAsyncDisposable
 
     /// <summary>Queues rendering the capture's wall textures again; its photo-real view is left alone.</summary>
     private Task RerenderTexturesAsync(Guid captureId) => QueuePhotoRealAsync(() => Captures.RerenderTexturesAsync(captureId));
+
+    /// <summary>Queues solving the capture's 3D model again from its photos; its photo-real view is kept.</summary>
+    private Task ResolveModelAsync(Guid captureId) => QueuePhotoRealAsync(() => Captures.ResolveModelAsync(captureId));
 
     private async Task QueuePhotoRealAsync(Func<Task<IReadOnlyList<string>>> queue)
     {
@@ -193,6 +196,7 @@ public partial class WallCaptureStatusList : IAsyncDisposable
             {
                 await Task.Delay(PollDelay(failures), ct);
                 var watched = running?.Id;
+                var resolving = history.Where(c => c.ModelResolving).ToDictionary(c => c.Id, c => c.GeometryModelId);
                 try
                 {
                     await InvokeAsync(LoadAsyncWithoutRestart);
@@ -211,6 +215,11 @@ public partial class WallCaptureStatusList : IAsyncDisposable
                 if (finished is { GeometryModelId: not null } && (!finished.IsRunning || finished.Status == WallCaptureStatus.Splatting)
                     && notified.Add(finished.Id))
                 {
+                    await InvokeAsync(() => OnCompleted.InvokeAsync());
+                }
+                else if (history.Any(c => resolving.TryGetValue(c.Id, out var before) && c.GeometryModelId != before))
+                {
+                    // A model solved again is live: the 3D view reloads as after a capture.
                     await InvokeAsync(() => OnCompleted.InvokeAsync());
                 }
             }

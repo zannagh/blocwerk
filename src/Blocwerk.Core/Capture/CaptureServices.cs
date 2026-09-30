@@ -54,6 +54,10 @@ public static class CaptureServices
         // Rendering a finished capture's wall textures again, beside the capture worker (see WallTextureRerenderWorker).
         services.AddSingleton<WallTextureRerenderQueue>();
         services.AddHostedService<WallTextureRerenderWorker>();
+
+        // Solving a finished capture's model again from its photos, beside the capture worker (see WallModelResolveWorker).
+        services.AddSingleton<WallModelResolveQueue>();
+        services.AddHostedService<WallModelResolveWorker>();
         services.AddScoped<IWallCaptureService, WallCaptureService>();
         services.AddScoped<ICapturePanelPhotoService, CapturePanelPhotoService>();
 

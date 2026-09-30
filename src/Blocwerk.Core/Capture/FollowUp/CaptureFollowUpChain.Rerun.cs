@@ -36,4 +36,31 @@ public sealed partial class CaptureFollowUpChain
         await SaveAsync(captureId, c => c.FollowUpJson = CaptureFollowUpRecord.Parse(c.FollowUpJson).With(entry).ToJson(), ct);
         return entry;
     }
+
+    /// <summary>
+    /// Runs every step (of every phase, in order) the capture's record does not have yet, without touching its stage: a
+    /// finished capture's model was replaced (solved again) and its record started over. No-op when its model is not active.
+    /// </summary>
+    /// <param name="captureId">The capture.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>The record after this run.</returns>
+    public async Task<CaptureFollowUpRecord> RunMissingAsync(Guid captureId, CancellationToken ct)
+    {
+        var (context, record, _) = await LoadAsync(captureId, ct);
+        if (context is null)
+        {
+            return record;
+        }
+
+        await using var scope = scopes.CreateAsyncScope();
+        foreach (var step in scope.ServiceProvider.GetServices<ICaptureFollowUpStep>().OrderBy(s => s.Order).Where(s => record.Find(s.Key) is null))
+        {
+            var inputsKey = step.RunsAfterCompletion ? await step.InputsKeyAsync(context, ct) : null;
+            var entry = await RunStepAsync(step, context, ct, quiet: true) with { InputsKey = inputsKey };
+            record = record.With(entry);
+            await SaveAsync(captureId, c => c.FollowUpJson = CaptureFollowUpRecord.Parse(c.FollowUpJson).With(entry).ToJson(), ct);
+        }
+
+        return record;
+    }
 }

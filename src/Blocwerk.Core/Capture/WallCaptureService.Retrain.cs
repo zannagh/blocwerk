@@ -101,6 +101,11 @@ public sealed partial class WallCaptureService
             errors.Add("This capture's 3D model no longer exists.");
         }
 
+        if (CaptureResolveMark.IsResolving(capture.SolveJobId))
+        {
+            errors.Add("The 3D model of this capture is being solved again. Wait for it to finish.");
+        }
+
         if (await db.WallCapturePhotos.CountAsync(p => p.CaptureId == capture.Id) < 2)
         {
             errors.Add("This capture's photos were already deleted (they are kept for a limited time). Start a new capture.");

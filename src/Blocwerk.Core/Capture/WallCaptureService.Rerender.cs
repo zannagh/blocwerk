@@ -56,6 +56,11 @@ public sealed partial class WallCaptureService
             errors.Add("The wall textures of this capture are already being rendered again.");
         }
 
+        if (CaptureResolveMark.IsResolving(capture.SolveJobId))
+        {
+            errors.Add("The 3D model of this capture is being solved again; its textures are rendered again after that.");
+        }
+
         var modelId = capture.GeometryModelId;
         if (modelId is null || !await db.WallGeometryModels.AnyAsync(m => m.Id == modelId && m.WallId == capture.WallId && m.IsActive))
         {

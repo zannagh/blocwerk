@@ -126,6 +126,17 @@
                                         Render wall textures again
                                     </button>
                                 }
+                                @if (capture.ModelResolving)
+                                {
+                                    <div class="hint" role="status">Solving the 3D model again from this capture's photos…</div>
+                                }
+                                else if (running is null && capture.CanResolveModel)
+                                {
+                                    <button class="btn-link" @onclick="() => ResolveModelAsync(capture.Id)" disabled="@retraining"
+                                            title="Solves the 3D model again from this capture's photos with the current solver and activates it only if it lines up with the active model; the photo-real view is kept, the wall textures are rendered again and the holds re-placed. Nothing is trained; takes minutes.">
+                                        Re-solve 3D model (no retraining)
+                                    </button>
+                                }
                             </td>
                         </tr>
                         @if (openCaptureId == capture.Id && openPhotos is not null)

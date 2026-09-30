@@ -135,9 +135,15 @@ public sealed partial class WallCaptureService
             refinishable.Contains(c.Id),
             counts.GetValueOrDefault(c.Id).Blurry,
             CaptureTextureOutcome.IsRerendering(c.TexturesJobId),
-            IsComputeConfigured && MayRerenderTextures(c.Status) && !CaptureTextureOutcome.IsRerendering(c.TexturesJobId)
-                && counts.GetValueOrDefault(c.Id).Count > 0 && c.GeometryModelId is { } active && activeModels.Contains(active))).ToList();
+            IsLive(c, activeModels, counts.GetValueOrDefault(c.Id).Count > 0) && MayRerenderTextures(c.Status)
+                && !CaptureTextureOutcome.IsRerendering(c.TexturesJobId) && !CaptureResolveMark.IsResolving(c.SolveJobId),
+            CaptureResolveMark.IsResolving(c.SolveJobId),
+            IsLive(c, activeModels, counts.GetValueOrDefault(c.Id).Count > 1) && MayResolveModel(c) && !pending.ContainsKey(c.Id))).ToList();
     }
+
+    /// <summary>The capture's model is the active one, its photos are kept and there is a 3D computation service.</summary>
+    private bool IsLive(WallCapture capture, HashSet<Guid> activeModels, bool photosKept) =>
+        IsComputeConfigured && photosKept && capture.GeometryModelId is { } active && activeModels.Contains(active);
 
     private static async Task<HashSet<Guid>> ActiveModelIdsAsync(BlocwerkDbContext db, List<WallCapture> captures)
     {

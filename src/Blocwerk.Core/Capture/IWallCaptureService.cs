@@ -119,6 +119,14 @@ public interface IWallCaptureService
     Task<IReadOnlyList<string>> RerenderTexturesAsync(Guid captureId);
 
     /// <summary>
+    /// Solves the 3D model of a finished capture whose model is active again from its kept photos (same solve request, in
+    /// the background), registers it to the active model and activates it only when that holds (else it is stored and the
+    /// reason noted). The photo-real view is kept (no GPU job); textures and follow-ups are redone for the new model.
+    /// Admin only, never from a kiosk. Returns the problems that prevent it (empty = queued).
+    /// </summary>
+    Task<IReadOnlyList<string>> ResolveModelAsync(Guid captureId);
+
+    /// <summary>
     /// The photos of any capture (draft or finished), for reuse as panel photos. Admin only, never a
     /// kiosk; the wall comes from the capture row. Reading never changes the capture.
     /// </summary>
