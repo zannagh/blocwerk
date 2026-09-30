@@ -88,7 +88,10 @@ average 125.4 mm, within ±3 mm except the bent marker 32 (2 photos, 133.7 mm).
   undeclared segment into the declared facet they are coplanar with (normal < `mergeDeg`, every
   corner < `mergeMm` from its plane). *Move* a declared marker to another facet only if its normal
   disagrees with its own facet by > `foldDeg` and fits the other. Declared segments are never merged
-  with each other; coplanar ones get a `coplanarNote`. Every decision is in `quality.facetDecisions`.
+  with each other; coplanar ones get a `coplanarNote`. When several (nearly coplanar) facets fit a
+  merged or moved marker, the one whose markers are nearest wins (`hostChoice`). A facet's extent
+  leaves out a member that lies outside its other markers' box and inside a coplanar facet's box
+  (`extentExcluded`; still solved and observed, origin unchanged). Every decision is in `quality.facetDecisions`.
 - **Outlier markers.** A marker whose free-solve RMS is > 3 px and > 4× the median is down-weighted
   (sigma = its RMS / median, max 10 px).
 - **False detections** (`wallgeometry/reject.py`). Down-weighting suits a marker that is wrong in every

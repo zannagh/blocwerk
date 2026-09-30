@@ -121,15 +121,34 @@ class _Assigner:
         return [m for m in ms if m not in self.suspect] or ms
 
     def best_host(self, ms, exclude):
-        best = None
+        """(facet, normal angle, max offset) of the declared facet that adopts `ms`, or None.
+
+        Every facet whose plane `ms` fits (normal < mergeDeg, corners < mergeMm) is a candidate. Nearly coplanar
+        facets all fit (The Attic, 2026-09-30: main wall 46.4 deg and "leftover bit" 46.3 deg, 13 mm apart), so the
+        plane cannot choose between them: the candidate whose own markers are NEAREST wins (the plane offset only
+        breaks ties). Picking by offset alone put marker 39, stuck among the main-wall markers, onto the leftover
+        bit 1 m away and stretched that facet over the main wall."""
+        cands = []
         for f in self.declared_fids:
             host = [m for m in self.facets[f][1] if m not in ms]
             if f in exclude or not host:
                 continue
             a, off = _fit_to(ms, _plane(self._trusted(host), self.mw, self.nm), self.mw, self.nm)
-            if a < self.p["mergeDeg"] and off < self.p["mergeMm"] and (best is None or off < best[2]):
-                best = (f, a, off)
-        return best
+            if a < self.p["mergeDeg"] and off < self.p["mergeMm"]:
+                cands.append((round(self._gap(ms, host), 1), off, f, a))
+        if not cands:
+            return None
+        gap, off, f, a = min(cands)
+        if len(cands) > 1:
+            self.log.append({"kind": "hostChoice", "markers": sorted(ms), "intoFacet": f,
+                             "candidates": {c[2]: {"nearestMarkerMm": c[0], "maxOffsetMm": round(c[1], 2)}
+                                            for c in sorted(cands, key=lambda c: c[2])},
+                             "reason": "several coplanar facets fit; the one with the nearest markers wins"})
+        return f, a, off
+
+    def _gap(self, ms, host):
+        """Smallest centre-to-centre distance (mm) from a marker of `ms` to a marker of `host`."""
+        return min(float(np.linalg.norm(self.mw[m].mean(0) - self.mw[h].mean(0))) for m in ms for h in host)
 
     def merge_undeclared(self):
         """Undeclared nominal segments: adopt into a coplanar declared facet."""

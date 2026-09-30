@@ -2,6 +2,7 @@
 import numpy as np
 
 from .camera import K_matrix
+from .extents import stray_markers
 from .frame import facet_axes, world_transform
 from .refplanes import borderline_decisions, warnings
 
@@ -13,7 +14,7 @@ def to_world(sol):
     """World frame: z = up, x along the reference facet; origin = reference facet's origin O."""
     R = world_transform(sol["normals"][sol["ref_facet"]], sol["up"])
     W0 = lambda X: np.asarray(X) @ R.T  # no shift yet
-    facets = {}
+    raw = {}
     for fid, ms in sol["members"].items():
         F, p = sol["fprob"].facet_frame(sol["fx"], fid)
         n = R @ F[:, 2]
@@ -21,13 +22,10 @@ def to_world(sol):
         pw = W0(p)
         ab = {m: np.stack([(W0(sol["corners_ba"][m]) - pw) @ u, (W0(sol["corners_ba"][m]) - pw) @ v], 1)
               for m in ms}
-        allab = np.vstack(list(ab.values()))
-        amin, bmin = allab.min(0)
-        span = allab.max(0) - allab.min(0)
-        facets[fid] = {"origin": pw + amin * u + bmin * v, "u": u, "v": v, "normal": n,
-                       "ab": {m: a - [amin, bmin] for m, a in ab.items()},
-                       "extent": {"aMin": -EXTENT_MARGIN_MM, "aMax": float(span[0] + EXTENT_MARGIN_MM),
-                                  "bMin": -EXTENT_MARGIN_MM, "bMax": float(span[1] + EXTENT_MARGIN_MM)}}
+        raw[fid] = {"origin_w": pw, "u": u, "v": v, "normal": n, "ab": ab}
+    stray = stray_markers(raw, {m: W0(c) for m, c in sol["corners_ba"].items()}, EXTENT_MARGIN_MM,
+                          sol["req"].options.get("facets") if sol.get("req") else None)
+    facets = {fid: _facet(f, stray.get(fid, [])) for fid, f in raw.items()}
     shift = facets[sol["ref_facet"]]["origin"].copy()
     for f in facets.values():
         f["origin"] = f["origin"] - shift
@@ -38,8 +36,27 @@ def to_world(sol):
         Rw = Rc @ R.T
         t = Rc @ o_ba + tc
         cams[img] = {"R": Rw, "t": t, "centre": -Rw.T @ t}
-    sol["world"] = {"R": R, "facets": facets, "corners": corners, "cams": cams}
+    sol["world"] = {"R": R, "facets": facets, "corners": corners, "cams": cams, "stray": stray}
     return sol
+
+
+def _facet(f, stray):
+    """World facet: origin = bottom-left of ALL its markers; extent = its non-stray markers' box + margin."""
+    ab, u, v = f["ab"], f["u"], f["v"]
+    allab = np.vstack(list(ab.values()))
+    amin, bmin = allab.min(0)
+    core = np.vstack([a for m, a in ab.items() if m not in stray]) - [amin, bmin]
+    lo, hi = core.min(0) - EXTENT_MARGIN_MM, core.max(0) + EXTENT_MARGIN_MM
+    return {"origin": f["origin_w"] + amin * u + bmin * v, "u": u, "v": v, "normal": f["normal"],
+            "ab": {m: a - [amin, bmin] for m, a in ab.items()},
+            "extent": {"aMin": float(lo[0]), "aMax": float(hi[0]), "bMin": float(lo[1]), "bMax": float(hi[1])}}
+
+
+def _extent_decisions(sol):
+    return [{"kind": "extentExcluded", "facet": fid, "markers": ms,
+             "reason": "outside the facet's other markers and inside a coplanar facet's region: still a member "
+                       "(solved and observed), left out of the extent"}
+            for fid, ms in sorted(sol["world"].get("stray", {}).items())]
 
 
 def _l(a, nd=3):
@@ -150,7 +167,7 @@ def build_document(sol, checks):
                     "levelPairs": _level_checks(sol),
                     "borderlineFacetDecisions": borderline_decisions(sol["decisions"]),
                     "warnings": warnings(sol)},
-         "facetDecisions": sol["decisions"],
+         "facetDecisions": sol["decisions"] + _extent_decisions(sol),
          "downweightedMarkers": {str(k): v for k, v in sol["downweighted"].items()},
          "rejectedObservations": sol.get("rejected", []),
          "unusedPhotos": sol["unreached"],
