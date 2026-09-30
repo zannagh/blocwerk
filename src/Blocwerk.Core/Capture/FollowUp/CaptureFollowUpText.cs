@@ -17,15 +17,29 @@ public static class CaptureFollowUpText
     /// photos." Null when it changed nothing worth saying (or has not run).
     /// </summary>
     /// <param name="record">The record.</param>
+    /// <param name="listedProposals">
+    /// How many hold proposals the review list shows now, when known: it replaces the count stored when the search ran
+    /// (accepted, rejected and covered proposals no longer wait for review). Null keeps the stored text.
+    /// </param>
     /// <returns>One sentence, or null.</returns>
-    public static string? Summary(CaptureFollowUpRecord record)
+    public static string? Summary(CaptureFollowUpRecord record, int? listedProposals = null)
     {
         var done = record.Steps
-            .Where(s => s.Outcome == CaptureFollowUpOutcome.Done && !string.IsNullOrWhiteSpace(s.Summary))
-            .Select(s => s.Summary)
+            .Where(s => s.Outcome == CaptureFollowUpOutcome.Done)
+            .Select(s => s.Key == FindHoldProposalsFollowUpStep.StepKey && listedProposals is { } listed
+                ? FindHoldProposalsFollowUpStep.Describe(listed)
+                : s.Summary)
+            .Where(s => !string.IsNullOrWhiteSpace(s))
             .ToList();
         return done.Count == 0 ? null : Sentence(string.Join(", ", done));
     }
+
+    /// <summary>The hold proposal search ran and reported proposals, so a live count is worth reading for <see cref="Summary"/>.</summary>
+    /// <param name="record">The record.</param>
+    /// <returns>Whether the record says how many holds were proposed.</returns>
+    public static bool ReportsProposals(CaptureFollowUpRecord record) =>
+        record.Find(FindHoldProposalsFollowUpStep.StepKey) is { Outcome: CaptureFollowUpOutcome.Done } step
+        && !string.IsNullOrWhiteSpace(step.Summary);
 
     /// <summary>What went wrong (each failed step) and the record's note, or null when there is nothing to add.</summary>
     /// <param name="record">The record.</param>

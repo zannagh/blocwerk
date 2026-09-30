@@ -4,6 +4,7 @@
 
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
 using Blocwerk.Core.Geometry.Proposals;
 using Blocwerk.Core.Geometry.Volumes;
 using Microsoft.EntityFrameworkCore;
@@ -60,6 +61,28 @@ internal static class ProposalCoverage
             logger.LogWarning(ex, "Could not compare the hold proposals of wall {WallId} with its holds; all are listed", wallId);
             return [];
         }
+    }
+
+    /// <summary>
+    /// How many of the wall's pending proposals of <paramref name="modelId"/> the review list shows now (those no live hold
+    /// covers), for the capture history's "possible new holds" line. Reads only the fields the check needs.
+    /// </summary>
+    /// <param name="db">The context.</param>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="modelId">The model the proposals were searched on (the active one).</param>
+    /// <param name="logger">Where a failure of the coverage check is logged.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>The pending, uncovered proposal count.</returns>
+    public static async Task<int> ListedCountAsync(BlocwerkDbContext db, Guid wallId, Guid modelId, ILogger logger, CancellationToken ct)
+    {
+        var pending = await db.HoldProposals.AsNoTracking()
+            .Where(p => p.WallId == wallId && p.GeometryModelId == modelId && p.Status == HoldProposalStatus.Pending)
+            .Select(p => new HoldProposal
+            {
+                Id = p.Id, WallId = p.WallId, GeometryModelId = p.GeometryModelId, FacetId = p.FacetId, A = p.A, B = p.B, BestPhoto = string.Empty,
+            })
+            .ToListAsync(ct);
+        return pending.Count == 0 ? 0 : pending.Count - (await CoveredAsync(db, wallId, pending, logger, ct)).Count;
     }
 
     private static (string FacetId, double A, double B, double ToleranceMm) Spot(

@@ -25,9 +25,23 @@ const SLOT_GAP_MM = 1500;
 const SLOT_NEAR_MM = 200;
 const BODY_WOOD = 0xb99d72;
 const CEILING_WOOD = 0xd2bc96;
-/** The ceiling cap sits this far over the wall's highest edge, the floor cap this far under its lowest. */
-const CEILING_GAP_MM = 40;
+/**
+ * The ceiling cap sits on the wall's highest edge (where the main wall meets the real ceiling), the floor
+ * cap this far under its lowest.
+ */
+const CEILING_GAP_MM = 0;
 const FLOOR_GAP_MM = 40;
+/**
+ * Lip: under the ceiling, in front of each facet whose top edge reaches it, a level strip this far below
+ * the ceiling, from LIP_FROM_MM to LIP_TO_MM in front of that edge. It hides the capture's fuzzy fringe
+ * along the ceiling line (the dark gap over a top beam, floaters), not the wall: it starts clear of the
+ * holds at the top edge, and a camera below the ceiling looks past its near side onto the wall.
+ */
+const LIP_DROP_MM = 30;
+const LIP_FROM_MM = 80;
+const LIP_TO_MM = 900;
+/** Corners this near the ceiling line form a facet's top edge there. */
+const TOP_EDGE_MM = 50;
 /** The caps reach this far past the wall on every side (beyond where the camera may go). */
 const CAP_REACH_MM = 40000;
 
@@ -159,10 +173,38 @@ function cap(corners, z, color) {
     return mesh;
 }
 
+/** The lip strips ([4 corners] each) under a ceiling at `topZ` for the facets whose top edge reaches it. */
+export function lipQuads(facets, topZ) {
+    const quads = [];
+    for (const f of facets) {
+        const n = v3(f.normal);
+        const forward = n.clone().setZ(0);
+        const top = (f.corners || []).map(v3).filter(c => c.z >= topZ - TOP_EDGE_MM);
+        if (Math.abs(n.z) > 0.95 || forward.lengthSq() < 1e-6 || top.length < 2) continue;
+        forward.normalize();
+        const along = new THREE.Vector3(-forward.y, forward.x, 0);
+        const ts = top.map(c => c.dot(along));
+        const edge = Math.max(...top.map(c => c.dot(forward)));
+        const z = topZ - LIP_DROP_MM;
+        const at = (t, s) => along.clone().multiplyScalar(t).addScaledVector(forward, edge + s).setZ(z);
+        const [t0, t1] = [Math.min(...ts), Math.max(...ts)];
+        quads.push([at(t0, LIP_FROM_MM), at(t1, LIP_FROM_MM), at(t1, LIP_TO_MM), at(t0, LIP_TO_MM)]);
+    }
+    return quads;
+}
+
+function lip(quad, material) {
+    const [a, b, c, d] = quad;
+    const g = new THREE.BufferGeometry().setFromPoints([a, b, c, a, c, d]);
+    g.computeVertexNormals();
+    return new THREE.Mesh(g, material);
+}
+
 /**
  * Builds the body: { group, pieces, ceilingZ, floorZ, setGhosted(ids) } (a ghosted facet's block hides
  * with it). The ceiling and floor caps close the room over the wall's top edge and under its foot: the
- * capture's floaters above the real ceiling and below the floor stay hidden.
+ * capture's floaters above the real ceiling and below the floor stay hidden; the lips under the ceiling
+ * hide its fringe along the ceiling line.
  */
 export function buildBody(view) {
     const pieces = bodyPieces(view.facets || []);
@@ -176,7 +218,11 @@ export function buildBody(view) {
     const corners = (view.facets || []).flatMap(f => (f.corners || []).map(v3));
     const ceilingZ = corners.length ? Math.max(...corners.map(c => c.z)) + CEILING_GAP_MM : null;
     const floorZ = corners.length ? Math.min(...corners.map(c => c.z)) - FLOOR_GAP_MM : null;
-    if (corners.length) group.add(cap(corners, ceilingZ, CEILING_WOOD), cap(corners, floorZ, BODY_WOOD));
+    if (corners.length) {
+        const ceiling = cap(corners, ceilingZ, CEILING_WOOD);
+        group.add(ceiling, cap(corners, floorZ, BODY_WOOD));
+        lipQuads(view.facets || [], ceilingZ - CEILING_GAP_MM).forEach(q => group.add(lip(q, ceiling.material)));
+    }
     return {
         group,
         pieces,

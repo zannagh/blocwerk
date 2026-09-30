@@ -5,6 +5,7 @@ using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Geometry;
 using Blocwerk.Core.MarkerPlanning;
+using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Capture;
@@ -123,11 +124,12 @@ public sealed partial class WallCaptureService
         var pending = await Runners.GpuJobText.PendingAsync(db, ids);
         var refinishable = await Runners.GpuJobQueue.RefinishableAsync(db, files, ids);
         var activeModels = await ActiveModelIdsAsync(db, captures);
+        var listed = await ListedProposalsAsync(db, captures, activeModels);
         return captures.Select(c => new WallCaptureSummary(
             c.Id, c.CreatedAt, c.Status, c.Progress, c.Stage, c.Error, c.Notes,
             counts.GetValueOrDefault(c.Id).Count, c.GeometryModelId, c.CompletedAt, ReadPlacementCheck(c.PlacementCheckJson),
             c.SplatQuality,
-            CaptureFollowUpText.Summary(CaptureFollowUpRecord.Parse(c.FollowUpJson)),
+            CaptureFollowUpText.Summary(CaptureFollowUpRecord.Parse(c.FollowUpJson), listed.TryGetValue(c.Id, out var n) ? n : (int?)null),
             CaptureFollowUpText.Note(CaptureFollowUpRecord.Parse(c.FollowUpJson)),
             c.WallId,
             c.GeometryModelId is { } modelId ? modelChecks.GetValueOrDefault(modelId, []) : [],
@@ -139,6 +141,24 @@ public sealed partial class WallCaptureService
                 && !CaptureTextureOutcome.IsRerendering(c.TexturesJobId) && !CaptureResolveMark.IsResolving(c.SolveJobId),
             CaptureResolveMark.IsResolving(c.SolveJobId),
             IsLive(c, activeModels, counts.GetValueOrDefault(c.Id).Count > 1) && MayResolveModel(c) && !pending.ContainsKey(c.Id))).ToList();
+    }
+
+    /// <summary>
+    /// For each capture of the active model whose record reports hold proposals: how many the review list shows now
+    /// (pending and not covered by a live hold), so the stored count from the search time does not go stale.
+    /// </summary>
+    private async Task<Dictionary<Guid, int>> ListedProposalsAsync(BlocwerkDbContext db, List<WallCapture> captures, HashSet<Guid> activeModels)
+    {
+        var result = new Dictionary<Guid, int>();
+        foreach (var c in captures.Where(c => c.GeometryModelId is { } m && activeModels.Contains(m)))
+        {
+            if (CaptureFollowUpText.ReportsProposals(CaptureFollowUpRecord.Parse(c.FollowUpJson)))
+            {
+                result[c.Id] = await ProposalCoverage.ListedCountAsync(db, c.WallId, c.GeometryModelId!.Value, logger, CancellationToken.None);
+            }
+        }
+
+        return result;
     }
 
     /// <summary>The capture's model is the active one, its photos are kept and there is a 3D computation service.</summary>

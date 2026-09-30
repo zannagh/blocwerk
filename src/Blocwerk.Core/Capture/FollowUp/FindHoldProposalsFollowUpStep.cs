@@ -20,8 +20,11 @@ namespace Blocwerk.Core.Capture.FollowUp;
 public sealed class FindHoldProposalsFollowUpStep(IHoldProposalService proposals, IDbContextFactory<BlocwerkDbContext> dbContextFactory)
     : ICaptureFollowUpStep
 {
+    /// <summary>The step's key in the follow-up record.</summary>
+    public const string StepKey = "find-hold-proposals";
+
     /// <inheritdoc />
-    public string Key => "find-hold-proposals";
+    public string Key => StepKey;
 
     /// <inheritdoc />
     public int Order => 400;
