@@ -24,7 +24,7 @@ namespace Blocwerk.Core.Capture.FollowUp;
 /// <para>Isolated: a step that throws is recorded as failed and the next step still runs. Only shutdown
 /// (cancellation) stops the chain.</para>
 /// </remarks>
-public sealed class CaptureFollowUpChain(RootDbContextFactory dbContextFactory, IServiceScopeFactory scopes, ILogger<CaptureFollowUpChain> logger)
+public sealed partial class CaptureFollowUpChain(RootDbContextFactory dbContextFactory, IServiceScopeFactory scopes, ILogger<CaptureFollowUpChain> logger)
 {
     /// <summary>Runs the steps due in <paramref name="phase"/> that have not run yet.</summary>
     /// <param name="captureId">The capture (it must have produced the wall's active model).</param>
@@ -102,9 +102,10 @@ public sealed class CaptureFollowUpChain(RootDbContextFactory dbContextFactory, 
     private static bool IsCompleted(WallCaptureStatus status) =>
         status is WallCaptureStatus.Succeeded or WallCaptureStatus.SucceededWithoutTextures or WallCaptureStatus.SucceededWithoutSplat;
 
-    private async Task<CaptureFollowUpEntry> RunStepAsync(ICaptureFollowUpStep step, CaptureFollowUpContext context, CancellationToken ct)
+    private async Task<CaptureFollowUpEntry> RunStepAsync(
+        ICaptureFollowUpStep step, CaptureFollowUpContext context, CancellationToken ct, bool quiet = false)
     {
-        if (!step.RunsAfterCompletion)
+        if (!step.RunsAfterCompletion && !quiet)
         {
             // A done capture keeps its "Done" line while an after-completion step works.
             await SaveAsync(context.CaptureId, c => c.Stage = step.Title.Length <= 200 ? step.Title : step.Title[..200], ct);

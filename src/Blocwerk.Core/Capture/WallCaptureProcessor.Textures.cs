@@ -81,7 +81,7 @@ public sealed partial class WallCaptureProcessor
     }
 
     private async Task StoreTexturesAsync(
-        Guid captureId, Guid modelId, ComputeJobStatus status, IComputeJobClient client, CancellationToken ct)
+        Guid captureId, Guid modelId, ComputeJobStatus status, IComputeJobClient client, CancellationToken ct, bool silent = false)
     {
         var manifest = CaptureComputeDocuments.ParseTextureResult(status.Result);
         if (manifest.Count == 0)
@@ -89,7 +89,11 @@ public sealed partial class WallCaptureProcessor
             throw new CaptureFailedException("the service returned no textures.");
         }
 
-        await SetStageAsync(captureId, WallCaptureStatus.Texturing, 0.96, "Saving wall textures", ct);
+        if (!silent)
+        {
+            await SetStageAsync(captureId, WallCaptureStatus.Texturing, 0.96, "Saving wall textures", ct);
+        }
+
         var rows = new List<WallGeometryTexture>();
         try
         {
@@ -226,9 +230,18 @@ public sealed partial class WallCaptureProcessor
         }
     }
 
+    /// <remarks>
+    /// From the photo-real stage the row's own texture outcome wins over <paramref name="error"/>: a texture re-render
+    /// (<see cref="RerenderTexturesAsync"/>) may have changed it while the view trained.
+    /// </remarks>
     private Task CompleteAsync(Guid captureId, WallCaptureStatus status, string? error, CancellationToken ct) =>
         UpdateAsync(captureId, c =>
         {
+            if (c.Status == WallCaptureStatus.Splatting && status != WallCaptureStatus.SucceededWithoutSplat)
+            {
+                (status, error) = (TextureOutcome(c.Error), c.Error);
+            }
+
             c.Status = status;
             c.Progress = 1;
             c.Stage = status switch

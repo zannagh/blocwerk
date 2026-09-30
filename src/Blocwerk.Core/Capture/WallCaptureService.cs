@@ -32,7 +32,8 @@ public sealed partial class WallCaptureService(
     WallCapturePipelineOptions? pipelineOptions = null,
     IDeployBusyGate? busyGate = null,
     CaptureVideoUploadSlots? uploadSlots = null,
-    ICapturePhotoConverter? photoConverter = null) : IWallCaptureService
+    ICapturePhotoConverter? photoConverter = null,
+    WallTextureRerenderQueue? textureQueue = null) : IWallCaptureService
 {
     private const string AdminAction = "Capturing wall photos";
 

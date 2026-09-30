@@ -38,7 +38,8 @@ internal sealed class CaptureScenario : IDisposable
         MarkerPlans = new MarkerPlanService(harness.DbContextFactory, harness.CurrentUser, NullLogger<MarkerPlanService>.Instance, kiosk);
         Service = new WallCaptureService(
             harness.DbContextFactory, harness.CurrentUser, Files, Queue, new FakeComputeJobClientFactory(Client, SplatClient),
-            NullLogger<WallCaptureService>.Instance, kiosk, Detector, MarkerPlans, Video, Options, busyGate, photoConverter: photoConverter);
+            NullLogger<WallCaptureService>.Instance, kiosk, Detector, MarkerPlans, Video, Options, busyGate, photoConverter: photoConverter,
+            textureQueue: TextureQueue);
         Runners = runnerOptions is null
             ? null
             : new GpuJobQueue(
@@ -71,6 +72,9 @@ internal sealed class CaptureScenario : IDisposable
     public MarkerPlanService MarkerPlans { get; }
 
     public WallCaptureQueue Queue { get; } = new();
+
+    /// <summary>Captures whose textures are to be rendered again (run them with <c>Processor.RerenderTexturesAsync</c>).</summary>
+    public WallTextureRerenderQueue TextureQueue { get; } = new();
 
     public IPushNotificationService Push { get; } = Substitute.For<IPushNotificationService>();
 

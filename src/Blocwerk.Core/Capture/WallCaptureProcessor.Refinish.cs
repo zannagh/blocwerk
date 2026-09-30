@@ -27,9 +27,17 @@ public sealed partial class WallCaptureProcessor
             captureId,
             c =>
             {
+                var textureError = c.Error;
                 c.Status = before.CaptureStatus;
                 c.Error = before.CaptureError;
                 c.Stage = before.CaptureStage;
+
+                // Textures rendered again meanwhile (RerenderTexturesAsync) keep their outcome.
+                if (WallCaptureService.TexturePart(before.CaptureError) != textureError)
+                {
+                    CaptureTextureOutcome.Apply(c, textureError);
+                }
+
                 c.CompletedAt = before.CaptureCompletedAt ?? DateTimeOffset.UtcNow;
                 c.Progress = 1;
                 var note = $"Finishing the trained photo-real view again failed ({reason}); the view installed before stays.";

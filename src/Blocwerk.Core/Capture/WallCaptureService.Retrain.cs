@@ -20,7 +20,7 @@ namespace Blocwerk.Core.Capture;
 public sealed partial class WallCaptureService
 {
     /// <summary>How <c>EndWithoutSplat</c> starts the splat half of a finished capture's error.</summary>
-    private const string SplatErrorStart = "The 3D model is active, but its photo-real view could not be made:";
+    internal const string SplatErrorStart = "The 3D model is active, but its photo-real view could not be made:";
 
     public async Task<IReadOnlyList<string>> RetrainPhotoRealAsync(Guid captureId, SplatQuality quality)
     {

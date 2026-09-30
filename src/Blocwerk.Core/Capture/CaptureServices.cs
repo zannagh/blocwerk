@@ -50,6 +50,10 @@ public static class CaptureServices
         services.AddSingleton<Runners.SplatQualityOffer>();
 
         services.AddHostedService<WallCaptureWorker>();
+
+        // Rendering a finished capture's wall textures again, beside the capture worker (see WallTextureRerenderWorker).
+        services.AddSingleton<WallTextureRerenderQueue>();
+        services.AddHostedService<WallTextureRerenderWorker>();
         services.AddScoped<IWallCaptureService, WallCaptureService>();
         services.AddScoped<ICapturePanelPhotoService, CapturePanelPhotoService>();
 

@@ -122,6 +122,7 @@ public sealed partial class WallCaptureService
         var modelChecks = await ModelChecksAsync(db, captures);
         var pending = await Runners.GpuJobText.PendingAsync(db, ids);
         var refinishable = await Runners.GpuJobQueue.RefinishableAsync(db, files, ids);
+        var activeModels = await ActiveModelIdsAsync(db, captures);
         return captures.Select(c => new WallCaptureSummary(
             c.Id, c.CreatedAt, c.Status, c.Progress, c.Stage, c.Error, c.Notes,
             counts.GetValueOrDefault(c.Id).Count, c.GeometryModelId, c.CompletedAt, ReadPlacementCheck(c.PlacementCheckJson),
@@ -132,7 +133,18 @@ public sealed partial class WallCaptureService
             c.GeometryModelId is { } modelId ? modelChecks.GetValueOrDefault(modelId, []) : [],
             pending.GetValueOrDefault(c.Id),
             refinishable.Contains(c.Id),
-            counts.GetValueOrDefault(c.Id).Blurry)).ToList();
+            counts.GetValueOrDefault(c.Id).Blurry,
+            CaptureTextureOutcome.IsRerendering(c.TexturesJobId),
+            IsComputeConfigured && MayRerenderTextures(c.Status) && !CaptureTextureOutcome.IsRerendering(c.TexturesJobId)
+                && counts.GetValueOrDefault(c.Id).Count > 0 && c.GeometryModelId is { } active && activeModels.Contains(active))).ToList();
+    }
+
+    private static async Task<HashSet<Guid>> ActiveModelIdsAsync(BlocwerkDbContext db, List<WallCapture> captures)
+    {
+        var modelIds = captures.Where(c => c.GeometryModelId is not null).Select(c => c.GeometryModelId!.Value).Distinct().ToList();
+        return modelIds.Count == 0
+            ? []
+            : (await db.WallGeometryModels.Where(m => modelIds.Contains(m.Id) && m.IsActive).Select(m => m.Id).ToListAsync()).ToHashSet();
     }
 
     /// <summary>What the solver said about each capture's model (its stored JSON), by model id.</summary>

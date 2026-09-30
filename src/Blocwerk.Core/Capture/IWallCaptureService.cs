@@ -111,6 +111,14 @@ public interface IWallCaptureService
     Task<IReadOnlyList<string>> RefinishPhotoRealAsync(Guid captureId);
 
     /// <summary>
+    /// Renders the wall textures of a capture whose model is active again (only the textures job, in the background; the
+    /// holds are then placed on them again). The capture's status and photo-real view are left alone, so it may run while
+    /// the view trains. On success the texture half of the capture's error goes; on failure it records the new reason.
+    /// Admin only, never from a kiosk. Returns the problems that prevent it (empty = queued).
+    /// </summary>
+    Task<IReadOnlyList<string>> RerenderTexturesAsync(Guid captureId);
+
+    /// <summary>
     /// The photos of any capture (draft or finished), for reuse as panel photos. Admin only, never a
     /// kiosk; the wall comes from the capture row. Reading never changes the capture.
     /// </summary>

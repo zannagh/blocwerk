@@ -16,8 +16,11 @@ namespace Blocwerk.Core.Capture.FollowUp;
 /// </summary>
 public sealed class PlaceHoldsFollowUpStep(IHoldTexturePlacementService placement) : ICaptureFollowUpStep
 {
+    /// <summary>The step's key (it is re-run after a texture re-render).</summary>
+    public const string StepKey = "place-holds";
+
     /// <inheritdoc />
-    public string Key => "place-holds";
+    public string Key => StepKey;
 
     /// <inheritdoc />
     public int Order => 100;
