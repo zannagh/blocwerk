@@ -62,7 +62,7 @@ export function mount(container, view, options = {}) {
     const volumes = buildVolumes(view, renderer, textures);   // plain: Schematic; photo: Photos (in `textures`)
     const body = buildBody(view);                             // solid in every mode, photo-real too
     scene.add(body.group, facets.group, textures, markers, labels, holds.lit, holds.dim, volumes.plain, outlines, holds.rings, holds.pick, selection);
-    const frame = wallFrame(view, facets.group, body.pieces);
+    const frame = wallFrame(view, facets.group, body);
     const ghosts = createGhosting({ facets, textures, quads: frame.quads, sides });
     const clip = createSplatClip(frame.quads, frame.floorZ);
     const surroundings = buildSurroundings(scene, frame, themeColor(container, '--bg', '#f5f4f1'));

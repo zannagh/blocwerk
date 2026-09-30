@@ -13,7 +13,7 @@ const UP = new THREE.Vector3(0, 0, 1);
  * "front" direction (horizontal, from the wall toward the climber — the main facet's normal
  * flattened) and the spot a climber stands on in front of it.
  */
-export function wallFrame(view, facetGroup, pieces = []) {
+export function wallFrame(view, facetGroup, body = {}) {
     const box = new THREE.Box3().setFromObject(facetGroup);
     if (box.isEmpty()) box.set(new THREE.Vector3(-1000, -1000, 0), new THREE.Vector3(1000, 1000, 2000));
     const main = view.facets.find(f => f.id === '0')
@@ -50,7 +50,7 @@ export function wallFrame(view, facetGroup, pieces = []) {
     }
     // floorZ is the lowest facet edge (the kickboard's bottom ≈ the mats' top): the floor plane.
     const quads = facetQuads(view.facets);
-    const reach = createReach(pieces, main, floorZ, front);
+    const reach = createReach(body.pieces || [], main, floorZ, front, body.ceilingZ);
     return { box, center, front, right, floorZ, stand, under, points, quads, reach, radius: box.getBoundingSphere(new THREE.Sphere()).radius };
 }
 

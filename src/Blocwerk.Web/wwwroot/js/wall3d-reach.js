@@ -13,11 +13,13 @@ import * as THREE from '../lib/three/three.module.min.js';
 import { pointOf, polygonDistance } from './wall3d-body.js';
 
 /** Closest zoom: the camera stops this far from the surface it looks at. */
-export const MIN_ZOOM_MM = 120;
+export const MIN_ZOOM_MM = 150;
 const CAMERA_GAP_MM = 80;
 const SIDE_PAD_MM = 40;
 /** Nor below the floor (the mats' surface is ~33 cm up; a camera on them may look up). */
 const FLOOR_GAP_MM = 200;
+/** Nor above the ceiling cap (wall3d-body.js), nor this close under it. */
+const CEILING_GAP_MM = 150;
 const SIDE_REACH_MM = 600;
 /** A target this much behind the surface on its sight line moves onto it. */
 const ANCHOR_SLACK_MM = 5;
@@ -72,10 +74,10 @@ function roomLimits(prisms, main, front) {
 
 /**
  * `pieces`: buildBody's pieces, `main`: the main facet, `floorZ`: the floor plane, `front`: the
- * horizontal direction toward the climber (wallFrame). Returns { minDistance, keepOut(position) → moved,
- * anchor(position, target) → moved, step(camera, controls, tweening) }.
+ * horizontal direction toward the climber (wallFrame), `ceilingZ`: the ceiling cap. Returns
+ * { minDistance, keepOut(position) → moved, anchor(position, target) → moved, step(camera, controls, tweening) }.
  */
-export function createReach(pieces, main, floorZ, front) {
+export function createReach(pieces, main, floorZ, front, ceilingZ = null) {
     const prisms = pieces.map(prism);
     const limits = roomLimits(prisms, main, front);
     const ray = new THREE.Ray();
@@ -94,6 +96,10 @@ export function createReach(pieces, main, floorZ, front) {
                 }
             }
             for (const q of prisms) any = pushOut(q, pos) || any;
+            if (ceilingZ != null && pos.z > ceilingZ - CEILING_GAP_MM) {
+                pos.z = ceilingZ - CEILING_GAP_MM;
+                any = true;
+            }
             if (floorZ != null && pos.z < floorZ + FLOOR_GAP_MM) {
                 pos.z = floorZ + FLOOR_GAP_MM;
                 any = true;

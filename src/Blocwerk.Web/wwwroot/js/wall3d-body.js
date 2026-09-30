@@ -24,6 +24,12 @@ const ADJACENT_MM = 300;
 const SLOT_GAP_MM = 1500;
 const SLOT_NEAR_MM = 200;
 const BODY_WOOD = 0xb99d72;
+const CEILING_WOOD = 0xd2bc96;
+/** The ceiling cap sits this far over the wall's highest edge, the floor cap this far under its lowest. */
+const CEILING_GAP_MM = 40;
+const FLOOR_GAP_MM = 40;
+/** The caps reach this far past the wall on every side (beyond where the camera may go). */
+const CAP_REACH_MM = 40000;
 
 function frameOf(f) {
     return { id: f.id, o: v3(f.origin), u: v3(f.u), v: v3(f.v), n: v3(f.normal), outline: facetOutline(f).map(p => [p[0], p[1]]) };
@@ -143,7 +149,21 @@ function pieceGeometry(p) {
     return g;
 }
 
-/** Builds the body: { group, pieces, setGhosted(ids) } (a ghosted facet's block hides with it). */
+/** A level plane at height `z` over the wall's footprint and CAP_REACH_MM around it. */
+function cap(corners, z, color) {
+    const box = new THREE.Box3().setFromPoints(corners);
+    const size = Math.max(box.max.x - box.min.x, box.max.y - box.min.y) + 2 * CAP_REACH_MM;
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(size, size),
+        new THREE.MeshStandardMaterial({ color, roughness: 0.95, metalness: 0, side: THREE.DoubleSide }));
+    mesh.position.set((box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2, z);
+    return mesh;
+}
+
+/**
+ * Builds the body: { group, pieces, ceilingZ, floorZ, setGhosted(ids) } (a ghosted facet's block hides
+ * with it). The ceiling and floor caps close the room over the wall's top edge and under its foot: the
+ * capture's floaters above the real ceiling and below the floor stay hidden.
+ */
 export function buildBody(view) {
     const pieces = bodyPieces(view.facets || []);
     const material = new THREE.MeshStandardMaterial({ color: BODY_WOOD, roughness: 0.95, metalness: 0, side: THREE.DoubleSide });
@@ -153,11 +173,17 @@ export function buildBody(view) {
         mesh.userData.facetId = p.id;
         group.add(mesh);
     }
+    const corners = (view.facets || []).flatMap(f => (f.corners || []).map(v3));
+    const ceilingZ = corners.length ? Math.max(...corners.map(c => c.z)) + CEILING_GAP_MM : null;
+    const floorZ = corners.length ? Math.min(...corners.map(c => c.z)) - FLOOR_GAP_MM : null;
+    if (corners.length) group.add(cap(corners, ceilingZ, CEILING_WOOD), cap(corners, floorZ, BODY_WOOD));
     return {
         group,
         pieces,
+        ceilingZ,
+        floorZ,
         setGhosted(ids) {
-            for (const m of group.children) m.visible = !ids.includes(m.userData.facetId);
+            for (const m of group.children) m.visible = !m.userData.facetId || !ids.includes(m.userData.facetId);
         },
     };
 }
