@@ -12,11 +12,11 @@ from . import textures as tx
 GAIN_DOWNSCALE = 8
 
 
-def _prepare(facets, cams, names, p):
+def _prepare(facets, cams, names, p, occs):
     jobs = []
     for f in facets:
         g = tx._grid(f, p)
-        X, S = tx._cell_scores(f, g, cams, names, p, [o for o in facets if o is not f])
+        X, S = tx._cell_scores(f, g, cams, names, p, occs)
         W = blend.view_weights(S, int(p["blendViews"]), float(p["blendSharpness"]))
         acc = blend.FacetAccumulator(g, W, p["labelCellPx"], int(p["blendViews"]))
         cells = np.full((len(names),) + S.shape[1:] + (3,), np.nan, np.float32)
@@ -52,8 +52,8 @@ def _sample_gain_cells(img, cam, c, jobs):
             j["cells"][c] = col
 
 
-def render(doc, load_photo, cams, names, facets, p, progress):
-    jobs = _prepare(facets, cams, names, p)
+def render(doc, load_photo, cams, names, facets, p, progress, occs):
+    jobs = _prepare(facets, cams, names, p, occs)
     balance = bool(p["exposureBalance"])
     for c, n in enumerate(names):
         if progress:

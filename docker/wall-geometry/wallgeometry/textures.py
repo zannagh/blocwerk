@@ -10,10 +10,10 @@ Pixel convention of every output image: column i, row j (top-left origin) covers
   a = aMin + (i + 0.5) * mmPerPx,   b = bMax - (j + 0.5) * mmPerPx
 i.e. +a to the right, +b up, exactly the facet frame of the geometry document.
 
-Plane points that lie behind another facet's surface (inside the wall), or that no photo sees, are left
-black; the per-facet coverage mask (`coverage_mask`) marks them 0 so a viewer can show the plain facet
-there instead. There is no geometric occlusion test (a hold or facet between camera and spot is not
-detected).
+A photo is not used for a plane point when another facet's region lies between the point and the
+camera (occlusion.py: ray vs the occluder's real region, never "behind its infinite plane"). Points no
+photo sees are left black; the per-facet coverage mask (`coverage_mask`) marks them 0 so a viewer can
+show the plain facet there instead. Holds are not modelled as occluders.
 
 By default (blendViews > 1, see blended.py) every photo is first exposure / white-balance balanced
 (exposure.py), and the per-cell choice penalises photos that disagree with what the other photos see
@@ -27,7 +27,7 @@ import math
 import cv2
 import numpy as np
 
-from . import blend, consensus, exposure, flatten, scale, seams, sourcemap
+from . import blend, consensus, exposure, flatten, occlusion, scale, seams, sourcemap
 from .markercheck import marker_check
 
 DEFAULTS = {"behindOtherFacetMm": 30.0, "mmPerPx": 2.0, "maxSidePx": 4096, "extraMarginMm": 100.0, "labelCellPx": 8,
@@ -133,30 +133,24 @@ def _score(cam, f, X, margin):
     return np.where(ok, cam["K"][0, 0] * cos / np.maximum(dist, 1e-9), 0.0)
 
 
-def _behind_others(f, others, X, tol):
-    """Plane points hidden inside the wall: more than `tol` behind another (non-coplanar) facet's
-    surface while projecting into that facet's extent. Clips e.g. the side triangle along the
-    overhang it meets, and the kickboard above its seam."""
-    n = np.array(f["normal"], float)
-    hidden = np.zeros(X.shape[:-1], bool)
-    for g in others:
-        ng = np.array(g["normal"], float)
-        if abs(n @ ng) > np.cos(np.radians(10)):  # (nearly) coplanar neighbours just abut
-            continue
-        Og, ug, vg = (np.array(g[k], float) for k in ("origin", "u", "v"))
-        d = (X - Og) @ ng
-        a, b = (X - Og) @ ug, (X - Og) @ vg
-        e = g["extentMm"]
-        inside = (a >= e["aMin"]) & (a <= e["aMax"]) & (b >= e["bMin"]) & (b <= e["bMax"])
-        hidden |= (d < -tol) & inside
-    return hidden
+def occluders(facets, doc):
+    """Every facet as a view blocker (occlusion.py), built once per render."""
+    return occlusion.occluders(facets, doc.get("markers", []))
 
 
-def _cell_scores(f, g, cams, names, p, others):
-    """Per label cell: world points X (ch, cw, 3) and every photo's score S (C, ch, cw)."""
+def _cell_scores(f, g, cams, names, p, occs):
+    """Per label cell: world points X (ch, cw, 3) and every photo's score S (C, ch, cw); a photo scores
+    0 where another facet's region (`occs`, the other facets' occlusion.Occluder) blocks its view."""
     X = blend.cell_points(f, g, p["labelCellPx"], _plane_points)
     S = np.stack([_score(cams[n], f, X, p["imageMarginPx"]) for n in names])  # (C, ch, cw)
-    S[:, _behind_others(f, others, X, p["behindOtherFacetMm"])] = 0
+    others = [o for o in occs if o.id != f["id"]]
+    flat = X.reshape(-1, 3)
+    for k, n in enumerate(names):
+        sk = S[k].reshape(-1)
+        seen = np.nonzero(sk > 0)[0]
+        if seen.size and others:
+            centre = -cams[n]["R"].T @ cams[n]["t"]
+            sk[seen[occlusion.hidden(centre, others, flat[seen], p["behindOtherFacetMm"])]] = 0
     return X, S
 
 
@@ -215,9 +209,9 @@ def render_textures(doc, load_photo, available, params=None, progress=None):
     slot_bytes = (int(p["blendViews"]) + 2) * 7 * sum(_grid(f, p)["W"] * _grid(f, p)["H"] for f in facets)
     if int(p["blendViews"]) > 1 and slot_bytes <= p["blendMaxBytes"]:
         from . import blended  # imports this module
-        results = blended.render(doc, load_photo, cams, names, facets, p, progress)
+        results = blended.render(doc, load_photo, cams, names, facets, p, progress, occluders(facets, doc))
     else:
-        results = _render_single(doc, load_photo, cams, names, facets, p, progress)
+        results = _render_single(doc, load_photo, cams, names, facets, p, progress, occluders(facets, doc))
     fid = {f["id"]: f for f in facets}
     if p["flattenShading"]:
         shading = flatten.flatten(results, fid, p)
@@ -239,11 +233,11 @@ def _checked_photo(load_photo, n, cam):
     return img
 
 
-def _render_single(doc, load_photo, cams, names, facets, p, progress):
+def _render_single(doc, load_photo, cams, names, facets, p, progress, occs):
     jobs = []
     for f in facets:
         g = _grid(f, p)
-        _, S = _cell_scores(f, g, cams, names, p, [o for o in facets if o is not f])
+        _, S = _cell_scores(f, g, cams, names, p, occs)
         cells = _cell_labels(S, names, p)
         lab = _upsample(cells, g, p["labelCellPx"])
         jobs.append({"f": f, "g": g, "lab": lab, "cells": cells, "out": np.zeros((g["H"], g["W"], 3), np.uint8),
