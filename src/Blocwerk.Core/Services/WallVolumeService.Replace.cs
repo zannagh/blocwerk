@@ -32,7 +32,7 @@ public sealed partial class WallVolumeService
         var removed = old.Where(v => v.IsRemoved).ToList();
         var removedRings = removed.Select(v => (v.FacetId, Ring: Footprint(v.FootprintJson))).ToList();
         var previous = old.Where(v => !v.IsRemoved)
-            .Select(v => (v.FacetId, Centre: Centre(Footprint(v.FootprintJson)), v.IsHidden, v.HasFlatSides)).ToList();
+            .Select(v => (v.FacetId, Centre: Centre(Footprint(v.FootprintJson)), v.IsHidden, v.HasFlatSides, Declined: !v.HasFlatSides && v.FlatFitRmsMm is not null)).ToList();
         db.WallVolumes.RemoveRange(old.Where(v => !v.IsRemoved));
         var wallFlat = await db.Walls.Where(w => w.Id == wallId).Select(w => w.VolumesHaveFlatSides).FirstOrDefaultAsync(ct);
         var index = 0;
@@ -45,13 +45,16 @@ public sealed partial class WallVolumeService
 
             var centre = Centre(v.Footprint);
             var match = previous.Where(p => p.FacetId == v.FacetId && Distance(p.Centre, centre) < SameVolumeMm)
-                .Select(p => ((bool IsHidden, bool HasFlatSides)?)(p.IsHidden, p.HasFlatSides)).FirstOrDefault();
+                .Select(p => ((bool IsHidden, bool HasFlatSides, bool Declined)?)(p.IsHidden, p.HasFlatSides, p.Declined)).FirstOrDefault();
             var row = NewRow(wallId, modelId, v, ++index);
             row.IsHidden = match?.IsHidden ?? false;
-            if (match?.HasFlatSides ?? wallFlat)
+
+            // An admin's choice carries over; flat sides the fit declined last time are not a choice and are tried again.
+            var chosen = match is { Declined: false };
+            if (chosen ? match!.Value.HasFlatSides : wallFlat)
             {
                 // A volume the admin gave flat sides keeps them; the wall's default only applies where they fit well.
-                WallVolumeShapes.SetFlatSides(row, on: true, force: match is not null);
+                WallVolumeShapes.SetFlatSides(row, on: true, force: chosen);
             }
 
             db.WallVolumes.Add(row);

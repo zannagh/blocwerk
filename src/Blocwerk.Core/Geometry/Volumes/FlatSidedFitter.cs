@@ -30,6 +30,12 @@ public static class FlatSidedFitter
     /// <summary>See <see cref="GoodRmsMm"/>.</summary>
     public const double GoodRmsShare = 0.12;
 
+    /// <summary>
+    /// A pyramid or a roof (the owner's volumes: flat plywood sheets) is also good within this, mm: a volume in the middle of
+    /// a wall is photographed from fewer angles and its splat is noisier (on The Attic, 2026-09-30, a clear roof fitted to 14.9 mm).
+    /// </summary>
+    public const double LooseRmsMm = 16;
+
     private const int Passes = 3;
     private const double SlackMm = 2;
     private const double SlackShare = 0.1;
@@ -119,8 +125,16 @@ public static class FlatSidedFitter
         var shape = candidate.Shape == "multi-peak" && inside.Count < 2 ? null : candidate.Shape;
         var polyhedron = new VolumePolyhedron(faces, shape);
         var rms = TrimmedRms(polyhedron, cells);
-        return new FlatSidedFit(polyhedron, Math.Round(rms, 1), rms <= Math.Max(GoodRmsMm, GoodRmsShare * polyhedron.TopHeightMm));
+        return new FlatSidedFit(polyhedron, Math.Round(rms, 1), IsGoodFit(rms, polyhedron));
     }
+
+    /// <summary>Within <see cref="GoodRmsMm"/> (or <see cref="GoodRmsShare"/> of the height), or a pyramid or roof within <see cref="LooseRmsMm"/>.</summary>
+    /// <param name="rmsMm">The trimmed RMS, mm.</param>
+    /// <param name="polyhedron">The fitted shape.</param>
+    /// <returns>Whether the fit is good.</returns>
+    public static bool IsGoodFit(double rmsMm, VolumePolyhedron polyhedron) =>
+        rmsMm <= Math.Max(GoodRmsMm, GoodRmsShare * polyhedron.TopHeightMm)
+        || (polyhedron.Shape is "pyramid" or "roof" && rmsMm <= LooseRmsMm);
 
     /// <summary>A reading's top vertices moved inside the base; a plateau's stay on its plane.</summary>
     private static List<(double A, double B, double H)> Inside(VolumeTopCandidate candidate, IReadOnlyList<(double A, double B)> ring)

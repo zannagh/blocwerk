@@ -99,6 +99,12 @@ public sealed record VolumeDetectionOptions
     public double SparseMaxMedianMm { get; init; } = 80;
 
     /// <summary>
+    /// A candidate lower than this whose flat-sided reading is several separate peaks is a cluster of holds and bumps, mm
+    /// (on The Attic, 2026-09-30: 60 mm; the real volumes stand 79–164 mm).
+    /// </summary>
+    public double MultiPeakMaxHeightMm { get; init; } = 70;
+
+    /// <summary>
     /// A small candidate without any hold on it is a step in the wall, not a volume (only judged when the facet has
     /// holds located on it at all).
     /// </summary>

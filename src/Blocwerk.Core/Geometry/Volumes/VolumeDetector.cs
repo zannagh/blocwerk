@@ -20,6 +20,9 @@ public static class VolumeDetector
     private const double RaisedQuantile = 0.75;
     private const double HeightQuantile = 0.9;
 
+    /// <summary>Half-width of the square that cuts a merged region at its necks, mm (2 cells of 20 mm: strands under ~100 mm wide go).</summary>
+    private const double NeckMm = 40;
+
     /// <summary>Every candidate on every facet (accepted and rejected).</summary>
     /// <param name="points">World points, mm.</param>
     /// <param name="frames">The facets by id.</param>
@@ -75,10 +78,14 @@ public static class VolumeDetector
         var members = Members(cloud, grid, labels, count);
         for (var k = 1; k <= count; k++)
         {
-            if (Candidate(cloud, grid, labels, k, members[k], holds, options, seams) is { } candidate)
+            var cells = Enumerable.Range(0, labels.Length).Where(i => labels[i] == k).ToList();
+            if (Candidate(cloud, grid, cells, members[k], holds, options, seams) is not { } candidate)
             {
-                result.Add(candidate);
+                continue;
             }
+
+            var pieces = IsMergeSuspect(candidate) ? Split(cloud, grid, cells, members[k], holds, options, seams) : [];
+            result.AddRange(pieces.Any(p => p.IsAccepted) ? pieces : [candidate]);
         }
 
         return result;
@@ -104,17 +111,58 @@ public static class VolumeDetector
         return members;
     }
 
-    private static DetectedVolume? Candidate(
+    /// <summary>
+    /// Rejected for reaching the facet's edge: possibly a real volume joined to the bumps at the edge by a thin strand of
+    /// raised cells (on The Attic, 2026-09-30, a roof joined to the bumps above it up to the top edge). A sparse region or
+    /// a shallow sheet is not split: cut up, its bumps would pass as volumes.
+    /// </summary>
+    private static bool IsMergeSuspect(DetectedVolume c) =>
+        c.Status == "rejected:edge";
+
+    /// <summary>
+    /// The region cut at its necks (opened by a square of half-width <see cref="NeckMm"/>, which keeps any volume wider than
+    /// ~100 mm whole), each piece measured and judged on its own.
+    /// </summary>
+    private static List<DetectedVolume> Split(
         FacetCloud cloud,
         CellGrid grid,
-        int[] labels,
-        int label,
+        List<int> cells,
         List<int> members,
         IReadOnlyList<KnownHoldEllipse> holds,
         VolumeDetectionOptions options,
         FacetSeams? seams)
     {
-        var cells = Enumerable.Range(0, labels.Length).Where(i => labels[i] == label).ToList();
+        var mask = new bool[grid.Cols * grid.Rows];
+        cells.ForEach(c => mask[c] = true);
+        var (labels, count) = grid.Label(grid.Open(mask, Math.Max(1, (int)Math.Round(NeckMm / grid.CellMm))));
+        var pieces = new List<DetectedVolume>();
+        if (count < 2)
+        {
+            return pieces;
+        }
+
+        for (var k = 1; k <= count; k++)
+        {
+            var piece = Enumerable.Range(0, labels.Length).Where(i => labels[i] == k).ToList();
+            var inPiece = members.Where(p => labels[grid.IndexOf(cloud.A[p], cloud.B[p])] == k).ToList();
+            if (Candidate(cloud, grid, piece, inPiece, holds, options, seams) is { } candidate)
+            {
+                pieces.Add(candidate);
+            }
+        }
+
+        return pieces;
+    }
+
+    private static DetectedVolume? Candidate(
+        FacetCloud cloud,
+        CellGrid grid,
+        List<int> cells,
+        List<int> members,
+        IReadOnlyList<KnownHoldEllipse> holds,
+        VolumeDetectionOptions options,
+        FacetSeams? seams)
+    {
         var area = cells.Count * options.CellMm * options.CellMm / 1e6;
         if (area < options.MinAreaM2 * 0.5 || members.Count < MinComponentPoints)
         {
@@ -137,8 +185,24 @@ public static class VolumeDetector
             Math.Round(VolumeChecks.WallSupport(cloud, footprint, options), 3), string.Empty, null);
         var status = VolumeChecks.Judge(candidate, cloud.Extent, options, seams, holds.Count > 0);
         var surface = status == DetectedVolume.Accepted ? VolumeSurfaceBuilder.Build(cloud, footprint, options) : null;
+        if (surface is not null && IsLowMultiPeak(candidate, surface, options))
+        {
+            (status, surface) = ("rejected:low-multi-peak", null);
+        }
+
         return candidate with { Status = status, Surface = surface };
     }
+
+    /// <summary>
+    /// Low (below <see cref="VolumeDetectionOptions.MultiPeakMaxHeightMm"/>) and its flat-sided reading is several separate
+    /// peaks: a cluster of holds and bumps, not a volume (the owner's volumes are pyramids and roofs).
+    /// </summary>
+    /// <param name="c">The measured candidate.</param>
+    /// <param name="surface">Its height field.</param>
+    /// <param name="options">Tuning.</param>
+    /// <returns>Whether it is such a cluster.</returns>
+    public static bool IsLowMultiPeak(DetectedVolume c, VolumeSurface surface, VolumeDetectionOptions options) =>
+        c.HeightMm < options.MultiPeakMaxHeightMm && FlatSidedFitter.Fit(surface, c.Footprint)?.Polyhedron.Shape == "multi-peak";
 
     private static IEnumerable<(double A, double B)> CellCorners(CellGrid grid, int index)
     {

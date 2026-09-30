@@ -53,6 +53,12 @@ public static class WallVolumeShapes
             volume.SurfaceJson = VolumeSurface.FlatSided(fit.Polyhedron, field.Grid.CellMm).ToJson();
             (volume.HasFlatSides, volume.FlatFitRmsMm) = (true, fit.RmsMm);
         }
+        else if (!volume.HasFlatSides)
+        {
+            // Declined automatically (the fit was poor): the error is kept, which tells a later detection that nobody
+            // switched them off (an admin's "off" clears it), so the volume gets another chance.
+            volume.FlatFitRmsMm = fit.RmsMm;
+        }
 
         return fit;
     }

@@ -91,6 +91,12 @@ public sealed record CellGrid(double ALo, double BLo, double CellMm, int Cols, i
         return Morph(Morph(closed, 0, 1, false), -1, 0, true);
     }
 
+    /// <summary>Morphological opening by a (2r+1)² square: removes necks and strands narrower than that.</summary>
+    /// <param name="mask">The mask.</param>
+    /// <param name="radius">The square's half-width, cells.</param>
+    /// <returns>The opened mask.</returns>
+    public bool[] Open(bool[] mask, int radius) => Morph(Morph(mask, -radius, radius, false), -radius, radius, true);
+
     /// <summary>Dilation by the square offsets [lo, hi]² (cells outside count as empty).</summary>
     /// <param name="mask">The mask.</param>
     /// <param name="lo">Lowest offset.</param>
