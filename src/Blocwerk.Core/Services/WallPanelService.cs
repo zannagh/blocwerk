@@ -25,6 +25,7 @@ public partial class WallPanelService : IWallPanelService
     private readonly IKioskContext? kioskContext;
     private readonly IChangeJournal? changeJournal;
     private readonly IHoldEnrichmentService? holdEnrichment;
+    private readonly IHoldRefinementQueue? refinementQueue;
 
     /// <summary>Creates the service.</summary>
     /// <remarks>
@@ -47,7 +48,8 @@ public partial class WallPanelService : IWallPanelService
         ILogger<WallPanelService> logger,
         IKioskContext? kioskContext = null,
         IChangeJournal? changeJournal = null,
-        IHoldEnrichmentService? holdEnrichment = null)
+        IHoldEnrichmentService? holdEnrichment = null,
+        IHoldRefinementQueue? refinementQueue = null)
     {
         this.dbContextFactory = dbContextFactory;
         this.currentUserService = currentUserService;
@@ -57,6 +59,7 @@ public partial class WallPanelService : IWallPanelService
         this.kioskContext = kioskContext;
         this.changeJournal = changeJournal;
         this.holdEnrichment = holdEnrichment;
+        this.refinementQueue = refinementQueue;
     }
 
     /// <inheritdoc/>
