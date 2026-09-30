@@ -38,15 +38,20 @@ public static class Wall3DFacetOutlines
             .ToDictionary(s => s.Index, s => new PlanTriangle(s.AttachedTo!.ParentIndex, s.RightAngle))
         ?? new Dictionary<int, PlanTriangle>();
 
-    /// <summary>The facets, each triangle's with its clipped <see cref="Wall3DFacet.Outline"/> where one can be found.</summary>
+    /// <summary>
+    /// The facets, each triangle's with its clipped <see cref="Wall3DFacet.Outline"/> where one can be found and reaching
+    /// the floor where its plan says so (<see cref="FacetFloorReach"/>), then every outline trimmed where it pokes a
+    /// little through a neighbour's plane at their seam (<see cref="FacetSeamTrim"/>).
+    /// </summary>
     public static List<Wall3DFacet> Apply(List<Wall3DFacet> facets, WallGeometryDocument doc, IReadOnlyDictionary<int, PlanTriangle>? triangles)
     {
-        if (triangles is not { Count: > 0 })
+        if (triangles is { Count: > 0 })
         {
-            return facets;
+            var cut = facets.Select(f => WithOutline(f, facets, doc, triangles)).ToList();
+            facets = FacetFloorReach.Apply(cut, doc, triangles);
         }
 
-        return facets.Select(f => WithOutline(f, facets, doc, triangles)).ToList();
+        return FacetSeamTrim.Apply(facets, doc);
     }
 
     /// <summary>
@@ -126,17 +131,22 @@ public static class Wall3DFacetOutlines
     /// <summary>The rectangle's part where <paramref name="side"/> ≥ 0; null when that is all of it or less than a triangle.</summary>
     public static IReadOnlyList<double[]>? ClipRect(PlaneRectMm rect, Func<double, double, double> side)
     {
-        double[][] corners = [[rect.AMin, rect.BMin], [rect.AMax, rect.BMin], [rect.AMax, rect.BMax], [rect.AMin, rect.BMax]];
-        if (corners.All(c => side(c[0], c[1]) >= 0))
-        {
-            return null;
-        }
+        var corners = RectCorners(rect);
+        return corners.All(c => side(c[0], c[1]) >= 0) ? null : ClipHalf(corners, side);
+    }
 
+    /// <summary>The rectangle's corners (aMin,bMin), (aMax,bMin), (aMax,bMax), (aMin,bMax).</summary>
+    public static IReadOnlyList<double[]> RectCorners(PlaneRectMm r) =>
+        [[r.AMin, r.BMin], [r.AMax, r.BMin], [r.AMax, r.BMax], [r.AMin, r.BMax]];
+
+    /// <summary>The convex polygon's part where <paramref name="side"/> ≥ 0; null when less than a triangle is left.</summary>
+    public static IReadOnlyList<double[]>? ClipHalf(IReadOnlyList<double[]> polygon, Func<double, double, double> side)
+    {
         var result = new List<double[]>();
-        for (var i = 0; i < corners.Length; i++)
+        for (var i = 0; i < polygon.Count; i++)
         {
-            var p = corners[i];
-            var q = corners[(i + 1) % corners.Length];
+            var p = polygon[i];
+            var q = polygon[(i + 1) % polygon.Count];
             var sp = side(p[0], p[1]);
             var sq = side(q[0], q[1]);
             if (sp >= 0)
@@ -159,40 +169,12 @@ public static class Wall3DFacetOutlines
         return result.Count >= 3 ? result : null;
     }
 
-    private static Wall3DFacet WithOutline(
-        Wall3DFacet facet, List<Wall3DFacet> facets, WallGeometryDocument doc, IReadOnlyDictionary<int, PlanTriangle> triangles)
-    {
-        if (!triangles.TryGetValue(facet.Segment, out var triangle))
-        {
-            return facet;
-        }
-
-        var centroid = MarkerCentroid(doc, facet.Id);
-        var parent = facets
-            .Where(f => f.Segment == triangle.ParentIndex && f.Id != facet.Id)
-            .MinBy(f => Distance(Centre(f), Centre(facet)));
-        var rightAngle = TriangleKeptSide.Mapped(facet, doc.World?.Up, triangle.RightAngle);
-        var outline = (parent is null ? null : Clip(facet, parent, centroid, rightAngle))
-                      ?? NearestSeamOutline(facet, facets, parent, centroid);
-        return outline is null
-            ? facet
-            : facet with { Corners = outline.Select(p => World(facet, p[0], p[1])).ToList(), Outline = outline };
-    }
-
-    private static IReadOnlyList<double[]>? NearestSeamOutline(
-        Wall3DFacet facet, List<Wall3DFacet> facets, Wall3DFacet? parent, (double A, double B)? centroid) =>
-        facets
-            .Where(f => f.Id != facet.Id && f.Id != parent?.Id)
-            .Select(f => (Other: f, Outline: Clip(facet, f, centroid)))
-            .Where(c => c.Outline is not null)
-            .Select(c => (c.Outline, Gap: SeamGapMm(facet, c.Other, c.Outline!)))
-            .Where(c => c.Gap <= MaxSeamGapMm)
-            .OrderBy(c => c.Gap)
-            .Select(c => c.Outline)
-            .FirstOrDefault();
+    /// <summary>The facet with <paramref name="outline"/> as its outline and corners.</summary>
+    internal static Wall3DFacet WithShape(Wall3DFacet facet, IReadOnlyList<double[]> outline) =>
+        facet with { Corners = outline.Select(p => World(facet, p[0], p[1])).ToList(), Outline = outline };
 
     /// <summary>Signed distance (mm) in the facet's plane from the line where it meets <paramref name="other"/>'s plane.</summary>
-    private static Func<double, double, double>? SeamSide(Wall3DFacet facet, Wall3DFacet other)
+    internal static Func<double, double, double>? SeamSide(Wall3DFacet facet, Wall3DFacet other)
     {
         var n = PlaneNormal(other);
         var alpha = Dot(n, facet.U);
@@ -209,6 +191,58 @@ public static class Wall3DFacetOutlines
 
     internal static bool IsUnit(double[]? n) => n is { Length: 3 } && Math.Abs(Math.Sqrt(Dot(n, n)) - 1) < 1e-3;
 
+    internal static double RectDistance(PlaneRectMm r, double a, double b) =>
+        Math.Sqrt(Math.Pow(Math.Max(Math.Max(r.AMin - a, 0), a - r.AMax), 2) + Math.Pow(Math.Max(Math.Max(r.BMin - b, 0), b - r.BMax), 2));
+
+    internal static (double A, double B)? MarkerCentroid(WallGeometryDocument doc, string facetId)
+    {
+        var corners = doc.Markers
+            .Where(m => m.Facet == facetId)
+            .SelectMany(m => m.CornersPlaneMm)
+            .Where(c => c.Length >= 2)
+            .ToList();
+        return corners.Count == 0 ? null : (corners.Average(c => c[0]), corners.Average(c => c[1]));
+    }
+
+    internal static double[] World(Wall3DFacet f, double a, double b) =>
+    [
+        f.Origin[0] + (a * f.U[0]) + (b * f.V[0]),
+        f.Origin[1] + (a * f.U[1]) + (b * f.V[1]),
+        f.Origin[2] + (a * f.U[2]) + (b * f.V[2]),
+    ];
+
+    internal static double Dot(double[] p, double[] q) => (p[0] * q[0]) + (p[1] * q[1]) + (p[2] * q[2]);
+
+    private static Wall3DFacet WithOutline(
+        Wall3DFacet facet, List<Wall3DFacet> facets, WallGeometryDocument doc, IReadOnlyDictionary<int, PlanTriangle> triangles)
+    {
+        if (!triangles.TryGetValue(facet.Segment, out var triangle))
+        {
+            return facet;
+        }
+
+        var centroid = MarkerCentroid(doc, facet.Id);
+        var parent = facets
+            .Where(f => f.Segment == triangle.ParentIndex && f.Id != facet.Id)
+            .MinBy(f => Distance(Centre(f), Centre(facet)));
+        var rightAngle = TriangleKeptSide.Mapped(facet, doc.World?.Up, triangle.RightAngle);
+        var outline = (parent is null ? null : Clip(facet, parent, centroid, rightAngle))
+                      ?? NearestSeamOutline(facet, facets, parent, centroid);
+        return outline is null ? facet : WithShape(facet, outline);
+    }
+
+    private static IReadOnlyList<double[]>? NearestSeamOutline(
+        Wall3DFacet facet, List<Wall3DFacet> facets, Wall3DFacet? parent, (double A, double B)? centroid) =>
+        facets
+            .Where(f => f.Id != facet.Id && f.Id != parent?.Id)
+            .Select(f => (Other: f, Outline: Clip(facet, f, centroid)))
+            .Where(c => c.Outline is not null)
+            .Select(c => (c.Outline, Gap: SeamGapMm(facet, c.Other, c.Outline!)))
+            .Where(c => c.Gap <= MaxSeamGapMm)
+            .OrderBy(c => c.Gap)
+            .Select(c => c.Outline)
+            .FirstOrDefault();
+
     /// <summary>The plane's unit normal: <see cref="Wall3DFacet.Normal"/>, else U × V.</summary>
     private static double[] PlaneNormal(Wall3DFacet f)
     {
@@ -222,23 +256,10 @@ public static class Wall3DFacetOutlines
         return length < 1e-9 ? n : [n[0] / length, n[1] / length, n[2] / length];
     }
 
-    private static double RectDistance(PlaneRectMm r, double a, double b) =>
-        Math.Sqrt(Math.Pow(Math.Max(Math.Max(r.AMin - a, 0), a - r.AMax), 2) + Math.Pow(Math.Max(Math.Max(r.BMin - b, 0), b - r.BMax), 2));
-
     private static double Area(IReadOnlyList<double[]> p) => Math.Abs(SignedArea(p));
 
     private static double SignedArea(IReadOnlyList<double[]> p) =>
         p.Select((q, i) => (q[0] * p[(i + 1) % p.Count][1]) - (p[(i + 1) % p.Count][0] * q[1])).Sum() / 2;
-
-    private static (double A, double B)? MarkerCentroid(WallGeometryDocument doc, string facetId)
-    {
-        var corners = doc.Markers
-            .Where(m => m.Facet == facetId)
-            .SelectMany(m => m.CornersPlaneMm)
-            .Where(c => c.Length >= 2)
-            .ToList();
-        return corners.Count == 0 ? null : (corners.Average(c => c[0]), corners.Average(c => c[1]));
-    }
 
     private static void AddDistinct(List<double[]> points, double[] p)
     {
@@ -252,15 +273,6 @@ public static class Wall3DFacetOutlines
 
     private static double[] Centre(Wall3DFacet f) =>
         World(f, (f.Extent.AMin + f.Extent.AMax) / 2, (f.Extent.BMin + f.Extent.BMax) / 2);
-
-    private static double[] World(Wall3DFacet f, double a, double b) =>
-    [
-        f.Origin[0] + (a * f.U[0]) + (b * f.V[0]),
-        f.Origin[1] + (a * f.U[1]) + (b * f.V[1]),
-        f.Origin[2] + (a * f.U[2]) + (b * f.V[2]),
-    ];
-
-    internal static double Dot(double[] p, double[] q) => (p[0] * q[0]) + (p[1] * q[1]) + (p[2] * q[2]);
 
     private static double Distance(double[] p, double[] q) =>
         Math.Sqrt(((p[0] - q[0]) * (p[0] - q[0])) + ((p[1] - q[1]) * (p[1] - q[1])) + ((p[2] - q[2]) * (p[2] - q[2])));

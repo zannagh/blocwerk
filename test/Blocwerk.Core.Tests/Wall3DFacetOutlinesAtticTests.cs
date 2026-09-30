@@ -95,14 +95,15 @@ public class Wall3DFacetOutlinesAtticTests
     }
 
     [Fact]
-    public void Sidewall_ReachesTheFloorUnderTheMainWall_WithItsLongEdgeAlongIt()
+    public void Sidewall_HasItsHypotenuseOnTheMainWall_WithoutAKickboard()
     {
-        var view = Build("0", "1", "2", "3", "5", "6", "7");
+        var view = Build("0", "1", "2", "5", "6", "7");
         var side = Facet(view, "1");
 
         Assert.NotNull(side.Outline);
 
-        // Right angle at the front, at the floor (a runs from the room toward the wall); the hypotenuse on the main wall.
+        // Without the kickboard (FacetFloorReach lowers it to that): right angle at the front, at the extent's bottom (a runs
+        // from the room toward the wall); the hypotenuse on the main wall.
         AssertPoints([[-50, 2175.9], [-50, -50], [2279.0, -50]], side.Outline!, 1);
         AssertInFront(side, Facet(view, "0"));
     }

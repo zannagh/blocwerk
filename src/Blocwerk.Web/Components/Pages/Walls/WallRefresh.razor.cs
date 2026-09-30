@@ -7,6 +7,7 @@ using Blocwerk.Core.Entities;
 using Blocwerk.Core.Refresh;
 using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Components;
+using Microsoft.JSInterop;
 
 namespace Blocwerk.Web.Components.Pages.Walls;
 
@@ -39,6 +40,9 @@ public partial class WallRefresh : IDisposable
 
     [Inject]
     private IKioskContext KioskContext { get; set; } = default!;
+
+    [Inject]
+    private IJSRuntime JS { get; set; } = default!;
 
     private bool CanDiscard => view is { Status: WallRefreshStatus.Uploading or WallRefreshStatus.ReadyToStart or WallRefreshStatus.ReadyToApply };
 
@@ -95,9 +99,24 @@ public partial class WallRefresh : IDisposable
     {
         if (focusDiscard && confirmDiscard)
         {
-            // Focusing scrolls the question into view, clear of the tab bar and bottom banners (scroll-margin in the CSS).
             focusDiscard = false;
+            await RevealDiscardAsync();
+        }
+    }
+
+    // Focus alone does not scroll a button that is on screen but under the cookie banner; revealing it honours the
+    // CSS scroll-margin, which keeps it clear of the tab bar and the bottom banners.
+    private async Task RevealDiscardAsync()
+    {
+        try
+        {
             await discardButton.FocusAsync();
+            await using var module = await JS.InvokeAsync<IJSObjectReference>("import", "/js/reveal-section.js");
+            await module.InvokeVoidAsync("revealElement", discardButton);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or TaskCanceledException)
+        {
+            // Best effort: the question is still on the page, only not scrolled clear.
         }
     }
 

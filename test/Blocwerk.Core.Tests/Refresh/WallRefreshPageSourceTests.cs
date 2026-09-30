@@ -39,6 +39,18 @@ public class WallRefreshPageSourceTests
     }
 
     [Fact]
+    public void DiscardConfirm_IsScrolledClearOfTheBottomBanners()
+    {
+        var code = Read("src/Blocwerk.Web/Components/Pages/Walls/WallRefresh.razor.cs");
+        var css = Read("src/Blocwerk.Web/Components/Pages/Walls/WallRefresh.razor.css");
+        var js = Read("src/Blocwerk.Web/wwwroot/js/reveal-section.js");
+
+        Assert.Contains("InvokeVoidAsync(\"revealElement\", discardButton)", code);
+        Assert.Contains("export function revealElement(element)", js);
+        Assert.Contains("scroll-margin-bottom: calc(24px + var(--bottomnav-h, 0px))", css);
+    }
+
+    [Fact]
     public void SortScreen_NamesPanelsByPlace_AndSaysWhatToCheck()
     {
         var sort = Read("src/Blocwerk.Web/Components/Shared/Refresh/RefreshSortScreen.razor.cs");

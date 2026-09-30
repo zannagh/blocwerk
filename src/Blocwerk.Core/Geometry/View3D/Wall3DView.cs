@@ -91,8 +91,9 @@ public sealed record Wall3DView
 /// <param name="Extent">The plane rectangle the quad spans (the outline's bounding rectangle).</param>
 /// <param name="AngleDeg">Tilt from vertical in degrees as the solve measured it (declared as a fallback); null when unknown.</param>
 /// <param name="Outline">
-/// A convex polygon inside <paramref name="Extent"/>, <c>[a, b]</c> mm counter-clockwise, when the facet is not the
-/// whole rectangle (a triangle cut along its seam, <see cref="Wall3DFacetOutlines"/>); null for a plain rectangle.
+/// A convex polygon, <c>[a, b]</c> mm counter-clockwise, when the facet is not the whole rectangle (a triangle cut along
+/// its seam, possibly lowered to the floor, or an edge trimmed at a neighbour's seam; <see cref="Wall3DFacetOutlines"/>);
+/// null for a plain rectangle. A triangle may reach a little past <paramref name="Extent"/>.
 /// </param>
 public sealed record Wall3DFacet(
     string Id,

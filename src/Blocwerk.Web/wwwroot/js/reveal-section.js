@@ -16,3 +16,13 @@ export function reveal(id) {
 
     requestAnimationFrame(() => target.scrollIntoView({ behavior: 'smooth', block: 'start' }));
 }
+
+/*
+ * Scrolls an element just far enough to be fully visible, honouring its CSS scroll-margin (focus()
+ * alone does not scroll an element that is already on screen, even if a fixed banner covers it).
+ */
+export function revealElement(element) {
+    if (element && typeof element.scrollIntoView === 'function') {
+        element.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+}
