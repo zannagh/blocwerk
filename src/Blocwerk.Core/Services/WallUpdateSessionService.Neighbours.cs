@@ -22,6 +22,18 @@ public partial class WallUpdateSessionService
         await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
 
         var session = await RequireOpenAsync(db, wallId);
+        await WriteNeighbourLinkSetAsync(db, session, linkSet);
+        WallUpdateSessions.Touch(session, user.Id);
+        await db.SaveChangesAsync();
+
+        logger.LogDebug(
+            "Wall update session {SessionId} panel {PanelId} confirmed by {UserId}: {Links} link(s), {Removed} removal(s)",
+            session.Id, linkSet.PanelId, user.Id, linkSet.Links.Count, linkSet.RemovedNeighbourHoldIds.Count);
+    }
+
+    /// <summary>Replaces one panel's link and removal rows with <paramref name="linkSet"/> (not saved; the caller saves).</summary>
+    private static async Task WriteNeighbourLinkSetAsync(BlocwerkDbContext db, WallUpdateSession session, NeighbourLinkSet linkSet)
+    {
         await ReplacePanelRowsAsync(db, session.Id, linkSet.PanelId);
 
         // Same defence as the carryover save: an id whose hold was deleted from the staging meanwhile
@@ -29,17 +41,10 @@ public partial class WallUpdateSessionService
         var candidates = linkSet.Links.SelectMany(l => new[] { l.NeighborHoldId, l.NewHoldId })
             .Concat(linkSet.RemovedNeighbourHoldIds)
             .ToList();
-        var live = await LoadLiveHoldIdsAsync(db, wallId, candidates);
+        var live = await LoadLiveHoldIdsAsync(db, session.WallId, candidates);
 
         AddLinkRows(db, session.Id, linkSet, live);
         AddRemovalRows(db, session.Id, linkSet, live);
-
-        WallUpdateSessions.Touch(session, user.Id);
-        await db.SaveChangesAsync();
-
-        logger.LogDebug(
-            "Wall update session {SessionId} panel {PanelId} confirmed by {UserId}: {Links} link(s), {Removed} removal(s)",
-            session.Id, linkSet.PanelId, user.Id, linkSet.Links.Count, linkSet.RemovedNeighbourHoldIds.Count);
     }
 
     /// <summary>Writes the panel's confirmed correspondences, skipping any end that no longer exists.</summary>

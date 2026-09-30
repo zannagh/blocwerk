@@ -18,4 +18,10 @@ public enum NewHoldDiscardReason
 
     /// <summary>The overlap maps it onto the centre photo, which shows that spot itself (a hold of the centre, or nothing).</summary>
     SeenOnNeighbourPanel,
+
+    /// <summary>The 3D model has an existing hold at that spot: a second detection of a hold that is already there.</summary>
+    KnownHoldIn3D,
+
+    /// <summary>On the 3D model the spot lies well off the wall (floor mats, ceiling, a neighbouring wall).</summary>
+    OffWallIn3D,
 }

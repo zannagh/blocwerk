@@ -38,11 +38,9 @@ public sealed partial class WallRefreshProcessor
             },
             ct);
 
-        var matched = await actors.BigUpdate.ResumeAsync(refresh.WallId);
-        var quick = QuickUpdateDefaults.Build(matched, byPanel);
-        await RecordDecisionsAsync(refresh.WallId, actors.Sessions, quick);
-        var relocations = await actors.Sessions.GetRelocationSuggestionsAsync(refresh.WallId);
-        var summary = await SummarizeAsync(refresh.WallId, quick, relocations.Count, photos, ct);
+        var panels = photos.Select(p => PanelPositionName.Describe(p.Col, p.Row)).ToList();
+        var summary = await TriageAndRecordAsync(refresh, actors, byPanel, panels, null, ct)
+            ?? throw new InvalidOperationException("The quick review's decisions could not be recorded.");
         await SaveAsync(
             refresh,
             r =>
@@ -79,16 +77,13 @@ public sealed partial class WallRefreshProcessor
         return adoptable ? open.Id : null;
     }
 
-    private static async Task RecordDecisionsAsync(Guid wallId, IWallUpdateSessionService sessions, QuickDecisions quick)
-    {
-        await sessions.SaveCarryOutcomeAsync(wallId, quick.Carryover, quick.AcceptedNewCentreHoldIds, quick.RemovedNewCentreHoldIds);
-        foreach (var set in quick.Neighbours)
-        {
-            await sessions.SaveNeighbourLinkSetAsync(wallId, set);
-        }
-
-        await sessions.SetPhaseAsync(wallId, WallUpdatePhase.Carryover);
-    }
+    /// <summary>Records the quick review's decisions in one transaction; false when the user changed the session after <paramref name="onlyIfUnchangedSince"/>.</summary>
+    private static Task<bool> RecordDecisionsAsync(
+        Guid wallId, IWallUpdateSessionService sessions, QuickDecisions quick, DateTimeOffset? onlyIfUnchangedSince) =>
+        sessions.SaveDefaultDecisionsAsync(
+            wallId,
+            new DefaultDecisions(quick.Carryover, quick.AcceptedNewCentreHoldIds, quick.RemovedNewCentreHoldIds, quick.Neighbours, WallUpdatePhase.Carryover),
+            onlyIfUnchangedSince);
 
     private async Task<Dictionary<Guid, IReadOnlyList<Guid>>> StagedHoldsByPanelAsync(Guid wallId, CancellationToken ct)
     {
@@ -102,7 +97,7 @@ public sealed partial class WallRefreshProcessor
     }
 
     private async Task<RefreshSummary> SummarizeAsync(
-        Guid wallId, QuickDecisions quick, int relocations, IReadOnlyList<BigUpdatePhoto> photos, CancellationToken ct)
+        Guid wallId, QuickDecisions quick, int relocations, IReadOnlyList<string> panels, CancellationToken ct)
     {
         var kept = quick.Carryover.Where(d => d.Kind == CarryKind.Carried && d.NewHoldId is null).Select(d => d.OldHoldId).ToList();
         var linkedNew = quick.Neighbours.SelectMany(n => n.Links).Select(l => l.NewHoldId).ToHashSet();
@@ -124,7 +119,7 @@ public sealed partial class WallRefreshProcessor
             linkedNew.Count,
             quick.OverlapsLeftOut,
             boulders,
-            photos.Select(p => PanelPositionName.Describe(p.Col, p.Row)).ToList());
+            panels);
     }
 
     private async Task<int> CountNeighbourNewAsync(

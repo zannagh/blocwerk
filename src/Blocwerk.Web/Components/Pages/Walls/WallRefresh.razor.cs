@@ -23,6 +23,8 @@ public partial class WallRefresh : IDisposable
     private bool loading = true;
     private bool busy;
     private bool confirmDiscard;
+    private bool focusDiscard;
+    private ElementReference discardButton;
     private string? error;
     private string? blocked;
     private PeriodicTimer? timer;
@@ -87,6 +89,22 @@ public partial class WallRefresh : IDisposable
         await ReloadAsync();
         loading = false;
         StartPolling();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (focusDiscard && confirmDiscard)
+        {
+            // Focusing scrolls the question into view, clear of the tab bar and bottom banners (scroll-margin in the CSS).
+            focusDiscard = false;
+            await discardButton.FocusAsync();
+        }
+    }
+
+    private void AskDiscard()
+    {
+        confirmDiscard = true;
+        focusDiscard = true;
     }
 
     private async Task ReloadAsync()
@@ -190,7 +208,7 @@ public partial class WallRefresh : IDisposable
         {
             while (await ticks.WaitForNextTickAsync(ct))
             {
-                if (view is null || !(view.IsWorking || view.Capture is { IsRunning: true }))
+                if (view is null || !(view.IsWorking || view.Check3DPending || view.Capture is { IsRunning: true }))
                 {
                     continue;
                 }

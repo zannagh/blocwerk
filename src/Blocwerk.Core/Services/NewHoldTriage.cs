@@ -16,12 +16,14 @@ public readonly record struct TriageCandidate(Guid Id, double X, double Y);
 /// <param name="OldSize">The old photo's size, or null when there is none.</param>
 /// <param name="MarkerQuads">Printed-marker corners detected on the staged photo.</param>
 /// <param name="Owner">For a neighbour panel: the centre panel that owns the overlap with it. Null for the centre.</param>
+/// <param name="Evidence3D">What the 3D model says per candidate; null (or a missing id) when there is no 3D evidence.</param>
 public sealed record NewHoldTriageInput(
     IReadOnlyList<TriageCandidate> Candidates,
     IReadOnlyList<PointPair> NewToOld,
     (int Width, int Height)? OldSize,
     IReadOnlyList<IReadOnlyList<(double X, double Y)>> MarkerQuads,
-    OverlapOwner? Owner = null);
+    OverlapOwner? Owner = null,
+    IReadOnlyDictionary<Guid, Evidence3DVerdict>? Evidence3D = null);
 
 /// <summary>
 /// Picks the unpaired staged detections that are most likely NOT new holds, so the review discards them
@@ -60,6 +62,12 @@ public static class NewHoldTriage
             if (input.Owner is { } owner && NeighbourPanelRule.ShownByOwner(owner, c.X, c.Y))
             {
                 result[c.Id] = NewHoldDiscardReason.SeenOnNeighbourPanel;
+                continue;
+            }
+
+            if (Discard3D(input.Evidence3D, c.Id) is { } reason3D)
+            {
+                result[c.Id] = reason3D;
                 continue;
             }
 
@@ -108,6 +116,14 @@ public static class NewHoldTriage
 
         return inside;
     }
+
+    private static NewHoldDiscardReason? Discard3D(IReadOnlyDictionary<Guid, Evidence3DVerdict>? evidence, Guid id) =>
+        evidence?.GetValueOrDefault(id) switch
+        {
+            Evidence3DVerdict.KnownHold => NewHoldDiscardReason.KnownHoldIn3D,
+            Evidence3DVerdict.OffWall => NewHoldDiscardReason.OffWallIn3D,
+            _ => null,
+        };
 
     private static void AddUnchanged(
         Dictionary<Guid, NewHoldDiscardReason> result,

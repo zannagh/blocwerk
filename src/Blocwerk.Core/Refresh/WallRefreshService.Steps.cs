@@ -63,6 +63,13 @@ public sealed partial class WallRefreshService
                 throw new UserFacingException("There is nothing to apply yet.");
             }
 
+            if (WallRefreshProcessor.IsRechecking(refresh, DateTimeOffset.UtcNow)
+                || WallRefreshProcessor.NeedsRecheck(refresh, await WallRefreshProcessor.Ready3DModelAsync(db, refresh, CancellationToken.None), DateTimeOffset.UtcNow))
+            {
+                queue.Enqueue(refreshId);
+                throw new UserFacingException("The update is being checked against the new 3D model. Try again in a moment.");
+            }
+
             refresh.Status = WallRefreshStatus.Applying;
             refresh.Error = null;
             RefreshTimeline.Set(refresh, RefreshTimeline.Apply, RefreshStepState.Running, "Applying the panel update");

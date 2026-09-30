@@ -48,8 +48,11 @@ namespace Blocwerk.Core.Services;
 /// </param>
 /// <param name="SuggestedNewDiscards">
 /// Unpaired staged detections (any re-photographed panel) the review discards by default, with why: on a
-/// printed marker, outside what the old photo covered, or unchanged since the old photo. Null before matching.
+/// printed marker, outside what the old photo covered, unchanged since the old photo, or (with the wall's 3D model) an existing
+/// hold's spot or off the wall. Null before matching.
 /// </param>
+/// <param name="SeenIn3DHoldIds">Kept unpaired detections the 3D model of this visit also sees as a hold not yet in the app. Null without 3D.</param>
+/// <param name="Evidence3DModelId">The 3D model the triage matched at least one new photo to; null when it ran without 3D.</param>
 public record BigUpdateSession(
     Guid WallId,
     Guid CenterPanelId,
@@ -63,4 +66,6 @@ public record BigUpdateSession(
     IReadOnlyDictionary<Guid, IReadOnlyList<HoldPositionNorm>>? CarriedWarpShapes = null,
     IReadOnlyList<CarriedPanelOldHolds>? CarriedPanels = null,
     IReadOnlyList<Guid>? CarriedOldHoldIds = null,
-    IReadOnlyDictionary<Guid, NewHoldDiscardReason>? SuggestedNewDiscards = null);
+    IReadOnlyDictionary<Guid, NewHoldDiscardReason>? SuggestedNewDiscards = null,
+    IReadOnlyList<Guid>? SeenIn3DHoldIds = null,
+    Guid? Evidence3DModelId = null);

@@ -68,6 +68,9 @@ public sealed partial class WallRefreshProcessor(
                 case WallRefreshStatus.Applying:
                     await ApplyAsync(refresh, scope.Actors, ct);
                     break;
+                case WallRefreshStatus.ReadyToApply:
+                    await RecheckAsync(refresh, scope.Actors, ct);
+                    break;
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
@@ -98,12 +101,20 @@ public sealed partial class WallRefreshProcessor(
         SaveAsync(refresh, r => RefreshTimeline.Set(r, key, state, detail), ct);
 
     /// <summary>
-    /// A failed apply goes back to the confirm screen (nothing was changed, it can be retried). Anything else stops
+    /// A failed apply goes back to the confirm screen (nothing was changed, it can be retried). A failed 3D re-check of a
+    /// prepared update keeps it as it is. Anything else stops
     /// the run with the reason on the running step and discards the panel update it staged, so starting over does
     /// not collide with it; its videos are no longer referenced and the capture sweep removes them.
     /// </summary>
     private async Task FailAsync(WallRefresh refresh, Exception ex, WallRefreshActors actors)
     {
+        if (refresh.Status == WallRefreshStatus.ReadyToApply)
+        {
+            // Only the 3D re-check runs on a prepared update: its failure never releases what the user is about to check.
+            await MarkCheckFailedAsync(refresh, null);
+            return;
+        }
+
         var applying = refresh.Status == WallRefreshStatus.Applying;
         if (!applying && ex is not WallUpdateSessionConflictException)
         {

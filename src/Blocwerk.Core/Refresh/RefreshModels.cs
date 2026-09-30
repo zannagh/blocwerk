@@ -64,6 +64,11 @@ public sealed record RefreshVideo(string StoredName, string? FileName, long Size
 /// <param name="OverlapsLeftOut">Overlap suggestions below 90 %, left unlinked.</param>
 /// <param name="BouldersOnKeptHolds">Boulders using a hold that was not found again.</param>
 /// <param name="Panels">The panels that get a new photo, named for people ("Centre panel", "Right panel").</param>
+/// <param name="DroppedByThe3DModel">Of the left-out detections: those the 3D model shows as an existing hold or off the wall.</param>
+/// <param name="NewSeenIn3D">Of the new holds: those the 3D model of this visit also sees.</param>
+/// <param name="CheckedWithModelId">This visit's 3D model, when the check used it successfully (null: checked without it).</param>
+/// <param name="Attempted3DModelId">This visit's 3D model once a check with it was tried (worked, failed, or kept the user's choices).</param>
+/// <param name="DecisionsRecordedAt">When the quick review's decisions were written; a later change is the user's own.</param>
 public sealed record RefreshSummary(
     int Refound,
     int KeptInPlace,
@@ -74,7 +79,12 @@ public sealed record RefreshSummary(
     int OverlapLinks,
     int OverlapsLeftOut,
     int BouldersOnKeptHolds,
-    IReadOnlyList<string> Panels);
+    IReadOnlyList<string> Panels,
+    int DroppedByThe3DModel = 0,
+    int NewSeenIn3D = 0,
+    Guid? CheckedWithModelId = null,
+    Guid? Attempted3DModelId = null,
+    DateTimeOffset? DecisionsRecordedAt = null);
 
 /// <summary>An uploaded file, as the drop zone lists it.</summary>
 public sealed record RefreshFile(Guid? PhotoId, string? FileName, bool IsVideo, string? Problem);
@@ -94,7 +104,9 @@ public sealed record WallRefreshView(
     string? Error,
     DateTimeOffset CreatedAt,
     Guid? CaptureId = null,
-    Guid? UpdateSessionId = null)
+    Guid? UpdateSessionId = null,
+    bool Check3DPending = false)
 {
     public bool IsWorking => Status is WallRefreshStatus.Sorting or WallRefreshStatus.Running or WallRefreshStatus.Applying;
+
 }

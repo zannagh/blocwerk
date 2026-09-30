@@ -38,8 +38,33 @@ public sealed partial class WallRefreshService(
         await using (db)
         {
             var refresh = await CurrentAsync(db, wallId);
-            return refresh is null ? null : await ToViewAsync(db, refresh);
+            if (refresh is null)
+            {
+                return null;
+            }
+
+            var pending = await Check3DPendingAsync(db, refresh);
+            return await ToViewAsync(db, refresh) with { Check3DPending = pending };
         }
+    }
+
+    /// <summary>Whether the ready update waits for (or is in) its check against this visit's new 3D model; starts that check.</summary>
+    private async Task<bool> Check3DPendingAsync(BlocwerkDbContext db, WallRefresh refresh)
+    {
+        var now = DateTimeOffset.UtcNow;
+        if (WallRefreshProcessor.IsRechecking(refresh, now))
+        {
+            return true;
+        }
+
+        var ready = refresh.Status == WallRefreshStatus.ReadyToApply ? await WallRefreshProcessor.Ready3DModelAsync(db, refresh, CancellationToken.None) : null;
+        if (!WallRefreshProcessor.NeedsRecheck(refresh, ready, now))
+        {
+            return false;
+        }
+
+        queue.Enqueue(refresh.Id);
+        return true;
     }
 
     public async Task<WallRefreshView> BeginAsync(Guid wallId)

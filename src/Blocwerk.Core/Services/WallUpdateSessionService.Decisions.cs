@@ -141,6 +141,23 @@ public partial class WallUpdateSessionService
         await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
 
         var session = await RequireOpenAsync(db, wallId);
+        await WriteCarryOutcomeAsync(db, session, carryover, acceptedNewCentreHoldIds, removedNewCentreHoldIds);
+        WallUpdateSessions.Touch(session, user.Id);
+        await db.SaveChangesAsync();
+
+        logger.LogDebug(
+            "Wall update session {SessionId} carryover saved by {UserId}: {Carry} verdicts, {Kept} kept, {Dropped} discarded",
+            session.Id, user.Id, carryover.Count, acceptedNewCentreHoldIds.Count, removedNewCentreHoldIds.Count);
+    }
+
+    /// <summary>Replaces the session's hold decisions with these (not saved; the caller saves).</summary>
+    private static async Task WriteCarryOutcomeAsync(
+        BlocwerkDbContext db,
+        WallUpdateSession session,
+        IReadOnlyList<CarryoverDecision> carryover,
+        IReadOnlyList<Guid> acceptedNewCentreHoldIds,
+        IReadOnlyList<Guid> removedNewCentreHoldIds)
+    {
         var existing = await db.WallUpdateHoldDecisions
             .Where(d => d.SessionId == session.Id)
             .ToListAsync();
@@ -149,17 +166,10 @@ public partial class WallUpdateSessionService
         // A hold another admin deleted from the staging since the browser last looked would fail the FK
         // and take the whole save down. Drop those ids instead: the decision is about a hold that no
         // longer exists, which is exactly what the cascade does to already-saved rows.
-        var live = await LoadLiveHoldIdsAsync(db, wallId, CollectHoldIds(carryover, acceptedNewCentreHoldIds, removedNewCentreHoldIds));
+        var live = await LoadLiveHoldIdsAsync(db, session.WallId, CollectHoldIds(carryover, acceptedNewCentreHoldIds, removedNewCentreHoldIds));
         AddCarryRows(db, session.Id, carryover, live, CarryRowsByHold(existing));
         AddNewCentreRows(db, session.Id, acceptedNewCentreHoldIds, live, discarded: false);
         AddNewCentreRows(db, session.Id, removedNewCentreHoldIds, live, discarded: true);
-
-        WallUpdateSessions.Touch(session, user.Id);
-        await db.SaveChangesAsync();
-
-        logger.LogDebug(
-            "Wall update session {SessionId} carryover saved by {UserId}: {Carry} verdicts, {Kept} kept, {Dropped} discarded",
-            session.Id, user.Id, carryover.Count, acceptedNewCentreHoldIds.Count, removedNewCentreHoldIds.Count);
     }
 
     /// <summary>The carry rows being replaced, by subject hold, so their confirmation can be carried over.</summary>

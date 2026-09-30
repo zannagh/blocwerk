@@ -32,8 +32,8 @@ public class WallRefreshPageSourceTests
     {
         var page = Read("src/Blocwerk.Web/Components/Pages/Walls/WallRefresh.razor");
 
-        Assert.Contains("@onclick=\"() => confirmDiscard = true\" disabled=\"@busy\">Discard this update</button>", page);
-        Assert.Contains("@onclick=\"DiscardAsync\" disabled=\"@busy\">Discard</button>", page);
+        Assert.Contains("@onclick=\"AskDiscard\" disabled=\"@busy\">Discard this update</button>", page);
+        Assert.Contains("@ref=\"discardButton\" @onclick=\"DiscardAsync\" disabled=\"@busy\">Discard</button>", page);
         Assert.Contains("@onclick=\"() => confirmDiscard = false\" disabled=\"@busy\">Keep</button>", page);
         Assert.DoesNotContain("confirm(", page);
     }
@@ -59,7 +59,7 @@ public class WallRefreshPageSourceTests
         Assert.Contains("@page \"/walls/{WallId:guid}/update\"", page);
         Assert.Contains("bwRefreshUpload.upload", drop);
         Assert.Contains("js/refresh-upload.js", app);
-        Assert.Contains("@onclick=\"OnApply\">Apply update</button>", confirm);
+        Assert.Contains("@onclick=\"OnApply\" disabled=\"@View.Check3DPending\">Apply update</button>", confirm);
         Assert.Contains("?update=review&amp;session=@View.UpdateSessionId\">Open full review</a>", confirm);
     }
 

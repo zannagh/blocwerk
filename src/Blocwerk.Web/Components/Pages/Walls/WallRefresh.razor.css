@@ -21,10 +21,10 @@
 .refresh-page ::deep .refresh-keep { display: flex; align-items: center; justify-content: center; font-size: 0.8rem; color: var(--text-secondary); }
 .refresh-page ::deep figcaption { font-size: 0.75rem; color: var(--text-secondary); text-align: center; }
 .refresh-page ::deep .refresh-badge { flex-shrink: 0; white-space: nowrap; font-size: 0.75rem; padding: 2px 8px; border-radius: 999px; background: var(--bg-surface); }
-.refresh-page ::deep .refresh-badge.is-high { color: var(--status-success); }
-.refresh-page ::deep .refresh-badge.is-medium { color: var(--status-warning); }
-.refresh-page ::deep .refresh-badge.is-none { color: var(--text-secondary); }
-.refresh-page ::deep .refresh-badge.is-user { color: var(--status-info); }
+.refresh-page ::deep .refresh-badge.is-high { color: var(--success-text); background: var(--success-bg); }
+.refresh-page ::deep .refresh-badge.is-medium { color: var(--warning-text); background: var(--warning-bg); }
+.refresh-page ::deep .refresh-badge.is-none { color: var(--text); background: var(--bg-surface); }
+.refresh-page ::deep .refresh-badge.is-user { color: var(--info-text); background: var(--info-bg); }
 .refresh-page ::deep .refresh-summary li { margin: 4px 0; }
 .refresh-page ::deep .refresh-summary li.is-attention { color: var(--status-warning); }
 .refresh-page ::deep .refresh-timeline { list-style: none; padding: 0; margin: 16px 0; }
@@ -58,3 +58,7 @@
 .refresh-done { font-weight: 600; }
 .refresh-actions { align-items: center; }
 .refresh-discard-question { flex: 1 1 100%; font-weight: 600; }
+/* Room below the last row, so the discard question never ends under the tab bar or a bottom banner. */
+.refresh-page { padding-bottom: calc(48px + var(--bottomnav-h, 0px)); }
+.refresh-actions > button { scroll-margin-bottom: calc(24px + var(--bottomnav-h, 0px)); }
+.refresh-page ::deep .refresh-3d-note { padding: 8px 12px; border-radius: var(--r-md); background: var(--info-bg); color: var(--info-text); }

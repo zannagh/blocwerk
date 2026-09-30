@@ -112,6 +112,16 @@ public interface IWallUpdateSessionService
     Task SaveNeighbourLinkSetAsync(Guid wallId, NeighbourLinkSet linkSet);
 
     /// <summary>
+    /// Writes a whole set of default decisions at once (the quick review's): the carryover, the new centre holds, every
+    /// neighbour panel's links and removals, and the phase, in one transaction under the session's write lock.
+    /// </summary>
+    /// <param name="onlyIfUnchangedSince">
+    /// When set, nothing is written if the session was changed after this moment (the user's own choices win).
+    /// </param>
+    /// <returns>Whether the decisions were written.</returns>
+    Task<bool> SaveDefaultDecisionsAsync(Guid wallId, DefaultDecisions decisions, DateTimeOffset? onlyIfUnchangedSince = null);
+
+    /// <summary>
     /// The open session's "this hold moved" suggestions, best first — the same list on every read, since
     /// they are computed once (when the matcher first runs) and persisted. Empty when no session is open.
     /// </summary>

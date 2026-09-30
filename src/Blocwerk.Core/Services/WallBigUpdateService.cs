@@ -30,6 +30,8 @@ public partial class WallBigUpdateService : IWallBigUpdateService
     private readonly ICapturePhotoConverter? photoConverter;
     private readonly IHoldPresenceProbe? presenceProbe;
     private readonly IMarkerDetectionService? markerDetection;
+    private readonly IPhotoTextureMatcher? textureMatcher;
+    private readonly ICaptureFileStore? captureFiles;
 
     public WallBigUpdateService(
         IDbContextFactory<BlocwerkDbContext> dbContextFactory,
@@ -43,8 +45,12 @@ public partial class WallBigUpdateService : IWallBigUpdateService
         IHoldRefinementQueue? refinementQueue = null,
         ICapturePhotoConverter? photoConverter = null,
         IHoldPresenceProbe? presenceProbe = null,
-        IMarkerDetectionService? markerDetection = null)
+        IMarkerDetectionService? markerDetection = null,
+        IPhotoTextureMatcher? textureMatcher = null,
+        ICaptureFileStore? captureFiles = null)
     {
+        this.textureMatcher = textureMatcher;
+        this.captureFiles = captureFiles;
         this.photoConverter = photoConverter;
         this.presenceProbe = presenceProbe;
         this.markerDetection = markerDetection;
@@ -60,7 +66,7 @@ public partial class WallBigUpdateService : IWallBigUpdateService
     }
 
     /// <inheritdoc/>
-    public async Task<BigUpdateSession> ResumeAsync(Guid wallId)
+    public async Task<BigUpdateSession> ResumeAsync(Guid wallId, bool use3DEvidence = false)
     {
         var user = await currentUserService.GetCurrentUserAsync();
         await using var db = await dbContextFactory.CreateDbContextAsync();
@@ -76,7 +82,7 @@ public partial class WallBigUpdateService : IWallBigUpdateService
             && p.Generation == stagedGen && p.StagedPhoto != null)
             ?? throw new InvalidOperationException("No in-flight big update to resume.");
 
-        var session = await BuildSessionAsync(db, wall, centerPanel.Id, stagedGen);
+        var session = await BuildSessionAsync(db, wall, centerPanel.Id, stagedGen, use3DEvidence);
 
         // A panel the matcher could not align is recorded on the session: the banner survives a resume and
         // the promote flags that panel's blind carries.
@@ -99,7 +105,7 @@ public partial class WallBigUpdateService : IWallBigUpdateService
     /// session always reflects the current DB state. No detection, no mutation.
     /// </summary>
     private async Task<BigUpdateSession> BuildSessionAsync(
-        BlocwerkDbContext db, Wall wall, Guid centerPanelId, int stagedGen)
+        BlocwerkDbContext db, Wall wall, Guid centerPanelId, int stagedGen, bool use3DEvidence)
     {
         // Panel-scoped carryover: match only the OLD holds that live on a re-photographed panel against
         // the new centre. A centre-only update therefore never pulls (and never warp-carries) the holds
@@ -256,12 +262,15 @@ public partial class WallBigUpdateService : IWallBigUpdateService
             neighbours.Add(new NeighbourOverlap(panel.Id, panel.Col, panel.Row, proposals, overlapFailed));
         }
 
+        var triage = await SuggestNewDiscardsAsync(db, wall, stagedGen, carryover, oldHolds, oldPanelPhotosById, neighbours, use3DEvidence);
         return new BigUpdateSession(
             wall.Id, centerPanelId, carryover, removedCandidates, newCenter, neighbours,
             autoMatchStatus, autoMatchMessage, carriedWarp, carriedShapes,
             await BuildCarriedPanelsAsync(db, wall.Id, stagedGen, oldByPosition, unalignedCarry),
             oldHolds.Select(h => h.Id).ToList(),
-            await SuggestNewDiscardsAsync(db, wall, stagedGen, carryover, oldHolds, oldPanelPhotosById, neighbours));
+            triage.Discards,
+            triage.SeenIn3D,
+            triage.Evidence3DModelId);
     }
 
     /// <summary>
