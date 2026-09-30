@@ -43,6 +43,18 @@ public class VolumeChecksTests
     }
 
     [Fact]
+    public void EdgeAbuttedByAClippedNeighbour_IsASeamAlongItsWholeLength()
+    {
+        // The neighbour covers only the lower half of the right edge but starts right at it (clipped at the midline).
+        var lower = FacetSeams.Of(HoldFootprintEstimatorTests.Wall, Extent, [(Continuation(), new PlaneRectMm(0, 2000, 0, 1000))], Options);
+        var aboveIt = Volume(Rect(2700, 2990, 1300, 1600), fill: 1, median: 100);
+
+        Assert.Equal(DetectedVolume.Accepted, Judge(aboveIt, lower));
+        Assert.Equal("rejected:edge", Judge(aboveIt, Seams(Continuation(gapMm: 120), new PlaneRectMm(0, 2000, 0, 1000))));
+        Assert.Equal("rejected:edge", Judge(Volume(Rect(2700, 2990, 1700, 1990), fill: 1, median: 100), lower));
+    }
+
+    [Fact]
     public void LowSparseOutline_IsRejected_ConvexAndTallOnesKept()
     {
         // The Attic's false L: 46 % of its outline raised, 55 mm median, 0.38 m² (under the shallow-sheet limit).
@@ -78,8 +90,8 @@ public class VolumeChecksTests
         })!;
     }
 
-    private static FacetSeams Seams(FacetFrame neighbour) =>
-        FacetSeams.Of(HoldFootprintEstimatorTests.Wall, Extent, [(neighbour, new PlaneRectMm(0, 2000, 0, 2000))], Options);
+    private static FacetSeams Seams(FacetFrame neighbour, PlaneRectMm? extent = null) =>
+        FacetSeams.Of(HoldFootprintEstimatorTests.Wall, Extent, [(neighbour, extent ?? new PlaneRectMm(0, 2000, 0, 2000))], Options);
 
     private static string Judge(DetectedVolume c, FacetSeams? seams) => VolumeChecks.Judge(c, Extent, Options, seams, holdsLocated: false);
 

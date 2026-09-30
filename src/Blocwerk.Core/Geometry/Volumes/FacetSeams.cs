@@ -9,7 +9,8 @@ namespace Blocwerk.Core.Geometry.Volumes;
 /// <summary>
 /// Where a facet's extent ends but the wall goes on: a near-coplanar neighbouring facet continues it across that edge.
 /// Extents are the markers' bounds plus a margin, so such an edge is a seam between facets, not the wall's edge, and a
-/// volume reaching into it is not cut off by the wall's end.
+/// volume reaching into it is not cut off by the wall's end. An edge a neighbour's extent abuts (coplanar facets that
+/// overlapped are clipped at their midline) is a seam along its whole length: the facet's own markers reached beyond it.
 /// </summary>
 public sealed class FacetSeams
 {
@@ -17,6 +18,7 @@ public sealed class FacetSeams
     private readonly PlaneRectMm extent;
     private readonly List<(FacetFrame Frame, PlaneRectMm Extent)> neighbours;
     private readonly VolumeDetectionOptions options;
+    private readonly bool[] abutted;
 
     private FacetSeams(FacetFrame own, PlaneRectMm ownExtent, List<(FacetFrame Frame, PlaneRectMm Extent)> coplanar, VolumeDetectionOptions tuning)
     {
@@ -24,6 +26,11 @@ public sealed class FacetSeams
         extent = ownExtent;
         neighbours = coplanar;
         options = tuning;
+        abutted = new bool[4];
+        foreach (var n in coplanar)
+        {
+            MarkAbutted(n);
+        }
     }
 
     /// <summary>The seams of one facet.</summary>
@@ -42,8 +49,8 @@ public sealed class FacetSeams
 
     /// <summary>
     /// Whether every extent edge whose band (<paramref name="band"/> mm) the plane point lies in is a seam at that
-    /// point: just beyond the edge (by the seam reach) the wall goes on as a near-coplanar neighbour, within the
-    /// seam offset of its plane and inside its extent.
+    /// point: the edge is abutted by a neighbour's extent, or just beyond it (by the seam reach) the wall goes on as a
+    /// near-coplanar neighbour, within the seam offset of its plane and inside its extent.
     /// </summary>
     /// <param name="a">Along u, mm.</param>
     /// <param name="b">Along v, mm.</param>
@@ -53,13 +60,37 @@ public sealed class FacetSeams
     {
         var reach = options.SeamReachMm;
         var e = extent;
-        return (a >= e.AMin + band || Continues(e.AMin - reach, b))
-            && (a <= e.AMax - band || Continues(e.AMax + reach, b))
-            && (b >= e.BMin + band || Continues(a, e.BMin - reach))
-            && (b <= e.BMax - band || Continues(a, e.BMax + reach));
+        return (a >= e.AMin + band || abutted[0] || Continues(e.AMin - reach, b))
+            && (a <= e.AMax - band || abutted[1] || Continues(e.AMax + reach, b))
+            && (b >= e.BMin + band || abutted[2] || Continues(a, e.BMin - reach))
+            && (b <= e.BMax - band || abutted[3] || Continues(a, e.BMax + reach));
     }
 
     private static double Dot(double[] p, double[] q) => (p[0] * q[0]) + (p[1] * q[1]) + (p[2] * q[2]);
+
+    /// <summary>Flags each own edge (a-min, a-max, b-min, b-max) the neighbour's extent starts at and runs along.</summary>
+    private void MarkAbutted((FacetFrame Frame, PlaneRectMm Extent) n)
+    {
+        var x = n.Extent;
+        var corners = new[] { (x.AMin, x.BMin), (x.AMax, x.BMin), (x.AMax, x.BMax), (x.AMin, x.BMax) }
+            .Select(c => n.Frame.ToWorld(c.Item1, c.Item2))
+            .Select(w => FacetCloud.Local(frame, w[0], w[1], w[2]))
+            .ToList();
+        if (corners.Any(c => Math.Abs(c.H) > options.SeamMaxOffsetMm))
+        {
+            return;
+        }
+
+        double a0 = corners.Min(c => c.A), a1 = corners.Max(c => c.A), b0 = corners.Min(c => c.B), b1 = corners.Max(c => c.B);
+        var tol = options.SeamAbutMm;
+        var e = extent;
+        var alongB = Math.Min(b1, e.BMax) - Math.Max(b0, e.BMin) > tol;
+        var alongA = Math.Min(a1, e.AMax) - Math.Max(a0, e.AMin) > tol;
+        abutted[0] |= alongB && Math.Abs(a1 - e.AMin) <= tol;
+        abutted[1] |= alongB && Math.Abs(a0 - e.AMax) <= tol;
+        abutted[2] |= alongA && Math.Abs(b1 - e.BMin) <= tol;
+        abutted[3] |= alongA && Math.Abs(b0 - e.BMax) <= tol;
+    }
 
     private bool Continues(double a, double b)
     {

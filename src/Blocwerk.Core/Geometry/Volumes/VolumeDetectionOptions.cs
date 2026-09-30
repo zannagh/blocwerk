@@ -55,6 +55,13 @@ public sealed record VolumeDetectionOptions
     /// <summary>How far beyond the edge the neighbour's extent must reach (a gap between the extents up to this), mm.</summary>
     public double SeamReachMm { get; init; } = 150;
 
+    /// <summary>
+    /// A neighbour's extent starting within this of an edge (and running along it) abuts it: the two were clipped apart at
+    /// their midline and the whole edge is a seam (on The Attic, 2026-09-30, the main wall's clipped edge cut off a roof
+    /// beside the lower neighbour's end), mm.
+    /// </summary>
+    public double SeamAbutMm { get; init; } = 30;
+
     /// <summary>Least share of bare wall in the ring around a volume (else it is not sitting on this facet).</summary>
     public double MinWallSupport { get; init; } = 0.35;
 

@@ -91,13 +91,27 @@ public static class FlatSidedFitter
             candidates = candidates.Where(c => c.Fit.Polyhedron.Shape == "multi-peak").ToList();
         }
 
+        // A good fit beats a poor one with fewer sides.
+        if (candidates.Any(c => c.Fit.IsGood))
+        {
+            candidates = candidates.Where(c => c.Fit.IsGood).ToList();
+        }
+
         var best = candidates.Min(c => c.Fit.RmsMm);
         var slack = Math.Max(SlackMm, SlackShare * best);
         return candidates.Where(c => c.Fit.RmsMm <= best + slack)
-            .OrderBy(c => c.Fit.Polyhedron.SideCount)
+            .OrderBy(c => Complexity(c.Fit.Polyhedron))
             .ThenBy(c => c.Fit.RmsMm + (c.Decided ? 0 : slack))
             .First().Fit;
     }
+
+    /// <summary>
+    /// How much a shape assumes: its flat sides plus every top vertex beyond an apex, so a ridge or a flat top has to fit
+    /// clearly better than the pyramid under it (a narrow plateau's corners otherwise pass for one side more).
+    /// </summary>
+    /// <param name="polyhedron">The fitted shape.</param>
+    /// <returns>The complexity.</returns>
+    public static int Complexity(VolumePolyhedron polyhedron) => polyhedron.SideCount + Math.Max(0, polyhedron.Top.Count - 1);
 
     /// <summary>The flat-sided shape over one outline and one reading of the top.</summary>
     private static FlatSidedFit? FitOne(List<(double A, double B)> outline, VolumeTopCandidate candidate, List<(double A, double B, double H)> cells)

@@ -45,6 +45,8 @@
     <!-- The Attic panel update of 2026-09-29 (centre + oblique right panel): every unpaired detection with the
          operator's real/junk label, matched pairs, markers, presence scores and overlap pairs. No photos. -->
     <Content Include="Triage\panel-update-attic.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The Attic main wall's five volumes (outline + splat height field, model of 2026-09-30) for the flat-sides shapes. -->
+    <Content Include="Volumes\attic-main-wall-volumes.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
