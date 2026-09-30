@@ -23,10 +23,18 @@ public sealed partial class HoldProposalService
     {
         await EnsureAdminAsync(wallId, ct);
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);
-        return await db.HoldProposals.AsNoTracking()
+        var list = await db.HoldProposals.AsNoTracking()
             .Where(p => p.WallId == wallId && p.Status == status)
             .OrderByDescending(p => p.Views).ThenByDescending(p => p.Confidence)
             .ToListAsync(ct);
+        if (status != HoldProposalStatus.Pending)
+        {
+            return list;
+        }
+
+        // A spot a hold was added or moved onto since the search is hidden (it stays pending: it shows again if the hold goes).
+        var covered = await ProposalCoverage.CoveredAsync(db, wallId, list, logger, ct);
+        return covered.Count == 0 ? list : list.Where(p => !covered.Contains(p.Id)).ToList();
     }
 
     /// <inheritdoc />

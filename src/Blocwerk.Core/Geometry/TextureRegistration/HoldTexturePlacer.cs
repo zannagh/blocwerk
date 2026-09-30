@@ -33,6 +33,16 @@ public static class HoldTexturePlacer
         && (hold.MetricSource is null || IsRejected(hold) || IsTexturePlaced(hold) || IsSizedWithoutPosition(hold));
 
     /// <summary>
+    /// Whether a hold a user just moved, reshaped or added may be (re)placed: <see cref="IsEligible"/>, or its position is
+    /// the edit path's own estimate (<see cref="HoldMetric.HoldFit"/>, a fit to the photo's other placed holds). Its 2D
+    /// position and outline are the truth; the 3D placement is derived from them and may be recomputed.
+    /// </summary>
+    /// <param name="hold">The hold.</param>
+    /// <returns>True when a registration may replace its placement.</returns>
+    public static bool IsEligibleAfterEdit(Hold hold) =>
+        IsEligible(hold) || (!hold.IsVirtual && hold.WallPanelId is not null && hold.MetricSource == HoldMetric.HoldFit);
+
+    /// <summary>
     /// Whether the marker pass measured only the hold's size, in its nearest marker's own square
     /// (<see cref="HoldMetric.LocalMarker"/>): its panel photo's markers were not mapped onto a wall model, so it has no position.
     /// </summary>

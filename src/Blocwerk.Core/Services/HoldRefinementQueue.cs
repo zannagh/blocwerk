@@ -5,6 +5,7 @@
 using System.Threading.Channels;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Geometry.Volumes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -15,7 +16,8 @@ namespace Blocwerk.Core.Services;
 /// <summary>
 /// The in-process <see cref="IHoldRefinementQueue"/>: a channel drained by one background loop that waits
 /// <see cref="Debounce"/> after the last edit of a burst, then per wall re-places / re-sizes the holds that
-/// still need it (<see cref="HoldGlyphRefresher"/>) and refines their footprint and protrusion.
+/// still need it (<see cref="HoldGlyphRefresher"/>), lets the 3D model follow them (registration and volume placement)
+/// and refines their footprint and protrusion.
 /// Single-instance, best-effort: a restart drops the queue and the 3D view keeps projecting the outline.
 /// </summary>
 public sealed class HoldRefinementQueue(IServiceScopeFactory scopes, ILogger<HoldRefinementQueue> logger)
@@ -55,6 +57,8 @@ public sealed class HoldRefinementQueue(IServiceScopeFactory scopes, ILogger<Hol
             }
         }
 
+        await FollowIn3DAsync(scope.ServiceProvider, factory, wallId, holdIds, ct);
+
         var footprints = scope.ServiceProvider.GetService<IHoldFootprintService>();
         if (footprints is not null)
         {
@@ -66,6 +70,60 @@ public sealed class HoldRefinementQueue(IServiceScopeFactory scopes, ILogger<Hol
         {
             await protrusion.MeasureHoldsFromPipelineAsync(wallId, holdIds, ct);
         }
+    }
+
+    /// <summary>
+    /// The 3D model follows the edited holds (their panel position is the truth): placed again from their panel photo's
+    /// registration, and placed again on a volume when their stored volume point no longer belongs to their position.
+    /// Silent: without a model, textures or volumes nothing happens, and a failure is only logged (the holds keep the
+    /// estimate the edit gave them).
+    /// </summary>
+    private async Task FollowIn3DAsync(
+        IServiceProvider services, IDbContextFactory<BlocwerkDbContext> factory, Guid wallId, IReadOnlyCollection<Guid> holdIds, CancellationToken ct)
+    {
+        try
+        {
+            if (services.GetService<IHoldTexturePlacementService>() is { } placement)
+            {
+                await placement.PlaceEditedAsync(wallId, holdIds, ct);
+            }
+
+            await using var db = await factory.CreateDbContextAsync(ct);
+            await PlaceOnVolumesAsync(db, wallId, holdIds, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Following {Count} edited holds in 3D on wall {WallId} failed; they keep their estimated placement", holdIds.Count, wallId);
+        }
+    }
+
+    /// <summary>
+    /// The edited holds whose volume placement is missing or stale, placed again on the active model's visible volumes; the
+    /// replaced placements are recorded in the model's rolling edit run, so reverting it restores them too.
+    /// </summary>
+    private static async Task PlaceOnVolumesAsync(BlocwerkDbContext db, Guid wallId, IReadOnlyCollection<Guid> holdIds, CancellationToken ct)
+    {
+        var modelId = await db.WallGeometryModels.AsNoTracking()
+            .Where(m => m.WallId == wallId && m.IsActive).Select(m => (Guid?)m.Id).FirstOrDefaultAsync(ct);
+        if (modelId is not { } active || !await db.WallVolumes.AnyAsync(v => v.GeometryModelId == active && !v.IsHidden && !v.IsRemoved, ct))
+        {
+            return;
+        }
+
+        var holds = await db.Holds.AsNoTracking().Where(h => h.WallId == wallId && holdIds.Contains(h.Id))
+            .Select(h => new { h.Id, h.PlaneAMm, h.PlaneBMm, h.VolumePlacementJson })
+            .ToListAsync(ct);
+        var stale = holds
+            .Where(h => HoldVolumePlacement.FromJson(h.VolumePlacementJson) is not { } p || !p.Matches(h.PlaneAMm, h.PlaneBMm))
+            .ToDictionary(h => h.Id, h => h.VolumePlacementJson);
+        if (stale.Count == 0)
+        {
+            return;
+        }
+
+        var changed = new List<Guid>();
+        await WallVolumeService.PlaceHoldsAsync(db, wallId, active, changed, ct, stale.Keys.ToHashSet());
+        await HoldTexturePlacementService.RecordVolumePlacementsAsync(db, wallId, active, changed.ToDictionary(id => id, id => stale[id]), ct);
     }
 
     /// <inheritdoc />

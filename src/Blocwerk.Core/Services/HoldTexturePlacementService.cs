@@ -71,7 +71,8 @@ public sealed partial class HoldTexturePlacementService : IHoldTexturePlacementS
             var hasTextures = await db.WallGeometryTextures.AnyAsync(t => t.GeometryModel.WallId == wallId && t.GeometryModel.IsActive, ct);
 
             // Few rows per wall; ordered in memory because SQLite cannot ORDER BY a DateTimeOffset.
-            var runs = await db.HoldPlacementRuns.AsNoTracking().Where(r => r.WallId == wallId).ToListAsync(ct);
+            var runs = await db.HoldPlacementRuns.AsNoTracking()
+                .Where(r => r.WallId == wallId && r.Trigger != HoldPlacementTrigger.Edit).ToListAsync(ct);
             var latest = runs.MaxBy(r => r.CreatedAt);
             var info = latest is null
                 ? null

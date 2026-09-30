@@ -51,6 +51,12 @@ public sealed record HoldPlacementEntry
     /// <summary>Gets the volume placement before the carry (see <see cref="RestoresVolumePlacement"/>).</summary>
     public string? PrevVolumePlacementJson { get; init; }
 
+    /// <summary>
+    /// Gets the hash of the hold's panel geometry (centre, radius, outline) the placement was derived from, or null for a run
+    /// that did not record it. A placement whose hold was edited since is not settled.
+    /// </summary>
+    public string? GeometryHash { get; init; }
+
     /// <summary>Captures what a hold carries before it is placed.</summary>
     /// <param name="hold">The hold, before the write.</param>
     /// <returns>The entry, hashes still empty.</returns>
@@ -72,6 +78,17 @@ public sealed record HoldPlacementEntry
         hold.PlaneAMm?.ToString("R", CultureInfo.InvariantCulture) ?? "-",
         hold.PlaneBMm?.ToString("R", CultureInfo.InvariantCulture) ?? "-",
         hold.MetricSource ?? "-"));
+
+    /// <summary>Hash of a hold's panel geometry: its panel, centre, radius and outline.</summary>
+    /// <param name="hold">The hold.</param>
+    /// <returns>A short stable hash.</returns>
+    public static string HashGeometry(Hold hold) => Hash(string.Join(
+        '|',
+        hold.WallPanelId?.ToString() ?? "-",
+        hold.X.ToString("R", CultureInfo.InvariantCulture),
+        hold.Y.ToString("R", CultureInfo.InvariantCulture),
+        hold.Radius.ToString("R", CultureInfo.InvariantCulture),
+        string.Join(';', (hold.ShapePoints ?? []).Select(p => string.Create(CultureInfo.InvariantCulture, $"{p.Dx:R},{p.Dy:R}")))));
 
     /// <summary>Hash of a fingerprint JSON, or null for none.</summary>
     /// <param name="json">The fingerprint.</param>

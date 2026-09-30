@@ -22,9 +22,13 @@ public sealed partial class WallVolumeService
     internal static Task<(int Placed, int Changed)> PlaceHoldsAsync(BlocwerkDbContext db, Guid wallId, Guid modelId, CancellationToken ct) =>
         PlaceHoldsAsync(db, wallId, modelId, null, ct);
 
-    /// <summary>As <see cref="PlaceHoldsAsync(BlocwerkDbContext, Guid, Guid, CancellationToken)"/>, collecting the ids of the holds that changed.</summary>
+    /// <summary>
+    /// As <see cref="PlaceHoldsAsync(BlocwerkDbContext, Guid, Guid, CancellationToken)"/>, collecting the ids of the holds that changed.
+    /// With <paramref name="only"/>, only those holds are placed again (the refinement of edited holds); every other hold keeps
+    /// its stored placement and still counts towards its volume.
+    /// </summary>
     internal static async Task<(int Placed, int Changed)> PlaceHoldsAsync(
-        BlocwerkDbContext db, Guid wallId, Guid modelId, ICollection<Guid>? changedIds, CancellationToken ct)
+        BlocwerkDbContext db, Guid wallId, Guid modelId, ICollection<Guid>? changedIds, CancellationToken ct, IReadOnlySet<Guid>? only = null)
     {
         var json = await db.WallGeometryModels.AsNoTracking().Where(m => m.Id == modelId).Select(m => m.Json).FirstAsync(ct);
         var (frames, _) = FacetsOf(WallGeometryDocument.Parse(json));
@@ -43,19 +47,36 @@ public sealed partial class WallVolumeService
         var panelCams = HoldFootprintRefiner.PanelCameras(placedHolds.Where(h => !NearVolume(h, volumes)).ToList(), frames, photos);
         var captureCams = SolvedCamera.ParseAll(json).Select(c => c.Centre).ToList();
         var minHeight = new VolumeDetectionOptions().MinPlacementHeightMm;
+        var (placed, changed, perVolume) = Apply(
+            holds, only, changedIds, h => PlacementOf(h, frames, volumes, panelCams, captureCams, minHeight));
+
+        foreach (var row in rows)
+        {
+            row.HoldCount = row.IsHidden || row.IsRemoved ? 0 : perVolume.GetValueOrDefault(row.Id);
+        }
+
+        await db.SaveChangesAsync(ct);
+        return (placed, changed);
+    }
+
+    /// <summary>Writes the placement of every hold in scope; counts every hold's placement (for one out of scope, its stored one while current).</summary>
+    private static (int Placed, int Changed, Dictionary<Guid, int> PerVolume) Apply(
+        List<Hold> holds, IReadOnlySet<Guid>? only, ICollection<Guid>? changedIds, Func<Hold, HoldVolumePlacement?> place)
+    {
         int placed = 0, changed = 0;
         var perVolume = new Dictionary<Guid, int>();
         foreach (var hold in holds)
         {
-            var placement = PlacementOf(hold, frames, volumes, panelCams, captureCams, minHeight);
-            var value = placement?.ToJson();
+            var inScope = only is null || only.Contains(hold.Id);
+            var placement = inScope ? place(hold) : Current(hold);
             if (placement is not null)
             {
                 placed++;
                 perVolume[placement.VolumeId] = perVolume.GetValueOrDefault(placement.VolumeId) + 1;
             }
 
-            if (hold.VolumePlacementJson != value)
+            var value = placement?.ToJson();
+            if (inScope && hold.VolumePlacementJson != value)
             {
                 hold.VolumePlacementJson = value;
                 changed++;
@@ -63,14 +84,12 @@ public sealed partial class WallVolumeService
             }
         }
 
-        foreach (var row in rows)
-        {
-            row.HoldCount = perVolume.GetValueOrDefault(row.Id);
-        }
-
-        await db.SaveChangesAsync(ct);
-        return (placed, changed);
+        return (placed, changed, perVolume);
     }
+
+    /// <summary>The hold's stored volume placement while it still belongs to its flat position, else null.</summary>
+    private static HoldVolumePlacement? Current(Hold hold) =>
+        HoldVolumePlacement.FromJson(hold.VolumePlacementJson) is { } p && p.Matches(hold.PlaneAMm, hold.PlaneBMm) ? p : null;
 
     private static HoldVolumePlacement? PlacementOf(
         Hold hold,

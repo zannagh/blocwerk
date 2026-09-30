@@ -1379,6 +1379,11 @@ public class WallService : IWallService
 
             db.Holds.Add(hold);
             await db.SaveChangesAsync();
+            if (!isVirtual && hold.WallPanelId is not null)
+            {
+                // The 3D model follows in the background: placed from its panel photo, proposals it covers resolved.
+                refinementQueue?.Enqueue(wallId, [hold.Id]);
+            }
 
             BlocwerkMetrics.RecordHoldAdded(wallId);
             await _activityLogService.LogAsync(wallId, null, ActivityType.HoldAdded);

@@ -17,6 +17,12 @@ public static class HoldPlacementTrigger
     /// by the known similarity, not registered again (<see cref="Blocwerk.Core.Capture.Corrections.CorrectionCarry"/>).
     /// </summary>
     public const string Correction = "correction";
+
+    /// <summary>
+    /// In the background after a user moved, reshaped or added holds on a panel (<see cref="HoldRefinementQueue"/>): only
+    /// those holds, registered again from their panel photo. Never shown as the wall's latest run.
+    /// </summary>
+    public const string Edit = "edit";
 }
 
 /// <summary>Whether the action can run on a wall, and its latest run.</summary>

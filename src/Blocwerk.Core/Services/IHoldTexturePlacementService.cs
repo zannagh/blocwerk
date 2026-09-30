@@ -50,4 +50,17 @@ public interface IHoldTexturePlacementService
     /// <param name="ct">Cancellation.</param>
     /// <returns>The result, or null when it did not run.</returns>
     Task<HoldPlacementResult?> PlaceFromPipelineAsync(Guid wallId, Guid modelId, Guid actingUserId, CancellationToken ct = default);
+
+    /// <summary>
+    /// The refinement queue's step for holds a user just moved, reshaped or added: each one whose position is only an
+    /// estimate (<see cref="Geometry.TextureRegistration.HoldTexturePlacer.IsEligibleAfterEdit"/>) is placed again from its
+    /// panel photo's registration onto the active model (cached per photo and model). Silent: no model, no textures, no
+    /// matcher or no registration leaves the holds exactly as they are. Never changes a hold's 2D fields. Recorded as a
+    /// <see cref="HoldPlacementTrigger.Edit"/> run.
+    /// </summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="holdIds">The edited holds.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>The holds placed.</returns>
+    Task<IReadOnlyList<Guid>> PlaceEditedAsync(Guid wallId, IReadOnlyCollection<Guid> holdIds, CancellationToken ct = default);
 }

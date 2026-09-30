@@ -22,6 +22,7 @@ public sealed partial class HoldTexturePlacementService
         live = only is null ? live : live.Where(h => only.Contains(h.Id)).ToList();
         var noPanel = live.Count(h => h.WallPanelId is null);
         var plans = await PlanPanelsAsync(db, wallId, live, model, ct);
+        RememberRegistrations(model.Id, plans);
 
         // The run row exists before the first hold is written, and every batch updates its entry list in the SAME
         // SaveChanges as the holds, so whatever was written is always revertable, even if the run is cut short.
@@ -148,8 +149,8 @@ public sealed partial class HoldTexturePlacementService
         Wall3DHoldGuard.PlacementOnFacet(fit.FacetId, fit.PlaneAMm, fit.PlaneBMm, extents, outline);
 
     /// <summary>An edit landed between planning and writing: the plan no longer describes this hold.</summary>
-    private static bool ChangedSincePlanned(Hold current, Hold planned) =>
-        !HoldTexturePlacer.IsEligible(current)
+    private static bool ChangedSincePlanned(Hold current, Hold planned, Func<Hold, bool>? eligible = null) =>
+        !(eligible ?? HoldTexturePlacer.IsEligible)(current)
         || current.WallPanelId != planned.WallPanelId
         || current.X != planned.X
         || current.Y != planned.Y

@@ -20,10 +20,20 @@ internal sealed class FakePhotoTextureMatcher : IPhotoTextureMatcher
     /// <summary>Gets the seeds the matcher was given, per (photo, texture).</summary>
     public List<(byte Photo, byte Texture)> Seeded { get; } = [];
 
-    public IPhotoTextureSession OpenPhoto(byte[] encodedPhoto) =>
-        encodedPhoto.Length == 0 || encodedPhoto[0] == 255
+    /// <summary>Gets how many photos were opened (each a registration).</summary>
+    public int Opened { get; private set; }
+
+    /// <summary>Gets or sets what happens when a photo is opened (a registration starts), e.g. a concurrent edit.</summary>
+    public Action? OnOpen { get; set; }
+
+    public IPhotoTextureSession OpenPhoto(byte[] encodedPhoto)
+    {
+        Opened++;
+        OnOpen?.Invoke();
+        return encodedPhoto.Length == 0 || encodedPhoto[0] == 255
             ? throw new ArgumentException("The photo could not be decoded.", nameof(encodedPhoto))
             : new FakePhotoTextureSession(this, encodedPhoto[0]);
+    }
 
     /// <summary>Gets the retries (<see cref="PhotoTextureAttempt.CoarsePass"/> set) the matcher was asked for, per (photo, texture).</summary>
     public List<(byte Photo, byte Texture, PhotoTextureAttempt Attempt)> Retries { get; } = [];

@@ -19,11 +19,13 @@ internal sealed record PlannedPlacement(Hold Hold, HoldPlaneFit Fit, HoldMetric?
 /// <param name="Placements">The placements.</param>
 /// <param name="Registrations">The photo's registrations (the evidence a carried placement is checked against).</param>
 /// <param name="Cleared">Holds whose previous placement the evidence contradicts: they lose it (counted as failed).</param>
+/// <param name="Photo">The photo the registrations belong to, stamped when it was read (the registration cache key).</param>
 internal sealed record PanelPlan(
     HoldPlacementPanelSummary Summary,
     List<PlannedPlacement> Placements,
     IReadOnlyList<FacetRegistration>? Registrations = null,
-    IReadOnlyList<Hold>? Cleared = null);
+    IReadOnlyList<Hold>? Cleared = null,
+    PanelPhotoStamp? Photo = null);
 
 /// <summary>JSON of <see cref="HoldPlacementRun.PanelsJson"/>.</summary>
 internal static class PanelSummaries
