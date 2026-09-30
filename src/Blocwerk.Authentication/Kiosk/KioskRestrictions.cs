@@ -300,6 +300,10 @@ public static class KioskRestrictions
         // circuit; saving is refused at MarkerPlanService too, which is the real gate.
         "Blocwerk.Web.Components.Pages.Walls.WallMarkerPlanner",
 
+        // "Update panels + 3D": an admin uploading a visit's photos from their own device; WallRefreshService
+        // refuses a kiosk too, which is the real gate.
+        "Blocwerk.Web.Components.Pages.Walls.WallRefresh",
+
         // The APPROVING half of device pairing. This page is for a wall admin on their own phone,
         // scanning the QR the tablet is showing; a tablet has no business on it. Approving mints a
         // kiosk key, which is precisely the "credential that outlives the session" this list exists

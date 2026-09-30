@@ -130,6 +130,11 @@ else
                                     <span>Opening it continues where they left off.</span>
                                 </p>
                             }
+                            @if (_isAdmin && !KioskContext.IsKiosk)
+                            {
+                                <a class="btn-primary refresh-entry" href="/walls/@WallId/update">Update panels + 3D</a>
+                                <p class="field-hint">Drop all photos and videos from a visit: the app sorts them to the panels, updates the panels and the 3D model, and asks you to confirm before anything changes.</p>
+                            }
                             <button class="btn-secondary bigupdate-entry" @onclick="OpenBigUpdate">
                                 @(_openUpdate is null ? "Update wall with new photos" : "Continue the wall update")
                             </button>
@@ -1447,6 +1452,7 @@ else
             && await BoulderService.CanCreateAnonymouslyAsync(WallId);
 
         await LoadOpenUpdateAsync();
+        OpenReviewFromDeepLink();
 
         if (_wall != null)
         {
@@ -1953,6 +1959,28 @@ else
         {
             await ShowToast($"Restore failed: {ex.Message}");
         }
+    }
+
+    /// <summary>Deep link from "Update panels + 3D": <c>?update=review&amp;session={id}</c> opens that wall update once.</summary>
+    [SupplyParameterFromQuery(Name = "update")]
+    public string? Update { get; set; }
+
+    /// <summary>The update session the "Update panels + 3D" run prepared; the review opens only while it is still the open one.</summary>
+    [SupplyParameterFromQuery(Name = "session")]
+    public Guid? UpdateSession { get; set; }
+
+    private bool updateDeepLinkUsed;
+
+    private void OpenReviewFromDeepLink()
+    {
+        if (updateDeepLinkUsed || !_isAdmin || KioskContext.IsKiosk || _openUpdate is null || _openUpdate.Id != UpdateSession
+            || !string.Equals(Update, "review", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        updateDeepLinkUsed = true;
+        _showBigUpdate = true;
     }
 
     private void OpenBigUpdate()

@@ -1,0 +1,65 @@
+@using System.Globalization
+@using Blocwerk.Core.Refresh
+@* The one progress timeline: upload, sorting, the 3D capture (with its own live stage), the panel update steps. *@
+
+<ol class="refresh-timeline" aria-live="polite">
+    @foreach (var step in View.Steps)
+    {
+        <li class="refresh-step is-@step.State.ToString().ToLowerInvariant()">
+            <span class="refresh-step-mark" aria-hidden="true">@Mark(step.State)</span>
+            <div>
+                <strong>@step.Title</strong> <span class="refresh-step-state">@StateText(step.State)</span>
+                @if (step.Detail is not null)
+                {
+                    <div class="hint">@step.Detail</div>
+                }
+                @if (step.Key == RefreshTimeline.Capture && View.Capture is { } capture)
+                {
+                    <div class="refresh-capture">
+                        @if (capture.IsRunning)
+                        {
+                            <progress class="refresh-progress" max="1" value="@capture.Progress.ToString(CultureInfo.InvariantCulture)"></progress>
+                            <div class="hint">@(capture.Stage ?? "Working…") (@((int)Math.Round(capture.Progress * 100)) %)</div>
+                        }
+                        else
+                        {
+                            <div class="hint">3D capture: @capture.Status@(capture.Error is not null ? $": {capture.Error}" : string.Empty)</div>
+                        }
+                        @if (capture.PhotoRealPending is not null)
+                        {
+                            <div class="hint">@capture.PhotoRealPending</div>
+                        }
+                        @if (capture.FollowUp is not null)
+                        {
+                            <div class="hint">@capture.FollowUp</div>
+                        }
+                    </div>
+                }
+            </div>
+        </li>
+    }
+</ol>
+
+@code {
+    [Parameter]
+    public WallRefreshView View { get; set; } = default!;
+
+    private static string Mark(RefreshStepState state) => state switch
+    {
+        RefreshStepState.Done => "✓",
+        RefreshStepState.Running => "…",
+        RefreshStepState.Failed => "!",
+        RefreshStepState.Skipped => "–",
+        RefreshStepState.Waiting => "?",
+        _ => "·",
+    };
+
+    private static string StateText(RefreshStepState state) => state switch
+    {
+        RefreshStepState.Running => "(running)",
+        RefreshStepState.Failed => "(did not work)",
+        RefreshStepState.Skipped => "(skipped)",
+        RefreshStepState.Waiting => "(waiting for you)",
+        _ => string.Empty,
+    };
+}

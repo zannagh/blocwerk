@@ -160,8 +160,12 @@ public sealed class WallCaptureSweeper(
         // every job's leftover (its trained result or installed preview, kept to finish again). Anything else of a finished,
         // failed or cancelled job is deleted with it; what survived a failed delete is an orphan here.
         var gpu = await Runners.GpuJobQueue.ReferencedFilesAsync(db, ct);
+
+        // Videos dropped into an "Update panels + 3D" run, kept until its 3D capture starts.
+        var refreshVideos = await Refresh.RefreshTimeline.StoredVideosAsync(db, ct);
         return new HashSet<string>(
-            photos.Concat(textures).Concat(masks).Concat(sourceMaps).Concat(videos).Concat(sparse).Concat(gpu), StringComparer.Ordinal);
+            photos.Concat(textures).Concat(masks).Concat(sourceMaps).Concat(videos).Concat(sparse).Concat(gpu).Concat(refreshVideos),
+            StringComparer.Ordinal);
     }
 
     private void DeleteFiles(IEnumerable<string> names)

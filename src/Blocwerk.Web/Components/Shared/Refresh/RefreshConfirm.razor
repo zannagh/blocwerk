@@ -1,0 +1,44 @@
+@using Blocwerk.Core.Refresh
+@* The quick review's one confirm: what the panel update will do, before anything goes live. *@
+
+<div class="refresh-confirm">
+    <h2>Check and apply</h2>
+    @if (View.Summary is { } s)
+    {
+        <p>New photos for: @string.Join(", ", s.Panels)</p>
+        <ul class="refresh-summary">
+            <li><strong>@s.Refound</strong> holds found again on the new photos</li>
+            <li class="@(s.KeptInPlace > 0 ? "is-attention" : null)">
+                <strong>@s.KeptInPlace</strong> holds not found again, kept where they were
+                @if (s.BouldersOnKeptHolds > 0)
+                {
+                    <span> (@s.BouldersOnKeptHolds boulders use one of them)</span>
+                }
+            </li>
+            <li><strong>@s.NewHolds</strong> new holds</li>
+            <li><strong>@s.DroppedDetections</strong> detections left out (on a marker, outside the old photo, or unchanged)</li>
+            @if (s.PossiblyMoved > 0)
+            {
+                <li class="is-attention"><strong>@s.PossiblyMoved</strong> holds may have moved; the quick review leaves them in place</li>
+            }
+            <li><strong>@s.OverlapLinks</strong> holds linked across panels@(s.OverlapsLeftOut > 0 ? $", {s.OverlapsLeftOut} unsure overlaps left unlinked" : string.Empty)</li>
+            <li><strong>@s.Removed</strong> holds removed</li>
+        </ul>
+    }
+
+    <p class="hint">
+        Nothing is live yet. "Open full review" shows every step of the update with these choices already filled in.
+    </p>
+    <div class="refresh-actions">
+        <button class="btn-primary" @onclick="OnApply">Apply update</button>
+        <a class="btn-secondary" href="/walls/@View.WallId?update=review&amp;session=@View.UpdateSessionId">Open full review</a>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public WallRefreshView View { get; set; } = default!;
+
+    [Parameter]
+    public EventCallback OnApply { get; set; }
+}

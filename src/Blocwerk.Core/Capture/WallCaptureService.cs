@@ -50,7 +50,8 @@ public sealed partial class WallCaptureService(
         await using (db)
         {
             var draft = await db.WallCaptures.AsNoTracking()
-                .Where(c => c.WallId == wallId && c.CreatedByUserId == userId && c.Status == WallCaptureStatus.Draft)
+                .Where(c => c.WallId == wallId && c.CreatedByUserId == userId && c.Status == WallCaptureStatus.Draft
+                            && !db.WallRefreshes.Any(r => r.CaptureId == c.Id))
                 .FirstOrDefaultAsync();
             return draft is null ? null : await ToDraftAsync(db, draft);
         }
@@ -68,7 +69,8 @@ public sealed partial class WallCaptureService(
             }
 
             var draft = await db.WallCaptures
-                .FirstOrDefaultAsync(c => c.WallId == wallId && c.CreatedByUserId == userId && c.Status == WallCaptureStatus.Draft);
+                .FirstOrDefaultAsync(c => c.WallId == wallId && c.CreatedByUserId == userId && c.Status == WallCaptureStatus.Draft
+                            && !db.WallRefreshes.Any(r => r.CaptureId == c.Id));
             if (draft is null)
             {
                 draft = new WallCapture { WallId = wallId, CreatedByUserId = userId, Stage = "Uploading photos" };

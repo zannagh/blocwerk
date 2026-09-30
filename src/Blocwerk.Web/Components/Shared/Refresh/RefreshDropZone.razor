@@ -1,0 +1,46 @@
+@using Blocwerk.Core.Refresh
+@* The one upload of "Update panels + 3D": every photo and video of the visit, streamed file by file over HTTP. *@
+
+<div class="refresh-drop">
+    <label for="refresh-files" class="refresh-drop-zone @(uploading ? "is-busy" : null)">
+        <strong>Drop all photos and videos from this visit</strong>
+        <span class="hint">Panel photos and 3D photos together, HEIC is fine, several videos too. The app sorts them.</span>
+        <input type="file" id="refresh-files" multiple
+               accept="image/*,.heic,.heif,video/mp4,video/quicktime,.mp4,.mov,.m4v"
+               disabled="@uploading" @onchange="UploadAsync" />
+    </label>
+
+    @if (uploading)
+    {
+        <progress class="refresh-progress" max="100" value="@percent" aria-label="Upload"></progress>
+        <p class="loading-small" role="status">Uploading: @percent% (@sentMb.ToString("0") of @totalMb.ToString("0") MB)</p>
+    }
+
+    @if (View is not null)
+    {
+        <p class="refresh-counts" role="status">
+            @View.Photos.Count photos@(View.Videos.Count > 0 ? $", {View.Videos.Count} videos" : string.Empty) uploaded.
+            @if (!View.CaptureAvailable)
+            {
+                <span class="hint">3D is not set up for this wall, so only the panel photos will be used.</span>
+            }
+        </p>
+    }
+
+    @if (problems.Count > 0)
+    {
+        <details class="refresh-problems" open>
+            <summary>@problems.Count files were not used</summary>
+            <ul>
+                @foreach (var file in problems)
+                {
+                    <li><strong>@(file.FileName ?? "A file")</strong>: @file.Problem</li>
+                }
+            </ul>
+        </details>
+    }
+
+    <button class="btn-primary" @onclick="OnContinue" disabled="@(uploading || View is null || View.Photos.Count == 0)">
+        Sort the photos
+    </button>
+</div>

@@ -4,6 +4,7 @@ using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Detection.Enrichment;
 using Blocwerk.Core.MarkerPlanning;
+using Blocwerk.Core.Refresh;
 using Blocwerk.Core.Services;
 using Blocwerk.Core.Services.TopLogger;
 using Blocwerk.Core.Telemetry;
@@ -176,6 +177,9 @@ public static class CoreServices
 
         // In-app glyph capture: photos in, 3D model out, computed by the GEOMETRYSERVICE__URL worker.
         builder.Services.AddWallCapture();
+
+        // "Update panels + 3D": one drop per wall visit drives the capture and the panel update (see WallRefreshWorker).
+        builder.Services.AddWallRefresh();
         builder.Services.AddScoped<IProgressionService, ProgressionService>();
         builder.Services.AddScoped<ITrainingService, TrainingService>();
         builder.Services.AddScoped<ISessionService, SessionService>();

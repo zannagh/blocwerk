@@ -1,0 +1,184 @@
+// <copyright file="WallRefresh.razor.cs" company="Blocwerk">
+// Copyright (c) Blocwerk. All rights reserved.
+// </copyright>
+
+using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Entities;
+using Blocwerk.Core.Refresh;
+using Blocwerk.Core.Services;
+using Microsoft.AspNetCore.Components;
+
+namespace Blocwerk.Web.Components.Pages.Walls;
+
+/// <summary>
+/// The "Update panels + 3D" page of a wall: shows the run's current screen (drop zone, sort, confirm) and its
+/// timeline, polling while the worker is busy or the 3D capture is still running. It survives reloads: the run
+/// lives on the server.
+/// </summary>
+public partial class WallRefresh : IDisposable
+{
+    private static readonly TimeSpan PollEvery = TimeSpan.FromSeconds(2);
+
+    private WallRefreshView? view;
+    private bool loading = true;
+    private bool busy;
+    private string? error;
+    private string? blocked;
+    private PeriodicTimer? timer;
+    private CancellationTokenSource? polling;
+    private Task? beginning;
+
+    [Parameter]
+    public Guid WallId { get; set; }
+
+    [Inject]
+    private IWallRefreshService Refreshes { get; set; } = default!;
+
+    [Inject]
+    private IKioskContext KioskContext { get; set; } = default!;
+
+    private bool CanDiscard => view is { Status: WallRefreshStatus.Uploading or WallRefreshStatus.ReadyToStart or WallRefreshStatus.ReadyToApply };
+
+    public void Dispose()
+    {
+        polling?.Cancel();
+        polling?.Dispose();
+        timer?.Dispose();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (KioskContext.IsKiosk)
+        {
+            blocked = "Panels and 3D are updated from your own device, not from this wall tablet.";
+            loading = false;
+            return;
+        }
+
+        await ReloadAsync();
+        loading = false;
+        StartPolling();
+    }
+
+    private async Task ReloadAsync()
+    {
+        try
+        {
+            view = await Refreshes.GetCurrentAsync(WallId);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            blocked = "Only admins of this wall can update its panels and 3D model.";
+        }
+        catch (KioskRestrictedException)
+        {
+            blocked = "Panels and 3D are updated from your own device, not from this wall tablet.";
+        }
+    }
+
+    private async Task<Guid?> EnsureRefreshAsync()
+    {
+        if (view is null)
+        {
+            // Two change events in a row must open one run, not two.
+            beginning ??= RunAsync(async () => view = await Refreshes.BeginAsync(WallId));
+            await beginning;
+            beginning = null;
+        }
+
+        return view?.Id;
+    }
+
+    private Task SortAsync() => ActAsync(id => Refreshes.SortAsync(id));
+
+    private Task StartAsync(IReadOnlyList<PanelChoice> choices) => ActAsync(id => Refreshes.StartAsync(id, choices));
+
+    private Task ApplyAsync() => ActAsync(id => Refreshes.ApplyAsync(id));
+
+    private Task DiscardAsync() => ActAsync(id => Refreshes.DiscardAsync(id));
+
+    private async Task StartOverAsync()
+    {
+        await RunAsync(async () => view = await Refreshes.BeginAsync(WallId));
+    }
+
+    private async Task ActAsync(Func<Guid, Task> action)
+    {
+        if (view is null)
+        {
+            return;
+        }
+
+        var id = view.Id;
+        await RunAsync(async () =>
+        {
+            await action(id);
+            await ReloadAsync();
+        });
+    }
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            await action();
+        }
+        catch (InvalidOperationException ex)
+        {
+            error = ex.Message;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            blocked = "Only admins of this wall can update its panels and 3D model.";
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private void StartPolling()
+    {
+        if (timer is not null)
+        {
+            return;
+        }
+
+        timer = new PeriodicTimer(PollEvery);
+        polling = new CancellationTokenSource();
+        _ = PollAsync(timer, polling.Token);
+    }
+
+    private async Task PollAsync(PeriodicTimer ticks, CancellationToken ct)
+    {
+        try
+        {
+            while (await ticks.WaitForNextTickAsync(ct))
+            {
+                if (view is null || !(view.IsWorking || view.Capture is { IsRunning: true }))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    await InvokeAsync(async () =>
+                    {
+                        await ReloadAsync();
+                        StateHasChanged();
+                    });
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // A missed poll is retried on the next tick.
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // The page closed.
+        }
+    }
+}

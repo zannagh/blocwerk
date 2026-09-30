@@ -1,0 +1,67 @@
+// <copyright file="RefreshSortScreen.razor.cs" company="Blocwerk">
+// Copyright (c) Blocwerk. All rights reserved.
+// </copyright>
+
+using Blocwerk.Core.Refresh;
+using Microsoft.AspNetCore.Components;
+
+namespace Blocwerk.Web.Components.Shared.Refresh;
+
+/// <summary>The sort screen: the proposed photo per panel with a confidence badge, changeable before "Start".</summary>
+public partial class RefreshSortScreen
+{
+    private readonly Dictionary<(int Col, int Row), Guid?> changes = [];
+
+    [Parameter]
+    public WallRefreshView View { get; set; } = default!;
+
+    [Parameter]
+    public EventCallback<IReadOnlyList<PanelChoice>> OnStart { get; set; }
+
+    private string VideoText => View.Videos.Count == 0 ? string.Empty : $" and {View.Videos.Count} videos";
+
+    private static string PanelName(PanelPick pick) =>
+        pick is { Col: 0, Row: 0 } ? "Centre panel" : $"Panel {pick.Col},{pick.Row}";
+
+    private static string Percent(double share) => $"{Math.Round(share * 100):0} %";
+
+    private Guid? Chosen(PanelPick pick) =>
+        changes.TryGetValue((pick.Col, pick.Row), out var changed) ? changed : pick.PhotoId;
+
+    private bool Changed(PanelPick pick, Guid? chosen) => chosen != pick.PhotoId;
+
+    private string BadgeText(PanelPick pick, Guid? chosen)
+    {
+        if (Changed(pick, chosen))
+        {
+            return chosen is null ? "Keeps its photo" : "Your choice";
+        }
+
+        return pick.Confidence switch
+        {
+            PanelPickConfidence.High => "Good match",
+            PanelPickConfidence.Medium => "Likely ?",
+            _ => "No match found",
+        };
+    }
+
+    private string BadgeClass(PanelPick pick, Guid? chosen) =>
+        Changed(pick, chosen) ? "is-user" : pick.Confidence switch
+        {
+            PanelPickConfidence.High => "is-high",
+            PanelPickConfidence.Medium => "is-medium",
+            _ => "is-none",
+        };
+
+    private string PhotoName(Guid photoId)
+    {
+        var photo = View.Photos.FirstOrDefault(p => p.PhotoId == photoId);
+        return photo?.FileName ?? $"Photo {photo?.Index}";
+    }
+
+    private void Choose(PanelPick pick, string? value) =>
+        changes[(pick.Col, pick.Row)] = Guid.TryParse(value, out var id) ? id : null;
+
+    private Task StartAsync() =>
+        OnStart.InvokeAsync(View.Picks.Select(p => new PanelChoice(p.Col, p.Row, Chosen(p))).ToList());
+}
