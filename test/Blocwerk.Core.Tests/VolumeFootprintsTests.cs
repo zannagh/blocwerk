@@ -61,5 +61,18 @@ public class VolumeFootprintsTests
         Assert.False(VolumeFootprints.Occluded([1650, -2500, 950], hold, volumes));  // straight on: clear
     }
 
+    [Fact]
+    public void ALineOfSightSkimmingAFlatFace_IsNotOccluded_ButOneThroughItIs()
+    {
+        // A 400 mm square pyramid, apex (200, 200) at 150 mm; the skimming ray passes 20 mm over the apex, inside the
+        // flat-face grace that only tracing a hold's own body may use.
+        var p = new VolumePolyhedron(VolumeHull.Build([(0, 0), (400, 0), (400, 400), (0, 400)], [(200, 200, 150)]).Select(f => f.Vertices));
+        var volumes = new FacetVolumes(Wall, [VolumeSurface.FlatSided(p, 20)]);
+        var target = Wall.ToWorld(1900, 200, 0);
+
+        Assert.False(VolumeFootprints.Occluded(Wall.ToWorld(-2800, 200, 470), target, volumes));
+        Assert.True(VolumeFootprints.Occluded(Wall.ToWorld(-2800, 200, 400), target, volumes));
+    }
+
     private static double RayMathDot(double[] a, double[] b) => (a[0] * b[0]) + (a[1] * b[1]) + (a[2] * b[2]);
 }
