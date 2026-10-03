@@ -27,7 +27,8 @@ public class CaptureVideoFrameExtractorTests : IDisposable
         var extractor = new CaptureVideoFrameExtractor(new BlocwerkSettings());
 
         var probe = await extractor.ProbeAsync(clip, CancellationToken.None);
-        var frames = await extractor.ExtractAsync(clip, new CaptureVideoFrameRequest(2.5, 7, TimeSpan.FromMinutes(2)), null, CancellationToken.None);
+        var frames = new List<byte[]>();
+        await extractor.ExtractAsync(clip, new CaptureVideoFrameRequest(2.5, 7, TimeSpan.FromMinutes(2)), FakeVideoFrameExtractor.Collect(frames), null, CancellationToken.None);
 
         Assert.Equal((1200, 2400), (probe.Width, probe.Height)); // displayed size: rotated
         Assert.InRange(frames.Count, 5, 7);                        // 8 s at 2.5 fps = 20, capped to 7

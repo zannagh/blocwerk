@@ -19,7 +19,7 @@ public sealed partial class CaptureFollowUpChain
     /// <returns>The step's new entry, or null when it did not run.</returns>
     public async Task<CaptureFollowUpEntry?> RerunAsync(Guid captureId, string stepKey, CancellationToken ct)
     {
-        var (context, _, _) = await LoadAsync(captureId, ct);
+        var (context, _, _, _) = await LoadAsync(captureId, ct);
         if (context is null)
         {
             return null;
@@ -33,36 +33,50 @@ public sealed partial class CaptureFollowUpChain
         }
 
         var entry = await RunStepAsync(step, context, ct, quiet: true);
-        await SaveAsync(captureId, c => c.FollowUpJson = CaptureFollowUpRecord.Parse(c.FollowUpJson).With(entry).ToJson(), ct);
+        await SaveEntryAsync(context, entry, ct);
         return entry;
     }
 
     /// <summary>
     /// For a record marked <see cref="CaptureFollowUpRecord.Rederive"/> (the capture's model was solved again and its
     /// record started over): runs every step (of every phase, in order) it does not have yet, without touching the stage,
-    /// then clears the mark. No-op for an unmarked record or when the capture's model is not active.
+    /// then clears the mark. No-op for an unmarked record; the mark is only cleared when the capture's model is no longer
+    /// the active one (nothing left to derive for it).
     /// </summary>
     /// <param name="captureId">The capture.</param>
     /// <param name="ct">Cancellation (the mark stays, so a restart resumes the rest).</param>
     /// <returns>The record after this run.</returns>
     public async Task<CaptureFollowUpRecord> RunMissingAsync(Guid captureId, CancellationToken ct)
     {
-        var (context, record, _) = await LoadAsync(captureId, ct);
-        if (context is null || !record.Rederive)
+        var (context, record, _, modelId) = await LoadAsync(captureId, ct);
+        if (!record.Rederive)
         {
             return record;
         }
 
-        await using var scope = scopes.CreateAsyncScope();
-        foreach (var step in scope.ServiceProvider.GetServices<ICaptureFollowUpStep>().OrderBy(s => s.Order).Where(s => record.Find(s.Key) is null))
+        if (context is not null)
         {
-            var inputsKey = step.RunsAfterCompletion ? await step.InputsKeyAsync(context, ct) : null;
-            var entry = await RunStepAsync(step, context, ct, quiet: true) with { InputsKey = inputsKey };
-            record = record.With(entry);
-            await SaveAsync(captureId, c => c.FollowUpJson = CaptureFollowUpRecord.Parse(c.FollowUpJson).With(entry).ToJson(), ct);
+            await using var scope = scopes.CreateAsyncScope();
+            foreach (var step in scope.ServiceProvider.GetServices<ICaptureFollowUpStep>().OrderBy(s => s.Order))
+            {
+                if (record.Find(step.Key) is not null)
+                {
+                    continue;
+                }
+
+                var inputsKey = step.RunsAfterCompletion ? await step.InputsKeyAsync(context, ct) : null;
+                var entry = await RunStepAsync(step, context, ct, quiet: true) with { InputsKey = inputsKey };
+                if (await SaveEntryAsync(context, entry, ct) is not { } saved)
+                {
+                    // Re-pointed meanwhile: the mark (if any) belongs to the new model's run.
+                    return record.With(entry);
+                }
+
+                record = saved;
+            }
         }
 
-        await SaveAsync(captureId, c => c.FollowUpJson = (CaptureFollowUpRecord.Parse(c.FollowUpJson) with { Rederive = false }).ToJson(), ct);
+        await ClearMarkAsync(captureId, modelId, r => r with { Rederive = false }, ct);
         return record with { Rederive = false };
     }
 }

@@ -185,7 +185,7 @@ public class WallCaptureSplatStageTests
 
         var geometrySubmissions = s.Client.JsonSubmissions.Count + s.Client.MultipartSubmissions.Count;
         await new WallCaptureWorker(
-                h.RootContextFactory, s.Queue, s.Processor, s.Files, s.Options, NullLogger<WallCaptureWorker>.Instance)
+                h.RootContextFactory, s.Queue, s.Processor, CaptureScenario.Sweeper(s), NullLogger<WallCaptureWorker>.Instance)
             .RecoverAsync(CancellationToken.None);
         var dequeued = await s.Queue.DequeueAsync(new CancellationTokenSource(TimeSpan.FromSeconds(5)).Token);
         await s.Processor.ProcessAsync(dequeued, CancellationToken.None);

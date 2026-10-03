@@ -48,13 +48,7 @@ public sealed partial class WallCaptureProcessor
         // VideoExtractTimeout of ffmpeg work, so the gate stays busy until the frames are stored.
         using var busy = busyGate?.Hold(DeployBusyWork.CaptureVideoFrames);
         await SetStageAsync(captureId, status, status == WallCaptureStatus.Splatting ? 0 : 0.2, VideoStage, ct);
-        var frames = await ExtractFramesAsync(captureId, video, status, ct);
-        var names = new List<string>(frames.Count);
-        foreach (var frame in frames)
-        {
-            names.Add(await files.SaveAsync(frame, ".jpg", ct));
-        }
-
+        var names = await ExtractFramesAsync(captureId, video, status, ct);
         await UpdateAsync(captureId, c =>
         {
             c.VideoFramesJson = CaptureVideoFiles.FramesJson(names);
@@ -64,7 +58,11 @@ public sealed partial class WallCaptureProcessor
         logger.LogInformation("Capture {CaptureId}: {Frames} video frame(s) extracted for the photo-real view", captureId, names.Count);
     }
 
-    private async Task<IReadOnlyList<byte[]>> ExtractFramesAsync(Guid captureId, string video, WallCaptureStatus status, CancellationToken ct)
+    /// <summary>
+    /// Extracts the frames straight into the capture store, one at a time (a 4K HDR clip's frames would otherwise sit in
+    /// memory together); returns their stored names. Frames stored by a run that then fails are deleted again.
+    /// </summary>
+    private async Task<List<string>> ExtractFramesAsync(Guid captureId, string video, WallCaptureStatus status, CancellationToken ct)
     {
         var path = files.ResolvePhysicalPath(video);
         if (path is null || !File.Exists(path))
@@ -74,23 +72,53 @@ public sealed partial class WallCaptureProcessor
 
         var latest = new LatestProgress();
         var request = options.VideoFrameRequest();
-        var extraction = Task.Run(() => videoFrames!.ExtractAsync(path, request, latest, ct), ct);
-        while (await Task.WhenAny(extraction, Task.Delay(TimeSpan.FromSeconds(2), ct)) != extraction)
-        {
-            var percent = (latest.Value * 100).ToString("0", CultureInfo.InvariantCulture);
-            var progress = status == WallCaptureStatus.Splatting ? VideoBand * latest.Value : 0.2;
-            await SetStageAsync(captureId, status, progress, $"{VideoStage} ({percent} %)", ct);
-        }
-
+        var names = new List<string>();
+        var extraction = Task.Run(() => videoFrames!.ExtractAsync(path, request, StoreFrameAsync, latest, ct), ct);
         try
         {
-            return await extraction;
+            while (await Task.WhenAny(extraction, Task.Delay(TimeSpan.FromSeconds(2), ct)) != extraction)
+            {
+                var percent = (latest.Value * 100).ToString("0", CultureInfo.InvariantCulture);
+                var progress = status == WallCaptureStatus.Splatting ? VideoBand * latest.Value : 0.2;
+                await SetStageAsync(captureId, status, progress, $"{VideoStage} ({percent} %)", ct);
+            }
+
+            await extraction;
+            return names;
         }
         catch (InvalidDataException ex)
         {
             logger.LogWarning("Capture {CaptureId}: the video could not be turned into frames ({Reason}); training from the photos only",
                 captureId, ex.Message);
+            DeleteStoredFrames(names);
             return [];
+        }
+        catch
+        {
+            DeleteStoredFrames(names);
+            throw;
+        }
+
+        async Task StoreFrameAsync(byte[] frame, CancellationToken token)
+        {
+            var name = await files.SaveAsync(frame, ".jpg", token);
+            lock (names)
+            {
+                names.Add(name);
+            }
+        }
+    }
+
+    private void DeleteStoredFrames(List<string> names)
+    {
+        lock (names)
+        {
+            foreach (var name in names)
+            {
+                files.Delete(name);
+            }
+
+            names.Clear();
         }
     }
 

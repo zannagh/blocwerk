@@ -33,7 +33,7 @@ public sealed partial class CaptureFollowUpChain(RootDbContextFactory dbContextF
     /// <returns>The record after this run (unchanged when the chain could not run).</returns>
     public async Task<CaptureFollowUpRecord> RunAsync(Guid captureId, CaptureFollowUpPhase phase, CancellationToken ct)
     {
-        var (context, record, status) = await LoadAsync(captureId, ct);
+        var (context, record, status, _) = await LoadAsync(captureId, ct);
         if (context is null || (phase == CaptureFollowUpPhase.AfterCompletion && !IsCompleted(status)))
         {
             // After completion only: a capture handed back to the photo-real stage runs it when it is done again.
@@ -53,8 +53,13 @@ public sealed partial class CaptureFollowUpChain(RootDbContextFactory dbContextF
             var entry = IsKept(step, record)
                 ? Kept(step, context, inputsKey, record)
                 : await RunStepAsync(step, context, ct) with { InputsKey = inputsKey };
-            record = record.With(entry);
-            await SaveAsync(captureId, c => c.FollowUpJson = record.ToJson(), ct);
+            if (await SaveEntryAsync(context, entry, ct) is not { } saved)
+            {
+                // The capture was re-pointed (corrected, solved again) meanwhile: its new record is not this run's.
+                return record.With(entry);
+            }
+
+            record = saved;
         }
 
         return record;
@@ -133,8 +138,11 @@ public sealed partial class CaptureFollowUpChain(RootDbContextFactory dbContextF
             step.Key, result.Outcome, result.Summary, DateTimeOffset.UtcNow, step.NeedsPhotoReal ? context.SplatId : null);
     }
 
-    /// <summary>The capture's context (null when its model is not the wall's active one) and its record so far.</summary>
-    private async Task<(CaptureFollowUpContext? Context, CaptureFollowUpRecord Record, WallCaptureStatus Status)> LoadAsync(
+    /// <summary>
+    /// The capture's context (null when its model is not the wall's active one), its record so far, its status and the
+    /// model it points at.
+    /// </summary>
+    private async Task<(CaptureFollowUpContext? Context, CaptureFollowUpRecord Record, WallCaptureStatus Status, Guid? ModelId)> LoadAsync(
         Guid captureId, CancellationToken ct)
     {
         await using var db = dbContextFactory.CreateDbContext();
@@ -144,7 +152,7 @@ public sealed partial class CaptureFollowUpChain(RootDbContextFactory dbContextF
             .FirstOrDefaultAsync(ct);
         if (capture?.GeometryModelId is not { } modelId)
         {
-            return (null, CaptureFollowUpRecord.Empty, capture?.Status ?? WallCaptureStatus.Draft);
+            return (null, CaptureFollowUpRecord.Parse(capture?.FollowUpJson), capture?.Status ?? WallCaptureStatus.Draft, null);
         }
 
         var record = CaptureFollowUpRecord.Parse(capture.FollowUpJson);
@@ -152,14 +160,14 @@ public sealed partial class CaptureFollowUpChain(RootDbContextFactory dbContextF
         if (!active)
         {
             logger.LogInformation("Capture {CaptureId}: its model {ModelId} is not the active one; no follow-up steps", captureId, modelId);
-            return (null, record, capture.Status);
+            return (null, record, capture.Status, modelId);
         }
 
         var splatId = await db.WallGeometrySplats.AsNoTracking()
             .Where(s => s.GeometryModelId == modelId)
             .Select(s => (Guid?)s.Id)
             .FirstOrDefaultAsync(ct);
-        return (new CaptureFollowUpContext(captureId, capture.WallId, modelId, capture.CreatedByUserId, splatId), record, capture.Status);
+        return (new CaptureFollowUpContext(captureId, capture.WallId, modelId, capture.CreatedByUserId, splatId), record, capture.Status, modelId);
     }
 
     private async Task SaveAsync(Guid captureId, Action<Entities.WallCapture> change, CancellationToken ct)

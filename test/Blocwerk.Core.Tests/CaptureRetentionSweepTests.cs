@@ -85,6 +85,7 @@ public class CaptureRetentionSweepTests
         await using (var db = h.CreateContext())
         {
             (await db.WallCaptures.SingleAsync()).CreatedAt = DateTimeOffset.UtcNow.AddDays(-2);
+            (await db.WallCapturePhotos.SingleAsync()).UploadedAt = DateTimeOffset.UtcNow.AddDays(-2);
             await db.SaveChangesAsync();
         }
 

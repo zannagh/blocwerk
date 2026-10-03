@@ -80,8 +80,12 @@ public sealed class CaptureVideoFrameExtractor(BlocwerkSettings settings) : ICap
         };
     }
 
-    public async Task<IReadOnlyList<byte[]>> ExtractAsync(
-        string videoPath, CaptureVideoFrameRequest request, IProgress<double>? progress, CancellationToken ct)
+    public async Task<int> ExtractAsync(
+        string videoPath,
+        CaptureVideoFrameRequest request,
+        Func<byte[], CancellationToken, Task> store,
+        IProgress<double>? progress,
+        CancellationToken ct)
     {
         var probe = await ProbeAsync(videoPath, ct);
         var target = Math.Min(request.FramesPerSecond, Math.Max(1, request.MaxFrames) / probe.DurationSeconds);
@@ -106,13 +110,14 @@ public sealed class CaptureVideoFrameExtractor(BlocwerkSettings settings) : ICap
                 progress?.Report(0.8 + (0.2 * (i + 1) / candidates.Count));
             }
 
-            var frames = new List<byte[]>();
+            var count = 0;
             foreach (var index in CaptureFrameSharpness.Select(scores, window, request.MaxFrames))
             {
-                frames.Add(ImageMetadataStripper.Strip(await File.ReadAllBytesAsync(candidates[index].FullName, ct)));
+                await store(ImageMetadataStripper.Strip(await File.ReadAllBytesAsync(candidates[index].FullName, ct)), ct);
+                count++;
             }
 
-            return frames;
+            return count;
         }
         finally
         {
