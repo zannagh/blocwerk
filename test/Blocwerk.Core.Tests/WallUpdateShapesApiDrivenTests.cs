@@ -111,6 +111,7 @@ public class WallUpdateShapesApiDrivenTests
                 new Claim(ApiKeyClaimTypes.Scope, ApiKeyScope.Wall.ToString()),
                 new Claim(ApiKeyClaimTypes.ApiKeyId, Guid.NewGuid().ToString()),
                 new Claim(ApiKeyClaimTypes.WallId, keyWallId.ToString()),
+                new Claim(ApiKeyClaimTypes.AllowWrite, "true"),
             ],
             ApiKeyAuthenticationHandler.SchemeName);
         controller.ControllerContext = new ControllerContext

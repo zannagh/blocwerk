@@ -9,8 +9,8 @@ namespace Blocwerk.Web.Controllers;
 
 /// <summary>
 /// Base for the wall-admin machine API (3D model, captures, hold shapes): the wall guard of
-/// <see cref="WallScopedApiController.GuardWallOrPersonalKey"/> — a wall key for the wall in the route, or a
-/// personal key with write access — and one error mapping. The services decide the rest from the key's OWNER,
+/// <see cref="WallScopedApiController.GuardWallOrPersonalKey"/> — a wall key for the wall in the route or a
+/// personal key, either created with write access — and one error mapping. The services decide the rest from the key's OWNER,
 /// exactly as for the browser: wall admin, never a kiosk.
 /// </summary>
 public abstract class WallAdminApiController(ILogger logger) : WallScopedApiController

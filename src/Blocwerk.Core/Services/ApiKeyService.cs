@@ -31,6 +31,7 @@ public partial class ApiKeyService : IApiKeyService
         Guid actingUserId,
         string name,
         DateTimeOffset? expiresAt,
+        bool allowWrite = false,
         CancellationToken ct = default)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);
@@ -38,8 +39,9 @@ public partial class ApiKeyService : IApiKeyService
 
         await WallAdminGuard.EnsureWallAdminAsync(db, wallId, actingUserId, ct);
 
-        var key = await PersistAsync(db, ApiKeyScope.Wall, actingUserId, wallId, name, expiresAt, ct);
-        logger.LogInformation("API key {ApiKeyId} issued for wall {WallId} by {UserId}", key.Key.Id, wallId, actingUserId);
+        var key = await PersistAsync(db, ApiKeyScope.Wall, actingUserId, wallId, name, expiresAt, ct, allowWrite);
+        logger.LogInformation(
+            "API key {ApiKeyId} issued for wall {WallId} by {UserId} (write: {AllowWrite})", key.Key.Id, wallId, actingUserId, allowWrite);
         return key;
     }
 
@@ -271,8 +273,8 @@ public partial class ApiKeyService : IApiKeyService
             Prefix = prefix,
             ExpiresAt = expiresAt,
 
-            // Only a personal key can carry it; every other scope's surface is fixed by the scope.
-            AllowWrite = allowWrite && scope == ApiKeyScope.User,
+            // Only a personal or wall key can carry it; kiosk and installation keys have a surface fixed by scope.
+            AllowWrite = allowWrite && scope is (ApiKeyScope.User or ApiKeyScope.Wall),
         };
 
         db.ApiKeys.Add(key);

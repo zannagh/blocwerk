@@ -135,6 +135,25 @@ public class WallCapturesControllerTests
     }
 
     [Fact]
+    public async Task WallKeyWithoutWriteAccess_AndKioskKeys_AreRefused_EvenOnTheirOwnWall()
+    {
+        using var h = new WallTestHarness();
+        using var s = await GlyphWallAsync(h);
+        var draft = await s.Service.CreateDraftAsync(h.WallId);
+
+        // A sensor or camera key: its device surface stays, the wall-admin API does not open for it.
+        var readOnly = Api(s, ApiKeys.Wall(h.WallId, allowWrite: false));
+        Assert.Equal(StatusCodes.Status403Forbidden, Status(await readOnly.List(h.WallId)));
+        Assert.Equal(StatusCodes.Status403Forbidden, Status(await readOnly.Get(h.WallId, draft.CaptureId)));
+        Assert.Equal(StatusCodes.Status403Forbidden, Status(await readOnly.Discard(h.WallId, draft.CaptureId)));
+
+        var kiosk = Api(s, ApiKeys.Kiosk(h.WallId));
+        Assert.Equal(StatusCodes.Status403Forbidden, Status(await kiosk.Discard(h.WallId, draft.CaptureId)));
+
+        Assert.NotNull(await s.Service.GetDraftAsync(h.WallId));
+    }
+
+    [Fact]
     public async Task Status_CarriesTheSolversModelChecks_AsAModelChecksArray()
     {
         using var h = new WallTestHarness();

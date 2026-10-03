@@ -63,6 +63,30 @@ public sealed class ApiKeyLoginValidatorTests : IDisposable
     }
 
     [Fact]
+    public async Task ReadOnlyPersonalKey_IsRefused_AndNotStampedAsUsed()
+    {
+        StubKey(ApiKeyScope.User, wallId: null, allowWrite: false);
+
+        var result = await Validate(CreateValidator());
+
+        // A browser session can change everything its owner can, so only a key created with write access
+        // may open one.
+        Assert.False(result.Succeeded);
+        await apiKeyService.DidNotReceiveWithAnyArgs().MarkUsedAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task SessionOfAReadOnlyKey_DoesNotStayValid()
+    {
+        var validator = new ApiKeyLoginValidator(apiKeyService, factory, kioskContext, Settings([user.Id]));
+        var (readOnly, _) = await SeedKeyAsync(ApiKeyScope.User, allowWrite: false);
+        var (writable, _) = await SeedKeyAsync(ApiKeyScope.User);
+
+        Assert.False(await validator.IsSessionStillValidAsync(readOnly, user.Id, default));
+        Assert.True(await validator.IsSessionStillValidAsync(writable, user.Id, default));
+    }
+
+    [Fact]
     public async Task KioskContext_IsRefusedBeforeTheKeyIsEvenLookedUp()
     {
         StubKey(ApiKeyScope.User, wallId: null);
@@ -162,7 +186,7 @@ public sealed class ApiKeyLoginValidatorTests : IDisposable
     private Task<ApiKeyLoginResult> Validate(ApiKeyLoginValidator validator) =>
         validator.ValidateAsync(RequestWith($"Bearer {token}"), CancellationToken.None);
 
-    private async Task<(Guid Id, string Token)> SeedKeyAsync(ApiKeyScope scope)
+    private async Task<(Guid Id, string Token)> SeedKeyAsync(ApiKeyScope scope, bool allowWrite = true)
     {
         var (seedToken, prefix) = ApiKeyTokens.Create();
         var key = new ApiKey
@@ -172,6 +196,7 @@ public sealed class ApiKeyLoginValidatorTests : IDisposable
             UserId = user.Id,
             KeyHash = ApiKeyTokens.Hash(seedToken),
             Prefix = prefix,
+            AllowWrite = allowWrite && scope == ApiKeyScope.User,
         };
         await using var db = factory.CreateDbContext();
         db.ApiKeys.Add(key);
@@ -179,7 +204,7 @@ public sealed class ApiKeyLoginValidatorTests : IDisposable
         return (key.Id, seedToken);
     }
 
-    private void StubKey(ApiKeyScope scope, Guid? wallId)
+    private void StubKey(ApiKeyScope scope, Guid? wallId, bool allowWrite = true)
     {
         var key = new ApiKey
         {
@@ -189,6 +214,7 @@ public sealed class ApiKeyLoginValidatorTests : IDisposable
             WallId = wallId,
             KeyHash = ApiKeyTokens.Hash(token),
             Prefix = token[..12],
+            AllowWrite = allowWrite,
         };
         apiKeyService.FindActiveAsync(token, Arg.Any<CancellationToken>()).Returns(key);
     }

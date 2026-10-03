@@ -7,9 +7,8 @@
 
     <p class="apikey-blurb">
         A wall key lets a sensor or camera post to <strong>this wall</strong> &mdash; temperature
-        samples and gallery snapshots. Send it as
-        <code>Authorization: Bearer &lt;token&gt;</code>. It grants nothing else, but treat it like
-        a password and revoke it as soon as the device is gone.
+        samples and gallery snapshots. Send it as <code>Authorization: Bearer &lt;token&gt;</code>.
+        Treat it like a password and revoke it as soon as the device is gone.
     </p>
 
     <p class="apikey-blurb">
@@ -47,6 +46,11 @@
         @if (kind == KeyKind.Kiosk)
         {
             <p class="hint">Enter this token once on the tablet via "Register Kiosk" on the login screen.</p>
+        }
+        else
+        {
+            <label><input type="checkbox" @bind="allowWrite" /> Allow this key to change the wall (captures, 3D model, hold shapes)</label>
+            <p class="hint">Leave it off for sensors and cameras: they only need temperature and images.</p>
         }
     </div>
     <div class="form-group">
@@ -99,6 +103,7 @@
     private string? error;
     private string copyLabel = "Copy to clipboard";
     private bool busy;
+    private bool allowWrite;
     private KeyKind kind = KeyKind.Wall;
 
     /// <summary>Which of the two wall-bound key kinds the form creates.</summary>
@@ -152,11 +157,12 @@
         {
             var (_, token) = kind == KeyKind.Kiosk
                 ? await ApiKeyService.CreateKioskKeyAsync(WallId, CurrentUserId, name.Trim(), expiresAt)
-                : await ApiKeyService.CreateWallKeyAsync(WallId, CurrentUserId, name.Trim(), expiresAt);
+                : await ApiKeyService.CreateWallKeyAsync(WallId, CurrentUserId, name.Trim(), expiresAt, allowWrite);
             newToken = token;
             copyLabel = "Copy to clipboard";
             name = string.Empty;
             expiresOn = null;
+            allowWrite = false;
             await ReloadAsync();
         }
         catch (UnauthorizedAccessException)

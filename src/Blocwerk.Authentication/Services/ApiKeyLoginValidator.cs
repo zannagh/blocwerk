@@ -149,6 +149,13 @@ public sealed class ApiKeyLoginValidator
             return ApiKeyLoginResult.Failure($"{key.Scope} key is not a personal key", key);
         }
 
+        // A browser session can change everything its owner can, so a read-only key must not become one.
+        // Checked here, not only at sign-in, so the 5-minute session re-check applies it as well.
+        if (!key.AllowWrite)
+        {
+            return ApiKeyLoginResult.Failure("personal key has no write access", key);
+        }
+
         // The operator's explicit list. Empty means nobody, even with the feature switched on. Being
         // listed is also the operator's decision that this user may skip their second factor here.
         if (!options.AllowedUserIds.Contains(key.UserId))

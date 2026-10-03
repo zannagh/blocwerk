@@ -16,7 +16,7 @@ public static class ApiKeyClaimTypes
     public const string WallId = "blocwerk:wall_id";
 
     /// <summary>
-    /// Present (value "true") only on a personal key its owner allowed to change walls
+    /// Present (value "true") only on a personal or wall key its owner allowed to change walls
     /// (<c>ApiKey.AllowWrite</c>). Absent otherwise.
     /// </summary>
     public const string AllowWrite = "blocwerk:apikey_write";

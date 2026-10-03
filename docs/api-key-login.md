@@ -26,8 +26,9 @@ Two settings, and both are needed:
 
 ### Which keys are accepted
 
-Only a key created under *Settings → API keys* (scope `User`, no wall) that is neither revoked nor expired, whose owner is a live account on the allow-list. The endpoint refuses:
+Only a key created under *Settings → API keys* (scope `User`, no wall) **with "Allow this key to change walls" ticked**, that is neither revoked nor expired, whose owner is a live account on the allow-list. A browser session can change everything its owner can, so a read-only key never opens one. The endpoint refuses:
 
+* read-only personal keys (created without write access),
 * wall, kiosk and installation keys,
 * keys of a deleted account (its tombstone) and of the Ghost system user,
 * owners who are currently locked out after failed password or TOTP attempts,
@@ -39,7 +40,7 @@ Every attempt is logged with the key's id and display prefix, never the key itse
 
 A key session is a normal signed-in session for browsing and using walls, with these limits:
 
-* **It ends with the key.** It lasts at most 8 hours, never longer than the key itself, and doesn't slide. About every 5 minutes the key is checked again: revoking it, letting it expire, deleting or locking the account, taking the user off the allow-list or switching the feature off ends the session on its next request.
+* **It ends with the key.** It lasts at most 8 hours, never longer than the key itself, and doesn't slide. About every 5 minutes the key is checked again: revoking it, letting it expire, losing its write access, deleting or locking the account, taking the user off the allow-list or switching the feature off ends the session on its next request.
 * **No account-security changes.** Creating or revoking API keys, setting or changing the password, turning the second factor on or off, changing the e-mail address, linking or merging another login, and deleting the account all answer *"Not available in a session signed in with an API key."*
 * **Open Blazor pages aren't cut off.** A page that is already open keeps its live connection until it's reloaded. The re-check applies to every new request and reload, not to a circuit that is already running.
 
@@ -56,14 +57,14 @@ await page.goto(`${base}/walls`);
 
 Keep the key in an environment variable or secret store, never in the test source.
 
-## Personal keys on the wall-update and capture API
+## Write keys on the wall-admin API
 
-Separately from the login above, and not affected by its switch or allow-list, a personal key can call these routes directly with `Authorization: Bearer bwk_…`, **but only if it was created with "Allow this key to change walls (wall updates, captures)" ticked**:
+Separately from the login above, and not affected by its switch or allow-list, a key can call these routes directly with `Authorization: Bearer bwk_…`, **but only if it was created with write access** ("Allow this key to change walls" for a personal key, "Allow this key to change the wall" for a wall key):
 
-* `/api/walls/{wallId}/update/shapes/*`. A wall key still works there for its own wall only.
-* `POST /api/captures/{captureId}/video`. Only signed-in users and personal keys with write access are accepted.
+* The wall-admin routes under `/api/walls/{wallId}/`: `captures`, `geometry/hold-proposals`, `geometry/volumes`, `geometry/corrections`, `geometry/place-holds`, `holds/outline-upgrade`, `holds/refine-shapes` and `update/shapes/*`. A personal write key or a wall write key for that wall. Reads on these routes need write access too.
+* `POST /api/captures/{captureId}/video` and `POST /api/refreshes/{refreshId}/files` (the wall update's file drop). Only signed-in users and personal keys with write access are accepted.
 
-In both cases the key's owner has to pass the same checks as in the browser: admin of the wall, not a kiosk, and for the video, their own open capture draft. Keys that existed before this option all start without write access. Wall keys can't be used on the capture route. Kiosk and installation keys can't be used on either.
+In every case the key's owner has to pass the same checks as in the browser: admin of the wall, not a kiosk, and for the video, their own open capture draft. A wall key without write access keeps only its device routes (temperature, images, maintenance, marker plan revisions): wall keys sit on devices and must be assumed to leak. Wall keys created before write access existed for them start without it; create a new wall key with write access for automation that needs it. Kiosk and installation keys can't be used on any of these routes.
 
 ## Trusted proxies
 

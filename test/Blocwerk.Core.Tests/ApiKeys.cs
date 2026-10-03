@@ -26,11 +26,25 @@ internal static class ApiKeys
         return Principal(claims);
     }
 
-    /// <summary>A wall key issued for <paramref name="wallId"/>.</summary>
-    public static ClaimsPrincipal Wall(Guid wallId)
+    /// <summary>A wall key issued for <paramref name="wallId"/>, with write access unless <paramref name="allowWrite"/> is false.</summary>
+    public static ClaimsPrincipal Wall(Guid wallId, bool allowWrite = true)
     {
         var claims = Base(ApiKeyScope.Wall);
         claims.Add(new Claim(ApiKeyClaimTypes.WallId, wallId.ToString()));
+        if (allowWrite)
+        {
+            claims.Add(new Claim(ApiKeyClaimTypes.AllowWrite, "true"));
+        }
+
+        return Principal(claims);
+    }
+
+    /// <summary>A kiosk key bound to <paramref name="wallId"/>, carrying a write claim it could never really get.</summary>
+    public static ClaimsPrincipal Kiosk(Guid wallId)
+    {
+        var claims = Base(ApiKeyScope.Kiosk);
+        claims.Add(new Claim(ApiKeyClaimTypes.WallId, wallId.ToString()));
+        claims.Add(new Claim(ApiKeyClaimTypes.AllowWrite, "true"));
         return Principal(claims);
     }
 

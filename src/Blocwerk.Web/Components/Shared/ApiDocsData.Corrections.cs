@@ -12,7 +12,7 @@ internal static partial class ApiDocsData
         "Corrects the wall's active 3D model, exactly as the geometry panel does. Each correction creates a NEW active model "
         + "version derived from the current one (textures and the photo-real view are reused, their placement mapped); the old "
         + "version stays in the history and can be activated again. The existing holds are then placed on the new version with "
-        + "no further call. A Wall-scoped key for the wall, or a personal key with write access, whose owner is an admin of the "
+        + "no further call. A Wall-scoped key for the wall or a personal key, created with write access, whose owner is an admin of the "
         + "wall (a member's key gets 403, kiosk tablets are refused).";
 
     private const string CorrectionStateJson =
@@ -33,7 +33,7 @@ internal static partial class ApiDocsData
     private static ApiSurfaceDoc WallGeometryCorrectionSurface => new(
         "Wall 3D model: corrections",
         CorrectionIntro,
-        "Wall key or personal key with write access (admin owner)",
+        "Wall or personal key with write access (admin owner)",
         [
             new("GET", CorrectionBase, "Where the sizes and angles come from, the surfaces, and the photos a distance can be measured on.",
                 CorrectionWall, null, CorrectionStateJson, "404 when the wall has no model."),

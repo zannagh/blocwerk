@@ -998,7 +998,7 @@ restarting the app underneath it.
 quality are all optional) and `GET …/{captureId}` to poll. The outline upgrade and "refine 3D hold
 shapes" are under `/api/walls/{wallId}/holds/outline-upgrade[/preview|/{runId}/revert]` and
 `/api/walls/{wallId}/holds/refine-shapes`. Use a personal API key created with write access (or a
-wall key for that wall); its owner must be an admin of the wall. Kiosk tablets are refused. A photo
+wall key for that wall, also created with write access); its owner must be an admin of the wall. Kiosk tablets are refused. A photo
 batch can be large (up to `CAPTURE__MAXPHOTOS` photos, 200 by default, at `CAPTURE__MAXPHOTOMB` each), so a reverse proxy must allow
 that body size on `/api/walls/*/captures/*/photos` too.
 

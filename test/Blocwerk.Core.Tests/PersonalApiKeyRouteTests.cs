@@ -3,6 +3,7 @@ using Blocwerk.Authentication.Authorization;
 using Blocwerk.Authentication.Handlers;
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Refresh;
 using Blocwerk.Web.Endpoints;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
@@ -56,6 +57,8 @@ public class PersonalApiKeyRouteTests
     [InlineData("/API/Captures/8f1c2f6e-0000-0000-0000-000000000000/video", true)]
     [InlineData("/api/capturesque", false)]
     [InlineData("/captures/8f1c2f6e-0000-0000-0000-000000000000/video", false)]
+    [InlineData("/api/refreshes/8f1c2f6e-0000-0000-0000-000000000000/files", true)]
+    [InlineData("/api/refreshesque", false)]
     public void SelectScheme_ForwardsAKeyOnTheCaptureApi(string path, bool covered)
     {
         var context = new DefaultHttpContext();
@@ -84,6 +87,31 @@ public class PersonalApiKeyRouteTests
         var authorize = endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>();
         Assert.Contains(authorize, a => a.Policy == BlocwerkPolicies.HumanOrUserApiKey);
         Assert.DoesNotContain(authorize, a => a.Policy is null);
+    }
+
+    /// <summary>
+    /// The wall update's file drop declares the same policy, and <see cref="SelectScheme_ForwardsAKeyOnTheCaptureApi"/>
+    /// shows its prefix is on the API-key surface — without that a write key's bearer would arrive anonymous there.
+    /// </summary>
+    [Fact]
+    public void WallRefreshUpload_DeclaresTheHumanOrPersonalKeyPolicy()
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.Services.AddAuthorization();
+        builder.Services.AddSingleton(Substitute.For<IWallRefreshService>());
+        builder.Services.AddSingleton(new WallCapturePipelineOptions());
+        var app = builder.Build();
+        app.MapWallRefreshUpload();
+
+        var endpoint = Assert.Single(((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .Where(e => e.RoutePattern.RawText == WallRefreshUploadEndpoint.Route));
+
+        var authorize = endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>();
+        Assert.Contains(authorize, a => a.Policy == BlocwerkPolicies.HumanOrUserApiKey);
+        Assert.DoesNotContain(authorize, a => a.Policy is null);
+        Assert.True(ApiKeySurface.Covers(new PathString(WallRefreshUploadEndpoint.Url(Guid.NewGuid()))));
     }
 
     private static ClaimsPrincipal ApiKeyPrincipal(ApiKeyScope scope, Guid? wallId = null, bool allowWrite = false)

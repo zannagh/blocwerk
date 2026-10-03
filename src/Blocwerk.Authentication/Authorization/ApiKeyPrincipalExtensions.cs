@@ -42,6 +42,19 @@ public static class ApiKeyPrincipalExtensions
             && principal.HasClaim(ApiKeyClaimTypes.AllowWrite, "true");
     }
 
+    /// <summary>
+    /// True when the request authenticated with a WALL key for <paramref name="wallId"/> that its owner
+    /// allowed to change the wall. Wall keys sit on devices and must be assumed to leak, so the wall-admin
+    /// machine API (captures, 3D model, hold shapes) needs this explicit grant on top of the wall binding.
+    /// </summary>
+    public static bool IsWritableWallKey(this ClaimsPrincipal principal, Guid wallId)
+    {
+        return principal.IsApiKeyPrincipal()
+            && principal.GetApiKeyScope() == ApiKeyScope.Wall
+            && principal.GetApiKeyWallId() == wallId
+            && principal.HasClaim(ApiKeyClaimTypes.AllowWrite, "true");
+    }
+
     /// <summary>The id of the API key the request authenticated with, or null when there is none.</summary>
     public static Guid? GetApiKeyId(this ClaimsPrincipal principal)
     {
