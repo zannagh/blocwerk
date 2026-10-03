@@ -1,8 +1,8 @@
+using System.Collections.Concurrent;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Detection.Outlines;
 using Blocwerk.Core.Entities;
-using Blocwerk.Core.Geometry.View3D;
 using Blocwerk.Core.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -11,13 +11,17 @@ namespace Blocwerk.Core.Services;
 
 /// <summary>
 /// <see cref="IHoldShapeCleanupService"/>. Pure geometry lives in <see cref="HoldShapeCleanup"/>; this class
-/// only loads each live photo's holds, applies the planned changes and saves them in one named journal batch.
-/// It needs no outliner and no photo decoding, so it runs on any host.
+/// loads each live photo's holds, applies the planned changes and saves them in one named journal batch. It
+/// needs no outliner and no photo decoding, so it runs on any host. See the Planning part for plan caching.
 /// </summary>
-public sealed class HoldShapeCleanupService : IHoldShapeCleanupService
+public sealed partial class HoldShapeCleanupService : IHoldShapeCleanupService
 {
     /// <summary>The journal batch label of an applied clean-up.</summary>
     public const string BatchLabel = "hold-shape-cleanup";
+
+    // One writer per wall inside this server process (the app runs as one instance): two admins pressing Apply
+    // (or Apply and Undo) at once would otherwise both plan from the same holds and write over each other.
+    private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> WallLocks = new();
 
     private readonly IDbContextFactory<BlocwerkDbContext> dbContextFactory;
     private readonly ICurrentUserService currentUserService;
@@ -69,41 +73,46 @@ public sealed class HoldShapeCleanupService : IHoldShapeCleanupService
     }
 
     /// <inheritdoc/>
-    public async Task<HoldShapeCleanupSummary> PreviewAsync(Guid wallId, CancellationToken ct = default)
+    public async Task<HoldShapeCleanupSummary> PreviewAsync(
+        Guid wallId, CancellationToken ct = default, IProgress<HoldShapeCleanupProgress>? progress = null)
     {
         var (db, _) = await OpenForAdminAsync(wallId, ct);
         await using (db)
         {
-            return (await PlanAsync(db, wallId, ct)).Summary(null);
+            var (_, plan) = await PlanAsync(db, wallId, progress, ct);
+            return plan.Summary(null);
         }
     }
 
     /// <inheritdoc/>
-    public async Task<HoldShapeCleanupSummary> ApplyAsync(Guid wallId, CancellationToken ct = default)
+    public async Task<HoldShapeCleanupSummary> ApplyAsync(
+        Guid wallId,
+        CancellationToken ct = default,
+        string? expectedVersion = null,
+        IProgress<HoldShapeCleanupProgress>? progress = null)
     {
         var (db, userId) = await OpenForAdminAsync(wallId, ct);
         await using (db)
         {
-            var plan = await PlanAsync(db, wallId, ct);
+            using var wallLock = AcquireWallLock(wallId);
+            var (holds, plan) = await PlanAsync(db, wallId, progress, ct);
+            if (expectedVersion is not null && expectedVersion != plan.Version)
+            {
+                throw new UserFacingException("The holds changed since the preview. Check the hold shapes again, then apply.");
+            }
+
             if (plan.Changes.Count == 0)
             {
                 return plan.Summary(null);
             }
 
-            foreach (var (hold, change) in plan.Changes)
+            foreach (var change in plan.Changes)
             {
-                Write(hold, change);
+                Write(holds[change.HoldId], change);
             }
 
-            using (journal.BeginBatch(BatchLabel, ChangeJournalScopeKind.Wall, wallId))
-            {
-                await db.SaveChangesAsync(ct);
-            }
-
-            var batches = await db.ChangeJournalBatches.AsNoTracking()
-                .Where(b => b.Label == BatchLabel && b.ScopeId == wallId)
-                .ToListAsync(ct);
-            var batchId = batches.MaxBy(b => b.CreatedAt)?.Id;
+            ct.ThrowIfCancellationRequested();
+            var batchId = await SaveInBatchAsync(db, wallId, ct);
             if (footprints is not null)
             {
                 // The 3D footprints derive from the outlines: refresh them (a batch step, as after the circle upgrade).
@@ -111,8 +120,8 @@ public sealed class HoldShapeCleanupService : IHoldShapeCleanupService
             }
 
             logger.LogInformation(
-                "Hold shape clean-up on wall {WallId} by {UserId}: {Changed} of {Shapes} outlines changed, journal batch {BatchId}",
-                wallId, userId, plan.Changes.Count, plan.AutoShapes, batchId);
+                "Hold shape clean-up on wall {WallId} by {UserId}: {Changed} of {Shapes} outlines and {Circles} circles considered changed, journal batch {BatchId}",
+                wallId, userId, plan.Changes.Count, plan.AutoShapes, plan.AutoCircles, batchId);
             return plan.Summary(batchId);
         }
     }
@@ -131,6 +140,7 @@ public sealed class HoldShapeCleanupService : IHoldShapeCleanupService
             }
         }
 
+        using var wallLock = AcquireWallLock(wallId);
         var result = await reverter.RevertBatchAsync(batchId, force: false, ct);
         if (result.Reverted && footprints is not null)
         {
@@ -140,52 +150,45 @@ public sealed class HoldShapeCleanupService : IHoldShapeCleanupService
         return result;
     }
 
+    /// <summary>Saves inside a named batch and returns the id of exactly the batch that was opened for this write.</summary>
+    private async Task<Guid> SaveInBatchAsync(BlocwerkDbContext db, Guid wallId, CancellationToken ct)
+    {
+        using var scope = journal.BeginBatch(BatchLabel, ChangeJournalScopeKind.Wall, wallId);
+        var batchId = ((ChangeJournalBatchScope)scope).BatchId;
+        await db.SaveChangesAsync(ct);
+        return batchId;
+    }
+
+    private static IDisposable AcquireWallLock(Guid wallId)
+    {
+        var gate = WallLocks.GetOrAdd(wallId, _ => new SemaphoreSlim(1, 1));
+        if (!gate.Wait(0))
+        {
+            throw new UserFacingException("Another clean-up or undo is already running on this wall.");
+        }
+
+        return new Releaser(gate);
+    }
+
     /// <summary>Writes one change onto the tracked hold: geometry only, never position, never boulders.</summary>
     private static void Write(Hold hold, HoldShapeChange change)
     {
         hold.Radius = change.Radius;
         if (change.Shape is null)
         {
-            hold.ShapePoints = null;
-            hold.ShapeHoles = null;
-            hold.OutlineSource = HoldOutlineSource.AutoCircle;
-            hold.OutlineConfidence = null;
+            if (hold.ShapePoints is not null)
+            {
+                hold.ShapePoints = null;
+                hold.ShapeHoles = null;
+                hold.OutlineSource = HoldOutlineSource.AutoCircle;
+                hold.OutlineConfidence = null;
+            }
+
             return;
         }
 
         hold.ShapePoints = change.Shape;
-        if (change.Kind != HoldShapeChangeKind.Smoothed)
-        {
-            hold.ShapeHoles = null;
-        }
-    }
-
-    private async Task<HoldShapeCleanupPlan> PlanAsync(BlocwerkDbContext db, Guid wallId, CancellationToken ct)
-    {
-        var photos = await HoldOutlineUpgradeService.LoadLivePhotosAsync(db, wallId, ct);
-        var plan = new HoldShapeCleanupPlan(photos.Count);
-        foreach (var photo in photos)
-        {
-            var holds = await HoldOutlineUpgradeService.LiveHolds(db, wallId, photo).ToListAsync(ct);
-            var byId = holds.ToDictionary(h => h.Id);
-            plan.AutoShapes += holds.Count(HoldShapeCleanup.IsCleanable);
-            plan.Locked += holds.Count(h => !HoldShapeCleanup.IsCleanable(h));
-            var aspect = await PhotoAspectAsync(db, wallId, photo, ct);
-            foreach (var change in HoldShapeCleanup.Plan(holds, aspect))
-            {
-                plan.Changes.Add((byId[change.HoldId], change));
-            }
-        }
-
-        return plan;
-    }
-
-    /// <summary>Width / height of the photo the holds sit on (header read only); 1 when it cannot be read.</summary>
-    private static async Task<double> PhotoAspectAsync(BlocwerkDbContext db, Guid wallId, OutlineUpgradePhoto photo, CancellationToken ct)
-    {
-        var key = new Wall3DPhotoKey(photo.PanelId, photo.Generation);
-        var infos = await PanelPhotoInfoLoader.LoadAsync(db, wallId, [key], ct);
-        return infos.TryGetValue(key, out var info) && info.Height > 0 ? (double)info.Width / info.Height : 1;
+        hold.ShapeHoles = HoldShapeHoles.Inside(hold.ShapeHoles, change.Shape);
     }
 
     private async Task<(BlocwerkDbContext Db, Guid UserId)> OpenForAdminAsync(Guid wallId, CancellationToken ct)
@@ -204,5 +207,10 @@ public sealed class HoldShapeCleanupService : IHoldShapeCleanupService
             await db.DisposeAsync();
             throw;
         }
+    }
+
+    private sealed class Releaser(SemaphoreSlim gate) : IDisposable
+    {
+        public void Dispose() => gate.Release();
     }
 }

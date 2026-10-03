@@ -61,7 +61,8 @@ public static class HoldShapeSmoother
 
         if (Verify(pts))
         {
-            return FromWork(pts, aspect);
+            // Already fine: hand back the input as it is (same order, same digits), so a clean shape never "changes".
+            return pts.Count == shape.Count ? shape.Select(p => new ShapePoint { Dx = p.Dx, Dy = p.Dy }).ToList() : FromWork(pts, aspect);
         }
 
         pts = ShapeSimplify.RemoveSpikes(pts, MinSpikeAngleDegrees);
@@ -74,7 +75,18 @@ public static class HoldShapeSmoother
         pts = ShapeSimplify.ClampConcavity(pts, MaxConcavityDepth * radius);
         pts = ShapeSimplify.Simplify(pts, SimplifyEpsilon * radius, MaxSimplifiedVertices);
         pts = ShapeSimplify.Chaikin(pts, ChaikinPasses);
-        return Verify(pts) ? FromWork(pts, aspect) : null;
+        return VerifiedRounded(pts, aspect);
+    }
+
+    /// <summary>
+    /// The 5-decimal outline that gets stored, re-verified AS STORED: a polygon that only passes before rounding
+    /// would fail on the next run and be changed again, so it is rejected now.
+    /// </summary>
+    private static List<ShapePoint>? VerifiedRounded(List<P2> pts, double aspect)
+    {
+        var rounded = FromWork(pts, aspect);
+        var again = Prepare(rounded, aspect);
+        return again is not null && Verify(again) ? rounded : null;
     }
 
     /// <summary>True when the outline already meets every smoothness criterion.</summary>

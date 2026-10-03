@@ -86,7 +86,7 @@ public sealed class HoldShapeOverlapResolverTests
     }
 
     [Fact]
-    public void ACircleThatCannotFitStaysAtTheMinimumAndIsReportedUnresolved()
+    public void ACircleThatCannotFitKeepsItsRadiusAndIsReportedUnresolved()
     {
         var hold = new HoldShapeInput(A, 0.5, 0.5, 0.04, null, false);
         var onTop = new HoldShapeInput(B, 0.505, 0.5, 0.04, null, true);
@@ -94,7 +94,7 @@ public sealed class HoldShapeOverlapResolverTests
         var r = Assert.Single(HoldShapeOverlapResolver.Resolve([hold, onTop]));
 
         Assert.Equal(HoldShapeFit.Unresolved, r.Fit);
-        Assert.Equal(0.04 * HoldShapeOverlapResolver.MinRadiusFraction, r.Radius, 9);
+        Assert.Equal(0.04, r.Radius);
     }
 
     [Fact]

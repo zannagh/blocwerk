@@ -1,5 +1,6 @@
 @* Wall-settings section: "Clean up hold shapes" — smooths jagged automatic outlines and removes overlaps between
    holds (preview counts → Apply → Undo). Hand-drawn shapes and manually placed holds are never touched.
+   Preview and apply run as background work with progress and a Cancel button, so the page stays usable.
    Admin-only (rendered inside the admin card); hidden on a kiosk tablet and behind a share link. *@
 
 @if (!Hidden)
@@ -11,21 +12,39 @@
         Shapes you drew yourself are never changed.
     </p>
 
-    @if (preview is null)
+    @if (busy)
+    {
+        <p class="loading-small" role="status">@ProgressText</p>
+        <div class="staged-actions">
+            <button class="btn-secondary" @onclick="Cancel">Cancel</button>
+        </div>
+    }
+    else if (preview is null)
     {
         <div class="staged-actions">
-            <button class="btn-secondary" @onclick="PreviewAsync" disabled="@busy">Check hold shapes</button>
+            <button class="btn-secondary" @onclick="PreviewAsync">Check hold shapes</button>
         </div>
     }
     else
     {
         <p class="glyph-summary" role="status">@PreviewText(preview)</p>
+        @if (preview.ManualOverlapCount > 0)
+        {
+            <p class="hint" role="status">@ManualOverlapText(preview)</p>
+            <ul class="hint">
+                @foreach (var pair in preview.ManualOverlaps)
+                {
+                    <li>@HoldLabel(pair.NameA, pair.HoldA) overlaps @HoldLabel(pair.NameB, pair.HoldB) (near @(Math.Round(pair.X * 100))% across, @(Math.Round(pair.Y * 100))% down)</li>
+                }
+            </ul>
+        }
+
         <div class="staged-actions">
-            @if (preview.Smoothed + preview.Clipped + preview.BackToCircle > 0)
+            @if (preview.Changed > 0)
             {
-                <button class="btn-primary" @onclick="ApplyAsync" disabled="@busy">Apply</button>
+                <button class="btn-primary" @onclick="ApplyAsync">Apply</button>
             }
-            <button class="btn-secondary" @onclick="CancelPreview" disabled="@busy">Cancel</button>
+            <button class="btn-secondary" @onclick="CancelPreview">Close</button>
         </div>
     }
 
@@ -38,10 +57,10 @@
         <p class="glyph-ok" role="status">@message</p>
     }
 
-    @if (status?.RevertableBatchId is { } batchId)
+    @if (!busy && status?.RevertableBatchId is { } batchId)
     {
         <div class="staged-actions">
-            <button class="btn-secondary" @onclick="() => UndoAsync(batchId)" disabled="@busy">Undo</button>
+            <button class="btn-secondary" @onclick="() => UndoAsync(batchId)">Undo</button>
         </div>
     }
 </div>

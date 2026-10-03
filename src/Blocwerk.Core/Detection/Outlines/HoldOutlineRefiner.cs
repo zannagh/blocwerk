@@ -36,6 +36,6 @@ public static class HoldOutlineRefiner
         }
 
         var polygon = smooth.Select(p => new NormalizedPoint(result.AnchorX + p.Dx, result.AnchorY + p.Dy)).ToList();
-        return result with { ShapePoints = smooth, Polygon = polygon };
+        return result with { ShapePoints = smooth, Polygon = polygon, ShapeHoles = HoldShapeHoles.Inside(result.ShapeHoles, smooth) };
     }
 }

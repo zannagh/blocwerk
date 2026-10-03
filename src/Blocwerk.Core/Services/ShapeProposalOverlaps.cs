@@ -37,7 +37,7 @@ internal static class ShapeProposalOverlaps
             {
                 var back = ShapeJson.Rebase(r.Shape, hold.X, hold.Y, proposal.AnchorX, proposal.AnchorY);
                 proposal.ShapeJson = ShapeJson.Write(back);
-                proposal.HolesJson = null;
+                proposal.HolesJson = ShapeJson.WriteRings(HoldShapeHoles.Inside(ShapeJson.ReadRings(proposal.HolesJson), back));
                 changed++;
             }
         }

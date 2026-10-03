@@ -27,7 +27,17 @@ internal sealed class ShapeObstacles(double tolerance)
     }
 
     /// <summary>True when the polygon is closer than the tolerance to (or inside) any claimed footprint.</summary>
-    public bool Overlaps(IReadOnlyList<P2> poly)
+    public bool Overlaps(IReadOnlyList<P2> poly) => Near(poly).Any(i => ShapeGeometry.Distance(poly, i) < tolerance);
+
+    /// <summary>The claimed footprints that the polygon overlaps (closer than the tolerance, or nested).</summary>
+    public List<P2[]> OverlappingWith(IReadOnlyList<P2> poly) =>
+        Near(poly).Where(i => ShapeGeometry.Distance(poly, i) < tolerance).ToList();
+
+    /// <summary>
+    /// The footprints whose bounding box (inflated by the tolerance) meets the polygon's: the cheap prefilter in
+    /// front of every exact distance, which keeps a 900-hold panel interactive.
+    /// </summary>
+    private IEnumerable<P2[]> Near(IReadOnlyList<P2> poly)
     {
         double minX = poly.Min(p => p.X) - tolerance;
         double minY = poly.Min(p => p.Y) - tolerance;
@@ -35,21 +45,10 @@ internal sealed class ShapeObstacles(double tolerance)
         double maxY = poly.Max(p => p.Y) + tolerance;
         foreach (var item in items)
         {
-            if (item.MaxX < minX || item.MinX > maxX || item.MaxY < minY || item.MinY > maxY)
+            if (item.MaxX >= minX && item.MinX <= maxX && item.MaxY >= minY && item.MinY <= maxY)
             {
-                continue;
-            }
-
-            if (ShapeGeometry.Distance(poly, item.Poly) < tolerance)
-            {
-                return true;
+                yield return item.Poly;
             }
         }
-
-        return false;
     }
-
-    /// <summary>The claimed footprints that the polygon overlaps (closer than the tolerance, or nested).</summary>
-    public List<P2[]> OverlappingWith(IReadOnlyList<P2> poly) =>
-        items.Where(i => ShapeGeometry.Distance(poly, i.Poly) < tolerance).Select(i => i.Poly).ToList();
 }

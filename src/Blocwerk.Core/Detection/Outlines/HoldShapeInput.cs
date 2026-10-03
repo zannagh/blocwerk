@@ -29,7 +29,7 @@ public enum HoldShapeFit
     /// <summary>The circle overlapped too, so the radius was reduced (not below the minimum).</summary>
     ShrunkCircle = 3,
 
-    /// <summary>Even the minimum circle overlaps (e.g. its centre lies inside a locked hold); it is kept at the minimum.</summary>
+    /// <summary>Even the floor-size circle overlaps (e.g. its centre lies inside a locked hold); the original circle is kept.</summary>
     Unresolved = 4,
 }
 
@@ -37,5 +37,5 @@ public enum HoldShapeFit
 /// <param name="Id">The hold.</param>
 /// <param name="Fit">What was done.</param>
 /// <param name="Shape">The final outline offsets, or null for the plain circle.</param>
-/// <param name="Radius">The final radius (equal to the input radius unless <see cref="HoldShapeFit.ShrunkCircle"/> or <see cref="HoldShapeFit.Unresolved"/>).</param>
+/// <param name="Radius">The final radius (equal to the input radius unless <see cref="HoldShapeFit.ShrunkCircle"/>).</param>
 public sealed record HoldShapeResolution(Guid Id, HoldShapeFit Fit, IReadOnlyList<ShapePoint>? Shape, double Radius);

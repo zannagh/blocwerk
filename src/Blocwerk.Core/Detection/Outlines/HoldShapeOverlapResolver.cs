@@ -9,10 +9,10 @@ namespace Blocwerk.Core.Detection.Outlines;
 /// <remarks>
 /// <para><b>Order of preference</b> for each unlocked hold: keep its outline; else clip it (cut it with a straight line
 /// per neighbour, then re-smooth) or, failing that, shrink it uniformly toward the centre;
-/// else the plain circle; else the circle at a smaller radius, never below
-/// <see cref="MinRadiusFraction"/> of the original nor <see cref="MinRadiusFloor"/>. Overlapping circles are
-/// better than a mangled outline, and a visible overlap is better than a hold too small to tap - the last case
-/// is reported as <see cref="HoldShapeFit.Unresolved"/>.</para>
+/// else the plain circle; else the circle at the LARGEST radius that clears every neighbour, never below
+/// <see cref="MinRadiusFraction"/> of the original nor <see cref="MinRadiusFloor"/>. If even that floor overlaps,
+/// the hold keeps its original radius and is reported as <see cref="HoldShapeFit.Unresolved"/>: a visible
+/// overlap is better than a hold too small to tap.</para>
 /// <para><b>Locked holds always win</b> and are never changed. Unlocked holds are processed in ascending id
 /// order against the locked ones plus the already-decided unlocked ones, so the result depends only on the
 /// input set, never on its order.</para>
@@ -39,6 +39,7 @@ public static class HoldShapeOverlapResolver
     public const double MinAreaRetained = 0.5;
 
     private const double ShrinkStep = 0.92;
+    private const int RadiusBisections = 20;
 
     /// <summary>Resolves the panel's holds.</summary>
     /// <param name="holds">Every hold on the panel photo (locked ones are obstacles only).</param>
@@ -86,23 +87,38 @@ public static class HoldShapeOverlapResolver
     private static HoldShapeResolution FitCircle(HoldShapeInput hold, ShapeObstacles obstacles, bool allowRadiusShrink, bool hadShape)
     {
         var centre = new P2(hold.X, hold.Y);
-        double min = allowRadiusShrink ? Math.Min(hold.Radius, Math.Max(MinRadiusFloor, hold.Radius * MinRadiusFraction)) : hold.Radius;
-        double r = hold.Radius;
-        while (r >= min - 1e-12)
+        if (!obstacles.Overlaps(ShapeObstacles.Circle(centre, hold.Radius)))
         {
-            if (!obstacles.Overlaps(ShapeObstacles.Circle(centre, r)))
-            {
-                var fit = r < hold.Radius ? HoldShapeFit.ShrunkCircle : hadShape ? HoldShapeFit.Circle : HoldShapeFit.Unchanged;
-                return new HoldShapeResolution(hold.Id, fit, null, r);
-            }
-
-            r *= ShrinkStep;
+            return new HoldShapeResolution(hold.Id, hadShape ? HoldShapeFit.Circle : HoldShapeFit.Unchanged, null, hold.Radius);
         }
 
-        return new HoldShapeResolution(hold.Id, HoldShapeFit.Unresolved, null, min);
+        double floor = Math.Min(hold.Radius, Math.Max(MinRadiusFloor, hold.Radius * MinRadiusFraction));
+        if (!allowRadiusShrink || obstacles.Overlaps(ShapeObstacles.Circle(centre, floor)))
+        {
+            // Nothing sane clears it: keep the original size and say so, rather than a needlessly tiny circle.
+            return new HoldShapeResolution(hold.Id, HoldShapeFit.Unresolved, null, hold.Radius);
+        }
+
+        // Overlap only grows with the radius, so bisect for the largest radius that still clears.
+        double lo = floor;
+        double hi = hold.Radius;
+        for (int i = 0; i < RadiusBisections; i++)
+        {
+            double mid = (lo + hi) / 2;
+            if (obstacles.Overlaps(ShapeObstacles.Circle(centre, mid)))
+            {
+                hi = mid;
+            }
+            else
+            {
+                lo = mid;
+            }
+        }
+
+        return new HoldShapeResolution(hold.Id, HoldShapeFit.ShrunkCircle, null, Math.Floor(lo * 1e6) / 1e6);
     }
 
-    /// <summary>Clips (vertex pull) then, if needed, uniformly shrinks the outline; null when it will not fit.</summary>
+    /// <summary>Clips (one straight cut per neighbour) then, if needed, uniformly shrinks the outline; null when it will not fit.</summary>
     private static List<ShapePoint>? TryPullIn(HoldShapeInput hold, IReadOnlyList<ShapePoint> shape, ShapeObstacles obstacles, double aspect)
     {
         var centre = new P2(hold.X, hold.Y);
@@ -120,7 +136,7 @@ public static class HoldShapeOverlapResolver
         for (double s = ShrinkStep; s >= MinShrinkFactor; s *= ShrinkStep)
         {
             var scaled = ToPoints(local.Select(p => p * s));
-            if (Accept(scaled, centre, originalArea, obstacles))
+            if (HoldShapeSmoother.IsSmooth(scaled, aspect) && Accept(scaled, centre, originalArea, obstacles))
             {
                 return scaled;
             }

@@ -79,6 +79,68 @@ public sealed class HoldShapeCleanupServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ApplyReturnsTheBatchItJustWroteAndRefusesAStalePreview()
+    {
+        await SeedAsync();
+        var preview = await Service().PreviewAsync(harness.WallId);
+
+        await using (var db = harness.CreateContext())
+        {
+            var hold = await db.Holds.FirstAsync(h => h.Id == overlapping);
+            hold.X += 0.2;
+            await db.SaveChangesAsync();
+        }
+
+        await Assert.ThrowsAsync<UserFacingException>(() => Service().ApplyAsync(harness.WallId, expectedVersion: preview.PlanVersion));
+
+        var fresh = await Service().PreviewAsync(harness.WallId);
+        var applied = await Service().ApplyAsync(harness.WallId, expectedVersion: fresh.PlanVersion);
+
+        Assert.NotNull(applied.BatchId);
+        await using var check = harness.CreateContext();
+        Assert.True(await check.ChangeJournalBatches.AnyAsync(b => b.Id == applied.BatchId && b.Label == HoldShapeCleanupService.BatchLabel));
+    }
+
+    [Fact]
+    public async Task OnlyOneApplyRunsPerWall()
+    {
+        await SeedAsync();
+        var locks = (System.Collections.Concurrent.ConcurrentDictionary<Guid, SemaphoreSlim>)typeof(HoldShapeCleanupService)
+            .GetField("WallLocks", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.GetValue(null)!;
+        var gate = locks.GetOrAdd(harness.WallId, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync();
+        try
+        {
+            await Assert.ThrowsAsync<UserFacingException>(() => Service().ApplyAsync(harness.WallId));
+        }
+        finally
+        {
+            gate.Release();
+        }
+
+        Assert.NotNull((await Service().ApplyAsync(harness.WallId)).BatchId);
+    }
+
+    [Fact]
+    public async Task APlainAutoCircleOverlappingAManualHoldIsShrunk()
+    {
+        await SeedAsync();
+        Guid circle;
+        await using (var db = harness.CreateContext())
+        {
+            var panelId = (await db.Holds.FirstAsync(h => h.Id == manualSpiky)).WallPanelId!.Value;
+            circle = Add(db, panelId, 0.80, null, HoldOutlineSource.AutoCircle, auto: true);
+            db.ChangeTracker.Entries<Hold>().Single(e => e.Entity.Id == circle).Entity.Y = 0.5 - 0.075;
+            await db.SaveChangesAsync();
+        }
+
+        var result = await Service().ApplyAsync(harness.WallId);
+
+        Assert.True(result.ShrunkCircle >= 1);
+        Assert.True((await LoadAsync())[circle].Radius < 0.05);
+    }
+
+    [Fact]
     public async Task ASecondRunFindsNothingToDo()
     {
         await SeedAsync();
@@ -147,14 +209,14 @@ public sealed class HoldShapeCleanupServiceTests : IDisposable
         await db.SaveChangesAsync();
     }
 
-    private Guid Add(BlocwerkDbContext db, Guid panelId, double x, List<ShapePoint> shape, HoldOutlineSource source, bool auto)
+    private Guid Add(BlocwerkDbContext db, Guid panelId, double x, List<ShapePoint>? shape, HoldOutlineSource source, bool auto)
     {
         var hold = EnrichmentFakes.AutoHold(harness.WallId, x, 0.5);
         hold.WallPanelId = panelId;
         hold.Generation = 1;
         hold.Radius = 0.05;
         hold.IsAutoDetected = auto;
-        hold.ShapePoints = shape.Select(p => new ShapePoint { Dx = p.Dx, Dy = p.Dy }).ToList();
+        hold.ShapePoints = shape?.Select(p => new ShapePoint { Dx = p.Dx, Dy = p.Dy }).ToList();
         hold.OutlineSource = source;
         db.Holds.Add(hold);
         return hold.Id;

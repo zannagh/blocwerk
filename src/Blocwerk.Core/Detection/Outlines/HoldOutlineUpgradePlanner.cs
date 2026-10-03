@@ -116,8 +116,9 @@ public static class HoldOutlineUpgradePlanner
     private static List<HoldOutlineUpgradeProposal> ResolveOverlaps(
         List<Hold> all, List<HoldOutlineUpgradeProposal> proposals, double aspect)
     {
+        // New outlines, and automatic holds that stay plain circles (those may shrink to clear a neighbour).
         var accepted = proposals
-            .Where(p => p.Outcome == HoldOutlineUpgradeOutcome.Outline)
+            .Where(p => p.Outcome == HoldOutlineUpgradeOutcome.Outline || p.Hold.IsAutoDetected)
             .ToDictionary(p => p.Hold, p => p.Result);
         var resolved = HoldShapeCleanup.ResolveOutlines(all, accepted, allowRadiusShrink: true, aspect);
         return proposals

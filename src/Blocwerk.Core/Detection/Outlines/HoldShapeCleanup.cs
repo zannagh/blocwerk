@@ -16,10 +16,10 @@ public enum HoldShapeChangeKind
     /// <summary>Back to the plain circle (jagged beyond repair, or no room for the outline).</summary>
     Circle = 2,
 
-    /// <summary>Plain circle at a reduced radius.</summary>
+    /// <summary>Plain circle at a reduced radius (the largest that clears its neighbours).</summary>
     ShrunkCircle = 3,
 
-    /// <summary>Minimum circle that still overlaps a locked hold.</summary>
+    /// <summary>A hold that could not be cleared of an overlap; it only appears when its outline had to be dropped.</summary>
     Unresolved = 4,
 }
 
@@ -30,53 +30,69 @@ public enum HoldShapeChangeKind
 /// <param name="Kind">What happened.</param>
 public sealed record HoldShapeChange(Guid HoldId, List<ShapePoint>? Shape, double Radius, HoldShapeChangeKind Kind);
 
+/// <summary>A panel's planned clean-up.</summary>
+/// <param name="Changes">The holds whose shape or radius change.</param>
+/// <param name="Unresolved">Holds that still overlap something after the clean-up (changed or not).</param>
+/// <param name="LockedOverlaps">Overlapping pairs of holds the clean-up may not touch (manual / hand-drawn).</param>
+public sealed record HoldShapePlan(
+    List<HoldShapeChange> Changes, List<Guid> Unresolved, List<(Guid A, Guid B)> LockedOverlaps);
+
 /// <summary>
 /// Entity-level glue of <see cref="HoldShapeSmoother"/> and <see cref="HoldShapeOverlapResolver"/>: decides
-/// which holds may be touched (auto-traced outlines only - hand-drawn and manually placed holds never) and
-/// turns the decisions into changes. Pure: reads holds, writes nothing.
+/// which holds may be touched (auto-detected, non-manual holds - traced outlines AND plain circles; hand-drawn
+/// and manually placed holds never) and turns the decisions into changes. Pure: reads holds, writes nothing.
 /// </summary>
 public static class HoldShapeCleanup
 {
     /// <summary>True for an automatically traced outline: auto-detected, not virtual, not hand-edited, with a polygon.</summary>
     /// <param name="hold">The hold.</param>
-    /// <returns>Whether the clean-up may change it.</returns>
-    public static bool IsCleanable(Hold hold) =>
-        !hold.IsVirtual
-        && hold.IsAutoDetected
-        && hold.OutlineSource != HoldOutlineSource.Manual
-        && hold.ShapePoints is { Count: >= 3 };
+    /// <returns>Whether the clean-up may change its outline.</returns>
+    public static bool IsCleanable(Hold hold) => IsResolvable(hold) && hold.ShapePoints is { Count: >= 3 };
+
+    /// <summary>True for an automatic hold the clean-up may change at all: an auto outline or an auto plain circle.</summary>
+    /// <param name="hold">The hold.</param>
+    /// <returns>Whether it is resolvable.</returns>
+    public static bool IsResolvable(Hold hold) =>
+        !hold.IsVirtual && hold.IsAutoDetected && hold.OutlineSource != HoldOutlineSource.Manual;
 
     /// <summary>Plans the clean-up of one panel's stored shapes.</summary>
     /// <param name="panelHolds">Every live hold on the panel photo.</param>
     /// <param name="aspect">Photo width / height (1 when unknown).</param>
     /// <returns>The holds whose shape or radius would change, in ascending id order.</returns>
-    public static List<HoldShapeChange> Plan(IReadOnlyList<Hold> panelHolds, double aspect = 1)
+    public static List<HoldShapeChange> Plan(IReadOnlyList<Hold> panelHolds, double aspect = 1) =>
+        PlanDetailed(panelHolds, aspect).Changes;
+
+    /// <summary>Plans the clean-up of one panel and also reports what could not be resolved.</summary>
+    /// <param name="panelHolds">Every live hold on the panel photo.</param>
+    /// <param name="aspect">Photo width / height (1 when unknown).</param>
+    /// <returns>The plan.</returns>
+    public static HoldShapePlan PlanDetailed(IReadOnlyList<Hold> panelHolds, double aspect = 1)
     {
         ArgumentNullException.ThrowIfNull(panelHolds);
-        var smoothed = panelHolds.Where(IsCleanable).ToDictionary(h => h.Id, h => HoldShapeSmoother.Smooth(h.ShapePoints!, aspect));
-        var inputs = panelHolds
-            .Select(h => new HoldShapeInput(
-                h.Id, h.X, h.Y, h.Radius, smoothed.TryGetValue(h.Id, out var s) ? s : h.ShapePoints, Locked: !smoothed.ContainsKey(h.Id)))
-            .ToList();
-        var byId = panelHolds.ToDictionary(h => h.Id);
+        var resolvable = panelHolds.Where(IsResolvable).ToDictionary(h => h.Id);
+        var inputs = panelHolds.Select(h => resolvable.ContainsKey(h.Id) ? Candidate(h, aspect) : Locked(h)).ToList();
         var changes = new List<HoldShapeChange>();
+        var unresolved = new List<Guid>();
         foreach (var r in HoldShapeOverlapResolver.Resolve(inputs, allowRadiusShrink: true, aspect))
         {
-            var hold = byId[r.Id];
-            if (!Differs(hold, r))
+            if (r.Fit == HoldShapeFit.Unresolved)
             {
-                continue;
+                unresolved.Add(r.Id);
             }
 
-            changes.Add(new HoldShapeChange(r.Id, r.Shape?.ToList(), r.Radius, KindOf(r)));
+            if (Differs(resolvable[r.Id], r))
+            {
+                changes.Add(new HoldShapeChange(r.Id, r.Shape?.ToList(), r.Radius, KindOf(r)));
+            }
         }
 
-        return changes;
+        return new HoldShapePlan(changes, unresolved, HoldShapeLockedOverlaps.Find(panelHolds.Where(h => !resolvable.ContainsKey(h.Id) && !h.IsVirtual).ToList()));
     }
 
     /// <summary>
-    /// Resolves overlaps for freshly traced outlines of one panel against every hold on it (stored holds are
-    /// locked obstacles). Radii are only ever reduced for the holds that were just traced.
+    /// Resolves overlaps for freshly traced outlines of one panel against every hold on it (every hold that has an
+    /// outline result is adjustable, every other hold is a locked obstacle). A contour is clipped, else a circle; a
+    /// circle shrinks (when allowed) to the largest radius that clears.
     /// </summary>
     /// <param name="panelHolds">Every hold on the panel photo.</param>
     /// <param name="outlines">The new outlines by hold.</param>
@@ -92,9 +108,9 @@ public static class HoldShapeCleanup
         ArgumentNullException.ThrowIfNull(panelHolds);
         ArgumentNullException.ThrowIfNull(outlines);
         var inputs = panelHolds
-            .Select(h => outlines.TryGetValue(h, out var o) && IsContour(o)
-                ? new HoldShapeInput(h.Id, h.X, h.Y, h.Radius, o.ShapePoints, Locked: false)
-                : new HoldShapeInput(h.Id, h.X, h.Y, h.Radius, h.ShapePoints, Locked: true))
+            .Select(h => outlines.TryGetValue(h, out var o)
+                ? new HoldShapeInput(h.Id, h.X, h.Y, h.Radius, IsContour(o) ? o.ShapePoints : null, Locked: false)
+                : Locked(h))
             .ToList();
         var byId = outlines.Keys.ToDictionary(h => h.Id);
         var resolved = new Dictionary<Hold, (HoldOutlineResult, double)>();
@@ -102,13 +118,39 @@ public static class HoldShapeCleanup
         {
             var hold = byId[r.Id];
             var outline = outlines[hold];
-            resolved[hold] = r.Shape is null
-                ? (outline with { Method = HoldOutlineMethod.CircleFallback, ShapePoints = null, ShapeHoles = null, Confidence = Math.Min(outline.Confidence, 0.2) }, r.Radius)
-                : (r.Fit == HoldShapeFit.Unchanged ? outline : outline with { ShapePoints = r.Shape.ToList(), ShapeHoles = null }, r.Radius);
+            resolved[hold] = (Adjusted(outline, r), r.Radius);
         }
 
         return resolved;
     }
+
+    private static HoldOutlineResult Adjusted(HoldOutlineResult outline, HoldShapeResolution r)
+    {
+        if (!IsContour(outline))
+        {
+            return outline;
+        }
+
+        if (r.Shape is null)
+        {
+            return outline with
+            {
+                Method = HoldOutlineMethod.CircleFallback,
+                ShapePoints = null,
+                ShapeHoles = null,
+                Confidence = Math.Min(outline.Confidence, HoldOutlineRefiner.CircleConfidenceCeiling),
+            };
+        }
+
+        return r.Fit == HoldShapeFit.Unchanged
+            ? outline
+            : outline with { ShapePoints = r.Shape.ToList(), ShapeHoles = HoldShapeHoles.Inside(outline.ShapeHoles, r.Shape) };
+    }
+
+    private static HoldShapeInput Candidate(Hold h, double aspect) =>
+        new(h.Id, h.X, h.Y, h.Radius, h.ShapePoints is { Count: >= 3 } shape ? HoldShapeSmoother.Smooth(shape, aspect) : null, Locked: false);
+
+    private static HoldShapeInput Locked(Hold h) => new(h.Id, h.X, h.Y, h.Radius, h.ShapePoints, Locked: true);
 
     private static bool IsContour(HoldOutlineResult o) =>
         o.Method != HoldOutlineMethod.CircleFallback && o.ShapePoints is { Count: >= 3 };
