@@ -331,6 +331,6 @@ does not deploy it. On the box, in the compose directory:
    (the one that pulls `blocwerk`) can pull it, or make the package public.
 4. `docker compose pull wall-geometry && docker compose up -d wall-geometry blocwerk`, then check
    `docker compose ps` shows it `healthy`.
-5. The autodeploy cron only redeploys the `blocwerk` service. Updating `wall-geometry` later is
-   `docker compose pull wall-geometry && docker compose up -d wall-geometry` until autodeploy
-   learns about it.
+5. Later images are picked up by the autodeploy cron (`docker/prod/autodeploy.sh`), which recreates
+   `wall-geometry` only once it has no queued or running job. The production compose file itself is
+   `docker/docker-compose.prod.yml` (see `docker/prod/README.md`).

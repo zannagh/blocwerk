@@ -939,8 +939,8 @@ On the box:
    package public.
 4. `docker compose pull wall-geometry && docker compose up -d wall-geometry blocwerk`, then check
    it's healthy.
-5. The autodeploy cron only redeploys `blocwerk`. To update `wall-geometry` later, pull and `up -d`
-   it by hand.
+5. The autodeploy cron (`docker/prod/autodeploy.sh`) also updates `wall-geometry` and `splat-cpu`,
+   each only once it has no queued or running job.
 
 (`docker/wall-geometry/README.md` still mentions *three* `GEOMETRYSERVICE__*` lines. The callback
 secret line was removed from the app since the app polls; two are current.)

@@ -1,0 +1,41 @@
+name: Prod compose
+
+# Keeps docker/docker-compose.prod.yml (what production runs) renderable and in step with
+# docker/docker-compose.yml: docker/prod/check-prod-compose.sh fails on a service or setting that
+# was added to the base file but not to prod. Also syntax-checks the deploy scripts.
+
+on:
+  pull_request:
+    paths:
+      - 'docker/**'
+      - '.github/workflows/prod-compose.yml'
+  push:
+    branches:
+      - main
+      - staging
+    paths:
+      - 'docker/**'
+      - '.github/workflows/prod-compose.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check prod compose
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compose version
+        run: docker compose version
+
+      - name: Prod compose renders and matches the base file
+        run: docker/prod/check-prod-compose.sh
+
+      - name: Deploy scripts parse
+        run: |
+          bash -n docker/prod/autodeploy.sh
+          bash -n docker/prod/check-prod-compose.sh
+          shellcheck -S error docker/prod/autodeploy.sh docker/prod/check-prod-compose.sh
