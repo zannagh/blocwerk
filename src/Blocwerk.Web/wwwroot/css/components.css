@@ -850,7 +850,7 @@ img.wall-photo {
    fixed docked bar. */
 @media (min-width: 721px) {
     /* The tab bar is hidden while the editor's toolbar is mounted (app.css), so stop reserving it. */
-    .app-shell:has(.bw-toolbar.docked-bottom) { --bottomnav-h: 0px; }
+    .app-shell:has(.wall-carousel-root.editing .bw-toolbar.docked-bottom) { --bottomnav-h: 0px; }
 
     .wall-carousel-root.editing .wall-page { display: flex; flex-direction: column; }
     .wall-carousel-root.editing .wall-main {
