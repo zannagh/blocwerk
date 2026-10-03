@@ -143,7 +143,7 @@ public class WallRefreshRecheckTests
         await db.SaveChangesAsync();
     }
 
-    private static async Task<Guid> MakeModelReadyAsync(WallTestHarness h, Guid captureId)
+    internal static async Task<Guid> MakeModelReadyAsync(WallTestHarness h, Guid captureId)
     {
         await using var db = h.CreateContext();
         var model = new WallGeometryModel { WallId = h.WallId, Json = "{}", Source = "test", IsActive = true };

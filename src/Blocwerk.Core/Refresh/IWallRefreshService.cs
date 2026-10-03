@@ -19,6 +19,18 @@ public interface IWallRefreshService
     /// <summary>The wall's current run (open, or finished within the last day), or null.</summary>
     Task<WallRefreshView?> GetCurrentAsync(Guid wallId);
 
+    /// <summary>
+    /// The wall's current run like <see cref="GetCurrentAsync"/>, but without side effects: it neither queues the check
+    /// against this visit's 3D model nor records a run whose photos were swept as discarded. For polling scripts.
+    /// </summary>
+    Task<WallRefreshView?> PeekCurrentAsync(Guid wallId);
+
+    /// <summary>Queues the check against this visit's new 3D model when it is due; true when it is pending or running.</summary>
+    Task<bool> RecheckAsync(Guid refreshId);
+
+    /// <summary>The wall a run belongs to, or null when there is no such run. Reveals nothing else.</summary>
+    Task<Guid?> GetWallIdAsync(Guid refreshId);
+
     /// <summary>Opens a run for the wall (or returns the open one).</summary>
     Task<WallRefreshView> BeginAsync(Guid wallId);
 
