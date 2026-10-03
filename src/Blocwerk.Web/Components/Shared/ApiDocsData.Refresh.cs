@@ -12,9 +12,10 @@ internal static partial class ApiDocsData
     private const string RefreshIntro =
         "Runs \"Update panels + 3D\" from a script, exactly as the page does: open a run, drop the photos and videos, sort, start "
         + "with the proposed photos (the quick review's defaults), read the confirm screen's summary, then apply with that summary's "
-        + "decisionsVersion. Nothing goes live before Apply, and Apply promotes only what that version describes. A personal key with "
+        + "decisionsVersion. Nothing goes live before Apply, and Apply promotes only what that version describes. Reads have no side "
+        + "effects. A personal key with "
         + "write access whose owner is an admin of the wall; wall, kiosk and installation keys get 403. Every write is recorded in the "
-        + "change journal.";
+        + "change journal (written before the write, removed again when it is refused).";
 
     private const string RefreshViewJson =
         "{\n  \"id\": \"<guid>\",\n  \"wallId\": \"<guid>\",\n  \"status\": 4,\n  \"photos\": [ { \"photoId\": \"<guid>\", \"index\": 0, "
@@ -66,7 +67,10 @@ internal static partial class ApiDocsData
             "{\n  \"choices\": [ { \"col\": 0, \"row\": 0, \"photoId\": \"<guid>\" } ]\n}", null,
             "202; poll until status 4. The body is optional; choices override the proposal per panel (photoId null keeps the current photo)."),
         new("GET", RefreshBase + "/{refreshId}/summary", "The confirm screen (summary only, changes nothing).", RefreshOnWall, null,
-            RefreshSummaryJson, "canApply is true when Apply would be taken now. Send decisionsVersion to Apply."),
+            RefreshSummaryJson, "canApply is true when Apply would be taken now. Send decisionsVersion to Apply. Reads never start anything."),
+        new("POST", RefreshBase + "/{refreshId}/recheck", "Starts the check against this visit's new 3D model when it is due.",
+            RefreshOnWall, null, "{\n  \"pending\": true\n}",
+            "202. While check3DPending is true Apply waits; poll the summary until canApply."),
         new("POST", RefreshBase + "/{refreshId}/apply", "Applies exactly the summary with this version.", RefreshOnWall,
             "{\n  \"decisionsVersion\": \"9F2C41A07B3D5E61C8A4F0B2\"\n}", null, RefreshApplyNote),
         new("GET", RefreshBase + "/{refreshId}", "The run, as the page shows it.", RefreshOnWall, null, RefreshViewJson, RefreshStatusNote),

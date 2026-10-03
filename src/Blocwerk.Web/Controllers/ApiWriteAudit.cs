@@ -13,10 +13,11 @@ using Microsoft.AspNetCore.Mvc.Infrastructure;
 namespace Blocwerk.Web.Controllers;
 
 /// <summary>
-/// The audit trail of the automation API's writes, kept in the change journal: every write runs inside a journal batch
-/// labelled <c>api:{action} key:{keyId}</c> and scoped to the wall, so the rows it changes (a wall's marker settings)
-/// carry that label, and a successful write whose rows are not journalled (a run, a plan revision) still leaves the
-/// batch row with the key owner as its actor. Refused or failed writes record nothing and are only logged.
+/// The audit trail of the automation API's writes, kept in the change journal. Before a write runs, its batch row is
+/// written as Pending (label <c>api:{action} key:{keyId}</c>, scoped to the wall, the key's owner as actor), so no write
+/// happens without one; the write runs with that batch ambient, so the rows it changes that the journal tracks (a
+/// wall's marker settings) are recorded in it. A successful write (2xx) completes the row; a refused or failed one
+/// removes it (or marks it Failed if it journalled rows). The audit never turns a write that happened into an error.
 /// </summary>
 public sealed class ApiWriteAudit(IChangeJournal journal, ICurrentUserService currentUser, ILogger<ApiWriteAudit> logger)
 {
@@ -27,28 +28,45 @@ public sealed class ApiWriteAudit(IChangeJournal journal, ICurrentUserService cu
     public static string Label(ClaimsPrincipal user, string action) =>
         $"{LabelPrefix}{action} key:{user.GetApiKeyId()?.ToString() ?? "none"}";
 
-    /// <summary>Runs <paramref name="write"/> on the wall inside the action's journal batch; records it when it answered 2xx.</summary>
+    /// <summary>Runs <paramref name="write"/> on the wall as an audited action; it succeeded when it answered 2xx.</summary>
     public Task<IActionResult> RunAsync(ClaimsPrincipal user, Guid wallId, string action, Func<Task<IActionResult>> write) =>
-        RunAsync(user, action, ChangeJournalScopeKind.Wall, wallId, write, Succeeded);
+        RunAsync(user, action, wallId, write, Succeeded);
 
-    /// <summary>Runs <paramref name="write"/> inside the action's journal batch; records it when <paramref name="succeeded"/> says so.</summary>
+    /// <summary>
+    /// Runs <paramref name="write"/> on the wall as an audited action; <paramref name="succeeded"/> judges its result.
+    /// With <paramref name="append"/> the action's batch is reused across calls (one batch for every file of an upload).
+    /// </summary>
     /// <typeparam name="T">The write's result.</typeparam>
     public async Task<T> RunAsync<T>(
-        ClaimsPrincipal user, string action, ChangeJournalScopeKind scopeKind, Guid? scopeId, Func<Task<T>> write, Func<T, bool> succeeded)
+        ClaimsPrincipal user, string action, Guid wallId, Func<Task<T>> write, Func<T, bool> succeeded, bool append = false)
     {
-        using var batch = journal.BeginAction(Label(user, action), scopeKind, scopeId);
-        var result = await write();
+        var actor = await currentUser.GetCurrentUserAsync();
+        var batch = await journal.StartActionAsync(Label(user, action), ChangeJournalScopeKind.Wall, wallId, actor.Id.ToString(), append);
+        T result;
+        try
+        {
+            using (batch.Enter())
+            {
+                result = await write();
+            }
+        }
+        catch
+        {
+            await TakeBackAsync(batch, action);
+            throw;
+        }
+
         if (!succeeded(result))
         {
-            logger.LogInformation("API write {Action} on {ScopeId} by key {KeyId} refused", action, scopeId, user.GetApiKeyId());
+            await TakeBackAsync(batch, action);
+            logger.LogInformation("API write {Action} on wall {WallId} by key {KeyId} refused", action, wallId, user.GetApiKeyId());
             return result;
         }
 
-        var actor = await currentUser.GetCurrentUserAsync();
-        await batch.CompleteAsync(actor.Id.ToString());
+        await CompleteAsync(batch, action);
         logger.LogInformation(
-            "API write {Action} on {ScopeId} by key {KeyId} (user {UserId}), journal batch {BatchId}",
-            action, scopeId, user.GetApiKeyId(), actor.Id, batch.BatchId);
+            "API write {Action} on wall {WallId} by key {KeyId} (user {UserId}), journal batch {BatchId}",
+            action, wallId, user.GetApiKeyId(), actor.Id, batch.BatchId);
         return result;
     }
 
@@ -57,5 +75,30 @@ public sealed class ApiWriteAudit(IChangeJournal journal, ICurrentUserService cu
         // An ObjectResult without a status code is written as 200.
         var status = (result as IStatusCodeActionResult)?.StatusCode ?? StatusCodes.Status200OK;
         return status is >= 200 and < 300;
+    }
+
+    private async Task CompleteAsync(ChangeJournalAction batch, string action)
+    {
+        try
+        {
+            await batch.CompleteAsync();
+        }
+        catch (Exception ex)
+        {
+            // The write happened: answer it as such. Its audit row stays Pending, which still records the attempt.
+            logger.LogError(ex, "API write {Action} succeeded but its journal batch {BatchId} could not be completed", action, batch.BatchId);
+        }
+    }
+
+    private async Task TakeBackAsync(ChangeJournalAction batch, string action)
+    {
+        try
+        {
+            await batch.FailAsync();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "API write {Action} did not happen but its journal batch {BatchId} could not be removed", action, batch.BatchId);
+        }
     }
 }

@@ -31,7 +31,7 @@ public sealed partial class WallRefreshApiController
             }
             catch (UserFacingException ex)
             {
-                var now = await refreshes.GetCurrentAsync(wallId);
+                var now = await refreshes.PeekCurrentAsync(wallId);
                 return Conflict(new RefreshApplyRefused(ex.Message, now?.Status, now?.Summary?.DecisionsVersion));
             }
 

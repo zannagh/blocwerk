@@ -5,12 +5,12 @@
 using System.Security.Claims;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Entities;
-using Blocwerk.Core.Enums;
 using Blocwerk.Core.MarkerPlanning;
 using Blocwerk.Core.Services;
 using Blocwerk.Web.Controllers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -55,15 +55,15 @@ public class WallMarkerPlanRevisionsControllerTests
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = key } },
         };
 
-    /// <summary>An audit whose journal records nothing: these tests are about the key guard.</summary>
+    /// <summary>A real audit over a throwaway database: these tests are about the key guard.</summary>
     private static ApiWriteAudit Audit()
     {
-        var journal = Substitute.For<IChangeJournal>();
-        journal.BeginAction(default!, default, default)
-            .ReturnsForAnyArgs(_ => new ChangeJournalAction(
-                new ChangeJournalBatchScope("test", ChangeJournalScopeKind.None, null, () => { }), (_, _) => Task.CompletedTask));
+        var factory = new TestDbContextFactory(TestDbContextFactory.IsolatedDatabase());
+        var keepAlive = factory.CreateDbContext();
+        keepAlive.Database.OpenConnection();
+        keepAlive.Database.EnsureCreated();
         var users = Substitute.For<ICurrentUserService>();
         users.GetCurrentUserAsync().Returns(new User { Identifier = "owner@test" });
-        return new ApiWriteAudit(journal, users, NullLogger<ApiWriteAudit>.Instance);
+        return new ApiWriteAudit(new ChangeJournal(factory.CreateDbContext), users, NullLogger<ApiWriteAudit>.Instance);
     }
 }

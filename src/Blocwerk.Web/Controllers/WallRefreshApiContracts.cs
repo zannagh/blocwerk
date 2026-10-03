@@ -60,3 +60,6 @@ public sealed record RefreshApplyAccepted(Guid RefreshId, string DecisionsVersio
 
 /// <summary>409 of Apply: refused (stale version, nothing to apply, a 3D check running); the run's current version.</summary>
 public sealed record RefreshApplyRefused(string Error, WallRefreshStatus? Status, string? CurrentDecisionsVersion);
+
+/// <summary>202 of Recheck: whether the check against this visit's 3D model is queued or running (Apply waits for it).</summary>
+public sealed record RefreshRecheckResponse(bool Pending);

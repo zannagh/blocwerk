@@ -86,6 +86,34 @@ public class WallMarkersControllerTests
         Assert.Empty(await AutomationApiFixture.ApiBatchesAsync(h));
     }
 
+    [Fact]
+    public async Task ThePlanAgain_IsRefused_AddsNoRevision_AndIsNotJournalled()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync(holdCount: 0);
+        var prep = new WallPrepApi(h);
+        var key = ApiKeys.Personal();
+        Assert.IsType<OkObjectResult>(await prep.Markers(key).SavePlan(h.WallId, PlanJson(AtticMarkerPlan.Plan)));
+
+        var again = await prep.Markers(key).SavePlan(h.WallId, PlanJson(AtticMarkerPlan.Plan));
+
+        var refused = Assert.IsType<WallMarkerPlanSaveResponse>(Assert.IsType<ConflictObjectResult>(again).Value);
+        Assert.Equal((true, 1), (refused.Unchanged, refused.Revision!.Value));
+        Assert.Single(await AutomationApiFixture.ApiBatchesAsync(h));
+        await using var db = h.CreateContext();
+        Assert.Equal(1, await db.WallMarkerPlans.CountAsync(p => p.WallId == h.WallId));
+    }
+
+    [Fact]
+    public void ThePlanUpload_IsCappedAtTwoMegabytes()
+    {
+        var limit = typeof(WallMarkersController).GetMethod(nameof(WallMarkersController.SavePlan))!
+            .GetCustomAttributes(typeof(RequestSizeLimitAttribute), false).Cast<RequestSizeLimitAttribute>().Single();
+
+        Assert.Equal(2 * 1024 * 1024, WallMarkersController.MaxPlanBytes);
+        Assert.NotNull(limit);
+    }
+
     private static JsonElement PlanJson(MarkerPlan plan) => JsonDocument.Parse(MarkerPlanJson.ToJson(plan)).RootElement;
 
     private static async Task<bool> GlyphsEnabledAsync(WallTestHarness h)

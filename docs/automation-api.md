@@ -17,9 +17,15 @@ Every route calls the same service the page calls, so the rules are the page's r
 
 ## Audit
 
-Every successful write through these routes is recorded in the change journal as a batch labelled `api:<action> key:<api key id>`, scoped to the wall (the file upload: to no aggregate, with the run id in the label), with the key's owner as the actor. Rows the write changes that the journal tracks (the wall's marker switch and size) are recorded in that batch with their before and after values. Refused writes record nothing; they and every write are also in the server log with the key id.
+Every write through these routes is recorded in the change journal, scoped to the wall, as a batch labelled `api:<action> key:<api key id>` with the key's owner as the actor:
 
-Actions: `refresh.begin`, `refresh.upload run:<id>`, `refresh.sort`, `refresh.start`, `refresh.apply`, `refresh.discard`, `markers.set`, `marker-plan.save`, `marker-plan.effective rev:<n>`.
+* The batch row is written **before** the write runs, with status *Pending*, so no write happens without one. A row left *Pending* means the outcome could not be recorded (the server was stopped mid-write, or the journal was unavailable afterwards; the latter is also logged as an error, and the write is still answered as the success it was).
+* A successful write (2xx) turns it into *Recorded*. Rows the write changes that the journal tracks (the wall's marker switch and size) are recorded in that batch with their before and after values.
+* A refused or failed write removes its row again. If it had already journalled rows, the batch is kept as *Failed* so those rows stay explained.
+* All the files of one upload go into one batch per run (and key): `api:refresh.upload run:<id> key:<id>`.
+* Every write, refused or not, is also in the server log with the key id.
+
+Actions: `refresh.begin`, `refresh.upload run:<id>`, `refresh.sort`, `refresh.recheck`, `refresh.start`, `refresh.apply`, `refresh.discard`, `markers.set`, `marker-plan.save`, `marker-plan.effective rev:<n>`.
 
 ## Panel update, end to end
 
@@ -68,9 +74,11 @@ Statuses: 0 uploading, 1 sorting, 2 ready to start, 3 running, 4 ready to apply,
 
 ### Consistency
 
-* `GET …/summary` changes nothing. `canApply` is true once the summary is ready and no check against this visit's new 3D model is pending.
+* Reads (`GET …/refresh`, `…/{id}`, `…/summary`) change nothing: polling is side-effect free. `canApply` is true once the summary is ready and no check against this visit's new 3D model is pending.
+* When the visit's 3D model becomes ready, the summary is worked out again with it before Apply is taken (`check3DPending: true`). The page starts that check by itself; a script starts it with `POST …/refresh/{id}/recheck` (202 `{"pending": true}`), then polls the summary again.
 * `apply` needs the `decisionsVersion` of the summary that was checked (400 without one). The server refuses with 409 `{"error", "status", "currentDecisionsVersion"}` when the summary changed since, when there is nothing to apply yet, or while the 3D check runs.
-* The background apply compares the version once more against what it would promote. If an admin changed the update in the full review in between, nothing is promoted and the run is back at status 4 with the new summary.
+* The accepted version is stored with the run, and the background apply compares what it would promote against **that** version, never against a summary written later. If anything changed in between (the full review, a re-check), nothing is promoted and the run is back at status 4 with the new summary.
+* Apply and the background steps of a wall (sorting, preparing, the 3D re-check, applying) never overlap. Apply waits a few seconds for a running step, then answers 409 "being checked … try again".
 
 ## Wall preparation, end to end
 
@@ -84,8 +92,8 @@ curl -fsS -H "$AUTH" "$BASE/api/walls/$WALL/markers" | jq
 curl -fsS -X PUT -H "$AUTH" -H 'Content-Type: application/json' \
   -d '{"enabled":true,"markerSizeMm":125}' "$BASE/api/walls/$WALL/markers"
 
-# Upload the planner's marker-plan.json as the next revision. 422 with the issues when it has errors;
-# the same plan again adds no revision ("unchanged": true).
+# Upload the planner's marker-plan.json (at most 2 MB, else 413) as the next revision. 422 with the issues when it
+# has errors; 409 with "unchanged": true and the current revision when it is identical to it (no revision is added).
 REV=$(curl -fsS -X PUT -H "$AUTH" -H 'Content-Type: application/json' \
   --data-binary @marker-plan.json "$BASE/api/walls/$WALL/marker-plan" | jq .revision)
 

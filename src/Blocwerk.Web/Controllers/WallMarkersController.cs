@@ -34,6 +34,9 @@ public sealed class WallMarkersController(
     ApiWriteAudit audit,
     ILogger<WallMarkersController> logger) : WallAdminApiController(logger)
 {
+    /// <summary>The largest marker-plan.json accepted (a real plan is a few tens of kilobytes).</summary>
+    public const int MaxPlanBytes = 2 * 1024 * 1024;
+
     /// <summary>Markers on or off, their size, and the marker plan's revisions (which is current, which is on the wall).</summary>
     [HttpGet("markers")]
     public Task<IActionResult> State(Guid wallId) => RunAsync(wallId, async () =>
@@ -72,11 +75,13 @@ public sealed class WallMarkersController(
             : NotFound(new ApiErrorResponse("This wall has no marker plan.")));
 
     /// <summary>
-    /// Uploads a marker-plan.json as the wall's next plan revision, exactly like the planner's Save: 200 with the revision
-    /// (the same plan again adds none), 422 with the reasons when it cannot be read or has errors.
+    /// Uploads a marker-plan.json (at most <see cref="MaxPlanBytes"/>) as the wall's next plan revision, exactly like the
+    /// planner's Save: 200 with the new revision; 409 with the current revision when it is identical to it (no revision is
+    /// added); 422 with the reasons when it cannot be read or has errors; 413 when it is too large.
     /// </summary>
     [HttpPut("marker-plan")]
     [Consumes("application/json")]
+    [RequestSizeLimit(MaxPlanBytes)]
     public Task<IActionResult> SavePlan(Guid wallId, [FromBody] JsonElement body) =>
         RunAsync(wallId, () => audit.RunAsync(User, wallId, "marker-plan.save", async () =>
         {
@@ -89,6 +94,12 @@ public sealed class WallMarkersController(
 
             var result = await plans.SavePlanAsync(wallId, plan);
             var response = new WallMarkerPlanSaveResponse(result.Saved, result.Revision, result.Unchanged, result.Issues);
+            if (result.Unchanged)
+            {
+                // Nothing was written: refused, so a script never mistakes it for a new revision.
+                return Conflict(response);
+            }
+
             return result.Saved ? Ok(response) : UnprocessableEntity(response);
         }));
 }

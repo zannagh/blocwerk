@@ -38,10 +38,10 @@ public sealed partial class WallRefreshApiController(
     public const string PersonalKeyOnly =
         "Updating panels over the API needs a personal API key with write access; wall, kiosk and installation keys cannot.";
 
-    /// <summary>The wall's current run (open, or finished within the last day), or 404.</summary>
+    /// <summary>The wall's current run (open, or finished within the last day), or 404. Reads change nothing.</summary>
     [HttpGet]
     public Task<IActionResult> Current(Guid wallId) =>
-        ReadAsync(wallId, async () => await refreshes.GetCurrentAsync(wallId) is { } view
+        ReadAsync(wallId, async () => await refreshes.PeekCurrentAsync(wallId) is { } view
             ? Ok(view)
             : NotFound(new ApiErrorResponse("This wall has no current panel update.")));
 
@@ -59,6 +59,15 @@ public sealed partial class WallRefreshApiController(
     [HttpGet("{refreshId:guid}/summary")]
     public Task<IActionResult> Summary(Guid wallId, Guid refreshId) =>
         ReadAsync(wallId, () => ForRunAsync(wallId, refreshId, view => Task.FromResult<IActionResult>(Ok(RefreshSummaryResponse.From(view)))));
+
+    /// <summary>
+    /// Starts the check against this visit's new 3D model when it is due (the page starts it on its own when it shows
+    /// the run; reads over the API never do). 202 with <c>{ pending }</c>: true while the check is queued or running.
+    /// </summary>
+    [HttpPost("{refreshId:guid}/recheck")]
+    public Task<IActionResult> Recheck(Guid wallId, Guid refreshId) =>
+        WriteAsync(wallId, "refresh.recheck", () => ForRunAsync(wallId, refreshId, async _ =>
+            Accepted(new RefreshRecheckResponse(await refreshes.RecheckAsync(refreshId)))));
 
     /// <summary>Done uploading: the photos are sorted to the panels in the background. 202.</summary>
     [HttpPost("{refreshId:guid}/sort")]
@@ -99,7 +108,7 @@ public sealed partial class WallRefreshApiController(
     /// <summary>Runs <paramref name="action"/> on the run when it is the wall's current one, otherwise 404.</summary>
     private async Task<IActionResult> ForRunAsync(Guid wallId, Guid refreshId, Func<WallRefreshView, Task<IActionResult>> action)
     {
-        var view = await refreshes.GetCurrentAsync(wallId);
+        var view = await refreshes.PeekCurrentAsync(wallId);
         return view is { } run && run.Id == refreshId
             ? await action(run)
             : NotFound(new ApiErrorResponse("That panel update is not this wall's current one."));

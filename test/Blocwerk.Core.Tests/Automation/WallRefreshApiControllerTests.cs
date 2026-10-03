@@ -108,11 +108,13 @@ public class WallRefreshApiControllerTests
         Assert.Equal(1, await RefreshApiFlow.GenerationAsync(h));
         var batches = await AutomationApiFixture.ApiBatchesAsync(h);
         Assert.Equal<string[]>(
-            ["refresh.begin", "refresh.upload", "refresh.upload", "refresh.sort", "refresh.start", "refresh.apply"],
+            ["refresh.begin", "refresh.upload", "refresh.sort", "refresh.start", "refresh.apply"],
             batches.Select(b => b.Label[ApiWriteAudit.LabelPrefix.Length..].Split(' ')[0]).ToArray());
         Assert.All(batches, b => Assert.Equal(h.Owner.Id.ToString(), b.Actor));
         Assert.All(batches, b => Assert.EndsWith($"key:{key.GetApiKeyId()}", b.Label));
-        Assert.All(batches.Where(b => !b.Label.Contains("upload")), b => Assert.Equal((ChangeJournalScopeKind.Wall, (Guid?)h.WallId), (b.ScopeKind, b.ScopeId)));
+        Assert.All(batches, b => Assert.Equal((ChangeJournalScopeKind.Wall, (Guid?)h.WallId), (b.ScopeKind, b.ScopeId)));
+        Assert.All(batches, b => Assert.Equal(ChangeJournalStatus.Recorded, b.Status));
+        Assert.StartsWith($"api:refresh.upload run:{run.Id} ", batches[1].Label);
     }
 
     [Fact]

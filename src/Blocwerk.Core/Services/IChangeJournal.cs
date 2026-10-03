@@ -17,12 +17,16 @@ public interface IChangeJournal
     IDisposable BeginBatch(string label, ChangeJournalScopeKind scopeKind = ChangeJournalScopeKind.None, Guid? scopeId = null);
 
     /// <summary>
-    /// Begins a batch like <see cref="BeginBatch"/> for one audited action (an automation API write). Unlike a plain
-    /// batch, <see cref="ChangeJournalAction.CompleteAsync"/> persists the batch row even when the action changed no
-    /// journalled entity (a marker plan, a wall update run), so every audited write leaves a row naming its label,
-    /// scope and actor. Requires the registry context factory, like <see cref="BeginWallUpdateBatch"/>.
+    /// Starts one audited action (an automation API write): its batch row is persisted FIRST, as
+    /// <see cref="ChangeJournalStatus.Pending"/> with <paramref name="actor"/> as its only actor, so no write happens
+    /// without an audit row. <see cref="ChangeJournalAction.Enter"/> then makes it the ambient batch for the write's
+    /// journalled rows; <see cref="ChangeJournalAction.CompleteAsync"/> records it, <see cref="ChangeJournalAction.FailAsync"/>
+    /// removes it (or marks it <see cref="ChangeJournalStatus.Failed"/> when rows were journalled). With
+    /// <paramref name="append"/>, an existing batch with the same label and scope is reused (one batch for repeated
+    /// actions, e.g. every file of one upload) and stays open. Requires the registry context factory.
     /// </summary>
-    ChangeJournalAction BeginAction(string label, ChangeJournalScopeKind scopeKind, Guid? scopeId);
+    Task<ChangeJournalAction> StartActionAsync(
+        string label, ChangeJournalScopeKind scopeKind, Guid? scopeId, string? actor, bool append = false);
 
     /// <summary>
     /// Begins (or resumes) the single OPEN wall-update batch for a wall, so a whole wall update — the

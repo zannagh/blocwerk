@@ -42,7 +42,8 @@ internal static partial class ApiDocsData
             "{ … marker-plan.json … }"),
         new("PUT", MarkersBase + "/marker-plan", "Saves a marker-plan.json as the wall's next plan revision.", MarkersWall,
             "{ … marker-plan.json … }", MarkerPlanSaveJson,
-            "The same plan again adds no revision (unchanged: true). 422 with the issues when it cannot be read or has errors."),
+            "At most 2 MB (413). 409 with unchanged: true when it is identical to the current revision (none is added). "
+                + "422 with the issues when it cannot be read or has errors."),
         new("GET", MarkersBase + "/marker-plan/revisions", "The plan's revisions, newest first.", MarkersWall, null,
             "[ … same shape as revisions above … ]"),
         new("PUT", MarkersBase + "/marker-plan/revisions/{revision}/effective", "Records that the revision's markers are on the wall.",

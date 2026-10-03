@@ -4,7 +4,6 @@
 
 using Blocwerk.Authentication.Authorization;
 using Blocwerk.Core.Capture;
-using Blocwerk.Core.Enums;
 using Blocwerk.Core.Refresh;
 using Blocwerk.Core.Services;
 using Blocwerk.Web.Controllers;
@@ -38,7 +37,7 @@ public static class WallRefreshUploadEndpoint
     public static string TooLarge(bool isVideo, long limit) =>
         $"The {(isVideo ? "video" : "photo")} is larger than {limit / (1024 * 1024)} MB.";
 
-    internal static Task<IResult> HandleAsync(
+    internal static async Task<IResult> HandleAsync(
         Guid refreshId,
         string? name,
         HttpContext http,
@@ -47,19 +46,20 @@ public static class WallRefreshUploadEndpoint
         CancellationToken ct,
         [FromServices] ApiWriteAudit? audit = null)
     {
-        if (audit is null || !http.User.IsApiKeyPrincipal())
+        // A script's upload is audited like the rest of the automation API (the browser's drop zone is not): one batch
+        // per run, scoped to its wall, appended to by every file. A run that does not exist takes no file at all.
+        if (audit is null || !http.User.IsApiKeyPrincipal() || await refreshes.GetWallIdAsync(refreshId) is not { } wallId)
         {
-            return StoreAsync(refreshId, name, http, refreshes, options, ct);
+            return await StoreAsync(refreshId, name, http, refreshes, options, ct);
         }
 
-        // A script's upload is audited like the rest of the automation API; the browser's drop zone is not.
-        return audit.RunAsync(
+        return await audit.RunAsync(
             http.User,
             $"refresh.upload run:{refreshId}",
-            ChangeJournalScopeKind.None,
-            null,
+            wallId,
             () => StoreAsync(refreshId, name, http, refreshes, options, ct),
-            result => result is Ok<RefreshFile> { Value.Problem: null });
+            result => result is Ok<RefreshFile> { Value.Problem: null },
+            append: true);
     }
 
     private static async Task<IResult> StoreAsync(
