@@ -190,9 +190,11 @@ public partial class WallGlyphService
         var active = await db.WallGeometryModels
             .Where(m => m.WallId == wallId && m.IsActive && m.Id != keep)
             .ToListAsync();
+        var now = DateTimeOffset.UtcNow;
         foreach (var previous in active)
         {
             previous.IsActive = false;
+            previous.RetiredAt = now;
         }
 
         await db.SaveChangesAsync();

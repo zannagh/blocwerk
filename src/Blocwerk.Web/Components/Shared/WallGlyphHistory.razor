@@ -1,5 +1,6 @@
 @* Every geometry the wall ever had, newest first. Exactly one is active; any other can be made
-   active again (the service swaps them atomically and re-applies its measured angles). *@
+   active again (the service swaps them atomically and re-applies its measured angles). An older one whose
+   textures and photo-real view the capture retention deleted comes back as a geometry only, and says so. *@
 
 <details class="segment-settings glyph-history">
     <summary>
@@ -27,6 +28,12 @@
                             @if (entry.IsActive)
                             {
                                 <span class="glyph-active-badge">Active</span>
+                            }
+                            else if (entry.FilesRemovedAt is not null)
+                            {
+                                @* Retention deleted its textures and photo-real view: only the geometry comes back. *@
+                                <button class="btn-link" disabled="@Disabled" @onclick="() => OnActivate.InvokeAsync(entry.Id)"
+                                        title="Its wall textures and photo-real view were deleted (capture retention): activating it brings back the geometry only.">Activate (geometry only)</button>
                             }
                             else
                             {

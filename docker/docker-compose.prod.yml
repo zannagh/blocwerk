@@ -81,6 +81,9 @@ services:
       CAPTURE__MAXPHOTOMB: ${CAPTURE__MAXPHOTOMB:-}
       CAPTURE__MAXPHOTOS: ${CAPTURE__MAXPHOTOS:-}
       CAPTURE__MAXVIDEOFRAMES: ${CAPTURE__MAXVIDEOFRAMES:-}
+      # Retention of old models' 3D files, runner results, abandoned imports: empty/true = log only,
+      # false = delete (docs/marker-walls.md, section 4 "Retention").
+      CAPTURE__RETENTIONDRYRUN: ${CAPTURE__RETENTIONDRYRUN:-}
       # Caddy reaches the app over `edge`; only senders in this IP/CIDR may set X-Forwarded-For.
       # Empty = trust every sender (the old behaviour).
       BLOCWERK__SERVER__TRUSTEDPROXIES__0: ${TRUSTED_PROXY:-}

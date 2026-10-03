@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Blocwerk.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blocwerk.Core.Migrations
 {
     [DbContext(typeof(BlocwerkDbContext))]
-    partial class BlocwerkDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261003161546_AddGeometryModelRetention")]
+    partial class AddGeometryModelRetention
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -776,12 +779,6 @@ namespace Blocwerk.Core.Migrations
                     b.Property<DateTimeOffset?>("LeaseExpiresAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<DateTimeOffset?>("LeftoverDroppedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<double?>("Loss")
-                        .HasColumnType("double precision");
-
                     b.Property<int>("LostLeaseCount")
                         .HasColumnType("integer");
 
@@ -846,24 +843,12 @@ namespace Blocwerk.Core.Migrations
                     b.Property<int>("ShutdownCount")
                         .HasColumnType("integer");
 
-                    b.Property<int?>("SplatCount")
-                        .HasColumnType("integer");
-
                     b.Property<string>("Stage")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
-
-                    b.Property<int?>("Step")
-                        .HasColumnType("integer");
-
-                    b.Property<int?>("StepAnchor")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTimeOffset?>("StepAnchorAt")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int?>("TotalSteps")
                         .HasColumnType("integer");
@@ -876,8 +861,6 @@ namespace Blocwerk.Core.Migrations
                     b.HasIndex("CaptureId");
 
                     b.HasIndex("ClaimedByRunnerId");
-
-                    b.HasIndex("CompletedAt");
 
                     b.HasIndex("WallId");
 
@@ -930,9 +913,6 @@ namespace Blocwerk.Core.Migrations
                     b.Property<Guid>("OwnerUserId")
                         .HasColumnType("uuid");
 
-                    b.Property<bool?>("Paused")
-                        .HasColumnType("boolean");
-
                     b.Property<string>("Platform")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
@@ -983,37 +963,6 @@ namespace Blocwerk.Core.Migrations
                     b.HasIndex("RunnerId");
 
                     b.ToTable("GpuRunnerApprovals");
-                });
-
-            modelBuilder.Entity("Blocwerk.Core.Entities.GpuRunnerFailure", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("At")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("JobId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Reason")
-                        .HasMaxLength(2048)
-                        .HasColumnType("character varying(2048)");
-
-                    b.Property<Guid>("RunnerId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("WallId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("JobId");
-
-                    b.HasIndex("RunnerId", "At");
-
-                    b.ToTable("GpuRunnerFailures");
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.GpuRunnerWall", b =>
@@ -2063,9 +2012,6 @@ namespace Blocwerk.Core.Migrations
                     b.Property<string>("FollowUpJson")
                         .HasColumnType("text");
 
-                    b.Property<DateTimeOffset?>("FollowUpRunningSince")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<int>("GeometryMode")
                         .HasColumnType("integer");
 
@@ -2124,12 +2070,6 @@ namespace Blocwerk.Core.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
 
-                    b.Property<string>("TimelineJson")
-                        .HasColumnType("text");
-
-                    b.Property<DateTimeOffset?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<double?>("VideoDurationSeconds")
                         .HasColumnType("double precision");
 
@@ -2152,13 +2092,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CompletedAt");
-
-                    b.HasIndex("FollowUpRunningSince");
-
                     b.HasIndex("Status");
-
-                    b.HasIndex("UpdatedAt");
 
                     b.HasIndex("WallId", "CreatedAt");
 
@@ -3516,21 +3450,6 @@ namespace Blocwerk.Core.Migrations
                     b.Navigation("Runner");
 
                     b.Navigation("Wall");
-                });
-
-            modelBuilder.Entity("Blocwerk.Core.Entities.GpuRunnerFailure", b =>
-                {
-                    b.HasOne("Blocwerk.Core.Entities.GpuJob", null)
-                        .WithMany()
-                        .HasForeignKey("JobId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Blocwerk.Core.Entities.GpuRunner", null)
-                        .WithMany()
-                        .HasForeignKey("RunnerId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.GpuRunnerWall", b =>

@@ -109,7 +109,7 @@ public partial class WallGlyphService(
                 .Where(m => m.WallId == wallId)
                 .OrderByDescending(m => m.CreatedAt)
                 .Select(m => new WallGeometryHistoryEntry(
-                    m.Id, m.CreatedAt, m.IsActive, m.SchemaVersion, m.Source, m.ReprojRmsPx, m.WidthMm, m.HeightMm, m.Notes))
+                    m.Id, m.CreatedAt, m.IsActive, m.SchemaVersion, m.Source, m.ReprojRmsPx, m.WidthMm, m.HeightMm, m.Notes, m.FilesRemovedAt))
                 .ToListAsync();
         }
     }
@@ -195,5 +195,5 @@ public partial class WallGlyphService(
         OpenForAdminAsync(wallId, action);
 
     private static WallGeometryHistoryEntry ToEntry(WallGeometryModel m) => new(
-        m.Id, m.CreatedAt, m.IsActive, m.SchemaVersion, m.Source, m.ReprojRmsPx, m.WidthMm, m.HeightMm, m.Notes);
+        m.Id, m.CreatedAt, m.IsActive, m.SchemaVersion, m.Source, m.ReprojRmsPx, m.WidthMm, m.HeightMm, m.Notes, m.FilesRemovedAt);
 }

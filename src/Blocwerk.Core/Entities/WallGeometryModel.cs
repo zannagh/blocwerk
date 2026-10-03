@@ -61,4 +61,16 @@ public class WallGeometryModel
 
     /// <summary>The model this one was derived from (a correction or a re-derivation); null for a solve or an upload.</summary>
     public Guid? DerivedFromModelId { get; set; }
+
+    /// <summary>
+    /// When another model replaced it as the active one; null while it never was active, or for a model retired before
+    /// this was recorded (retention then goes by <see cref="CreatedAt"/>).
+    /// </summary>
+    public DateTimeOffset? RetiredAt { get; set; }
+
+    /// <summary>
+    /// When the capture retention deleted its wall textures and photo-real view (<c>SupersededModelRetention</c>); its
+    /// geometry stays, so it can still be activated, but only as a geometry. Null while it keeps its files.
+    /// </summary>
+    public DateTimeOffset? FilesRemovedAt { get; set; }
 }
