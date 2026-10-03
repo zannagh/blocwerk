@@ -136,8 +136,8 @@ services:
   # in docker/.env (or `docker compose --profile compute up -d`) and set GEOMETRYSERVICE_URL for the app.
   # The app does not depend_on it: the site must keep working when this experimental service is down.
   # Single instance by design (in-memory job queue, results expire after RESULT_TTL_S).
-  # Built by .github/workflows/wall-geometry.yml. Production runs a STANDALONE copy of this compose
-  # file: adding this service there is a manual step (docker/wall-geometry/README.md, "Production").
+  # Built by .github/workflows/wall-geometry.yml. Production does not use this file: it runs
+  # docker-compose.prod.yml (CI checks the two for drift; docker/prod/README.md).
   wall-geometry:
     image: ghcr.io/zannagh/blocwerk-geometry:latest
     profiles: ["compute"]
