@@ -15,7 +15,10 @@ namespace Blocwerk.Core.Capture.Coverage;
 /// <param name="Photos">The solved photo cameras.</param>
 /// <param name="VideoFrames">The registered video frames with a pose (empty when not reported).</param>
 /// <param name="Volumes">The model's visible volumes.</param>
-/// <param name="HoldBounds">Per facet, the bounds of the holds placed on it (they widen the facet's region).</param>
+/// <param name="HoldBounds">
+/// Per facet, the bounds of the holds placed on it (they widen the facet's region); empty unless the model is the wall's
+/// active one, whose frame the holds' positions are in.
+/// </param>
 /// <param name="Video">The walk-along video's frame counts.</param>
 public sealed record CoverageInputs(
     Guid CaptureId,

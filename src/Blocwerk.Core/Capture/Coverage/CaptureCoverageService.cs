@@ -149,7 +149,7 @@ public sealed class CaptureCoverageService(
             CoverageCamera.FromModel(modelJson),
             CoverageCamera.FromSplatFrame(frameJson),
             await VolumesAsync(db, model, ct),
-            await HoldBoundsAsync(db, capture.WallId, ct),
+            await CoverageHoldBounds.LoadAsync(db, model, ct),
             video);
     }
 
@@ -166,19 +166,6 @@ public sealed class CaptureCoverageService(
                 : null)
             .OfType<CoverageVolume>()
             .ToList();
-    }
-
-    private static async Task<IReadOnlyDictionary<string, PlaneRectMm>> HoldBoundsAsync(BlocwerkDbContext db, Guid wallId, CancellationToken ct)
-    {
-        var live = await LiveWallHolds.QueryAsync(db, wallId, ct);
-        var points = await live.AsNoTracking()
-            .Where(h => h.FacetId != null && h.PlaneAMm != null && h.PlaneBMm != null)
-            .Select(h => new { h.FacetId, h.PlaneAMm, h.PlaneBMm })
-            .ToListAsync(ct);
-        return points.GroupBy(p => p.FacetId!)
-            .Select(g => (g.Key, Bounds: PlaneRectMm.Bounds(g.Select(p => (p.PlaneAMm!.Value, p.PlaneBMm!.Value)))))
-            .Where(x => x.Bounds is not null)
-            .ToDictionary(x => x.Key, x => x.Bounds!.Value, StringComparer.Ordinal);
     }
 
     private static IReadOnlyList<double[]> Footprint(string json)
