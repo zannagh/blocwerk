@@ -1549,6 +1549,17 @@ a.wall3d-link {
     padding: 18px; box-shadow: 0 10px 40px var(--shadow-lg); display: flex; flex-direction: column; gap: 12px;
 }
 .bw-modal h3 { font-size: 1.05rem; font-weight: 600; color: var(--text-heading); }
+/* The panel crop tool (PanelCropTool.razor) is a real modal ABOVE the wall editor: the editor's own tool row is
+   fixed/sticky at z-index 60 (above the plain modal backdrop's 50) and would draw over the dialog, so it is hidden
+   while the crop dialog is open and the backdrop is lifted over every page layer (below only the classify menu).
+   The dialog fits the viewport on a phone and a desktop; it scrolls inside itself if it ever has to. */
+body:has(.panel-crop-modal) .bw-toolbar { display: none; }
+.bw-modal-backdrop:has(.panel-crop-modal) { z-index: 950; }
+.bw-modal.panel-crop-modal { max-width: 960px; max-height: calc(100dvh - 40px); overflow-y: auto; }
+@media (max-width: 600px) {
+    .bw-modal-backdrop:has(.panel-crop-modal) { padding: 8px; }
+    .bw-modal.panel-crop-modal { padding: 12px; gap: 8px; max-height: calc(100dvh - 16px); }
+}
 .wall-pick-list { display: flex; flex-direction: column; gap: 8px; max-height: 50vh; overflow-y: auto; }
 .wall-pick-item {
     text-align: left; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px;

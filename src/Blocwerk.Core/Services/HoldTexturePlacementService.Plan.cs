@@ -49,7 +49,7 @@ public sealed partial class HoldTexturePlacementService
         IReadOnlyList<FacetRegistration>? direct = null)
     {
         var panel = await db.WallPanels.AsNoTracking().Where(p => p.Id == panelId)
-            .Select(p => new { p.Col, p.Row, p.Generation, p.Photo }).FirstOrDefaultAsync(ct);
+            .Select(p => new { p.Col, p.Row, p.Generation, p.Photo, p.PhotoRevision }).FirstOrDefaultAsync(ct);
         var eligible = holds.Where(HoldTexturePlacer.IsEligible).ToList();
         var skipped = holds.Count - eligible.Count;
         var (col, row) = (panel?.Col ?? 0, panel?.Row ?? 0);
@@ -83,7 +83,7 @@ public sealed partial class HoldTexturePlacementService
         var none = registrations.Any(r => r.Accepted) ? null : "the photo matched none of the model's textures";
         var summary = new HoldPlacementPanelSummary(
             panelId, col, row, placements.Count, skipped, eligible.Count - placements.Count, facets, none);
-        return new PanelPlan(summary, placements, registrations, Photo: new PanelPhotoStamp(panel.Generation, panel.Photo.Length));
+        return new PanelPlan(summary, placements, registrations, Photo: new PanelPhotoStamp(panel.Generation, panel.Photo.Length, panel.PhotoRevision));
     }
 
     /// <summary>One matcher session for the photo, registered onto every texture (CPU-bound; run off the request thread).</summary>

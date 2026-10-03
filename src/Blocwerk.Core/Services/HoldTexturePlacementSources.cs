@@ -7,10 +7,11 @@ using Blocwerk.Core.Geometry.TextureRegistration;
 
 namespace Blocwerk.Core.Services;
 
-/// <summary>A panel photo as it was read: its generation and byte length, stamped in the same query as the bytes.</summary>
+/// <summary>A panel photo as it was read: its generation, in-place revision and byte length, stamped in the same query as the bytes.</summary>
 /// <param name="Generation">The panel's photo generation.</param>
 /// <param name="Length">The photo's byte length.</param>
-internal readonly record struct PanelPhotoStamp(int Generation, int Length);
+/// <param name="Revision">The panel's <see cref="Entities.WallPanel.PhotoRevision"/> (moves on a crop or its undo).</param>
+internal readonly record struct PanelPhotoStamp(int Generation, int Length, int Revision = 0);
 
 /// <summary>
 /// A panel photo as registered onto a model's textures: a new photo (generation or size), another model or the same model's

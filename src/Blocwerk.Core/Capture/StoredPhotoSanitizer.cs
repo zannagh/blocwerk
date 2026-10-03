@@ -64,6 +64,39 @@ public static class StoredPhotoSanitizer
     }
 
     /// <summary>
+    /// <paramref name="target"/> (a freshly encoded JPEG or PNG without metadata, e.g. a crop of <paramref name="source"/>)
+    /// with <paramref name="source"/>'s EXIF orientation written into it, so the browser keeps turning the pixels the same
+    /// way. Unchanged when the source has no orientation other than 1 or the target is another format.
+    /// </summary>
+    /// <param name="source">The photo whose orientation counts.</param>
+    /// <param name="target">The re-encoded pixels.</param>
+    /// <returns>The bytes to store.</returns>
+    public static byte[] WithOrientationOf(byte[] source, byte[] target)
+    {
+        var orientation = ImageMetadataStripper.CanStrip(source) ? ReadExif(source).Orientation : (ushort)0;
+        return WithOrientation(target, orientation);
+    }
+
+    /// <summary><paramref name="target"/> (a JPEG or PNG without metadata) with an orientation tag (2..8; others: unchanged).</summary>
+    /// <param name="target">The encoded pixels.</param>
+    /// <param name="orientation">The EXIF orientation.</param>
+    /// <returns>The tagged bytes.</returns>
+    internal static byte[] WithOrientation(byte[] target, ushort orientation)
+    {
+        if (orientation is < 2 or > 8)
+        {
+            return target;
+        }
+
+        return CapturePhotoFormat.Sniff(target) switch
+        {
+            CapturePhotoKind.Jpeg => InsertJpegOrientation(target, orientation),
+            CapturePhotoKind.Png => InsertPngOrientation(target, orientation),
+            _ => target,
+        };
+    }
+
+    /// <summary>
     /// Whether the photo carries a GPS block, and whether sanitizing would change it. Never throws: a
     /// damaged photo or another format reports nothing to clean. A photo whose only metadata is an
     /// equivalent orientation block is reported clean — sanitizing it could only rewrite that block.

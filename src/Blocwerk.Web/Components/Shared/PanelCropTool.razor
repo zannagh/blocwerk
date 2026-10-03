@@ -1,0 +1,108 @@
+@using Blocwerk.Core.Services.PanelCrop
+
+@* Crop one live panel photo. The box is dragged by its edges, corners or body (panel-crop.js owns it while it
+   moves); its handles are buttons, so arrow keys nudge the focused edge, Shift for bigger steps. The live preview
+   is the dimmed outside plus the holds the crop would cut, drawn red; saving a crop that cuts holds asks first.
+   Escape and the backdrop close it without saving (Modal). The stage stays rendered under the confirmation so the
+   JS-owned box is never torn down mid-flow. *@
+<Modal Title="Crop panel photo" PanelClass="panel-crop-modal" OnClose="CloseAsync">
+    <p class="panel-crop-hint">Drag the edges or the box. Arrow keys move the focused edge (Shift: faster). Holds stay where they are on the wall.</p>
+    <div class="panel-crop-frame @(Confirming ? "confirming" : null)">
+        <div class="panel-crop-stage" @ref="stage">
+            <img src="@ResponsiveImage.AtWidth(PhotoUrl, 1280)" alt="Panel photo to crop" draggable="false" />
+            <svg class="panel-crop-holds" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                @foreach (var hold in Holds)
+                {
+                    <circle cx="@F(hold.X * 100)" cy="@F(hold.Y * 100)" r="@F(Math.Max(hold.Radius, 0.008) * 100)"
+                            class="@(cutHoldIds.Contains(hold.Id) ? "cut" : "kept")" />
+                }
+            </svg>
+            <div class="panel-crop-box" @ref="box">
+                <button type="button" class="panel-crop-move" data-crop-handle="move" aria-label="Move the crop area" disabled="@Confirming"></button>
+                @foreach (var (handle, label) in Handles)
+                {
+                    <button type="button" class="panel-crop-handle h-@handle" data-crop-handle="@handle" aria-label="@label" disabled="@Confirming"></button>
+                }
+            </div>
+        </div>
+    </div>
+    <p class="panel-crop-status" aria-live="polite">
+        Keeps @Percent(rect.Width) × @Percent(rect.Height) of the photo
+        @if (cutHoldIds.Count > 0)
+        {
+            <span class="panel-crop-cut"> · @Plural(cutHoldIds.Count, "hold") would be removed</span>
+        }
+    </p>
+    @if (error is not null)
+    {
+        <p class="panel-crop-error" role="alert">@error</p>
+    }
+    @if (state is { IsCropped: true, RemovedHoldCount: > 0 } && !Confirming)
+    {
+        <p class="panel-crop-hint">@UndoHint</p>
+    }
+    @if (confirm is { } preview)
+    {
+        <div class="panel-crop-confirm" role="group" aria-labelledby="panel-crop-confirm-title">
+            <p id="panel-crop-confirm-title" class="panel-crop-warning">
+                Are you sure? This crop removes @Plural(preview.RemovedHoldIds.Count, "hold") that would no longer be on the photo.
+            </p>
+            @if (preview.Boulders.Count > 0)
+            {
+                <p class="panel-crop-hint">These boulders use them and become historic, as when a hold is deleted:</p>
+                <ul class="panel-crop-boulders">
+                    @foreach (var boulder in preview.Boulders)
+                    {
+                        <li>
+                            <span>@boulder.Name</span>
+                            @if (!string.IsNullOrEmpty(boulder.Grade))
+                            {
+                                <span class="panel-crop-tag">@boulder.Grade</span>
+                            }
+                            @if (!boulder.IsActive)
+                            {
+                                <span class="panel-crop-tag">already historic</span>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+            else
+            {
+                <p class="panel-crop-hint">No boulder uses them.</p>
+            }
+            <div class="staged-actions">
+                <button type="button" class="btn-secondary" @onclick="CancelConfirm" disabled="@busy">Cancel</button>
+                <button type="button" class="btn-danger" @onclick="CropAnywayAsync" disabled="@busy">Crop anyway</button>
+            </div>
+        </div>
+    }
+    else if (confirmUndo)
+    {
+        <div class="panel-crop-confirm" role="group" aria-labelledby="panel-crop-undo-title">
+            <p id="panel-crop-undo-title" class="panel-crop-warning">
+                Undo this crop? It removed @Plural(state!.RemovedHoldCount, "hold").
+            </p>
+            <p class="panel-crop-hint">
+                The original photo comes back, and if nothing on this panel was edited since the crop, the removed holds
+                and their boulders come back too. If it was edited, only the photo is restored and the removed holds stay deleted.
+            </p>
+            <div class="staged-actions">
+                <button type="button" class="btn-secondary" @onclick="CancelUndo" disabled="@busy">Cancel</button>
+                <button type="button" class="btn-danger" @onclick="UndoConfirmedAsync" disabled="@busy">Undo crop</button>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="staged-actions panel-crop-actions">
+            <button type="button" class="btn-secondary" @onclick="CloseAsync" disabled="@busy">Cancel</button>
+            @if (state?.IsCropped == true)
+            {
+                <button type="button" class="btn-secondary" @onclick="UndoAsync" disabled="@busy" title="@UndoHint">Undo crop</button>
+            }
+            <button type="button" class="btn-secondary" @onclick="ResetAsync" disabled="@busy">Reset</button>
+            <button type="button" class="btn-primary" @onclick="SaveAsync" disabled="@(busy || rect.IsFull)">Save crop</button>
+        </div>
+    }
+</Modal>
