@@ -49,8 +49,14 @@ export function createModeController({ modes, parts, photo, ui, request, onMode 
         for (const s of parts.slabs) s.visible = name === 'schematic';
         if (name === 'photos' && !photosAsked && parts.photos) {
             photosAsked = true;
-            ui.say('Loading the photos…');
-            parts.photos.load().then(() => { if (mode === 'photos') ui.hideHint(false); });
+            // Starting in Photos: the first-visit gesture hint stays; a later switch says it is loading.
+            const quiet = mode === null;
+            if (!quiet) ui.say('Loading the photos…');
+            parts.photos.load().then(failed => {
+                if (mode !== 'photos') return;
+                if (failed > 0) ui.say('Some wall photos could not be loaded.');
+                else if (!quiet) ui.hideHint(false);
+            });
         }
     }
 

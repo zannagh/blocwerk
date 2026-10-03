@@ -113,9 +113,9 @@ public partial class Wall3DStage : IAsyncDisposable
         {
             await reference.DisposeAsync();
         }
-        catch (JSDisconnectedException)
+        catch (Exception ex) when (ex is JSDisconnectedException or JSException or OperationCanceledException)
         {
-            // Circuit already torn down.
+            // Circuit already torn down, or the browser did not answer.
         }
     }
 
@@ -134,6 +134,10 @@ public partial class Wall3DStage : IAsyncDisposable
         catch (JSDisconnectedException)
         {
             // The browser side is already gone, and its WebGL context with it.
+        }
+        catch (Exception ex) when (ex is JSException or OperationCanceledException)
+        {
+            // A failed or timed-out dispose must not block the next mount or the component's own dispose.
         }
     }
 
@@ -160,6 +164,11 @@ public partial class Wall3DStage : IAsyncDisposable
         try
         {
             module ??= await JS.InvokeAsync<IJSObjectReference>("import", "/js/wall3d.js");
+            if (!IsCurrent(view))
+            {
+                return;
+            }
+
             var handle = await module.InvokeAsync<IJSObjectReference>("mount", stage, view, MountOptions());
             if (!IsCurrent(view))
             {
@@ -187,6 +196,16 @@ public partial class Wall3DStage : IAsyncDisposable
                 ? "This wall's 3D model could not be drawn."
                 : "This device could not start the 3D view (WebGL is unavailable).";
             StateHasChanged();
+        }
+        catch (OperationCanceledException ex)
+        {
+            // The interop call timed out (a busy or suspended browser): later mounts and dispose go on.
+            Logger.LogWarning(ex, "3D view of wall {WallId} timed out while starting", view.WallId);
+            if (IsCurrent(view))
+            {
+                failure = "The 3D view took too long to start. Reload the page to try again.";
+                StateHasChanged();
+            }
         }
     }
 

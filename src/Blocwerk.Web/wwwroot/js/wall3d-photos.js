@@ -45,9 +45,11 @@ export function createPhotoLoader(request) {
             meshes.push({ mesh, urls });
             if (started) reveal(meshes[meshes.length - 1]);
         },
-        /** Starts the downloads (once); resolves when every photo landed or failed. */
+        /** Starts the downloads (once); resolves with the number of photos (or masks) that failed to load. */
         load() {
-            started ??= Promise.all(meshes.map(reveal));
+            started ??= Promise.all(meshes.map(reveal))
+                .then(() => Promise.all([...byUrl.values()].map(e => e.ready ?? true)))
+                .then(oks => oks.filter(ok => !ok).length);
             return started;
         },
     };

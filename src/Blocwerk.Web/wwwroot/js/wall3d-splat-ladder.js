@@ -114,7 +114,7 @@ export function firstLevelWarning(level, light, detail = 'auto') {
     if (!light || detail === 'ultra' || pinnedLevel(1) != null) return null;
     if (sizeOf(level) <= (detail === 'high' ? LIGHT_HIGH_CAP_SPLATS : LIGHT_CAP_SPLATS)) return null;
     const size = level.sizeBytes > 0 ? `${Math.max(1, Math.round(level.sizeBytes / 1048576))} MB, ` : '';
-    return `The photo-real view is ${size}heavy for a phone. Tap Photo-real again to load it.`;
+    return `The photo-real view is ${size}heavy for this device. Tap Photo-real again to load it.`;
 }
 
 /** The level `?splatLevel=` / `?splatLod=` pins, or null. */

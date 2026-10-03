@@ -13,7 +13,7 @@
 // and resumes one level lower at a lower resolution (wall3d-splat-recover.js). Only when even the smallest level is lost twice does it give
 // up, quietly, back to Schematic. Every step is reported to the server log (wall3d-splat-diag.js).
 // A shader that fails (iOS's Metal translator) is retried once on a plainer Spark path.
-// Downloads go through wall3d-splat-fetch.js, so dispose, a mode switch or a lost context aborts them.
+// Levels load through wall3d-splat-levels.js, so dispose, a mode switch or a lost context aborts them.
 //
 // Rendered on demand (wall3d-loop.js): Spark re-sorts only after a camera move and its `onDirty`
 // asks for the frame showing the finished sort; phones space sorts LIGHT_SORT_MS apart.
@@ -26,13 +26,11 @@ import { createRecovery, createRenderScale, prefersLightSplat, supportsPhotoReal
 import { releaseTextures } from './wall3d-stage.js';
 import { createShaderRetry } from './wall3d-splat-safe.js';
 import {
-    createAborter, createCancelToken, fetchSplatBytes, PhotoRealCancelledError, PhotoRealStalledError, PhotoRealTooLargeError, PhotoRealUnsupportedError,
+    createFirstLoad, PhotoRealCancelledError, PhotoRealStalledError, PhotoRealTooLargeError, PhotoRealUnsupportedError,
 } from './wall3d-splat-fetch.js';
+import { createLevelLoader } from './wall3d-splat-levels.js';
 
 export { prefersLightSplat, PhotoRealUnsupportedError };
-
-/** Minimum time between two splat sorts on a phone (each one reads back and sorts every splat). */
-const LIGHT_SORT_MS = 90;
 
 /**
  * @param ctx.renderer      the view's THREE.WebGLRenderer
@@ -54,16 +52,7 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
     let detailMode = storedDetail();    // 'auto' | 'high' | 'ultra' (wall3d-splat-detail.js)
     let onLevel = null;             // the Detail toggle's label follows the level drawn
     let cap = levels.length > 0 ? levelCap(levels, light, detailMode) : 0;
-    let spark = null;               // the Spark module, once imported
-    let sparkRenderer = null;
-    let mesh = null;
-    let index = -1;                 // the level showing
-    let loadingIndex = -1;          // the level loading, -1 when none
-    let epoch = 0;                  // bumps on a lost context: loads of an older epoch are dropped
-    let loading = null;
-    let starting = null;            // { cancelled, stopped, cancel } of the first load in flight, null when none
-    let warned = false;             // the "heavy for a phone" note was shown: the next pick loads anyway
-    const aborter = createAborter();
+    let warned = false;             // the "heavy for this device" note was shown: the next pick loads anyway
     let stepping = null;            // the epoch of the step in flight, null when none
     let active = false;
     let disposed = false;
@@ -71,7 +60,7 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
     let startedAt = 0;
 
     const state = extra => ({
-        level: index, levels: levels.length, splats: index >= 0 ? levels[index].splats : null,
+        level: loader.index, levels: levels.length, splats: loader.index >= 0 ? levels[loader.index].splats : null,
         frameMs: policy.monitor.median || null, elapsedMs: startedAt ? performance.now() - startedAt : null,
         lostCount: recovery.lostCount, safeSplats: remembered().failSplats ?? null, mobile: light, ...extra,
     });
@@ -81,10 +70,10 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
 
     const recovery = createRecovery({
         renderer, say,
-        culprit: () => levels[Math.max(index, loadingIndex, 0)],
-        culpritIndex: () => Math.max(index, loadingIndex, 0),
+        culprit: () => levels[Math.max(loader.index, loader.loadingIndex, 0)],
+        culpritIndex: () => Math.max(loader.index, loader.loadingIndex, 0),
         drop() {
-            drop();
+            loader.drop();
             detail.show('Restoring detail…');
         },
         resume(lowered) {
@@ -99,71 +88,24 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
         },
     });
 
-    /** Drops what loads now: its download is aborted and a late result of it is thrown away. */
-    function drop() {
-        epoch++;
-        aborter.abort();
-        release();
-    }
-
-    /** Loads level `i` and swaps it in; false when it was dropped (aborted, disposed, a lost context). */
-    async function loadLevel(i, progress) {
-        const myEpoch = epoch;
-        const signal = aborter.signal;
-        spark ??= await import('../lib/spark/spark.module.min.js');
-        if (disposed || myEpoch !== epoch) return false;
-        if (!sparkRenderer) {
-            sparkRenderer = new spark.SparkRenderer({
-                renderer, onDirty: () => request(), minSortIntervalMs: light ? LIGHT_SORT_MS : 0,
-                ...clip?.rendererOptions, ...retry.rendererOptions,
-            });
-            clip?.install(sparkRenderer);
-            sparkRenderer.visible = active;
-            scene.add(sparkRenderer);
-        }
-        loadingIndex = i;
-        let next = null;
-        try {
-            const fileBytes = await fetchSplatBytes(levels[i].url, signal, progress);
-            if (!fileBytes || disposed || myEpoch !== epoch) return false;
-            next = new spark.SplatMesh({ fileBytes, fileType: 'spz', ...retry.meshOptions });
-            next.matrixAutoUpdate = false;
-            next.matrix.fromArray(view.splatMatrix);
-            next.matrixWorldNeedsUpdate = true;
-            next.visible = false;
-            scene.add(next);
-            await next.initialized;
-        } catch (err) {
-            if (next) { scene.remove(next); next.dispose(); }
-            throw err;
-        } finally {
-            loadingIndex = -1;
-        }
-        if (disposed || myEpoch !== epoch || !sparkRenderer) {
-            scene.remove(next);
-            next.dispose();
-            return false;
-        }
-        const old = mesh;
-        retry.loaded();
-        mesh = next;
-        index = i;
-        mesh.visible = active;
-        if (old) { scene.remove(old); old.dispose(); }
-        policy.shown(index < cap && detailMode !== 'ultra');
-        onLevel?.();
-        request();
-        return true;
-    }
+    const loader = createLevelLoader({
+        renderer, scene, view, levels, light, clip, retry, request,
+        visible: () => active,
+        closed: () => disposed,
+        onShown: () => {
+            policy.shown(loader.index < cap && detailMode !== 'ultra');
+            onLevel?.();
+        },
+    });
 
     /** Loads level `i` behind the one showing and swaps it in; a failure caps the ladder where it is. */
     function stepTo(i, recovering = false) {
         // A step of an older context epoch (lost mid-download) does not block the resume.
-        if (stepping === epoch || disposed || broken) return;
-        const myEpoch = epoch;
+        if (stepping === loader.epoch || disposed || broken) return;
+        const myEpoch = loader.epoch;
         stepping = myEpoch;
         detail.show(recovering ? 'Restoring detail…' : 'Loading detail…');
-        loadLevel(i, null)
+        loader.load(i, null)
             .then(ok => { if (ok) say(recovering ? 'resumed' : 'level'); })
             .catch(err => {
                 console.warn('wall3d: photo-real level failed', err);
@@ -177,7 +119,7 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
             });
     }
 
-    async function start(token) {
+    async function start() {
         if (broken) throw new PhotoRealUnsupportedError('The photo-real view failed on this device.');
         if (!supported(renderer)) throw new PhotoRealUnsupportedError('WebGL 2 with large texture arrays is required.');
         if (levels.length === 0) throw new Error('No photo-real scene.');
@@ -188,92 +130,69 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
             throw new PhotoRealTooLargeError(warning);
         }
         startedAt = performance.now();
+        const myEpoch = loader.epoch;
         say('start', { level: first, detail: `cap ${cap}, levels ${levels.map(l => l.splats).join('/')}` });
+        let shown;
         try {
-            await loadLevel(first, onProgress);
+            shown = await loader.load(first, onProgress);
         } catch (err) {
-            if (token.cancelled || disposed) throw new PhotoRealCancelledError('Cancelled.');
+            if (disposed || myEpoch !== loader.epoch) throw new PhotoRealCancelledError('Cancelled.');
             say('level-failed', { level: first, detail: String(err?.message || err) });
             if (err instanceof PhotoRealStalledError) throw err;   // a stall again would only double the wait
-            await loadLevel(first, onProgress);      // one retry: a flaky phone connection
+            shown = await loader.load(first, onProgress);      // one retry: a flaky phone connection
         }
-        if (token.cancelled) throw new PhotoRealCancelledError('Cancelled.');
-        say('level');
+        if (shown) say('level');
     }
 
-    /** Starts the first load; `starting` can cancel it until it shows. */
-    function begin() {
-        const token = createCancelToken();
-        starting = token;
-        const p = start(token).then(
-            () => { if (starting === token) starting = null; },
-            err => {
-                if (starting === token) starting = null;
-                if (loading === p) loading = null;
-                throw err;
-            });
-        return p;
-    }
+    // The first load, shared by every pick of the mode (a pick during a decode waits for it).
+    const firstLoad = createFirstLoad(start);
 
     function apply() {
         // The SparkRenderer draws its last sorted splats itself: hidden too, or a redraw shows them.
-        if (mesh) mesh.visible = active;
-        if (sparkRenderer) sparkRenderer.visible = active;
+        if (loader.mesh) loader.mesh.visible = active;
+        if (loader.sparkRenderer) loader.sparkRenderer.visible = active;
         for (const part of facetParts) part.visible = !active;
         if (active) releaseTextures(photoTextures);
         scale.apply(active);
         if (!active) detail.hide();
     }
 
-    function release() {
-        for (const o of [mesh, sparkRenderer]) {
-            if (!o) continue;
-            scene.remove(o);
-            try { o.dispose(); } catch { /* a lost context has nothing left to free */ }
-        }
-        mesh = null;
-        sparkRenderer = null;
-        index = -1;
-    }
-
     return {
         get available() { return !!(levels.length > 0 && view.splatMatrix && view.splatMatrix.length === 16); },
         get light() { return light; },
         get active() { return active; },
-        get loaded() { return !!mesh && mesh.isInitialized; },
+        get loaded() { return !!loader.mesh && loader.mesh.isInitialized; },
         /** The level showing, the levels and the cap (diagnostics, the screenshot harness). */
-        get level() { return { index, cap, count: levels.length, splats: index >= 0 ? levels[index].splats : 0, stepping: stepping !== null, recovering: recovery.recovering }; },
+        get level() { const index = loader.index; return { index, cap, count: levels.length, splats: index >= 0 ? levels[index].splats : 0, stepping: stepping !== null, recovering: recovery.recovering }; },
 
         /** Switches the mode; resolves once the scene shows what was asked for. Throws on failure. */
         async setActive(on) {
             if (disposed || on === active) return;
             if (on) {
-                loading ??= begin();
-                await (starting ? Promise.race([loading, starting.stopped]) : loading);
+                await firstLoad.wait();
                 if (disposed) return;
                 if (broken) throw new PhotoRealUnsupportedError('The photo-real view failed on this device.');
             } else if (stepping !== null) {
-                epoch++;                          // leaving the mode: a step loading behind it is not wanted now
-                aborter.abort();
+                loader.abort();                   // leaving the mode: a step loading behind it is not wanted now
             }
             active = on;
             apply();
         },
 
-        /** Cancels a first load still in flight (another mode was picked): its download stops, `setActive` throws. */
+        /**
+         * Another mode was picked while the first load runs: `setActive` throws PhotoRealCancelledError. A download
+         * still in flight is aborted (the next pick starts afresh); a decode, which cannot be, is kept for the next pick.
+         */
         cancel() {
-            if (!starting || active) return;
-            const token = starting;
-            starting = null;
-            loading = null;
-            epoch++;
-            aborter.abort();
-            token.cancel();
+            if (active) return;
+            const abort = loader.downloading;
+            if (firstLoad.cancel(abort) && abort) loader.abort();
         },
 
         /** Called every drawn frame while the mode shows: measures and steps the ladder. */
         frame(now) {
-            if (!active || !mesh || stepping !== null || recovery.recovering || broken) return;
+            const index = loader.index;
+            if (!active || !loader.mesh || stepping !== null || recovery.recovering || broken) return;
             const next = index + 1;
             const ultra = detailMode === 'ultra';
             if (next <= cap && (ultra || sizeOf(levels[next]) <= (remembered().okSplats ?? 0))) {
@@ -294,7 +213,7 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
         },
 
         /** True while the ladder wants back-to-back frames (a probe measuring the level on show). */
-        get wantsFrames() { return active && !!mesh && policy.probing && stepping === null && !recovery.recovering; },
+        get wantsFrames() { return active && !!loader.mesh && policy.probing && stepping === null && !recovery.recovering; },
         /** Whether the loop caps the frame rate (a phone, outside a probe). */
         get capped() { return active && light && !policy.probing; },
         /** A camera move started / settled: a phone renders at a lower resolution in between. */
@@ -311,14 +230,14 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
             detailMode = mode;
             storeDetail(mode);
             cap = levelCap(levels, light, detailMode);
-            if (!mesh || broken) return;
-            if (index > cap) stepTo(cap);
-            else policy.shown(index < cap && mode !== 'ultra');
+            if (!loader.mesh || broken) return;
+            if (loader.index > cap) stepTo(cap);
+            else policy.shown(loader.index < cap && mode !== 'ultra');
             request();
         },
 
         /** A lost WebGL context: true when photo-real handles it (it had started), else false. */
-        contextLost: event => !disposed && !broken && !!loading && recovery.lost(event),
+        contextLost: event => !disposed && !broken && firstLoad.started && recovery.lost(event),
         contextRestored: () => recovery.restored(),
 
         /** Gives up after a render failure: every later `setActive(true)` throws (a restore still runs). */
@@ -327,8 +246,8 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
             broken = true;
             active = false;
             apply();
-            drop();
-            loading = null;
+            loader.drop();
+            firstLoad.reset();
         },
 
         /**
@@ -336,20 +255,20 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
          * (wall3d-splat-safe.js), once. False when there is nothing (left) to retry: Schematic then.
          */
         retrySimple(failure) {
-            if (disposed || broken || !loading) return false;
-            const level = Math.max(0, index);
+            if (disposed || broken || !firstLoad.started) return false;
+            const level = Math.max(0, loader.index);
             // Not mid-render: three.js reports the failure while it draws the scene being released.
-            return retry.start(failure, () => { drop(); stepTo(level, true); });
+            return retry.start(failure, () => { loader.drop(); stepTo(level, true); });
         },
 
         dispose() {
             if (disposed) return;
             disposed = true;
             active = false;
-            starting?.cancel();
+            firstLoad.cancel(true);
             recovery.cancel();
             apply();
-            drop();
+            loader.drop();
             detail.remove();
         },
     };
