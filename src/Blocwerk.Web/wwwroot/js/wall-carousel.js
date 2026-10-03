@@ -228,8 +228,59 @@ window.wallCarousel = {
             }
         };
         state.onScroll = () => {
+            // Remember where the track was in PAGES, but only while the width is the one we know:
+            // a scroll event fired by a resize reports an offset in the old geometry against the
+            // new width. See onWidthChange().
+            if (el.clientWidth > 0 && el.clientWidth === state.width) {
+                state.frac = el.scrollLeft / el.clientWidth;
+            }
             state.arm();
         };
+        state.width = el.clientWidth;
+        state.frac = state.width > 0 ? el.scrollLeft / state.width : 0;
+        // initPage ran BEFORE observe(), so the remembered page must be read off where the track
+        // actually is — left at 0, the first rotation re-snapped to page 1.
+        state.page = this.currentPage(el);
+        // The container's WIDTH changed (rotation, split view, window resize, address-bar/viewport
+        // changes that reflow it). Whatever gesture was in flight is over — a rotation makes iOS drop
+        // the touch without a pointerup/pointercancel, and a pointer count left above zero used to
+        // veto every re-snap and every settle for the rest of the page's life, which is exactly the
+        // "stuck between pages until the app is restarted" report.
+        state.onWidthChange = () => {
+            const width = el.clientWidth;
+            if (width === 0 || width === state.width) {
+                return;
+            }
+            state.width = width;
+            if (state.pointers > 0) {
+                // Mid-swipe: keep the page the finger had reached rather than the one it started on.
+                const count = el.children ? el.children.length : 1;
+                state.page = Math.min(Math.max(0, count - 1), Math.max(0, Math.round(state.frac)));
+                state.pointers = 0;
+            }
+            this.resnap(el);
+            // WebKit reports the final geometry late; one more instant pass once it has settled.
+            clearTimeout(state.confirmTimer);
+            state.confirmTimer = setTimeout(() => {
+                // A finger that landed since owns the track; do not yank it.
+                if (state.pointers === 0) {
+                    this.resnap(el);
+                }
+            }, 300);
+        };
+        state.onWindowResize = () => {
+            cancelAnimationFrame(state.resizeFrame);
+            state.resizeFrame = requestAnimationFrame(state.onWidthChange);
+        };
+        window.addEventListener('resize', state.onWindowResize, { passive: true });
+        window.addEventListener('orientationchange', state.onWindowResize, { passive: true });
+        if (window.visualViewport && window.visualViewport.addEventListener) {
+            window.visualViewport.addEventListener('resize', state.onWindowResize, { passive: true });
+        }
+        if (window.ResizeObserver) {
+            state.resizeObserver = new ResizeObserver(state.onWidthChange);
+            state.resizeObserver.observe(el);
+        }
         // ---- trackpad paging ------------------------------------------------------------------
         //
         // The recogniser is shared with the panel stepper inside this carousel (viewport.js), so a
@@ -250,6 +301,7 @@ window.wallCarousel = {
         state.onWheel = (e) => state.pager.onWheel(e);
         state.onPointerDown = () => {
             state.pointers++;
+            clearTimeout(state.confirmTimer);
             state.swiped = true;
             // A finger beats a pending re-snap: from here the user decides the page again.
             state.resnapping = false;
@@ -342,10 +394,9 @@ window.wallCarousel = {
         if (count === 0) {
             return;
         }
-        // A finger on the track owns it; re-snapping under a live gesture would yank it away.
-        if (state.pointers > 0) {
-            return;
-        }
+        // Called for a width change, which ends any gesture (see onWidthChange): a finger count that
+        // is still above zero here is a touch the browser dropped, not one still on the glass.
+        state.pointers = 0;
         state.page = Math.min(count - 1, Math.max(0, state.page));
         state.resnapping = true;
         state.swiped = false;
@@ -404,6 +455,16 @@ window.wallCarousel = {
         }
         if (state.timer) {
             clearTimeout(state.timer);
+        }
+        clearTimeout(state.confirmTimer);
+        cancelAnimationFrame(state.resizeFrame);
+        window.removeEventListener('resize', state.onWindowResize);
+        window.removeEventListener('orientationchange', state.onWindowResize);
+        if (window.visualViewport && window.visualViewport.removeEventListener) {
+            window.visualViewport.removeEventListener('resize', state.onWindowResize);
+        }
+        if (state.resizeObserver) {
+            state.resizeObserver.disconnect();
         }
         el.removeEventListener('scroll', state.onScroll);
         el.removeEventListener('wheel', state.onWheel);

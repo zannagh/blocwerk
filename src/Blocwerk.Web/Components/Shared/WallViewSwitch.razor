@@ -3,7 +3,19 @@
    side is the inline schematic (Wall3DInline); the host swaps its photo viewer for it. *@
 @inject IWall3DViewService ViewService
 
-@if (available)
+@if (!checkedDone)
+{
+    @if (ReserveSpace)
+    {
+    @* Holds the row's height while the geometry check is pending, so the toggles do not pop in and
+       shove the wall view down. Hidden from sight and from assistive tech. *@
+    <div class="view-toggle wall-view-switch pending" aria-hidden="true">
+        <button type="button" class="toggle-btn" tabindex="-1">Photos</button>
+        <button type="button" class="toggle-btn" tabindex="-1">3D</button>
+    </div>
+    }
+}
+else if (available)
 {
     <div class="view-toggle wall-view-switch" role="group" aria-label="Wall view">
         <button type="button" class="toggle-btn @(!Show3D ? "active" : "")" aria-pressed="@(Show3D ? "false" : "true")"
@@ -19,12 +31,16 @@
 
 @code {
     private bool available;
+    private bool checkedDone;
     private Guid checkedWallId;
 
     [Parameter, EditorRequired] public Guid WallId { get; set; }
 
     /// <summary>True while the host shows the 3D view.</summary>
     [Parameter] public bool Show3D { get; set; }
+
+    /// <summary>Render an invisible placeholder of the toggle's size while the availability check is pending.</summary>
+    [Parameter] public bool ReserveSpace { get; set; }
 
     [Parameter] public EventCallback<bool> Show3DChanged { get; set; }
 
@@ -37,7 +53,9 @@
         }
 
         checkedWallId = WallId;
+        checkedDone = false;
         available = WallId != Guid.Empty && await ViewService.HasActiveGeometryAsync(WallId);
+        checkedDone = true;
     }
 
     private Task SetAsync(bool show) => show == Show3D ? Task.CompletedTask : Show3DChanged.InvokeAsync(show);

@@ -338,6 +338,50 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     box-sizing: border-box;
 }
 .wall-page.no-pad { padding: 0; }
+/* A slide scrolls ITSELF; reaching its top or bottom must not hand the gesture to the document (the
+   "whole page scrolls instead of the list" report), nor a sideways overshoot to the browser's
+   back-swipe. */
+.wall-page { min-height: 0; overscroll-behavior-y: contain; }
+.wall-carousel { align-items: stretch; overscroll-behavior-x: contain; }
+
+/* The carousel owns the screen: a FIXED app shell, not a document that merely happens to be about
+   one screen tall. The root used to be sized as `100dvh - topbar - tab bar` with those two heights
+   hard-coded, so any difference between the assumed and the real chrome (a title that wraps the
+   top bar, a banner, a safe-area inset) left the document taller than the window and the PAGE
+   scrolled under the list. Pinning the shell to the dynamic viewport and letting the root take
+   what is left makes the chrome absorb the difference instead.
+   Not while editing (the docked toolbar scrolls the slide itself) and not on a window too short
+   for the root's 360px floor, where scrolling the document is the only way to reach the rest. */
+@media (min-height: 520px) {
+    html:has(.wall-carousel-root:not(.editing)),
+    body:has(.wall-carousel-root:not(.editing)) {
+        height: 100dvh;
+        overflow: hidden;
+        overscroll-behavior: none;
+    }
+    .app-shell:has(.wall-carousel-root:not(.editing)) { height: 100dvh; min-height: 0; }
+    /* The root may sit directly in .content (wall) or inside a page wrapper (.activity-page, guides):
+       every link of that chain is a column flex box that hands its leftover height down, so the
+       root fills its parent whichever wrapper it has. */
+    .app-shell:has(.wall-carousel-root:not(.editing)) > .content {
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+    }
+    .app-shell:has(.wall-carousel-root:not(.editing)) > .content > :has(.wall-carousel-root) {
+        flex: 1 1 0;
+        min-height: 0;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+    }
+    .app-shell:has(.wall-carousel-root:not(.editing)) .wall-carousel-root {
+        height: auto;
+        flex: 1 1 0;
+        width: 100%;
+    }
+    .app-shell:has(.wall-carousel-root:not(.editing)) .activity-page { height: 100%; min-height: 0; }
+}
 
 .carousel-dots {
     display: flex;
@@ -1225,6 +1269,16 @@ a.wall3d-link {
 .rule-chip.foot { background: var(--foot-hold-soft); color: var(--foot-hold-text); border-color: transparent; }
 .rule-chip .rule-warn { color: var(--warning-text); }
 .view-toggle .toggle-sep { width: 1px; align-self: stretch; background: var(--border); margin: 0 4px; }
+
+/* Boulder view: the Then/Now and Photos/3D groups share ONE row (two stacked rows were ~100px of
+   a phone screen). Each group keeps its own pill and takes half the width; the buttons stay 40px
+   tall for a thumb. A group that is not offered (no older state, no 3D model) simply leaves the
+   other with the whole row, and an empty row takes no space at all. */
+.boulder-toggle-row { display: flex; gap: 8px; margin-bottom: 8px; }
+.boulder-toggle-row:not(:has(.view-toggle)) { display: none; }
+.boulder-toggle-row .view-toggle.pending { visibility: hidden; }
+.boulder-toggle-row .view-toggle { flex: 1 1 0; min-width: 0; margin-bottom: 0; padding: 2px; }
+.boulder-toggle-row .toggle-btn { min-height: 44px; padding: 0 8px; font-size: 0.8rem; white-space: nowrap; }
 
 .attempt-section { margin-bottom: 16px; }
 .attempt-section h2 { font-size: 1.1rem; font-weight: 600; color: var(--text-heading); margin-bottom: 10px; }
@@ -3835,4 +3889,85 @@ html.bw-fullscreen .panel-link-dialog .panel-step-viewport {
     padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
     border-top: 1px solid var(--border-light);
     background: var(--bg-surface);
+}
+
+/* ========== Boulder detail: the first screen is the wall view + Attempt/Send/Flash ==========
+ *
+ * Phone (<= 720px wide) and landscape phone (short window): the climber opens a boulder to look at
+ * it and log it, so those two things must be on screen together without scrolling. Everything else
+ * (rules, rating, setter, videos, activity, comments, history) follows below the fold.
+ *
+ * The column wrappers are display:contents on this tier, so .boulder-detail sees every block as a
+ * direct flex/grid item and the visual order is set with `order` alone; the DOM order (and the
+ * desktop tier) is untouched. The view slot gets an exact height budget instead of the old
+ * `--boulder-photo-chrome` guess, and --bottomnav-h already includes any bottom banner. */
+.boulder-below-meta { display: none; }
+.boulder-full-name { font-weight: 700; color: var(--text-heading); margin: 0 0 2px; overflow-wrap: anywhere; }
+@media (max-width: 720px), (orientation: landscape) and (max-height: 500px) {
+    .boulder-detail {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 8px 12px 16px;
+        /* padding 8 + header 44 + toggles 44 + attempt 52 + three 8px gaps = 172, plus slack for borders */
+        --boulder-first-screen-chrome: 196px;
+        --boulder-view-h: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - var(--boulder-first-screen-chrome));
+        --boulder-photo-chrome: var(--boulder-first-screen-chrome);
+        --photo-fit-floor: 120px;
+    }
+    /* Everything is "below the fold" unless it is given a place on the first screen. */
+    .boulder-detail :is(.boulder-main-row, .boulder-photo-col, .boulder-side-col, .boulder-wide-col) > * { order: 20; margin-top: 0; margin-bottom: 0; }
+    .boulder-detail .page-header { order: 1; margin: 0; }
+    .boulder-detail .boulder-toggle-row { order: 2; margin: 0; }
+    .boulder-detail .boulder-view-slot { order: 3; }
+    .boulder-detail .attempt-section { order: 4; margin: 0; }
+    .boulder-detail .boulder-below-meta { display: block; }
+
+    /* One-line header: arrow, title, grade, favourite, edit. */
+    .boulder-detail .page-header { display: flex; align-items: center; gap: 4px; min-height: 44px; }
+    .boulder-detail .back-link { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; margin-left: -8px; font-size: 1.3rem; }
+    .boulder-detail .back-link-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    .boulder-detail .title-row { margin: 0; flex: 1 1 auto; min-width: 0; flex-wrap: nowrap; gap: 8px; }
+    .boulder-detail .title-row h1 { font-size: 1.15rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 1 auto; }
+    .boulder-detail .title-row > :is(.draft-badge, .historic-badge, .archived-badge) { display: none; }
+    .boulder-detail .title-actions { flex: 0 0 auto; }
+    .boulder-detail .title-actions :is(.btn-view3d, .btn-revise) { display: none; }
+    .boulder-detail .page-header .meta { display: none; }
+
+    /* The view: exactly the leftover height, image contained, zoom engine untouched. */
+    .boulder-detail .boulder-view-slot { min-height: 0; }
+    .boulder-detail .boulder-view-slot .wall3d-inline-stage { height: var(--boulder-view-h); min-height: 0; }
+    /* 3D mode: the legend/footer is not part of the first screen. The slot and the schematic's box
+       dissolve so the stage, the action row and the footer become siblings and the footer can be
+       ordered under the action row, like the photo mode's chips. */
+    .boulder-detail .boulder-view-slot:has(.wall3d-inline),
+    .boulder-detail .boulder-view-slot .wall3d-inline { display: contents; }
+    .boulder-detail .boulder-view-slot:has(.wall3d-inline) .wall3d-inline-stage,
+    .boulder-detail .boulder-view-slot:has(.wall3d-inline) .wall3d-inline-message { order: 3; border: 1px solid var(--border); border-radius: var(--r-md, 10px); overflow: hidden; }
+    .boulder-detail .boulder-view-slot:has(.wall3d-inline) .wall3d-inline-foot { order: 21; }
+    .boulder-detail .boulder-view-slot .photo-viewport.photo-section { --fit-h: max(var(--photo-fit-floor), var(--boulder-view-h)); }
+
+    /* Ascent buttons: 52px, icon beside the label. */
+    .boulder-detail .attempt-btn { flex-direction: row; justify-content: center; min-height: 52px; padding: 8px; }
+    .boulder-detail .attempt-btn svg { width: 20px; height: 20px; }
+}
+/* Landscape phone: the view takes the left, header + toggles + ascent buttons stack at the right. */
+@media (orientation: landscape) and (max-height: 500px) {
+    .boulder-detail {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+        grid-template-rows: auto auto auto 1fr;
+        align-items: start;
+        column-gap: 12px;
+        max-width: none;
+        --boulder-first-screen-chrome: 16px;
+    }
+    .boulder-detail .boulder-view-slot,
+    .boulder-detail .boulder-view-slot:has(.wall3d-inline) .wall3d-inline-stage,
+    .boulder-detail .boulder-view-slot:has(.wall3d-inline) .wall3d-inline-message { grid-column: 1; grid-row: 1 / span 4; }
+    .boulder-detail .boulder-view-slot:has(.wall3d-inline) .wall3d-inline-foot { grid-column: 1 / -1; grid-row: auto; }
+    .boulder-detail .page-header { grid-column: 2; grid-row: 1; }
+    .boulder-detail .boulder-toggle-row { grid-column: 2; grid-row: 2; flex-direction: column; }
+    .boulder-detail .attempt-section { grid-column: 2; grid-row: 3; }
+    .boulder-detail :is(.boulder-main-row, .boulder-photo-col, .boulder-side-col, .boulder-wide-col) > :not(.page-header, .boulder-toggle-row, .boulder-view-slot, .attempt-section) { grid-column: 1 / -1; grid-row: auto; }
 }
