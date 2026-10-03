@@ -17,4 +17,18 @@ namespace Blocwerk.Core.Services;
 /// whose panels all sit at the same generation has none outdated. Surfaces the "needs update"
 /// state once a subset of panels has been promoted ahead of the rest.
 /// </param>
-public record WallPanelInfo(Guid Id, int Col, int Row, bool IsLive, bool HasStaged, int Generation, bool IsOutdated);
+/// <param name="PhotoRevision">
+/// The live photo's in-place revision (<see cref="Entities.WallPanel.PhotoRevision"/>): moves on a crop or its undo, so a
+/// photo URL carrying it is a new URL for the browser's image cache.
+/// </param>
+public record WallPanelInfo(Guid Id, int Col, int Row, bool IsLive, bool HasStaged, int Generation, bool IsOutdated, int PhotoRevision = 0)
+{
+    /// <summary>
+    /// <paramref name="photoUrl"/> with <c>rev=N</c> appended, so the live photo URL changes after a crop or its undo;
+    /// unchanged for a photo never rewritten in place, so its URL (and every cached rendition of it) stays as it was.
+    /// </summary>
+    /// <param name="photoUrl">The panel's live photo URL, with or without a query.</param>
+    /// <returns>The URL to render.</returns>
+    public string WithPhotoRevision(string photoUrl) =>
+        PhotoRevision > 0 ? photoUrl + (photoUrl.Contains('?') ? '&' : '?') + "rev=" + PhotoRevision : photoUrl;
+}
