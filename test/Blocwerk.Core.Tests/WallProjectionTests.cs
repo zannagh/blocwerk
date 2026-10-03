@@ -1,59 +1,65 @@
+using System.Reflection;
 using Blocwerk.Core.Entities;
-using Blocwerk.Core.Helpers;
+using Blocwerk.Core.Services;
+using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Tests;
 
-/// <summary>
-/// Locks down the segment hit-testing every wall renderer shares: overlapping polygons
-/// resolve by sort order, and "inside a segment" is the union of the polygons.
-/// </summary>
+/// <summary>Guards <see cref="WallQueryExtensions.WithoutPhotos"/> against a Wall column being added and forgotten.</summary>
 public class WallProjectionTests
 {
-    [Fact]
-    public void FindSegment_PicksBySortOrder_ForOverlappingPolygons()
-    {
-        var first = Segment("First", 10, 0.0, 1.0, sortOrder: 0);
-        var second = Segment("Second", 40, 0.0, 1.0, sortOrder: 1);
-
-        var found = WallProjection.FindSegment(0.5, 0.5, [second, first]);
-
-        Assert.Equal(first.Id, found?.Id);
-    }
+    private static readonly HashSet<string> Blobs = [nameof(Wall.Photo), nameof(Wall.StagedPhoto)];
 
     [Fact]
-    public void IsInsideAnySegment_IsTheUnionOfThePolygons()
+    public async Task WithoutPhotos_CopiesEveryScalarExceptTheBlobs()
     {
-        var left = Segment("Left", 0, 0.0, 1.0, x0: 0.0, x1: 0.4);
-        var right = Segment("Right", 0, 0.0, 1.0, x0: 0.6, x1: 1.0);
-        var segments = new[] { left, right };
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync();
+        await using var db = h.CreateContext();
+        var full = await db.Walls.AsNoTracking().FirstAsync(w => w.Id == h.WallId);
 
-        Assert.True(WallProjection.IsInsideAnySegment(0.2, 0.5, segments));
-        Assert.True(WallProjection.IsInsideAnySegment(0.8, 0.5, segments));
-        Assert.False(WallProjection.IsInsideAnySegment(0.5, 0.5, segments));
-        Assert.False(WallProjection.IsInsideAnySegment(0.2, 0.5, []));
-    }
+        // Give every scalar a non-default value so a property missing from the projection shows up as a diff.
+        full.Description = "d";
+        full.StagedPhotoContentType = "image/png";
+        full.StagedAt = DateTimeOffset.UtcNow;
+        full.StagedByUserId = Guid.NewGuid();
+        full.ShareToken = "tok";
+        full.Angle = 7;
+        full.BorderPoints = [new ShapePoint { Dx = 1, Dy = 2 }];
+        full.LastResetAt = DateTimeOffset.UtcNow;
+        full.CurrentGeneration = 3;
+        full.UsesMultipleImages = true;
+        full.UnderMaintenance = true;
+        full.MaintenanceByUserId = Guid.NewGuid();
+        full.AllowAnonymousKioskSetting = true;
+        full.AllowKioskKeyboardShortcuts = true;
+        full.LinksFinalizedGeneration = 3;
+        full.GlyphsEnabled = true;
+        full.MarkerSizeMm = 42.5;
+        full.VolumesHaveFlatSides = true;
+        full.StagedPhoto = [9];
+        db.Walls.Attach(full);
+        db.Entry(full).State = EntityState.Modified;
+        await db.SaveChangesAsync();
 
-    private static WallSegment Segment(
-        string name,
-        int angle,
-        double y0,
-        double y1,
-        double x0 = 0.0,
-        double x1 = 1.0,
-        int sortOrder = 0,
-        WallSegmentKind kind = WallSegmentKind.Wall) =>
-        new()
+        await using var db2 = h.CreateContext();
+        var slim = await db2.Walls.Where(w => w.Id == h.WallId).WithoutPhotos().SingleAsync();
+        var reference = await db2.Walls.AsNoTracking().SingleAsync(w => w.Id == h.WallId);
+
+        Assert.Null(slim.Photo);
+        Assert.Null(slim.StagedPhoto);
+        var scalars = typeof(Wall).GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Where(p => p.CanWrite && !Blobs.Contains(p.Name) && IsScalar(p.PropertyType));
+        foreach (var p in scalars)
         {
-            Name = name,
-            Angle = angle,
-            SortOrder = sortOrder,
-            Kind = kind,
-            Points =
-            [
-                new ShapePoint { Dx = x0, Dy = y0 },
-                new ShapePoint { Dx = x1, Dy = y0 },
-                new ShapePoint { Dx = x1, Dy = y1 },
-                new ShapePoint { Dx = x0, Dy = y1 },
-            ],
-        };
+            Assert.True(
+                Equals(p.GetValue(reference), p.GetValue(slim)) || p.Name == nameof(Wall.BorderPoints),
+                $"Wall.{p.Name} is not copied by WithoutPhotos");
+        }
+
+        Assert.Single(slim.BorderPoints!);
+    }
+
+    private static bool IsScalar(Type t) =>
+        !(t.IsGenericType && t.GetGenericTypeDefinition() == typeof(ICollection<>)) && t != typeof(User);
 }

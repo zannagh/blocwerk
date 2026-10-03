@@ -84,7 +84,7 @@ public class SessionService : ISessionService
                 await _pushNotificationService.NotifySessionStartedAsync(wallId, user.Id);
             }
 
-            session.Wall = await db.Walls.FirstAsync(w => w.Id == wallId);
+            session.Wall = await db.Walls.Where(w => w.Id == wallId).WithoutPhotos().FirstAsync();
             return session;
         }
         catch (Exception ex)
@@ -103,8 +103,9 @@ public class SessionService : ISessionService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
+            // Wall rows without their photo blobs, attached first so the session's Wall is fixed up by EF.
+            await db.AttachVisibleWallsWithoutPhotosAsync();
             var session = await db.ClimbingSessions
-                .Include(s => s.Wall)
                 .Where(s => s.UserId == user.Id && s.EndedAt == null)
                 .OrderByDescending(s => s.StartedAt)
                 .FirstOrDefaultAsync();

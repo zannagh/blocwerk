@@ -123,6 +123,20 @@ public class WallService : IWallService
         }
     }
 
+    /// <summary>
+    /// Loads the wall's non-archived boulders with their creator and holds into the context, so EF fix-up
+    /// fills <c>wall.Boulders</c> (and each boulder's <c>Wall</c>, <c>CreatedBy</c>, <c>BoulderHolds</c>).
+    /// </summary>
+    private static async Task LoadActiveBouldersAsync(BlocwerkDbContext db, Guid wallId)
+    {
+        await db.Boulders
+            .Where(b => b.WallId == wallId && !b.IsArchived)
+            .Include(b => b.CreatedBy)
+            .Include(b => b.BoulderHolds)
+            .AsSplitQuery()
+            .ToListAsync();
+    }
+
     public async Task<Wall?> GetWallAsync(Guid wallId)
     {
         using var op = BlocwerkMetrics.TimeOperation("Wall.Get", wallId);
@@ -131,12 +145,20 @@ public class WallService : IWallService
             var viewerId = await ResolveViewerIdAsync(wallId);
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = viewerId;
-            // Project just the column (async, no blob load, no tracking) rather than materialising
-            // the whole Wall entity just to read the generation.
-            var currentGeneration = await db.Walls
+            // The wall row WITHOUT its photo blobs (~10 MB each): materialising the whole entity and nulling
+            // the bytes afterwards still pulled them out of Postgres on every page load. The slim row is
+            // attached so the explicit loads below fix up Members/Holds/Boulders exactly like Include did.
+            var wall = await db.Walls
                 .Where(wl => wl.Id == wallId)
-                .Select(wl => wl.CurrentGeneration)
+                .WithoutPhotos()
                 .FirstOrDefaultAsync();
+            if (wall is null)
+            {
+                return null;
+            }
+
+            db.Attach(wall);
+            var currentGeneration = wall.CurrentGeneration;
 
             // Live holds are a PER-PANEL fact, not a per-wall one: after a subset (per-panel) promote the
             // wall generation bumps but the panels left untouched — and their holds — stay at the old
@@ -147,23 +169,14 @@ public class WallService : IWallService
             // + 1) the review overlay needs. Superseded old panel rows are excluded by the live-panel set.
             var livePanelIds = await LoadLivePanelIdsAsync(db, wallId);
 
-            var wall = await db.Walls
-                .AsSplitQuery()
-                .Include(w => w.Members)
-                .Include(w => w.Holds
-                    .Where(h
-                        => (h.WallPanelId != null && livePanelIds.Contains(h.WallPanelId.Value))
-                            || (h.WallPanelId == null && h.Generation == currentGeneration)
-                            || h.Generation == currentGeneration + 1))
-                .Include(w => w.Boulders.Where(b => !b.IsArchived)).ThenInclude(b => b.CreatedBy)
-                .Include(w => w.Boulders).ThenInclude(b => b.BoulderHolds)
-                .FirstOrDefaultAsync(w => w.Id == wallId);
-
-            if (wall != null)
-            {
-                wall.Photo = null;
-                wall.StagedPhoto = null;
-            }
+            await db.WallMembers.Where(m => m.WallId == wallId).ToListAsync();
+            await db.Holds
+                .Where(h => h.WallId == wallId
+                    && ((h.WallPanelId != null && livePanelIds.Contains(h.WallPanelId.Value))
+                        || (h.WallPanelId == null && h.Generation == currentGeneration)
+                        || h.Generation == currentGeneration + 1))
+                .ToListAsync();
+            await LoadActiveBouldersAsync(db, wallId);
 
             return wall;
         }
@@ -182,16 +195,19 @@ public class WallService : IWallService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = Guid.Empty;
 
+            // Slim row (no photo blobs), attached so the explicit loads fix up the graph like Include did.
             var wall = await db.Walls
-                .AsSplitQuery()
-                .Include(w => w.Members)
-                .Include(w => w.Holds)
-                .Include(w => w.Boulders.Where(b => !b.IsArchived)).ThenInclude(b => b.CreatedBy)
-                .Include(w => w.Boulders).ThenInclude(b => b.BoulderHolds)
-                .FirstOrDefaultAsync(w => w.ShareToken == shareToken);
+                .Where(w => w.ShareToken == shareToken)
+                .WithoutPhotos()
+                .FirstOrDefaultAsync();
 
             if (wall != null)
             {
+                db.Attach(wall);
+                await db.WallMembers.Where(m => m.WallId == wall.Id).ToListAsync();
+                await db.Holds.Where(h => h.WallId == wall.Id).ToListAsync();
+                await LoadActiveBouldersAsync(db, wall.Id);
+
                 // Live holds only for a share viewer — no in-flight staged rows. As in GetWallAsync the
                 // live set spans generations after a subset promote, so filter by the latest live panel
                 // per position (plus legacy null-panel holds at the current generation) rather than a
@@ -201,7 +217,6 @@ public class WallService : IWallService
                     .Where(h => (h.WallPanelId is { } pid && livePanelIds.Contains(pid))
                         || (h.WallPanelId is null && h.Generation == wall.CurrentGeneration))
                     .ToList();
-                wall.Photo = null;
             }
 
             return wall;
@@ -239,14 +254,21 @@ public class WallService : IWallService
 
             // Single collection include (Members) so AsNoTracking is safe here — no reliance on
             // identity resolution the way GetWallAsync has (it includes Boulders twice).
+            // Slim rows (no photo blobs) with the members loaded separately and attached by hand: a
+            // projection cannot Include, and nothing here is tracked.
             var walls = await db.Walls
                 .AsNoTracking()
-                .Include(w => w.Members)
+                .WithoutPhotos()
                 .ToListAsync();
 
+            var wallIds = walls.Select(w => w.Id).ToList();
+            var members = await db.WallMembers
+                .AsNoTracking()
+                .Where(m => wallIds.Contains(m.WallId))
+                .ToListAsync();
             foreach (var w in walls)
             {
-                w.Photo = null;
+                w.Members = members.Where(m => m.WallId == w.Id).ToList();
             }
 
             return walls;
