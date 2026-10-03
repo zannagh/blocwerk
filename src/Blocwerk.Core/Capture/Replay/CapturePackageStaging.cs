@@ -41,7 +41,7 @@ internal sealed class CapturePackageStaging(ICaptureFileStore files)
     /// <summary>The open import's manifest, or null when there is none.</summary>
     public async Task<CapturePackageManifest?> LoadManifestAsync(Guid importId, CancellationToken ct)
     {
-        var path = Path.Combine(Folder(importId), ManifestFile);
+        var path = ManifestPath(importId);
         if (!File.Exists(path))
         {
             return null;
@@ -60,6 +60,24 @@ internal sealed class CapturePackageStaging(ICaptureFileStore files)
             Directory.Delete(folder, recursive: true);
         }
     }
+
+    /// <summary>The ids of every open import (a folder with a manifest), for the progress API.</summary>
+    public IReadOnlyList<Guid> OpenImportIds()
+    {
+        var root = Root();
+        if (!Directory.Exists(root))
+        {
+            return [];
+        }
+
+        return Directory.EnumerateDirectories(root)
+            .Select(d => Guid.TryParseExact(Path.GetFileName(d), "N", out var id) && File.Exists(ManifestPath(id)) ? id : Guid.Empty)
+            .Where(id => id != Guid.Empty)
+            .ToList();
+    }
+
+    /// <summary>The path of an import's manifest.</summary>
+    public string ManifestPath(Guid importId) => Path.Combine(Folder(importId), ManifestFile);
 
     /// <summary>The capture store's physical path of a stored name.</summary>
     public string StorePath(string name) =>

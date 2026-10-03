@@ -65,6 +65,11 @@ public static class CaptureServices
         // Replaying a finished capture on another instance without training (app admins; see CapturePackageService).
         services.AddScoped<Replay.ICapturePackageService, Replay.CapturePackageService>();
 
+        // The progress read model of every long-running job and its API/UI service (see JobProgressReader).
+        services.AddSingleton<Replay.CaptureImportProgress>();
+        services.AddSingleton<Jobs.IJobProgressReader, Jobs.JobProgressReader>();
+        services.AddScoped<Jobs.IJobProgressService, Jobs.JobProgressService>();
+
         // Retention: stale drafts, expired photos and files no row references (see WallCaptureSweeper).
         services.AddSingleton<WallCaptureSweeper>();
         services.AddHostedService<WallCaptureSweepWorker>();
