@@ -261,7 +261,12 @@ window.wallCarousel = {
             this.resnap(el);
             // WebKit reports the final geometry late; one more instant pass once it has settled.
             clearTimeout(state.confirmTimer);
-            state.confirmTimer = setTimeout(() => this.resnap(el), 300);
+            state.confirmTimer = setTimeout(() => {
+                // A finger that landed since owns the track; do not yank it.
+                if (state.pointers === 0) {
+                    this.resnap(el);
+                }
+            }, 300);
         };
         state.onWindowResize = () => {
             cancelAnimationFrame(state.resizeFrame);
@@ -296,6 +301,7 @@ window.wallCarousel = {
         state.onWheel = (e) => state.pager.onWheel(e);
         state.onPointerDown = () => {
             state.pointers++;
+            clearTimeout(state.confirmTimer);
             state.swiped = true;
             // A finger beats a pending re-snap: from here the user decides the page again.
             state.resnapping = false;

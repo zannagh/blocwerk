@@ -360,8 +360,27 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
         overscroll-behavior: none;
     }
     .app-shell:has(.wall-carousel-root:not(.editing)) { height: 100dvh; min-height: 0; }
-    .app-shell:has(.wall-carousel-root:not(.editing)) > .content { min-height: 0; }
-    .app-shell:has(.wall-carousel-root:not(.editing)) .wall-carousel-root { height: 100%; }
+    /* The root may sit directly in .content (wall) or inside a page wrapper (.activity-page, guides):
+       every link of that chain is a column flex box that hands its leftover height down, so the
+       root fills its parent whichever wrapper it has. */
+    .app-shell:has(.wall-carousel-root:not(.editing)) > .content {
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+    }
+    .app-shell:has(.wall-carousel-root:not(.editing)) > .content > :has(.wall-carousel-root) {
+        flex: 1 1 0;
+        min-height: 0;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+    }
+    .app-shell:has(.wall-carousel-root:not(.editing)) .wall-carousel-root {
+        height: auto;
+        flex: 1 1 0;
+        width: 100%;
+    }
+    .app-shell:has(.wall-carousel-root:not(.editing)) .activity-page { height: 100%; min-height: 0; }
 }
 
 .carousel-dots {
@@ -1257,8 +1276,9 @@ a.wall3d-link {
    other with the whole row, and an empty row takes no space at all. */
 .boulder-toggle-row { display: flex; gap: 8px; margin-bottom: 8px; }
 .boulder-toggle-row:not(:has(.view-toggle)) { display: none; }
+.boulder-toggle-row .view-toggle.pending { visibility: hidden; }
 .boulder-toggle-row .view-toggle { flex: 1 1 0; min-width: 0; margin-bottom: 0; padding: 2px; }
-.boulder-toggle-row .toggle-btn { min-height: 40px; padding: 0 8px; font-size: 0.8rem; white-space: nowrap; }
+.boulder-toggle-row .toggle-btn { min-height: 44px; padding: 0 8px; font-size: 0.8rem; white-space: nowrap; }
 
 .attempt-section { margin-bottom: 16px; }
 .attempt-section h2 { font-size: 1.1rem; font-weight: 600; color: var(--text-heading); margin-bottom: 10px; }
