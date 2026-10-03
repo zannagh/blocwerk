@@ -19,6 +19,12 @@ internal sealed class CoverageOccluder
     /// <summary>A crossing this close to the target is the target's own surroundings, mm.</summary>
     public const double NearTargetMm = 80;
 
+    /// <summary>A point at least this far behind the facet's shape is inside the wall, mm.</summary>
+    public const double InsideWallDepthMm = 30;
+
+    /// <summary>A board facing more than ~120° away from the point's own surface is the far side of a structure, not the wall around it.</summary>
+    private const double MinFacingCos = -0.5;
+
     private readonly (double Alpha, double Beta, double Gamma)[] halfPlanes;
     private readonly double[] boxMin;
     private readonly double[] boxMax;
@@ -96,6 +102,25 @@ internal sealed class CoverageOccluder
         }
 
         return Contains(from.A + (t * (to.A - from.A)), from.B + (t * (to.B - from.B)), EdgeMarginMm);
+    }
+
+    /// <summary>
+    /// Whether the point lies behind the facet's shape (at least <see cref="InsideWallDepthMm"/> behind its plane,
+    /// within its shape shrunk by <see cref="EdgeMarginMm"/>) and the facet does not face away from the point's surface.
+    /// </summary>
+    /// <param name="point">The point, world mm.</param>
+    /// <param name="normal">The point's outward unit normal, world.</param>
+    /// <returns>True when the point is inside the wall behind this facet.</returns>
+    public bool Behind(double[] point, double[] normal)
+    {
+        var n = Facet.Frame.Normal;
+        if ((n[0] * normal[0]) + (n[1] * normal[1]) + (n[2] * normal[2]) < MinFacingCos)
+        {
+            return false;
+        }
+
+        var local = FacetCloud.Local(Facet.Frame, point[0], point[1], point[2]);
+        return local.H <= -InsideWallDepthMm && Contains(local.A, local.B, EdgeMarginMm);
     }
 
     private static double Sq(double x) => x * x;

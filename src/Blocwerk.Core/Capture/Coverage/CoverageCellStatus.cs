@@ -22,7 +22,10 @@ public enum CoverageCellStatus
     /// <summary>No camera sees it.</summary>
     Never = 4,
 
-    /// <summary>Not rated: the facet under a volume, or blocked by other facets from every camera that frames it (inside the wall).</summary>
+    /// <summary>
+    /// Not rated: the facet under a volume, beyond its marker-confirmed seam (the cut-away half of a triangle), or behind
+    /// another facet's board with no camera seeing it (inside the wall).
+    /// </summary>
     Hidden = 5,
 }
 
