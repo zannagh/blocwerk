@@ -13,8 +13,8 @@ namespace Blocwerk.Core.Services;
 
 /// <summary>
 /// Holds a user just moved, reshaped or added, placed again from their panel photo's registration (the 3D placement
-/// follows the panel; the panel is never changed). A photo's registration is cached per photo and model
-/// (<see cref="PanelRegistrationCache"/>), so an edit costs one registration per photo and model at most, then
+/// follows the panel; the panel is never changed). A photo's registration is cached per photo, model and texture set
+/// (<see cref="PanelRegistrationCache"/>), so an edit costs one registration per photo and texture set at most, then
 /// only the mapping of the hold's centre. Writing: <see cref="WriteEditedAsync"/>.
 /// </summary>
 public sealed partial class HoldTexturePlacementService
@@ -29,21 +29,21 @@ public sealed partial class HoldTexturePlacementService
 
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);
         if (await ActiveModelTextures.FindAsync(db, wallId, ct) is not { } found
-            || !await db.WallGeometryTextures.AnyAsync(t => t.GeometryModelId == found.Id, ct))
+            || await TextureSetStamp.OfModelAsync(db, found.Id, ct) is not { } textures)
         {
             return [];
         }
 
         var watch = Stopwatch.StartNew();
         var live = await (await LiveHoldsQueryAsync(db, wallId, ct)).AsNoTracking().ToListAsync(ct);
-        var written = await WrittenOnModelAsync(db, wallId, found.Id, ct);
+        var written = await WrittenOnTexturesAsync(db, wallId, found.Id, textures, ct);
         var edited = live.Where(h => holdIds.Contains(h.Id) && HoldTexturePlacer.IsEligibleAfterEdit(h) && !IsSettled(h, written)).ToList();
         if (edited.Count == 0)
         {
             return [];
         }
 
-        var source = new EditedPlacementSource(found.Id, () => ActiveModelTextures.LoadAsync(db, files!, found.Id, found.Json, logger, ct));
+        var source = new EditedPlacementSource(found.Id, textures.Key, () => ActiveModelTextures.LoadAsync(db, files!, found.Id, found.Json, logger, ct));
         var planned = new List<PlannedPlacement>();
         foreach (var panel in edited.GroupBy(h => h.WallPanelId!.Value))
         {
@@ -66,23 +66,30 @@ public sealed partial class HoldTexturePlacementService
     }
 
     /// <summary>A run's photo registrations, kept for the edits that follow it (under the photo stamp read with the bytes).</summary>
-    private static void RememberRegistrations(Guid modelId, List<PanelPlan> plans)
+    private static void RememberRegistrations(Guid modelId, string? textureSetKey, List<PanelPlan> plans)
     {
         foreach (var plan in plans.Where(p => p.Registrations is not null && p.Photo is not null))
         {
-            PanelRegistrationCache.Put(new PanelRegistrationKey(plan.Summary.PanelId, plan.Photo!.Value, modelId), plan.Registrations!);
+            var key = new PanelRegistrationKey(plan.Summary.PanelId, plan.Photo!.Value, modelId, textureSetKey);
+            PanelRegistrationCache.Put(key, plan.Registrations!);
         }
     }
 
-    /// <summary>The entries of every unreverted run on <paramref name="modelId"/>, by hold.</summary>
-    private static async Task<ILookup<Guid, HoldPlacementEntry>> WrittenOnModelAsync(
-        BlocwerkDbContext db, Guid wallId, Guid modelId, CancellationToken ct)
+    /// <summary>
+    /// The entries of every unreverted run on <paramref name="modelId"/>'s current textures (<see cref="TextureSetStamp.Covers"/>),
+    /// by hold: a placement registered on textures rendered again since is neither settled nor an anchor.
+    /// </summary>
+    private static async Task<ILookup<Guid, HoldPlacementEntry>> WrittenOnTexturesAsync(
+        BlocwerkDbContext db, Guid wallId, Guid modelId, TextureSetStamp textures, CancellationToken ct)
     {
         var runs = await db.HoldPlacementRuns.AsNoTracking()
             .Where(r => r.WallId == wallId && r.GeometryModelId == modelId && r.RevertedAt == null)
-            .Select(r => r.HoldsJson)
+            .Select(r => new { r.TextureSetKey, r.CreatedAt, r.HoldsJson })
             .ToListAsync(ct);
-        return runs.SelectMany(HoldPlacementEntry.FromJson).ToLookup(e => e.HoldId);
+        return runs
+            .Where(r => textures.Covers(r.TextureSetKey, r.CreatedAt))
+            .SelectMany(r => HoldPlacementEntry.FromJson(r.HoldsJson))
+            .ToLookup(e => e.HoldId);
     }
 
     /// <summary>A run on the model wrote the hold's current placement, and (when it recorded it) for its current panel geometry.</summary>
@@ -109,7 +116,8 @@ public sealed partial class HoldTexturePlacementService
             return null;
         }
 
-        if (PanelRegistrationCache.Get(new PanelRegistrationKey(panelId, new PanelPhotoStamp(stamp.Generation, stamp.Length), source.ModelId)) is { } cached)
+        var cacheKey = new PanelRegistrationKey(panelId, new PanelPhotoStamp(stamp.Generation, stamp.Length), source.ModelId, source.TextureSetKey);
+        if (PanelRegistrationCache.Get(cacheKey) is { } cached)
         {
             return cached;
         }
@@ -130,7 +138,7 @@ public sealed partial class HoldTexturePlacementService
         {
             var registrations = await Task.Run(() => Register(panel.Photo, textures, $"c{panel.Col} r{panel.Row}", anchors, null, ct), ct);
             source.Registered++;
-            PanelRegistrationCache.Put(new PanelRegistrationKey(panelId, new PanelPhotoStamp(panel.Generation, panel.Photo.Length), source.ModelId), registrations);
+            PanelRegistrationCache.Put(cacheKey with { Photo = new PanelPhotoStamp(panel.Generation, panel.Photo.Length) }, registrations);
             return registrations;
         }
         catch (ArgumentException ex)

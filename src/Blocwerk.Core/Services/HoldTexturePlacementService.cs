@@ -122,7 +122,7 @@ public sealed partial class HoldTexturePlacementService : IHoldTexturePlacementS
     /// The automatic run's holds: when the model is the wall's active one and has textures, the live panel holds this
     /// action may place (<see cref="HoldTexturePlacer.IsEligible"/>: never one placed by markers or an edit) that are
     /// not on the model yet — no facet, a facet the model does not have, or placed by texture registration on an
-    /// earlier model. Null when the run does not apply.
+    /// earlier model or on this model's earlier textures (rendered again since). Null when the run does not apply.
     /// </summary>
     private async Task<HashSet<Guid>?> UnplacedHoldIdsAsync(BlocwerkDbContext db, Guid wallId, Guid modelId, CancellationToken ct)
     {
@@ -136,9 +136,9 @@ public sealed partial class HoldTexturePlacementService : IHoldTexturePlacementS
         var facets = Facets(active.Json).Extents.Keys.ToHashSet(StringComparer.Ordinal);
         var live = await (await LiveHoldsQueryAsync(db, wallId, ct)).AsNoTracking().ToListAsync(ct);
         var eligible = live.Where(HoldTexturePlacer.IsEligible).ToList();
-        var onThisModel = await PlacedOnModelAsync(db, wallId, modelId, ct);
+        var onThisModel = await PlacedOnTexturesAsync(db, wallId, modelId, ct);
 
-        // A hold a run on this model left unmeasured on purpose stays so: this run would see the same evidence.
+        // A hold a run on these textures left unmeasured on purpose stays so: this run would see the same evidence.
         var unplaced = eligible
             .Where(h => h.FacetId is null || h.PlaneAMm is null || h.PlaneBMm is null || !facets.Contains(h.FacetId))
             .Where(h => !HoldTexturePlacer.IsRejected(h) || !onThisModel.Contains(h.Id))
@@ -146,8 +146,9 @@ public sealed partial class HoldTexturePlacementService : IHoldTexturePlacementS
             .ToHashSet();
 
         // A new model keeps the facet ids but its planes moved (a re-solve), so what an earlier run placed by
-        // texture registration on an OLDER model is placed again on this one's textures. Marker-placed and
-        // edited holds are not eligible at all; a hold a run on this model already placed is not redone.
+        // texture registration on an OLDER model is placed again on this one's textures; so is what a run placed on
+        // this model's textures before they were rendered again. Marker-placed and edited holds are not eligible at
+        // all; a hold a run on these textures already placed is not redone.
         var replaced = eligible
             .Where(h => HoldTexturePlacer.IsTexturePlaced(h) && !unplaced.Contains(h.Id) && !onThisModel.Contains(h.Id))
             .Select(h => h.Id)
@@ -155,19 +156,27 @@ public sealed partial class HoldTexturePlacementService : IHoldTexturePlacementS
         unplaced.UnionWith(replaced);
         logger.LogInformation(
             "Wall {WallId}: model {ModelId} is live; {Live} live holds, {Eligible} placeable here, {Unplaced} to place "
-            + "({Replaced} placed on an earlier model, placed again)",
+            + "({Replaced} placed on an earlier model or earlier textures, placed again)",
             wallId, modelId, live.Count, eligible.Count, unplaced.Count, replaced.Count);
         return unplaced;
     }
 
-    /// <summary>The holds a run on <paramref name="modelId"/> placed and that was not reverted.</summary>
-    private static async Task<HashSet<Guid>> PlacedOnModelAsync(BlocwerkDbContext db, Guid wallId, Guid modelId, CancellationToken ct)
+    /// <summary>
+    /// The holds an unreverted run on <paramref name="modelId"/> placed against its current textures
+    /// (<see cref="TextureSetStamp.Covers"/>): a run before "Render wall textures again" no longer counts.
+    /// </summary>
+    internal static async Task<HashSet<Guid>> PlacedOnTexturesAsync(BlocwerkDbContext db, Guid wallId, Guid modelId, CancellationToken ct)
     {
+        var textures = await TextureSetStamp.OfModelAsync(db, modelId, ct);
         var runs = await db.HoldPlacementRuns.AsNoTracking()
             .Where(r => r.WallId == wallId && r.GeometryModelId == modelId && r.RevertedAt == null)
-            .Select(r => r.HoldsJson)
+            .Select(r => new { r.TextureSetKey, r.CreatedAt, r.HoldsJson })
             .ToListAsync(ct);
-        return runs.SelectMany(HoldPlacementEntry.FromJson).Select(e => e.HoldId).ToHashSet();
+        return runs
+            .Where(r => textures?.Covers(r.TextureSetKey, r.CreatedAt) != false)
+            .SelectMany(r => HoldPlacementEntry.FromJson(r.HoldsJson))
+            .Select(e => e.HoldId)
+            .ToHashSet();
     }
 
     /// <summary>Runs <paramref name="action"/> unless the wall already has a run in progress (then null).</summary>

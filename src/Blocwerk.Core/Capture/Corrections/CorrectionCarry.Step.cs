@@ -59,6 +59,7 @@ public static partial class CorrectionCarry
         {
             WallId = wallId,
             GeometryModelId = step.To,
+            TextureSetKey = (await TextureSetStamp.OfModelAsync(db, step.To, ct))?.Key,
             CreatedByUserId = userId,
             Trigger = HoldPlacementTrigger.Correction,
             HoldsJson = HoldPlacementEntry.ToJson(entries),

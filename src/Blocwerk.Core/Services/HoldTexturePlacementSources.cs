@@ -12,11 +12,15 @@ namespace Blocwerk.Core.Services;
 /// <param name="Length">The photo's byte length.</param>
 internal readonly record struct PanelPhotoStamp(int Generation, int Length);
 
-/// <summary>A panel photo as registered onto a model: a new photo (generation or size) or another model is another key.</summary>
+/// <summary>
+/// A panel photo as registered onto a model's textures: a new photo (generation or size), another model or the same model's
+/// textures rendered again (<see cref="TextureSetStamp.Key"/>) is another key.
+/// </summary>
 /// <param name="PanelId">The panel.</param>
 /// <param name="Photo">The photo, stamped when its bytes were read.</param>
 /// <param name="ModelId">The model registered onto.</param>
-internal readonly record struct PanelRegistrationKey(Guid PanelId, PanelPhotoStamp Photo, Guid ModelId);
+/// <param name="TextureSetKey">The model's texture set registered onto.</param>
+internal readonly record struct PanelRegistrationKey(Guid PanelId, PanelPhotoStamp Photo, Guid ModelId, string? TextureSetKey);
 
 /// <summary>
 /// Panel photo registrations kept in memory (a few KB each), filled by every placement run and by the edited holds'
@@ -49,12 +53,15 @@ internal static class PanelRegistrationCache
 
 /// <summary>The active model's textures for one edited-holds placement: read at most once, and only when a photo is not cached.</summary>
 /// <param name="modelId">The active model.</param>
+/// <param name="textureSetKey">Its current texture set.</param>
 /// <param name="load">Reads it with its textures.</param>
-internal sealed class EditedPlacementSource(Guid modelId, Func<Task<ActiveModel>> load)
+internal sealed class EditedPlacementSource(Guid modelId, string? textureSetKey, Func<Task<ActiveModel>> load)
 {
     private ActiveModel? model;
 
     public Guid ModelId => modelId;
+
+    public string? TextureSetKey => textureSetKey;
 
     /// <summary>Gets or sets how many photos were registered (not cached).</summary>
     public int Registered { get; set; }

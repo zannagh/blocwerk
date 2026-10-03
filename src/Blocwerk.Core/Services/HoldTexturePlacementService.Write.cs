@@ -22,11 +22,15 @@ public sealed partial class HoldTexturePlacementService
         live = only is null ? live : live.Where(h => only.Contains(h.Id)).ToList();
         var noPanel = live.Count(h => h.WallPanelId is null);
         var plans = await PlanPanelsAsync(db, wallId, live, model, ct);
-        RememberRegistrations(model.Id, plans);
+        var textures = await TextureSetStamp.OfModelAsync(db, model.Id, ct);
+        RememberRegistrations(model.Id, textures?.Key, plans);
 
         // The run row exists before the first hold is written, and every batch updates its entry list in the SAME
         // SaveChanges as the holds, so whatever was written is always revertable, even if the run is cut short.
-        var run = new HoldPlacementRun { WallId = wallId, GeometryModelId = model.Id, CreatedByUserId = userId, Trigger = trigger };
+        var run = new HoldPlacementRun
+        {
+            WallId = wallId, GeometryModelId = model.Id, TextureSetKey = textures?.Key, CreatedByUserId = userId, Trigger = trigger,
+        };
         db.HoldPlacementRuns.Add(run);
         await db.SaveChangesAsync(ct);
 
