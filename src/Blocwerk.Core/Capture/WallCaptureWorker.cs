@@ -20,8 +20,7 @@ public sealed class WallCaptureWorker(
     RootDbContextFactory dbContextFactory,
     WallCaptureQueue queue,
     WallCaptureProcessor processor,
-    ICaptureFileStore files,
-    WallCapturePipelineOptions options,
+    WallCaptureSweeper sweeper,
     ILogger<WallCaptureWorker> logger) : BackgroundService
 {
     /// <summary>Re-enqueues unfinished captures and removes stale drafts. Public for tests.</summary>
@@ -46,7 +45,7 @@ public sealed class WallCaptureWorker(
                 logger.LogInformation("Resuming {Count} capture(s) left unfinished by a previous run", unfinished.Count);
             }
 
-            await SweepDraftsAsync(db, ct);
+            await sweeper.SweepDraftsAsync(DateTimeOffset.UtcNow, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -82,27 +81,6 @@ public sealed class WallCaptureWorker(
                 // ProcessAsync contains its own failures; this only keeps a DB blip from killing the host.
                 logger.LogError(ex, "Capture worker failed on capture {CaptureId}; continuing", captureId);
             }
-        }
-    }
-
-    private async Task SweepDraftsAsync(BlocwerkDbContext db, CancellationToken ct)
-    {
-        var cutoff = DateTimeOffset.UtcNow - options.DraftLifetime;
-        var drafts = (await db.WallCaptures.Where(c => c.Status == WallCaptureStatus.Draft).ToListAsync(ct))
-            .Where(c => c.CreatedAt < cutoff)
-            .ToList();
-        if (drafts.Count == 0)
-        {
-            return;
-        }
-
-        var ids = drafts.Select(d => d.Id).ToList();
-        var paths = await db.WallCapturePhotos.Where(p => ids.Contains(p.CaptureId)).Select(p => p.StoredPath).ToListAsync(ct);
-        db.WallCaptures.RemoveRange(drafts);
-        await db.SaveChangesAsync(ct);
-        foreach (var path in paths)
-        {
-            files.Delete(path);
         }
     }
 }

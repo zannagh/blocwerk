@@ -23,8 +23,14 @@ public sealed partial class CapturePackageService
         }
 
         // Kept even when the capture is already here: a commit after this begin then answers "already imported".
-        await staging.SaveManifestAsync(manifest, ct);
-        var report = await CheckAsync(manifest, ct);
+        var report = await CaptureImportLocks.RunAsync(
+            manifest.CaptureId,
+            async () =>
+            {
+                await staging.SaveManifestAsync(manifest, ct);
+                return await CheckAsync(manifest, ct);
+            },
+            ct);
         logger.LogInformation(
             "Capture import {ImportId} begun by {UserId}: {Blockers} blocker(s), {Missing} of {Files} file(s) to upload, already imported {Already}",
             manifest.CaptureId, userId, report.Blockers.Count, report.Files.Count(f => f.State == CaptureImportFileState.Missing),

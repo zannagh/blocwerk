@@ -157,6 +157,29 @@ public class CaptureVideoPipelineTests
         Assert.Empty(s.Files.ListFiles());
     }
 
+    [Fact]
+    public async Task AVideoThatFailsPartWay_LeavesNoStoredFramesBehind()
+    {
+        using var h = new WallTestHarness();
+        using var s = new CaptureScenario(h);
+        s.SplatClient.IsConfigured = true;
+        s.Video.Failure = new InvalidDataException("ffmpeg failed (1): truncated");
+        s.Video.FailAfter = 2;
+        var captureId = await s.StartCaptureAsync(photos: 2, beforeStart: id => AddVideoAsync(s, id));
+
+        await s.Processor.ProcessAsync(captureId, CancellationToken.None);
+
+        var frames = new[] { CaptureScenario.TinyJpeg(seed: 100), CaptureScenario.TinyJpeg(seed: 101) };
+        foreach (var file in s.Files.ListFiles())
+        {
+            var bytes = await File.ReadAllBytesAsync(s.Files.ResolvePhysicalPath(file.Name)!);
+            Assert.DoesNotContain(frames, f => f.AsSpan().SequenceEqual(bytes));
+        }
+
+        await using var db = h.CreateContext();
+        Assert.Equal("[]", (await db.WallCaptures.SingleAsync()).VideoFramesJson);
+    }
+
     private static async Task AddVideoAsync(CaptureScenario s, Guid captureId)
     {
         await using var video = FakeVideoFrameExtractor.Mp4Stream();

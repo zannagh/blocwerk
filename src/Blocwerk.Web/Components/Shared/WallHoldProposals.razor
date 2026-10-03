@@ -45,7 +45,11 @@
                         <img src="@src" alt="Proposed hold" width="180" height="180" loading="lazy" />
                     }
                     <p class="glyph-summary">@ProposalText(p)</p>
-                    @if (p.PanelId is not null)
+                    @if (p.IsStale)
+                    {
+                        <p class="hint">Found on a panel photo that has since been replaced. Run "Find holds from all photos" again to add it.</p>
+                    }
+                    else if (p.PanelId is not null)
                     {
                         <select @bind="colors[p.Id]" disabled="@busy" aria-label="Colour of the new hold">
                             <option value="">No colour</option>

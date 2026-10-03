@@ -109,7 +109,8 @@ public class HdrToneMapFilterTests : IDisposable
         var extractor = new CaptureVideoFrameExtractor(new BlocwerkSettings());
 
         var probe = await extractor.ProbeAsync(clip, CancellationToken.None);
-        var frames = await extractor.ExtractAsync(clip, new CaptureVideoFrameRequest(1, 2, TimeSpan.FromMinutes(1)), null, CancellationToken.None);
+        var frames = new List<byte[]>();
+        await extractor.ExtractAsync(clip, new CaptureVideoFrameRequest(1, 2, TimeSpan.FromMinutes(1)), FakeVideoFrameExtractor.Collect(frames), null, CancellationToken.None);
 
         Assert.Equal(HdrToneMapFilter.Hlg, probe.ColorTransfer);
         Assert.NotEmpty(frames);

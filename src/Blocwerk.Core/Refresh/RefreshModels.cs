@@ -68,7 +68,13 @@ public sealed record RefreshVideo(string StoredName, string? FileName, long Size
 /// <param name="NewSeenIn3D">Of the new holds: those the 3D model of this visit also sees.</param>
 /// <param name="CheckedWithModelId">This visit's 3D model, when the check used it successfully (null: checked without it).</param>
 /// <param name="Attempted3DModelId">This visit's 3D model once a check with it was tried (worked, failed, or kept the user's choices).</param>
-/// <param name="DecisionsRecordedAt">When the quick review's decisions were written; a later change is the user's own.</param>
+/// <param name="DecisionsRecordedAt">
+/// The update session's stamp as committed with the quick review's decisions; a later write is the user's own.
+/// </param>
+/// <param name="DecisionsVersion">
+/// The fingerprint of what this summary describes (<see cref="RefreshDecisions"/>); Apply promotes only that.
+/// </param>
+/// <param name="EditedInFullReview">The summary includes choices made in the full review.</param>
 public sealed record RefreshSummary(
     int Refound,
     int KeptInPlace,
@@ -84,7 +90,9 @@ public sealed record RefreshSummary(
     int NewSeenIn3D = 0,
     Guid? CheckedWithModelId = null,
     Guid? Attempted3DModelId = null,
-    DateTimeOffset? DecisionsRecordedAt = null);
+    DateTimeOffset? DecisionsRecordedAt = null,
+    string? DecisionsVersion = null,
+    bool EditedInFullReview = false);
 
 /// <summary>An uploaded file, as the drop zone lists it.</summary>
 public sealed record RefreshFile(Guid? PhotoId, string? FileName, bool IsVideo, string? Problem);

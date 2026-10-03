@@ -53,7 +53,7 @@ public sealed partial class WallRefreshService
         queue.Enqueue(refreshId);
     }
 
-    public async Task ApplyAsync(Guid refreshId)
+    public async Task ApplyAsync(Guid refreshId, string? confirmedVersion = null)
     {
         var (db, refresh) = await OpenRefreshAsync(refreshId);
         await using (db)
@@ -61,6 +61,11 @@ public sealed partial class WallRefreshService
             if (refresh.Status != WallRefreshStatus.ReadyToApply)
             {
                 throw new UserFacingException("There is nothing to apply yet.");
+            }
+
+            if (confirmedVersion is not null && RefreshTimeline.Summary(refresh)?.DecisionsVersion != confirmedVersion)
+            {
+                throw new UserFacingException("The summary changed while you were looking at it. Check it again, then apply.");
             }
 
             if (WallRefreshProcessor.IsRechecking(refresh, DateTimeOffset.UtcNow)

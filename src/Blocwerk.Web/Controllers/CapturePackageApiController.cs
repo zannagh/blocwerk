@@ -49,6 +49,12 @@ public abstract class CapturePackageApiController(ICapturePackageService package
         {
             return BadRequest(new ApiErrorResponse($"The package is not readable JSON: {ex.Message}"));
         }
+        catch (IOException ex)
+        {
+            // A file in the way, or a disk problem: the client may retry (the import keeps what is staged).
+            logger.LogWarning(ex, "Capture package request hit a file error");
+            return Conflict(new ApiErrorResponse("A file of this import could not be written or moved; retry the request."));
+        }
         catch (InvalidOperationException ex)
         {
             logger.LogWarning(ex, "Capture package request failed unexpectedly");

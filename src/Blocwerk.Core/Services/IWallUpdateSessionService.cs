@@ -118,8 +118,11 @@ public interface IWallUpdateSessionService
     /// <param name="onlyIfUnchangedSince">
     /// When set, nothing is written if the session was changed after this moment (the user's own choices win).
     /// </param>
-    /// <returns>Whether the decisions were written.</returns>
-    Task<bool> SaveDefaultDecisionsAsync(Guid wallId, DefaultDecisions decisions, DateTimeOffset? onlyIfUnchangedSince = null);
+    /// <returns>
+    /// The session's <c>UpdatedAt</c> as committed with the decisions (the stamp to compare later writes against), or null
+    /// when nothing was written.
+    /// </returns>
+    Task<DateTimeOffset?> SaveDefaultDecisionsAsync(Guid wallId, DefaultDecisions decisions, DateTimeOffset? onlyIfUnchangedSince = null);
 
     /// <summary>
     /// The open session's "this hold moved" suggestions, best first — the same list on every read, since

@@ -17,6 +17,11 @@ public sealed partial class CapturePackageService
     public async Task<CaptureImportFile> PutFileAsync(Guid importId, string name, Stream body, CancellationToken ct)
     {
         await EnsureAdminAsync(ct);
+        return await CaptureImportLocks.RunAsync(importId, () => PutFileLockedAsync(importId, name, body, ct), ct);
+    }
+
+    private async Task<CaptureImportFile> PutFileLockedAsync(Guid importId, string name, Stream body, CancellationToken ct)
+    {
         var manifest = await staging.LoadManifestAsync(importId, ct)
                        ?? throw new UserFacingException("There is no open import with this id: begin it first.");
         var expected = manifest.Files.FirstOrDefault(f => f.Name == name)

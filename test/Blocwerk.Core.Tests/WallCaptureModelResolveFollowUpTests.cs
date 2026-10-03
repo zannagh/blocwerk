@@ -94,6 +94,37 @@ public class WallCaptureModelResolveFollowUpTests
         Assert.Contains("no longer defines marker(s) 12", (await s.Service.GetCaptureAsync(captureId))!.FollowUpNote);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ThePlacementCheck_IsStoredOnlyWithTheActivation(bool registers)
+    {
+        using var h = new WallTestHarness();
+        using var s = new CaptureScenario(h);
+        s.Client.GeometryJson = Solved(Rev1Json);
+        var captureId = await FinishedAsync(s, beforeStart: _ => RevisionOneAsync(h, s));
+        await using (var db = h.CreateContext())
+        {
+            (await db.WallCaptures.SingleAsync(c => c.Id == captureId)).PlacementCheckJson = "{\"before\":true}";
+            await db.SaveChangesAsync();
+        }
+
+        if (!registers)
+        {
+            s.Client.GeometryJson = CaptureScenario.GeometryWithCameras("p00", "p01");
+        }
+
+        Assert.Empty(await s.Service.ResolveModelAsync(captureId));
+        await s.Processor.ResolveModelAsync(captureId, CancellationToken.None);
+
+        await using var read = h.CreateContext();
+        var capture = await read.WallCaptures.AsNoTracking().SingleAsync(c => c.Id == captureId);
+        var activated = await read.WallGeometryModels.AnyAsync(m => m.Id == capture.GeometryModelId && m.Source == WallCaptureProcessor.ResolvedModelSource(captureId));
+        Assert.Equal(registers, activated);
+        Assert.Equal(registers, capture.PlacementCheckJson != "{\"before\":true}");
+        Assert.NotNull(capture.PlacementCheckJson);
+    }
+
     private static CaptureScenario Scenario(WallTestHarness h, List<string> log) => new(h, followUps: harness => FollowUpChains.Build(
         harness.RootContextFactory,
         new ScriptedFollowUpStep(PlaceHoldsFollowUpStep.StepKey, 100, log),

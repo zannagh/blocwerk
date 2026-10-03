@@ -20,17 +20,33 @@ namespace Blocwerk.Core.Capture;
 public sealed partial class WallCaptureProcessor
 {
     /// <summary>Runs the capture's pending texture re-render (no-op without one). Cancellation leaves it to resume.</summary>
-    public async Task RerenderTexturesAsync(Guid captureId, CancellationToken ct)
+    public Task RerenderTexturesAsync(Guid captureId, CancellationToken ct) =>
+        RunOnceAsync(rerendering, captureId, () => RerenderOnceAsync(captureId, ct));
+
+    private async Task RerenderOnceAsync(Guid captureId, CancellationToken ct)
     {
         if (await RerenderTargetAsync(captureId, ct) is not { } target)
         {
             return;
         }
 
+        var rendered = false;
+        await RedoCountedAsync(
+            captureId, CaptureRedoKind.Rerender, async () => rendered = await RenderAndEndAsync(captureId, target.ModelId, target.JobId, ct), ct);
+        if (rendered && followUps is not null)
+        {
+            await followUps.RerunAsync(captureId, PlaceHoldsFollowUpStep.StepKey, ct);
+            await followUps.RunMissingAsync(captureId, ct);
+        }
+    }
+
+    /// <summary>Renders the textures and clears the mark with the outcome; true when they were made.</summary>
+    private async Task<bool> RenderAndEndAsync(Guid captureId, Guid modelId, string? existingJobId, CancellationToken ct)
+    {
         string? jobId;
         try
         {
-            jobId = await RenderTexturesAgainAsync(captureId, target.ModelId, target.JobId, ct);
+            jobId = await RenderTexturesAgainAsync(captureId, modelId, existingJobId, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
@@ -41,17 +57,13 @@ public sealed partial class WallCaptureProcessor
                 CaptureFailedException or ComputeJobException or InvalidDataException or IOException => ex.Message,
                 _ => "something went wrong on the server.",
             };
-            await EndRerenderAsync(captureId, target.ModelId, null, $"The 3D model is active, but its textures could not be made: {reason}", ct);
-            return;
+            await EndRerenderAsync(captureId, modelId, null, $"The 3D model is active, but its textures could not be made: {reason}", ct);
+            return false;
         }
 
-        await EndRerenderAsync(captureId, target.ModelId, jobId, null, ct);
+        await EndRerenderAsync(captureId, modelId, jobId, null, ct);
         logger.LogInformation("Textures of capture {CaptureId} rendered again (job {JobId})", captureId, jobId);
-        if (followUps is not null)
-        {
-            await followUps.RerunAsync(captureId, PlaceHoldsFollowUpStep.StepKey, ct);
-            await followUps.RunMissingAsync(captureId, ct);
-        }
+        return true;
     }
 
     private async Task<string> RenderTexturesAgainAsync(Guid captureId, Guid modelId, string? existingJobId, CancellationToken ct)
@@ -89,7 +101,8 @@ public sealed partial class WallCaptureProcessor
         if (!active || !WallCaptureService.MayRerenderTextures(capture.Status))
         {
             logger.LogInformation("Capture {CaptureId}: its textures are not rendered again (its model is no longer active)", captureId);
-            await UpdateAsync(captureId, c => c.TexturesJobId = null, ct);
+            await ClearMarkAsync(captureId, c => c.TexturesJobId = null, ct);
+            await UpdateRecordAsync(captureId, r => r with { RerenderStarts = 0 }, ct);
             return null;
         }
 
@@ -108,19 +121,25 @@ public sealed partial class WallCaptureProcessor
             kept = textureError is not null && await db.WallGeometryTextures.AnyAsync(t => t.GeometryModelId == modelId, ct);
         }
 
-        await UpdateAsync(
+        await ClearMarkAsync(
             captureId,
             c =>
             {
                 c.TexturesJobId = jobId;
-                if (kept)
+                if (!kept)
                 {
-                    AddFollowUpNote(c, $"Rendering the wall textures again failed ({textureError}); the previous textures stay.");
-                    return;
+                    CaptureTextureOutcome.Apply(c, textureError);
                 }
-
-                CaptureTextureOutcome.Apply(c, textureError);
             },
             ct);
+        if (kept)
+        {
+            await NoteAsync(
+                captureId, $"Rendering the wall textures again failed ({textureError}); the previous textures stay.", ct, r => r with { RerenderStarts = 0 });
+        }
+        else
+        {
+            await UpdateRecordAsync(captureId, r => r with { RerenderStarts = 0 }, ct);
+        }
     }
 }

@@ -77,8 +77,11 @@ public sealed partial class WallRefreshProcessor
         return adoptable ? open.Id : null;
     }
 
-    /// <summary>Records the quick review's decisions in one transaction; false when the user changed the session after <paramref name="onlyIfUnchangedSince"/>.</summary>
-    private static Task<bool> RecordDecisionsAsync(
+    /// <summary>
+    /// Records the quick review's decisions in one transaction and returns the session's stamp as committed with them;
+    /// null when the user changed the session after <paramref name="onlyIfUnchangedSince"/>.
+    /// </summary>
+    private static Task<DateTimeOffset?> RecordDecisionsAsync(
         Guid wallId, IWallUpdateSessionService sessions, QuickDecisions quick, DateTimeOffset? onlyIfUnchangedSince) =>
         sessions.SaveDefaultDecisionsAsync(
             wallId,

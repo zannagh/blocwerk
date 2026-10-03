@@ -36,6 +36,11 @@ public sealed partial class WallGeometryCorrectionService
                 throw new UserFacingException("A capture of this wall is still being processed. Correct the model once it is done.");
             }
 
+            if (await CaptureRedoMarks.Redoing(db.WallCaptures.Where(c => c.WallId == wallId)).AnyAsync())
+            {
+                throw new UserFacingException(CaptureRedoMarks.BusyMessage + " Correct the model once that is done.");
+            }
+
             var captureId = await db.WallCaptures.AsNoTracking()
                 .Where(c => c.WallId == wallId && c.GeometryModelId == model.Id)
                 .OrderByDescending(c => c.CreatedAt)
@@ -172,7 +177,7 @@ public sealed partial class WallGeometryCorrectionService
         }
 
         capture.GeometryModelId = modelId;
-        capture.FollowUpJson = carriedFrom is { } from ? CaptureFollowUpRecord.Carried(from).ToJson() : null;
+        capture.FollowUpJson = CaptureFollowUpRecord.Repointed(carriedFrom).ToJson();
         capture.CoverageJson = null;
         await db.SaveChangesAsync();
         return capture.Id;

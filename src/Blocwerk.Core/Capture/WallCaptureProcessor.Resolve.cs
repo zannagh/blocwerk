@@ -11,23 +11,36 @@ using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Capture;
 
-/// <summary>What solving a finished capture again produced: the stored model, its job, and why it was not activated.</summary>
-internal sealed record ResolveOutcome(Guid ModelId, string JobId, string? Refusal);
+/// <summary>
+/// What solving a finished capture again produced: the stored (inactive) model, its job, why it may not be activated, and
+/// the planned-vs-observed check of the solved document (stored with the activation; null: none, or resumed).
+/// </summary>
+internal sealed record ResolveOutcome(Guid ModelId, string JobId, string? Refusal, string? PlacementCheckJson = null);
 
 /// <summary>
 /// Solving a finished capture's 3D model again from its kept photos (<see cref="WallCaptureService.ResolveModelAsync"/>),
 /// beside the capture worker (<see cref="WallModelResolveWorker"/>): the same solve request as the capture's own, the
-/// result registered to the active model (so it lands in the frame the photo-real view is aligned to) and activated only
-/// when that registration holds. Then the view is kept, the textures rendered again and the follow-ups re-derived
-/// (<c>WallCaptureProcessor.ResolveAdopt.cs</c>). Nothing is trained; the capture's status stays finished.
+/// result registered to the active model (so it lands in the frame the photo-real view is aligned to) and stored
+/// inactive. When that registration holds it is activated together with the capture row in one transaction, then the
+/// textures are rendered again and the follow-ups re-derived (<c>WallCaptureProcessor.ResolveAdopt.cs</c>). A restart
+/// after the model was stored resumes from it. Nothing is trained; the capture's status stays finished.
 /// </summary>
 public sealed partial class WallCaptureProcessor
 {
     /// <summary>The <see cref="WallGeometryModel.Source"/> of a model solved again from a capture's photos.</summary>
     internal static string ResolvedModelSource(Guid captureId) => $"capture {captureId:N} re-solve";
 
+    /// <summary>The <see cref="WallGeometryModel.Notes"/> of that model: names the solve job, so a restart finds the run's model.</summary>
+    internal static string ResolvedModelNotes(Guid captureId, string jobId) => $"Solved again from the photos of capture {captureId:N} (job {jobId})";
+
+    /// <summary>Follows <see cref="ResolvedModelNotes"/> with the reason when the fresh checks refused the model.</summary>
+    internal const string RefusedNote = " Not activated: ";
+
     /// <summary>Runs the capture's pending re-solve (no-op without one). Cancellation leaves it to resume.</summary>
-    public async Task ResolveModelAsync(Guid captureId, CancellationToken ct)
+    public Task ResolveModelAsync(Guid captureId, CancellationToken ct) =>
+        RunOnceAsync(resolving, captureId, () => ResolveOnceAsync(captureId, ct));
+
+    private async Task ResolveOnceAsync(Guid captureId, CancellationToken ct)
     {
         if (await ResolveRunAsync(captureId, ct) is not { } run)
         {
@@ -35,11 +48,16 @@ public sealed partial class WallCaptureProcessor
             return;
         }
 
-        var previousId = run.Capture.GeometryModelId!.Value;
+        await RedoCountedAsync(captureId, CaptureRedoKind.Resolve, () => RunResolveAsync(run, ct), ct);
+    }
+
+    private async Task RunResolveAsync(CaptureRun run, CancellationToken ct)
+    {
+        var captureId = run.Capture.Id;
         ResolveOutcome outcome;
         try
         {
-            outcome = await SolveAgainAsync(run, ct);
+            outcome = await StoredResolveAsync(run, ct) ?? await SolveAgainAsync(run, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
@@ -64,7 +82,7 @@ public sealed partial class WallCaptureProcessor
             return;
         }
 
-        await AdoptResolvedModelAsync(run, previousId, outcome, ct);
+        await AdoptResolvedModelAsync(run, outcome, ct);
     }
 
     private async Task<ResolveOutcome> SolveAgainAsync(CaptureRun run, CancellationToken ct)
@@ -90,8 +108,14 @@ public sealed partial class WallCaptureProcessor
         var frame = await RegisterToActiveAsync(run, json, ct);
         var refusal = ResolveRefusal(frame, json);
         var glyphs = new WallGlyphService(dbContextFactory, new CaptureActingUser(run.User), loggerFactory.CreateLogger<WallGlyphService>());
-        var options = new GeometryImportOptions(capture.PlanJson is null ? null : capture.PlanRevision, refusal is null);
-        var notes = $"Solved again from the photos of capture {capture.Id:N}";
+
+        // Stored inactive: it goes live together with the capture row, in one transaction (AdoptResolvedModelAsync).
+        var options = new GeometryImportOptions(capture.PlanJson is null ? null : capture.PlanRevision, Activate: false);
+
+        // The verdict goes into the notes, so a restart resumes with the checks of this solve, not of the stored document.
+        var notes = ResolvedModelNotes(capture.Id, status.JobId!) + (refusal is null ? string.Empty : RefusedNote + refusal);
+        var placement = refusal is null ? await ResolvedPlacementAsync(run, json, ct) : null;
+
         var imported = await glyphs.ImportGeometryAsync(capture.WallId, frame.Json, notes, ResolvedModelSource(capture.Id), options);
         if (!imported.Succeeded)
         {
@@ -99,13 +123,8 @@ public sealed partial class WallCaptureProcessor
         }
 
         logger.LogInformation(
-            "Capture {CaptureId} solved again into model {ModelId} (activated: {Activated})", capture.Id, imported.Model!.Id, refusal is null);
-        if (refusal is null)
-        {
-            await CheckPlacementAsync(run, json, ct);
-        }
-
-        return new ResolveOutcome(imported.Model.Id, status.JobId!, refusal);
+            "Capture {CaptureId} solved again into model {ModelId} (to be activated: {Activate})", capture.Id, imported.Model!.Id, refusal is null);
+        return new ResolveOutcome(imported.Model.Id, status.JobId!, refusal, placement);
     }
 
     /// <summary>Why the new model may not replace the active one: it failed the checks, or is not in the view's frame.</summary>
@@ -118,7 +137,7 @@ public sealed partial class WallCaptureProcessor
 
         if (!frame.Activate)
         {
-            return frame.Refusal ?? "It could not be tied to the active model.";
+            return string.IsNullOrWhiteSpace(frame.Refusal) ? "It could not be tied to the active model." : frame.Refusal;
         }
 
         return FrameLineage.IsReset(frame.Json)
@@ -157,13 +176,9 @@ public sealed partial class WallCaptureProcessor
     private static string Noted(CaptureRun run, string note) => run.PlanNote is null ? note : $"{note} {run.PlanNote}";
 
     /// <summary>Drops the mark (a finished job id stays as the capture's solve job) and tells the admin what happened.</summary>
-    private Task EndResolveAsync(Guid captureId, string? jobId, string note, CancellationToken ct) =>
-        UpdateAsync(
-            captureId,
-            c =>
-            {
-                c.SolveJobId = jobId;
-                AddFollowUpNote(c, note);
-            },
-            ct);
+    private async Task EndResolveAsync(Guid captureId, string? jobId, string note, CancellationToken ct)
+    {
+        await ClearMarkAsync(captureId, c => c.SolveJobId = jobId, ct);
+        await NoteAsync(captureId, note, ct, r => r with { ResolveStarts = 0 });
+    }
 }

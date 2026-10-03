@@ -52,7 +52,6 @@ public partial class WallBigUpdateService
         BlocwerkDbContext db,
         Guid wallId,
         WallPanel centerPanel,
-        int oldGen,
         int newGen,
         IReadOnlyDictionary<Guid, Hold> oldHolds,
         IReadOnlyDictionary<Guid, Hold> stagedTwins,
@@ -62,6 +61,7 @@ public partial class WallBigUpdateService
         IReadOnlyDictionary<Guid, IReadOnlyList<HoldPositionNorm>>? warpShapes,
         IReadOnlyDictionary<Guid, (int Col, int Row)> panelPositions,
         IReadOnlyDictionary<(int Col, int Row), Guid> newGenPanelByPosition,
+        IReadOnlyDictionary<Guid, (int Width, int Height)> photoSizes,
         Guid userId)
     {
         var survivingCenterStaged = new HashSet<Guid>();
@@ -94,8 +94,8 @@ public partial class WallBigUpdateService
             var destinationPanelId = ResolveDestinationPanelId(
                 oldHold, centerPanel.Id, panelPositions, newGenPanelByPosition);
             await AdvanceCarriedHoldAsync(
-                db, wallId, destinationPanelId, oldGen, newGen, oldHold, decision.Kind, decision.NewHoldId,
-                stagedTwins, claimedTwins, survivingCenterStaged, warpPositions, warpShapes, userId);
+                db, wallId, destinationPanelId, newGen, oldHold, decision.Kind, decision.NewHoldId,
+                stagedTwins, claimedTwins, survivingCenterStaged, warpPositions, warpShapes, photoSizes, userId);
         }
 
         // Reconcile: any gen-N hold the outcome never mentions is default-carried (clone forward, link
@@ -109,9 +109,12 @@ public partial class WallBigUpdateService
 
             var destinationPanelId = ResolveDestinationPanelId(
                 oldHold, centerPanel.Id, panelPositions, newGenPanelByPosition);
-            await AdvanceCarriedHoldAsync(
-                db, wallId, destinationPanelId, oldGen, newGen, oldHold, CarryKind.Carried, null,
-                stagedTwins, claimedTwins, survivingCenterStaged, warpPositions, warpShapes, userId);
+            var blind = await AdvanceCarriedHoldAsync(
+                db, wallId, destinationPanelId, newGen, oldHold, CarryKind.Carried, null,
+                stagedTwins, claimedTwins, survivingCenterStaged, warpPositions, warpShapes, photoSizes, userId);
+
+            // Nobody decided this hold: it is carried so nothing is lost, but flagged so a person looks at it.
+            blind.NeedsReview = true;
         }
 
         await ReconcileNewCentreHolds(db, centerStaged, confirmation, newGen, survivingCenterStaged);
@@ -122,14 +125,15 @@ public partial class WallBigUpdateService
     /// Advances one carried/changed old hold: promotes its staged twin in place (or clones the old row
     /// forward when there is no twin), copies curation, records the lineage link, and re-points the
     /// still-advancing boulders. When several old holds claim the SAME twin (a physical merge) only the
-    /// first writer copies curation (first-writer-wins) and each old hold still gets its own link; the
-    /// repoint is idempotent so the boulder ends with a single membership to the merged hold.
+    /// first writer copies curation (first-writer-wins), later ones only merge their provenance and review
+    /// flags and fill gaps, and each old hold still gets its own link (from its OWN generation, which can
+    /// be older than the wall's when an earlier subset update skipped its panel); the repoint is idempotent
+    /// so the boulder ends with a single membership to the merged hold.
     /// </summary>
-    private async Task AdvanceCarriedHoldAsync(
+    private async Task<Hold> AdvanceCarriedHoldAsync(
         BlocwerkDbContext db,
         Guid wallId,
         Guid destinationPanelId,
-        int oldGen,
         int newGen,
         Hold oldHold,
         CarryKind kind,
@@ -139,6 +143,7 @@ public partial class WallBigUpdateService
         HashSet<Guid> survivingCenterStaged,
         IReadOnlyDictionary<Guid, HoldPositionNorm>? warpPositions,
         IReadOnlyDictionary<Guid, IReadOnlyList<HoldPositionNorm>>? warpShapes,
+        IReadOnlyDictionary<Guid, (int Width, int Height)> photoSizes,
         Guid userId)
     {
         var changed = kind == CarryKind.Changed;
@@ -151,21 +156,26 @@ public partial class WallBigUpdateService
                 staged.Generation = newGen;
                 CopyCuratedFields(oldHold, staged);
                 staged.NeedsReview = changed || oldHold.NeedsReview;
+                CopyPlacementFields(
+                    oldHold, staged, changed, warpPositions?.GetValueOrDefault(oldHold.Id),
+                    staged.WallPanelId is { } panelId && photoSizes.TryGetValue(panelId, out var size) ? size : null);
 
                 // Warp-carry (shapes): a matched twin is a fresh detection with NO custom outline. If the
                 // old hold carried one, transform it onto the twin (using the twin's OWN detected centre)
                 // so a custom-shaped hold that also matched keeps its warped outline, not a plain circle.
-                ApplyWarpedShape(staged, oldHold.Id, warpShapes);
+                ApplyWarpedShape(staged, oldHold, warpShapes);
                 survivingCenterStaged.Add(twinId);
             }
-            else if (changed)
+            else
             {
-                // A later claimant asserting "changed" flags the twin, but never clears the first writer's curation.
-                staged.NeedsReview = true;
+                // A later claimant (a physical merge) never overwrites the first writer's curation, but its
+                // provenance and review state must survive the merge: see MergeCuratedFields.
+                MergeCuratedFields(oldHold, staged, changed);
             }
 
             await RepointBouldersAsync(db, oldHold.Id, staged.Id, newGen, changed);
-            AddGenerationLink(db, wallId, oldHold.Id, staged.Id, linkKind, oldGen, newGen, userId);
+            AddGenerationLink(db, wallId, oldHold.Id, staged.Id, linkKind, oldHold.Generation, newGen, userId);
+            return staged;
         }
         else
         {
@@ -183,11 +193,12 @@ public partial class WallBigUpdateService
 
             // Warp-carry (shapes): transform the custom outline onto the new image too. Applied AFTER the
             // centre is repositioned above, since ShapePoints are stored relative to the (final) centre.
-            ApplyWarpedShape(clone, oldHold.Id, warpShapes);
+            ApplyWarpedShape(clone, oldHold, warpShapes);
 
             db.Holds.Add(clone);
             await RepointBouldersAsync(db, oldHold.Id, clone.Id, newGen, changed);
-            AddGenerationLink(db, wallId, oldHold.Id, clone.Id, linkKind, oldGen, newGen, userId);
+            AddGenerationLink(db, wallId, oldHold.Id, clone.Id, linkKind, oldHold.Generation, newGen, userId);
+            return clone;
         }
     }
 
@@ -282,102 +293,6 @@ public partial class WallBigUpdateService
     }
 
     /// <summary>
-    /// Re-points the memberships on THIS old hold onto its new-generation successor row, for every active
-    /// (non-archived, non-historic) boulder that used it. Only ever called for an old hold on a
-    /// re-photographed panel (the carry scopes <c>oldHolds</c> to updated panels), so it advances exactly
-    /// the memberships whose hold is being re-shot and never touches a membership on a non-updated panel.
-    /// <para>
-    /// Subset promote (decision D-B, corrected): a boulder WHOLLY on updated panels has every membership
-    /// repointed here (full advance); a boulder SPANNING an updated and a non-updated panel is PARTIALLY
-    /// repointed — this call advances its updated-panel membership to the successor while its non-updated
-    /// membership, whose hold is never passed to this method, stays on the retained gen-N row. That is the
-    /// invariant the live read needs: each membership resolves at ITS panel's live generation, so no hold
-    /// vanishes from a spanning boulder after a partial promote. A boulder wholly on non-updated panels is
-    /// never reached (none of its holds is in the carry set) and stays entirely untouched.
-    /// </para>
-    /// <para>
-    /// Because <see cref="BoulderHold.HoldId"/> is part of the key it cannot be mutated on a tracked row —
-    /// the re-point is a delete + insert of the join row, and the insert is idempotent
-    /// (<see cref="BoulderHoldExists"/>) so a physical merge (two old holds → one new) yields one membership.
-    /// Historic (incl. the Pass-0-frozen) and archived boulders keep their <see cref="BoulderHold"/> on the
-    /// retained old row, so their older-gen schematics still render. <paramref name="changed"/> only ever
-    /// comes from a Changed carry decision, so a plain carried correction never forces review.
-    /// </para>
-    /// </summary>
-    private static async Task RepointBouldersAsync(
-        BlocwerkDbContext db, Guid oldHoldId, Guid newHoldId, int newGen, bool changed)
-    {
-        var boulderLinks = await db.BoulderHolds
-            .Where(bh => bh.HoldId == oldHoldId)
-            .Include(bh => bh.Boulder)
-            .ToListAsync();
-
-        foreach (var link in boulderLinks)
-        {
-            if (link.Boulder is not { IsArchived: false, IsHistoric: false })
-            {
-                continue;
-            }
-
-            db.BoulderHolds.Remove(link);
-            if (!BoulderHoldExists(db, link.BoulderId, newHoldId))
-            {
-                db.BoulderHolds.Add(new BoulderHold
-                {
-                    BoulderId = link.BoulderId,
-                    HoldId = newHoldId,
-                    Type = link.Type,
-                    Usage = link.Usage,
-                });
-            }
-
-            link.Boulder.Generation = newGen;
-            if (changed)
-            {
-                link.Boulder.NeedsReview = true;
-            }
-        }
-    }
-
-    /// <summary>
-    /// True when a <see cref="BoulderHold"/> for this pair is already present — as a pending insert in
-    /// the change tracker (an earlier repoint this transaction) or a committed row. Guards the idempotent
-    /// repoint insert against a duplicate-key crash when two old holds merge onto one successor.
-    /// </summary>
-    private static bool BoulderHoldExists(BlocwerkDbContext db, Guid boulderId, Guid holdId)
-    {
-        var pending = db.BoulderHolds.Local.Any(bh =>
-            bh.BoulderId == boulderId && bh.HoldId == holdId
-            && db.Entry(bh).State != EntityState.Deleted);
-        if (pending)
-        {
-            return true;
-        }
-
-        return db.BoulderHolds.Any(bh => bh.BoulderId == boulderId && bh.HoldId == holdId);
-    }
-
-    /// <summary>
-    /// Copies the curated (user-set) fields from the old hold onto its successor row, leaving the
-    /// successor's own detected position and shape untouched. Virtual only carries forward from a
-    /// virtual predecessor; a real detection is never demoted to virtual.
-    /// </summary>
-    private static void CopyCuratedFields(Hold from, Hold to)
-    {
-        to.Name = from.Name;
-        to.Color = from.Color;
-        to.Material = from.Material;
-        to.Category = from.Category;
-        to.HandType = from.HandType;
-        to.IsOnKickboard = from.IsOnKickboard;
-        to.IsAutoDetected = from.IsAutoDetected;
-        if (from.IsVirtual)
-        {
-            to.IsVirtual = true;
-        }
-    }
-
-    /// <summary>
     /// Deep-copies an old hold into a fresh next-generation row on its destination panel, keeping its
     /// position (the hold fell outside the new capture, so there is no better one) and a new identity.
     /// </summary>
@@ -440,10 +355,10 @@ public partial class WallBigUpdateService
     /// </summary>
     private static void ApplyWarpedShape(
         Hold successor,
-        Guid oldHoldId,
+        Hold oldHold,
         IReadOnlyDictionary<Guid, IReadOnlyList<HoldPositionNorm>>? warpShapes)
     {
-        if (warpShapes is null || !warpShapes.TryGetValue(oldHoldId, out var polygon) || polygon.Count < 3)
+        if (warpShapes is null || !warpShapes.TryGetValue(oldHold.Id, out var polygon) || polygon.Count < 3)
         {
             return;
         }
@@ -467,6 +382,12 @@ public partial class WallBigUpdateService
         // Pocket holes belong to the outline they were detected in (the clone's old one, or the twin's fresh
         // one) and are not warped with it — drop them; re-detection on the new photo restores them.
         successor.ShapeHoles = null;
+
+        // The outline is now the OLD hold's, so is its provenance. Without this a hand-traced polygon warped
+        // onto a twin was labelled as the twin's automatic contour, and the next update's re-outlining no
+        // longer protected it (ShapeRecognitionTargets.IsHandDrawn reads OutlineSource).
+        successor.OutlineSource = oldHold.OutlineSource;
+        successor.OutlineConfidence = oldHold.OutlineConfidence;
     }
 
     /// <summary>

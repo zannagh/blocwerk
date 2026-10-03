@@ -189,7 +189,7 @@
                 <button class="btn-danger-soft" @onclick="DiscardMatch" title="Not the same hold (D)">Discard match</button>
                 <button class="btn-primary" @onclick="ConfirmMatch" title="Same hold (Enter / C)">Confirm match</button>
                 <button class="btn-secondary" @onclick="EnterMoved" title="Same hold, different position (M)">Moved hold</button>
-                <button class="btn-danger-soft" @onclick="DeleteHold" title="This hold was removed from the wall (X / Delete)">Delete hold</button>
+                <button class="btn-danger-soft" @onclick="DeleteHold" disabled="@CurrentIsReFound" title="@DeleteHoldTitle">Delete hold</button>
                 <button class="btn-secondary" @onclick="Next" title="Skip (→)">→</button>
             </div>
             <div class="panel-stepper-foot">

@@ -59,12 +59,26 @@ public sealed partial class WallCaptureProcessor
 
     /// <summary>
     /// The final view failed for good while a preview is installed: the preview stays the wall's view and the capture
-    /// says so (a finished capture keeps its status; one in the photo-real stage ends as done).
+    /// says so (a finished capture keeps its status; one in the photo-real stage ends as done). On a tracked row, for the
+    /// runner queue's sweep; the processor writes the note conditionally (<see cref="EndWithoutViewAsync"/>).
     /// </summary>
     internal static void KeepPreview(WallCapture c, string reason, int step, int? total)
     {
+        KeepPreviewStatus(c);
+        c.FollowUpJson = (CaptureFollowUpRecord.Parse(c.FollowUpJson) with { Note = KeptPreviewNote(reason, step, total) }).ToJson();
+    }
+
+    /// <summary>The note of <see cref="KeepPreview"/>.</summary>
+    internal static string KeptPreviewNote(string reason, int step, int? total)
+    {
         const string polled = "Photo-real view failed: ";
         reason = reason.StartsWith(polled, StringComparison.Ordinal) ? reason[polled.Length..] : reason;
+        return GpuJobPreviews.KeptNote(step, total, reason);
+    }
+
+    /// <summary>The status half of <see cref="KeepPreview"/>.</summary>
+    private static void KeepPreviewStatus(WallCapture c)
+    {
         if (c.Status == WallCaptureStatus.Splatting)
         {
             c.Status = TextureOutcome(c.Error);
@@ -72,8 +86,6 @@ public sealed partial class WallCaptureProcessor
             c.Stage = "Done (photo-real preview kept)";
             c.CompletedAt = DateTimeOffset.UtcNow;
         }
-
-        c.FollowUpJson = (CaptureFollowUpRecord.Parse(c.FollowUpJson) with { Note = GpuJobPreviews.KeptNote(step, total, reason) }).ToJson();
     }
 
     /// <summary>The photo-real stage failed: the capture ends without the view, or keeps the installed preview.</summary>
@@ -84,9 +96,9 @@ public sealed partial class WallCaptureProcessor
             captureId,
             c =>
             {
-                if (preview is { } p)
+                if (preview is not null)
                 {
-                    KeepPreview(c, reason, p.Step, p.Total);
+                    KeepPreviewStatus(c);
                 }
                 else
                 {
@@ -94,5 +106,9 @@ public sealed partial class WallCaptureProcessor
                 }
             },
             ct);
+        if (preview is { } kept)
+        {
+            await NoteAsync(captureId, KeptPreviewNote(reason, kept.Step, kept.Total), ct);
+        }
     }
 }

@@ -22,9 +22,7 @@ public static class QuickUpdateDefaults
     public static QuickDecisions Build(BigUpdateSession session, IReadOnlyDictionary<Guid, IReadOnlyList<Guid>> stagedHoldsByPanel)
     {
         var suggested = session.SuggestedNewDiscards ?? new Dictionary<Guid, NewHoldDiscardReason>();
-        var twins = session.Carryover
-            .GroupBy(p => p.OldHoldId)
-            .ToDictionary(g => g.Key, g => g.OrderByDescending(p => p.Confidence).First().NewHoldId);
+        var twins = CarryoverScope.DefaultTwins(session);
         var carry = (session.CarriedOldHoldIds ?? [])
             .Select(id => new CarryoverDecision(id, CarryKind.Carried, twins.TryGetValue(id, out var twin) ? twin : null))
             .ToList();

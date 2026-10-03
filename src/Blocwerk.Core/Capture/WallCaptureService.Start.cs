@@ -144,6 +144,11 @@ public sealed partial class WallCaptureService
             errors.Add("Another capture of this wall is still being processed. Wait for it to finish.");
         }
 
+        if (await CaptureRedoMarks.Redoing(db.WallCaptures.Where(c => c.WallId == capture.WallId && c.Id != capture.Id)).AnyAsync())
+        {
+            errors.Add(CaptureRedoMarks.BusyMessage + " Wait for it to finish.");
+        }
+
         return errors;
     }
 

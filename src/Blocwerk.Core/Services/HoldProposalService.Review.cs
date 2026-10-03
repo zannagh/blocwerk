@@ -34,7 +34,9 @@ public sealed partial class HoldProposalService
 
         // A spot a hold was added or moved onto since the search is hidden (it stays pending: it shows again if the hold goes).
         var covered = await ProposalCoverage.CoveredAsync(db, wallId, list, logger, ct);
-        return covered.Count == 0 ? list : list.Where(p => !covered.Contains(p.Id)).ToList();
+        var shown = covered.Count == 0 ? list : list.Where(p => !covered.Contains(p.Id)).ToList();
+        await FlagStaleAsync(db, wallId, shown, ct);
+        return shown;
     }
 
     /// <inheritdoc />
@@ -47,6 +49,8 @@ public sealed partial class HoldProposalService
         {
             throw new UserFacingException("This hold is only seen in 3D, not on a panel photo. Add it on the panel by hand.");
         }
+
+        await EnsurePanelCurrentAsync(db, wallId, panelId, ct);
 
         // The normal hold-creation path: panel truth, editor check, activity log, generation stamp.
         var hold = await wallService.AddHoldAsync(wallId, x, y, r, color, category, wallPanelId: panelId);
@@ -102,6 +106,47 @@ public sealed partial class HoldProposalService
 
         await db.SaveChangesAsync(ct);
         return onPanels;
+    }
+
+    /// <summary>
+    /// A proposal's panel point is in the coordinates of the panel photo that was live when the search ran. Once a panel
+    /// update replaces that photo the point means nothing on the new one (the hold would be created on the superseded
+    /// panel, where the wall never shows it), and while an update is staged a new hold would be added to the staged set
+    /// with the old photo's coordinates. Both are refused; the next search maps the proposals onto the current photos.
+    /// </summary>
+    private static async Task EnsurePanelCurrentAsync(BlocwerkDbContext db, Guid wallId, Guid panelId, CancellationToken ct)
+    {
+        if (await db.Walls.AnyAsync(w => w.Id == wallId && w.StagedAt != null, ct))
+        {
+            throw new UserFacingException(
+                "A panel update of this wall is open. Apply or discard it first; after applying, run \"Find holds from all photos\" again.");
+        }
+
+        if (!(await LiveWallHolds.LoadPanelIdsAsync(db, wallId, ct)).Contains(panelId))
+        {
+            throw new UserFacingException(
+                "The panel photo this hold was found on has been replaced by a newer one. "
+                + "Run \"Find holds from all photos\" again to see the suggestions on the current photos.");
+        }
+    }
+
+    /// <summary>
+    /// Flags the proposals whose panel photo a panel update replaced (<see cref="HoldProposal.IsStale"/>). They are not
+    /// re-mapped here: the new panel's holds have no 3D placement until the placement run after the update, so a mapping
+    /// would mostly fail; the next search maps every proposal onto the current photos.
+    /// </summary>
+    private static async Task FlagStaleAsync(BlocwerkDbContext db, Guid wallId, IReadOnlyList<HoldProposal> proposals, CancellationToken ct)
+    {
+        if (!proposals.Any(p => p.PanelId is not null))
+        {
+            return;
+        }
+
+        var live = (await LiveWallHolds.LoadPanelIdsAsync(db, wallId, ct)).ToHashSet();
+        foreach (var p in proposals)
+        {
+            p.IsStale = p.PanelId is { } panel && !live.Contains(panel);
+        }
     }
 
     private static async Task<HoldProposal> PendingAsync(BlocwerkDbContext db, Guid wallId, Guid proposalId, CancellationToken ct) =>

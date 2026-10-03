@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Blocwerk.Core.Capture;
 using Blocwerk.Core.Capture.Corrections;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
@@ -43,6 +44,12 @@ public partial class WallGlyphService
             if (parsed.Document is not { } document)
             {
                 return GeometryImportResult.Fail(parsed.Errors);
+            }
+
+            // A manual import that goes live must wait for a re-solve or re-render (the capture pipeline guards its own).
+            if (source is null && options.Activate && await CaptureRedoMarks.AnyOnWallAsync(db, wallId))
+            {
+                return GeometryImportResult.Fail([CaptureRedoMarks.BusyMessage + " Import the model once that is done."]);
             }
 
             var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId)
@@ -98,6 +105,11 @@ public partial class WallGlyphService
             if (model.IsActive)
             {
                 return;
+            }
+
+            if (await CaptureRedoMarks.AnyOnWallAsync(db, wallId))
+            {
+                throw new UserFacingException(CaptureRedoMarks.BusyMessage + " Activate this model once that is done.");
             }
 
             WallGeometryDocument document;

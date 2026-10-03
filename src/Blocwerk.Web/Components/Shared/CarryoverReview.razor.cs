@@ -103,11 +103,13 @@ public partial class CarryoverReview
         // proposal exists. Never auto-set Changed — "physically changed" is a 100% manual assertion.
         // If the session carries no proposals (matcher unavailable/failed), the flow still works
         // fully because everything above is already carried.
-        foreach (var p in Session.Carryover)
+        // One twin per old hold, chosen as CarryoverScope.DefaultTwins does, so the seed, the quick review and the
+        // promote's scope reset agree.
+        foreach (var (oldHoldId, twin) in CarryoverScope.DefaultTwins(Session))
         {
-            if (_decisions.ContainsKey(p.OldHoldId))
+            if (_decisions.ContainsKey(oldHoldId))
             {
-                _decisions[p.OldHoldId] = new CarryoverDecision(p.OldHoldId, CarryKind.Carried, p.NewHoldId);
+                _decisions[oldHoldId] = new CarryoverDecision(oldHoldId, CarryKind.Carried, twin);
             }
         }
 

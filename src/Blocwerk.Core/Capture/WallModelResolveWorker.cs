@@ -12,12 +12,31 @@ namespace Blocwerk.Core.Capture;
 /// <summary>
 /// The single consumer of <see cref="WallModelResolveQueue"/>: solves finished captures' 3D models again one at a time
 /// (<see cref="WallCaptureProcessor.ResolveModelAsync"/>), beside the capture worker. On start it re-enqueues every
-/// re-solve a previous process left marked, and every adopted one whose follow-ups it left unfinished.
+/// re-solve a previous process left marked, and every adopted one whose follow-ups it left unfinished (at most
+/// <see cref="CaptureFollowUpChain.MaxRecoveries"/> starts in a row). When idle it re-enqueues marks no run clears
+/// (<see cref="CaptureRedoRescan"/>).
 /// </summary>
 public sealed class WallModelResolveWorker(
-    WallModelResolveQueue queue, WallCaptureProcessor processor, RootDbContextFactory dbContextFactory, ILogger<WallModelResolveWorker> logger)
+    WallModelResolveQueue queue,
+    WallCaptureProcessor processor,
+    RootDbContextFactory dbContextFactory,
+    ILogger<WallModelResolveWorker> logger,
+    CaptureFollowUpChain? chain = null,
+    WallCapturePipelineOptions? options = null)
     : BackgroundService
 {
+    private readonly TimeSpan idle = (options ?? new WallCapturePipelineOptions()).RedoRescanInterval;
+
+    /// <summary>Queues every marked re-solve no run is working on. Public for tests.</summary>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>How many were queued.</returns>
+    public async Task<int> RequeueStuckAsync(CancellationToken ct)
+    {
+        var stuck = await CaptureRedoRescan.StuckAsync(dbContextFactory, CaptureRedoKind.Resolve, processor, ct);
+        stuck.ForEach(queue.Enqueue);
+        return stuck.Count;
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await RecoverAsync(stoppingToken);
@@ -26,11 +45,22 @@ public sealed class WallModelResolveWorker(
             Guid captureId;
             try
             {
-                captureId = await queue.DequeueAsync(stoppingToken);
+                if (await CaptureRedoRescan.NextAsync(queue.DequeueAsync, idle, stoppingToken) is not { } next)
+                {
+                    await RequeueStuckAsync(stoppingToken);
+                    continue;
+                }
+
+                captureId = next;
             }
             catch (OperationCanceledException)
             {
                 return;
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Could not look for re-solves left marked");
+                continue;
             }
 
             try
@@ -52,15 +82,18 @@ public sealed class WallModelResolveWorker(
     {
         try
         {
+            await RequeueStuckAsync(ct);
             await using var db = dbContextFactory.CreateDbContext();
-            var marked = await db.WallCaptures
-                .Where(c => (c.SolveJobId != null && c.SolveJobId.StartsWith(CaptureResolveMark.Mark))
-                    || (c.FollowUpJson != null && c.FollowUpJson.Contains(CaptureFollowUpRecord.RederiveMarker)))
+            var rederive = await db.WallCaptures
+                .Where(c => c.FollowUpJson != null && c.FollowUpJson.Contains(CaptureFollowUpRecord.RederiveMarker))
                 .Select(c => c.Id)
                 .ToListAsync(ct);
-            foreach (var captureId in marked)
+            foreach (var captureId in rederive)
             {
-                queue.Enqueue(captureId);
+                if (chain is null || await chain.MayRecoverAsync(captureId, CaptureFollowUpRecoveryKind.Rederive, ct))
+                {
+                    queue.Enqueue(captureId);
+                }
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

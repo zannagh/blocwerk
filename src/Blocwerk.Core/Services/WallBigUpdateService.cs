@@ -113,10 +113,13 @@ public partial class WallBigUpdateService : IWallBigUpdateService
         // count as centre, which is always updated.
         var updatedPositions = await LoadUpdatedPositionsAsync(db, wall.Id, stagedGen);
         var panelPositions = await LoadPanelPositionsAsync(db, wall.Id);
-        var oldHolds = (await db.Holds
-                .Where(h => h.WallId == wall.Id && h.Generation == wall.CurrentGeneration)
-                .ToListAsync())
-            .Where(h => IsOnUpdatedPanel(h.WallPanelId, panelPositions, updatedPositions))
+
+        // The "before" side is the LIVE panel at each re-shot position, whatever its generation: a panel an
+        // earlier subset update skipped is still live at its older generation, and so are its holds.
+        // Ordered by id so the matcher sees the same input order on every run.
+        var liveUpdatedPanelIds = await LoadLiveUpdatedPanelIdsAsync(db, wall.Id, panelPositions, updatedPositions);
+        var oldHolds = (await LoadCarriedOldHoldsAsync(db, wall, liveUpdatedPanelIds, updatedPositions))
+            .OrderBy(h => h.Id)
             .ToList();
 
         // Keep crash-mat / floor false holds out of the matcher entirely so they are never offered as a
@@ -129,16 +132,14 @@ public partial class WallBigUpdateService : IWallBigUpdateService
         var oldByPosition = GroupOldHoldsByPosition(oldHolds, panelPositions);
         var centreOldHolds = oldByPosition.GetValueOrDefault((0, 0)) ?? new List<Hold>();
 
-        // Every live panel photo by id, so a neighbour's OLD panel image is available as the left side of
-        // its own carryover match (the staged photo is the right side). Read before any promote mutates it.
-        var oldPanelPhotosById = (await db.WallPanels
-                .Where(p => p.WallId == wall.Id && p.Photo != null)
-                .Select(p => new { p.Id, p.Photo })
-                .ToListAsync())
-            .ToDictionary(p => p.Id, p => p.Photo!);
+        // The live photo of each re-shot panel by id, so a neighbour's OLD panel image is available as the
+        // left side of its own carryover match (the staged photo is the right side). Only the live panels at
+        // updated positions: superseded rows keep their photos as history and are never needed here.
+        var oldPanelPhotosById = await LoadPanelPhotosAsync(db, liveUpdatedPanelIds);
 
         var centerHolds = await db.Holds
             .Where(h => h.WallPanelId == centerPanelId && h.Generation == stagedGen)
+            .OrderBy(h => h.Id)
             .ToListAsync();
         var centerImage = await db.WallPanels
             .Where(p => p.Id == centerPanelId)
@@ -209,6 +210,7 @@ public partial class WallBigUpdateService : IWallBigUpdateService
         {
             var neighbourHolds = await db.Holds
                 .Where(h => h.WallPanelId == panel.Id && h.Generation == stagedGen)
+                .OrderBy(h => h.Id)
                 .ToListAsync();
             var (neighbourMatcher, neighbourIndex) = BuildMatcherHolds(neighbourHolds);
             var direction = DirectionFromNeighbor(0, 0, panel.Col, panel.Row);

@@ -24,7 +24,8 @@ public class WallUpdateDefaultDecisionsTests
 
         var written = await sessions.SaveDefaultDecisionsAsync(h.WallId, Decisions(old.Id, twin, neighbour, detection));
 
-        Assert.True(written);
+        Assert.NotNull(written);
+        Assert.Equal((await sessions.GetOpenSessionAsync(h.WallId))!.UpdatedAt, written);
         var read = await sessions.GetDecisionsAsync(h.WallId);
         Assert.Equal(twin, Assert.Single(read.Carryover).NewHoldId);
         Assert.Equal([detection], Assert.Single(read.Neighbours).RemovedNeighbourHoldIds);
@@ -42,7 +43,7 @@ public class WallUpdateDefaultDecisionsTests
 
         var written = await sessions.SaveDefaultDecisionsAsync(h.WallId, Decisions(old.Id, twin, neighbour, detection), since);
 
-        Assert.False(written);
+        Assert.Null(written);
         var read = await sessions.GetDecisionsAsync(h.WallId);
         Assert.Equal(CarryKind.Removed, Assert.Single(read.Carryover).Kind);
         Assert.Empty(read.Neighbours);

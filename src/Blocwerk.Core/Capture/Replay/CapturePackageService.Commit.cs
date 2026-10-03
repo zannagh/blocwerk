@@ -11,7 +11,7 @@ namespace Blocwerk.Core.Capture.Replay;
 /// <summary>
 /// The commit: checked again, the staged files moved into the capture store (stamped as new, so the orphan sweep's grace
 /// covers the moment before the rows exist), then every row in ONE transaction through the normal activation swap
-/// (<see cref="WallGlyphService.SwapActiveModelAsync"/>), then the capture is queued. A failed insert moves the files back.
+/// (<see cref="WallGlyphService.SwapActiveModelAsync"/>), then the capture is queued. A failed move or insert moves the files back.
 /// The capture and model take this server's number of the same marker plan; a model registered to a model that is not here
 /// keeps that registration as history only.
 /// </summary>
@@ -20,6 +20,11 @@ public sealed partial class CapturePackageService
     public async Task<CaptureImportReport> CommitImportAsync(Guid importId, CancellationToken ct)
     {
         var userId = await EnsureAdminAsync(ct);
+        return await CaptureImportLocks.RunAsync(importId, () => CommitLockedAsync(importId, userId, ct), ct);
+    }
+
+    private async Task<CaptureImportReport> CommitLockedAsync(Guid importId, Guid userId, CancellationToken ct)
+    {
         var manifest = await staging.LoadManifestAsync(importId, ct);
         if (manifest is null)
         {
@@ -39,9 +44,10 @@ public sealed partial class CapturePackageService
             return missing == 0 ? report : report with { Blockers = [.. report.Blockers, $"{missing} file(s) are not uploaded yet."] };
         }
 
-        var moved = MoveIntoStore(importId, report.Files);
+        var moved = new List<string>();
         try
         {
+            MoveIntoStore(importId, report.Files, moved);
             await ScoreUnscoredPhotosAsync(manifest.Rows.Photos, ct);
             await InsertAsync(manifest, ct);
         }
@@ -59,18 +65,16 @@ public sealed partial class CapturePackageService
         return report with { Committed = true };
     }
 
-    private List<string> MoveIntoStore(Guid importId, IReadOnlyList<CaptureImportFile> states)
+    /// <summary>Moves the staged files into the store, adding each to <paramref name="moved"/> as it lands (so a failure part-way moves those back).</summary>
+    private void MoveIntoStore(Guid importId, IReadOnlyList<CaptureImportFile> states, List<string> moved)
     {
-        var moved = new List<string>();
         foreach (var file in states.Where(f => f.State == CaptureImportFileState.Staged))
         {
             var target = staging.StorePath(file.Name);
             File.Move(staging.StagedPath(importId, file.Name), target, overwrite: false);
-            File.SetLastWriteTimeUtc(target, DateTime.UtcNow);
             moved.Add(file.Name);
+            File.SetLastWriteTimeUtc(target, DateTime.UtcNow);
         }
-
-        return moved;
     }
 
     private void MoveBack(Guid importId, List<string> moved)

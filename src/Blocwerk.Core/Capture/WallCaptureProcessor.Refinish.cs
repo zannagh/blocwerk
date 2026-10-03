@@ -1,7 +1,6 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
-using Blocwerk.Core.Capture.FollowUp;
 using Blocwerk.Core.Runners;
 using Microsoft.Extensions.Logging;
 
@@ -40,10 +39,9 @@ public sealed partial class WallCaptureProcessor
 
                 c.CompletedAt = before.CaptureCompletedAt ?? DateTimeOffset.UtcNow;
                 c.Progress = 1;
-                var note = $"Finishing the trained photo-real view again failed ({reason}); the view installed before stays.";
-                c.FollowUpJson = (CaptureFollowUpRecord.Parse(c.FollowUpJson) with { Note = note }).ToJson();
             },
             ct);
+        await NoteAsync(captureId, $"Finishing the trained photo-real view again failed ({reason}); the view installed before stays.", ct);
         return true;
     }
 

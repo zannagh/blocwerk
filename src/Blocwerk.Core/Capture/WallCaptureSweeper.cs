@@ -11,7 +11,7 @@ public sealed record CaptureSweepResult(int Drafts, int ExpiredPhotos, int Orpha
 /// <summary>
 /// Retention for capture data — wall photos can show people, so nothing is kept without a reason:
 /// <list type="number">
-/// <item>drafts nobody submitted, after <see cref="WallCapturePipelineOptions.DraftLifetime"/>;</item>
+/// <item>drafts nobody submitted, <see cref="WallCapturePipelineOptions.DraftLifetime"/> after their last upload;</item>
 /// <item>photos of a finished or failed capture, <see cref="WallCapturePipelineOptions.PhotoRetention"/>
 /// after it ended — unless that capture produced the wall's ACTIVE model;</item>
 /// <item>stored images no photo or texture row references (a deleted wall or model cascades its rows
@@ -49,14 +49,35 @@ public sealed class WallCaptureSweeper(
         return new CaptureSweepResult(drafts, expired, orphans);
     }
 
-    private async Task<int> SweepDraftsAsync(DateTimeOffset now, CancellationToken ct)
+    /// <summary>
+    /// Removes drafts idle for <see cref="WallCapturePipelineOptions.DraftLifetime"/>: measured from their last photo or video
+    /// upload (or creation), never while an open "Update panels + 3D" run still owns them (that run expires on its own).
+    /// </summary>
+    /// <param name="now">The sweep time.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>How many drafts were removed.</returns>
+    public async Task<int> SweepDraftsAsync(DateTimeOffset now, CancellationToken ct)
     {
         await using var db = dbContextFactory.CreateDbContext();
         var cutoff = now - options.DraftLifetime;
+        var owned = await db.WallRefreshes
+            .Where(r => r.CaptureId != null && r.Status != WallRefreshStatus.Done && r.Status != WallRefreshStatus.Failed
+                        && r.Status != WallRefreshStatus.Discarded)
+            .Select(r => r.CaptureId!.Value)
+            .ToListAsync(ct);
 
         // Filtered in memory: SQLite cannot compare DateTimeOffset in SQL.
-        var drafts = (await db.WallCaptures.Where(c => c.Status == WallCaptureStatus.Draft).ToListAsync(ct))
+        var candidates = (await db.WallCaptures.Where(c => c.Status == WallCaptureStatus.Draft && !owned.Contains(c.Id)).ToListAsync(ct))
             .Where(c => c.CreatedAt < cutoff)
+            .ToList();
+        var candidateIds = candidates.Select(d => d.Id).ToList();
+        var uploads = (await db.WallCapturePhotos.Where(p => candidateIds.Contains(p.CaptureId))
+                .Select(p => new { p.CaptureId, p.UploadedAt })
+                .ToListAsync(ct))
+            .GroupBy(p => p.CaptureId)
+            .ToDictionary(g => g.Key, g => g.Max(p => p.UploadedAt));
+        var drafts = candidates
+            .Where(c => (!uploads.TryGetValue(c.Id, out var last) || last < cutoff) && !(VideoUploadedAt(c.VideoStoredPath) >= cutoff))
             .ToList();
         if (drafts.Count == 0)
         {
@@ -166,6 +187,13 @@ public sealed class WallCaptureSweeper(
         return new HashSet<string>(
             photos.Concat(textures).Concat(masks).Concat(sourceMaps).Concat(videos).Concat(sparse).Concat(gpu).Concat(refreshVideos),
             StringComparer.Ordinal);
+    }
+
+    /// <summary>When a draft's walk-along video was stored (its file's write time); null without one.</summary>
+    private DateTimeOffset? VideoUploadedAt(string? storedPath)
+    {
+        var path = storedPath is null ? null : files.ResolvePhysicalPath(storedPath);
+        return path is not null && File.Exists(path) ? new DateTimeOffset(File.GetLastWriteTimeUtc(path), TimeSpan.Zero) : null;
     }
 
     private void DeleteFiles(IEnumerable<string> names)
