@@ -223,6 +223,11 @@ else
                             <summary>3D runners (photo-real view)</summary>
                             <WallGpuRunnersPanel WallId="_wall.Id" />
                         </details>
+                        @* This wall's long-running work; it refreshes only while open. *@
+                        <details class="segment-settings" id="wall-jobs">
+                            <summary>Background jobs (captures, 3D, follow-ups)</summary>
+                            <JobProgressList WallId="_wall.Id" />
+                        </details>
                     }
                     <WallOutlineUpgrade WallId="_wall.Id" ShareToken="@ShareToken" />
                     <WallPhotoPrivacy WallId="_wall.Id" ShareToken="@ShareToken" />

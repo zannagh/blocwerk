@@ -1,0 +1,64 @@
+@* Running and recent long-running jobs (IJobProgressService). Refreshes every few seconds while it is on screen. *@
+@using Blocwerk.Core.Jobs
+
+<div class="jobs" @ref="root">
+    <div class="jobs-toolbar">
+        <label class="jobs-toggle">
+            <input type="checkbox" checked="@showRecent" @onchange="ToggleRecentAsync" />
+            Include jobs that ended in the last @RecentHours h
+        </label>
+        @if (snapshot is not null)
+        {
+            <span class="hint">@RunningCount running · updated @snapshot.GeneratedAt.ToLocalTime().ToString("HH:mm:ss")</span>
+        }
+    </div>
+
+    @if (error is not null)
+    {
+        <div class="error-msg">@error</div>
+    }
+
+    @if (snapshot is null)
+    {
+        <p class="loading-small">Loading...</p>
+    }
+    else if (snapshot.Jobs.Count == 0)
+    {
+        <p class="apikey-empty">@(showRecent ? "Nothing ran recently." : "Nothing is running.")</p>
+    }
+    else
+    {
+        <ul class="jobs-list">
+            @foreach (var job in snapshot.Jobs)
+            {
+                <li @key="job.Id" class="job job-@job.State">
+                    <div class="job-head">
+                        <span class="job-kind">@KindLabel(job.Kind)</span>
+                        <span class="job-state">@job.State</span>
+                        @if (job.Stage is not null)
+                        {
+                            <span class="job-stage">@job.Stage</span>
+                        }
+                        @if (WallId is null && job.WallName is not null)
+                        {
+                            <span class="job-wall">@job.WallName</span>
+                        }
+                    </div>
+                    @if (job.Detail is not null)
+                    {
+                        <div class="job-detail">@job.Detail</div>
+                    }
+                    @if (job.Percent is { } percent && JobStates.IsActive(job.State))
+                    {
+                        <progress class="job-progress" max="100" value="@percent.ToString(System.Globalization.CultureInfo.InvariantCulture)"></progress>
+                    }
+                    <div class="job-meta hint">@Meta(job)</div>
+                    @if (job.LastError is not null)
+                    {
+                        <div class="job-error">@job.LastError</div>
+                    }
+                </li>
+            }
+        </ul>
+    }
+</div>
