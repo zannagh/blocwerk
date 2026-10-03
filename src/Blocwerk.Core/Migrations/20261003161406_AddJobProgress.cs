@@ -11,6 +11,12 @@ namespace Blocwerk.Core.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.AddColumn<DateTimeOffset>(
+                name: "FollowUpRunningSince",
+                table: "WallCaptures",
+                type: "timestamp with time zone",
+                nullable: true);
+
             migrationBuilder.AddColumn<string>(
                 name: "TimelineJson",
                 table: "WallCaptures",
@@ -54,6 +60,16 @@ namespace Blocwerk.Core.Migrations
                 nullable: true);
 
             migrationBuilder.CreateIndex(
+                name: "IX_WallCaptures_CompletedAt",
+                table: "WallCaptures",
+                column: "CompletedAt");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_WallCaptures_FollowUpRunningSince",
+                table: "WallCaptures",
+                column: "FollowUpRunningSince");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_WallCaptures_UpdatedAt",
                 table: "WallCaptures",
                 column: "UpdatedAt");
@@ -68,12 +84,24 @@ namespace Blocwerk.Core.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropIndex(
+                name: "IX_WallCaptures_CompletedAt",
+                table: "WallCaptures");
+
+            migrationBuilder.DropIndex(
+                name: "IX_WallCaptures_FollowUpRunningSince",
+                table: "WallCaptures");
+
+            migrationBuilder.DropIndex(
                 name: "IX_WallCaptures_UpdatedAt",
                 table: "WallCaptures");
 
             migrationBuilder.DropIndex(
                 name: "IX_GpuJobs_CompletedAt",
                 table: "GpuJobs");
+
+            migrationBuilder.DropColumn(
+                name: "FollowUpRunningSince",
+                table: "WallCaptures");
 
             migrationBuilder.DropColumn(
                 name: "TimelineJson",

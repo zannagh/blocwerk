@@ -127,7 +127,7 @@ public sealed partial class CaptureFollowUpChain(RootDbContextFactory dbContextF
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             // A graceful shutdown: the step is not running any more (a restart runs it again).
-            await ClearRunningAsync(context.CaptureId, step.Key, CancellationToken.None);
+            await ClearRunningOnShutdownAsync(context.CaptureId, running);
             throw;
         }
         catch (Exception ex)

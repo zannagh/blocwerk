@@ -54,6 +54,7 @@ public static partial class CaptureTimeline
                 {
                     changes.Add(Change(entry, now));
                     entry.Entity.UpdatedAt = now;
+                    KeepRunningSince(entry);
                 }
             }
         }
@@ -81,6 +82,15 @@ public static partial class CaptureTimeline
             entries, Resolve, CaptureResolveMark.IsResolving(change.SolveBefore), CaptureResolveMark.IsResolving(change.SolveAfter),
             change.SolveAfter is not null, change.At);
         return changed;
+    }
+
+    /// <summary>A tracked write of the follow-up record keeps its running-since column in step with it.</summary>
+    private static void KeepRunningSince(EntityEntry<WallCapture> entry)
+    {
+        if (entry.State == EntityState.Added || entry.Property(c => c.FollowUpJson).IsModified)
+        {
+            entry.Entity.FollowUpRunningSince = FollowUp.CaptureFollowUpRecord.Parse(entry.Entity.FollowUpJson).Running?.StartedAt;
+        }
     }
 
     private static CaptureTimelineChange Change(EntityEntry<WallCapture> entry, DateTimeOffset now)

@@ -104,8 +104,16 @@ public sealed partial class CaptureFollowUpChain
     }
 
     /// <summary>Merges <paramref name="entry"/> into the stored record; null (nothing written) once the capture was re-pointed.</summary>
-    private Task<CaptureFollowUpRecord?> SaveEntryAsync(CaptureFollowUpContext context, CaptureFollowUpEntry entry, CancellationToken ct) =>
-        UpdateRecordAsync(context.CaptureId, context.ModelId, r => r.With(entry), ct);
+    private async Task<CaptureFollowUpRecord?> SaveEntryAsync(CaptureFollowUpContext context, CaptureFollowUpEntry entry, CancellationToken ct)
+    {
+        var saved = await UpdateRecordAsync(context.CaptureId, context.ModelId, r => r.With(entry), ct);
+        if (saved is null)
+        {
+            await DropOrphanedMarkAsync(context.CaptureId, entry, ct);
+        }
+
+        return saved;
+    }
 
     private async Task<CaptureFollowUpRecord?> UpdateRecordAsync(
         Guid captureId, Guid? modelId, Func<CaptureFollowUpRecord, CaptureFollowUpRecord> change, CancellationToken ct)

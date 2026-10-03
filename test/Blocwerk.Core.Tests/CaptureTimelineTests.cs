@@ -118,6 +118,34 @@ public class CaptureTimelineTests
         Assert.Equal(["queued", "detecting"], CaptureTimeline.Parse((await LoadAsync(h, id)).TimelineJson).Select(e => e.Stage));
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ASaveInsideATransaction_IsMergedWhenItCommits_AndNotWhenItRollsBack(bool commit)
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync(holdCount: 0);
+        var id = await AddAsync(h, WallCaptureStatus.Queued);
+        await using var db = h.CreateContext();
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var capture = await db.WallCaptures.SingleAsync(c => c.Id == id);
+        capture.Status = WallCaptureStatus.Detecting;
+        await db.SaveChangesAsync();
+
+        Assert.Equal(["queued"], CaptureTimeline.Parse(await db.WallCaptures.Where(c => c.Id == id).Select(c => c.TimelineJson).SingleAsync()).Select(e => e.Stage));
+        if (commit)
+        {
+            await transaction.CommitAsync();
+        }
+        else
+        {
+            await transaction.RollbackAsync();
+        }
+
+        var expected = commit ? new[] { "queued", "detecting" } : ["queued"];
+        Assert.Equal(expected, CaptureTimeline.Parse((await LoadAsync(h, id)).TimelineJson).Select(e => e.Stage));
+    }
+
     [Fact]
     public void TheTimeline_KeepsTheNewestEntriesOnly()
     {

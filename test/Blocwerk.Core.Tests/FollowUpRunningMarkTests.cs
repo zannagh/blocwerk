@@ -93,13 +93,46 @@ public class FollowUpRunningMarkTests
         Assert.Equal("links", Record(await LoadAsync(h, fresh)).Running?.Key);
     }
 
+    [Fact]
+    public async Task AnEntryRefusedAfterAModelSwap_DropsItsMarkAnyway()
+    {
+        using var h = new WallTestHarness();
+        var (captureId, _) = await CaptureFollowUpChainTests.SeedAsync(h);
+        var corrected = new WallGeometryModel { WallId = h.WallId, Json = GlyphGeometryJson.Build(), SchemaVersion = 1, Source = "correction" };
+        await using (var seed = h.CreateContext())
+        {
+            seed.WallGeometryModels.Add(corrected);
+            await seed.SaveChangesAsync();
+        }
+
+        var step = new ScriptedFollowUpStep("place", 100, [])
+        {
+            Run = (_, _) =>
+            {
+                // A correction re-points the capture while the step runs; the mark stays in its record.
+                using var db = h.CreateContext();
+                db.WallCaptures.Where(c => c.Id == captureId).ExecuteUpdate(s => s.SetProperty(c => c.GeometryModelId, corrected.Id));
+                return CaptureFollowUpStepResult.Done("placed on the old model");
+            },
+        };
+
+        await FollowUpChains.Build(h.RootContextFactory, step).RunAsync(captureId, CaptureFollowUpPhase.Model, default);
+
+        var capture = await LoadAsync(h, captureId);
+        Assert.Null(Record(capture).Running);
+        Assert.Empty(Record(capture).Steps);
+        Assert.Null(capture.FollowUpRunningSince);
+    }
+
     private static CaptureFollowUpRecord Record(WallCapture capture) => CaptureFollowUpRecord.Parse(capture.FollowUpJson);
 
     private static async Task SetRecordAsync(WallTestHarness h, Guid id, CaptureFollowUpRecord record)
     {
         var json = record.ToJson();
+        var since = record.Running?.StartedAt;
         await using var db = h.CreateContext();
-        await db.WallCaptures.Where(c => c.Id == id).ExecuteUpdateAsync(s => s.SetProperty(c => c.FollowUpJson, json));
+        await db.WallCaptures.Where(c => c.Id == id)
+            .ExecuteUpdateAsync(s => s.SetProperty(c => c.FollowUpJson, json).SetProperty(c => c.FollowUpRunningSince, since));
     }
 
     private static async Task<WallCapture> LoadAsync(WallTestHarness h, Guid id)

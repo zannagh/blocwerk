@@ -10,15 +10,15 @@ namespace Blocwerk.Core.Data;
 
 /// <summary>
 /// Keeps captures' stage timelines (<see cref="CaptureTimeline"/>). The changes are read before a save (and recomputed by a
-/// retried one, so nothing is recorded twice) and merged onto the STORED timeline only after the save committed, with a
-/// conditional write that reads again when another writer got there first: several workers save the same capture, and
-/// writing the timeline the context loaded would drop what another one recorded meanwhile. Added by
-/// <see cref="BlocwerkDbContext"/> itself, so every context has it whatever factory built it.
+/// retried one, so nothing is recorded twice) and merged onto the STORED timeline only once the write is committed
+/// (<see cref="CaptureTimelineMerge"/>: a conditional write that reads again when another writer got there first; several
+/// workers save the same capture, and writing the timeline the context loaded would drop what another one recorded).
+/// A save outside a transaction is committed when it returns, so it merges right away; a save inside the caller's
+/// transaction merges when that transaction commits (<see cref="CaptureTimelineTransactionInterceptor"/>), and not at all
+/// when it rolls back. Added by <see cref="BlocwerkDbContext"/> itself, so every context has it whatever factory built it.
 /// </summary>
 public sealed class CaptureTimelineInterceptor : SaveChangesInterceptor
 {
-    private const int MaxAttempts = 20;
-
     private readonly ConditionalWeakTable<DbContext, List<CaptureTimelineChange>> pending = new();
 
     private CaptureTimelineInterceptor()
@@ -43,22 +43,14 @@ public sealed class CaptureTimelineInterceptor : SaveChangesInterceptor
 
     public override int SavedChanges(SaveChangesCompletedEventData eventData, int result)
     {
-        foreach (var change in Take(eventData.Context))
-        {
-            ApplyAsync((BlocwerkDbContext)eventData.Context!, change, sync: true, CancellationToken.None).GetAwaiter().GetResult();
-        }
-
+        Merge(eventData.Context, sync: true).GetAwaiter().GetResult();
         return base.SavedChanges(eventData, result);
     }
 
     public override async ValueTask<int> SavedChangesAsync(
         SaveChangesCompletedEventData eventData, int result, CancellationToken cancellationToken = default)
     {
-        foreach (var change in Take(eventData.Context))
-        {
-            await ApplyAsync((BlocwerkDbContext)eventData.Context!, change, sync: false, CancellationToken.None);
-        }
-
+        await Merge(eventData.Context, sync: false);
         return await base.SavedChangesAsync(eventData, result, cancellationToken);
     }
 
@@ -74,47 +66,25 @@ public sealed class CaptureTimelineInterceptor : SaveChangesInterceptor
         return base.SaveChangesFailedAsync(eventData, cancellationToken);
     }
 
-    /// <summary>Merges one change onto the stored timeline (conditional on the stored value; read again on a conflict).</summary>
-    private static async Task ApplyAsync(BlocwerkDbContext db, CaptureTimelineChange change, bool sync, CancellationToken ct)
+    /// <summary>
+    /// Merges what the save changed, or, inside a caller's transaction, keeps it for when that commits: the merge must
+    /// neither run in a transaction that may still roll back nor make it longer.
+    /// </summary>
+    private Task Merge(DbContext? context, bool sync)
     {
-        try
+        var changes = Take(context);
+        if (context is null || changes.Count == 0)
         {
-            await MergeAsync(db, change, sync, ct);
+            return Task.CompletedTask;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+
+        if (context.Database.CurrentTransaction is not null)
         {
-            // The save itself committed; a timeline that could not be merged must not turn it into a failure.
+            CaptureTimelineMerge.Defer(context, changes);
+            return Task.CompletedTask;
         }
-    }
 
-    private static async Task MergeAsync(BlocwerkDbContext db, CaptureTimelineChange change, bool sync, CancellationToken ct)
-    {
-        for (var attempt = 0; attempt < MaxAttempts; attempt++)
-        {
-            var rows = db.WallCaptures.AsNoTracking().Where(c => c.Id == change.CaptureId).Select(c => new { c.TimelineJson });
-            var row = sync ? rows.FirstOrDefault() : await rows.FirstOrDefaultAsync(ct);
-            if (row is null)
-            {
-                return;
-            }
-
-            var read = row.TimelineJson;
-            var entries = CaptureTimeline.Parse(read);
-            if (!CaptureTimeline.Apply(entries, change))
-            {
-                return;
-            }
-
-            var json = CaptureTimeline.ToJson(entries);
-            var target = db.WallCaptures.Where(c => c.Id == change.CaptureId && c.TimelineJson == read);
-            var written = sync
-                ? target.ExecuteUpdate(s => s.SetProperty(c => c.TimelineJson, json))
-                : await target.ExecuteUpdateAsync(s => s.SetProperty(c => c.TimelineJson, json), ct);
-            if (written == 1)
-            {
-                return;
-            }
-        }
+        return CaptureTimelineMerge.MergeAllAsync(context, changes, sync, fresh: false);
     }
 
     private void Collect(DbContext? context)

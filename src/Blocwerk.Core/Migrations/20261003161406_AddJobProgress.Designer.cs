@@ -13,7 +13,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blocwerk.Core.Migrations
 {
     [DbContext(typeof(BlocwerkDbContext))]
-    [Migration("20261003160314_AddJobProgress")]
+    [Migration("20261003161406_AddJobProgress")]
     partial class AddJobProgress
     {
         /// <inheritdoc />
@@ -2032,6 +2032,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<string>("FollowUpJson")
                         .HasColumnType("text");
 
+                    b.Property<DateTimeOffset?>("FollowUpRunningSince")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int>("GeometryMode")
                         .HasColumnType("integer");
 
@@ -2117,6 +2120,10 @@ namespace Blocwerk.Core.Migrations
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CompletedAt");
+
+                    b.HasIndex("FollowUpRunningSince");
 
                     b.HasIndex("Status");
 

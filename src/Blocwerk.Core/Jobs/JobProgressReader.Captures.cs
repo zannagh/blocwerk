@@ -56,7 +56,7 @@ public sealed partial class JobProgressReader
         var active = scoped.Where(c => RunningStatuses.Contains(c.Status)
             || (c.TexturesJobId != null && c.TexturesJobId.StartsWith(CaptureTextureOutcome.RerenderMark))
             || (c.SolveJobId != null && c.SolveJobId.StartsWith(CaptureResolveMark.Mark))
-            || (c.FollowUpJson != null && c.FollowUpJson.Contains(CaptureFollowUpRecord.RunningMarker)));
+            || c.FollowUpRunningSince != null);
         var running = await Project(active.OrderByDescending(c => c.CreatedAt).Take(MaxActiveRows)).ToListAsync(ct);
         var ids = running.Select(r => r.Id).ToList();
         var ended = await Project(scoped

@@ -70,9 +70,14 @@ internal static class CaptureFollowUpRecordStore
                 await beforeWrite();
             }
 
+            var runningSince = record.Running?.StartedAt;
             var written = await db.WallCaptures
                 .Where(c => c.Id == captureId && c.GeometryModelId == model && c.FollowUpJson == read)
-                .ExecuteUpdateAsync(s => s.SetProperty(c => c.FollowUpJson, json).SetProperty(c => c.UpdatedAt, DateTimeOffset.UtcNow), ct);
+                .ExecuteUpdateAsync(
+                    s => s.SetProperty(c => c.FollowUpJson, json)
+                        .SetProperty(c => c.FollowUpRunningSince, runningSince)
+                        .SetProperty(c => c.UpdatedAt, DateTimeOffset.UtcNow),
+                    ct);
             if (written == 1)
             {
                 return record;

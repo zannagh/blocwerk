@@ -160,4 +160,11 @@ public class WallCapture
     /// current stage's start and the stages' historical durations from it. Null until the first change.
     /// </summary>
     public string? TimelineJson { get; set; }
+
+    /// <summary>
+    /// When the follow-up step running now started (the <c>running</c> mark of <see cref="FollowUpJson"/>), null when none
+    /// runs: kept beside the JSON by every write of it, so the progress API and the startup sweep find running steps by an
+    /// index instead of searching the JSON.
+    /// </summary>
+    public DateTimeOffset? FollowUpRunningSince { get; set; }
 }

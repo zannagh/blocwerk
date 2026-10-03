@@ -2029,6 +2029,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<string>("FollowUpJson")
                         .HasColumnType("text");
 
+                    b.Property<DateTimeOffset?>("FollowUpRunningSince")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int>("GeometryMode")
                         .HasColumnType("integer");
 
@@ -2114,6 +2117,10 @@ namespace Blocwerk.Core.Migrations
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CompletedAt");
+
+                    b.HasIndex("FollowUpRunningSince");
 
                     b.HasIndex("Status");
 

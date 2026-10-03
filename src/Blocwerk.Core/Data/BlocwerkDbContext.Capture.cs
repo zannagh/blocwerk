@@ -41,6 +41,8 @@ public partial class BlocwerkDbContext
 
             // The progress API's "ended within the window" read, every few seconds while a jobs list is open.
             entity.HasIndex(c => c.UpdatedAt);
+            entity.HasIndex(c => c.CompletedAt);
+            entity.HasIndex(c => c.FollowUpRunningSince);
         });
 
         modelBuilder.Entity<WallCapturePhoto>(entity =>
