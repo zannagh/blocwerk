@@ -40,7 +40,7 @@ else
             @{ var backUrl = !string.IsNullOrEmpty(ShareToken) ? $"/walls/{WallId}/shared/{ShareToken}?view=boulders" : $"/walls/{WallId}?view=boulders"; }
             <a href="@backUrl" class="back-link" aria-label="Back to boulder list"><span aria-hidden="true">&larr;</span><span class="back-link-text"> Back to boulder list</span></a>
             <div class="title-row">
-                <h1>@_boulder.Name</h1>
+                <h1 title="@_boulder.Name">@_boulder.Name</h1>
                 @if (!string.IsNullOrEmpty(_boulder.Grade))
                 {
                     <span class="grade-badge">@_boulder.Grade</span>
@@ -117,6 +117,7 @@ else
            and the Revise action leave the header and follow below the fold (CSS hides these two
            everywhere else, and hides their header twins on the phone). *@
         <div class="boulder-below-meta">
+            <p class="boulder-full-name">@_boulder.Name@(string.IsNullOrEmpty(_boulder.Grade) ? string.Empty : " · " + _boulder.Grade)</p>
             @if (_boulder.Setters.Count > 0)
             {
                 <p class="meta">Set by @SettersDisplay &middot; added by @CreatorDisplay &middot; <LocalTime Value="@_boulder.CreatedAt" Format="LocalTimeFormat.Date" /></p>

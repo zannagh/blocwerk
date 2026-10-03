@@ -3902,6 +3902,7 @@ html.bw-fullscreen .panel-link-dialog .panel-step-viewport {
  * desktop tier) is untouched. The view slot gets an exact height budget instead of the old
  * `--boulder-photo-chrome` guess, and --bottomnav-h already includes any bottom banner. */
 .boulder-below-meta { display: none; }
+.boulder-full-name { font-weight: 700; color: var(--text-heading); margin: 0 0 2px; overflow-wrap: anywhere; }
 @media (max-width: 720px), (orientation: landscape) and (max-height: 500px) {
     .boulder-detail {
         display: flex;
@@ -3936,6 +3937,14 @@ html.bw-fullscreen .panel-link-dialog .panel-step-viewport {
     /* The view: exactly the leftover height, image contained, zoom engine untouched. */
     .boulder-detail .boulder-view-slot { min-height: 0; }
     .boulder-detail .boulder-view-slot .wall3d-inline-stage { height: var(--boulder-view-h); min-height: 0; }
+    /* 3D mode: the legend/footer is not part of the first screen. The slot and the schematic's box
+       dissolve so the stage, the action row and the footer become siblings and the footer can be
+       ordered under the action row, like the photo mode's chips. */
+    .boulder-detail .boulder-view-slot:has(.wall3d-inline),
+    .boulder-detail .boulder-view-slot .wall3d-inline { display: contents; }
+    .boulder-detail .boulder-view-slot:has(.wall3d-inline) .wall3d-inline-stage,
+    .boulder-detail .boulder-view-slot:has(.wall3d-inline) .wall3d-inline-message { order: 3; border: 1px solid var(--border); border-radius: var(--r-md, 10px); overflow: hidden; }
+    .boulder-detail .boulder-view-slot:has(.wall3d-inline) .wall3d-inline-foot { order: 21; }
     .boulder-detail .boulder-view-slot .photo-viewport.photo-section { --fit-h: max(var(--photo-fit-floor), var(--boulder-view-h)); }
 
     /* Ascent buttons: 52px, icon beside the label. */
@@ -3953,7 +3962,10 @@ html.bw-fullscreen .panel-link-dialog .panel-step-viewport {
         max-width: none;
         --boulder-first-screen-chrome: 16px;
     }
-    .boulder-detail .boulder-view-slot { grid-column: 1; grid-row: 1 / span 4; }
+    .boulder-detail .boulder-view-slot,
+    .boulder-detail .boulder-view-slot:has(.wall3d-inline) .wall3d-inline-stage,
+    .boulder-detail .boulder-view-slot:has(.wall3d-inline) .wall3d-inline-message { grid-column: 1; grid-row: 1 / span 4; }
+    .boulder-detail .boulder-view-slot:has(.wall3d-inline) .wall3d-inline-foot { grid-column: 1 / -1; grid-row: auto; }
     .boulder-detail .page-header { grid-column: 2; grid-row: 1; }
     .boulder-detail .boulder-toggle-row { grid-column: 2; grid-row: 2; flex-direction: column; }
     .boulder-detail .attempt-section { grid-column: 2; grid-row: 3; }
