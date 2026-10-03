@@ -63,11 +63,10 @@ public partial class WallBigUpdateService
         var updatedPositions = await LoadUpdatedPositionsAsync(db, wallId, stagedGen);
         var panelPositions = await LoadPanelPositionsAsync(db, wallId);
 
-        var carriedOldHolds = (await db.Holds
-                .Where(h => h.WallId == wallId && h.Generation == oldGen)
-                .ToListAsync())
-            .Where(h => IsOnUpdatedPanel(h.WallPanelId, panelPositions, updatedPositions))
-            .ToList();
+        // The carry set is the holds on the LIVE panel at each updated position — including a panel an
+        // earlier subset update skipped, whose holds are still live at their older generation.
+        var liveUpdatedPanelIds = await LoadLiveUpdatedPanelIdsAsync(db, wallId, panelPositions, updatedPositions);
+        var carriedOldHolds = await LoadCarriedOldHoldsAsync(db, wall, liveUpdatedPanelIds, updatedPositions);
 
         // Drop crash-mat / floor false holds BEFORE the carry so a mat accepted at an earlier generation
         // never gets a successor or a lineage link (the boulder-membership guard keeps referenced holds).
@@ -86,7 +85,7 @@ public partial class WallBigUpdateService
         // Map each updated grid position to its NEW-generation staged panel row, so a carried old hold on
         // ANY re-shot panel (the centre OR a co-updated neighbour) advances/clones onto the new-generation
         // row of ITS OWN position — never onto the centre. Without this, an updated neighbour's old holds
-        // (which land in oldHolds via IsOnUpdatedPanel but have no twin in the centre-only centerStaged)
+        // (which land in oldHolds via the carry scope but have no twin in the centre-only centerStaged)
         // fell to the clone branch and were cloned onto the CENTRE panel. Built before ClearStaged and the
         // neighbour promote, while every staged row still carries its StagedPhoto at stagedGen.
         var newGenPanelByPosition = (await db.WallPanels
@@ -124,7 +123,7 @@ public partial class WallBigUpdateService
         // Returns the staged centre holds that went live — now an identity set, since a promoted twin
         // keeps its own id.
         var survivingCenterStaged = await CarryCentreHoldsAsync(
-            db, wallId, centerPanel, oldGen, newGen, oldHolds, stagedTwins, centerStaged, confirmation,
+            db, wallId, centerPanel, newGen, oldHolds, stagedTwins, centerStaged, confirmation,
             confirmation.CarriedWarpPositions, confirmation.CarriedWarpShapes, panelPositions,
             newGenPanelByPosition, user.Id);
 
@@ -233,7 +232,7 @@ public partial class WallBigUpdateService
                 continue;
             }
 
-            var removed = linkSet.RemovedNeighbourHoldIds.ToHashSet();
+            var removed = RemovableNeighbourHoldIds(linkSet, stagedHolds, survivingCenterStaged);
             foreach (var link in linkSet.Links)
             {
                 if (removed.Contains(link.NewHoldId))
@@ -325,26 +324,6 @@ public partial class WallBigUpdateService
         db.WallPanels.RemoveRange(panels);
     }
 
-    /// <summary>
-    /// Deletes holds a boulder may point at: clears everything referencing them with a Restrict FK
-    /// (memberships — their boulders go historic — panel links, and the cross-generation lineage,
-    /// which is tombstoned rather than dropped), then removes the holds. One set-based preparation for
-    /// the whole batch rather than three queries per hold, since this runs inside the promote
-    /// transaction. No SaveChanges.
-    /// </summary>
-    private static async Task DeleteHoldsAsync(BlocwerkDbContext db, Guid wallId, HashSet<Guid> holdIds)
-    {
-        if (holdIds.Count == 0)
-        {
-            return;
-        }
-
-        var holds = await db.Holds.Where(h => holdIds.Contains(h.Id) && h.WallId == wallId).ToListAsync();
-        await HoldDeletion.PrepareHoldsForDeleteAsync(
-            db, holds.Select(h => h.Id).ToList(), clearNeedsReview: true);
-        db.Holds.RemoveRange(holds);
-    }
-
     private static void ClearStaged(WallPanel panel)
     {
         panel.StagedPhoto = null;
@@ -425,7 +404,7 @@ public partial class WallBigUpdateService
     /// entirely at their current generation. The centre (0,0) is always among them (the center-first rule
     /// in <see cref="StageAsync"/> guarantees it), so the carryover always has a centre anchor.
     /// </summary>
-    private static async Task<HashSet<(int Col, int Row)>> LoadUpdatedPositionsAsync(
+    internal static async Task<HashSet<(int Col, int Row)>> LoadUpdatedPositionsAsync(
         BlocwerkDbContext db, Guid wallId, int stagedGen)
     {
         var positions = await db.WallPanels
@@ -436,7 +415,7 @@ public partial class WallBigUpdateService
     }
 
     /// <summary>Every panel of the wall by id → its grid position, for resolving a hold's (Col,Row).</summary>
-    private static async Task<Dictionary<Guid, (int Col, int Row)>> LoadPanelPositionsAsync(
+    internal static async Task<Dictionary<Guid, (int Col, int Row)>> LoadPanelPositionsAsync(
         BlocwerkDbContext db, Guid wallId)
     {
         var panels = await db.WallPanels
@@ -444,22 +423,5 @@ public partial class WallBigUpdateService
             .Select(p => new { p.Id, p.Col, p.Row })
             .ToListAsync();
         return panels.ToDictionary(p => p.Id, p => (p.Col, p.Row));
-    }
-
-    /// <summary>
-    /// Whether a hold sits on a panel re-photographed in this update. A null panel id means the hold is on
-    /// the legacy centre photo, which the centre (0,0) — always re-shot — subsumes, so it counts as updated.
-    /// </summary>
-    private static bool IsOnUpdatedPanel(
-        Guid? panelId,
-        IReadOnlyDictionary<Guid, (int Col, int Row)> panelPositions,
-        IReadOnlySet<(int Col, int Row)> updatedPositions)
-    {
-        if (panelId is not { } id)
-        {
-            return updatedPositions.Contains((0, 0));
-        }
-
-        return panelPositions.TryGetValue(id, out var pos) && updatedPositions.Contains(pos);
     }
 }
