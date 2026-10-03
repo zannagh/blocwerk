@@ -14,9 +14,10 @@ namespace Blocwerk.Core.Services.PanelCrop;
 public sealed record PanelCroppedPhoto(byte[] Photo, string ContentType, PanelCropRect Rect);
 
 /// <summary>
-/// Cuts a rectangle out of a stored photo. Works on the RAW pixel grid (EXIF orientation not applied), the grid hold
-/// X/Y are stored in (see <see cref="StoredPhotoSanitizer"/>), and writes the source's orientation back so the browser
-/// turns the crop exactly as it turned the original. PNG stays PNG; everything else becomes a high-quality JPEG.
+/// Cuts a rectangle out of a stored photo. The rectangle is given in the DISPLAYED frame (the photo as the browser turns
+/// it by its EXIF orientation: what the editor shows the holds and the crop box over); it is cut from the RAW pixel grid
+/// (<see cref="PanelCropOrientation"/>) and the source's orientation is written back, so the browser turns the crop
+/// exactly as it turned the original. PNG stays PNG; everything else becomes a high-quality JPEG.
 /// </summary>
 public static class PanelCropImage
 {
@@ -25,14 +26,15 @@ public static class PanelCropImage
 
     /// <summary>Crops <paramref name="source"/> to <paramref name="rect"/>.</summary>
     /// <param name="source">The photo bytes.</param>
-    /// <param name="rect">The crop, normalized to the photo.</param>
-    /// <returns>The cropped photo.</returns>
+    /// <param name="rect">The crop, normalized to the displayed photo.</param>
+    /// <returns>The cropped photo; its rectangle is in the displayed frame, snapped to the raw pixels.</returns>
     /// <exception cref="InvalidOperationException">The photo does not decode.</exception>
     public static PanelCroppedPhoto Crop(byte[] source, PanelCropRect rect)
     {
+        var origin = OriginOf(source);
         using var bitmap = SKBitmap.Decode(source)
             ?? throw new InvalidOperationException("The panel photo could not be read, so it cannot be cropped.");
-        var pixels = Snap(rect, bitmap.Width, bitmap.Height);
+        var pixels = Snap(PanelCropOrientation.ToRaw(rect, origin), bitmap.Width, bitmap.Height);
         using var subset = new SKBitmap();
         if (!bitmap.ExtractSubset(subset, pixels))
         {
@@ -43,7 +45,8 @@ public static class PanelCropImage
         using var image = SKImage.FromBitmap(subset);
         using var data = image.Encode(png ? SKEncodedImageFormat.Png : SKEncodedImageFormat.Jpeg, Quality);
         var encoded = StoredPhotoSanitizer.WithOrientationOf(source, data.ToArray());
-        return new PanelCroppedPhoto(encoded, png ? "image/png" : "image/jpeg", Normalize(pixels, bitmap.Width, bitmap.Height));
+        var displayed = PanelCropOrientation.ToDisplayed(Normalize(pixels, bitmap.Width, bitmap.Height), origin);
+        return new PanelCroppedPhoto(encoded, png ? "image/png" : "image/jpeg", displayed);
     }
 
     /// <summary>
@@ -58,8 +61,17 @@ public static class PanelCropImage
         using var stream = new SKMemoryStream(source);
         using var codec = SKCodec.Create(stream)
             ?? throw new InvalidOperationException("The panel photo could not be read, so it cannot be cropped.");
-        var (width, height) = (codec.Info.Width, codec.Info.Height);
-        return Normalize(Snap(rect, width, height), width, height);
+        var (width, height, origin) = (codec.Info.Width, codec.Info.Height, codec.EncodedOrigin);
+        var raw = Normalize(Snap(PanelCropOrientation.ToRaw(rect, origin), width, height), width, height);
+        return PanelCropOrientation.ToDisplayed(raw, origin);
+    }
+
+    /// <summary>The EXIF orientation the photo declares (upright when none or unreadable).</summary>
+    private static SKEncodedOrigin OriginOf(byte[] source)
+    {
+        using var stream = new SKMemoryStream(source);
+        using var codec = SKCodec.Create(stream);
+        return codec?.EncodedOrigin ?? SKEncodedOrigin.TopLeft;
     }
 
     private static PanelCropRect Normalize(SKRectI pixels, int width, int height) => new(

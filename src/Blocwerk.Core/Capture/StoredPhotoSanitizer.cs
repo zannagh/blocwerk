@@ -74,6 +74,15 @@ public static class StoredPhotoSanitizer
     public static byte[] WithOrientationOf(byte[] source, byte[] target)
     {
         var orientation = ImageMetadataStripper.CanStrip(source) ? ReadExif(source).Orientation : (ushort)0;
+        return WithOrientation(target, orientation);
+    }
+
+    /// <summary><paramref name="target"/> (a JPEG or PNG without metadata) with an orientation tag (2..8; others: unchanged).</summary>
+    /// <param name="target">The encoded pixels.</param>
+    /// <param name="orientation">The EXIF orientation.</param>
+    /// <returns>The tagged bytes.</returns>
+    internal static byte[] WithOrientation(byte[] target, ushort orientation)
+    {
         if (orientation is < 2 or > 8)
         {
             return target;
