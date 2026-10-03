@@ -63,11 +63,11 @@ public partial class WallHoldProposals
         }
 
         loadedWallId = WallId;
-        message = null;
-        failure = null;
+        (loaded, proposals, message, failure) = (false, [], null, null);
         await ReloadAsync();
     }
 
+    /// <summary>Loads the list; after the first list a failure keeps it (and the message) on screen.</summary>
     private async Task ReloadAsync()
     {
         try
@@ -83,7 +83,10 @@ public partial class WallHoldProposals
         catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidOperationException or KioskRestrictedException)
         {
             Logger.LogWarning(ex, "Could not load the hold proposals of wall {WallId}", WallId);
-            loaded = false;
+            if (loaded)
+            {
+                failure ??= "The list could not be updated; reload the page to see the latest.";
+            }
         }
     }
 

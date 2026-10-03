@@ -72,6 +72,8 @@ export function attach(svg, dotnet) {
             const x = Number(d.g.dataset.cx) + d.dx;
             const y = Number(d.g.dataset.cy) + d.dy;
             await dotnet.invokeMethodAsync('OnMarkerDropped', id, x, -y);
+        } catch {
+            /* the circuit went away */
         } finally {
             d.g.removeAttribute('transform');
         }
@@ -87,7 +89,7 @@ export function attach(svg, dotnet) {
         }
         const surface = evt.target.closest('[data-segment]');
         const index = surface ? Number(surface.dataset.segment) : -1;
-        dotnet.invokeMethodAsync('OnCanvasClicked', index, p.x, -p.y);
+        dotnet.invokeMethodAsync('OnCanvasClicked', index, p.x, -p.y).catch(() => { /* the circuit went away */ });
     };
 
     svg.addEventListener('pointerdown', onDown);

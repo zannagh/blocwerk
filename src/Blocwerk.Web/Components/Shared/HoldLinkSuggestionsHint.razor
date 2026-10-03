@@ -25,9 +25,13 @@
                 <p class="field-error" role="alert">@failure</p>
             }
 
-            @if (rows is null)
+            @if (rows is null && busy)
             {
                 <p class="loading-small">Loading…</p>
+            }
+            else if (rows is null)
+            {
+                <button type="button" class="btn-link" @onclick="LoadRowsAsync">Try again</button>
             }
             else
             {

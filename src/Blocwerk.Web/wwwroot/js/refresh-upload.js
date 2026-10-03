@@ -20,7 +20,8 @@ window.bwRefreshUpload = {
             }
             lastReport = now;
             const sent = loaded.reduce((a, b) => a + b, 0);
-            dotNetRef.invokeMethodAsync('OnUploadProgress', Math.floor((sent / Math.max(total, 1)) * 100), sent / 1048576, total / 1048576);
+            dotNetRef.invokeMethodAsync('OnUploadProgress', Math.floor((sent / Math.max(total, 1)) * 100), sent / 1048576, total / 1048576)
+                .catch(() => { /* the circuit went away */ });
         };
 
         const sendOne = (file, index) => new Promise((resolve) => {
@@ -35,7 +36,7 @@ window.bwRefreshUpload = {
             const finish = (result) => {
                 loaded[index] = file.size;
                 report(true);
-                dotNetRef.invokeMethodAsync('OnFileUploaded', result).finally(resolve);
+                dotNetRef.invokeMethodAsync('OnFileUploaded', result).catch(() => { /* the circuit went away */ }).finally(resolve);
             };
             xhr.onload = () => {
                 if (xhr.status >= 200 && xhr.status < 300) {
