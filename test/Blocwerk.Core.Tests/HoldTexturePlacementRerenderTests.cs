@@ -117,7 +117,7 @@ public class HoldTexturePlacementRerenderTests
     }
 
     /// <summary>"Render wall textures again": the same model's texture rows replaced by a new set (first bytes 4 and 5).</summary>
-    private static async Task RerenderAsync(WallTestHarness h, HoldPlacementScenario s)
+    internal static async Task RerenderAsync(WallTestHarness h, HoldPlacementScenario s)
     {
         s.Files.ReadAsync("r0.jpg", Arg.Any<CancellationToken>()).Returns(new byte[] { 4 });
         s.Files.ReadAsync("r1.jpg", Arg.Any<CancellationToken>()).Returns(new byte[] { 5 });

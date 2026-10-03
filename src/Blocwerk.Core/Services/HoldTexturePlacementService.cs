@@ -165,7 +165,7 @@ public sealed partial class HoldTexturePlacementService : IHoldTexturePlacementS
     /// The holds an unreverted run on <paramref name="modelId"/> placed against its current textures
     /// (<see cref="TextureSetStamp.Covers"/>): a run before "Render wall textures again" no longer counts.
     /// </summary>
-    private static async Task<HashSet<Guid>> PlacedOnTexturesAsync(BlocwerkDbContext db, Guid wallId, Guid modelId, CancellationToken ct)
+    internal static async Task<HashSet<Guid>> PlacedOnTexturesAsync(BlocwerkDbContext db, Guid wallId, Guid modelId, CancellationToken ct)
     {
         var textures = await TextureSetStamp.OfModelAsync(db, modelId, ct);
         var runs = await db.HoldPlacementRuns.AsNoTracking()
