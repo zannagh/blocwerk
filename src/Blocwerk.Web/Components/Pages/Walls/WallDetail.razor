@@ -130,17 +130,21 @@ else
                                     <span>Opening it continues where they left off.</span>
                                 </p>
                             }
-                            @* Wall admins' main way to bring the wall up to date after a visit. Not on the wall tablet
-                               (the page refuses kiosks too); this card is admin-only and not on share links.
-                               "Update wall with new photos" below is the step-by-step flow. *@
-                            @if (!KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
-                            {
-                                <a class="btn-secondary bigupdate-entry refresh-entry" href="/walls/@WallId/update">Update panels + 3D</a>
-                                <p class="field-hint refresh-entry-hint">After a visit: drop all its photos and videos, check the panels, confirm. You can also update the panels only and keep the 3D model.</p>
-                            }
-                            <button class="btn-secondary bigupdate-entry" @onclick="OpenBigUpdate">
-                                @(_openUpdate is null ? "Update wall with new photos" : "Continue the wall update")
-                            </button>
+                            @* Wall admins' main way to bring the wall up to date after a visit. "Update panels + 3D" is
+                               not offered on the wall tablet (the page refuses kiosks too); this card is admin-only and
+                               not on share links. "Update wall with new photos" is the step-by-step flow. *@
+                            <div class="update-actions" role="group" aria-labelledby="update-actions-title">
+                                <h3 class="update-actions-title" id="update-actions-title">Update panels</h3>
+                                @if (!KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
+                                {
+                                    <a class="btn-secondary update-action" href="/walls/@WallId/update">Update panels + 3D</a>
+                                    <p class="field-hint">Drop a visit's photos and videos at once; check, confirm, optionally keep the 3D model.</p>
+                                }
+                                <button class="btn-secondary update-action" @onclick="OpenBigUpdate">
+                                    @(_openUpdate is null ? "Update wall with new photos" : "Continue the wall update")
+                                </button>
+                                <p class="field-hint">Step by step: stage the panel photos, then decide each hold's carry-over yourself.</p>
+                            </div>
                         </div>
                     }
                     </div>

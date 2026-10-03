@@ -47,6 +47,11 @@ public sealed partial class WallRefreshService
             }
 
             var picks = ApplyChoices(RefreshTimeline.Picks(refresh), choices);
+            if (keepModel && picks.All(p => p.PhotoId is null))
+            {
+                throw new UserFacingException("Choose a new photo for at least one panel to update the panels only.");
+            }
+
             refresh.PanelPicksJson = RefreshTimeline.Write(picks);
             refresh.Status = WallRefreshStatus.Running;
             if (keepModel)

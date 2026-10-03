@@ -577,9 +577,6 @@ a.wall3d-link {
     display: flex; align-items: center; justify-content: center; gap: 8px;
     box-sizing: border-box; text-decoration: none; margin-bottom: 20px;
 }
-/* "Update panels + 3D" in the Wall Settings card, above the step-by-step update button. */
-a.refresh-entry { display: block; text-align: center; text-decoration: none; box-sizing: border-box; }
-.refresh-entry-hint { margin: 4px 0 12px; }
 .stat-label {
     font-size: 0.7rem;
     font-weight: 600;
@@ -2946,7 +2943,14 @@ html.bw-fullscreen .panel-link-dialog .panel-step-viewport {
 }
 
 /* ── Big-wall update flow (upload → carryover → overlaps → apply) ──────────── */
-.bigupdate-entry { width: auto; margin-top: 10px; }
+.update-actions { margin-top: 10px; }
+.update-actions-title { font-size: 0.8rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 8px; }
+/* Link and button look the same: an <a> and a <button> otherwise get different default font sizes. */
+.update-action {
+    display: block; width: 100%; box-sizing: border-box; padding: 12px; text-align: center; text-decoration: none;
+    font-size: 1rem; line-height: 1.25; font-family: inherit;
+}
+.update-actions .field-hint { margin: 4px 0 12px; }
 
 .bigupdate { margin: 8px 0; }
 .bigupdate-head {

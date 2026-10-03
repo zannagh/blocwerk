@@ -87,6 +87,26 @@ public class WallRefreshPanelsOnlyTests
         Assert.Equal(modelId, await ActiveModelIdAsync(h));
     }
 
+    [Fact]
+    public async Task PanelsOnly_WithNoPanelPhotoChosen_IsRefusedUpFront()
+    {
+        using var h = new WallTestHarness();
+        using var s = new RefreshScenario(h);
+        await s.SeedMarkerWallWithEarlierCaptureAsync();
+        await AddActiveModelAsync(h);
+        var id = await s.DropPhotosAsync();
+        await s.Service.SortAsync(id);
+        await s.RunQueuedAsync();
+        var sorted = await s.CurrentAsync();
+        Assert.True(sorted.HasActiveModel);
+
+        var none = sorted.Picks.Select(p => new PanelChoice(p.Col, p.Row, null)).ToList();
+        var ex = await Assert.ThrowsAsync<UserFacingException>(() => s.Service.StartAsync(id, none, keepModel: true));
+
+        Assert.Contains("at least one panel", ex.Message);
+        Assert.Equal(WallRefreshStatus.ReadyToStart, (await s.CurrentAsync()).Status);
+    }
+
     private static async Task<WallRefreshView> PrepareKeepingModelAsync(RefreshScenario s)
     {
         var id = await s.DropPhotosAsync();

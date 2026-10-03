@@ -113,7 +113,8 @@ public sealed record WallRefreshView(
     DateTimeOffset CreatedAt,
     Guid? CaptureId = null,
     Guid? UpdateSessionId = null,
-    bool Check3DPending = false)
+    bool Check3DPending = false,
+    bool HasActiveModel = false)
 {
     public bool IsWorking => Status is WallRefreshStatus.Sorting or WallRefreshStatus.Running or WallRefreshStatus.Applying;
 
