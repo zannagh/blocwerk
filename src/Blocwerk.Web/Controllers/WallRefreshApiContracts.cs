@@ -12,7 +12,11 @@ namespace Blocwerk.Web.Controllers;
 /// Overrides of the sorter's proposal, one per panel (<c>photoId: null</c> keeps that panel's current photo); omitted
 /// or empty accepts the proposal as it is, like pressing Start on the sort screen without changing anything.
 /// </param>
-public sealed record RefreshStartRequest(IReadOnlyList<PanelChoice>? Choices = null);
+/// <param name="KeepModel">
+/// Panels only: no 3D capture is started and the wall's active 3D model stays as it is, like the page's panels-only
+/// start. Defaults to false (the full update with a new 3D model).
+/// </param>
+public sealed record RefreshStartRequest(IReadOnlyList<PanelChoice>? Choices = null, bool KeepModel = false);
 
 /// <summary>Body of <c>POST …/refresh/{refreshId}/apply</c>.</summary>
 /// <param name="DecisionsVersion">
