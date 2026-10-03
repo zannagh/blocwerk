@@ -77,23 +77,28 @@ def _cam(c):
     K = np.array(c["K"], float).reshape(3, 3)
     d = np.array(c["dist"], float)
     k = (d[0], d[1], d[4] if len(d) > 4 else 0.0)
-    return {"K": K, "k": k, "r2max": max_valid_radius2(k),
+    return {"K": K, "k": k, "p": (d[2], d[3]) if len(d) > 3 else (0.0, 0.0), "r2max": max_valid_radius2(k),
             "R": np.array(c["R"], float).reshape(3, 3), "t": np.array(c["t"], float),
             "w": int(c["width"]), "h": int(c["height"])}
 
 
 def project(cam, X):
-    """World points (...,3) -> (pixels (...,2), depth (...), camera-frame points). A point past the
-    radius where the lens model folds back (camera.max_valid_radius2) gets a pixel far outside the image."""
+    """World points (...,3) -> (pixels (...,2), depth (...), camera-frame points), with k1, k2, p1, p2, k3
+    and skew exactly as SolvedCamera.Project (C#). Past the radial fold (camera.max_valid_radius2) a
+    point gets a pixel far outside the image. p = 0 and skew = 0 add exact zeros (radial bits unchanged)."""
     Xc = X @ cam["R"].T + cam["t"]
     z = Xc[..., 2]
     zs = np.where(z > 1e-6, z, 1e-6)
     xn, yn = Xc[..., 0] / zs, Xc[..., 1] / zs
     r2 = xn * xn + yn * yn
     k1, k2, k3 = cam["k"]
+    p1, p2 = cam.get("p", (0.0, 0.0))
     d = 1 + k1 * r2 + k2 * r2 * r2 + k3 * r2 * r2 * r2
+    tx = 2 * p1 * xn * yn + p2 * (r2 + 2 * xn * xn)
+    ty = p1 * (r2 + 2 * yn * yn) + 2 * p2 * xn * yn
     K = cam["K"]
-    px = np.stack([K[0, 0] * xn * d + K[0, 2], K[1, 1] * yn * d + K[1, 2]], -1)
+    px = np.stack([K[0, 0] * xn * d + K[0, 0] * tx + K[0, 1] * (yn * d + ty) + K[0, 2],
+                   K[1, 1] * yn * d + K[1, 1] * ty + K[1, 2]], -1)
     px[r2 >= cam.get("r2max", np.inf)] = -1e6
     return px, z, Xc
 
