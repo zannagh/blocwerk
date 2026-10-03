@@ -1,10 +1,11 @@
-# Blocwerk on the IONOS host (blocwerk.app). THIS file is what production runs: the box keeps a copy
+# Blocwerk on the production host (blocwerk.app). THIS file is what production runs: the box keeps a copy
 # of it as /home/patrickweindl/blocwerk/docker-compose.yml (with its .env next to it; template:
 # prod.env.example). Edit it HERE and copy it over (docker/prod/README.md); CI checks it against
 # docker-compose.yml (docker/prod/check-prod-compose.sh). Differences from docker-compose.yml:
 #  * nothing is published to the public interface — Caddy (on the shared `edge` network)
-#    terminates TLS and reaches the app by service name, matching eunomia/memory-sync here.
-#  * Postgres is bound to loopback with a generated password instead of publishing 5051.
+#    terminates TLS and reaches the app by service name.
+#  * Postgres and the dashboard are bound to loopback (host ports from .env), Postgres with a
+#    generated password.
 #  * no deploy-hook: an inbound webhook is an attack surface on a public host. A cron job polls
 #    GHCR for new images instead (docker/prod/autodeploy.sh).
 #  * no GPU services: this box has no GPU; training runs on the owner's 3D runner.
@@ -17,7 +18,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     # Loopback only: this host has a public IP, unlike the machine this moved from.
     ports:
-      - "127.0.0.1:18567:5432"
+      - "127.0.0.1:${POSTGRES_HOST_PORT:?set POSTGRES_HOST_PORT in .env}:5432"
     volumes:
       - ./pgdata:/var/lib/postgresql/data
     restart: unless-stopped
@@ -28,14 +29,14 @@ services:
       retries: 10
 
   # Unsecured by design (anonymous dashboard + OTLP ingest), so it must never be published
-  # beyond loopback. 18888/18889 are already taken by the csharp stack on this host.
+  # beyond loopback. Host ports come from .env (the defaults clash with another stack on the host).
   otel-dashboard:
     image: mcr.microsoft.com/dotnet/aspire-dashboard:9.0
     environment:
       DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
     ports:
-      - "127.0.0.1:18890:18888"
-      - "127.0.0.1:18891:18889"
+      - "127.0.0.1:${OTEL_UI_HOST_PORT:?set OTEL_UI_HOST_PORT in .env}:18888"
+      - "127.0.0.1:${OTEL_OTLP_HOST_PORT:?set OTEL_OTLP_HOST_PORT in .env}:18889"
     restart: unless-stopped
 
   blocwerk:
@@ -132,7 +133,7 @@ services:
       TEXTURES_BLEND_MAX_BYTES: ${TEXTURES_BLEND_MAX_BYTES:-}
       SFM_MAX_SPARSE_MB: ${SFM_MAX_SPARSE_MB:-}
       SFM_TIMEOUT_S: ${SFM_TIMEOUT_S:-}
-    # Shared host (authentik, synapse, game servers): capped. 4g rather than 2g: the multi-view
+    # Shared host: capped. 4g rather than 2g: the multi-view
     # texture blend alone may take TEXTURES_BLEND_MAX_BYTES (default 2 GB), decoded photos on top.
     cpus: 2
     mem_limit: 4g
@@ -162,7 +163,7 @@ services:
       COLMAP_MAX_IMAGE_SIZE: ${COLMAP_MAX_IMAGE_SIZE:-2400}
       COLMAP_MAX_FEATURES: ${COLMAP_MAX_FEATURES:-8192}
       COLMAP_MAX_MATCHES: ${COLMAP_MAX_MATCHES:-8192}
-      # Below the 4-CPU cap so the app and the other stacks keep headroom.
+      # Below the 4-CPU cap so the app and the rest of the host keep headroom.
       COLMAP_THREADS: ${COLMAP_THREADS:-3}
     cpus: 4
     cpu_shares: 256
