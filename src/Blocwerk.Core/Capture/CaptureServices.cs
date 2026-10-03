@@ -48,6 +48,7 @@ public static class CaptureServices
         services.AddSingleton<Runners.GpuPreviewQueue>();
         services.AddHostedService<GpuPreviewWorker>();
         services.AddScoped<Runners.IGpuRunnerService, Runners.GpuRunnerService>();
+        services.AddScoped<Runners.IGpuRunnerOverviewService, Runners.GpuRunnerOverviewService>();
         services.AddSingleton<Runners.SplatQualityOffer>();
 
         services.AddHostedService<WallCaptureWorker>();

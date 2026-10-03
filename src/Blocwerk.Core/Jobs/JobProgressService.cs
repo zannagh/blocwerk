@@ -75,7 +75,7 @@ public sealed class JobProgressService(
     }
 
     /// <summary>The walls the user owns or is an admin member of (the two branches of <see cref="WallAdminGuard"/>).</summary>
-    private static async Task<HashSet<Guid>> AdministeredWallsAsync(BlocwerkDbContext db, Guid userId, CancellationToken ct)
+    internal static async Task<HashSet<Guid>> AdministeredWallsAsync(BlocwerkDbContext db, Guid userId, CancellationToken ct)
     {
         var member = await db.WallMembers.AsNoTracking()
             .Where(m => m.UserId == userId && m.Role == WallRole.Admin)

@@ -1,0 +1,72 @@
+@* The runner overview (IGpuRunnerOverviewService): state, walls, current job, failures; revoke and share where allowed. *@
+@using Blocwerk.Core.Jobs
+@using Blocwerk.Core.Runners
+
+<div class="runners" @ref="root">
+    @if (error is not null)
+    {
+        <div class="error-msg">@error</div>
+    }
+
+    @if (!Runners.CanChangeRunners)
+    {
+        <p class="hint">@Blocwerk.Core.Services.ApiKeySessionRestrictedException.UserMessage Sharing and revoking runners is disabled.</p>
+    }
+
+    @if (overview is null)
+    {
+        <p class="loading-small">Loading...</p>
+    }
+    else if (overview.Runners.Count == 0)
+    {
+        <p class="apikey-empty">No 3D runner serves your walls. Wall admins create them under a wall's settings.</p>
+    }
+    else
+    {
+        <p class="hint">@Summary(overview) · updated @overview.GeneratedAt.ToLocalTime().ToString("HH:mm:ss")</p>
+        <ul class="runner-list">
+            @foreach (var runner in overview.Runners)
+            {
+                <li @key="runner.Id" class="runner runner-@runner.State">
+                    <div class="runner-head">
+                        <span class="runner-name">@runner.Name</span>
+                        <span class="runner-chip runner-state">@runner.State</span>
+                        @if (runner.SharedWithOtherWalls)
+                        {
+                            <span class="runner-chip">shared</span>
+                        }
+                    </div>
+                    <div class="runner-meta hint">@Owner(runner) · @Hardware(runner.Capabilities)</div>
+                    <div class="runner-meta hint">@Walls(runner)</div>
+                    <div class="runner-meta hint">seen @Ago(runner.LastSeenAt) · last job @Ago(runner.LastJobAt)</div>
+                    <div class="runner-doing">@Doing(runner.Current)</div>
+                    @if (runner.Current?.Job is { Percent: { } percent })
+                    {
+                        <progress class="job-progress" max="100" value="@percent.ToString(System.Globalization.CultureInfo.InvariantCulture)"></progress>
+                    }
+                    @if (runner.Failures.Count > 0)
+                    {
+                        <div class="runner-error">@Failures(runner.Failures)</div>
+                    }
+                    @if (Runners.CanChangeRunners && (runner.CanRevoke || runner.CanShare))
+                    {
+                        <div class="runner-actions">
+                            @if (runner.CanShare)
+                            {
+                                <button type="button" class="apikey-btn" disabled="@busy" @onclick="() => ShareAsync(runner)">
+                                    @(runner.SharedWithOtherWalls ? "Stop sharing" : "Offer to other walls")
+                                </button>
+                            }
+                            @if (runner.CanRevoke)
+                            {
+                                <button type="button" class="apikey-btn danger" disabled="@busy" @onclick="() => RevokeAsync(runner)">
+                                    @(confirmRevoke == runner.Id ? "Really revoke?" : "Revoke")
+                                </button>
+                            }
+                        </div>
+                    }
+                </li>
+            }
+        </ul>
+    }
+</div>

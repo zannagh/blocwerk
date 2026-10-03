@@ -78,9 +78,9 @@ public sealed class CaptureTimelineInterceptor : SaveChangesInterceptor
             return Task.CompletedTask;
         }
 
-        if (context.Database.CurrentTransaction is not null)
+        if (context.Database.CurrentTransaction is { } transaction)
         {
-            CaptureTimelineMerge.Defer(context, changes);
+            CaptureTimelineMerge.Defer(context, transaction.TransactionId, changes);
             return Task.CompletedTask;
         }
 

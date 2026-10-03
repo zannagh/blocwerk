@@ -9,7 +9,8 @@ namespace Blocwerk.Core.Data;
 /// <summary>
 /// The second half of <see cref="CaptureTimelineInterceptor"/>: timeline changes saved inside a caller's transaction are
 /// merged once it committed (by a context of their own, since the caller's context still holds the finished transaction),
-/// and dropped when it rolled back or failed.
+/// and dropped when it rolled back or failed. A transaction disposed without either leaves its changes held only until the
+/// context starts its next transaction (held changes belong to one transaction id) or goes away.
 /// </summary>
 public sealed class CaptureTimelineTransactionInterceptor : DbTransactionInterceptor
 {
@@ -24,7 +25,7 @@ public sealed class CaptureTimelineTransactionInterceptor : DbTransactionInterce
     {
         if (eventData.Context is { } context)
         {
-            CaptureTimelineMerge.MergeAllAsync(context, CaptureTimelineMerge.TakeDeferred(context), sync: true, fresh: true).GetAwaiter().GetResult();
+            CaptureTimelineMerge.MergeAllAsync(context, CaptureTimelineMerge.TakeDeferred(context, eventData.TransactionId), sync: true, fresh: true).GetAwaiter().GetResult();
         }
 
         base.TransactionCommitted(transaction, eventData);
@@ -35,10 +36,25 @@ public sealed class CaptureTimelineTransactionInterceptor : DbTransactionInterce
     {
         if (eventData.Context is { } context)
         {
-            await CaptureTimelineMerge.MergeAllAsync(context, CaptureTimelineMerge.TakeDeferred(context), sync: false, fresh: true);
+            await CaptureTimelineMerge.MergeAllAsync(
+                context, CaptureTimelineMerge.TakeDeferred(context, eventData.TransactionId), sync: false, fresh: true);
         }
 
         await base.TransactionCommittedAsync(transaction, eventData, cancellationToken);
+    }
+
+    public override DbTransaction TransactionStarted(DbConnection connection, TransactionEndEventData eventData, DbTransaction result)
+    {
+        // Held changes of an earlier transaction that ended without a commit or rollback EF saw (disposed) go now.
+        CaptureTimelineMerge.DropStale(eventData.Context, eventData.TransactionId);
+        return base.TransactionStarted(connection, eventData, result);
+    }
+
+    public override ValueTask<DbTransaction> TransactionStartedAsync(
+        DbConnection connection, TransactionEndEventData eventData, DbTransaction result, CancellationToken cancellationToken = default)
+    {
+        CaptureTimelineMerge.DropStale(eventData.Context, eventData.TransactionId);
+        return base.TransactionStartedAsync(connection, eventData, result, cancellationToken);
     }
 
     public override void TransactionRolledBack(DbTransaction transaction, TransactionEndEventData eventData)

@@ -19,20 +19,31 @@ internal static class CaptureTimelineMerge
 {
     private const int MaxAttempts = 20;
 
-    private static readonly ConditionalWeakTable<DbContext, List<CaptureTimelineChange>> Deferred = new();
+    private static readonly ConditionalWeakTable<DbContext, CaptureTimelineHeld> Deferred = new();
 
-    /// <summary>Keeps <paramref name="changes"/> until the context's transaction commits (dropped on a rollback).</summary>
-    public static void Defer(DbContext context, List<CaptureTimelineChange> changes)
+    /// <summary>
+    /// Keeps <paramref name="changes"/> until the transaction <paramref name="transactionId"/> of the context commits; changes
+    /// held for an earlier transaction of the context (one that ended without a commit EF saw) are dropped.
+    /// </summary>
+    public static void Defer(DbContext context, Guid transactionId, List<CaptureTimelineChange> changes)
     {
         lock (Deferred)
         {
-            var list = Deferred.GetOrCreateValue(context);
-            list.AddRange(changes);
+            if (!Deferred.TryGetValue(context, out var held) || held.TransactionId != transactionId)
+            {
+                held = new CaptureTimelineHeld(transactionId, []);
+                Deferred.AddOrUpdate(context, held);
+            }
+
+            held.Changes.AddRange(changes);
         }
     }
 
-    /// <summary>Takes (and forgets) what waits for the context's transaction.</summary>
-    public static List<CaptureTimelineChange> TakeDeferred(DbContext? context)
+    /// <summary>
+    /// Takes (and forgets) what the context holds; only what was held for <paramref name="transactionId"/> is returned
+    /// (null: whatever it holds, to drop it).
+    /// </summary>
+    public static List<CaptureTimelineChange> TakeDeferred(DbContext? context, Guid? transactionId = null)
     {
         if (context is null)
         {
@@ -41,13 +52,30 @@ internal static class CaptureTimelineMerge
 
         lock (Deferred)
         {
-            if (!Deferred.TryGetValue(context, out var list))
+            if (!Deferred.TryGetValue(context, out var held))
             {
                 return [];
             }
 
             Deferred.Remove(context);
-            return list;
+            return transactionId is null || held.TransactionId == transactionId ? held.Changes : [];
+        }
+    }
+
+    /// <summary>Drops what the context holds for a transaction other than <paramref name="transactionId"/> (a new one began).</summary>
+    public static void DropStale(DbContext? context, Guid transactionId)
+    {
+        if (context is null)
+        {
+            return;
+        }
+
+        lock (Deferred)
+        {
+            if (Deferred.TryGetValue(context, out var held) && held.TransactionId != transactionId)
+            {
+                Deferred.Remove(context);
+            }
         }
     }
 
@@ -67,7 +95,7 @@ internal static class CaptureTimelineMerge
         BlocwerkDbContext? own = null;
         try
         {
-            own = fresh ? new BlocwerkDbContext((DbContextOptions<BlocwerkDbContext>)context.GetService<IDbContextOptions>()) : null;
+            own = fresh ? ((BlocwerkDbContext)context).CreateTimelineMergeContext() : null;
             var db = own ?? (BlocwerkDbContext)context;
             foreach (var change in changes)
             {

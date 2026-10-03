@@ -147,6 +147,30 @@ public class CaptureTimelineTests
     }
 
     [Fact]
+    public async Task ATransactionDisposedWithoutCommit_LeavesNothingForTheNextOne()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync(holdCount: 0);
+        var id = await AddAsync(h, WallCaptureStatus.Queued);
+        await using var db = h.CreateContext();
+        var capture = await db.WallCaptures.SingleAsync(c => c.Id == id);
+        await using (await db.Database.BeginTransactionAsync())
+        {
+            capture.Status = WallCaptureStatus.Detecting;
+            await db.SaveChangesAsync();
+        }
+
+        await using (var next = await db.Database.BeginTransactionAsync())
+        {
+            capture.Stage = "something else";
+            await db.SaveChangesAsync();
+            await next.CommitAsync();
+        }
+
+        Assert.Equal(["queued"], CaptureTimeline.Parse((await LoadAsync(h, id)).TimelineJson).Select(e => e.Stage));
+    }
+
+    [Fact]
     public void TheTimeline_KeepsTheNewestEntriesOnly()
     {
         var entries = Enumerable.Range(0, CaptureTimeline.MaxEntries + 5)
