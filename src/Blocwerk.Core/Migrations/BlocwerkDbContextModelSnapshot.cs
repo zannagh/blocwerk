@@ -778,6 +778,7 @@ namespace Blocwerk.Core.Migrations
 
                     b.Property<DateTimeOffset?>("LeftoverDroppedAt")
                         .HasColumnType("timestamp with time zone");
+
                     b.Property<double?>("Loss")
                         .HasColumnType("double precision");
 
