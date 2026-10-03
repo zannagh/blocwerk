@@ -20,14 +20,14 @@ public partial class PanelCropTool
             return;
         }
 
-        await OnSaved.InvokeAsync(result.PhotoRevision);
+        await OnSaved.InvokeAsync(CroppedMessage(result));
     });
 
     private Task CropAnywayAsync() => RunAsync(async () =>
     {
         var result = await CropService.CropAsync(WallId, PanelId, rect, confirmRemovals: true);
         confirm = null;
-        await OnSaved.InvokeAsync(result.PhotoRevision);
+        await OnSaved.InvokeAsync(CroppedMessage(result));
     });
 
     private void CancelConfirm()
@@ -35,11 +35,40 @@ public partial class PanelCropTool
         confirm = null;
     }
 
-    private Task UndoAsync() => RunAsync(async () =>
+    /// <summary>Undo straight away when the crop removed nothing; otherwise say first what may not come back.</summary>
+    private Task UndoAsync()
+    {
+        if (state is { RemovedHoldCount: > 0 })
+        {
+            confirmUndo = true;
+            return Task.CompletedTask;
+        }
+
+        return UndoConfirmedAsync();
+    }
+
+    private void CancelUndo()
+    {
+        confirmUndo = false;
+    }
+
+    private Task UndoConfirmedAsync() => RunAsync(async () =>
     {
         var result = await CropService.UndoAsync(WallId, PanelId);
-        await OnSaved.InvokeAsync(result.PhotoRevision);
+        confirmUndo = false;
+        await OnSaved.InvokeAsync(UndoneMessage(result));
     });
+
+    private static string CroppedMessage(PanelCropResult result) => result.Preview.RemovedHoldIds.Count == 0
+        ? "Panel photo cropped; holds stay where they are on the wall"
+        : $"Panel photo cropped; {Plural(result.Preview.RemovedHoldIds.Count, "hold")} removed";
+
+    private static string UndoneMessage(PanelCropResult result) => result switch
+    {
+        { RevertedFromJournal: true } => "Crop undone: original photo, removed holds and their boulders restored",
+        { HoldsNotRestored: > 0 } => $"Crop undone (photo only): the panel was edited since, so {Plural(result.HoldsNotRestored, "removed hold")} stay deleted",
+        _ => "Crop undone: original photo restored",
+    };
 
     /// <summary>Back to the whole photo (nothing cropped yet).</summary>
     private async Task ResetAsync()
@@ -67,6 +96,7 @@ public partial class PanelCropTool
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or UnauthorizedAccessException)
         {
             confirm = null;
+            confirmUndo = false;
             error = ex.Message;
         }
         finally

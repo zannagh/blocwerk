@@ -34,15 +34,13 @@ public partial class WallDetail
         croppingPanel = false;
     }
 
-    private async Task OnPanelCropSaved(int photoRevision)
+    private async Task OnPanelCropSaved(string message)
     {
-        // The revision arrives with the re-read panel below; the callback carries it for hosts without a panel list.
-        _ = photoRevision;
         croppingPanel = false;
         var panelId = _editingPanel?.Id;
         await LoadPanels();
         _editingPanel = _livePanels.FirstOrDefault(p => p.Id == panelId) ?? _editingPanel;
         await LoadEditingPanelHolds();
-        await ShowToast("Panel photo updated; holds stay where they are on the wall");
+        await ShowToast(message);
     }
 }

@@ -32,6 +32,7 @@ public partial class PanelCropTool : IAsyncDisposable
     private HashSet<Guid> cutHoldIds = [];
     private PanelCropState? state;
     private PanelCropPreview? confirm;
+    private bool confirmUndo;
     private string? error;
     private bool busy;
 
@@ -54,9 +55,9 @@ public partial class PanelCropTool : IAsyncDisposable
     [Parameter]
     public IReadOnlyList<Hold> Holds { get; set; } = [];
 
-    /// <summary>Gets or sets the callback after a crop or undo was saved; carries the new photo revision.</summary>
+    /// <summary>Gets or sets the callback after a crop or undo was saved; carries the message to show the user.</summary>
     [Parameter]
-    public EventCallback<int> OnSaved { get; set; }
+    public EventCallback<string> OnSaved { get; set; }
 
     /// <summary>Gets or sets the callback when the tool closes without saving.</summary>
     [Parameter]
@@ -125,6 +126,12 @@ public partial class PanelCropTool : IAsyncDisposable
         module = await JS.InvokeAsync<IJSObjectReference>("import", "/js/panel-crop.js");
         handle = await module.InvokeAsync<IJSObjectReference>("attach", stage, box, self, JsRect(rect));
     }
+
+    private bool Confirming => confirm is not null || confirmUndo;
+
+    private string UndoHint => state is { RemovedHoldCount: > 0 } removed
+        ? $"Undo crop brings back the original photo. The {Plural(removed.RemovedHoldCount, "hold")} this crop removed come back only if the panel was not edited since."
+        : "Undo crop brings back the original photo.";
 
     private static string F(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
 

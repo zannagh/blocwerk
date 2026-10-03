@@ -26,6 +26,7 @@ public sealed partial class PanelCropService : IPanelCropService
     private readonly IKioskContext? kioskContext;
     private readonly IChangeJournal? changeJournal;
     private readonly IHoldRefinementQueue? refinementQueue;
+    private readonly ChangeJournalReverter? reverter;
 
     /// <summary>Initializes a new instance of the <see cref="PanelCropService"/> class. The optional parts are absent in unit tests and tool hosts, as on <c>WallPanelService</c>.</summary>
     public PanelCropService(
@@ -34,7 +35,8 @@ public sealed partial class PanelCropService : IPanelCropService
         ILogger<PanelCropService> logger,
         IKioskContext? kioskContext = null,
         IChangeJournal? changeJournal = null,
-        IHoldRefinementQueue? refinementQueue = null)
+        IHoldRefinementQueue? refinementQueue = null,
+        ChangeJournalReverter? reverter = null)
     {
         this.dbContextFactory = dbContextFactory;
         this.currentUserService = currentUserService;
@@ -42,6 +44,7 @@ public sealed partial class PanelCropService : IPanelCropService
         this.kioskContext = kioskContext;
         this.changeJournal = changeJournal;
         this.refinementQueue = refinementQueue;
+        this.reverter = reverter;
     }
 
     /// <inheritdoc/>
@@ -64,7 +67,8 @@ public sealed partial class PanelCropService : IPanelCropService
             .Select(c => new { c.Left, c.Top, c.Width, c.Height })
             .FirstOrDefaultAsync(ct);
         var rect = crop is null ? (PanelCropRect?)null : new PanelCropRect(crop.Left, crop.Top, crop.Width, crop.Height);
-        return new PanelCropState(crop is not null, rect, panel.PhotoRevision);
+        var removed = crop is null ? 0 : (await CropChainAsync(db, wallId, panelId, ct)).Sum(b => b.RemovedHolds);
+        return new PanelCropState(crop is not null, rect, panel.PhotoRevision, removed);
     }
 
     /// <inheritdoc/>
@@ -87,7 +91,7 @@ public sealed partial class PanelCropService : IPanelCropService
         var plan = await PlanCropAsync(db, target, rect, ct);
         if (plan.Preview.NeedsConfirmation && !confirmRemovals)
         {
-            return new PanelCropResult(false, plan.Preview, target.Panel.PhotoRevision, 0);
+            return new PanelCropResult(false, plan.Preview, target.Panel.PhotoRevision, 0, false, 0);
         }
 
         var source = target.Crop?.OriginalPhoto ?? target.Panel.Photo!;
@@ -97,34 +101,12 @@ public sealed partial class PanelCropService : IPanelCropService
         target.Panel.PhotoContentType = cropped.ContentType;
         target.Panel.PhotoRevision++;
 
-        var historic = await ApplyAsync(db, target, plan.Map, plan.Preview.RemovedHoldIds, "panel-crop", ct);
+        var historic = await ApplyAsync(db, target, plan.Map, plan.Preview.RemovedHoldIds, CropLabel, ct);
         logger.LogInformation(
             "Panel {PanelId} on wall {WallId} cropped to ({Left:F3},{Top:F3},{Width:F3},{Height:F3}) of its original: {Kept} holds re-mapped, {Removed} removed, {Historic} boulder(s) made historic",
             panelId, wallId, cropped.Rect.Left, cropped.Rect.Top, cropped.Rect.Width, cropped.Rect.Height,
             plan.Preview.KeptHoldCount, plan.Preview.RemovedHoldIds.Count, historic);
-        return new PanelCropResult(true, plan.Preview, target.Panel.PhotoRevision, historic);
-    }
-
-    /// <inheritdoc/>
-    public async Task<PanelCropResult> UndoAsync(Guid wallId, Guid panelId, CancellationToken ct = default)
-    {
-        await using var db = await OpenAdminContextAsync(wallId, ct);
-        var target = await LoadTargetAsync(db, wallId, panelId, ct);
-        if (target.Crop is not { } crop)
-        {
-            throw new InvalidOperationException("This panel photo is not cropped.");
-        }
-
-        var map = PanelFrameMap.OutOfCrop(new PanelCropRect(crop.Left, crop.Top, crop.Width, crop.Height));
-        target.Panel.Photo = crop.OriginalPhoto;
-        target.Panel.PhotoContentType = crop.OriginalPhotoContentType;
-        target.Panel.PhotoRevision++;
-        db.WallPanelCrops.Remove(crop);
-
-        await ApplyAsync(db, target, map, [], "panel-crop-undo", ct);
-        logger.LogInformation("Panel {PanelId} on wall {WallId}: crop undone, original photo restored", panelId, wallId);
-        var empty = new PanelCropPreview([], 0, []);
-        return new PanelCropResult(true, empty, target.Panel.PhotoRevision, 0);
+        return new PanelCropResult(true, plan.Preview, target.Panel.PhotoRevision, historic, false, 0);
     }
 
     /// <summary>A context for a wall-admin mutation: not a kiosk, signed in, admin of the wall.</summary>

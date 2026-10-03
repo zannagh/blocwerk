@@ -29,10 +29,25 @@ public sealed record PanelCropPreview(
 /// <param name="Preview">What the crop does (or would do) to the holds; empty for an undo.</param>
 /// <param name="PhotoRevision">The panel's photo revision afterwards (cache-bust token for the photo URL).</param>
 /// <param name="HistoricBoulderCount">How many active boulders the removed holds made historic.</param>
-public sealed record PanelCropResult(bool Applied, PanelCropPreview Preview, int PhotoRevision, int HistoricBoulderCount);
+/// <param name="RevertedFromJournal">
+/// For an undo: the crop was reverted through the change journal, so the holds it removed and their boulders' states
+/// came back too. False for a crop, and for an undo that could only restore the photo.
+/// </param>
+/// <param name="HoldsNotRestored">For an undo: how many holds the crop removed that stay removed (photo-only undo).</param>
+public sealed record PanelCropResult(
+    bool Applied,
+    PanelCropPreview Preview,
+    int PhotoRevision,
+    int HistoricBoulderCount,
+    bool RevertedFromJournal,
+    int HoldsNotRestored);
 
 /// <summary>A live panel's crop state, for the editor.</summary>
 /// <param name="IsCropped">Whether the photo is cropped (an original is kept and "Undo crop" is available).</param>
 /// <param name="Crop">The current crop relative to the original, when cropped.</param>
 /// <param name="PhotoRevision">The panel's photo revision.</param>
-public sealed record PanelCropState(bool IsCropped, PanelCropRect? Crop, int PhotoRevision);
+/// <param name="RemovedHoldCount">
+/// How many holds the current crop removed. "Undo crop" tries to bring them back (journal revert); when the wall has
+/// changed since, only the photo is restored and they stay removed, which the editor warns about first.
+/// </param>
+public sealed record PanelCropState(bool IsCropped, PanelCropRect? Crop, int PhotoRevision, int RemovedHoldCount = 0);
