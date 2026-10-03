@@ -4,7 +4,7 @@
 @implements IAsyncDisposable
 
 <div class="wall3d-stage-el" @ref="stage"></div>
-@if (mountFailed)
+@if (failure is not null)
 {
-    <p class="wall3d-stage-failed">This device could not start the 3D view (WebGL is unavailable).</p>
+    <p class="wall3d-stage-failed">@failure</p>
 }

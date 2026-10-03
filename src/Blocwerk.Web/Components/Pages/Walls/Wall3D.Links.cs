@@ -41,14 +41,6 @@ public partial class Wall3D
     private async Task UpdateViewAsync()
     {
         linksChanged = false;
-        try
-        {
-            _result = await ViewService.BuildAsync(WallId, BoulderId, ShareToken);
-            await LoadCorrectionAsync();
-        }
-        catch (UnauthorizedAccessException)
-        {
-            Navigation.NavigateTo("/account/login", replace: true);
-        }
+        await ReloadAsync();
     }
 }
