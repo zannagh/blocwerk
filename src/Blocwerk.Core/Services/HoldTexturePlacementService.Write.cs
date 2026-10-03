@@ -26,7 +26,11 @@ public sealed partial class HoldTexturePlacementService
 
         // The run row exists before the first hold is written, and every batch updates its entry list in the SAME
         // SaveChanges as the holds, so whatever was written is always revertable, even if the run is cut short.
-        var run = new HoldPlacementRun { WallId = wallId, GeometryModelId = model.Id, CreatedByUserId = userId, Trigger = trigger };
+        var textures = await TextureSetStamp.OfModelAsync(db, model.Id, ct);
+        var run = new HoldPlacementRun
+        {
+            WallId = wallId, GeometryModelId = model.Id, TextureSetKey = textures?.Key, CreatedByUserId = userId, Trigger = trigger,
+        };
         db.HoldPlacementRuns.Add(run);
         await db.SaveChangesAsync(ct);
 

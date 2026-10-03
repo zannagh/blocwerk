@@ -110,14 +110,23 @@ public sealed partial class HoldTexturePlacementService
         return rows == 1;
     }
 
-    /// <summary>The model's unreverted rolling edit run (tracked), created when asked; null when there is none.</summary>
+    /// <summary>
+    /// The model's unreverted rolling edit run on its current textures (tracked), created when asked; null when there is none.
+    /// After "Render wall textures again" a new one starts, so the earlier one's entries keep their textures.
+    /// </summary>
     private static async Task<HoldPlacementRun?> RollingRunAsync(BlocwerkDbContext db, Guid wallId, Guid modelId, bool create, CancellationToken ct)
     {
+        var key = (await TextureSetStamp.OfModelAsync(db, modelId, ct))?.Key;
         var run = await db.HoldPlacementRuns.FirstOrDefaultAsync(
-            r => r.WallId == wallId && r.GeometryModelId == modelId && r.Trigger == HoldPlacementTrigger.Edit && r.RevertedAt == null, ct);
+            r => r.WallId == wallId && r.GeometryModelId == modelId && r.TextureSetKey == key
+                && r.Trigger == HoldPlacementTrigger.Edit && r.RevertedAt == null,
+            ct);
         if (run is null && create)
         {
-            run = new HoldPlacementRun { WallId = wallId, GeometryModelId = modelId, CreatedByUserId = Guid.Empty, Trigger = HoldPlacementTrigger.Edit };
+            run = new HoldPlacementRun
+            {
+                WallId = wallId, GeometryModelId = modelId, TextureSetKey = key, CreatedByUserId = Guid.Empty, Trigger = HoldPlacementTrigger.Edit,
+            };
             db.HoldPlacementRuns.Add(run);
         }
 
