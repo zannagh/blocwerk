@@ -128,8 +128,6 @@ public partial class BlocwerkDbContext : DbContext
     public BlocwerkDbContext(DbContextOptions<BlocwerkDbContext> options)
         : base(options)
     {
-        // Captures' stage timeline: stamped from what each save changes (see CaptureTimeline).
-        SavingChanges += (_, _) => Blocwerk.Core.Capture.CaptureTimeline.Stamp(ChangeTracker, DateTimeOffset.UtcNow);
     }
 
     public async Task SetCurrentUserAsync(ICurrentUserService currentUserService)
@@ -144,6 +142,10 @@ public partial class BlocwerkDbContext : DbContext
             CurrentUserId = Guid.Empty;
         }
     }
+
+    /// <summary>Captures' stage timeline is kept by every context, whatever factory built it (see <see cref="CaptureTimelineInterceptor"/>).</summary>
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder) =>
+        optionsBuilder.AddInterceptors(CaptureTimelineInterceptor.Instance);
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

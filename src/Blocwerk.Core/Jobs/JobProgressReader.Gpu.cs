@@ -18,15 +18,24 @@ public sealed partial class JobProgressReader
     {
         var walls = context.Walls;
         var since = context.Since;
-        var rows = await db.GpuJobs.AsNoTracking()
-            .Where(j => walls == null || walls.Contains(j.WallId))
+        var scoped = db.GpuJobs.AsNoTracking().Where(j => walls == null || walls.Contains(j.WallId));
+
+        // Running work all, ended work the newest MaxRows: the cap never cuts off a running job.
+        var active = await scoped
             .Where(j => j.Status == GpuJobStatus.Queued || j.Status == GpuJobStatus.Claimed || j.Status == GpuJobStatus.Running
-                        || (j.Status == GpuJobStatus.Succeeded && j.InstalledAt == null) || j.PreviewFinishJobId != null
-                        || j.CompletedAt >= since || j.InstalledAt >= since)
+                        || (j.Status == GpuJobStatus.Succeeded && j.InstalledAt == null) || j.PreviewFinishJobId != null)
             .OrderByDescending(j => j.CreatedAt)
+            .Take(MaxActiveRows)
+            .Select(j => new { Job = j, Runner = j.ClaimedByRunner == null ? null : j.ClaimedByRunner.Name })
+            .ToListAsync(ct);
+        var ids = active.Select(r => r.Job.Id).ToList();
+        var ended = await scoped
+            .Where(j => (j.CompletedAt >= since || j.InstalledAt >= since) && !ids.Contains(j.Id))
+            .OrderByDescending(j => j.CompletedAt)
             .Take(MaxRows)
             .Select(j => new { Job = j, Runner = j.ClaimedByRunner == null ? null : j.ClaimedByRunner.Name })
             .ToListAsync(ct);
+        var rows = active.Concat(ended);
 
         var items = new List<JobProgressItem>();
         foreach (var row in rows)

@@ -87,7 +87,7 @@ public class JobProgressServiceTests
         string[] names =
         [
             "id", "kind", "state", "stage", "detail", "percent", "step", "totalSteps", "etaSeconds", "etaSource", "startedAt", "updatedAt",
-            "endedAt", "lastError", "wallId", "wallName", "captureId", "gpuJobId", "runnerName", "attempts", "training", "stages",
+            "endedAt", "lastError", "wallId", "wallName", "captureId", "gpuJobId", "runnerName", "runnerPaused", "attempts", "training", "stages",
         ];
         Assert.Equal(names, job.EnumerateObject().Select(p => p.Name));
         Assert.Equal(StatusCodes.Status403Forbidden, Assert.IsType<ObjectResult>(await api.List(other, null, default)).StatusCode);

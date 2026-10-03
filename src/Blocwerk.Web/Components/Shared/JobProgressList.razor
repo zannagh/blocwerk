@@ -39,6 +39,10 @@
                         {
                             <span class="job-stage">@job.Stage</span>
                         }
+                        @if (job.RunnerPaused == true)
+                        {
+                            <span class="job-stage job-paused">runner paused</span>
+                        }
                         @if (WallId is null && job.WallName is not null)
                         {
                             <span class="job-wall">@job.WallName</span>

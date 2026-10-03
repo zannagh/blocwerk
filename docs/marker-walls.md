@@ -1215,7 +1215,9 @@ Everything slow shows up in one list: captures (per stage), photo-real training 
 (step, total steps, previews, loss and splat count when the trainer prints them), the server's
 finish of a trained view, each follow-up step, texture re-renders, re-solves and capture imports.
 Each job has a state (`queued`, `running`, `succeeded`, `skipped`, `failed`, `cancelled`), a
-percentage, the time it has left, when it started and last moved, and its last error.
+percentage, the time it has left, when it started and last moved, and its last error. A GPU training
+also says when its runner is paused (`runnerPaused`), or, while it waits, when every online runner that
+may take it is paused.
 
 - **In the app:** *Administration → Background jobs* lists every wall's jobs (app admins). A wall's
   settings have a compact *Background jobs* panel for its admins. Both refresh every 4 s while they

@@ -41,23 +41,36 @@ public sealed partial class JobProgressReader
         return items;
     }
 
-    private static Task<List<JobCaptureRow>> JobCaptureRowsAsync(BlocwerkDbContext db, JobProgressReadContext context, CancellationToken ct)
+    /// <summary>
+    /// The captures with something running (status, a re-render or re-solve mark, a running follow-up step), all of them, and
+    /// apart from those the newest <see cref="MaxRows"/> with something that ended within the window: the cap never cuts off
+    /// a running job.
+    /// </summary>
+    private static async Task<List<JobCaptureRow>> JobCaptureRowsAsync(BlocwerkDbContext db, JobProgressReadContext context, CancellationToken ct)
     {
         var walls = context.Walls;
         var since = context.Since;
-        return db.WallCaptures.AsNoTracking()
+        var scoped = db.WallCaptures.AsNoTracking()
             .Where(c => walls == null || walls.Contains(c.WallId))
-            .Where(c => c.Status != WallCaptureStatus.Draft)
-            .Where(c => RunningStatuses.Contains(c.Status) || c.CompletedAt >= since || c.UpdatedAt >= since
-                        || (c.TexturesJobId != null && c.TexturesJobId.StartsWith(CaptureTextureOutcome.RerenderMark))
-                        || (c.SolveJobId != null && c.SolveJobId.StartsWith(CaptureResolveMark.Mark)))
-            .OrderByDescending(c => c.CreatedAt)
-            .Take(MaxRows)
-            .Select(c => new JobCaptureRow(
-                c.Id, c.WallId, c.Status, c.Progress, c.Stage, c.Error, c.CreatedAt, c.StartedAt, c.CompletedAt, c.UpdatedAt,
-                c.Attempts, c.TimelineJson, c.FollowUpJson, c.TexturesJobId, c.SolveJobId))
+            .Where(c => c.Status != WallCaptureStatus.Draft);
+        var active = scoped.Where(c => RunningStatuses.Contains(c.Status)
+            || (c.TexturesJobId != null && c.TexturesJobId.StartsWith(CaptureTextureOutcome.RerenderMark))
+            || (c.SolveJobId != null && c.SolveJobId.StartsWith(CaptureResolveMark.Mark))
+            || (c.FollowUpJson != null && c.FollowUpJson.Contains(CaptureFollowUpRecord.RunningMarker)));
+        var running = await Project(active.OrderByDescending(c => c.CreatedAt).Take(MaxActiveRows)).ToListAsync(ct);
+        var ids = running.Select(r => r.Id).ToList();
+        var ended = await Project(scoped
+                .Where(c => (c.CompletedAt >= since || c.UpdatedAt >= since) && !ids.Contains(c.Id))
+                .OrderByDescending(c => c.UpdatedAt ?? c.CompletedAt)
+                .Take(MaxRows))
             .ToListAsync(ct);
+        return [.. running, .. ended];
     }
+
+    private static IQueryable<JobCaptureRow> Project(IQueryable<WallCapture> captures) =>
+        captures.Select(c => new JobCaptureRow(
+            c.Id, c.WallId, c.Status, c.Progress, c.Stage, c.Error, c.CreatedAt, c.StartedAt, c.CompletedAt, c.UpdatedAt,
+            c.Attempts, c.TimelineJson, c.FollowUpJson, c.TexturesJobId, c.SolveJobId));
 
     private static JobProgressItem? CaptureItem(JobCaptureRow row, List<CaptureTimelineEntry> timeline, JobProgressReadContext context)
     {

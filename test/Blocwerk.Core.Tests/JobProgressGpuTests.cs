@@ -48,10 +48,67 @@ public class JobProgressGpuTests
         job.ClaimedAt = claimed.AddMinutes(5);
         Assert.Equal((7000, claimed.AddMinutes(6)), Anchor(GpuJobProgressFacts.From(job, Report(7000), claimed.AddMinutes(6))));
 
-        // A report without a step keeps the stored step and anchor; a detail without numbers keeps the stored ones.
-        job.Step = 7000;
+        // Within the claim, a report without a step or numbers keeps the stored ones.
+        (job.Step, job.StepAnchor, job.StepAnchorAt, job.Loss, job.SplatCount) = (7000, 7000, claimed.AddMinutes(6), 0.05, 900000);
         var none = GpuJobProgressFacts.From(job, Report(null, "uploading"), claimed.AddMinutes(7));
-        Assert.Equal((7000, (double?)null, (int?)null), (none.Step, none.Loss, none.Splats));
+        Assert.Equal((7000, 0.05, 900000), (none.Step, none.Loss, none.Splats));
+
+        // A new claim does not carry the previous claim's step, loss or splat count until it reports its own.
+        job.ClaimedAt = claimed.AddMinutes(8);
+        var reclaimed = GpuJobProgressFacts.From(job, Report(null, "downloading"), claimed.AddMinutes(9));
+        Assert.Equal(((int?)null, (double?)null, (int?)null), (reclaimed.Step, reclaimed.Loss, reclaimed.Splats));
+    }
+
+    [Theory]
+    [InlineData("step 750/15000 splats 55966 loss 0.1416", 0.1416, 55966)]
+    [InlineData("step 750/15000 splats 55966 loss 0.1416; resumed from step 500", 0.1416, 55966)]
+    [InlineData("step 750/15000 splats 2000000 loss 1.5e-3", 0.0015, 2000000)]
+    [InlineData("step 750/15000 splats 1,234 loss 0,1416", null, null)]
+    [InlineData("step 750/15000 splats 1.2M loss 0.14x", null, null)]
+    [InlineData("step 750/15000", null, null)]
+    public void TheTrainersNumbers_AreReadInvariantly_AndUnknownFormsAreNoValue(string detail, double? loss, int? splats)
+    {
+        Assert.Equal((loss, splats), (GpuJobProgressFacts.ParseLoss(detail), GpuJobProgressFacts.ParseSplats(detail)));
+    }
+
+    [Fact]
+    public async Task ARealTrainerLine_EndToEnd_StoresStepLossAndSplats()
+    {
+        using var h = new WallTestHarness();
+        using var f = await RunnerFixture.CreateAsync(h);
+        var (runner, _) = await f.AddRunnerAsync("gpu", walls: h.WallId);
+        var job = await f.AddJobAsync(h.WallId);
+        await f.Queue.TryClaimAsync(runner, null, default);
+
+        // As the runner sends it: the gsplat trainer's line (see the splat worker's gsplat-train.log fixture) as the detail.
+        var line = "step 750/15000 splats 55966 loss 0.1416";
+        await f.Queue.ProgressAsync(runner, job.Id, new RunnerProgress(0.05, 750, 15000, "train", line), default);
+
+        await using var db = h.CreateContext();
+        var row = await db.GpuJobs.AsNoTracking().SingleAsync(j => j.Id == job.Id);
+        Assert.Equal((750, 15000, 0.1416, 55966), (row.Step, row.TotalSteps, row.Loss, row.SplatCount));
+        Assert.Contains("step 750/15000", row.Stage);
+    }
+
+    [Fact]
+    public async Task APausedRunner_IsShown_OnItsRunningJob_AndOnJobsWaitingOnlyForPausedRunners()
+    {
+        using var h = new WallTestHarness();
+        using var f = await RunnerFixture.CreateAsync(h);
+        var (runner, _) = await f.AddRunnerAsync("gpu", walls: h.WallId);
+        var running = await f.AddJobAsync(h.WallId);
+        await f.Queue.TryClaimAsync(runner, null, default);
+        var waiting = await f.AddJobAsync(h.WallId);
+        await using (var db = h.CreateContext())
+        {
+            await db.GpuRunners.Where(r => r.Id == runner.Id).ExecuteUpdateAsync(s => s.SetProperty(r => r.Paused, true));
+        }
+
+        var reader = new JobProgressReader(h.RootContextFactory, clock: f.Clock, runnerQueue: f.Queue);
+        var jobs = (await reader.ReadAsync(new JobProgressScope(null, TimeSpan.FromHours(1)), default)).Jobs;
+
+        Assert.True(Assert.Single(jobs, j => j.GpuJobId == running.Id && j.Kind == JobKinds.GpuTraining).RunnerPaused);
+        Assert.True(Assert.Single(jobs, j => j.GpuJobId == waiting.Id).RunnerPaused);
     }
 
     [Fact]

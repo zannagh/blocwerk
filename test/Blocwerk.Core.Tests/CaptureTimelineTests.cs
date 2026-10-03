@@ -78,6 +78,47 @@ public class CaptureTimelineTests
     }
 
     [Fact]
+    public async Task TwoWritersOfTheSameCapture_BothLandOnTheTimeline()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync(holdCount: 0);
+        var id = await AddAsync(h, WallCaptureStatus.Splatting);
+        await using var worker = h.CreateContext();
+        await using var rerender = h.CreateContext();
+        var a = await worker.WallCaptures.SingleAsync(c => c.Id == id);
+        var b = await rerender.WallCaptures.SingleAsync(c => c.Id == id);
+
+        b.TexturesJobId = CaptureTextureOutcome.RerenderMark;
+        await rerender.SaveChangesAsync();
+        a.Status = WallCaptureStatus.Succeeded;
+        await worker.SaveChangesAsync();
+
+        var timeline = CaptureTimeline.Parse((await LoadAsync(h, id)).TimelineJson);
+        Assert.Equal(
+            [("splatting", (string?)CaptureTimeline.Done), (CaptureTimeline.Rerender, null)],
+            timeline.Select(e => (e.Stage, e.Outcome)));
+    }
+
+    [Fact]
+    public async Task AFailedSave_RecordsNothing_AndItsRetryRecordsOnce()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync(holdCount: 0);
+        var id = await AddAsync(h, WallCaptureStatus.Queued);
+        await using var db = h.CreateContext();
+        var capture = await db.WallCaptures.SingleAsync(c => c.Id == id);
+        capture.Status = WallCaptureStatus.Detecting;
+        var orphan = db.WallMembers.Add(new WallMember { WallId = Guid.NewGuid(), UserId = Guid.NewGuid(), Role = Enums.WallRole.Member });
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+        Assert.Equal(["queued"], CaptureTimeline.Parse((await LoadAsync(h, id)).TimelineJson).Select(e => e.Stage));
+        orphan.State = EntityState.Detached;
+        await db.SaveChangesAsync();
+
+        Assert.Equal(["queued", "detecting"], CaptureTimeline.Parse((await LoadAsync(h, id)).TimelineJson).Select(e => e.Stage));
+    }
+
+    [Fact]
     public void TheTimeline_KeepsTheNewestEntriesOnly()
     {
         var entries = Enumerable.Range(0, CaptureTimeline.MaxEntries + 5)

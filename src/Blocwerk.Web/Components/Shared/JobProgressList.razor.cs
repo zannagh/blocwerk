@@ -19,6 +19,9 @@ public partial class JobProgressList : IAsyncDisposable
     /// <summary>How often the list refreshes while it is shown.</summary>
     public static readonly TimeSpan RefreshEvery = TimeSpan.FromSeconds(4);
 
+    /// <summary>The longest wait after failed refreshes.</summary>
+    public static readonly TimeSpan MaxBackoff = TimeSpan.FromSeconds(60);
+
     private readonly CancellationTokenSource disposed = new();
     private ElementReference root;
     private JobProgressSnapshot? snapshot;
@@ -46,8 +49,8 @@ public partial class JobProgressList : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        // Cancelled, not disposed: the refresh loop may still observe its token (a source without timers holds nothing).
         await disposed.CancelAsync();
-        disposed.Dispose();
         GC.SuppressFinalize(this);
     }
 
@@ -100,12 +103,11 @@ public partial class JobProgressList : IAsyncDisposable
         _ => kind,
     };
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    protected override void OnAfterRender(bool firstRender)
     {
         if (firstRender)
         {
-            await ReloadAsync();
-            StateHasChanged();
+            // The token is taken once, here: the loop never touches the source again (disposing only cancels it).
             _ = RefreshLoopAsync(disposed.Token);
         }
     }
@@ -115,37 +117,42 @@ public partial class JobProgressList : IAsyncDisposable
     private async Task ToggleRecentAsync(ChangeEventArgs e)
     {
         showRecent = e.Value is true;
-        await ReloadAsync();
+        await LoadAsync(disposed.Token);
     }
 
+    /// <summary>
+    /// Loads now and then every <see cref="RefreshEvery"/> while the list is on screen (never while its panel is closed).
+    /// A failed load shows its error and the loop keeps going, waiting longer after each failure (up to <see cref="MaxBackoff"/>).
+    /// </summary>
     private async Task RefreshLoopAsync(CancellationToken ct)
     {
-        try
+        var wait = TimeSpan.Zero;
+        while (!ct.IsCancellationRequested)
         {
-            using var timer = new PeriodicTimer(RefreshEvery);
-            while (await timer.WaitForNextTickAsync(ct))
+            try
             {
-                await InvokeAsync(async () =>
-                {
-                    if (await IsShownAsync())
-                    {
-                        await ReloadAsync();
-                        StateHasChanged();
-                    }
-                });
+                await Task.Delay(wait, ct);
+                var ok = true;
+                await InvokeAsync(async () => ok = !await IsShownAsync(ct) || await LoadAsync(ct));
+                wait = ok ? RefreshEvery : TimeSpan.FromTicks(Math.Min(MaxBackoff.Ticks, Math.Max(RefreshEvery.Ticks, wait.Ticks * 2)));
             }
-        }
-        catch (OperationCanceledException)
-        {
-            // Disposed.
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogDebug(ex, "The background jobs list could not refresh");
+                wait = MaxBackoff;
+            }
         }
     }
 
-    private async Task<bool> IsShownAsync()
+    private async Task<bool> IsShownAsync(CancellationToken ct)
     {
         try
         {
-            return await JS.InvokeAsync<bool>("bwShown", disposed.Token, root);
+            return await JS.InvokeAsync<bool>("bwShown", ct, root);
         }
         catch (Exception ex) when (ex is JSException or JSDisconnectedException or TaskCanceledException or InvalidOperationException)
         {
@@ -153,21 +160,30 @@ public partial class JobProgressList : IAsyncDisposable
         }
     }
 
-    private async Task ReloadAsync()
+    /// <summary>Loads the list; false (with the error shown) when it failed.</summary>
+    private async Task<bool> LoadAsync(CancellationToken ct)
     {
         try
         {
-            snapshot = await Jobs.ListAsync(WallId, showRecent ? TimeSpan.FromHours(RecentHours) : TimeSpan.Zero, disposed.Token);
+            snapshot = await Jobs.ListAsync(WallId, showRecent ? TimeSpan.FromHours(RecentHours) : TimeSpan.Zero, ct);
             error = null;
+            return true;
         }
-        catch (Exception ex) when (ex is UnauthorizedAccessException or KioskRestrictedException or InvalidOperationException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return true;
+        }
+        catch (Exception ex)
         {
             Logger.LogDebug(ex, "Could not list the background jobs (wall {WallId})", WallId);
-            error = ex is InvalidOperationException ? UserFacingException.GenericMessage : "Only admins see background jobs.";
+            error = ex is UnauthorizedAccessException or KioskRestrictedException
+                ? "Only admins see background jobs."
+                : $"{UserFacingException.GenericMessage} Retrying.";
+            return false;
         }
-        catch (OperationCanceledException)
+        finally
         {
-            // Disposed while loading.
+            StateHasChanged();
         }
     }
 }

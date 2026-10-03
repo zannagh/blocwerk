@@ -78,6 +78,13 @@ public sealed record JobProgressItem
     [JsonPropertyName("runnerName")]
     public string? RunnerName { get; init; }
 
+    /// <summary>
+    /// GPU training only: true when its runner is paused (running), or when every online runner that may train it is
+    /// paused (queued); false otherwise; null for other kinds and ended jobs.
+    /// </summary>
+    [JsonPropertyName("runnerPaused")]
+    public bool? RunnerPaused { get; init; }
+
     /// <summary>How often it was picked up (captures, GPU jobs), or null.</summary>
     [JsonPropertyName("attempts")]
     public int? Attempts { get; init; }

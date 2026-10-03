@@ -79,7 +79,7 @@ public sealed partial class CaptureFollowUpChain
 
                 logger.LogWarning("Capture {CaptureId}: {Count} runs of its follow-up steps did not finish; they are dropped", captureId, r.Recoveries);
                 var dropped = kind == CaptureFollowUpRecoveryKind.Rederive ? r with { Rederive = false } : r with { RunAgain = false };
-                return dropped with { Recoveries = 0, Note = r.Note is null ? GaveUpNote : $"{r.Note} {GaveUpNote}" };
+                return dropped with { Recoveries = 0, Running = null, Note = r.Note is null ? GaveUpNote : $"{r.Note} {GaveUpNote}" };
             },
             ct);
         return saved is not null && queue;

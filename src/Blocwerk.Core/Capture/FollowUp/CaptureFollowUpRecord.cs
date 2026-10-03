@@ -50,6 +50,9 @@ public sealed record CaptureFollowUpRecord(
     /// <summary>How a record marked <see cref="RunAgain"/> reads in the stored JSON (to find the ones left to resume).</summary>
     public const string RunAgainMarker = "\"runAgain\":true";
 
+    /// <summary>How a record with a <see cref="Running"/> step reads in the stored JSON (to find stale marks).</summary>
+    public const string RunningMarker = "\"running\":";
+
     private static readonly JsonSerializerOptions Json = new() { Converters = { new JsonStringEnumConverter() } };
 
     /// <summary>Nothing recorded yet.</summary>

@@ -22,7 +22,7 @@ internal static partial class ApiDocsData
         + "\n      \"step\": 12000,\n      \"totalSteps\": 30000,\n      \"etaSeconds\": 1620.5,\n      \"etaSource\": \"rate\","
         + "\n      \"startedAt\": \"2026-10-03T17:40:00+00:00\",\n      \"updatedAt\": \"2026-10-03T18:19:55+00:00\","
         + "\n      \"endedAt\": null,\n      \"lastError\": null,\n      \"wallId\": \"<guid>\",\n      \"wallName\": \"Home wall\","
-        + "\n      \"captureId\": \"<guid>\",\n      \"gpuJobId\": \"<guid>\",\n      \"runnerName\": \"home PC\",\n      \"attempts\": 1,"
+        + "\n      \"captureId\": \"<guid>\",\n      \"gpuJobId\": \"<guid>\",\n      \"runnerName\": \"home PC\",\n      \"runnerPaused\": false,\n      \"attempts\": 1,"
         + "\n      \"training\": { \"loss\": 0.031, \"splats\": 812345, \"previewStep\": null, \"previewInstalledStep\": 10000, \"stepsPerSecond\": 11.1 },"
         + "\n      \"stages\": null\n    },\n    {\n      \"id\": \"capture:<guid>\",\n      \"kind\": \"capture\",\n      \"state\": \"running\","
         + "\n      \"stage\": \"splatting\",\n      \"percent\": 52.3,\n      \"etaSeconds\": null,\n      \"etaSource\": null,"
@@ -30,7 +30,8 @@ internal static partial class ApiDocsData
         + "\n    }\n  ]\n}";
 
     private const string JobsNote =
-        "kind: capture, gpuTraining, finish, followUp, textureRerender, resolve, import. etaSource: rate or history. "
+        "kind: capture, gpuTraining, finish, followUp, textureRerender, resolve, import. etaSource: rate or history. runnerPaused "
+        + "(GPU training): its runner is paused, or every online runner that may take it is. "
         + "Shortened example; every job carries every field (null when it does not apply).";
 
     private static ApiParamDoc[] JobsParams =>

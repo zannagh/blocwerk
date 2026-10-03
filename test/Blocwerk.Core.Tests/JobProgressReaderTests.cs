@@ -71,6 +71,28 @@ public class JobProgressReaderTests
     }
 
     [Fact]
+    public async Task ManyEndedCaptures_NeverCutOffARunningOne()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync(holdCount: 0);
+        var running = await CaptureTimelineTests.AddAsync(h, WallCaptureStatus.Solving, c => c.CreatedAt = Now.AddDays(-3));
+        await using (var db = h.CreateContext())
+        {
+            db.WallCaptures.AddRange(Enumerable.Range(0, JobProgressReader.MaxRows + 10).Select(i => new WallCapture
+            {
+                WallId = h.WallId, CreatedByUserId = h.Owner.Id, Status = WallCaptureStatus.Succeeded,
+                CreatedAt = Now.AddHours(-2), CompletedAt = Now.AddMinutes(-i),
+            }));
+            await db.SaveChangesAsync();
+        }
+
+        var jobs = (await ReadAsync(h)).Jobs;
+
+        Assert.Equal($"capture:{running}", jobs[0].Id);
+        Assert.Equal(JobProgressReader.MaxRows, jobs.Count(j => j.State == JobStates.Succeeded));
+    }
+
+    [Fact]
     public async Task TheReRenderAndReSolveLanes_AreJobsOfTheirOwn()
     {
         using var h = new WallTestHarness();

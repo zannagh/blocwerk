@@ -107,8 +107,8 @@ public sealed partial class GpuJobQueue
                     .SetProperty(j => j.TotalSteps, j => facts.TotalSteps ?? j.TotalSteps)
                     .SetProperty(j => j.StepAnchor, facts.Anchor)
                     .SetProperty(j => j.StepAnchorAt, facts.AnchorAt)
-                    .SetProperty(j => j.Loss, j => facts.Loss ?? j.Loss)
-                    .SetProperty(j => j.SplatCount, j => facts.Splats ?? j.SplatCount)
+                    .SetProperty(j => j.Loss, facts.Loss)
+                    .SetProperty(j => j.SplatCount, facts.Splats)
                     .SetProperty(j => j.Error, (string?)null),
                 ct);
         return updated == 0 ? RunnerJobOutcome.Gone : RunnerJobOutcome.Ok;

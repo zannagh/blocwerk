@@ -4,6 +4,7 @@
 using System.Globalization;
 using Blocwerk.Core.Capture.Replay;
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Runners;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Jobs;
@@ -16,12 +17,16 @@ namespace Blocwerk.Core.Jobs;
 public sealed partial class JobProgressReader(
     RootDbContextFactory dbContextFactory,
     CaptureImportProgress? imports = null,
-    TimeProvider? clock = null) : IJobProgressReader
+    TimeProvider? clock = null,
+    GpuJobQueue? runnerQueue = null) : IJobProgressReader
 {
-    /// <summary>How many rows of each source are read at most.</summary>
+    /// <summary>How many rows of each source with only ended work are read at most.</summary>
     public const int MaxRows = 200;
 
-    /// <summary>How many jobs a snapshot lists at most (running ones first).</summary>
+    /// <summary>A safety cap on the rows with running work (far above what one installation runs at once).</summary>
+    public const int MaxActiveRows = 2000;
+
+    /// <summary>How many ended jobs a snapshot lists at most (running ones are always all listed).</summary>
     public const int MaxItems = 300;
 
     private readonly TimeProvider time = clock ?? TimeProvider.System;
@@ -38,6 +43,7 @@ public sealed partial class JobProgressReader(
         items.AddRange(await CaptureItemsAsync(db, context, ct));
         items.AddRange(await GpuItemsAsync(db, context, ct));
         items.AddRange(await ImportItemsAsync(context, ct));
+        items = await MarkPausedAsync(db, items, context, ct);
         var named = await NameWallsAsync(db, items, ct);
         return new JobProgressSnapshot(now, Math.Round(scope.Recent.TotalHours, 2), Order(named));
     }
@@ -49,7 +55,7 @@ public sealed partial class JobProgressReader(
             .ThenBy(i => i.State == JobStates.Running ? 0 : 1)
             .ThenByDescending(i => JobStates.IsActive(i.State) ? i.StartedAt ?? i.UpdatedAt : i.EndedAt ?? i.UpdatedAt)
             .ThenBy(i => i.Id, StringComparer.Ordinal)
-            .Take(MaxItems)
+            .Where((i, index) => JobStates.IsActive(i.State) || index < MaxItems)
             .ToList();
 
     private static async Task<List<JobProgressItem>> NameWallsAsync(BlocwerkDbContext db, List<JobProgressItem> items, CancellationToken ct)
