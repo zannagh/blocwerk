@@ -115,16 +115,15 @@ function edgesOf(geometry) {
 
 /**
  * { plain, photo }: two groups with every volume of `view` (either may be empty); `photo` is added to the
- * facet photo group `textures`, so it shows and hides with the photos. `renderer` asks for a frame when a
- * photo lands. Volumes are one-sided (front only): from behind the wall they are hidden.
+ * facet photo group `textures`, so it shows and hides with the photos, which `photos` (wall3d-photos.js)
+ * downloads on the first switch to Photos. Volumes are one-sided (front only): from behind the wall they are hidden.
  */
-export function buildVolumes(view, renderer, textures) {
+export function buildVolumes(view, renderer, textures, photos) {
     const plain = new THREE.Group();
     const photo = new THREE.Group();
     const facets = new Map(view.facets.map(f => [f.id, f]));
     const photoOf = new Map((view.textures || []).map(t => [t.facetId, t]));
-    const loader = new THREE.TextureLoader();
-    const photos = new Map();
+    const materials = new Map();
     const plainMat = new THREE.MeshStandardMaterial({ color: PLAIN_WOOD, roughness: 0.9, metalness: 0, side: THREE.FrontSide });
     for (const vol of view.volumes || []) {
         const f = facets.get(vol.facetId);
@@ -136,14 +135,14 @@ export function buildVolumes(view, renderer, textures) {
         plain.add(plainMesh);
         const tex = photoOf.get(vol.facetId);
         if (!tex || !vol.textureCamera) continue;
-        if (!photos.has(tex.url)) {
-            const map = loader.load(tex.url, () => renderer.__wall3dRequest?.());
-            map.colorSpace = THREE.SRGBColorSpace;
+        if (!materials.has(tex.url)) {
+            const map = photos.texture(tex.url, THREE.SRGBColorSpace);
             map.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
-            photos.set(tex.url, new THREE.MeshBasicMaterial({ map, side: THREE.FrontSide }));
+            materials.set(tex.url, new THREE.MeshBasicMaterial({ map, side: THREE.FrontSide }));
         }
-        const photoMesh = new THREE.Mesh(flat ? flatGeometryOf(vol, f, tex) : geometryOf(vol, f, tex), photos.get(tex.url));
+        const photoMesh = new THREE.Mesh(flat ? flatGeometryOf(vol, f, tex) : geometryOf(vol, f, tex), materials.get(tex.url));
         photoMesh.userData = { facetId: f.id, volumeId: vol.id };
+        photos.add(photoMesh, [tex.url]);
         photo.add(photoMesh);
     }
     textures.add(photo);

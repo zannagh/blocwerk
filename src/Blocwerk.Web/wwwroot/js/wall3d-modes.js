@@ -4,6 +4,7 @@
 //   photoreal — the captured Gaussian splat (wall3d-splat.js) instead of the modelled wall.
 // Photos needs facet textures and photo-real a splat; a mode without its imagery is not offered.
 import { describeShaderFailure } from './wall3d-splat-safe.js';
+import { PhotoRealCancelledError, PhotoRealTooLargeError, PhotoRealUnsupportedError } from './wall3d-splat-fetch.js';
 
 export const MODE_LABELS = { schematic: 'Schematic', photos: 'Photos', photoreal: 'Photo-real' };
 
@@ -21,38 +22,71 @@ export function normalizeMode(name) {
     return MODE_LABELS[key] ? key : null;
 }
 
+/** The line shown when the switch to photo-real failed with `err`. */
+function failureText(err) {
+    if (err instanceof PhotoRealTooLargeError) return err.message;
+    return err instanceof PhotoRealUnsupportedError
+        ? 'This device cannot show the photo-real view (its graphics are too limited).'
+        : 'The photo-real view could not be loaded.';
+}
+
 /**
- * Switches the scene between modes. `parts`: { textures, slabs: [lit, dim], outlines }. `photo` is the
+ * Switches the scene between modes. `parts`: { textures, slabs: [lit, dim], outlines, photos } (`photos`:
+ * the lazy facet photos, wall3d-photos.js, loaded on the first switch to Photos). `photo` is the
  * photo-real controller; `ui` gets setMode(mode, loading) and say(text); `request` asks for a frame;
  * `onMode(mode)` runs once a mode shows (the photo-real hold overlay, wall3d-overlay.js).
+ * While photo-real loads, picking another mode cancels the load (`photo.cancel()`).
  */
-export function createModeController({ modes, parts, photo, ui, request, PhotoRealUnsupportedError, onMode }) {
+export function createModeController({ modes, parts, photo, ui, request, onMode }) {
     let mode = null;
     let pending = Promise.resolve();
+    let photoLoading = false;
+    let photosAsked = false;
 
     function showModelled(name) {
         parts.textures.visible = name === 'photos';
         parts.outlines.visible = name === 'photos';
         for (const s of parts.slabs) s.visible = name === 'schematic';
+        if (name === 'photos' && !photosAsked && parts.photos) {
+            photosAsked = true;
+            // Starting in Photos: the first-visit gesture hint stays; a later switch says it is loading.
+            const quiet = mode === null;
+            if (!quiet) ui.say('Loading the photos…');
+            parts.photos.load().then(failed => {
+                if (mode !== 'photos') return;
+                if (failed > 0) ui.say('Some wall photos could not be loaded.');
+                else if (!quiet) ui.hideHint(false);
+            });
+        }
+    }
+
+    async function showPhotoReal(previous) {
+        ui.setMode('photoreal', true);
+        if (!photo.loaded) ui.say('Loading the photo-real view…');
+        photoLoading = true;
+        try {
+            await photo.setActive(true);
+            ui.hideHint();
+            return true;
+        } catch (err) {
+            if (err instanceof PhotoRealCancelledError) {
+                ui.hideHint(false);
+            } else {
+                ui.say(failureText(err));
+                console.warn('wall3d: photo-real view failed', err);
+            }
+            ui.setMode(previous, false);
+            request();
+            return false;
+        } finally {
+            photoLoading = false;
+        }
     }
 
     async function switchTo(name) {
         const previous = mode;
         if (name === 'photoreal') {
-            ui.setMode(name, true);
-            if (!photo.loaded) ui.say('Loading the photo-real view…');
-            try {
-                await photo.setActive(true);
-                ui.hideHint();
-            } catch (err) {
-                ui.say(err instanceof PhotoRealUnsupportedError
-                    ? 'This device cannot show the photo-real view (its graphics are too limited).'
-                    : 'The photo-real view could not be loaded.');
-                console.warn('wall3d: photo-real view failed', err);
-                ui.setMode(previous, false);
-                request();
-                return;
-            }
+            if (!await showPhotoReal(previous)) return;
         } else {
             await photo.setActive(false);
             showModelled(name);
@@ -87,7 +121,13 @@ export function createModeController({ modes, parts, photo, ui, request, PhotoRe
         /** Switches to `name` (ignored when not offered); calls queue so a double tap cannot interleave. */
         set(name) {
             const next = normalizeMode(name);
-            if (!next || !modes.includes(next) || next === mode) return pending;
+            if (!next || !modes.includes(next)) return pending;
+            if (photoLoading) {
+                if (next === 'photoreal') return pending;
+                photo.cancel();                   // another mode picked while photo-real loads
+            } else if (next === mode) {
+                return pending;
+            }
             pending = pending.then(() => switchTo(next));
             return pending;
         },

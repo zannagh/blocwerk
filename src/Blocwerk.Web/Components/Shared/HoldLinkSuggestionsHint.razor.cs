@@ -100,9 +100,14 @@ public partial class HoldLinkSuggestionsHint
         open = !open;
         if (open && rows is null)
         {
-            await RunAsync(async () => rows = [.. await Suggestions.ListAsync(WallId)]);
-            count = rows?.Count ?? count;
+            await LoadRowsAsync();
         }
+    }
+
+    private async Task LoadRowsAsync()
+    {
+        await RunAsync(async () => rows = [.. await Suggestions.ListAsync(WallId)]);
+        count = rows?.Count ?? count;
     }
 
     private Task LinkAsync(HoldLinkSuggestionView s) =>

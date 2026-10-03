@@ -52,28 +52,48 @@ public partial class Wall3D
         _ => "Wall not found.",
     };
 
+    private (Guid Wall, string? Token, Guid? Boulder) Key => (WallId, ShareToken, BoulderId);
+
     // Route data is loaded here, not in OnInitializedAsync: enhanced navigation between two walls
     // (same route template) keeps this component alive and only swaps the parameters. The stage
     // remounts when the view instance changes.
     protected override async Task OnParametersSetAsync()
     {
-        var key = (WallId, ShareToken, BoulderId);
-        if (_loaded == key)
+        if (_loaded == Key)
         {
             return;
         }
 
-        _loaded = key;
+        _loaded = Key;
         _result = null;
+        await ReloadAsync();
+    }
+
+    /// <summary>
+    /// Builds the view for the current wall; a build that returns after the page moved on to another wall
+    /// (or boulder) is dropped, so a slow build of the previous one never replaces the current one.
+    /// </summary>
+    private async Task ReloadAsync()
+    {
+        var key = Key;
         try
         {
-            _result = await ViewService.BuildAsync(WallId, BoulderId, ShareToken);
-            await LoadCorrectionAsync();
+            var built = await ViewService.BuildAsync(key.Wall, key.Boulder, key.Token);
+            if (_loaded != key)
+            {
+                return;
+            }
+
+            _result = built;
+            await LoadCorrectionAsync(key);
         }
         catch (UnauthorizedAccessException)
         {
-            // Same as the wall page: an anonymous visitor without a share link signs in first.
-            Navigation.NavigateTo("/account/login", replace: true);
+            if (_loaded == key)
+            {
+                // Same as the wall page: an anonymous visitor without a share link signs in first.
+                Navigation.NavigateTo("/account/login", replace: true);
+            }
         }
     }
 

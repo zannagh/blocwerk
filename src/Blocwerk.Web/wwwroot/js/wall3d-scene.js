@@ -121,11 +121,10 @@ export function buildFacets(view, renderer) {
  * top to bottom), so with three's default flipY the plane rect maps to UV 0..1 without any flip:
  * u = (a − aMin) / width, v = (b − bMin) / height. The quad is clipped to the facet's outline — the
  * texture's extra margin would otherwise overlap the neighbouring facets — and drawn a hair above
- * the plywood and the marker squares.
+ * the plywood and the marker squares. `photos` (wall3d-photos.js) downloads them on the first switch to Photos.
  */
-export function buildTextures(view, renderer) {
+export function buildTextures(view, renderer, photos) {
     const group = new THREE.Group();
-    const loader = new THREE.TextureLoader();
     const byId = new Map(view.facets.map(f => [f.id, f]));
     for (const t of view.textures || []) {
         const f = byId.get(t.facetId);
@@ -138,11 +137,11 @@ export function buildTextures(view, renderer) {
         const corners = planes
             .map(([a, bb]) => v3(f.origin).addScaledVector(v3(f.u), a).addScaledVector(v3(f.v), bb).add(lift).toArray());
         const geo = polygonGeometry(corners, planes, (a, bb) => [(a - b.aMin) / (b.aMax - b.aMin), (bb - b.bMin) / (b.bMax - b.bMin)]);
-        const tex = loader.load(t.url, () => renderer.__wall3dRequest?.());
-        tex.colorSpace = THREE.SRGBColorSpace;
+        const tex = photos.texture(t.url, THREE.SRGBColorSpace);
         tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
-        const mesh = texturedMesh(geo, tex, t.maskUrl ? loader.load(t.maskUrl, () => renderer.__wall3dRequest?.()) : null);
+        const mesh = texturedMesh(geo, tex, t.maskUrl ? photos.texture(t.maskUrl, THREE.NoColorSpace) : null);
         mesh.userData.facetId = f.id;                // faded while ghosted (wall3d-ghost.js)
+        photos.add(mesh, t.maskUrl ? [t.url, t.maskUrl] : [t.url]);
         group.add(mesh);
     }
     return group;
