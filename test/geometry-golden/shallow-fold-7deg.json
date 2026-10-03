@@ -1,0 +1,127 @@
+{
+ "name": "shallow-fold-7deg",
+ "description": "Two panels 7 deg apart whose margins overlap at their fold: too close to parallel for a seam line, so neither is cut (the solver clips their extents at the midline instead, overlaps.py).",
+ "model": {
+  "version": 1,
+  "units": "mm",
+  "world": {
+   "up": [0, 0, 1],
+   "referenceFacet": "0"
+  },
+  "segments": [
+   {
+    "index": 0,
+    "name": "Facet 0",
+    "facets": [
+     {
+      "id": "0",
+      "origin": [0, 0, 0],
+      "u": [1, 0, 0],
+      "v": [0, 0, 1],
+      "normal": [0, -1, 0],
+      "extentMm": {
+       "aMin": -50,
+       "aMax": 1550,
+       "bMin": -50,
+       "bMax": 2050
+      }
+     }
+    ]
+   },
+   {
+    "index": 1,
+    "name": "Facet 1",
+    "facets": [
+     {
+      "id": "1",
+      "origin": [1450, 0, 0],
+      "u": [0.992546151641322, 0.12186934340514748, 0],
+      "v": [0, 0, 1],
+      "normal": [0.12186934340514748, -0.992546151641322, 0],
+      "extentMm": {
+       "aMin": -50,
+       "aMax": 1500,
+       "bMin": -50,
+       "bMax": 2050
+      }
+     }
+    ]
+   }
+  ],
+  "markers": [
+   {
+    "id": 1,
+    "facet": "0",
+    "cornersPlaneMm": [
+     [437.5, 562.5],
+     [562.5, 562.5],
+     [562.5, 437.5],
+     [437.5, 437.5]
+    ]
+   },
+   {
+    "id": 2,
+    "facet": "0",
+    "cornersPlaneMm": [
+     [1137.5, 1562.5],
+     [1262.5, 1562.5],
+     [1262.5, 1437.5],
+     [1137.5, 1437.5]
+    ]
+   },
+   {
+    "id": 3,
+    "facet": "1",
+    "cornersPlaneMm": [
+     [337.5, 562.5],
+     [462.5, 562.5],
+     [462.5, 437.5],
+     [337.5, 437.5]
+    ]
+   },
+   {
+    "id": 4,
+    "facet": "1",
+    "cornersPlaneMm": [
+     [1137.5, 1562.5],
+     [1262.5, 1562.5],
+     [1262.5, 1437.5],
+     [1137.5, 1437.5]
+    ]
+   }
+  ]
+ },
+ "expect": {
+  "cuts": {
+   "0": [],
+   "1": []
+  }
+ },
+ "queries": [
+  {
+   "kind": "inShape",
+   "facet": "0",
+   "ab": [1520, 1000],
+   "insetMm": 0,
+   "expected": true,
+   "why": "7 deg is below the seam threshold (~9.8 deg): no cut"
+  },
+  {
+   "kind": "inShape",
+   "facet": "1",
+   "ab": [-30, 1000],
+   "insetMm": 0,
+   "expected": true,
+   "why": "nor on the other facet"
+  },
+  {
+   "kind": "blocked",
+   "camera": [0, -3000, 1000],
+   "target": [1520, 0, 1000],
+   "targetFacet": "0",
+   "insetMm": 0,
+   "expected": false,
+   "why": "the target is 8.5 mm off the other facet's plane"
+  }
+ ]
+}

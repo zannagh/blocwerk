@@ -102,3 +102,20 @@ def test_an_l_shaped_seam_whose_marker_boxes_interleave_slightly_is_still_cut_at
     seam = (4990 + SIZE / 2 + 5100 - SIZE / 2) / 2
     assert rec["axis"] == "a"
     assert abs(_x_range(facets["0"])[1] - seam) < 1e-6 and abs(_x_range(facets["2"])[0] - seam) < 1e-6
+
+
+def test_facets_at_a_fold_too_shallow_for_a_seam_are_clipped_at_the_midline():
+    # 7 deg apart: above mergeDeg (5), below the seam threshold (~9.8 deg), so occlusion and the 3D view cut nothing
+    # there; without the clip their margins would overlap uncut (review F10)
+    facets, core = _facets(right_tilt=7.0)
+    assert _x_range(facets["0"])[1] > _x_range(facets["2"])[0]
+    [rec] = clip_overlaps(facets, core)
+    assert rec["facets"] == ["0", "2"] and "too shallow for a seam" in rec["reason"]
+    mid = (1000 + SIZE / 2 + 1130 - SIZE / 2) / 2  # in the left facet's plane; the right one is turned 7 deg
+    assert abs(_x_range(facets["0"])[1] - mid) < 1.0
+    assert _x_range(facets["2"])[0] >= _x_range(facets["0"])[1] - 1e-6
+
+
+def test_a_shallow_fold_that_does_not_meet_at_the_midline_is_a_step_and_not_clipped():
+    facets, core = _facets(right_z=120.0, right_tilt=7.0)
+    assert clip_overlaps(facets, core) == []
