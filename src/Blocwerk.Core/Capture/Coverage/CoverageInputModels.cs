@@ -43,9 +43,19 @@ public sealed record CoverageVideoInput(bool HasVideo, int FramesExtracted, int?
 /// <param name="Region">Its extent (markers and placed holds), mm.</param>
 /// <param name="OverhangDeg">Tilt from vertical (positive = overhanging), or 0 when unknown.</param>
 /// <param name="YawDeg">Turn relative to the reference facet, or 0.</param>
-/// <param name="MarkerCorners">Its markers' corners, [a, b] mm (they say which side of a seam the facet is on).</param>
+/// <param name="MarkerCorners">
+/// Its voting markers' corners, [a, b] mm (they say which side of a seam the facet is on; <see cref="GeometryKernel.VotingCorners"/>).
+/// </param>
+/// <param name="FoldCuts">Its outline's fold clips (<see cref="GeometryKernel.OutlineHalfPlanes"/>; SfM models), if any.</param>
 public sealed record CoverageFacet(
-    string Id, string Name, FacetFrame Frame, PlaneRectMm Region, double OverhangDeg, double YawDeg, IReadOnlyList<double[]>? MarkerCorners = null);
+    string Id,
+    string Name,
+    FacetFrame Frame,
+    PlaneRectMm Region,
+    double OverhangDeg,
+    double YawDeg,
+    IReadOnlyList<double[]>? MarkerCorners = null,
+    IReadOnlyList<(double Alpha, double Beta, double Gamma)>? FoldCuts = null);
 
 /// <summary>A visible volume: its number, its facet, its height field and outline.</summary>
 /// <param name="Index">Its number ("Volume 3").</param>

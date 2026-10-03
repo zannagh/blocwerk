@@ -69,7 +69,16 @@ public static class CaptureCoverageAnalyzer
                 var name = segment.Name ?? $"Segment {segment.Index}";
                 name = segment.Facets.Count > 1 ? $"{name} ({facet.Id})" : name;
                 var overhang = facet.MeasuredAngleDeg ?? segment.MeasuredAngleDeg ?? segment.DeclaredAngleDeg ?? 0;
-                result.Add(new CoverageFacet(facet.Id, name, frame, region, overhang, facet.YawDeg ?? 0, MarkerCorners(doc, facet.Id)));
+                var extent = facet.ExtentMm is { Area: > 0 } e ? e : (PlaneRectMm?)null;
+                result.Add(new CoverageFacet(
+                    facet.Id,
+                    name,
+                    frame,
+                    region,
+                    overhang,
+                    facet.YawDeg ?? 0,
+                    GeometryKernel.VotingCorners(doc, facet.Id),
+                    GeometryKernel.OutlineHalfPlanes(facet.OutlineMm, extent)));
             }
         }
 

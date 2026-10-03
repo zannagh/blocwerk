@@ -45,7 +45,9 @@ normalized 0..1 pipeline is reinterpreted.
           "u": [..], "v": [..], "normal": [..],
           "measuredAngleDeg": 44.6,         // angle between normal and horizontal plane, as tilt-from-vertical (+ overhang, − slab)
           "yawDeg": 0.0,                    // rotation of the facet about z relative to segment 0
-          "extentMm": { "aMin": .., "aMax": .., "bMin": .., "bMax": .. }  // bbox of its markers + margin; NOT an outline
+          "extentMm": { "aMin": .., "aMax": .., "bMin": .., "bMax": .. }, // bbox of its markers + margin; NOT an outline
+          "outlineMm": [[a,b], ...]         // optional, models solved from photo features only: the fold-clipped convex
+                                            // polygon when a fold cut a corner off the extent (docs/geometry-kernel.md)
         }
       ]
     }
@@ -55,6 +57,7 @@ normalized 0..1 pipeline is reinterpreted.
       "id": 0, "segment": 0, "role": "TL", "facet": "0",   // role null for "plan" ids
       "sizeMm": 125.0,                       // this marker's printed size
       "cornersPlaneMm": [[a,b],[a,b],[a,b],[a,b]],   // TL,TR,BR,BL in the facet frame
+      "extentExcluded": true,                // optional: left out of its facet's extent (a stray); no vote on its shape
       "cornersWorldMm": [[x,y,z], ...],
       "observations": 2,                     // photos it was solved from
       "reprojRmsPx": 0.8,

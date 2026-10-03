@@ -49,6 +49,8 @@
     <Content Include="Volumes\attic-main-wall-volumes.json" CopyToOutputDirectory="PreserveNewest" />
     <!-- The Attic's active model (c6d007b8, planes, extents and marker plane corners only) for the 3D view's facet seams. -->
     <Content Include="View3D\attic-active-model.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The geometry kernel's golden cases, shared with the Python wall-geometry tests (docs/geometry-kernel.md). -->
+    <Content Include="..\geometry-golden\*.json" Link="GeometryGolden\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

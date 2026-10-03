@@ -1,0 +1,220 @@
+{
+ "name": "volume",
+ "description": "A box volume on the wall built from facets: a front face parallel to the wall 400 mm in front of it and a sloped right side face back to the wall.",
+ "model": {
+  "version": 1,
+  "units": "mm",
+  "world": {
+   "up": [0, 0, 1],
+   "referenceFacet": "0"
+  },
+  "segments": [
+   {
+    "index": 0,
+    "name": "wall",
+    "facets": [
+     {
+      "id": "0",
+      "origin": [0, 0, 0],
+      "u": [1, 0, 0],
+      "v": [0, 0, 1],
+      "normal": [0, -1, 0],
+      "extentMm": {
+       "aMin": -50,
+       "aMax": 4050,
+       "bMin": -50,
+       "bMax": 3050
+      }
+     }
+    ]
+   },
+   {
+    "index": 1,
+    "name": "volume front",
+    "facets": [
+     {
+      "id": "1",
+      "origin": [1500, -400, 1000],
+      "u": [1, 0, 0],
+      "v": [0, 0, 1],
+      "normal": [0, -1, 0],
+      "extentMm": {
+       "aMin": -50,
+       "aMax": 1050,
+       "bMin": -50,
+       "bMax": 1050
+      }
+     }
+    ]
+   },
+   {
+    "index": 2,
+    "name": "volume side",
+    "facets": [
+     {
+      "id": "2",
+      "origin": [2500, -400, 1000],
+      "u": [0.7808688094430304, 0.6246950475544243, 0],
+      "v": [0, 0, 1],
+      "normal": [0.6246950475544243, -0.7808688094430304, 0],
+      "extentMm": {
+       "aMin": -50,
+       "aMax": 690,
+       "bMin": -50,
+       "bMax": 1050
+      }
+     }
+    ]
+   }
+  ],
+  "markers": [
+   {
+    "id": 1,
+    "facet": "0",
+    "cornersPlaneMm": [
+     [437.5, 562.5],
+     [562.5, 562.5],
+     [562.5, 437.5],
+     [437.5, 437.5]
+    ]
+   },
+   {
+    "id": 2,
+    "facet": "0",
+    "cornersPlaneMm": [
+     [3437.5, 2562.5],
+     [3562.5, 2562.5],
+     [3562.5, 2437.5],
+     [3437.5, 2437.5]
+    ]
+   },
+   {
+    "id": 3,
+    "facet": "0",
+    "cornersPlaneMm": [
+     [437.5, 2562.5],
+     [562.5, 2562.5],
+     [562.5, 2437.5],
+     [437.5, 2437.5]
+    ]
+   },
+   {
+    "id": 4,
+    "facet": "1",
+    "cornersPlaneMm": [
+     [237.5, 362.5],
+     [362.5, 362.5],
+     [362.5, 237.5],
+     [237.5, 237.5]
+    ]
+   },
+   {
+    "id": 5,
+    "facet": "1",
+    "cornersPlaneMm": [
+     [637.5, 762.5],
+     [762.5, 762.5],
+     [762.5, 637.5],
+     [637.5, 637.5]
+    ]
+   },
+   {
+    "id": 6,
+    "facet": "2",
+    "cornersPlaneMm": [
+     [137.5, 562.5],
+     [262.5, 562.5],
+     [262.5, 437.5],
+     [137.5, 437.5]
+    ]
+   },
+   {
+    "id": 7,
+    "facet": "2",
+    "cornersPlaneMm": [
+     [387.5, 562.5],
+     [512.5, 562.5],
+     [512.5, 437.5],
+     [387.5, 437.5]
+    ]
+   }
+  ]
+ },
+ "expect": {
+  "cuts": {
+   "0": [],
+   "1": [
+    [-1, 0, -1000]
+   ],
+   "2": [
+    [1, 0, 0],
+    [-1, 0, -640.3124237432849]
+   ]
+  }
+ },
+ "queries": [
+  {
+   "kind": "blocked",
+   "camera": [2000, -3000, 1500],
+   "target": [2000, 0, 1500],
+   "targetFacet": "0",
+   "insetMm": 0,
+   "expected": true,
+   "why": "the volume's front face hides the wall behind it"
+  },
+  {
+   "kind": "blocked",
+   "camera": [-3000, -1000, 1500],
+   "target": [2000, 0, 1500],
+   "targetFacet": "0",
+   "insetMm": 0,
+   "expected": false,
+   "why": "seen from far left past the volume"
+  },
+  {
+   "kind": "blocked",
+   "camera": [5000, -2000, 1500],
+   "target": [2800, 0, 1500],
+   "targetFacet": "0",
+   "insetMm": 0,
+   "expected": true,
+   "why": "the sloped side face hides the wall at its foot"
+  },
+  {
+   "kind": "blockedBy",
+   "occluder": "1",
+   "camera": [2000, -400, 1500],
+   "target": [2000, 0, 1500],
+   "insetMm": 0,
+   "expected": false,
+   "why": "a camera on the front face's plane crosses nothing (C# used to call this blocked)"
+  },
+  {
+   "kind": "visible",
+   "camera": [2000, -3000, 1500],
+   "target": [2000, -400, 1500],
+   "targetFacet": "1",
+   "insetMm": 0,
+   "expected": true,
+   "why": "the front face itself is seen"
+  },
+  {
+   "kind": "blocked",
+   "camera": [2000, -3000, 1500],
+   "target": [2000, 0, 1500],
+   "targetFacet": "0",
+   "insetMm": 60,
+   "expected": true,
+   "why": "the front face blocks with a 60 mm inset"
+  },
+  {
+   "kind": "blocked",
+   "camera": [2530, -3000, 1500],
+   "target": [2530, 0, 1500],
+   "targetFacet": "0",
+   "insetMm": 60,
+   "expected": false,
+   "why": "past the volume's front-right corner: crosses the side face 39 mm from its seam with the front, inside the 60 mm inset"
+  }
+ ]
+}

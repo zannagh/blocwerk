@@ -8,27 +8,28 @@ using Blocwerk.Core.Geometry.Volumes;
 namespace Blocwerk.Core.Capture.Coverage;
 
 /// <summary>
-/// Where a facet really is: its region rectangle cut along the seams with its neighbours where the facet's own markers
-/// all lie on one side, so a triangle segment (side wall, closing piece) keeps only its real half. A seam is only used
-/// where the neighbour really is (the seam runs, on average, within <see cref="MaxSeamGapMm"/> of the neighbour's
-/// region). The same rule as the wall textures' <c>occlusion.py</c>.
+/// Where a facet really is: its region rectangle cut along the seams with its neighbours where the facet's own voting
+/// markers (<see cref="GeometryKernel.VotingCorners"/>) all lie on one side, so a triangle segment (side wall, closing
+/// piece) keeps only its real half, and along its outline's fold clips (SfM models, which have no markers). A seam is only
+/// used where the neighbour really is (the seam runs, on average, within <see cref="MaxSeamGapMm"/> of the neighbour's
+/// region). The geometry kernel's facet shape (<c>docs/geometry-kernel.md</c>), as the wall textures' <c>occlusion.py</c>.
 /// </summary>
 internal static class CoverageOccluderSeams
 {
     /// <summary>Planes closer to parallel than this (sine of their angle, ~10°) give no reliable seam.</summary>
-    public const double MinPlaneAngleSin = 0.17;
+    public const double MinPlaneAngleSin = GeometryKernel.MinPlaneAngleSin;
 
     /// <summary>A seam counts only when it lies, on average, within this of the neighbour's region, mm.</summary>
-    public const double MaxSeamGapMm = 800;
+    public const double MaxSeamGapMm = GeometryKernel.MaxSeamGapMm;
 
     /// <summary>A marker corner this close to a seam still counts as on either side, mm.</summary>
-    public const double MarkerSideTolMm = 20;
+    public const double MarkerSideTolMm = GeometryKernel.MarkerSideTolMm;
 
-    /// <summary>One occluder per facet, each cut by its marker-confirmed seams.</summary>
+    /// <summary>One occluder per facet, each cut by its marker-confirmed seams and its fold clips.</summary>
     /// <param name="facets">The facets.</param>
     /// <returns>The occluders, in the facets' order.</returns>
     public static IReadOnlyList<CoverageOccluder> Build(IReadOnlyList<CoverageFacet> facets) =>
-        facets.Select(g => new CoverageOccluder(g, HalfPlanes(g, facets))).ToList();
+        facets.Select(g => new CoverageOccluder(g, [.. HalfPlanes(g, facets), .. g.FoldCuts ?? []])).ToList();
 
     private static List<(double Alpha, double Beta, double Gamma)> HalfPlanes(CoverageFacet g, IReadOnlyList<CoverageFacet> facets)
     {

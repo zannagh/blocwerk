@@ -15,12 +15,12 @@ def _corners(c, z=0.0):
                      [c[0] - h, c[1] + h, z]])
 
 
-def _facets(right_z=0.0, right_tilt=0.0, flip_right=False, right=RIGHT):
+def _facets(right_z=0.0, right_tilt=0.0, flip_right=False, right=RIGHT, pivot_x=1130.0):
     mw = {m: _corners(c) for m, c in LEFT.items()}
     mw.update({m: _corners(c, right_z) for m, c in right.items()})
     t = np.radians(right_tilt)
     rot = np.array([[np.cos(t), 0, np.sin(t)], [0, 1, 0], [-np.sin(t), 0, np.cos(t)]])
-    pivot = np.array([1130.0, 0, right_z])
+    pivot = np.array([pivot_x, 0, right_z])
     for m in right:
         mw[m] = (mw[m] - pivot) @ rot.T + pivot
     out = {}
@@ -102,3 +102,28 @@ def test_an_l_shaped_seam_whose_marker_boxes_interleave_slightly_is_still_cut_at
     seam = (4990 + SIZE / 2 + 5100 - SIZE / 2) / 2
     assert rec["axis"] == "a"
     assert abs(_x_range(facets["0"])[1] - seam) < 1e-6 and abs(_x_range(facets["2"])[0] - seam) < 1e-6
+
+
+def test_facets_at_a_fold_too_shallow_for_a_seam_are_clipped_at_the_midline():
+    # 7 deg apart: above mergeDeg (5), below the seam threshold (~9.8 deg), so occlusion and the 3D view cut nothing
+    # there; without the clip their margins would overlap uncut (review F10)
+    # the right panel turns 7 deg about a fold line at x = 1090, between the clusters but not at their midline (1065)
+    facets, core = _facets(right_tilt=7.0, pivot_x=1090.0)
+    assert _x_range(facets["0"])[1] > _x_range(facets["2"])[0]
+    [rec] = clip_overlaps(facets, core)
+    assert rec["facets"] == ["0", "2"] and "too shallow for a seam" in rec["reason"]
+    assert "where their planes meet" in rec["reason"]
+    assert abs(_x_range(facets["0"])[1] - 1090) < 1.0  # at the fold, not the midline
+    assert abs(_x_range(facets["2"])[0] - 1090) < 1.0
+    assert abs(rec["clippedAtWorldMm"][0] - 1090) < 1.0 and abs(rec["clippedAtWorldMm"][2]) < 1.0
+
+
+def test_a_shallow_fold_inside_a_marker_cluster_is_not_clipped():
+    # the planes meet 62 mm inside the right panel's markers: no fold between the clusters to clip at
+    facets, core = _facets(right_tilt=7.0, pivot_x=1130.0)
+    assert clip_overlaps(facets, core) == []
+
+
+def test_a_shallow_fold_that_does_not_meet_at_the_midline_is_a_step_and_not_clipped():
+    facets, core = _facets(right_z=120.0, right_tilt=7.0)
+    assert clip_overlaps(facets, core) == []

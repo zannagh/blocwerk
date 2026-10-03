@@ -2,8 +2,9 @@ name: Wall geometry service
 
 # Builds, tests and publishes ghcr.io/<owner>/blocwerk-geometry (docker/wall-geometry/).
 # Independent of the app image (main.yml): it only runs when the service's own files (or the shared
-# protocol package docker/compute-jobs-py/) change. Build context = repo root (Dockerfile.dockerignore
-# next to the Dockerfile keeps it to the service + the shared package).
+# protocol package docker/compute-jobs-py/, or the geometry kernel's golden cases test/geometry-golden/ it shares with
+# the C# tests) change. Build context = repo root (Dockerfile.dockerignore next to the Dockerfile keeps it to the
+# service, the shared package and the golden cases).
 
 on:
   push:
@@ -12,11 +13,13 @@ on:
     paths:
       - 'docker/wall-geometry/**'
       - 'docker/compute-jobs-py/**'
+      - 'test/geometry-golden/**'
       - '.github/workflows/wall-geometry.yml'
   pull_request:
     paths:
       - 'docker/wall-geometry/**'
       - 'docker/compute-jobs-py/**'
+      - 'test/geometry-golden/**'
       - '.github/workflows/wall-geometry.yml'
   workflow_dispatch:
 

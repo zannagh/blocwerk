@@ -1,7 +1,7 @@
 """Cross-facet consistency: one global gain solve, and seam harmonisation between facet textures."""
 import numpy as np
 
-from wallgeometry import exposure, seams
+from wallgeometry import exposure, occlusion, seams
 
 RES = 5.0  # mm per texture px
 
@@ -97,3 +97,16 @@ def test_real_lighting_gradient_across_the_seam_is_kept():
         rel = r["image"][40:220, 40:220].astype(float).mean() / o[40:220, 40:220].mean()
         assert abs(rel - 1) < 0.03, rel
     assert _strip(res[1], 1000, 800, 900) / _strip(res[0], 0, 0, 100) > 1.5
+
+
+def test_a_cut_away_part_of_a_facet_forms_no_seam():
+    # B's shape starts 300 mm from A (a seam cut, occlusion.Occluder): its rectangle's part next to A is no wall,
+    # so there is nothing to harmonise against (review: seam bands measured against full extent rectangles)
+    rng = np.random.default_rng(5)
+    wood = _wood(rng)
+    facets, res = _two_facets(wood, lambda X, Z: wood(X, Z) * 0.7)
+    before = res[0]["image"].copy()
+    shapes = {"B": occlusion.Occluder(facets["B"], [(1.0, 0.0, 300.0)])}
+    rep = seams.harmonise(res, facets, shapes=shapes)
+    assert "A-B" not in rep
+    assert np.array_equal(res[0]["image"], before)

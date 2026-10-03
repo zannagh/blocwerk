@@ -1,0 +1,157 @@
+{
+ "name": "arete",
+ "description": "A convex 90 deg arete (front y = 0, right side x = 2000); each extent's margin past the edge is cut.",
+ "model": {
+  "version": 1,
+  "units": "mm",
+  "world": {
+   "up": [0, 0, 1],
+   "referenceFacet": "0"
+  },
+  "segments": [
+   {
+    "index": 0,
+    "name": "front",
+    "facets": [
+     {
+      "id": "0",
+      "origin": [0, 0, 0],
+      "u": [1, 0, 0],
+      "v": [0, 0, 1],
+      "normal": [0, -1, 0],
+      "extentMm": {
+       "aMin": -50,
+       "aMax": 2050,
+       "bMin": -50,
+       "bMax": 2050
+      }
+     }
+    ]
+   },
+   {
+    "index": 1,
+    "name": "right side",
+    "facets": [
+     {
+      "id": "1",
+      "origin": [2000, 0, 0],
+      "u": [0, 1, 0],
+      "v": [0, 0, 1],
+      "normal": [1, 0, 0],
+      "extentMm": {
+       "aMin": -50,
+       "aMax": 1550,
+       "bMin": -50,
+       "bMax": 2050
+      }
+     }
+    ]
+   }
+  ],
+  "markers": [
+   {
+    "id": 1,
+    "facet": "0",
+    "cornersPlaneMm": [
+     [437.5, 562.5],
+     [562.5, 562.5],
+     [562.5, 437.5],
+     [437.5, 437.5]
+    ]
+   },
+   {
+    "id": 2,
+    "facet": "0",
+    "cornersPlaneMm": [
+     [1437.5, 1562.5],
+     [1562.5, 1562.5],
+     [1562.5, 1437.5],
+     [1437.5, 1437.5]
+    ]
+   },
+   {
+    "id": 3,
+    "facet": "1",
+    "cornersPlaneMm": [
+     [337.5, 562.5],
+     [462.5, 562.5],
+     [462.5, 437.5],
+     [337.5, 437.5]
+    ]
+   },
+   {
+    "id": 4,
+    "facet": "1",
+    "cornersPlaneMm": [
+     [1037.5, 1562.5],
+     [1162.5, 1562.5],
+     [1162.5, 1437.5],
+     [1037.5, 1437.5]
+    ]
+   }
+  ]
+ },
+ "expect": {
+  "cuts": {
+   "0": [
+    [-1, 0, -2000]
+   ],
+   "1": [
+    [1, 0, 0]
+   ]
+  }
+ },
+ "queries": [
+  {
+   "kind": "inShape",
+   "facet": "0",
+   "ab": [2030, 1000],
+   "insetMm": 0,
+   "expected": false,
+   "why": "the front's margin past the arete is cut"
+  },
+  {
+   "kind": "inShape",
+   "facet": "0",
+   "ab": [1980, 1000],
+   "insetMm": 0,
+   "expected": true,
+   "why": "20 mm before the arete"
+  },
+  {
+   "kind": "inShape",
+   "facet": "0",
+   "ab": [1980, 1000],
+   "insetMm": 60,
+   "expected": false,
+   "why": "... but not with the coverage report's 60 mm inset"
+  },
+  {
+   "kind": "blocked",
+   "camera": [3000, -1000, 1000],
+   "target": [2000, 40, 1000],
+   "targetFacet": "1",
+   "insetMm": 0,
+   "expected": false,
+   "why": "the line of sight grazes past the arete through the front's cut-away margin (x = 2038)"
+  },
+  {
+   "kind": "blocked",
+   "camera": [3000, -1000, 1000],
+   "target": [2000, 20, 1000],
+   "targetFacet": "1",
+   "insetMm": 0,
+   "expected": false,
+   "why": "20 mm from the front's plane: its own seam"
+  },
+  {
+   "kind": "visible",
+   "camera": [3000, -1000, 1000],
+   "target": [1500, 0, 1000],
+   "targetFacet": "0",
+   "insetMm": 0,
+   "expected": true,
+   "why": "both faces of a convex arete are seen from the corner"
+  }
+ ]
+}

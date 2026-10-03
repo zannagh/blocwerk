@@ -1,0 +1,246 @@
+{
+ "name": "overhang-with-lip",
+ "description": "A vertical kickboard, a 45 deg overhang hinged on its top edge and a vertical lip on the overhang's top front edge.",
+ "model": {
+  "version": 1,
+  "units": "mm",
+  "world": {
+   "up": [0, 0, 1],
+   "referenceFacet": "0"
+  },
+  "segments": [
+   {
+    "index": 0,
+    "name": "overhang",
+    "facets": [
+     {
+      "id": "0",
+      "origin": [0, 0, 1000],
+      "u": [1, 0, 0],
+      "v": [0, -0.7071067811865475, 0.7071067811865475],
+      "normal": [0, -0.7071067811865475, -0.7071067811865475],
+      "extentMm": {
+       "aMin": -50,
+       "aMax": 3050,
+       "bMin": -50,
+       "bMax": 1464.2
+      }
+     }
+    ]
+   },
+   {
+    "index": 1,
+    "name": "kickboard",
+    "facets": [
+     {
+      "id": "1",
+      "origin": [0, 0, 0],
+      "u": [1, 0, 0],
+      "v": [0, 0, 1],
+      "normal": [0, -1, 0],
+      "extentMm": {
+       "aMin": -50,
+       "aMax": 3050,
+       "bMin": -50,
+       "bMax": 1050
+      }
+     }
+    ]
+   },
+   {
+    "index": 2,
+    "name": "lip",
+    "facets": [
+     {
+      "id": "2",
+      "origin": [0, -1000, 2000],
+      "u": [1, 0, 0],
+      "v": [0, 0, 1],
+      "normal": [0, -1, 0],
+      "extentMm": {
+       "aMin": -50,
+       "aMax": 3050,
+       "bMin": -50,
+       "bMax": 350
+      }
+     }
+    ]
+   }
+  ],
+  "markers": [
+   {
+    "id": 1,
+    "facet": "1",
+    "cornersPlaneMm": [
+     [437.5, 362.5],
+     [562.5, 362.5],
+     [562.5, 237.5],
+     [437.5, 237.5]
+    ]
+   },
+   {
+    "id": 2,
+    "facet": "1",
+    "cornersPlaneMm": [
+     [2437.5, 762.5],
+     [2562.5, 762.5],
+     [2562.5, 637.5],
+     [2437.5, 637.5]
+    ]
+   },
+   {
+    "id": 3,
+    "facet": "0",
+    "cornersPlaneMm": [
+     [437.5, 462.5],
+     [562.5, 462.5],
+     [562.5, 337.5],
+     [437.5, 337.5]
+    ]
+   },
+   {
+    "id": 4,
+    "facet": "0",
+    "cornersPlaneMm": [
+     [2437.5, 1062.5],
+     [2562.5, 1062.5],
+     [2562.5, 937.5],
+     [2437.5, 937.5]
+    ]
+   },
+   {
+    "id": 5,
+    "facet": "2",
+    "cornersPlaneMm": [
+     [437.5, 212.5],
+     [562.5, 212.5],
+     [562.5, 87.5],
+     [437.5, 87.5]
+    ]
+   },
+   {
+    "id": 6,
+    "facet": "2",
+    "cornersPlaneMm": [
+     [2437.5, 212.5],
+     [2562.5, 212.5],
+     [2562.5, 87.5],
+     [2437.5, 87.5]
+    ]
+   }
+  ]
+ },
+ "expect": {
+  "cuts": {
+   "0": [
+    [0, 1, 0],
+    [0, -1, -1414.213562373095]
+   ],
+   "1": [
+    [0, -1, -1000]
+   ],
+   "2": [
+    [0, 1, 0]
+   ]
+  }
+ },
+ "queries": [
+  {
+   "kind": "blocked",
+   "camera": [1500, -3000, 800],
+   "target": [1500, 0, 500],
+   "targetFacet": "1",
+   "insetMm": 0,
+   "expected": false,
+   "why": "a low camera sees the kickboard under the overhang"
+  },
+  {
+   "kind": "blocked",
+   "camera": [1500, -1500, 3500],
+   "target": [1500, 0, 500],
+   "targetFacet": "1",
+   "insetMm": 0,
+   "expected": true,
+   "why": "a high camera's view of the kickboard crosses the overhang"
+  },
+  {
+   "kind": "blocked",
+   "camera": [1500, -1500, 3500],
+   "target": [1500, 0, 960],
+   "targetFacet": "1",
+   "insetMm": 0,
+   "expected": false,
+   "why": "28 mm below the fold: within 30 mm of the overhang's plane, its own seam (C# used to say blocked)"
+  },
+  {
+   "kind": "blocked",
+   "camera": [1500, -1500, 3500],
+   "target": [1500, 0, 900],
+   "targetFacet": "1",
+   "insetMm": 0,
+   "expected": true,
+   "why": "100 mm below the fold the overhang blocks"
+  },
+  {
+   "kind": "blockedBy",
+   "occluder": "2",
+   "camera": [1500, -2000, 3500],
+   "target": [1500, -919.2, 1919.2],
+   "insetMm": 0,
+   "expected": true,
+   "why": "crosses the lip's plane 37 mm above its bottom edge"
+  },
+  {
+   "kind": "blockedBy",
+   "occluder": "2",
+   "camera": [1500, -2000, 2600],
+   "target": [1500, -919.2, 1919.2],
+   "insetMm": 0,
+   "expected": false,
+   "why": "crosses its plane 30 mm below the lip's bottom edge (its seam with the overhang): in its extent's margin, cut away"
+  },
+  {
+   "kind": "inShape",
+   "facet": "0",
+   "ab": [1500, 1440],
+   "insetMm": 0,
+   "expected": false,
+   "why": "the overhang's margin past the lip is cut"
+  },
+  {
+   "kind": "inShape",
+   "facet": "1",
+   "ab": [1500, 1030],
+   "insetMm": 0,
+   "expected": false,
+   "why": "the kickboard's margin above the fold is cut"
+  },
+  {
+   "kind": "blocked",
+   "camera": [1500, -179.9, 3006.8],
+   "target": [1500, -80, 1009.3],
+   "targetFacet": "1",
+   "insetMm": 60,
+   "expected": true,
+   "why": "a hold 80 mm proud of the kickboard at the inside fold, 50 mm below the overhang's plane, seen steeply from above: the ray crosses the overhang 75 mm from the hold, 118 mm up it (C# used to ignore any crossing within 80 mm along the ray)"
+  },
+  {
+   "kind": "blocked",
+   "camera": [1500, -1500, 3500],
+   "target": [1500, 0, 900],
+   "targetFacet": "1",
+   "insetMm": 60,
+   "expected": true,
+   "why": "the overhang blocks with a 60 mm inset too"
+  },
+  {
+   "kind": "blockedBy",
+   "occluder": "2",
+   "camera": [1500, -2000, 3500],
+   "target": [1500, -919.2, 1919.2],
+   "insetMm": 60,
+   "expected": false,
+   "why": "37 mm above the lip's bottom edge: inside the exact shape, not with a 60 mm inset"
+  }
+ ]
+}
