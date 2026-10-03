@@ -40,7 +40,14 @@ public sealed partial class WallCaptureProcessor
     /// </summary>
     private Task AfterCompletionAsync(CaptureRun run, CancellationToken ct) => FollowUpAsync(run, CaptureFollowUpPhase.AfterCompletion, ct);
 
-    /// <summary>Adds a plain-words note to the capture's follow-up record (e.g. why there is no photo-real view).</summary>
-    private static void AddFollowUpNote(WallCapture capture, string note) =>
-        capture.FollowUpJson = (CaptureFollowUpRecord.Parse(capture.FollowUpJson) with { Note = note }).ToJson();
+    /// <summary>
+    /// Puts a plain-words note on the capture's follow-up record (e.g. why there is no photo-real view), as a conditional
+    /// write (<see cref="CaptureFollowUpRecordStore"/>), with <paramref name="also"/> applied in the same write.
+    /// </summary>
+    private Task NoteAsync(Guid captureId, string note, CancellationToken ct, Func<CaptureFollowUpRecord, CaptureFollowUpRecord>? also = null) =>
+        UpdateRecordAsync(captureId, r => (also is null ? r : also(r)) with { Note = note }, ct);
+
+    /// <summary>Changes the capture's follow-up record with a conditional write, whatever model it points at.</summary>
+    private Task<CaptureFollowUpRecord?> UpdateRecordAsync(Guid captureId, Func<CaptureFollowUpRecord, CaptureFollowUpRecord> change, CancellationToken ct) =>
+        CaptureFollowUpRecordStore.UpdateAsync(dbContextFactory.CreateDbContext, captureId, change, ct);
 }

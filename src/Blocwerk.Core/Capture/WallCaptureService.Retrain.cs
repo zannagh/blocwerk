@@ -50,7 +50,6 @@ public sealed partial class WallCaptureService
             capture.Error = textureError;
             capture.Attempts = 0;
             capture.CompletedAt = null;
-            capture.FollowUpJson = WithoutNote(capture.FollowUpJson);
 
             // A photo-real view still waiting for (or on) a 3D runner is superseded by the new one.
             var superseded = await Runners.GpuJobQueue.CancelActiveAsync(
@@ -59,6 +58,12 @@ public sealed partial class WallCaptureService
             foreach (var path in superseded.SelectMany(Runners.GpuJobQueue.FilesOf))
             {
                 files.Delete(path);
+            }
+
+            // The note spoke about the photo-real view being redone.
+            if (CaptureFollowUpRecord.Parse(capture.FollowUpJson).Note is not null)
+            {
+                await CaptureFollowUpRecordStore.UpdateAsync(dbContextFactory.CreateDbContext, capture.Id, r => r with { Note = null }, CancellationToken.None);
             }
 
             queue.Enqueue(capture.Id);
@@ -80,11 +85,6 @@ public sealed partial class WallCaptureService
         var part = (i < 0 ? error : error[..i]).Trim();
         return part.Length == 0 ? null : part;
     }
-
-    /// <summary>The follow-up record without its note (the note spoke about the photo-real view being redone).</summary>
-    private static string? WithoutNote(string? followUpJson) => followUpJson is null
-        ? null
-        : (CaptureFollowUpRecord.Parse(followUpJson) with { Note = null }).ToJson();
 
     private static async Task<List<string>> RetrainProblemsAsync(Data.BlocwerkDbContext db, WallCapture capture)
     {

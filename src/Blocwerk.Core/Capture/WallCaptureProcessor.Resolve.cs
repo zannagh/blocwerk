@@ -12,9 +12,10 @@ using Microsoft.Extensions.Logging;
 namespace Blocwerk.Core.Capture;
 
 /// <summary>
-/// What solving a finished capture again produced: the stored (inactive) model, its job, and why it may not be activated.
+/// What solving a finished capture again produced: the stored (inactive) model, its job, why it may not be activated, and
+/// the planned-vs-observed check of the solved document (stored with the activation; null: none, or resumed).
 /// </summary>
-internal sealed record ResolveOutcome(Guid ModelId, string JobId, string? Refusal);
+internal sealed record ResolveOutcome(Guid ModelId, string JobId, string? Refusal, string? PlacementCheckJson = null);
 
 /// <summary>
 /// Solving a finished capture's 3D model again from its kept photos (<see cref="WallCaptureService.ResolveModelAsync"/>),
@@ -47,6 +48,12 @@ public sealed partial class WallCaptureProcessor
             return;
         }
 
+        await RedoCountedAsync(captureId, CaptureRedoKind.Resolve, () => RunResolveAsync(run, ct), ct);
+    }
+
+    private async Task RunResolveAsync(CaptureRun run, CancellationToken ct)
+    {
+        var captureId = run.Capture.Id;
         ResolveOutcome outcome;
         try
         {
@@ -107,10 +114,7 @@ public sealed partial class WallCaptureProcessor
 
         // The verdict goes into the notes, so a restart resumes with the checks of this solve, not of the stored document.
         var notes = ResolvedModelNotes(capture.Id, status.JobId!) + (refusal is null ? string.Empty : RefusedNote + refusal);
-        if (refusal is null)
-        {
-            await CheckResolvedPlacementAsync(run, json, ct);
-        }
+        var placement = refusal is null ? await ResolvedPlacementAsync(run, json, ct) : null;
 
         var imported = await glyphs.ImportGeometryAsync(capture.WallId, frame.Json, notes, ResolvedModelSource(capture.Id), options);
         if (!imported.Succeeded)
@@ -120,7 +124,7 @@ public sealed partial class WallCaptureProcessor
 
         logger.LogInformation(
             "Capture {CaptureId} solved again into model {ModelId} (to be activated: {Activate})", capture.Id, imported.Model!.Id, refusal is null);
-        return new ResolveOutcome(imported.Model.Id, status.JobId!, refusal);
+        return new ResolveOutcome(imported.Model.Id, status.JobId!, refusal, placement);
     }
 
     /// <summary>Why the new model may not replace the active one: it failed the checks, or is not in the view's frame.</summary>
@@ -133,7 +137,7 @@ public sealed partial class WallCaptureProcessor
 
         if (!frame.Activate)
         {
-            return frame.Refusal ?? "It could not be tied to the active model.";
+            return string.IsNullOrWhiteSpace(frame.Refusal) ? "It could not be tied to the active model." : frame.Refusal;
         }
 
         return FrameLineage.IsReset(frame.Json)
@@ -172,13 +176,9 @@ public sealed partial class WallCaptureProcessor
     private static string Noted(CaptureRun run, string note) => run.PlanNote is null ? note : $"{note} {run.PlanNote}";
 
     /// <summary>Drops the mark (a finished job id stays as the capture's solve job) and tells the admin what happened.</summary>
-    private Task EndResolveAsync(Guid captureId, string? jobId, string note, CancellationToken ct) =>
-        ClearMarkAsync(
-            captureId,
-            c =>
-            {
-                c.SolveJobId = jobId;
-                AddFollowUpNote(c, note);
-            },
-            ct);
+    private async Task EndResolveAsync(Guid captureId, string? jobId, string note, CancellationToken ct)
+    {
+        await ClearMarkAsync(captureId, c => c.SolveJobId = jobId, ct);
+        await NoteAsync(captureId, note, ct, r => r with { ResolveStarts = 0 });
+    }
 }

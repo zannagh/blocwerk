@@ -23,19 +23,23 @@ public sealed partial class WallCaptureProcessor
     /// <param name="ct">Cancellation.</param>
     private async Task CheckPlacementAsync(CaptureRun run, string? geometryJson, CancellationToken ct)
     {
+        var json = geometryJson ?? await ModelJsonAsync(run.Capture.GeometryModelId, ct);
+        if (json is not null && await PlacementCheckJsonAsync(run, json, ct) is { } stored)
+        {
+            await UpdateAsync(run.Capture.Id, c => c.PlacementCheckJson = stored, ct);
+        }
+    }
+
+    /// <summary>The planned-vs-observed check of <paramref name="json"/> as stored; null off a plan or when the model cannot be read.</summary>
+    private async Task<string?> PlacementCheckJsonAsync(CaptureRun run, string json, CancellationToken ct)
+    {
         if (!run.Layout.IsFromPlan)
         {
-            return;
+            return null;
         }
 
         try
         {
-            var json = geometryJson ?? await ModelJsonAsync(run.Capture.GeometryModelId, ct);
-            if (json is null)
-            {
-                return;
-            }
-
             var photos = await LoadPhotosAsync(run.Capture.Id, ct);
             var detected = photos
                 .SelectMany(p => CaptureComputeDocuments.UsableMarkers(run.Layout, p.MarkersJson))
@@ -47,15 +51,15 @@ public sealed partial class WallCaptureProcessor
                 WallGeometryDocument.Parse(json),
                 detected,
                 name => labels.GetValueOrDefault(name, name));
-            var stored = JsonSerializer.Serialize(check);
-            await UpdateAsync(run.Capture.Id, c => c.PlacementCheckJson = stored, ct);
             logger.LogInformation(
                 "Capture {CaptureId} placement check: {Solved}/{Planned} planned markers solved, {Findings} finding(s)",
                 run.Capture.Id, check.SolvedMarkers, check.PlannedMarkers, check.Findings.Count);
+            return JsonSerializer.Serialize(check);
         }
         catch (JsonException ex)
         {
             logger.LogWarning(ex, "Capture {CaptureId}: the placement check could not read the model", run.Capture.Id);
+            return null;
         }
     }
 

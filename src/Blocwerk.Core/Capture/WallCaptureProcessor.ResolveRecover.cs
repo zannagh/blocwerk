@@ -39,7 +39,13 @@ public sealed partial class WallCaptureProcessor
             return null;
         }
 
-        var refusal = stored.Notes!.Length > accepted.Length ? stored.Notes[refused.Length..] : null;
+        var refusal = stored.Notes!.Length > accepted.Length ? stored.Notes[Math.Min(refused.Length, stored.Notes.Length)..].Trim() : null;
+        if (refusal is { Length: 0 })
+        {
+            // Refused, but the reason did not survive (an empty or clipped verdict): still refused.
+            refusal = "It failed the checks when it was solved.";
+        }
+
         logger.LogInformation(
             "Capture {CaptureId}: resuming the re-solve from its stored model {ModelId} (refused: {Refused})", capture.Id, stored.Id, refusal is not null);
         return new ResolveOutcome(stored.Id, jobId, refusal);

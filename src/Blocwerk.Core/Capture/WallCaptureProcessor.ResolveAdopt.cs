@@ -89,21 +89,31 @@ public sealed partial class WallCaptureProcessor
             capture.SolveJobId = outcome.JobId;
             capture.TexturesJobId = CaptureTextureOutcome.RerenderMark;
             capture.CoverageJson = null;
+            if (outcome.PlacementCheckJson is { } placement)
+            {
+                capture.PlacementCheckJson = placement;
+            }
+
+            // A new record (the run is over: its start count goes with the old one).
             capture.FollowUpJson = (CaptureFollowUpRecord.Empty with { Note = note, Rederive = true }).ToJson();
         });
         return view is not null;
     }
 
-    /// <summary>The planned-vs-observed check of the solved document; advisory, so nothing here stops the re-solve.</summary>
-    private async Task CheckResolvedPlacementAsync(CaptureRun run, string solvedJson, CancellationToken ct)
+    /// <summary>
+    /// The planned-vs-observed check of the solved document, stored with the activation (never for a model that does not
+    /// go live); advisory, so nothing here stops the re-solve.
+    /// </summary>
+    private async Task<string?> ResolvedPlacementAsync(CaptureRun run, string solvedJson, CancellationToken ct)
     {
         try
         {
-            await CheckPlacementAsync(run, solvedJson, ct);
+            return await PlacementCheckJsonAsync(run, solvedJson, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             logger.LogWarning(ex, "Capture {CaptureId}: the placement check of the re-solved model failed", run.Capture.Id);
+            return null;
         }
     }
 

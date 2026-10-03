@@ -54,29 +54,44 @@ public sealed partial class CaptureFollowUpChain
             return record;
         }
 
+        var repointed = false;
         if (context is not null)
         {
-            await using var scope = scopes.CreateAsyncScope();
-            foreach (var step in scope.ServiceProvider.GetServices<ICaptureFollowUpStep>().OrderBy(s => s.Order))
-            {
-                if (record.Find(step.Key) is not null)
-                {
-                    continue;
-                }
+            await CountedAsync(captureId, modelId, async () => (record, repointed) = await RunMissingStepsAsync(context, record, ct), ct);
+        }
 
-                var inputsKey = step.RunsAfterCompletion ? await step.InputsKeyAsync(context, ct) : null;
-                var entry = await RunStepAsync(step, context, ct, quiet: true) with { InputsKey = inputsKey };
-                if (await SaveEntryAsync(context, entry, ct) is not { } saved)
-                {
-                    // Re-pointed meanwhile: the mark (if any) belongs to the new model's run.
-                    return record.With(entry);
-                }
-
-                record = saved;
-            }
+        if (repointed)
+        {
+            // The mark (if any) belongs to the new model's run.
+            return record;
         }
 
         await UpdateRecordAsync(captureId, modelId, r => r with { Rederive = false, Recoveries = 0 }, ct);
         return record with { Rederive = false };
+    }
+
+    /// <summary>Runs every step the record has no entry for; stops (repointed) once the capture points at another model.</summary>
+    private async Task<(CaptureFollowUpRecord Record, bool Repointed)> RunMissingStepsAsync(
+        CaptureFollowUpContext context, CaptureFollowUpRecord record, CancellationToken ct)
+    {
+        await using var scope = scopes.CreateAsyncScope();
+        foreach (var step in scope.ServiceProvider.GetServices<ICaptureFollowUpStep>().OrderBy(s => s.Order))
+        {
+            if (record.Find(step.Key) is not null)
+            {
+                continue;
+            }
+
+            var inputsKey = step.RunsAfterCompletion ? await step.InputsKeyAsync(context, ct) : null;
+            var entry = await RunStepAsync(step, context, ct, quiet: true) with { InputsKey = inputsKey };
+            if (await SaveEntryAsync(context, entry, ct) is not { } saved)
+            {
+                return (record.With(entry), true);
+            }
+
+            record = saved;
+        }
+
+        return (record, false);
     }
 }

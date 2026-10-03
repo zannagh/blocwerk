@@ -28,8 +28,7 @@ public sealed class WallTextureRerenderWorker(
     /// <returns>How many were queued.</returns>
     public async Task<int> RequeueStuckAsync(CancellationToken ct)
     {
-        var stuck = await CaptureRedoRescan.StuckAsync(
-            dbContextFactory, q => q.Where(c => c.TexturesJobId != null && c.TexturesJobId.StartsWith(CaptureTextureOutcome.RerenderMark)), processor, ct);
+        var stuck = await CaptureRedoRescan.StuckAsync(dbContextFactory, CaptureRedoKind.Rerender, processor, ct);
         stuck.ForEach(queue.Enqueue);
         return stuck.Count;
     }

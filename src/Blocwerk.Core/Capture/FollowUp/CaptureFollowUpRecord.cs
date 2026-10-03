@@ -26,16 +26,21 @@ namespace Blocwerk.Core.Capture.FollowUp;
 /// (<see cref="CaptureFollowUpChain.RunAgainAsync"/>), resumed after a restart until it is cleared.
 /// </param>
 /// <param name="Recoveries">
-/// How many starts in a row picked up <see cref="Rederive"/> or <see cref="RunAgain"/> without the work finishing (a crash
-/// in it); after <see cref="CaptureFollowUpChain.MaxRecoveries"/> the marks are dropped with a note. Reset when it finishes.
+/// How many runs of <see cref="Rederive"/> or <see cref="RunAgain"/> started without finishing (the process died in them;
+/// a graceful shutdown does not count); after <see cref="CaptureFollowUpChain.MaxRecoveries"/> a startup drops the mark
+/// with a note. Reset when a run finishes.
 /// </param>
+/// <param name="ResolveStarts">The same count for the capture's re-solve (<see cref="CaptureResolveMark"/>).</param>
+/// <param name="RerenderStarts">The same count for its texture re-render (<see cref="CaptureTextureOutcome.RerenderMark"/>).</param>
 public sealed record CaptureFollowUpRecord(
     [property: JsonPropertyName("steps")] IReadOnlyList<CaptureFollowUpEntry> Steps,
     [property: JsonPropertyName("note")] string? Note = null,
     [property: JsonPropertyName("carriedFrom"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? CarriedFrom = null,
     [property: JsonPropertyName("rederive"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool Rederive = false,
     [property: JsonPropertyName("runAgain"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool RunAgain = false,
-    [property: JsonPropertyName("recoveries"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] int Recoveries = 0)
+    [property: JsonPropertyName("recoveries"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] int Recoveries = 0,
+    [property: JsonPropertyName("resolveStarts"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] int ResolveStarts = 0,
+    [property: JsonPropertyName("rerenderStarts"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] int RerenderStarts = 0)
 {
     /// <summary>How a record marked <see cref="Rederive"/> reads in the stored JSON (to find the ones left to resume).</summary>
     public const string RederiveMarker = "\"rederive\":true";

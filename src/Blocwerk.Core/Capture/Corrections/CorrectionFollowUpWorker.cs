@@ -46,7 +46,7 @@ public sealed class CorrectionFollowUpWorker(
             foreach (var captureId in marked)
             {
                 // At most MaxRecoveries starts in a row: a chain that brings the process down must not loop it.
-                if (await chain.CountRecoveryAsync(captureId, CaptureFollowUpRecoveryKind.RunAgain, ct))
+                if (await chain.MayRecoverAsync(captureId, CaptureFollowUpRecoveryKind.RunAgain, ct))
                 {
                     queue.Enqueue(captureId);
                     resumed++;

@@ -73,7 +73,8 @@ public sealed partial class WallCaptureProcessor
         var latest = new LatestProgress();
         var request = options.VideoFrameRequest();
         var names = new List<string>();
-        var extraction = Task.Run(() => videoFrames!.ExtractAsync(path, request, StoreFrameAsync, latest, ct), ct);
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var extraction = Task.Run(() => videoFrames!.ExtractAsync(path, request, StoreFrameAsync, latest, stop.Token), stop.Token);
         try
         {
             while (await Task.WhenAny(extraction, Task.Delay(TimeSpan.FromSeconds(2), ct)) != extraction)
@@ -95,7 +96,8 @@ public sealed partial class WallCaptureProcessor
         }
         catch
         {
-            // A failed progress write (or shutdown) leaves the extraction running: let it end before its frames go.
+            // A failed progress write (or shutdown) leaves the extraction running: stop it, and let it end before its frames go.
+            await stop.CancelAsync();
             try
             {
                 await extraction;

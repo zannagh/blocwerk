@@ -32,8 +32,7 @@ public sealed class WallModelResolveWorker(
     /// <returns>How many were queued.</returns>
     public async Task<int> RequeueStuckAsync(CancellationToken ct)
     {
-        var stuck = await CaptureRedoRescan.StuckAsync(
-            dbContextFactory, q => q.Where(c => c.SolveJobId != null && c.SolveJobId.StartsWith(CaptureResolveMark.Mark)), processor, ct);
+        var stuck = await CaptureRedoRescan.StuckAsync(dbContextFactory, CaptureRedoKind.Resolve, processor, ct);
         stuck.ForEach(queue.Enqueue);
         return stuck.Count;
     }
@@ -91,7 +90,7 @@ public sealed class WallModelResolveWorker(
                 .ToListAsync(ct);
             foreach (var captureId in rederive)
             {
-                if (chain is null || await chain.CountRecoveryAsync(captureId, CaptureFollowUpRecoveryKind.Rederive, ct))
+                if (chain is null || await chain.MayRecoverAsync(captureId, CaptureFollowUpRecoveryKind.Rederive, ct))
                 {
                     queue.Enqueue(captureId);
                 }

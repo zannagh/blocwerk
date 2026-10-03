@@ -145,7 +145,7 @@ public sealed partial class WallCaptureProcessor
             "Capture {CaptureId}: no photo-real worker was reachable ({Reason}); finishing without the photo-real view",
             capture.Id, ex.Message);
         await FollowUpAsync(run, CaptureFollowUpPhase.Final, ct);
-        await UpdateAsync(capture.Id, c => AddFollowUpNote(c, NoWorkerNote), ct);
+        await NoteAsync(capture.Id, NoWorkerNote, ct);
         await CompleteAsync(capture.Id, TextureOutcome(capture.Error), capture.Error, ct);
     }
 

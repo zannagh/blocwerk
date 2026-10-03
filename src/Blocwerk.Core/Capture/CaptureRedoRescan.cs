@@ -2,7 +2,6 @@
 // See License in the project root for license information.
 
 using Blocwerk.Core.Data;
-using Blocwerk.Core.Entities;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Capture;
@@ -29,15 +28,31 @@ internal static class CaptureRedoRescan
         }
     }
 
-    /// <summary>The marked captures (<paramref name="marked"/>) no run of <paramref name="processor"/> is working on.</summary>
+    /// <summary>
+    /// The captures marked for <paramref name="kind"/> that no run of <paramref name="processor"/> is working on and that
+    /// may run again (a mark whose runs keep not ending is dropped here, <see cref="WallCaptureProcessor.MayQueueRedoAsync"/>).
+    /// </summary>
     public static async Task<List<Guid>> StuckAsync(
-        RootDbContextFactory dbContextFactory,
-        Func<IQueryable<WallCapture>, IQueryable<WallCapture>> marked,
-        WallCaptureProcessor processor,
-        CancellationToken ct)
+        RootDbContextFactory dbContextFactory, CaptureRedoKind kind, WallCaptureProcessor processor, CancellationToken ct)
     {
-        await using var db = dbContextFactory.CreateDbContext();
-        var ids = await marked(db.WallCaptures).Select(c => c.Id).ToListAsync(ct);
-        return ids.Where(id => !processor.IsRedoing(id)).ToList();
+        List<Guid> ids;
+        await using (var db = dbContextFactory.CreateDbContext())
+        {
+            var marked = kind == CaptureRedoKind.Resolve
+                ? db.WallCaptures.Where(c => c.SolveJobId != null && c.SolveJobId.StartsWith(CaptureResolveMark.Mark))
+                : db.WallCaptures.Where(c => c.TexturesJobId != null && c.TexturesJobId.StartsWith(CaptureTextureOutcome.RerenderMark));
+            ids = await marked.Select(c => c.Id).ToListAsync(ct);
+        }
+
+        var stuck = new List<Guid>();
+        foreach (var id in ids.Where(id => !processor.IsRedoing(id)))
+        {
+            if (await processor.MayQueueRedoAsync(id, kind, ct))
+            {
+                stuck.Add(id);
+            }
+        }
+
+        return stuck;
     }
 }

@@ -25,10 +25,16 @@ public class CaptureFollowUpRecoveryTests
         var chain = FollowUpChains.Build(h.RootContextFactory, new ScriptedFollowUpStep("place", 100, []));
         var worker = new CorrectionFollowUpWorker(queue, chain, h.RootContextFactory, NullLogger<CorrectionFollowUpWorker>.Instance);
 
+        // The process "dies" at the step's write each time (write 1 counts the start): the run started, but never ended.
+        var writes = 0;
+        chain.BeforeConditionalWrite = () => ++writes == 2 ? throw new InvalidOperationException("the process died") : Task.CompletedTask;
         for (var start = 1; start <= CaptureFollowUpChain.MaxRecoveries; start++)
         {
             await worker.RecoverAsync(default);
-            Assert.Equal(captureId, await queue.DequeueAsync(Timeout()));
+            Assert.Equal(start - 1, (await RecordAsync(h, captureId)).Recoveries); // queueing does not count
+            writes = 0;
+            var queued = await queue.DequeueAsync(Timeout());
+            await Assert.ThrowsAsync<InvalidOperationException>(() => worker.RunAsync(queued, default));
             Assert.Equal(start, (await RecordAsync(h, captureId)).Recoveries);
         }
 
@@ -41,6 +47,31 @@ public class CaptureFollowUpRecoveryTests
         await worker.RecoverAsync(default);
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             async () => await queue.DequeueAsync(new CancellationTokenSource(TimeSpan.FromMilliseconds(100)).Token));
+    }
+
+    [Fact]
+    public async Task AGracefulShutdownMidChain_DoesNotCount()
+    {
+        using var h = new WallTestHarness();
+        var (captureId, _) = await CaptureFollowUpChainTests.SeedAsync(h);
+        await SetAsync(h, captureId, CaptureFollowUpRecord.Repointed(null));
+        using var shutdown = new CancellationTokenSource();
+        var step = new ScriptedFollowUpStep("place", 100, [])
+        {
+            Run = (_, ct) =>
+            {
+                shutdown.Cancel();
+                ct.ThrowIfCancellationRequested();
+                return CaptureFollowUpStepResult.Done("never");
+            },
+        };
+        var chain = FollowUpChains.Build(h.RootContextFactory, step);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => chain.RunAgainAsync(captureId, shutdown.Token));
+
+        var record = await RecordAsync(h, captureId);
+        Assert.True(record.RunAgain);
+        Assert.Equal(0, record.Recoveries);
     }
 
     [Fact]
