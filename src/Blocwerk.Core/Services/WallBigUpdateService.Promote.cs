@@ -125,7 +125,7 @@ public partial class WallBigUpdateService
         var survivingCenterStaged = await CarryCentreHoldsAsync(
             db, wallId, centerPanel, newGen, oldHolds, stagedTwins, centerStaged, confirmation,
             confirmation.CarriedWarpPositions, confirmation.CarriedWarpShapes, panelPositions,
-            newGenPanelByPosition, user.Id);
+            newGenPanelByPosition, await LoadStagedPhotoSizesAsync(db, updatedPanelIds), user.Id);
 
         // Blind carries on a panel whose photo could not be aligned sit at their OLD coordinates: flag them.
         await FlagUnalignedCarriesAsync(db, wallId);

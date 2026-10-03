@@ -56,6 +56,31 @@ public partial class WallBigUpdateService
     }
 
     /// <summary>
+    /// The raw pixel size of each staged panel photo by panel id (panels whose photo does not decode are
+    /// left out). Only the header is decoded.
+    /// </summary>
+    private static async Task<Dictionary<Guid, (int Width, int Height)>> LoadStagedPhotoSizesAsync(
+        BlocwerkDbContext db, IReadOnlyCollection<Guid> panelIds)
+    {
+        var ids = panelIds.ToList();
+        var photos = await db.WallPanels
+            .AsNoTracking()
+            .Where(p => ids.Contains(p.Id) && p.StagedPhoto != null)
+            .Select(p => new { p.Id, p.StagedPhoto })
+            .ToListAsync();
+        var sizes = new Dictionary<Guid, (int Width, int Height)>();
+        foreach (var photo in photos)
+        {
+            if (OverlapSeedLoader.RawSize(photo.StagedPhoto!) is { } size)
+            {
+                sizes[photo.Id] = size;
+            }
+        }
+
+        return sizes;
+    }
+
+    /// <summary>
     /// The committed photos of the given panels by id. Only the live panels at re-photographed positions
     /// are ever asked for: superseded rows keep their photo as history, so reading every panel photo of
     /// the wall grew with each update (panels x generations of multi-megabyte images) on every resume.

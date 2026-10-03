@@ -61,6 +61,7 @@ public partial class WallBigUpdateService
         IReadOnlyDictionary<Guid, IReadOnlyList<HoldPositionNorm>>? warpShapes,
         IReadOnlyDictionary<Guid, (int Col, int Row)> panelPositions,
         IReadOnlyDictionary<(int Col, int Row), Guid> newGenPanelByPosition,
+        IReadOnlyDictionary<Guid, (int Width, int Height)> photoSizes,
         Guid userId)
     {
         var survivingCenterStaged = new HashSet<Guid>();
@@ -94,7 +95,7 @@ public partial class WallBigUpdateService
                 oldHold, centerPanel.Id, panelPositions, newGenPanelByPosition);
             await AdvanceCarriedHoldAsync(
                 db, wallId, destinationPanelId, newGen, oldHold, decision.Kind, decision.NewHoldId,
-                stagedTwins, claimedTwins, survivingCenterStaged, warpPositions, warpShapes, userId);
+                stagedTwins, claimedTwins, survivingCenterStaged, warpPositions, warpShapes, photoSizes, userId);
         }
 
         // Reconcile: any gen-N hold the outcome never mentions is default-carried (clone forward, link
@@ -110,7 +111,7 @@ public partial class WallBigUpdateService
                 oldHold, centerPanel.Id, panelPositions, newGenPanelByPosition);
             var blind = await AdvanceCarriedHoldAsync(
                 db, wallId, destinationPanelId, newGen, oldHold, CarryKind.Carried, null,
-                stagedTwins, claimedTwins, survivingCenterStaged, warpPositions, warpShapes, userId);
+                stagedTwins, claimedTwins, survivingCenterStaged, warpPositions, warpShapes, photoSizes, userId);
 
             // Nobody decided this hold: it is carried so nothing is lost, but flagged so a person looks at it.
             blind.NeedsReview = true;
@@ -142,6 +143,7 @@ public partial class WallBigUpdateService
         HashSet<Guid> survivingCenterStaged,
         IReadOnlyDictionary<Guid, HoldPositionNorm>? warpPositions,
         IReadOnlyDictionary<Guid, IReadOnlyList<HoldPositionNorm>>? warpShapes,
+        IReadOnlyDictionary<Guid, (int Width, int Height)> photoSizes,
         Guid userId)
     {
         var changed = kind == CarryKind.Changed;
@@ -153,8 +155,10 @@ public partial class WallBigUpdateService
             {
                 staged.Generation = newGen;
                 CopyCuratedFields(oldHold, staged);
-                CopyPlacementFields(oldHold, staged, changed, warpPositions?.GetValueOrDefault(oldHold.Id));
                 staged.NeedsReview = changed || oldHold.NeedsReview;
+                CopyPlacementFields(
+                    oldHold, staged, changed, warpPositions?.GetValueOrDefault(oldHold.Id),
+                    staged.WallPanelId is { } panelId && photoSizes.TryGetValue(panelId, out var size) ? size : null);
 
                 // Warp-carry (shapes): a matched twin is a fresh detection with NO custom outline. If the
                 // old hold carried one, transform it onto the twin (using the twin's OWN detected centre)

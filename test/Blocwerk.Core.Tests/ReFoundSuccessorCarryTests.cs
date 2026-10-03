@@ -17,11 +17,11 @@ namespace Blocwerk.Core.Tests;
 /// </summary>
 public class ReFoundSuccessorCarryTests
 {
-    // F4: the overlap step lets the user "Delete hold" a neighbour detection the carry consumed as a twin.
+    // F4: a removal on the neighbour panel (a suggested discard) can name a detection the carry consumed as a twin.
     // NON-VACUOUS: before the guard the promote deleted the twin it had just repointed the Span boulder onto,
     // and SaveChanges failed on the severed membership — the update could not be applied at all.
     [Fact]
-    public async Task NeighbourRemoval_OfAReFoundTwin_KeepsTheTwinAndFlagsIt()
+    public async Task NeighbourRemoval_OfAReFoundTwin_KeepsTheTwin()
     {
         using var h = new WallTestHarness();
         var w = await SeedAsync(h);
@@ -40,7 +40,9 @@ public class ReFoundSuccessorCarryTests
         await using var db = h.CreateContext();
         var twin = await db.Holds.SingleAsync(x => x.Id == s[1].HoldId);
         Assert.Equal(3, twin.Generation);
-        Assert.True(twin.NeedsReview);
+
+        // A removal on the step's own panel is a suggested discard, not the user's "Delete hold": no override flag.
+        Assert.False(twin.NeedsReview);
         Assert.Contains(s[1].HoldId, await db.BoulderHolds.Where(bh => bh.BoulderId == w.SpanBoulderId).Select(bh => bh.HoldId).ToListAsync());
         Assert.Equal(s[1].HoldId, (await db.HoldGenerationLinks.SingleAsync(l => l.OldHoldId == w.NeighbourHoldId)).NewHoldId);
     }
@@ -140,6 +142,7 @@ public class ReFoundSuccessorCarryTests
         var off = await db.Holds.SingleAsync(x => x.Id == s[0].HoldId);
         Assert.Null(off.FacetId);
         Assert.Null(off.VolumePlacementJson);
+        Assert.True(off.NeedsReview);
         Assert.Equal(50.0, off.WidthMm);
 
         var local = await db.Holds.SingleAsync(x => x.Id == s[1].HoldId);

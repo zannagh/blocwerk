@@ -16,6 +16,13 @@ namespace Blocwerk.Core.Services;
 public partial class WallBigUpdateService
 {
     /// <summary>
+    /// The widest distance, in photo pixels, at which the overlap matcher accepts a pair: its residual gate
+    /// (90 px) doubled for anchor-seeded pairs (<c>OpenCvHoldOverlapMatcher</c>). The matcher does not report
+    /// the bound it used per pair, so the placement check uses the widest one.
+    /// </summary>
+    private const double MatcherGatePx = 180.0;
+
+    /// <summary>
     /// Copies the curated (user-set) fields from the old hold onto its successor row, leaving the
     /// successor's own detected position and shape untouched. Virtual only carries forward from a
     /// virtual predecessor; a real detection is never demoted to virtual.
@@ -47,19 +54,25 @@ public partial class WallBigUpdateService
     /// copies nothing, and neither does a twin that is not on the old hold's warp-predicted spot
     /// (<paramref name="warped"/>): a new 2D position with the old 3D placement is never corrected for
     /// marker or hold-fit placements, and it later makes the 3D triage discard a real new hold at the old
-    /// spot. With no warp prediction the matcher's pairing is all there is, and it is trusted.
+    /// spot. With no warp prediction the matcher's pairing is all there is, and it is trusted. A twin whose
+    /// old position is withheld is flagged <see cref="Hold.NeedsReview"/> so it is not silently unplaced.
     /// </para>
     /// </summary>
-    private static void CopyPlacementFields(Hold from, Hold to, bool changed, HoldPositionNorm? warped)
+    private static void CopyPlacementFields(
+        Hold from, Hold to, bool changed, HoldPositionNorm? warped, (int Width, int Height)? photoSize)
     {
         if (changed)
         {
             return;
         }
 
-        if (warped is null || IsOnWarpedSpot(to, warped))
+        if (warped is null || IsOnWarpedSpot(to, warped, photoSize))
         {
             CopyWallPosition(from, to);
+        }
+        else if (from.FacetId is not null && to.FacetId is null)
+        {
+            to.NeedsReview = true;
         }
 
         if (to.WidthMm is null && to.HeightMm is null && to.AreaMm2 is null)
@@ -94,13 +107,27 @@ public partial class WallBigUpdateService
         to.VolumePlacementJson ??= from.VolumePlacementJson;
     }
 
-    /// <summary>Whether the twin sits on the old hold's warp-predicted spot (same window as the outline test).</summary>
-    private static bool IsOnWarpedSpot(Hold twin, HoldPositionNorm warped)
+    /// <summary>
+    /// Whether the twin sits on the old hold's warp-predicted spot. Compared in pixels of the twin's photo:
+    /// X and Y are normalized per side while the radius is normalized to the longest side, so a normalized
+    /// distance shrinks the window on a landscape photo. The window is never tighter than the matcher's own
+    /// widest acceptance (<see cref="MatcherGatePx"/>), so a pair the matcher accepted is not second-guessed
+    /// here. Without a decodable photo size it falls back to the normalized radius window.
+    /// </summary>
+    private static bool IsOnWarpedSpot(Hold twin, HoldPositionNorm warped, (int Width, int Height)? photoSize)
     {
-        var dx = warped.X - twin.X;
-        var dy = warped.Y - twin.Y;
-        var tolerance = Math.Max(twin.Radius, MinWarpedShapeRadius) * WarpedShapeRadiusFactor;
-        return (dx * dx) + (dy * dy) <= tolerance * tolerance;
+        var radiusWindow = Math.Max(twin.Radius, MinWarpedShapeRadius) * WarpedShapeRadiusFactor;
+        if (photoSize is not { } size)
+        {
+            var nx = warped.X - twin.X;
+            var ny = warped.Y - twin.Y;
+            return (nx * nx) + (ny * ny) <= radiusWindow * radiusWindow;
+        }
+
+        var dx = (warped.X - twin.X) * size.Width;
+        var dy = (warped.Y - twin.Y) * size.Height;
+        var window = Math.Max(radiusWindow * Math.Max(size.Width, size.Height), MatcherGatePx);
+        return (dx * dx) + (dy * dy) <= window * window;
     }
 
     /// <summary>

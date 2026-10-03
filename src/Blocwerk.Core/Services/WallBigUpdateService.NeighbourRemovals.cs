@@ -20,10 +20,16 @@ public partial class WallBigUpdateService
     /// panel). By the time removals run the carry has repointed boulder memberships and lineage onto those
     /// twins; deleting one either failed the whole promote (the pending memberships still point at it) or
     /// quietly retired a hold the carry reported as carried. Same rule as the centre reconcile, which skips
-    /// consumed twins: the carry wins. A kept twin is flagged <see cref="Hold.NeedsReview"/> and the override
-    /// is logged with both ids (holds have no review-reason field), so the owner sees the conflicting delete
-    /// and can remove it on the live wall, where the delete path handles its boulders. Holds the carry did not
-    /// use — including new centre holds kept by the review — are deleted as before.
+    /// consumed twins: the carry wins. Holds the carry did not use — including new centre holds kept by the
+    /// review — are deleted as before.
+    /// <para>
+    /// Only an explicit "Delete hold" is reported as overridden: in the big update that action marks the
+    /// paired hold on the OTHER panel of the step (the staged centre), while the removals on the step's own
+    /// panel are the service's suggested discards (seeded, or restored on a resume). An overridden explicit
+    /// delete flags the kept twin <see cref="Hold.NeedsReview"/> and is logged with both ids (holds have no
+    /// review-reason field), so the owner sees the conflict and can remove it on the live wall, where the
+    /// delete path handles its boulders. A suggested discard that turned out to be a twin is just kept.
+    /// </para>
     /// </summary>
     private HashSet<Guid> RemovableNeighbourHoldIds(BlocwerkDbContext db, Guid wallId, NeighbourLinkSet linkSet)
     {
@@ -34,11 +40,13 @@ public partial class WallBigUpdateService
         foreach (var id in removed.Where(successorOf.ContainsKey).ToList())
         {
             removed.Remove(id);
-            if (db.Holds.Local.FirstOrDefault(h => h.Id == id) is { } twin)
+            var twin = db.Holds.Local.FirstOrDefault(h => h.Id == id);
+            if (twin is null || twin.WallPanelId == linkSet.PanelId)
             {
-                twin.NeedsReview = true;
+                continue;
             }
 
+            twin.NeedsReview = true;
             logger.LogWarning(
                 "Big update on wall {WallId}: kept hold {HoldId} although the overlap step on panel {PanelId} marked it deleted, because it is the re-found successor of hold {OldHoldId}; flagged for review",
                 wallId, id, linkSet.PanelId, successorOf[id]);
