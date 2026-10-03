@@ -1,7 +1,8 @@
 """One claimed job: download the bundle (resumable) -> train (train.py: the worker's own trainer path) ->
 upload the slim .ply (gzip). Outcomes: succeeded, failed (reported), cancelled (the server says the job is over
 for good: dropped with its checkpoints), gone (requeued or taken away: dropped, checkpoints kept), shutdown
-(handed back with `shutdown: true` and the newest checkpoint's step, no attempt used), abandoned (network lost
+(handed back with `shutdown: true` and the newest checkpoint's step, no attempt used), paused (the owner paused the
+runner now: handed back like a shutdown, with `pause: true`, free), abandoned (network lost
 for too long; reported as `unreachable` so the server need not wait for the lease, at no training attempt). A
 gsplat job saves
 checkpoints (a retry of the same job and bundle resumes from them; dropped once the job is over for good) and
@@ -73,12 +74,16 @@ def trim_stats(stats):
 
 
 class JobRun:
-    def __init__(self, client, job, work_dir, caps, shutdown, alive=None, resume=None):
-        self.client, self.job, self.caps, self.shutdown = client, job, caps or {}, shutdown
+    def __init__(self, client, job, work_dir, caps, shutdown, alive=None, resume=None, pause=None, status=None):
+        """pause: the pause switch's "now" event (control.py); status: the job's live record (history.JobStatus)."""
+        self.client, self.job, self.caps, self.shutdown, self.pause = client, job, caps or {}, shutdown, pause
         self.id = str(job["jobId"])
         self.dir = tempfile.mkdtemp(prefix="job-", dir=work_dir)
         self.stop = threading.Event()
-        self.hb = Heartbeat(client, self.id, self.stop, alive)
+        self.hb = Heartbeat(client, self.id, self.stop, alive, observer=status.update if status else None)
+        if status is not None:
+            status.update(dict(self.hb.state))
+        self.error, self.previews_uploaded = None, None  # for the job history
         # checkpoints (kept for a retry unless the job is over for good) and previews: resume.py
         self.resume = resume.for_job(job, self.dir) if resume else checkpoints.TrainResume()
         self.over = False
@@ -101,9 +106,12 @@ class JobRun:
             if outcome in ("succeeded", "cancelled") or self.over:
                 checkpoints.discard(self.resume.checkpoint_dir)
 
+    def _pausing(self):
+        return self.pause is not None and self.pause.is_set()
+
     def _watch_shutdown(self):
         while not self.stop.is_set() and not self.hb.done.is_set():
-            if self.shutdown.wait(0.5):
+            if self.shutdown.wait(0.5) or self._pausing():
                 self.stop.set()
                 return
 
@@ -151,7 +159,7 @@ class JobRun:
             if previews is not None:
                 previews.close()  # an unfinished preview upload yields to the final result
         if previews is not None:
-            stats["previewsUploaded"] = len(previews.uploaded)
+            stats["previewsUploaded"] = self.previews_uploaded = len(previews.uploaded)
         slim = os.path.join(self.dir, "splat.ply")
         write_slim_ply(read_ply(ply), slim)
         shutil.rmtree(train_dir, ignore_errors=True)
@@ -181,12 +189,16 @@ class JobRun:
         if self.hb.revoked:
             raise Unauthorized(str(why))
         over = self.hb.cancelled or (isinstance(why, Gone) and why.over)
-        if self.shutdown.is_set() and not (self.hb.gone or over):
+        pausing = self._pausing() and not self.shutdown.is_set()  # a process that stops is offline: a shutdown
+        if (self.shutdown.is_set() or pausing) and not (self.hb.gone or over):
             step = checkpoints.newest_step(self.resume.checkpoint_dir)
-            log.info("job %s: the runner is shutting down; handing it back (checkpoint: %s)", self.id, step)
-            self._report_failure("the runner was shut down", retryable=True, shutdown=True, checkpoint_step=step)
-            return "shutdown"
+            what = "paused" if pausing else "shutting down"
+            log.info("job %s: the runner is %s; handing it back (checkpoint: %s)", self.id, what, step)
+            reason = "the runner was paused" if pausing else "the runner was shut down"
+            self._report_failure(reason, retryable=True, shutdown=True, checkpoint_step=step, pause=pausing)
+            return "paused" if pausing else "shutdown"
         log.info("job %s stopped: %s", self.id, why)
+        self.error = str(why)
         if over:
             return "cancelled"
         if self.hb.gone or isinstance(why, Gone):
@@ -202,8 +214,9 @@ class JobRun:
         self._report_failure(reason, retryable)
         return "failed"
 
-    def _report_failure(self, reason, retryable, shutdown=False, checkpoint_step=None, unreachable=False):
+    def _report_failure(self, reason, retryable, shutdown=False, checkpoint_step=None, unreachable=False, pause=False):
+        self.error = reason
         try:
-            self.client.fail(self.id, reason, retryable, shutdown, checkpoint_step, unreachable)
+            self.client.fail(self.id, reason, retryable, shutdown, checkpoint_step, unreachable, pause)
         except (Transient, Gone, Rejected, Unauthorized) as e:
             log.info("could not report the failure (%s)", e)

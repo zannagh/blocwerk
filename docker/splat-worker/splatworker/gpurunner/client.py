@@ -194,11 +194,14 @@ class Client:
     def progress(self, job_id, doc):
         return self._json("POST", f"/api/runners/jobs/{job_id}/progress", doc)[1] or {}
 
-    def fail(self, job_id, reason, retryable, shutdown=False, checkpoint_step=None, unreachable=False):
+    def fail(self, job_id, reason, retryable, shutdown=False, checkpoint_step=None, unreachable=False, pause=False):
         """Hands the job back. checkpoint_step (with a shutdown): the newest checkpoint kept for it, so the server
         can tell a shutdown that kept progress (free) from one that did not. unreachable: given up because the
-        server or the network stayed away (not a training failure: it costs no attempt)."""
+        server or the network stayed away (not a training failure: it costs no attempt). pause (with shutdown): the
+        owner paused this runner: free, and the runner stays online (an older server counts a shutdown)."""
         doc = {"reason": str(reason)[:1000], "retryable": bool(retryable), "shutdown": bool(shutdown)}
+        if pause:
+            doc["pause"] = True
         if checkpoint_step is not None:
             doc["checkpointStep"] = int(checkpoint_step)
         if unreachable:

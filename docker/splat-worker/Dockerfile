@@ -5,7 +5,7 @@
 #   docker run --gpus all -p 8100:8100 -e COMPUTE_API_KEY=... blocwerk-splat-worker     # NVIDIA
 #   docker run --device /dev/dri -p 8100:8100 -e COMPUTE_API_KEY=... blocwerk-splat-worker  # AMD / Intel
 # The same image, two more roles (README "3D runner"):
-#   3D runner (Brush on Vulkan; pulls training from a Blocwerk server; no ports):
+#   3D runner (Brush on Vulkan; pulls training from a Blocwerk server; no inbound ports; status page: README):
 #     docker run -d --name blocwerk-runner --restart unless-stopped --device /dev/dri --env-file runner.env \
 #       blocwerk-splat-worker python -m splatworker.gpurunner --server https://blocwerk.app
 #   CPU half next to the app (splat-prepare + splat-finish only, no GPU): -e SPLAT_WORKER_MODE=cpu
@@ -53,7 +53,7 @@ ENV GIT_SHA=${GIT_SHA} HOST=0.0.0.0 PORT=8100 WORK_DIR=/var/lib/splat-worker/job
     BRUSH_CACHE_DIR=/var/lib/splat-worker/brush-cache XDG_CACHE_HOME=/var/lib/splat-worker/brush-cache/xdg \
     NVIDIA_VISIBLE_DEVICES=all NVIDIA_DRIVER_CAPABILITIES=compute,graphics,utility
 RUN useradd --system --uid 10001 --no-create-home --home-dir /app app \
-    && mkdir -p /var/lib/splat-worker/jobs /var/lib/splat-worker/brush-cache \
+    && mkdir -p /var/lib/splat-worker/jobs /var/lib/splat-worker/brush-cache /var/lib/splat-worker/runner-state \
     && chown -R app /var/lib/splat-worker
 USER app
 EXPOSE 8100

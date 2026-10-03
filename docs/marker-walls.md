@@ -1119,6 +1119,15 @@ prepared or queued at all.
 4. The runner appears as **online** (a green dot, seen within the last minute) with its GPU, memory,
    trainer and the highest quality it can train. It picks up waiting jobs within seconds.
 
+**Status page and pause.** On the runner machine, the runner serves a small page on
+`http://127.0.0.1:8190` (loopback only; in Docker add `-e RUNNER_UI_HOST=0.0.0.0 -p 127.0.0.1:8190:8190`)
+with the jobs it took on, the running job's progress and ETA, and a **pause switch**: *Pause now* hands
+the running job back at no cost (it resumes from its checkpoint later), *Finish this job, then pause*
+stops claiming after it, *Resume* takes jobs again. A paused runner stays up, does no GPU work and keeps
+telling the server it is paused, so no work is routed to it (a wall's shared runner may help meanwhile).
+The switch survives a restart. Details and settings: `docker/splat-worker/README.md`, "Status page and
+pause switch".
+
 **Quality.** A runner claims only jobs up to the quality it reported (draft < high < max < ultra; a
 runner that never said counts as high). **Ultra** (50000 steps on the photos at up to 4096 px, up
 to 6 M splats) is only offered in the capture panel and the retrain button when something can train

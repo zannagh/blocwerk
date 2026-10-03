@@ -33,9 +33,11 @@ def test_https_only_unless_local():
         check_server("ftp://blocwerk.app")
 
 
-def test_a_missing_trainer_exits_2(monkeypatch):
+def test_a_missing_trainer_exits_2(monkeypatch, tmp_path):
     monkeypatch.setenv("BWR_KEY", KEY)
-    monkeypatch.setattr(caps.Capabilities, "__init__", lambda self: setattr(self, "version", None) or
+    monkeypatch.setenv("RUNNER_WORK_DIR", str(tmp_path))
+    monkeypatch.setenv("RUNNER_UI_PORT", "0")
+    monkeypatch.setattr(caps.Capabilities, "__init__", lambda self: setattr(self, "_version", None) or
                         setattr(self, "trainer", "gsplat"))
     assert cli.main(["--server", "https://blocwerk.app"]) == 2
 
