@@ -5,6 +5,7 @@
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core.Services;
 
@@ -14,31 +15,35 @@ namespace Blocwerk.Core.Services;
 public partial class WallBigUpdateService
 {
     /// <summary>
-    /// The neighbour detections the promote may delete for one panel: the user's removals, minus every
-    /// detection the carry already made an old hold's successor. The overlap step lists those re-found
-    /// twins like any other detection, but by the time removals run the carry has repointed boulder
-    /// memberships and lineage onto them; deleting one then either failed the whole promote (the pending
-    /// memberships still point at it) or quietly retired a hold the carry reported as carried. Same rule as
-    /// the centre reconcile, which skips consumed twins: the carry wins. A kept twin is flagged
-    /// <see cref="Hold.NeedsReview"/> so the owner sees the conflicting delete and can remove it on the live
-    /// wall, where the delete path handles its boulders.
+    /// The holds the promote may delete for one overlap step: the user's "Delete hold" choices, minus every
+    /// staged hold the carry already made an old hold's successor (a re-found twin, on the centre or on this
+    /// panel). By the time removals run the carry has repointed boulder memberships and lineage onto those
+    /// twins; deleting one either failed the whole promote (the pending memberships still point at it) or
+    /// quietly retired a hold the carry reported as carried. Same rule as the centre reconcile, which skips
+    /// consumed twins: the carry wins. A kept twin is flagged <see cref="Hold.NeedsReview"/> and the override
+    /// is logged with both ids (holds have no review-reason field), so the owner sees the conflicting delete
+    /// and can remove it on the live wall, where the delete path handles its boulders. Holds the carry did not
+    /// use — including new centre holds kept by the review — are deleted as before.
     /// </summary>
-    private static HashSet<Guid> RemovableNeighbourHoldIds(
-        NeighbourLinkSet linkSet,
-        IReadOnlyList<Hold> stagedHolds,
-        IReadOnlySet<Guid> survivingCenterStaged)
+    private HashSet<Guid> RemovableNeighbourHoldIds(BlocwerkDbContext db, Guid wallId, NeighbourLinkSet linkSet)
     {
         var removed = linkSet.RemovedNeighbourHoldIds.ToHashSet();
-        foreach (var hold in stagedHolds)
+        var successorOf = CollectSuccessors(db, wallId)
+            .GroupBy(kv => kv.Value)
+            .ToDictionary(g => g.Key, g => g.First().Key);
+        foreach (var id in removed.Where(successorOf.ContainsKey).ToList())
         {
-            if (removed.Contains(hold.Id) && survivingCenterStaged.Contains(hold.Id))
+            removed.Remove(id);
+            if (db.Holds.Local.FirstOrDefault(h => h.Id == id) is { } twin)
             {
-                removed.Remove(hold.Id);
-                hold.NeedsReview = true;
+                twin.NeedsReview = true;
             }
+
+            logger.LogWarning(
+                "Big update on wall {WallId}: kept hold {HoldId} although the overlap step on panel {PanelId} marked it deleted, because it is the re-found successor of hold {OldHoldId}; flagged for review",
+                wallId, id, linkSet.PanelId, successorOf[id]);
         }
 
-        removed.RemoveWhere(survivingCenterStaged.Contains);
         return removed;
     }
 

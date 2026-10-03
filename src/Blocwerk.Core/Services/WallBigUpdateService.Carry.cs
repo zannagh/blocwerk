@@ -108,9 +108,12 @@ public partial class WallBigUpdateService
 
             var destinationPanelId = ResolveDestinationPanelId(
                 oldHold, centerPanel.Id, panelPositions, newGenPanelByPosition);
-            await AdvanceCarriedHoldAsync(
+            var blind = await AdvanceCarriedHoldAsync(
                 db, wallId, destinationPanelId, newGen, oldHold, CarryKind.Carried, null,
                 stagedTwins, claimedTwins, survivingCenterStaged, warpPositions, warpShapes, userId);
+
+            // Nobody decided this hold: it is carried so nothing is lost, but flagged so a person looks at it.
+            blind.NeedsReview = true;
         }
 
         await ReconcileNewCentreHolds(db, centerStaged, confirmation, newGen, survivingCenterStaged);
@@ -126,7 +129,7 @@ public partial class WallBigUpdateService
     /// be older than the wall's when an earlier subset update skipped its panel); the repoint is idempotent
     /// so the boulder ends with a single membership to the merged hold.
     /// </summary>
-    private async Task AdvanceCarriedHoldAsync(
+    private async Task<Hold> AdvanceCarriedHoldAsync(
         BlocwerkDbContext db,
         Guid wallId,
         Guid destinationPanelId,
@@ -150,7 +153,7 @@ public partial class WallBigUpdateService
             {
                 staged.Generation = newGen;
                 CopyCuratedFields(oldHold, staged);
-                CopyPlacementFields(oldHold, staged, changed);
+                CopyPlacementFields(oldHold, staged, changed, warpPositions?.GetValueOrDefault(oldHold.Id));
                 staged.NeedsReview = changed || oldHold.NeedsReview;
 
                 // Warp-carry (shapes): a matched twin is a fresh detection with NO custom outline. If the
@@ -168,6 +171,7 @@ public partial class WallBigUpdateService
 
             await RepointBouldersAsync(db, oldHold.Id, staged.Id, newGen, changed);
             AddGenerationLink(db, wallId, oldHold.Id, staged.Id, linkKind, oldHold.Generation, newGen, userId);
+            return staged;
         }
         else
         {
@@ -190,6 +194,7 @@ public partial class WallBigUpdateService
             db.Holds.Add(clone);
             await RepointBouldersAsync(db, oldHold.Id, clone.Id, newGen, changed);
             AddGenerationLink(db, wallId, oldHold.Id, clone.Id, linkKind, oldHold.Generation, newGen, userId);
+            return clone;
         }
     }
 
@@ -281,82 +286,6 @@ public partial class WallBigUpdateService
         await HoldDeletion.PrepareHoldsForDeleteAsync(
             db, rejected.Select(x => x.Id).ToList(), HoldDeleteBoulderPolicy.LeaveUntouched);
         db.Holds.RemoveRange(rejected);
-    }
-
-    /// <summary>
-    /// Re-points the memberships on THIS old hold onto its new-generation successor row, for every active
-    /// (non-archived, non-historic) boulder that used it. Only ever called for an old hold on a
-    /// re-photographed panel (the carry scopes <c>oldHolds</c> to updated panels), so it advances exactly
-    /// the memberships whose hold is being re-shot and never touches a membership on a non-updated panel.
-    /// <para>
-    /// Subset promote (decision D-B, corrected): a boulder WHOLLY on updated panels has every membership
-    /// repointed here (full advance); a boulder SPANNING an updated and a non-updated panel is PARTIALLY
-    /// repointed — this call advances its updated-panel membership to the successor while its non-updated
-    /// membership, whose hold is never passed to this method, stays on the retained gen-N row. That is the
-    /// invariant the live read needs: each membership resolves at ITS panel's live generation, so no hold
-    /// vanishes from a spanning boulder after a partial promote. A boulder wholly on non-updated panels is
-    /// never reached (none of its holds is in the carry set) and stays entirely untouched.
-    /// </para>
-    /// <para>
-    /// Because <see cref="BoulderHold.HoldId"/> is part of the key it cannot be mutated on a tracked row —
-    /// the re-point is a delete + insert of the join row, and the insert is idempotent
-    /// (<see cref="BoulderHoldExists"/>) so a physical merge (two old holds → one new) yields one membership.
-    /// Historic (incl. the Pass-0-frozen) and archived boulders keep their <see cref="BoulderHold"/> on the
-    /// retained old row, so their older-gen schematics still render. <paramref name="changed"/> only ever
-    /// comes from a Changed carry decision, so a plain carried correction never forces review.
-    /// </para>
-    /// </summary>
-    private static async Task RepointBouldersAsync(
-        BlocwerkDbContext db, Guid oldHoldId, Guid newHoldId, int newGen, bool changed)
-    {
-        var boulderLinks = await db.BoulderHolds
-            .Where(bh => bh.HoldId == oldHoldId)
-            .Include(bh => bh.Boulder)
-            .ToListAsync();
-
-        foreach (var link in boulderLinks)
-        {
-            if (link.Boulder is not { IsArchived: false, IsHistoric: false })
-            {
-                continue;
-            }
-
-            db.BoulderHolds.Remove(link);
-            if (!BoulderHoldExists(db, link.BoulderId, newHoldId))
-            {
-                db.BoulderHolds.Add(new BoulderHold
-                {
-                    BoulderId = link.BoulderId,
-                    HoldId = newHoldId,
-                    Type = link.Type,
-                    Usage = link.Usage,
-                });
-            }
-
-            link.Boulder.Generation = newGen;
-            if (changed)
-            {
-                link.Boulder.NeedsReview = true;
-            }
-        }
-    }
-
-    /// <summary>
-    /// True when a <see cref="BoulderHold"/> for this pair is already present — as a pending insert in
-    /// the change tracker (an earlier repoint this transaction) or a committed row. Guards the idempotent
-    /// repoint insert against a duplicate-key crash when two old holds merge onto one successor.
-    /// </summary>
-    private static bool BoulderHoldExists(BlocwerkDbContext db, Guid boulderId, Guid holdId)
-    {
-        var pending = db.BoulderHolds.Local.Any(bh =>
-            bh.BoulderId == boulderId && bh.HoldId == holdId
-            && db.Entry(bh).State != EntityState.Deleted);
-        if (pending)
-        {
-            return true;
-        }
-
-        return db.BoulderHolds.Any(bh => bh.BoulderId == boulderId && bh.HoldId == holdId);
     }
 
     /// <summary>

@@ -186,7 +186,7 @@ public partial class WallBigUpdateService
     /// end — kept only when that centre hold went live, dropped when it was discarded. No SaveChanges:
     /// the caller commits atomically.
     /// </summary>
-    private static async Task PromoteNeighboursAsync(
+    private async Task PromoteNeighboursAsync(
         BlocwerkDbContext db,
         Guid wallId,
         int stagedGen,
@@ -232,7 +232,7 @@ public partial class WallBigUpdateService
                 continue;
             }
 
-            var removed = RemovableNeighbourHoldIds(linkSet, stagedHolds, survivingCenterStaged);
+            var removed = RemovableNeighbourHoldIds(db, wallId, linkSet);
             foreach (var link in linkSet.Links)
             {
                 if (removed.Contains(link.NewHoldId))

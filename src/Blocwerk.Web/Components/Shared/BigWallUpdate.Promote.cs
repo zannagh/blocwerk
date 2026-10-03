@@ -19,6 +19,12 @@ public partial class BigWallUpdate
     private int CarriedCount => _outcome?.Carryover.Count(d => d.Kind == CarryKind.Carried) ?? 0;
     private int ChangedCount => _outcome?.Carryover.Count(d => d.Kind == CarryKind.Changed) ?? 0;
     private int RemovedCount => _outcome?.Carryover.Count(d => d.Kind == CarryKind.Removed) ?? 0;
+
+    /// <summary>Staged holds the carry verdicts make an old hold's successor; the overlap step does not offer deleting them.</summary>
+    private IReadOnlySet<Guid>? ReFoundSuccessorIds => _outcome?.Carryover
+        .Where(d => d.Kind != CarryKind.Removed && d.NewHoldId is not null)
+        .Select(d => d.NewHoldId!.Value)
+        .ToHashSet();
     private int NewKeptCount => _outcome?.AcceptedNewCenterHoldIds.Count ?? 0;
     private int LinkCount => _linkSets.Sum(l => l.Links.Count);
 

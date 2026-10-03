@@ -75,6 +75,30 @@ public class SkippedPanelCarryTests
         Assert.Contains(session.Carryover, c => c.OldHoldId == w.FarHoldId);
     }
 
+    // The "Then" view at gen 3: the far hold was carried 2 -> 4 in one step, but it was live at gen 3 on its
+    // skipped panel, so the boulders still show it there. NON-VACUOUS: the walk used to require a row AT the
+    // target generation and dropped the hold.
+    [Fact]
+    public async Task ThenView_AtTheSkippedGeneration_StillShowsTheSkippedPanelHold()
+    {
+        using var h = new WallTestHarness();
+        var w = await SeedAsync(h);
+        var second = await RunUpdateOneThenStageUpdateTwoAsync(h, w);
+        var first = await FirstUpdateSuccessorsAsync(h, w);
+        await Service(h).PromoteAsync(w.WallId, Confirm(
+            new CarryoverDecision(first.Centre, CarryKind.Carried, second[0].HoldId),
+            new CarryoverDecision(first.Neighbour, CarryKind.Carried, second[1].HoldId),
+            new CarryoverDecision(w.FarHoldId, CarryKind.Carried, second[2].HoldId)));
+
+        var far = await h.BoulderService.GetBoulderHoldsAtGenerationAsync(w.FarBoulderId, 3);
+        Assert.Equal(w.FarHoldId, Assert.Single(far!).HoldId);
+
+        var span = await h.BoulderService.GetBoulderHoldsAtGenerationAsync(w.SpanBoulderId, 3);
+        Assert.Equal(
+            new[] { first.Neighbour, w.FarHoldId }.OrderBy(x => x),
+            span!.Select(m => m.HoldId).OrderBy(x => x));
+    }
+
     // Only the live panel at each re-shot position is the "before" side, so only its photo is read: the
     // superseded gen-2 rows of (0,0) and (1,0) keep their photos as history and must not be loaded.
     [Fact]

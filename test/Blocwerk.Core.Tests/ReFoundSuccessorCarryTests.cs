@@ -86,9 +86,10 @@ public class ReFoundSuccessorCarryTests
         Assert.Equal(50.0, neighbour.WidthMm);
     }
 
-    // A "changed" twin is a different hold at the same spot: it keeps the position, not the old sizes.
+    // A "changed" twin (a different hold, or an accepted "this hold moved" relocation) sits somewhere the old
+    // 3D placement does not describe: it inherits neither the old position nor the old measurements.
     [Fact]
-    public async Task ChangedTwin_KeepsPosition_ButNotTheOldMeasurements()
+    public async Task ChangedTwin_InheritsNoPlacementOrMeasurements()
     {
         using var h = new WallTestHarness();
         var w = await SeedAsync(h);
@@ -99,10 +100,52 @@ public class ReFoundSuccessorCarryTests
 
         await using var db = h.CreateContext();
         var twin = await db.Holds.SingleAsync(x => x.Id == s[0].HoldId);
-        Assert.Equal("3", twin.FacetId);
+        Assert.Null(twin.FacetId);
+        Assert.Null(twin.PlaneAMm);
+        Assert.Null(twin.MetricSource);
+        Assert.Null(twin.VolumePlacementJson);
         Assert.Null(twin.WidthMm);
         Assert.Null(twin.FootprintMm);
         Assert.Null(twin.ProtrusionMm);
+    }
+
+    // A twin away from where the matcher predicts the old hold landed is not on the old 3D spot: the old
+    // position is not copied (sizes are, it is still the same hold). A twin the marker pass sized in its own
+    // marker square keeps that metric source when the old position is copied.
+    [Fact]
+    public async Task Twin_OffTheWarpedSpot_KeepsNoOldPosition_AndLocalMarkerSourceSurvives()
+    {
+        using var h = new WallTestHarness();
+        var w = await SeedAsync(h);
+        await MutateAsync(h, w.CentreHoldId, Placed);
+        await MutateAsync(h, w.NeighbourHoldId, Placed);
+        var s = await StageAsync(h, w.WallId, 3, 0, 1);
+        await MutateAsync(h, s[1].HoldId, x => (x.WidthMm, x.MetricSource) = (33, "local-marker"));
+
+        await Service(h).PromoteAsync(w.WallId, new BigUpdateConfirmation(
+            [
+                new CarryoverDecision(w.CentreHoldId, CarryKind.Carried, s[0].HoldId),
+                new CarryoverDecision(w.NeighbourHoldId, CarryKind.Carried, s[1].HoldId),
+            ],
+            [],
+            [],
+            [],
+            new Dictionary<Guid, HoldPositionNorm>
+            {
+                [w.CentreHoldId] = new(0.70, 0.80),
+                [w.NeighbourHoldId] = new(0.56, 0.41),
+            }));
+
+        await using var db = h.CreateContext();
+        var off = await db.Holds.SingleAsync(x => x.Id == s[0].HoldId);
+        Assert.Null(off.FacetId);
+        Assert.Null(off.VolumePlacementJson);
+        Assert.Equal(50.0, off.WidthMm);
+
+        var local = await db.Holds.SingleAsync(x => x.Id == s[1].HoldId);
+        Assert.Equal("3", local.FacetId);
+        Assert.Equal("local-marker", local.MetricSource);
+        Assert.Equal(33.0, local.WidthMm);
     }
 
     // F10: two old holds merged onto one twin. The second (hand-added, flagged for review, named) used to
