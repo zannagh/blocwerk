@@ -172,6 +172,18 @@ internal static class ShapeGeometry
         return Math.Min(MinVertexToBoundary(a, b), MinVertexToBoundary(b, a));
     }
 
+    /// <summary>True when the polygons intersect, nest or come closer than <paramref name="limit"/> (early exits, no allocations).</summary>
+    public static bool IsCloserThan(IReadOnlyList<P2> a, IReadOnlyList<P2> b, double limit)
+    {
+        if (EdgesCross(a, b) || Contains(b, a[0]) || Contains(a, b[0]))
+        {
+            return true;
+        }
+
+        double limit2 = limit * limit;
+        return AnyVertexWithin(a, b, limit2) || AnyVertexWithin(b, a, limit2);
+    }
+
     /// <summary>0 when p lies in the polygon, otherwise its distance to the boundary.</summary>
     public static double Distance(P2 p, IReadOnlyList<P2> poly) =>
         Contains(poly, p) ? 0 : (ClosestOnBoundary(p, poly) - p).Length;
@@ -185,7 +197,35 @@ internal static class ShapeGeometry
         {
             for (int k = 0, l = b.Count - 1; k < b.Count; l = k++)
             {
+                if (Math.Max(a[j].X, a[i].X) < Math.Min(b[l].X, b[k].X) || Math.Min(a[j].X, a[i].X) > Math.Max(b[l].X, b[k].X)
+                    || Math.Max(a[j].Y, a[i].Y) < Math.Min(b[l].Y, b[k].Y) || Math.Min(a[j].Y, a[i].Y) > Math.Max(b[l].Y, b[k].Y))
+                {
+                    continue;
+                }
+
                 if (SegmentsIntersect(a[j], a[i], b[l], b[k]))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static bool AnyVertexWithin(IReadOnlyList<P2> verts, IReadOnlyList<P2> poly, double limit2)
+    {
+        foreach (var v in verts)
+        {
+            for (int i = 0, j = poly.Count - 1; i < poly.Count; j = i++)
+            {
+                var a = poly[j];
+                var ab = poly[i] - a;
+                double len2 = (ab.X * ab.X) + (ab.Y * ab.Y);
+                double t = len2 < 1e-18 ? 0 : Math.Clamp((((v.X - a.X) * ab.X) + ((v.Y - a.Y) * ab.Y)) / len2, 0, 1);
+                double dx = v.X - (a.X + (ab.X * t));
+                double dy = v.Y - (a.Y + (ab.Y * t));
+                if ((dx * dx) + (dy * dy) < limit2)
                 {
                     return true;
                 }

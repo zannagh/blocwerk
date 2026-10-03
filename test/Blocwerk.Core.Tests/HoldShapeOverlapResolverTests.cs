@@ -81,7 +81,7 @@ public sealed class HoldShapeOverlapResolverTests
         var r = Assert.Single(HoldShapeOverlapResolver.Resolve([hold, neighbour]));
 
         Assert.Equal(HoldShapeFit.ShrunkCircle, r.Fit);
-        Assert.InRange(r.Radius, 0.04 * HoldShapeOverlapResolver.MinRadiusFraction, 0.04);
+        Assert.InRange(r.Radius, HoldShapeOverlapResolver.MinRadiusFloor, 0.04);
         Assert.True(Gap(hold, new HoldShapeResolution(A, r.Fit, null, r.Radius), neighbour, new HoldShapeResolution(B, HoldShapeFit.Unchanged, null, 0.04)) >= HoldShapeOverlapResolver.Tolerance - 1e-4);
     }
 

@@ -10,8 +10,9 @@ namespace Blocwerk.Core.Detection.Outlines;
 /// <para><b>Order of preference</b> for each unlocked hold: keep its outline; else clip it (cut it with a straight line
 /// per neighbour, then re-smooth) or, failing that, shrink it uniformly toward the centre;
 /// else the plain circle; else the circle at the LARGEST radius that clears every neighbour, never below
-/// <see cref="MinRadiusFraction"/> of the original nor <see cref="MinRadiusFloor"/>. If even that floor overlaps,
-/// the hold keeps its original radius and is reported as <see cref="HoldShapeFit.Unresolved"/>: a visible
+/// <see cref="MinRadiusFloor"/>. The floor is ABSOLUTE on purpose: a floor that is a share of the current radius
+/// would let every re-run shrink the same stubborn hold again, and the clean-up must be idempotent. If even that floor overlaps,
+/// the hold keeps its size and is reported as <see cref="HoldShapeFit.Unresolved"/>: a visible
 /// overlap is better than a hold too small to tap.</para>
 /// <para><b>Locked holds always win</b> and are never changed. Unlocked holds are processed in ascending id
 /// order against the locked ones plus the already-decided unlocked ones, so the result depends only on the
@@ -26,11 +27,12 @@ public static class HoldShapeOverlapResolver
     /// <summary>Footprints closer than this (normalized image units) count as overlapping.</summary>
     public const double Tolerance = 0.0005;
 
-    /// <summary>A shrunk circle keeps at least this share of its original radius.</summary>
-    public const double MinRadiusFraction = 0.5;
-
-    /// <summary>Absolute smallest circle radius (the editor's own lower bound).</summary>
-    public const double MinRadiusFloor = 0.003;
+    /// <summary>
+    /// Absolute smallest circle radius the resolver shrinks to: 0.008 of the longer side, about 32 px on a 4000 px
+    /// photo - the same size the outline upgrade treats as the smallest real hold (<c>MinManualSeedRadius</c>).
+    /// A hold that is already smaller keeps its size.
+    /// </summary>
+    public const double MinRadiusFloor = 0.008;
 
     /// <summary>The uniform shrink fallback never goes below this share of the outline's size.</summary>
     public const double MinShrinkFactor = 0.5;
@@ -55,10 +57,11 @@ public static class HoldShapeOverlapResolver
             obstacles.Add(Footprint(locked, locked.Shape, locked.Radius));
         }
 
+        var starts = allowRadiusShrink ? ShapeCirclePrepass.Shrink(holds, FloorOf) : [];
         var results = new List<HoldShapeResolution>();
         foreach (var hold in holds.Where(h => !h.Locked).OrderBy(h => h.Id))
         {
-            var resolution = FitOne(hold, obstacles, allowRadiusShrink, aspect);
+            var resolution = FitOne(hold, starts.GetValueOrDefault(hold.Id, hold.Radius), obstacles, allowRadiusShrink, aspect);
             obstacles.Add(Footprint(hold, resolution.Shape, resolution.Radius));
             results.Add(resolution);
         }
@@ -66,7 +69,7 @@ public static class HoldShapeOverlapResolver
         return results;
     }
 
-    private static HoldShapeResolution FitOne(HoldShapeInput hold, ShapeObstacles obstacles, bool allowRadiusShrink, double aspect)
+    private static HoldShapeResolution FitOne(HoldShapeInput hold, double start, ShapeObstacles obstacles, bool allowRadiusShrink, double aspect)
     {
         if (hold.Shape is { Count: >= 3 } shape)
         {
@@ -81,27 +84,30 @@ public static class HoldShapeOverlapResolver
             }
         }
 
-        return FitCircle(hold, obstacles, allowRadiusShrink, hadShape: hold.Shape is { Count: >= 3 });
+        return FitCircle(hold, hold.Shape is { Count: >= 3 } ? hold.Radius : start, obstacles, allowRadiusShrink, hadShape: hold.Shape is { Count: >= 3 });
     }
 
-    private static HoldShapeResolution FitCircle(HoldShapeInput hold, ShapeObstacles obstacles, bool allowRadiusShrink, bool hadShape)
+    private static HoldShapeResolution FitCircle(
+        HoldShapeInput hold, double start, ShapeObstacles obstacles, bool allowRadiusShrink, bool hadShape)
     {
         var centre = new P2(hold.X, hold.Y);
-        if (!obstacles.Overlaps(ShapeObstacles.Circle(centre, hold.Radius)))
+        if (!obstacles.Overlaps(ShapeObstacles.Circle(centre, start)))
         {
-            return new HoldShapeResolution(hold.Id, hadShape ? HoldShapeFit.Circle : HoldShapeFit.Unchanged, null, hold.Radius);
+            var fit = start < hold.Radius ? HoldShapeFit.ShrunkCircle : hadShape ? HoldShapeFit.Circle : HoldShapeFit.Unchanged;
+            return new HoldShapeResolution(hold.Id, fit, null, start);
         }
 
-        double floor = Math.Min(hold.Radius, Math.Max(MinRadiusFloor, hold.Radius * MinRadiusFraction));
+        double floor = Math.Min(start, FloorOf(hold.Radius));
         if (!allowRadiusShrink || obstacles.Overlaps(ShapeObstacles.Circle(centre, floor)))
         {
-            // Nothing sane clears it: keep the original size and say so, rather than a needlessly tiny circle.
-            return new HoldShapeResolution(hold.Id, HoldShapeFit.Unresolved, null, hold.Radius);
+            // Nothing sane clears it: keep the size (the original unless a circle neighbour already shared the
+            // overlap) and say so, rather than a needlessly tiny circle.
+            return new HoldShapeResolution(hold.Id, HoldShapeFit.Unresolved, null, start);
         }
 
         // Overlap only grows with the radius, so bisect for the largest radius that still clears.
         double lo = floor;
-        double hi = hold.Radius;
+        double hi = start;
         for (int i = 0; i < RadiusBisections; i++)
         {
             double mid = (lo + hi) / 2;
@@ -117,6 +123,8 @@ public static class HoldShapeOverlapResolver
 
         return new HoldShapeResolution(hold.Id, HoldShapeFit.ShrunkCircle, null, Math.Floor(lo * 1e6) / 1e6);
     }
+
+    private static double FloorOf(double radius) => Math.Min(radius, MinRadiusFloor);
 
     /// <summary>Clips (one straight cut per neighbour) then, if needed, uniformly shrinks the outline; null when it will not fit.</summary>
     private static List<ShapePoint>? TryPullIn(HoldShapeInput hold, IReadOnlyList<ShapePoint> shape, ShapeObstacles obstacles, double aspect)

@@ -44,6 +44,8 @@ public sealed record HoldShapePlan(
 /// </summary>
 public static class HoldShapeCleanup
 {
+    private const int MaxPasses = 6;
+
     /// <summary>True for an automatically traced outline: auto-detected, not virtual, not hand-edited, with a polygon.</summary>
     /// <param name="hold">The hold.</param>
     /// <returns>Whether the clean-up may change its outline.</returns>
@@ -70,23 +72,38 @@ public static class HoldShapeCleanup
     {
         ArgumentNullException.ThrowIfNull(panelHolds);
         var resolvable = panelHolds.Where(IsResolvable).ToDictionary(h => h.Id);
-        var inputs = panelHolds.Select(h => resolvable.ContainsKey(h.Id) ? Candidate(h, aspect) : Locked(h)).ToList();
-        var changes = new List<HoldShapeChange>();
-        var unresolved = new List<Guid>();
-        foreach (var r in HoldShapeOverlapResolver.Resolve(inputs, allowRadiusShrink: true, aspect))
-        {
-            if (r.Fit == HoldShapeFit.Unresolved)
-            {
-                unresolved.Add(r.Id);
-            }
+        var smoothed = resolvable.Values.ToDictionary(h => h.Id, h => h.ShapePoints is { Count: >= 3 } shape ? HoldShapeSmoother.Smooth(shape, aspect) : null);
+        var current = panelHolds.Select(h => resolvable.ContainsKey(h.Id)
+            ? new HoldShapeInput(h.Id, h.X, h.Y, h.Radius, smoothed[h.Id], Locked: false)
+            : Locked(h)).ToList();
 
-            if (Differs(resolvable[r.Id], r))
+        // Run to a fixpoint: every pass only shrinks things, so it converges, and a re-run on the result changes nothing.
+        List<HoldShapeResolution> last = [];
+        for (int pass = 0; pass < MaxPasses; pass++)
+        {
+            last = HoldShapeOverlapResolver.Resolve(current, allowRadiusShrink: true, aspect);
+            var results = last.ToDictionary(r => r.Id);
+            var changed = current.Any(i => results.TryGetValue(i.Id, out var r) && Differs(i.Shape, i.Radius, r));
+            current = current.Select(i => results.TryGetValue(i.Id, out var r) ? i with { Shape = r.Shape, Radius = r.Radius } : i).ToList();
+            if (!changed)
             {
-                changes.Add(new HoldShapeChange(r.Id, r.Shape?.ToList(), r.Radius, KindOf(r)));
+                break;
             }
         }
 
-        return new HoldShapePlan(changes, unresolved, HoldShapeLockedOverlaps.Find(panelHolds.Where(h => !resolvable.ContainsKey(h.Id) && !h.IsVirtual).ToList()));
+        var changes = new List<HoldShapeChange>();
+        foreach (var r in last)
+        {
+            var hold = resolvable[r.Id];
+            if (Differs(hold.ShapePoints, hold.Radius, r))
+            {
+                changes.Add(new HoldShapeChange(r.Id, r.Shape?.ToList(), r.Radius, KindOf(hold, r, smoothed[r.Id])));
+            }
+        }
+
+        var unresolved = last.Where(r => r.Fit == HoldShapeFit.Unresolved).Select(r => r.Id).ToList();
+        var locked = panelHolds.Where(h => !resolvable.ContainsKey(h.Id) && !h.IsVirtual).ToList();
+        return new HoldShapePlan(changes, unresolved, HoldShapeLockedOverlaps.Find(locked));
     }
 
     /// <summary>
@@ -147,36 +164,36 @@ public static class HoldShapeCleanup
             : outline with { ShapePoints = r.Shape.ToList(), ShapeHoles = HoldShapeHoles.Inside(outline.ShapeHoles, r.Shape) };
     }
 
-    private static HoldShapeInput Candidate(Hold h, double aspect) =>
-        new(h.Id, h.X, h.Y, h.Radius, h.ShapePoints is { Count: >= 3 } shape ? HoldShapeSmoother.Smooth(shape, aspect) : null, Locked: false);
-
     private static HoldShapeInput Locked(Hold h) => new(h.Id, h.X, h.Y, h.Radius, h.ShapePoints, Locked: true);
 
     private static bool IsContour(HoldOutlineResult o) =>
         o.Method != HoldOutlineMethod.CircleFallback && o.ShapePoints is { Count: >= 3 };
 
-    private static bool Differs(Hold hold, HoldShapeResolution r)
+    private static bool Differs(IReadOnlyList<ShapePoint>? shape, double radius, HoldShapeResolution r)
     {
-        if (Math.Abs(hold.Radius - r.Radius) > 1e-9)
+        if (Math.Abs(radius - r.Radius) > 1e-9)
         {
             return true;
         }
 
-        var before = hold.ShapePoints;
-        if (before is null || r.Shape is null)
+        if (shape is null || r.Shape is null)
         {
-            return !(before is null && r.Shape is null);
+            return !(shape is null && r.Shape is null);
         }
 
-        return before.Count != r.Shape.Count
-               || before.Zip(r.Shape).Any(p => Math.Abs(p.First.Dx - p.Second.Dx) > 1e-9 || Math.Abs(p.First.Dy - p.Second.Dy) > 1e-9);
+        return shape.Count != r.Shape.Count
+               || shape.Zip(r.Shape).Any(p => Math.Abs(p.First.Dx - p.Second.Dx) > 1e-9 || Math.Abs(p.First.Dy - p.Second.Dy) > 1e-9);
     }
 
-    private static HoldShapeChangeKind KindOf(HoldShapeResolution r) => r.Fit switch
+    /// <summary>Names the net effect: outline kept (smoothed or trimmed), back to a circle, or a smaller circle.</summary>
+    private static HoldShapeChangeKind KindOf(Hold before, HoldShapeResolution r, List<ShapePoint>? smoothedBefore)
     {
-        HoldShapeFit.Shrunk => HoldShapeChangeKind.Clipped,
-        HoldShapeFit.ShrunkCircle => HoldShapeChangeKind.ShrunkCircle,
-        HoldShapeFit.Unresolved => HoldShapeChangeKind.Unresolved,
-        _ => r.Shape is null ? HoldShapeChangeKind.Circle : HoldShapeChangeKind.Smoothed,
-    };
+        if (r.Shape is not null)
+        {
+            var onlySmoothed = smoothedBefore is not null && !Differs(smoothedBefore, r.Radius, r);
+            return onlySmoothed ? HoldShapeChangeKind.Smoothed : HoldShapeChangeKind.Clipped;
+        }
+
+        return r.Radius < before.Radius - 1e-9 ? HoldShapeChangeKind.ShrunkCircle : HoldShapeChangeKind.Circle;
+    }
 }
