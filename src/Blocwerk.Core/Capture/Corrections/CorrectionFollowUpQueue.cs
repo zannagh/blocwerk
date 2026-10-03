@@ -7,8 +7,9 @@ namespace Blocwerk.Core.Capture.Corrections;
 
 /// <summary>
 /// Captures whose model was corrected (or reverted) and whose follow-up chain has to run again on the model now live. In
-/// memory like <see cref="WallCaptureQueue"/>: the app is a single instance, and a restart before the chain ran only
-/// leaves the placements of the previous version (the next correction or capture re-derives them).
+/// memory like <see cref="WallCaptureQueue"/> (the app is a single instance); the work itself is marked on the capture's
+/// record (<see cref="FollowUp.CaptureFollowUpRecord.RunAgain"/>), so <see cref="CorrectionFollowUpWorker"/> queues it
+/// again after a restart.
 /// </summary>
 public sealed class CorrectionFollowUpQueue
 {

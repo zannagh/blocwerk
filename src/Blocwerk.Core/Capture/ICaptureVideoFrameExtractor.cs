@@ -15,11 +15,16 @@ public interface ICaptureVideoFrameExtractor
     Task<CaptureVideoProbe> ProbeAsync(string videoPath, CancellationToken ct);
 
     /// <summary>
-    /// Extracts the frames, in video order, as metadata-free JPEG bytes. <paramref name="progress"/>
-    /// gets 0..1. Throws <see cref="InvalidDataException"/> when ffmpeg cannot read the video.
+    /// Extracts the frames, in video order, as metadata-free JPEG bytes handed to <paramref name="store"/> one at a time
+    /// (never all held in memory at once); returns how many were handed over. <paramref name="progress"/> gets 0..1.
+    /// Throws <see cref="InvalidDataException"/> when ffmpeg cannot read the video.
     /// </summary>
-    Task<IReadOnlyList<byte[]>> ExtractAsync(
-        string videoPath, CaptureVideoFrameRequest request, IProgress<double>? progress, CancellationToken ct);
+    Task<int> ExtractAsync(
+        string videoPath,
+        CaptureVideoFrameRequest request,
+        Func<byte[], CancellationToken, Task> store,
+        IProgress<double>? progress,
+        CancellationToken ct);
 }
 
 /// <summary>What ffprobe says about an uploaded video.</summary>

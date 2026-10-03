@@ -112,7 +112,9 @@ public class WallCaptureRecoveryTests
         string stored;
         await using (var db = h.CreateContext())
         {
-            stored = (await db.WallCapturePhotos.SingleAsync()).StoredPath;
+            var photo = await db.WallCapturePhotos.SingleAsync();
+            stored = photo.StoredPath;
+            photo.UploadedAt = DateTimeOffset.UtcNow.AddDays(-2);
             var capture = await db.WallCaptures.SingleAsync();
             capture.CreatedAt = DateTimeOffset.UtcNow.AddDays(-2);
             await db.SaveChangesAsync();
@@ -126,7 +128,7 @@ public class WallCaptureRecoveryTests
     }
 
     private static WallCaptureWorker Worker(CaptureScenario s) => new(
-        s.Harness.RootContextFactory, s.Queue, s.Processor, s.Files, s.Options, NullLogger<WallCaptureWorker>.Instance);
+        s.Harness.RootContextFactory, s.Queue, s.Processor, CaptureScenario.Sweeper(s), NullLogger<WallCaptureWorker>.Instance);
 
     /// <summary>Leaves the row as a process killed mid-stage would.</summary>
     private static async Task SimulateCrashAsync(

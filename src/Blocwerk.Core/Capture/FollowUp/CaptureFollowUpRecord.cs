@@ -21,16 +21,34 @@ namespace Blocwerk.Core.Capture.FollowUp;
 /// The capture's model was replaced (solved again): every step runs again for the new model
 /// (<see cref="CaptureFollowUpChain.RunMissingAsync"/>), resumed after a restart until it is cleared.
 /// </param>
+/// <param name="RunAgain">
+/// The capture was re-pointed at a corrected (or re-activated) model and its chain is still to run on it
+/// (<see cref="CaptureFollowUpChain.RunAgainAsync"/>), resumed after a restart until it is cleared.
+/// </param>
+/// <param name="Recoveries">
+/// How many runs of <see cref="Rederive"/> or <see cref="RunAgain"/> started without finishing (the process died in them;
+/// a graceful shutdown does not count); after <see cref="CaptureFollowUpChain.MaxRecoveries"/> a startup drops the mark
+/// with a note. Reset when a run finishes.
+/// </param>
+/// <param name="ResolveStarts">The same count for the capture's re-solve (<see cref="CaptureResolveMark"/>).</param>
+/// <param name="RerenderStarts">The same count for its texture re-render (<see cref="CaptureTextureOutcome.RerenderMark"/>).</param>
 public sealed record CaptureFollowUpRecord(
     [property: JsonPropertyName("steps")] IReadOnlyList<CaptureFollowUpEntry> Steps,
     [property: JsonPropertyName("note")] string? Note = null,
     [property: JsonPropertyName("carriedFrom"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? CarriedFrom = null,
-    [property: JsonPropertyName("rederive"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool Rederive = false)
+    [property: JsonPropertyName("rederive"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool Rederive = false,
+    [property: JsonPropertyName("runAgain"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool RunAgain = false,
+    [property: JsonPropertyName("recoveries"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] int Recoveries = 0,
+    [property: JsonPropertyName("resolveStarts"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] int ResolveStarts = 0,
+    [property: JsonPropertyName("rerenderStarts"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] int RerenderStarts = 0)
 {
-    private static readonly JsonSerializerOptions Json = new() { Converters = { new JsonStringEnumConverter() } };
-
     /// <summary>How a record marked <see cref="Rederive"/> reads in the stored JSON (to find the ones left to resume).</summary>
     public const string RederiveMarker = "\"rederive\":true";
+
+    /// <summary>How a record marked <see cref="RunAgain"/> reads in the stored JSON (to find the ones left to resume).</summary>
+    public const string RunAgainMarker = "\"runAgain\":true";
+
+    private static readonly JsonSerializerOptions Json = new() { Converters = { new JsonStringEnumConverter() } };
 
     /// <summary>Nothing recorded yet.</summary>
     public static CaptureFollowUpRecord Empty { get; } = new([]);
@@ -39,6 +57,14 @@ public sealed record CaptureFollowUpRecord(
     /// <param name="modelId">The model it came from.</param>
     /// <returns>The record.</returns>
     public static CaptureFollowUpRecord Carried(Guid modelId) => new([], null, modelId);
+
+    /// <summary>
+    /// The fresh record of a capture re-pointed at a corrected or re-activated model: carried from
+    /// <paramref name="carriedFrom"/> when the data was carried over, and marked <see cref="RunAgain"/>.
+    /// </summary>
+    /// <param name="carriedFrom">The model the data was carried from, or null.</param>
+    /// <returns>The record.</returns>
+    public static CaptureFollowUpRecord Repointed(Guid? carriedFrom) => new([], null, carriedFrom, RunAgain: true);
 
     /// <summary>Reads a stored record; empty when there is none or it does not parse.</summary>
     /// <param name="json">The stored JSON.</param>

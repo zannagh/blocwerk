@@ -142,6 +142,10 @@ internal sealed class CaptureScenario : IDisposable
         return data.ToArray();
     }
 
+    /// <summary>The retention sweeper over the scenario's store and options.</summary>
+    public static WallCaptureSweeper Sweeper(CaptureScenario s) =>
+        new(s.Harness.RootContextFactory, s.Files, s.Options, NullLogger<WallCaptureSweeper>.Instance);
+
     /// <summary>A valid geometry document whose cameras are the given photo names.</summary>
     public static string GeometryWithCameras(params string[] images)
     {

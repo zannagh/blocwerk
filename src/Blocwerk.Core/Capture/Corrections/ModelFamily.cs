@@ -63,7 +63,7 @@ public static class ModelFamily
         }
 
         capture.GeometryModelId = modelId;
-        capture.FollowUpJson = carriedFrom is { } from ? CaptureFollowUpRecord.Carried(from).ToJson() : null;
+        capture.FollowUpJson = CaptureFollowUpRecord.Repointed(carriedFrom).ToJson();
         capture.CoverageJson = null;
         await db.SaveChangesAsync();
         return capture.Id;

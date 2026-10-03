@@ -72,7 +72,7 @@ public sealed partial class WallCaptureProcessor
         var capture = run.Capture;
         logger.LogInformation("Capture {CaptureId}: no 3D runner for the markerless photo-real view; finishing without it", capture.Id);
         await FollowUpAsync(run, CaptureFollowUpPhase.Final, ct);
-        await UpdateAsync(capture.Id, c => AddFollowUpNote(c, NoRunnerNote), ct);
+        await NoteAsync(capture.Id, NoRunnerNote, ct);
         await CompleteAsync(capture.Id, TextureOutcome(capture.Error), capture.Error, ct);
     }
 }

@@ -88,6 +88,12 @@ public sealed class WallCapturePipelineOptions
     /// <summary>How often <see cref="WallCaptureSweeper"/> runs.</summary>
     public TimeSpan SweepInterval { get; init; } = TimeSpan.FromHours(6);
 
+    /// <summary>
+    /// After this long idle, the re-solve and re-render workers queue again every capture still marked for them that no
+    /// run is working on (a mark a failed run could not clear), so the wall is not left busy until a restart.
+    /// </summary>
+    public TimeSpan RedoRescanInterval { get; init; } = TimeSpan.FromMinutes(10);
+
     /// <summary>A stored file no row references is only deleted once it is at least this old (an upload in flight).</summary>
     public TimeSpan OrphanGrace { get; init; } = TimeSpan.FromHours(1);
 

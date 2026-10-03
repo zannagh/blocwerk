@@ -39,7 +39,14 @@ public sealed partial class CapturePackageService(
     public async Task AbortImportAsync(Guid importId, CancellationToken ct)
     {
         var userId = await EnsureAdminAsync(ct);
-        staging.Delete(importId);
+        await CaptureImportLocks.RunAsync(
+            importId,
+            () =>
+            {
+                staging.Delete(importId);
+                return Task.FromResult(true);
+            },
+            ct);
         logger.LogInformation("Capture import {ImportId} abandoned by {UserId}", importId, userId);
     }
 
