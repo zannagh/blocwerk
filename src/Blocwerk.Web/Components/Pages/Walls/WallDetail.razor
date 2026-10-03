@@ -130,7 +130,14 @@ else
                                     <span>Opening it continues where they left off.</span>
                                 </p>
                             }
-                            @* "Update panels + 3D" sits in the wall rail beside the panels; this is the step-by-step flow. *@
+                            @* Wall admins' main way to bring the wall up to date after a visit. Not on the wall tablet
+                               (the page refuses kiosks too); this card is admin-only and not on share links.
+                               "Update wall with new photos" below is the step-by-step flow. *@
+                            @if (!KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
+                            {
+                                <a class="btn-secondary bigupdate-entry refresh-entry" href="/walls/@WallId/update">Update panels + 3D</a>
+                                <p class="field-hint refresh-entry-hint">After a visit: drop all its photos and videos, check the panels, confirm. You can also update the panels only and keep the 3D model.</p>
+                            }
                             <button class="btn-secondary bigupdate-entry" @onclick="OpenBigUpdate">
                                 @(_openUpdate is null ? "Update wall with new photos" : "Continue the wall update")
                             </button>
@@ -596,15 +603,6 @@ else
                         </svg>
                         View in 3D
                     </Wall3DLink>
-
-                    @* Wall admins' main way to bring the wall up to date after a visit. Not on share links or the
-                       wall tablet (the page refuses kiosks too); the step-by-step "Update wall with new photos"
-                       stays in the Wall Settings card. *@
-                    @if (_isAdmin && !KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
-                    {
-                        <a class="btn-primary refresh-entry" href="/walls/@WallId/update">Update panels + 3D</a>
-                        <p class="field-hint refresh-entry-hint">After a visit: drop all its photos and videos, check the panels, confirm.</p>
-                    }
 
                     @if (_showInviteLink && !string.IsNullOrEmpty(_shareLink))
                     {
