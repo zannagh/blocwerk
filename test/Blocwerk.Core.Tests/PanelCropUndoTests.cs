@@ -1,10 +1,14 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using Blocwerk.Core.Detection.Enrichment;
+using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
 using Blocwerk.Core.Services.PanelCrop;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 
 namespace Blocwerk.Core.Tests;
 
@@ -72,6 +76,61 @@ public class PanelCropUndoTests
         Assert.False(await db.Holds.AnyAsync(h => h.Id == f.Edge.Id));
         Assert.True((await db.Boulders.SingleAsync(b => b.Id == f.BoulderId)).IsHistoric);
         Assert.False(await db.WallPanelCrops.AnyAsync());
+    }
+
+    [Fact]
+    public async Task Undo_After3DPlacementWroteTheHolds_StillRevertsTheWholeCrop()
+    {
+        using var f = new PanelCropFixture();
+        await f.SeedAsync();
+        var service = JournalledService(f);
+        await service.CropAsync(f.Harness.WallId, f.PanelId, CutsEdge, confirmRemovals: true);
+
+        // What the refinement queue does ~20 s after the crop on a wall with a 3D model: the edited-holds placement,
+        // the footprint/protrusion refinement and the volume placement write their columns, each in its own
+        // (adhoc) journal batch, through the same code the services use (HoldMetricPlanner.Apply).
+        await using (var placement = new JournallingDbContextFactory(f.Harness.DbContextFactory.ConnectionString, new ChangeJournal()).CreateDbContext())
+        {
+            foreach (var hold in await placement.Holds.Where(h => h.WallPanelId == f.PanelId).ToListAsync())
+            {
+                HoldMetricPlanner.Apply(hold, new HoldMetric(42, 17, 600, "0", 1234.5, 987.6, HoldMetric.TextureRegistration));
+                (hold.FootprintMm, hold.ProtrusionMm, hold.VolumePlacementJson) = ("{\"fp\":1}", "{\"pr\":1}", "{\"vp\":1}");
+            }
+
+            await placement.SaveChangesAsync();
+        }
+
+        f.Queue.ClearReceivedCalls();
+        var result = await service.UndoAsync(f.Harness.WallId, f.PanelId);
+
+        Assert.True(result.RevertedFromJournal);
+        Assert.Equal(f.OriginalPhoto, (await f.LoadPanelAsync()).Photo);
+        var centre = await f.LoadHoldAsync(f.Centre.Id);
+        Assert.Equal(f.Centre.Radius, centre.Radius, 12);
+        Assert.Equal(1234.5, centre.PlaneAMm); // the placement is physical, it stays; the 3D view re-places from the panel
+        await using var db = f.Harness.CreateContext();
+        Assert.True(await db.Holds.AnyAsync(h => h.Id == f.Edge.Id));
+        Assert.False((await db.Boulders.SingleAsync(b => b.Id == f.BoulderId)).IsHistoric);
+        f.Queue.Received(1).Enqueue(f.Harness.WallId, Arg.Is<IEnumerable<Guid>>(ids => ids.Contains(f.Centre.Id) && ids.Contains(f.Edge.Id)));
+    }
+
+    [Fact]
+    public async Task CropBatch_WritesOnlyTheFrameColumnsOfAKeptHold()
+    {
+        using var f = new PanelCropFixture();
+        await f.SeedAsync();
+        await JournalledService(f).CropAsync(f.Harness.WallId, f.PanelId, new PanelCropRect(0.1, 0.1, 0.875, 0.8), confirmRemovals: false);
+
+        // The undo relies on this: the 3D/metric refinement never writes these columns, so its later writes cannot
+        // read as "edited since" for the journal revert (it checks only the columns the crop batch itself wrote).
+        await using var db = f.Harness.CreateContext();
+        var written = (await db.ChangeJournalEntries
+                .Where(e => e.EntityType == nameof(Hold) && e.Op == ChangeJournalOp.Update)
+                .Select(e => e.AfterJson)
+                .ToListAsync())
+            .SelectMany(json => System.Text.Json.JsonDocument.Parse(json!).RootElement.EnumerateObject().Select(p => p.Name))
+            .ToHashSet();
+        Assert.Subset(new HashSet<string> { "X", "Y", "Radius", "ShapePoints", "ShapeHoles" }, written);
     }
 
     [Fact]

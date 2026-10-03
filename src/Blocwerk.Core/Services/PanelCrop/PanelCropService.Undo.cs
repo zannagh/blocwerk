@@ -21,6 +21,15 @@ internal sealed record PanelCropBatch(Guid Id, int RemovedHolds);
 /// and boulder memberships, and puts the boulders' historic flag back. The reverter refuses a batch whose rows were
 /// changed since (a hold edited after the crop, say); then whatever is still cropped is undone photo-only: the original
 /// photo comes back and the holds are mapped back, but removed holds stay removed (reported in the result).
+/// <para>
+/// The 3D follow-up of a crop does NOT count as "changed since": the reverter checks a row only on the columns the
+/// batch itself wrote, and a crop writes a kept hold's frame columns alone (X, Y, Radius, ShapePoints, ShapeHoles),
+/// while the edited-holds placement, metric refresh, footprint/protrusion refinement and volume placement that run
+/// ~20 s later write only the placement and metric columns (facet, plane position, metric source, sizes, fingerprint,
+/// footprint, protrusion, volume placement), in their own batches. Those values are physical (millimetres on the
+/// facet), so they stay valid across the revert; the holds are queued again so the placement re-settles against the
+/// restored frame.
+/// </para>
 /// </summary>
 public sealed partial class PanelCropService
 {
