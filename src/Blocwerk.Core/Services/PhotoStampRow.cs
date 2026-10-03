@@ -16,6 +16,9 @@ internal sealed class PhotoStampRow
     /// <summary>The row's generation.</summary>
     public int Generation { get; set; }
 
+    /// <summary>The panel's photo revision (0 for the legacy wall photo).</summary>
+    public int Revision { get; set; }
+
     /// <summary>The photo's byte length.</summary>
     public long Length { get; set; }
 
