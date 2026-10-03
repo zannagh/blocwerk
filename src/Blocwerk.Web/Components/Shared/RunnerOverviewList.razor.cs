@@ -104,7 +104,7 @@ public partial class RunnerOverviewList : IAsyncDisposable
     }
 
     internal static string Failures(GpuRunnerFailures f) =>
-        $"{f.Count} failed training{(f.Count == 1 ? string.Empty : "s")} recently; last {Ago(f.LastAt)}: {f.LastReason ?? "no reason given"}";
+        $"{f.Count} failed training{(f.Count == 1 ? string.Empty : "s")} on this runner (30 days); last {Ago(f.LastAt)}: {f.LastReason ?? "no reason given"}";
 
     protected override void OnAfterRender(bool firstRender)
     {

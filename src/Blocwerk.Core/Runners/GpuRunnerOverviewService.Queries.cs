@@ -25,7 +25,7 @@ public sealed partial class GpuRunnerOverviewService
                     || db.GpuRunnerWalls.Any(rw => rw.RunnerId == r.Id && walls.Contains(rw.WallId))
                     || (r.SharedWithOtherWalls && db.GpuRunnerApprovals.Any(a => a.RunnerId == r.Id && walls.Contains(a.WallId)))));
         var rows = await runners.AsNoTracking()
-            .Select(r => new { Runner = r, Owner = r.Owner.CustomDisplayName ?? r.Owner.DisplayName })
+            .Select(r => new { Runner = r, r.Owner.CustomDisplayName, r.Owner.DisplayName })
             .ToListAsync(ct);
         var ids = rows.Select(r => r.Runner.Id).ToList();
         var own = await db.GpuRunnerWalls.AsNoTracking().Where(rw => ids.Contains(rw.RunnerId))
@@ -37,32 +37,33 @@ public sealed partial class GpuRunnerOverviewService
         var served = own.Concat(approved).ToLookup(w => w.RunnerId);
         return rows.Select(r => new GpuRunnerOverviewInput(
                 r.Runner,
-                string.IsNullOrWhiteSpace(r.Owner) ? "Unknown" : r.Owner,
+                OwnerName(r.CustomDisplayName, r.DisplayName),
                 served[r.Runner.Id].DistinctBy(w => w.WallId).Select(w => new GpuRunnerWallRef(w.WallId, w.Name, w.Approved)).ToList()))
             .ToList();
     }
+
+    /// <summary>The owner's name as everywhere else (<see cref="User.Name"/>: a blank custom name is unset).</summary>
+    internal static string OwnerName(string? custom, string? display) =>
+        !string.IsNullOrWhiteSpace(custom) ? custom : !string.IsNullOrWhiteSpace(display) ? display : "Unknown";
 
     private static Task<List<GpuRunnerHeldJob>> HeldJobsAsync(BlocwerkDbContext db, List<Guid> runnerIds, CancellationToken ct) =>
         db.GpuJobs.AsNoTracking()
             .Where(j => j.ClaimedByRunnerId != null && runnerIds.Contains(j.ClaimedByRunnerId.Value)
                         && (j.Status == GpuJobStatus.Claimed || j.Status == GpuJobStatus.Running))
-            .Select(j => new GpuRunnerHeldJob(j.Id, j.ClaimedByRunnerId!.Value, j.WallId, j.LeaseExpiresAt, j.HeartbeatAt))
+            .Select(j => new GpuRunnerHeldJob(
+                j.Id, j.ClaimedByRunnerId!.Value, j.WallId, j.LeaseExpiresAt, j.HeartbeatAt, j.Status == GpuJobStatus.Running, j.ClaimedAt))
             .ToListAsync(ct);
 
-    /// <summary>The newest <see cref="FailureSamples"/> jobs some runner failed, one entry per runner in scope that failed it.</summary>
-    private static async Task<List<GpuRunnerFailedJob>> FailedJobsAsync(BlocwerkDbContext db, List<Guid> runnerIds, CancellationToken ct)
+    /// <summary>The runners' failures within <see cref="GpuJobQueue.FailureRetention"/>, newest first (indexed by runner and time).</summary>
+    private static Task<List<GpuRunnerFailedJob>> FailedJobsAsync(BlocwerkDbContext db, List<Guid> runnerIds, DateTimeOffset now, CancellationToken ct)
     {
-        var jobs = await db.GpuJobs.AsNoTracking()
-            .Where(j => j.FailedRunnerIdsJson != null)
-            .OrderByDescending(j => j.CreatedAt)
+        var since = now - GpuJobQueue.FailureRetention;
+        return db.GpuRunnerFailures.AsNoTracking()
+            .Where(f => runnerIds.Contains(f.RunnerId) && f.At >= since)
+            .OrderByDescending(f => f.At)
             .Take(FailureSamples)
-            .Select(j => new { j.WallId, j.FailedRunnerIdsJson, j.CompletedAt, j.ClaimedAt, j.CreatedAt, j.Error })
+            .Select(f => new GpuRunnerFailedJob(
+                f.RunnerId, f.WallId, db.Walls.IgnoreQueryFilters().Where(w => w.Id == f.WallId).Select(w => w.Name).FirstOrDefault(), f.At, f.Reason))
             .ToListAsync(ct);
-        var ids = runnerIds.ToHashSet();
-        return jobs
-            .SelectMany(j => GpuJobFailedRunners.Parse(j.FailedRunnerIdsJson)
-                .Where(ids.Contains)
-                .Select(runner => new GpuRunnerFailedJob(runner, j.WallId, j.CompletedAt ?? j.ClaimedAt ?? j.CreatedAt, j.Error)))
-            .ToList();
     }
 }

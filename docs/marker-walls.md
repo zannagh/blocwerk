@@ -1218,7 +1218,9 @@ version, the walls it serves, what it trains now (wall, stage, step, remaining t
 recent failed trainings. Site admins see every runner and may revoke or share any; wall admins see the
 runners that serve their walls and their own (they may revoke their own). A runner busy with a wall
 you do not administer only says "busy with another wall's job", and its failures there carry no
-reason. The page refreshes every 5 s while it is visible.
+reason; on your own runner you see its jobs and the walls it serves, and another wall's failure
+reads "a job of another wall (wall name)". Failures are each runner's own (kept 30 days). The page
+refreshes every 5 s while it is visible.
 
 ### Watching long-running work (progress API)
 

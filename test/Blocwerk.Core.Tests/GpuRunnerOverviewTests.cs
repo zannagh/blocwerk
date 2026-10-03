@@ -78,6 +78,63 @@ public class GpuRunnerOverviewTests
         Assert.Empty((await Service(h, f).GetAsync(default)).Runners);
     }
 
+    [Fact]
+    public async Task TheOwnerOfASharedRunner_SeesItsJobAndWalls_ButNotAnotherWallsErrors()
+    {
+        using var h = new WallTestHarness();
+        using var f = await RunnerFixture.CreateAsync(h);
+        var foreignWall = await f.AddWallAsync("Stranger's wall", foreign: true);
+        await using var db = h.CreateContext();
+        var stranger = await db.Walls.IgnoreQueryFilters().Where(w => w.Id == foreignWall).Select(w => w.OwnerId).SingleAsync();
+        var wallName = await db.Walls.IgnoreQueryFilters().Where(w => w.Id == h.WallId).Select(w => w.Name).SingleAsync();
+        var (shared, _) = await f.AddRunnerAsync("shared GPU", shared: true, ownerId: stranger, walls: foreignWall);
+        await f.ApproveAsync(h.WallId, shared);
+        var job = await f.AddJobAsync(h.WallId);
+        await f.Queue.TryClaimAsync(shared, null, default);
+        await db.GpuJobs.Where(j => j.Id == job.Id).ExecuteUpdateAsync(x => x.SetProperty(j => j.Error, "the owner's wall's private error"));
+        db.GpuRunnerFailures.Add(new GpuRunnerFailure { RunnerId = shared.Id, JobId = job.Id, WallId = h.WallId, At = f.Clock.GetUtcNow(), Reason = "raw" });
+        await db.SaveChangesAsync();
+        h.ActingUser = await db.Users.SingleAsync(u => u.Id == stranger);
+
+        var row = Assert.Single((await Service(h, f).GetAsync(default)).Runners);
+
+        Assert.Equal((false, job.Id), (row.Current!.OtherWall, row.Current.Job!.GpuJobId!.Value));
+        Assert.Null(row.Current.Job.LastError);
+        Assert.Equal((2, 0), (row.Walls.Count, row.OtherWallCount));
+        Assert.Equal($"{GpuRunnerOverviewComposer.OtherWallFailure} ({wallName})", row.Failures.LastReason);
+        Assert.True(row.IsMine && row.CanRevoke);
+    }
+
+    [Fact]
+    public async Task ARunnersFailure_IsRecordedWithItsOwnReason_WhenItGivesTheJobBack()
+    {
+        using var h = new WallTestHarness();
+        using var f = await RunnerFixture.CreateAsync(h);
+        var (runner, _) = await f.AddRunnerAsync("gpu", walls: h.WallId);
+        var job = await f.AddJobAsync(h.WallId);
+        await f.Queue.TryClaimAsync(runner, null, default);
+
+        await f.Queue.FailAsync(runner, job.Id, new RunnerFailure("CUDA out of memory", Retryable: true), default);
+
+        await using var db = h.CreateContext();
+        var failure = await db.GpuRunnerFailures.SingleAsync();
+        Assert.Equal((runner.Id, job.Id, h.WallId), (failure.RunnerId, failure.JobId, failure.WallId));
+        Assert.Contains("CUDA out of memory", failure.Reason);
+    }
+
+    [Fact]
+    public void TheHeldJob_IsTheRunningOne_ThenTheNewestClaim_AndABlankCustomNameIsUnset()
+    {
+        var runner = Guid.NewGuid();
+        var at = DateTimeOffset.UnixEpoch;
+        GpuRunnerHeldJob Job(int n, bool running, int minutes) => new(new Guid(n, 0, 0, new byte[8]), runner, Guid.Empty, null, null, running, at.AddMinutes(minutes));
+
+        Assert.Equal(Job(2, true, 1).JobId, GpuRunnerOverviewComposer.Held([Job(1, false, 9), Job(2, true, 1), Job(3, true, 0)], runner)!.JobId);
+        Assert.Equal(Job(1, false, 9).JobId, GpuRunnerOverviewComposer.Held([Job(4, false, 2), Job(1, false, 9)], runner)!.JobId);
+        Assert.Equal("Display", GpuRunnerOverviewService.OwnerName("  ", "Display"));
+        Assert.Equal("Custom", GpuRunnerOverviewService.OwnerName("Custom", "Display"));
+    }
+
     [Theory]
     [InlineData(true, true, GpuRunnerStates.Paused)]
     [InlineData(false, true, GpuRunnerStates.Offline)]
@@ -124,9 +181,11 @@ public class GpuRunnerOverviewTests
         var failed = await f.AddJobAsync(foreignWall);
         await using (var db = h.CreateContext())
         {
-            var json = GpuJobFailedRunners.With(null, shared.Id);
-            await db.GpuJobs.Where(j => j.Id == failed.Id).ExecuteUpdateAsync(x => x
-                .SetProperty(j => j.FailedRunnerIdsJson, json).SetProperty(j => j.Error, "out of memory").SetProperty(j => j.Status, GpuJobStatus.Failed));
+            db.GpuRunnerFailures.Add(new GpuRunnerFailure
+            {
+                RunnerId = shared.Id, JobId = failed.Id, WallId = foreignWall, At = f.Clock.GetUtcNow(), Reason = "out of memory",
+            });
+            await db.SaveChangesAsync();
         }
 
         var (mine, _) = await f.AddRunnerAsync("home PC", walls: h.WallId);

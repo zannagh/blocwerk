@@ -22,7 +22,7 @@ public sealed partial class GpuRunnerOverviewService(
     IKioskContext? kioskContext = null,
     TimeProvider? clock = null) : IGpuRunnerOverviewService
 {
-    /// <summary>How many recent jobs with failed runners are read for the failure counts.</summary>
+    /// <summary>How many recent failures of the runners in view are read for the failure counts.</summary>
     public const int FailureSamples = 300;
 
     private const string Action = "Watching 3D runners";
@@ -40,9 +40,12 @@ public sealed partial class GpuRunnerOverviewService(
         var runners = await RunnersAsync(db, viewer, ct);
         var ids = runners.Select(r => r.Runner.Id).ToList();
         var held = await HeldJobsAsync(db, ids, ct);
-        var visible = held.Where(j => runners.Any(r => r.Runner.Id == j.RunnerId && viewer.MaySeeJob(j.WallId, r.Runner.OwnerUserId))).ToList();
+        var visible = runners
+            .Select(r => GpuRunnerOverviewComposer.Held(held, r.Runner.Id) is { } j && viewer.MaySeeJob(j.WallId, r.Runner.OwnerUserId) ? j : null)
+            .OfType<GpuRunnerHeldJob>()
+            .ToList();
         var jobs = await ProgressAsync(visible, ct);
-        var failed = await FailedJobsAsync(db, ids, ct);
+        var failed = await FailedJobsAsync(db, ids, now, ct);
         var rows = GpuRunnerOverviewComposer.Compose(viewer, runners, held, jobs, failed, now - queue.Options.OnlineWindow);
         return new GpuRunnerOverview(now, viewer.IsAppAdmin, rows);
     }
