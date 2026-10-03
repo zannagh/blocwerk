@@ -14,25 +14,23 @@ namespace Blocwerk.Web.Controllers;
 /// <summary>
 /// Drives the wall update's optional "recognise hold shapes" step and its review over the machine API —
 /// the same <see cref="IWallUpdateShapeService"/> methods the wizard calls, so the rules are identical:
-/// a wall API key for the wall in the route, or a PERSONAL API key created with write access
-/// (<c>ApiKey.AllowWrite</c>), in both cases only when the key's
-/// OWNER is an admin of the wall (the service's own check, the one the browser user meets). Never a kiosk
-/// or installation key (neither satisfies <see cref="BlocwerkPolicies.AnyApiKey"/>, and the service refuses
+/// a wall API key for the wall in the route or a PERSONAL API key, either created with write access
+/// (<c>ApiKey.AllowWrite</c>), and only when the key's OWNER is an admin of the wall (the service's own check,
+/// the one the browser user meets). Never a kiosk or installation key (neither satisfies <see cref="BlocwerkPolicies.AnyApiKey"/>, and the service refuses
 /// kiosk sessions besides). Scheme pinned to API keys.
 /// </summary>
 [ApiController]
 [Route("api/walls/{wallId:guid}/update/shapes")]
 [Authorize(Policy = BlocwerkPolicies.AnyApiKey, AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName)]
 [Produces("application/json")]
-public sealed class WallUpdateShapesController : WallScopedApiController
+public sealed class WallUpdateShapesController : WallAdminApiController
 {
     private readonly IWallUpdateShapeService shapes;
-    private readonly ILogger<WallUpdateShapesController> logger;
 
     public WallUpdateShapesController(IWallUpdateShapeService shapes, ILogger<WallUpdateShapesController> logger)
+        : base(logger)
     {
         this.shapes = shapes;
-        this.logger = logger;
     }
 
     /// <summary>Starts (or resumes) recognition in the background. 202 with the run status; poll GET.</summary>
@@ -112,35 +110,15 @@ public sealed class WallUpdateShapesController : WallScopedApiController
     }
 
     /// <summary>The wall guard plus one error mapping for every action.</summary>
-    private async Task<IActionResult> RunAsync(Guid wallId, Func<Task<IActionResult>> action)
+    /// <summary>
+    /// The base's guard and error mapping, plus 400 for a malformed request the service rejects with an
+    /// <see cref="ArgumentException"/> (bad decision payloads).
+    /// </summary>
+    private new async Task<IActionResult> RunAsync(Guid wallId, Func<Task<IActionResult>> action)
     {
-        if (GuardWallOrPersonalKey(wallId) is { } guard)
-        {
-            return guard;
-        }
-
         try
         {
-            return await action();
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return StatusCode(StatusCodes.Status403Forbidden, new ApiErrorResponse("This API key's owner is not an admin of that wall."));
-        }
-        catch (KioskRestrictedException ex)
-        {
-            return StatusCode(StatusCodes.Status403Forbidden, new ApiErrorResponse(ex.Message));
-        }
-        catch (UserFacingException ex)
-        {
-            // Written for the caller (stale session, step not finished, detection off): safe to echo.
-            return Conflict(new ApiErrorResponse(ex.Message));
-        }
-        catch (InvalidOperationException ex)
-        {
-            // Anything else may be EF Core or framework internals: log it, never echo it.
-            logger.LogWarning(ex, "Shape step request on wall {WallId} failed unexpectedly", wallId);
-            return Conflict(new ApiErrorResponse(UserFacingException.GenericMessage));
+            return await base.RunAsync(wallId, action);
         }
         catch (ArgumentException ex)
         {

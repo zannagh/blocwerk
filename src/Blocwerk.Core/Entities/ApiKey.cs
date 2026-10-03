@@ -88,7 +88,7 @@ public class ApiKey
     /// </summary>
     /// <remarks>
     /// Reading the owner's own records (<c>/api/v1/me</c>) never needs it, nor does a wall key's fixed
-    /// device surface (temperature, images, maintenance, marker revisions). Kiosk and installation keys
+    /// device surface (temperature, images, maintenance). Kiosk and installation keys
     /// never carry it. It is a capability on top of the owner's authority, never a substitute for it — the
     /// wall-admin checks still run for the owner.
     /// </remarks>

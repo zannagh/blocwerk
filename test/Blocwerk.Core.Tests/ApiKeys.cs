@@ -48,6 +48,14 @@ internal static class ApiKeys
         return Principal(claims);
     }
 
+    /// <summary>An installation key (no wall), carrying a write claim it could never really get.</summary>
+    public static ClaimsPrincipal Installation()
+    {
+        var claims = Base(ApiKeyScope.Installation);
+        claims.Add(new Claim(ApiKeyClaimTypes.AllowWrite, "true"));
+        return Principal(claims);
+    }
+
     /// <summary>Gives the controller's request a multipart/form-data body with these files.</summary>
     public static void Multipart(ControllerBase controller, params (string Name, byte[] Bytes)[] files)
     {

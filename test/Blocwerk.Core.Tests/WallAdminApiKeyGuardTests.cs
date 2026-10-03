@@ -30,6 +30,7 @@ public class WallAdminApiKeyGuardTests
         { "read-only wall key", ApiKeys.Wall(WallId, allowWrite: false), false },
         { "wall key with write access of another wall", ApiKeys.Wall(Guid.NewGuid()), false },
         { "kiosk key", ApiKeys.Kiosk(WallId), false },
+        { "installation key", ApiKeys.Installation(), false },
     };
 
     [Theory]
@@ -49,17 +50,31 @@ public class WallAdminApiKeyGuardTests
     }
 
     /// <summary>
-    /// Every controller that admits wall keys alongside personal keys is a wall-admin controller and so must sit on
-    /// the guard above; the device routes (temperature, images, maintenance, marker revisions) keep WallApiKey.
+    /// Every controller that admits wall keys alongside personal keys is a wall-admin controller and so must run its
+    /// actions through <see cref="WallAdminApiController"/>'s RunAsync, where the device guard is hidden behind a
+    /// compile error. Every other wall-scoped controller is a device controller and admits wall keys only.
     /// </summary>
     [Fact]
-    public void EveryAnyApiKeyController_IsAWallScopedController()
+    public void AnyApiKeyControllers_AreWallAdminControllers_AndTheRestAreDeviceOnly()
     {
-        var anyKeyControllers = typeof(WallScopedApiController).Assembly.GetTypes()
-            .Where(t => t.GetCustomAttribute<AuthorizeAttribute>()?.Policy == BlocwerkPolicies.AnyApiKey)
-            .ToList();
+        var types = typeof(WallScopedApiController).Assembly.GetTypes();
+        var wallScoped = types.Where(t => !t.IsAbstract && typeof(WallScopedApiController).IsAssignableFrom(t)).ToList();
+        var anyKey = types.Where(t => t.GetCustomAttribute<AuthorizeAttribute>()?.Policy == BlocwerkPolicies.AnyApiKey).ToList();
 
-        Assert.NotEmpty(anyKeyControllers);
-        Assert.All(anyKeyControllers, t => Assert.True(typeof(WallScopedApiController).IsAssignableFrom(t), t.Name));
+        Assert.NotEmpty(anyKey);
+        Assert.All(anyKey, t => Assert.True(typeof(WallAdminApiController).IsAssignableFrom(t), t.Name));
+        Assert.All(
+            wallScoped.Where(t => !typeof(WallAdminApiController).IsAssignableFrom(t)),
+            t => Assert.Equal(BlocwerkPolicies.WallApiKey, t.GetCustomAttribute<AuthorizeAttribute>()?.Policy));
+    }
+
+    [Fact]
+    public void TheDeviceGuard_IsACompileErrorInWallAdminControllers()
+    {
+        var hidden = typeof(WallAdminApiController).GetMethod(
+            "GuardWall", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
+
+        Assert.NotNull(hidden);
+        Assert.True(hidden!.GetCustomAttribute<ObsoleteAttribute>()?.IsError);
     }
 }

@@ -16,7 +16,7 @@ namespace Blocwerk.Web.Controllers;
 /// the outline upgrade (circles → traced outlines on the panel photos; preview, apply, exact revert — it changes
 /// panel hold shapes, so it only ever runs when a caller asks for it) and "refine 3D hold shapes" (the derived
 /// contact footprints on the model). Authorised like <see cref="WallGeometryPlacementController"/>: a wall key for
-/// the wall, or a personal key with write access, whose owner is an admin of the wall; kiosks are refused.
+/// the wall or a personal key, either created with write access, whose owner is an admin of the wall; kiosks are refused.
 /// </summary>
 [ApiController]
 [Route("api/walls/{wallId:guid}/holds")]

@@ -14,7 +14,7 @@ namespace Blocwerk.Web.Controllers;
 /// Corrections of the wall's active 3D model over the machine API — the same <see cref="IWallGeometryCorrectionService"/>
 /// calls the geometry panel and the 3D view make: each creates a new active model version (the old one stays in the
 /// history, revertable by activating it). Same key rules as the other wall-admin routes: a wall key for the wall in the
-/// route or a personal key with write access, and the key's owner must be an admin of the wall; never a kiosk.
+/// route or a personal key, either created with write access, and the key's owner must be an admin of the wall; never a kiosk.
 /// </summary>
 [ApiController]
 [Route("api/walls/{wallId:guid}/geometry/corrections")]
