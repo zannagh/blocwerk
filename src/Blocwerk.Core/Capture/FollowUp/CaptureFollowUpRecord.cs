@@ -32,6 +32,7 @@ namespace Blocwerk.Core.Capture.FollowUp;
 /// </param>
 /// <param name="ResolveStarts">The same count for the capture's re-solve (<see cref="CaptureResolveMark"/>).</param>
 /// <param name="RerenderStarts">The same count for its texture re-render (<see cref="CaptureTextureOutcome.RerenderMark"/>).</param>
+/// <param name="Running">The step running right now (for the progress API), or null.</param>
 public sealed record CaptureFollowUpRecord(
     [property: JsonPropertyName("steps")] IReadOnlyList<CaptureFollowUpEntry> Steps,
     [property: JsonPropertyName("note")] string? Note = null,
@@ -40,7 +41,8 @@ public sealed record CaptureFollowUpRecord(
     [property: JsonPropertyName("runAgain"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool RunAgain = false,
     [property: JsonPropertyName("recoveries"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] int Recoveries = 0,
     [property: JsonPropertyName("resolveStarts"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] int ResolveStarts = 0,
-    [property: JsonPropertyName("rerenderStarts"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] int RerenderStarts = 0)
+    [property: JsonPropertyName("rerenderStarts"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] int RerenderStarts = 0,
+    [property: JsonPropertyName("running"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CaptureFollowUpRunning? Running = null)
 {
     /// <summary>How a record marked <see cref="Rederive"/> reads in the stored JSON (to find the ones left to resume).</summary>
     public const string RederiveMarker = "\"rederive\":true";
@@ -100,5 +102,10 @@ public sealed record CaptureFollowUpRecord(
     /// <param name="entry">The entry.</param>
     /// <returns>The new record.</returns>
     public CaptureFollowUpRecord With(CaptureFollowUpEntry entry) =>
-        this with { Steps = [.. Steps.Where(s => s.Key != entry.Key), entry] };
+        this with { Steps = [.. Steps.Where(s => s.Key != entry.Key), entry], Running = Running?.Key == entry.Key ? null : Running };
+
+    /// <summary>The record with <paramref name="running"/> as the step running now.</summary>
+    /// <param name="running">The step that starts.</param>
+    /// <returns>The new record.</returns>
+    public CaptureFollowUpRecord Starting(CaptureFollowUpRunning running) => this with { Running = running };
 }

@@ -116,6 +116,9 @@ public sealed partial class CaptureFollowUpChain(RootDbContextFactory dbContextF
             await SaveAsync(context.CaptureId, c => c.Stage = step.Title.Length <= 200 ? step.Title : step.Title[..200], ct);
         }
 
+        // The record says what runs either way (for the progress API); its entry drops the mark again.
+        var running = new CaptureFollowUpRunning(step.Key, step.Title, DateTimeOffset.UtcNow);
+        await MarkRunningAsync(context, running, ct);
         CaptureFollowUpStepResult result;
         try
         {
@@ -123,6 +126,8 @@ public sealed partial class CaptureFollowUpChain(RootDbContextFactory dbContextF
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
+            // A graceful shutdown: the step is not running any more (a restart runs it again).
+            await ClearRunningOnShutdownAsync(context.CaptureId, running);
             throw;
         }
         catch (Exception ex)
@@ -135,7 +140,8 @@ public sealed partial class CaptureFollowUpChain(RootDbContextFactory dbContextF
             "Capture {CaptureId} follow-up {Step}: {Outcome} — {Summary}",
             context.CaptureId, step.Key, result.Outcome, string.IsNullOrWhiteSpace(result.Summary) ? "nothing to report" : result.Summary);
         return new CaptureFollowUpEntry(
-            step.Key, result.Outcome, result.Summary, DateTimeOffset.UtcNow, step.NeedsPhotoReal ? context.SplatId : null);
+            step.Key, result.Outcome, result.Summary, DateTimeOffset.UtcNow, step.NeedsPhotoReal ? context.SplatId : null,
+            StartedAt: running.StartedAt);
     }
 
     /// <summary>
@@ -152,7 +158,8 @@ public sealed partial class CaptureFollowUpChain(RootDbContextFactory dbContextF
             .FirstOrDefaultAsync(ct);
         if (capture?.GeometryModelId is not { } modelId)
         {
-            return (null, CaptureFollowUpRecord.Parse(capture?.FollowUpJson), capture?.Status ?? WallCaptureStatus.Draft, null);
+            var none = CaptureFollowUpRecord.Parse(capture?.FollowUpJson);
+            return (null, await WithoutRunningAsync(captureId, none, ct), capture?.Status ?? WallCaptureStatus.Draft, null);
         }
 
         var record = CaptureFollowUpRecord.Parse(capture.FollowUpJson);
@@ -160,7 +167,7 @@ public sealed partial class CaptureFollowUpChain(RootDbContextFactory dbContextF
         if (!active)
         {
             logger.LogInformation("Capture {CaptureId}: its model {ModelId} is not the active one; no follow-up steps", captureId, modelId);
-            return (null, record, capture.Status, modelId);
+            return (null, await WithoutRunningAsync(captureId, record, ct), capture.Status, modelId);
         }
 
         var splatId = await db.WallGeometrySplats.AsNoTracking()
@@ -169,6 +176,10 @@ public sealed partial class CaptureFollowUpChain(RootDbContextFactory dbContextF
             .FirstOrDefaultAsync(ct);
         return (new CaptureFollowUpContext(captureId, capture.WallId, modelId, capture.CreatedByUserId, splatId), record, capture.Status, modelId);
     }
+
+    /// <summary>No step runs for a capture whose model is not active: a mark left on it is dropped.</summary>
+    private async Task<CaptureFollowUpRecord> WithoutRunningAsync(Guid captureId, CaptureFollowUpRecord record, CancellationToken ct) =>
+        record.Running is null ? record : await ClearRunningAsync(captureId, null, ct) ?? record;
 
     private async Task SaveAsync(Guid captureId, Action<Entities.WallCapture> change, CancellationToken ct)
     {

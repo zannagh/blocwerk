@@ -174,8 +174,26 @@ public class GpuJob
     /// <summary>The training step of <see cref="PreviewPath"/>; a later preview must have a higher one.</summary>
     public int? PreviewStep { get; set; }
 
-    /// <summary>The training's total steps, as the runner reports them with a preview.</summary>
+    /// <summary>The training's total steps, as the runner reports them with its progress or a preview.</summary>
     public int? TotalSteps { get; set; }
+
+    /// <summary>The newest training step the runner reported (null: none reported yet).</summary>
+    public int? Step { get; set; }
+
+    /// <summary>
+    /// The first step reported in the current claim, with <see cref="StepAnchorAt"/>: the base of the step rate the progress API
+    /// derives the remaining time from. Reset by the first report of a later claim (anchored before <see cref="ClaimedAt"/>).
+    /// </summary>
+    public int? StepAnchor { get; set; }
+
+    /// <summary>When <see cref="StepAnchor"/> was reported.</summary>
+    public DateTimeOffset? StepAnchorAt { get; set; }
+
+    /// <summary>The trainer's latest loss, read from the progress detail when it carries one.</summary>
+    public double? Loss { get; set; }
+
+    /// <summary>The trainer's latest splat count, read from the progress detail when it carries one.</summary>
+    public int? SplatCount { get; set; }
 
     /// <summary>The step of the preview installed on the model (null: none); only ever grows.</summary>
     public int? PreviewInstalledStep { get; set; }

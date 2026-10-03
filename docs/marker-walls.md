@@ -1209,6 +1209,56 @@ the upload and the hand-over to `splat-finish` all stream through files.
 The splat worker (`SPLATSERVICE__URL`) is still needed for the CPU steps; with `always` it no longer
 needs a GPU.
 
+### Watching long-running work (progress API)
+
+Everything slow shows up in one list: captures (per stage), photo-real training on a 3D runner
+(step, total steps, previews, loss and splat count when the trainer prints them), the server's
+finish of a trained view, each follow-up step, texture re-renders, re-solves and capture imports.
+Each job has a state (`queued`, `running`, `succeeded`, `skipped`, `failed`, `cancelled`), a
+percentage, the time it has left, when it started and last moved, and its last error. A GPU training
+also says when its runner is paused (`runnerPaused`), or, while it waits, when every online runner that
+may take it is paused.
+
+- **In the app:** *Administration → Background jobs* lists every wall's jobs (app admins). A wall's
+  settings have a compact *Background jobs* panel for its admins. Both refresh every 4 s while they
+  are open and the tab is visible.
+- **For scripts:** `GET /api/v1/admin/jobs` with a personal API key (*Settings → API keys*; read
+  access is enough, the route never changes anything). An app admin's key sees every wall, a wall
+  admin's key only their walls; wall, kiosk and installation keys get 403. Optional query
+  parameters: `wallId` (one wall) and `recentHours` (how far back ended jobs are listed, default 24,
+  at most 168, `0` for running jobs only).
+
+```bash
+curl -s -H "Authorization: Bearer $BLOCWERK_KEY" \
+  "https://blocwerk.example.com/api/v1/admin/jobs?recentHours=6" \
+  | jq '.jobs[] | select(.state == "running") | {kind, stage, percent, etaSeconds, updatedAt, lastError}'
+```
+
+The JSON field names are stable (fields may be added, never renamed); the in-app API reference
+(*Settings → API keys*) shows a full example. Every value is derived when it is read, from the rows
+that already track the work plus a few facts stored for it: a capture's stage timeline (when each
+stage, re-render and re-solve started and ended), the runner's latest step and the step its current
+claim started at, and when each follow-up step started.
+
+**Remaining time** (`etaSeconds`) comes from the job's own rate when it has one (`etaSource:
+"rate"`: training steps, or bytes of an import, per second since the current claim started),
+otherwise from the median duration of the same stage over the last 60 runs (`"history"`). It is
+`null` when neither is known, or once a stage has run longer than its median; it is never guessed.
+
+**Telemetry.** The same numbers go to the OpenTelemetry exporter (meter `Blocwerk`), every 15 s:
+
+| Instrument | Kind | Tags |
+|---|---|---|
+| `blocwerk.jobs.active` | gauge `{job}` | `kind`, `stage`, `state` (queued/running) |
+| `blocwerk.jobs.progress` | gauge `%` (mean of the running jobs) | `kind`, `stage` |
+| `blocwerk.jobs.eta` | gauge `s` (the longest known remaining time) | `kind`, `stage` |
+| `blocwerk.jobs.stage.duration` | histogram `s` | `kind`, `stage`, `outcome` |
+| `blocwerk.jobs.failures` | counter `{failure}` | `kind`, `stage` |
+
+Each stage that ends is also exported as a span (`job <kind> <stage>`, activity source `Blocwerk`)
+with its real start and end, so a capture shows up in the trace view as its stages one after the
+other. Metrics carry no wall or job ids; spans carry the job id and the anonymized wall tag.
+
 ### Polling vs callbacks
 
 The app **polls** each job (starting at 1 s, backing off to 10 s). The services can also send

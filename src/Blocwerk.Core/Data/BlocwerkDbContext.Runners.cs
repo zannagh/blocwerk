@@ -51,6 +51,7 @@ public partial class BlocwerkDbContext
             entity.Property(j => j.ResultStatsJson).HasColumnType("text");
             entity.HasIndex(j => new { j.Status, j.CreatedAt });
             entity.HasIndex(j => j.CaptureId);
+            entity.HasIndex(j => j.CompletedAt);
         });
 
         modelBuilder.Entity<GpuRunnerApproval>(entity =>

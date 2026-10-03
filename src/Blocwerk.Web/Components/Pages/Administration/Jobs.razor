@@ -1,0 +1,22 @@
+@page "/administration/jobs"
+@rendermode InteractiveServer
+@using Blocwerk.Authentication.Authorization
+@attribute [Authorize(Policy = BlocwerkPolicies.AppAdmin)]
+
+<PageTitle>Background jobs - Blocwerk</PageTitle>
+
+<div class="admin-dashboard">
+    <div class="list-header">
+        <h1>Background jobs</h1>
+        <a href="/administration" class="hint">Back to administration</a>
+    </div>
+
+    <div class="settings-panel">
+        <p class="apikey-blurb">
+            Captures, photo-real training on 3D runners, finishing, follow-up steps, texture re-renders, re-solves and
+            imports on every wall: what runs now, how far it is and how long it usually takes. Scripts read the same
+            list from <code>GET /api/v1/admin/jobs</code> with a personal API key (see Settings → API keys).
+        </p>
+        <JobProgressList />
+    </div>
+</div>

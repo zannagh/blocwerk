@@ -143,6 +143,10 @@ public partial class BlocwerkDbContext : DbContext
         }
     }
 
+    /// <summary>Captures' stage timeline is kept by every context, whatever factory built it (see <see cref="CaptureTimelineInterceptor"/>).</summary>
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder) =>
+        optionsBuilder.AddInterceptors(CaptureTimelineInterceptor.Instance, CaptureTimelineTransactionInterceptor.Instance);
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
