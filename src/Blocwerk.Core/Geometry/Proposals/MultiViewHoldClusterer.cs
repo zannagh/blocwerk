@@ -8,7 +8,8 @@ namespace Blocwerk.Core.Geometry.Proposals;
 
 /// <summary>
 /// Groups detections of one physical hold across photos. Greedy, most confident detection first: it takes, from
-/// every OTHER photo, the nearest unused hit on the same facet within <see cref="LinkMm"/> and of similar size,
+/// every OTHER photo, the nearest unused hit within <see cref="LinkMm"/> (in the world, whichever facet it landed on:
+/// a hold on an arete or seam is hit on both facets) and of similar size,
 /// triangulates their rays, and drops the views whose detection the point does not reproject into (more than
 /// <see cref="MaxReprojectionShare"/> of the box radius away), until the rest agree. A cluster is kept only when
 /// ≥ minViews photos agree, their rays meet within <see cref="MaxResidualMm"/> and they see it from angles at
@@ -35,6 +36,9 @@ public static class MultiViewHoldClusterer
     private const double MinRadiusPx = 6;
     private const int Rounds = 3;
 
+    private static readonly (int I, int J, int K)[] Neighbours =
+        [.. from i in new[] { -1, 0, 1 } from j in new[] { -1, 0, 1 } from k in new[] { -1, 0, 1 } select (i, j, k)];
+
     /// <summary>The clusters seen by at least <paramref name="minViews"/> agreeing photos.</summary>
     /// <param name="hits">All hits.</param>
     /// <param name="cameras">The photos' cameras by name.</param>
@@ -42,10 +46,10 @@ public static class MultiViewHoldClusterer
     /// <returns>The clusters.</returns>
     public static List<HoldCluster> Cluster(IReadOnlyList<SurfaceHit> hits, IReadOnlyDictionary<string, SolvedCamera> cameras, int minViews = 3)
     {
-        var grid = new Dictionary<(string Facet, long I, long J), List<int>>();
+        var grid = new Dictionary<(long I, long J, long K), List<int>>();
         for (var i = 0; i < hits.Count; i++)
         {
-            var key = (hits[i].FacetId, (long)Math.Floor(hits[i].A / LinkMm), (long)Math.Floor(hits[i].B / LinkMm));
+            var key = Cell(hits[i].World);
             if (!grid.TryGetValue(key, out var list))
             {
                 list = [];
@@ -91,35 +95,38 @@ public static class MultiViewHoldClusterer
     }
 
     /// <summary>The seed plus, per other photo, its nearest unused compatible hit.</summary>
-    private static List<int> Candidates(IReadOnlyList<SurfaceHit> hits, Dictionary<(string Facet, long I, long J), List<int>> grid, bool[] used, int seed)
+    private static List<int> Candidates(IReadOnlyList<SurfaceHit> hits, Dictionary<(long I, long J, long K), List<int>> grid, bool[] used, int seed)
     {
         var s = hits[seed];
-        var (i0, j0) = ((long)Math.Floor(s.A / LinkMm), (long)Math.Floor(s.B / LinkMm));
-        var best = new Dictionary<string, (double D, int Index)>();
-        for (var di = -1; di <= 1; di++)
+        var (i0, j0, k0) = Cell(s.World);
+        var best = new Dictionary<string, (double D, bool OtherFacet, int Index)>();
+        foreach (var (di, dj, dk) in Neighbours)
         {
-            for (var dj = -1; dj <= 1; dj++)
+            foreach (var j in grid.GetValueOrDefault((i0 + di, j0 + dj, k0 + dk)) ?? [])
             {
-                foreach (var j in grid.GetValueOrDefault((s.FacetId, i0 + di, j0 + dj)) ?? [])
+                var q = hits[j];
+                var d = RayMath.Length(q.World, s.World);
+                var ratio = Math.Max(q.SizeMm, s.SizeMm) / Math.Max(1, Math.Min(q.SizeMm, s.SizeMm));
+                if (used[j] || q.Detection.Photo == s.Detection.Photo || d > LinkMm || ratio > MaxSizeRatio)
                 {
-                    var q = hits[j];
-                    var d = RayMath.Length(q.World, s.World);
-                    var ratio = Math.Max(q.SizeMm, s.SizeMm) / Math.Max(1, Math.Min(q.SizeMm, s.SizeMm));
-                    if (used[j] || q.Detection.Photo == s.Detection.Photo || d > LinkMm || ratio > MaxSizeRatio)
-                    {
-                        continue;
-                    }
+                    continue;
+                }
 
-                    if (!best.TryGetValue(q.Detection.Photo, out var b) || d < b.D)
-                    {
-                        best[q.Detection.Photo] = (d, j);
-                    }
+                // Nearest wins; the seed's own facet only breaks a tie.
+                var candidate = (D: d, OtherFacet: q.FacetId != s.FacetId, Index: j);
+                if (!best.TryGetValue(q.Detection.Photo, out var b) || (candidate.D, candidate.OtherFacet).CompareTo((b.D, b.OtherFacet)) < 0)
+                {
+                    best[q.Detection.Photo] = candidate;
                 }
             }
         }
 
         return [seed, .. best.Values.Select(b => b.Index)];
     }
+
+    /// <summary>The world grid cell of a point: cells of <see cref="LinkMm"/>, so every hit within it is in a neighbouring cell.</summary>
+    private static (long I, long J, long K) Cell(double[] world) =>
+        ((long)Math.Floor(world[0] / LinkMm), (long)Math.Floor(world[1] / LinkMm), (long)Math.Floor(world[2] / LinkMm));
 
     /// <summary>Drops the views the triangulated point does not reproject into, a few rounds; the seed stays.</summary>
     private static List<int> Agreeing(List<int> members, int seed, IReadOnlyList<SurfaceHit> hits, IReadOnlyDictionary<string, SolvedCamera> cameras)
