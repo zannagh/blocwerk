@@ -58,6 +58,12 @@ public sealed class GpuRunnerOptions
     /// <summary>Budget-free hand-backs (shutdowns that kept their progress, pauses) per job; further ones count as shutdowns.</summary>
     public int MaxPauses { get; init; } = 50;
 
+    /// <summary>
+    /// Owner pauses that hand a job back without an advanced checkpoint stay free only while the job has had fewer pauses
+    /// than this; later ones count as shutdowns (a runner paused and resumed in a loop cannot hold a job forever).
+    /// </summary>
+    public int MaxStalledPauses { get; init; } = 5;
+
     /// <summary>Active (not revoked) runners one user may own.</summary>
     public int MaxRunnersPerUser { get; init; } = 10;
 

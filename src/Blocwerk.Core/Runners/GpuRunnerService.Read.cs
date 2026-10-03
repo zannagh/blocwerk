@@ -89,7 +89,7 @@ public sealed partial class GpuRunnerService
                 current,
                 r.Walls.Count,
                 r.Approved,
-                x.Paused is true);
+                x.RevokedAt is null && x.LastSeenAt >= online && x.Paused is true);
         }).ToList();
     }
 }

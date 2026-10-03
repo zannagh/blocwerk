@@ -4,8 +4,8 @@
 namespace Blocwerk.Core.Runners;
 
 /// <summary>
-/// A runner as the wall panel and the site-admin list show it. Never carries the key. <c>IsPaused</c>: its owner paused it
-/// (its last hello said so); it may still be online.
+/// A runner as the wall panel and the site-admin list show it. Never carries the key. <c>IsPaused</c>: online and paused
+/// by its owner (its last hello said so); an offline runner is never "paused", offline wins.
 /// </summary>
 public sealed record GpuRunnerInfo(
     Guid Id,

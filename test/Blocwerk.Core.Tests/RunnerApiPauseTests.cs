@@ -30,6 +30,7 @@ public class RunnerApiPauseTests
 
         Assert.Equal(HttpStatusCode.OK, (await host.PostJsonAsync($"{Api}/hello", key, "{\"gpuName\":\"RTX\",\"paused\":true}")).StatusCode);
         Assert.True(await PausedAsync(h, runner.Id));
+        await f.MarkOnlineAsync(runner, DateTimeOffset.UtcNow); // the list's online window uses the wall clock
         Assert.True((await service.ListForWallAsync(h.WallId)).Single().IsPaused);
 
         Assert.Equal(HttpStatusCode.OK, (await host.PostJsonAsync($"{Api}/hello", key, "{\"gpuName\":\"RTX\",\"paused\":false}")).StatusCode);
@@ -92,6 +93,61 @@ public class RunnerApiPauseTests
 
         Assert.Contains($"\"wallId\":\"{h.WallId}\"", body);
         Assert.Contains($"\"captureId\":\"{job.CaptureId}\"", body);
+    }
+
+    [Fact]
+    public async Task TheHelloAnswer_SaysTheServerKnowsPauses_AndOfflineWinsOverPaused()
+    {
+        using var h = new WallTestHarness();
+        using var f = await RunnerFixture.CreateAsync(h);
+        await using var host = await RunnerApiTestHost.StartAsync(f);
+        var (runner, key) = await f.AddRunnerAsync("gpu", walls: h.WallId);
+        var service = new GpuRunnerService(h.DbContextFactory, h.CurrentUser, f.Queue, NullLogger<GpuRunnerService>.Instance, null);
+
+        var hello = await host.PostJsonAsync($"{Api}/hello", key, "{\"paused\":true}");
+        Assert.Contains("\"pauseAware\":true", await hello.Content.ReadAsStringAsync());
+        await f.MarkOnlineAsync(runner, DateTimeOffset.UtcNow); // the list's online window uses the wall clock
+        Assert.True((await service.ListForWallAsync(h.WallId)).Single().IsPaused);
+
+        await f.MarkOnlineAsync(runner, DateTimeOffset.UtcNow - TimeSpan.FromHours(1));
+        var listed = (await service.ListForWallAsync(h.WallId)).Single();
+        Assert.False(listed.IsPaused || listed.IsOnline);
+    }
+
+    [Fact]
+    public async Task APausedOnlyRunner_ShowsTheJobAsWaitingForAPausedRunner()
+    {
+        using var h = new WallTestHarness();
+        using var f = await RunnerFixture.CreateAsync(h);
+        await using var host = await RunnerApiTestHost.StartAsync(f);
+        var (_, key) = await f.AddRunnerAsync("gpu", walls: h.WallId);
+        await host.PostJsonAsync($"{Api}/hello", key, "{\"maxQuality\":\"max\",\"paused\":true}");
+        var job = await f.AddJobAsync(h.WallId);
+
+        await f.Queue.SweepAsync(CancellationToken.None);
+
+        await using var db = h.CreateContext();
+        Assert.Equal("waiting for a 3D runner (paused)", (await db.GpuJobs.SingleAsync(j => j.Id == job.Id)).Stage);
+    }
+
+    [Fact]
+    public async Task PausesWithoutProgress_AreFreeOnlyAFewTimes()
+    {
+        using var h = new WallTestHarness();
+        using var f = await RunnerFixture.CreateAsync(h, new GpuRunnerOptions { ClaimWait = TimeSpan.Zero, MaxStalledPauses = 2 });
+        await using var host = await RunnerApiTestHost.StartAsync(f);
+        var (_, key) = await f.AddRunnerAsync("gpu", walls: h.WallId);
+        var job = await f.AddJobAsync(h.WallId);
+        var fail = "{\"reason\":\"paused\",\"retryable\":true,\"shutdown\":true,\"pause\":true}";
+        for (var i = 0; i < 3; i++)
+        {
+            Assert.Equal(HttpStatusCode.OK, (await host.PostJsonAsync($"{Api}/claim", key, "{}")).StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await host.PostJsonAsync($"{Api}/jobs/{job.Id}/fail", key, fail)).StatusCode);
+        }
+
+        await using var db = h.CreateContext();
+        var row = await db.GpuJobs.SingleAsync();
+        Assert.Equal((GpuJobStatus.Queued, 2, 1), (row.Status, row.PauseCount, row.ShutdownCount));
     }
 
     private static async Task<bool?> PausedAsync(WallTestHarness h, Guid runnerId)

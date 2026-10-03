@@ -131,9 +131,10 @@ public sealed partial class GpuJobQueue
             : failure.Unreachable ? ReleaseKind.LostLease
             : failure.Retryable ? ReleaseKind.Failure : ReleaseKind.Fatal;
         var paused = failure.Shutdown && failure.Pause;
-        if (paused)
+        if (paused && (kind == ReleaseKind.Pause || job.PauseCount < options.MaxStalledPauses))
         {
-            // The owner paused the runner: free whether or not its checkpoint advanced (capped by MaxPauses).
+            // The owner paused the runner: free (capped by MaxPauses), and while its checkpoint did not advance only
+            // while the job has had fewer than MaxStalledPauses pauses; past that it costs a shutdown.
             kind = ReleaseKind.Pause;
         }
 
