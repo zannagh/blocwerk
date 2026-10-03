@@ -156,15 +156,15 @@ public sealed partial class WallRefreshProcessor
 
         var matched = await actors.BigUpdate.ResumeAsync(refresh.WallId, use3DEvidence: true);
         var quick = QuickUpdateDefaults.Build(matched, byPanel);
-        if (!await RecordDecisionsAsync(refresh.WallId, actors.Sessions, quick, onlyIfUnchangedSince))
+        if (await RecordDecisionsAsync(refresh.WallId, actors.Sessions, quick, onlyIfUnchangedSince) is not { } recordedAt)
         {
             return null;
         }
 
-        var relocations = await actors.Sessions.GetRelocationSuggestionsAsync(refresh.WallId);
-        var recordedAt = DateTimeOffset.UtcNow;
-        var summary = await SummarizeAsync(refresh.WallId, quick, relocations.Count, panels, ct);
-        var dropped = quick.RemovedNewCentreHoldIds.Concat(quick.Neighbours.SelectMany(n => n.RemovedNeighbourHoldIds));
+        // Summed up from the decisions as stored, the way Apply reads them, so the version below is what Apply checks.
+        var promotable = await RefreshDecisions.LoadAsync(refresh.WallId, actors, matched);
+        var summary = await SummarizeAsync(refresh.WallId, RefreshDecisions.AsQuick(promotable), promotable.PendingRelocations, panels, ct);
+        var dropped = promotable.Folded.RemovedNewCenterHoldIds.Concat(promotable.Folded.Neighbours.SelectMany(n => n.RemovedNeighbourHoldIds));
         var by3D = dropped.Count(id => matched.SuggestedNewDiscards?.GetValueOrDefault(id) is NewHoldDiscardReason.KnownHoldIn3D or NewHoldDiscardReason.OffWallIn3D);
         return summary with
         {
@@ -172,6 +172,7 @@ public sealed partial class WallRefreshProcessor
             NewSeenIn3D = matched.SeenIn3DHoldIds?.Count ?? 0,
             CheckedWithModelId = model is not null && matched.Evidence3DModelId == model ? model : null,
             Attempted3DModelId = model,
+            DecisionsVersion = promotable.Version,
             DecisionsRecordedAt = recordedAt,
         };
     }

@@ -1401,7 +1401,7 @@ public class WallService : IWallService
     /// Resolves the panel stamp for a hold placed while a specific panel was on screen: the panel
     /// row plus the generation that panel's own reads key on. Returns null — meaning "no panel, keep
     /// the wall-level generation", exactly as before — when no panel was given, the panel doesn't
-    /// belong to this wall, or a wall update is currently staged.
+    /// belong to this wall, or a wall update is currently staged. Refuses a panel a newer photo has replaced.
     /// </summary>
     /// <remarks>
     /// Two things this must not get wrong.
@@ -1428,8 +1428,19 @@ public class WallService : IWallService
             .Where(p => p.Id == panelId && p.WallId == wall.Id && p.Photo != null)
             .Select(p => new { p.Id, p.Generation })
             .FirstOrDefaultAsync();
+        if (panel is null)
+        {
+            return null;
+        }
 
-        return panel is null ? null : (panel.Id, panel.Generation);
+        // A panel a newer photo has replaced keeps its Photo, but the wall no longer shows it: a hold stamped onto it
+        // would be invisible from the start.
+        if (!(await LiveWallHolds.LoadPanelIdsAsync(db, wall.Id)).Contains(panel.Id))
+        {
+            throw new UserFacingException("This panel photo has been replaced by a newer one. Reload the wall and add the hold there.");
+        }
+
+        return (panel.Id, panel.Generation);
     }
 
     /// <summary>

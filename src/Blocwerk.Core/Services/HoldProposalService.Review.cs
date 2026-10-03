@@ -48,6 +48,8 @@ public sealed partial class HoldProposalService
             throw new UserFacingException("This hold is only seen in 3D, not on a panel photo. Add it on the panel by hand.");
         }
 
+        await EnsurePanelCurrentAsync(db, wallId, panelId, ct);
+
         // The normal hold-creation path: panel truth, editor check, activity log, generation stamp.
         var hold = await wallService.AddHoldAsync(wallId, x, y, r, color, category, wallPanelId: panelId);
         await MarkAsync(db, p, HoldProposalStatus.Accepted, hold.Id, ct);
@@ -102,6 +104,28 @@ public sealed partial class HoldProposalService
 
         await db.SaveChangesAsync(ct);
         return onPanels;
+    }
+
+    /// <summary>
+    /// A proposal's panel point is in the coordinates of the panel photo that was live when the search ran. Once a panel
+    /// update replaces that photo the point means nothing on the new one (the hold would be created on the superseded
+    /// panel, where the wall never shows it), and while an update is staged a new hold would be added to the staged set
+    /// with the old photo's coordinates. Both are refused; the next search maps the proposals onto the current photos.
+    /// </summary>
+    private static async Task EnsurePanelCurrentAsync(BlocwerkDbContext db, Guid wallId, Guid panelId, CancellationToken ct)
+    {
+        if (await db.Walls.AnyAsync(w => w.Id == wallId && w.StagedAt != null, ct))
+        {
+            throw new UserFacingException(
+                "A panel update of this wall is open. Apply or discard it first; after applying, run \"Find holds from all photos\" again.");
+        }
+
+        if (!(await LiveWallHolds.LoadPanelIdsAsync(db, wallId, ct)).Contains(panelId))
+        {
+            throw new UserFacingException(
+                "The panel photo this hold was found on has been replaced by a newer one. "
+                + "Run \"Find holds from all photos\" again to see the suggestions on the current photos.");
+        }
     }
 
     private static async Task<HoldProposal> PendingAsync(BlocwerkDbContext db, Guid wallId, Guid proposalId, CancellationToken ct) =>

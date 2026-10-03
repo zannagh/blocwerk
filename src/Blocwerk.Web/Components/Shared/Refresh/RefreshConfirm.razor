@@ -6,6 +6,10 @@
     @if (View.Summary is { } s)
     {
         <p>New photos for: @string.Join(", ", s.Panels)</p>
+        @if (s.EditedInFullReview)
+        {
+            <p class="refresh-3d-note">Includes the changes made in the full review.</p>
+        }
         <ul class="refresh-summary">
             <li><strong>@s.Refound</strong> holds found again on the new photos</li>
             <li class="@(s.KeptInPlace > 0 ? "is-attention" : null)">

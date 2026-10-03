@@ -1,0 +1,97 @@
+// <copyright file="RefreshDecisions.cs" company="Blocwerk">
+// Copyright (c) Blocwerk. All rights reserved.
+// </copyright>
+
+using System.Security.Cryptography;
+using System.Text;
+using Blocwerk.Core.Enums;
+using Blocwerk.Core.Services;
+
+namespace Blocwerk.Core.Refresh;
+
+/// <summary>
+/// What Apply would promote right now: the update session's decisions run through <see cref="CarryoverScope"/> against
+/// the matched session (exactly as Apply does), with the accepted "this hold moved" suggestions folded in (as the promote
+/// does). Its <see cref="PromotableDecisions.Version"/> is stored with the summary the confirm screen shows, and Apply
+/// promotes only when the decisions still have that version: the user applies what they checked, or is shown the new
+/// summary first.
+/// </summary>
+internal static class RefreshDecisions
+{
+    /// <summary>Reads the session's decisions and works out what Apply would promote with <paramref name="matched"/>.</summary>
+    public static async Task<PromotableDecisions> LoadAsync(Guid wallId, WallRefreshActors actors, BigUpdateSession matched)
+    {
+        var decisions = await actors.Sessions.GetDecisionsAsync(wallId);
+        var scoped = CarryoverScope.Reconcile(matched, decisions.Carryover);
+        var promotable = decisions with { Carryover = scoped.Decisions.ToList() };
+        var relocations = await actors.Sessions.GetRelocationSuggestionsAsync(wallId);
+        var accepted = relocations
+            .Where(r => RelocationFold.VerdictOf(r.Status) is not null)
+            .Select(r => (r.OldHoldId, r.NewHoldId, RelocationFold.VerdictOf(r.Status)!.Value))
+            .ToList();
+        var folded = RelocationFold.Apply(promotable, accepted);
+        var linked = folded.Neighbours.Sum(n => n.Links.Count);
+        var leftOut = Math.Max(0, matched.Neighbours.Sum(n => n.Proposals.Count) - linked);
+        return new PromotableDecisions(
+            promotable,
+            folded,
+            scoped.Reset.Count,
+            relocations.Count(r => r.Status == RelocationProposalStatus.Pending),
+            leftOut,
+            Fingerprint(folded));
+    }
+
+    /// <summary>The decisions in the shape the summary is worked out from.</summary>
+    public static QuickDecisions AsQuick(PromotableDecisions decisions) =>
+        new(
+            decisions.Folded.Carryover,
+            decisions.Folded.AcceptedNewCenterHoldIds,
+            decisions.Folded.RemovedNewCenterHoldIds,
+            decisions.Folded.Neighbours,
+            decisions.OverlapsLeftOut);
+
+    /// <summary>A short, order-independent fingerprint of everything that decides what the promote does.</summary>
+    public static string Fingerprint(BigUpdateConfirmation c)
+    {
+        var text = new StringBuilder();
+        foreach (var d in c.Carryover.Select(d => $"c:{d.OldHoldId}:{d.Kind}:{d.NewHoldId}:{d.Confirmed}").Order(StringComparer.Ordinal))
+        {
+            text.Append(d).Append('\n');
+        }
+
+        Append(text, "a", c.AcceptedNewCenterHoldIds);
+        Append(text, "r", c.RemovedNewCenterHoldIds);
+        foreach (var n in c.Neighbours.OrderBy(n => n.PanelId.ToString(), StringComparer.Ordinal))
+        {
+            text.Append("n:").Append(n.PanelId).Append('\n');
+            Append(text, "l", n.Links.Select(l => $"{l.NeighborHoldId}>{l.NewHoldId}:{l.Moved}"));
+            Append(text, "x", n.RemovedNeighbourHoldIds);
+        }
+
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(text.ToString()));
+        return Convert.ToHexString(hash, 0, 12);
+    }
+
+    private static void Append<T>(StringBuilder text, string tag, IEnumerable<T> values)
+    {
+        foreach (var value in values.Select(v => v?.ToString() ?? string.Empty).Order(StringComparer.Ordinal))
+        {
+            text.Append(tag).Append(':').Append(value).Append('\n');
+        }
+    }
+}
+
+/// <summary>What Apply would promote, see <see cref="RefreshDecisions"/>.</summary>
+/// <param name="Scoped">The session's decisions after <see cref="CarryoverScope.Reconcile"/>: what is handed to the promote.</param>
+/// <param name="Folded"><paramref name="Scoped"/> with the accepted relocations folded in: what the promote ends up doing.</param>
+/// <param name="Resets">Verdicts outside the reviewable scope that Apply resets to the matcher's default.</param>
+/// <param name="PendingRelocations">"This hold may have moved" suggestions nobody decided.</param>
+/// <param name="OverlapsLeftOut">Overlap suggestions not linked.</param>
+/// <param name="Version">The fingerprint of <paramref name="Folded"/>.</param>
+internal sealed record PromotableDecisions(
+    BigUpdateConfirmation Scoped,
+    BigUpdateConfirmation Folded,
+    int Resets,
+    int PendingRelocations,
+    int OverlapsLeftOut,
+    string Version);

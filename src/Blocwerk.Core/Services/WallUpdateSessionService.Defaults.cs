@@ -12,7 +12,7 @@ namespace Blocwerk.Core.Services;
 public partial class WallUpdateSessionService
 {
     /// <inheritdoc/>
-    public async Task<bool> SaveDefaultDecisionsAsync(Guid wallId, DefaultDecisions decisions, DateTimeOffset? onlyIfUnchangedSince = null)
+    public async Task<DateTimeOffset?> SaveDefaultDecisionsAsync(Guid wallId, DefaultDecisions decisions, DateTimeOffset? onlyIfUnchangedSince = null)
     {
         var user = await currentUserService.GetCurrentUserAsync();
         await using var db = await dbContextFactory.CreateDbContextAsync();
@@ -29,7 +29,7 @@ public partial class WallUpdateSessionService
         if (onlyIfUnchangedSince is { } since && updatedAt > since)
         {
             logger.LogInformation("Wall update session {SessionId}: changed by a person since {Since}; default decisions not written", session.Id, since);
-            return false;
+            return null;
         }
 
         await db.Entry(session).ReloadAsync();
@@ -41,7 +41,11 @@ public partial class WallUpdateSessionService
 
         WallUpdateSessions.MovePhase(session, decisions.Phase, 0, user.Id);
         await db.SaveChangesAsync();
+
+        // Read back inside the transaction (still under the row lock): exactly the stamp these decisions carry, as the
+        // database stores it. A person's write after the commit is strictly later, so "changed since" stays exact.
+        var written = await db.WallUpdateSessions.AsNoTracking().Where(s => s.Id == session.Id).Select(s => s.UpdatedAt).FirstAsync();
         await transaction.CommitAsync();
-        return true;
+        return written;
     }
 }

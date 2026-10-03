@@ -11,7 +11,9 @@ namespace Blocwerk.Core.Refresh;
 
 /// <summary>
 /// After the user's confirm: promote what the update SESSION records (so edits made in the full review count),
-/// topped up with the matcher's warp dictionaries exactly like the step-by-step wizard, then place the holds on
+/// topped up with the matcher's warp dictionaries exactly like the step-by-step wizard — but only when that is what the
+/// confirm screen summed up (<see cref="RefreshSummary.DecisionsVersion"/>), otherwise the user checks the new summary
+/// first (<see cref="ReconfirmAsync"/>) — then place the holds on
 /// the wall's active 3D model when it has textures (<see cref="IHoldTexturePlacementService.PlaceAsync"/>).
 /// </summary>
 public sealed partial class WallRefreshProcessor
@@ -42,12 +44,19 @@ public sealed partial class WallRefreshProcessor
             throw new UserFacingException("Another update of this wall replaced this one, so it can no longer be applied.");
         }
 
-        var decisions = await actors.Sessions.GetDecisionsAsync(refresh.WallId);
         var matched = await actors.BigUpdate.ResumeAsync(refresh.WallId);
-        var scoped = CarryoverScope.Reconcile(matched, decisions.Carryover);
-        var confirmation = decisions with
+        var promotable = await RefreshDecisions.LoadAsync(refresh.WallId, actors, matched);
+        var summary = RefreshTimeline.Summary(refresh);
+        if (summary?.DecisionsVersion != promotable.Version)
         {
-            Carryover = scoped.Decisions.ToList(),
+            // Not what the confirm screen showed (edited in the full review, or matched differently now): nothing is
+            // promoted; the user sees the summary of what would be, and applies that.
+            await ReconfirmAsync(refresh, summary, promotable, open, ct);
+            return;
+        }
+
+        var confirmation = promotable.Scoped with
+        {
             CarriedWarpPositions = matched.CarriedWarpPositions,
             CarriedWarpShapes = matched.CarriedWarpShapes,
         };
