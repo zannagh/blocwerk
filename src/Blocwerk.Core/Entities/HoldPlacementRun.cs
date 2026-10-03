@@ -22,6 +22,14 @@ public class HoldPlacementRun
     /// <summary>The geometry model whose textures the photos were registered onto. A plain id: models are history.</summary>
     public Guid GeometryModelId { get; set; }
 
+    /// <summary>
+    /// The texture render of the model the run placed against (<c>TextureSetStamp.Key</c>): rendering the wall textures
+    /// again keeps the model but changes this, so the placements become unsettled and are placed again. Null for runs
+    /// recorded before it existed (then the run's time against the textures' decides).
+    /// </summary>
+    [MaxLength(32)]
+    public string? TextureSetKey { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
     /// <summary>Who ran it (for a capture: the admin who started the capture). A plain id, not a foreign key.</summary>

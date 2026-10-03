@@ -14,8 +14,8 @@ internal static partial class ApiDocsData
         + "model's flattened facet textures by feature matching, and each hold gets its facet, plane position and "
         + "millimetre size. For walls whose photos were taken before the printed markers went up. Hold positions "
         + "in the photos, outlines, panels and boulders are never changed; holds placed by markers or by an edit "
-        + "are left alone, holds this action placed before are placed again. A Wall-scoped key for the wall, or a "
-        + "personal key with write access, whose owner is an admin of the wall (a member's key gets 403, kiosk "
+        + "are left alone, holds this action placed before are placed again. A Wall-scoped key for the wall or a "
+        + "personal key, created with write access, whose owner is an admin of the wall (a member's key gets 403, kiosk "
         + "tablets are refused).";
 
     private const string PlacementResultJson =
@@ -48,7 +48,7 @@ internal static partial class ApiDocsData
     private static ApiSurfaceDoc WallGeometryPlacementSurface => new(
         "Wall 3D model: place existing holds",
         PlacementIntro,
-        "Wall key or personal key with write access (admin owner)",
+        "Wall or personal key with write access (admin owner)",
         PlacementEndpoints());
 
     private static ApiEndpointDoc[] PlacementEndpoints() =>

@@ -148,7 +148,8 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<ApiKeyAuthentic
             claims.Add(new Claim(ApiKeyClaimTypes.WallId, wallId.ToString()));
         }
 
-        if (key.AllowWrite && key.Scope == ApiKeyScope.User)
+        // Personal and wall keys may carry it; a kiosk or installation key never does.
+        if (key.AllowWrite && key.Scope is (ApiKeyScope.User or ApiKeyScope.Wall))
         {
             claims.Add(new Claim(ApiKeyClaimTypes.AllowWrite, "true"));
         }

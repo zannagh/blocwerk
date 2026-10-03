@@ -1379,6 +1379,10 @@ namespace Blocwerk.Core.Migrations
                     b.Property<int>("SkippedCount")
                         .HasColumnType("integer");
 
+                    b.Property<string>("TextureSetKey")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
                     b.Property<string>("Trigger")
                         .IsRequired()
                         .HasMaxLength(16)

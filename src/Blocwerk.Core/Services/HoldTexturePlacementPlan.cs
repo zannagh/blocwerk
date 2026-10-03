@@ -67,3 +67,8 @@ internal sealed record ActiveModel(
 /// <param name="A">Plane a on the active model, mm.</param>
 /// <param name="B">Plane b on the active model, mm.</param>
 internal sealed record CarriedPosition(string FacetId, double A, double B);
+
+/// <summary>The run that wrote a hold's current placement: its model, and whether it was on the active model's current textures.</summary>
+/// <param name="ModelId">The run's model.</param>
+/// <param name="OnCurrentTextures">The run is on the active model and placed against its current texture render.</param>
+internal readonly record struct PlacementSource(Guid ModelId, bool OnCurrentTextures);

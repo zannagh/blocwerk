@@ -939,8 +939,8 @@ On the box:
    package public.
 4. `docker compose pull wall-geometry && docker compose up -d wall-geometry blocwerk`, then check
    it's healthy.
-5. The autodeploy cron only redeploys `blocwerk`. To update `wall-geometry` later, pull and `up -d`
-   it by hand.
+5. The autodeploy cron (`docker/prod/autodeploy.sh`) also updates `wall-geometry` and `splat-cpu`,
+   each only once it has no queued or running job.
 
 (`docker/wall-geometry/README.md` still mentions *three* `GEOMETRYSERVICE__*` lines. The callback
 secret line was removed from the app since the app polls; two are current.)
@@ -998,7 +998,7 @@ restarting the app underneath it.
 quality are all optional) and `GET …/{captureId}` to poll. The outline upgrade and "refine 3D hold
 shapes" are under `/api/walls/{wallId}/holds/outline-upgrade[/preview|/{runId}/revert]` and
 `/api/walls/{wallId}/holds/refine-shapes`. Use a personal API key created with write access (or a
-wall key for that wall); its owner must be an admin of the wall. Kiosk tablets are refused. A photo
+wall key for that wall, also created with write access); its owner must be an admin of the wall. Kiosk tablets are refused. A photo
 batch can be large (up to `CAPTURE__MAXPHOTOS` photos, 200 by default, at `CAPTURE__MAXPHOTOMB` each), so a reverse proxy must allow
 that body size on `/api/walls/*/captures/*/photos` too.
 

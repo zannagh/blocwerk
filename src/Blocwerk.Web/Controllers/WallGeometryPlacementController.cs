@@ -12,8 +12,8 @@ namespace Blocwerk.Web.Controllers;
 
 /// <summary>
 /// "Place existing holds on the 3D model" over the machine API — the same <see cref="IHoldTexturePlacementService"/>
-/// methods the wall-settings button calls, so the rules are identical: a wall API key for the wall in the route,
-/// or a PERSONAL key created with write access (<c>ApiKey.AllowWrite</c>), in both cases only when the key's
+/// methods the wall-settings button calls, so the rules are identical: a wall API key for the wall in the route
+/// or a PERSONAL key, either created with write access (<c>ApiKey.AllowWrite</c>), and only when the key's
 /// OWNER is an admin of the wall (the service's own check). Never a kiosk or installation key (neither
 /// satisfies <see cref="BlocwerkPolicies.AnyApiKey"/>, and the service refuses kiosk sessions besides).
 /// </summary>

@@ -14,13 +14,13 @@ namespace Blocwerk.Web.Controllers;
 /// <summary>
 /// Volumes without markers over the machine API (<see cref="IWallVolumeService"/>): find them on the active model's
 /// photo-real scene, list them, hide or show a wrong one, remove a false one (and undo), give them flat sides. Same key rules as the hold placement: a wall key for the
-/// wall in the route or a personal key with write access, and the key's owner must be an admin of the wall.
+/// wall in the route or a personal key, either created with write access, and the key's owner must be an admin of the wall.
 /// </summary>
 [ApiController]
 [Route("api/walls/{wallId:guid}/geometry/volumes")]
 [Authorize(Policy = BlocwerkPolicies.AnyApiKey, AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName)]
 [Produces("application/json")]
-public sealed class WallVolumesController(IWallVolumeService volumes, ILogger<WallVolumesController> logger) : WallScopedApiController
+public sealed class WallVolumesController(IWallVolumeService volumes, ILogger<WallVolumesController> logger) : WallAdminApiController(logger)
 {
     /// <summary>Finds the volumes (replacing the model's previous ones) and places the holds on them.</summary>
     [HttpPost]
@@ -66,34 +66,4 @@ public sealed class WallVolumesController(IWallVolumeService volumes, ILogger<Wa
     [HttpPut("flat-sides")]
     public Task<IActionResult> SetWallFlatSides(Guid wallId, [FromBody] FlatSidesRequest request, CancellationToken ct) =>
         RunAsync(wallId, async () => Ok(await volumes.SetWallFlatSidesAsync(wallId, request.Value, request.ApplyToAll, ct)));
-
-    private async Task<IActionResult> RunAsync(Guid wallId, Func<Task<IActionResult>> action)
-    {
-        if (GuardWallOrPersonalKey(wallId) is { } guard)
-        {
-            return guard;
-        }
-
-        try
-        {
-            return await action();
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return StatusCode(StatusCodes.Status403Forbidden, new ApiErrorResponse("This API key's owner is not an admin of that wall."));
-        }
-        catch (KioskRestrictedException ex)
-        {
-            return StatusCode(StatusCodes.Status403Forbidden, new ApiErrorResponse(ex.Message));
-        }
-        catch (UserFacingException ex)
-        {
-            return Conflict(new ApiErrorResponse(ex.Message));
-        }
-        catch (InvalidOperationException ex)
-        {
-            logger.LogWarning(ex, "Volume request on wall {WallId} failed unexpectedly", wallId);
-            return Conflict(new ApiErrorResponse(UserFacingException.GenericMessage));
-        }
-    }
 }

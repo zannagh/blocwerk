@@ -21,7 +21,8 @@ namespace Blocwerk.Web.Controllers;
 [Route("api/walls/{wallId:guid}/geometry/hold-proposals")]
 [Authorize(Policy = BlocwerkPolicies.AnyApiKey, AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName)]
 [Produces("application/json")]
-public sealed class HoldProposalsController(IHoldProposalService proposals, ILogger<HoldProposalsController> logger) : WallScopedApiController
+public sealed class HoldProposalsController(IHoldProposalService proposals, ILogger<HoldProposalsController> logger)
+    : WallAdminApiController(logger)
 {
     /// <summary>Runs the search (minutes on the CPU); replaces the pending proposals.</summary>
     [HttpPost]
@@ -61,34 +62,4 @@ public sealed class HoldProposalsController(IHoldProposalService proposals, ILog
     [Produces("image/jpeg")]
     public Task<IActionResult> Crop(Guid wallId, Guid proposalId, CancellationToken ct) =>
         RunAsync(wallId, async () => await proposals.CropAsync(wallId, proposalId, ct) is { } jpeg ? File(jpeg, "image/jpeg") : NotFound());
-
-    private async Task<IActionResult> RunAsync(Guid wallId, Func<Task<IActionResult>> action)
-    {
-        if (GuardWallOrPersonalKey(wallId) is { } guard)
-        {
-            return guard;
-        }
-
-        try
-        {
-            return await action();
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return StatusCode(StatusCodes.Status403Forbidden, new ApiErrorResponse("This API key's owner may not do that on this wall."));
-        }
-        catch (KioskRestrictedException ex)
-        {
-            return StatusCode(StatusCodes.Status403Forbidden, new ApiErrorResponse(ex.Message));
-        }
-        catch (UserFacingException ex)
-        {
-            return Conflict(new ApiErrorResponse(ex.Message));
-        }
-        catch (InvalidOperationException ex)
-        {
-            logger.LogWarning(ex, "Hold proposal request on wall {WallId} failed unexpectedly", wallId);
-            return Conflict(new ApiErrorResponse(UserFacingException.GenericMessage));
-        }
-    }
 }

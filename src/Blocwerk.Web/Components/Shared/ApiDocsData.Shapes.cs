@@ -11,7 +11,7 @@ internal static partial class ApiDocsData
 
     private const string ShapesIntro =
         "Drives the optional \"recognise hold shapes\" step of an in-flight wall update and its review, with "
-        + "the same rules as the wizard: a Wall-scoped key whose owner is an admin of the wall (a member's "
+        + "the same rules as the wizard: a Wall-scoped or personal key created with write access, whose owner is an admin of the wall (a member's "
         + "key gets 403, kiosk tablets are refused). An update must already be open on the wall. Every write "
         + "takes an optional sessionId; when it is no longer the wall's open update the call is refused with "
         + "409, so a stale script cannot act on a newer update. Nothing reaches the live holds until the "
@@ -75,7 +75,7 @@ internal static partial class ApiDocsData
     private static ApiSurfaceDoc WallUpdateShapesSurface => new(
         "Wall update: hold shapes",
         ShapesIntro,
-        "Wall key (admin owner)",
+        "Wall or personal key with write access (admin owner)",
         ShapeEndpoints());
 
     private static ApiEndpointDoc[] ShapeEndpoints() =>

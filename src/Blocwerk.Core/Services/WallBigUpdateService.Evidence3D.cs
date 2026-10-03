@@ -44,13 +44,10 @@ public partial class WallBigUpdateService
             }
 
             // Only old holds found again on the new photos (a hold not found again may have been replaced on the same
-            // spot), placed by a run on THIS model (a re-solve moves the planes, so an older model's spots may be off).
+            // spot), placed by a run on THIS model (a re-solve moves the planes, so an older model's spots may be off) and its
+            // current textures (rendering them again re-places the holds).
             var paired = carryover.Select(p => p.OldHoldId).ToHashSet();
-            var runs = await db.HoldPlacementRuns.AsNoTracking()
-                .Where(r => r.WallId == wallId && r.GeometryModelId == model.Id && r.RevertedAt == null)
-                .Select(r => r.HoldsJson)
-                .ToListAsync();
-            var placedHere = runs.SelectMany(HoldPlacementEntry.FromJson).Select(e => e.HoldId).ToHashSet();
+            var placedHere = await HoldTexturePlacementService.PlacedOnTexturesAsync(db, wallId, model.Id, CancellationToken.None);
             var known = oldHolds
                 .Where(h => h is { FacetId: not null, PlaneAMm: not null, PlaneBMm: not null, VolumePlacementJson: null, IsVirtual: false }
                     && !HoldTexturePlacer.IsRejected(h) && placedHere.Contains(h.Id) && paired.Contains(h.Id))

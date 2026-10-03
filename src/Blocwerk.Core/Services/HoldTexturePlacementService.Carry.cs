@@ -23,7 +23,9 @@ public sealed partial class HoldTexturePlacementService
     /// <summary>
     /// Every eligible hold with a texture placement on an earlier model, moved onto the active model. The earlier
     /// model is the one of the newest unreverted run that wrote the hold's current placement (its hash matches);
-    /// a hold whose placement no run wrote, or one a run registered on the active model, is not carried. The position
+    /// a hold whose placement no run wrote, or one a run registered on the active model's current textures, is not carried.
+    /// One registered on the active model before its textures were rendered again is carried in place, so this run's evidence
+    /// checks it (and a photo the new textures register places it again). The position
     /// always moves through world space (<see cref="PlacementCarrier"/>), never as raw (a, b): a re-solved or rebased facet
     /// frame gives the same point other plane coordinates.
     /// </summary>
@@ -34,18 +36,17 @@ public sealed partial class HoldTexturePlacementService
             .Where(h => HoldTexturePlacer.IsEligible(h) && HoldTexturePlacer.IsTexturePlaced(h))
             .Where(h => h.FacetId is not null && h.PlaneAMm is not null && h.PlaneBMm is not null)
             .ToDictionary(h => h.Id);
-        var sourceModel = await PlacementModelsAsync(db, wallId, candidates, ct);
+        var textures = await TextureSetStamp.OfModelAsync(db, active.Id, ct);
+        var sources = await PlacementSourcesAsync(db, wallId, candidates, active.Id, textures, ct);
 
-        // A placement a run wrote on the active model is kept as it is, except one that run only carried over: that is
-        // carried again (in place) so it is checked against this run's evidence like any other carried placement.
-        var settled = sourceModel
-            .Where(kv => kv.Value == active.Id && candidates[kv.Key].MetricSource != HoldMetric.TextureRegistrationCarried)
+        // A placement a run wrote on the active model's current textures is kept as it is, except one that run only carried
+        // over: that is carried again (in place) so it is checked against this run's evidence like any other carried
+        // placement. One written on the textures before they were rendered again is not settled either.
+        var settled = sources
+            .Where(kv => kv.Value.OnCurrentTextures && candidates[kv.Key].MetricSource != HoldMetric.TextureRegistrationCarried)
             .Select(kv => kv.Key)
             .ToList();
-        foreach (var id in settled)
-        {
-            sourceModel.Remove(id);
-        }
+        var sourceModel = sources.Where(kv => !settled.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value.ModelId);
 
         var otherFrame = await OtherFrameAsync(db, wallId, active.Id, candidates.Keys, sourceModel, settled, ct);
         foreach (var id in otherFrame)
@@ -111,11 +112,14 @@ public sealed partial class HoldTexturePlacementService
             : null;
     }
 
-    /// <summary>For each candidate, the model of the newest unreverted run that wrote its current placement.</summary>
-    private static async Task<Dictionary<Guid, Guid>> PlacementModelsAsync(
-        BlocwerkDbContext db, Guid wallId, Dictionary<Guid, Hold> candidates, CancellationToken ct)
+    /// <summary>
+    /// For each candidate, the model of the newest unreverted run that wrote its current placement, and whether that run
+    /// placed it on the active model's current textures (<see cref="TextureSetStamp.Covers"/>).
+    /// </summary>
+    private static async Task<Dictionary<Guid, PlacementSource>> PlacementSourcesAsync(
+        BlocwerkDbContext db, Guid wallId, Dictionary<Guid, Hold> candidates, Guid activeId, TextureSetStamp? textures, CancellationToken ct)
     {
-        var result = new Dictionary<Guid, Guid>();
+        var result = new Dictionary<Guid, PlacementSource>();
         if (candidates.Count == 0)
         {
             return result;
@@ -124,16 +128,17 @@ public sealed partial class HoldTexturePlacementService
         // Few rows per wall; ordered in memory because SQLite cannot ORDER BY a DateTimeOffset.
         var runs = await db.HoldPlacementRuns.AsNoTracking()
             .Where(r => r.WallId == wallId && r.RevertedAt == null)
-            .Select(r => new { r.CreatedAt, r.GeometryModelId, r.HoldsJson })
+            .Select(r => new { r.CreatedAt, r.GeometryModelId, r.TextureSetKey, r.HoldsJson })
             .ToListAsync(ct);
         var hashes = candidates.ToDictionary(kv => kv.Key, kv => HoldPlacementEntry.HashPlacement(kv.Value));
         foreach (var run in runs.OrderByDescending(r => r.CreatedAt))
         {
+            var current = run.GeometryModelId == activeId && textures?.Covers(run.TextureSetKey, run.CreatedAt) != false;
             foreach (var entry in HoldPlacementEntry.FromJson(run.HoldsJson))
             {
                 if (!result.ContainsKey(entry.HoldId) && hashes.TryGetValue(entry.HoldId, out var hash) && hash == entry.PlacementHash)
                 {
-                    result[entry.HoldId] = run.GeometryModelId;
+                    result[entry.HoldId] = new PlacementSource(run.GeometryModelId, current);
                 }
             }
         }

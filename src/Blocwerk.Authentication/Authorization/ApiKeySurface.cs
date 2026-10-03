@@ -16,7 +16,7 @@ namespace Blocwerk.Authentication.Authorization;
 /// must be assumed to leak. Without a path gate the key would authenticate the app's DEFAULT
 /// scheme on every request — Blazor pages and the browser's own <c>/api/offline</c> routes
 /// included — which would turn a device key into a full login for its owner. The key therefore
-/// only ever produces a principal on the two machine-facing route families below; everywhere else
+/// only ever produces a principal on the machine-facing route families below; everywhere else
 /// the bearer is simply ignored and the request stays anonymous.
 /// </remarks>
 public static class ApiKeySurface
@@ -34,8 +34,16 @@ public static class ApiKeySurface
     /// </summary>
     public const string CapturesApiPrefix = "/api/captures";
 
+    /// <summary>
+    /// The wall update's file drop (<c>/api/refreshes/{id}/files</c>). Like the capture video, its endpoint admits
+    /// a personal key with write access only, through <see cref="BlocwerkPolicies.HumanOrUserApiKey"/>; the
+    /// refresh service then applies the cookie user's own gates (wall admin, not a kiosk, run still uploading).
+    /// </summary>
+    public const string RefreshesApiPrefix = "/api/refreshes";
+
     /// <summary>Every prefix an API key may authenticate under. Deliberately not /api/offline.</summary>
-    public static readonly IReadOnlyList<string> AllowedPrefixes = [WallApiPrefix, UserApiPrefix, CapturesApiPrefix];
+    public static readonly IReadOnlyList<string> AllowedPrefixes =
+        [WallApiPrefix, UserApiPrefix, CapturesApiPrefix, RefreshesApiPrefix];
 
     /// <summary>True when the path belongs to the machine-facing API surface.</summary>
     public static bool Covers(PathString path)

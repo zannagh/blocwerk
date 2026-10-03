@@ -1,0 +1,175 @@
+# Blocwerk on the production host (blocwerk.app). THIS file is what production runs: the box keeps a copy
+# of it as /home/patrickweindl/blocwerk/docker-compose.yml (with its .env next to it; template:
+# prod.env.example). Edit it HERE and copy it over (docker/prod/README.md); CI checks it against
+# docker-compose.yml (docker/prod/check-prod-compose.sh). Differences from docker-compose.yml:
+#  * nothing is published to the public interface — Caddy (on the shared `edge` network)
+#    terminates TLS and reaches the app by service name.
+#  * Postgres and the dashboard are bound to loopback (host ports from .env), Postgres with a
+#    generated password.
+#  * no deploy-hook: an inbound webhook is an attack surface on a public host. A cron job polls
+#    GHCR for new images instead (docker/prod/autodeploy.sh).
+#  * no GPU services: this box has no GPU; training runs on the owner's 3D runner.
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: blocwerk
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    # Loopback only: this host has a public IP, unlike the machine this moved from.
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:?set POSTGRES_HOST_PORT in .env}:5432"
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d blocwerk"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Unsecured by design (anonymous dashboard + OTLP ingest), so it must never be published
+  # beyond loopback. Host ports come from .env (the defaults clash with another stack on the host).
+  otel-dashboard:
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:9.0
+    environment:
+      DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
+    ports:
+      - "127.0.0.1:${OTEL_UI_HOST_PORT:?set OTEL_UI_HOST_PORT in .env}:18888"
+      - "127.0.0.1:${OTEL_OTLP_HOST_PORT:?set OTEL_OTLP_HOST_PORT in .env}:18889"
+    restart: unless-stopped
+
+  blocwerk:
+    image: ghcr.io/zannagh/blocwerk:latest
+    # No ports: Caddy reaches this over `edge` as blocwerk:5050.
+    environment:
+      SMTP__HOST: ${SMTP__HOST}
+      SMTP__PORT: ${SMTP__PORT}
+      SMTP__USERNAME: ${SMTP__USERNAME}
+      SMTP__PASSWORD: ${SMTP__PASSWORD}
+      SMTP__FROM: ${SMTP__FROM}
+      SMTP__FROMNAME: ${SMTP__FROMNAME}
+      SMTP__SECURITY: ${SMTP__SECURITY}
+      ASPNETCORE_ENVIRONMENT: Production
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-dashboard:18889"
+      OTEL_SERVICE_NAME: Blocwerk
+      POSTGRES__HOST: postgres
+      POSTGRES__PORT: "5432"
+      POSTGRES__DATABASE: blocwerk
+      POSTGRES__USERNAME: postgres
+      POSTGRES__PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      # Same value as the old host: changing it makes every encrypted column unreadable.
+      BLOCWERK__ENCRYPTIONKEY: ${BLOCWERK__ENCRYPTIONKEY:?set BLOCWERK__ENCRYPTIONKEY in .env}
+      VAPID__SUBJECT: ${VAPID__SUBJECT:-}
+      VAPID__PUBLICKEY: ${VAPID__PUBLICKEY:-}
+      VAPID__PRIVATEKEY: ${VAPID__PRIVATEKEY:-}
+      DEPLOY__MAINTENANCEWINDOW: ${DEPLOY__MAINTENANCEWINDOW:-}
+      # --- 3D rollout (2026-10). Values live in .env; never put secrets here. ---
+      # These only take effect while appsettings.json has no Capture / GeometryService /
+      # SplatService / Runners block (it has none as of 2026-10-03).
+      # Wall-geometry (3D solve + textures), internal network only. Empty URL = feature off.
+      GEOMETRYSERVICE__URL: ${GEOMETRYSERVICE_URL:-}
+      GEOMETRYSERVICE__APIKEY: ${COMPUTE_API_KEY:-}
+      # The splat worker's CPU half (splat-cpu below: prepare + finish). Training goes to a runner.
+      SPLATSERVICE__URL: ${SPLATSERVICE_URL:-}
+      SPLATSERVICE__APIKEY: ${SPLAT_API_KEY:-}
+      # always = every photo-real training goes to a 3D runner (never trains on this box);
+      # off = the runner API (/api/runners/*) is not mapped.
+      RUNNERS__MODE: ${RUNNERS_MODE:-off}
+      # Capture limits (WallCapturePipelineOptions). Keep MAXPHOTOS <= GEOMETRY_MAX_PHOTOS.
+      CAPTURE__MAXVIDEOMB: ${CAPTURE__MAXVIDEOMB:-2048}
+      CAPTURE__MAXPHOTOMB: ${CAPTURE__MAXPHOTOMB:-}
+      CAPTURE__MAXPHOTOS: ${CAPTURE__MAXPHOTOS:-}
+      CAPTURE__MAXVIDEOFRAMES: ${CAPTURE__MAXVIDEOFRAMES:-}
+      # Caddy reaches the app over `edge`; only senders in this IP/CIDR may set X-Forwarded-For.
+      # Empty = trust every sender (the old behaviour).
+      BLOCWERK__SERVER__TRUSTEDPROXIES__0: ${TRUSTED_PROXY:-}
+      # API-key browser login (POST /account/api-key-login) for the rollout UI scripts.
+      # OFF unless .env says otherwise; enable only TEMPORARILY (apply-steps.md, section G2).
+      # While off the route is not mapped (404). An empty allow-list means nobody.
+      BLOCWERK__AUTH__APIKEYLOGIN__ENABLED: ${APIKEYLOGIN_ENABLED:-false}
+      BLOCWERK__AUTH__APIKEYLOGIN__ALLOWEDUSERIDS__0: ${APIKEYLOGIN_USER_ID:-}
+    volumes:
+      - ./appsettings.json:/app/appsettings.json:ro
+      - ./climbingcrux.onnx:/app/models/climbingcrux.onnx:ro
+      # DataProtection keys, carried over verbatim. Losing these invalidates every kiosk
+      # device registration, TOTP secret and stored TopLogger token.
+      - ./dpkeys:/app/keys
+      - ./beta-videos:/app/beta-videos
+      # Wall gallery uploads AND the derived image-variant cache. Without this mount both
+      # land in the container writable layer and are destroyed by every autodeploy.
+      - ./wall-images:/app/wall-images
+    depends_on:
+      postgres:
+        condition: service_healthy
+      otel-dashboard:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - default
+      - edge
+
+  # Wall-geometry service: marker observations -> metric 3D wall geometry, photos + geometry ->
+  # per-facet textures. Internal only (no ports, not on `edge`); the app reaches it as
+  # http://wall-geometry:8000 on `default` and polls (no callbacks). Profile `compute`
+  # (COMPOSE_PROFILES in .env). The app does not depend_on it. Autodeploy updates it once it has
+  # no queued or running job (docker/prod/autodeploy.sh).
+  wall-geometry:
+    image: ghcr.io/zannagh/blocwerk-geometry:latest
+    profiles: ["compute"]
+    environment:
+      # Required bearer key (the service refuses 0.0.0.0 without one). Not `:?`: compose
+      # interpolates every service, even ones behind an inactive profile.
+      COMPUTE_API_KEY: ${COMPUTE_API_KEY:-}
+      # Empty => no progress callbacks (the app polls).
+      COMPUTE_CALLBACK_SECRET: ${COMPUTE_CALLBACK_SECRET:-}
+      # Private-network callbacks only to the app's service name.
+      CALLBACK_ALLOWED_HOSTS: blocwerk
+      RESULT_TTL_S: "3600"
+      MAX_REQUEST_MB: ${GEOMETRY_MAX_REQUEST_MB:-}
+      MAX_PHOTOS: ${GEOMETRY_MAX_PHOTOS:-}
+      TEXTURES_TIMEOUT_S: ${TEXTURES_TIMEOUT_S:-}
+      TEXTURES_MAX_MEGAPIXELS: ${TEXTURES_MAX_MEGAPIXELS:-}
+      TEXTURES_BLEND_MAX_BYTES: ${TEXTURES_BLEND_MAX_BYTES:-}
+      SFM_MAX_SPARSE_MB: ${SFM_MAX_SPARSE_MB:-}
+      SFM_TIMEOUT_S: ${SFM_TIMEOUT_S:-}
+    # Shared host: capped. 4g rather than 2g: the multi-view
+    # texture blend alone may take TEXTURES_BLEND_MAX_BYTES (default 2 GB), decoded photos on top.
+    cpus: 2
+    mem_limit: 4g
+    # Job files live in the container's /tmp (writable layer) and expire after RESULT_TTL_S.
+    restart: unless-stopped
+
+  # The splat worker's CPU half for 3D runners: splat-prepare (COLMAP, training bundle) and
+  # splat-finish (alignment, crop, clean-up, export). No GPU, no trainer: SPLAT_WORKER_MODE=cpu
+  # refuses the all-in-one `splat` kind, so nothing ever trains on this box. Training runs on the
+  # owner's GPU runner (RUNNERS_MODE=always, SPLATSERVICE_URL=http://splat-cpu:8100).
+  # Internal only (polled by the app), profile `compute`. Autodeploy updates it like wall-geometry.
+  splat-cpu:
+    image: ghcr.io/zannagh/blocwerk-splat-worker:latest
+    profiles: ["compute"]
+    environment:
+      COMPUTE_API_KEY: ${SPLAT_API_KEY:-}
+      COMPUTE_CALLBACK_SECRET: ${SPLAT_CALLBACK_SECRET:-}
+      CALLBACK_ALLOWED_HOSTS: blocwerk
+      SPLAT_WORKER_MODE: cpu
+      RESULT_TTL_S: "3600"
+      SPLAT_TIMEOUT_S: "14400"
+      # Images per job: photos + video frames + ~15 anchors (400 + 200 + 15 > the default 600).
+      MAX_PHOTOS: ${SPLAT_MAX_PHOTOS:-}
+      # Each job sizes COLMAP to the container's memory limit below; 0 = no extra bound.
+      SPLAT_MAX_MEMORY_MB: ${SPLAT_MAX_MEMORY_MB:-0}
+      SPLAT_MAX_SWAP_GROWTH_MB: ${SPLAT_MAX_SWAP_GROWTH_MB:-2048}
+      COLMAP_MAX_IMAGE_SIZE: ${COLMAP_MAX_IMAGE_SIZE:-2400}
+      COLMAP_MAX_FEATURES: ${COLMAP_MAX_FEATURES:-8192}
+      COLMAP_MAX_MATCHES: ${COLMAP_MAX_MATCHES:-8192}
+      # Below the 4-CPU cap so the app and the rest of the host keep headroom.
+      COLMAP_THREADS: ${COLMAP_THREADS:-3}
+    cpus: 4
+    cpu_shares: 256
+    mem_limit: 8g
+    restart: unless-stopped
+
+networks:
+  edge:
+    external: true

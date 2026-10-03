@@ -152,8 +152,11 @@ public sealed class ApiKeyAuthenticationHandlerTests : IDisposable
     [Theory]
     [InlineData(ApiKeyScope.User, true, true)]
     [InlineData(ApiKeyScope.User, false, false)]
+    [InlineData(ApiKeyScope.Wall, true, true)]
+    [InlineData(ApiKeyScope.Wall, false, false)]
+    [InlineData(ApiKeyScope.Kiosk, true, false)]
     [InlineData(ApiKeyScope.Installation, true, false)]
-    public async Task WriteClaim_OnlyOnAPersonalKeyThatAllowsWrites(ApiKeyScope scope, bool allowWrite, bool expected)
+    public async Task WriteClaim_OnlyOnAPersonalOrWallKeyThatAllowsWrites(ApiKeyScope scope, bool allowWrite, bool expected)
     {
         var key = new ApiKey
         {

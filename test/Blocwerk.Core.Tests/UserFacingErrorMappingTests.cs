@@ -101,6 +101,7 @@ public class UserFacingErrorMappingTests
             new Claim(ApiKeyClaimTypes.Scope, ApiKeyScope.Wall.ToString()),
             new Claim(ApiKeyClaimTypes.ApiKeyId, Guid.NewGuid().ToString()),
             new Claim(ApiKeyClaimTypes.WallId, wallId.ToString()),
+            new Claim(ApiKeyClaimTypes.AllowWrite, "true"),
         ],
         ApiKeyAuthenticationHandler.SchemeName));
 }

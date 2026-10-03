@@ -106,6 +106,20 @@ public class WallGeometryPlacementControllerTests
         Assert.Equal(1, Body<HoldPlacementResult>(await own.Place(h.WallId, default)).Placed);
     }
 
+    [Fact]
+    public async Task WallKeyWithoutWriteAccess_IsRefused_EvenOnItsOwnWall()
+    {
+        using var h = new WallTestHarness();
+        var s = await HoldPlacementScenario.CreateAsync(h);
+        await s.AddHoldAsync(0.25, 0.5);
+        var api = Bind(
+            new WallGeometryPlacementController(s.Service(), NullLogger<WallGeometryPlacementController>.Instance), h.WallId, allowWrite: false);
+
+        Assert.Equal(StatusCodes.Status403Forbidden, Assert.IsType<ObjectResult>(await api.Place(h.WallId, default)).StatusCode);
+        Assert.Equal(StatusCodes.Status403Forbidden, Assert.IsType<ObjectResult>(await api.Status(h.WallId, default)).StatusCode);
+        await AssertNothingPlacedAsync(h);
+    }
+
     private static async Task AssertNothingPlacedAsync(WallTestHarness h)
     {
         await using var db = h.CreateContext();
@@ -116,7 +130,7 @@ public class WallGeometryPlacementControllerTests
     private static T Body<T>(IActionResult result) => Assert.IsType<T>(Assert.IsType<OkObjectResult>(result).Value);
 
     /// <summary>
-    /// A wall key bound to <paramref name="keyWallId"/>, or a personal key when it is null (with write access
+    /// A wall key bound to <paramref name="keyWallId"/>, or a personal key when it is null (either with write access
     /// unless <paramref name="allowWrite"/> is false).
     /// </summary>
     private static WallGeometryPlacementController Bind(WallGeometryPlacementController controller, Guid? keyWallId, bool allowWrite = true)
@@ -131,7 +145,8 @@ public class WallGeometryPlacementControllerTests
         {
             claims.Add(new Claim(ApiKeyClaimTypes.WallId, wallId.ToString()));
         }
-        else if (allowWrite)
+
+        if (allowWrite)
         {
             claims.Add(new Claim(ApiKeyClaimTypes.AllowWrite, "true"));
         }

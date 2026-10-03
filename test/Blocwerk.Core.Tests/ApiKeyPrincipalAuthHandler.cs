@@ -11,7 +11,7 @@ namespace Blocwerk.Core.Tests;
 
 /// <summary>
 /// Signs every request in as an API key the way the key handler builds it: a wall key for the wall in the
-/// <see cref="WallHeader"/> header, otherwise a personal key with write access.
+/// <see cref="WallHeader"/> header, otherwise a personal key, both with write access.
 /// </summary>
 internal sealed class ApiKeyPrincipalAuthHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options, ILoggerFactory logger, UrlEncoder encoder)

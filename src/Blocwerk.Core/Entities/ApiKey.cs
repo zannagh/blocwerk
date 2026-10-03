@@ -81,14 +81,16 @@ public class ApiKey
     public bool AllowAnonymousKioskSetting { get; set; } = true;
 
     /// <summary>
-    /// For <see cref="ApiKeyScope.User"/> keys: may this personal key CHANGE walls through the machine
-    /// API (the wall update's shape step, capture video uploads)? Off unless the owner ticked it when
-    /// creating the key, and off for every key that existed before the column (migration default).
+    /// For <see cref="ApiKeyScope.User"/> and <see cref="ApiKeyScope.Wall"/> keys: may this key use the
+    /// wall-admin machine API (captures, 3D model, hold shapes, the wall update's shape step) and, for a
+    /// personal key, the capture video and wall update uploads? Off unless the owner ticked it when
+    /// creating the key.
     /// </summary>
     /// <remarks>
-    /// Reading and the owner's own records (<c>/api/v1/me</c>) never needed it. Wall keys ignore it:
-    /// their write surface is fixed by scope. It is a capability on top of the owner's authority, never
-    /// a substitute for it — the wall-admin checks still run for the owner.
+    /// Reading the owner's own records (<c>/api/v1/me</c>) never needs it, nor does a wall key's fixed
+    /// device surface (temperature, images, maintenance). Kiosk and installation keys
+    /// never carry it. It is a capability on top of the owner's authority, never a substitute for it — the
+    /// wall-admin checks still run for the owner.
     /// </remarks>
     public bool AllowWrite { get; set; }
 }

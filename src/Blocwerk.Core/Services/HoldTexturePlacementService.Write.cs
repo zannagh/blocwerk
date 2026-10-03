@@ -22,11 +22,15 @@ public sealed partial class HoldTexturePlacementService
         live = only is null ? live : live.Where(h => only.Contains(h.Id)).ToList();
         var noPanel = live.Count(h => h.WallPanelId is null);
         var plans = await PlanPanelsAsync(db, wallId, live, model, ct);
-        RememberRegistrations(model.Id, plans);
+        var textures = await TextureSetStamp.OfModelAsync(db, model.Id, ct);
+        RememberRegistrations(model.Id, textures?.Key, plans);
 
         // The run row exists before the first hold is written, and every batch updates its entry list in the SAME
         // SaveChanges as the holds, so whatever was written is always revertable, even if the run is cut short.
-        var run = new HoldPlacementRun { WallId = wallId, GeometryModelId = model.Id, CreatedByUserId = userId, Trigger = trigger };
+        var run = new HoldPlacementRun
+        {
+            WallId = wallId, GeometryModelId = model.Id, TextureSetKey = textures?.Key, CreatedByUserId = userId, Trigger = trigger,
+        };
         db.HoldPlacementRuns.Add(run);
         await db.SaveChangesAsync(ct);
 
@@ -68,8 +72,10 @@ public sealed partial class HoldTexturePlacementService
     }
 
     /// <summary>
-    /// Re-reads the batch's holds tracked, skips any that changed since they were planned, writes the rest and
-    /// saves them together with the run's grown entry list. A placement off its target facet's extent is never written
+    /// In one transaction: claims the batch's holds (<see cref="ClaimAsync"/>: a newer 2D edit either landed already and
+    /// the hold is skipped, or waits for the commit and then wins), re-reads them tracked, skips any that changed since
+    /// they were planned, writes the rest with the panel geometry they were placed for and saves them together with the
+    /// run's grown entry list. A placement off its target facet's extent is never written
     /// (<see cref="Wall3DHoldGuard.PlacementOnFacet"/>). Returns the number skipped.
     /// </summary>
     private static async Task<int> WriteBatchAsync(
@@ -80,25 +86,44 @@ public sealed partial class HoldTexturePlacementService
         List<HoldPlacementEntry> entries,
         CancellationToken ct)
     {
-        var ids = batch.Select(p => p.Hold.Id).ToList();
-        var holds = await db.Holds.Where(h => ids.Contains(h.Id)).ToDictionaryAsync(h => h.Id, ct);
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var holds = await ClaimAndReadAsync(db, batch.Where(p => OnFacet(p.Fit, extents, null)).Select(p => p.Hold), ct);
         var skipped = 0;
         foreach (var placement in batch)
         {
-            var fit = placement.Fit;
-            if (!holds.TryGetValue(placement.Hold.Id, out var hold) || ChangedSincePlanned(hold, placement.Hold)
-                || !OnFacet(fit, extents, null))
+            if (!holds.TryGetValue(placement.Hold.Id, out var hold) || ChangedSincePlanned(hold, placement.Hold))
             {
                 skipped++;
                 continue;
             }
 
-            entries.Add(Write(hold, placement, extents));
+            entries.Add(Write(hold, placement, extents) with { GeometryHash = HoldPlacementEntry.HashGeometry(hold) });
         }
 
         run.HoldsJson = HoldPlacementEntry.ToJson(entries);
         await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
         return skipped;
+    }
+
+    /// <summary>
+    /// Claims each planned hold's row (<see cref="ClaimAsync"/>) and reads the claimed ones tracked. A hold a newer edit
+    /// changed since it was planned is not claimed, so it is missing from the result. Call inside a transaction. The rows
+    /// are claimed in Id order, so two multi-hold writers locking in key order never wait on each other in a cycle.
+    /// </summary>
+    private static async Task<Dictionary<Guid, Hold>> ClaimAndReadAsync(BlocwerkDbContext db, IEnumerable<Hold> planned, CancellationToken ct)
+    {
+        var ids = new List<Guid>();
+        foreach (var hold in planned.OrderBy(h => h.Id))
+        {
+            if (await ClaimAsync(db, hold, ct))
+            {
+                ids.Add(hold.Id);
+            }
+        }
+
+        // The re-read must stay inside the claiming transaction: only the row locks keep it current until the save.
+        return ids.Count == 0 ? [] : await db.Holds.Where(h => ids.Contains(h.Id)).ToDictionaryAsync(h => h.Id, ct);
     }
 
     /// <summary>
@@ -106,7 +131,8 @@ public sealed partial class HoldTexturePlacementService
     /// from holds whose placement this run's evidence contradicts, and marks them
     /// <see cref="HoldMetric.TextureRegistrationRejected"/> (not measured: the 3D view guesses no position for them),
     /// recorded in the run like a placement so a revert restores them. One already marked so is left as it is.
-    /// A hold changed since it was planned is left alone. Returns the holds cleared.
+    /// A hold changed since it was planned is left alone; the holds are claimed first, as in <see cref="WriteBatchAsync"/>.
+    /// Returns the holds cleared.
     /// </summary>
     private static async Task<List<Guid>> ClearAsync(
         BlocwerkDbContext db, HoldPlacementRun run, IReadOnlyList<Hold> planned, List<HoldPlacementEntry> entries, CancellationToken ct)
@@ -116,8 +142,8 @@ public sealed partial class HoldTexturePlacementService
             return [];
         }
 
-        var ids = planned.Select(p => p.Id).ToList();
-        var holds = await db.Holds.Where(h => ids.Contains(h.Id)).ToDictionaryAsync(h => h.Id, ct);
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var holds = await ClaimAndReadAsync(db, planned, ct);
         var cleared = new List<Guid>();
         foreach (var p in planned)
         {
@@ -135,12 +161,14 @@ public sealed partial class HoldTexturePlacementService
             {
                 PlacementHash = HoldPlacementEntry.HashPlacement(hold),
                 FingerprintHash = HoldPlacementEntry.HashFingerprint(hold.FingerprintJson),
+                GeometryHash = HoldPlacementEntry.HashGeometry(hold),
             });
             cleared.Add(hold.Id);
         }
 
         run.HoldsJson = HoldPlacementEntry.ToJson(entries);
         await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
         return cleared;
     }
 

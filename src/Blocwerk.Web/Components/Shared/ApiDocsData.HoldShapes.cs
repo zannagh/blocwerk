@@ -26,7 +26,7 @@ internal static partial class ApiDocsData
     private static ApiSurfaceDoc WallHoldShapesSurface => new(
         "Wall holds: outlines and 3D shapes",
         HoldShapesIntro,
-        "Wall key or personal key with write access (admin owner)",
+        "Wall or personal key with write access (admin owner)",
         HoldShapesEndpoints());
 
     private static ApiEndpointDoc[] HoldShapesEndpoints() =>
