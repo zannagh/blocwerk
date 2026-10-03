@@ -27,6 +27,7 @@ public class WallHoldShapesControllerTests
 {
     private readonly IHoldOutlineUpgradeService outlines = Substitute.For<IHoldOutlineUpgradeService>();
     private readonly IHoldFootprintService footprints = Substitute.For<IHoldFootprintService>();
+    private readonly IHoldShapeCleanupService cleanup = Substitute.For<IHoldShapeCleanupService>();
     private readonly Guid wallId = Guid.NewGuid();
 
     [Fact]
@@ -91,7 +92,7 @@ public class WallHoldShapesControllerTests
 
     private static int? Status(IActionResult result) => Assert.IsAssignableFrom<ObjectResult>(result).StatusCode;
 
-    private WallHoldShapesController Api(ClaimsPrincipal key) => new(outlines, footprints, NullLogger<WallHoldShapesController>.Instance)
+    private WallHoldShapesController Api(ClaimsPrincipal key) => new(outlines, footprints, cleanup, NullLogger<WallHoldShapesController>.Instance)
     {
         ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = key } },
     };

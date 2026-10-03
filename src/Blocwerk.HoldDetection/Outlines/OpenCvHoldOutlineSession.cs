@@ -1,4 +1,5 @@
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Detection.Outlines;
 using OpenCvSharp;
 
 namespace Blocwerk.HoldDetection.Outlines;
@@ -71,6 +72,13 @@ public sealed class OpenCvHoldOutlineSession : IHoldOutlineSession
     public HoldOutlineResult Outline(HoldSeed seed)
     {
         ArgumentNullException.ThrowIfNull(seed);
+
+        // Every consumer (ingest, circle upgrade, wall-update shapes) gets the same smoothed-or-circle result.
+        return HoldOutlineRefiner.Refine(OutlineRaw(seed), (double)image.Width / image.Height);
+    }
+
+    private HoldOutlineResult OutlineRaw(HoldSeed seed)
+    {
         using OutlineCrop? crop = OutlineCrop.Create(image, seed);
         if (crop is null)
         {

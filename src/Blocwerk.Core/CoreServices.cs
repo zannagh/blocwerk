@@ -162,6 +162,7 @@ public static class CoreServices
         builder.Services.AddScoped<IWallSegmentService, WallSegmentService>();
         builder.Services.AddScoped<IWallGlyphService, WallGlyphService>();
         builder.Services.AddScoped<IHoldOutlineUpgradeService, HoldOutlineUpgradeService>();
+        builder.Services.AddScoped<IHoldShapeCleanupService, HoldShapeCleanupService>();
         builder.Services.AddScoped<IHoldFootprintService, HoldFootprintService>();
         builder.Services.AddScoped<IHoldTexturePlacementService, HoldTexturePlacementService>();
         builder.Services.AddScoped<IHoldProtrusionService, HoldProtrusionService>();

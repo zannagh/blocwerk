@@ -1,6 +1,7 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Detection.Outlines;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Helpers;
 using Microsoft.Extensions.Logging;
@@ -97,6 +98,17 @@ public sealed partial class HoldEnrichmentService : IHoldEnrichmentService
         foreach (var hold in targets)
         {
             plan.Outlines[hold] = session.Outline(new HoldSeed(hold.X, hold.Y, hold.Radius));
+        }
+
+        // The panel's shapes must not overlap each other or a hand-placed hold: clip, else circle, else a smaller circle.
+        var aspect = (double)session.ImageWidth / Math.Max(1, session.ImageHeight);
+        foreach (var (hold, (outline, radius)) in HoldShapeCleanup.ResolveOutlines(request.Holds, plan.Outlines, allowRadiusShrink: true, aspect))
+        {
+            plan.Outlines[hold] = outline;
+            if (Math.Abs(radius - hold.Radius) > 1e-9)
+            {
+                plan.Radii[hold] = radius;
+            }
         }
 
         return (session.ImageWidth, session.ImageHeight);
