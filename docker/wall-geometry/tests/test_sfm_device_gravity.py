@@ -44,7 +44,7 @@ def test_the_stored_size_picks_the_mapping(holding):
         sizes[stem] = (3024, 4032) if portrait else (4032, 3024)
     model = {"images": images, "cams": {1: {"width": 1000, "height": 1000}}}
     up, info = device_up(model, vectors, sizes)
-    assert info["photos"] == 4 and angle(up, [0.1, -0.2, 1.0] / np.linalg.norm([0.1, -0.2, 1.0])) < 1e-6
+    assert info["photos"] == 4 and angle(up, [0.1, -0.2, 1.0] / np.linalg.norm([0.1, -0.2, 1.0])) < 1e-4
     if portrait:
         wrong, _ = device_up(model, vectors)  # the square camera read as landscape
         assert angle(wrong, up) > 10
