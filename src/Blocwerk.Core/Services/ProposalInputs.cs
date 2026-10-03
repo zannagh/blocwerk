@@ -8,6 +8,7 @@ using Blocwerk.Core.Geometry.Footprints;
 using Blocwerk.Core.Geometry.Proposals;
 using Blocwerk.Core.Geometry.View3D;
 using Blocwerk.Core.Geometry.Volumes;
+using Blocwerk.Core.MarkerPlanning;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Services;
@@ -40,12 +41,14 @@ public sealed record ProposalInputs(
             .ToList();
         var facets = new List<CastFacet>();
         var frames = new Dictionary<string, FacetFrame>(StringComparer.Ordinal);
+        var outlines = FacetShapes.Outlines(doc, await PlanTrianglesAsync(db, wallId, ct));
         foreach (var f in doc.Segments.SelectMany(s => s.Facets))
         {
             if (!string.IsNullOrEmpty(f.Id) && FacetFrame.From(f) is { } frame && f.ExtentMm is { } extent)
             {
                 frames[f.Id] = frame;
-                facets.Add(new CastFacet(f.Id, frame, extent, volumes.Where(v => v.FacetId == f.Id).Select(v => v.Surface!).ToList()));
+                facets.Add(new CastFacet(
+                    f.Id, frame, extent, volumes.Where(v => v.FacetId == f.Id).Select(v => v.Surface!).ToList(), outlines.GetValueOrDefault(f.Id)));
             }
         }
 
@@ -65,4 +68,12 @@ public sealed record ProposalInputs(
             .ToList();
         return new ProposalInputs(facets, known, panels);
     }
+
+    /// <summary>The triangle segments of the wall's current marker plan (they cut facets to their shape, as the 3D view does).</summary>
+    /// <param name="db">The database.</param>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>Triangle segment index → parent and right angle.</returns>
+    public static async Task<IReadOnlyDictionary<int, PlanTriangle>> PlanTrianglesAsync(BlocwerkDbContext db, Guid wallId, CancellationToken ct) =>
+        Wall3DFacetOutlines.PlanTriangles(MarkerPlanJson.FromJson(await WallMarkerLayoutResolver.CurrentPlanJsonAsync(db, wallId, ct), out _));
 }

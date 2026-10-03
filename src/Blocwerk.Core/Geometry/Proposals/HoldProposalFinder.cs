@@ -103,8 +103,7 @@ public static class HoldProposalFinder
         var facet = facets[cluster.Hits.GroupBy(h => h.FacetId).MaxBy(g => g.Count())!.Key];
         var (a, b, h) = FacetCloud.Local(facet.Frame, p[0], p[1], p[2]);
         var top = facet.Volumes.Select(v => v.HeightAt(a, b)).DefaultIfEmpty(0).Max();
-        var e = facet.Extent;
-        if (a < e.AMin || a > e.AMax || b < e.BMin || b > e.BMax || h < top + MinReliefMm || h > top + 150)
+        if (!facet.Covers(a, b) || h < top + MinReliefMm || h > top + 150)
         {
             return null;
         }

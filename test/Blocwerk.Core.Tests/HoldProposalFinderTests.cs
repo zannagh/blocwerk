@@ -24,7 +24,7 @@ public class HoldProposalFinderTests
 
     private static readonly Dictionary<string, FacetFrame> Frames = new() { ["0"] = Wall };
 
-    private static readonly Dictionary<string, SolvedCamera> Cameras = new()
+    internal static readonly Dictionary<string, SolvedCamera> Cameras = new()
     {
         ["p1"] = LookAt("p1", [1500, -3000, 1000], [1500, 0, 1000]),
         ["p2"] = LookAt("p2", [500, -2800, 1200], [1400, 0, 1000]),
@@ -124,7 +124,7 @@ public class HoldProposalFinderTests
     private static IEnumerable<CaptureDetection> Detect(double[] point, double sizeMm) =>
         Cameras.Values.Select(c => DetectIn(c, point, sizeMm)).OfType<CaptureDetection>();
 
-    private static CaptureDetection? DetectIn(SolvedCamera c, double[] point, double sizeMm)
+    internal static CaptureDetection? DetectIn(SolvedCamera c, double[] point, double sizeMm)
     {
         if (c.Project(point) is not { } px)
         {
@@ -136,7 +136,7 @@ public class HoldProposalFinderTests
     }
 
     /// <summary>A 4000 × 3000 px pinhole camera at <paramref name="eye"/> looking at <paramref name="target"/>, z up.</summary>
-    private static SolvedCamera LookAt(string name, double[] eye, double[] target)
+    internal static SolvedCamera LookAt(string name, double[] eye, double[] target)
     {
         var z = Unit([target[0] - eye[0], target[1] - eye[1], target[2] - eye[2]]);
         var x = Unit(Cross(z, [0, 0, 1]));

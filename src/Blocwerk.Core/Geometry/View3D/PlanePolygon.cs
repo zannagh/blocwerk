@@ -114,6 +114,26 @@ public static class PlanePolygon
         return convex.Count >= 3;
     }
 
+    /// <summary>The distance from a point to the ring's boundary (its nearest edge).</summary>
+    /// <param name="ring">The ring.</param>
+    /// <param name="p">The point.</param>
+    /// <returns>The distance; infinity for an empty ring.</returns>
+    public static double DistanceTo(IReadOnlyList<(double A, double B)> ring, (double A, double B) p)
+    {
+        var best = double.PositiveInfinity;
+        for (var i = 0; i < ring.Count; i++)
+        {
+            var (s, e) = (ring[i], ring[(i + 1) % ring.Count]);
+            double da = e.A - s.A, db = e.B - s.B;
+            var len2 = (da * da) + (db * db);
+            var t = len2 <= 0 ? 0 : Math.Clamp((((p.A - s.A) * da) + ((p.B - s.B) * db)) / len2, 0, 1);
+            double qa = s.A + (t * da) - p.A, qb = s.B + (t * db) - p.B;
+            best = Math.Min(best, Math.Sqrt((qa * qa) + (qb * qb)));
+        }
+
+        return best;
+    }
+
     private static double SignedArea(IReadOnlyList<(double A, double B)> ring)
     {
         var sum = 0.0;
