@@ -62,12 +62,24 @@ public sealed partial class WallRefreshApiController(
 
     /// <summary>
     /// Starts the check against this visit's new 3D model when it is due (the page starts it on its own when it shows
-    /// the run; reads over the API never do). 202 with <c>{ pending }</c>: true while the check is queued or running.
+    /// the run; reads over the API never do). 202 <c>{ pending: true }</c> when it was queued now, the only case that is
+    /// audited; 200 <c>{ pending }</c> otherwise (already running, or nothing due).
     /// </summary>
     [HttpPost("{refreshId:guid}/recheck")]
     public Task<IActionResult> Recheck(Guid wallId, Guid refreshId) =>
-        WriteAsync(wallId, "refresh.recheck", () => ForRunAsync(wallId, refreshId, async _ =>
-            Accepted(new RefreshRecheckResponse(await refreshes.RecheckAsync(refreshId)))));
+        ReadAsync(wallId, () => ForRunAsync(wallId, refreshId, async view =>
+        {
+            if (!view.Check3DPending)
+            {
+                return Ok(new RefreshRecheckResponse(false));
+            }
+
+            var outcome = await audit.RunAsync(
+                User, "refresh.recheck", wallId, () => refreshes.RecheckAsync(refreshId), o => o == RefreshRecheckOutcome.Queued);
+            return outcome == RefreshRecheckOutcome.Queued
+                ? Accepted(new RefreshRecheckResponse(true))
+                : Ok(new RefreshRecheckResponse(outcome == RefreshRecheckOutcome.Running));
+        }));
 
     /// <summary>Done uploading: the photos are sorted to the panels in the background. 202.</summary>
     [HttpPost("{refreshId:guid}/sort")]

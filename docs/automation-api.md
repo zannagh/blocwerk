@@ -75,10 +75,10 @@ Statuses: 0 uploading, 1 sorting, 2 ready to start, 3 running, 4 ready to apply,
 ### Consistency
 
 * Reads (`GET …/refresh`, `…/{id}`, `…/summary`) change nothing: polling is side-effect free. `canApply` is true once the summary is ready and no check against this visit's new 3D model is pending.
-* When the visit's 3D model becomes ready, the summary is worked out again with it before Apply is taken (`check3DPending: true`). The page starts that check by itself; a script starts it with `POST …/refresh/{id}/recheck` (202 `{"pending": true}`), then polls the summary again.
+* When the visit's 3D model becomes ready, the summary is worked out again with it before Apply is taken (`check3DPending: true`). The page starts that check by itself; a script starts it with `POST …/refresh/{id}/recheck`, then polls the summary again. It answers 202 `{"pending": true}` when it queued the check now (the only case recorded in the change journal), and 200 `{"pending": …}` when the check is already running or nothing is due.
 * `apply` needs the `decisionsVersion` of the summary that was checked (400 without one). The server refuses with 409 `{"error", "status", "currentDecisionsVersion"}` when the summary changed since, when there is nothing to apply yet, or while the 3D check runs.
 * The accepted version is stored with the run, and the background apply compares what it would promote against **that** version, never against a summary written later. If anything changed in between (the full review, a re-check), nothing is promoted and the run is back at status 4 with the new summary.
-* Apply and the background steps of a wall (sorting, preparing, the 3D re-check, applying) never overlap. Apply waits a few seconds for a running step, then answers 409 "being checked … try again".
+* Apply and the background steps of a wall (sorting, preparing, the 3D re-check, applying) never overlap: they share one lock per wall. Apply waits a few seconds for a running step; while a 3D re-check (or another step) still holds the wall after that, Apply answers **409** with *"The update is being checked against the new 3D model. Try again in a moment."* and nothing changes. Scripts should treat that 409 as transient: read the summary again, and retry Apply with the (possibly new) `decisionsVersion` with backoff (for example 5 s, 10 s, 20 s, … capped at a minute), giving up after a few minutes.
 
 ## Wall preparation, end to end
 

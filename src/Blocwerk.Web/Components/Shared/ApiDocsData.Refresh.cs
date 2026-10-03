@@ -70,7 +70,8 @@ internal static partial class ApiDocsData
             RefreshSummaryJson, "canApply is true when Apply would be taken now. Send decisionsVersion to Apply. Reads never start anything."),
         new("POST", RefreshBase + "/{refreshId}/recheck", "Starts the check against this visit's new 3D model when it is due.",
             RefreshOnWall, null, "{\n  \"pending\": true\n}",
-            "202. While check3DPending is true Apply waits; poll the summary until canApply."),
+            "202 when queued now (audited); 200 {\"pending\"} when already running or nothing is due. While check3DPending is true "
+                + "Apply waits (409 \"being checked\": retry with backoff); poll the summary until canApply."),
         new("POST", RefreshBase + "/{refreshId}/apply", "Applies exactly the summary with this version.", RefreshOnWall,
             "{\n  \"decisionsVersion\": \"9F2C41A07B3D5E61C8A4F0B2\"\n}", null, RefreshApplyNote),
         new("GET", RefreshBase + "/{refreshId}", "The run, as the page shows it.", RefreshOnWall, null, RefreshViewJson, RefreshStatusNote),

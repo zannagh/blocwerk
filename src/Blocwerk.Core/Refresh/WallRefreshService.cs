@@ -41,12 +41,17 @@ public sealed partial class WallRefreshService(
 
     public Task<WallRefreshView?> PeekCurrentAsync(Guid wallId) => ReadCurrentAsync(wallId, sideEffects: false);
 
-    public async Task<bool> RecheckAsync(Guid refreshId)
+    public async Task<RefreshRecheckOutcome> RecheckAsync(Guid refreshId)
     {
         var (db, refresh) = await OpenRefreshAsync(refreshId);
         await using (db)
         {
-            return await Check3DPendingAsync(db, refresh, enqueue: true);
+            if (WallRefreshProcessor.IsRechecking(refresh, DateTimeOffset.UtcNow))
+            {
+                return RefreshRecheckOutcome.Running;
+            }
+
+            return await Check3DPendingAsync(db, refresh, enqueue: true) ? RefreshRecheckOutcome.Queued : RefreshRecheckOutcome.NotDue;
         }
     }
 

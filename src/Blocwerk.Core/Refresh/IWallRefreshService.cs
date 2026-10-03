@@ -6,6 +6,19 @@ using Blocwerk.Core.Capture;
 
 namespace Blocwerk.Core.Refresh;
 
+/// <summary>What <see cref="IWallRefreshService.RecheckAsync"/> did.</summary>
+public enum RefreshRecheckOutcome
+{
+    /// <summary>No check is due (no new 3D model ready, or it was already tried with it).</summary>
+    NotDue = 0,
+
+    /// <summary>The check was due and has been queued now.</summary>
+    Queued = 1,
+
+    /// <summary>The check is already running.</summary>
+    Running = 2,
+}
+
 /// <summary>The photo a user chose for one panel on the sort screen (null keeps the current photo).</summary>
 public sealed record PanelChoice(int Col, int Row, Guid? PhotoId);
 
@@ -25,8 +38,8 @@ public interface IWallRefreshService
     /// </summary>
     Task<WallRefreshView?> PeekCurrentAsync(Guid wallId);
 
-    /// <summary>Queues the check against this visit's new 3D model when it is due; true when it is pending or running.</summary>
-    Task<bool> RecheckAsync(Guid refreshId);
+    /// <summary>Queues the check against this visit's new 3D model when it is due, and says whether it did.</summary>
+    Task<RefreshRecheckOutcome> RecheckAsync(Guid refreshId);
 
     /// <summary>The wall a run belongs to, or null when there is no such run. Reveals nothing else.</summary>
     Task<Guid?> GetWallIdAsync(Guid refreshId);

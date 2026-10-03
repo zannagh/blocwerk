@@ -3,10 +3,14 @@
 // </copyright>
 
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
 using Blocwerk.Core.Refresh;
+using Blocwerk.Core.Services;
 using Blocwerk.Core.Tests.Refresh;
 using Blocwerk.Web.Controllers;
+using Blocwerk.Web.Endpoints;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -42,6 +46,40 @@ public class WallRefreshApiReadTests
         Assert.Equal(model, after.Summary!.Attempted3DModelId);
         Assert.True(after.CanApply);
         Assert.StartsWith("api:refresh.recheck ", Assert.Single(await AutomationApiFixture.ApiBatchesAsync(h)).Label);
+    }
+
+    [Fact]
+    public async Task ARecheckWithNothingDue_Answers200_AndIsNotAudited()
+    {
+        using var h = new WallTestHarness();
+        using var s = new RefreshScenario(h);
+        s.Capture.Client.IsConfigured = false;
+        await s.SeedWallAsync();
+        var prepared = await s.PrepareAsync();
+
+        var result = await Api(h, s.Service).Recheck(h.WallId, prepared.Id);
+
+        Assert.False(Assert.IsType<RefreshRecheckResponse>(Assert.IsType<OkObjectResult>(result).Value).Pending);
+        await AssertQueueEmptyAsync(s);
+        Assert.Empty(await AutomationApiFixture.ApiBatchesAsync(h));
+    }
+
+    [Fact]
+    public async Task AnUploadByAKeyWhoseOwnerMayNotUpload_IsRefusedBeforeAnyAuditRow()
+    {
+        using var h = new WallTestHarness();
+        using var s = new RefreshScenario(h);
+        await s.SeedWallAsync();
+        var run = await s.Service.BeginAsync(h.WallId);
+        h.ActingUser = await h.AddMemberAsync("member@test", WallRole.Member);
+        var journal = new ChangeJournal(() => throw new InvalidOperationException("No audit row may be written."));
+        var http = new DefaultHttpContext { User = ApiKeys.Personal() };
+        http.Request.Body = new UnreadableStream();
+
+        var result = await WallRefreshUploadEndpoint.HandleAsync(
+            run.Id, "IMG_1.jpg", http, s.Service, s.Capture.Options, CancellationToken.None, AutomationApiFixture.Audit(h, journal));
+
+        Assert.IsType<ForbidHttpResult>(result);
     }
 
     [Fact]

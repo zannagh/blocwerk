@@ -53,6 +53,12 @@ public static class WallRefreshUploadEndpoint
             return await StoreAsync(refreshId, name, http, refreshes, options, ct);
         }
 
+        // Authorised before the audit row is written: a caller who may not upload leaves no trace in the journal.
+        if (await RefusedAsync(refreshId, name, refreshes) is { } refused)
+        {
+            return refused;
+        }
+
         return await audit.RunAsync(
             http.User,
             $"refresh.upload run:{refreshId}",
@@ -103,6 +109,25 @@ public static class WallRefreshUploadEndpoint
         {
             var problem = ex.StatusCode == StatusCodes.Status413PayloadTooLarge ? TooLarge(isVideo, limit) : "The upload was interrupted.";
             return Results.Ok(new RefreshFile(null, name, isVideo, problem));
+        }
+    }
+
+    /// <summary>The answer to a caller who may not add this file to the run now, or null when they may.</summary>
+    private static async Task<IResult?> RefusedAsync(Guid refreshId, string? name, IWallRefreshService refreshes)
+    {
+        var isVideo = CaptureVideoFiles.Extensions.Contains(Path.GetExtension(name ?? string.Empty));
+        try
+        {
+            await refreshes.EnsureCanUploadAsync(refreshId, isVideo);
+            return null;
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or KioskRestrictedException)
+        {
+            return Results.Forbid();
+        }
+        catch (UserFacingException ex)
+        {
+            return Results.Ok(new RefreshFile(null, name, isVideo, ex.Message));
         }
     }
 
