@@ -165,6 +165,13 @@ public class GpuJob
     /// </summary>
     public string? RefinishStateJson { get; set; }
 
+    /// <summary>
+    /// When the job's leftover (trained result or installed preview, with the prepared state) was deleted: a newer job of
+    /// the capture was installed, the capture's photos expired, or the capture retention dropped it. <see cref="PreparedPath"/>
+    /// (required) then names a file that is gone. Null while the leftover is kept.
+    /// </summary>
+    public DateTimeOffset? LeftoverDroppedAt { get; set; }
+
     public long? PreviewBytes { get; set; }
 
     /// <summary><c>ply</c> or <c>spz</c> (content-checked on upload).</summary>

@@ -35,7 +35,13 @@ public interface IWallRefreshService
     Task SortAsync(Guid refreshId);
 
     /// <summary>Starts the 3D capture and prepares the panel update with the chosen photos.</summary>
-    Task StartAsync(Guid refreshId, IReadOnlyList<PanelChoice> choices);
+    /// <param name="refreshId">The run.</param>
+    /// <param name="choices">The photo per panel.</param>
+    /// <param name="keepModel">
+    /// Panels only: no 3D capture is started (so no GPU runner is involved and the wall's active 3D model stays
+    /// exactly as it is); the confirmed holds are still placed on that model's textures in the background.
+    /// </param>
+    Task StartAsync(Guid refreshId, IReadOnlyList<PanelChoice> choices, bool keepModel = false);
 
     /// <summary>The user's confirm: applies the prepared panel update, then places the holds on the 3D model.</summary>
     /// <param name="refreshId">The run.</param>

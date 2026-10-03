@@ -26,10 +26,68 @@ public static class PanelPhotoInfoLoader
     /// <param name="keys">The photos (a null panel is the legacy wall photo).</param>
     /// <param name="ct">Cancellation.</param>
     /// <returns>The info per photo.</returns>
+    public static Task<Dictionary<Wall3DPhotoKey, PanelPhotoInfo>> LoadAsync(
+        BlocwerkDbContext db, Guid wallId, IEnumerable<Wall3DPhotoKey> keys, CancellationToken ct) =>
+        LoadHeadersAsync(db, wallId, keys.Distinct().ToList(), ct);
+
+    /// <summary>
+    /// As <see cref="LoadAsync(BlocwerkDbContext, Guid, IEnumerable{Wall3DPhotoKey}, CancellationToken)"/>, but through
+    /// <paramref name="cache"/>: each photo's <see cref="PhotoInfoStamp"/> is read (no photo bytes beyond its last few) and
+    /// only the photos not cached under it have their header read.
+    /// </summary>
+    /// <param name="db">The context.</param>
+    /// <param name="wallId">The wall the photos belong to.</param>
+    /// <param name="keys">The photos (a null panel is the legacy wall photo).</param>
+    /// <param name="cache">The cache, or null to read every header.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>The info per photo.</returns>
     public static async Task<Dictionary<Wall3DPhotoKey, PanelPhotoInfo>> LoadAsync(
-        BlocwerkDbContext db, Guid wallId, IEnumerable<Wall3DPhotoKey> keys, CancellationToken ct)
+        BlocwerkDbContext db, Guid wallId, IEnumerable<Wall3DPhotoKey> keys, Wall3DViewCache? cache, CancellationToken ct)
     {
         var wanted = keys.Distinct().ToList();
+        if (cache is null || wanted.Count == 0)
+        {
+            return await LoadHeadersAsync(db, wallId, wanted, ct);
+        }
+
+        // Stamped BEFORE the headers are read: a photo replaced in between is cached under its old stamp, never the reverse.
+        var stamps = await PhotoInfoStamp.LoadAsync(db, wallId, wanted, ct);
+        var result = new Dictionary<Wall3DPhotoKey, PanelPhotoInfo>();
+        var missing = new List<Wall3DPhotoKey>();
+        foreach (var key in wanted)
+        {
+            if (!stamps.TryGetValue(key.PanelId ?? wallId, out var stamp))
+            {
+                continue;
+            }
+
+            if (!cache.TryGetPhotoInfo(stamp, out var cached))
+            {
+                missing.Add(key);
+            }
+            else if (cached is not null)
+            {
+                result[key] = cached;
+            }
+        }
+
+        var loaded = missing.Count == 0 ? [] : await LoadHeadersAsync(db, wallId, missing, ct);
+        foreach (var key in missing)
+        {
+            var info = loaded.GetValueOrDefault(key);
+            cache.SetPhotoInfo(stamps[key.PanelId ?? wallId], info);
+            if (info is not null)
+            {
+                result[key] = info;
+            }
+        }
+
+        return result;
+    }
+
+    private static async Task<Dictionary<Wall3DPhotoKey, PanelPhotoInfo>> LoadHeadersAsync(
+        BlocwerkDbContext db, Guid wallId, List<Wall3DPhotoKey> wanted, CancellationToken ct)
+    {
         var panelIds = wanted.Where(k => k.PanelId.HasValue).Select(k => k.PanelId!.Value).Distinct().ToList();
         var headers = panelIds.Count == 0
             ? []

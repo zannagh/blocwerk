@@ -26,7 +26,8 @@ public sealed class HoldFootprintService(
     ILogger<HoldFootprintService> logger,
     IHoldOutlineService? outlineService = null,
     ICaptureFileStore? files = null,
-    IKioskContext? kioskContext = null) : IHoldFootprintService
+    IKioskContext? kioskContext = null,
+    Wall3DViewCache? photoInfoCache = null) : IHoldFootprintService
 {
     private const string KioskRefusal = "Refining 3D hold shapes";
 
@@ -91,7 +92,7 @@ public sealed class HoldFootprintService(
         var projector = HoldPlaneProjector.Create(live, doc, markers);
         var usable = cameras.Where(c => photos.ContainsKey(c.Image)).ToList();
         var panelPhotos = await PanelPhotoInfoLoader.LoadAsync(
-            db, wallId, live.Where(h => h.FacetId is not null).Select(HoldPlaneProjector.PhotoOf), ct);
+            db, wallId, live.Where(h => h.FacetId is not null).Select(HoldPlaneProjector.PhotoOf), photoInfoCache, ct);
         var volumes = await FacetVolumesAsync(db, model.Id, doc, ct);
         var refinement = await Task.Run(
             () => HoldFootprintRefiner.Refine(live, doc, usable, c => Open(c, photos, ct), projector, only, panelPhotos, volumes), ct);

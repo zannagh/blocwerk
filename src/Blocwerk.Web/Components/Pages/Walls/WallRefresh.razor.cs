@@ -159,6 +159,9 @@ public partial class WallRefresh : IDisposable
 
     private Task StartAsync(IReadOnlyList<PanelChoice> choices) => ActAsync(id => Refreshes.StartAsync(id, choices));
 
+    private Task StartPanelsOnlyAsync(IReadOnlyList<PanelChoice> choices) =>
+        ActAsync(id => Refreshes.StartAsync(id, choices, keepModel: true));
+
     private Task ApplyAsync()
     {
         // The version of the summary on screen: Apply promotes only what this summary describes.

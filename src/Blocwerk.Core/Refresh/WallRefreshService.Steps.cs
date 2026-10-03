@@ -11,6 +11,9 @@ namespace Blocwerk.Core.Refresh;
 /// <summary>The user's three decisions: done uploading, start with these photos, apply.</summary>
 public sealed partial class WallRefreshService
 {
+    /// <summary>The 3D step's note for a panels-only run.</summary>
+    public const string KeptModelNote = "Panels only: the current 3D model is kept as it is.";
+
     public async Task SortAsync(Guid refreshId)
     {
         var (db, refresh) = await OpenRefreshAsync(refreshId);
@@ -33,7 +36,7 @@ public sealed partial class WallRefreshService
         queue.Enqueue(refreshId);
     }
 
-    public async Task StartAsync(Guid refreshId, IReadOnlyList<PanelChoice> choices)
+    public async Task StartAsync(Guid refreshId, IReadOnlyList<PanelChoice> choices, bool keepModel = false)
     {
         var (db, refresh) = await OpenRefreshAsync(refreshId);
         await using (db)
@@ -44,9 +47,23 @@ public sealed partial class WallRefreshService
             }
 
             var picks = ApplyChoices(RefreshTimeline.Picks(refresh), choices);
+            if (keepModel && picks.All(p => p.PhotoId is null))
+            {
+                throw new UserFacingException("Choose a new photo for at least one panel to update the panels only.");
+            }
+
             refresh.PanelPicksJson = RefreshTimeline.Write(picks);
             refresh.Status = WallRefreshStatus.Running;
-            RefreshTimeline.Set(refresh, RefreshTimeline.Capture, RefreshStepState.Running, "Starting");
+            if (keepModel)
+            {
+                // A Skipped capture step is what the processor reads as "do not start a capture".
+                RefreshTimeline.Set(refresh, RefreshTimeline.Capture, RefreshStepState.Skipped, KeptModelNote);
+            }
+            else
+            {
+                RefreshTimeline.Set(refresh, RefreshTimeline.Capture, RefreshStepState.Running, "Starting");
+            }
+
             await db.SaveChangesAsync();
         }
 

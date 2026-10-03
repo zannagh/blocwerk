@@ -36,7 +36,8 @@ public sealed partial class WallRefreshService
             refresh.Error,
             refresh.CreatedAt,
             refresh.CaptureId,
-            refresh.UpdateSessionId);
+            refresh.UpdateSessionId,
+            HasActiveModel: await db.WallGeometryModels.AnyAsync(m => m.WallId == refresh.WallId && m.IsActive));
     }
 
     private async Task<bool> CaptureAvailableAsync(BlocwerkDbContext db, Guid wallId)

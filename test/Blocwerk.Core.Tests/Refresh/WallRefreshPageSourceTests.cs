@@ -20,9 +20,12 @@ public class WallRefreshPageSourceTests
         var markup = Read("src/Blocwerk.Web/Components/Pages/Walls/WallDetail.razor");
 
         var entry = markup.IndexOf("href=\"/walls/@WallId/update\">Update panels + 3D</a>", StringComparison.Ordinal);
-        var guard = markup.LastIndexOf("@if (_isAdmin && !KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))", entry, StringComparison.Ordinal);
+        var guard = markup.LastIndexOf("@if (!KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))", entry, StringComparison.Ordinal);
+        var settings = markup.IndexOf("<h2>Wall Settings</h2>", StringComparison.Ordinal);
+        var adminOnly = markup.LastIndexOf("@if (_isAdmin)", settings, StringComparison.Ordinal);
         Assert.True(entry > 0, "entry link missing");
-        Assert.True(guard > 0 && entry - guard < 200, "entry must sit right inside the admin/kiosk/share-link guard");
+        Assert.True(guard > 0 && entry - guard < 200, "entry must sit right inside the kiosk/share-link guard");
+        Assert.True(adminOnly > 0 && settings > adminOnly && entry > settings, "entry must live in the admin-only Wall Settings card");
         Assert.Equal(entry, markup.LastIndexOf("href=\"/walls/@WallId/update\"", StringComparison.Ordinal));
         Assert.Contains("\"Update wall with new photos\"", markup);
     }

@@ -109,6 +109,9 @@ services:
       # Photos per capture (2-1000; default 200). Keep it <= GEOMETRY_MAX_PHOTOS and SPLAT_MAX_PHOTOS minus the video
       # frames; every step (textures included) uses all of them, so GEOMETRY_MAX_REQUEST_MB must fit them.
       CAPTURE__MAXPHOTOS: ${CAPTURE__MAXPHOTOS:-}
+      # Retention of old models' 3D files, runner results, abandoned imports: empty/true = log only,
+      # false = delete (docs/marker-walls.md, section 4 "Retention").
+      CAPTURE__RETENTIONDRYRUN: ${CAPTURE__RETENTIONDRYRUN:-}
       # Texture options sent to wall-geometry (docker/wall-geometry/README.md); empty = not sent, the
       # service's defaults apply (2 mm/px, 4096 px, JPEG 90). MMPERPX 0.25-50, MAXSIDEPX 256-8192,
       # JPEGQUALITY 30-100. A finer texture needs TEXTURES_BLEND_MAX_BYTES / TEXTURES_MAX_MEGAPIXELS raised.

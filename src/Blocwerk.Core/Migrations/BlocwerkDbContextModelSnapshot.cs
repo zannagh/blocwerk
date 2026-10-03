@@ -776,6 +776,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<DateTimeOffset?>("LeaseExpiresAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTimeOffset?>("LeftoverDroppedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<double?>("Loss")
                         .HasColumnType("double precision");
 
@@ -2253,6 +2256,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<Guid?>("DerivedFromModelId")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTimeOffset?>("FilesRemovedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int>("FrameSource")
                         .HasColumnType("integer");
 
@@ -2275,6 +2281,9 @@ namespace Blocwerk.Core.Migrations
 
                     b.Property<double?>("ReprojRmsPx")
                         .HasColumnType("double precision");
+
+                    b.Property<DateTimeOffset?>("RetiredAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("SchemaVersion")
                         .HasColumnType("integer");
