@@ -3,7 +3,10 @@
 
 namespace Blocwerk.Core.Runners;
 
-/// <summary>A runner as the wall panel and the site-admin list show it. Never carries the key.</summary>
+/// <summary>
+/// A runner as the wall panel and the site-admin list show it. Never carries the key. <c>IsPaused</c>: its owner paused it
+/// (its last hello said so); it may still be online.
+/// </summary>
 public sealed record GpuRunnerInfo(
     Guid Id,
     string Name,
@@ -21,7 +24,8 @@ public sealed record GpuRunnerInfo(
     GpuRunnerCapabilities Capabilities,
     GpuRunnerCurrentJob? CurrentJob,
     int WallCount,
-    bool ApprovedForThisWall = false);
+    bool ApprovedForThisWall = false,
+    bool IsPaused = false);
 
 /// <summary>What the runner reported about itself in <c>hello</c>.</summary>
 public sealed record GpuRunnerCapabilities(

@@ -108,9 +108,9 @@ public sealed partial class GpuJobQueue
     }
 
     /// <summary>
-    /// The runner gave up. A shutdown requeues the job (for free while its checkpoint advances, else a few times); a
-    /// retryable failure requeues it while training attempts are left (for another runner first); anything else (or no
-    /// attempts left) fails the job.
+    /// The runner gave up. A pause requeues the job for free (the runner stays online, paused); a shutdown requeues it
+    /// (for free while its checkpoint advances, else a few times); a retryable failure requeues it while training attempts
+    /// are left (for another runner first); anything else (or no attempts left) fails the job.
     /// </summary>
     public async Task<RunnerJobOutcome> FailAsync(GpuRunner runner, Guid jobId, RunnerFailure failure, CancellationToken ct)
     {
@@ -130,14 +130,22 @@ public sealed partial class GpuJobQueue
         var kind = failure.Shutdown ? ShutdownKind(job, failure.CheckpointStep)
             : failure.Unreachable ? ReleaseKind.LostLease
             : failure.Retryable ? ReleaseKind.Failure : ReleaseKind.Fatal;
+        var paused = failure.Shutdown && failure.Pause;
+        if (paused)
+        {
+            // The owner paused the runner: free whether or not its checkpoint advanced (capped by MaxPauses).
+            kind = ReleaseKind.Pause;
+        }
+
         logger.LogWarning(
             "Runner {RunnerId} ({Name}) gave GPU job {JobId} back ({Kind}; failures {Failures}, shutdowns {Shutdowns}): {Reason}",
             runner.Id, runner.Name, job.Id, kind, job.FailureCount, job.ShutdownCount, reason);
-        var text = failure.Shutdown ? "the 3D runner shut down"
+        var text = paused ? "the 3D runner was paused"
+            : failure.Shutdown ? "the 3D runner shut down"
             : failure.Unreachable ? $"the 3D runner gave the job back: {reason}"
             : $"training on the 3D runner failed: {reason}";
         var released = await ReleaseAsync(db, job, kind, text, ct);
-        if (failure.Shutdown)
+        if (failure.Shutdown && !paused)
         {
             await MarkStoppedAsync(db, runner.Id, ct);
         }

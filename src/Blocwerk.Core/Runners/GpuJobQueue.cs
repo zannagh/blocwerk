@@ -91,11 +91,17 @@ public sealed partial class GpuJobQueue(
         var trainer = row.Trainer is null ? (hello.BrushVersion is null ? null : $"Brush {hello.BrushVersion}") : row.Trainer;
         var cuda = hello.Cuda is true ? "CUDA" : null;
         row.Platform = Clip(string.Join(" · ", new[] { hello.Platform, trainer, cuda }.Where(s => !string.IsNullOrWhiteSpace(s))), 200);
+        var pauseChanged = row.Paused != hello.Paused;
+        row.Paused = hello.Paused;
         row.LastSeenAt = Now;
         await db.SaveChangesAsync(ct);
-        logger.LogInformation(
-            "Runner {RunnerId} ({Name}) said hello: {Gpu}, {Vram} MB, {Trainer}, max quality {Quality}, version {Version}",
-            runner.Id, runner.Name, row.GpuName, row.VramMb, row.Trainer, row.MaxQuality, row.RunnerVersion);
+        if (pauseChanged || hello.Paused is not true)
+        {
+            // A paused runner says hello every half minute; log only when that changes.
+            logger.LogInformation(
+                "Runner {RunnerId} ({Name}) said hello: {Gpu}, {Vram} MB, {Trainer}, max quality {Quality}, version {Version}, paused {Paused}",
+                runner.Id, runner.Name, row.GpuName, row.VramMb, row.Trainer, row.MaxQuality, row.RunnerVersion, row.Paused);
+        }
     }
 
     /// <summary>Queues a prepared job and wakes waiting runners.</summary>

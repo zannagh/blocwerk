@@ -92,6 +92,13 @@ public class GpuRunner
     public string? Platform { get; set; }
 
     /// <summary>
+    /// Reported by the runner (<c>hello</c>): its owner paused it, so it is up but takes no new jobs. Null for a runner that
+    /// does not report it (older versions). A paused runner keeps saying hello, so it stays "online" for the overview, but
+    /// the queue treats it as unavailable (no jobs are routed or left to it). A claim clears it.
+    /// </summary>
+    public bool? Paused { get; set; }
+
+    /// <summary>
     /// Not stored: the claim token of the runner process making the current call (<c>X-Blocwerk-Claim</c>), null for a
     /// runner that sends none. Two processes with the same key have different tokens; see <see cref="GpuJob.ClaimToken"/>.
     /// </summary>

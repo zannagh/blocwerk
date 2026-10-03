@@ -172,9 +172,9 @@ public sealed partial class GpuJobQueue
 
         var online = Now - options.OnlineWindow;
         var walls = waiting.Select(j => j.WallId).Distinct().ToList();
-        var own = await Assignments(db).Where(rw => walls.Contains(rw.WallId) && rw.Runner.LastSeenAt >= online)
+        var own = await Assignments(db).Where(rw => walls.Contains(rw.WallId) && rw.Runner.LastSeenAt >= online && rw.Runner.Paused != true)
             .Select(rw => new { rw.WallId, rw.RunnerId, rw.Runner.MaxQuality }).ToListAsync(ct);
-        var shared = await Approvals(db).Where(a => walls.Contains(a.WallId) && a.Runner.LastSeenAt >= online)
+        var shared = await Approvals(db).Where(a => walls.Contains(a.WallId) && a.Runner.LastSeenAt >= online && a.Runner.Paused != true)
             .Select(a => new { a.WallId, a.RunnerId, a.Runner.MaxQuality }).ToListAsync(ct);
         var busy = (await db.GpuJobs.AsNoTracking()
                 .Where(j => (j.Status == GpuJobStatus.Claimed || j.Status == GpuJobStatus.Running) && j.ClaimedByRunnerId != null)
