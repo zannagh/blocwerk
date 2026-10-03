@@ -208,14 +208,16 @@ changed.
     were placed on facet 0.
   - Regions: each model was run twice, once with plain extents and once with hold-widened regions (every extent
     + 150 mm, standing in for placed holds).
-  - Result: of 5394 rated cells, **0 changed status**. The main wall's "good" share stays 91.3 / 91.3 / 88.9 % (plain)
+  - Result: of 5394 rated cells, 0 changed status. The main wall's "good" share stays 91.3 / 91.3 / 88.9 % (plain)
     and 84.9 / 84.9 / 82.8 % (hold-widened).
-  - Caveats: the active model has no stored cameras, and the volumes fixture comes from a later model version, so this
-    is the closest real check the repository allows.
-
-  The changed rules (facing at 87–88°, 30 mm off-plane instead of 80 mm along the ray, camera on the plane) only
-  matter for grazing or very steep lines of sight near folds. Coverage % can move only where a cell sits right at a
-  threshold.
+  - What this shows, and what it doesn't: the changed line-of-sight rules (facing at 87–88°, 30 mm off-plane
+    instead of 80 mm along the ray, camera on the plane) don't regress these particular models. These capture-1 models
+    have no strays, no triangle panels and no shallow folds, so the check says nothing about the walls where this
+    change is meant to make a difference.
+  - Other limits: the active model has no stored cameras, the volumes fixture comes from a later model version, and
+    the hold widening is synthetic.
+  - The comparison harness is not committed. It was a throw-away xUnit probe run against an export of the base commit
+    and against this branch, and its per-cell codes were compared with a script.
 - **Textures.**
   - Photo choice is unchanged. Python's rules were already the unified ones, apart from stray voting and SfM outlines.
   - Seam harmonisation leaves out pixels beyond a facet's seam cut. Colour corrections within about 100 mm of folds

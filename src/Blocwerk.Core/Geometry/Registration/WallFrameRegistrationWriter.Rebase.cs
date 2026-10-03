@@ -62,7 +62,9 @@ public static partial class WallFrameRegistrationWriter
             var rect = ExtentRect(solved?.ExtentMm is null ? old.ExtentMm : null, extent, 0);
             if (solved is null)
             {
+                // No solved frame to map an outline from: the reference's extent replaces the shape entirely.
                 facet["extentMm"] = Json(rect);
+                facet.Remove("outlineMm");
             }
             else
             {

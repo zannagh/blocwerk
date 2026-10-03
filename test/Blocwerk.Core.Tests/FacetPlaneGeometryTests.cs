@@ -90,6 +90,18 @@ public sealed class FacetPlaneGeometryTests
         Assert.Equal(500, facet["extentMm"]!["aMax"]!.GetValue<double>());
     }
 
+    [Fact]
+    public void WithoutAnOldExtent_TheOutlineIsDropped()
+    {
+        var facet = JsonNode.Parse(SfmDoc())!["segments"]![1]!["facets"]![0]!.AsObject();
+        facet.Remove("extentMm");
+
+        FacetPlaneGeometry.Rewrite(facet, p => p, new PlaneRectMm(0, 1500, 0, 1500));
+
+        Assert.Null(facet["outlineMm"]);
+        Assert.Equal(1500, facet["extentMm"]!["bMax"]!.GetValue<double>());
+    }
+
     private static string SfmDoc()
     {
         var path = Path.Combine(AppContext.BaseDirectory, "GeometryGolden", "sfm-no-markers.json");

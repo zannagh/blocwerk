@@ -19,7 +19,8 @@ public static class FacetPlaneGeometry
     /// Sets the facet's extent to <paramref name="extent"/> and carries its outline along: the outline's fold clips
     /// (<see cref="GeometryKernel.OutlineHalfPlanes"/> against the OLD extent) are mapped by <paramref name="map"/> (old
     /// plane (a, b) → new plane (a, b)) and cut the new extent rectangle, so the outline's other sides are the new
-    /// extent's sides again. An outline that no fold clip cuts any more is dropped.
+    /// extent's sides again. An outline that no fold clip cuts any more is dropped, and so is one whose old extent is
+    /// missing or empty (its sides could not be told from its folds).
     /// </summary>
     /// <param name="facet">The facet's JSON object.</param>
     /// <param name="map">Old plane coordinates → new plane coordinates (identity when only the extent changes).</param>
@@ -41,9 +42,17 @@ public static class FacetPlaneGeometry
             return;
         }
 
+        if (old is not { Area: > 0 })
+        {
+            // Without the old extent the outline's sides cannot be told from its fold clips: drop it rather than cut
+            // the new extent along the old rectangle's sides.
+            facet.Remove("outlineMm");
+            return;
+        }
+
         var outline = outlineNode.Select(GeometryJson.Numbers).OfType<double[]>().Where(p => p.Length >= 2).ToList();
         IReadOnlyList<double[]>? shape = Wall3DFacetOutlines.RectCorners(extent);
-        foreach (var fold in GeometryKernel.OutlineHalfPlanes(outline, old is { Area: > 0 } o ? o : null))
+        foreach (var fold in GeometryKernel.OutlineHalfPlanes(outline, old))
         {
             var side = Mapped(fold, map);
             shape = shape is null ? null : Wall3DFacetOutlines.ClipHalf(shape, side);
