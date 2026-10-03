@@ -107,7 +107,8 @@
      [462.5, 1262.5],
      [462.5, 1137.5],
      [337.5, 1137.5]
-    ]
+    ],
+    "extentExcluded": true
    }
   ]
  },
@@ -171,6 +172,33 @@
    "insetMm": 0,
    "expected": true,
    "why": "crosses at (-1000, 400): the side wall's real half"
+  },
+  {
+   "kind": "blockedBy",
+   "occluder": "2",
+   "camera": [500, -1000, 400],
+   "target": [-500, -1000, 400],
+   "insetMm": 60,
+   "expected": true,
+   "why": "the same with the coverage report's 60 mm inset: 424 mm inside the seam"
+  },
+  {
+   "kind": "blockedBy",
+   "occluder": "2",
+   "camera": [500, -700, 650],
+   "target": [-500, -700, 650],
+   "insetMm": 60,
+   "expected": false,
+   "why": "crosses 35 mm inside the seam: blocked with the exact shape, not with a 60 mm inset"
+  },
+  {
+   "kind": "blockedBy",
+   "occluder": "2",
+   "camera": [500, -700, 650],
+   "target": [-500, -700, 650],
+   "insetMm": 0,
+   "expected": true,
+   "why": "... and blocked with the exact shape"
   },
   {
    "kind": "inShape",

@@ -197,6 +197,24 @@
    "insetMm": 0,
    "expected": true,
    "why": "the front face itself is seen"
+  },
+  {
+   "kind": "blocked",
+   "camera": [2000, -3000, 1500],
+   "target": [2000, 0, 1500],
+   "targetFacet": "0",
+   "insetMm": 60,
+   "expected": true,
+   "why": "the front face blocks with a 60 mm inset"
+  },
+  {
+   "kind": "blocked",
+   "camera": [2530, -3000, 1500],
+   "target": [2530, 0, 1500],
+   "targetFacet": "0",
+   "insetMm": 60,
+   "expected": false,
+   "why": "past the volume's front-right corner: crosses the side face 39 mm from its seam with the front, inside the 60 mm inset"
   }
  ]
 }
