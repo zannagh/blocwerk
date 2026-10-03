@@ -186,12 +186,15 @@ else
         @* Two view switches: the historic Then/Now toggle, and Photos | 3D (the inline 3D schematic
            with this boulder highlighted). The 3D model is today's wall, so it is only offered on
            "Now", and going to "Then" leaves it. *@
+        @* ONE row, both groups side by side: two stacked 48px rows cost ~100px of a phone screen that
+           the wall view and the Attempt/Send/Flash buttons need to fit on together. *@
+        <div class="boulder-toggle-row">
         @if (CanViewHistoric)
         {
             @* Both states are rendered, with the active one marked. A single button labelled with the
                CURRENT state reads as a status label, so nobody could tell whether "Then" meant "you
                are in Then" or "go to Then" — the two-button form is unambiguous either way round. *@
-            <div class="view-toggle">
+            <div class="view-toggle" role="group" aria-label="Wall generation">
                 <button class="toggle-btn @(!_showHistoric ? "active" : "")" aria-pressed="@(_showHistoric ? "false" : "true")"
                         @onclick="() => ShowGenerationAsync(historic: false)"
                         title="Show the wall as it is today">
@@ -209,6 +212,7 @@ else
         {
             <WallViewSwitch WallId="WallId" @bind-Show3D="_show3D" />
         }
+        </div>
 
         @if (!string.IsNullOrEmpty(_boulder.FootColorOnly) || _boulder.NoMatch)
         {

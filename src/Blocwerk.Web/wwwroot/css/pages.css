@@ -338,6 +338,31 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     box-sizing: border-box;
 }
 .wall-page.no-pad { padding: 0; }
+/* A slide scrolls ITSELF; reaching its top or bottom must not hand the gesture to the document (the
+   "whole page scrolls instead of the list" report), nor a sideways overshoot to the browser's
+   back-swipe. */
+.wall-page { min-height: 0; overscroll-behavior-y: contain; }
+.wall-carousel { align-items: stretch; overscroll-behavior-x: contain; }
+
+/* The carousel owns the screen: a FIXED app shell, not a document that merely happens to be about
+   one screen tall. The root used to be sized as `100dvh - topbar - tab bar` with those two heights
+   hard-coded, so any difference between the assumed and the real chrome (a title that wraps the
+   top bar, a banner, a safe-area inset) left the document taller than the window and the PAGE
+   scrolled under the list. Pinning the shell to the dynamic viewport and letting the root take
+   what is left makes the chrome absorb the difference instead.
+   Not while editing (the docked toolbar scrolls the slide itself) and not on a window too short
+   for the root's 360px floor, where scrolling the document is the only way to reach the rest. */
+@media (min-height: 520px) {
+    html:has(.wall-carousel-root:not(.editing)),
+    body:has(.wall-carousel-root:not(.editing)) {
+        height: 100dvh;
+        overflow: hidden;
+        overscroll-behavior: none;
+    }
+    .app-shell:has(.wall-carousel-root:not(.editing)) { height: 100dvh; min-height: 0; }
+    .app-shell:has(.wall-carousel-root:not(.editing)) > .content { min-height: 0; }
+    .app-shell:has(.wall-carousel-root:not(.editing)) .wall-carousel-root { height: 100%; }
+}
 
 .carousel-dots {
     display: flex;
@@ -1225,6 +1250,15 @@ a.wall3d-link {
 .rule-chip.foot { background: var(--foot-hold-soft); color: var(--foot-hold-text); border-color: transparent; }
 .rule-chip .rule-warn { color: var(--warning-text); }
 .view-toggle .toggle-sep { width: 1px; align-self: stretch; background: var(--border); margin: 0 4px; }
+
+/* Boulder view: the Then/Now and Photos/3D groups share ONE row (two stacked rows were ~100px of
+   a phone screen). Each group keeps its own pill and takes half the width; the buttons stay 40px
+   tall for a thumb. A group that is not offered (no older state, no 3D model) simply leaves the
+   other with the whole row, and an empty row takes no space at all. */
+.boulder-toggle-row { display: flex; gap: 8px; margin-bottom: 8px; }
+.boulder-toggle-row:not(:has(.view-toggle)) { display: none; }
+.boulder-toggle-row .view-toggle { flex: 1 1 0; min-width: 0; margin-bottom: 0; padding: 2px; }
+.boulder-toggle-row .toggle-btn { min-height: 40px; padding: 0 8px; font-size: 0.8rem; white-space: nowrap; }
 
 .attempt-section { margin-bottom: 16px; }
 .attempt-section h2 { font-size: 1.1rem; font-weight: 600; color: var(--text-heading); margin-bottom: 10px; }
