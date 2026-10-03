@@ -144,6 +144,7 @@ public class ApiKeySessionTests
         KeyHash = "hash",
         Prefix = "bwk_0000",
         ExpiresAt = expiresAt,
+        AllowWrite = true,
     };
 
     private static async Task<ApiKey> StoreKeyAsync(WallTestHarness h)

@@ -170,7 +170,7 @@ public class WallUpdateShapesControllerTests
     private static T Body<T>(IActionResult result) => Assert.IsType<T>(Assert.IsType<OkObjectResult>(result).Value);
 
     /// <summary>
-    /// A wall key bound to <paramref name="keyWallId"/>, or a personal key when it is null (with write
+    /// A wall key bound to <paramref name="keyWallId"/>, or a personal key when it is null (either with write
     /// access unless <paramref name="allowWrite"/> is false).
     /// </summary>
     private static WallUpdateShapesController Bind(
@@ -186,7 +186,8 @@ public class WallUpdateShapesControllerTests
         {
             claims.Add(new Claim(ApiKeyClaimTypes.WallId, wallId.ToString()));
         }
-        else if (allowWrite)
+
+        if (allowWrite)
         {
             claims.Add(new Claim(ApiKeyClaimTypes.AllowWrite, "true"));
         }

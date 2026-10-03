@@ -66,10 +66,11 @@ public sealed class KioskGuardedApiKeyService : IApiKeyService
         Guid actingUserId,
         string name,
         DateTimeOffset? expiresAt,
+        bool allowWrite = false,
         CancellationToken ct = default)
     {
         EnsureNotKiosk();
-        return inner.CreateWallKeyAsync(wallId, actingUserId, name, expiresAt, ct);
+        return inner.CreateWallKeyAsync(wallId, actingUserId, name, expiresAt, allowWrite, ct);
     }
 
     public Task<(ApiKey Key, string Token)> CreateKioskKeyAsync(

@@ -13,25 +13,28 @@ namespace Blocwerk.Web.Controllers;
 
 /// <summary>
 /// The marker plan's revisions over the machine API, and the API twin of the planner's "Markers swapped on
-/// the wall" action (<see cref="IMarkerPlanService.SetRevisionEffectiveAsync"/>). API key only; the key's
-/// owner must be an admin of the wall — enforced inside the service.
+/// the wall" action (<see cref="IMarkerPlanService.SetRevisionEffectiveAsync"/>). A wall-admin route like the
+/// capture API: a wall key for the wall in the route or a personal key, either created with write access, whose
+/// owner must be an admin of the wall — enforced inside the service. No device needs it, so a sensor's or
+/// camera's wall key without write access is refused.
 /// </summary>
 [ApiController]
 [Route("api/walls/{wallId:guid}/marker-plan/revisions")]
-[Authorize(Policy = BlocwerkPolicies.WallApiKey, AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName)]
+[Authorize(Policy = BlocwerkPolicies.AnyApiKey, AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName)]
 [Produces("application/json")]
-public sealed class WallMarkerPlanRevisionsController : WallScopedApiController
+public sealed class WallMarkerPlanRevisionsController : WallAdminApiController
 {
     private readonly IMarkerPlanService plans;
 
-    public WallMarkerPlanRevisionsController(IMarkerPlanService markerPlans)
+    public WallMarkerPlanRevisionsController(IMarkerPlanService markerPlans, ILogger<WallMarkerPlanRevisionsController> logger)
+        : base(logger)
     {
         plans = markerPlans;
     }
 
     /// <summary>The wall's plan revisions, newest first, with when each went up on the wall.</summary>
     [HttpGet]
-    public Task<IActionResult> List(Guid wallId) => AsAdminAsync(wallId, async () =>
+    public Task<IActionResult> List(Guid wallId) => RunAsync(wallId, async () =>
     {
         var revisions = await plans.GetRevisionsAsync(wallId);
         return Ok(revisions.Select(r => new MarkerPlanRevisionResponse(
@@ -45,32 +48,13 @@ public sealed class WallMarkerPlanRevisionsController : WallScopedApiController
     [HttpPut("{revision:int}/effective")]
     [Consumes("application/json")]
     public Task<IActionResult> SetEffective(Guid wallId, int revision, [FromBody] MarkerPlanEffectiveRequest body) =>
-        AsAdminAsync(wallId, async () =>
+        RunAsync(wallId, async () =>
         {
             DateTimeOffset? from = body.Clear ? null : body.EffectiveFrom ?? DateTimeOffset.UtcNow;
             return await plans.SetRevisionEffectiveAsync(wallId, revision, from)
                 ? NoContent()
                 : NotFound(new ApiErrorResponse($"The wall has no marker plan revision {revision}."));
         });
-
-    private async Task<IActionResult> AsAdminAsync(Guid wallId, Func<Task<IActionResult>> action)
-    {
-        if (GuardWall(wallId) is { } guard)
-        {
-            return guard;
-        }
-
-        try
-        {
-            return await action();
-        }
-        catch (Exception ex) when (ex is UnauthorizedAccessException or KioskRestrictedException)
-        {
-            return StatusCode(
-                StatusCodes.Status403Forbidden,
-                new ApiErrorResponse("This API key's owner is not an admin of that wall."));
-        }
-    }
 }
 
 /// <summary>Body of <c>PUT …/marker-plan/revisions/{revision}/effective</c>.</summary>

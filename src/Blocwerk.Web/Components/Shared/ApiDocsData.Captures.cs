@@ -13,7 +13,7 @@ internal static partial class ApiDocsData
         "Feeds new photos of a marker wall into its 3D model, exactly as the capture panel does: open a draft, stream "
         + "the photos in, start it, poll it. Once the model is live the server places the wall's existing holds on it, "
         + "refines their 3D shapes and (with a photo-real view) measures them, with no further call; panel holds and "
-        + "boulders are never changed. A Wall-scoped key for the wall, or a personal key with write access, whose "
+        + "boulders are never changed. A Wall-scoped key for the wall or a personal key, created with write access, whose "
         + "owner is an admin of the wall (a member's key gets 403, kiosk tablets are refused). The optional walk-along "
         + "video uses POST /api/captures/{captureId}/video (personal key), and only when a photo-real worker is set up.";
 
@@ -77,7 +77,7 @@ internal static partial class ApiDocsData
     private static ApiSurfaceDoc WallCaptureSurface => new(
         "Wall 3D model: captures",
         CaptureIntro,
-        "Wall key or personal key with write access (admin owner)",
+        "Wall or personal key with write access (admin owner)",
         CaptureEndpoints());
 
     private static ApiEndpointDoc[] CaptureEndpoints() =>

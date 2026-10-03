@@ -10,6 +10,9 @@ public interface IApiKeyService
 {
     /// <summary>
     /// Issues a wall-scoped key. The acting user must be an admin member (or the owner) of the wall.
+    /// <paramref name="allowWrite"/> sets <see cref="ApiKey.AllowWrite"/>: whether the key may also use the
+    /// wall-admin machine API (captures, 3D model, hold shapes) on its wall. Off by default, so a sensor or
+    /// camera key keeps only its fixed device surface (temperature, images, maintenance).
     /// </summary>
     /// <exception cref="UnauthorizedAccessException">The acting user does not administer the wall.</exception>
     Task<(ApiKey Key, string Token)> CreateWallKeyAsync(
@@ -17,6 +20,7 @@ public interface IApiKeyService
         Guid actingUserId,
         string name,
         DateTimeOffset? expiresAt,
+        bool allowWrite = false,
         CancellationToken ct = default);
 
     /// <summary>

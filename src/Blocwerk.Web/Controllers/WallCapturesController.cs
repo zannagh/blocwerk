@@ -18,7 +18,7 @@ namespace Blocwerk.Web.Controllers;
 /// </summary>
 /// <remarks>
 /// Authorised like <see cref="WallGeometryPlacementController"/>: a wall key for the wall in the route or a personal
-/// key with write access, whose OWNER must be an admin of the wall (the service's check); kiosk sessions are
+/// key, either created with write access, whose OWNER must be an admin of the wall (the service's check); kiosk sessions are
 /// refused by the service. A capture id is only served under the wall it belongs to.
 /// </remarks>
 [ApiController]

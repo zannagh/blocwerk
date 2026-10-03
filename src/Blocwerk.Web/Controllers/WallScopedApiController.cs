@@ -29,23 +29,38 @@ public abstract class WallScopedApiController : ControllerBase
     }
 
     /// <summary>
-    /// <see cref="GuardWall"/>, but also admitting a PERSONAL key (User scope, no wall claim) whose owner
-    /// allowed it to change walls (<c>ApiKey.AllowWrite</c>). Only for actions whose service decides per
-    /// wall from the acting user — wall admin, not a kiosk — so the personal key meets exactly the checks
-    /// its owner meets in the browser, and a wall key is still pinned to its own wall. The controller's
-    /// policy must admit User keys for this to be reachable.
+    /// The guard of the wall-admin machine API: admits a PERSONAL key (User scope, no wall claim) or a WALL key
+    /// bound to <paramref name="wallId"/>, and either only when its owner created it with write access
+    /// (<c>ApiKey.AllowWrite</c>). Only for actions whose service decides per wall from the acting user — wall
+    /// admin, not a kiosk — so the key meets exactly the checks its owner meets in the browser. A wall key without
+    /// write access keeps its fixed device surface (temperature, images, maintenance) and nothing more.
     /// </summary>
     protected IActionResult? GuardWallOrPersonalKey(Guid wallId)
     {
-        if (User.GetApiKeyScope() == ApiKeyScope.User)
+        var scope = User.GetApiKeyScope();
+        if (scope == ApiKeyScope.User)
         {
-            return User.IsWritablePersonalKey()
-                ? null
-                : StatusCode(
-                    StatusCodes.Status403Forbidden,
-                    new ApiErrorResponse("This API key may not change walls. Create a key with write access."));
+            return User.IsWritablePersonalKey() ? null : NoWriteAccess();
         }
 
-        return GuardWall(wallId);
+        // Kiosk and installation keys never reach the wall-admin API, whatever wall they carry.
+        if (scope != ApiKeyScope.Wall)
+        {
+            return NoWriteAccess();
+        }
+
+        if (GuardWall(wallId) is { } wrongWall)
+        {
+            return wrongWall;
+        }
+
+        return User.IsWritableWallKey(wallId) ? null : NoWriteAccess();
+    }
+
+    private ObjectResult NoWriteAccess()
+    {
+        return StatusCode(
+            StatusCodes.Status403Forbidden,
+            new ApiErrorResponse("This API key may not change walls. Create a key with write access."));
     }
 }

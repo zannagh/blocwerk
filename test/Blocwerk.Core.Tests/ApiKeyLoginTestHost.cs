@@ -114,12 +114,16 @@ internal sealed class ApiKeyLoginTestHost : IAsyncDisposable
         return user;
     }
 
-    /// <summary>Stores a key row the way ApiKeyService mints one, and returns its full token.</summary>
+    /// <summary>
+    /// Stores a key row the way ApiKeyService mints one, and returns its full token. A personal key gets write
+    /// access unless <paramref name="allowWrite"/> is false: a read-only key never signs a browser in.
+    /// </summary>
     public async Task<string> AddKeyAsync(
         Guid userId,
         ApiKeyScope scope = ApiKeyScope.User,
         DateTimeOffset? expiresAt = null,
-        DateTimeOffset? revokedAt = null)
+        DateTimeOffset? revokedAt = null,
+        bool allowWrite = true)
     {
         var (token, prefix) = ApiKeyTokens.Create();
         await using var db = Factory.CreateDbContext();
@@ -132,6 +136,7 @@ internal sealed class ApiKeyLoginTestHost : IAsyncDisposable
             Prefix = prefix,
             ExpiresAt = expiresAt,
             RevokedAt = revokedAt,
+            AllowWrite = allowWrite && scope == ApiKeyScope.User,
         });
         await db.SaveChangesAsync();
         return token;
