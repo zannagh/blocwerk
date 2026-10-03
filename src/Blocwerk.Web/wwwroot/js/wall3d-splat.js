@@ -13,10 +13,11 @@
 // and resumes one level lower at a lower resolution (wall3d-splat-recover.js). Only when even the smallest level is lost twice does it give
 // up, quietly, back to Schematic. Every step is reported to the server log (wall3d-splat-diag.js).
 // A shader that fails (iOS's Metal translator) is retried once on a plainer Spark path.
+// Downloads go through wall3d-splat-fetch.js, so dispose, a mode switch or a lost context aborts them.
 //
 // Rendered on demand (wall3d-loop.js): Spark re-sorts only after a camera move and its `onDirty`
 // asks for the frame showing the finished sort; phones space sorts LIGHT_SORT_MS apart.
-import { createDetailBadge, ladderOf, levelCap, pinnedLevel, remembered, rememberSuccess, sizeOf } from './wall3d-splat-ladder.js';
+import { createDetailBadge, firstLevelWarning, ladderOf, levelCap, pinnedLevel, remembered, rememberSuccess, sizeOf } from './wall3d-splat-ladder.js';
 import { storeDetail, storedDetail } from './wall3d-splat-detail.js';
 import { createLadderPolicy } from './wall3d-splat-policy.js';
 import { deviceFacts, report } from './wall3d-splat-diag.js';
@@ -24,13 +25,14 @@ import { PHOTO_REAL_FAILED } from './wall3d-modes.js';
 import { createRecovery, createRenderScale, prefersLightSplat, supportsPhotoReal as supported } from './wall3d-splat-recover.js';
 import { releaseTextures } from './wall3d-stage.js';
 import { createShaderRetry } from './wall3d-splat-safe.js';
+import {
+    createAborter, createCancelToken, fetchSplatBytes, PhotoRealCancelledError, PhotoRealStalledError, PhotoRealTooLargeError, PhotoRealUnsupportedError,
+} from './wall3d-splat-fetch.js';
 
-export { prefersLightSplat };
+export { prefersLightSplat, PhotoRealUnsupportedError };
 
 /** Minimum time between two splat sorts on a phone (each one reads back and sorts every splat). */
 const LIGHT_SORT_MS = 90;
-
-export class PhotoRealUnsupportedError extends Error {}
 
 /**
  * @param ctx.renderer      the view's THREE.WebGLRenderer
@@ -59,6 +61,9 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
     let loadingIndex = -1;          // the level loading, -1 when none
     let epoch = 0;                  // bumps on a lost context: loads of an older epoch are dropped
     let loading = null;
+    let starting = null;            // { cancelled, stopped, cancel } of the first load in flight, null when none
+    let warned = false;             // the "heavy for a phone" note was shown: the next pick loads anyway
+    const aborter = createAborter();
     let stepping = null;            // the epoch of the step in flight, null when none
     let active = false;
     let disposed = false;
@@ -79,8 +84,7 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
         culprit: () => levels[Math.max(index, loadingIndex, 0)],
         culpritIndex: () => Math.max(index, loadingIndex, 0),
         drop() {
-            epoch++;
-            release();
+            drop();
             detail.show('Restoring detail…');
         },
         resume(lowered) {
@@ -95,10 +99,19 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
         },
     });
 
+    /** Drops what loads now: its download is aborted and a late result of it is thrown away. */
+    function drop() {
+        epoch++;
+        aborter.abort();
+        release();
+    }
+
+    /** Loads level `i` and swaps it in; false when it was dropped (aborted, disposed, a lost context). */
     async function loadLevel(i, progress) {
-        spark ??= await import('../lib/spark/spark.module.min.js');
-        if (disposed) return false;
         const myEpoch = epoch;
+        const signal = aborter.signal;
+        spark ??= await import('../lib/spark/spark.module.min.js');
+        if (disposed || myEpoch !== epoch) return false;
         if (!sparkRenderer) {
             sparkRenderer = new spark.SparkRenderer({
                 renderer, onDirty: () => request(), minSortIntervalMs: light ? LIGHT_SORT_MS : 0,
@@ -108,24 +121,20 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
             sparkRenderer.visible = active;
             scene.add(sparkRenderer);
         }
-        const next = new spark.SplatMesh({
-            url: levels[i].url,
-            fileType: 'spz',
-            ...retry.meshOptions,
-            // A late progress event must not re-open the "Loading…" bubble over a finished scene.
-            onProgress: progress ? e => { if (!next.isInitialized) progress(e && e.lengthComputable && e.total > 0 ? e.loaded / e.total : null); } : undefined,
-        });
-        next.matrixAutoUpdate = false;
-        next.matrix.fromArray(view.splatMatrix);
-        next.matrixWorldNeedsUpdate = true;
-        next.visible = false;
-        scene.add(next);
         loadingIndex = i;
+        let next = null;
         try {
+            const fileBytes = await fetchSplatBytes(levels[i].url, signal, progress);
+            if (!fileBytes || disposed || myEpoch !== epoch) return false;
+            next = new spark.SplatMesh({ fileBytes, fileType: 'spz', ...retry.meshOptions });
+            next.matrixAutoUpdate = false;
+            next.matrix.fromArray(view.splatMatrix);
+            next.matrixWorldNeedsUpdate = true;
+            next.visible = false;
+            scene.add(next);
             await next.initialized;
         } catch (err) {
-            scene.remove(next);
-            next.dispose();
+            if (next) { scene.remove(next); next.dispose(); }
             throw err;
         } finally {
             loadingIndex = -1;
@@ -168,20 +177,42 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
             });
     }
 
-    async function start() {
+    async function start(token) {
         if (broken) throw new PhotoRealUnsupportedError('The photo-real view failed on this device.');
         if (!supported(renderer)) throw new PhotoRealUnsupportedError('WebGL 2 with large texture arrays is required.');
         if (levels.length === 0) throw new Error('No photo-real scene.');
-        startedAt = performance.now();
         const first = pinnedLevel(levels.length) ?? 0;
+        const warning = warned ? null : firstLevelWarning(levels[first], light, detailMode);
+        if (warning) {
+            warned = true;
+            throw new PhotoRealTooLargeError(warning);
+        }
+        startedAt = performance.now();
         say('start', { level: first, detail: `cap ${cap}, levels ${levels.map(l => l.splats).join('/')}` });
         try {
             await loadLevel(first, onProgress);
         } catch (err) {
+            if (token.cancelled || disposed) throw new PhotoRealCancelledError('Cancelled.');
             say('level-failed', { level: first, detail: String(err?.message || err) });
+            if (err instanceof PhotoRealStalledError) throw err;   // a stall again would only double the wait
             await loadLevel(first, onProgress);      // one retry: a flaky phone connection
         }
+        if (token.cancelled) throw new PhotoRealCancelledError('Cancelled.');
         say('level');
+    }
+
+    /** Starts the first load; `starting` can cancel it until it shows. */
+    function begin() {
+        const token = createCancelToken();
+        starting = token;
+        const p = start(token).then(
+            () => { if (starting === token) starting = null; },
+            err => {
+                if (starting === token) starting = null;
+                if (loading === p) loading = null;
+                throw err;
+            });
+        return p;
     }
 
     function apply() {
@@ -217,13 +248,27 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
         async setActive(on) {
             if (disposed || on === active) return;
             if (on) {
-                loading ??= start().catch(err => { loading = null; throw err; });
-                await loading;
+                loading ??= begin();
+                await (starting ? Promise.race([loading, starting.stopped]) : loading);
                 if (disposed) return;
                 if (broken) throw new PhotoRealUnsupportedError('The photo-real view failed on this device.');
+            } else if (stepping !== null) {
+                epoch++;                          // leaving the mode: a step loading behind it is not wanted now
+                aborter.abort();
             }
             active = on;
             apply();
+        },
+
+        /** Cancels a first load still in flight (another mode was picked): its download stops, `setActive` throws. */
+        cancel() {
+            if (!starting || active) return;
+            const token = starting;
+            starting = null;
+            loading = null;
+            epoch++;
+            aborter.abort();
+            token.cancel();
         },
 
         /** Called every drawn frame while the mode shows: measures and steps the ladder. */
@@ -282,7 +327,7 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
             broken = true;
             active = false;
             apply();
-            release();
+            drop();
             loading = null;
         },
 
@@ -294,16 +339,17 @@ export function createPhotoReal({ renderer, scene, view, facetParts, photoTextur
             if (disposed || broken || !loading) return false;
             const level = Math.max(0, index);
             // Not mid-render: three.js reports the failure while it draws the scene being released.
-            return retry.start(failure, () => { epoch++; release(); stepTo(level, true); });
+            return retry.start(failure, () => { drop(); stepTo(level, true); });
         },
 
         dispose() {
             if (disposed) return;
             disposed = true;
             active = false;
+            starting?.cancel();
             recovery.cancel();
             apply();
-            release();
+            drop();
             detail.remove();
         },
     };

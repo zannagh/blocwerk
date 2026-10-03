@@ -105,6 +105,18 @@ export function levelCap(levels, light, detail = 'auto') {
     return cap;
 }
 
+/**
+ * The phone cap for the first level: the cap only limits stepping up, so a scene without a ladder (only
+ * the full scene, e.g. not backfilled yet) would start a phone on all of it. Null when `level` may load
+ * at once, else the line asking first ("… N MB …"). Detail: Ultra and a pinned level load anyway.
+ */
+export function firstLevelWarning(level, light, detail = 'auto') {
+    if (!light || detail === 'ultra' || pinnedLevel(1) != null) return null;
+    if (sizeOf(level) <= (detail === 'high' ? LIGHT_HIGH_CAP_SPLATS : LIGHT_CAP_SPLATS)) return null;
+    const size = level.sizeBytes > 0 ? `${Math.max(1, Math.round(level.sizeBytes / 1048576))} MB, ` : '';
+    return `The photo-real view is ${size}heavy for a phone. Tap Photo-real again to load it.`;
+}
+
 /** The level `?splatLevel=` / `?splatLod=` pins, or null. */
 export function pinnedLevel(count, q = new URLSearchParams(location.search)) {
     const n = q.get('splatLevel');
