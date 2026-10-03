@@ -59,7 +59,17 @@ public static partial class WallFrameRegistrationWriter
             facet["v"] = Array(frame.V!, 6);
             Set(facet, "normal", frame.Normal, 6);
             var extent = solved is null ? [] : Corners(solved).Select(x => ToPlane(frame, x));
-            facet["extentMm"] = Extent(solved?.ExtentMm is null ? old.ExtentMm : null, extent, 0);
+            var rect = ExtentRect(solved?.ExtentMm is null ? old.ExtentMm : null, extent, 0);
+            if (solved is null)
+            {
+                facet["extentMm"] = Json(rect);
+            }
+            else
+            {
+                // The extent and the outline (SfM fold clips) move from the solved frame into the rebased one together.
+                FacetPlaneGeometry.Rewrite(facet, p => ToPlane(frame, MarkerWorldCorners.ToWorld(solved, p[0], p[1])), rect);
+            }
+
             frames[id] = frame;
         }
 

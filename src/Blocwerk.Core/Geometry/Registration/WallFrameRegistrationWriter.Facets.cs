@@ -190,8 +190,8 @@ public static partial class WallFrameRegistrationWriter
                 continue;
             }
 
-            var old = new PlaneRectMm(Num(e, "aMin"), Num(e, "aMax"), Num(e, "bMin"), Num(e, "bMax"));
-            facet["extentMm"] = Extent(old, corners, ExtentMarginMm);
+            // Same frame, a bigger extent: an outline's fold clips stay, its other sides follow the extent.
+            FacetPlaneGeometry.Rewrite(facet, p => p, ExtentRect(Rect(e), corners, ExtentMarginMm));
         }
     }
 
@@ -214,7 +214,17 @@ public static partial class WallFrameRegistrationWriter
         return [Vec3.Dot(d, frame.U!), Vec3.Dot(d, frame.V!)];
     }
 
-    private static JsonObject Extent(PlaneRectMm? old, IEnumerable<double[]> plane, double margin)
+    private static PlaneRectMm Rect(JsonObject e) => new(Num(e, "aMin"), Num(e, "aMax"), Num(e, "bMin"), Num(e, "bMax"));
+
+    private static JsonObject Json(PlaneRectMm r) => new()
+    {
+        ["aMin"] = Math.Round(r.AMin, 1),
+        ["aMax"] = Math.Round(r.AMax, 1),
+        ["bMin"] = Math.Round(r.BMin, 1),
+        ["bMax"] = Math.Round(r.BMax, 1),
+    };
+
+    private static PlaneRectMm ExtentRect(PlaneRectMm? old, IEnumerable<double[]> plane, double margin)
     {
         var points = plane.Select(p => (p[0], p[1])).ToList();
         var bounds = PlaneRectMm.Bounds(points);
@@ -228,12 +238,6 @@ public static partial class WallFrameRegistrationWriter
             (null, { } g) => g,
             _ => new PlaneRectMm(-ExtentMarginMm, ExtentMarginMm, -ExtentMarginMm, ExtentMarginMm),
         };
-        return new JsonObject
-        {
-            ["aMin"] = Math.Round(union.AMin, 1),
-            ["aMax"] = Math.Round(union.AMax, 1),
-            ["bMin"] = Math.Round(union.BMin, 1),
-            ["bMax"] = Math.Round(union.BMax, 1),
-        };
+        return new PlaneRectMm(Math.Round(union.AMin, 1), Math.Round(union.AMax, 1), Math.Round(union.BMin, 1), Math.Round(union.BMax, 1));
     }
 }
