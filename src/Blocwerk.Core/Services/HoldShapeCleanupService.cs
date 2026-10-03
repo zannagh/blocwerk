@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Detection.Outlines;
@@ -18,10 +17,6 @@ public sealed partial class HoldShapeCleanupService : IHoldShapeCleanupService
 {
     /// <summary>The journal batch label of an applied clean-up.</summary>
     public const string BatchLabel = "hold-shape-cleanup";
-
-    // One writer per wall inside this server process (the app runs as one instance): two admins pressing Apply
-    // (or Apply and Undo) at once would otherwise both plan from the same holds and write over each other.
-    private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> WallLocks = new();
 
     private readonly IDbContextFactory<BlocwerkDbContext> dbContextFactory;
     private readonly ICurrentUserService currentUserService;
@@ -113,11 +108,7 @@ public sealed partial class HoldShapeCleanupService : IHoldShapeCleanupService
 
             ct.ThrowIfCancellationRequested();
             var batchId = await SaveInBatchAsync(db, wallId, ct);
-            if (footprints is not null)
-            {
-                // The 3D footprints derive from the outlines: refresh them (a batch step, as after the circle upgrade).
-                await footprints.RefineFromPipelineAsync(wallId, ct);
-            }
+            await RefreshFootprintsAsync(wallId);
 
             logger.LogInformation(
                 "Hold shape clean-up on wall {WallId} by {UserId}: {Changed} of {Shapes} outlines and {Circles} circles considered changed, journal batch {BatchId}",
@@ -142,9 +133,9 @@ public sealed partial class HoldShapeCleanupService : IHoldShapeCleanupService
 
         using var wallLock = AcquireWallLock(wallId);
         var result = await reverter.RevertBatchAsync(batchId, force: false, ct);
-        if (result.Reverted && footprints is not null)
+        if (result.Reverted)
         {
-            await footprints.RefineFromPipelineAsync(wallId, ct);
+            await RefreshFootprintsAsync(wallId);
         }
 
         return result;
@@ -159,15 +150,30 @@ public sealed partial class HoldShapeCleanupService : IHoldShapeCleanupService
         return batchId;
     }
 
-    private static IDisposable AcquireWallLock(Guid wallId)
+    /// <summary>Fails fast when any hold writer (another clean-up, an outline upgrade, a wall-update commit) is running.</summary>
+    private static IDisposable AcquireWallLock(Guid wallId) =>
+        WallHoldWriteLock.TryAcquire(wallId, "Another update of this wall's holds (a clean-up, an outline upgrade or a wall update) is running. Try again in a moment.");
+
+    /// <summary>
+    /// The 3D footprints derive from the outlines. This runs AFTER the holds were saved, so it ignores the caller's
+    /// cancellation (a cancelled request must not report "nothing changed" over written holds) and a failure here
+    /// is logged, not reported as a failed clean-up: the shapes are saved and the refresh can be run again.
+    /// </summary>
+    private async Task RefreshFootprintsAsync(Guid wallId)
     {
-        var gate = WallLocks.GetOrAdd(wallId, _ => new SemaphoreSlim(1, 1));
-        if (!gate.Wait(0))
+        if (footprints is null)
         {
-            throw new UserFacingException("Another clean-up or undo is already running on this wall.");
+            return;
         }
 
-        return new Releaser(gate);
+        try
+        {
+            await footprints.RefineFromPipelineAsync(wallId, CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            logger.LogWarning(ex, "The 3D footprint refresh after the shape clean-up on wall {WallId} failed; run \"refine 3D hold shapes\" again", wallId);
+        }
     }
 
     /// <summary>Writes one change onto the tracked hold: geometry only, never position, never boulders.</summary>
@@ -207,10 +213,5 @@ public sealed partial class HoldShapeCleanupService : IHoldShapeCleanupService
             await db.DisposeAsync();
             throw;
         }
-    }
-
-    private sealed class Releaser(SemaphoreSlim gate) : IDisposable
-    {
-        public void Dispose() => gate.Release();
     }
 }

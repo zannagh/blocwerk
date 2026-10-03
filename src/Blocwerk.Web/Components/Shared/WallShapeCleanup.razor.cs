@@ -17,6 +17,7 @@ public partial class WallShapeCleanup : IDisposable
     private string? failure;
     private string? phase;
     private HoldShapeCleanupProgress progress;
+    private bool disposed;
     private CancellationTokenSource? cancellation;
     private HoldShapeCleanupStatus? status;
     private HoldShapeCleanupSummary? preview;
@@ -79,6 +80,7 @@ public partial class WallShapeCleanup : IDisposable
     /// <inheritdoc/>
     public void Dispose()
     {
+        disposed = true;
         try
         {
             cancellation?.Cancel();
@@ -114,6 +116,10 @@ public partial class WallShapeCleanup : IDisposable
         {
             Logger.LogWarning(ex, "Could not load the shape clean-up status of wall {WallId}", WallId);
             status = null;
+        }
+        catch (ObjectDisposedException)
+        {
+            // The circuit was disposed while the run was finishing: nobody is left to show it to.
         }
     }
 
@@ -158,7 +164,10 @@ public partial class WallShapeCleanup : IDisposable
         var report = new Progress<HoldShapeCleanupProgress>(p =>
         {
             progress = p;
-            _ = InvokeAsync(StateHasChanged);
+            if (!disposed)
+            {
+                _ = InvokeAsync(StateHasChanged);
+            }
         });
         try
         {
@@ -178,7 +187,11 @@ public partial class WallShapeCleanup : IDisposable
         {
             cancellation.Dispose();
             cancellation = null;
-            await ReloadAsync();
+            if (!disposed)
+            {
+                await ReloadAsync();
+            }
+
             busy = false;
         }
     }

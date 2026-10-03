@@ -11,6 +11,7 @@ public sealed partial class HoldOutlineUpgradeService
     /// <inheritdoc/>
     public async Task<HoldOutlineRevertResult> RevertAsync(Guid wallId, Guid runId, CancellationToken ct = default)
     {
+        using var holdWrite = await WallHoldWriteLock.AcquireAsync(wallId, ct: ct);
         var (db, userId) = await OpenForAdminAsync(wallId, ct);
         await using (db)
         {

@@ -273,6 +273,7 @@ public partial class WallPanelService : IWallPanelService
         IReadOnlyList<ConfirmedLink> links,
         IReadOnlyList<Guid> removedNeighborHoldIds)
     {
+        using var holdWrite = await WallHoldWriteLock.AcquireAsync(wallId);
         var user = await currentUserService.GetCurrentUserAsync();
         await using var db = await dbContextFactory.CreateDbContextAsync();
         db.CurrentUserId = user.Id;

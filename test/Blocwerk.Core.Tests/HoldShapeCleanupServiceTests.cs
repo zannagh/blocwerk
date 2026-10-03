@@ -105,17 +105,10 @@ public sealed class HoldShapeCleanupServiceTests : IDisposable
     public async Task OnlyOneApplyRunsPerWall()
     {
         await SeedAsync();
-        var locks = (System.Collections.Concurrent.ConcurrentDictionary<Guid, SemaphoreSlim>)typeof(HoldShapeCleanupService)
-            .GetField("WallLocks", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.GetValue(null)!;
-        var gate = locks.GetOrAdd(harness.WallId, _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync();
-        try
+        using (WallHoldWriteLock.TryAcquire(harness.WallId, "busy"))
         {
             await Assert.ThrowsAsync<UserFacingException>(() => Service().ApplyAsync(harness.WallId));
-        }
-        finally
-        {
-            gate.Release();
+            await Assert.ThrowsAsync<UserFacingException>(() => WallHoldWriteLock.AcquireAsync(harness.WallId, TimeSpan.FromMilliseconds(50)));
         }
 
         Assert.NotNull((await Service().ApplyAsync(harness.WallId)).BatchId);

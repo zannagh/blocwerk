@@ -17,6 +17,7 @@ public sealed partial class HoldOutlineUpgradeService
     {
         ArgumentNullException.ThrowIfNull(options);
         EnsureEnabled();
+        using var holdWrite = await WallHoldWriteLock.AcquireAsync(wallId, ct: ct);
         var (db, userId) = await OpenForAdminAsync(wallId, ct);
         await using (db)
         {
