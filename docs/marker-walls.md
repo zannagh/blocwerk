@@ -1209,6 +1209,17 @@ the upload and the hand-over to `splat-finish` all stream through files.
 The splat worker (`SPLATSERVICE__URL`) is still needed for the CPU steps; with `always` it no longer
 needs a GPU.
 
+### Runner overview
+
+*3D runners → Overview* (`/administration/runners`, linked from a wall's runner panel and the
+administration page) lists every runner you may see: its state (online, paused by its owner,
+offline, revoked; a runner that stopped calling is offline even if it was paused), owner, GPU and
+version, the walls it serves, what it trains now (wall, stage, step, remaining time, lease) and its
+recent failed trainings. Site admins see every runner and may revoke or share any; wall admins see the
+runners that serve their walls and their own (they may revoke their own). A runner busy with a wall
+you do not administer only says "busy with another wall's job", and its failures there carry no
+reason. The page refreshes every 5 s while it is visible.
+
 ### Watching long-running work (progress API)
 
 Everything slow shows up in one list: captures (per stage), photo-real training on a 3D runner

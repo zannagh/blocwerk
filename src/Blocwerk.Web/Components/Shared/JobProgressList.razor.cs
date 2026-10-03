@@ -11,16 +11,13 @@ namespace Blocwerk.Web.Components.Shared;
 
 /// <summary>
 /// The list behind the administration's "Background jobs" page and the wall's compact panel: every job the user may watch
-/// (<see cref="IJobProgressService"/>), polled every <see cref="RefreshEvery"/> while the list is on screen (the tab is
-/// visible and the panel open, see <c>element-shown.js</c>).
+/// (<see cref="IJobProgressService"/>), polled every <see cref="RefreshEvery"/> while the list is on screen
+/// (<see cref="ShownPoller"/>).
 /// </summary>
 public partial class JobProgressList : IAsyncDisposable
 {
     /// <summary>How often the list refreshes while it is shown.</summary>
     public static readonly TimeSpan RefreshEvery = TimeSpan.FromSeconds(4);
-
-    /// <summary>The longest wait after failed refreshes.</summary>
-    public static readonly TimeSpan MaxBackoff = TimeSpan.FromSeconds(60);
 
     private readonly CancellationTokenSource disposed = new();
     private ElementReference root;
@@ -108,7 +105,7 @@ public partial class JobProgressList : IAsyncDisposable
         if (firstRender)
         {
             // The token is taken once, here: the loop never touches the source again (disposing only cancels it).
-            _ = RefreshLoopAsync(disposed.Token);
+            _ = new ShownPoller(JS, () => root, InvokeAsync, LoadAsync, Logger).RunAsync(RefreshEvery, disposed.Token);
         }
     }
 
@@ -118,46 +115,6 @@ public partial class JobProgressList : IAsyncDisposable
     {
         showRecent = e.Value is true;
         await LoadAsync(disposed.Token);
-    }
-
-    /// <summary>
-    /// Loads now and then every <see cref="RefreshEvery"/> while the list is on screen (never while its panel is closed).
-    /// A failed load shows its error and the loop keeps going, waiting longer after each failure (up to <see cref="MaxBackoff"/>).
-    /// </summary>
-    private async Task RefreshLoopAsync(CancellationToken ct)
-    {
-        var wait = TimeSpan.Zero;
-        while (!ct.IsCancellationRequested)
-        {
-            try
-            {
-                await Task.Delay(wait, ct);
-                var ok = true;
-                await InvokeAsync(async () => ok = !await IsShownAsync(ct) || await LoadAsync(ct));
-                wait = ok ? RefreshEvery : TimeSpan.FromTicks(Math.Min(MaxBackoff.Ticks, Math.Max(RefreshEvery.Ticks, wait.Ticks * 2)));
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception ex)
-            {
-                Logger.LogDebug(ex, "The background jobs list could not refresh");
-                wait = MaxBackoff;
-            }
-        }
-    }
-
-    private async Task<bool> IsShownAsync(CancellationToken ct)
-    {
-        try
-        {
-            return await JS.InvokeAsync<bool>("bwShown", ct, root);
-        }
-        catch (Exception ex) when (ex is JSException or JSDisconnectedException or TaskCanceledException or InvalidOperationException)
-        {
-            return false;
-        }
     }
 
     /// <summary>Loads the list; false (with the error shown) when it failed.</summary>

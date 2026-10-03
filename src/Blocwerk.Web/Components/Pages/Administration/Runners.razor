@@ -1,0 +1,22 @@
+@page "/administration/runners"
+@rendermode InteractiveServer
+@attribute [Authorize]
+
+<PageTitle>3D runners - Blocwerk</PageTitle>
+
+@* Signed-in admins only: a site admin sees every runner, a wall admin the runners that serve their walls (the service
+   decides; anyone else sees an empty list). Refused on kiosk tablets (KioskRestrictions). *@
+<div class="admin-dashboard">
+    <div class="list-header">
+        <h1>3D runners</h1>
+    </div>
+
+    <div class="settings-panel">
+        <p class="apikey-blurb">
+            Every GPU machine that trains photo-real views for your walls: online, paused by its owner, or offline (offline
+            wins), what it is training now, the walls it serves and its recent failures. A runner busy with a wall you do
+            not administer only says that it is busy.
+        </p>
+        <RunnerOverviewList />
+    </div>
+</div>
