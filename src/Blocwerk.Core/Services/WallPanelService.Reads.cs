@@ -1,5 +1,6 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Services.PanelCrop;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Services;
@@ -303,6 +304,7 @@ public partial class WallPanelService
                 Type = staged ? p.StagedPhotoContentType : p.PhotoContentType,
                 p.StagedAt,
                 p.Generation,
+                p.PhotoRevision,
             })
             .FirstOrDefaultAsync();
 
@@ -318,11 +320,12 @@ public partial class WallPanelService
         //            Generation alone). The token is nonetheless sound because Photo is WRITE-ONCE:
         //            promotion is refused unless Photo is still null (the `panel.Photo is not null`
         //            guard in StagePanelAsync/ResumePanelAsync), so a live panel photo is never
-        //            rewritten and there is nothing for a version to have to track. Length and
-        //            content type below are what would catch it if that guard ever went away.
+        //            rewritten by promotion. Length and content type below are what would catch it if
+        //            that guard ever went away. The ONE in-place rewrite is a crop or its undo
+        //            (PanelCropService), which moves PhotoRevision — folded into the token here.
         // This is load-bearing for the ETag AND for the variant cache key, which is derived from
         // exactly these parts — see FileSystemImageVariantCache.
-        var version = staged ? row.StagedAt?.UtcTicks ?? 0L : row.Generation;
+        var version = staged ? row.StagedAt?.UtcTicks ?? 0L : PanelPhotoVersion.Of(row.Generation, row.PhotoRevision);
         return new WallPhotoTag(row.Length, row.Type, version, IsArchived: false);
     }
 

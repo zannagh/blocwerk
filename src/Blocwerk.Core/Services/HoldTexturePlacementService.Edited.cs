@@ -109,14 +109,14 @@ public sealed partial class HoldTexturePlacementService
         BlocwerkDbContext db, Guid panelId, List<Hold> anchorHolds, EditedPlacementSource source, CancellationToken ct)
     {
         var stamp = await db.WallPanels.AsNoTracking().Where(p => p.Id == panelId && p.Photo != null)
-            .Select(p => new { p.Generation, p.Photo!.Length })
+            .Select(p => new { p.Generation, p.Photo!.Length, p.PhotoRevision })
             .FirstOrDefaultAsync(ct);
         if (stamp is null)
         {
             return null;
         }
 
-        var cacheKey = new PanelRegistrationKey(panelId, new PanelPhotoStamp(stamp.Generation, stamp.Length), source.ModelId, source.TextureSetKey);
+        var cacheKey = new PanelRegistrationKey(panelId, new PanelPhotoStamp(stamp.Generation, stamp.Length, stamp.PhotoRevision), source.ModelId, source.TextureSetKey);
         if (PanelRegistrationCache.Get(cacheKey) is { } cached)
         {
             return cached;
@@ -124,8 +124,9 @@ public sealed partial class HoldTexturePlacementService
 
         var textures = await source.TexturesAsync();
         var panel = await db.WallPanels.AsNoTracking().Where(p => p.Id == panelId)
-            .Select(p => new { p.Col, p.Row, p.Generation, p.Photo }).FirstAsync(ct);
-        if (textures.Count == 0 || panel.Photo is null || panel.Generation != stamp.Generation || panel.Photo.Length != stamp.Length)
+            .Select(p => new { p.Col, p.Row, p.Generation, p.Photo, p.PhotoRevision }).FirstAsync(ct);
+        if (textures.Count == 0 || panel.Photo is null || panel.Generation != stamp.Generation || panel.Photo.Length != stamp.Length
+            || panel.PhotoRevision != stamp.PhotoRevision)
         {
             return null;
         }
@@ -138,7 +139,7 @@ public sealed partial class HoldTexturePlacementService
         {
             var registrations = await Task.Run(() => Register(panel.Photo, textures, $"c{panel.Col} r{panel.Row}", anchors, null, ct), ct);
             source.Registered++;
-            PanelRegistrationCache.Put(cacheKey with { Photo = new PanelPhotoStamp(panel.Generation, panel.Photo.Length) }, registrations);
+            PanelRegistrationCache.Put(cacheKey with { Photo = new PanelPhotoStamp(panel.Generation, panel.Photo.Length, panel.PhotoRevision) }, registrations);
             return registrations;
         }
         catch (ArgumentException ex)

@@ -6,6 +6,7 @@ using Blocwerk.Core.Detection.Enrichment;
 using Blocwerk.Core.MarkerPlanning;
 using Blocwerk.Core.Refresh;
 using Blocwerk.Core.Services;
+using Blocwerk.Core.Services.PanelCrop;
 using Blocwerk.Core.Services.TopLogger;
 using Blocwerk.Core.Telemetry;
 using Microsoft.EntityFrameworkCore;
@@ -215,6 +216,7 @@ public static class CoreServices
         builder.Services.AddWall3DView();
         builder.Services.AddMarkerPlanning();
         builder.Services.AddScoped<IWallPanelService, WallPanelService>();
+        builder.Services.AddScoped<IPanelCropService, PanelCropService>();
         builder.Services.AddScoped<IWallBigUpdateService, WallBigUpdateService>();
         builder.Services.AddScoped<IWallUpdateSessionService, WallUpdateSessionService>();
 

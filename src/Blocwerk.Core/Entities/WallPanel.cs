@@ -41,5 +41,13 @@ public class WallPanel
 
     public int Generation { get; set; } = 1;
 
+    /// <summary>
+    /// Moves every time the live <see cref="Photo"/> is rewritten in place (a crop or its undo, see
+    /// <see cref="WallPanelCrop"/>). The photo is otherwise write-once per row, so the image ETag, the variant cache and
+    /// the 3D registration cache keyed on <see cref="Generation"/> alone; they include this too, so an in-place
+    /// rewrite reads as a new photo.
+    /// </summary>
+    public int PhotoRevision { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
