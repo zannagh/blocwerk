@@ -159,7 +159,12 @@ public partial class WallRefresh : IDisposable
 
     private Task StartAsync(IReadOnlyList<PanelChoice> choices) => ActAsync(id => Refreshes.StartAsync(id, choices));
 
-    private Task ApplyAsync() => ActAsync(id => Refreshes.ApplyAsync(id));
+    private Task ApplyAsync()
+    {
+        // The version of the summary on screen: Apply promotes only what this summary describes.
+        var confirmed = view?.Summary?.DecisionsVersion;
+        return ActAsync(id => Refreshes.ApplyAsync(id, confirmed));
+    }
 
     private async Task DiscardAsync()
     {
@@ -182,8 +187,15 @@ public partial class WallRefresh : IDisposable
         var id = view.Id;
         await RunAsync(async () =>
         {
-            await action(id);
-            await ReloadAsync();
+            try
+            {
+                await action(id);
+            }
+            finally
+            {
+                // Also after a refusal: e.g. "the summary changed" is only fixed by showing the current one.
+                await ReloadAsync();
+            }
         });
     }
 

@@ -32,7 +32,7 @@ internal sealed class FailingDecisionSessions(IWallUpdateSessionService inner) :
 
     public Task SaveNeighbourLinkSetAsync(Guid wallId, NeighbourLinkSet linkSet) => inner.SaveNeighbourLinkSetAsync(wallId, linkSet);
 
-    public Task<bool> SaveDefaultDecisionsAsync(Guid wallId, DefaultDecisions decisions, DateTimeOffset? onlyIfUnchangedSince = null) =>
+    public Task<DateTimeOffset?> SaveDefaultDecisionsAsync(Guid wallId, DefaultDecisions decisions, DateTimeOffset? onlyIfUnchangedSince = null) =>
         throw new InvalidOperationException("The decisions could not be saved.");
 
     public Task<IReadOnlyList<RelocationSuggestion>> GetRelocationSuggestionsAsync(Guid wallId) => inner.GetRelocationSuggestionsAsync(wallId);

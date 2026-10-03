@@ -38,7 +38,11 @@ public interface IWallRefreshService
     Task StartAsync(Guid refreshId, IReadOnlyList<PanelChoice> choices);
 
     /// <summary>The user's confirm: applies the prepared panel update, then places the holds on the 3D model.</summary>
-    Task ApplyAsync(Guid refreshId);
+    /// <param name="refreshId">The run.</param>
+    /// <param name="confirmedVersion">
+    /// The <see cref="RefreshSummary.DecisionsVersion"/> of the summary the user saw; refused when the summary changed since.
+    /// </param>
+    Task ApplyAsync(Guid refreshId, string? confirmedVersion = null);
 
     /// <summary>Throws the run away (and its prepared panel update); a started 3D capture keeps running.</summary>
     Task DiscardAsync(Guid refreshId);

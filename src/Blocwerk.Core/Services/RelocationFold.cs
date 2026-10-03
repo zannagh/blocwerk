@@ -21,7 +21,8 @@ namespace Blocwerk.Core.Services;
 /// <para>
 /// A later, deliberate verdict wins over the accept: an old hold now marked Removed, or pointed at a
 /// DIFFERENT new hold, is left alone, and so is an accept whose new hold another old hold has since
-/// claimed (that would silently turn a move into a merge).
+/// claimed (that would silently turn a move into a merge). Accepts competing for one new hold are folded in a fixed
+/// order (old hold id, then new hold id), so the outcome never depends on the order they were read in.
 /// </para>
 /// </summary>
 public static class RelocationFold
@@ -52,8 +53,13 @@ public static class RelocationFold
             return confirmation;
         }
 
+        // When two accepts compete for one new hold the first one folded wins, so the order is fixed here (by ids)
+        // rather than left to whatever order the caller read them in: every caller folds to the same outcome.
+        var ordered = accepted
+            .OrderBy(a => a.OldHoldId.ToString(), StringComparer.Ordinal)
+            .ThenBy(a => a.NewHoldId.ToString(), StringComparer.Ordinal);
         var decisions = confirmation.Carryover.ToList();
-        foreach (var (oldHoldId, newHoldId, kind) in accepted)
+        foreach (var (oldHoldId, newHoldId, kind) in ordered)
         {
             if (ClaimedByAnother(decisions, oldHoldId, newHoldId))
             {

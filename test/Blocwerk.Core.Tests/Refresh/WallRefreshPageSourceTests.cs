@@ -28,6 +28,18 @@ public class WallRefreshPageSourceTests
     }
 
     [Fact]
+    public void ARefusedAction_ReloadsTheRun_SoAStaleSummaryIsReplaced()
+    {
+        var code = Read("src/Blocwerk.Web/Components/Pages/Walls/WallRefresh.razor.cs");
+
+        var act = code.IndexOf("private async Task ActAsync(", StringComparison.Ordinal);
+        var reload = code.IndexOf("await ReloadAsync();", act, StringComparison.Ordinal);
+        var finallyAt = code.IndexOf("finally", act, StringComparison.Ordinal);
+        Assert.True(act > 0 && finallyAt > act && reload > finallyAt, "ActAsync must reload in a finally block");
+        Assert.Contains("Refreshes.ApplyAsync(id, confirmed)", code);
+    }
+
+    [Fact]
     public void Discard_AsksFirst_InThePage()
     {
         var page = Read("src/Blocwerk.Web/Components/Pages/Walls/WallRefresh.razor");
