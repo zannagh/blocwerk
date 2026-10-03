@@ -72,6 +72,7 @@ public class CapturePackageCommitSafetyTests
         })));
 
         Assert.Single(commits, c => c?.Committed == true);
+        Assert.False(CaptureImportLocks.Has(f.CaptureId));
         await using var db = h.CreateContext();
         Assert.Single(await db.WallCaptures.ToListAsync());
     }

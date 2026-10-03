@@ -20,7 +20,10 @@ namespace Blocwerk.Core.Capture;
 public sealed partial class WallCaptureProcessor
 {
     /// <summary>Runs the capture's pending texture re-render (no-op without one). Cancellation leaves it to resume.</summary>
-    public async Task RerenderTexturesAsync(Guid captureId, CancellationToken ct)
+    public Task RerenderTexturesAsync(Guid captureId, CancellationToken ct) =>
+        RunOnceAsync(rerendering, captureId, () => RerenderOnceAsync(captureId, ct));
+
+    private async Task RerenderOnceAsync(Guid captureId, CancellationToken ct)
     {
         if (await RerenderTargetAsync(captureId, ct) is not { } target)
         {
@@ -89,7 +92,7 @@ public sealed partial class WallCaptureProcessor
         if (!active || !WallCaptureService.MayRerenderTextures(capture.Status))
         {
             logger.LogInformation("Capture {CaptureId}: its textures are not rendered again (its model is no longer active)", captureId);
-            await UpdateAsync(captureId, c => c.TexturesJobId = null, ct);
+            await ClearMarkAsync(captureId, c => c.TexturesJobId = null, ct);
             return null;
         }
 
@@ -108,7 +111,7 @@ public sealed partial class WallCaptureProcessor
             kept = textureError is not null && await db.WallGeometryTextures.AnyAsync(t => t.GeometryModelId == modelId, ct);
         }
 
-        await UpdateAsync(
+        await ClearMarkAsync(
             captureId,
             c =>
             {

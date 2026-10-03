@@ -9,7 +9,10 @@ namespace Blocwerk.Core.Capture;
 /// <summary>
 /// A re-solve a previous process left between storing the new model and activating it: the model is found by its source
 /// and the solve job named in its notes (<see cref="WallCaptureProcessor.ResolvedModelNotes"/>), so the run goes on to
-/// the adoption instead of solving (and storing) again.
+/// the adoption instead of solving (and storing) again. The verdict is the one the fresh solve reached on the solved
+/// document (written into the notes after <see cref="WallCaptureProcessor.RefusedNote"/>), not re-checked on the stored,
+/// registered one (which may carry facets and markers of the model it was tied to); the placement check was stored
+/// before the model was.
 /// </summary>
 public sealed partial class WallCaptureProcessor
 {
@@ -24,23 +27,21 @@ public sealed partial class WallCaptureProcessor
 
         await using var db = dbContextFactory.CreateDbContext();
         var source = ResolvedModelSource(capture.Id);
-        var notes = ResolvedModelNotes(capture.Id, jobId);
+        var accepted = ResolvedModelNotes(capture.Id, jobId);
+        var refused = accepted + RefusedNote;
         var stored = await db.WallGeometryModels.AsNoTracking()
-            .Where(m => m.WallId == capture.WallId && m.Source == source && m.Notes == notes && !m.IsActive)
-            .Select(m => new { m.Id, m.Json })
+            .Where(m => m.WallId == capture.WallId && m.Source == source && !m.IsActive
+                        && (m.Notes == accepted || (m.Notes != null && m.Notes.StartsWith(refused))))
+            .Select(m => new { m.Id, m.Notes })
             .FirstOrDefaultAsync(ct);
         if (stored is null)
         {
             return null;
         }
 
-        logger.LogInformation("Capture {CaptureId}: resuming the re-solve from its stored model {ModelId}", capture.Id, stored.Id);
-        return new ResolveOutcome(stored.Id, jobId, StoredRefusal(stored.Json), stored.Json);
+        var refusal = stored.Notes!.Length > accepted.Length ? stored.Notes[refused.Length..] : null;
+        logger.LogInformation(
+            "Capture {CaptureId}: resuming the re-solve from its stored model {ModelId} (refused: {Refused})", capture.Id, stored.Id, refusal is not null);
+        return new ResolveOutcome(stored.Id, jobId, refusal);
     }
-
-    /// <summary>Why a stored re-solved model may not be activated, read from the document (the registration it carries).</summary>
-    private static string? StoredRefusal(string json) =>
-        RegisteredGeometry.Carried(json).ReferenceModelId is null
-            ? "It could not be tied to the active model."
-            : ResolveRefusal(new FrameOutcome(json, true, null), json);
 }

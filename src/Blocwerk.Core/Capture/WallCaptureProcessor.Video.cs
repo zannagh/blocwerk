@@ -95,6 +95,16 @@ public sealed partial class WallCaptureProcessor
         }
         catch
         {
+            // A failed progress write (or shutdown) leaves the extraction running: let it end before its frames go.
+            try
+            {
+                await extraction;
+            }
+            catch (Exception ex)
+            {
+                logger.LogDebug(ex, "Capture {CaptureId}: the abandoned frame extraction ended with an error", captureId);
+            }
+
             DeleteStoredFrames(names);
             throw;
         }

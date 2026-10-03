@@ -48,12 +48,10 @@ public sealed partial class WallCaptureProcessor
 
         logger.LogInformation(
             "Capture {CaptureId}: re-solved model {ModelId} activated (photo-real view kept: {Kept})", captureId, outcome.ModelId, kept);
-        await CheckResolvedPlacementAsync(run, outcome, ct);
         await RerenderTexturesAsync(captureId, ct);
-        if (followUps is not null)
-        {
-            await followUps.RunMissingAsync(captureId, ct);
-        }
+
+        // A re-render the texture worker runs instead (it took the capture first) finishes the follow-ups itself.
+        await ResumeRederiveAsync(captureId, ct);
     }
 
     /// <summary>
@@ -96,12 +94,12 @@ public sealed partial class WallCaptureProcessor
         return view is not null;
     }
 
-    /// <summary>The planned-vs-observed check for the new model; advisory, so nothing here stops the textures and follow-ups.</summary>
-    private async Task CheckResolvedPlacementAsync(CaptureRun run, ResolveOutcome outcome, CancellationToken ct)
+    /// <summary>The planned-vs-observed check of the solved document; advisory, so nothing here stops the re-solve.</summary>
+    private async Task CheckResolvedPlacementAsync(CaptureRun run, string solvedJson, CancellationToken ct)
     {
         try
         {
-            await CheckPlacementAsync(run, outcome.PlacementJson, ct);
+            await CheckPlacementAsync(run, solvedJson, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {

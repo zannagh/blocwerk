@@ -111,6 +111,12 @@ public sealed partial class CapturePackageService
             warnings.Add("Printed markers are switched off for this wall here; switch them on (marker size) as on the source.");
         }
 
+        // The commit activates the package's model, which must wait for a re-solve or re-render of the wall's model.
+        if (await CaptureRedoMarks.AnyOnWallAsync(db, m.WallId, ct))
+        {
+            blockers.Add(CaptureRedoMarks.BusyMessage + " Commit the import once that is done.");
+        }
+
         await PlanProblemsAsync(db, m, blockers, warnings, ct);
     }
 

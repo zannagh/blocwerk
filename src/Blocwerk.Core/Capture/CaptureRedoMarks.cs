@@ -1,7 +1,9 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Capture;
 
@@ -20,4 +22,8 @@ internal static class CaptureRedoMarks
     public static IQueryable<WallCapture> Redoing(IQueryable<WallCapture> captures) => captures.Where(c =>
         (c.SolveJobId != null && c.SolveJobId.StartsWith(CaptureResolveMark.Mark))
         || (c.TexturesJobId != null && c.TexturesJobId.StartsWith(CaptureTextureOutcome.RerenderMark)));
+
+    /// <summary>Whether a capture of the wall carries a re-solve or re-render mark.</summary>
+    public static Task<bool> AnyOnWallAsync(BlocwerkDbContext db, Guid wallId, CancellationToken ct = default) =>
+        Redoing(db.WallCaptures.Where(c => c.WallId == wallId)).AnyAsync(ct);
 }

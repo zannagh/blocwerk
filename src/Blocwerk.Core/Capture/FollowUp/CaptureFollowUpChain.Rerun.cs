@@ -76,7 +76,7 @@ public sealed partial class CaptureFollowUpChain
             }
         }
 
-        await ClearMarkAsync(captureId, modelId, r => r with { Rederive = false }, ct);
+        await UpdateRecordAsync(captureId, modelId, r => r with { Rederive = false, Recoveries = 0 }, ct);
         return record with { Rederive = false };
     }
 }

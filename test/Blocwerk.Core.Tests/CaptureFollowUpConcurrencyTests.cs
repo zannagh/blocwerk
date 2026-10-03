@@ -42,6 +42,52 @@ public class CaptureFollowUpConcurrencyTests
     }
 
     [Fact]
+    public async Task AWriteBetweenReadAndSave_IsNotLost_TheSaveReadsAgainAndMerges()
+    {
+        using var h = new WallTestHarness();
+        var (captureId, _) = await CaptureFollowUpChainTests.SeedAsync(h);
+        var other = new CaptureFollowUpEntry("other", CaptureFollowUpOutcome.Done, "by another worker", DateTimeOffset.UtcNow);
+        var chain = FollowUpChains.Build(h.RootContextFactory, new ScriptedFollowUpStep("place", 100, []));
+        var raced = false;
+        chain.BeforeConditionalWrite = () =>
+        {
+            if (!raced)
+            {
+                raced = true;
+                Write(h, captureId, json => CaptureFollowUpRecord.Parse(json).With(other).ToJson());
+            }
+
+            return Task.CompletedTask;
+        };
+
+        await chain.RunAsync(captureId, CaptureFollowUpPhase.Model, default);
+
+        Assert.Equal(["other", "place"], (await RecordAsync(h, captureId)).Steps.Select(s => s.Key));
+    }
+
+    [Fact]
+    public async Task ARepointBetweenReadAndSave_WritesNothing()
+    {
+        using var h = new WallTestHarness();
+        var (captureId, _) = await CaptureFollowUpChainTests.SeedAsync(h);
+        var log = new List<string>();
+        var chain = FollowUpChains.Build(h.RootContextFactory, new ScriptedFollowUpStep("place", 100, log), new ScriptedFollowUpStep("footprints", 200, log));
+        chain.BeforeConditionalWrite = () =>
+        {
+            chain.BeforeConditionalWrite = null;
+            Repoint(h, captureId, CaptureFollowUpRecord.Repointed(null).ToJson());
+            return Task.CompletedTask;
+        };
+
+        await chain.RunAsync(captureId, CaptureFollowUpPhase.Model, default);
+
+        Assert.Equal(["place"], log);
+        var stored = await RecordAsync(h, captureId);
+        Assert.Empty(stored.Steps);
+        Assert.True(stored.RunAgain);
+    }
+
+    [Fact]
     public async Task AChainRun_StopsAndWritesNothing_OnceTheCaptureWasRepointed()
     {
         using var h = new WallTestHarness();

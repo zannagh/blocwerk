@@ -78,6 +78,53 @@ public class CaptureRedoBusyTests
         Assert.Equal(WallCaptureStatus.Draft, (await read.WallCaptures.SingleAsync(c => c.Id == draft.CaptureId)).Status);
     }
 
+    [Fact]
+    public async Task ActivatingAnOlderModel_AndAManualImport_AreRefused_WhileTheModelIsRedone()
+    {
+        using var h = new WallTestHarness();
+        var (modelId, captureId) = await GeometryCorrectionFixture.SeedAsync(h, json: GlyphGeometryJson.Build());
+        var glyphs = WallGlyphSettingsTests.Service(h);
+        Guid olderId;
+        await using (var db = h.CreateContext())
+        {
+            var older = new WallGeometryModel { WallId = h.WallId, Json = GlyphGeometryJson.Build(), SchemaVersion = 1, Source = "older", IsActive = false };
+            db.WallGeometryModels.Add(older);
+            await db.SaveChangesAsync();
+            olderId = older.Id;
+        }
+
+        await MarkAsync(h, captureId, CaptureResolveMark.Mark, null);
+
+        var activate = await Assert.ThrowsAsync<UserFacingException>(() => glyphs.ActivateGeometryAsync(olderId));
+        Assert.StartsWith(CaptureRedoMarks.BusyMessage, activate.Message, StringComparison.Ordinal);
+        var import = await glyphs.ImportGeometryAsync(h.WallId, GlyphGeometryJson.Build(), "manual");
+        Assert.False(import.Succeeded);
+        Assert.StartsWith(CaptureRedoMarks.BusyMessage, Assert.Single(import.Errors), StringComparison.Ordinal);
+        await using var read = h.CreateContext();
+        Assert.Equal(modelId, (await read.WallGeometryModels.SingleAsync(m => m.IsActive)).Id);
+    }
+
+    [Fact]
+    public async Task APackageImport_IsBlocked_WhileTheWallsModelIsRedone()
+    {
+        using var h = new WallTestHarness();
+        using var f = await CapturePackageFlow.FinishedAsync(h);
+        var (manifest, _) = await f.ExportAsync();
+        await f.ForgetAsync(manifest, keepModel: true);
+        await using (var db = h.CreateContext())
+        {
+            db.WallCaptures.Add(new WallCapture
+            {
+                WallId = h.WallId, CreatedByUserId = h.Owner.Id, Status = WallCaptureStatus.Succeeded, TexturesJobId = CaptureTextureOutcome.RerenderMark,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var report = await f.Service.BeginImportAsync(manifest, CancellationToken.None);
+
+        Assert.Contains(report.Blockers, b => b.StartsWith(CaptureRedoMarks.BusyMessage, StringComparison.Ordinal));
+    }
+
     private static async Task MarkAsync(WallTestHarness h, Guid captureId, string? solveJobId, string? texturesJobId)
     {
         await using var db = h.CreateContext();

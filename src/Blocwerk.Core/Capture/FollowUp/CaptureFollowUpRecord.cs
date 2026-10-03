@@ -25,12 +25,17 @@ namespace Blocwerk.Core.Capture.FollowUp;
 /// The capture was re-pointed at a corrected (or re-activated) model and its chain is still to run on it
 /// (<see cref="CaptureFollowUpChain.RunAgainAsync"/>), resumed after a restart until it is cleared.
 /// </param>
+/// <param name="Recoveries">
+/// How many starts in a row picked up <see cref="Rederive"/> or <see cref="RunAgain"/> without the work finishing (a crash
+/// in it); after <see cref="CaptureFollowUpChain.MaxRecoveries"/> the marks are dropped with a note. Reset when it finishes.
+/// </param>
 public sealed record CaptureFollowUpRecord(
     [property: JsonPropertyName("steps")] IReadOnlyList<CaptureFollowUpEntry> Steps,
     [property: JsonPropertyName("note")] string? Note = null,
     [property: JsonPropertyName("carriedFrom"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? CarriedFrom = null,
     [property: JsonPropertyName("rederive"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool Rederive = false,
-    [property: JsonPropertyName("runAgain"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool RunAgain = false)
+    [property: JsonPropertyName("runAgain"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool RunAgain = false,
+    [property: JsonPropertyName("recoveries"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] int Recoveries = 0)
 {
     /// <summary>How a record marked <see cref="Rederive"/> reads in the stored JSON (to find the ones left to resume).</summary>
     public const string RederiveMarker = "\"rederive\":true";

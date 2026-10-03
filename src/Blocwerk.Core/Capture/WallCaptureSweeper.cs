@@ -50,7 +50,7 @@ public sealed class WallCaptureSweeper(
     }
 
     /// <summary>
-    /// Removes drafts idle for <see cref="WallCapturePipelineOptions.DraftLifetime"/>: measured from their last photo
+    /// Removes drafts idle for <see cref="WallCapturePipelineOptions.DraftLifetime"/>: measured from their last photo or video
     /// upload (or creation), never while an open "Update panels + 3D" run still owns them (that run expires on its own).
     /// </summary>
     /// <param name="now">The sweep time.</param>
@@ -76,7 +76,9 @@ public sealed class WallCaptureSweeper(
                 .ToListAsync(ct))
             .GroupBy(p => p.CaptureId)
             .ToDictionary(g => g.Key, g => g.Max(p => p.UploadedAt));
-        var drafts = candidates.Where(c => !uploads.TryGetValue(c.Id, out var last) || last < cutoff).ToList();
+        var drafts = candidates
+            .Where(c => (!uploads.TryGetValue(c.Id, out var last) || last < cutoff) && !(VideoUploadedAt(c.VideoStoredPath) >= cutoff))
+            .ToList();
         if (drafts.Count == 0)
         {
             return 0;
@@ -185,6 +187,13 @@ public sealed class WallCaptureSweeper(
         return new HashSet<string>(
             photos.Concat(textures).Concat(masks).Concat(sourceMaps).Concat(videos).Concat(sparse).Concat(gpu).Concat(refreshVideos),
             StringComparer.Ordinal);
+    }
+
+    /// <summary>When a draft's walk-along video was stored (its file's write time); null without one.</summary>
+    private DateTimeOffset? VideoUploadedAt(string? storedPath)
+    {
+        var path = storedPath is null ? null : files.ResolvePhysicalPath(storedPath);
+        return path is not null && File.Exists(path) ? new DateTimeOffset(File.GetLastWriteTimeUtc(path), TimeSpan.Zero) : null;
     }
 
     private void DeleteFiles(IEnumerable<string> names)

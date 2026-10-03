@@ -2,7 +2,6 @@
 // See License in the project root for license information.
 
 using Blocwerk.Core.Data;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -11,21 +10,45 @@ namespace Blocwerk.Core.Capture;
 /// <summary>
 /// The single consumer of <see cref="WallTextureRerenderQueue"/>: renders wall textures again one capture at a time
 /// (<see cref="WallCaptureProcessor.RerenderTexturesAsync"/>), beside the capture worker, which may be busy with an
-/// hour-long photo-real training. On start it re-enqueues every re-render a previous process left marked.
+/// hour-long photo-real training. On start, and whenever it was idle for a while (<see cref="CaptureRedoRescan"/>), it
+/// re-enqueues every re-render left marked that no run is working on.
 /// </summary>
 public sealed class WallTextureRerenderWorker(
-    WallTextureRerenderQueue queue, WallCaptureProcessor processor, RootDbContextFactory dbContextFactory, ILogger<WallTextureRerenderWorker> logger)
+    WallTextureRerenderQueue queue,
+    WallCaptureProcessor processor,
+    RootDbContextFactory dbContextFactory,
+    ILogger<WallTextureRerenderWorker> logger,
+    WallCapturePipelineOptions? options = null)
     : BackgroundService
 {
+    private readonly TimeSpan idle = (options ?? new WallCapturePipelineOptions()).RedoRescanInterval;
+
+    /// <summary>Queues every marked re-render no run is working on. Public for tests.</summary>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>How many were queued.</returns>
+    public async Task<int> RequeueStuckAsync(CancellationToken ct)
+    {
+        var stuck = await CaptureRedoRescan.StuckAsync(
+            dbContextFactory, q => q.Where(c => c.TexturesJobId != null && c.TexturesJobId.StartsWith(CaptureTextureOutcome.RerenderMark)), processor, ct);
+        stuck.ForEach(queue.Enqueue);
+        return stuck.Count;
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await RecoverAsync(stoppingToken);
+        await TryRequeueAsync(stoppingToken);
         while (!stoppingToken.IsCancellationRequested)
         {
             Guid captureId;
             try
             {
-                captureId = await queue.DequeueAsync(stoppingToken);
+                if (await CaptureRedoRescan.NextAsync(queue.DequeueAsync, idle, stoppingToken) is not { } next)
+                {
+                    await TryRequeueAsync(stoppingToken);
+                    continue;
+                }
+
+                captureId = next;
             }
             catch (OperationCanceledException)
             {
@@ -47,23 +70,15 @@ public sealed class WallTextureRerenderWorker(
         }
     }
 
-    private async Task RecoverAsync(CancellationToken ct)
+    private async Task TryRequeueAsync(CancellationToken ct)
     {
         try
         {
-            await using var db = dbContextFactory.CreateDbContext();
-            var marked = await db.WallCaptures
-                .Where(c => c.TexturesJobId != null && c.TexturesJobId.StartsWith(CaptureTextureOutcome.RerenderMark))
-                .Select(c => c.Id)
-                .ToListAsync(ct);
-            foreach (var captureId in marked)
-            {
-                queue.Enqueue(captureId);
-            }
+            await RequeueStuckAsync(ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogWarning(ex, "Could not recover texture re-renders on startup");
+            logger.LogWarning(ex, "Could not look for texture re-renders left marked");
         }
     }
 }

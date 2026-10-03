@@ -26,6 +26,25 @@ public class CaptureDraftSweepTests
         Assert.True(await db.WallCaptures.AnyAsync(c => c.Id == draftId));
     }
 
+    [Fact]
+    public async Task AnIdleDraft_WithARecentVideoUpload_IsKept()
+    {
+        using var h = new WallTestHarness();
+        using var s = new CaptureScenario(h);
+        var draftId = await DraftAsync(h, s, created: TimeSpan.FromDays(3), uploaded: TimeSpan.FromDays(3));
+        var video = await s.Files.SaveAsync(new byte[] { 1, 2, 3 }, ".mp4", CancellationToken.None);
+        await using (var db = h.CreateContext())
+        {
+            (await db.WallCaptures.SingleAsync(c => c.Id == draftId)).VideoStoredPath = video;
+            await db.SaveChangesAsync();
+        }
+
+        Assert.Equal(0, await CaptureScenario.Sweeper(s).SweepDraftsAsync(DateTimeOffset.UtcNow, CancellationToken.None));
+
+        File.SetLastWriteTimeUtc(s.Files.ResolvePhysicalPath(video)!, DateTime.UtcNow.AddDays(-2));
+        Assert.Equal(1, await CaptureScenario.Sweeper(s).SweepDraftsAsync(DateTimeOffset.UtcNow, CancellationToken.None));
+    }
+
     [Theory]
     [InlineData(WallRefreshStatus.Uploading, false)]
     [InlineData(WallRefreshStatus.ReadyToStart, false)]
@@ -57,6 +76,7 @@ public class CaptureDraftSweepTests
             await db.SaveChangesAsync();
         }
 
+        File.SetLastWriteTimeUtc(s.Files.ResolvePhysicalPath(video)!, DateTime.UtcNow.AddDays(-2));
         await new WallCaptureWorker(h.RootContextFactory, s.Queue, s.Processor, CaptureScenario.Sweeper(s), NullLogger<WallCaptureWorker>.Instance)
             .RecoverAsync(CancellationToken.None);
 

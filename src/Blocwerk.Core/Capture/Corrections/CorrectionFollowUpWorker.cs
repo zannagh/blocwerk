@@ -42,14 +42,20 @@ public sealed class CorrectionFollowUpWorker(
                 .Where(c => c.FollowUpJson != null && c.FollowUpJson.Contains(CaptureFollowUpRecord.RunAgainMarker))
                 .Select(c => c.Id)
                 .ToListAsync(ct);
+            var resumed = 0;
             foreach (var captureId in marked)
             {
-                queue.Enqueue(captureId);
+                // At most MaxRecoveries starts in a row: a chain that brings the process down must not loop it.
+                if (await chain.CountRecoveryAsync(captureId, CaptureFollowUpRecoveryKind.RunAgain, ct))
+                {
+                    queue.Enqueue(captureId);
+                    resumed++;
+                }
             }
 
-            if (marked.Count > 0)
+            if (resumed > 0)
             {
-                logger.LogInformation("Resuming the follow-up chain of {Count} corrected capture(s)", marked.Count);
+                logger.LogInformation("Resuming the follow-up chain of {Count} corrected capture(s)", resumed);
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
