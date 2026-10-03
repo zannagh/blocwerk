@@ -43,6 +43,15 @@ public sealed class ChangeJournal : IChangeJournal
     }
 
     /// <inheritdoc/>
+    public ChangeJournalAction BeginAction(string label, ChangeJournalScopeKind scopeKind, Guid? scopeId)
+    {
+        var previous = current.Value;
+        var scope = new ChangeJournalBatchScope(label, scopeKind, scopeId, () => current.Value = previous);
+        current.Value = scope;
+        return new ChangeJournalAction(scope, RecordActionAsync);
+    }
+
+    /// <inheritdoc/>
     public IDisposable BeginWallUpdateBatch(Guid wallId)
     {
         // Find-or-create the wall's one OPEN wall-update batch. Persisting the created row here (rather
@@ -117,6 +126,26 @@ public sealed class ChangeJournal : IChangeJournal
 
         open.SealedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync();
+    }
+
+    /// <summary>Persists an audited action's batch row when none of its writes created it: sealed, no entries.</summary>
+    private async Task RecordActionAsync(ChangeJournalBatchScope scope, string? actor)
+    {
+        await using var db = RequireRegistryContext();
+        var now = DateTimeOffset.UtcNow;
+        db.ChangeJournalBatches.Add(new ChangeJournalBatch
+        {
+            Id = scope.BatchId,
+            Label = scope.Label,
+            ScopeKind = scope.ScopeKind,
+            ScopeId = scope.ScopeId,
+            Actor = actor,
+            CreatedAt = now,
+            SealedAt = now,
+            Status = ChangeJournalStatus.Recorded,
+        });
+        await db.SaveChangesAsync();
+        scope.BatchRowCreated = true;
     }
 
     private BlocwerkDbContext RequireRegistryContext()

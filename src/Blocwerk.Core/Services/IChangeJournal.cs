@@ -17,6 +17,14 @@ public interface IChangeJournal
     IDisposable BeginBatch(string label, ChangeJournalScopeKind scopeKind = ChangeJournalScopeKind.None, Guid? scopeId = null);
 
     /// <summary>
+    /// Begins a batch like <see cref="BeginBatch"/> for one audited action (an automation API write). Unlike a plain
+    /// batch, <see cref="ChangeJournalAction.CompleteAsync"/> persists the batch row even when the action changed no
+    /// journalled entity (a marker plan, a wall update run), so every audited write leaves a row naming its label,
+    /// scope and actor. Requires the registry context factory, like <see cref="BeginWallUpdateBatch"/>.
+    /// </summary>
+    ChangeJournalAction BeginAction(string label, ChangeJournalScopeKind scopeKind, Guid? scopeId);
+
+    /// <summary>
     /// Begins (or resumes) the single OPEN wall-update batch for a wall, so a whole wall update — the
     /// "run" that stages panels and inserts the next-generation holds AND the later "promote" that
     /// carries them over — records into ONE batch even though the two run on separate contexts. Finds

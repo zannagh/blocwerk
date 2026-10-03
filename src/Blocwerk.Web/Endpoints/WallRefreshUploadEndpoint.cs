@@ -4,9 +4,13 @@
 
 using Blocwerk.Authentication.Authorization;
 using Blocwerk.Core.Capture;
+using Blocwerk.Core.Enums;
 using Blocwerk.Core.Refresh;
 using Blocwerk.Core.Services;
+using Blocwerk.Web.Controllers;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Blocwerk.Web.Endpoints;
 
@@ -34,7 +38,31 @@ public static class WallRefreshUploadEndpoint
     public static string TooLarge(bool isVideo, long limit) =>
         $"The {(isVideo ? "video" : "photo")} is larger than {limit / (1024 * 1024)} MB.";
 
-    internal static async Task<IResult> HandleAsync(
+    internal static Task<IResult> HandleAsync(
+        Guid refreshId,
+        string? name,
+        HttpContext http,
+        IWallRefreshService refreshes,
+        WallCapturePipelineOptions options,
+        CancellationToken ct,
+        [FromServices] ApiWriteAudit? audit = null)
+    {
+        if (audit is null || !http.User.IsApiKeyPrincipal())
+        {
+            return StoreAsync(refreshId, name, http, refreshes, options, ct);
+        }
+
+        // A script's upload is audited like the rest of the automation API; the browser's drop zone is not.
+        return audit.RunAsync(
+            http.User,
+            $"refresh.upload run:{refreshId}",
+            ChangeJournalScopeKind.None,
+            null,
+            () => StoreAsync(refreshId, name, http, refreshes, options, ct),
+            result => result is Ok<RefreshFile> { Value.Problem: null });
+    }
+
+    private static async Task<IResult> StoreAsync(
         Guid refreshId, string? name, HttpContext http, IWallRefreshService refreshes, WallCapturePipelineOptions options, CancellationToken ct)
     {
         var isVideo = CaptureVideoFiles.Extensions.Contains(Path.GetExtension(name ?? string.Empty));
