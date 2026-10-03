@@ -19,6 +19,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 
+from . import workdir
 from .callbacks import CallbackSender
 from .settings import settings
 
@@ -102,7 +103,8 @@ class JobManager:
         self.q = queue.Queue()
         self.callbacks = CallbackSender()
         self.ctx = mp.get_context("spawn")
-        os.makedirs(settings.work_dir, exist_ok=True)
+        # State is in memory: job directories of a previous process are orphans (workdir.py).
+        self.work_dir_lock = workdir.claim(settings.work_dir)
         threading.Thread(target=self._worker, name="worker", daemon=True).start()
         threading.Thread(target=self._janitor, name="janitor", daemon=True).start()
 
