@@ -90,18 +90,8 @@ public sealed partial class HoldTexturePlacementService
             return [];
         }
 
-        var claimed = new List<PlannedPlacement>();
-        foreach (var p in planned.Where(p => OnFacet(p.Fit, extents, null)))
-        {
-            if (await ClaimAsync(db, p.Hold, ct))
-            {
-                claimed.Add(p);
-            }
-        }
-
-        var ids = claimed.Select(p => p.Hold.Id).ToList();
-        var holds = await db.Holds.Where(h => ids.Contains(h.Id)).ToDictionaryAsync(h => h.Id, ct);
-        var entries = claimed
+        var holds = await ClaimAndReadAsync(db, planned.Where(p => OnFacet(p.Fit, extents, null)).Select(p => p.Hold), ct);
+        var entries = planned
             .Where(p => holds.TryGetValue(p.Hold.Id, out var hold) && !ChangedSincePlanned(hold, p.Hold, HoldTexturePlacer.IsEligibleAfterEdit))
             .Select(p => Write(holds[p.Hold.Id], p, extents) with { GeometryHash = HoldPlacementEntry.HashGeometry(holds[p.Hold.Id]) })
             .ToList();
@@ -120,17 +110,18 @@ public sealed partial class HoldTexturePlacementService
     }
 
     /// <summary>
-    /// Locks the hold's row with a no-op update that only matches while its panel geometry and metric fields are exactly as
-    /// read; false when a newer edit changed them.
+    /// Locks the hold's row with a no-op update that only matches while its panel geometry and placement (facet, plane
+    /// position, metric source) are exactly as read; false when a newer edit changed them. The sizes are not matched, as
+    /// <see cref="ChangedSincePlanned"/> does not compare them either: a refinement that only re-measured the hold does not
+    /// make the placement stale, and the run writes the sizes it measured at it.
     /// </summary>
     private static async Task<bool> ClaimAsync(BlocwerkDbContext db, Hold read, CancellationToken ct)
     {
         var (id, panel, x, y, radius) = (read.Id, read.WallPanelId, read.X, read.Y, read.Radius);
-        var (facet, a, b, source, width, height) = (read.FacetId, read.PlaneAMm, read.PlaneBMm, read.MetricSource, read.WidthMm, read.HeightMm);
+        var (facet, a, b, source) = (read.FacetId, read.PlaneAMm, read.PlaneBMm, read.MetricSource);
         var rows = await db.Holds
             .Where(h => h.Id == id && h.WallPanelId == panel && h.X == x && h.Y == y && h.Radius == radius
-                && h.FacetId == facet && h.PlaneAMm == a && h.PlaneBMm == b && h.MetricSource == source
-                && h.WidthMm == width && h.HeightMm == height)
+                && h.FacetId == facet && h.PlaneAMm == a && h.PlaneBMm == b && h.MetricSource == source)
             .ExecuteUpdateAsync(s => s.SetProperty(h => h.FacetId, h => h.FacetId), ct);
         return rows == 1;
     }

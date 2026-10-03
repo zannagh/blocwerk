@@ -15,18 +15,20 @@ namespace Blocwerk.Core.Tests;
 /// Hands out contexts over the harness database that run a concurrent edit once, in the middle of a wall-wide placement run's
 /// write: after the run row is saved, at whichever comes first of the next transaction start (a write that claims its rows
 /// first) or the next save of modified holds (a write that does not). The edit goes through its own context, as a user's
-/// request would.
+/// request would. With <c>afterClaim</c> it starts only at that save, i.e. after a claiming write locked its rows.
 /// </summary>
 public sealed class MidWriteEditDbContextFactory : IDbContextFactory<BlocwerkDbContext>, ISaveChangesInterceptor, IDbTransactionInterceptor
 {
     private readonly string connectionString;
     private readonly Func<Task> edit;
+    private readonly bool afterClaim;
     private bool armed;
 
-    public MidWriteEditDbContextFactory(string connectionString, Func<Task> edit)
+    public MidWriteEditDbContextFactory(string connectionString, Func<Task> edit, bool afterClaim = false)
     {
         this.connectionString = connectionString;
         this.edit = edit;
+        this.afterClaim = afterClaim;
     }
 
     /// <summary>Gets a value indicating whether the edit ran.</summary>
@@ -54,7 +56,11 @@ public sealed class MidWriteEditDbContextFactory : IDbContextFactory<BlocwerkDbC
     public async ValueTask<InterceptionResult<DbTransaction>> TransactionStartingAsync(
         DbConnection connection, TransactionStartingEventData eventData, InterceptionResult<DbTransaction> result, CancellationToken cancellationToken = default)
     {
-        await EditOnceAsync();
+        if (!afterClaim)
+        {
+            await EditOnceAsync();
+        }
+
         return result;
     }
 

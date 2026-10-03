@@ -108,12 +108,13 @@ public sealed partial class HoldTexturePlacementService
 
     /// <summary>
     /// Claims each planned hold's row (<see cref="ClaimAsync"/>) and reads the claimed ones tracked. A hold a newer edit
-    /// changed since it was planned is not claimed, so it is missing from the result. Call inside a transaction.
+    /// changed since it was planned is not claimed, so it is missing from the result. Call inside a transaction. The rows
+    /// are claimed in Id order, so two multi-hold writers locking in key order never wait on each other in a cycle.
     /// </summary>
     private static async Task<Dictionary<Guid, Hold>> ClaimAndReadAsync(BlocwerkDbContext db, IEnumerable<Hold> planned, CancellationToken ct)
     {
         var ids = new List<Guid>();
-        foreach (var hold in planned)
+        foreach (var hold in planned.OrderBy(h => h.Id))
         {
             if (await ClaimAsync(db, hold, ct))
             {
@@ -121,6 +122,7 @@ public sealed partial class HoldTexturePlacementService
             }
         }
 
+        // The re-read must stay inside the claiming transaction: only the row locks keep it current until the save.
         return ids.Count == 0 ? [] : await db.Holds.Where(h => ids.Contains(h.Id)).ToDictionaryAsync(h => h.Id, ct);
     }
 

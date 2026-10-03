@@ -4,6 +4,7 @@
 
 using Blocwerk.Core.Geometry.TextureRegistration;
 using Blocwerk.Core.Services;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -39,6 +40,44 @@ public class HoldPlacementConcurrentEditTests
         Assert.Equal(0.3 * 4000, placed.PlaneAMm!.Value, 1);
     }
 
+    /// <remarks>
+    /// SQLite has no row locks: the run's transaction locks the whole (shared-cache) database, so the edit fails with
+    /// "locked" and retries until the commit, which is how a Postgres row lock makes it wait. The ordering is what is tested.
+    /// </remarks>
+    [Fact]
+    public async Task AMoveLandingAfterTheClaim_WaitsForTheCommit_ThenWins_AndThePlacementIsNotSettled()
+    {
+        using var h = new WallTestHarness();
+        var s = await HoldPlacementScenario.CreateAsync(h);
+        var hold = await s.AddHoldAsync(0.25, 0.5);
+        Task? move = null;
+        var factory = new MidWriteEditDbContextFactory(
+            h.DbContextFactory.ConnectionString,
+            () =>
+            {
+                move = Task.Run(() => MoveWhenUnlockedAsync(h, hold, 0.3));
+                return Task.CompletedTask;
+            },
+            afterClaim: true);
+        var service = new HoldTexturePlacementService(
+            factory, h.CurrentUser, NullLogger<HoldTexturePlacementService>.Instance, s.Matcher, s.Files, s.Queue);
+
+        await service.PlaceAsync(h.WallId);
+        Assert.NotNull(move);
+        await move;
+
+        var stored = (await s.LoadHoldsAsync())[hold];
+        Assert.Equal((0.3, null, null), (stored.X, stored.FacetId, stored.PlaneAMm));
+        await using (var db = h.CreateContext())
+        {
+            var entry = HoldPlacementEntry.FromJson((await db.HoldPlacementRuns.SingleAsync()).HoldsJson).Single();
+            Assert.NotEqual(HoldPlacementEntry.HashGeometry(stored), entry.GeometryHash);
+        }
+
+        Assert.Equal([hold], await s.Service().PlaceEditedAsync(h.WallId, [hold]));
+        Assert.Equal(0.3 * 4000, (await s.LoadHoldsAsync())[hold].PlaneAMm!.Value, 1);
+    }
+
     [Fact]
     public async Task AWallWidePlacement_RecordsThePanelGeometryItWasPlacedFor()
     {
@@ -61,5 +100,22 @@ public class HoldPlacementConcurrentEditTests
         hold.InvalidateGlyphPosition();
         hold.X = x;
         await db.SaveChangesAsync();
+    }
+
+    /// <summary>The move, retried while the run's transaction holds the database (SQLite's stand-in for waiting on a row lock).</summary>
+    private static async Task MoveWhenUnlockedAsync(WallTestHarness h, Guid holdId, double x)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                await MoveAsync(h, holdId, x);
+                return;
+            }
+            catch (Exception ex) when (attempt < 500 && (ex is SqliteException || ex.InnerException is SqliteException))
+            {
+                await Task.Delay(10);
+            }
+        }
     }
 }
