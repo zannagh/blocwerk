@@ -60,7 +60,9 @@ public sealed partial class GpuJobQueue
                         || (j.Status == GpuJobStatus.Succeeded && j.InstalledAt == null)
                         || j.ResultPath != null || j.PreviewPath != null || j.InstalledPreviewPath != null)
             .ToListAsync(ct);
-        return jobs.SelectMany(FilesOf).ToList();
+
+        // A cancelled job keeps nothing but its leftover (an installed preview); its other names were deleted with it.
+        return jobs.SelectMany(j => j.Status == GpuJobStatus.Cancelled ? Leftover(j) : FilesOf(j)).ToList();
     }
 
     /// <summary>

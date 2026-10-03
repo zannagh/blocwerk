@@ -93,6 +93,19 @@ public class GpuJob
     /// </summary>
     public DateTimeOffset? HeartbeatAt { get; set; }
 
+    /// <summary>
+    /// The claim token of the runner process holding the job (null: a runner that sends none). Job calls from another
+    /// process of the same runner key are refused; a re-attach hands the job (and the token) to the restarted process.
+    /// </summary>
+    [MaxLength(64)]
+    public string? ClaimToken { get; set; }
+
+    /// <summary>How often the holding runner re-attached to this job after a restart; past a cap, each one costs a lost lease.</summary>
+    public int ReattachCount { get; set; }
+
+    /// <summary>Budget-free hand-backs (pauses, shutdowns that kept progress); past a cap they count as shutdowns.</summary>
+    public int PauseCount { get; set; }
+
     /// <summary>The training bundle (zip) in the capture file store: the ONLY thing a runner ever sees.</summary>
     [Required]
     [MaxLength(200)]

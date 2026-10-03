@@ -1137,7 +1137,9 @@ ever serves walls its owner **still administers**, and does nothing at all once 
 or locked out. All of this is re-checked on every call of the runner, not only when it claims: a
 runner that lost its right gets 410 and the job goes back to the queue. A runner holds one job at a
 time; a restarted runner gets its job back when it claims again (once the job has been silent for 45
-seconds), so it resumes from its checkpoint without losing the lease. A user may own at most 10 runner keys. Site admins see every runner under
+seconds), so it resumes from its checkpoint; 10 such re-attaches per job are free, each further one costs a
+lost lease. Each runner process sends its own claim token, so a second process with the same key never
+trains the same job. A user may own at most 10 runner keys. Site admins see every runner under
 **Administration → 3D runners** and can revoke any.
 
 **Leases, failures, shutdowns.** A claimed job is leased for 5 minutes and every progress report
@@ -1145,8 +1147,10 @@ extends it, but never past 6 hours after the claim (`RUNNERS__MAXJOBHOURS`; then
 attempt). Three budgets, counted separately:
 
 - a runner that **reports a training failure** (e.g. out of memory) uses one of 3 attempts
-  (`RUNNERS__MAXATTEMPTS`), and the next try goes to another runner of the wall while one is online; a
-  failure no retry can fix (a bad bundle, or one missing on the server) fails the job at once;
+  (`RUNNERS__MAXATTEMPTS`), and the next try goes to another idle runner of the wall that can train it
+  (for up to 15 minutes; with none, the same runner tries again); a failure no retry can fix (a bad
+  bundle, or one missing on the server) fails the job at once; a runner that gives up because the server
+  or the network stayed out of reach costs a lost lease, not an attempt;
 - a runner that **vanishes** (crash, sleep, network) loses the job when its lease runs out; after
   10 lost leases (`RUNNERS__MAXLOSTLEASES`) the job fails;
 - a runner that **shuts down** (it says so) or is **revoked** gives the job back at once, free (a

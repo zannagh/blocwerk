@@ -52,6 +52,12 @@ public sealed class GpuRunnerOptions
     /// <summary>Shutdowns that give a job back for free; each further one costs a training attempt.</summary>
     public int MaxFreeShutdowns { get; init; } = 5;
 
+    /// <summary>Re-attaches after a runner restart that are free per job; each further one costs a lost lease.</summary>
+    public int MaxReattaches { get; init; } = 10;
+
+    /// <summary>Budget-free hand-backs (shutdowns that kept their progress, pauses) per job; further ones count as shutdowns.</summary>
+    public int MaxPauses { get; init; } = 50;
+
     /// <summary>Active (not revoked) runners one user may own.</summary>
     public int MaxRunnersPerUser { get; init; } = 10;
 

@@ -38,6 +38,9 @@ public static partial class RunnerApiEndpoints
     /// <inheritdoc cref="GoneOver"/>
     public const string GoneRequeued = "requeued";
 
+    /// <summary>The header carrying the runner process's claim token (generated at runner start).</summary>
+    public const string ClaimTokenHeader = "X-Blocwerk-Claim";
+
     private const string BearerPrefix = "Bearer ";
 
     public static void MapRunnerApi(this WebApplication app)
@@ -112,6 +115,8 @@ public static partial class RunnerApiEndpoints
             return (null, TooManyRequests(http, "This runner calls too often."));
         }
 
+        // The calling process's claim token (see GpuJob.ClaimToken); a runner that sends none is not checked.
+        runner.ClaimToken = http.Request.Headers[ClaimTokenHeader].FirstOrDefault() is { Length: > 0 and <= 64 } token ? token : null;
         return (runner, Results.Empty);
     }
 

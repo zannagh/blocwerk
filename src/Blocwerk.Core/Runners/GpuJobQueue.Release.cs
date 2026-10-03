@@ -21,8 +21,9 @@ public sealed partial class GpuJobQueue
         Free,
 
         /// <summary>
-        /// The job is paused with its progress kept (a shutdown whose checkpoint got further than any before): requeued,
-        /// costs nothing and counts nowhere. The seam for a deliberate pause of a running job.
+        /// The job is paused with its progress kept (a shutdown whose checkpoint got further than any before): requeued
+        /// at no cost, up to <see cref="GpuRunnerOptions.MaxPauses"/> per job (then it counts as a shutdown). The seam
+        /// for a deliberate pause of a running job.
         /// </summary>
         Pause,
 
@@ -35,7 +36,11 @@ public sealed partial class GpuJobQueue
         /// </summary>
         Failure,
 
-        /// <summary>The runner vanished (lease expired): costs one of <see cref="GpuRunnerOptions.MaxLostLeases"/>.</summary>
+        /// <summary>
+        /// The runner vanished (lease expired), or gave the job up because the server or the network stayed out of reach:
+        /// costs one of <see cref="GpuRunnerOptions.MaxLostLeases"/>, never a training attempt, and the runner is not
+        /// marked as having failed the job.
+        /// </summary>
         LostLease,
 
         /// <summary>A failure no retry can fix: the job fails now.</summary>
@@ -68,6 +73,8 @@ public sealed partial class GpuJobQueue
                     .SetProperty(j => j.FailureCount, job.FailureCount)
                     .SetProperty(j => j.LostLeaseCount, job.LostLeaseCount)
                     .SetProperty(j => j.ShutdownCount, job.ShutdownCount)
+                    .SetProperty(j => j.PauseCount, job.PauseCount)
+                    .SetProperty(j => j.ClaimToken, j => retry ? null : j.ClaimToken)
                     .SetProperty(j => j.CheckpointStep, job.CheckpointStep)
                     .SetProperty(j => j.FailedRunnerIdsJson, failedRunners)
                     .SetProperty(j => j.Progress, progress)
@@ -94,13 +101,24 @@ public sealed partial class GpuJobQueue
     }
 
     /// <summary>
-    /// What a shutdown hand-back costs: nothing when the runner's checkpoint got further than any shutdown's before (the
-    /// next claim resumes there, so the job progresses; the step only grows, so a runner cannot loop on it), else it is
-    /// a <see cref="ReleaseKind.Shutdown"/>. Records the new checkpoint step on <paramref name="job"/>.
+    /// What a shutdown hand-back costs: nothing (a <see cref="ReleaseKind.Pause"/>) when the runner's checkpoint got
+    /// further than any shutdown's before (the next claim resumes there, so the job progresses; the step only grows and
+    /// never past the job's total steps, and pauses are capped, so a runner cannot loop on it), else it is a
+    /// <see cref="ReleaseKind.Shutdown"/>. Records the new checkpoint step on <paramref name="job"/>.
     /// </summary>
+    /// <remarks>
+    /// The step is kept per job, not per runner: a checkpoint lives on the runner that wrote it, so another runner's
+    /// shutdown below the best step so far counts as a plain shutdown even if its own checkpoint advanced.
+    /// </remarks>
     internal static ReleaseKind ShutdownKind(GpuJob job, int? checkpointStep)
     {
-        if (checkpointStep is not { } step || step <= 0 || step <= (job.CheckpointStep ?? 0))
+        if (checkpointStep is not { } reported || reported <= 0)
+        {
+            return ReleaseKind.Shutdown;
+        }
+
+        var step = job.TotalSteps is { } total && total > 0 ? Math.Min(reported, total) : reported;
+        if (step <= (job.CheckpointStep ?? 0))
         {
             return ReleaseKind.Shutdown;
         }
@@ -112,6 +130,11 @@ public sealed partial class GpuJobQueue
     /// <summary>Counts what <paramref name="kind"/> costs on <paramref name="job"/>; whether the job gets another try.</summary>
     private bool ApplyBudget(GpuJob job, ReleaseKind kind)
     {
+        if (kind == ReleaseKind.Pause && ++job.PauseCount > options.MaxPauses)
+        {
+            kind = ReleaseKind.Shutdown;
+        }
+
         if (kind == ReleaseKind.Shutdown && ++job.ShutdownCount > options.MaxFreeShutdowns)
         {
             kind = ReleaseKind.Failure;

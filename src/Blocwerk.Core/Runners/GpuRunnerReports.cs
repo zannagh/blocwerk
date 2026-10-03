@@ -37,12 +37,15 @@ public sealed record RunnerProgress(
 /// <c>POST /api/runners/jobs/{id}/fail</c>. <c>Shutdown</c>: the runner is stopping (not the job failing), so the job goes
 /// back to the queue without using an attempt. <c>Retryable</c>: another try (maybe on another runner) may succeed.
 /// <c>CheckpointStep</c>: with a shutdown, the step of the newest checkpoint the runner keeps for the job (it resumes there).
+/// <c>Unreachable</c>: the runner gave the job up because the server or the network stayed out of reach (not a training
+/// failure: it costs a lost lease, not an attempt).
 /// </summary>
 public sealed record RunnerFailure(
     [property: JsonPropertyName("reason")] string? Reason,
     [property: JsonPropertyName("retryable")] bool Retryable,
     [property: JsonPropertyName("shutdown")] bool Shutdown = false,
-    [property: JsonPropertyName("checkpointStep")] int? CheckpointStep = null);
+    [property: JsonPropertyName("checkpointStep")] int? CheckpointStep = null,
+    [property: JsonPropertyName("unreachable")] bool Unreachable = false);
 
 /// <summary>
 /// A claimed job as the runner receives it. <c>Previews</c>: the server takes intermediate splats (<c>PUT .../preview</c>).

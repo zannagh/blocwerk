@@ -18,6 +18,13 @@ namespace Blocwerk.Core.Migrations
                 nullable: true);
 
             migrationBuilder.AddColumn<string>(
+                name: "ClaimToken",
+                table: "GpuJobs",
+                type: "character varying(64)",
+                maxLength: 64,
+                nullable: true);
+
+            migrationBuilder.AddColumn<string>(
                 name: "FailedRunnerIdsJson",
                 table: "GpuJobs",
                 type: "character varying(1000)",
@@ -29,6 +36,20 @@ namespace Blocwerk.Core.Migrations
                 table: "GpuJobs",
                 type: "timestamp with time zone",
                 nullable: true);
+
+            migrationBuilder.AddColumn<int>(
+                name: "PauseCount",
+                table: "GpuJobs",
+                type: "integer",
+                nullable: false,
+                defaultValue: 0);
+
+            migrationBuilder.AddColumn<int>(
+                name: "ReattachCount",
+                table: "GpuJobs",
+                type: "integer",
+                nullable: false,
+                defaultValue: 0);
         }
 
         /// <inheritdoc />
@@ -39,11 +60,23 @@ namespace Blocwerk.Core.Migrations
                 table: "GpuJobs");
 
             migrationBuilder.DropColumn(
+                name: "ClaimToken",
+                table: "GpuJobs");
+
+            migrationBuilder.DropColumn(
                 name: "FailedRunnerIdsJson",
                 table: "GpuJobs");
 
             migrationBuilder.DropColumn(
                 name: "HeartbeatAt",
+                table: "GpuJobs");
+
+            migrationBuilder.DropColumn(
+                name: "PauseCount",
+                table: "GpuJobs");
+
+            migrationBuilder.DropColumn(
+                name: "ReattachCount",
                 table: "GpuJobs");
         }
     }

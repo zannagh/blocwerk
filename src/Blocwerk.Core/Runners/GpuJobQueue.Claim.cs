@@ -110,6 +110,7 @@ public sealed partial class GpuJobQueue
                     .SetProperty(j => j.ClaimedByRunnerId, runner.Id)
                     .SetProperty(j => j.ClaimedAt, now)
                     .SetProperty(j => j.HeartbeatAt, now)
+                    .SetProperty(j => j.ClaimToken, Clip(runner.ClaimToken, 64))
                     .SetProperty(j => j.LeaseExpiresAt, lease)
                     .SetProperty(j => j.Progress, 0)
                     .SetProperty(j => j.Stage, "is downloading the photos")
@@ -143,6 +144,7 @@ public sealed partial class GpuJobQueue
                 return (null, false);
             }
 
+            current.ClaimToken = runner.ClaimToken;
             if (await HoldsClaimAsync(db, runner.Id, ct))
             {
                 var held = await ReattachAsync(db, current, ct);

@@ -1,4 +1,5 @@
-"""The runner's failure paths against the fake server: a bundle that stays damaged fails the job for good, one
+"""The runner's failure paths against the fake server: a bundle that stays damaged is handed back as this
+runner's failure, one
 too large for the runner is handed back before any download, a 410 "over" drops the job's checkpoints while a
 requeue keeps them, a job given up on is reported (not left to the lease), and a shutdown tells the server the
 newest checkpoint it would resume from."""
@@ -33,13 +34,13 @@ def discarded(monkeypatch):
     return dropped
 
 
-def test_a_bundle_that_stays_damaged_fails_the_job_for_good(tmp_path, fast, server, monkeypatch):  # noqa: F811
+def test_a_bundle_that_stays_damaged_is_this_runners_retryable_failure(tmp_path, fast, server, monkeypatch):  # noqa: F811
     monkeypatch.setattr(brush, "train", lambda *a, **k: pytest.fail("trained a corrupt bundle"))
     srv = server(make_bundle(tmp_path))
     srv.job = lambda: {**FakeServer.job(srv), "bundleSha256": "0" * 64}
     runner, _ = run_runner(srv, tmp_path)
     assert runner.outcomes == ["failed"] and not srv.results
-    assert srv.fails[0]["retryable"] is False
+    assert srv.fails[0]["retryable"] is True and "unreachable" not in srv.fails[0]
     assert f"checksum mismatch after {job.MAX_CORRUPT_DOWNLOADS} downloads" in srv.fails[0]["reason"]
     assert len([p for _, p, _, _ in srv.requests if p.endswith("/bundle")]) == job.MAX_CORRUPT_DOWNLOADS
 
@@ -72,7 +73,7 @@ def test_a_410_over_on_the_bundle_is_a_cancel(tmp_path, fast, server, monkeypatc
     assert runner.outcomes == ["cancelled"] and len(discarded) == 1 and not srv.fails
 
 
-def test_a_job_given_up_on_is_reported_as_a_retryable_failure(tmp_path, fast, server, monkeypatch):  # noqa: F811
+def test_a_job_given_up_on_is_reported_as_unreachable(tmp_path, fast, server, monkeypatch):  # noqa: F811
     monkeypatch.setattr(brush, "train", brush_ok)
     monkeypatch.setattr(job, "UPLOAD_PATIENCE_S", -1)
     srv = server(make_bundle(tmp_path))
@@ -80,6 +81,7 @@ def test_a_job_given_up_on_is_reported_as_a_retryable_failure(tmp_path, fast, se
     runner, _ = run_runner(srv, tmp_path)
     assert runner.outcomes == ["abandoned"] and not srv.results
     assert srv.fails[0]["retryable"] is True and srv.fails[0]["shutdown"] is False
+    assert srv.fails[0]["unreachable"] is True
     assert srv.fails[0]["reason"].startswith("the runner gave up: upload")
 
 
@@ -112,3 +114,12 @@ def test_newest_step_needs_a_complete_checkpoint(tmp_path):
     checkpoints.commit(d, 5000, "sig")
     open(checkpoints.paths(d, 10000)[0], "wb").close()
     assert checkpoints.newest_step(d) == 5000
+
+
+def test_every_call_carries_the_process_claim_token(tmp_path, fast, server, monkeypatch):  # noqa: F811
+    monkeypatch.setattr(brush, "train", brush_ok)
+    srv = server(make_bundle(tmp_path))
+    runner, _ = run_runner(srv, tmp_path)
+    tokens = {h.get("X-Blocwerk-Claim") for _, _, h, _ in srv.requests}
+    assert runner.outcomes == ["succeeded"] and len(tokens) == 1 and len(tokens.pop()) == 32
+    assert Client(srv.url, KEY).claim_token != runner.client.claim_token  # another process, another token

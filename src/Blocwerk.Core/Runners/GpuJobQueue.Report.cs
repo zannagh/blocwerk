@@ -29,7 +29,7 @@ public sealed partial class GpuJobQueue
     {
         await using var db = dbContextFactory.CreateDbContext();
         var job = await db.GpuJobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == jobId, ct);
-        if (job is null || job.ClaimedByRunnerId != runner.Id)
+        if (job is null || job.ClaimedByRunnerId != runner.Id || !HoldsToken(job, runner))
         {
             return (RunnerJobOutcome.NotYours, null);
         }
@@ -116,7 +116,7 @@ public sealed partial class GpuJobQueue
     {
         await using var db = dbContextFactory.CreateDbContext();
         var job = await db.GpuJobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == jobId && j.ClaimedByRunnerId == runner.Id, ct);
-        if (job is null)
+        if (job is null || !HoldsToken(job, runner))
         {
             return RunnerJobOutcome.NotYours;
         }
@@ -128,11 +128,14 @@ public sealed partial class GpuJobQueue
 
         var reason = Clip(failure.Reason, 1000) ?? "the runner reported a failure";
         var kind = failure.Shutdown ? ShutdownKind(job, failure.CheckpointStep)
+            : failure.Unreachable ? ReleaseKind.LostLease
             : failure.Retryable ? ReleaseKind.Failure : ReleaseKind.Fatal;
         logger.LogWarning(
             "Runner {RunnerId} ({Name}) gave GPU job {JobId} back ({Kind}; failures {Failures}, shutdowns {Shutdowns}): {Reason}",
             runner.Id, runner.Name, job.Id, kind, job.FailureCount, job.ShutdownCount, reason);
-        var text = failure.Shutdown ? "the 3D runner shut down" : $"training on the 3D runner failed: {reason}";
+        var text = failure.Shutdown ? "the 3D runner shut down"
+            : failure.Unreachable ? $"the 3D runner gave the job back: {reason}"
+            : $"training on the 3D runner failed: {reason}";
         var released = await ReleaseAsync(db, job, kind, text, ct);
         if (failure.Shutdown)
         {
@@ -141,6 +144,13 @@ public sealed partial class GpuJobQueue
 
         return released ? RunnerJobOutcome.Ok : RunnerJobOutcome.Gone;
     }
+
+    /// <summary>
+    /// Whether the calling process holds the job's claim token: always for a runner (or a job) without one, so runners that
+    /// send no token keep working; a second process of the same key with another token does not.
+    /// </summary>
+    internal static bool HoldsToken(GpuJob job, GpuRunner runner) =>
+        job.ClaimToken is null || runner.ClaimToken is null || job.ClaimToken == runner.ClaimToken;
 
     /// <summary>
     /// Until when a claim made at <paramref name="claimedAt"/> may run: <see cref="GpuRunnerOptions.MaxJobDuration"/>, plus

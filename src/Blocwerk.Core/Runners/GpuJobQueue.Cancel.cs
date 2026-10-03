@@ -102,14 +102,22 @@ public sealed partial class GpuJobQueue
     internal static List<string> KeepOnlyInstalledPreview(GpuJob job)
     {
         var all = FilesOf(job).ToList();
-        if (job.InstalledPreviewPath is null)
-        {
-            return all;
-        }
-
         job.ResultPath = null;
         job.PreviewPath = null;
         return all.Except(Leftover(job)).ToList();
+    }
+
+    /// <summary>
+    /// Unsets (not saved) every optional file of a cancelled job whose files all go (retrain, retention) and returns them
+    /// for deleting after the save; the bundle and prepared names stay on the row but no longer count as referenced.
+    /// </summary>
+    internal static List<string> ForgetFiles(GpuJob job)
+    {
+        var all = FilesOf(job).ToList();
+        job.ResultPath = null;
+        job.PreviewPath = null;
+        job.InstalledPreviewPath = null;
+        return all;
     }
 
     private static void MarkCancelled(IEnumerable<GpuJob> jobs, string reason, DateTimeOffset now)

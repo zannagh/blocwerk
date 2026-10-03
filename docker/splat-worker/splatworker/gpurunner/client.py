@@ -16,6 +16,7 @@ import socket
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 
 from .. import __version__
 
@@ -145,9 +146,13 @@ class Client:
         if not key or not key.startswith("bwr_"):
             raise ValueError("BWR_KEY must be set to a runner key (bwr_...)")
         self.server, self.key, self.gzip_upload = server, key, gzip_upload
+        # This process's claim token, sent with every call: a second process with the same key (or this one after a
+        # restart took its job over) is refused on the job's calls instead of training it twice.
+        self.claim_token = uuid.uuid4().hex
 
     def _request(self, method, path, body=None, headers=None, timeout=DEFAULT_TIMEOUT_S):
-        h = {"Authorization": f"Bearer {self.key}", "User-Agent": f"blocwerk-runner/{__version__}"}
+        h = {"Authorization": f"Bearer {self.key}", "User-Agent": f"blocwerk-runner/{__version__}",
+             "X-Blocwerk-Claim": self.claim_token}
         h.update(headers or {})
         req = urllib.request.Request(self.server + path, data=body, headers=h, method=method)
         try:
@@ -189,12 +194,15 @@ class Client:
     def progress(self, job_id, doc):
         return self._json("POST", f"/api/runners/jobs/{job_id}/progress", doc)[1] or {}
 
-    def fail(self, job_id, reason, retryable, shutdown=False, checkpoint_step=None):
+    def fail(self, job_id, reason, retryable, shutdown=False, checkpoint_step=None, unreachable=False):
         """Hands the job back. checkpoint_step (with a shutdown): the newest checkpoint kept for it, so the server
-        can tell a shutdown that kept progress (free) from one that did not."""
+        can tell a shutdown that kept progress (free) from one that did not. unreachable: given up because the
+        server or the network stayed away (not a training failure: it costs no attempt)."""
         doc = {"reason": str(reason)[:1000], "retryable": bool(retryable), "shutdown": bool(shutdown)}
         if checkpoint_step is not None:
             doc["checkpointStep"] = int(checkpoint_step)
+        if unreachable:
+            doc["unreachable"] = True
         self._json("POST", f"/api/runners/jobs/{job_id}/fail", doc)
 
     def download_bundle(self, job_id, dest, expected_bytes=None, expected_sha=None, max_bytes=MAX_BUNDLE_BYTES,

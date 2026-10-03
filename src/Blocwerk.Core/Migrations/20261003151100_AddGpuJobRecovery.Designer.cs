@@ -13,7 +13,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blocwerk.Core.Migrations
 {
     [DbContext(typeof(BlocwerkDbContext))]
-    [Migration("20261003145053_AddGpuJobRecovery")]
+    [Migration("20261003151100_AddGpuJobRecovery")]
     partial class AddGpuJobRecovery
     {
         /// <inheritdoc />
@@ -732,6 +732,10 @@ namespace Blocwerk.Core.Migrations
                     b.Property<int?>("CheckpointStep")
                         .HasColumnType("integer");
 
+                    b.Property<string>("ClaimToken")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<DateTimeOffset?>("ClaimedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -778,6 +782,9 @@ namespace Blocwerk.Core.Migrations
                     b.Property<int>("LostLeaseCount")
                         .HasColumnType("integer");
 
+                    b.Property<int>("PauseCount")
+                        .HasColumnType("integer");
+
                     b.Property<string>("PreparedPath")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -811,6 +818,9 @@ namespace Blocwerk.Core.Migrations
                         .HasColumnType("double precision");
 
                     b.Property<int>("Quality")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ReattachCount")
                         .HasColumnType("integer");
 
                     b.Property<string>("RefinishStateJson")
