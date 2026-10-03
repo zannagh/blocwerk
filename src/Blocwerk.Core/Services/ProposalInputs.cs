@@ -3,6 +3,7 @@
 // </copyright>
 
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Entities;
 using Blocwerk.Core.Geometry;
 using Blocwerk.Core.Geometry.Footprints;
 using Blocwerk.Core.Geometry.Proposals;
@@ -41,7 +42,8 @@ public sealed record ProposalInputs(
             .ToList();
         var facets = new List<CastFacet>();
         var frames = new Dictionary<string, FacetFrame>(StringComparer.Ordinal);
-        var outlines = FacetShapes.Outlines(doc, await PlanTrianglesAsync(db, wallId, ct));
+        var live = await (await LiveWallHolds.QueryAsync(db, wallId, ct)).AsNoTracking().ToListAsync(ct);
+        var outlines = await OutlinesAsync(db, wallId, doc, live, ct);
         foreach (var f in doc.Segments.SelectMany(s => s.Facets))
         {
             if (!string.IsNullOrEmpty(f.Id) && FacetFrame.From(f) is { } frame && f.ExtentMm is { } extent)
@@ -52,7 +54,6 @@ public sealed record ProposalInputs(
             }
         }
 
-        var live = await (await LiveWallHolds.QueryAsync(db, wallId, ct)).AsNoTracking().ToListAsync(ct);
         var placed = live.Where(h => h.FacetId is { } f && frames.ContainsKey(f) && h.PlaneAMm != null && h.PlaneBMm != null).ToList();
         var flat = placed.Where(h => h.VolumePlacementJson is null).ToList();
         var photos = await PanelPhotoInfoLoader.LoadAsync(db, wallId, placed.Select(HoldPlaneProjector.PhotoOf), ct);
@@ -69,11 +70,21 @@ public sealed record ProposalInputs(
         return new ProposalInputs(facets, known, panels);
     }
 
-    /// <summary>The triangle segments of the wall's current marker plan (they cut facets to their shape, as the 3D view does).</summary>
+    /// <summary>
+    /// The model's facet outlines as the 3D view draws them (<see cref="FacetShapes.Outlines"/>): cut by the wall's current
+    /// marker plan's triangle segments, with the same fallback extents from the live holds.
+    /// </summary>
     /// <param name="db">The database.</param>
     /// <param name="wallId">The wall.</param>
+    /// <param name="doc">The model.</param>
+    /// <param name="live">The wall's live holds, when already loaded.</param>
     /// <param name="ct">Cancellation.</param>
-    /// <returns>Triangle segment index → parent and right angle.</returns>
-    public static async Task<IReadOnlyDictionary<int, PlanTriangle>> PlanTrianglesAsync(BlocwerkDbContext db, Guid wallId, CancellationToken ct) =>
-        Wall3DFacetOutlines.PlanTriangles(MarkerPlanJson.FromJson(await WallMarkerLayoutResolver.CurrentPlanJsonAsync(db, wallId, ct), out _));
+    /// <returns>Per facet id, its outline (only facets that are not their whole extent).</returns>
+    public static async Task<IReadOnlyDictionary<string, IReadOnlyList<double[]>>> OutlinesAsync(
+        BlocwerkDbContext db, Guid wallId, WallGeometryDocument doc, IReadOnlyList<Hold>? live, CancellationToken ct)
+    {
+        live ??= await (await LiveWallHolds.QueryAsync(db, wallId, ct)).AsNoTracking().ToListAsync(ct);
+        var plan = MarkerPlanJson.FromJson(await WallMarkerLayoutResolver.CurrentPlanJsonAsync(db, wallId, ct), out _);
+        return FacetShapes.Outlines(doc, Wall3DFacetOutlines.PlanTriangles(plan), live);
+    }
 }

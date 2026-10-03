@@ -65,4 +65,21 @@ public class CoverageSceneInsideWallTests
         Assert.NotEqual(CoverageCellStatus.Hidden, rated.Status[rated.Grid.IndexOf(300, 1800)]);
         Assert.InRange(rated.Status.Count(s => s == CoverageCellStatus.Hidden), rated.Status.Length * 0.4, rated.Status.Length * 0.6);
     }
+
+    [Fact]
+    public void AHeadwallStripAboveAnOverhangsLip_IsNeverSeen_NotInsideTheWall()
+    {
+        // A 46° overhang whose region overreaches its lip (at z = 0) by 400 mm, a vertical headwall above the lip. The one
+        // camera under the overhang is blocked by that overreach; the headwall behind it is real, unphotographed wall.
+        var overhang = Facet("over", [0, 0, 0], [1, 0, 0], [0, -0.7193, 0.6947], [0, -0.6947, -0.7193], new PlaneRectMm(0, 3000, -3000, 400));
+        var headwall = Facet("head", [0, 0, 0], [1, 0, 0], [0, 0, 1], [0, -1, 0], new PlaneRectMm(0, 3000, 0, 1500));
+        var scene = new CoverageScene([overhang, headwall], []);
+        double[] target = [1000, 0, 150];
+
+        var views = PointViews.Evaluate(target, [0, -1, 0], "head", [CoverageFixtures.Photo([1000, -2000, -500], target)], scene);
+
+        Assert.Equal((0, 1), (views.Views, views.Blocked));
+        Assert.False(views.InsideWall);
+        Assert.Equal(CoverageCellStatus.Never, views.Status);
+    }
 }

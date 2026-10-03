@@ -5,7 +5,6 @@ using System.Globalization;
 using System.Text.Json.Nodes;
 using Blocwerk.Core.Geometry.Corrections;
 using Blocwerk.Core.Geometry.Footprints;
-using Blocwerk.Core.Geometry.View3D;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 
@@ -25,7 +24,7 @@ public sealed partial class WallGeometryCorrectionService
             }
 
             var camera = await PhotoCameraAsync(context, reference.PhotoIndex);
-            var outlines = FacetShapes.Outlines(context.Document, await ProposalInputs.PlanTrianglesAsync(context.Db, wallId, default));
+            var outlines = await ProposalInputs.OutlinesAsync(context.Db, wallId, context.Document, null, default);
             var (measurement, refusal) = GeometryCorrectionMath.MeasureScale(
                 context.Document, camera, reference.A, reference.B, reference.Mm, outlines);
             if (measurement is null)

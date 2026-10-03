@@ -68,7 +68,7 @@ public static class WallSurfaceCaster
         var world = f.Frame.ToWorld(a, b, h);
         var dist = Math.Sqrt(Dot(Sub(world, o), Sub(world, o)));
         var size = 2 * d.RadiusPx * dist / camera.K[0];
-        return new SurfaceHit(d, f.Id, a, b, h, world, o, dir, size, cos);
+        return new SurfaceHit(d, f.Id, a, b, h, world, o, dir, size, cos, f.Frame.Normal);
     }
 
     private static double Dot(double[] a, double[] b) => (a[0] * b[0]) + (a[1] * b[1]) + (a[2] * b[2]);

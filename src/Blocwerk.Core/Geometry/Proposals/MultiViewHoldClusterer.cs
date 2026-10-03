@@ -33,6 +33,12 @@ public static class MultiViewHoldClusterer
     /// <summary>Widest angle between two of its rays must reach this, degrees.</summary>
     public const double MinBaselineDeg = 10;
 
+    /// <summary>
+    /// Hits on facets whose normals are further apart than this cosine (~120°) are never linked: they are the two faces of
+    /// a thin panel (or a fin), seen from opposite sides, never one hold. An arete's two faces stay well inside it.
+    /// </summary>
+    public const double MinLinkNormalCos = -0.5;
+
     private const double MinRadiusPx = 6;
     private const int Rounds = 3;
 
@@ -107,7 +113,7 @@ public static class MultiViewHoldClusterer
                 var q = hits[j];
                 var d = RayMath.Length(q.World, s.World);
                 var ratio = Math.Max(q.SizeMm, s.SizeMm) / Math.Max(1, Math.Min(q.SizeMm, s.SizeMm));
-                if (used[j] || q.Detection.Photo == s.Detection.Photo || d > LinkMm || ratio > MaxSizeRatio)
+                if (used[j] || q.Detection.Photo == s.Detection.Photo || d > LinkMm || ratio > MaxSizeRatio || Opposed(s, q))
                 {
                     continue;
                 }
@@ -123,6 +129,9 @@ public static class MultiViewHoldClusterer
 
         return [seed, .. best.Values.Select(b => b.Index)];
     }
+
+    private static bool Opposed(SurfaceHit s, SurfaceHit q) =>
+        s.FacetId != q.FacetId && s.Normal is { } n && q.Normal is { } m && RayMath.Dot(n, m) < MinLinkNormalCos;
 
     /// <summary>The world grid cell of a point: cells of <see cref="LinkMm"/>, so every hit within it is in a neighbouring cell.</summary>
     private static (long I, long J, long K) Cell(double[] world) =>
