@@ -21,7 +21,7 @@ public sealed record ScaleMeasurement(double Scale, double ModelMm, TapHit A, Ta
 
 /// <summary>
 /// The math of the model corrections: two taps on a capture photo plus a measured distance → the scale factor (each
-/// tap's viewing ray onto the nearest facet plane it meets inside the facet's extent), and "this surface is vertical" →
+/// tap's viewing ray onto the nearest facet plane it meets on the facet's real shape, <see cref="FacetShapes"/>), and "this surface is vertical" →
 /// the rotation that makes that facet plumb (the smallest turn of "up" into the facet's plane).
 /// </summary>
 public static class GeometryCorrectionMath
@@ -44,17 +44,23 @@ public static class GeometryCorrectionMath
     /// <param name="a">First tap [x, y] px.</param>
     /// <param name="b">Second tap [x, y] px.</param>
     /// <param name="mm">The measured distance, mm.</param>
+    /// <param name="outlines">The facets' outlines (<see cref="FacetShapes.Outlines"/>); a facet without one is its whole extent.</param>
     /// <returns>The measurement, or the reason it cannot be used.</returns>
     public static (ScaleMeasurement? Result, string? Refusal) MeasureScale(
-        WallGeometryDocument document, SolvedCamera camera, double[] a, double[] b, double mm)
+        WallGeometryDocument document,
+        SolvedCamera camera,
+        double[] a,
+        double[] b,
+        double mm,
+        IReadOnlyDictionary<string, IReadOnlyList<double[]>>? outlines = null)
     {
         if (!(mm > 0) || !double.IsFinite(mm))
         {
             return (null, "Enter the distance in millimetres.");
         }
 
-        var hitA = Hit(document, camera, a[0], a[1]);
-        var hitB = Hit(document, camera, b[0], b[1]);
+        var hitA = Hit(document, camera, a[0], a[1], outlines);
+        var hitB = Hit(document, camera, b[0], b[1], outlines);
         if (hitA is null || hitB is null)
         {
             return (null, "A tapped point is not on any surface of the 3D model. Tap two points on the wall itself.");
@@ -77,20 +83,23 @@ public static class GeometryCorrectionMath
         return (new ScaleMeasurement(scale, model, hitA, hitB), null);
     }
 
-    /// <summary>The nearest facet (inside its extent plus a margin) the pixel's viewing ray meets in front of the camera.</summary>
+    /// <summary>The nearest facet (on its outline, else its extent, plus a margin) the pixel's viewing ray meets in front of the camera.</summary>
     /// <param name="document">The model.</param>
     /// <param name="camera">The camera.</param>
     /// <param name="px">Pixel x.</param>
     /// <param name="py">Pixel y.</param>
+    /// <param name="outlines">The facets' outlines (<see cref="FacetShapes.Outlines"/>); a facet without one is its whole extent.</param>
     /// <returns>The hit, or null.</returns>
-    public static TapHit? Hit(WallGeometryDocument document, SolvedCamera camera, double px, double py)
+    public static TapHit? Hit(
+        WallGeometryDocument document, SolvedCamera camera, double px, double py, IReadOnlyDictionary<string, IReadOnlyList<double[]>>? outlines = null)
     {
         var centre = camera.Centre;
         TapHit? best = null;
         var bestDistance = double.PositiveInfinity;
         foreach (var facet in document.Segments.SelectMany(s => s.Facets))
         {
-            if (FacetFrame.From(facet) is not { } frame || camera.PixelToPlane(frame, px, py) is not { } ab || !Inside(facet.ExtentMm, ab))
+            if (FacetFrame.From(facet) is not { } frame || camera.PixelToPlane(frame, px, py) is not { } ab
+                || !Inside(facet.ExtentMm, outlines?.GetValueOrDefault(facet.Id), ab))
             {
                 continue;
             }
@@ -138,9 +147,8 @@ public static class GeometryCorrectionMath
         return (GeometrySimilarity.RotationBetween(inPlane, [0, 0, 1], frame.Origin), tilt, null);
     }
 
-    private static bool Inside(PlaneRectMm? extent, (double A, double B) ab) =>
-        extent is not { Area: > 0 } e
-        || (ab.A >= e.AMin - ExtentMarginMm && ab.A <= e.AMax + ExtentMarginMm && ab.B >= e.BMin - ExtentMarginMm && ab.B <= e.BMax + ExtentMarginMm);
+    private static bool Inside(PlaneRectMm? extent, IReadOnlyList<double[]>? outline, (double A, double B) ab) =>
+        extent is not { Area: > 0 } e || FacetShapes.Covers(outline, e, ab.A, ab.B, ExtentMarginMm);
 
     private static double Distance(double[] p, double[] q) =>
         Math.Sqrt(Math.Pow(p[0] - q[0], 2) + Math.Pow(p[1] - q[1], 2) + Math.Pow(p[2] - q[2], 2));

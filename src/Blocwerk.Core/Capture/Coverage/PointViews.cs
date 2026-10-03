@@ -17,7 +17,9 @@ namespace Blocwerk.Core.Capture.Coverage;
 /// <param name="BestAngleDeg">The most face-on view's angle off the surface normal, degrees (90 without views).</param>
 /// <param name="BestMmPerPx">The finest resolution, mm per pixel (infinity without views).</param>
 /// <param name="Blocked">Cameras that frame it from its front but whose line of sight another facet blocks.</param>
-public readonly record struct PointViews(int Views, int Directions, double SpreadDeg, double BestAngleDeg, double BestMmPerPx, int Blocked = 0)
+/// <param name="InsideWall">Without views: it lies behind another facet's board (<see cref="CoverageScene.InsideWall"/>).</param>
+public readonly record struct PointViews(
+    int Views, int Directions, double SpreadDeg, double BestAngleDeg, double BestMmPerPx, int Blocked = 0, bool InsideWall = false)
 {
     /// <summary>Fewer distinct directions than this: "seen from &lt; 3 directions".</summary>
     public const int MinDirections = 3;
@@ -32,11 +34,12 @@ public readonly record struct PointViews(int Views, int Directions, double Sprea
     public const double DirectionSeparationDeg = 15;
 
     /// <summary>
-    /// The rating: hidden behind other facets from every camera that frames it (inside the wall), never seen, then only
-    /// grazing, then too few directions, then only far away.
+    /// The rating: hidden when no camera sees it because it lies behind another facet's board (inside the wall), never
+    /// seen (also when other boards only happened to block every camera that framed it), then only grazing, then too few
+    /// directions, then only far away.
     /// </summary>
     public CoverageCellStatus Status =>
-        Views == 0 ? (Blocked > 0 ? CoverageCellStatus.Hidden : CoverageCellStatus.Never)
+        Views == 0 ? (Blocked > 0 && InsideWall ? CoverageCellStatus.Hidden : CoverageCellStatus.Never)
         : BestAngleDeg > GrazingDeg ? CoverageCellStatus.Grazing
         : Directions < MinDirections ? CoverageCellStatus.FewDirections
         : BestMmPerPx > MaxMmPerPx ? CoverageCellStatus.LowResolution
@@ -89,7 +92,8 @@ public readonly record struct PointViews(int Views, int Directions, double Sprea
         }
 
         var bestDeg = Math.Acos(Math.Clamp(bestCos, 0, 1)) * 180 / Math.PI;
-        return new PointViews(views, directions.Count, Spread(directions), bestDeg, bestMm, blocked);
+        var inside = views == 0 && blocked > 0 && scene.InsideWall(point, normal, facetId);
+        return new PointViews(views, directions.Count, Spread(directions), bestDeg, bestMm, blocked, inside);
     }
 
     private static double Spread(List<double[]> rays)

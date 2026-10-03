@@ -22,7 +22,7 @@ public class Wall3DFacetOutlinesTests
     /// x = 1000 whose (a, b) maps to (1000, −a, b), so the seam is the line a = b; its marker sits above it.
     /// Rectangle "7": same side wall, but its segment is no plan triangle.
     /// </summary>
-    private const string Json = """
+    internal const string Json = """
         {
           "version": 1, "units": "mm", "markerSizeMm": 125.0,
           "segments": [

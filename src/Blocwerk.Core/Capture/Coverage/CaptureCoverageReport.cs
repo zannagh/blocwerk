@@ -41,8 +41,8 @@ public sealed record CaptureCoverageReport(
     bool FromFeatures = false,
     string? VolumesFingerprint = null)
 {
-    /// <summary>The current format.</summary>
-    public const int CurrentVersion = 3;
+    /// <summary>The current format (4: cells off a facet's real shape are not rated, blocked-only cells outside the wall are never seen).</summary>
+    public const int CurrentVersion = 4;
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {

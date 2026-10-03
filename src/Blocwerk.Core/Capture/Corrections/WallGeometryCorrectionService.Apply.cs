@@ -24,7 +24,9 @@ public sealed partial class WallGeometryCorrectionService
             }
 
             var camera = await PhotoCameraAsync(context, reference.PhotoIndex);
-            var (measurement, refusal) = GeometryCorrectionMath.MeasureScale(context.Document, camera, reference.A, reference.B, reference.Mm);
+            var outlines = await ProposalInputs.OutlinesAsync(context.Db, wallId, context.Document, null, default);
+            var (measurement, refusal) = GeometryCorrectionMath.MeasureScale(
+                context.Document, camera, reference.A, reference.B, reference.Mm, outlines);
             if (measurement is null)
             {
                 throw new UserFacingException(refusal!);

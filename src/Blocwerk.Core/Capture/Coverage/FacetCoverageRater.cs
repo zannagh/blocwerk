@@ -6,7 +6,10 @@ using Blocwerk.Core.Geometry.Volumes;
 
 namespace Blocwerk.Core.Capture.Coverage;
 
-/// <summary>Rasterises each facet into cells and rates every cell's centre (<see cref="PointViews"/>).</summary>
+/// <summary>
+/// Rasterises each facet into cells and rates every cell's centre (<see cref="PointViews"/>). A centre off the facet's
+/// real shape (beyond a marker-confirmed seam, <see cref="CoverageScene.OnFacet"/>) or under a volume is not rated.
+/// </summary>
 public static class FacetCoverageRater
 {
     /// <summary>The default cell side, mm.</summary>
@@ -38,7 +41,7 @@ public static class FacetCoverageRater
         for (var k = 0; k < views.Length; k++)
         {
             var (a, b) = grid.Centre(k);
-            if (scene.UnderVolume(facet.Id, a, b))
+            if (!scene.OnFacet(facet.Id, a, b) || scene.UnderVolume(facet.Id, a, b))
             {
                 status[k] = CoverageCellStatus.Hidden;
                 continue;

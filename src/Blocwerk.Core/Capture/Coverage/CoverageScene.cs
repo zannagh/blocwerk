@@ -53,6 +53,28 @@ public sealed class CoverageScene
     public bool UnderVolume(string facetId, double a, double b) =>
         volumesByFacet.TryGetValue(facetId, out var list) && list.Any(v => v.Surface.HeightAt(a, b) >= VolumeMinHeightMm);
 
+    /// <summary>
+    /// Whether (a, b) is part of the facet: inside its region and on the kept side of its marker-confirmed seams (the
+    /// same shape it blocks views with). The cut-away half of a triangle segment is not wall.
+    /// </summary>
+    /// <param name="facetId">The facet.</param>
+    /// <param name="a">Along u, mm.</param>
+    /// <param name="b">Along v, mm.</param>
+    /// <returns>True on the facet.</returns>
+    public bool OnFacet(string facetId, double a, double b) =>
+        occluders.FirstOrDefault(o => o.Facet.Id == facetId) is not { } own || own.WithinSeams(a, b);
+
+    /// <summary>
+    /// Whether the point lies inside the wall: behind another facet's board (<see cref="CoverageOccluder.Behind"/>),
+    /// whichever cameras there are.
+    /// </summary>
+    /// <param name="point">The point, world mm.</param>
+    /// <param name="normal">Its outward unit normal, world.</param>
+    /// <param name="facetId">Its facet.</param>
+    /// <returns>True inside the wall.</returns>
+    public bool InsideWall(double[] point, double[] normal, string facetId) =>
+        occluders.Any(o => o.Facet.Id != facetId && o.Behind(point, normal));
+
     /// <summary>Whether another facet's board stands between the camera and the target.</summary>
     /// <param name="camera">Camera centre, world mm.</param>
     /// <param name="target">The target point, world mm.</param>

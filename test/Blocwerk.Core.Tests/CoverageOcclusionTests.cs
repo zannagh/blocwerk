@@ -34,7 +34,7 @@ public class CoverageOcclusionTests
     }
 
     [Fact]
-    public void AFinThatStandsInTheWay_StillBlocksThatCamera()
+    public void AFinThatStandsInTheWay_StillBlocksThatCamera_ButTheWallBesideItIsNotInsideTheWall()
     {
         var wall = Facet("wall", [0, 0, 0], [1, 0, 0], [0, 0, 1], [0, -1, 0], new PlaneRectMm(0, 3000, 0, 3000));
         var fin = Facet("fin", [1500, 0, 0], [0, -1, 0], [0, 0, 1], [1, 0, 0], new PlaneRectMm(0, 1000, 0, 3000));
@@ -48,7 +48,8 @@ public class CoverageOcclusionTests
 
         Assert.Equal(1, views.Views);
         Assert.Equal(1, views.Blocked);
-        Assert.Equal(CoverageCellStatus.Hidden, onlyBlocked.Status);
+        Assert.False(onlyBlocked.InsideWall);
+        Assert.Equal(CoverageCellStatus.Never, onlyBlocked.Status);
     }
 
     [Fact]
