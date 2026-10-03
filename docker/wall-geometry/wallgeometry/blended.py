@@ -98,23 +98,24 @@ def render(doc, load_photo, cams, names, jobs, p, progress):
 
 
 def _label(j, gains, p):
-    """(Consensus-penalised single-photo choice per label cell, the same upsampled to full resolution),
-    or (the best-weighted photo per cell, None) in blend mode."""
+    """Consensus-penalised single-photo choice per label cell, upsampled to full resolution (None in
+    blend mode). Only photos with rendered pixels there (blend weight > 0, i.e. among the top-N raw
+    views) can be chosen: a choice without a sample slot would silently paint another photo."""
     fv = j["views"]
     if p["blendMode"] != "select":
-        return fv.per_cell("W", sourcemap.best_cells), None
+        return None
     key = "S"
     if p["exposureBalance"]:
         consensus.penalise(fv, gains, p)
         fv.drop("cells")
         key = "P"
-    cells = fv.labels(key, int(p["selectModeFilterCells"]))
-    return cells, tx._upsample(cells, j["g"], p["labelCellPx"])
+    cells = fv.labels(key, int(p["selectModeFilterCells"]), mask_key="W")
+    return tx._upsample(cells, j["g"], p["labelCellPx"])
 
 
-def _result(doc, j, gains, names, p, labels):
-    cells, label = labels
-    out, filled, kept = blend.finish(j["acc"], gains, p, label)
+def _result(doc, j, gains, names, p, label):
+    out, filled, kept, drawn = blend.finish(j["acc"], gains, p, label)
+    cells = sourcemap.drawn_cells(drawn, p["labelCellPx"])
     g = j["g"]
     tot = kept.sum()
     used = {names[k]: round(float(kept[k] / tot), 4) for k in range(len(names)) if tot > 0 and kept[k] > 0}

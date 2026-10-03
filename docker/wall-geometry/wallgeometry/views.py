@@ -112,21 +112,19 @@ class FacetViews:
             if y1 > y0:
                 v.fields[key][y0 - v.y0:y1 - v.y0] = rows[k, y0 - r0:y1 - r0, v.x0:v.x1]
 
-    def per_cell(self, key, fn, halo=0):
-        """Per-cell photo choice over all tiles: fn(dense (n, rows, cw)) -> local index (rows, cw), -1 =
-        none; returned as photo indices (ch, cw)."""
+    def labels(self, key, k, mask_key=None):
+        """cell_labels of field `key` (mode filter k x k cells) -> photo index per cell (ch, cw), -1 = none.
+        With `mask_key` a photo only counts where that field is > 0."""
         out = np.full(self.shape, -1, np.intp)
-        for r0, r1, a0, a1 in self.tiles(halo):
+        for r0, r1, a0, a1 in self.tiles(k // 2):
             idx, S = self.dense(key, a0, a1, 0.0)
             if S is None:
                 continue
-            lab = fn(S)[r0 - a0:r1 - a0]
+            if mask_key is not None:
+                S = np.where(self.dense(mask_key, a0, a1, 0.0)[1] > 0, S, 0)
+            lab = cell_labels(S, k)[r0 - a0:r1 - a0]
             out[r0:r1] = np.where(lab >= 0, idx[np.maximum(lab, 0)], -1)
         return out
-
-    def labels(self, key, k):
-        """cell_labels of field `key` (mode filter k x k cells) -> photo index per cell (ch, cw), -1 = none."""
-        return self.per_cell(key, lambda S: cell_labels(S, k), halo=k // 2)
 
     def full(self, key, C, fill=0.0):
         """The old dense (C, ch, cw, ...) array of field `key` (tests and small grids only)."""

@@ -161,14 +161,22 @@ def select_combine(rgb, wt, cam, label, feather):
     w = np.where(none[None], best, pick).astype(np.float32)
     tot = w.sum(0)
     out = (rgb.astype(np.float32) * w[..., None]).sum(0) / np.where(tot > 0, tot, 1)[..., None]
-    return out, w > 0
+    return out, w
+
+
+def _dominant(cam, w):
+    """Per pixel the photo whose slot has the largest combine weight `w` (K, h, w); -1 = none."""
+    top = np.take_along_axis(cam, w.argmax(0)[None], 0)[0]
+    return np.where(w.max(0) > 0, top, -1).astype(np.int16)
 
 
 def finish(acc, gains, p, label=None):
-    """Apply per-photo gains and combine all slots -> (image uint8, filled bool, per-photo use).
+    """Apply per-photo gains and combine all slots -> (image uint8, filled bool, per-photo use, photo
+    that painted each pixel (int16, -1 = none)).
     With a `label` map: consensus single-photo choice; else the robust multi-view blend."""
     H, W = acc.g["H"], acc.g["W"]
     out = np.zeros((H, W, 3), np.uint8)
+    drawn = np.full((H, W), -1, np.int16)
     lut = exposure.gain_luts(gains)  # (C, 3, 256) uint8, identity where no gain
     kept_by_cam = np.zeros(len(lut), np.float64)
     step = int(p["combineTileRows"])
@@ -177,15 +185,18 @@ def finish(acc, gains, p, label=None):
         cam, wt = acc.cam[:, sl], acc.wt[:, sl].astype(np.float32)
         rgb = exposure.apply_luts(acc.rgb[:, sl], cam, lut)
         if label is not None:
-            img, keep = select_combine(rgb, wt, cam, label[sl], int(p["seamFeatherPx"]))
+            img, w = select_combine(rgb, wt, cam, label[sl], int(p["seamFeatherPx"]))
+            keep = w > 0
         else:
             img, keep = robust_combine(rgb, wt, p["outlierDeltaE"], p["outlierBlurPx"],
                                        int(p["outlierSmoothPx"]))
+            w = np.where(keep, wt, 0)
         out[sl] = np.clip(img + 0.5, 0, 255).astype(np.uint8)
+        drawn[sl] = _dominant(cam, w)
         kc = cam[keep]
         kept_by_cam += np.bincount(kc[kc >= 0], weights=wt[keep][kc >= 0], minlength=len(lut))
     filled = acc.count > 0
-    return out, filled, kept_by_cam
+    return out, filled, kept_by_cam, drawn
 
 
 def shrink(img, down=8):

@@ -1,12 +1,13 @@
 """The texture renderer as it was before views.py: every per-photo array dense over photos x label cells.
 
 Kept only as the reference the sparse renderer must reproduce exactly (test_texture_memory.py). The
-code is the previous textures / blended / exposure code; shared pieces that did not change (scoring of
-one photo, slot combine, flattening, seams) are imported.
+code is the previous textures / blended / exposure code (plus the rule that the consensus label only
+picks photos with rendered pixels); shared pieces that did not change (scoring of one photo, slot
+combine and its source map, flattening, seams) are imported.
 """
 import numpy as np
 
-from wallgeometry import blend, consensus, exposure, flatten, occlusion, scale, seams, sourcemap
+from wallgeometry import blend, consensus, exposure, flatten, occlusion, scale, seams
 from wallgeometry import blended as bl
 from wallgeometry import textures as tx
 
@@ -110,10 +111,11 @@ def _sample_gain_cells(img, cam, c, jobs):
 
 def _label(j, gains, names, p):
     if p["blendMode"] != "select":
-        return sourcemap.best_cells(j["acc"].W), None
+        return None
     S = consensus.penalised_scores(j["S"], j["cells"], gains, p) if p["exposureBalance"] else j["S"]
+    S = np.where(j["acc"].W > 0, S, 0)  # only photos with rendered pixels (the consensus-pick fix)
     cells = cell_labels(S, names, {**p, "modeFilterCells": p["selectModeFilterCells"]})
-    return cells, tx._upsample(cells, j["g"], p["labelCellPx"])
+    return tx._upsample(cells, j["g"], p["labelCellPx"])
 
 
 def _render_blended(doc, load_photo, cams, names, facets, p, occs):
