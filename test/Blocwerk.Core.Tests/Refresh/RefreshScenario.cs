@@ -36,9 +36,10 @@ internal sealed class RefreshScenario : IDisposable
         var actors = new DelegateRefreshActors(ActorsForAsync);
         Service = new WallRefreshService(
             harness.DbContextFactory, harness.CurrentUser, Capture.Service, Queue, actors, Capture.Files,
-            NullLogger<WallRefreshService>.Instance, Capture.Options);
+            NullLogger<WallRefreshService>.Instance, Capture.Options, wallLocks: Locks);
         Processor = new WallRefreshProcessor(
-            harness.RootContextFactory, actors, new PanelPhotoPicker(alignment), Capture.Files, NullLogger<WallRefreshProcessor>.Instance);
+            harness.RootContextFactory, actors, new PanelPhotoPicker(alignment), Capture.Files, NullLogger<WallRefreshProcessor>.Instance,
+            locks: Locks);
     }
 
     /// <summary>Wraps the services the worker gets (e.g. to make one step fail).</summary>
@@ -49,6 +50,9 @@ internal sealed class RefreshScenario : IDisposable
     public IHoldTexturePlacementService Placement { get; } = Substitute.For<IHoldTexturePlacementService>();
 
     public WallRefreshQueue Queue { get; } = new();
+
+    /// <summary>The wall locks the service and the processor share (Apply gives up after 100 ms here).</summary>
+    public WallRefreshLocks Locks { get; } = new(TimeSpan.FromMilliseconds(100));
 
     public WallRefreshService Service { get; }
 

@@ -43,9 +43,7 @@ public sealed partial class WallRefreshProcessor
 
     private async Task<bool> DiscardIdleAsync(WallRefresh refresh, DateTimeOffset now, CancellationToken ct)
     {
-        var gate = wallLocks.GetOrAdd(refresh.WallId, _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync(ct);
-        try
+        using (await wallLocks.AcquireAsync(refresh.WallId, ct))
         {
             // The user may have come back in the meantime.
             var current = await LoadAsync(refresh.Id, ct);
@@ -70,10 +68,6 @@ public sealed partial class WallRefreshProcessor
                 },
                 ct);
             return true;
-        }
-        finally
-        {
-            gate.Release();
         }
     }
 

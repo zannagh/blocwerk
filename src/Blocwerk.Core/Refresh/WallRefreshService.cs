@@ -25,46 +25,40 @@ public sealed partial class WallRefreshService(
     ICaptureFileStore files,
     ILogger<WallRefreshService> logger,
     WallCapturePipelineOptions? pipelineOptions = null,
-    IKioskContext? kioskContext = null) : IWallRefreshService
+    IKioskContext? kioskContext = null,
+    WallRefreshLocks? wallLocks = null) : IWallRefreshService
 {
+    /// <summary>Apply's refusal while the update is checked against this visit's new 3D model.</summary>
+    public const string BeingChecked = "The update is being checked against the new 3D model. Try again in a moment.";
+
     private const string AdminAction = "Updating panels and 3D";
+    private readonly WallRefreshLocks locks = wallLocks ?? new WallRefreshLocks();
     private static readonly TimeSpan ShownAfterFinish = TimeSpan.FromDays(1);
 
     private WallCapturePipelineOptions Options => pipelineOptions ?? new WallCapturePipelineOptions();
 
-    public async Task<WallRefreshView?> GetCurrentAsync(Guid wallId)
+    public Task<WallRefreshView?> GetCurrentAsync(Guid wallId) => ReadCurrentAsync(wallId, sideEffects: true);
+
+    public Task<WallRefreshView?> PeekCurrentAsync(Guid wallId) => ReadCurrentAsync(wallId, sideEffects: false);
+
+    public async Task<RefreshRecheckOutcome> RecheckAsync(Guid refreshId)
     {
-        var (db, _) = await OpenForAdminAsync(wallId);
+        var (db, refresh) = await OpenRefreshAsync(refreshId);
         await using (db)
         {
-            var refresh = await CurrentAsync(db, wallId);
-            if (refresh is null)
+            if (WallRefreshProcessor.IsRechecking(refresh, DateTimeOffset.UtcNow))
             {
-                return null;
+                return RefreshRecheckOutcome.Running;
             }
 
-            var pending = await Check3DPendingAsync(db, refresh);
-            return await ToViewAsync(db, refresh) with { Check3DPending = pending };
+            return await Check3DPendingAsync(db, refresh, enqueue: true) ? RefreshRecheckOutcome.Queued : RefreshRecheckOutcome.NotDue;
         }
     }
 
-    /// <summary>Whether the ready update waits for (or is in) its check against this visit's new 3D model; starts that check.</summary>
-    private async Task<bool> Check3DPendingAsync(BlocwerkDbContext db, WallRefresh refresh)
+    public async Task<Guid?> GetWallIdAsync(Guid refreshId)
     {
-        var now = DateTimeOffset.UtcNow;
-        if (WallRefreshProcessor.IsRechecking(refresh, now))
-        {
-            return true;
-        }
-
-        var ready = refresh.Status == WallRefreshStatus.ReadyToApply ? await WallRefreshProcessor.Ready3DModelAsync(db, refresh, CancellationToken.None) : null;
-        if (!WallRefreshProcessor.NeedsRecheck(refresh, ready, now))
-        {
-            return false;
-        }
-
-        queue.Enqueue(refresh.Id);
-        return true;
+        await using var db = await dbContextFactory.CreateDbContextAsync();
+        return await db.WallRefreshes.Where(r => r.Id == refreshId).Select(r => (Guid?)r.WallId).FirstOrDefaultAsync();
     }
 
     public async Task<WallRefreshView> BeginAsync(Guid wallId)
@@ -125,10 +119,52 @@ public sealed partial class WallRefreshService(
         }
     }
 
+    private async Task<WallRefreshView?> ReadCurrentAsync(Guid wallId, bool sideEffects)
+    {
+        var (db, _) = await OpenForAdminAsync(wallId);
+        await using (db)
+        {
+            var refresh = await CurrentAsync(db, wallId, sideEffects);
+            if (refresh is null)
+            {
+                return null;
+            }
+
+            var pending = await Check3DPendingAsync(db, refresh, enqueue: sideEffects);
+            return await ToViewAsync(db, refresh) with { Check3DPending = pending };
+        }
+    }
+
+    /// <summary>
+    /// Whether the ready update waits for (or is in) its check against this visit's new 3D model; with
+    /// <paramref name="enqueue"/>, starts that check.
+    /// </summary>
+    private async Task<bool> Check3DPendingAsync(BlocwerkDbContext db, WallRefresh refresh, bool enqueue)
+    {
+        var now = DateTimeOffset.UtcNow;
+        if (WallRefreshProcessor.IsRechecking(refresh, now))
+        {
+            return true;
+        }
+
+        var ready = refresh.Status == WallRefreshStatus.ReadyToApply ? await WallRefreshProcessor.Ready3DModelAsync(db, refresh, CancellationToken.None) : null;
+        if (!WallRefreshProcessor.NeedsRecheck(refresh, ready, now))
+        {
+            return false;
+        }
+
+        if (enqueue)
+        {
+            queue.Enqueue(refresh.Id);
+        }
+
+        return true;
+    }
+
     private static bool IsFinished(WallRefreshStatus status) =>
         status is WallRefreshStatus.Done or WallRefreshStatus.Failed or WallRefreshStatus.Discarded;
 
-    private static async Task<WallRefresh?> CurrentAsync(BlocwerkDbContext db, Guid wallId)
+    private static async Task<WallRefresh?> CurrentAsync(BlocwerkDbContext db, Guid wallId, bool sideEffects = true)
     {
         // Few rows per wall; ordered in memory because SQLite cannot ORDER BY a DateTimeOffset.
         var rows = await db.WallRefreshes.Where(r => r.WallId == wallId && r.Status != WallRefreshStatus.Discarded).ToListAsync();
@@ -142,6 +178,12 @@ public sealed partial class WallRefreshService(
         if (latest.Status is WallRefreshStatus.Uploading or WallRefreshStatus.ReadyToStart
             && !await db.WallCaptures.AnyAsync(c => c.Id == latest.CaptureId))
         {
+            if (!sideEffects)
+            {
+                // A read-only caller sees it as gone; the page's next read (or a write) records that.
+                return null;
+            }
+
             latest.Status = WallRefreshStatus.Discarded;
             latest.CompletedAt = DateTimeOffset.UtcNow;
             await db.SaveChangesAsync();

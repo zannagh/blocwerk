@@ -6,7 +6,10 @@ using Blocwerk.Authentication.Authorization;
 using Blocwerk.Core.Capture;
 using Blocwerk.Core.Refresh;
 using Blocwerk.Core.Services;
+using Blocwerk.Web.Controllers;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Mvc;
 
 namespace Blocwerk.Web.Endpoints;
 
@@ -35,6 +38,37 @@ public static class WallRefreshUploadEndpoint
         $"The {(isVideo ? "video" : "photo")} is larger than {limit / (1024 * 1024)} MB.";
 
     internal static async Task<IResult> HandleAsync(
+        Guid refreshId,
+        string? name,
+        HttpContext http,
+        IWallRefreshService refreshes,
+        WallCapturePipelineOptions options,
+        CancellationToken ct,
+        [FromServices] ApiWriteAudit? audit = null)
+    {
+        // A script's upload is audited like the rest of the automation API (the browser's drop zone is not): one batch
+        // per run, scoped to its wall, appended to by every file. A run that does not exist takes no file at all.
+        if (audit is null || !http.User.IsApiKeyPrincipal() || await refreshes.GetWallIdAsync(refreshId) is not { } wallId)
+        {
+            return await StoreAsync(refreshId, name, http, refreshes, options, ct);
+        }
+
+        // Authorised before the audit row is written: a caller who may not upload leaves no trace in the journal.
+        if (await RefusedAsync(refreshId, name, refreshes) is { } refused)
+        {
+            return refused;
+        }
+
+        return await audit.RunAsync(
+            http.User,
+            $"refresh.upload run:{refreshId}",
+            wallId,
+            () => StoreAsync(refreshId, name, http, refreshes, options, ct),
+            result => result is Ok<RefreshFile> { Value.Problem: null },
+            append: true);
+    }
+
+    private static async Task<IResult> StoreAsync(
         Guid refreshId, string? name, HttpContext http, IWallRefreshService refreshes, WallCapturePipelineOptions options, CancellationToken ct)
     {
         var isVideo = CaptureVideoFiles.Extensions.Contains(Path.GetExtension(name ?? string.Empty));
@@ -75,6 +109,25 @@ public static class WallRefreshUploadEndpoint
         {
             var problem = ex.StatusCode == StatusCodes.Status413PayloadTooLarge ? TooLarge(isVideo, limit) : "The upload was interrupted.";
             return Results.Ok(new RefreshFile(null, name, isVideo, problem));
+        }
+    }
+
+    /// <summary>The answer to a caller who may not add this file to the run now, or null when they may.</summary>
+    private static async Task<IResult?> RefusedAsync(Guid refreshId, string? name, IWallRefreshService refreshes)
+    {
+        var isVideo = CaptureVideoFiles.Extensions.Contains(Path.GetExtension(name ?? string.Empty));
+        try
+        {
+            await refreshes.EnsureCanUploadAsync(refreshId, isVideo);
+            return null;
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or KioskRestrictedException)
+        {
+            return Results.Forbid();
+        }
+        catch (UserFacingException ex)
+        {
+            return Results.Ok(new RefreshFile(null, name, isVideo, ex.Message));
         }
     }
 

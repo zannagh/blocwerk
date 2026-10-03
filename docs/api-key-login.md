@@ -2,6 +2,8 @@
 
 Automation (Playwright, scripts) can open a browser session as a user without going through OAuth, by presenting one of that user's **personal** API keys. The feature is **off by default**. When it is off, the route is not mapped and answers 404 like any other unknown path.
 
+Scripts that only run a panel update ("Update panels + 3D") or prepare a wall's markers and marker plan don't need it: those flows have their own API routes with a write key, see [automation-api.md](automation-api.md).
+
 ## Enabling it
 
 Two settings, and both are needed:
@@ -61,8 +63,8 @@ Keep the key in an environment variable or secret store, never in the test sourc
 
 Separately from the login above, and not affected by its switch or allow-list, a key can call these routes directly with `Authorization: Bearer bwk_…`, **but only if it was created with write access** ("Allow this key to change walls" for a personal key, "Allow this key to change the wall" for a wall key):
 
-* The wall-admin routes under `/api/walls/{wallId}/`: `captures`, `geometry/hold-proposals`, `geometry/volumes`, `geometry/corrections`, `geometry/place-holds`, `holds/outline-upgrade`, `holds/refine-shapes`, `marker-plan/revisions` and `update/shapes/*`. A personal write key or a wall write key for that wall. Reads on these routes need write access too.
-* `POST /api/captures/{captureId}/video` and `POST /api/refreshes/{refreshId}/files` (the wall update's file drop). Only signed-in users and personal keys with write access are accepted.
+* The wall-admin routes under `/api/walls/{wallId}/`: `captures`, `geometry/hold-proposals`, `geometry/volumes`, `geometry/corrections`, `geometry/place-holds`, `holds/outline-upgrade`, `holds/refine-shapes`, `markers`, `marker-plan`, `marker-plan/revisions` and `update/shapes/*`. A personal write key or a wall write key for that wall. Reads on these routes need write access too.
+* `POST /api/captures/{captureId}/video`, `POST /api/refreshes/{refreshId}/files` (the wall update's file drop) and the panel update under `/api/walls/{wallId}/refresh`. Only signed-in users (not on `/refresh`) and personal keys with write access are accepted.
 
 In every case the key's owner has to pass the same checks as in the browser: admin of the wall, not a kiosk, and for the video, their own open capture draft. A wall key without write access keeps only its device routes (temperature, images, maintenance): wall keys sit on devices and must be assumed to leak. Wall keys created before write access existed for them start without it; create a new wall key with write access for automation that needs it. Kiosk and installation keys can't be used on any of these routes.
 

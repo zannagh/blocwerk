@@ -185,6 +185,9 @@ public static class Program
         // the kiosk wall's opt-in flag is read once per circuit, whichever component asks first.
         builder.Services.AddScoped<KeyboardShortcutGate>();
 
+        // The change-journal audit of the automation API's writes (panel update, wall preparation).
+        builder.Services.AddScoped<ApiWriteAudit>();
+
         // Counts live circuits into the "connected users" gauge.
         builder.Services.AddScoped<CircuitHandler, TelemetryCircuitHandler>();
 
