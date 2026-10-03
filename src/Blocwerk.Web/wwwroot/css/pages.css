@@ -3890,3 +3890,72 @@ html.bw-fullscreen .panel-link-dialog .panel-step-viewport {
     border-top: 1px solid var(--border-light);
     background: var(--bg-surface);
 }
+
+/* ========== Boulder detail: the first screen is the wall view + Attempt/Send/Flash ==========
+ *
+ * Phone (<= 720px wide) and landscape phone (short window): the climber opens a boulder to look at
+ * it and log it, so those two things must be on screen together without scrolling. Everything else
+ * (rules, rating, setter, videos, activity, comments, history) follows below the fold.
+ *
+ * The column wrappers are display:contents on this tier, so .boulder-detail sees every block as a
+ * direct flex/grid item and the visual order is set with `order` alone; the DOM order (and the
+ * desktop tier) is untouched. The view slot gets an exact height budget instead of the old
+ * `--boulder-photo-chrome` guess, and --bottomnav-h already includes any bottom banner. */
+.boulder-below-meta { display: none; }
+@media (max-width: 720px), (orientation: landscape) and (max-height: 500px) {
+    .boulder-detail {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 8px 12px 16px;
+        /* padding 8 + header 44 + toggles 44 + attempt 52 + three 8px gaps = 172, plus slack for borders */
+        --boulder-first-screen-chrome: 196px;
+        --boulder-view-h: calc(100dvh - var(--topbar-h) - var(--bottomnav-h) - var(--boulder-first-screen-chrome));
+        --boulder-photo-chrome: var(--boulder-first-screen-chrome);
+        --photo-fit-floor: 120px;
+    }
+    /* Everything is "below the fold" unless it is given a place on the first screen. */
+    .boulder-detail :is(.boulder-main-row, .boulder-photo-col, .boulder-side-col, .boulder-wide-col) > * { order: 20; margin-top: 0; margin-bottom: 0; }
+    .boulder-detail .page-header { order: 1; margin: 0; }
+    .boulder-detail .boulder-toggle-row { order: 2; margin: 0; }
+    .boulder-detail .boulder-view-slot { order: 3; }
+    .boulder-detail .attempt-section { order: 4; margin: 0; }
+    .boulder-detail .boulder-below-meta { display: block; }
+
+    /* One-line header: arrow, title, grade, favourite, edit. */
+    .boulder-detail .page-header { display: flex; align-items: center; gap: 4px; min-height: 44px; }
+    .boulder-detail .back-link { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; margin-left: -8px; font-size: 1.3rem; }
+    .boulder-detail .back-link-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    .boulder-detail .title-row { margin: 0; flex: 1 1 auto; min-width: 0; flex-wrap: nowrap; gap: 8px; }
+    .boulder-detail .title-row h1 { font-size: 1.15rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 1 auto; }
+    .boulder-detail .title-row > :is(.draft-badge, .historic-badge, .archived-badge) { display: none; }
+    .boulder-detail .title-actions { flex: 0 0 auto; }
+    .boulder-detail .title-actions :is(.btn-view3d, .btn-revise) { display: none; }
+    .boulder-detail .page-header .meta { display: none; }
+
+    /* The view: exactly the leftover height, image contained, zoom engine untouched. */
+    .boulder-detail .boulder-view-slot { min-height: 0; }
+    .boulder-detail .boulder-view-slot .wall3d-inline-stage { height: var(--boulder-view-h); min-height: 0; }
+    .boulder-detail .boulder-view-slot .photo-viewport.photo-section { --fit-h: max(var(--photo-fit-floor), var(--boulder-view-h)); }
+
+    /* Ascent buttons: 52px, icon beside the label. */
+    .boulder-detail .attempt-btn { flex-direction: row; justify-content: center; min-height: 52px; padding: 8px; }
+    .boulder-detail .attempt-btn svg { width: 20px; height: 20px; }
+}
+/* Landscape phone: the view takes the left, header + toggles + ascent buttons stack at the right. */
+@media (orientation: landscape) and (max-height: 500px) {
+    .boulder-detail {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+        grid-template-rows: auto auto auto 1fr;
+        align-items: start;
+        column-gap: 12px;
+        max-width: none;
+        --boulder-first-screen-chrome: 16px;
+    }
+    .boulder-detail .boulder-view-slot { grid-column: 1; grid-row: 1 / span 4; }
+    .boulder-detail .page-header { grid-column: 2; grid-row: 1; }
+    .boulder-detail .boulder-toggle-row { grid-column: 2; grid-row: 2; flex-direction: column; }
+    .boulder-detail .attempt-section { grid-column: 2; grid-row: 3; }
+    .boulder-detail :is(.boulder-main-row, .boulder-photo-col, .boulder-side-col, .boulder-wide-col) > :not(.page-header, .boulder-toggle-row, .boulder-view-slot, .attempt-section) { grid-column: 1 / -1; grid-row: auto; }
+}

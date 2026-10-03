@@ -38,7 +38,7 @@ else
         <div class="boulder-photo-col">
         <div class="page-header">
             @{ var backUrl = !string.IsNullOrEmpty(ShareToken) ? $"/walls/{WallId}/shared/{ShareToken}?view=boulders" : $"/walls/{WallId}?view=boulders"; }
-            <a href="@backUrl" class="back-link">&larr; Back to boulder list</a>
+            <a href="@backUrl" class="back-link" aria-label="Back to boulder list"><span aria-hidden="true">&larr;</span><span class="back-link-text"> Back to boulder list</span></a>
             <div class="title-row">
                 <h1>@_boulder.Name</h1>
                 @if (!string.IsNullOrEmpty(_boulder.Grade))
@@ -111,6 +111,24 @@ else
                 <p class="meta">by @CreatorDisplay &middot; <LocalTime Value="@_boulder.CreatedAt" Format="LocalTimeFormat.Date" /></p>
             }
 
+        </div>
+
+        @* Phone tier only: the first screen is the wall view plus the ascent buttons, so the setter line
+           and the Revise action leave the header and follow below the fold (CSS hides these two
+           everywhere else, and hides their header twins on the phone). *@
+        <div class="boulder-below-meta">
+            @if (_boulder.Setters.Count > 0)
+            {
+                <p class="meta">Set by @SettersDisplay &middot; added by @CreatorDisplay &middot; <LocalTime Value="@_boulder.CreatedAt" Format="LocalTimeFormat.Date" /></p>
+            }
+            else
+            {
+                <p class="meta">by @CreatorDisplay &middot; <LocalTime Value="@_boulder.CreatedAt" Format="LocalTimeFormat.Date" /></p>
+            }
+            @if (CanFullRevise)
+            {
+                <a href="/walls/@WallId/boulders/@BoulderId/revise" class="btn-revise">Revise</a>
+            }
         </div>
 
         @if (_boulder.IsDraft)
@@ -260,6 +278,7 @@ else
                 @HistoricHoldsMissing were set on holds that aren't on these photos.
             </p>
         }
+        <div class="boulder-view-slot">
         @if (_show3D && !_showHistoric)
         {
             <Wall3DInline WallId="WallId" BoulderId="BoulderId" ShareToken="@ShareToken" />
@@ -338,6 +357,7 @@ else
                 }
             </div>
         }
+        </div>
         </div>
 
         @* Right column on the desktop tier: everything you DO with the boulder. *@
