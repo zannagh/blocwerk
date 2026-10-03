@@ -53,7 +53,16 @@ public sealed record Panel3DEvidence(
 /// </summary>
 public static class NewHoldEvidence3D
 {
-    /// <summary>A detection this close (mm) to a placed hold's centre is that hold, whatever its size.</summary>
+    /// <summary>
+    /// A detection this close (mm) to a placed hold's centre is that hold, whatever its size.
+    /// <para>
+    /// Known trade-off (review 2026-10, F12): the floor absorbs photo-to-model registration error, so it also
+    /// catches a genuinely new small hold (a foot chip, a screw-on) set within 35–45 mm of an existing one,
+    /// which is then suggested for discard as <see cref="Evidence3DVerdict.KnownHold"/>. Lowering it trades
+    /// that for duplicate holds whenever registration drifts. Judge only sees a point, not the detection's
+    /// size or 2D footprint, so a size-aware catch needs those passed in first.
+    /// </para>
+    /// </summary>
     public const double MinimumCatchMm = 35;
 
     /// <summary>The catch radius of a large hold or a volume is capped, so a new hold bolted onto it is not taken for it.</summary>

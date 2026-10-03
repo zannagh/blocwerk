@@ -22,19 +22,36 @@ public partial class WallBigUpdateService
     /// Which of the mat-flagged OLD holds may really be dropped. The carried set was curated at an earlier
     /// generation, so only the mat-SIZED blobs (radius + position rule) qualify — never a hold that is only
     /// low on the photo (the floor-gap rule clips a real kickboard row sitting under a gap) — and never one
-    /// a person stands behind: a hand-added hold, a kickboard hold or a foothold.
+    /// a person stands behind: a hand-added hold, a named hold, a kickboard hold or a foothold.
     /// </summary>
     internal static IEnumerable<Hold> CarriedMatCandidates(IEnumerable<Hold> radiusMats) =>
-        radiusMats.Where(h => h.IsAutoDetected && !h.IsOnKickboard && h.Category != HoldCategory.Foot);
+        radiusMats.Where(h => h.IsAutoDetected && !h.IsOnKickboard && h.Category != HoldCategory.Foot
+            && string.IsNullOrWhiteSpace(h.Name));
 
-    /// <summary>The ids of the old holds to drop as mat false detections (before the boulder guard).</summary>
+    /// <summary>
+    /// The ids of the old holds to drop as mat false detections (before the boulder guard). The classifier
+    /// is population-relative over coordinates normalized to ONE photo, so it runs per panel photo, exactly
+    /// as the detector does: pooling every re-shot panel read "near the bottom" of an upper-row panel, or
+    /// "large" on a panel shot from closer, as a floor mat. Legacy holds without a panel form their own group.
+    /// </summary>
     internal static HashSet<Guid> SelectCarriedMatDrops(IReadOnlyList<Hold> oldHolds)
+    {
+        var dropped = new HashSet<Guid>();
+        foreach (var panel in oldHolds.GroupBy(h => h.WallPanelId))
+        {
+            dropped.UnionWith(SelectPanelMatDrops(panel.ToList()));
+        }
+
+        return dropped;
+    }
+
+    private static IEnumerable<Guid> SelectPanelMatDrops(IReadOnlyList<Hold> panelHolds)
     {
         // Project each old Hold to a DetectedHold, keeping a reference-keyed back-map so the classifier's
         // Dropped set resolves to the exact Hold rows even when two holds share identical geometry.
         var detectionToHold = new Dictionary<DetectedHold, Hold>(ReferenceEqualityComparer.Instance);
-        var detections = new List<DetectedHold>(oldHolds.Count);
-        foreach (var hold in oldHolds)
+        var detections = new List<DetectedHold>(panelHolds.Count);
+        foreach (var hold in panelHolds)
         {
             var detection = new DetectedHold(hold.X, hold.Y, hold.Radius, hold.Color, hold.Confidence);
             detectionToHold[detection] = hold;
@@ -43,8 +60,7 @@ public partial class WallBigUpdateService
 
         return CarriedMatCandidates(
                 MatFalseDetectionFilter.Classify(detections).RadiusMats.Select(d => detectionToHold[d]))
-            .Select(h => h.Id)
-            .ToHashSet();
+            .Select(h => h.Id);
     }
 
     /// <summary>

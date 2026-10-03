@@ -197,7 +197,7 @@ public record HoldUsageRef(
     bool IsDraft,
     bool IsHistoric);
 
-public class BoulderService : IBoulderService
+public partial class BoulderService : IBoulderService
 {
     /// <summary>
     /// Thrown by <see cref="ReviseBoulderAsync"/> when another climber has already sent the boulder
@@ -754,7 +754,9 @@ public class BoulderService : IBoulderService
             }
 
             var predecessor = await LoadPredecessorMapAsync(db, wall, generation, ct);
-            var mapped = WalkBackToGeneration(marks, predecessor, generation);
+            var olderMarks = marks.Where(m => m.OwnGeneration < generation).Select(m => m.HoldId).ToList();
+            var liveOlder = await LoadLiveAtGenerationAsync(db, wall, olderMarks, generation, ct);
+            var mapped = WalkBackToGeneration(marks, predecessor, generation, liveOlder);
             if (mapped.Count == 0)
             {
                 return [];
@@ -1619,8 +1621,8 @@ public class BoulderService : IBoulderService
 
     /// <summary>
     /// Reads the hold rows the walk resolved to and pairs each with the boulder's mark for it. The
-    /// generation filter is kept on the read so a mapped id that is somehow not at that generation
-    /// drops out rather than drawing a row from the wrong one.
+    /// generation filter is kept on the read so a mapped id that is somehow newer than that generation
+    /// drops out rather than drawing a row from the wrong one (an older row is a hold carried past it).
     /// </summary>
     private static async Task<List<BoulderHoldAtGeneration>> LoadMappedHoldsAsync(
         BlocwerkDbContext db,
@@ -1632,7 +1634,7 @@ public class BoulderService : IBoulderService
         var ids = mapped.Keys.ToList();
         var holds = await db.Holds
             .AsNoTracking()
-            .Where(hold => hold.WallId == wallId && ids.Contains(hold.Id) && hold.Generation == generation)
+            .Where(hold => hold.WallId == wallId && ids.Contains(hold.Id) && hold.Generation <= generation)
             .ToListAsync(ct);
 
         return holds
@@ -1646,7 +1648,7 @@ public class BoulderService : IBoulderService
     }
 
     /// <summary>
-    /// The wall's hold lineage from <paramref name="generation"/> forward, reduced to ONE backward
+    /// The wall's hold lineage in force after <paramref name="generation"/>, reduced to ONE backward
     /// step per hold: successor id -&gt; (predecessor id, the generation that predecessor lived at).
     /// </summary>
     /// <remarks>
@@ -1675,7 +1677,11 @@ public class BoulderService : IBoulderService
             .Where(l => l.WallId == wallId
                 && l.NewHoldId != null
                 && l.OldHoldId != null
-                && l.FromGeneration >= generation)
+
+                // Every link still in force after the target: one that starts before it too, since a hold
+                // on a panel a subset update skipped is carried straight from its own generation (2 -> 4)
+                // and was live at every generation in between.
+                && l.ToGeneration > generation)
             .Select(l => new { NewId = l.NewHoldId!.Value, OldId = l.OldHoldId!.Value, l.FromGeneration })
             .ToListAsync(ct);
 
@@ -1692,8 +1698,8 @@ public class BoulderService : IBoulderService
 
     /// <summary>
     /// Walks each of the boulder's marked holds back along <paramref name="predecessor"/> until it
-    /// sits at <paramref name="generation"/>, and returns the boulder's marks keyed by the hold id AT
-    /// that generation. A hold already there maps to itself; one whose chain runs out before the
+    /// sits at <paramref name="generation"/> (or at an older row a link carried past it), and returns the
+    /// boulder's marks keyed by the hold id live AT that generation. A hold already there maps to itself; one whose chain runs out before the
     /// target did not exist then and drops out.
     /// </summary>
     /// <remarks>
@@ -1708,7 +1714,8 @@ public class BoulderService : IBoulderService
     private static Dictionary<Guid, MappedMark> WalkBackToGeneration(
         IReadOnlyList<(Guid HoldId, HoldType Type, HoldUsage Usage, int OwnGeneration)> marks,
         IReadOnlyDictionary<Guid, (Guid OldId, int FromGeneration)> predecessor,
-        int generation)
+        int generation,
+        IReadOnlySet<Guid> liveOlderMarks)
     {
         var mapped = new Dictionary<Guid, MappedMark>();
         var sources = new Dictionary<Guid, List<Guid>>();
@@ -1732,7 +1739,11 @@ public class BoulderService : IBoulderService
                 cursorGeneration = step.FromGeneration;
             }
 
-            if (cursorGeneration != generation)
+            // A row at the target is the hold then. A row OLDER than the target counts when a link led
+            // here (that link reaches past the target, so the row was still live at it: a panel the update
+            // before skipped), or when the boulder's own row was still live then (its panel not yet re-shot).
+            if (cursorGeneration > generation
+                || (cursorGeneration < generation && cursor == mark.HoldId && !liveOlderMarks.Contains(cursor)))
             {
                 continue;
             }

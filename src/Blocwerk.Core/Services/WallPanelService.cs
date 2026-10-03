@@ -176,7 +176,7 @@ public partial class WallPanelService : IWallPanelService
         }
 
         var panelHolds = await db.Holds
-            .Where(h => h.WallPanelId == panelId && h.Generation == wall.CurrentGeneration)
+            .Where(h => h.WallPanelId == panelId && h.Generation == panel.Generation)
             .ToListAsync();
 
         var unaligned = new List<Guid>();
@@ -203,10 +203,13 @@ public partial class WallPanelService : IWallPanelService
         IReadOnlyList<Hold> panelHolds,
         List<Guid> unalignedNeighbourIds)
     {
+        // Only the LIVE panel at each neighbouring position: superseded rows keep their photos and holds
+        // as history, and the live one may be older than the wall when a subset update skipped it.
         var neighborSet = Neighbors(panel.Col, panel.Row).ToHashSet();
+        var livePanelIds = await LiveWallHolds.LoadPanelIdsAsync(db, wall.Id);
         var adjacentLive = await db.WallPanels
             .AsNoTracking()
-            .Where(p => p.WallId == wall.Id && p.Photo != null && p.Id != panel.Id)
+            .Where(p => livePanelIds.Contains(p.Id) && p.Id != panel.Id)
             .Select(p => new { p.Id, p.Col, p.Row })
             .ToListAsync();
 
@@ -224,7 +227,7 @@ public partial class WallPanelService : IWallPanelService
             }
 
             var neighborHolds = await db.Holds
-                .Where(h => h.WallPanelId == neighbor.Id && h.Generation == wall.CurrentGeneration)
+                .Where(h => h.WallPanelId == neighbor.Id && h.Generation <= wall.CurrentGeneration)
                 .ToListAsync();
             var (neighborMatcherHolds, neighborIndex) = BuildMatcherHolds(neighborHolds);
 

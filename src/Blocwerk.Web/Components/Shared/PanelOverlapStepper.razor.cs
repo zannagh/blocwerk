@@ -179,6 +179,12 @@ public partial class PanelOverlapStepper
     /// </summary>
     private async Task DeleteHold()
     {
+        // The keyboard shortcut reaches here too; a re-found successor is dropped via its carry verdict.
+        if (CurrentIsReFound)
+        {
+            return;
+        }
+
         var neighborHoldId = _steps[_index].HoldAId;
         _removed.Add(neighborHoldId);
 
