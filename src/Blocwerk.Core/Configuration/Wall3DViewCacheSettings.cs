@@ -27,6 +27,9 @@ public sealed class Wall3DViewCacheSettings
     /// <summary>Gets how long an entry stays cached without being read.</summary>
     public TimeSpan SlidingExpiration { get; init; } = TimeSpan.FromMinutes(DefaultSlidingMinutes);
 
+    /// <summary>Gets how long an entry stays cached at most, however often it is read.</summary>
+    public TimeSpan AbsoluteExpiration { get; init; } = TimeSpan.FromHours(24);
+
     /// <summary>Binds the settings from <paramref name="configuration"/>; null gives the defaults.</summary>
     /// <param name="configuration">The app configuration (environment variables included), or null.</param>
     /// <returns>The settings.</returns>

@@ -6,6 +6,7 @@ using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Blocwerk.Core;
 
@@ -18,7 +19,8 @@ public static class Wall3DViewServices
     /// </summary>
     public static IServiceCollection AddWall3DView(this IServiceCollection services)
     {
-        services.AddSingleton(sp => new Wall3DViewCache(Wall3DViewCacheSettings.Bind(sp.GetService<IConfiguration>())));
+        services.AddSingleton(sp => new Wall3DViewCache(
+            Wall3DViewCacheSettings.Bind(sp.GetService<IConfiguration>()), sp.GetService<ILogger<Wall3DViewCache>>()));
         services.AddScoped<IWall3DViewService, Wall3DViewService>();
         return services;
     }

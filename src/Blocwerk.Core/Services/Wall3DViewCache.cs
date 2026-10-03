@@ -8,6 +8,8 @@ using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Geometry.Footprints;
 using Blocwerk.Core.Geometry.View3D;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Blocwerk.Core.Services;
 
@@ -32,14 +34,21 @@ public sealed class Wall3DViewCache : IDisposable
 
     private readonly MemoryCache cache;
     private readonly TimeSpan sliding;
+    private readonly TimeSpan absolute;
+    private readonly long sizeLimit;
+    private readonly ILogger log;
     private readonly ConcurrentDictionary<string, Lazy<Task<StrongBox<TextureSourceMap?>?>>> loading = new(StringComparer.Ordinal);
 
     /// <summary>Initializes a new instance of the <see cref="Wall3DViewCache"/> class.</summary>
-    /// <param name="settings">The size limit and sliding expiration.</param>
-    public Wall3DViewCache(Wall3DViewCacheSettings settings)
+    /// <param name="settings">The size limit and the sliding and absolute expirations.</param>
+    /// <param name="logger">Logs entries too large to cache; none when null.</param>
+    public Wall3DViewCache(Wall3DViewCacheSettings settings, ILogger<Wall3DViewCache>? logger = null)
     {
         cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = settings.SizeLimitBytes, CompactionPercentage = 0.25 });
         sliding = settings.SlidingExpiration;
+        absolute = settings.AbsoluteExpiration;
+        sizeLimit = settings.SizeLimitBytes;
+        log = (ILogger?)logger ?? NullLogger.Instance;
     }
 
     /// <summary>Gets the number of cached entries.</summary>
@@ -62,16 +71,14 @@ public sealed class Wall3DViewCache : IDisposable
             return hit!.Value;
         }
 
-        var lazy = loading.GetOrAdd(storedName, name => new Lazy<Task<StrongBox<TextureSourceMap?>?>>(() => LoadSourceMapAsync(name, read)));
-        try
-        {
-            return (await lazy.Value.WaitAsync(ct))?.Value;
-        }
-        finally
-        {
-            loading.TryRemove(KeyValuePair.Create(storedName, lazy));
-        }
+        // The shared read runs on its own (no caller's token) and leaves `loading` itself when it ends, so a viewer that
+        // gives up only stops waiting: the others keep the same read, and a later viewer does not start another.
+        var lazy = loading.GetOrAdd(storedName, name => new Lazy<Task<StrongBox<TextureSourceMap?>?>>(() => SharedLoadAsync(name, read)));
+        return (await lazy.Value.WaitAsync(ct))?.Value;
     }
+
+    /// <inheritdoc />
+    public void Dispose() => cache.Dispose();
 
     /// <summary>Estimated in-memory size of a parsed map, bytes.</summary>
     /// <param name="map">The map, or null for a file that is no map.</param>
@@ -99,23 +106,43 @@ public sealed class Wall3DViewCache : IDisposable
     /// <param name="stamp">The photo's stamp, read before the info.</param>
     /// <param name="info">The info, or null when the photo is no image.</param>
     internal void SetPhotoInfo(PhotoInfoStamp stamp, PanelPhotoInfo? info) =>
-        cache.Set(stamp, new StrongBox<PanelPhotoInfo?>(info), Entry(PhotoInfoSize));
+        Set(stamp, new StrongBox<PanelPhotoInfo?>(info), PhotoInfoSize);
 
-    /// <inheritdoc />
-    public void Dispose() => cache.Dispose();
-
-    private async Task<StrongBox<TextureSourceMap?>?> LoadSourceMapAsync(string storedName, Func<string, CancellationToken, Task<byte[]?>> read)
+    /// <summary>The one read of a map all concurrent viewers wait on; it removes itself from <see cref="loading"/> when done.</summary>
+    private async Task<StrongBox<TextureSourceMap?>?> SharedLoadAsync(string storedName, Func<string, CancellationToken, Task<byte[]?>> read)
     {
-        // Not the first caller's token: other viewers may be waiting on this read.
-        if (await read(storedName, CancellationToken.None) is not { } bytes)
+        try
         {
-            return null;
-        }
+            // Yield first, so the read never runs inside the Lazy that holds it.
+            await Task.Yield();
+            if (await read(storedName, CancellationToken.None) is not { } bytes)
+            {
+                return null;
+            }
 
-        var box = new StrongBox<TextureSourceMap?>(TextureSourceMap.Parse(bytes));
-        cache.Set((SourceMapKind, storedName), box, Entry(SizeOf(box.Value)));
-        return box;
+            var box = new StrongBox<TextureSourceMap?>(TextureSourceMap.Parse(bytes));
+            Set((SourceMapKind, storedName), box, SizeOf(box.Value));
+            return box;
+        }
+        finally
+        {
+            loading.TryRemove(storedName, out _);
+        }
     }
 
-    private MemoryCacheEntryOptions Entry(long size) => new() { Size = size, SlidingExpiration = sliding };
+    private void Set(object key, object value, long size)
+    {
+        if (size > sizeLimit)
+        {
+            log.LogDebug("3D view cache entry {Key} of {Size} B exceeds the {Limit} B limit; not cached", key, size, sizeLimit);
+            return;
+        }
+
+        cache.Set(key, value, new MemoryCacheEntryOptions
+        {
+            Size = size,
+            SlidingExpiration = sliding,
+            AbsoluteExpirationRelativeToNow = absolute,
+        });
+    }
 }

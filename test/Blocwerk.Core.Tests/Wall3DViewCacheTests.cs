@@ -8,6 +8,7 @@ using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Geometry.View3D;
 using Blocwerk.Core.Services;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using NSubstitute;
 
 namespace Blocwerk.Core.Tests;
@@ -85,6 +86,30 @@ public class Wall3DViewCacheTests
     }
 
     [Fact]
+    public async Task SourceMap_ACancelledViewer_DoesNotDropTheSharedRead()
+    {
+        using var cache = new Wall3DViewCache(new Wall3DViewCacheSettings());
+        var gate = new TaskCompletionSource<byte[]?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var reads = 0;
+        Task<byte[]?> Read(string name, CancellationToken ct)
+        {
+            Interlocked.Increment(ref reads);
+            return gate.Task;
+        }
+
+        using var gaveUp = new CancellationTokenSource();
+        var cancelled = cache.SourceMapAsync("map-a.json", Read, gaveUp.Token);
+        await gaveUp.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelled);
+
+        var later = cache.SourceMapAsync("map-a.json", Read, CancellationToken.None);
+        gate.SetResult(TextureSourceMapTests.Doc());
+
+        Assert.Equal("A", (await later)!.CameraAt(15, 15));
+        Assert.Equal(1, reads);
+    }
+
+    [Fact]
     public async Task SourceMap_SizeLimit_IsRespected()
     {
         // Each 300 × 300 map is charged ~180 KB; a 0.5 MB limit holds two of them, never more.
@@ -100,11 +125,21 @@ public class Wall3DViewCacheTests
             Assert.True(cache.Count * size <= limit, $"{cache.Count} entries of {size} B exceed {limit} B");
         }
 
-        // A map larger than the whole limit is served but never kept.
+    }
+
+    [Fact]
+    public async Task SourceMap_LargerThanTheLimit_IsServedAndLogged_ButNeverKept()
+    {
+        var logger = Substitute.For<ILogger<Wall3DViewCache>>();
+        using var cache = new Wall3DViewCache(new Wall3DViewCacheSettings { SizeLimitBytes = 512 * 1024 }, logger);
         var huge = Store(("huge.json", Map(600, 600)));
-        await cache.SourceMapAsync("huge.json", huge.ReadAsync, CancellationToken.None);
-        await cache.SourceMapAsync("huge.json", huge.ReadAsync, CancellationToken.None);
+
+        Assert.NotNull(await cache.SourceMapAsync("huge.json", huge.ReadAsync, CancellationToken.None));
+        Assert.NotNull(await cache.SourceMapAsync("huge.json", huge.ReadAsync, CancellationToken.None));
+
         await huge.Received(2).ReadAsync("huge.json", Arg.Any<CancellationToken>());
+        Assert.Equal(0, cache.Count);
+        Assert.Equal(2, logger.ReceivedCalls().Count(c => c.GetMethodInfo().Name == "Log" && (LogLevel)c.GetArguments()[0]! == LogLevel.Debug));
     }
 
     [Fact]
@@ -119,6 +154,7 @@ public class Wall3DViewCacheTests
         Assert.Equal(128L * 1024 * 1024, settings.SizeLimitBytes);
         Assert.Equal(TimeSpan.FromMinutes(Wall3DViewCacheSettings.DefaultSlidingMinutes), settings.SlidingExpiration);
         Assert.Equal(Wall3DViewCacheSettings.DefaultSizeMb * 1024L * 1024, Wall3DViewCacheSettings.Bind(null).SizeLimitBytes);
+        Assert.Equal(TimeSpan.FromHours(24), settings.AbsoluteExpiration);
     }
 
     /// <summary>A version-1 map of <paramref name="cols"/> × <paramref name="rows"/> 10 mm cells, all painted by one camera.</summary>
