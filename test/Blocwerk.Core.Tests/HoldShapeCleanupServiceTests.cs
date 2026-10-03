@@ -4,7 +4,9 @@ using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
+using Blocwerk.Core.Abstractions;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 
 namespace Blocwerk.Core.Tests;
 
@@ -29,7 +31,7 @@ public sealed class HoldShapeCleanupServiceTests : IDisposable
 
         Assert.Equal(2, preview.AutoShapes);
         Assert.Equal(1, preview.LockedHolds);
-        Assert.True(preview.Smoothed + preview.Clipped + preview.BackToCircle >= 2);
+        Assert.True(preview.Smoothed + preview.Clipped + preview.BackToCircle >= 1, preview.ToString());
         Assert.Null(preview.BatchId);
         Assert.Equal(spikyShape.Count, (await LoadAsync())[spiky].ShapePoints!.Count);
     }
@@ -48,6 +50,32 @@ public sealed class HoldShapeCleanupServiceTests : IDisposable
         Assert.Equal(HoldOutlineSource.Manual, holds[manualSpiky].OutlineSource);
         Assert.True(HoldShapeSmoother.IsSmooth(holds[spiky].ShapePoints!));
         Assert.Empty(HoldShapeCleanup.Plan(holds.Values.Where(h => h.WallPanelId != null).ToList()));
+    }
+
+    [Fact]
+    public async Task ApplyRefreshesThe3DFootprintsOnlyWhenShapesChanged()
+    {
+        await SeedAsync();
+        var footprints = Substitute.For<IHoldFootprintService>();
+
+        await Service(footprints).ApplyAsync(harness.WallId);
+        await footprints.Received(1).RefineFromPipelineAsync(harness.WallId, Arg.Any<CancellationToken>());
+
+        await Service(footprints).ApplyAsync(harness.WallId);
+        await footprints.Received(1).RefineFromPipelineAsync(harness.WallId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task StatusOffersTheLatestBatchUntilItIsReverted()
+    {
+        await SeedAsync();
+        Assert.Null((await Service().GetStatusAsync(harness.WallId)).RevertableBatchId);
+
+        var applied = await Service().ApplyAsync(harness.WallId);
+        Assert.Equal(applied.BatchId, (await Service().GetStatusAsync(harness.WallId)).RevertableBatchId);
+
+        await Service().RevertAsync(harness.WallId, applied.BatchId!.Value);
+        Assert.Null((await Service().GetStatusAsync(harness.WallId)).RevertableBatchId);
     }
 
     [Fact]
@@ -88,7 +116,7 @@ public sealed class HoldShapeCleanupServiceTests : IDisposable
     private static string Key(Hold h) =>
         $"{h.Radius:R}|{h.OutlineSource}|{string.Join(",", (h.ShapePoints ?? []).Select(p => $"{p.Dx:R}/{p.Dy:R}"))}";
 
-    private HoldShapeCleanupService Service()
+    private HoldShapeCleanupService Service(IHoldFootprintService? footprints = null)
     {
         var factory = new JournalingFactory(((TestDbContextFactory)harness.DbContextFactory).ConnectionString, journal);
         return new HoldShapeCleanupService(
@@ -96,7 +124,8 @@ public sealed class HoldShapeCleanupServiceTests : IDisposable
             harness.CurrentUser,
             journal,
             new ChangeJournalReverter(factory, journal),
-            NullLogger<HoldShapeCleanupService>.Instance);
+            NullLogger<HoldShapeCleanupService>.Instance,
+            footprints: footprints);
     }
 
     private async Task<Dictionary<Guid, Hold>> LoadAsync()

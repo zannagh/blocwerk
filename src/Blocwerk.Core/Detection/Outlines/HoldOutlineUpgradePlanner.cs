@@ -110,8 +110,8 @@ public static class HoldOutlineUpgradePlanner
     }
 
     /// <summary>
-    /// A new outline must not overlap any other hold on the photo (this action never changes a radius, so the
-    /// last resort is simply to leave the hold a circle). Manual holds keep what they have and always win.
+    /// A new outline must not overlap any other hold on the photo: clipped, else a circle, else a circle with a
+    /// smaller radius (auto-detected holds only, as at ingest). Manual holds keep what they have and always win.
     /// </summary>
     private static List<HoldOutlineUpgradeProposal> ResolveOverlaps(
         List<Hold> all, List<HoldOutlineUpgradeProposal> proposals, double aspect)
@@ -119,13 +119,14 @@ public static class HoldOutlineUpgradePlanner
         var accepted = proposals
             .Where(p => p.Outcome == HoldOutlineUpgradeOutcome.Outline)
             .ToDictionary(p => p.Hold, p => p.Result);
-        var resolved = HoldShapeCleanup.ResolveOutlines(all, accepted, allowRadiusShrink: false, aspect);
+        var resolved = HoldShapeCleanup.ResolveOutlines(all, accepted, allowRadiusShrink: true, aspect);
         return proposals
             .Select(p => resolved.TryGetValue(p.Hold, out var r)
                 ? p with
                 {
                     Result = r.Outline,
                     Outcome = r.Outline.ShapePoints is null ? HoldOutlineUpgradeOutcome.KeepCircle : p.Outcome,
+                    NewRadius = p.Hold.IsAutoDetected && Math.Abs(r.Radius - p.Hold.Radius) > 1e-9 ? r.Radius : null,
                 }
                 : p)
             .ToList();

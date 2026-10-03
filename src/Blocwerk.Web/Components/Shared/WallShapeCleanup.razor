@@ -1,0 +1,48 @@
+@* Wall-settings section: "Clean up hold shapes" — smooths jagged automatic outlines and removes overlaps between
+   holds (preview counts → Apply → Undo). Hand-drawn shapes and manually placed holds are never touched.
+   Admin-only (rendered inside the admin card); hidden on a kiosk tablet and behind a share link. *@
+
+@if (!Hidden)
+{
+<div class="glyph-settings">
+    <h3 class="glyph-heading">Clean up hold shapes</h3>
+    <p class="hint">
+        Smooths jagged automatic hold outlines and makes sure holds do not overlap, so each one can be selected.
+        Shapes you drew yourself are never changed.
+    </p>
+
+    @if (preview is null)
+    {
+        <div class="staged-actions">
+            <button class="btn-secondary" @onclick="PreviewAsync" disabled="@busy">Check hold shapes</button>
+        </div>
+    }
+    else
+    {
+        <p class="glyph-summary" role="status">@PreviewText(preview)</p>
+        <div class="staged-actions">
+            @if (preview.Smoothed + preview.Clipped + preview.BackToCircle > 0)
+            {
+                <button class="btn-primary" @onclick="ApplyAsync" disabled="@busy">Apply</button>
+            }
+            <button class="btn-secondary" @onclick="CancelPreview" disabled="@busy">Cancel</button>
+        </div>
+    }
+
+    @if (failure is not null)
+    {
+        <p class="field-error" role="alert">@failure</p>
+    }
+    else if (message is not null)
+    {
+        <p class="glyph-ok" role="status">@message</p>
+    }
+
+    @if (status?.RevertableBatchId is { } batchId)
+    {
+        <div class="staged-actions">
+            <button class="btn-secondary" @onclick="() => UndoAsync(batchId)" disabled="@busy">Undo</button>
+        </div>
+    }
+</div>
+}

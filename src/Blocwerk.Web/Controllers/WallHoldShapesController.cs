@@ -48,6 +48,11 @@ public sealed class WallHoldShapesController(
     public Task<IActionResult> RevertOutlines(Guid wallId, Guid runId, CancellationToken ct) =>
         RunAsync(wallId, async () => Ok(await outlines.RevertAsync(wallId, runId, ct)));
 
+    /// <summary>The latest shape clean-up that can still be undone (its journal batch id), if any.</summary>
+    [HttpGet("shape-cleanup")]
+    public Task<IActionResult> CleanupStatus(Guid wallId, CancellationToken ct) =>
+        RunAsync(wallId, async () => Ok(await cleanup.GetStatusAsync(wallId, ct)));
+
     /// <summary>Dry run of the shape clean-up (smooth jagged auto outlines, remove overlaps); writes nothing.</summary>
     [HttpPost("shape-cleanup/preview")]
     public Task<IActionResult> PreviewCleanup(Guid wallId, CancellationToken ct) =>

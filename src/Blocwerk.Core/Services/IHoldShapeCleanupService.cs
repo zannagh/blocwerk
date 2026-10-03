@@ -8,6 +8,12 @@ namespace Blocwerk.Core.Services;
 /// </summary>
 public interface IHoldShapeCleanupService
 {
+    /// <summary>The wall's latest clean-up that can still be undone (its journal batch is not reverted).</summary>
+    /// <param name="wallId">The wall.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>The status.</returns>
+    Task<HoldShapeCleanupStatus> GetStatusAsync(Guid wallId, CancellationToken ct = default);
+
     /// <summary>Computes what <see cref="ApplyAsync"/> would change, writing nothing.</summary>
     /// <param name="wallId">The wall.</param>
     /// <param name="ct">Cancellation.</param>
@@ -48,3 +54,8 @@ public sealed record HoldShapeCleanupSummary(
     int ShrunkCircle,
     int StillOverlapping,
     int LockedHolds);
+
+/// <summary>Whether a clean-up can be undone.</summary>
+/// <param name="RevertableBatchId">The latest not-yet-reverted clean-up batch, or null.</param>
+/// <param name="CreatedAt">When it ran.</param>
+public sealed record HoldShapeCleanupStatus(Guid? RevertableBatchId, DateTimeOffset? CreatedAt);
