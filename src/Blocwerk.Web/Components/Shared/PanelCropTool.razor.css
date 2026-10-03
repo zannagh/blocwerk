@@ -18,11 +18,17 @@
     line-height: 0;
 }
 
+/* Sized against the dynamic viewport so title, hint, status and buttons always fit beside it. */
 .panel-crop-stage img {
     display: block;
     max-width: 100%;
-    max-height: min(60vh, 640px);
+    max-height: max(180px, min(640px, calc(100dvh - 330px)));
     pointer-events: none;
+}
+
+/* While a confirmation is open the photo steps back so the question and its buttons fit without scrolling. */
+.panel-crop-frame.confirming .panel-crop-stage img {
+    max-height: max(120px, calc(100dvh - 560px));
 }
 
 .panel-crop-holds {
