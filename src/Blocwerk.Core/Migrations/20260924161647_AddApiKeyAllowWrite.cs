@@ -16,6 +16,14 @@ namespace Blocwerk.Core.Migrations
                 type: "boolean",
                 nullable: false,
                 defaultValue: false);
+
+            // App administrators' existing account keys keep doing what they did before write keys existed.
+            migrationBuilder.Sql(
+                """
+                UPDATE "ApiKeys" AS k SET "AllowWrite" = TRUE
+                FROM "Users" AS u
+                WHERE k."UserId" = u."Id" AND u."Role" = 2 AND k."Scope" = 1 AND k."RevokedAt" IS NULL;
+                """);
         }
 
         /// <inheritdoc />

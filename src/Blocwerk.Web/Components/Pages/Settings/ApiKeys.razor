@@ -105,6 +105,7 @@
     private string name = string.Empty;
     private DateTime? expiresOn;
     private bool allowWrite;
+    private bool writeByDefault;
     private string? newToken;
     private string? error;
     private string copyLabel = "Copy to clipboard";
@@ -117,6 +118,9 @@
         {
             var user = await CurrentUserService.GetCurrentUserAsync();
             userId = user.Id;
+            // App administrators use their keys for admin automation (e.g. the capture replay), so write is the default for them.
+            writeByDefault = user.Role == Blocwerk.Core.Enums.IdentityRole.Admin;
+            allowWrite = writeByDefault;
             keys = await ApiKeyService.GetUserKeysAsync(userId, userId);
         }
         catch (Exception ex)
@@ -150,7 +154,7 @@
             copyLabel = "Copy to clipboard";
             name = string.Empty;
             expiresOn = null;
-            allowWrite = false;
+            allowWrite = writeByDefault;
             keys = await ApiKeyService.GetUserKeysAsync(userId, userId);
         }
         catch (ApiKeySessionRestrictedException ex)
