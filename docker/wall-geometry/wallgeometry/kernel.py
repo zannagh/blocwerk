@@ -17,9 +17,6 @@ SEAM_MIN_ANGLE_DEG = math.degrees(math.asin(MIN_PLANE_ANGLE_SIN))
 MAX_SEAM_GAP_MM = 800.0
 # A marker corner this close to a seam still counts as on either side of it (mm).
 MARKER_SIDE_TOL_MM = 20.0
-# Only markers whose centre lies within the facet's extent grown by this vote on its seam sides (mm): a marker the
-# solver left out of the extent (a stray on a coplanar neighbour, extents.py) says nothing about the facet's shape.
-MARKER_VOTE_MARGIN_MM = 50.0
 # A target this close to an occluder's plane is on that occluder's seam: the occluder does not block it (mm).
 NEAR_PLANE_MM = 30.0
 # A camera this close to an occluder's plane does not cross it (mm).
@@ -30,23 +27,30 @@ MIN_FACING_COS = 0.05
 OUTLINE_EDGE_TOL_MM = 1.0
 
 
-def voting_corners(facet, markers):
-    """(n, 2) plane corners of the markers that vote on facet's seam sides: its own markers whose centre lies within
-    its extentMm grown by MARKER_VOTE_MARGIN_MM (all of its markers when it has no extent with an area)."""
-    fid, e = str(facet["id"]), facet.get("extentMm")
-    if e and (e["aMax"] - e["aMin"] <= 0 or e["bMax"] - e["bMin"] <= 0):
-        e = None  # no usable extent: every marker votes
-    out = []
-    for m in markers or []:
-        if m.get("facet") is None or str(m["facet"]) != fid or not m.get("cornersPlaneMm"):
-            continue
-        c = np.array(m["cornersPlaneMm"], float)[:, :2]
-        a, b = c.mean(0)
-        g = MARKER_VOTE_MARGIN_MM
-        if e and not (e["aMin"] - g <= a <= e["aMax"] + g and e["bMin"] - g <= b <= e["bMax"] + g):
-            continue
-        out.append(c)
+def extent_excluded(doc):
+    """Ids of the markers the solver left out of their facet's extent (strays on a coplanar neighbour, extents.py):
+    flagged `extentExcluded`, or listed by an `extentExcluded` facet decision (documents older than the flag)."""
+    out = {m["id"] for m in doc.get("markers") or [] if m.get("extentExcluded")}
+    for d in (doc.get("quality") or {}).get("facetDecisions") or []:
+        if isinstance(d, dict) and d.get("kind") == "extentExcluded":
+            out.update(m for m in d.get("markers") or [] if isinstance(m, int))
+    return out
+
+
+def voting_corners(facet, markers, excluded=()):
+    """(n, 2) plane corners of the markers that vote on facet's seam sides: all of its own markers except those the
+    solver left out of its extent (`excluded`, see extent_excluded)."""
+    fid = str(facet["id"])
+    out = [np.array(m["cornersPlaneMm"], float)[:, :2] for m in markers or []
+           if m.get("facet") is not None and str(m["facet"]) == fid and m.get("cornersPlaneMm")
+           and m.get("id") not in excluded and not m.get("extentExcluded")]
     return np.vstack(out) if out else np.zeros((0, 2))
+
+
+def usable_extent(facet):
+    """The facet's extentMm, or None when it has none or it has no area (C#: PlaneRectMm { Area: > 0 })."""
+    e = facet.get("extentMm")
+    return e if e and e["aMax"] > e["aMin"] and e["bMax"] > e["bMin"] else None
 
 
 def outline_halfplanes(facet):
@@ -60,7 +64,7 @@ def outline_halfplanes(facet):
     area = float(np.sum(P[:, 0] * np.roll(P[:, 1], -1) - np.roll(P[:, 0], -1) * P[:, 1])) / 2
     if abs(area) < 1e-9:
         return []
-    e, tol, out = facet.get("extentMm"), OUTLINE_EDGE_TOL_MM, []
+    e, tol, out = usable_extent(facet), OUTLINE_EDGE_TOL_MM, []
     for p, q in zip(P, np.roll(P, -1, 0)):
         d = q - p
         length = float(np.hypot(*d))

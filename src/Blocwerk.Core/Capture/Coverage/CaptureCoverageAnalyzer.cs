@@ -77,7 +77,7 @@ public static class CaptureCoverageAnalyzer
                     region,
                     overhang,
                     facet.YawDeg ?? 0,
-                    GeometryKernel.VotingCorners(doc, facet.Id, extent),
+                    GeometryKernel.VotingCorners(doc, facet.Id),
                     GeometryKernel.OutlineHalfPlanes(facet.OutlineMm, extent)));
             }
         }

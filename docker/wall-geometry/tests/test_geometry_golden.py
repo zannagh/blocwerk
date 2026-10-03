@@ -35,7 +35,7 @@ def _facets(doc):
 
 def _occluders(case):
     facets = _facets(case["model"])
-    occs = occlusion.occluders(facets, case["model"].get("markers", []))
+    occs = occlusion.occluders(facets, case["model"].get("markers", []), kernel.extent_excluded(case["model"]))
     return {o.id: o for o in occs}, {f["id"]: f for f in facets}
 
 
@@ -64,6 +64,18 @@ def _answer(q, occs, facets):
 def test_there_is_a_golden_case_per_wall_kind():
     assert len(CASES) >= 8
     assert sum(len(c["queries"]) for c in CASES.values()) >= 40
+
+
+def test_an_older_document_names_its_strays_in_the_facet_decisions():
+    model = json.loads(json.dumps(CASES["triangle-stray-marker"]["model"]))
+    for m in model["markers"]:
+        m.pop("extentExcluded", None)
+    facets = _facets(model)
+    assert occlusion.occluders(facets, model["markers"], kernel.extent_excluded(model))[1].halfplanes == []  # own markers vote
+    model["quality"] = {"facetDecisions": [{"kind": "split", "facet": "0"},
+                                           {"kind": "extentExcluded", "facet": "2", "markers": [13]}]}
+    assert kernel.extent_excluded(model) == {13}
+    assert len(occlusion.occluders(facets, model["markers"], kernel.extent_excluded(model))[1].halfplanes) == 1
 
 
 @pytest.mark.parametrize("name", sorted(CASES))

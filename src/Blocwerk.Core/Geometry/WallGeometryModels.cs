@@ -158,6 +158,13 @@ public sealed record WallGeometryMarker
 
     /// <summary>True if any corner was reconstructed (e.g. id 1, cut off by the frame); down-weight it.</summary>
     public bool Synthetic { get; init; }
+
+    /// <summary>
+    /// True when the solver left this marker out of its facet's extent (a stray stuck on a coplanar neighbour): it is
+    /// still solved, but says nothing about the facet's shape (<see cref="GeometryKernel.VotingCorners"/>). Older
+    /// documents record it only in <c>quality.facetDecisions</c> (kind <c>extentExcluded</c>).
+    /// </summary>
+    public bool ExtentExcluded { get; init; }
 }
 
 public sealed record WallGeometryQuality
@@ -183,6 +190,9 @@ public sealed record WallGeometryQuality
 
     /// <summary>How gravity was found; null from older solvers.</summary>
     public WallGeometryGravityDetail? GravityDetail { get; init; }
+
+    /// <summary>The solver's facet decisions (splits, adoptions, <c>extentExcluded</c> markers), kept raw.</summary>
+    public IReadOnlyList<System.Text.Json.JsonElement>? FacetDecisions { get; init; }
 }
 
 /// <summary>Why the solver down-weighted a marker (<c>quality.downweightedMarkers</c>).</summary>

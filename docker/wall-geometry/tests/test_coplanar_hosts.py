@@ -3,9 +3,11 @@
 Layout after The Attic (2026-09-30): the main wall (facet "0", markers up to x = 5.0 m) and the "leftover bit"
 (facet "2", x = 5.1..5.6 m) lie in one plane 13 mm apart; marker 39 is stuck among the main-wall markers at x = 4.1 m.
 """
+from types import SimpleNamespace
+
 import numpy as np
 
-from wallgeometry.export import EXTENT_MARGIN_MM, _facet
+from wallgeometry.export import EXTENT_MARGIN_MM, _facet, _markers
 from wallgeometry.extents import stray_markers
 from wallgeometry.facets import DEFAULTS, _Assigner
 
@@ -105,3 +107,13 @@ def test_a_facet_always_keeps_one_marker_in_its_extent():
     mw = _world()
     raw = _raw({"0": sorted(MAIN), "2": [39]}, mw)
     assert stray_markers(raw, mw, EXTENT_MARGIN_MM) == {}
+
+
+def test_the_document_flags_a_marker_left_out_of_its_extent():
+    # the flag lets occlusion, coverage and the 3D view leave it out of the seam-side vote (docs/geometry-kernel.md)
+    ab = {m: np.zeros((4, 2)) for m in (22, 39)}
+    req = SimpleNamespace(nominal_segment=lambda m: 2, role_of=lambda m: None, marker_size=lambda m: SIZE, unplanned=set())
+    sol = {"world": {"facets": {"2": {"ab": ab}}, "corners": {m: np.zeros((4, 3)) for m in ab}, "stray": {"2": [39]}},
+           "req": req, "members": {"2": [22, 39]}, "obs": [], "facet_segment": {"2": 2}, "downweighted": {}}
+    recs = {r["id"]: r for r in _markers(sol, {}, {})}
+    assert recs[39].get("extentExcluded") is True and "extentExcluded" not in recs[22]

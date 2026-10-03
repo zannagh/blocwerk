@@ -7,8 +7,8 @@ plane" alone never hides anything (a far perpendicular panel whose plane merely 
 wall must not blank it).
 
 The region is the facet's extent rectangle (markers' bounding box + margin), cut along the seams with
-its neighbours where the facet's own voting markers (kernel.voting_corners: not the strays left out of
-its extent) all lie on one side: a triangle segment (side wall, closing piece) keeps only its real half,
+its neighbours where the facet's own voting markers (kernel.voting_corners: not the strays the solver left
+out of its extent) all lie on one side: a triangle segment (side wall, closing piece) keeps only its real half,
 so its empty half-rectangle blocks nothing. A seam is only used where the neighbour really is (the seam
 line runs, on average, within `MAX_SEAM_GAP_MM` of the neighbour's extent). A model without markers
 (SfM) cuts along its exported fold clips (`outlineMm`, kernel.outline_halfplanes) instead.
@@ -113,9 +113,11 @@ def _halfplanes(g, facets, corners):
     return out
 
 
-def occluders(facets, markers):
-    """Occluder per facet (region = extent cut by its marker-confirmed seams and its outline's fold clips)."""
-    return [Occluder(g, _halfplanes(g, facets, voting_corners(g, markers)) + outline_halfplanes(g)) for g in facets]
+def occluders(facets, markers, excluded=()):
+    """Occluder per facet (region = extent cut by its marker-confirmed seams and its outline's fold clips);
+    `excluded`: marker ids left out of their facet's extent (kernel.extent_excluded), which do not vote."""
+    return [Occluder(g, _halfplanes(g, facets, voting_corners(g, markers, excluded)) + outline_halfplanes(g))
+            for g in facets]
 
 
 def hidden(centre, occs, X, near=NEAR_PLANE_MM, inset=0.0):

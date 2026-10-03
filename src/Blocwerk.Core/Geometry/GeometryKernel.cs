@@ -1,6 +1,8 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using System.Text.Json;
+
 namespace Blocwerk.Core.Geometry;
 
 /// <summary>
@@ -21,12 +23,6 @@ public static class GeometryKernel
     /// <summary>A marker corner this close to a seam still counts as on either side of it, mm.</summary>
     public const double MarkerSideTolMm = 20;
 
-    /// <summary>
-    /// Only markers whose centre lies within the facet's extent grown by this vote on its seam sides and its marker centroid,
-    /// mm: a marker the solver left out of the extent (a stray on a coplanar neighbour) says nothing about the facet's shape.
-    /// </summary>
-    public const double MarkerVoteMarginMm = 50;
-
     /// <summary>A target this close to an occluder's plane is on that occluder's seam: the occluder does not block it, mm.</summary>
     public const double NearPlaneMm = 30;
 
@@ -40,31 +36,45 @@ public static class GeometryKernel
     public const double OutlineEdgeTolMm = 1;
 
     /// <summary>
-    /// The plane corners [a, b] of the markers that vote on the facet's seam sides: its own markers whose centre lies within
-    /// its extent grown by <see cref="MarkerVoteMarginMm"/> (all of its markers when it has no extent).
+    /// The plane corners [a, b] of the markers that vote on the facet's seam sides and its marker centroid: all of its own
+    /// markers except those the solver explicitly left out of its extent (<see cref="ExtentExcluded"/>).
     /// </summary>
     /// <param name="doc">The model.</param>
     /// <param name="facetId">The facet.</param>
-    /// <param name="extent">The facet's extent, or null.</param>
     /// <returns>The voting corners.</returns>
-    public static List<double[]> VotingCorners(WallGeometryDocument doc, string facetId, PlaneRectMm? extent)
+    public static List<double[]> VotingCorners(WallGeometryDocument doc, string facetId)
     {
-        var result = new List<double[]>();
-        foreach (var marker in doc.Markers.Where(m => m.Facet == facetId))
+        var excluded = ExtentExcluded(doc);
+        return doc.Markers
+            .Where(m => m.Facet == facetId && !excluded.Contains(m.Id))
+            .SelectMany(m => m.CornersPlaneMm)
+            .Where(c => c.Length >= 2)
+            .ToList();
+    }
+
+    /// <summary>
+    /// The markers the solver left out of their facet's extent (strays on a coplanar neighbour): flagged
+    /// <see cref="WallGeometryMarker.ExtentExcluded"/>, or listed by an <c>extentExcluded</c> facet decision (older documents).
+    /// </summary>
+    /// <param name="doc">The model.</param>
+    /// <returns>Their ids.</returns>
+    public static HashSet<int> ExtentExcluded(WallGeometryDocument doc)
+    {
+        var result = doc.Markers.Where(m => m.ExtentExcluded).Select(m => m.Id).ToHashSet();
+        foreach (var decision in doc.Quality?.FacetDecisions ?? [])
         {
-            var corners = marker.CornersPlaneMm.Where(c => c.Length >= 2).ToList();
-            if (corners.Count == 0)
+            if (decision.ValueKind == JsonValueKind.Object
+                && decision.TryGetProperty("kind", out var kind) && kind.ValueKind == JsonValueKind.String && kind.GetString() == "extentExcluded"
+                && decision.TryGetProperty("markers", out var markers) && markers.ValueKind == JsonValueKind.Array)
             {
-                continue;
+                foreach (var marker in markers.EnumerateArray())
+                {
+                    if (marker.ValueKind == JsonValueKind.Number && marker.TryGetInt32(out var id))
+                    {
+                        result.Add(id);
+                    }
+                }
             }
-
-            double a = corners.Average(c => c[0]), b = corners.Average(c => c[1]), g = MarkerVoteMarginMm;
-            if (extent is { Area: > 0 } e && (a < e.AMin - g || a > e.AMax + g || b < e.BMin - g || b > e.BMax + g))
-            {
-                continue;
-            }
-
-            result.AddRange(corners);
         }
 
         return result;

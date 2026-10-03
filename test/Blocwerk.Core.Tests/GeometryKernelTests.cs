@@ -2,6 +2,7 @@
 // See License in the project root for license information.
 
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Blocwerk.Core.Geometry;
 using Blocwerk.Core.Geometry.View3D;
 
@@ -15,16 +16,32 @@ namespace Blocwerk.Core.Tests;
 public sealed class GeometryKernelTests
 {
     [Fact]
-    public void VotingCorners_LeaveOutAMarkerFarOutsideTheExtent()
+    public void VotingCorners_LeaveOutTheMarkerTheSolverExcludedFromTheExtent()
     {
         var doc = Doc(Golden("triangle-stray-marker"));
-        var extent = doc.FindFacet("2")!.Value.Facet.ExtentMm;
 
-        var corners = GeometryKernel.VotingCorners(doc, "2", extent);
+        var corners = GeometryKernel.VotingCorners(doc, "2");
 
         Assert.Equal(12, corners.Count); // markers 10, 11, 12; not the stray 13
         Assert.DoesNotContain(corners, c => c[0] > 100);
-        Assert.Equal(16, GeometryKernel.VotingCorners(doc, "2", null).Count);
+    }
+
+    [Fact]
+    public void VotingCorners_ReadTheExclusionFromAnOlderDocumentsFacetDecisions()
+    {
+        var model = JsonNode.Parse(Golden("triangle-stray-marker").GetProperty("model").GetRawText())!;
+        model["markers"]![5]!.AsObject().Remove("extentExcluded");
+        var unflagged = WallGeometryDocument.Parse(model.ToJsonString());
+        model["quality"] = new JsonObject
+        {
+            ["facetDecisions"] = new JsonArray(
+                new JsonObject { ["kind"] = "split", ["facet"] = "0" },
+                new JsonObject { ["kind"] = "extentExcluded", ["facet"] = "2", ["markers"] = new JsonArray(13) }),
+        };
+        var older = WallGeometryDocument.Parse(model.ToJsonString());
+
+        Assert.Equal(16, GeometryKernel.VotingCorners(unflagged, "2").Count); // a facet's own markers always vote
+        Assert.Equal(12, GeometryKernel.VotingCorners(older, "2").Count);
     }
 
     [Fact]

@@ -29,6 +29,7 @@ import numpy as np
 
 from . import blend, consensus, exposure, flatten, occlusion, scale, seams, sourcemap, views
 from .camera import max_valid_radius2
+from . import kernel
 from .kernel import MIN_FACING_COS, NEAR_PLANE_MM
 from .markercheck import marker_check
 
@@ -146,7 +147,7 @@ def _score(cam, f, X, margin):
 
 def occluders(facets, doc):
     """Every facet as a view blocker (occlusion.py), built once per render."""
-    return occlusion.occluders(facets, doc.get("markers", []))
+    return occlusion.occluders(facets, doc.get("markers", []), kernel.extent_excluded(doc))
 
 
 def _cell_views(f, g, cams, names, p, occs):

@@ -57,6 +57,7 @@ normalized 0..1 pipeline is reinterpreted.
       "id": 0, "segment": 0, "role": "TL", "facet": "0",   // role null for "plan" ids
       "sizeMm": 125.0,                       // this marker's printed size
       "cornersPlaneMm": [[a,b],[a,b],[a,b],[a,b]],   // TL,TR,BR,BL in the facet frame
+      "extentExcluded": true,                // optional: left out of its facet's extent (a stray); no vote on its shape
       "cornersWorldMm": [[x,y,z], ...],
       "observations": 2,                     // photos it was solved from
       "reprojRmsPx": 0.8,

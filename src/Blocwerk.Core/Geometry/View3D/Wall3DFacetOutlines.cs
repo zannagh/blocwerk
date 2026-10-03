@@ -199,8 +199,7 @@ public static class Wall3DFacetOutlines
     /// <summary>The centroid of the facet's voting markers (<see cref="GeometryKernel.VotingCorners"/>: not the strays left out of its extent).</summary>
     internal static (double A, double B)? MarkerCentroid(WallGeometryDocument doc, string facetId)
     {
-        var extent = doc.FindFacet(facetId)?.Facet.ExtentMm;
-        var corners = GeometryKernel.VotingCorners(doc, facetId, extent);
+        var corners = GeometryKernel.VotingCorners(doc, facetId);
         return corners.Count == 0 ? null : (corners.Average(c => c[0]), corners.Average(c => c[1]));
     }
 
