@@ -85,6 +85,41 @@ public sealed class WallCapturePipelineOptions
     /// </summary>
     public TimeSpan? PhotoRetention { get; init; } = TimeSpan.FromDays(30);
 
+    /// <summary>
+    /// Retired models per wall that keep their wall textures and photo-real view, newest first, so the admin can activate
+    /// the one before again with its 3D view (the active model's family and models of captures awaiting an admin's
+    /// decision never count). Older ones keep their geometry only. Null keeps every model's files. Setting
+    /// <c>Blocwerk:Capture:KeepSupersededModels</c> / <c>CAPTURE__KEEPSUPERSEDEDMODELS</c> (0–100, -1 = keep all); default 1.
+    /// </summary>
+    public int? KeepSupersededModels { get; init; } = 1;
+
+    /// <summary>
+    /// A retired model keeps its files at least this long after it was replaced, whatever <see cref="KeepSupersededModels"/>
+    /// says. Setting <c>Blocwerk:Capture:SupersededModelGraceDays</c> / <c>CAPTURE__SUPERSEDEDMODELGRACEDAYS</c> (0–3650);
+    /// default 14.
+    /// </summary>
+    public TimeSpan SupersededModelGrace { get; init; } = TimeSpan.FromDays(14);
+
+    /// <summary>
+    /// A 3D runner's trained result and prepared state (kept to finish the view again without training, or to export the
+    /// capture for a replay) are deleted this long after the view was installed; the installed view stays. Null keeps
+    /// them. Setting <c>Blocwerk:Capture:RunnerLeftoverRetentionDays</c> / <c>CAPTURE__RUNNERLEFTOVERRETENTIONDAYS</c>
+    /// (0 = keep); default 30.
+    /// </summary>
+    public TimeSpan? RunnerLeftoverRetention { get; init; } = TimeSpan.FromDays(30);
+
+    /// <summary>
+    /// A capture import (<c>captures/imports/{id}/</c>) nobody touched for this long is abandoned and deleted. Setting
+    /// <c>Blocwerk:Capture:ImportStagingDays</c> / <c>CAPTURE__IMPORTSTAGINGDAYS</c> (1–365); default 3.
+    /// </summary>
+    public TimeSpan ImportStagingLifetime { get; init; } = TimeSpan.FromDays(3);
+
+    /// <summary>
+    /// The retention of retired models, runner leftovers and abandoned imports only logs what it would free. Setting
+    /// <c>Blocwerk:Capture:RetentionDryRun</c> / <c>CAPTURE__RETENTIONDRYRUN</c> (true/false); default false.
+    /// </summary>
+    public bool RetentionDryRun { get; init; }
+
     /// <summary>How often <see cref="WallCaptureSweeper"/> runs.</summary>
     public TimeSpan SweepInterval { get; init; } = TimeSpan.FromHours(6);
 
@@ -158,8 +193,20 @@ public sealed class WallCapturePipelineOptions
             MaxVideoFrames = frames ?? defaults.MaxVideoFrames,
             VideoFramesPerSecond = fps,
             HeifConvertPath = Read(configuration, "HeifConvertPath") is { Length: > 0 } heif ? heif : defaults.HeifConvertPath,
+            KeepSupersededModels = ReadInt(configuration, "KeepSupersededModels", -1, 100) is { } keep
+                ? (keep < 0 ? null : keep)
+                : defaults.KeepSupersededModels,
+            SupersededModelGrace = ReadDays(configuration, "SupersededModelGraceDays", 0, 3650) ?? defaults.SupersededModelGrace,
+            RunnerLeftoverRetention = ReadInt(configuration, "RunnerLeftoverRetentionDays", 0, int.MaxValue) is { } leftover
+                ? (leftover == 0 ? null : TimeSpan.FromDays(leftover))
+                : defaults.RunnerLeftoverRetention,
+            ImportStagingLifetime = ReadDays(configuration, "ImportStagingDays", 1, 365) ?? defaults.ImportStagingLifetime,
+            RetentionDryRun = bool.TryParse(Read(configuration, "RetentionDryRun"), out var dryRun) && dryRun,
         };
     }
+
+    private static TimeSpan? ReadDays(IConfiguration? configuration, string key, int min, int max) =>
+        ReadInt(configuration, key, min, max) is { } days ? TimeSpan.FromDays(days) : null;
 
     private static string? Read(IConfiguration? configuration, string key) =>
         configuration?[$"Blocwerk:Capture:{key}"] ?? Environment.GetEnvironmentVariable($"CAPTURE__{key.ToUpperInvariant()}");

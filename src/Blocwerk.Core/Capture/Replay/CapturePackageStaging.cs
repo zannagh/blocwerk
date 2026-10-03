@@ -8,7 +8,8 @@ namespace Blocwerk.Core.Capture.Replay;
 /// <summary>
 /// An open import's folder: <c>captures/imports/{importId}/</c> with the manifest and the uploaded, hash-verified files.
 /// A sub-folder on purpose: the capture sweep only looks at the store's top level, so nothing staged here is taken for an
-/// orphan however long the upload takes. The commit moves the files up next to the rows that reference them.
+/// orphan however long the upload takes. The commit moves the files up next to the rows that reference them; an import
+/// left without activity is removed by <see cref="Retention.ImportStagingRetention"/>.
 /// </summary>
 internal sealed class CapturePackageStaging(ICaptureFileStore files)
 {
@@ -78,6 +79,34 @@ internal sealed class CapturePackageStaging(ICaptureFileStore files)
 
     /// <summary>The path of an import's manifest.</summary>
     public string ManifestPath(Guid importId) => Path.Combine(Folder(importId), ManifestFile);
+
+    /// <summary>Every import folder there is (open, finished with or abandoned), by import id.</summary>
+    public IReadOnlyList<Guid> List()
+    {
+        var root = Root();
+        return Directory.Exists(root)
+            ? Directory.EnumerateDirectories(root)
+                .Select(d => Guid.TryParseExact(Path.GetFileName(d), "N", out var id) ? id : (Guid?)null)
+                .OfType<Guid>()
+                .ToList()
+            : [];
+    }
+
+    /// <summary>When anything in the import's folder (the folder itself, the manifest, a file, a partial upload) last changed.</summary>
+    public DateTimeOffset? LastActivity(Guid importId)
+    {
+        var folder = new DirectoryInfo(Folder(importId));
+        if (!folder.Exists)
+        {
+            return null;
+        }
+
+        var last = folder.EnumerateFileSystemInfos("*", SearchOption.AllDirectories)
+            .Select(f => f.LastWriteTimeUtc)
+            .Append(folder.LastWriteTimeUtc)
+            .Max();
+        return new DateTimeOffset(last, TimeSpan.Zero);
+    }
 
     /// <summary>The capture store's physical path of a stored name.</summary>
     public string StorePath(string name) =>

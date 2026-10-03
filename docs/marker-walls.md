@@ -709,6 +709,21 @@ Capture photos are stored on disk and deleted **30 days** after the capture ends
 Photos of the capture that produced the wall's **active** model are kept. A sweep runs every six
 hours. Change this with `CAPTURE__PHOTORETENTIONDAYS` (0 = keep forever); see section 10.
 
+The same sweep bounds the rest of the capture store:
+
+- **Older models' 3D files.** When a new model becomes active, the one before keeps its wall textures and
+  photo-real view, so **Activate** brings it back complete. Older models lose their textures and photo-real
+  view (never within 14 days of being replaced) but keep their geometry: the history then offers
+  **Activate (geometry only)**. A model awaiting your decision ("stored, not activated") keeps its files as
+  long as its capture keeps its photos. Nothing is touched on a wall while a capture, re-solve, re-render or
+  3D runner job is in flight.
+- **3D runner results.** The trained result and its prepared state are kept 30 days after the view was
+  installed (to finish the view again without training, or to export the capture for a replay), then
+  deleted. The installed view stays.
+- **Abandoned capture imports** (`captures/imports/`) are deleted after 3 days without activity.
+
+Set `CAPTURE__RETENTIONDRYRUN=true` to only log what these three rules would free; see section 10.
+
 ---
 
 ## 5. Panels stay first-class
@@ -1331,6 +1346,11 @@ The compose file maps `docker/.env` values onto these: `GEOMETRYSERVICE_URL` →
 | appsettings (`Blocwerk:…`) | Environment | Default | Effect |
 |---|---|---|---|
 | `Capture:PhotoRetentionDays` | `CAPTURE__PHOTORETENTIONDAYS` | 30 | Days after a capture ends before its photos are deleted. `0` = keep forever. The active model's capture is always kept. A capture's video frames follow its photos. |
+| `Capture:KeepSupersededModels` | `CAPTURE__KEEPSUPERSEDEDMODELS` | 1 | Retired models per wall (newest first) that keep their wall textures and photo-real view for a revert; older ones keep their geometry only. `-1` = keep all (0–100). The active model and its corrections are always kept. |
+| `Capture:SupersededModelGraceDays` | `CAPTURE__SUPERSEDEDMODELGRACEDAYS` | 14 | A retired model keeps its 3D files at least this many days, whatever the count above (0–3650). |
+| `Capture:RunnerLeftoverRetentionDays` | `CAPTURE__RUNNERLEFTOVERRETENTIONDAYS` | 30 | Days after a 3D runner's view was installed before its trained result and prepared state are deleted (no more "finish again" or replay export). `0` = keep forever. |
+| `Capture:ImportStagingDays` | `CAPTURE__IMPORTSTAGINGDAYS` | 3 | Days without activity before an abandoned capture import folder is deleted (1–365). |
+| `Capture:RetentionDryRun` | `CAPTURE__RETENTIONDRYRUN` | false | `true`: the three rules above only log what they would free ("Capture retention (dry run) would free …"). |
 | `Capture:MaxVideoMb` | `CAPTURE__MAXVIDEOMB` | 2048 | Largest walk-along video (streamed to disk, 1–16384). A reverse proxy in front of the app must allow bodies this big on `/api/captures/*/video` (section 9). |
 | `Capture:MaxVideoFrames` | `CAPTURE__MAXVIDEOFRAMES` | 120 | Most frames taken from the video (3–400). |
 | `Capture:VideoFramesPerSecond` | `CAPTURE__VIDEOFRAMESPERSECOND` | 2.5 | Target frame rate (ffmpeg decodes 3 candidates per kept frame; the sharpest wins); lowered for long videos to stay under the cap. |

@@ -1,6 +1,7 @@
 // Copyright (c) 2026, zannagh. All rights reserved.
 // See License in the project root for license information.
 
+using Blocwerk.Core.Capture;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -13,7 +14,8 @@ namespace Blocwerk.Core.Runners;
 /// result and the newest preview. Once training is over the bundle goes, but the job keeps a leftover: its trained result
 /// (installed or not), else its installed preview, with the prepared state, so the view can be finished and installed
 /// again without training (<see cref="ReopenForRefinish"/>). A leftover goes when a newer job of the same capture is
-/// installed, and with the capture's photos (retention).
+/// installed, with the capture's photos (retention), and its trained result
+/// <see cref="WallCapturePipelineOptions.RunnerLeftoverRetention"/> after the install (<see cref="DropAgedResultsAsync"/>).
 /// </summary>
 public sealed partial class GpuJobQueue
 {
