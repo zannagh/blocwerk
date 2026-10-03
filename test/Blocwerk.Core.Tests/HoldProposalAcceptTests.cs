@@ -50,6 +50,22 @@ public class HoldProposalAcceptTests
     }
 
     [Fact]
+    public async Task List_FlagsAProposalOnAReplacedPanel_AsStale()
+    {
+        using var h = new WallTestHarness();
+        await h.SeedWallAsync(holdCount: 0);
+        var old = await AddPanelAsync(h, generation: 0);
+        var proposal = await AddProposalAsync(h, old);
+        Assert.False(Assert.Single(await Service(h).ListAsync(h.WallId)).IsStale);
+
+        await AddPanelAsync(h, generation: 1);
+
+        var listed = Assert.Single(await Service(h).ListAsync(h.WallId));
+        Assert.Equal(proposal, listed.Id);
+        Assert.True(listed.IsStale);
+    }
+
+    [Fact]
     public async Task Accept_WhileAPanelUpdateIsStaged_IsRefused()
     {
         using var h = new WallTestHarness();

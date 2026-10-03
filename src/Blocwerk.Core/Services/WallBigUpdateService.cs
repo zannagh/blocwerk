@@ -115,6 +115,7 @@ public partial class WallBigUpdateService : IWallBigUpdateService
         var panelPositions = await LoadPanelPositionsAsync(db, wall.Id);
         var oldHolds = (await db.Holds
                 .Where(h => h.WallId == wall.Id && h.Generation == wall.CurrentGeneration)
+                .OrderBy(h => h.Id)
                 .ToListAsync())
             .Where(h => IsOnUpdatedPanel(h.WallPanelId, panelPositions, updatedPositions))
             .ToList();
@@ -139,6 +140,7 @@ public partial class WallBigUpdateService : IWallBigUpdateService
 
         var centerHolds = await db.Holds
             .Where(h => h.WallPanelId == centerPanelId && h.Generation == stagedGen)
+            .OrderBy(h => h.Id)
             .ToListAsync();
         var centerImage = await db.WallPanels
             .Where(p => p.Id == centerPanelId)
@@ -209,6 +211,7 @@ public partial class WallBigUpdateService : IWallBigUpdateService
         {
             var neighbourHolds = await db.Holds
                 .Where(h => h.WallPanelId == panel.Id && h.Generation == stagedGen)
+                .OrderBy(h => h.Id)
                 .ToListAsync();
             var (neighbourMatcher, neighbourIndex) = BuildMatcherHolds(neighbourHolds);
             var direction = DirectionFromNeighbor(0, 0, panel.Col, panel.Row);

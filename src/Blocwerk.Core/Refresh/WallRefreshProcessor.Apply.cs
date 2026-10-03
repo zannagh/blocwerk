@@ -45,7 +45,7 @@ public sealed partial class WallRefreshProcessor
         }
 
         var matched = await actors.BigUpdate.ResumeAsync(refresh.WallId);
-        var promotable = await RefreshDecisions.LoadAsync(refresh.WallId, actors, matched);
+        var promotable = await RefreshDecisions.LoadAsync(refresh.WallId, actors, matched, await StagedHoldsByPanelAsync(refresh.WallId, ct));
         var summary = RefreshTimeline.Summary(refresh);
         if (summary?.DecisionsVersion != promotable.Version)
         {

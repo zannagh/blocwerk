@@ -50,6 +50,20 @@ public static class CarryoverScope
     }
 
     /// <summary>
+    /// The matcher's twin for each old hold: its most confident proposal, the smallest new hold id breaking a tie. The one
+    /// definition the review's defaults (<c>QuickUpdateDefaults</c>) and <see cref="Reconcile"/> share, so a reset can
+    /// never land on a different twin than the default it resets to.
+    /// </summary>
+    /// <param name="session">The matched session.</param>
+    /// <returns>Old hold id to its default twin.</returns>
+    public static Dictionary<Guid, Guid> DefaultTwins(BigUpdateSession session) =>
+        session.Carryover
+            .GroupBy(p => p.OldHoldId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderByDescending(p => p.Confidence).ThenBy(p => p.NewHoldId.ToString(), StringComparer.Ordinal).First().NewHoldId);
+
+    /// <summary>
     /// Replaces every carry verdict made outside the reviewable scope that differs from the matcher's
     /// default with that default, and reports the ones it replaced.
     /// </summary>
@@ -65,11 +79,7 @@ public static class CarryoverScope
             return new CarryoverScopeResult(decisions, []);
         }
 
-        var proposals = new Dictionary<Guid, Guid>();
-        foreach (var proposal in session.Carryover)
-        {
-            proposals[proposal.OldHoldId] = proposal.NewHoldId;
-        }
+        var proposals = DefaultTwins(session);
 
         var safe = new List<CarryoverDecision>(decisions.Count);
         var reset = new List<CarryoverDecision>();

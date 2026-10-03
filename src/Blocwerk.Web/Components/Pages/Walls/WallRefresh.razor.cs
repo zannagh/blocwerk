@@ -187,8 +187,15 @@ public partial class WallRefresh : IDisposable
         var id = view.Id;
         await RunAsync(async () =>
         {
-            await action(id);
-            await ReloadAsync();
+            try
+            {
+                await action(id);
+            }
+            finally
+            {
+                // Also after a refusal: e.g. "the summary changed" is only fixed by showing the current one.
+                await ReloadAsync();
+            }
         });
     }
 

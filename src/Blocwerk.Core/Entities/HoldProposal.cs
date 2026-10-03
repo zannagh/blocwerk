@@ -82,4 +82,11 @@ public class HoldProposal
     public DateTimeOffset? ReviewedAt { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    /// <summary>
+    /// Set when listed: <see cref="PanelId"/> is a panel photo a panel update has since replaced, so the panel point no
+    /// longer fits the wall; it cannot be accepted until the next search maps it onto the current photos. Not stored.
+    /// </summary>
+    [NotMapped]
+    public bool IsStale { get; set; }
 }

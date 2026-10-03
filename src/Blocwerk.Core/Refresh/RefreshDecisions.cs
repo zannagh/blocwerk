@@ -12,14 +12,21 @@ namespace Blocwerk.Core.Refresh;
 /// <summary>
 /// What Apply would promote right now: the update session's decisions run through <see cref="CarryoverScope"/> against
 /// the matched session (exactly as Apply does), with the accepted "this hold moved" suggestions folded in (as the promote
-/// does). Its <see cref="PromotableDecisions.Version"/> is stored with the summary the confirm screen shows, and Apply
+/// does). Its <see cref="PromotableDecisions.Version"/> covers those decisions and the staged holds they are about (a hold
+/// added or deleted in the touch-up or the wall editor while the update is staged changes what is promoted), is stored with the summary the confirm screen shows, and Apply
 /// promotes only when the decisions still have that version: the user applies what they checked, or is shown the new
 /// summary first.
 /// </summary>
 internal static class RefreshDecisions
 {
     /// <summary>Reads the session's decisions and works out what Apply would promote with <paramref name="matched"/>.</summary>
-    public static async Task<PromotableDecisions> LoadAsync(Guid wallId, WallRefreshActors actors, BigUpdateSession matched)
+    /// <param name="wallId">The wall.</param>
+    /// <param name="actors">The services acting as the run's starter.</param>
+    /// <param name="matched">The matched session.</param>
+    /// <param name="stagedByPanel">The staged holds per staged panel, as they are now.</param>
+    /// <returns>What Apply would promote, with its version.</returns>
+    public static async Task<PromotableDecisions> LoadAsync(
+        Guid wallId, WallRefreshActors actors, BigUpdateSession matched, IReadOnlyDictionary<Guid, IReadOnlyList<Guid>> stagedByPanel)
     {
         var decisions = await actors.Sessions.GetDecisionsAsync(wallId);
         var scoped = CarryoverScope.Reconcile(matched, decisions.Carryover);
@@ -38,7 +45,7 @@ internal static class RefreshDecisions
             scoped.Reset.Count,
             relocations.Count(r => r.Status == RelocationProposalStatus.Pending),
             leftOut,
-            Fingerprint(folded));
+            Fingerprint(folded, stagedByPanel));
     }
 
     /// <summary>The decisions in the shape the summary is worked out from.</summary>
@@ -51,9 +58,18 @@ internal static class RefreshDecisions
             decisions.OverlapsLeftOut);
 
     /// <summary>A short, order-independent fingerprint of everything that decides what the promote does.</summary>
-    public static string Fingerprint(BigUpdateConfirmation c)
+    /// <param name="c">The decisions (relocations folded in).</param>
+    /// <param name="stagedByPanel">The staged holds per staged panel.</param>
+    /// <returns>The fingerprint.</returns>
+    public static string Fingerprint(BigUpdateConfirmation c, IReadOnlyDictionary<Guid, IReadOnlyList<Guid>> stagedByPanel)
     {
         var text = new StringBuilder();
+        foreach (var (panel, holds) in stagedByPanel.OrderBy(p => p.Key.ToString(), StringComparer.Ordinal))
+        {
+            text.Append("s:").Append(panel).Append('\n');
+            Append(text, "h", holds);
+        }
+
         foreach (var d in c.Carryover.Select(d => $"c:{d.OldHoldId}:{d.Kind}:{d.NewHoldId}:{d.Confirmed}").Order(StringComparer.Ordinal))
         {
             text.Append(d).Append('\n');

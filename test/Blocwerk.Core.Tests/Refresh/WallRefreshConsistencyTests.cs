@@ -64,6 +64,31 @@ public class WallRefreshConsistencyTests
     }
 
     [Fact]
+    public async Task AHoldAddedToTheStagedPhotos_IsNotAppliedUnseen()
+    {
+        using var h = new WallTestHarness();
+        using var s = new RefreshScenario(h);
+        s.Capture.Client.IsConfigured = false;
+        await s.SeedWallAsync();
+        var view = await s.PrepareAsync();
+        await using (var db = h.CreateContext())
+        {
+            var staged = await db.WallPanels.SingleAsync(p => p.WallId == h.WallId && p.StagedPhoto != null);
+            db.Holds.Add(new Hold { WallId = h.WallId, WallPanelId = staged.Id, Generation = staged.Generation, X = 0.5, Y = 0.5, Radius = 0.02 });
+            await db.SaveChangesAsync();
+        }
+
+        await s.Service.ApplyAsync(view.Id, view.Summary!.DecisionsVersion);
+        await s.RunQueuedAsync();
+
+        var back = await s.CurrentAsync();
+        Assert.Equal(WallRefreshStatus.ReadyToApply, back.Status);
+        Assert.Equal(WallRefreshProcessor.OutOfDate, back.Error);
+        Assert.NotEqual(view.Summary.DecisionsVersion, back.Summary!.DecisionsVersion);
+        Assert.Equal(0, await GenerationAsync(h));
+    }
+
+    [Fact]
     public async Task ASessionTouchedWithoutAChange_AppliesAsConfirmed()
     {
         using var h = new WallTestHarness();
