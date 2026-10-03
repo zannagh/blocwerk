@@ -93,7 +93,7 @@ public static class VolumeFootprints
 
         foreach (var v in volumes.Volumes)
         {
-            if (v.RayHit(from, a, b, 5, endT) is { } hit && hit.H > at.H + OcclusionMarginMm * 0.5
+            if (v.RayHit(from, a, b, 5, endT, strict: true) is { } hit && hit.H > at.H + OcclusionMarginMm * 0.5
                 && Length(hit.A - at.A, hit.B - at.B, hit.H - at.H) > OcclusionMarginMm)
             {
                 return true;

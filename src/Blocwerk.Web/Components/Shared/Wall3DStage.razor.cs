@@ -10,10 +10,14 @@ namespace Blocwerk.Web.Components.Shared;
 
 /// <summary>
 /// Mounts a <see cref="Wall3DView"/> into <c>wwwroot/js/wall3d.js</c> (three.js) and disposes the
-/// viewer (and its WebGL context) when the view changes or the component goes away.
+/// viewer (and its WebGL context) when the view changes or the component goes away. Mounts run one at a
+/// time; a viewer whose mount returns after the view changed or the component went away is disposed at once.
 /// </summary>
 public partial class Wall3DStage : IAsyncDisposable
 {
+    // wall3d.js's MODEL_FAILED: the model could not be drawn, as opposed to WebGL missing.
+    private const string ModelFailedPrefix = "wall3d-model:";
+
     private static readonly Dictionary<string, string> RoleColors = new()
     {
         ["Start"] = BoulderHoldColors.Start,
@@ -29,7 +33,9 @@ public partial class Wall3DStage : IAsyncDisposable
     private IJSObjectReference? bridge;
     private DotNetObjectReference<Wall3DStage>? selfRef;
     private Wall3DView? mounted;
-    private bool mountFailed;
+    private Task mounting = Task.CompletedTask;
+    private bool disposed;
+    private string? failure;
 
     /// <summary>The view to render. A new instance remounts the viewer.</summary>
     [Parameter]
@@ -60,32 +66,21 @@ public partial class Wall3DStage : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        disposed = true;
+        try
+        {
+            // A mount in flight disposes its own viewer when it returns (it sees `disposed`).
+            await mounting;
+        }
+        catch (OperationCanceledException)
+        {
+            // A JS call timed out: nothing was handed back to dispose.
+        }
+
         await UnmountAsync();
         selfRef?.Dispose();
-        if (bridge is not null)
-        {
-            try
-            {
-                await bridge.DisposeAsync();
-            }
-            catch (JSDisconnectedException)
-            {
-                // Circuit already torn down.
-            }
-        }
-
-        if (module is not null)
-        {
-            try
-            {
-                await module.DisposeAsync();
-            }
-            catch (JSDisconnectedException)
-            {
-                // Circuit already torn down.
-            }
-        }
-
+        await DisposeModuleAsync(bridge);
+        await DisposeModuleAsync(module);
         GC.SuppressFinalize(this);
     }
 
@@ -95,30 +90,93 @@ public partial class Wall3DStage : IAsyncDisposable
     [JSInvokable]
     public Task FacetTapped(string? facetId) => OnFacetTap.InvokeAsync(facetId);
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    protected override Task OnAfterRenderAsync(bool firstRender)
     {
-        if (ReferenceEquals(mounted, View))
+        if (disposed || ReferenceEquals(mounted, View))
+        {
+            return Task.CompletedTask;
+        }
+
+        mounted = View;
+        mounting = MountAsync(View, mounting);
+        return mounting;
+    }
+
+    private static async Task DisposeModuleAsync(IJSObjectReference? reference)
+    {
+        if (reference is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await reference.DisposeAsync();
+        }
+        catch (Exception ex) when (ex is JSDisconnectedException or JSException or OperationCanceledException)
+        {
+            // Circuit already torn down, or the browser did not answer.
+        }
+    }
+
+    private static async Task DisposeViewerAsync(IJSObjectReference? handle)
+    {
+        if (handle is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await handle.InvokeVoidAsync("dispose");
+            await handle.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+            // The browser side is already gone, and its WebGL context with it.
+        }
+        catch (Exception ex) when (ex is JSException or OperationCanceledException)
+        {
+            // A failed or timed-out dispose must not block the next mount or the component's own dispose.
+        }
+    }
+
+    private bool IsCurrent(Wall3DView view) => !disposed && ReferenceEquals(mounted, view);
+
+    private async Task MountAsync(Wall3DView view, Task previous)
+    {
+        try
+        {
+            await previous;
+        }
+        catch (OperationCanceledException)
+        {
+            // The previous mount timed out; this one starts afresh.
+        }
+
+        if (!IsCurrent(view))
         {
             return;
         }
 
         await UnmountAsync();
-        mounted = View;
-        mountFailed = false;
+        failure = null;
         try
         {
             module ??= await JS.InvokeAsync<IJSObjectReference>("import", "/js/wall3d.js");
-            viewer = await module.InvokeAsync<IJSObjectReference>(
-                "mount",
-                stage,
-                View,
-                new Dictionary<string, object?>
-                {
-                    ["roleColors"] = RoleColors,
-                    ["initialPreset"] = InitialPreset,
-                    ["initialMode"] = InitialMode ?? "schematic",
-                    ["hintOnce"] = HintOnce,
-                });
+            if (!IsCurrent(view))
+            {
+                return;
+            }
+
+            var handle = await module.InvokeAsync<IJSObjectReference>("mount", stage, view, MountOptions());
+            if (!IsCurrent(view))
+            {
+                await DisposeViewerAsync(handle);
+                return;
+            }
+
+            viewer = handle;
             await ListenFacetTapsAsync();
         }
         catch (JSDisconnectedException)
@@ -127,15 +185,41 @@ public partial class Wall3DStage : IAsyncDisposable
         }
         catch (JSException ex)
         {
-            Logger.LogWarning(ex, "3D view of wall {WallId} failed to start (WebGL unavailable?)", View.WallId);
-            mountFailed = true;
+            if (!IsCurrent(view))
+            {
+                return;
+            }
+
+            var model = ex.Message.Contains(ModelFailedPrefix, StringComparison.Ordinal);
+            Logger.LogWarning(ex, "3D view of wall {WallId} failed to start ({Reason})", view.WallId, model ? "model" : "WebGL unavailable?");
+            failure = model
+                ? "This wall's 3D model could not be drawn."
+                : "This device could not start the 3D view (WebGL is unavailable).";
             StateHasChanged();
+        }
+        catch (OperationCanceledException ex)
+        {
+            // The interop call timed out (a busy or suspended browser): later mounts and dispose go on.
+            Logger.LogWarning(ex, "3D view of wall {WallId} timed out while starting", view.WallId);
+            if (IsCurrent(view))
+            {
+                failure = "The 3D view took too long to start. Reload the page to try again.";
+                StateHasChanged();
+            }
         }
     }
 
+    private Dictionary<string, object?> MountOptions() => new()
+    {
+        ["roleColors"] = RoleColors,
+        ["initialPreset"] = InitialPreset,
+        ["initialMode"] = InitialMode ?? "schematic",
+        ["hintOnce"] = HintOnce,
+    };
+
     private async Task ListenFacetTapsAsync()
     {
-        if (!OnFacetTap.HasDelegate || viewer is null)
+        if (!OnFacetTap.HasDelegate || viewer is null || disposed)
         {
             return;
         }
@@ -149,19 +233,6 @@ public partial class Wall3DStage : IAsyncDisposable
     {
         var current = viewer;
         viewer = null;
-        if (current is null)
-        {
-            return;
-        }
-
-        try
-        {
-            await current.InvokeVoidAsync("dispose");
-            await current.DisposeAsync();
-        }
-        catch (JSDisconnectedException)
-        {
-            // The browser side is already gone, and its WebGL context with it.
-        }
+        await DisposeViewerAsync(current);
     }
 }

@@ -37,7 +37,8 @@ window.bwCaptureVideo = {
                 const eta = elapsed >= 3 && e.loaded > 0
                     ? Math.round((e.total - e.loaded) / (e.loaded / elapsed))
                     : null;
-                dotNetRef.invokeMethodAsync('OnVideoUploadProgress', pct, e.loaded / 1048576, e.total / 1048576, eta);
+                dotNetRef.invokeMethodAsync('OnVideoUploadProgress', pct, e.loaded / 1048576, e.total / 1048576, eta)
+                    .catch(() => { /* the circuit went away */ });
             };
             xhr.onload = () => {
                 const ok = xhr.status >= 200 && xhr.status < 300;

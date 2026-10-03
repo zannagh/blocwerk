@@ -100,11 +100,10 @@ public static class HoldProposalFinder
             return null;
         }
 
-        var facet = facets[cluster.Hits.GroupBy(h => h.FacetId).MaxBy(g => g.Count())!.Key];
+        var facet = FacetOf(cluster, p, facets);
         var (a, b, h) = FacetCloud.Local(facet.Frame, p[0], p[1], p[2]);
         var top = facet.Volumes.Select(v => v.HeightAt(a, b)).DefaultIfEmpty(0).Max();
-        var e = facet.Extent;
-        if (a < e.AMin || a > e.AMax || b < e.BMin || b > e.BMax || h < top + MinReliefMm || h > top + 150)
+        if (!facet.Covers(a, b) || h < top + MinReliefMm || h > top + 150)
         {
             return null;
         }
@@ -113,6 +112,16 @@ public static class HoldProposalFinder
         return new HoldProposalCandidate(
             facet.Id, Math.Round(a, 1), Math.Round(b, 1), Math.Round(h, 1), p, Math.Round(size, 1), cluster.Views,
             Math.Round(cluster.Hits.Average(x => x.Detection.Confidence), 3), cluster.ResidualMm, best.Detection, cluster.Hits.Select(x => x.Detection).ToList());
+    }
+
+    /// <summary>
+    /// The cluster's facet: of the facets its hits landed on (most hits first), the first whose shape covers the point,
+    /// else the one most hits landed on. An arete hold's point may lie a few mm onto the minority facet.
+    /// </summary>
+    private static CastFacet FacetOf(HoldCluster cluster, double[] p, Dictionary<string, CastFacet> facets)
+    {
+        var ranked = cluster.Hits.GroupBy(h => h.FacetId).OrderByDescending(g => g.Count()).Select(g => facets[g.Key]).ToList();
+        return ranked.FirstOrDefault(f => FacetCloud.Local(f.Frame, p[0], p[1], p[2]) is var l && f.Covers(l.A, l.B)) ?? ranked[0];
     }
 
     private static double Distance(double[] x, double[] y) =>

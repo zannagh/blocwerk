@@ -10,7 +10,7 @@ namespace Blocwerk.Core.Geometry.Proposals;
 
 /// <summary>
 /// Lifts a detection from its photo onto the wall: the pixel's ray through the solved camera to the nearest
-/// facet plane hit inside that facet's extent, walked back onto a volume standing on the facet when it meets
+/// facet plane hit inside that facet's real shape (its outline, <see cref="CastFacet.Covers"/>), walked back onto a volume standing on the facet when it meets
 /// one first. Grazing views (the facet seen under more than <see cref="MinCosView"/>) are dropped: their boxes
 /// are mostly the hold's side and their hits smear along the wall.
 /// </summary>
@@ -42,9 +42,7 @@ public static class WallSurfaceCaster
 
             var t = Dot(Sub(f.Frame.Origin, o), n) / den;
             var (a, b, _) = FacetCloud.Local(f.Frame, o[0] + (t * dir[0]), o[1] + (t * dir[1]), o[2] + (t * dir[2]));
-            var e = f.Extent;
-            var inside = a >= e.AMin - ExtentMarginMm && a <= e.AMax + ExtentMarginMm && b >= e.BMin - ExtentMarginMm && b <= e.BMax + ExtentMarginMm;
-            if (t > 0 && inside && (best is null || t < best.Value.T))
+            if (t > 0 && f.Covers(a, b, ExtentMarginMm) && (best is null || t < best.Value.T))
             {
                 best = (f, t, -den);
             }
@@ -70,7 +68,7 @@ public static class WallSurfaceCaster
         var world = f.Frame.ToWorld(a, b, h);
         var dist = Math.Sqrt(Dot(Sub(world, o), Sub(world, o)));
         var size = 2 * d.RadiusPx * dist / camera.K[0];
-        return new SurfaceHit(d, f.Id, a, b, h, world, o, dir, size, cos);
+        return new SurfaceHit(d, f.Id, a, b, h, world, o, dir, size, cos, f.Frame.Normal);
     }
 
     private static double Dot(double[] a, double[] b) => (a[0] * b[0]) + (a[1] * b[1]) + (a[2] * b[2]);

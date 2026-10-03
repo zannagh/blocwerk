@@ -111,9 +111,10 @@ public sealed class VolumeSurface
     /// <param name="b">Target along v.</param>
     /// <param name="minHeightMm">Hits lower than this are the wall around the volume, not the volume.</param>
     /// <param name="endT">Where the walk ends, as a share of the way from <paramref name="from"/> to the plane point (1 = all the way).</param>
+    /// <param name="strict">Only a ray that really meets the surface hits it (no flat-face grace): for occlusion, where a near miss is a clear view.</param>
     /// <returns>The hit (a, b, height).</returns>
     public (double A, double B, double H)? RayHit(
-        (double A, double B, double H) from, double a, double b, double minHeightMm, double endT = 1)
+        (double A, double B, double H) from, double a, double b, double minHeightMm, double endT = 1, bool strict = false)
     {
         double da = a - from.A, db = b - from.B, dh = -from.H;
         var length = Math.Sqrt((da * da) + (db * db) + (dh * dh));
@@ -122,7 +123,7 @@ public sealed class VolumeSurface
             return null;
         }
 
-        var clearance = Polyhedron is null ? -1 : FlatGraceMm;
+        var clearance = Polyhedron is null || strict ? -1 : FlatGraceMm;
         var top = MaxHeightMm + 1 + Math.Max(0, clearance);
         var t = Math.Max(0, (from.H - top) / from.H);
         var step = 1.0 / length;

@@ -253,7 +253,7 @@ public static class Wall3DViewBuilder
                 }
 
                 frames[facet.Id] = frame;
-                var extent = facet.ExtentMm is { Width: > 0, Height: > 0 } e ? e : FallbackExtent(doc, wall, facet.Id);
+                var extent = facet.ExtentMm is { Width: > 0, Height: > 0 } e ? e : FacetFallbackExtent.Of(doc, facet.Id, LiveHolds(wall));
                 if (extent is null)
                 {
                     continue;
@@ -280,23 +280,6 @@ public static class Wall3DViewBuilder
         }
 
         return result;
-    }
-
-    /// <summary>Bounds of the facet's marker corners and placed holds, plus a margin; null when it has neither.</summary>
-    private static PlaneRectMm? FallbackExtent(WallGeometryDocument doc, Wall wall, string facetId)
-    {
-        var points = doc.Markers
-            .Where(m => m.Facet == facetId)
-            .SelectMany(m => m.CornersPlaneMm)
-            .Where(c => c.Length >= 2)
-            .Select(c => (c[0], c[1]))
-            .Concat(LiveHolds(wall)
-                .Where(h => h.FacetId == facetId && h.PlaneAMm.HasValue && h.PlaneBMm.HasValue)
-                .Select(h => (h.PlaneAMm!.Value, h.PlaneBMm!.Value)));
-        var bounds = PlaneRectMm.Bounds(points);
-        return bounds is { } r
-            ? new PlaneRectMm(r.AMin - FallbackMarginMm, r.AMax + FallbackMarginMm, r.BMin - FallbackMarginMm, r.BMax + FallbackMarginMm)
-            : null;
     }
 
     private static List<Wall3DMarker> BuildMarkers(WallGeometryDocument doc) =>

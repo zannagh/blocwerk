@@ -107,13 +107,13 @@ export function buildOverlay(root, view, on, modes, { hintOnce = false } = {}) {
             if (byViewer && hintOnce && !hint.classList.contains('gone')) storedFlag(HINT_SEEN_KEY, true);
             hint.classList.add('gone');
         },
-        /** Marks `mode` as current; `loading` shows it as still loading and blocks further picks. */
+        /** Marks `mode` as current; `loading` shows it as still loading (the other modes stay pickable: they cancel it). */
         setMode(mode, loading) {
             modeSwitch.querySelectorAll('[data-mode]').forEach(b => {
                 const current = b.dataset.mode === mode;
                 b.classList.toggle('active', current);
                 b.setAttribute('aria-checked', current ? 'true' : 'false');
-                b.disabled = !!loading;
+                b.disabled = !!loading && current;
                 b.textContent = current && loading ? 'Loading…' : MODE_LABELS[b.dataset.mode];
             });
             root.dataset.mode = mode || '';

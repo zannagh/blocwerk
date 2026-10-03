@@ -80,13 +80,20 @@
 
         loaded = key;
         result = null;
+        Wall3DViewResult built;
         try
         {
-            result = await ViewService.BuildAsync(WallId, BoulderId, ShareToken);
+            built = await ViewService.BuildAsync(WallId, BoulderId, ShareToken);
         }
         catch (UnauthorizedAccessException)
         {
-            result = new Wall3DViewResult(Wall3DViewStatus.NotFound);
+            built = new Wall3DViewResult(Wall3DViewStatus.NotFound);
+        }
+
+        // A slow build of the previous wall must not replace the current one's.
+        if (loaded == key)
+        {
+            result = built;
         }
     }
 

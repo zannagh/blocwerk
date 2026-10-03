@@ -13,7 +13,8 @@ Document (`facet_<id>_source.json`, manifest field `sourceFile`):
 little-endian when more than 255 photos are used): 0 = no photo, k = cameras[k - 1]. Cell (i, j) covers
 a in [aMin + i * cellMm, aMin + (i + 1) * cellMm), b in (bMax - (j + 1) * cellMm, bMax - j * cellMm]; the
 last row / column may reach past the texture. Near a seam the texture is feathered over a few pixels
-between the two photos; the map names the one the renderer chose.
+between the two photos; the map names the photo that actually painted the cell (the dominant one at its
+centre pixel, `drawn_cells`), never just the one the renderer wanted there.
 """
 import base64
 import json
@@ -41,9 +42,17 @@ def decode(doc):
     return np.frombuffer(base64.b64decode(doc["cells"]), dt).reshape(doc["rows"], doc["cols"])
 
 
-def best_cells(W):
-    """Blend mode: per cell the photo with the highest blend weight (-1 where none)."""
-    return np.where((W > 0).any(0), W.argmax(0), -1)
+def drawn_cells(drawn, cell):
+    """Per-pixel painting photo (H, W) (-1 = none, blend.finish) -> per label cell (ch, cw): the photo
+    that painted the cell's centre pixel, else (centre unpainted) its first painted pixel, else -1."""
+    H, W = drawn.shape
+    ch, cw = -(-H // cell), -(-W // cell)
+    pad = np.full((ch * cell, cw * cell), -1, drawn.dtype)
+    pad[:H, :W] = drawn
+    px = pad.reshape(ch, cell, cw, cell).transpose(0, 2, 1, 3).reshape(ch, cw, cell * cell)
+    centre = px[..., (cell // 2) * cell + cell // 2]
+    first = np.take_along_axis(px, (px >= 0).argmax(-1)[..., None], -1)[..., 0]
+    return np.where(centre >= 0, centre, first).astype(np.int64)
 
 
 def encode(doc):

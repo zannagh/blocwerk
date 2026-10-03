@@ -17,7 +17,8 @@ more than `outlierDeltaE` from it are dropped before the weighted mean. Two cand
 leave the better-weighted one.
 
 Memory: K = blendViews + 2 sample slots per pixel (uint8 colour, float16 weight, int16 photo index);
-the robust combine runs in row tiles. Photos are loaded once.
+the robust combine runs in row tiles. Photos are loaded once. The per-cell weights live in the facet's
+sparse views (views.py); textures.blend_bytes budgets both.
 """
 import math
 
@@ -47,10 +48,11 @@ def view_weights(S, n, sharp):
 
 
 class FacetAccumulator:
-    """Sample slots of one facet grid, filled photo by photo."""
+    """Sample slots of one facet grid, filled photo by photo. The per-cell blend weights come from the
+    facet's views.FacetViews (field "W")."""
 
-    def __init__(self, g, W_cells, cell, n):
-        self.g, self.W, self.cell = g, W_cells, cell
+    def __init__(self, g, views, cell, n):
+        self.g, self.views, self.cell = g, views, cell
         self.K = n + 2
         H, Wd = g["H"], g["W"]
         self.rgb = np.zeros((self.K, H, Wd, 3), np.uint8)
@@ -58,18 +60,26 @@ class FacetAccumulator:
         self.cam = np.full((self.K, H, Wd), -1, np.int16)
         self.count = np.zeros((H, Wd), np.uint8)
 
+    def weights(self, c):
+        """Photo c's view (views.View) when it has any blend weight on this facet, else None."""
+        v = self.views.by_photo.get(c)
+        return v if v is not None and (v.fields["W"] > 0).any() else None
+
     def region(self, c):
         """Full-res weight crop (y0, x0, weights) for photo index c, or None."""
-        Wc = self.W[c]
-        ys, xs = np.nonzero(Wc > 0)
-        if ys.size == 0:
+        v = self.weights(c)
+        if v is None:
             return None
+        # the view's crop reaches PAD_CELLS past every cell the photo sees, so the one-cell frame read
+        # here is the same as on the whole grid
+        Wc = v.fields["W"]
+        ys, xs = np.nonzero(Wc > 0)
         cy0, cy1 = max(ys.min() - 1, 0), min(ys.max() + 2, Wc.shape[0])
         cx0, cx1 = max(xs.min() - 1, 0), min(xs.max() + 2, Wc.shape[1])
         crop = Wc[cy0:cy1, cx0:cx1]
         cell = self.cell
         up = cv2.resize(crop, ((cx1 - cx0) * cell, (cy1 - cy0) * cell), interpolation=cv2.INTER_LINEAR)
-        y0, x0 = cy0 * cell, cx0 * cell
+        y0, x0 = (v.y0 + cy0) * cell, (v.x0 + cx0) * cell
         up = up[:max(0, self.g["H"] - y0), :max(0, self.g["W"] - x0)]
         return y0, x0, up
 
@@ -109,6 +119,12 @@ def _lab(rgb_u8, blur):
 def robust_combine(rgb, wt, delta_e, blur, smooth=0):
     """rgb (K, h, w, 3) uint8, wt (K, h, w) float -> (image (h, w, 3) float32, survivors (K, h, w) bool).
     Weighted-medoid outlier rejection in Lab, then the weighted mean of the survivors."""
+    out, keep, _ = robust_weights(rgb, wt, delta_e, blur, smooth)
+    return out, keep
+
+
+def robust_weights(rgb, wt, delta_e, blur, smooth=0):
+    """robust_combine -> (image, survivors, the per-slot weights (K, h, w) the mean actually used)."""
     valid = wt > 0
     lab = _lab(rgb, blur)
     K = rgb.shape[0]
@@ -134,7 +150,7 @@ def robust_combine(rgb, wt, delta_e, blur, smooth=0):
     w = np.where(keep, wv * keepf, 0)
     tot = w.sum(0)
     out = (rgb.astype(np.float32) * w[..., None]).sum(0) / np.where(tot > 0, tot, 1)[..., None]
-    return out, keep
+    return out, keep, w
 
 
 def select_combine(rgb, wt, cam, label, feather):
@@ -151,14 +167,22 @@ def select_combine(rgb, wt, cam, label, feather):
     w = np.where(none[None], best, pick).astype(np.float32)
     tot = w.sum(0)
     out = (rgb.astype(np.float32) * w[..., None]).sum(0) / np.where(tot > 0, tot, 1)[..., None]
-    return out, w > 0
+    return out, w
+
+
+def _dominant(cam, w):
+    """Per pixel the photo whose slot has the largest combine weight `w` (K, h, w); -1 = none."""
+    top = np.take_along_axis(cam, w.argmax(0)[None], 0)[0]
+    return np.where(w.max(0) > 0, top, -1).astype(np.int16)
 
 
 def finish(acc, gains, p, label=None):
-    """Apply per-photo gains and combine all slots -> (image uint8, filled bool, per-photo use).
+    """Apply per-photo gains and combine all slots -> (image uint8, filled bool, per-photo use, photo
+    that painted each pixel (int16, -1 = none)).
     With a `label` map: consensus single-photo choice; else the robust multi-view blend."""
     H, W = acc.g["H"], acc.g["W"]
     out = np.zeros((H, W, 3), np.uint8)
+    drawn = np.full((H, W), -1, np.int16)
     lut = exposure.gain_luts(gains)  # (C, 3, 256) uint8, identity where no gain
     kept_by_cam = np.zeros(len(lut), np.float64)
     step = int(p["combineTileRows"])
@@ -167,15 +191,17 @@ def finish(acc, gains, p, label=None):
         cam, wt = acc.cam[:, sl], acc.wt[:, sl].astype(np.float32)
         rgb = exposure.apply_luts(acc.rgb[:, sl], cam, lut)
         if label is not None:
-            img, keep = select_combine(rgb, wt, cam, label[sl], int(p["seamFeatherPx"]))
+            img, w = select_combine(rgb, wt, cam, label[sl], int(p["seamFeatherPx"]))
+            keep = w > 0
         else:
-            img, keep = robust_combine(rgb, wt, p["outlierDeltaE"], p["outlierBlurPx"],
-                                       int(p["outlierSmoothPx"]))
+            img, keep, w = robust_weights(rgb, wt, p["outlierDeltaE"], p["outlierBlurPx"],
+                                          int(p["outlierSmoothPx"]))
         out[sl] = np.clip(img + 0.5, 0, 255).astype(np.uint8)
+        drawn[sl] = _dominant(cam, w)
         kc = cam[keep]
         kept_by_cam += np.bincount(kc[kc >= 0], weights=wt[keep][kc >= 0], minlength=len(lut))
     filled = acc.count > 0
-    return out, filled, kept_by_cam
+    return out, filled, kept_by_cam, drawn
 
 
 def shrink(img, down=8):

@@ -20,7 +20,8 @@ import { availableModes, createModeController, normalizeMode, PHOTO_REAL_FAILED,
 import { createLabelLayout } from './wall3d-labels.js';
 import { createTweener, presetPose, wallFrame } from './wall3d-camera.js';
 import { buildOverlay, chromeInsets, createPlanMap } from './wall3d-ui.js';
-import { createPhotoReal, PhotoRealUnsupportedError } from './wall3d-splat.js';
+import { createPhotoReal } from './wall3d-splat.js';
+import { createPhotoLoader } from './wall3d-photos.js';
 import { createFacetSides } from './wall3d-sides.js';
 import { createPicker, screenPointOf } from './wall3d-pick.js';
 import { buildSurroundings, disposeScene, ensureStylesheet, themeColor } from './wall3d-stage.js';
@@ -37,16 +38,32 @@ const DEFAULT_ROLE_COLORS = { Start: '#4CAF50', Top: '#9C27B0', Hand: '#2196F3',
 const DAMPING = 0.12;
 const CAPPED_DAMPING = 1 - (1 - DAMPING) ** 2;
 
-export function mount(container, view, options = {}) {
-    const loadingCss = ensureStylesheet();
-    const roleColors = { ...DEFAULT_ROLE_COLORS, ...(options.roleColors || {}) };
-    const reducedMq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    container.classList.add('w3d-root');
+/** Prefix of the error `mount` throws when the model itself could not be drawn (not WebGL missing). */
+export const MODEL_FAILED = 'wall3d-model:';
 
+export function mount(container, view, options = {}) {
+    container.classList.add('w3d-root');
     const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: !!options.preserveDrawingBuffer });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.domElement.className = 'w3d-canvas';
     container.prepend(renderer.domElement);
+    try {
+        return build(container, renderer, view, options);
+    } catch (err) {
+        // Bad server data must not leave a live WebGL context (browsers cap them) or read as "no WebGL".
+        console.error('wall3d: the model could not be drawn', err);
+        renderer.dispose();
+        renderer.forceContextLoss();
+        container.replaceChildren();
+        container.classList.remove('w3d-root');
+        throw new Error(`${MODEL_FAILED} ${err?.message || err}`);
+    }
+}
+
+function build(container, renderer, view, options) {
+    const loadingCss = ensureStylesheet();
+    const roleColors = { ...DEFAULT_ROLE_COLORS, ...(options.roleColors || {}) };
+    const reducedMq = window.matchMedia('(prefers-reduced-motion: reduce)');
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(50, 1, 20, 200000);
     camera.up.set(0, 0, 1);
@@ -57,9 +74,10 @@ export function mount(container, view, options = {}) {
     const outlines = buildOutlines(holds.litHolds, holds.dimHolds, holds.facets, OUTLINE_LIFT, sides);
     const selection = buildSelection();
     const labels = buildLabels(view);
-    const textures = buildTextures(view, renderer);
+    const photos = createPhotoLoader(() => request());   // the facet photos load on the first switch to Photos
+    const textures = buildTextures(view, renderer, photos);
     const markers = buildMarkers(view, sides);
-    const volumes = buildVolumes(view, renderer, textures);   // plain: Schematic; photo: Photos (in `textures`)
+    const volumes = buildVolumes(view, renderer, textures, photos);   // plain: Schematic; photo: Photos (in `textures`)
     const body = buildBody(view);                             // solid in every mode, photo-real too
     scene.add(body.group, facets.group, textures, markers, labels, holds.lit, holds.dim, volumes.plain, outlines, holds.rings, holds.pick, selection);
     const frame = wallFrame(view, facets.group, body);
@@ -84,7 +102,6 @@ export function mount(container, view, options = {}) {
         onInteract: moving => photo.interact(moving),
     });
     const request = () => { if (!disposed) loop.request(); };
-    renderer.__wall3dRequest = request;         // texture loads ask for a redraw when they land
 
     // Photo-real mode swaps the modelled wall for the captured splat; the hold outlines and boulder
     // rings (wall3d-overlay.js), the selection and hold taps stay.
@@ -105,8 +122,8 @@ export function mount(container, view, options = {}) {
     }, modes, { hintOnce: !!options.hintOnce });
     const overlay = createPhotoOverlay({ root: container, outlines, rings: holds.rings, request: () => request(), photo });
     const modeCtl = createModeController({
-        modes, photo, ui, request: () => request(), PhotoRealUnsupportedError, onMode: m => overlay.apply(m),
-        parts: { textures, outlines, slabs: [holds.lit, holds.dim, volumes.plain] },
+        modes, photo, ui, request: () => request(), onMode: m => overlay.apply(m),
+        parts: { textures, outlines, photos, slabs: [holds.lit, holds.dim, volumes.plain] },
     });
     const failures = watchRenderFailures(renderer, modeCtl, () => request(), photo);
     const plan = createPlanMap(ui.map, view, frame);

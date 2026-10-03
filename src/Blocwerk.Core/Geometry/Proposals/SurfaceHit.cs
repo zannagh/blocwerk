@@ -15,6 +15,7 @@ namespace Blocwerk.Core.Geometry.Proposals;
 /// <param name="Direction">The ray's unit direction.</param>
 /// <param name="SizeMm">The box's longer side at the hit's distance, mm.</param>
 /// <param name="CosView">Cosine between the ray and the facet normal (1 = straight on).</param>
+/// <param name="Normal">The hit facet's unit normal, world (null when unknown).</param>
 public sealed record SurfaceHit(
     CaptureDetection Detection,
     string FacetId,
@@ -25,4 +26,5 @@ public sealed record SurfaceHit(
     double[] Origin,
     double[] Direction,
     double SizeMm,
-    double CosView);
+    double CosView,
+    double[]? Normal = null);

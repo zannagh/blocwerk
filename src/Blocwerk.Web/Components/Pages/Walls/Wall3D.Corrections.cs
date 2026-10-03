@@ -30,18 +30,22 @@ public partial class Wall3D
     private EventCallback<string?> FacetTap =>
         correction is null ? default : EventCallback.Factory.Create<string?>(this, FacetTapped);
 
-    private async Task LoadCorrectionAsync()
+    private async Task LoadCorrectionAsync((Guid Wall, string? Token, Guid? Boulder) key)
     {
         correction = null;
         tappedFacet = null;
-        if (Correct is not ("1" or "true") || !string.IsNullOrEmpty(ShareToken) || _result?.Status != Wall3DViewStatus.Ok)
+        if (Correct is not ("1" or "true") || !string.IsNullOrEmpty(key.Token) || _result?.Status != Wall3DViewStatus.Ok)
         {
             return;
         }
 
         try
         {
-            correction = await Corrections.GetStateAsync(WallId);
+            var state = await Corrections.GetStateAsync(key.Wall);
+            if (_loaded == key)
+            {
+                correction = state;
+            }
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidOperationException or KioskRestrictedException)
         {
@@ -71,8 +75,7 @@ public partial class Wall3D
         try
         {
             var result = await run();
-            _result = await ViewService.BuildAsync(WallId, BoulderId, ShareToken);
-            await LoadCorrectionAsync();
+            await ReloadAsync();
             correctionMessage = $"{result.Summary}. Saved as a new model version; the previous one stays in the wall's model history.";
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidOperationException or KioskRestrictedException)

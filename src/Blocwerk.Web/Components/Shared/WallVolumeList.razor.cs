@@ -71,11 +71,14 @@ public partial class WallVolumeList
         }
 
         loadedWallId = WallId;
-        message = null;
-        failure = null;
+        (loaded, volumes, message, failure) = (false, [], null, null);
         await ReloadAsync();
     }
 
+    /// <summary>
+    /// Loads the list. A failure before the first list hides the section (not a wall admin); after it the last
+    /// list stays, with the failure under it, instead of the whole section vanishing with its message.
+    /// </summary>
     private async Task ReloadAsync()
     {
         try
@@ -87,7 +90,10 @@ public partial class WallVolumeList
         catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidOperationException or KioskRestrictedException)
         {
             Logger.LogWarning(ex, "Could not load the volumes of wall {WallId}", WallId);
-            loaded = false;
+            if (loaded)
+            {
+                failure ??= "The volume list could not be updated; reload the page to see the latest.";
+            }
         }
     }
 
