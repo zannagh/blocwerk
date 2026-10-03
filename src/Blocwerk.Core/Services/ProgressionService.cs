@@ -506,8 +506,10 @@ public class ProgressionService : IProgressionService
 
             var cutoff = DateTimeOffset.UtcNow.AddDays(-user.ProgressionWindowDays);
 
+            // Walls without their photo blobs, attached first so the tracked activities pick them up by
+            // fix-up: Include(a => a.Wall) repeated every wall's photos for each joined activity row.
+            await db.AttachVisibleWallsWithoutPhotosAsync();
             var activities = await db.Activities
-                .Include(a => a.Wall)
                 .Include(a => a.ExternalGym)
                 .Where(a => a.UserId == user.Id && a.StartedAt >= cutoff)
                 .OrderByDescending(a => a.StartedAt)
@@ -572,8 +574,8 @@ public class ProgressionService : IProgressionService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = user.Id;
 
+            await db.AttachVisibleWallsWithoutPhotosAsync();
             var activity = await db.Activities
-                .Include(a => a.Wall)
                 .Include(a => a.ExternalGym)
                 .FirstOrDefaultAsync(a => a.Id == activityId && a.UserId == user.Id);
 

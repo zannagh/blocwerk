@@ -330,8 +330,12 @@ public partial class BoulderService : IBoulderService
                 }
             }
 
-            var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == wallId);
-            if (wall == null)
+            // Only the generation is needed: don't load the wall row with its ~10 MB photo blobs.
+            var wallGeneration = await db.Walls
+                .Where(w => w.Id == wallId)
+                .Select(w => (int?)w.CurrentGeneration)
+                .FirstOrDefaultAsync();
+            if (wallGeneration is null)
             {
                 _logger.LogWarning("Create boulder failed: wall {WallId} not found for user {UserId}", wallId, creatorId);
                 throw new InvalidOperationException("Wall not found");
@@ -344,7 +348,7 @@ public partial class BoulderService : IBoulderService
                 Name = name.Trim(),
                 Grade = grade,
                 CreatedByUserId = creatorId,
-                Generation = wall.CurrentGeneration,
+                Generation = wallGeneration.Value,
                 KickboardFootholdsOn = kickboardFootholdsOn,
                 HandsFollowFeet = handsFollowFeet,
                 FootColorOnly = NormalizeFootColor(footColorOnly),
@@ -469,10 +473,13 @@ public partial class BoulderService : IBoulderService
             boulder.IsDraft = false;
             boulder.PublishedAt = DateTimeOffset.UtcNow;
 
-            var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == boulder.WallId);
-            if (wall != null)
+            var wallGeneration = await db.Walls
+                .Where(w => w.Id == boulder.WallId)
+                .Select(w => (int?)w.CurrentGeneration)
+                .FirstOrDefaultAsync();
+            if (wallGeneration is { } generation)
             {
-                boulder.Generation = wall.CurrentGeneration;
+                boulder.Generation = generation;
             }
 
             await db.SaveChangesAsync();
@@ -603,7 +610,7 @@ public partial class BoulderService : IBoulderService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = viewerId;
 
-            return await db.Boulders
+            var boulder = await db.Boulders
 
                 // Attempts are unbounded and nobody reads boulder.Attempts off this call — the
                 // detail page loads them separately (with the User) only when shown — so don't drag
@@ -614,7 +621,6 @@ public partial class BoulderService : IBoulderService
                 .Include(b => b.BoulderHolds).ThenInclude(bh => bh.Hold)
                 .Include(b => b.Setters).ThenInclude(s => s.User)
                 .Include(b => b.CreatedBy)
-                .Include(b => b.Wall)
 
                 // Boulder carries no query filter of its own — the wall is the only filtered entity
                 // in the model — so the id alone used to be the whole check and ANY signed-in caller
@@ -623,11 +629,36 @@ public partial class BoulderService : IBoulderService
                 // the kiosk wall gate with it.
                 .Where(b => db.Walls.Any(w => w.Id == b.WallId))
                 .FirstOrDefaultAsync(b => b.Id == boulderId);
+
+            await AttachWallWithoutPhotosAsync(db, boulder);
+            return boulder;
         }
         catch (Exception ex)
         {
             op.Fail(ex);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Sets <c>boulder.Wall</c> from a wall row without its photo blobs. <c>Include(b =&gt; b.Wall)</c> dragged the
+    /// ~10 MB photos along on every boulder page load; the page only reads generation and share token.
+    /// </summary>
+    private static async Task AttachWallWithoutPhotosAsync(BlocwerkDbContext db, Boulder? boulder)
+    {
+        if (boulder is null)
+        {
+            return;
+        }
+
+        var wall = await db.Walls
+            .AsNoTracking()
+            .Where(w => w.Id == boulder.WallId)
+            .WithoutPhotos()
+            .FirstOrDefaultAsync();
+        if (wall is not null)
+        {
+            boulder.Wall = wall;
         }
     }
 
@@ -639,7 +670,7 @@ public partial class BoulderService : IBoulderService
             await using var db = await _dbContextFactory.CreateDbContextAsync();
             db.CurrentUserId = Guid.Empty;
 
-            return await db.Boulders
+            var boulder = await db.Boulders
 
                 // See GetBoulderAsync: split the two collection includes to avoid a cartesian blow-up.
                 .AsSplitQuery()
@@ -648,9 +679,11 @@ public partial class BoulderService : IBoulderService
                 .Include(b => b.Attempts.OrderByDescending(a => a.Timestamp)).ThenInclude(a => a.User)
                 .Include(b => b.Setters).ThenInclude(s => s.User)
                 .Include(b => b.CreatedBy)
-                .Include(b => b.Wall)
                 .Where(b => b.Id == boulderId && b.Wall.ShareToken == shareToken && !b.IsDraft)
                 .FirstOrDefaultAsync();
+
+            await AttachWallWithoutPhotosAsync(db, boulder);
+            return boulder;
         }
         catch (Exception ex)
         {
@@ -1152,10 +1185,13 @@ public partial class BoulderService : IBoulderService
             boulder.IsHistoric = false;
             boulder.NeedsReview = false;
 
-            var wall = await db.Walls.FirstOrDefaultAsync(w => w.Id == boulder.WallId);
-            if (wall != null)
+            var wallGeneration = await db.Walls
+                .Where(w => w.Id == boulder.WallId)
+                .Select(w => (int?)w.CurrentGeneration)
+                .FirstOrDefaultAsync();
+            if (wallGeneration is { } generation)
             {
-                boulder.Generation = wall.CurrentGeneration;
+                boulder.Generation = generation;
             }
 
             await db.SaveChangesAsync();
