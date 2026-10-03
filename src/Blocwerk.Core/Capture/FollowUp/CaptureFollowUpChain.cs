@@ -110,11 +110,20 @@ public sealed partial class CaptureFollowUpChain(RootDbContextFactory dbContextF
     private async Task<CaptureFollowUpEntry> RunStepAsync(
         ICaptureFollowUpStep step, CaptureFollowUpContext context, CancellationToken ct, bool quiet = false)
     {
-        if (!step.RunsAfterCompletion && !quiet)
-        {
-            // A done capture keeps its "Done" line while an after-completion step works.
-            await SaveAsync(context.CaptureId, c => c.Stage = step.Title.Length <= 200 ? step.Title : step.Title[..200], ct);
-        }
+        // A done capture keeps its "Done" line while an after-completion step works; the record says what runs either way.
+        var running = new CaptureFollowUpRunning(step.Key, step.Title, DateTimeOffset.UtcNow);
+        var showStage = !step.RunsAfterCompletion && !quiet;
+        await SaveAsync(
+            context.CaptureId,
+            c =>
+            {
+                c.FollowUpJson = CaptureFollowUpRecord.Parse(c.FollowUpJson).Starting(running).ToJson();
+                if (showStage)
+                {
+                    c.Stage = step.Title.Length <= 200 ? step.Title : step.Title[..200];
+                }
+            },
+            ct);
 
         CaptureFollowUpStepResult result;
         try
@@ -135,7 +144,8 @@ public sealed partial class CaptureFollowUpChain(RootDbContextFactory dbContextF
             "Capture {CaptureId} follow-up {Step}: {Outcome} — {Summary}",
             context.CaptureId, step.Key, result.Outcome, string.IsNullOrWhiteSpace(result.Summary) ? "nothing to report" : result.Summary);
         return new CaptureFollowUpEntry(
-            step.Key, result.Outcome, result.Summary, DateTimeOffset.UtcNow, step.NeedsPhotoReal ? context.SplatId : null);
+            step.Key, result.Outcome, result.Summary, DateTimeOffset.UtcNow, step.NeedsPhotoReal ? context.SplatId : null,
+            StartedAt: running.StartedAt);
     }
 
     /// <summary>

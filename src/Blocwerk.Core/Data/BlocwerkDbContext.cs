@@ -128,6 +128,8 @@ public partial class BlocwerkDbContext : DbContext
     public BlocwerkDbContext(DbContextOptions<BlocwerkDbContext> options)
         : base(options)
     {
+        // Captures' stage timeline: stamped from what each save changes (see CaptureTimeline).
+        SavingChanges += (_, _) => Blocwerk.Core.Capture.CaptureTimeline.Stamp(ChangeTracker, DateTimeOffset.UtcNow);
     }
 
     public async Task SetCurrentUserAsync(ICurrentUserService currentUserService)

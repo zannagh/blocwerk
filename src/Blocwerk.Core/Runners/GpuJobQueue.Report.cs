@@ -93,6 +93,7 @@ public sealed partial class GpuJobQueue
         var lease = now + options.Lease < deadline ? now + options.Lease : deadline;
         var progress = report.Fraction is { } f && double.IsFinite(f) ? Math.Clamp(f, 0, 1) : job.Progress;
         var stage = Clip(Describe(report), 200);
+        var facts = GpuJobProgressFacts.From(job, report, now);
         var updated = await db.GpuJobs
             .Where(j => j.Id == jobId && j.ClaimedByRunnerId == runner.Id
                         && (j.Status == GpuJobStatus.Claimed || j.Status == GpuJobStatus.Running))
@@ -102,6 +103,12 @@ public sealed partial class GpuJobQueue
                     .SetProperty(j => j.Progress, progress)
                     .SetProperty(j => j.Stage, stage)
                     .SetProperty(j => j.HeartbeatAt, now)
+                    .SetProperty(j => j.Step, facts.Step)
+                    .SetProperty(j => j.TotalSteps, j => facts.TotalSteps ?? j.TotalSteps)
+                    .SetProperty(j => j.StepAnchor, facts.Anchor)
+                    .SetProperty(j => j.StepAnchorAt, facts.AnchorAt)
+                    .SetProperty(j => j.Loss, j => facts.Loss ?? j.Loss)
+                    .SetProperty(j => j.SplatCount, j => facts.Splats ?? j.SplatCount)
                     .SetProperty(j => j.Error, (string?)null),
                 ct);
         return updated == 0 ? RunnerJobOutcome.Gone : RunnerJobOutcome.Ok;

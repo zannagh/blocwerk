@@ -35,8 +35,12 @@ public partial class BlocwerkDbContext
             entity.Property(c => c.PlanJson).HasColumnType("text");
             entity.Property(c => c.PlacementCheckJson).HasColumnType("text");
             entity.Property(c => c.FollowUpJson).HasColumnType("text");
+            entity.Property(c => c.TimelineJson).HasColumnType("text");
             entity.HasIndex(c => new { c.WallId, c.CreatedAt });
             entity.HasIndex(c => c.Status);
+
+            // The progress API's "ended within the window" read, every few seconds while a jobs list is open.
+            entity.HasIndex(c => c.UpdatedAt);
         });
 
         modelBuilder.Entity<WallCapturePhoto>(entity =>
