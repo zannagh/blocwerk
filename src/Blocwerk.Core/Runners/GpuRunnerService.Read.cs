@@ -75,13 +75,18 @@ public sealed partial class GpuRunnerService
         {
             var x = r.Runner;
             var job = jobs.FirstOrDefault(j => j.ClaimedByRunnerId == x.Id);
+
+            // Another wall's job on a shared runner: the viewer only learns that the runner is busy.
             var sameWall = wallId is null || job?.WallId == wallId || job is null || x.OwnerUserId == userId;
+            var current = job is null ? null
+                : sameWall ? new GpuRunnerCurrentJob(job.Id, job.WallId, job.WallName, job.Progress, job.Stage)
+                : GpuRunnerCurrentJob.Busy;
             return new GpuRunnerInfo(
                 x.Id, x.Name, x.OwnerUserId, string.IsNullOrWhiteSpace(r.Owner) ? "Unknown" : r.Owner, x.OwnerUserId == userId,
                 x.SharedWithOtherWalls, wallId is { } w && r.Walls.Contains(w), x.RevokedAt is null && x.LastSeenAt >= online,
                 x.RevokedAt is not null, x.KeyPrefix, x.CreatedAt, x.LastSeenAt, x.LastJobAt,
                 new GpuRunnerCapabilities(x.GpuName, x.VramMb, x.MaxQuality, x.MemoryBudgetMb, x.RunnerVersion, x.Platform),
-                job is null ? null : new GpuRunnerCurrentJob(job.Id, job.WallId, sameWall ? job.WallName : null, job.Progress, job.Stage),
+                current,
                 r.Walls.Count,
                 r.Approved);
         }).ToList();

@@ -74,6 +74,38 @@ public class GpuJob
     /// </summary>
     public int ShutdownCount { get; set; }
 
+    /// <summary>
+    /// The runners whose training of this job failed (JSON array of runner ids, see <c>GpuJobFailedRunners</c>). A runner
+    /// in it does not get the job again while another runner that may train it is online.
+    /// </summary>
+    [MaxLength(1000)]
+    public string? FailedRunnerIdsJson { get; set; }
+
+    /// <summary>
+    /// The highest training step a runner had a resumable checkpoint at when it handed the job back on a shutdown. A
+    /// shutdown whose checkpoint got further than this is free: the next claim does not start over.
+    /// </summary>
+    public int? CheckpointStep { get; set; }
+
+    /// <summary>
+    /// When the claiming runner last spoke for the job (claim, progress). A claim silent for a while may be taken over
+    /// by the same runner again (it restarted) instead of waiting for the lease to run out.
+    /// </summary>
+    public DateTimeOffset? HeartbeatAt { get; set; }
+
+    /// <summary>
+    /// The claim token of the runner process holding the job (null: a runner that sends none). Job calls from another
+    /// process of the same runner key are refused; a re-attach hands the job (and the token) to the restarted process.
+    /// </summary>
+    [MaxLength(64)]
+    public string? ClaimToken { get; set; }
+
+    /// <summary>How often the holding runner re-attached to this job after a restart; past a cap, each one costs a lost lease.</summary>
+    public int ReattachCount { get; set; }
+
+    /// <summary>Budget-free hand-backs (pauses, shutdowns that kept progress); past a cap they count as shutdowns.</summary>
+    public int PauseCount { get; set; }
+
     /// <summary>The training bundle (zip) in the capture file store: the ONLY thing a runner ever sees.</summary>
     [Required]
     [MaxLength(200)]

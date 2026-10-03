@@ -2,7 +2,8 @@
 
 Posts the latest progress at most every MIN_INTERVAL_S when it changed, and at least every MAX_INTERVAL_S
 regardless (the server's 5-minute lease). A `cancel` answer, a 404 / 410 (the job is no longer ours: cancelled,
-requeued, the runner may no longer train that wall) or a 401 sets `stop`, which kills the trainer
+requeued, the runner may no longer train that wall; `cancelled` when the 410 says it is over for good) or a 401
+sets `stop`, which kills the trainer
 (procs.ToolRun's stop event). It also keeps the liveness file fresh while a long job holds the main loop."""
 import logging
 import threading
@@ -58,6 +59,7 @@ class Heartbeat:
             self.last_ok = self.clock()
         except (Gone, Unauthorized) as e:
             self.gone, self.revoked = True, isinstance(e, Unauthorized)
+            self.cancelled = getattr(e, "over", False)  # over for good (cancelled, failed): its checkpoints go
             log.warning("job %s is no longer ours (%s): stopping it", self.job_id, e)
             self.stop.set()
             return False

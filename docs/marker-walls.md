@@ -1136,7 +1136,10 @@ runner only helps a wall none of whose own runners that can train the job is onl
 ever serves walls its owner **still administers**, and does nothing at all once its owner is deleted
 or locked out. All of this is re-checked on every call of the runner, not only when it claims: a
 runner that lost its right gets 410 and the job goes back to the queue. A runner holds one job at a
-time; a user may own at most 10 runner keys. Site admins see every runner under
+time; a restarted runner gets its job back when it claims again (once the job has been silent for 45
+seconds), so it resumes from its checkpoint; 10 such re-attaches per job are free, each further one costs a
+lost lease. Each runner process sends its own claim token, so a second process with the same key never
+trains the same job. A user may own at most 10 runner keys. Site admins see every runner under
 **Administration → 3D runners** and can revoke any.
 
 **Leases, failures, shutdowns.** A claimed job is leased for 5 minutes and every progress report
@@ -1144,13 +1147,21 @@ extends it, but never past 6 hours after the claim (`RUNNERS__MAXJOBHOURS`; then
 attempt). Three budgets, counted separately:
 
 - a runner that **reports a training failure** (e.g. out of memory) uses one of 3 attempts
-  (`RUNNERS__MAXATTEMPTS`); a failure no retry can fix (a bad bundle) fails the job at once;
+  (`RUNNERS__MAXATTEMPTS`), and the next try goes to another idle runner of the wall that can train it
+  (for up to 15 minutes; with none, the same runner tries again); a failure no retry can fix (a bad
+  bundle, or one missing on the server) fails the job at once; a runner that gives up because the server
+  or the network stayed out of reach costs a lost lease, not an attempt;
 - a runner that **vanishes** (crash, sleep, network) loses the job when its lease runs out; after
   10 lost leases (`RUNNERS__MAXLOSTLEASES`) the job fails;
 - a runner that **shuts down** (it says so) or is **revoked** gives the job back at once, free (a
-  shutdown only 5 times per job; after that each one costs an attempt).
+  shutdown whose checkpoint got further than any before is always free; other shutdowns 5 times per
+  job, after that each one costs an attempt).
 
-A job nobody claims within 14 days (`RUNNERS__QUEUEDJOBDAYS`) is cancelled and its bundle deleted; so
+The 6-hour cap is extended by the upload limit (2 hours) once the runner uploads the trained view. A
+job that is over for good tells its last runner so (410 `over`), which then drops its checkpoints.
+
+A job nobody claims within 14 days (`RUNNERS__QUEUEDJOBDAYS`) is cancelled and its bundle deleted (an
+installed preview stays, to finish again); so
 is a job whose capture's photos expire (`CAPTURE__PHOTORETENTIONDAYS`), and with `RUNNERS__MODE=off`
 every waiting job is cancelled at startup (the runner API is then not served at all).
 

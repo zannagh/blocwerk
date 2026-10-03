@@ -90,4 +90,11 @@ public class GpuRunner
     /// <summary>Reported by the runner: OS / architecture / trainer version, for the admin list.</summary>
     [MaxLength(200)]
     public string? Platform { get; set; }
+
+    /// <summary>
+    /// Not stored: the claim token of the runner process making the current call (<c>X-Blocwerk-Claim</c>), null for a
+    /// runner that sends none. Two processes with the same key have different tokens; see <see cref="GpuJob.ClaimToken"/>.
+    /// </summary>
+    [NotMapped]
+    public string? ClaimToken { get; set; }
 }

@@ -22,7 +22,11 @@
     <div class="hint">
         @Capabilities() · key @(Runner.KeyPrefix)… · @Runner.WallCount wall(s)
     </div>
-    @if (Runner.CurrentJob is { } job)
+    @if (Runner.CurrentJob is { OtherWall: true })
+    {
+        <div class="gpu-runner-job">Busy with another wall's job.</div>
+    }
+    else if (Runner.CurrentJob is { } job)
     {
         <div class="gpu-runner-job">Working@(job.WallName is null ? "" : $" on {job.WallName}"): @job.Stage (@job.Progress.ToString("P0"))</div>
     }

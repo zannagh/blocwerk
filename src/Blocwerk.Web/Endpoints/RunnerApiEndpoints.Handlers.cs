@@ -44,7 +44,7 @@ public static partial class RunnerApiEndpoints
 
         try
         {
-            var claim = await queue.ClaimAsync(runner, queue.Options.ClaimWait, request?.MaxQuality, http.RequestAborted);
+            var claim = await queue.ClaimAsync(runner, queue.Options.ClaimWait, request, http.RequestAborted);
             return claim is null ? Results.NoContent() : Results.Ok(claim);
         }
         catch (OperationCanceledException) when (http.RequestAborted.IsCancellationRequested)
@@ -62,16 +62,11 @@ public static partial class RunnerApiEndpoints
             return refused;
         }
 
-        var (outcome, job) = await queue.FindClaimedAsync(runner, jobId, http.RequestAborted);
-        if (outcome != RunnerJobOutcome.Ok || job is null)
+        // A bundle missing on the server fails the job at once (410 "over"), see GpuJobQueue.BundleForRunnerAsync.
+        var (outcome, path) = await queue.BundleForRunnerAsync(runner, jobId, http.RequestAborted);
+        if (outcome != RunnerJobOutcome.Ok || path is null)
         {
             return Outcome(http, outcome);
-        }
-
-        var path = queue.BundlePath(job);
-        if (path is null || !File.Exists(path))
-        {
-            return Results.NotFound();
         }
 
         logger.LogInformation("Runner {RunnerId} ({Name}) downloads the bundle of GPU job {JobId}", runner.Id, runner.Name, jobId);

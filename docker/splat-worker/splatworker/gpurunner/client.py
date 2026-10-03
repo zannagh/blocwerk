@@ -1,8 +1,9 @@
 """HTTP client for the Blocwerk runner API (stdlib only: urllib / http.client).
 
 Status codes: 401/403 = the key is refused (Unauthorized: the runner exits 3); 404/410 = the job is no
-longer this runner's (Gone: drop it, go on); 408/409/429/5xx and network errors = Transient (retry,
-honouring Retry-After); anything else 4xx = Rejected (413 too large, 415 encoding, 422 invalid, 400).
+longer this runner's (Gone: drop it, go on; a 410 with reason "over" means it is over for good, so its
+checkpoints go too); 408/409/429/5xx and network errors = Transient (retry, honouring Retry-After); anything
+else 4xx = Rejected (413 too large, 415 encoding, 422 invalid, 400).
 """
 import gzip
 import hashlib
@@ -15,6 +16,7 @@ import socket
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 
 from .. import __version__
 
@@ -23,6 +25,7 @@ CLAIM_TIMEOUT_S = 45  # the server long-polls ~25 s
 DEFAULT_TIMEOUT_S = 60
 UPLOAD_TIMEOUT_S = 600
 CHUNK = 1 << 20
+MAX_BUNDLE_BYTES = 8 << 30  # the largest training bundle this runner downloads (told to the server with each claim)
 NETWORK_ERRORS = (urllib.error.URLError, socket.timeout, ConnectionError, TimeoutError, OSError,
                   http.client.HTTPException)
 
@@ -37,7 +40,12 @@ class Unauthorized(Exception):
 
 
 class Gone(Exception):
-    """404 / 410 on a job: it is no longer this runner's (cancelled, requeued, lost eligibility)."""
+    """404 / 410 on a job: it is no longer this runner's (cancelled, requeued, lost eligibility). over: the server
+    said the job is over for good (cancelled, failed, finished), not merely back in the queue."""
+
+    def __init__(self, message, over=False):
+        super().__init__(message)
+        self.over = over
 
 
 class Stopped(Exception):
@@ -58,6 +66,15 @@ class Transient(Exception):
     def __init__(self, message, retry_after=None):
         super().__init__(message)
         self.retry_after = retry_after
+
+
+class BundleCorrupt(Transient):
+    """The downloaded bundle does not match the claim (checksum or size): retried, but a bundle that stays damaged
+    is the server's (job.py then fails the job for good)."""
+
+
+class BundleTooLarge(Exception):
+    """The bundle is larger than this runner downloads (MAX_BUNDLE_BYTES): another runner may take it."""
 
 
 class Backoff:
@@ -84,6 +101,15 @@ def check_server(url, insecure_http=False):
         raise ValueError("refusing plain http to a remote server (the key would travel in clear); "
                          "use https or pass --insecure-http")
     return urllib.parse.urlunsplit((u.scheme, u.netloc, u.path.rstrip("/"), "", ""))
+
+
+def _reason(text):
+    """The `reason` of a problem document ("over" / "requeued" on a 410), or None."""
+    try:
+        doc = json.loads(text)
+    except ValueError:
+        return None
+    return doc.get("reason") if isinstance(doc, dict) else None
 
 
 def _retry_after(headers):
@@ -120,9 +146,13 @@ class Client:
         if not key or not key.startswith("bwr_"):
             raise ValueError("BWR_KEY must be set to a runner key (bwr_...)")
         self.server, self.key, self.gzip_upload = server, key, gzip_upload
+        # This process's claim token, sent with every call: a second process with the same key (or this one after a
+        # restart took its job over) is refused on the job's calls instead of training it twice.
+        self.claim_token = uuid.uuid4().hex
 
     def _request(self, method, path, body=None, headers=None, timeout=DEFAULT_TIMEOUT_S):
-        h = {"Authorization": f"Bearer {self.key}", "User-Agent": f"blocwerk-runner/{__version__}"}
+        h = {"Authorization": f"Bearer {self.key}", "User-Agent": f"blocwerk-runner/{__version__}",
+             "X-Blocwerk-Claim": self.claim_token}
         h.update(headers or {})
         req = urllib.request.Request(self.server + path, data=body, headers=h, method=method)
         try:
@@ -140,7 +170,7 @@ class Client:
         if code in (401, 403):
             raise Unauthorized(text[:200] or "unauthorized")
         if code in (404, 410):
-            raise Gone(f"{code}: {text[:200]}")
+            raise Gone(f"{code}: {text[:200]}", over=code == 410 and _reason(text) == "over")
         if code in (408, 409, 429) or code >= 500:
             raise Transient(f"HTTP {code}: {text[:200]}", _retry_after(headers) or (10 if code == 409 else None))
         raise Rejected(code, text[:500])
@@ -155,30 +185,43 @@ class Client:
         return self._json("POST", "/api/runners/hello", caps)[1] or {}
 
     def claim(self, max_quality):
-        """The claimed job dict, or None (204: nothing to do)."""
-        status, doc = self._json("POST", "/api/runners/claim", {"maxQuality": max_quality}, CLAIM_TIMEOUT_S)
+        """The claimed job dict, or None (204: nothing to do). Its "reattached": the server handed back the job this
+        runner still held (it restarted)."""
+        request = {"maxQuality": max_quality, "maxBundleBytes": MAX_BUNDLE_BYTES}
+        status, doc = self._json("POST", "/api/runners/claim", request, CLAIM_TIMEOUT_S)
         return doc if status == 200 and doc else None
 
     def progress(self, job_id, doc):
         return self._json("POST", f"/api/runners/jobs/{job_id}/progress", doc)[1] or {}
 
-    def fail(self, job_id, reason, retryable, shutdown=False):
-        self._json("POST", f"/api/runners/jobs/{job_id}/fail",
-                   {"reason": str(reason)[:1000], "retryable": bool(retryable), "shutdown": bool(shutdown)})
+    def fail(self, job_id, reason, retryable, shutdown=False, checkpoint_step=None, unreachable=False):
+        """Hands the job back. checkpoint_step (with a shutdown): the newest checkpoint kept for it, so the server
+        can tell a shutdown that kept progress (free) from one that did not. unreachable: given up because the
+        server or the network stayed away (not a training failure: it costs no attempt)."""
+        doc = {"reason": str(reason)[:1000], "retryable": bool(retryable), "shutdown": bool(shutdown)}
+        if checkpoint_step is not None:
+            doc["checkpointStep"] = int(checkpoint_step)
+        if unreachable:
+            doc["unreachable"] = True
+        self._json("POST", f"/api/runners/jobs/{job_id}/fail", doc)
 
-    def download_bundle(self, job_id, dest, expected_bytes=None, expected_sha=None, max_bytes=8 << 30, stop=None):
+    def download_bundle(self, job_id, dest, expected_bytes=None, expected_sha=None, max_bytes=MAX_BUNDLE_BYTES,
+                        stop=None):
         """Streams the bundle to `dest`, resuming a partial file with a Range request; checks the size and
-        sha256 at the end (a mismatch deletes the file). Returns the byte count."""
+        sha256 at the end (BundleCorrupt; a checksum mismatch deletes the file). Returns the byte count."""
+        if expected_bytes is not None and int(expected_bytes) > max_bytes:
+            raise BundleTooLarge(f"the bundle ({int(expected_bytes) / 2**30:.1f} GB) is larger than this runner "
+                                 f"downloads ({max_bytes / 2**30:.1f} GB)")
         have = os.path.getsize(dest) if os.path.exists(dest) else 0
         if expected_bytes is not None and have > int(expected_bytes):
             have = 0
         if expected_bytes is None or have < int(expected_bytes):
             have = self._fetch(job_id, dest, have, max_bytes, stop)
         if expected_bytes is not None and have != int(expected_bytes):
-            raise Transient(f"bundle truncated ({have} of {expected_bytes} bytes)")
+            raise BundleCorrupt(f"bundle truncated ({have} of {expected_bytes} bytes)")
         if expected_sha and _sha256(dest) != str(expected_sha).lower():
             os.remove(dest)
-            raise Transient("bundle checksum mismatch")
+            raise BundleCorrupt("bundle checksum mismatch")
         return have
 
     def _fetch(self, job_id, dest, have, max_bytes, stop):
@@ -202,7 +245,8 @@ class Client:
                             raise Stopped("download stopped")
                         have += len(chunk)
                         if have > max_bytes:
-                            raise Rejected(413, "bundle larger than the runner accepts")
+                            raise BundleTooLarge(f"the bundle is larger than this runner downloads "
+                                                 f"({max_bytes / 2**30:.1f} GB)")
                         fh.write(chunk)
                 except NETWORK_ERRORS as e:
                     raise Transient(f"bundle download interrupted at {have} bytes: {e}") from e

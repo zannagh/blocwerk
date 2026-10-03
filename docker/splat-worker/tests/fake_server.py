@@ -20,6 +20,7 @@ class FakeServer:
         self.errors = {"hello": [], "claim": [], "bundle": [], "progress": [], "result": [], "fail": [], "preview": []}
         self.drop_bundle_after = None  # bytes: the first download breaks off there (resume test)
         self.gone_on_stage = None  # progress with this stage answers 410
+        self.gone_reason = None  # the 410's "reason" ("over" / "requeued"), None: none (an older server)
         self.on_progress = None  # callable(doc), e.g. to signal the runner mid-training
         self.lock = threading.Lock()
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), self._handler())
@@ -87,7 +88,7 @@ class FakeServer:
         if self.on_progress:
             self.on_progress(doc)
         if self.gone_on_stage and doc.get("stage") == self.gone_on_stage:
-            return 410, {"title": "Gone"}, {}
+            return 410, {"title": "Gone", **({"reason": self.gone_reason} if self.gone_reason else {})}, {}
         return 200, {"cancel": False, "leaseSeconds": 300}, {}
 
     def _result(self, _h, body, headers):

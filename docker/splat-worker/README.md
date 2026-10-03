@@ -543,7 +543,12 @@ A **3D runner** trains the photo-real view on a GPU somewhere else, pulling work
    out-of-memory retry,
    or Brush fitted to memory; `trainers.select()` / `job_profile()`), progress heartbeats (the lease), and a
    slim `.ply` upload, gzip-compressed. SIGTERM kills the trainer and hands the job back
-   (`fail` with `shutdown: true`, no attempt used); 404 / 410 drop the job; 401 exits with code 3.
+   (`fail` with `shutdown: true` and the newest checkpoint's step, no attempt used); 404 / 410 drop the
+   job (a 410 with `reason: "over"` drops its checkpoints too); a job given up on (the server out of reach
+   too long) is reported as `unreachable` (no training attempt used), a bundle that stays damaged after 3
+   downloads as a retryable failure of this runner; 401 exits with code 3. A runner restarted mid-job gets
+   the same job back on its next claim. Every call carries the process's claim token (`X-Blocwerk-Claim`),
+   so a second process with the same key cannot train the same job.
 3. `splat-finish` (this worker): the runner's scene + `prepared.json` through the all-in-one job's own
    `frame_and_crop` and `export` (`finish.py`): alignment + refinement, the wall-zone cut when the runner
    trained with the zones, the clean-up over every camera, `wall.raw.spz`. Same files as `splat`

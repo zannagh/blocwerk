@@ -15,7 +15,8 @@ public sealed partial class GpuJobQueue
 {
     /// <summary>
     /// Requeues (or fails) every job whose lease ran out, cancels jobs that waited longer than
-    /// <see cref="GpuRunnerOptions.QueuedLifetime"/>, and refreshes the queued jobs' text. Returns how many leases expired.
+    /// <see cref="GpuRunnerOptions.QueuedLifetime"/>, hands pending previews to the preview worker again now and then,
+    /// and refreshes the queued jobs' text. Returns how many leases expired.
     /// </summary>
     public async Task<int> SweepAsync(CancellationToken ct)
     {
@@ -31,6 +32,7 @@ public sealed partial class GpuJobQueue
 
         await ExpireQueuedAsync(db, now, ct);
         await RetryUnfinishedAsync(db, now, ct);
+        await RetryPendingPreviewsAsync(now, ct);
         await RefreshWaitingAsync(db, ct);
         return expired.Count;
     }
@@ -44,12 +46,12 @@ public sealed partial class GpuJobQueue
 
     private async Task ExpireLeaseAsync(BlocwerkDbContext db, GpuJob job, DateTimeOffset now, CancellationToken ct)
     {
-        if (job.ClaimedAt is { } claimed && claimed + options.MaxJobDuration <= now)
+        var uploading = job.Stage?.StartsWith(UploadingStage, StringComparison.Ordinal) == true;
+        if (job.ClaimedAt is { } claimed && Deadline(claimed, uploading) <= now)
         {
             // Heartbeats alone never keep a claim past the wall-clock cap; that costs a training attempt.
-            var hours = options.MaxJobDuration.TotalHours.ToString("0.#", CultureInfo.InvariantCulture);
-            logger.LogWarning("GPU job {JobId}: runner {RunnerId} held it longer than {Hours} h", job.Id, job.ClaimedByRunnerId, hours);
-            await ReleaseAsync(db, job, ReleaseKind.Failure, $"the training took longer than {hours} h", ct);
+            logger.LogWarning("GPU job {JobId}: runner {RunnerId} held it past the cap: {Reason}", job.Id, job.ClaimedByRunnerId, TooLongReason());
+            await ReleaseAsync(db, job, ReleaseKind.Failure, TooLongReason(), ct);
             return;
         }
 
@@ -76,7 +78,8 @@ public sealed partial class GpuJobQueue
                 .ExecuteUpdateAsync(
                     s => s.SetProperty(j => j.Status, GpuJobStatus.Cancelled)
                         .SetProperty(j => j.Error, reason)
-                        .SetProperty(j => j.CompletedAt, now),
+                        .SetProperty(j => j.CompletedAt, now)
+                        .SetProperty(j => j.PreviewPath, (string?)null),
                     ct);
             if (cancelled == 0)
             {
@@ -85,7 +88,9 @@ public sealed partial class GpuJobQueue
 
             logger.LogInformation("GPU job {JobId} of capture {CaptureId} expired: {Reason}", job.Id, job.CaptureId, reason);
             await MarkCaptureWithoutSplatAsync(db, job, reason, ct);
-            DeleteFiles(job);
+
+            // An installed preview stays the job's leftover: it may still be the capture's view, to finish again.
+            DeleteAll(KeepOnlyInstalledPreview(job), job.Id);
         }
     }
 
