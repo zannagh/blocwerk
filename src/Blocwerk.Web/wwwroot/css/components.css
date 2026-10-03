@@ -829,3 +829,65 @@ img.wall-photo {
 
 .legend-dot { display: inline-flex; align-items: center; gap: 0.3rem; font-style: normal; }
 .legend-swatch { width: 0.7rem; height: 0.7rem; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
+
+/* ========== Wall editor: fit one screen on a desktop window ==========
+   Two defects lived here, both from budgeting the editor like the read-only photo view:
+
+   1. The close (X) button is `.wall-edit-fab`, absolutely positioned over the photo card's top-right
+      corner. It overhung the top-bar toolbar (and, with the rail, needed a magic 26px margin to
+      clear it). In edit mode it is now an ordinary flex row of its own above the editor, so
+      nothing can collide with it and the toolbar needs no reservation for it.
+   2. The photo's height cap subtracted a flat 140px for "chrome" and the page still reserved
+      --bottomnav-h for a tab bar that edit mode hides. The real chrome (X row, panel selector,
+      a 106px toolbar + option row in the top placement, the save/discard bar) is far taller, so the
+      Save / Discard bar landed below the fold and the page scrolled.
+
+   Fix: height-lock the column from the page down (min-height:0 on every flex link), give the
+   stage `container-type: size`, and cap the photo to the stage's OWN height (cqh) minus one fixed
+   save-bar slot. The photo then takes whatever the toolbar placement leaves, at any window size,
+   and the toolbar and save bar can never be pushed out. The slot is reserved even while empty so
+   the first edit does not resize the image. The phone tier (<= 720px) is untouched: it keeps its
+   fixed docked bar. */
+@media (min-width: 721px) {
+    /* The tab bar is hidden while the editor's toolbar is mounted (app.css), so stop reserving it. */
+    .app-shell:has(.wall-carousel-root.editing .bw-toolbar.docked-bottom) { --bottomnav-h: 0px; }
+
+    .wall-carousel-root.editing .wall-page { display: flex; flex-direction: column; }
+    .wall-carousel-root.editing .wall-main {
+        display: flex;
+        flex-direction: column;
+        /* The desktop tier sets --wall-main-align: start for the photo-plus-rail grid. */
+        align-items: stretch;
+        flex: 1 1 0;
+        min-height: 0;
+    }
+    .wall-carousel-root.editing .wall-detail-card,
+    .wall-carousel-root.editing .wall-photo-container,
+    .wall-carousel-root.editing .editor-shell,
+    .wall-carousel-root.editing .editor-stage {
+        flex: 1 1 0;
+        min-height: 0;
+    }
+    .wall-carousel-root.editing .wall-photo-container { margin-bottom: 0; }
+    .wall-carousel-root.editing .editor-stage { container-type: size; }
+
+    /* --avail-h is what `.wall-main .photo-viewport` (pages.css) caps both height and, through the
+       image aspect, width with — so redefining it is the whole change. 52px is the save bar slot. */
+    .wall-carousel-root.editing .wall-main .photo-viewport {
+        --avail-h: calc(100cqh - 52px);
+    }
+
+    /* The close button: in flow, right-aligned, its own row. */
+    .wall-carousel-root.editing .btn-icon.wall-edit-fab {
+        position: static;
+        flex: 0 0 auto;
+        align-self: flex-end;
+        width: 34px;
+        height: 34px;
+        margin: 0 0 6px;
+    }
+
+    /* Nothing hangs over the toolbar any more, so neither reservation is needed. */
+    .wall-carousel-root.editing .wall-photo-container .bw-toolbar .editor-toolbar { padding-right: 12px; }
+    .wall-carousel-root.editing .editor-shell.with-sidebar > .bw-toolbar { margin-top: 0; }
+}
