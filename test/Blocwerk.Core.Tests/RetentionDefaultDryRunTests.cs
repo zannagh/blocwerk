@@ -29,6 +29,7 @@ public class RetentionDefaultDryRunTests
         var previous = (await glyphs.ImportGeometryAsync(h.WallId, GlyphGeometryJson.Build(), null)).Model!.Id;
         await glyphs.ImportGeometryAsync(h.WallId, GlyphGeometryJson.Build(), null);
         var modelFiles = await ModelFilesTestData.AddAsync(h, s.Files, old);
+        await ModelFilesTestData.AddAsync(h, s.Files, previous); // the revert target, kept
         var (jobId, runnerFiles) = await AddAgedRunnerResultAsync(h, s.Files);
         await using (var db = h.CreateContext())
         {

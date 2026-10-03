@@ -72,9 +72,11 @@ public class SupersededModelRetentionTests
     {
         using var h = new WallTestHarness();
         using var s = await ScenarioAsync(h);
-        var (a, _, c) = await ImportThreeAsync(h);
+        var (a, b, c) = await ImportThreeAsync(h);
         var aFiles = await ModelFilesTestData.AddAsync(h, s.Files, a);
+        await ModelFilesTestData.AddAsync(h, s.Files, b);
         await RetireAsync(h, a, days: 60);
+        await RetireAsync(h, b, days: 30);
         await using (var db = h.CreateContext())
         {
             // A correction shares its parent's texture files: here the active model points at one of a's.

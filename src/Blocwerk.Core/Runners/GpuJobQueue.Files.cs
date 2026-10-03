@@ -49,6 +49,7 @@ public sealed partial class GpuJobQueue
             job.ResultPath = null;
             job.PreviewPath = null;
             job.InstalledPreviewPath = null;
+            job.LeftoverDroppedAt ??= DateTimeOffset.UtcNow;
         }
 
         return paths;

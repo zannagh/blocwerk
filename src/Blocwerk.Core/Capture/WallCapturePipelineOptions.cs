@@ -115,7 +115,8 @@ public sealed class WallCapturePipelineOptions
     public TimeSpan ImportStagingLifetime { get; init; } = TimeSpan.FromDays(3);
 
     /// <summary>
-    /// The retention of retired models, runner leftovers and abandoned imports only logs what it would free. On by
+    /// The retention of retired models, runner leftovers and abandoned imports, and the deleting of unreferenced
+    /// photo-real scenes (<c>.spz</c> orphans), only log what they would free. On by
     /// default: deleting is opt-in, after a look at the "would free" log. Setting <c>Blocwerk:Capture:RetentionDryRun</c> /
     /// <c>CAPTURE__RETENTIONDRYRUN</c> (<c>false</c> turns deleting on; anything else keeps the dry run); default true.
     /// </summary>

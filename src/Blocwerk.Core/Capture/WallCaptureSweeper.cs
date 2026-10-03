@@ -22,7 +22,8 @@ namespace Blocwerk.Core.Capture;
 /// <item>3D runners' trained results once the view is long installed (<see cref="Runners.GpuJobQueue.DropAgedResultsAsync"/>);</item>
 /// <item>abandoned capture imports (<see cref="ImportStagingRetention"/>).</item>
 /// </list>
-/// The last three only log what they would free while <see cref="WallCapturePipelineOptions.RetentionDryRun"/> is set.
+/// The last three, and the <c>.spz</c> orphans, only log what they would free while
+/// <see cref="WallCapturePipelineOptions.RetentionDryRun"/> is set.
 /// A capture's walk-along video and its extracted frames (<see cref="CaptureVideoFiles"/>) follow its
 /// photos: removed with a draft, and with the photos once they expire.
 /// Only the store's known kinds (images, videos, texture source maps, runner files, sparse clouds, photo-real
@@ -192,9 +193,22 @@ public sealed class WallCaptureSweeper(
 
         var referenced = await ReferencedAsync(ct);
         var orphans = candidates.Where(f => !referenced.Contains(f.Name)).Select(f => f.Name).ToList();
+
+        // Photo-real scenes joined the orphan kinds with the retention rules, so they share its dry run on a first deploy.
+        var scenes = orphans.Where(IsScene).ToList();
+        if (options.RetentionDryRun && scenes.Count > 0)
+        {
+            logger.LogInformation(
+                "Capture retention (dry run) would delete {Count} .spz orphan(s) ({Bytes})",
+                scenes.Count, RetentionFiles.Format(RetentionFiles.SizeOf(files, scenes)));
+            orphans.RemoveAll(IsScene);
+        }
+
         DeleteFiles(orphans);
         return removed + orphans.Count;
     }
+
+    private static bool IsScene(string name) => string.Equals(Path.GetExtension(name), ".spz", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Every stored name a row still points at.</summary>
     private async Task<HashSet<string>> ReferencedAsync(CancellationToken ct)

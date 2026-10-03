@@ -1,4 +1,5 @@
 """Start-up sweep of WORK_DIR: job directories of a previous process go, caches and a live neighbour's stay."""
+import errno
 import os
 
 import pytest
@@ -69,3 +70,32 @@ def test_creates_a_missing_work_dir(tmp_path):
         assert target.is_dir()
     finally:
         handle.close()
+
+
+def test_a_file_system_without_locks_skips_the_sweep_and_starts(tmp_path, monkeypatch):
+    _job(tmp_path, JOB_A)
+
+    def refuse(*_args):
+        raise OSError(errno.ENOLCK, "No locks available")
+
+    monkeypatch.setattr(workdir.fcntl, "flock", refuse)
+    assert workdir.claim(str(tmp_path)) is None
+    assert (tmp_path / JOB_A).exists()
+
+
+def test_a_network_work_dir_is_never_swept(tmp_path, monkeypatch):
+    _job(tmp_path, JOB_A)
+    monkeypatch.setattr(workdir, "mount_type", lambda _path: "nfs4")
+    assert workdir.claim(str(tmp_path)) is None
+    assert (tmp_path / JOB_A).exists()
+
+
+def test_mount_type_takes_the_longest_mount_point(tmp_path):
+    mounts = tmp_path / "mounts"
+    work = tmp_path / "share" / "jobs"
+    work.mkdir(parents=True)
+    share = os.path.realpath(tmp_path / "share")
+    mounts.write_text(f"/dev/sda1 / ext4 rw 0 0\nserver:/x {share} nfs4 rw 0 0\n")
+    assert workdir.mount_type(str(work), str(mounts)) == "nfs4"
+    assert workdir.mount_type("/", str(mounts)) == "ext4"
+    assert workdir.mount_type("/", str(tmp_path / "missing")) is None

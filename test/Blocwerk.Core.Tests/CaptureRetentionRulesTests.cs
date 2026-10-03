@@ -26,16 +26,21 @@ public class CaptureRetentionRulesTests
         var recent = await InstalledJobAsync(f, daysAgo: 5);
         var options = new WallCapturePipelineOptions { RetentionDryRun = false };
 
+        var expected = new FileInfo(f.Files.ResolvePhysicalPath(old.ResultPath!)!).Length
+                       + new FileInfo(f.Files.ResolvePhysicalPath(old.PreparedPath)!).Length;
+
         var outcome = await DropAsync(f, options);
 
-        Assert.Equal(1, outcome.Count);
-        Assert.True(outcome.Bytes > 0);
+        Assert.Equal(new RetentionOutcome(1, expected), outcome); // what was really deleted
         Assert.False(Exists(f.Files, old.ResultPath!));
         Assert.False(Exists(f.Files, old.PreparedPath));
         Assert.True(Exists(f.Files, recent.ResultPath!));
         await using (var db = h.CreateContext())
         {
-            Assert.Null((await db.GpuJobs.SingleAsync(j => j.Id == old.Id)).ResultPath);
+            var dropped = await db.GpuJobs.SingleAsync(j => j.Id == old.Id);
+            Assert.Null(dropped.ResultPath);
+            Assert.NotNull(dropped.LeftoverDroppedAt); // PreparedPath (required) names a file that is gone
+            Assert.Null((await db.GpuJobs.SingleAsync(j => j.Id == recent.Id)).LeftoverDroppedAt);
             Assert.NotNull((await db.GpuJobs.SingleAsync(j => j.Id == recent.Id)).ResultPath);
 
             // No longer offered for a re-finish: its leftover is gone.
@@ -61,6 +66,26 @@ public class CaptureRetentionRulesTests
         }
 
         Assert.Equal(0, (await DropAsync(f, new WallCapturePipelineOptions { RetentionDryRun = false })).Count);
+        Assert.True(Exists(f.Files, job.ResultPath!));
+        Assert.True(Exists(f.Files, job.PreparedPath));
+    }
+
+    [Theory]
+    [InlineData(GpuJobStatus.Failed)]
+    [InlineData(GpuJobStatus.Cancelled)]
+    public async Task TrainedResult_ThatWasNeverInstalled_IsNeverDropped(GpuJobStatus status)
+    {
+        using var h = new WallTestHarness();
+        using var f = await RunnerFixture.CreateAsync(h);
+        var job = await InstalledJobAsync(f, daysAgo: 400);
+        await using (var db = h.CreateContext())
+        {
+            // Finishing it again is the only way to that view: it stays until a newer job is installed or the photos go.
+            await db.GpuJobs.ExecuteUpdateAsync(s => s.SetProperty(j => j.Status, status).SetProperty(j => j.InstalledAt, (DateTimeOffset?)null));
+        }
+
+        Assert.Equal(RetentionOutcome.None, await DropAsync(f, new WallCapturePipelineOptions { RetentionDryRun = false }));
+        Assert.Equal(RetentionOutcome.None, await DropAsync(f, new WallCapturePipelineOptions()));
         Assert.True(Exists(f.Files, job.ResultPath!));
         Assert.True(Exists(f.Files, job.PreparedPath));
     }
@@ -107,6 +132,25 @@ public class CaptureRetentionRulesTests
         Assert.Equal(1, result.OrphanFiles);
         Assert.False(Exists(s.Files, orphan));
         Assert.All(kept, name => Assert.True(Exists(s.Files, name)));
+    }
+
+    [Fact]
+    public async Task InADryRun_SceneOrphansStay_OtherOrphansStillGo()
+    {
+        using var h = new WallTestHarness();
+        using var s = await SupersededModelRetentionTests.ScenarioAsync(h, dryRun: true);
+        var scene = await s.Files.SaveAsync(new byte[100], ".spz", CancellationToken.None);
+        var image = await s.Files.SaveAsync(CaptureScenario.TinyJpeg(3), ".jpg", CancellationToken.None);
+        foreach (var name in new[] { scene, image })
+        {
+            File.SetLastWriteTimeUtc(s.Files.ResolvePhysicalPath(name)!, DateTime.UtcNow.AddHours(-3));
+        }
+
+        var result = await SupersededModelRetentionTests.Sweeper(s).SweepAsync(CancellationToken.None);
+
+        Assert.Equal(1, result.OrphanFiles);
+        Assert.True(Exists(s.Files, scene));
+        Assert.False(Exists(s.Files, image));
     }
 
     [Theory]
