@@ -30,6 +30,12 @@ There are ten walls: a flat wall, a triangle side wall, the same triangle with a
 overlap, a 7° shallow fold, an arete, an overhang with a lip, a volume built from facets, a far facet behind the wall,
 and an SfM model without markers.
 
+Blocked queries are run both with the exact shape (`insetMm` 0, textures) and with the coverage report's 60 mm inset.
+One overhang query checks the stricter near-target rule (rule 4): a hold 80 mm proud of the kickboard at the inside
+fold, 50 mm below the overhang's plane, seen steeply from above. The line of sight crosses the overhang 75 mm from the
+hold, so it is blocked even with the 60 mm inset. The old C# rule ignored any crossing within 80 mm along the ray, so it
+called this hold seen.
+
 CI runs both runners:
 
 - `main.yml` runs `dotnet test`. The test project links the JSON files into `GeometryGolden/`.
@@ -64,15 +70,21 @@ The seam between facet g and facet h is the line in g's plane where it meets h's
 
 ### 3. Voting markers
 
-Only markers whose centre lies inside the facet's `extentMm`, grown by `MarkerVoteMarginMm` = 50, take part in two
-decisions:
+All of a facet's own markers take part in two decisions, except the ones the solver explicitly left out of its extent:
 
 - the seam-side test (rule 1);
 - the marker centroid used by the 3D view's `TriangleKeptSide` and `FacetSeamTrim`.
 
-A marker that the solver left out of the extent is a stray stuck on a coplanar neighbour (`extents.py`; The Attic's
-marker 39). It stays a member of its facet for the solve, but it says nothing about the facet's shape. A facet without
-an extent lets all of its markers vote.
+A marker left out of the extent is a stray stuck on a coplanar neighbour (`extents.py`; The Attic's marker 39). It stays
+a member of its facet for the solve, but it says nothing about the facet's shape. The solver marks it with
+`"extentExcluded": true` on the marker. Documents older than that flag list it in `quality.facetDecisions` (kind
+`extentExcluded`), and both languages read either source (`GeometryKernel.ExtentExcluded`, `kernel.extent_excluded`).
+There is no geometric guess: a marker that the solver did not exclude always votes.
+
+### 3b. Degenerate extents
+
+An extent without area (or none at all) counts as no extent on both sides. `GeometryKernel` takes `PlaneRectMm?` with
+`Area > 0`; `kernel.usable_extent` does the same check. The outline's side test then skips no edges.
 
 ### 4. Line of sight
 
@@ -93,9 +105,15 @@ A view counts only from the front of the surface: `cos(ray, outward normal) > Mi
 ### 6. Shallow folds
 
 When two facets' normals are between `mergeDeg` (5°) and the seam threshold (about 9.8°) apart, rule 2 gives them no
-seam. If their extents overlap in-plane, the solver clips both at the midline between their marker clusters, as it
-already does for coplanar facets (`overlaps.py`). It does so only when the planes really meet there: both ends of the
-cut must lie within `mergeMm` of the other plane. Otherwise the planes form a step, and nothing is clipped.
+seam. If their extents overlap in-plane, the solver clips both at their real fold (`overlaps.py`): the line where the
+two planes meet, projected into the first facet, taken at both ends of the overlap.
+
+- **Where the fold must be.** It must lie between the two marker clusters, within `mergeMm` of each cluster's facing
+  edge. The ends of the midline between the clusters must also lie within `mergeMm` of the other plane (the
+  marker-offset check). Otherwise the planes form a step or meet elsewhere, and nothing is clipped.
+- **Bound.** An extent is a rectangle, so a fold that runs slanted to the cut axis is followed conservatively: each facet
+  stops at the fold's nearer end. That leaves a thin wedge that neither facet covers. The wedge is at most the length
+  of the overlap times the slant, and the fold may be at most 60° off the axis perpendicular to the cut.
 
 Together, the coplanar clip, the shallow-fold clip and the seam cut leave no gap in angle between them.
 
@@ -110,6 +128,16 @@ the fold clip.
   extent's sides (`OutlineEdgeTolMm` = 1).
 - **3D view and ray casts.** Facets that have no plan-triangle outline use `outlineMm` as their outline
   (`Wall3DFacetOutlines.Apply`, `FacetShapes`).
+- **Moving with the frame.** Every C# path that rewrites a facet's frame or extent goes through
+  `FacetPlaneGeometry.Rewrite`, so the outline never stays behind in the old frame. The paths are:
+  - scale and vertical corrections (`WallGeometryModelTransformer`);
+  - the anchored registration's rebase (`WallFrameRegistrationWriter.RebaseClaimedFrames`);
+  - an extent grown over carried markers (`CoverCarried`).
+
+  `Rewrite` maps the fold clips into the new frame and cuts the new extent rectangle with them, so the outline's other
+  sides are always the new extent's sides. An outline that no fold cuts any more is dropped.
+  - **Paths that don't need it.** Dropping a surface removes the whole facet. A replay import copies documents
+    verbatim. A registration's rigid world transform leaves plane coordinates unchanged.
 
 ## Consumer policies (deliberately not shared)
 
@@ -163,8 +191,8 @@ changed.
   re-solved.
 - **F10 (planes 5–10° apart are neither clipped nor cut).** Fixed by rule 6 in the solver. It applies to marker models
   solved after this change. On existing models, such pairs keep their overlap until a re-solve.
-- **F11 (stray markers decide seam sides).** Fixed by rule 3 in both languages. It applies to existing documents
-  immediately.
+- **F11 (stray markers decide seam sides).** Fixed by rule 3 in both languages. It applies straight away to existing
+  documents that record the exclusion in `quality.facetDecisions`, and to new solves through the marker flag.
 
 ## What users see
 
@@ -173,12 +201,21 @@ changed.
 - **Occluder regions.** Every facet's seam cuts are identical before and after. In this model, marker 39 already sits
   on the main wall (the solver's nearest-host fix), so every marker votes.
 - **No shallow folds.** No facet pair is 5–9.8° apart, so a re-solve clips nothing new.
-- **Coverage.** A simulation with 29 synthetic cameras over 814 cells, using the old and new C# blocking and facing
-  rules, gave these results:
-  - No cell changed status.
-  - About 20 % of cells gained or lost one or two counted views. These are views at 87–88° that no longer count, and
-    grazing lines of sight past the 13 mm-off "leftover bit" that are no longer counted as blocked.
-  - Coverage percentages can move only where a cell sits at a threshold.
+- **Coverage.** I ran the real `CaptureCoverageAnalyzer` on the base commit and on this branch, and compared the
+  cells:
+  - Inputs: the three Attic capture-1 models with posed photos in the test fixtures (`capture1-rev1`, `capture1-rev2`,
+    `Resolves/attic-14`; 11–14 cameras each). The five main-wall volumes from `Volumes/attic-main-wall-volumes.json`
+    were placed on facet 0.
+  - Regions: each model was run twice, once with plain extents and once with hold-widened regions (every extent
+    + 150 mm, standing in for placed holds).
+  - Result: of 5394 rated cells, **0 changed status**. The main wall's "good" share stays 91.3 / 91.3 / 88.9 % (plain)
+    and 84.9 / 84.9 / 82.8 % (hold-widened).
+  - Caveats: the active model has no stored cameras, and the volumes fixture comes from a later model version, so this
+    is the closest real check the repository allows.
+
+  The changed rules (facing at 87–88°, 30 mm off-plane instead of 80 mm along the ray, camera on the plane) only
+  matter for grazing or very steep lines of sight near folds. Coverage % can move only where a cell sits right at a
+  threshold.
 - **Textures.**
   - Photo choice is unchanged. Python's rules were already the unified ones, apart from stray voting and SfM outlines.
   - Seam harmonisation leaves out pixels beyond a facet's seam cut. Colour corrections within about 100 mm of folds
@@ -191,5 +228,5 @@ changed.
   hides walls in the textures or in coverage, and its cells are no longer rated.
 - **SfM walls with triangle panels, once re-solved.** The same effect. Their 3D outline also becomes the clipped
   polygon.
-- **Marker walls with folds of 5–9.8°, once re-solved.** The overlap is clipped at the midline. There is no more
+- **Marker walls with folds of 5–9.8°, once re-solved.** The overlap is clipped at the fold line. There is no more
   z-fighting, and coverage no longer counts the overlap twice. The clip is recorded in `quality.checks.overlapClipped`.
