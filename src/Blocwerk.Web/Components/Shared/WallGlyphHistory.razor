@@ -1,0 +1,54 @@
+@* Every geometry the wall ever had, newest first. Exactly one is active; any other can be made
+   active again (the service swaps them atomically and re-applies its measured angles). *@
+
+<details class="segment-settings glyph-history">
+    <summary>
+        Geometry history
+        <span class="segment-settings-count">@History.Count</span>
+    </summary>
+    <div class="leaderboard-scroll">
+        <table class="leaderboard-table">
+            <thead>
+                <tr>
+                    <th scope="col">Created</th>
+                    <th scope="col" class="num">Error</th>
+                    <th scope="col">Notes</th>
+                    <th scope="col" aria-label="Status"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var entry in History)
+                {
+                    <tr @key="entry.Id">
+                        <td><LocalTime Value="@entry.CreatedAt" Format="LocalTimeFormat.DateDmy" /></td>
+                        <td class="num">@GlyphFormat.Pixels(entry.ReprojRmsPx)</td>
+                        <td>@(entry.Notes ?? "—")</td>
+                        <td class="glyph-history-action">
+                            @if (entry.IsActive)
+                            {
+                                <span class="glyph-active-badge">Active</span>
+                            }
+                            else
+                            {
+                                <button class="btn-link" disabled="@Disabled" @onclick="() => OnActivate.InvokeAsync(entry.Id)">Activate</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</details>
+
+@code {
+    /// <summary>The wall's models, newest first.</summary>
+    [Parameter, EditorRequired]
+    public IReadOnlyList<WallGeometryHistoryEntry> History { get; set; } = [];
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    /// <summary>Raised with the id of the model to make active.</summary>
+    [Parameter]
+    public EventCallback<Guid> OnActivate { get; set; }
+}

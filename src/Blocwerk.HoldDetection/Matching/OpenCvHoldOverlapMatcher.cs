@@ -23,16 +23,21 @@ public sealed class OpenCvHoldOverlapMatcher : IHoldOverlapMatcher
         byte[] rightImage,
         IReadOnlyList<MatcherHold> rightHolds,
         HoldOverlapDirection direction,
-        ILogger? diag = null)
+        ILogger? diag = null,
+        HoldOverlapSeed? seed = null)
     {
-        using var imgL = Cv2.ImDecode(leftImage, ImreadModes.Color);
-        using var imgR = Cv2.ImDecode(rightImage, ImreadModes.Color);
+        // A seed lives in the RAW pixel frame (like hold X/Y); without one the decode is unchanged.
+        using var imgL = SeededCoarse.Decode(leftImage, seed is not null);
+        using var imgR = SeededCoarse.Decode(rightImage, seed is not null);
         if (imgL.Empty() || imgR.Empty())
         {
             throw new ArgumentException("Could not decode one of the wall images.");
         }
 
-        var coarse = HomographyHelper.Coarse(imgL, imgR);
+        bool seedUsed = false;
+        var coarse = seed is null
+            ? HomographyHelper.Coarse(imgL, imgR, () => WarpFieldBuilder.CountTextureAnchors(imgL, imgR))
+            : SeededCoarse.Resolve(imgL, imgR, seed, ToPixels(leftHolds, imgL.Width, imgL.Height), diag, out seedUsed);
         if (coarse.H is null)
         {
             // Log the homography counts before the catastrophic run propagates, so the
@@ -40,7 +45,9 @@ public sealed class OpenCvHoldOverlapMatcher : IHoldOverlapMatcher
             diag?.LogInformation(
                 "[Matcher] homography ka={KaKeypoints} kb={KbKeypoints} ratio={RatioMatches} inliers={Inliers} | coarse homography FAILED",
                 coarse.KaKeypoints, coarse.KbKeypoints, coarse.RatioMatches, coarse.Inliers);
-            throw new InvalidOperationException("Coarse homography failed (too few texture matches).");
+            throw new InvalidOperationException(
+                $"Coarse homography failed (too few texture matches: keypoints {coarse.KaKeypoints}/{coarse.KbKeypoints}, "
+                + $"ratio matches {coarse.RatioMatches}, RANSAC inliers {coarse.Inliers}, need {HomographyHelper.MinInliers}).");
         }
 
         double[,] h = coarse.H;
@@ -71,7 +78,8 @@ public sealed class OpenCvHoldOverlapMatcher : IHoldOverlapMatcher
         var descRb = Descriptors(imgR, rightHolds, ri, Math.Max(wr, hr));
 
         // Local warp fields L→R (anchors) and R→L (same anchors reversed) for the mutual check.
-        var build = WarpFieldBuilder.Build(imgL, imgR, cLb, cRb, descLb, descRb);
+        var prior = seed is null ? null : WarpPrior.From(seed, seedUsed, leftHolds, rightHolds, wl, hl, wr, hr);
+        var build = WarpFieldBuilder.Build(imgL, imgR, cLb, cRb, descLb, descRb, prior: prior);
         var rfield = new LocalWarpField(build.AnchorsDst, build.AnchorsSrc);
 
         // Warp-carry: predict a new-image position for EVERY left hold (matched ones too), aligned
@@ -91,18 +99,31 @@ public sealed class OpenCvHoldOverlapMatcher : IHoldOverlapMatcher
         var nnR = predR.Select(p => MatchGeometry.KNearest(cRb, p, 2)).ToArray();
         var nnL = predL.Select(p => MatchGeometry.KNearest(cLb, p, 2)).ToArray();
 
-        var (proposals, diags) = ScoreAndAssign(
-            li, ri, descLb, descRb, qmap, predR, nnR, nnL, effL, effR,
-            out List<double> residuals, out int gatedOut, out int colourGated, out int mutualNn);
+        var radiusRb = ri.Select(j => rightHolds[j].SizeNorm * (double?)Math.Max(wr, hr)).ToList();
+        var stats = new MatchStats();
+        var (proposals, diags) = ScoreAndAssign(li, ri, cRb, radiusRb, descLb, descRb, qmap, nnR, nnL, effL, effR, stats);
         var usedL = new HashSet<int>(proposals.Select(p => p.LeftIdx));
         var usedR = new HashSet<int>(proposals.Select(p => p.RightIdx));
 
         ColorRescue(li, ri, cRb, descLb, descRb, qmap, predR, usedL, usedR, proposals, diags, effL, effR);
+        if (seed is { Anchors.Count: > 0 })
+        {
+            var anchorOutcome = AnchorReconciler.Apply(
+                seed.Anchors, leftHolds, rightHolds, build.Field, cL, cR, 2 * GatePx, proposals, diags, usedL, usedR, diag);
+            diag?.LogInformation(
+                "[Matcher] anchors={Anchors} agreed={Agreed} conflicts={Conflicts} added={Added} rejected={Rejected}",
+                seed.Anchors.Count, anchorOutcome.Agreed, anchorOutcome.Conflicts, anchorOutcome.Added, anchorOutcome.Rejected);
+        }
 
         // Raise-only neighbour-consistency pass: boost candidates whose disparity + colour/shape
         // agree with the confident anchors around them. Never lowers a confidence, never reaches 1.
         NeighbourConsistency.Apply(
             proposals, diags, leftHolds, rightHolds, cL, cR, Math.Max(wl, hl), Math.Max(wr, hr));
+
+        // Confidence must reflect independent evidence: a proposal whose neighbourhood has no measured anchor
+        // (texture or marker) rests only on the field's extrapolation and its own bootstrap, which a wrong field
+        // satisfies just as well. Such proposals stay, but at most at confirm-tier confidence.
+        int unsupported = TextureSupport.CapUnsupported(proposals, cL, build.MeasuredSrc, Math.Max(wl, hl));
 
         var outProposals = proposals
             .Select(p => new HoldOverlapProposal(
@@ -121,13 +142,13 @@ public sealed class OpenCvHoldOverlapMatcher : IHoldOverlapMatcher
                 "[Matcher] homography ka={KaKeypoints} kb={KbKeypoints} ratio={RatioMatches} inliers={Inliers} | "
                 + "band old={OldHolds} new={NewHolds} inbandL={InBandLeft} inbandR={InBandRight} | "
                 + "warp tex={TextureAnchors} boot={BootAnchors} | "
-                + "resid p50={ResidP50} p90={ResidP90} gatedOut={GatedOut} colourGated={ColourGated} | "
+                + "resid p50={ResidP50} p90={ResidP90} gatedOut={GatedOut} colourGated={ColourGated} offHold={OffHold} unsupported={Unsupported} | "
                 + "match proposals={Proposals} mutual={MutualNn} rescued={Rescued} unmatchedL={UnmatchedLeft} unmatchedR={UnmatchedRight}",
                 coarse.KaKeypoints, coarse.KbKeypoints, coarse.RatioMatches, coarse.Inliers,
                 leftHolds.Count, rightHolds.Count, li.Count, ri.Count,
                 build.TextureAnchors, build.BootAnchors,
-                Percentile(residuals, 0.50), Percentile(residuals, 0.90), gatedOut, colourGated,
-                proposals.Count, mutualNn, rescued, unmatchedL.Count, unmatchedR.Count);
+                Percentile(stats.Residuals, 0.50), Percentile(stats.Residuals, 0.90), stats.GatedOut, stats.ColourGated,
+                stats.OffHold, unsupported, proposals.Count, stats.MutualNn, rescued, unmatchedL.Count, unmatchedR.Count);
         }
 
         return new HoldOverlapResult(outProposals, unmatchedL, unmatchedR, warpedLeft, warpedShapes);
@@ -234,65 +255,75 @@ public sealed class OpenCvHoldOverlapMatcher : IHoldOverlapMatcher
     }
 
     private static (List<Proposal> Proposals, List<MatchDiag> Diags) ScoreAndAssign(
-        List<int> li, List<int> ri,
+        List<int> li, List<int> ri, List<Pt> cRb, List<double?> radiusRb,
         List<float[]?> descLb, List<float[]?> descRb, ColorQuantileMap qmap,
-        Pt[] predR, (int[] Idx, double[] Dist)[] nnR, (int[] Idx, double[] Dist)[] nnL,
-        double[]?[] effL, double[]?[] effR,
-        out List<double> residuals, out int gatedOut, out int colourGated, out int mutualNn)
+        (int[] Idx, double[] Dist)[] nnR, (int[] Idx, double[] Dist)[] nnL,
+        double[]?[] effL, double[]?[] effR, MatchStats stats)
     {
-        // Diagnostics accumulators: residuals of every candidate that cleared the gate, and the
-        // counts of candidates rejected by the residual gate and by the colour sanity-gate.
-        residuals = new List<double>();
-        gatedOut = 0;
-        colourGated = 0;
-
-        var cand = new List<(double Conf, int A, int B, double Resid, double Dcol, double App, bool Mutual)>();
-        for (int a = 0; a < predR.Length; a++)
+        var raw = new List<Candidate>();
+        for (int a = 0; a < nnR.Length; a++)
         {
             int b = nnR[a].Idx[0];
             double resid = nnR[a].Dist[0];
             if (resid >= GatePx)
             {
-                gatedOut++;
+                stats.GatedOut++;
                 continue;
             }
 
-            residuals.Add(resid);
+            stats.Residuals.Add(resid);
             double d2 = nnR[a].Dist.Length > 1 ? nnR[a].Dist[1] : resid;
             double margin = Math.Max(0.0, (d2 - resid) / (d2 + 1e-6));
             bool mutual = nnL[b].Idx[0] == a && nnL[b].Dist[0] < GatePx;
-
             int i = li[a], j = ri[b];
-            double appearance = WarpFieldBuilder.Ncc(descLb[a], descRb[b]);
             double dcol = LabMath.Distance(effL[i], effR[j], qmap);
 
-            // Colour sanity-gate (primary assignment only): a candidate whose old↔new quantile-mapped
-            // Lab colour differs too much is a mispair (e.g. an old marker on bare wood paired to a
-            // blue hold) — reject it so it is neither assigned nor allowed to steal the correct match.
-            // The rejected old hold falls through to warp-carry and the new hold stays available for
-            // its true old hold. Skipped when either colour is missing (never reject on unknown).
-            // The colour-rescue pass deliberately re-uses colour to ADD matches and is not gated here.
+            // Colour sanity-gate (primary assignment only): a candidate whose old↔new quantile-mapped Lab colour
+            // differs too much is a mispair — reject it so it can neither be assigned nor steal the correct match.
+            // Skipped when either colour is missing. The colour-rescue pass re-uses colour to ADD matches.
             if (ColorGate.Rejects(effL[i], effR[j], dcol))
             {
-                colourGated++;
+                stats.ColourGated++;
                 continue;
             }
 
-            double geo = Math.Exp(-Math.Pow(resid / GeoScale, 2));
-            double col = Math.Max(0.0, 1 - (dcol / 45.0));
-            double app = Math.Max(0.0, appearance);
-            double conf = (0.30 * geo) + (0.27 * margin) + (0.18 * (mutual ? 1.0 : 0.0))
-                          + (0.15 * app) + (0.10 * col);
-            cand.Add((conf, a, b, resid, dcol, appearance, mutual));
+            raw.Add(new Candidate(a, b, resid, margin, mutual, WarpFieldBuilder.Ncc(descLb[a], descRb[b]), dcol));
         }
 
+        var cand = new List<(double Conf, Candidate C)>();
+        double[] spread = MatchGate.LocalSpread(
+            raw.Select(c => cRb[c.B]).ToList(), raw.Select(c => c.Resid).ToList(), raw.Select(c => c.Mutual).ToList());
+        for (int k = 0; k < raw.Count; k++)
+        {
+            Candidate c = raw[k];
+
+            // The predicted centre lands off this detection by more than the field's local error: the real hold
+            // was most likely not detected and this is its neighbour. Declined, the old hold is warp-carried.
+            if (MatchGate.OffHold(c.Resid, radiusRb[c.B], spread[k]))
+            {
+                stats.OffHold++;
+                continue;
+            }
+
+            double geo = Math.Exp(-Math.Pow(c.Resid / GeoScale, 2));
+            double col = Math.Max(0.0, 1 - (c.Dcol / 45.0));
+            double conf = (0.30 * geo) + (0.27 * c.Margin) + (0.18 * (c.Mutual ? 1.0 : 0.0))
+                          + (0.15 * Math.Max(0.0, c.App)) + (0.10 * col);
+            cand.Add((conf, c));
+        }
+
+        return Assign(cand, li, ri, stats);
+    }
+
+    private static (List<Proposal> Proposals, List<MatchDiag> Diags) Assign(
+        List<(double Conf, Candidate C)> cand, List<int> li, List<int> ri, MatchStats stats)
+    {
         cand.Sort((x, y) => y.Conf.CompareTo(x.Conf));
         var usedL = new HashSet<int>();
         var usedR = new HashSet<int>();
         var proposals = new List<Proposal>();
         var diags = new List<MatchDiag>();
-        mutualNn = 0;
-        foreach (var c in cand)
+        foreach (var (conf, c) in cand)
         {
             int i = li[c.A], j = ri[c.B];
             if (usedL.Contains(i) || usedR.Contains(j))
@@ -302,11 +333,11 @@ public sealed class OpenCvHoldOverlapMatcher : IHoldOverlapMatcher
 
             usedL.Add(i);
             usedR.Add(j);
-            proposals.Add(new Proposal(i, j, c.Conf, c.Resid > 0.6 * GatePx, c.Resid, null));
+            proposals.Add(new Proposal(i, j, conf, c.Resid > 0.6 * GatePx, c.Resid, null));
             diags.Add(new MatchDiag(c.Dcol, c.App));
             if (c.Mutual)
             {
-                mutualNn++;
+                stats.MutualNn++;
             }
         }
 

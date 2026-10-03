@@ -44,4 +44,10 @@ public enum WallUpdatePhase
 
     /// <summary>The update was applied.</summary>
     Done = 9,
+
+    /// <summary>The optional "recognise hold shapes" step, after the final touch-up.</summary>
+    Shapes = 10,
+
+    /// <summary>Reviewing the recognised shapes, lowest confidence first, before the confirm step.</summary>
+    ShapeReview = 11,
 }

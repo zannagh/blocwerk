@@ -1,0 +1,4 @@
+.capture-guidance { margin: 8px 0; padding: 8px 12px; border-left: 3px solid var(--accent, var(--border)); background: var(--surface-muted, transparent); }
+.capture-guidance-title { margin: 0 0 4px; font-weight: 600; }
+.capture-guidance ul { margin: 0; padding-left: 1.2em; }
+.capture-guidance li { margin: 2px 0; font-size: 0.9rem; }

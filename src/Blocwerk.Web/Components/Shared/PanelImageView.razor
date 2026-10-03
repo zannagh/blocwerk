@@ -59,7 +59,7 @@
                                carries the distinction and the square then fully contains the circle this
                                used to be, so no tap target shrinks. Purely visual: Style below still owns
                                cursor and pointer-events, so viewport-gestures.js hit-tests as before. *@
-                            <HoldShape @key="h.Id" X="g.X" Y="g.Y" Radius="g.Radius" ShapePoints="h.ShapePoints"
+                            <HoldShape @key="h.Id" X="g.X" Y="g.Y" Radius="g.Radius" ShapePoints="h.ShapePoints" ShapeHoles="h.ShapeHoles"
                                        Foot="isFoot" FootScale="HoldShape.FullFoot"
                                        Fill="@fill" Stroke="@stroke" StrokeWidth="@sw"
                                        Style="@($"cursor: {(interact ? "pointer" : "inherit")}; pointer-events: {(interact ? "auto" : "none")};")"
@@ -105,7 +105,7 @@
                                    passed unconditionally — it only ever reaches the circle. *@
                                 <HoldShape @key="@($"drag-{h.Id}")" X="g.X" Y="g.Y"
                                            Radius="@(ExactHitTargets ? g.Radius : Math.Max(g.Radius, HitFloor))"
-                                           ShapePoints="h.ShapePoints"
+                                           ShapePoints="h.ShapePoints" ShapeHoles="h.ShapeHoles"
                                            Fill="transparent" Stroke="transparent" StrokeWidth="@HitStroke"
                                            Style="cursor: move; pointer-events: auto;"
                                            OnPointerDown="() => StartMove(h)"

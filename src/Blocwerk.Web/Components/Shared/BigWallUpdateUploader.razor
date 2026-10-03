@@ -5,7 +5,10 @@
    photos, each dropped into its direction slot (right = col+1, left = col-1, up = row-1, down = row+1).
    "Upload all wall-piece photos at once", then Start hands the assembled set to StageAsync.
    Large phone photos are downscaled client-side (image-downscale.js) so nothing is silently dropped;
-   if a pick fails, its slot is flagged and Start stays disabled until it is fixed or removed. *@
+   if a pick fails, its slot is flagged and Start stays disabled until it is fixed or removed.
+   Every update re-declares whether the photos carry printed ArUco markers (defaulting to the wall's
+   current setting); a changed answer is saved to the wall BEFORE staging, so StageAsync itself is
+   unchanged and simply sees the wall's up-to-date setting. *@
 
 <div class="bigupdate-uploader">
     <p class="hint">
@@ -63,6 +66,13 @@
         <p class="staged-hint">A photo is still being prepared — large images take a moment. Start will enable once it is ready.</p>
     }
 
+    @if (markers.Loaded)
+    {
+        <WallMarkerDeclaration Label="@WallMarkerDeclarationState.WholeWallLabel"
+                               Hint="@(markers.HintFor("Tick this if the printed marker sheets are on the wall in these photos. Leave it off for a wall without markers."))"
+                               @bind-Enabled="markers.Enabled" @bind-SizeMm="markers.SizeMm" Disabled="_busy" />
+    }
+
     <div class="staged-actions">
         <button class="btn-primary" @onclick="Start" disabled="@(_busy || !CentreReady || AnyInvalid || AnyWorking)">
             @(_busy ? "Preparing…" : "Start update")
@@ -88,14 +98,7 @@
     private string? _error;
     private IJSObjectReference? _module;
 
-    private readonly List<Slot> _slots =
-    [
-        new("Centre", 0, 0, Required: true),
-        new("Left", -1, 0, Required: false),
-        new("Right", 1, 0, Required: false),
-        new("Up", 0, -1, Required: false),
-        new("Down", 0, 1, Required: false),
-    ];
+    private readonly List<BigWallUpdateUploaderSlot> _slots = BigWallUpdateUploaderSlot.CreateAll();
 
     private bool CentreReady => _slots[0].HasFile;
 
@@ -104,22 +107,6 @@
     private bool AnyInvalid => _slots.Any(s => s.Invalid);
 
     private bool AnyWorking => _slots.Any(s => s.Working);
-
-    private sealed class Slot(string label, int col, int row, bool Required)
-    {
-        public string Label { get; } = label;
-        public int Col { get; } = col;
-        public int Row { get; } = row;
-        public bool Required { get; } = Required;
-        public string InputId { get; } = $"bigupdate-slot-{label.ToLowerInvariant()}";
-        public byte[]? Bytes { get; set; }
-        public string? ContentType { get; set; }
-        public string? FileName { get; set; }
-        public bool Working { get; set; }
-        public bool Invalid { get; set; }
-        public string? Error { get; set; }
-        public bool HasFile => Bytes is not null;
-    }
 
     private async Task<IJSObjectReference?> EnsureModuleAsync()
     {
@@ -144,7 +131,7 @@
         return _module;
     }
 
-    private async Task OnSlotFile(InputFileChangeEventArgs e, Slot slot)
+    private async Task OnSlotFile(InputFileChangeEventArgs e, BigWallUpdateUploaderSlot slot)
     {
         _error = null;
         slot.Invalid = false;
@@ -197,7 +184,7 @@
         }
     }
 
-    private async Task<byte[]?> TryDownscaleAsync(Slot slot)
+    private async Task<byte[]?> TryDownscaleAsync(BigWallUpdateUploaderSlot slot)
     {
         var module = await EnsureModuleAsync();
         if (module is null)
@@ -235,7 +222,7 @@
         return string.IsNullOrEmpty(baseName) ? "photo.jpg" : $"{baseName}.jpg";
     }
 
-    private void Clear(Slot slot)
+    private void Clear(BigWallUpdateUploaderSlot slot)
     {
         slot.Bytes = null;
         slot.ContentType = null;
@@ -268,12 +255,20 @@
             return;
         }
 
-        if (AnyInvalid || AnyWorking)
+        // _busy is checked first and set before the first await: a double tap arrives before the
+        // disabled button reaches the phone, and the awaited marker save widens that window.
+        if (_busy || AnyInvalid || AnyWorking)
         {
             return;
         }
 
         _busy = true;
+        if (!await DeclareMarkersAsync())
+        {
+            _busy = false;
+            return;
+        }
+
         var photos = _slots
             .Where(s => s.HasFile)
             .Select(s => new BigUpdatePhoto(s.Bytes!, s.ContentType!, s.Col, s.Row))

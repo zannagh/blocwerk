@@ -49,6 +49,12 @@ public partial class BigWallUpdate
         WallUpdatePhase.Detected => ["Enter", "s", "a", "m", "d", "p", "x"],
         WallUpdatePhase.Carryover => _carryoverSubViewOpen ? [] : ["Enter", "a", "m", "d", "p", "x"],
         WallUpdatePhase.Touchup => ["Enter", "s", "a", "m", "d", "p", "x"],
+
+        // Enter starts the recognition (or opens the review once it is done); s skips the step.
+        WallUpdatePhase.Shapes => ["Enter", "s"],
+
+        // The adjust overlay hosts a whole editor; the wizard claims nothing while it is open.
+        WallUpdatePhase.ShapeReview => _shapeReview?.IsAdjusting == true ? [] : ["Enter"],
         WallUpdatePhase.Confirm => ["Enter"],
 
         // The update is already applied; Enter/Escape both just close the finished flow.
@@ -116,6 +122,10 @@ public partial class BigWallUpdate
         else if (_phase == WallUpdatePhase.Touchup)
         {
             await OnTouchupSkip();
+        }
+        else if (_phase == WallUpdatePhase.Shapes && _shapeStep is { } step)
+        {
+            await step.SkipAsync();
         }
     }
 
@@ -205,6 +215,18 @@ public partial class BigWallUpdate
 
             case WallUpdatePhase.Touchup:
                 await OnTouchupContinue();
+                break;
+
+            case WallUpdatePhase.Shapes:
+                if (_shapeStep is { } shapeStep)
+                {
+                    await shapeStep.PrimaryAsync();
+                }
+
+                break;
+
+            case WallUpdatePhase.ShapeReview:
+                await OnShapeReviewContinue();
                 break;
 
             case WallUpdatePhase.Confirm:

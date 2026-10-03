@@ -1,0 +1,92 @@
+@* The active wall-geometry model at a glance: a one-line summary and one row per facet, with the
+   admin's declared angle next to the solver's measured one. The "marker span" is the extent the
+   markers cover (plus the solver's margin) on the widest facet — NOT the size of the wall. *@
+
+<p class="glyph-summary">
+    @SourceText
+    <LocalTime Value="@Active.Model.CreatedAt" Format="LocalTimeFormat.DateDmy" />
+    @if (Active.FromFeatures)
+    {
+        <text>&middot; from photo features (no markers)</text>
+    }
+    else
+    {
+        <text>&middot; @Active.MarkerCount markers of @GlyphFormat.Millimetres(Active.MarkerSizeMm)</text>
+    }
+    &middot; reprojection error @GlyphFormat.Pixels(Active.Model.ReprojRmsPx)@SpanText
+</p>
+@if (Active.ScaleIsEstimate)
+{
+    <p class="hint">Sizes marked ≈ are estimated (about ±10–15 %): no markers or measured distance fixed the scale.</p>
+}
+@if (!Active.AnglesKnown)
+{
+    <p class="hint">Angles are not shown: “up” could not be determined for this model.</p>
+}
+@if (!string.IsNullOrEmpty(Active.Model.Notes))
+{
+    <p class="hint">@Active.Model.Notes</p>
+}
+
+@if (Active.Facets.Count == 0)
+{
+    <p class="empty-msg">The stored geometry could not be read. Import it again.</p>
+}
+else
+{
+    <div class="leaderboard-scroll">
+        <table class="leaderboard-table glyph-facet-table">
+            <thead>
+                <tr>
+                    <th scope="col">Facet</th>
+                    <th scope="col">Segment</th>
+                    <th scope="col" class="num">Declared</th>
+                    <th scope="col" class="num">Measured</th>
+                    <th scope="col" class="num">Yaw</th>
+                    <th scope="col" class="num">Markers</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var facet in Active.Facets)
+                {
+                    <tr>
+                        <td>@facet.FacetId</td>
+                        <td>@facet.SegmentIndex @(string.IsNullOrEmpty(facet.SegmentName) ? "" : $"· {facet.SegmentName}")</td>
+                        <td class="num">@GlyphFormat.Degrees(facet.DeclaredAngleDeg)</td>
+                        <td class="num">@Angle(facet.MeasuredAngleDeg)</td>
+                        <td class="num">@Angle(facet.YawDeg)</td>
+                        <td class="num">@facet.MarkerCount</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@* The angles are in the table above; the solver's own warnings and notes follow. *@
+<WallGeometryModelCheckList Checks="Active.Checks" HideKinds="AnglesInTable" Title="Solver notes" />
+
+@code {
+    private static readonly string[] AnglesInTable = [Blocwerk.Core.Geometry.WallGeometryModelCheck.KindSegmentAngle];
+
+    /// <summary>The wall's active model.</summary>
+    [Parameter, EditorRequired]
+    public ActiveWallGeometry Active { get; set; } = default!;
+
+    // The widest facet's marker extent — explicitly NOT the wall's size.
+    private string SpanText => Active.Model.WidthMm is null
+        ? string.Empty
+        : $" · {(Active.FromFeatures ? "surface" : "marker")} span {Approx}{GlyphFormat.Metres(Active.Model.WidthMm)} × {Approx}{GlyphFormat.Metres(Active.Model.HeightMm)}";
+
+    private string SourceText => Active.Model.Source switch
+    {
+        var s when s.StartsWith("capture ", StringComparison.Ordinal) => "Measured from photos",
+        var s when s.StartsWith(Blocwerk.Core.Capture.Corrections.WallGeometryCorrectionService.SourcePrefix, StringComparison.Ordinal) => "Corrected",
+        _ => "Imported",
+    };
+
+    private string Approx => Active.ScaleIsEstimate ? "≈" : string.Empty;
+
+    // Without a known "up" the absolute angles were not measured.
+    private string Angle(double? degrees) => Active.AnglesKnown ? GlyphFormat.Degrees(degrees) : "–";
+}

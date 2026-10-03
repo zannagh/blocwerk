@@ -1,0 +1,226 @@
+# `marker-plan.json` — the owner's marker plan (v1)
+
+Written by the marker planner (`src/Blocwerk.Core/MarkerPlanning/`, `MarkerPlanJson.ToJson`) and meant to
+**travel with every photo dump** of a marker wall. It answers the questions the solver would otherwise
+have to guess or ask: which surfaces exist and how they join, roughly how big and how steep they are, which
+marker sits on which surface and where, and how large each one was printed. Because of that, marker ids
+carry **no meaning** — any id may sit on any surface (the old `segment*6+role` scheme is just one plan).
+
+Companion of `wall-geometry.schema.md`: a plan is the *intent* (drawn by the owner), a geometry is the
+*measurement* (solved from photos). A plan can also be built from a solved geometry
+(`MarkerPlanFromGeometry.Build`) so walls that already carry markers get one without redrawing.
+
+## Frames and units
+
+- All lengths **mm**, angles **degrees**.
+- **Segment frame** — identical to a solved facet's plane frame `(a, b)`: origin at the bottom-left of the
+  segment's bounding box, `x` to the right as you face the surface, `y` **up the surface** (up the slope for
+  an overhang), surface normal toward the climber.
+- **Marker position** = the centre of its black square in its segment's frame. Squares are axis-aligned in
+  that frame, printed with their `TOP` edge pointing up the surface.
+- **Net** (the planner's drawing) — the surfaces unfolded flat, root at the origin, each child hinged onto
+  its parent's edge. Only the attachments are stored; the net is recomputed (`NetLayout.Compute`).
+
+## Shape
+
+```jsonc
+{
+  "format": "blocwerk-marker-plan",      // optional on read; if present it must be this value
+  "schemaVersion": 1,                     // readers refuse versions newer than theirs
+  "dictionary": "DICT_4X4_50",            // the only dictionary the detector reads (ids 0..49)
+  "photo": {
+    "distanceMm": 2500,                   // FARTHEST usual camera-to-wall distance (markers are sized for it), 300..20000
+    "cameraPreset": "phone-0.5x",         // "phone-1x" (≈69°, 4032 px) | "phone-0.5x" (≈104°, 4032 px) | "custom";
+                                          // with phoneModel set: the nearest legacy name (0.5x for ultra-wides)
+    "horizontalFovDeg": 103,              // 5..150 — what the sizing maths reads
+    "imageLongEdgePx": 4032,              // 640..20000 — ditto
+    "phoneModel": "iphone-16-pro",        // optional (added without a schema bump): a PhoneCameraCatalog id, [a-z0-9.-], ≤ 64
+    "lens": "0.5x",                       // optional: that phone's zoom button, e.g. "0.5x", "1x", "1.2x", "5x"; needs phoneModel
+    "nearestDistanceMm": 1200             // optional: closest usual distance, ≤ distanceMm; hints only
+  },
+  "segments": [
+    {
+      "index": 0,                         // unique, stable; gaps allowed (The Attic uses 0,1,2,5)
+      "name": "main wall",
+      "shape": "rectangle",               // "rectangle" | "triangle" (right triangle)
+      "widthMm": 5200,                    // rectangle width, or the triangle's horizontal leg
+      "heightMm": 3400,                   // along the surface; or the triangle's vertical leg
+      "rightAngle": "bottomLeft",         // triangles: bottomLeft|bottomRight|topLeft|topRight; ignored otherwise
+      "overhangDeg": 45,                  // tilt from vertical: 0 vertical, + overhang, − slab
+      "yawDeg": 0,                        // turn about the vertical axis relative to the ROOT segment
+      "attachedTo": null                  // exactly one segment (the root) has null
+    },
+    {
+      "index": 2, "name": "left triangle", "shape": "triangle", "widthMm": 2400, "heightMm": 2400,
+      "rightAngle": "bottomLeft", "overhangDeg": 0, "yawDeg": 90,
+      "attachedTo": {
+        "parentIndex": 0,                 // the segment it touches
+        "parentEdge": "left",             // top|right|bottom|left|hypotenuse (a triangle has its 2 legs + hypotenuse)
+        "ownEdge": "hypotenuse",
+        "offsetMm": 0                     // slide along the parent edge, from its lower (or left) end
+      }
+    }
+  ],
+  "markers": [
+    { "id": 0, "segment": 0, "xMm": 85.1, "yMm": 3158.9, "sizeMm": 125, "role": "corner" },
+    { "id": 24, "segment": 0, "xMm": 3581.6, "yMm": 3283.8, "sizeMm": 125, "role": "filler" }
+  ],
+  "print": {                              // optional (added in v1 without a bump; omitted when unset)
+    "mountingHoles": {                    // optional
+      "enabled": true,                    // print the holes
+      "holeDiameterMm": 3,                // 1 | 2 | 2.5 | 3 | 3.5
+      "screwHeadDiameterMm": 6,           // hole + 0.5 .. 15
+      "gapToMarkerMm": 1,                 // optional, 0.5 .. 10 (default 1): head rim to black square
+      "gapToEdgeMm": 1                    // optional, 0.5 .. 10 (default 1): head rim to cut line
+    }
+  }
+}
+```
+
+### Mounting holes (`print.mountingHoles`)
+
+Printing only — the solver ignores it. When enabled, the PDF prints one hole diagonally outward from each
+corner of every black square: a light-grey circle at the true hole diameter with a crosshair (drill or
+punch there) and a dashed light-grey circle at the screw-head diameter. The holes sit tight to the marker:
+the per-axis offset of a hole centre from its corner is `d = (r + gapToMarkerMm)/√2` (r = head radius), so
+the head's nearest point is the square's corner, exactly `gapToMarkerMm` away. The head reaches `d + r`
+past the square on each axis, so the cut-out's white border is `d + r + gapToEdgeMm`, independent of the
+marker size (no floor). Defaults 3 mm hole / 6 mm head / 1 mm / 1 mm: `d` = 2.83 mm, border 6.83 mm;
+cut-out 138.7 mm for a 125 mm marker (was 182 mm), 113.7 mm at 100, 93.7 mm at 80, 63.7 mm at 50.
+Plans without the two gap fields read as 1 mm each. Sizes are validated even while `enabled` is false.
+
+Detection limits. Simulated renders (the PDF drawn with dark screw heads and a textured wall outside the
+cut line, 30–295 px per marker, `MountingHoleDecodeTests`): the detector keeps the black square rather than
+the paper's outline (ArUco's too-close filter off, nested same-id quads collapsed to the inner one), so every
+marker decodes with the tight 1 / 1 mm default and any head gap ≥ 0.5 mm; the refined corners drift 0.8–1.5
+px at 1–2 px of border and are as good as a plain print from ~3 px. REAL photos set the thresholds
+(`MountingHoleSafety`; sizing study 2026-09-23: the owner's 125 mm markers cut with a 3–7 % border, 14
+iPhone 16 Pro shots downsampled to 20–80 px, view < 55°, mean side ≥ 26 px). Acceptance by white border px
+and the wall tone right outside the paper:
+
+| border px | light plywood | mid tone | dark hold / volume / shadow |
+|---|---|---|---|
+| 1–2 | 87–95 % | 40–77 % | 80–86 % |
+| 2–3 | 100 % | 80–88 % | 80–86 % |
+| 3–4 | 100 % | 95–100 % | 75–77 % |
+| 4–5 | 100 % | 100 % | 92 % |
+
+Two levels follow: under **2 px** (`mounting-holes-tight`) markers drop out on every tone and the median
+corner error doubles (0.35–0.5 px vs 0.15–0.2 px from 3 px); under **4 px** (`mounting-holes-thin`) the
+light wall is fine but a marker on a dark hold or volume loses about one photo in six. Both are warnings
+and name the gaps that reach 4 px (the cut edge moves first, then the holes). The 1 / 1 mm default leaves
+6.8 mm ≈ 3.3 px for a 125 mm marker at the planned 60 px: `mounting-holes-thin`, fixed by 1 / 3 mm
+(cut-out 143 mm) if a marker sits on a dark hold; at 40 px it takes 1 / 7 mm (cut-out 151 mm).
+
+### Attachments
+
+The two edges are laid against each other like a cardboard net. Both outlines are counter-clockwise, so on
+the shared edge they run in opposite directions — the child lands on the outside of the parent edge and the
+physical corners meet with no mirroring flag. `offsetMm` moves the child's end on the parent-start side to
+`start + offsetMm` along the parent edge (start = the lower end of the parent edge in the parent's own frame,
+its left end when horizontal). Negative offsets are allowed.
+
+### Roles
+
+`corner` markers anchor a surface (sized for decoding AND pose accuracy, see "Sizing maths"); `filler`
+markers link photos along edges (smaller targets). Both are ordinary markers to the solver.
+
+### Phone model and lens
+
+`phoneModel` / `lens` name a row of `PhoneCameraCatalog` (Core/MarkerPlanning, one file per maker; each
+lens row carries its source): iPhone 12–17 incl. Pro/Pro Max/16e/Air, Pixel 8/9 (Pro), Galaxy S23–S25
+(Ultra), plus `generic-phone` (the two legacy presets, exactly). Picking one copies its FOV and default
+photo size into `horizontalFovDeg` / `imageLongEdgePx`; those two stay the truth, so an unknown model (a newer
+catalog) only warns (`photo-camera-unknown`) and a hand-edited mismatch warns (`photo-camera-mismatch`).
+Plans without the fields read as before: `cameraPreset` maps to the generic phone. iPhones from the 15 save
+24 MP (5712 px) on the main lens and its 1.2× / 1.5× (28 / 35 mm) crops, 12 MP (4032 px) on 0.5× and 2×.
+
+## With a photo dump (the in-app capture)
+
+The capture upload takes the plan JSON next to the photos ("Marker plan (JSON, optional)"). The draft then
+runs with that plan; when it differs from the wall's current plan it is saved as the wall's next revision
+(see below). Without an upload, the wall's saved plan is used; without either, the legacy `segment*6+role`
+convention with the wall's one marker size. The capture keeps a snapshot of the plan it started with
+(`WallCapture.PlanJson`) and its revision (`WallCapture.PlanRevision`); `UsePlanRevisionAsync` pins a draft
+to an older stored revision.
+
+Everything downstream reads the plan through `WallMarkerLayout` (`WallMarkerLayoutResolver`): detection
+accepts only the plan's ids, the declarations table is pre-filled with the plan's surfaces, names and
+angles (plumb surfaces become gravity references), and the solve request carries each marker's segment
+and size (see `wall-geometry.schema.md`, `idScheme: "plan"`). After the solve, `MarkerPlacementChecker`
+answers "did I place them right?": markers never seen or not placed, markers found on another surface
+than planned, markers more than 100 mm from their planned spot (after a robust rigid fit of the plan onto
+each solved facet, whose origin is its markers' bounding box), and surfaces more than 5° off the planned
+angle. The list shows with the capture's result.
+
+## Revisions
+
+The JSON itself carries no revision: the app numbers every save per wall (`WallMarkerPlan.Revision`, 1, 2, …;
+saving exactly the current plan again adds none). Captures, geometry models (`WallGeometryModel.PlanRevision`)
+and panel-photo marker observations (`WallMarkerObservation.PlanRevision`) record the revision they were made
+with; null means the legacy convention. Revision "null" compares as the markers of the wall's newest legacy
+model read like "Start from measured wall" does (`MarkerPlanFromGeometry`), so a revision 1 built from it is
+unchanged.
+
+`MarkerPlanDiff` compares two revisions per id: **unchanged** only when segment, printed size (±0.5 mm) and
+centre (±10 mm, segment frame) all match; otherwise moved / resized / reassigned (combinable), added or
+removed. An id reused at another size or place is a CHANGED marker. Only unchanged markers may tie a photo
+or model of one revision to another: frame registration of a new capture (`WallFrameRegistration`, see
+`wall-geometry.schema.md`), mapping an old photo onto the model (`MarkerRevisionScope`), and the wall-update
+seed between an old and a new panel photo (`OverlapSeedLoader`).
+
+## Reading rules
+
+- Unknown fields are ignored (add fields freely; bump `schemaVersion` only for breaking changes).
+- Comments and trailing commas are tolerated. Enums are strings (case-insensitive on read).
+- Numbers must be real JSON numbers (no strings, no NaN/Infinity) within the ranges above;
+  segment sizes 1..100 000 mm, marker size 10..1000 mm, positions/offsets within ±100 000 mm.
+- At most 1 MB, 200 segments, 1000 markers (the 50-id dictionary limit is a validation error, not a parse error).
+- `print.mountingHoles` sizes are checked on read (hole one of 1/2/2.5/3/3.5 mm, head hole + 0.5 .. 15 mm,
+  gaps 0.5 .. 10 mm; missing gaps default to 1 mm).
+- Parse errors name the field, e.g. `markers[3].sizeMm must be between 10 and 1000 (was 5000).`
+
+## Validation (`MarkerPlanValidator`)
+
+Errors block saving; warnings (and `tip-*` codes) are advice.
+
+| Code | Severity | Meaning |
+|---|---|---|
+| `schema-version`, `dictionary`, `no-segments` | error | unusable header |
+| `photo-distance`, `photo-fov`, `photo-resolution` | error | implausible photo setup |
+| `photo-camera-unknown`, `photo-camera-mismatch` | warning | phone/lens not in this catalog, or stored FOV/px differ from the lens |
+| `segment-duplicate-index`, `segment-size` | error | bad segment |
+| `net-no-root`, `net-several-roots`, `attachment-edge`, `attachment-offset`, `attachment-self`, `attachment-missing-parent`, `attachment-cycle`, `net-overlap` | error | the net can't be laid out |
+| `marker-duplicate-id`, `marker-id-range`, `marker-segment`, `marker-size`, `marker-outside`, `marker-overlap` | error | bad marker |
+| `too-many-markers` | error | more than 50 markers |
+| `segment-few-markers` | error | fewer than 3 markers on a surface |
+| `segment-bunched` | warning | markers span < 35 % of the surface's diagonal |
+| `marker-too-small` | warning | estimated px below the role's target on its surface (message names the camera, whether decoding or pose sets the target, and the smallest size that works) |
+| `grazing-surface` | warning | > 72° oblique to the standing camera: photograph it face-on |
+| `shared-edge-uncovered` | warning | no marker within one photo height of a shared edge on both sides |
+| `mounting-holes` | error | hole not 1/2/2.5/3/3.5 mm, head outside hole + 0.5 .. 15 mm, or a gap outside 0.5 .. 10 mm |
+| `mounting-holes-tight` | warning | white border < 2 photo px (side/30 when the photo scale is unknown): markers drop out on any wall; names the gaps that reach 4 px |
+| `mounting-holes-thin` | warning | white border 2–4 photo px (under side/15 when the scale is unknown): fine on light plywood, not on dark holds or volumes; names the gaps that reach 4 px |
+| `tip-full-frame`, `tip-corner-photos`, `tip-marker-large` | warning | capture-1 lessons |
+| `tip-screw-bias` | warning | no mounting holes: screws near the black square shift detected corners |
+
+## Sizing maths (`MarkerSizing`)
+
+- `pxPerMm = imageLongEdgePx / (2 · distanceMm · tan(hfov/2))` (long edge horizontal).
+- Foreshortening for a camera in front of the root, looking horizontally:
+  `px = sizeMm · pxPerMm · min(cos overhang, cos yaw)`; beyond 72° the surface is flagged "shoot face-on"
+  and sized for a face-on shot (factor 1).
+- Photo footprint `2·d·tan(hfov/2)` × ¾ of that; markers are spaced ≤ half the footprint height.
+- Required short-side px per role (`MarkerSizing.RequiredPx`, measured in the 2026-09 sizing study on
+  real photos, see `MarkerDetectability`): the larger of
+  - decoding: corners 28 px, fillers 22 px (app floor 20 px + margin), × a steep-view margin rising from
+    1 at 40° obliqueness to 1.3 at 60°;
+  - pose accuracy: corners 30 px, fillers 20 px **per metre of photo distance** on the marker's mean side
+    (≈ 5 / 8 mm marker position error; facet angles stay within 0.5°).
+- The generator picks the SMALLEST of `30, 40, 50, 60, 80, 100, 125, 150, 200` mm that reaches it (markers
+  cost wall space); the planner shows the wall area (cut-outs incl. white border) vs printing all markers
+  at the largest size.
+- Example (The Attic, 2.5 m, phone 0.5×): 6.4 × 4.8 m per photo, 0.63 px/mm; on the 45° main wall pose
+  sets the corners to 150 mm (67 px short side ≥ 62) and fillers to 100 mm, 125/80 mm on the vertical
+  kickboard. On an iPhone 16 Pro at 1.5 m (0.5×) a face-on wall gets 50 mm corners and 30 mm fillers; at
+  3 m the 0.5× needs 200/125 mm, the 1.2× (28 mm, 24 MP) 60/40 mm.

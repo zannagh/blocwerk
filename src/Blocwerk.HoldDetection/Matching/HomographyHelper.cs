@@ -10,14 +10,45 @@ namespace Blocwerk.HoldDetection.Matching;
 /// </summary>
 internal static class HomographyHelper
 {
+    /// <summary>
+    /// Fewest RANSAC inliers a coarse homography needs to be trusted. Measured: unrelated/barely-overlapping
+    /// photos give 4-12 (garbage), while a real reframed same-panel update (The Attic right panel, 24 mm) gave only
+    /// 16 yet carried ~95% of its holds correctly via the warp field. Keep this between those. A pair below it
+    /// can still pass on wider texture evidence — see <see cref="MinRescueInliers"/>.
+    /// </summary>
+    internal const int MinInliers = 15;
+
+    /// <summary>
+    /// Below <see cref="MinInliers"/> a homography is still accepted when BOTH wider signals clear their bar
+    /// (and it has at least this many inliers, so it is more than a minimal 4-point fit). Measured 2026-09-23:
+    /// garbage pairs gave ratio matches 20-44 and texture anchors 1-77; the real reframed right panel 186 / 951,
+    /// the weakest good pair 122 / 228. The bars sit ~2.3x / 2.6x above garbage; no measured outcome changes.
+    /// </summary>
+    internal const int MinRescueInliers = 8;
+
+    /// <summary>Ratio-test matches a sub-<see cref="MinInliers"/> homography needs to be rescued.</summary>
+    internal const int MinRescueRatioMatches = 100;
+
+    /// <summary>Locally consistent texture anchors a sub-<see cref="MinInliers"/> homography needs to be rescued.</summary>
+    internal const int MinRescueTextureAnchors = 200;
+
     /// <summary>Estimates the coarse L→R homography as a 3x3 matrix, with diagnostic counts.</summary>
+    /// <param name="imgL">Left image.</param>
+    /// <param name="imgR">Right image.</param>
+    /// <param name="textureAnchors">
+    /// Counts the pair's locally consistent texture anchors; asked only for a borderline homography (see
+    /// <see cref="MinRescueInliers"/>), since it costs a second, denser AKAZE pass. Null disables the rescue.
+    /// </param>
+    /// <param name="s">Downscale for the coarse AKAZE pass.</param>
+    /// <param name="ratio">Lowe ratio-test threshold.</param>
+    /// <param name="ransacSeed">Non-zero: the ratio matches are shuffled with this seed first, so RANSAC draws other samples (see <see cref="Shuffle"/>).</param>
     /// <returns>
     /// (H, keypoint counts, ratio-match count, RANSAC inlier count). H is null when too few
     /// matches were found; the counts are still populated as far as the run got, so a failed
     /// run stays diagnosable.
     /// </returns>
     public static (double[,]? H, int KaKeypoints, int KbKeypoints, int RatioMatches, int Inliers) Coarse(
-        Mat imgL, Mat imgR, double s = 0.35, double ratio = 0.75)
+        Mat imgL, Mat imgR, Func<int>? textureAnchors = null, double s = 0.35, double ratio = 0.75, int ransacSeed = 0)
     {
         using var a = new Mat();
         using var b = new Mat();
@@ -64,6 +95,7 @@ internal static class HomographyHelper
             return (null, ka.Length, kb.Length, ratioMatches, 0);
         }
 
+        Shuffle(src, dst, ransacSeed);
         using var mask = new Mat();
         using Mat h = Cv2.FindHomography(src, dst, HomographyMethods.Ransac, 5.0, mask);
         if (h.Empty())
@@ -71,7 +103,15 @@ internal static class HomographyHelper
             return (null, ka.Length, kb.Length, ratioMatches, 0);
         }
 
+        // A handful of RANSAC inliers is no consensus at all (any 4 points fit a homography): two photos
+        // that barely share texture would otherwise yield an arbitrary H, and everything downstream — band,
+        // warp field, proposals — would be confidently built on it. Treat it as a failed estimate.
         int inliers = Cv2.CountNonZero(mask);
+        if (inliers < MinInliers && !Rescued(inliers, ratioMatches, textureAnchors))
+        {
+            return (null, ka.Length, kb.Length, ratioMatches, inliers);
+        }
+
         return (ToArray(h), ka.Length, kb.Length, ratioMatches, inliers);
     }
 
@@ -105,7 +145,41 @@ internal static class HomographyHelper
         return ToArray(inv);
     }
 
-    private static double[,] ToArray(Mat m)
+    /// <summary>
+    /// Shuffles two parallel correspondence lists in place with a seeded generator (nothing for seed 0). OpenCV's
+    /// RANSAC draws its samples from a fixed-seed generator, so the input order IS its seed: the same order always
+    /// gives the same fit, another order other samples.
+    /// </summary>
+    /// <param name="src">Source points.</param>
+    /// <param name="dst">Destination points, parallel to <paramref name="src"/>.</param>
+    /// <param name="seed">The seed; 0 keeps the order.</param>
+    internal static void Shuffle(List<Point2d> src, List<Point2d> dst, int seed)
+    {
+        if (seed == 0)
+        {
+            return;
+        }
+
+        var rng = new Random(seed);
+        for (var i = src.Count - 1; i > 0; i--)
+        {
+            var j = rng.Next(i + 1);
+            (src[i], src[j]) = (src[j], src[i]);
+            (dst[i], dst[j]) = (dst[j], dst[i]);
+        }
+    }
+
+    /// <summary>
+    /// Whether a homography below <see cref="MinInliers"/> is still trusted: enough inliers to be more than a
+    /// minimal fit, AND wide texture agreement on both the coarse ratio test and the dense anchor pass.
+    /// </summary>
+    internal static bool Rescued(int inliers, int ratioMatches, Func<int>? textureAnchors) =>
+        textureAnchors is not null
+        && inliers >= MinRescueInliers
+        && ratioMatches >= MinRescueRatioMatches
+        && textureAnchors() >= MinRescueTextureAnchors;
+
+    internal static double[,] ToArray(Mat m)
     {
         var arr = new double[3, 3];
         for (int r = 0; r < 3; r++)

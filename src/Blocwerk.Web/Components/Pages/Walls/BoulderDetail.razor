@@ -26,6 +26,11 @@
 else
 {
     <div class="boulder-detail">
+        @* The two-column row on the desktop tier. It exists so the sticky photo column has a
+           containing block that ends where the rail ends: a sticky box sticks within its parent,
+           and with .boulder-detail as that parent the photo rode down over the full-width
+           activity/comments/history row below. display:contents on the phone tier. *@
+        <div class="boulder-main-row">
         @* Left column on the desktop tier: everything that describes THIS boulder on the wall —
            header, notices, view toggle, banners and the photo itself. Both column wrappers are
            display:contents on the phone tier, so they are absent from the layout there and the
@@ -66,6 +71,16 @@ else
                             </svg>
                         </button>
                     }
+                    @* Only when the wall has a measured 3D model; opens it with this boulder's holds highlighted. *@
+                    <Wall3DLink WallId="WallId" BoulderId="BoulderId" ShareToken="@ShareToken" CssClass="btn-view3d">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"
+                             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M12 2 3 7v10l9 5 9-5V7z" />
+                            <path d="M3 7l9 5 9-5" />
+                            <path d="M12 12v10" />
+                        </svg>
+                        3D
+                    </Wall3DLink>
                     @if (CanFullRevise)
                     {
                         <a href="/walls/@WallId/boulders/@BoulderId/revise" class="btn-revise">Revise</a>
@@ -168,24 +183,31 @@ else
             </div>
         }
 
-        @* The historic Then/Now toggle is the page's only view switch. *@
+        @* Two view switches: the historic Then/Now toggle, and Photos | 3D (the inline 3D schematic
+           with this boulder highlighted). The 3D model is today's wall, so it is only offered on
+           "Now", and going to "Then" leaves it. *@
         @if (CanViewHistoric)
         {
             @* Both states are rendered, with the active one marked. A single button labelled with the
                CURRENT state reads as a status label, so nobody could tell whether "Then" meant "you
                are in Then" or "go to Then" — the two-button form is unambiguous either way round. *@
             <div class="view-toggle">
-                <button class="toggle-btn @(!_showHistoric ? "active" : "")" aria-pressed="@(!_showHistoric)"
+                <button class="toggle-btn @(!_showHistoric ? "active" : "")" aria-pressed="@(_showHistoric ? "false" : "true")"
                         @onclick="() => ShowGenerationAsync(historic: false)"
                         title="Show the wall as it is today">
                     Now
                 </button>
-                <button class="toggle-btn @(_showHistoric ? "active" : "")" aria-pressed="@_showHistoric"
+                <button class="toggle-btn @(_showHistoric ? "active" : "")" aria-pressed="@(_showHistoric ? "true" : "false")"
                         @onclick="() => ShowGenerationAsync(historic: true)"
                         title="Show the wall as it was when this boulder was set">
                     Then
                 </button>
             </div>
+        }
+
+        @if (!_showHistoric)
+        {
+            <WallViewSwitch WallId="WallId" @bind-Show3D="_show3D" />
         }
 
         @if (!string.IsNullOrEmpty(_boulder.FootColorOnly) || _boulder.NoMatch)
@@ -210,7 +232,11 @@ else
             </div>
         }
 
-        <WallDimControl />
+        @if (!_show3D || _showHistoric)
+        {
+            @* Dims the photo around the boulder: meaningless on the 3D view, which dims by itself. *@
+            <WallDimControl />
+        }
         @if (HistoricHoldsMissing > 0)
         {
             @* Fix: a partial translation used to be silent. Some of the boulder's holds have no
@@ -230,7 +256,11 @@ else
                 @HistoricHoldsMissing were set on holds that aren't on these photos.
             </p>
         }
-        @if (UsingMultiPanel)
+        @if (_show3D && !_showHistoric)
+        {
+            <Wall3DInline WallId="WallId" BoulderId="BoulderId" ShareToken="@ShareToken" />
+        }
+        else if (UsingMultiPanel)
         {
             @if (BoulderOnOutdatedPanel)
             {
@@ -412,6 +442,7 @@ else
                            IsAnonymous="_isAnonymous" ShareToken="@ShareToken"
                            Uploaded="OnBetaVideoUploaded" />
         </div>
+        </div>
 
         @* Full-width row under both columns on the desktop tier: the three sections whose content
            has no natural length — activity, comments, history. In a 360px rail they were a thin
@@ -481,7 +512,7 @@ else
                    set: this legacy single-image branch has always drawn every hold as a plain
                    circle and keeps doing so, so the move is visually a no-op. *@
                 <HoldShape @key="bh.HoldId" X="bh.Hold.X" Y="bh.Hold.Y" Radius="bh.Hold.Radius"
-                           ShapePoints="bh.Hold.ShapePoints"
+                           ShapePoints="bh.Hold.ShapePoints" ShapeHoles="bh.Hold.ShapeHoles"
                            Fill="@BoulderHoldColors.FillFor(bh.Type, bh.Usage)"
                            Stroke="@BoulderHoldColors.Stroke(bh.Type)" StrokeWidth="0.5"
                            Dash="@dash" />
@@ -516,6 +547,9 @@ else
     private bool _isAdmin;
     private bool _isSetter;
     private bool _showHistoric;
+
+    // The "3D" side of the Photos | 3D switch (only offered while showing "Now").
+    private bool _show3D;
 
     /// <summary>The generation the "Then" view renders, or null when there is nothing older to show.
     /// Resolved once per boulder load; see <see cref="ResolveHistoricGenerationAsync"/>.</summary>
@@ -1013,6 +1047,7 @@ else
     private async Task ShowGenerationAsync(bool historic)
     {
         _showHistoric = historic;
+        _show3D &= !historic;
 
         // All three have to move together: the holds are re-resolved onto the generation being shown,
         // LoadWallHolds swaps the schematic hold data, and the photos underneath come from the panel
@@ -1362,7 +1397,7 @@ else
             .ToDictionary(
                 g => g.Key,
                 g => g.Select(bh => new PanelHold(
-                    bh.HoldId, bh.Hold.X, bh.Hold.Y, bh.Hold.Radius, bh.Hold.Color, bh.Hold.Category, bh.Hold.ShapePoints, bh.Hold.IsVirtual)).ToList());
+                    bh.HoldId, bh.Hold.X, bh.Hold.Y, bh.Hold.Radius, bh.Hold.Color, bh.Hold.Category, bh.Hold.ShapePoints, bh.Hold.IsVirtual, bh.Hold.ShapeHoles)).ToList());
         foreach (var bh in onPanels)
         {
             _highlightedHoldIds.Add(bh.HoldId);

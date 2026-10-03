@@ -36,13 +36,13 @@ public class HlsBackendTests
     }
 
     [Fact]
-    public void SelectRungs_ForATinySource_KeepsOnlyTheSmallestRung()
+    public void SelectRungs_ForATinySource_MakesOneRungAtTheSourceSize()
     {
-        // A source shorter than the smallest rung must still get exactly one rung, and never one taller
-        // than itself would be upscaled to — the smallest is the safe floor.
+        // A source shorter than the smallest rung gets exactly one rung, at its own height — never the
+        // 360p floor, which would upscale it. HlsLadderSourceSizedRungTests covers the details.
         var rungs = HlsLadderPlanner.SelectRungs(Ladder, sourceHeight: 240);
 
-        Assert.Equal([360], rungs.Select(r => r.Height));
+        Assert.Equal([240], rungs.Select(r => r.Height));
     }
 
     [Fact]

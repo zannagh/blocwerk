@@ -20,6 +20,13 @@
     <InternalsVisibleTo Include="Blocwerk.Core.Tests" />
   </ItemGroup>
 
+  <!-- Dev-only page for wall3d.js screenshots. Its harness scripts serve wwwroot straight from disk, so
+       it only has to stay out of Release: removing it from Content drops it from the static web assets
+       manifest and the publish output, so production never serves it. -->
+  <ItemGroup Condition="'$(Configuration)' == 'Release'">
+    <Content Remove="wwwroot\js\wall3d-harness.html" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Blocwerk.Core\Blocwerk.Core.csproj" />
     <ProjectReference Include="..\Blocwerk.Authentication\Blocwerk.Authentication.csproj" />

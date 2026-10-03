@@ -86,24 +86,10 @@ public partial class BigWallUpdate
     // ---- Resume ----------------------------------------------------------------
 
     /// <summary>The persisted step to resume at; <see cref="WallUpdatePhase.Detected"/> when unknown.</summary>
-    private WallUpdatePhase ResumeTarget => _sessionInfo?.Phase switch
-    {
-        WallUpdatePhase.Carryover => WallUpdatePhase.Carryover,
-        WallUpdatePhase.Neighbours => WallUpdatePhase.Neighbours,
-        WallUpdatePhase.Touchup => WallUpdatePhase.Touchup,
-        WallUpdatePhase.Confirm => WallUpdatePhase.Confirm,
-        _ => WallUpdatePhase.Detected,
-    };
+    private WallUpdatePhase ResumeTarget => WallUpdateResume.TargetFor(_sessionInfo?.Phase);
 
     /// <summary>What the Resume button promises, so the user knows where they are going back to.</summary>
-    private string ResumeLabel => ResumeTarget switch
-    {
-        WallUpdatePhase.Carryover => "Resume at the carryover review",
-        WallUpdatePhase.Neighbours => "Resume at the overlap review",
-        WallUpdatePhase.Touchup => "Resume at the final touch-up",
-        WallUpdatePhase.Confirm => "Resume at the confirmation",
-        _ => "Resume at the detected holds",
-    };
+    private string ResumeLabel => WallUpdateResume.LabelFor(ResumeTarget);
 
     /// <summary>
     /// Picks the flow back up where it was left. Everything before the carryover has nothing persisted
@@ -128,6 +114,10 @@ public partial class BigWallUpdate
             await RestoreDecisionsAsync();
             _neighbourIndex = ClampNeighbourIndex(_sessionInfo?.NeighbourIndex ?? 0);
             _phase = target;
+            if (target == WallUpdatePhase.Confirm)
+            {
+                await LoadShapeSummaryAsync();
+            }
         }
         catch (Exception ex)
         {

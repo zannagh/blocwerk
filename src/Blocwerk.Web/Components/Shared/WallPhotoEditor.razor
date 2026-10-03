@@ -144,7 +144,7 @@
 
             @* No @key here, deliberately: this loop has never had one, and keying it on the hold id
                would change the diff's identity rules for every overlay layered below. *@
-            <HoldShape X="hold.X" Y="hold.Y" Radius="hold.Radius" ShapePoints="hold.ShapePoints"
+            <HoldShape X="hold.X" Y="hold.Y" Radius="hold.Radius" ShapePoints="hold.ShapePoints" ShapeHoles="hold.ShapeHoles"
                        Foot="isFoot" Fill="@fillColor" Stroke="@strokeColor" StrokeWidth="@sw" Dash="@dash"
                        PointerEvents="@hitEvents" Style="cursor: pointer"
                        OnClick="() => OnHoldClick(hold)" OnPointerDown="() => StartDrag(hold)" />
@@ -1104,6 +1104,16 @@
     [Parameter] public Guid? ResetToken { get; set; }
 
     /// <summary>
+    /// Opens the editor straight in the shape tool on this hold, zoomed onto it — the wall update's shape
+    /// review uses it to adjust one outline. A hold with no outline starts from the default octagon.
+    /// Null (the default) changes nothing.
+    /// </summary>
+    [Parameter] public Guid? InitialShapeEditHoldId { get; set; }
+
+    private Guid? _appliedInitialShapeEdit;
+    private bool _pendingShapeFocus;
+
+    /// <summary>
     /// True while this editor holds unsaved hold edits (adds/updates/deletes). Lets the parent
     /// warn before it re-scopes the editor (e.g. stepping panels) and drops them.
     /// </summary>
@@ -1210,7 +1220,7 @@
     // Geometry each staged clone had when manual alignment began (== its previous-generation
     // source, since a clone starts at its source's position). The MarkUnchanged reset restores a
     // hold back to it; "changed" is now a manual reviewer decision (_changedHoldIds), not geometry.
-    private readonly Dictionary<Guid, (double X, double Y, double Radius, List<ShapePoint>? Shape)> _manualBaseline = new();
+    private readonly Dictionary<Guid, (double X, double Y, double Radius, List<ShapePoint>? Shape, List<List<ShapePoint>>? Holes)> _manualBaseline = new();
     private bool _showChanges = true;
     private Guid? _markUnchangedHoldId;
 
@@ -1514,6 +1524,8 @@
                 _fitKey = fitKey;
                 await JS.InvokeVoidAsync("bwViewport.fitBox", _viewportRef, _frame != null, _frame);
             }
+
+            await FocusInitialShapeHoldAsync();
         }
         catch (JSException)
         {
@@ -1559,6 +1571,8 @@
         {
             SetMode(HoldTouchupTool.Border);
         }
+
+        ApplyInitialShapeEdit();
 
         // Reset all editing state whenever we enter or leave manual alignment so
         // stale hold ids from a prior staging session never bleed into the next one.
@@ -1684,6 +1698,10 @@
             IsAutoDetected = h.IsAutoDetected, Confidence = h.Confidence, Generation = h.Generation,
             Name = h.Name,
             ShapePoints = h.ShapePoints?.Select(sp => new ShapePoint { Dx = sp.Dx, Dy = sp.Dy }).ToList(),
+            ShapeHoles = ShapePoint.CloneRings(h.ShapeHoles),
+            WidthMm = h.WidthMm, HeightMm = h.HeightMm, AreaMm2 = h.AreaMm2, FacetId = h.FacetId,
+            PlaneAMm = h.PlaneAMm, PlaneBMm = h.PlaneBMm, FingerprintJson = h.FingerprintJson,
+            OutlineSource = h.OutlineSource, OutlineConfidence = h.OutlineConfidence, MetricSource = h.MetricSource,
         }).ToList();
     }
 
@@ -2106,6 +2124,8 @@
                     hold.ShapePoints[i].Dx = (spx + dxOff) - hold.X;
                     hold.ShapePoints[i].Dy = (spy + dyOff) - hold.Y;
                 }
+
+                DropPocketHoles(hold);
             }
             _alignmentChangedIds.Add(snap.Id);
         }
@@ -2131,6 +2151,7 @@
     // ---- per-hold ShapeTilt -----------------------------------------------
     private Guid? _shapeTiltHoldId;
     private List<ShapePoint>? _shapeTiltSnapshot;
+    private List<List<ShapePoint>>? _shapeTiltHolesSnapshot;
     private double _shapeTiltAngleX, _shapeTiltAngleY;
     private double _shapeTiltDragStartX, _shapeTiltDragStartY;
     private bool _shapeTiltDragging;
@@ -2144,9 +2165,14 @@
             hold.ShapePoints = ShapePoint.DefaultOctagon(hold.Radius);
         }
         _shapeTiltSnapshot = hold.ShapePoints.Select(sp => new ShapePoint { Dx = sp.Dx, Dy = sp.Dy }).ToList();
+        _shapeTiltHolesSnapshot = ShapePoint.CloneRings(hold.ShapeHoles);
     }
 
-    private void ClearShapeTiltSnapshot() { _shapeTiltSnapshot = null; }
+    private void ClearShapeTiltSnapshot()
+    {
+        _shapeTiltSnapshot = null;
+        _shapeTiltHolesSnapshot = null;
+    }
 
     private async Task StartShapeTiltDrag(MouseEventArgs e, Hold hold)
     {
@@ -2180,6 +2206,7 @@
             hold.ShapePoints[i].Dx = x2 * scale;
             hold.ShapePoints[i].Dy = y1 * scale;
         }
+        DropPocketHoles(hold);
         _updatedHoldIds.Add(hold.Id);
     }
 
@@ -2192,6 +2219,9 @@
             hold.ShapePoints[i].Dx = _shapeTiltSnapshot[i].Dx;
             hold.ShapePoints[i].Dy = _shapeTiltSnapshot[i].Dy;
         }
+
+        // The outline is back to the snapshot, so the pocket holes measured against it come back too.
+        hold.ShapeHoles = ShapePoint.CloneRings(_shapeTiltHolesSnapshot);
         _shapeTiltAngleX = _shapeTiltAngleY = 0;
         _updatedHoldIds.Add(hold.Id);
         StateHasChanged();
@@ -2222,6 +2252,8 @@
 
     private void StartShapePointDrag(Hold hold, int idx)
     {
+        // Pocket holes are dropped on the first REAL move (OnSvgMouseMove), not here: a tap without a
+        // move saves the unchanged outline, which the server treats as no reshape and keeps the holes.
         TakeSnapshot();
         _draggingShapeHold = hold;
         _draggingShapePointIdx = idx;
@@ -2293,8 +2325,15 @@
         if (_draggingShapePointIdx.HasValue && _draggingShapeHold != null)
         {
             var sp = _draggingShapeHold.ShapePoints![_draggingShapePointIdx.Value];
-            sp.Dx = pos.X - _draggingShapeHold.X;
-            sp.Dy = pos.Y - _draggingShapeHold.Y;
+            var nx = pos.X - _draggingShapeHold.X;
+            var ny = pos.Y - _draggingShapeHold.Y;
+            if (Math.Abs(sp.Dx - nx) > 1e-6 || Math.Abs(sp.Dy - ny) > 1e-6)
+            {
+                DropPocketHoles(_draggingShapeHold);
+            }
+
+            sp.Dx = nx;
+            sp.Dy = ny;
             StateHasChanged(); return;
         }
         if (_draggingHoldId == null) return;
@@ -2396,7 +2435,8 @@
         foreach (var h in Holds)
         {
             _manualBaseline[h.Id] = (h.X, h.Y, h.Radius,
-                h.ShapePoints?.Select(sp => new ShapePoint { Dx = sp.Dx, Dy = sp.Dy }).ToList());
+                h.ShapePoints?.Select(sp => new ShapePoint { Dx = sp.Dx, Dy = sp.Dy }).ToList(),
+                ShapePoint.CloneRings(h.ShapeHoles));
         }
     }
 
@@ -2448,6 +2488,7 @@
         hold.Y = b.Y;
         hold.Radius = b.Radius;
         hold.ShapePoints = b.Shape?.Select(sp => new ShapePoint { Dx = sp.Dx, Dy = sp.Dy }).ToList();
+        hold.ShapeHoles = ShapePoint.CloneRings(b.Holes);
         _changedHoldIds.Remove(holdId);
         _alignedHoldIds.Add(holdId);
     }
@@ -2493,8 +2534,16 @@
         TakeSnapshot();
         hold.Radius = _selectedRadius;
         if (hold.ShapePoints != null) hold.ShapePoints = ShapePoint.DefaultOctagon(_selectedRadius);
+        DropPocketHoles(hold);
         _updatedHoldIds.Add(hold.Id);
     }
+
+    /// <summary>
+    /// Client-side mirror of the server rule in <see cref="Hold.IsReshape"/>: a manual outer-shape edit
+    /// drops the detected pocket holes (they were measured against the detected outline),
+    /// so the preview matches what the save persists. Undo restores them via <see cref="TakeSnapshot"/>.
+    /// </summary>
+    private static void DropPocketHoles(Hold hold) => hold.ShapeHoles = null;
 
     private void SetSelectedCategory(HoldCategory cat)
     {
@@ -2566,6 +2615,43 @@
         {
             hold.Material = null;
         }
+    }
+
+    private void ApplyInitialShapeEdit()
+    {
+        if (InitialShapeEditHoldId is not { } id || _appliedInitialShapeEdit == id
+            || Holds.FirstOrDefault(h => h.Id == id) is not { } hold)
+        {
+            return;
+        }
+
+        _appliedInitialShapeEdit = id;
+
+        // Not SetMode: that also stores the tool as the member's editor preference, and a one-off
+        // adjustment must not make the main wall editor reopen in the shape tool.
+        tools.SetTool(HoldTouchupTool.Shape);
+        ClearToolState(HoldTouchupTool.Shape);
+        _shapeEditHoldId = id;
+        if (hold.ShapePoints is not { Count: >= 3 })
+        {
+            hold.ShapePoints = ShapePoint.DefaultOctagon(hold.Radius);
+        }
+
+        // Counted as an edit from the start, so Save hands the outline back even if it is taken as is.
+        _updatedHoldIds.Add(id);
+        _pendingShapeFocus = true;
+    }
+
+    private async Task FocusInitialShapeHoldAsync()
+    {
+        if (!_pendingShapeFocus || Holds.FirstOrDefault(h => h.Id == InitialShapeEditHoldId) is not { } hold)
+        {
+            return;
+        }
+
+        _pendingShapeFocus = false;
+        var zoom = Math.Clamp(0.12 / Math.Max(hold.Radius, 0.004), 2.0, 10.0);
+        await JS.InvokeVoidAsync("bwViewport.centerOn", _viewportRef, hold.X, hold.Y, zoom);
     }
 
     private async Task SaveChanges()
@@ -2644,6 +2730,7 @@
         var p1 = pts[edgeIdx];
         var p2 = pts[(edgeIdx + 1) % pts.Count];
         pts.Insert(edgeIdx + 1, new ShapePoint { Dx = (p1.Dx + p2.Dx) / 2, Dy = (p1.Dy + p2.Dy) / 2 });
+        DropPocketHoles(h);
         _updatedHoldIds.Add(h.Id);
     }
 
@@ -2653,6 +2740,7 @@
         if (h?.ShapePoints is not { Count: > 3 } pts) return;
         TakeSnapshot();
         pts.RemoveAt(pts.Count - 1);
+        DropPocketHoles(h);
         _updatedHoldIds.Add(h.Id);
     }
 

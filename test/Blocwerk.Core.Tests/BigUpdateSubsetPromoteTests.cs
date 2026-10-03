@@ -418,11 +418,11 @@ public class BigUpdateSubsetPromoteTests
         // Four mat-signature holds (over-sized radius in the bottom margin).
         var looseMats = new List<Hold>
         {
-            new() { WallId = wall.Id, WallPanelId = centre.Id, X = 0.20, Y = 0.813, Radius = 0.0637, Generation = 2 },
-            new() { WallId = wall.Id, WallPanelId = centre.Id, X = 0.45, Y = 0.817, Radius = 0.0662, Generation = 2 },
-            new() { WallId = wall.Id, WallPanelId = centre.Id, X = 0.70, Y = 0.821, Radius = 0.0680, Generation = 2 },
+            new() { WallId = wall.Id, WallPanelId = centre.Id, X = 0.20, Y = 0.813, Radius = 0.0637, Generation = 2, IsAutoDetected = true },
+            new() { WallId = wall.Id, WallPanelId = centre.Id, X = 0.45, Y = 0.817, Radius = 0.0662, Generation = 2, IsAutoDetected = true },
+            new() { WallId = wall.Id, WallPanelId = centre.Id, X = 0.70, Y = 0.821, Radius = 0.0680, Generation = 2, IsAutoDetected = true },
         };
-        var boulderMat = new Hold { WallId = wall.Id, WallPanelId = centre.Id, X = 0.55, Y = 0.813, Radius = 0.0637, Generation = 2 };
+        var boulderMat = new Hold { WallId = wall.Id, WallPanelId = centre.Id, X = 0.55, Y = 0.813, Radius = 0.0637, Generation = 2, IsAutoDetected = true };
         db.Holds.AddRange(looseMats);
         db.Holds.Add(boulderMat);
 

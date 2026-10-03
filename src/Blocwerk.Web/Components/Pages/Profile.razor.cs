@@ -203,6 +203,7 @@ public partial class Profile
         "already" => "That account is already linked to this profile.",
         "error" => "Couldn't link that account. Please try again.",
         "unavailable" => "That provider isn't available.",
+        "apikey" => Blocwerk.Core.Services.ApiKeySessionRestrictedException.UserMessage,
         _ => null,
     };
 

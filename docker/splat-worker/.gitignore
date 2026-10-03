@@ -1,0 +1,3 @@
+# run-native.sh downloads the pinned Brush release and creates a venv here
+.bin/
+.venv/

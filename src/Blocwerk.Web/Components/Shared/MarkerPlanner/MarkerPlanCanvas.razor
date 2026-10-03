@@ -1,0 +1,43 @@
+@* The unfolded net: surfaces as filled polygons, markers as squares coloured by whether they reach
+   their on-photo pixel target. Pointer handling lives in wwwroot/js/marker-planner.js; this component
+   only draws and turns its reports into semantic events for the page. *@
+@using Blocwerk.Core.MarkerPlanning
+
+<div class="mplan-canvas @(AddMode ? "adding" : null)">
+    <svg @ref="svg" class="mplan-svg" viewBox="@Model.ViewBox" preserveAspectRatio="xMidYMid meet"
+         role="img" aria-label="Unfolded net of the wall with its markers">
+        <g class="mplan-surfaces">
+        @foreach (var segment in Model.Segments)
+        {
+            <polygon @key="segment.Index" data-segment="@segment.Index" points="@segment.Points"
+                     class="mplan-surface @(segment.Index == SelectedSegment ? "sel" : null)" />
+        }
+        </g>
+        @foreach (var segment in Model.Segments)
+        {
+            <g class="mplan-surface-label">
+                <text x="@F(segment.LabelX)" y="@F(segment.LabelY)" font-size="@F(Model.LabelSizeMm)" text-anchor="middle">
+                    <tspan x="@F(segment.LabelX)" dy="0">@segment.Title</tspan>
+                    <tspan x="@F(segment.LabelX)" dy="1.25em" class="mplan-surface-detail">@segment.Detail</tspan>
+                </text>
+            </g>
+        }
+        <g class="mplan-markers">
+        @foreach (var marker in Model.Markers)
+        {
+            <g @key="marker.Id" data-marker-id="@marker.Id" data-cx="@F(marker.CentreX)" data-cy="@F(marker.CentreY)"
+               class="mplan-marker @(marker.MeetsTarget ? "ok" : "warn") @(marker.Role == MarkerRole.Corner ? "corner" : "filler") @(marker.Id == SelectedMarker ? "sel" : null)">
+                <title>#@marker.Id · @F(marker.SizeMm) mm @marker.Role.ToString().ToLowerInvariant() · ≈ @F(Math.Round(marker.EstimatedPx)) px on photos</title>
+                <polygon points="@marker.Points" />
+                <text x="@F(marker.CentreX)" y="@F(marker.CentreY)" font-size="@F(marker.SizeMm * 0.55)"
+                      text-anchor="middle" dominant-baseline="central">@marker.Id</text>
+            </g>
+        }
+        </g>
+    </svg>
+    <div class="mplan-legend" aria-hidden="true">
+        <span><i class="ok"></i>reaches its pixel target</span>
+        <span><i class="warn"></i>too small at this distance</span>
+        <span><i class="corner"></i>corner (thick outline)</span>
+    </div>
+</div>

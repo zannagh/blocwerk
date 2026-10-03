@@ -1,0 +1,64 @@
+.refresh-page { max-width: 960px; margin: 0 auto; padding: 12px 16px 48px; }
+.refresh-page h1 { margin: 8px 0 12px; }
+.refresh-page ::deep .refresh-drop-zone {
+    display: flex; flex-direction: column; gap: 6px; padding: 28px 16px; text-align: center; cursor: pointer;
+    border: 2px dashed var(--border-light); border-radius: var(--r-md); background: var(--bg-surface-alt);
+}
+.refresh-page ::deep .refresh-drop-zone.is-busy { opacity: 0.6; cursor: progress; }
+.refresh-page ::deep .refresh-drop-zone input { margin: 8px auto 0; max-width: 100%; }
+.refresh-page ::deep .refresh-progress { width: 100%; height: 8px; margin: 8px 0 4px; accent-color: var(--top-hold, currentColor); }
+.refresh-page ::deep .refresh-counts,
+.refresh-page ::deep .refresh-problems { margin: 10px 0; }
+.refresh-page ::deep .refresh-panels { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 12px; margin: 12px 0; }
+.refresh-page ::deep .refresh-panel-card { padding: 10px; border: 1px solid var(--border-light); border-radius: var(--r-md); background: var(--bg-surface-alt); }
+.refresh-page ::deep .refresh-panel-card { min-width: 0; }
+.refresh-page ::deep .refresh-panel-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+.refresh-page ::deep .refresh-photo-select { width: 100%; min-width: 0; max-width: 100%; text-overflow: ellipsis; }
+.refresh-page ::deep .refresh-panel-photos { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+.refresh-page ::deep .refresh-panel-photos figure { margin: 0; }
+.refresh-page ::deep .refresh-panel-photos img,
+.refresh-page ::deep .refresh-keep { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--r-md); background: var(--bg-surface); }
+.refresh-page ::deep .refresh-keep { display: flex; align-items: center; justify-content: center; font-size: 0.8rem; color: var(--text-secondary); }
+.refresh-page ::deep figcaption { font-size: 0.75rem; color: var(--text-secondary); text-align: center; }
+.refresh-page ::deep .refresh-badge { flex-shrink: 0; white-space: nowrap; font-size: 0.75rem; padding: 2px 8px; border-radius: 999px; background: var(--bg-surface); }
+.refresh-page ::deep .refresh-badge.is-high { color: var(--success-text); background: var(--success-bg); }
+.refresh-page ::deep .refresh-badge.is-medium { color: var(--warning-text); background: var(--warning-bg); }
+.refresh-page ::deep .refresh-badge.is-none { color: var(--text); background: var(--bg-surface); }
+.refresh-page ::deep .refresh-badge.is-user { color: var(--info-text); background: var(--info-bg); }
+.refresh-page ::deep .refresh-summary li { margin: 4px 0; }
+.refresh-page ::deep .refresh-summary li.is-attention { color: var(--status-warning); }
+.refresh-page ::deep .refresh-timeline { list-style: none; padding: 0; margin: 16px 0; }
+.refresh-page ::deep .refresh-step { display: flex; gap: 10px; padding: 6px 0; }
+/* Step marks: pending = empty ring, running = spinning ring, done = filled check, failed = filled "!",
+   waiting for you = blue ring "?", skipped = dashed ring. */
+.refresh-page ::deep .refresh-step-mark {
+    flex: 0 0 22px; width: 22px; height: 22px; box-sizing: border-box; margin-top: 1px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 2px solid var(--border-light); border-radius: 50%;
+    font-size: 0.75rem; font-weight: 700; line-height: 1; color: var(--text-secondary);
+}
+.refresh-page ::deep .refresh-step.is-pending > div { opacity: 0.55; }
+.refresh-page ::deep .refresh-step.is-running .refresh-step-mark {
+    border-color: var(--accent); border-top-color: transparent; animation: refresh-spin 0.9s linear infinite;
+}
+.refresh-page ::deep .refresh-step.is-running strong { color: var(--accent); }
+.refresh-page ::deep .refresh-step.is-done .refresh-step-mark { background: var(--status-success); border-color: var(--status-success); color: #fff; }
+.refresh-page ::deep .refresh-step.is-failed .refresh-step-mark { background: var(--status-danger); border-color: var(--status-danger); color: #fff; }
+.refresh-page ::deep .refresh-step.is-waiting .refresh-step-mark { border-color: var(--status-info); color: var(--status-info); }
+.refresh-page ::deep .refresh-step.is-skipped .refresh-step-mark { border-style: dashed; }
+@keyframes refresh-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+    .refresh-page ::deep .refresh-step.is-running .refresh-step-mark { animation: none; border-top-color: var(--accent); background: radial-gradient(var(--accent) 35%, transparent 40%); }
+}
+.refresh-page ::deep .refresh-step-state { font-size: 0.8rem; color: var(--text-secondary); }
+.refresh-page ::deep .refresh-actions,
+.refresh-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.refresh-page ::deep .refresh-actions > *,
+.refresh-actions > * { width: auto; }
+.refresh-done { font-weight: 600; }
+.refresh-actions { align-items: center; }
+.refresh-discard-question { flex: 1 1 100%; font-weight: 600; }
+/* Room below the last row, so the discard question never ends under the tab bar or a bottom banner. */
+.refresh-page { padding-bottom: calc(48px + var(--bottomnav-h, 0px)); }
+.refresh-actions > button { scroll-margin-bottom: calc(24px + var(--bottomnav-h, 0px)); }
+.refresh-page ::deep .refresh-3d-note { padding: 8px 12px; border-radius: var(--r-md); background: var(--info-bg); color: var(--info-text); }

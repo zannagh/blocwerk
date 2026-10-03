@@ -3,7 +3,9 @@ using System.Diagnostics.Metrics;
 using System.Reflection;
 using Blocwerk.Authentication;
 using Blocwerk.Authentication.Controllers;
+using Blocwerk.Authentication.Endpoints;
 using Blocwerk.Core;
+using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
 using Blocwerk.Core.Telemetry;
@@ -122,12 +124,10 @@ public static class Program
 
         // Logs are exported to OTLP by the Serilog OpenTelemetry sink configured above, so no
         // separate Microsoft.Extensions.Logging OTLP provider is registered here.
-        builder.Services.Configure<ForwardedHeadersOptions>(options =>
-        {
-            options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost;
-            options.KnownIPNetworks.Clear();
-            options.KnownProxies.Clear();
-        });
+        // Blocwerk:Server:TrustedProxies (empty = trust every sender, as before). See TrustedProxies.
+        builder.Services.AddOptions<ForwardedHeadersOptions>()
+            .Configure<Blocwerk.Core.Configuration.BlocwerkSettings>(
+                (options, blocwerk) => TrustedProxies.Apply(options, blocwerk.Server.TrustedProxies));
 
         builder.ConfigureCoreServices(out var settings)
             .ConfigureAuthenticationAndAuthorization(settings)
@@ -217,6 +217,9 @@ public static class Program
         builder.Services.AddSingleton<EditActivityRegistry>();
         builder.Services.AddScoped<CircuitEditActivity>();
 
+        // Core's long-running work (capture video upload + frame extraction) holds the same gate.
+        builder.Services.AddSingleton<IDeployBusyGate, EditActivityDeployBusyGate>();
+
         // Heartbeats this circuit's leases while its connection is UP, so a lease whose client has
         // gone silent (a sleeping tablet behind a NAT) expires on its TTL instead of holding
         // /health/ready-to-deploy at 503 until the process restarts — which used to block the very
@@ -230,6 +233,10 @@ public static class Program
         builder.Services.AddSingleton<MaintenanceJobRunner>();
         builder.Services.AddScoped<ImageVariantWarmer>();
         builder.Services.AddScoped<AvatarNormalizer>();
+
+        // The 3D runners' rate limit. Registered through RateLimitPolicies like the API-key login's, so the
+        // app keeps ONE OnRejected that dispatches per policy (a second AddRateLimiter would overwrite it).
+        builder.Services.AddRunnerRateLimit();
 
         // Health checks: "busy" (Degraded while editing, not Unhealthy) gates deploys; "database"
         // probes PostgreSQL. Both are surfaced anonymously via MapHealthChecks below.
@@ -286,6 +293,13 @@ public static class Program
         app.ConfigureAuthenticationMiddlewares();
         app.MapControllers();
 
+        // Personal-API-key browser login for automation. OFF by default: unmapped (a plain 404)
+        // unless Blocwerk:Auth:ApiKeyLogin:Enabled is set. See ApiKeyLoginEndpoints.
+        app.MapApiKeyLogin(settings);
+
+        // The 3D runners' pull API (runner keys, never user sessions); rate-limited per caller.
+        app.MapRunnerApi();
+
         // Prometheus/OpenMetrics scrape endpoint for the custom + runtime + ASP.NET metrics.
         // Handy for a quick `curl http://<host>:5050/metrics` when the dashboard isn't in reach.
         // It is unauthenticated and carries operational counts (no PII; wall ids are hashed), so
@@ -338,6 +352,15 @@ public static class Program
         // wall photo routes above.
         app.MapWallPanelPhotos();
 
+        // Per-facet textures of a solved glyph wall model (3D view); same posture as the panel photos.
+        app.MapWallGeometryTextures();
+
+        // The photo-real (Gaussian splat) scene of the same model; same posture as its textures.
+        app.MapWallGeometrySplats();
+
+        // Device reports of the photo-real view (start, level steps, lost contexts), logged only.
+        app.MapPhotoRealDiagnostics();
+
         // User avatar bytes; same browser-only auth posture as the wall photo routes above.
         app.MapUserAvatars();
 
@@ -380,6 +403,15 @@ public static class Program
         });
 
         app.MapBetaVideoUpload();
+
+        // A capture draft's optional walk-along video (photo-real view only), streamed to disk.
+        app.MapCaptureVideoUpload();
+
+        // A capture photo for the "Make sizes exact" picker (wall admin only, see CapturePhotoEndpoint).
+        app.MapCapturePhotos();
+
+        // The "Update panels + 3D" drop zone: one photo or video per request (see WallRefreshUploadEndpoint).
+        app.MapWallRefreshUpload();
 
         // HLS adaptive-bitrate ladder for a Ready clip that has one. Same wall/share-token gate as the
         // byte route above (see BetaVideoHlsEndpoints); a denial or an MP4-only clip is a 404 and the

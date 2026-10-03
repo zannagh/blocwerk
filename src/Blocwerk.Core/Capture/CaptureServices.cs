@@ -1,0 +1,81 @@
+using Blocwerk.Core.Capture.FollowUp;
+using Blocwerk.Core.Compute;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace Blocwerk.Core.Capture;
+
+/// <summary>DI registration of the in-app glyph capture and the compute job clients.</summary>
+public static class CaptureServices
+{
+    public static IServiceCollection AddWallCapture(this IServiceCollection services)
+    {
+        ComputeJobClientFactory.Register(services);
+        services.AddSingleton<ICaptureFileStore, FileSystemCaptureFileStore>();
+        services.AddSingleton<ICaptureVideoFrameExtractor, CaptureVideoFrameExtractor>();
+        services.AddSingleton<ICapturePhotoConverter, HeifCapturePhotoConverter>();
+        services.AddSingleton(sp => WallCapturePipelineOptions.Bind(sp.GetService<IConfiguration>()));
+        services.AddSingleton(_ => new CaptureVideoUploadSlots());
+
+        // Single-instance app: one in-memory queue and ONE worker; the row status is the durable truth
+        // and the worker re-enqueues unfinished captures on start (see WallCaptureWorker).
+        services.AddSingleton<WallCaptureQueue>();
+        services.AddSingleton<WallCaptureProcessor>();
+
+        // The post-capture chain: what a live model does for the wall's existing holds (see CaptureFollowUpChain).
+        services.AddSingleton<CaptureFollowUpChain>();
+        services.AddScoped<ICaptureFollowUpStep, PlaceHoldsFollowUpStep>();
+        services.AddScoped<ICaptureFollowUpStep, RefineFootprintsFollowUpStep>();
+        services.AddScoped<ICaptureFollowUpStep, DetectVolumesFollowUpStep>();
+        services.AddScoped<ICaptureFollowUpStep, SuggestHoldLinksFollowUpStep>();
+        services.AddScoped<ICaptureFollowUpStep, MeasureProtrusionFollowUpStep>();
+        services.AddScoped<ICaptureFollowUpStep, FindHoldProposalsFollowUpStep>();
+        services.AddScoped<ICaptureFollowUpStep, CoverageReportFollowUpStep>();
+        services.AddScoped<Coverage.ICaptureCoverageService, Coverage.CaptureCoverageService>();
+
+        // Corrections of the active model (new model versions) and the chain re-run on the corrected version.
+        services.AddSingleton<Corrections.CorrectionFollowUpQueue>();
+        services.AddHostedService<Corrections.CorrectionFollowUpWorker>();
+        services.AddScoped<Corrections.IWallGeometryCorrectionService, Corrections.WallGeometryCorrectionService>();
+
+        // 3D runners: GPU machines that pull the photo-real training (see GpuJobQueue).
+        services.AddSingleton(sp => Runners.GpuRunnerOptions.Bind(sp.GetService<IConfiguration>()));
+        services.AddSingleton<Runners.GpuJobSignal>();
+        services.AddSingleton<Runners.GpuJobQueue>();
+        services.AddHostedService<Runners.GpuJobSweepWorker>();
+
+        // Photo-real previews a runner uploads while it trains: installed beside the capture worker (GpuPreviewWorker).
+        services.AddSingleton<Runners.GpuPreviewQueue>();
+        services.AddHostedService<GpuPreviewWorker>();
+        services.AddScoped<Runners.IGpuRunnerService, Runners.GpuRunnerService>();
+        services.AddSingleton<Runners.SplatQualityOffer>();
+
+        services.AddHostedService<WallCaptureWorker>();
+
+        // Rendering a finished capture's wall textures again, beside the capture worker (see WallTextureRerenderWorker).
+        services.AddSingleton<WallTextureRerenderQueue>();
+        services.AddHostedService<WallTextureRerenderWorker>();
+
+        // Solving a finished capture's model again from its photos, beside the capture worker (see WallModelResolveWorker).
+        services.AddSingleton<WallModelResolveQueue>();
+        services.AddHostedService<WallModelResolveWorker>();
+        services.AddScoped<IWallCaptureService, WallCaptureService>();
+        services.AddScoped<ICapturePanelPhotoService, CapturePanelPhotoService>();
+
+        // Replaying a finished capture on another instance without training (app admins; see CapturePackageService).
+        services.AddScoped<Replay.ICapturePackageService, Replay.CapturePackageService>();
+
+        // Retention: stale drafts, expired photos and files no row references (see WallCaptureSweeper).
+        services.AddSingleton<WallCaptureSweeper>();
+        services.AddHostedService<WallCaptureSweepWorker>();
+
+        // Level-of-detail ladders of photo-real scenes stored before the ladder existed.
+        services.AddSingleton<SplatLodBackfill>();
+        services.AddHostedService(sp => sp.GetRequiredService<SplatLodBackfill>());
+
+        // Sharpness of capture photos stored unscored, or with the 0 every photo got before the scorer read colour JPEGs.
+        services.AddSingleton<CapturePhotoSharpnessBackfill>();
+        services.AddHostedService(sp => sp.GetRequiredService<CapturePhotoSharpnessBackfill>());
+        return services;
+    }
+}

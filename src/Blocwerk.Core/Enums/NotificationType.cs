@@ -32,4 +32,7 @@ public enum NotificationType
 
     /// <summary>Someone joined a wall you are a member of.</summary>
     MemberJoined = 64,
+
+    /// <summary>A 3D wall model you started computing (in-app glyph capture) is ready.</summary>
+    WallModelReady = 128,
 }

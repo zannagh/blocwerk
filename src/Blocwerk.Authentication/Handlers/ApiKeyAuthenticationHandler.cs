@@ -3,6 +3,7 @@ using System.Text.Encodings.Web;
 using Blocwerk.Authentication.Authorization;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
 using Blocwerk.Core.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
@@ -62,7 +63,8 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<ApiKeyAuthentic
             return AuthenticateResult.NoResult();
         }
 
-        var key = await apiKeyService.ValidateAsync(token, Context.RequestAborted);
+        // Found without recording a use: LastUsedAt is stamped only once the owner checks below pass.
+        var key = await apiKeyService.FindActiveAsync(token, Context.RequestAborted);
         if (key is null)
         {
             return AuthenticateResult.Fail(FailureMessage);
@@ -93,6 +95,7 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<ApiKeyAuthentic
             return AuthenticateResult.Fail(FailureMessage);
         }
 
+        await apiKeyService.MarkUsedAsync(key, Context.RequestAborted);
         var principal = new ClaimsPrincipal(identity);
         return AuthenticateResult.Success(new AuthenticationTicket(principal, Scheme.Name));
     }
@@ -143,6 +146,11 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<ApiKeyAuthentic
         if (key.WallId is { } wallId)
         {
             claims.Add(new Claim(ApiKeyClaimTypes.WallId, wallId.ToString()));
+        }
+
+        if (key.AllowWrite && key.Scope == ApiKeyScope.User)
+        {
+            claims.Add(new Claim(ApiKeyClaimTypes.AllowWrite, "true"));
         }
 
         return new ClaimsIdentity(claims, SchemeName, ClaimTypes.Name, ClaimTypes.Role);

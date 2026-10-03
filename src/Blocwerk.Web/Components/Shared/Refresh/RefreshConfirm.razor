@@ -1,0 +1,71 @@
+@using Blocwerk.Core.Refresh
+@* The quick review's one confirm: what the panel update will do, before anything goes live. *@
+
+<div class="refresh-confirm">
+    <h2>Check and apply</h2>
+    @if (View.Summary is { } s)
+    {
+        <p>New photos for: @string.Join(", ", s.Panels)</p>
+        <ul class="refresh-summary">
+            <li><strong>@s.Refound</strong> holds found again on the new photos</li>
+            <li class="@(s.KeptInPlace > 0 ? "is-attention" : null)">
+                <strong>@s.KeptInPlace</strong> holds not found again, kept where they were
+                @if (s.BouldersOnKeptHolds > 0)
+                {
+                    <span> (@s.BouldersOnKeptHolds boulders use one of them)</span>
+                }
+            </li>
+            <li>
+                <strong>@s.NewHolds</strong> new holds@(s.NewSeenIn3D > 0 ? $", {s.NewSeenIn3D} of them also seen in the 3D model" : string.Empty)
+            </li>
+            <li>
+                <strong>@s.DroppedDetections</strong> detections left out (on a marker, outside the old photo, or unchanged)
+                @if (s.DroppedByThe3DModel > 0)
+                {
+                    <span>; @s.DroppedByThe3DModel of them the 3D model shows as a hold you already have, or off the wall</span>
+                }
+            </li>
+            @if (s.PossiblyMoved > 0)
+            {
+                <li class="is-attention"><strong>@s.PossiblyMoved</strong> holds may have moved; the quick review leaves them in place</li>
+            }
+            <li><strong>@s.OverlapLinks</strong> holds linked across panels@(s.OverlapsLeftOut > 0 ? $", {s.OverlapsLeftOut} unsure overlaps left unlinked" : string.Empty)</li>
+            <li><strong>@s.Removed</strong> holds removed</li>
+        </ul>
+    }
+
+    @if (View.Check3DPending)
+    {
+        <p class="refresh-3d-note" role="status">The new 3D model is ready. Checking the new detections against it; this takes a minute or two.</p>
+    }
+    else if (Waiting3D)
+    {
+        <p class="refresh-3d-note">
+            The 3D model is still being built@(View.Capture?.Stage is { } stage ? $" ({stage})" : string.Empty).
+            When it is ready, this check runs again with it and leaves out detections of holds you already have.
+            You can apply now, or wait here.
+        </p>
+    }
+    else if (View.Summary?.CheckedWithModelId is not null)
+    {
+        <p class="refresh-3d-note">Checked against the 3D model from this visit.</p>
+    }
+
+    <p class="hint">
+        Nothing is live yet. "Open full review" shows every step of the update with these choices already filled in.
+    </p>
+    <div class="refresh-actions">
+        <button class="btn-primary" @onclick="OnApply" disabled="@View.Check3DPending">Apply update</button>
+        <a class="btn-secondary" href="/walls/@View.WallId?update=review&amp;session=@View.UpdateSessionId">Open full review</a>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public WallRefreshView View { get; set; } = default!;
+
+    [Parameter]
+    public EventCallback OnApply { get; set; }
+
+    private bool Waiting3D => View.Capture is { IsRunning: true } && View.Summary is { Attempted3DModelId: null };
+}

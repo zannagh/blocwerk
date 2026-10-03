@@ -1,0 +1,166 @@
+"""One full solve: free BA -> outlier down-weighting -> facet assignment -> facet BA -> frame."""
+import numpy as np
+
+from . import unplanned
+from .facets import assign_facets, build_facet_problem, coplanarity, marker_normals
+from .ba import Problem, pack_free, unpack_free
+from .freeba import ROBUST, build_cameras, free_mask, per_marker_rms, per_obs_err, rms, run_free
+from .frame import angles, camera_up_vote, gravity, pseudo_up
+from .refplanes import gravity_refs, split_report, whole_segment_planes
+from .reject import find_rejections
+from .request import observations
+
+# A marker whose free-solve RMS exceeds both of these is treated as physically suspect (bent, not
+# flat, partly occluded) and down-weighted: sigma = its RMS / the median marker RMS (capped).
+OUTLIER_MIN_PX = 3.0
+OUTLIER_X_MEDIAN = 4.0
+OUTLIER_MAX_SIGMA = 10.0
+
+
+def _noop(*_):
+    pass
+
+
+def downweight_outliers(prob, x, obs, free_intr):
+    pm = per_marker_rms(prob, x, obs)
+    med = float(np.median(list(pm.values())))
+    flagged = {}
+    for m, r in pm.items():
+        if r > OUTLIER_MIN_PX and r > OUTLIER_X_MEDIAN * med:
+            s = float(min(OUTLIER_MAX_SIGMA, r / med))
+            flagged[m] = {"freeRmsPx": round(r, 3), "medianRmsPx": round(med, 3), "sigmaPx": round(s, 3)}
+            for o in obs:
+                if o["id"] == m:
+                    o["sigma"] = np.maximum(o["sigma"], s)
+    if flagged:
+        prob._obs_arrays()
+        x, _ = prob.solve(x, free_mask(prob, free_intr), max_nfev=300, **ROBUST)
+    return x, flagged
+
+
+def reject_false_detections(prob, x, obs, free_intr, flagged, auto_downweight):
+    """Remove observations that contradict the rest (reject.py), re-solve, re-run the down-weighting."""
+    found = find_rejections(prob, x, obs, per_obs_err(prob, x))
+    if not found:
+        return prob, x, obs, flagged, []
+    drop = {k for k, _ in found}
+    keep = [o for k, o in enumerate(obs) if k not in drop]
+    for o in keep:
+        o["sigma"] = o["sigma0"].copy()
+    intr, cam_pose, mk_pose = unpack_free(prob, x)
+    mids = sorted({o["id"] for o in keep})
+    nprob = Problem(keep, prob.cams, prob.groups, prob.root, mids, prob.obj, prior=prob.prior)
+    x = pack_free(nprob, intr, cam_pose, {m: mk_pose[m] for m in mids})
+    x, _ = nprob.solve(x, free_mask(nprob, free_intr), max_nfev=300, **ROBUST)
+    flagged = {}
+    if auto_downweight:
+        x, flagged = downweight_outliers(nprob, x, keep, free_intr)
+    return nprob, x, keep, flagged, [rec for _, rec in found]
+
+
+def reference_facet(members, facet_segment, segments):
+    """World-x facet: lowest declared non-reference segment's biggest facet; else the biggest facet."""
+    cands = [s for s in sorted(segments) if not segments[s].vertical_reference]
+    for s in cands:
+        fs = [f for f, seg in facet_segment.items() if seg == s]
+        if fs:
+            return max(fs, key=lambda f: (len(members[f]), f))
+    return max(members, key=lambda f: (len(members[f]), f))
+
+
+def facet_solve(prob, x, members, free_intr):
+    fprob, fx = build_facet_problem(prob, x, members)
+    fx, _ = fprob.solve(fx, free_mask(fprob, free_intr), loss="linear", max_nfev=300)
+    fx, _ = fprob.solve(fx, free_mask(fprob, free_intr), max_nfev=300, **ROBUST)
+    return fprob, fx
+
+
+def declared_angles(req):
+    """{declared segment: its declared angle (deg; a vertical reference without one: 0) or None}."""
+    return {i: s.declared_angle_deg if s.declared_angle_deg is not None else (0.0 if s.vertical_reference else None)
+            for i, s in req.segments.items()}
+
+
+def solve_structure(req, progress=_noop, drop_image=None, members=None):
+    """Everything up to (not including) gravity. Returns the solution dict."""
+    obs = observations(req)
+    if drop_image:
+        obs = [o for o in obs if o["image"] != drop_image]
+    cams, intr, free_intr, prior = build_cameras(req)
+    cams = {k: v for k, v in cams.items() if k != drop_image}
+    obj = {o["id"]: o["obj"] for o in obs}
+    progress(0.05, "free bundle adjustment")
+    prob, x, obs, unreached = run_free(obs, cams, intr, free_intr, prior, obj)
+    progress(0.45, "outlier check")
+    for o in obs:
+        o["sigma0"] = o["sigma"].copy()
+    flagged, rejected = {}, []
+    auto_downweight = req.options.get("autoDownweight", True)
+    if auto_downweight:
+        x, flagged = downweight_outliers(prob, x, obs, free_intr)
+    if req.options.get("rejectOutliers", True):
+        prob, x, obs, flagged, rejected = reject_false_detections(prob, x, obs, free_intr, flagged,
+                                                                  auto_downweight)
+    declared = declared_angles(req)
+    decisions = []
+    facet_segment = None
+    if members is None:
+        progress(0.55, "facet assignment")
+        members, facet_segment, decisions = assign_facets(prob, x, declared, req.options.get("facets"),
+                                                          suspect=set(flagged), nominal_of=req.segment_of)
+        off = unplanned.misfits(req, obs, members, facet_segment, flagged)
+        if off:
+            sol = solve_structure(unplanned.without(req, off), progress)
+            sol["rejected"] = unplanned.records(req, off) + sol["rejected"]
+            return sol
+    members = {k: [m for m in v if m in prob.mids] for k, v in members.items()}
+    members = {k: v for k, v in members.items() if v}
+    if facet_segment is None:
+        facet_segment = {f: int(f.rstrip("abcdefgh")) for f in members}
+    progress(0.65, "facet bundle adjustment")
+    fprob, fx = facet_solve(prob, x, members, free_intr)
+    fmw = fprob.marker_world(fx)
+    sol = {
+        "req": req, "obs": obs, "cams": prob.cams, "prob": prob, "x": x, "fprob": fprob, "fx": fx,
+        "members": members, "facet_segment": facet_segment, "decisions": decisions,
+        "downweighted": flagged, "rejected": rejected, "unreached": unreached, "free_intr": free_intr,
+        "free_normals": marker_normals(prob, x),
+        "coplanarity_free": coplanarity(prob, x, members),
+        "rms_free": rms(per_obs_err(prob, x), obs),
+        "rms_facet": rms(per_obs_err(fprob, fx), obs),
+        "err_facet": per_obs_err(fprob, fx),
+        "normals": {fid: fprob.facet_frame(fx, fid)[0][:, 2] for fid in fprob.facets},
+        "corners_ba": fmw, "centres": {m: c.mean(0) for m, c in fmw.items()},
+    }
+    sol["gravity_planes"] = whole_segment_planes(sol, facet_solve)
+    return sol
+
+
+def apply_gravity(sol, level_pairs=None):
+    """Gravity + reference facet + angles. Cheap: can be re-run with different level pairs."""
+    req = sol["req"]
+    level_pairs = req.level_pairs if level_pairs is None else level_pairs
+    normals, members, fseg = sol["normals"], sol["members"], sol["facet_segment"]
+    ref_facets = [f for f in sorted(members) if fseg[f] in req.segments
+                  and req.segments[fseg[f]].vertical_reference]
+    cams_ba = {img: sol["fprob"].cam(sol["fx"], img) for img in sol["fprob"].images}
+    cam_up = camera_up_vote(cams_ba)
+    planes = sol.get("gravity_planes", {})
+    refs = gravity_refs(ref_facets, normals, fseg, planes)
+    up, ginfo = gravity(refs, sol["centres"], level_pairs, cam_up)
+    ref = reference_facet(members, fseg, req.segments)
+    ginfo["known"] = up is not None
+    if planes:
+        ginfo["splitReferences"] = split_report(sol, planes, up)
+    if up is None:
+        up = pseudo_up(normals[ref], cam_up)
+    sol.update({"up": up, "gravity": ginfo, "ref_facet": ref, "ref_facets_gravity": ref_facets,
+                "level_pairs": list(level_pairs), "cams_ba": cams_ba,
+                "angles": angles(normals, up, ref)})
+    return sol
+
+
+def solve(req, progress=_noop):
+    sol = apply_gravity(solve_structure(req, progress))
+    progress(0.8, "gravity and world frame")
+    return sol

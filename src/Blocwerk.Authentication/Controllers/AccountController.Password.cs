@@ -1,6 +1,4 @@
-using System.Security.Claims;
-using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.Cookies;
+using Blocwerk.Authentication.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -89,43 +87,11 @@ public partial class AccountController
     internal async Task<IActionResult> CompletePasswordSignInAsync(
         Core.Entities.User user, string? returnUrl, bool isPersistent)
     {
-        // Build a cookie principal carrying the exact user id as a "uid" claim, so CurrentUserService
-        // resolves this session by id (path 0) — precise, and never misresolving or creating a blank user
-        // when the display name contains "__". The NameIdentifier/Name claims stay for the legacy
-        // identifier path and for anything that reads the display name off the principal.
-        var claims = new List<Claim>
-        {
-            new(ClaimTypes.NameIdentifier, user.UserAuthId),
-            new(ClaimTypes.Name, user.UserName),
-            new("Name", user.UserName),
-            new("uid", user.Id.ToString()),
-        };
-
-        var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
-        var principal = new ClaimsPrincipal(identity);
-
-        // "Keep me signed in" → a persistent, long-lived (1-year absolute) cookie that overrides the cookie
-        // handler's 8h sliding default. Unchecked → a session cookie that ends when the browser closes (the
-        // handler's sliding window still bounds the ticket). OAuth logins are unaffected either way.
-        var authProperties = isPersistent
-            ? new AuthenticationProperties
-            {
-                IsPersistent = true,
-                ExpiresUtc = DateTimeOffset.UtcNow.AddYears(1),
-                AllowRefresh = true,
-            }
-            : new AuthenticationProperties
-            {
-                IsPersistent = false,
-                AllowRefresh = true,
-            };
-
-        await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, authProperties);
-
-        // Mark this device as a returning visitor so "/" skips the Get Started landing next time. Shared
-        // by the no-second-factor path and the successful TOTP challenge, so every password sign-in sets
-        // it. (Provider-usage counting is OAuth-only and stays in Callback.)
-        SetReturningVisitorCookie();
+        // The "uid"-claim cookie principal, the persistent/session properties ("keep me signed in") and
+        // the returning-visitor marker all live in UserCookieSignIn, so the API-key login and the dev
+        // login produce this exact session too. Provider-usage counting is OAuth-only and stays in
+        // Callback.
+        await UserCookieSignIn.SignInAsync(HttpContext, user, isPersistent);
 
         return LocalRedirect(string.IsNullOrEmpty(returnUrl) ? "/walls" : returnUrl);
     }

@@ -19,6 +19,7 @@ public partial class CurrentUserService : ICurrentUserService
     private readonly ITotpService _totpService;
     private readonly BlocwerkSettings _settings;
     private readonly IKioskContext? _kioskContext;
+    private readonly IApiKeySessionContext? _apiKeySession;
 
     // Scoped service = one instance per circuit / HTTP request. The signed-in identity is stable for
     // that lifetime (sign-in/out does a full reload that starts a fresh scope), so resolve the User
@@ -39,9 +40,11 @@ public partial class CurrentUserService : ICurrentUserService
         ITotpService totpService,
         AuthenticationStateProvider? authenticationStateProvider = null,
         IHttpContextAccessor? accessor = null,
-        IKioskContext? kioskContext = null)
+        IKioskContext? kioskContext = null,
+        IApiKeySessionContext? apiKeySession = null)
     {
         _kioskContext = kioskContext;
+        _apiKeySession = apiKeySession;
         _accessor = accessor;
         _authenticationStateProvider = authenticationStateProvider;
         _dbContextFactory = dbContextFactory;
@@ -354,8 +357,11 @@ public partial class CurrentUserService : ICurrentUserService
     /// are called straight from interactive Blazor components inside the circuit, where no route
     /// middleware ever runs — hiding the buttons is not a gate.
     /// </remarks>
+    // Every caller is an account-security change (password, second factor), which a session signed
+    // in with an API key is refused as well.
     private void EnsureNotKiosk(string action)
     {
+        ApiKeySessionGuard.EnsureNotApiKeySession(_apiKeySession);
         if (_kioskContext is { IsKiosk: true })
         {
             throw new KioskRestrictedException($"{action} is not available from a kiosk session.");

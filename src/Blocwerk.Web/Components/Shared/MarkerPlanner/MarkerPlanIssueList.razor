@@ -1,0 +1,47 @@
+@* What the validator found, errors first. Clicking an issue selects the marker or surface it is about. *@
+@using Blocwerk.Core.MarkerPlanning
+
+@if (Issues.Count == 0)
+{
+    <p class="glyph-ok" role="status">No problems found — this plan is ready to print.</p>
+}
+else
+{
+    <p class="hint">
+        @ErrorCount error(s) — these block saving — and @(Issues.Count - ErrorCount) warning(s) or tip(s).
+    </p>
+    <ul class="mplan-issues">
+        @foreach (var issue in Issues.OrderBy(i => i.Severity))
+        {
+            var target = TargetLabel(issue);
+            <li class="mplan-issue @(issue.Severity == PlanIssueSeverity.Error ? "error" : "warning")">
+                @if (target is not null)
+                {
+                    <button type="button" class="btn-link mplan-issue-target" @onclick="() => OnPick.InvokeAsync(issue)">@target</button>
+                }
+                <span class="mplan-issue-kind">@(issue.Severity == PlanIssueSeverity.Error ? "Error" : "Warning")</span>
+                <span>@issue.Message</span>
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    /// <summary>The validator's findings.</summary>
+    [Parameter]
+    [EditorRequired]
+    public IReadOnlyList<PlanIssue> Issues { get; set; } = [];
+
+    /// <summary>An issue was clicked.</summary>
+    [Parameter]
+    public EventCallback<PlanIssue> OnPick { get; set; }
+
+    private int ErrorCount => Issues.Count(i => i.Severity == PlanIssueSeverity.Error);
+
+    private static string? TargetLabel(PlanIssue issue) => issue switch
+    {
+        { MarkerId: { } id } => $"Marker #{id}",
+        { Segment: { } segment } => $"Surface #{segment}",
+        _ => null,
+    };
+}

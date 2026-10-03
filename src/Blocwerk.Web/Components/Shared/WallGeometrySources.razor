@@ -1,0 +1,43 @@
+@using Blocwerk.Core.Capture.Corrections
+@* The result card of a model: where its sizes and angles come from, with the fix offered right where it is needed
+   ("Make exact" for estimated sizes, "Which surface is vertical?" for unmeasured angles). *@
+
+<div class="geometry-sources" role="status">
+    <p class="geometry-source">
+        <span class="geometry-source-label">Sizes:</span> @State.Scale
+        @if (State.ScaleIsEstimate && State.CaptureId is not null)
+        {
+            <span aria-hidden="true">&middot;</span>
+            <button type="button" class="btn-link geometry-source-action" @onclick="() => OnMakeExact.InvokeAsync()" disabled="@Disabled">Make exact</button>
+        }
+    </p>
+    <p class="geometry-source">
+        <span class="geometry-source-label">Angles:</span> @State.Gravity
+        @if (!State.GravityKnown)
+        {
+            <span aria-hidden="true">&middot;</span>
+            <button type="button" class="btn-link geometry-source-action" @onclick="() => OnWhichVertical.InvokeAsync()" disabled="@Disabled">Which surface is vertical?</button>
+        }
+    </p>
+    @if (State.LastCorrection is { } last)
+    {
+        <p class="hint">Corrected: @last</p>
+    }
+</div>
+
+@code {
+    /// <summary>The active model's sources.</summary>
+    [Parameter, EditorRequired]
+    public GeometryCorrectionState State { get; set; } = default!;
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    /// <summary>"Make exact" was tapped.</summary>
+    [Parameter]
+    public EventCallback OnMakeExact { get; set; }
+
+    /// <summary>"Which surface is vertical?" was tapped.</summary>
+    [Parameter]
+    public EventCallback OnWhichVertical { get; set; }
+}

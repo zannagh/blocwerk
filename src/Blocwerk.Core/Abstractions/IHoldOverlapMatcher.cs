@@ -43,6 +43,12 @@ public interface IHoldOverlapMatcher
     /// per run at Information level explaining why holds matched or not. Instrumentation only —
     /// it never affects the matching behaviour or the returned result.
     /// </param>
+    /// <param name="seed">
+    /// Optional marker-derived prior (glyph walls only). When supplied, its homography replaces the
+    /// texture-derived coarse estimate (which stays as a sanity check / fallback), its measured pairs and
+    /// wall-space anchors join the warp field, and the images are read in their RAW pixel frame. Null keeps
+    /// the matcher's behaviour exactly as without markers.
+    /// </param>
     /// <returns>One-to-one proposals plus the unmatched-in-band buckets.</returns>
     HoldOverlapResult Match(
         byte[] leftImage,
@@ -50,5 +56,6 @@ public interface IHoldOverlapMatcher
         byte[] rightImage,
         IReadOnlyList<MatcherHold> rightHolds,
         HoldOverlapDirection direction,
-        ILogger? diag = null);
+        ILogger? diag = null,
+        HoldOverlapSeed? seed = null);
 }

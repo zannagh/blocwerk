@@ -78,7 +78,7 @@
     margin-top: 20px; cursor: pointer;
     color: var(--text-secondary); font-size: 0.9rem;
 }
-.remember-method input { width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--accent); cursor: pointer; }
+.remember-method input { width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--secondary); cursor: pointer; }
 
 .oauth-container .footer { text-align: center; margin-top: 24px; color: var(--text-secondary); font-size: 0.85rem; }
 
@@ -572,6 +572,17 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
     margin-bottom: 4px;
 }
 svg.stat-value { margin-inline: auto; }
+/* "View in 3D" under the wall stats (Wall3DLink's default btn-secondary look, as a link). */
+a.wall3d-link {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    box-sizing: border-box; text-decoration: none; margin-bottom: 20px;
+}
+/* "Update panels + 3D" for wall admins, right under "View in 3D" in the wall rail. */
+a.refresh-entry {
+    display: flex; align-items: center; justify-content: center;
+    width: 100%; padding: 12px; box-sizing: border-box; text-decoration: none; margin-bottom: 4px;
+}
+.refresh-entry-hint { margin: 0 0 20px; text-align: center; }
 .stat-label {
     font-size: 0.7rem;
     font-weight: 600;
@@ -619,7 +630,7 @@ svg.stat-value { margin-inline: auto; }
     display: flex; align-items: center; gap: 5px;
     font-size: 0.8rem; color: var(--text-secondary); cursor: pointer;
 }
-.filter-check input { accent-color: var(--accent); }
+.filter-check input { accent-color: var(--secondary); }
 
 .grade-range-picker { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .grade-range-picker .grade-select { min-width: 62px; font-size: 0.85rem; font-weight: 600; padding: 6px 8px; }
@@ -1057,10 +1068,18 @@ svg.stat-value { margin-inline: auto; }
    rather than --page-max: this page WANTS a bounded width so no comment or history row ever
    runs the full 1440px, while --page-max: none still frees the pages that want the window. */
 .boulder-detail {
-    display: var(--boulder-detail-display, block);
     padding: 16px;
     max-width: var(--boulder-page-max, var(--page-max, 600px));
     margin: 0 auto;
+}
+/* The two columns live in their own row rather than directly in .boulder-detail, because the
+   photo column is sticky on the desktop tier and a sticky box sticks for as long as its PARENT is
+   on screen. With .boulder-detail as the grid, that parent also held the full-width row below, so
+   the photo stayed pinned over activity/comments/history all the way to the bottom of the page.
+   Wrapped here, the photo sticks only while the rail beside it scrolls, then leaves with the row.
+   Transparent on the phone tier (display: contents), so the stack there is unchanged. */
+.boulder-main-row {
+    display: var(--boulder-detail-display, contents);
     grid-template-columns: minmax(0, 1fr) var(--boulder-side-w, 360px);
     gap: 0 20px;
     align-items: start;
@@ -1076,14 +1095,13 @@ svg.stat-value { margin-inline: auto; }
 .boulder-photo-col { position: var(--boulder-photo-col-position, static); top: calc(var(--topbar-h) + 8px); }
 
 /* The long-form row. Transparent on the phone tier like the other two wrappers, so its three
-   sections stay where they always were in the single stack. On the desktop tier it is a grid item
-   spanning both columns under them, and an auto-fit grid in its own right: each section gets at
+   sections stay where they always were in the single stack. On the desktop tier it is a block
+   under .boulder-main-row spanning its full width, and an auto-fit grid in its own right: each section gets at
    least 340px and the row uses as many columns as the page width affords (three at 1280+, two at
    1024, one at the bottom of the tier). align-items: start so a short Activity list does not
    stretch to the height of a long comment thread. */
 .boulder-wide-col {
     display: var(--boulder-wide-display, contents);
-    grid-column: 1 / -1;
     grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
     align-items: start;
     gap: 0 20px;
@@ -1110,6 +1128,13 @@ svg.stat-value { margin-inline: auto; }
     display: inline-block; padding: 8px 16px; background: #E65100; color: white;
     text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 0.85rem;
 }
+/* "3D" next to Revise on the boulder page (Wall3DLink): an outlined pill, secondary to Revise. */
+.btn-view3d {
+    display: inline-flex; align-items: center; gap: 5px; min-height: 36px; padding: 6px 12px;
+    background: var(--bg-surface); color: var(--text-heading); border: 1px solid var(--border);
+    text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 0.85rem;
+}
+.btn-view3d:hover { background: var(--bg-surface-alt); }
 
 .bw-grade-proposal-notice {
     padding: 12px 14px; border-radius: 8px; margin-bottom: 12px; font-size: 0.9rem;
@@ -1401,11 +1426,11 @@ svg.stat-value { margin-inline: auto; }
 }
 /* Same selected-not-invalid treatment as .checkbox-label below. */
 .radio-label:has(input:checked) {
-    border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
-    background: var(--accent-soft);
+    border-color: color-mix(in srgb, var(--secondary) 45%, var(--border));
+    background: color-mix(in srgb, var(--secondary) 10%, transparent);
 }
 .radio-label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
-.radio-label input[type=radio] { accent-color: var(--accent); }
+.radio-label input[type=radio] { accent-color: var(--secondary); }
 
 /* ========== Boulder Create ========== */
 
@@ -1433,18 +1458,17 @@ svg.stat-value { margin-inline: auto; }
     cursor: pointer; font-size: 0.9rem; font-weight: 500;
     color: var(--text);
 }
-/* Checked reads as SELECTED, not as invalid. The fill used to be a literal #fff5f6, which
-   in dark mode put near-white label text on a pale pink ground — illegible, and a pale
-   fill inside a full-strength --accent border is exactly how this app draws a validation
-   error. --accent-soft is a translucent tint defined in all three theme blocks, so it
-   composites over whatever the card ground is, and the border is mixed back toward
-   --border so the row reads as emphasis rather than alarm. */
+/* Checked reads as SELECTED, not as invalid. A pink tick in a pink-tinted box inside a
+   pink border is exactly how this app draws a validation error (--accent is the error and
+   the call-to-action colour), so selection uses --secondary, the calm navy (light blue in
+   dark mode): a translucent tint that composites over any card ground, and a border mixed
+   back toward --border so the row reads as emphasis rather than alarm. */
 .checkbox-label:has(input:checked), .toggle-label:has(input:checked) {
-    border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
-    background: var(--accent-soft);
+    border-color: color-mix(in srgb, var(--secondary) 45%, var(--border));
+    background: color-mix(in srgb, var(--secondary) 10%, transparent);
     color: var(--text);
 }
-.checkbox-label input, .toggle-label input { accent-color: var(--accent); }
+.checkbox-label input, .toggle-label input { accent-color: var(--secondary); }
 .checkbox-label:has(input:focus-visible), .toggle-label:has(input:focus-visible) {
     outline: 2px solid var(--accent); outline-offset: 2px;
 }
@@ -2645,7 +2669,7 @@ html.bw-compact {
     text-align: center;
 }
 .panel-proposal-accept { display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; }
-.panel-proposal-accept input { accent-color: var(--accent); }
+.panel-proposal-accept input { accent-color: var(--secondary); }
 .panel-proposal-band { font-weight: 600; }
 .panel-proposal-band.high { color: var(--success-text); }
 .panel-proposal-band.mid { color: var(--warning-text); }
@@ -2740,6 +2764,8 @@ html.bw-compact {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 10px;
+    /* wallEditor.revealElement scrolls the panes to the top: keep them clear of the fixed top bar. */
+    scroll-margin-top: calc(var(--topbar-h, 56px) + 8px);
 }
 /* Single full-width panel (the touch-up step): the lone PanelImageView spans the whole width
    instead of sitting half-width in the left column of the side-by-side comparison grid. */
@@ -3086,6 +3112,21 @@ html.bw-fullscreen .panel-link-dialog .panel-step-viewport {
     border-color: var(--status-success);
     background: color-mix(in srgb, var(--status-success) 12%, var(--bg-surface));
 }
+/* A banner the user must not miss (failed alignment, reset verdicts): the danger tone, unlike the
+   warning-toned attention headline, because what it describes happened without the user's say. */
+.bigupdate-banner {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px 14px;
+    margin: 6px 0 10px;
+    border-radius: var(--r-sm);
+    border: 1px solid var(--status-danger);
+    background: color-mix(in srgb, var(--status-danger) 10%, var(--bg-surface));
+    color: var(--text-primary);
+}
+.bigupdate-banner span { font-size: 0.88rem; color: var(--text-secondary); }
+.bigupdate-banner .btn-secondary { width: auto; align-self: flex-start; margin-bottom: 0; }
 .bigupdate-attention-head { font-size: 1.02rem; color: var(--text-primary); }
 .bigupdate-attention-sub { font-size: 0.85rem; color: var(--text-secondary); }
 
@@ -3648,7 +3689,8 @@ html.bw-fullscreen .panel-link-dialog .panel-step-viewport {
 @media (max-height: 560px) and (max-width: 959.98px) {
     html body {
         --topbar-h: 40px;
-        --bottomnav-h: calc(44px + max(2px, env(safe-area-inset-bottom, 0px)));
+        --bw-tabbar-h: calc(44px + max(2px, env(safe-area-inset-bottom, 0px)));
+        --bottomnav-h: calc(var(--bw-tabbar-h) + var(--bw-banner-h, 0px));
         --fold-peek: 44px;
         /* The stat cards under the wall photo are the first thing worth sacrificing height for;
            they are still there, just no longer budgeted as if the photo must clear them. */
@@ -3675,4 +3717,110 @@ html.bw-fullscreen .panel-link-dialog .panel-step-viewport {
 
     /* 360px of first-fold on a 390px window left nothing for the rest of the page. */
     .wall-fold { min-height: 200px; }
+}
+
+/* ---- Wall update: optional shape recognition + shape review ------------------------------------ */
+.shape-optional {
+    margin-left: 6px;
+    padding: 1px 8px;
+    border-radius: var(--r-pill);
+    border: 1px solid var(--border-light);
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+/* Large tap targets: this step is used on a phone at the wall. */
+.shape-big-btn { min-height: 48px; width: auto; flex: 1 1 auto; margin-bottom: 0; }
+.shape-progress { width: 100%; height: 14px; margin: 6px 0 2px; accent-color: var(--accent); }
+.shape-scope { border: 1px solid var(--border-light); border-radius: var(--r-sm); padding: 8px 12px; margin: 0 0 12px; }
+.shape-scope legend { font-weight: 600; padding: 0 4px; }
+.shape-radio { display: flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; }
+.shape-radio input { width: 22px; height: 22px; flex: 0 0 auto; margin: 0; }
+.shape-radio small { color: var(--text-secondary); }
+
+.shape-review-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px;
+    margin: 6px 0 12px;
+}
+.shape-slider { display: flex; flex-direction: column; gap: 4px; flex: 1 1 220px; font-size: 0.88rem; }
+.shape-slider input[type=range] { width: 100%; min-height: 32px; accent-color: var(--accent); }
+
+.shape-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 210px), 1fr));
+    gap: 12px;
+    margin: 0 0 12px;
+}
+.shape-card {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border-light);
+    border-radius: var(--r-sm);
+    background: var(--bg-surface);
+    overflow: hidden;
+}
+.shape-card.decision-accepted, .shape-card.decision-adjusted { border-color: var(--status-success); }
+.shape-card.decision-circle, .shape-card.decision-keepprevious { border-color: var(--text-secondary); }
+.shape-crop { width: 100%; aspect-ratio: 1; display: block; background: #111; image-rendering: auto; }
+.shape-recognised { fill: rgba(233, 69, 96, 0.08); stroke: #e94560; vector-effect: none; }
+/* Nothing was recognised: an unfilled dashed ring, so no tint suggests a colour the hold does not have. */
+.shape-recognised.shape-none { fill: none; stroke: #fff; stroke-dasharray: 6 4; }
+.shape-previous { fill: none; stroke: #ffd700; stroke-dasharray: 4 3; }
+.shape-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    padding: 6px 8px 0;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}
+.shape-conf { font-weight: 700; }
+.shape-conf.low { color: var(--danger-text, #c0392b); }
+.shape-conf.mid { color: var(--warning-text, #b3541e); }
+.shape-conf.high { color: var(--success-text, #2f8f4e); }
+.shape-decision { margin-left: auto; font-weight: 600; }
+.shape-card-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+    gap: 6px;
+    padding: 8px;
+}
+.shape-act {
+    min-height: 44px;
+    border-radius: var(--r-sm);
+    border: 1px solid var(--border-light);
+    background: var(--bg-surface-alt);
+    color: var(--text-primary);
+    font-weight: 600;
+    cursor: pointer;
+}
+.shape-act.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.shape-act:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.shape-adjust-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-surface);
+}
+.shape-adjust-head {
+    flex: 0 0 auto;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border-light);
+}
+.shape-adjust-head .hint { margin: 2px 0 0; }
+.shape-adjust-editor { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+/* Save/Cancel belong to this overlay's footer; the editor's own batch bar would duplicate them off-screen. */
+.shape-adjust-editor .batch-bar { display: none; }
+.shape-adjust-footer {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 10px;
+    padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--border-light);
+    background: var(--bg-surface);
 }

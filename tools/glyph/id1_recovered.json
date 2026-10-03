@@ -1,0 +1,37 @@
+{
+ "image": "IMG_2773",
+ "id": 1,
+ "segment": 0,
+ "role": "TR",
+ "method": "top strip synthesised by continuing each column upward; restored-border height chosen by NCC of the 4x4 bit cells lying fully in real pixels (peak 0.953 at m=68, within 0.01 over m=66..72)",
+ "m_restored_px": 68,
+ "corners": [
+  [
+   1803.66015625,
+   -68.48408508300781
+  ],
+  [
+   2140.809814453125,
+   -68.54216003417969
+  ],
+  [
+   2095.0,
+   377.0
+  ],
+  [
+   1793.935791015625,
+   396.631103515625
+  ]
+ ],
+ "synthetic_corners": [
+  "TL",
+  "TR"
+ ],
+ "corner_spread_px_over_best_band": {
+  "TL": 6.0,
+  "TR": 6.0,
+  "BR": 0.0,
+  "BL": 0.0
+ },
+ "mean_side_px": 387.990234375
+}

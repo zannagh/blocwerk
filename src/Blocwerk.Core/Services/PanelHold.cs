@@ -18,6 +18,8 @@ namespace Blocwerk.Core.Services;
 /// to draw a foot as a smaller rounded square, the way the wall editor and the hold picker already do.
 /// </param>
 /// <param name="ShapePoints">The hold's custom shape outline (offsets from the centre), or null for a circle.</param>
+/// <param name="ShapeHoles">The outline's interior holes (pocket/donut), same convention as
+/// <paramref name="ShapePoints"/>; null for a solid hold. Visual only — the hold is hit on its full outline.</param>
 /// <param name="IsVirtual">
 /// True when the hold is a user-placed placeholder that isn't visible in the wall photo (e.g. a
 /// virtual TOP). Drawn with a dashed outline so it doesn't read as a real hold on the image.
@@ -30,4 +32,5 @@ public record PanelHold(
     string? Color,
     HoldCategory Category,
     List<ShapePoint>? ShapePoints = null,
-    bool IsVirtual = false);
+    bool IsVirtual = false,
+    List<List<ShapePoint>>? ShapeHoles = null);

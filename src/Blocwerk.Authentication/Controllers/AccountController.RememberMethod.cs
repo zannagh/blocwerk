@@ -8,10 +8,6 @@ namespace Blocwerk.Authentication.Controllers;
 /// </summary>
 public partial class AccountController
 {
-    // Set once any sign-in on this device succeeds. A later logged-OUT visit to "/" reads it and jumps
-    // straight to /account/login (skipping the Get Started landing) instead of re-onboarding.
-    private const string ReturningVisitorCookie = "blocwerk-returning";
-
     // Compact per-provider sign-in counter (e.g. "github:2|google:1"). Once a provider reaches the
     // auto-remember threshold we set RememberedMethodCookie for the user automatically.
     private const string MethodCountsCookie = "bw_method_counts";
@@ -25,18 +21,12 @@ public partial class AccountController
 
     /// <summary>
     /// Marks this device as a returning visitor so the Get Started landing is skipped on the next
-    /// logged-out visit to "/". Set on every successful sign-in path.
+    /// logged-out visit to "/". Set on every successful sign-in path; the cookie itself is owned by
+    /// <see cref="Services.UserCookieSignIn"/>, which the non-OAuth sign-ins call directly.
     /// </summary>
     private void SetReturningVisitorCookie()
     {
-        Response.Cookies.Append(ReturningVisitorCookie, "1", new CookieOptions
-        {
-            Secure = Request.IsHttps,
-            SameSite = SameSiteMode.Lax,
-            IsEssential = true,
-            MaxAge = TimeSpan.FromDays(365),
-            Path = "/",
-        });
+        Services.UserCookieSignIn.AppendReturningVisitorCookie(HttpContext);
     }
 
     /// <summary>

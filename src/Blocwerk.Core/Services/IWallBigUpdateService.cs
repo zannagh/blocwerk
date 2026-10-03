@@ -56,7 +56,12 @@ public interface IWallBigUpdateService
     /// than only for the ones this pass left unmatched (see the note there).
     /// </para>
     /// </summary>
-    Task<BigUpdateSession> ResumeAsync(Guid wallId);
+    /// <param name="wallId">The wall.</param>
+    /// <param name="use3DEvidence">
+    /// Also match the new photos to the wall's 3D model for the new-hold triage (seconds per photo). Only the quick
+    /// review asks for it; every other resume reads the decisions already stored.
+    /// </param>
+    Task<BigUpdateSession> ResumeAsync(Guid wallId, bool use3DEvidence = false);
 
     /// <summary>
     /// Promotes the staged update to live in one transaction: archives the outgoing photo, applies the

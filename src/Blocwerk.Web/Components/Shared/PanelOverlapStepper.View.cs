@@ -80,6 +80,16 @@ public partial class PanelOverlapStepper : IAsyncDisposable
             return;
         }
 
+        if (suggestedMode)
+        {
+            if (e.Key == "Escape")
+            {
+                LeaveSuggested();
+            }
+
+            return;
+        }
+
         if (_manualMode)
         {
             switch (e.Key)

@@ -12,7 +12,7 @@ namespace Blocwerk.Core.Services;
 /// wall alone.
 /// </para>
 /// </summary>
-public class WallUpdateSessionSupersededException : InvalidOperationException
+public class WallUpdateSessionSupersededException : UserFacingException
 {
     public WallUpdateSessionSupersededException(Guid wallId, Guid expectedSessionId, Guid? currentSessionId)
         : base("This wall update was replaced by a newer one, so it can no longer be applied or discarded. "

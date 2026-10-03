@@ -27,8 +27,15 @@ public static class ApiKeySurface
     /// <summary>User-scoped machine routes: the personal REST API.</summary>
     public const string UserApiPrefix = "/api/v1";
 
+    /// <summary>
+    /// Wall capture drafts (the walk-along video upload). Its endpoint admits a personal key only,
+    /// through <see cref="BlocwerkPolicies.HumanOrUserApiKey"/>; the capture service then applies the
+    /// cookie user's own gates (wall admin, not a kiosk, own open draft).
+    /// </summary>
+    public const string CapturesApiPrefix = "/api/captures";
+
     /// <summary>Every prefix an API key may authenticate under. Deliberately not /api/offline.</summary>
-    public static readonly IReadOnlyList<string> AllowedPrefixes = [WallApiPrefix, UserApiPrefix];
+    public static readonly IReadOnlyList<string> AllowedPrefixes = [WallApiPrefix, UserApiPrefix, CapturesApiPrefix];
 
     /// <summary>True when the path belongs to the machine-facing API surface.</summary>
     public static bool Covers(PathString path)
@@ -82,6 +89,14 @@ public static class ApiKeySurface
         }
 
         var bearer = authHeader["Bearer ".Length..].TrimStart();
+
+        // A 3D runner key names a machine, never a user: it authenticates nothing here (the runner
+        // API checks it itself), so it must not reach the JWT handler either.
+        if (bearer.StartsWith(GpuRunner.TokenPrefix, StringComparison.Ordinal))
+        {
+            return CookieAuthenticationDefaults.AuthenticationScheme;
+        }
+
         if (!bearer.StartsWith(ApiKey.TokenPrefix, StringComparison.Ordinal))
         {
             return JwtBearerDefaults.AuthenticationScheme;

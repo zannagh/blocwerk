@@ -75,9 +75,11 @@ window.bwKeys = (function () {
     // update wizard off screen mid-review, or page the wall behind an open lightbox.
     // The cross-gen and panel-link tools are here for the same reason: they are full-view takeovers,
     // so without them the editor's letter keys stay live underneath a tool that covers the screen.
+    // The shape-adjust overlay (wall update shape review) hosts a whole editor over the wizard.
     function takeoverSurfaceOpen() {
         return document.querySelector(
-            '.panel-stepper, .wall-lightbox, .bw-modal-backdrop, .crossgen-tool, .panel-link-overlay, .bw-stage-overlay') !== null;
+            '.panel-stepper, .wall-lightbox, .bw-modal-backdrop, .crossgen-tool, .panel-link-overlay, .bw-stage-overlay, '
+            + '.shape-adjust-overlay') !== null;
     }
 
     // Enter and Space ACTIVATE whatever currently has focus. Listening in the capture phase means we

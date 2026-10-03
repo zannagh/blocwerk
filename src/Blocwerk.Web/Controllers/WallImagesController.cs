@@ -49,6 +49,7 @@ public sealed class WallImagesController : WallScopedApiController
     /// </remarks>
     [HttpPost]
     [IgnoreAntiforgeryToken]
+    [DisableFormValueModelBinding]
     public async Task<IActionResult> Upload(Guid wallId, CancellationToken cancellationToken)
     {
         var guard = GuardWall(wallId);
@@ -69,6 +70,11 @@ public sealed class WallImagesController : WallScopedApiController
         var upload = isMultipart
             ? await WallImageUploads.ReadMultipartAsync(Request, storage, cancellationToken)
             : await WallImageUploads.ReadRawAsync(Request, storage, cancellationToken);
+
+        if (upload.IsSuccess)
+        {
+            upload = await WallImageUploads.RemoveMetadataAsync(upload, cancellationToken);
+        }
 
         if (!upload.IsSuccess)
         {

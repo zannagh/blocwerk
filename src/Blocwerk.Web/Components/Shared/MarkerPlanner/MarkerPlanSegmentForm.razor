@@ -1,0 +1,169 @@
+@* The selected surface's properties: name, shape, size, angles, and how it hangs off its parent in
+   the net. Every change is applied at once (the page re-validates and redraws). *@
+@using Blocwerk.Core.MarkerPlanning
+
+<div class="mplan-form" @key="Segment.Index">
+    <div class="form-group">
+        <label for="mplan-seg-name">Name</label>
+        <input id="mplan-seg-name" class="form-input" maxlength="100" value="@Segment.Name"
+               @onchange="e => Apply(Segment with { Name = e.Value?.ToString()?.Trim() is { Length: > 0 } n ? n : Segment.Name })" />
+    </div>
+    <div class="mplan-grid">
+        <div class="form-group">
+            <label for="mplan-seg-shape">Shape</label>
+            <select id="mplan-seg-shape" class="form-input" value="@Segment.Shape"
+                    @onchange="e => ApplyEnum<SegmentShape>(e, v => Segment with { Shape = v })">
+                <option value="@SegmentShape.Rectangle">Rectangle</option>
+                <option value="@SegmentShape.Triangle">Right triangle</option>
+            </select>
+        </div>
+        @if (Segment.Shape == SegmentShape.Triangle)
+        {
+            <div class="form-group">
+                <label for="mplan-seg-corner">Right angle at</label>
+                <select id="mplan-seg-corner" class="form-input" value="@Segment.RightAngle"
+                        @onchange="e => ApplyEnum<TriangleCorner>(e, v => Segment with { RightAngle = v })">
+                    @foreach (var corner in Enum.GetValues<TriangleCorner>())
+                    {
+                        <option value="@corner">@Words(corner.ToString())</option>
+                    }
+                </select>
+            </div>
+        }
+        <div class="form-group">
+            <label for="mplan-seg-w">Width (mm)</label>
+            <input id="mplan-seg-w" type="number" min="1" step="10" class="form-input" value="@NetCanvasModel.F(Segment.WidthMm)"
+                   @onchange="e => ApplyNumber(e, v => v > 0 ? Segment with { WidthMm = v } : null)" />
+        </div>
+        <div class="form-group">
+            <label for="mplan-seg-h">Height along the surface (mm)</label>
+            <input id="mplan-seg-h" type="number" min="1" step="10" class="form-input" value="@NetCanvasModel.F(Segment.HeightMm)"
+                   @onchange="e => ApplyNumber(e, v => v > 0 ? Segment with { HeightMm = v } : null)" />
+        </div>
+    </div>
+
+    <div class="form-group mplan-lean-group">
+        <label id="mplan-seg-lean-label">Angle</label>
+        <SignedAngleInput Id="mplan-seg-angle" LabelledBy="mplan-seg-lean-label" Options="LeanOptions" Max="90" MaxExclusive="true"
+                          Value="Segment.OverhangDeg" ValueChanged="v => Apply(Segment with { OverhangDeg = v ?? 0 })"
+                          Description="@SurfaceAngle.Describe(Segment.OverhangDeg)">
+            <MarkerPlanLeanProfile OverhangDeg="Segment.OverhangDeg" />
+        </SignedAngleInput>
+        <p class="hint">
+            Measured from vertical. <strong>Slab</strong>: the top leans away from you.
+            <strong>Overhang</strong>: the top leans over you (towards 90° it becomes a roof).
+            @if (Segment.OverhangDeg != 0 && SurfaceAngle.IsVertical(Segment.OverhangDeg))
+            {
+                <text> Under @NetCanvasModel.F(SurfaceAngle.VerticalToleranceDeg)° counts as vertical and becomes a plumb reference for the photos.</text>
+            }
+        </p>
+    </div>
+
+    <div class="form-group mplan-lean-group">
+        <label id="mplan-seg-yaw-label">Turn</label>
+        <SignedAngleInput Id="mplan-seg-yaw" LabelledBy="mplan-seg-yaw-label" Options="TurnOptions" Max="180"
+                          Value="Segment.YawDeg" ValueChanged="v => Apply(Segment with { YawDeg = v ?? 0 })"
+                          Description="@SurfaceYaw.Describe(Segment.YawDeg)">
+            <MarkerPlanYawPlan YawDeg="Segment.YawDeg" />
+        </SignedAngleInput>
+        <p class="hint">
+            How far this surface is turned about the vertical, relative to the root surface, seen from above.
+            <strong>Turned left</strong>: you turn left to face it square-on — a side wall on your left is about 90° left
+            (its face points to your right). <strong>Turned right</strong>: the mirror image.
+        </p>
+    </div>
+
+    @if (Segment.AttachedTo is { } at)
+    {
+        var parent = Plan.Segments.FirstOrDefault(s => s.Index == at.ParentIndex);
+        <h4 class="glyph-subheading">Attached to</h4>
+        <div class="mplan-grid">
+            <div class="form-group">
+                <label for="mplan-att-parent">Surface</label>
+                <select id="mplan-att-parent" class="form-input" value="@at.ParentIndex"
+                        @onchange="e => ApplyNumber(e, v => Segment with { AttachedTo = at with { ParentIndex = (int)v } })">
+                    @foreach (var other in Plan.Segments.Where(s => s.Index != Segment.Index))
+                    {
+                        <option value="@other.Index">#@other.Index @other.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="mplan-att-pedge">Its edge</label>
+                <select id="mplan-att-pedge" class="form-input" value="@at.ParentEdge"
+                        @onchange="e => ApplyEnum<SegmentEdge>(e, v => Segment with { AttachedTo = at with { ParentEdge = v } })">
+                    @foreach (var edge in parent is null ? Enum.GetValues<SegmentEdge>() : PlanSegmentEdits.EdgesOf(parent))
+                    {
+                        <option value="@edge">@edge</option>
+                    }
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="mplan-att-own">This surface's edge</label>
+                <select id="mplan-att-own" class="form-input" value="@at.OwnEdge"
+                        @onchange="e => ApplyEnum<SegmentEdge>(e, v => Segment with { AttachedTo = at with { OwnEdge = v } })">
+                    @foreach (var edge in PlanSegmentEdits.EdgesOf(Segment))
+                    {
+                        <option value="@edge">@edge</option>
+                    }
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="mplan-att-offset">Offset along it (mm)</label>
+                <input id="mplan-att-offset" type="number" step="10" class="form-input" value="@NetCanvasModel.F(at.OffsetMm)"
+                       @onchange="e => ApplyNumber(e, v => Segment with { AttachedTo = at with { OffsetMm = v } })" />
+            </div>
+        </div>
+        <p class="hint">The offset slides this surface along the other one's edge, measured from that edge's lower (or left) end.</p>
+    }
+    else
+    {
+        <p class="hint">This is the root surface — stand in front of it to take your photos. Everything else is attached to it, directly or indirectly.</p>
+    }
+</div>
+
+@code {
+    private const double DefaultSlabDeg = 10;
+    private const double DefaultOverhangDeg = 30;
+    private const double DefaultTurnDeg = 90;
+
+    /// <summary>The whole plan (for the parent picker and edge lists).</summary>
+    [Parameter]
+    [EditorRequired]
+    public MarkerPlan Plan { get; set; } = default!;
+
+    /// <summary>The surface being edited.</summary>
+    [Parameter]
+    [EditorRequired]
+    public PlanSegment Segment { get; set; } = default!;
+
+    /// <summary>The edited surface.</summary>
+    [Parameter]
+    public EventCallback<PlanSegment> OnChange { get; set; }
+
+    private static readonly IReadOnlyList<SignedAngleOption> LeanOptions =
+    [
+        new("Slab", -1, DefaultSlabDeg),
+        new("Vertical", 0),
+        new("Overhang", 1, DefaultOverhangDeg),
+    ];
+
+    private static readonly IReadOnlyList<SignedAngleOption> TurnOptions =
+    [
+        new("Turned left", 1, DefaultTurnDeg, "Turned left by (°)"),
+        new("Straight", 0),
+        new("Turned right", -1, DefaultTurnDeg, "Turned right by (°)"),
+    ];
+
+    private static string Words(string pascal) =>
+        string.Concat(pascal.Select((c, i) => i > 0 && char.IsUpper(c) ? " " + char.ToLowerInvariant(c) : c.ToString()));
+
+    private Task Apply(PlanSegment updated) => OnChange.InvokeAsync(updated);
+
+    private Task ApplyNumber(ChangeEventArgs e, Func<double, PlanSegment?> update) =>
+        PlannerInput.Number(e.Value) is { } v && update(v) is { } updated ? Apply(updated) : Task.CompletedTask;
+
+    private Task ApplyEnum<TEnum>(ChangeEventArgs e, Func<TEnum, PlanSegment> update)
+        where TEnum : struct, Enum =>
+        PlannerInput.Enum<TEnum>(e.Value) is { } v ? Apply(update(v)) : Task.CompletedTask;
+}

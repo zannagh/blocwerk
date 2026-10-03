@@ -87,7 +87,7 @@
             }
             else
             {
-                <BigWallUpdateUploader @ref="_uploader" OnStart="OnUpload" OnCancel="Close" />
+                <BigWallUpdateUploader @ref="_uploader" WallId="WallId" Prefill="Prefill" OnStart="OnUpload" OnCancel="Close" />
             }
             break;
 
@@ -127,7 +127,9 @@
                 </div>
                 <PanelOverlapStepper @key="n.PanelId" WallId="WallId" PanelId="n.PanelId"
                                      Col="n.Col" Row="n.Row" Proposals="n.Proposals" NeighbourStaged="true"
+                                     AlignmentFailed="n.AlignmentFailed"
                                      Restored="RestoredFor(n.PanelId)"
+                                     SuggestedRemovals="_session!.SuggestedNewDiscards?.Keys.ToList()"
                                      OnConfirm="OnNeighbourConfirm" OnProgress="OnNeighbourProgress"
                                      OnDiscard="OnNeighbourSkip" />
             }
@@ -139,6 +141,16 @@
                 <TouchupStep @ref="_touchupStep" WallId="WallId" Session="_session"
                              OnContinue="OnTouchupContinue" OnSkip="OnTouchupSkip" />
             }
+            break;
+
+        case WallUpdatePhase.Shapes:
+            <ShapeRecognitionStep @ref="_shapeStep" WallId="WallId" SessionId="_sessionInfo?.Id"
+                                  OnReview="OnShapesReview" OnSkip="OnShapesSkipped" />
+            break;
+
+        case WallUpdatePhase.ShapeReview:
+            <ShapeReviewStep @ref="_shapeReview" WallId="WallId" SessionId="_sessionInfo?.Id"
+                             OnContinue="OnShapeReviewContinue" OnBack="OnShapeReviewBack" />
             break;
 
         case WallUpdatePhase.Confirm:
@@ -169,6 +181,17 @@
                 <span class="bigupdate-chip remove">@RemovedCount removed</span>
                 <span class="bigupdate-chip new">@NewKeptCount new</span>
                 <span class="bigupdate-chip link">@LinkCount links</span>
+                @if (_shapeSummary?.Status == ShapeRecognitionStatus.Completed)
+                {
+                    <span class="bigupdate-chip carry">@ShapeCount(ShapeReviewDecision.Accepted) shapes accepted</span>
+                    <span class="bigupdate-chip new">@ShapeCount(ShapeReviewDecision.Adjusted) adjusted</span>
+                    <span class="bigupdate-chip remove">@ShapeCount(ShapeReviewDecision.Circle) to circle</span>
+                    <span class="bigupdate-chip link">@(ShapeCount(ShapeReviewDecision.KeepPrevious) + ShapeCount(ShapeReviewDecision.Pending)) kept</span>
+                }
+                else if (_shapeSummary?.Status == ShapeRecognitionStatus.Skipped)
+                {
+                    <span class="bigupdate-chip link">shapes skipped</span>
+                }
             </div>
             <p class="staged-hint">
                 Removed holds retire their boulders to history; everything carried keeps its boulders.

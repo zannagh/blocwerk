@@ -1,0 +1,9 @@
+.geometry-correction { margin: 6px 0; }
+.geometry-correction-toggle { min-height: 44px; font-weight: 600; }
+.geometry-surfaces { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+
+/* A card per surface: its name on one line, the actions below (wrapping on a phone). */
+.geometry-surface { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--border-light, var(--border)); border-radius: 8px; }
+.geometry-surface-name { font-weight: 600; }
+.geometry-surface-actions { display: flex; flex-wrap: wrap; gap: 6px 8px; }
+.geometry-surface-actions button { min-height: 44px; }

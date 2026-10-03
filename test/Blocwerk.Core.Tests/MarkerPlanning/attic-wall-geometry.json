@@ -1,0 +1,965 @@
+{
+ "version": 1,
+ "units": "mm",
+ "dictionary": "DICT_4X4_50",
+ "idScheme": "segment*6+role",
+ "markerSizeMm": 125.0,
+ "world": {
+  "origin": "facet 0 origin: the bottom-left of its markers' bounding box in its own plane (a = along u, b = along v); x = horizontal along that facet pointing right as you face it, y = z \u00d7 x (into the wall), z = up",
+  "up": [
+   0,
+   0,
+   1
+  ],
+  "gravityKnown": true,
+  "referenceFacet": "0"
+ },
+ "segments": [
+  {
+   "index": 0,
+   "name": "main wall",
+   "declared": true,
+   "declaredAngleDeg": 45.0,
+   "measuredAngleDeg": 45.415,
+   "declaredVsMeasuredDeg": 0.415,
+   "angleIsGravityReference": false,
+   "facets": [
+    {
+     "id": "0",
+     "origin": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "u": [
+      1.0,
+      0.0,
+      -0.0
+     ],
+     "v": [
+      0.0,
+      -0.712207,
+      0.70197
+     ],
+     "normal": [
+      0.0,
+      -0.70197,
+      -0.712207
+     ],
+     "measuredAngleDeg": 45.415,
+     "yawDeg": 0.0,
+     "angleToReferenceFacetDeg": 0.0,
+     "extentMm": {
+      "aMin": -50.0,
+      "aMax": 5134.2,
+      "bMin": -50.0,
+      "bMax": 3386.6
+     },
+     "markerIds": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      24,
+      25,
+      26,
+      27
+     ]
+    }
+   ]
+  },
+  {
+   "index": 1,
+   "name": "kickboard",
+   "declared": true,
+   "declaredAngleDeg": 0.0,
+   "measuredAngleDeg": 0.0,
+   "declaredVsMeasuredDeg": 0.0,
+   "angleIsGravityReference": true,
+   "facets": [
+    {
+     "id": "1",
+     "origin": [
+      48.47,
+      15.43,
+      -284.6
+     ],
+     "u": [
+      0.999813,
+      -0.019343,
+      0.0
+     ],
+     "v": [
+      -0.0,
+      -0.0,
+      1.0
+     ],
+     "normal": [
+      -0.019343,
+      -0.999813,
+      -0.0
+     ],
+     "measuredAngleDeg": 0.0,
+     "yawDeg": -1.108,
+     "angleToReferenceFacetDeg": 45.425,
+     "extentMm": {
+      "aMin": -50.0,
+      "aMax": 5766.1,
+      "bMin": -50.0,
+      "bMax": 419.9
+     },
+     "markerIds": [
+      6,
+      7,
+      8,
+      9,
+      10
+     ]
+    }
+   ]
+  },
+  {
+   "index": 2,
+   "name": "left triangle",
+   "declared": true,
+   "declaredAngleDeg": 0.0,
+   "measuredAngleDeg": 0.0,
+   "declaredVsMeasuredDeg": 0.0,
+   "angleIsGravityReference": true,
+   "facets": [
+    {
+     "id": "2",
+     "origin": [
+      6.69,
+      -2046.92,
+      -84.86
+     ],
+     "u": [
+      0.017158,
+      0.999853,
+      -0.0
+     ],
+     "v": [
+      -0.0,
+      0.0,
+      1.0
+     ],
+     "normal": [
+      0.999853,
+      -0.017158,
+      0.0
+     ],
+     "measuredAngleDeg": 0.0,
+     "yawDeg": 89.017,
+     "angleToReferenceFacetDeg": 89.31,
+     "extentMm": {
+      "aMin": -50.0,
+      "aMax": 1993.7,
+      "bMin": -50.0,
+      "bMax": 1851.8
+     },
+     "markerIds": [
+      12,
+      14,
+      15
+     ]
+    }
+   ]
+  },
+  {
+   "index": 5,
+   "name": "right cornered piece",
+   "declared": true,
+   "declaredAngleDeg": null,
+   "measuredAngleDeg": 45.174,
+   "declaredVsMeasuredDeg": null,
+   "angleIsGravityReference": false,
+   "facets": [
+    {
+     "id": "5",
+     "origin": [
+      5092.9,
+      -88.6,
+      85.0
+     ],
+     "u": [
+      0.999915,
+      0.013041,
+      -0.0
+     ],
+     "v": [
+      0.009249,
+      -0.709186,
+      0.704961
+     ],
+     "normal": [
+      0.009194,
+      -0.704901,
+      -0.709246
+     ],
+     "measuredAngleDeg": 45.174,
+     "yawDeg": 0.747,
+     "angleToReferenceFacetDeg": 0.578,
+     "extentMm": {
+      "aMin": -50.0,
+      "aMax": 1400.1,
+      "bMin": -50.0,
+      "bMax": 2480.9
+     },
+     "markerIds": [
+      31,
+      32,
+      33
+     ]
+    }
+   ]
+  }
+ ],
+ "markers": [
+  {
+   "id": 0,
+   "segment": 0,
+   "nominalSegment": 0,
+   "role": "TL",
+   "facet": "0",
+   "sizeMm": 125.0,
+   "cornersPlaneMm": [
+    [
+     0.0,
+     3198.71
+    ],
+    [
+     124.89,
+     3203.99
+    ],
+    [
+     130.17,
+     3079.11
+    ],
+    [
+     5.28,
+     3073.83
+    ]
+   ],
+   "observations": 2,
+   "reprojRmsPx": 0.799,
+   "synthetic": false,
+   "syntheticCorners": []
+  },
+  {
+   "id": 1,
+   "segment": 0,
+   "nominalSegment": 0,
+   "role": "TR",
+   "facet": "0",
+   "sizeMm": 125.0,
+   "cornersPlaneMm": [
+    [
+     4893.34,
+     3334.73
+    ],
+    [
+     5018.32,
+     3336.59
+    ],
+    [
+     5020.18,
+     3211.61
+    ],
+    [
+     4895.2,
+     3209.75
+    ]
+   ],
+   "observations": 1,
+   "reprojRmsPx": 0.439,
+   "synthetic": true,
+   "syntheticCorners": [
+    "TL",
+    "TR"
+   ]
+  },
+  {
+   "id": 2,
+   "segment": 0,
+   "nominalSegment": 0,
+   "role": "BR",
+   "facet": "0",
+   "sizeMm": 125.0,
+   "cornersPlaneMm": [
+    [
+     4957.5,
+     243.47
+    ],
+    [
+     5082.49,
+     245.18
+    ],
+    [
+     5084.2,
+     120.2
+    ],
+    [
+     4959.22,
+     118.48
+    ]
+   ],
+   "observations": 5,
+   "reprojRmsPx": 2.141,
+   "synthetic": false,
+   "syntheticCorners": []
+  },
+  {
+   "id": 3,
+   "segment": 0,
+   "nominalSegment": 0,
+   "role": "BL",
+   "facet": "0",
+   "sizeMm": 125.0,
+   "cornersPlaneMm": [
+    [
+     52.65,
+     125.0
+    ],
+    [
+     177.65,
+     125.04
+    ],
+    [
+     177.69,
+     0.04
+    ],
+    [
+     52.69,
+     0.0
+    ]
+   ],
+   "observations": 1,
+   "reprojRmsPx": 1.168,
+   "synthetic": false,
+   "syntheticCorners": []
+  },
+  {
+   "id": 4,
+   "segment": 0,
+   "nominalSegment": 0,
+   "role": "H",
+   "facet": "0",
+   "sizeMm": 125.0,
+   "cornersPlaneMm": [
+    [
+     2073.25,
+     3299.04
+    ],
+    [
+     2198.25,
+     3298.84
+    ],
+    [
+     2198.05,
+     3173.85
+    ],
+    [
+     2073.05,
+     3174.04
+    ]
+   ],
+   "observations": 5,
+   "reprojRmsPx": 2.176,
+   "synthetic": false,
+   "syntheticCorners": []
+  },
+  {
+   "id": 5,
+   "segment": 0,
+   "nominalSegment": 0,
+   "role": "V",
+   "facet": "0",
+   "sizeMm": 125.0,
+   "cornersPlaneMm": [
+    [
+     13.23,
+     2400.69
+    ],
+    [
+     138.22,
+     2402.6
+    ],
+    [
+     140.13,
+     2277.62
+    ],
+    [
+     15.15,
+     2275.7
+    ]
+   ],
+   "observations": 5,
+   "reprojRmsPx": 1.258,
+   "synthetic": false,
+   "syntheticCorners": []
+  },
+  {
+   "id": 6,
+   "segment": 1,
+   "nominalSegment": 1,
+   "role": "TL",
+   "facet": "1",
+   "sizeMm": 125.0,
+   "cornersPlaneMm": [
+    [
+     1.8,
+     273.52
+    ],
+    [
+     126.8,
+     273.05
+    ],
+    [
+     126.32,
+     148.05
+    ],
+    [
+     1.32,
+     148.53
+    ]
+   ],
+   "observations": 5,
+   "reprojRmsPx": 1.659,
+   "synthetic": false,
+   "syntheticCorners": []
+  },
+  {
+   "id": 7,
+   "segment": 1,
+   "nominalSegment": 1,
+   "role": "TR",
+   "facet": "1",
+   "sizeMm": 125.0,
+   "cornersPlaneMm": [
+    [
+     5577.23,
+     367.05
+    ],
+    [
+     5702.2,
+     369.92
+    ],
+    [
+     5705.07,
+     244.95
+    ],
+    [
+     5580.1,
+     242.08
+    ]
+   ],
+   "observations": 6,
+   "reprojRmsPx": 1.241,
+   "synthetic": false,
+   "syntheticCorners": []
+  },
+  {
+   "id": 8,
+   "segment": 1,
+   "nominalSegment": 1,
+   "role": "BR",
+   "facet": "1",
+   "sizeMm": 125.0,
+   "cornersPlaneMm": [
+    [
+     5587.28,
+     222.3
+    ],
+    [
+     5712.22,
+     226.22
+    ],
+    [
+     5716.14,
+     101.29
+    ],
+    [
+     5591.2,
+     97.36
+    ]
+   ],
+   "observations": 5,
+   "reprojRmsPx": 1.091,
+   "synthetic": false,
+   "syntheticCorners": []
+  },
+  {
+   "id": 9,
+   "segment": 1,
+   "nominalSegment": 1,
+   "role": "BL",
+   "facet": "1",
+   "sizeMm": 125.0,
+   "cornersPlaneMm": [
+    [
+     0.0,
+     124.99
+    ],
+    [
+     124.99,
+     126.52
+    ],
+    [
+     126.52,
+     1.53
+    ],
+    [
+     1.53,
+     0.0
+    ]
+   ],
+   "observations": 2,
+   "reprojRmsPx": 2.491,
+   "synthetic": false,
+   "syntheticCorners": []
+  },
+  {
+   "id": 10,
+   "segment": 1,
+   "nominalSegment": 1,
+   "role": "H",
+   "facet": "1",
+   "sizeMm": 125.0,
+   "cornersPlaneMm": [
+    [
+     2485.26,
+     309.82
+    ],
+    [
+     2610.23,
+     312.85
+    ],
+    [
+     2613.26,
+     187.89
+    ],
+    [
+     2488.29,
+     184.86
+    ]
+   ],
+   "observations": 8,
+   "reprojRmsPx": 1.372,
+   "synthetic": false,
+   "syntheticCorners": []
+  },
+  {
+   "id": 12,
+   "segment": 2,
+   "nominalSegment": 2,
+   "role": "TL",
+   "facet": "2",
+   "sizeMm": 125.0,
+   "cornersPlaneMm": [
+    [
+     21.61,
+     1799.64
+    ],
+    [
+     146.59,
+     1801.8
+    ],
+    [
+     148.75,
+     1676.82
+    ],
+    [
+     23.77,
+     1674.66
+    ]
+   ],
+   "observations": 5,
+   "reprojRmsPx": 2.463,
+   "synthetic": false,
+   "syntheticCorners": []
+  },
+  {
+   "id": 14,
+   "segment": 2,
+   "nominalSegment": 2,
+   "role": "BR",
+   "facet": "2",
+   "sizeMm": 125.0,
+   "cornersPlaneMm": [
+    [
+     1813.85,
+     192.18
+    ],
+    [
+     1938.76,
+     197.07
+    ],
+    [
+     1943.66,
+     72.17
+    ],
+    [
+     1818.75,
+     67.27
+    ]
+   ],
+   "observations": 7,
+   "reprojRmsPx": 1.378,
+   "synthetic": false,
+   "syntheticCorners": []
+  },
+  {
+   "id": 15,
+   "segment": 2,
+   "nominalSegment": 2,
+   "role": "BL",
+   "facet": "2",
+   "sizeMm": 125.0,
+   "cornersPlaneMm": [
+    [
+     0.0,
+     124.98
+    ],
+    [
+     124.98,
+     127.13
+    ],
+    [
+     127.13,
+     2.15
+    ],
+    [
+     2.15,
+     0.0
+    ]
+   ],
+   "observations": 3,
+   "reprojRmsPx": 0.961,
+   "synthetic": false,
+   "syntheticCorners": []
+  },
+  {
+   "id": 24,
+   "segment": 0,
+   "nominalSegment": 4,
+   "role": "TL",
+   "facet": "0",
+   "sizeMm": 125.0,
+   "cornersPlaneMm": [
+    [
+     3496.95,
+     3324.03
+    ],
+    [
+     3621.87,
+     3328.44
+    ],
+    [
+     3626.28,
+     3203.52
+    ],
+    [
+     3501.36,
+     3199.11
+    ]
+   ],
+   "observations": 3,
+   "reprojRmsPx": 1.142,
+   "synthetic": false,
+   "syntheticCorners": []
+  },
+  {
+   "id": 25,
+   "segment": 0,
+   "nominalSegment": 4,
+   "role": "TR",
+   "facet": "0",
+   "sizeMm": 125.0,
+   "cornersPlaneMm": [
+    [
+     4911.91,
+     2475.53
+    ],
+    [
+     5036.9,
+     2477.24
+    ],
+    [
+     5038.61,
+     2352.25
+    ],
+    [
+     4913.62,
+     2350.54
+    ]
+   ],
+   "observations": 3,
+   "reprojRmsPx": 0.619,
+   "synthetic": false,
+   "syntheticCorners": []
+  },
+  {
+   "id": 26,
+   "segment": 0,
+   "nominalSegment": 4,
+   "role": "BR",
+   "facet": "0",
+   "sizeMm": 125.0,
+   "cornersPlaneMm": [
+    [
+     2095.48,
+     161.59
+    ],
+    [
+     2220.46,
+     163.94
+    ],
+    [
+     2222.81,
+     38.96
+    ],
+    [
+     2097.83,
+     36.61
+    ]
+   ],
+   "observations": 4,
+   "reprojRmsPx": 1.281,
+   "synthetic": false,
+   "syntheticCorners": []
+  },
+  {
+   "id": 27,
+   "segment": 0,
+   "nominalSegment": 4,
+   "role": "BL",
+   "facet": "0",
+   "sizeMm": 125.0,
+   "cornersPlaneMm": [
+    [
+     3673.81,
+     212.02
+    ],
+    [
+     3798.81,
+     212.53
+    ],
+    [
+     3799.31,
+     87.53
+    ],
+    [
+     3674.32,
+     87.03
+    ]
+   ],
+   "observations": 3,
+   "reprojRmsPx": 1.189,
+   "synthetic": false,
+   "syntheticCorners": []
+  },
+  {
+   "id": 31,
+   "segment": 5,
+   "nominalSegment": 5,
+   "role": "TR",
+   "facet": "5",
+   "sizeMm": 125.0,
+   "cornersPlaneMm": [
+    [
+     1180.07,
+     2423.62
+    ],
+    [
+     1304.86,
+     2430.91
+    ],
+    [
+     1312.15,
+     2306.12
+    ],
+    [
+     1187.36,
+     2298.83
+    ]
+   ],
+   "observations": 1,
+   "reprojRmsPx": 0.856,
+   "synthetic": false,
+   "syntheticCorners": []
+  },
+  {
+   "id": 32,
+   "segment": 5,
+   "nominalSegment": 5,
+   "role": "BR",
+   "facet": "5",
+   "sizeMm": 125.0,
+   "cornersPlaneMm": [
+    [
+     1220.09,
+     1275.91
+    ],
+    [
+     1344.98,
+     1281.03
+    ],
+    [
+     1350.1,
+     1156.14
+    ],
+    [
+     1225.21,
+     1151.02
+    ]
+   ],
+   "observations": 2,
+   "reprojRmsPx": 10.292,
+   "synthetic": false,
+   "syntheticCorners": [],
+   "downweightedSigmaPx": 7.894
+  },
+  {
+   "id": 33,
+   "segment": 5,
+   "nominalSegment": 5,
+   "role": "BL",
+   "facet": "5",
+   "sizeMm": 125.0,
+   "cornersPlaneMm": [
+    [
+     0.0,
+     124.97
+    ],
+    [
+     124.97,
+     127.8
+    ],
+    [
+     127.8,
+     2.83
+    ],
+    [
+     2.83,
+     0.0
+    ]
+   ],
+   "observations": 6,
+   "reprojRmsPx": 0.866,
+   "synthetic": false,
+   "syntheticCorners": []
+  }
+ ],
+ "quality": {
+  "reprojRmsPx": 1.51,
+  "reprojRmsPxFree": 0.854,
+  "gravity": "least squares over facet 1 normal, facet 2 normal",
+  "gravityDetail": {
+   "constraints": [
+    "facet 1 normal",
+    "facet 2 normal"
+   ],
+   "levelPairsMissing": [],
+   "residualDeg": {
+    "facet 1 normal": 0.0,
+    "facet 2 normal": 0.0
+   },
+   "referenceNormalsAngleDeg": 90.12517609631188
+  },
+  "checks": {
+   "declaredVsMeasuredDeg": {
+    "0": 0.415
+   },
+   "markerSideRmsErrMm": 6.046,
+   "markerSideMeanErrMm": 0.416,
+   "levelPairs": [],
+   "seg0DeclaredVsMeasuredDeg": 0.415
+  },
+  "facetDecisions": [
+   {
+    "kind": "splitRejected",
+    "segment": 1,
+    "clusters": [
+     [
+      6,
+      9
+     ],
+     [
+      7,
+      8,
+      10
+     ]
+    ],
+    "reason": "side planes differ by only 4.15 deg (<= 5.0)"
+   },
+   {
+    "kind": "merge",
+    "markers": [
+     24,
+     25,
+     26,
+     27
+    ],
+    "fromNominalSegment": 4,
+    "intoFacet": "0",
+    "normalAngleDeg": 0.409,
+    "maxOffsetMm": 10.94
+   }
+  ],
+  "downweightedMarkers": {
+   "32": {
+    "freeRmsPx": 4.936,
+    "medianRmsPx": 0.625,
+    "sigmaPx": 7.894
+   }
+  },
+  "unusedPhotos": [],
+  "intrinsics": {
+   "iPhone 16 Pro|main": {
+    "intr": [
+     4932.23109,
+     0.0,
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    "cornerShiftMaxPx": 0.0,
+    "images": 1,
+    "freeParams": [
+     0
+    ]
+   },
+   "iPhone 16 Pro|ultra-wide": {
+    "intr": [
+     1607.815906,
+     -0.617267,
+     4.649333,
+     -0.001633,
+     9.9e-05,
+     0.0
+    ],
+    "cornerShiftMaxPx": 8.7,
+    "images": 13,
+    "freeParams": [
+     0,
+     1,
+     2,
+     3,
+     4
+    ]
+   }
+  },
+  "coplanarityFreeSolveMm": {
+   "0": 6.64,
+   "1": 3.46,
+   "2": 1.4,
+   "5": 5.16
+  },
+  "cornerSource": "as supplied by the client (expected: edge-line refined, see refine.py)",
+  "n1n2AngleDeg": 90.125
+ }
+}

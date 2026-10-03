@@ -79,4 +79,16 @@ public class ApiKey
     /// </para>
     /// </remarks>
     public bool AllowAnonymousKioskSetting { get; set; } = true;
+
+    /// <summary>
+    /// For <see cref="ApiKeyScope.User"/> keys: may this personal key CHANGE walls through the machine
+    /// API (the wall update's shape step, capture video uploads)? Off unless the owner ticked it when
+    /// creating the key, and off for every key that existed before the column (migration default).
+    /// </summary>
+    /// <remarks>
+    /// Reading and the owner's own records (<c>/api/v1/me</c>) never needed it. Wall keys ignore it:
+    /// their write surface is fixed by scope. It is a capability on top of the owner's authority, never
+    /// a substitute for it — the wall-admin checks still run for the owner.
+    /// </remarks>
+    public bool AllowWrite { get; set; }
 }

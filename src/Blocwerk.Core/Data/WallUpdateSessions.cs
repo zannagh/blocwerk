@@ -94,6 +94,18 @@ public static class WallUpdateSessions
         }
     }
 
+    /// <summary>
+    /// Moves the resume cursor. The ONE place the phase is written, whether the wizard advances it
+    /// (<c>IWallUpdateSessionService.SetPhaseAsync</c>) or the shape step's service does on behalf of an API
+    /// client — so a flow driven over the API reopens in the wizard exactly where the API left it.
+    /// </summary>
+    public static void MovePhase(WallUpdateSession session, WallUpdatePhase phase, int neighbourIndex, Guid userId)
+    {
+        session.Phase = phase;
+        session.NeighbourIndex = Math.Max(0, neighbourIndex);
+        Touch(session, userId);
+    }
+
     /// <summary>Stamps who last wrote to the session and when. Every mutating path goes through this.</summary>
     public static void Touch(WallUpdateSession session, Guid userId)
     {

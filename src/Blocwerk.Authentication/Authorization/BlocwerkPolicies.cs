@@ -23,6 +23,14 @@ public static class BlocwerkPolicies
     public const string InstallationApiKey = "InstallationApiKey";
 
     /// <summary>
+    /// A signed-in human (cookie or JWT) OR a PERSONAL API key (<c>User</c> scope, no wall) with
+    /// <c>AllowWrite</c>, standing in for its owner. Never satisfied by a wall, kiosk or installation key,
+    /// nor by a personal key without write access. For routes whose service
+    /// already decides per wall from the acting user, so the key meets exactly the cookie user's checks.
+    /// </summary>
+    public const string HumanOrUserApiKey = "HumanOrUserApiKey";
+
+    /// <summary>
     /// Guards the browser's gallery byte route: a signed-in human or an anonymous share-token
     /// viewer, never an API key.
     /// </summary>

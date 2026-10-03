@@ -222,24 +222,11 @@ public static class ImageResponse
     public static bool IsRenderableWidth(int? width) => width is null || ImageVariants.IsAllowed(width.Value);
 
     /// <summary>
-    /// A 404 with the validator and cache policy taken back off. Both are written up front, before
-    /// the bytes are known to exist, so an archived image whose blob has gone missing would
-    /// otherwise be answered 404 under <c>max-age=31536000, immutable</c> — telling the browser to
-    /// hold that failure for a year and never ask again, even once the image is restored.
-    /// </summary>
-    private static IResult NotFound(HttpContext http)
-    {
-        http.Response.Headers.Remove(HeaderNames.ETag);
-        http.Response.Headers.Remove(HeaderNames.CacheControl);
-        return Results.NotFound();
-    }
-
-    /// <summary>
     /// Whether the caller already holds these bytes. Parsed by hand rather than through
     /// <c>EntityTagHeaderValue</c> so a malformed header degrades into a cache miss instead of an
     /// exception; the weak prefix is stripped because our own tags are always strong.
     /// </summary>
-    private static bool Matches(HttpRequest request, string etag)
+    internal static bool Matches(HttpRequest request, string etag)
     {
         foreach (var header in request.Headers.IfNoneMatch)
         {
@@ -264,5 +251,18 @@ public static class ImageResponse
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// A 404 with the validator and cache policy taken back off. Both are written up front, before
+    /// the bytes are known to exist, so an archived image whose blob has gone missing would
+    /// otherwise be answered 404 under <c>max-age=31536000, immutable</c> — telling the browser to
+    /// hold that failure for a year and never ask again, even once the image is restored.
+    /// </summary>
+    private static IResult NotFound(HttpContext http)
+    {
+        http.Response.Headers.Remove(HeaderNames.ETag);
+        http.Response.Headers.Remove(HeaderNames.CacheControl);
+        return Results.NotFound();
     }
 }

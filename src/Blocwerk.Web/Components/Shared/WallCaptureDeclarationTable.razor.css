@@ -1,0 +1,5 @@
+.capture-decl-warning-row td { padding-top: 0; border-top: none; }
+.capture-decl-warning {
+    margin: 0; padding: 4px 8px; font-size: 0.8rem; border-radius: var(--r-sm, 4px);
+    background: var(--warning-bg); color: var(--warning-text);
+}

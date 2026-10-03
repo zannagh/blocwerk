@@ -86,7 +86,7 @@
                 if (hold.IsVirtual && !isSelected && !isColorFoot) { strokeColor = "#c86dff"; }
                 var isFoot = hold.Category == HoldCategory.Foot;
 
-                <HoldShape @key="hold.Id" X="hold.X" Y="hold.Y" Radius="hold.Radius" ShapePoints="hold.ShapePoints"
+                <HoldShape @key="hold.Id" X="hold.X" Y="hold.Y" Radius="hold.Radius" ShapePoints="hold.ShapePoints" ShapeHoles="hold.ShapeHoles"
                            Foot="isFoot" Fill="@fillColor" Stroke="@strokeColor" StrokeWidth="@sw" Dash="@dash"
                            Style="cursor: pointer"
                            OnClick="(e) => OnHoldClicked(hold, e)" />

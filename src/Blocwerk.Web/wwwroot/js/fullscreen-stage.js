@@ -122,6 +122,7 @@ window.bwStage = (function () {
             lastH: -1,
             resizeTimer: 0,
             dotnet: dotnet,
+            home: null,
         };
 
         // A new photo (or the first one finishing its decode) is the one case that MUST re-fit.
@@ -162,7 +163,8 @@ window.bwStage = (function () {
 
         window.bwGestures.bind(viewport, window.bwStageModel.rotationAdapter(
             model, viewport, function () { return ctx.rotation; }));
-        document.documentElement.classList.add('bw-stage-open');
+        document.documentElement.classList.add('bw-stage-active');
+        ctx.home = portal(root);
         current = ctx;
         // The overlay is up, so the lock the tap armed is now accounted for.
         window.bwStageLock.settled();
@@ -189,6 +191,36 @@ window.bwStage = (function () {
         }
 
         relayout(ctx, true);
+    }
+
+    /**
+     * Portals the overlay to <body>. Rendered in place it sat inside the page column, where the
+     * sticky photo column is its own stacking context: z-index 900 then only counted INSIDE it,
+     * and the sticky top bar, the tab bar, the cookie banner and the side column painted over the
+     * takeover and its close button. Returns the Blazor host it came from (see StageOverlay.razor
+     * for why moving it out of that host is safe).
+     */
+    function portal(root) {
+        const home = root && root.parentElement;
+        if (home && home !== document.body) {
+            document.body.appendChild(root);
+        }
+
+        return home;
+    }
+
+    /** Puts the overlay back while its host still exists; once Blazor dropped the host, removes it. */
+    function unportal(ctx) {
+        const root = ctx.root;
+        if (!root || root.parentElement !== document.body || ctx.home === document.body) {
+            return;
+        }
+
+        if (ctx.home && ctx.home.isConnected) {
+            ctx.home.appendChild(root);
+        } else {
+            root.remove();
+        }
     }
 
     function close(ctx) {
@@ -221,7 +253,8 @@ window.bwStage = (function () {
         document.removeEventListener('fullscreenchange', ctx.onFullscreenChange);
         // The gesture recogniser has no dispose: the node leaves with the Blazor render and the model
         // above is already inert, so a stray in-flight intent can no longer move anything.
-        document.documentElement.classList.remove('bw-stage-open', 'bw-stage-rot90');
+        document.documentElement.classList.remove('bw-stage-active', 'bw-stage-rot90');
+        unportal(ctx);
         window.bwStageLock.release();
     }
 

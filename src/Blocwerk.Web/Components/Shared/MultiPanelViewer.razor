@@ -141,7 +141,7 @@ else
                                editor and the hold picker — at FULL radius: on a viewing surface the shrink
                                only made feet hard to see, and the shape alone tells them from hands. *@
                             var isFoot = h.Category == HoldCategory.Foot;
-                            <HoldShape @key="h.Id" X="h.X" Y="h.Y" Radius="h.Radius" ShapePoints="h.ShapePoints"
+                            <HoldShape @key="h.Id" X="h.X" Y="h.Y" Radius="h.Radius" ShapePoints="h.ShapePoints" ShapeHoles="h.ShapeHoles"
                                        Foot="isFoot" FootScale="HoldShape.FullFoot"
                                        Fill="@fill" Stroke="@stroke" StrokeWidth="@sw" Dash="@dash" />
 

@@ -1,0 +1,68 @@
+@* Wall-settings sub-section: the 3D model's volumes found without markers. Per volume a card with its place, size and
+   holds, "Has flat sides" (planar faces from its outline and high points instead of the measured height field),
+   Hide/Show and Remove (kept for the undo; a re-detection does not bring it back). Above the cards the wall setting
+   "Volumes on this wall have flat sides" and "Apply to all volumes". Hidden on a kiosk tablet and behind a share link;
+   the service refuses both anyway. *@
+
+@if (!Hidden && loaded)
+{
+    <h4 class="glyph-subheading">Volumes</h4>
+    @if (volumes.Count == 0)
+    {
+        <p class="hint">No volumes found yet. They are found from the photo-real scene after a capture.</p>
+    }
+    else
+    {
+        <p class="hint">
+            Found from the 3D capture, no markers needed. Holds on them are drawn on the volume in 3D. Remove one that was
+            detected by mistake; tick "Has flat sides" for volumes made of flat sheets (pyramids, roofs).
+        </p>
+        <div class="volume-settings">
+            <label class="volume-check">
+                <input type="checkbox" checked="@wallFlat" disabled="@busy" @onchange="SetWallFlatAsync" />
+                Volumes on this wall have flat sides
+            </label>
+            <button class="btn-secondary" @onclick="ApplyToAllAsync" disabled="@busy">Apply to all volumes</button>
+        </div>
+        <div class="volume-list">
+            @foreach (var v in volumes)
+            {
+                @if (v.IsRemoved)
+                {
+                    <div class="volume-card volume-card-removed">
+                        <p class="glyph-summary">Volume @v.Index (@PlaceText(v)) removed.</p>
+                        <button class="btn-link" @onclick="() => SetRemovedAsync(v, false)" disabled="@busy">Undo</button>
+                    </div>
+                }
+                else
+                {
+                    <div class="volume-card">
+                        <p class="volume-title">Volume @v.Index <span class="hint">@PlaceText(v)</span></p>
+                        <p class="glyph-summary">@VolumeText(v)</p>
+                        @if (ShapeText(v) is { } shape)
+                        {
+                            <p class="glyph-summary">@shape</p>
+                        }
+                        <div class="volume-actions">
+                            <label class="volume-check">
+                                <input type="checkbox" checked="@v.HasFlatSides" disabled="@busy" @onchange="e => SetFlatAsync(v, e)" />
+                                Has flat sides
+                            </label>
+                            <button class="btn-link" @onclick="() => ToggleHiddenAsync(v)" disabled="@busy">@(v.IsHidden ? "Show" : "Hide")</button>
+                            <button class="btn-link" @onclick="() => SetRemovedAsync(v, true)" disabled="@busy">Remove</button>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    }
+
+    @if (failure is not null)
+    {
+        <p class="field-error" role="alert">@failure</p>
+    }
+    else if (message is not null)
+    {
+        <p class="glyph-ok" role="status">@message</p>
+    }
+}

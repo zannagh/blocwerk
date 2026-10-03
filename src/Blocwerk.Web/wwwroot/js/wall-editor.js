@@ -41,4 +41,22 @@ window.wallEditor = {
     blockPageZoom: function () {
         window.bwViewport.blockPageZoom();
     },
+
+    /**
+     * Scrolls an element into view unless it is already fully on screen. On a phone the carryover
+     * review's photo panes sit BELOW the "possibly moved" list, so re-centring them on a tapped pair
+     * is invisible until the page is scrolled to them.
+     */
+    revealElement: function (element) {
+        if (!element || typeof element.scrollIntoView !== 'function') {
+            return;
+        }
+
+        const rect = element.getBoundingClientRect();
+        if (rect.top >= 0 && rect.bottom <= window.innerHeight) {
+            return;
+        }
+
+        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    },
 };

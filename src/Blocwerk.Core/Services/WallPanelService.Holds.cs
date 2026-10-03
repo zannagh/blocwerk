@@ -75,6 +75,11 @@ public partial class WallPanelService
         }
         db.Holds.Add(hold);
         await db.SaveChangesAsync();
+        if (!stagedPanel)
+        {
+            // The 3D model follows in the background, as for holds added through WallService.
+            refinementQueue?.Enqueue(wallId, [hold.Id]);
+        }
 
         logger.LogInformation(
             "Hold {HoldId} manually added to panel {PanelId} on wall {WallId} (gen {Gen}, staged {Staged}) by {UserId}",

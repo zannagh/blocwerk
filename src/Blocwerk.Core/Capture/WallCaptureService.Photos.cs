@@ -1,0 +1,227 @@
+using System.Security.Cryptography;
+using System.Text.Json;
+using Blocwerk.Core.Entities;
+using Blocwerk.Core.Helpers;
+using Blocwerk.Core.MarkerPlanning;
+using Blocwerk.Core.Services;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using SkiaSharp;
+
+namespace Blocwerk.Core.Capture;
+
+/// <summary>Photo upload: validate, read EXIF, strip metadata, store on disk, detect markers.</summary>
+public sealed partial class WallCaptureService
+{
+    public async Task<CapturePhotoResult> AddPhotoAsync(Guid captureId, string? fileName, byte[] bytes, CancellationToken ct)
+    {
+        var name = fileName is { Length: > 256 } ? fileName[..256] : fileName;
+        var kind = ValidateUpload(name, bytes, photoConverter is not null, PipelineOptions.MaxPhotoBytes);
+        var uploaded = bytes;
+        if (kind == CapturePhotoKind.Heic)
+        {
+            bytes = await ConvertHeicAsync(name, bytes, ct);
+            kind = CapturePhotoKind.Jpeg;
+        }
+
+        var (width, height) = RawSize(bytes, name);
+
+        var (db, _, capture) = await OpenDraftAsync(captureId);
+        await using (db)
+        {
+            var existing = await db.WallCapturePhotos.Where(p => p.CaptureId == captureId)
+                .Select(p => new { p.Index, p.ContentHash }).ToListAsync(ct);
+            if (existing.Count >= PipelineOptions.MaxPhotos)
+            {
+                throw new UserFacingException($"A capture takes at most {PipelineOptions.MaxPhotos} photos.");
+            }
+
+            // The stripper validates the structure first; EXIF (camera facts, the iPhone gravity vector) is then read
+            // from the original, and what is stored has none of it (no GPS or maker note on disk either).
+            var clean = StripOrRefuse(bytes, name);
+            var exif = ReadCamera(bytes, uploaded);
+            var gravity = ReadDeviceGravity(bytes, uploaded);
+            var hash = Convert.ToHexStringLower(SHA256.HashData(clean));
+            if (existing.Any(p => p.ContentHash == hash))
+            {
+                throw new UserFacingException($"{name ?? "This photo"} was already uploaded to this capture.");
+            }
+
+            // The draft's layout decides which ids are real: the plan's, or the legacy 0..35.
+            var layout = await DraftLayoutAsync(db, capture);
+            var focalPx = CapturePlanLayoutCheck.FocalPx(exif.Focal35mm, width, height);
+            var markers = await CaptureMarkerDetection.DetectOrNullAsync(markerDetection, clean, layout, focalPx, logger, ct);
+            var photo = new WallCapturePhoto
+            {
+                CaptureId = capture.Id,
+                Index = existing.Count == 0 ? 1 : existing.Max(p => p.Index) + 1,
+                OriginalFileName = name,
+                StoredPath = await files.SaveAsync(clean, CapturePhotoFormat.Extension(kind), ct),
+                ContentType = CapturePhotoFormat.ContentType(kind),
+                ContentHash = hash,
+                SizeBytes = clean.LongLength,
+                Width = width,
+                Height = height,
+                Focal35mm = exif.Focal35mm,
+                CameraGroup = exif.CameraGroup(width, height),
+                DeviceGravityX = gravity?.X,
+                DeviceGravityY = gravity?.Y,
+                DeviceGravityZ = gravity?.Z,
+                Sharpness = CapturePhotoSharpness.Stored(
+                    await Task.Run(() => CaptureFrameSharpness.Score(clean, PipelineOptions.PhotoSharpnessEdge), ct)),
+                MarkersJson = markers is null ? null : JsonSerializer.Serialize(markers),
+            };
+            db.WallCapturePhotos.Add(photo);
+            await db.SaveChangesAsync(ct);
+            return ToResult(photo, Warnings(photo, markers, layout));
+        }
+    }
+
+    public async Task RemovePhotoAsync(Guid captureId, Guid photoId)
+    {
+        var (db, _, capture) = await OpenDraftAsync(captureId);
+        await using (db)
+        {
+            var photo = await db.WallCapturePhotos.FirstOrDefaultAsync(p => p.Id == photoId && p.CaptureId == captureId);
+            if (photo is null)
+            {
+                return;
+            }
+
+            // A measured distance on this photo goes with it.
+            if (CaptureSfmDocuments.ParseScale(capture.ScaleReferenceJson)?.PhotoIndex == photo.Index)
+            {
+                capture.ScaleReferenceJson = null;
+            }
+
+            db.WallCapturePhotos.Remove(photo);
+            await db.SaveChangesAsync();
+            files.Delete(photo.StoredPath);
+        }
+    }
+
+    /// <summary>
+    /// The iPhone gravity vector from the pre-strip bytes: heif-convert copies the HEIC's EXIF (maker note included) into
+    /// its JPEG; should a converter drop it, the HEIC itself is read.
+    /// </summary>
+    private static DeviceGravity? ReadDeviceGravity(byte[] preStrip, byte[] uploaded) =>
+        DeviceGravityReader.Read(preStrip) ?? (ReferenceEquals(preStrip, uploaded) ? null : DeviceGravityReader.Read(uploaded));
+
+    /// <summary>
+    /// The camera facts (focal length, lens, body) from the pre-strip bytes; for a HEIC upload whose converted JPEG
+    /// carries none (a converter that drops EXIF), from the HEIC's own Exif item.
+    /// </summary>
+    private static ExifCameraInfo ReadCamera(byte[] preStrip, byte[] uploaded)
+    {
+        var exif = ExifCameraReader.Read(preStrip);
+        return exif.Focal35mm is null && !ReferenceEquals(preStrip, uploaded) ? ExifCameraReader.Read(uploaded) : exif;
+    }
+
+    /// <summary>HEIC → upright JPEG (EXIF kept until the strip below reads and drops it).</summary>
+    private async Task<byte[]> ConvertHeicAsync(string? name, byte[] heic, CancellationToken ct)
+    {
+        var label = name ?? "The photo";
+        byte[] jpeg;
+        try
+        {
+            jpeg = await photoConverter!.ToJpegAsync(heic, ct);
+        }
+        catch (InvalidDataException ex)
+        {
+            logger.LogWarning(ex, "HEIC conversion failed for a capture photo");
+            throw new UserFacingException($"{label} is a HEIC photo that could not be converted. Export it as JPEG and upload that.");
+        }
+
+        if (CapturePhotoFormat.Sniff(jpeg) != CapturePhotoKind.Jpeg)
+        {
+            throw new UserFacingException($"{label} is a HEIC photo that could not be converted. Export it as JPEG and upload that.");
+        }
+
+        if (jpeg.LongLength > PipelineOptions.MaxPhotoBytes)
+        {
+            throw new UserFacingException(
+                $"{label} is larger than {PipelineOptions.MaxPhotoBytes / (1024 * 1024)} MB once converted from HEIC.");
+        }
+
+        return jpeg;
+    }
+
+    private static CapturePhotoKind ValidateUpload(string? name, byte[] bytes, bool canConvertHeic, long maxBytes)
+    {
+        var label = name ?? "The photo";
+        if (bytes.LongLength > maxBytes)
+        {
+            throw new UserFacingException($"{label} is larger than {maxBytes / (1024 * 1024)} MB.");
+        }
+
+        return CapturePhotoFormat.Sniff(bytes) switch
+        {
+            CapturePhotoKind.Jpeg => CapturePhotoKind.Jpeg,
+            CapturePhotoKind.Png => CapturePhotoKind.Png,
+            CapturePhotoKind.Heic when canConvertHeic => CapturePhotoKind.Heic,
+            CapturePhotoKind.Heic => throw new UserFacingException(
+                $"{label} is a HEIC photo, which cannot be processed. Upload it from the Photos picker in the browser "
+                + "(iOS converts it to JPEG), or set Camera → Formats → Most Compatible."),
+            _ => throw new UserFacingException($"{label} is not a JPEG or PNG photo."),
+        };
+    }
+
+    /// <summary>The RAW pixel grid (EXIF orientation ignored, like the marker decoder).</summary>
+    private static (int Width, int Height) RawSize(byte[] bytes, string? name)
+    {
+        using var data = SKData.CreateCopy(bytes);
+        using var codec = SKCodec.Create(data);
+        if (codec is null || codec.Info.Width < 16 || codec.Info.Height < 16)
+        {
+            throw new UserFacingException($"{name ?? "The photo"} could not be read as an image.");
+        }
+
+        if (ImagePixelLimit.IsTooLarge(codec.Info.Width, codec.Info.Height))
+        {
+            throw new UserFacingException(
+                $"{name ?? "The photo"} has more than {ImagePixelLimit.MaxPixels / 1_000_000} megapixels. "
+                + "Upload it at the camera's normal resolution.");
+        }
+
+        return (codec.Info.Width, codec.Info.Height);
+    }
+
+    private static byte[] StripOrRefuse(byte[] bytes, string? name)
+    {
+        try
+        {
+            return ImageMetadataStripper.Strip(bytes);
+        }
+        catch (InvalidDataException)
+        {
+            throw new UserFacingException($"{name ?? "The photo"} is damaged or incomplete and cannot be used.");
+        }
+    }
+
+    private static List<string> Warnings(WallCapturePhoto photo, IReadOnlyList<CaptureMarker>? markers, WallMarkerLayout layout)
+    {
+        var warnings = new List<string>();
+        if (markers is not null && markers.All(m => m.Ignored is not null))
+        {
+            warnings.Add("No markers found — this photo will not be used.");
+        }
+
+        foreach (var ignored in markers?.Where(m => m.Ignored is not null) ?? [])
+        {
+            warnings.Add($"Ignored a detection of marker {ignored.Id}: {ignored.IgnoredDetail ?? ignored.Ignored}.");
+        }
+
+        foreach (var unplanned in markers?.Where(m => m.Ignored is null && layout.IsFromPlan && !layout.AllowedIds.Contains(m.Id)) ?? [])
+        {
+            warnings.Add($"Marker {unplanned.Id} is not in the marker plan; it is used when {CaptureUnplannedMarkers.MinPhotos} or more "
+                         + "photos show it and it lies on the wall's surfaces.");
+        }
+
+        if (photo.Focal35mm is null)
+        {
+            warnings.Add("No focal length in the photo's EXIF — upload the camera original.");
+        }
+
+        return warnings;
+    }
+}

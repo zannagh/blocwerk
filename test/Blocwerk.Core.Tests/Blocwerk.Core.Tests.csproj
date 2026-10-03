@@ -18,6 +18,37 @@
     <!-- The cutting-plan PDF tests render with SkiaSharp; the base package ships native
          assets for Windows/macOS but not Linux, so the CI (Linux) test run needs this. -->
     <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" />
+    <!-- In-memory server for the API-key login endpoint tests: real middleware order (rate
+         limiter, cookie auth, kiosk gate, antiforgery) without starting Kestrel or Postgres. -->
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- A real glyph crop (markers 0, 5, 12) for the end-to-end enrichment test; the fixture itself
+         lives with the HoldDetection tests, which own the CV fixtures. -->
+    <Content Include="..\Blocwerk.HoldDetection.Tests\Fixtures\Glyphs\img2783-topleft.jpg"
+             Link="Fixtures\Glyphs\img2783-topleft.jpg"
+             CopyToOutputDirectory="PreserveNewest" />
+    <!-- A second real crop (kickboard seam) so the in-app capture test has two photos with markers. -->
+    <Content Include="..\Blocwerk.HoldDetection.Tests\Fixtures\Glyphs\img2772-kickboard-seam.jpg"
+             Link="Fixtures\Glyphs\img2772-kickboard-seam.jpg"
+             CopyToOutputDirectory="PreserveNewest" />
+    <!-- The Attic's solved geometry (capture 1, trimmed to the plane data) for the marker-plan import. -->
+    <Content Include="MarkerPlanning\attic-wall-geometry.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The planner's exports for The Attic: the legacy layout as a plan, and a suggested mixed-size layout. -->
+    <Content Include="MarkerPlanning\attic-plan.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="MarkerPlanning\attic-suggested.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="MarkerRevisions\capture1-rev1-geometry.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="MarkerRevisions\capture1-rev2-geometry.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Re-solves of the same 14-photo Attic capture (subsets, markers left out, fillers 4/5 declared 100 mm). -->
+    <Content Include="MarkerRevisions\Resolves\*.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The Attic panel update of 2026-09-29 (centre + oblique right panel): every unpaired detection with the
+         operator's real/junk label, matched pairs, markers, presence scores and overlap pairs. No photos. -->
+    <Content Include="Triage\panel-update-attic.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The Attic main wall's five volumes (outline + splat height field, model of 2026-09-30) for the flat-sides shapes. -->
+    <Content Include="Volumes\attic-main-wall-volumes.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The Attic's active model (c6d007b8, planes, extents and marker plane corners only) for the 3D view's facet seams. -->
+    <Content Include="View3D\attic-active-model.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

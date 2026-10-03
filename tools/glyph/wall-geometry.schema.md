@@ -1,0 +1,148 @@
+# `wall-geometry.json` — contract between the glyph solver and the app (v1)
+
+Produced by the solver in `docker/wall-geometry/wallgeometry/` (the `wall-geometry` service, job kind
+`solve`; `tools/glyph/geometry/solve.py` is its CLI). The service adds extra fields, documented in
+`docker/wall-geometry/README.md`. Consumed by the app (C#) to map any photo
+that sees markers onto the wall in millimetres. **Additive and experimental** — nothing in the existing
+normalized 0..1 pipeline is reinterpreted.
+
+## Frames and units
+
+- All lengths **mm**. Angles **degrees**.
+- **World frame**: `z` = up (opposite gravity). `x` = along the main wall's (segment 0) bottom edge,
+  pointing right as you face the wall. `y = z × x` (points into/away from the wall, right-handed).
+  Origin: segment 0's bottom-left marker corner projected onto the floor-parallel plane through it
+  (solver may choose another fixed point — it must say which in `world.origin`).
+- **Facet (plane) frame**: every planar piece of a segment is a *facet*. A facet has origin `O`, unit
+  vectors `u` (across the surface, as horizontal as the facet allows, pointing right) and `v`
+  (up the surface), normal `n = u × v` pointing **out of the wall, toward the climber**.
+  A point with plane coords `(a, b)` sits at `O + a·u + b·v`.
+- **Marker corners** are always listed in ArUco order **TL, TR, BR, BL** of the marker's own printed
+  orientation (the order `detectMarkers` returns).
+
+## Shape
+
+```jsonc
+{
+  "version": 1,
+  "units": "mm",
+  "dictionary": "DICT_4X4_50",
+  "idScheme": "segment*6+role",           // roles 0=TL 1=TR 2=BR 3=BL 4=H 5=V; or "plan" (ids carry no meaning)
+  "markerSizeMm": 125.0,                    // black-square side (the most common one with a plan)
+  "markerSizeOverridesMm": { "40": 80 },    // optional: markers printed at another size
+  "markerSegments": { "44": 0 },            // "plan" scheme: the marker plan's segment per id (echo of the request)
+  "world": { "origin": "text description", "up": [0,0,1] },
+  "segments": [
+    {
+      "index": 0,                           // == markerId / 6, or the marker plan's segment index
+      "name": "main wall",
+      "declaredAngleDeg": 45.0,             // tilt from vertical, as the admin states it (null if none): + overhang, − slab
+      "measuredAngleDeg": 44.6,             // from the solve; for multi-facet segments, per facet below
+      "facets": [
+        {
+          "id": "0",                        // "0", or "5a"/"5b" when a segment folds
+          "origin": [x, y, z],
+          "u": [..], "v": [..], "normal": [..],
+          "measuredAngleDeg": 44.6,         // angle between normal and horizontal plane, as tilt-from-vertical (+ overhang, − slab)
+          "yawDeg": 0.0,                    // rotation of the facet about z relative to segment 0
+          "extentMm": { "aMin": .., "aMax": .., "bMin": .., "bMax": .. }  // bbox of its markers + margin; NOT an outline
+        }
+      ]
+    }
+  ],
+  "markers": [
+    {
+      "id": 0, "segment": 0, "role": "TL", "facet": "0",   // role null for "plan" ids
+      "sizeMm": 125.0,                       // this marker's printed size
+      "cornersPlaneMm": [[a,b],[a,b],[a,b],[a,b]],   // TL,TR,BR,BL in the facet frame
+      "cornersWorldMm": [[x,y,z], ...],
+      "observations": 2,                     // photos it was solved from
+      "reprojRmsPx": 0.8,
+      "measuredSideMm": 125.4,               // optional (null if seen in 1 photo): mean side length
+                                             // triangulated from its photos with the solved cameras;
+                                             // the corners above are always exactly sizeMm, this is not
+      "measuredSidePhotos": 5,               // optional: photos measuredSideMm is based on (null with it)
+      "synthetic": false                     // true if any corner came from reconstruction (e.g. id 1)
+    }
+  ],
+  "cameras": [                               // optional; for 3D view / splatting, not needed at runtime
+    { "image": "IMG_2770", "K": [9], "dist": [..], "R": [9], "t": [3], "reprojRmsPx": 0.9 }
+  ],
+  "quality": {
+    "reprojRmsPx": 0.9,
+    "gravity": "from seg1 x seg2 normals",
+    "checks": { "seg0DeclaredVsMeasuredDeg": 0.4, "markerSideRmsErrMm": 0.6 },
+    "rejectedObservations": [                // optional (additive; absent from older solvers): single
+      {                                      // detections REMOVED before the final solve as probable
+        "photo": "p16",                      // false detections. photo = the request's photo name
+        "id": 17,
+        "views": 1,                          // photos the id was detected in before the removal
+        "residualPx": 10.33,                 // its free-solve reprojection RMS
+        "thresholdPx": 8.09,                 // max(4, median + 10 x MAD) over all observations
+        "otherViewsResidualPx": null,        // vs the pose its OTHER photos give (null: seen once)
+        "reason": "single-view-misfit",      // or "inconsistent-with-other-views"; "implausible-model" (dropped
+                                             // and re-solved, with "detail" + "round"); added by the app before
+                                             // import: "no-quiet-zone", "plan-layout" (with "detail")
+        "markerDropped": true                // it was the id's only detection: the id is not in markers[]
+      }
+    ]
+  }
+}
+```
+
+## Marker plans (`idScheme: "plan"`)
+
+When the wall has a marker plan (`marker-plan.schema.md`) the app sends the solve request with
+`idScheme: "plan"`, every planned id's segment in `markerSegments` (any DICT_4X4_50 id 0..49), per-marker
+sizes in `markerSizeOverridesMm`, and one declared segment per planned surface (angle = the plan's
+overhang, `verticalReference` = |overhang| < 2°, the same tolerance under which the app calls a surface "vertical"). The solver then starts every marker on its PLANNED
+segment instead of `id // 6`; the facet split/move logic is unchanged, so a marker glued to another
+surface than planned is still moved to the facet its normal fits (and the app reports it). Requests
+without these fields are read exactly as before.
+
+## Registration to the active model (app-side)
+
+The solver picks its frame from what it saw (origin = the reference facet's markers' bounding box, facet
+plane origins likewise), so two captures of the same wall — or a new marker at a facet's edge — land in
+frames tens of mm apart. The solver stays stateless; the APP ties every new solve to the wall's active
+model before importing it (`WallFrameRegistration` + `WallFrameRegistrationWriter`):
+
+1. Markers eligible for the fit: present in both documents AND unchanged between the two plan revisions
+   (`MarkerPlanDiff`; same revision = all shared ids).
+2. A rigid transform (Horn's closed form) new → active on their world corners (`origin + a·u + b·v`),
+   dropping the worst marker while it misses by more than max(25 mm, 3 × median). Refused with fewer than
+   3 markers, markers within 150 mm of one line, or an RMS above 15 mm — the model is then stored
+   inactive and the capture fails with the reason.
+3. World quantities (facet frames, `cornersWorldMm`, cameras' R/t) are mapped. A new facet carrying the
+   active facet's registration markers takes that facet's **id and plane frame** (origin/u/v/normal and
+   measured angles), its markers are re-projected into it and its `extentMm` grows to cover both, so a
+   hold's `(facetId, planeA, planeB)` keeps meaning the same spot.
+4. Active facets not re-photographed are carried over verbatim, with their markers unchanged in the new
+   revision (`"carried": true` on such a marker); the `world` block stays the active model's.
+5. `quality.registration` records it: `referenceModelId`, `referencePlanRevision`, `planRevision`,
+   `usedMarkerIds`, `changedMarkerIds`, `outlierMarkerIds`, `rmsMm`, `maxMm`, `rotationDeg`,
+   `translationMm`, `renamedFacets`, `carriedFacets`, `carriedMarkerIds`. The textures job gets the
+   document without carried facets; their textures are copied from the active model.
+
+On the real 14-photo capture of The Attic, a second solve without 3 photos and with 4 renumbered markers
+differs from the first by 18 mm RMS / 39 mm max in plane coordinates; registered, by 4.8 mm RMS / 10 mm max.
+
+## Facet textures (the `textures` job's result)
+
+Not part of `wall-geometry.json`, but keyed by its facet ids: per facet the worker returns
+`{facet, file, maskFile, mmPerPx, bounds {aMin, aMax, bMin, bMax}, widthPx, heightPx, photosUsed,
+coverage, markerCheck}`. `file` is the rectified JPEG; pixel `(i, j)` covers
+`a = aMin + (i+0.5)·mmPerPx`, `b = bMax − (j+0.5)·mmPerPx`. `maskFile` (added later, optional for
+consumers) is an 8-bit grayscale PNG on the same grid: 0 = no photo covers that spot (the JPEG is black
+there), 255 = covered, a few pixels of linear ramp inside the covered edge. Consumers use it as the
+texture's alpha and fall back to the opaque JPEG when it is absent (older textures).
+
+## How the app uses it
+
+For a photo that sees ≥1 marker of facet `F`: pair each detected corner (pixels) with its
+`cornersPlaneMm`, fit a homography `H_F` (RANSAC when ≥2 markers). Then any pixel on facet `F` maps to
+plane mm and back — metric hold sizes, rectified per-facet images, and exact photo-to-photo alignment
+all fall out of `H_F`. With **one** marker only, `H_F` is still exact at that marker and degrades with
+distance from it; consumers must report which case they are in.
+
+Markers mark the **plane**, not the corner: never use marker positions as a segment's outline.

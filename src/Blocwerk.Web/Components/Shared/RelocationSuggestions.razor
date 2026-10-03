@@ -1,0 +1,151 @@
+@using System.Globalization
+@using Blocwerk.Core.Enums
+@using Blocwerk.Core.Services
+
+@* The carryover review's "Possibly moved" list: holds the matcher could not re-find in place, paired by
+   appearance with a new detection elsewhere on the photo. Suggestions only — nothing changes until the
+   user answers one: "Moved here" is the same as marking the hold "changed" onto that new hold (its
+   boulders are flagged for revision); "Same hold" carries it onto the new hold like a normal match (the
+   photo shifted, the hold did not; nothing is flagged). Plain buttons, no key bindings of its own: a focused button keeps
+   Enter/Space (keyboard-shortcuts.js), and it is not a takeover surface. *@
+
+@if (Rows.Count > 0)
+{
+    <section class="relocate" aria-labelledby="relocate-head">
+        <div class="relocate-head">
+            <strong id="relocate-head">Possibly moved (@Rows.Count)</strong>
+            <span class="hint">
+                Holds that vanished from their old spot but look like a new hold elsewhere.
+                <b>Moved here</b> flags its boulders for revision, like any changed hold.
+                <b>Same hold</b> means only the photo shifted — boulders stay as they are.
+            </span>
+        </div>
+        <ul class="relocate-list">
+            @foreach (var row in Rows)
+            {
+                var s = row.Suggestion;
+                <li class="relocate-row @StatusClass(s.Status)" @key="s.Id">
+                    <button type="button" class="relocate-pair" title="Show both holds on the photos"
+                            @onclick="() => OnShow.InvokeAsync(row)">
+                        <span class="relocate-num">@row.Number</span>
+                        <span class="relocate-thumb" style="@ThumbStyle(row.OldHold)">
+                            <img src="@ThumbUrl(OldPhotoUrl)" alt="" loading="lazy" style="@ImgStyle(row.OldHold)" />
+                            <i class="relocate-ring"></i>
+                        </span>
+                        <span class="relocate-arrow" aria-hidden="true">→</span>
+                        <span class="relocate-thumb" style="@ThumbStyle(row.NewHold)">
+                            <img src="@ThumbUrl(NewPhotoUrl)" alt="" loading="lazy" style="@ImgStyle(row.NewHold)" />
+                            <i class="relocate-ring"></i>
+                        </span>
+                    </button>
+                    <span class="relocate-meta">
+                        <span class="relocate-label">@row.OldLabel @Pos(row.OldHold) → @Pos(row.NewHold)</span>
+                        <span class="relocate-score">
+                            @Percent(s.Score) match
+                            @if (!s.Metric)
+                            {
+                                <span class="relocate-tag low" title="Colour and shape only — look-alike holds can score this high">lower confidence</span>
+                            }
+                            @if (row.OnBoulder)
+                            {
+                                <span class="relocate-tag">on a boulder</span>
+                            }
+                        </span>
+                        @if (row.Claimed && !IsAccepted(s.Status))
+                        {
+                            <span class="hint">That new hold is already carried from another old hold.</span>
+                        }
+                    </span>
+                    <span class="relocate-actions">
+                        @if (IsAccepted(s.Status))
+                        {
+                            <span class="relocate-state">@AcceptedLabel(s.Status)</span>
+                            <button type="button" class="btn-secondary" disabled="@Busy"
+                                    @onclick="() => OnDecide.InvokeAsync((s, RelocationDecision.Dismiss))">Undo</button>
+                        }
+                        else
+                        {
+                            @if (s.Status == RelocationProposalStatus.Dismissed)
+                            {
+                                <span class="relocate-state">Dismissed</span>
+                            }
+                            <button type="button" class="btn-primary" disabled="@(Busy || row.Claimed)"
+                                    title="It was moved: its boulders are flagged for revision"
+                                    @onclick="() => OnDecide.InvokeAsync((s, RelocationDecision.Moved))">Moved here</button>
+                            <button type="button" class="btn-secondary" disabled="@(Busy || row.Claimed)"
+                                    title="Same spot, the photo shifted: boulders are not flagged"
+                                    @onclick="() => OnDecide.InvokeAsync((s, RelocationDecision.SameHold))">Same hold</button>
+                            @if (s.Status == RelocationProposalStatus.Pending)
+                            {
+                                <button type="button" class="btn-secondary" disabled="@Busy"
+                                        @onclick="() => OnDecide.InvokeAsync((s, RelocationDecision.Dismiss))">Dismiss</button>
+                            }
+                        }
+                    </span>
+                </li>
+            }
+        </ul>
+    </section>
+}
+
+@code {
+    /// <summary>The rows to show, best first. Nothing renders when empty.</summary>
+    [Parameter] public IReadOnlyList<RelocationRow> Rows { get; set; } = [];
+
+    /// <summary>The "before" photo the old holds are drawn on.</summary>
+    [Parameter] public string OldPhotoUrl { get; set; } = string.Empty;
+
+    /// <summary>The staged "after" photo the new holds are drawn on.</summary>
+    [Parameter] public string NewPhotoUrl { get; set; } = string.Empty;
+
+    /// <summary>True while a decision is being saved; the buttons wait for it.</summary>
+    [Parameter] public bool Busy { get; set; }
+
+    /// <summary>Answer one suggestion: moved here, same hold, or dismiss / undo.</summary>
+    [Parameter] public EventCallback<(RelocationSuggestion Suggestion, RelocationDecision Decision)> OnDecide { get; set; }
+
+    /// <summary>Raised when the user asks to see a pair on the photos.</summary>
+    [Parameter] public EventCallback<RelocationRow> OnShow { get; set; }
+
+    // How much of the photo width a thumbnail shows, in hold radii: the hold fills about a third of it.
+    private const double RadiiPerThumb = 6.0;
+
+    private static string F(double v) => v.ToString("0.####", CultureInfo.InvariantCulture);
+
+    private static string Percent(double score) => score.ToString("P0", CultureInfo.InvariantCulture);
+
+    private static string Pos(PanelHold h) =>
+        $"({(h.X * 100).ToString("0", CultureInfo.InvariantCulture)}, {(h.Y * 100).ToString("0", CultureInfo.InvariantCulture)})";
+
+    private static string StatusClass(RelocationProposalStatus status) => status switch
+    {
+        RelocationProposalStatus.Accepted => "accepted",
+        RelocationProposalStatus.AcceptedAsSame => "accepted same",
+        RelocationProposalStatus.Dismissed => "dismissed",
+        _ => string.Empty,
+    };
+
+    private static bool IsAccepted(RelocationProposalStatus status) =>
+        status is RelocationProposalStatus.Accepted or RelocationProposalStatus.AcceptedAsSame;
+
+    private static string AcceptedLabel(RelocationProposalStatus status) =>
+        status == RelocationProposalStatus.AcceptedAsSame ? "Same hold" : "Moved — boulders flagged";
+
+    private static string ThumbStyle(PanelHold h) => HoldRingColor.Style(h.Color);
+
+    // The rendition the photo panes below start from (not the camera original): the thumbnails share
+    // that download with the panes instead of pulling the full-resolution photo once per row.
+    private static string ThumbUrl(string url) => string.IsNullOrEmpty(url) ? url : ResponsiveImage.Initial(url);
+
+    /// <summary>
+    /// A crop without canvas: the photo is scaled so <see cref="RadiiPerThumb"/> radii span the thumbnail,
+    /// its top-left pinned at the thumbnail's centre and shifted back by the hold's own normalized position
+    /// (translate percentages are of the image itself), so the hold lands dead centre. The radius is
+    /// long-side normalized, which for a landscape photo is the width; a portrait photo just crops wider.
+    /// </summary>
+    private static string ImgStyle(PanelHold h)
+    {
+        var span = Math.Clamp(h.Radius * RadiiPerThumb, 0.03, 1.0);
+        return $"width:{F(100 / span)}%;transform:translate(-{F(h.X * 100)}%,-{F(h.Y * 100)}%)";
+    }
+}

@@ -26,4 +26,14 @@ public enum EditKind
     /// underneath it would abort the run.
     /// </summary>
     Maintenance,
+
+    /// <summary>
+    /// A capture's walk-along video is streaming in over HTTP. Background work like
+    /// <see cref="Maintenance"/>: an upload has no circuit to heartbeat it and can take well over the
+    /// inactivity TTL, and a restart loses it outright.
+    /// </summary>
+    CaptureVideoUpload,
+
+    /// <summary>The capture worker is extracting frames from a walk-along video (ffmpeg).</summary>
+    CaptureVideoFrames,
 }

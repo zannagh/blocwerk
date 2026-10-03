@@ -1,5 +1,6 @@
 using System.Text;
 using Blocwerk.Authentication.Authorization;
+using Blocwerk.Authentication.Endpoints;
 using Blocwerk.Authentication.Handlers;
 using Blocwerk.Authentication.Kiosk;
 using Blocwerk.Authentication.Middleware;
@@ -29,6 +30,9 @@ public static class AuthenticationServices
     /// Shared with the client in <c>offline-transport.js</c>.
     /// </summary>
     public const string AntiforgeryHeaderName = "X-Blocwerk-Antiforgery";
+
+    /// <summary>The friendly page (Blocwerk.Web's AccessDenied) a forbidden signed-in human lands on.</summary>
+    public const string AccessDeniedPath = "/access-denied";
 
     public static IHostApplicationBuilder ConfigureAuthenticationAndAuthorization(this IHostApplicationBuilder app, BlocwerkSettings configuration)
     {
@@ -91,6 +95,11 @@ public static class AuthenticationServices
         // Blocwerk.Core owns only the ITopLoggerTokenStore interface, so there is no circular reference.
         app.Services.AddScoped<ITopLoggerTokenStore, DataProtectionTopLoggerTokenStore>();
 
+        // Personal-API-key browser login: its validator and rate-limit policy. Registered always so
+        // the pipeline shape does not depend on configuration; the route itself is only mapped when
+        // Blocwerk:Auth:ApiKeyLogin:Enabled is set (see ApiKeyLoginEndpoints).
+        app.Services.AddApiKeyLogin();
+
         var policyScheme = "BlocwerkPolicy";
 
         app.Services.AddAuthentication(policyScheme)
@@ -118,6 +127,10 @@ public static class AuthenticationServices
             {
                 options.LoginPath = "/account/login";
                 options.LogoutPath = "/account/logout";
+
+                // A signed-in user an [Authorize] endpoint forbids (a non-admin on /administration).
+                // Left unset this is the framework's /Account/AccessDenied, which nothing serves.
+                options.AccessDeniedPath = AccessDeniedPath;
                 options.SlidingExpiration = true;
                 options.ExpireTimeSpan = TimeSpan.FromHours(8);
 
@@ -148,6 +161,7 @@ public static class AuthenticationServices
             options.AddPolicy(
                 BlocwerkPolicies.InstallationApiKey,
                 policy => BuildApiKeyPolicy(policy, ApiKeyScope.Installation));
+            options.AddPolicy(BlocwerkPolicies.HumanOrUserApiKey, HumanOrPersonalApiKeyPolicy.Build(new AuthorizationPolicyBuilder()));
             options.AddPolicy(BlocwerkPolicies.WallGalleryImage, BuildGalleryImagePolicy(new AuthorizationPolicyBuilder()));
             options.AddPolicy(BlocwerkPolicies.AppAdmin, BuildAppAdminPolicy(new AuthorizationPolicyBuilder()));
         });
@@ -172,6 +186,9 @@ public static class AuthenticationServices
 
     public static WebApplication ConfigureAuthenticationMiddlewares(this WebApplication app)
     {
+        // Before authentication, so a throttled sign-in attempt costs no database lookup. Only endpoints
+        // that opt in with RequireRateLimiting are limited; there is no global limiter.
+        app.UseRateLimiter();
         app.UseAuthentication();
 
         // Development uses the REAL OAuth flow by default (the GitHub app allows

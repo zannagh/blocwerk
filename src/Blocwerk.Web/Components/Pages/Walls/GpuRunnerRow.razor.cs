@@ -1,0 +1,106 @@
+// Copyright (c) 2026, zannagh. All rights reserved.
+// See License in the project root for license information.
+
+using Blocwerk.Core.Runners;
+using Blocwerk.Core.Services;
+using Microsoft.AspNetCore.Components;
+
+namespace Blocwerk.Web.Components.Pages.Walls;
+
+/// <summary>
+/// One runner: state, capabilities, current job; the owner's walls / revoke controls, a wall admin's approval of a
+/// shared runner, and the site admin's share / revoke controls.
+/// </summary>
+public partial class GpuRunnerRow
+{
+    private IReadOnlyList<GpuRunnerWallChoice>? walls;
+    private bool confirmRevoke;
+
+    [Parameter]
+    [EditorRequired]
+    public GpuRunnerInfo Runner { get; set; } = default!;
+
+    [Parameter]
+    public Guid? WallId { get; set; }
+
+    [Parameter]
+    public bool Busy { get; set; }
+
+    /// <summary>Owner controls (share, walls, revoke); off in the read-only site-admin list.</summary>
+    [Parameter]
+    public bool ShowControls { get; set; } = true;
+
+    /// <summary>Site-admin controls: offer the runner to other walls, and revoke anyone's runner.</summary>
+    [Parameter]
+    public bool AllowRevokeAsAdmin { get; set; }
+
+    [Parameter]
+    public EventCallback OnChanged { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnError { get; set; }
+
+    [Inject]
+    private IGpuRunnerService Runners { get; set; } = default!;
+
+    /// <summary>In an API-key session every key or sharing change is refused, so its controls are disabled.</summary>
+    private bool Locked => !Runners.CanChangeRunners;
+
+    private string? LockHint => Locked ? ApiKeySessionRestrictedException.UserMessage : null;
+
+    private string Capabilities()
+    {
+        var c = Runner.Capabilities;
+        if (c.GpuName is null && c.RunnerVersion is null)
+        {
+            return "has not connected yet";
+        }
+
+        var vram = c.VramMb is { } mb ? $" ({mb / 1024.0:0.#} GB)" : string.Empty;
+        var max = c.MaxQuality is null ? string.Empty : $" · up to {c.MaxQuality} quality";
+        var platform = c.Platform is null ? string.Empty : $" · {c.Platform}";
+        return $"{c.GpuName ?? "unknown GPU"}{vram}{max}{platform} · runner {c.RunnerVersion ?? "?"}";
+    }
+
+    private Task SetSharedAsync(bool shared) => RunAsync(() => Runners.SetSharedAsync(Runner.Id, shared));
+
+    private Task SetApprovedAsync(bool approve) =>
+        WallId is { } wallId ? RunAsync(() => Runners.SetRunnerApprovalAsync(wallId, Runner.Id, approve)) : Task.CompletedTask;
+
+    private Task RevokeAsync() => RunAsync(() => Runners.RevokeAsync(Runner.Id));
+
+    private async Task ToggleWallsAsync()
+    {
+        if (walls is not null)
+        {
+            walls = null;
+            return;
+        }
+
+        await RunAsync(async () => walls = await Runners.GetWallChoicesAsync(Runner.Id), notify: false);
+    }
+
+    private Task SetWallAsync(Guid wallId, bool serves) => RunAsync(async () =>
+    {
+        await Runners.SetServesWallAsync(Runner.Id, wallId, serves);
+        walls = await Runners.GetWallChoicesAsync(Runner.Id);
+    });
+
+    private async Task RunAsync(Func<Task> action, bool notify = true)
+    {
+        try
+        {
+            await action();
+            confirmRevoke = false;
+            if (notify)
+            {
+                await OnChanged.InvokeAsync();
+            }
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or UserFacingException or KioskRestrictedException)
+        {
+            // ApiKeySessionRestrictedException is a UserFacingException: its message is the hint shown here.
+            await OnError.InvokeAsync(ex.Message);
+        }
+    }
+}

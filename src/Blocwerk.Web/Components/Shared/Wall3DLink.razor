@@ -1,0 +1,50 @@
+@* "View in 3D" — rendered only when the wall has an active glyph geometry model. Place it on pages
+   that already loaded (and so may show) the wall: the wall detail page, and the boulder pages with
+   BoulderId set so the 3D view highlights that boulder. Pass ShareToken on share-link routes. *@
+@inject IWall3DViewService ViewService
+
+@if (_available)
+{
+    <a class="@CssClass" href="@Href">@ChildContentOrDefault</a>
+}
+
+@code {
+    private bool _available;
+    private Guid _checkedWallId;
+
+    [Parameter, EditorRequired] public Guid WallId { get; set; }
+
+    /// <summary>Highlight this boulder in the 3D view.</summary>
+    [Parameter] public Guid? BoulderId { get; set; }
+
+    /// <summary>The share token, when the current page is a share-link route.</summary>
+    [Parameter] public string? ShareToken { get; set; }
+
+    [Parameter] public string CssClass { get; set; } = "btn-secondary wall3d-link";
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private RenderFragment ChildContentOrDefault => ChildContent ?? (b => b.AddContent(0, "View in 3D"));
+
+    private string Href
+    {
+        get
+        {
+            var shared = string.IsNullOrEmpty(ShareToken) ? string.Empty : $"/shared/{Uri.EscapeDataString(ShareToken)}";
+            var boulder = BoulderId is { } id ? $"?boulder={id}" : string.Empty;
+            return $"/walls/{WallId}{shared}/3d{boulder}";
+        }
+    }
+
+    // Parameters, not OnInitializedAsync: the host page may be reused for another wall.
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_checkedWallId == WallId)
+        {
+            return;
+        }
+
+        _checkedWallId = WallId;
+        _available = WallId != Guid.Empty && await ViewService.HasActiveGeometryAsync(WallId);
+    }
+}

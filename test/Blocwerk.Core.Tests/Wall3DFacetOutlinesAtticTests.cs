@@ -1,0 +1,190 @@
+// Copyright (c) 2026, zannagh. All rights reserved.
+// See License in the project root for license information.
+
+using Blocwerk.Core.Entities;
+using Blocwerk.Core.Geometry;
+using Blocwerk.Core.Geometry.View3D;
+using Blocwerk.Core.MarkerPlanning;
+
+namespace Blocwerk.Core.Tests;
+
+/// <summary>
+/// The Attic's three plan triangles, with the solved planes, extents and marker corners of the real model; the plan
+/// draws each with its right angle at the bottom. "sidewall" (1) stands under the main wall's overhang and reaches the
+/// floor, as its plan corner says. "closing up space" (5) rests on its plan parent "leftover bit" (2); its plan corner
+/// lies on that seam, so it keeps the side behind the overhang. "closing up end" (7) is attached in the plan to
+/// "corner" (6), whose seam only shaves the extent's edge; its hypotenuse really runs along the 45° overhang, which
+/// "leftover bit" continues ~570 mm away, so its plan corner is not trusted and it too keeps the side behind
+/// (<see cref="Wall3DFacetOutlines"/>).
+/// </summary>
+public class Wall3DFacetOutlinesAtticTests
+{
+    private const string Markers = """
+        [
+          { "id": 12, "segment": 1, "facet": "1", "cornersPlaneMm": [[44.57, 100], [144.56, 100.52], [145.08, 0.52], [45.08, 0]] },
+          { "id": 13, "segment": 1, "facet": "1", "cornersPlaneMm": [[1962.46, 154.52], [2062.24, 161.13], [2068.85, 61.35], [1969.07, 54.74]] },
+          { "id": 14, "segment": 1, "facet": "1", "cornersPlaneMm": [[0, 2009.67], [99.97, 2012.29], [102.59, 1912.32], [2.62, 1909.7]] },
+          { "id": 15, "segment": 1, "facet": "1", "cornersPlaneMm": [[1043.24, 95.49], [1123.21, 97.89], [1125.61, 17.93], [1045.65, 15.52]] },
+          { "id": 16, "segment": 1, "facet": "1", "cornersPlaneMm": [[893.01, 1189.74], [972.76, 1196], [979.02, 1116.24], [899.26, 1109.99]] },
+          { "id": 17, "segment": 1, "facet": "1", "cornersPlaneMm": [[37.44, 1156.03], [117.43, 1157.37], [118.76, 1077.38], [38.77, 1076.04]] },
+          { "id": 27, "segment": 7, "facet": "7", "cornersPlaneMm": [[0, 99.94], [99.94, 103.33], [103.33, 3.39], [3.39, 0]] },
+          { "id": 28, "segment": 7, "facet": "7", "cornersPlaneMm": [[841.03, 107.74], [941.03, 107.83], [941.12, 7.83], [841.12, 7.74]] },
+          { "id": 29, "segment": 7, "facet": "7", "cornersPlaneMm": [[1645.63, 1462.34], [1725.62, 1463.85], [1727.12, 1383.86], [1647.14, 1382.35]] },
+          { "id": 30, "segment": 7, "facet": "7", "cornersPlaneMm": [[2095.84, 1926.83], [2195.7, 1921.48], [2190.35, 1821.62], [2090.49, 1826.97]] },
+          { "id": 42, "segment": 5, "facet": "5", "cornersPlaneMm": [[1658.48, 100], [1758.48, 100.46], [1758.94, 0.47], [1658.94, 0]] },
+          { "id": 43, "segment": 5, "facet": "5", "cornersPlaneMm": [[1960.15, 138.29], [2060.11, 141.04], [2062.86, 41.08], [1962.9, 38.32]] },
+          { "id": 44, "segment": 5, "facet": "5", "cornersPlaneMm": [[0, 1969.33], [99.85, 1974.81], [105.33, 1874.96], [5.48, 1869.48]] },
+          { "id": 45, "segment": 5, "facet": "5", "cornersPlaneMm": [[932.67, 1428.32], [1012.66, 1429.05], [1013.4, 1349.05], [933.4, 1348.32]] }
+        ]
+        """;
+
+    /// <summary>"closing up end": right angle at the top, back (the corner); its hypotenuse runs down the overhang's plane.</summary>
+    private static readonly double[][] ClosingUpEnd = [[2241.9, 1976.8], [-50, 1976.8], [-50, -212.4]];
+
+    /// <summary>The plan's triangles: all three drawn with their right angle at the bottom.</summary>
+    private static readonly Dictionary<int, PlanTriangle> Triangles = new()
+    {
+        [1] = new(0, TriangleCorner.BottomLeft),
+        [5] = new(2, TriangleCorner.BottomRight),
+        [7] = new(6, TriangleCorner.BottomRight),
+    };
+
+    private static readonly Dictionary<string, string> Segments = new()
+    {
+        ["0"] = """{ "index": 0, "name": "main wall", "facets": [ { "id": "0", "origin": [0, 0, 0], "u": [1, 0, 0], "v": [0, -0.722935, 0.690916], "normal": [0, -0.690916, -0.722935], "extentMm": { "aMin": -50, "aMax": 5130.4, "bMin": -50, "bMax": 3313.1 } } ] }""",
+        ["1"] = """{ "index": 1, "name": "sidewall", "facets": [ { "id": "1", "origin": [-15.33, -2114.41, -107.28], "u": [-0.000859, 1, 0], "v": [0.007327, 0.000006, 0.999973], "normal": [0.999973, 0.000859, -0.007327], "extentMm": { "aMin": -50, "aMax": 2118.8, "bMin": -50, "bMax": 2062.3 } } ] }""",
+        ["2"] = """{ "index": 2, "name": "leftover bit", "facets": [ { "id": "2", "origin": [5053.54, -6.37, 5.34], "u": [0.99998, 0.006392, 0], "v": [0.004622, -0.723117, 0.69071], "normal": [0.004415, -0.690696, -0.723132], "extentMm": { "aMin": -50, "aMax": 694.3, "bMin": -50, "bMax": 2397.3 } } ] }""",
+        ["3"] = """{ "index": 3, "name": "kickboard", "facets": [ { "id": "3", "origin": [-10.21, -2.98, -273.69], "u": [0.999997, 0.002303, 0], "v": [0.000051, -0.022101, 0.999756], "normal": [0.002302, -0.999753, -0.022101], "extentMm": { "aMin": -50, "aMax": 5759.4, "bMin": -50, "bMax": 319.4 } } ] }""",
+        ["5"] = """{ "index": 5, "name": "closing up space", "facets": [ { "id": "5", "origin": [5721.89, -1632.33, -273.83], "u": [-0.003002, 0.999995, 0], "v": [0.003233, 0.00001, 0.999995], "normal": [0.99999, 0.003002, -0.003233], "extentMm": { "aMin": -50, "aMax": 2112.9, "bMin": -50, "bMax": 2024.8 } } ] }""",
+        ["6"] = """{ "index": 6, "name": "corner", "facets": [ { "id": "6", "origin": [5724.02, 447.46, -266.74], "u": [0.999977, 0.006773, 0], "v": [-0.000152, 0.022368, 0.99975], "normal": [0.006772, -0.999727, 0.022369], "extentMm": { "aMin": -50, "aMax": 608.7, "bMin": -50, "bMax": 427.7 } } ] }""",
+        ["7"] = """{ "index": 7, "name": "closing up end", "facets": [ { "id": "7", "origin": [6290.2, 443.78, -252.45], "u": [0.027066, -0.999634, 0], "v": [-0.010459, -0.000283, 0.999945], "normal": [-0.999579, -0.027065, -0.010463], "extentMm": { "aMin": -50, "aMax": 2245.7, "bMin": -50, "bMax": 1976.8 } } ] }""",
+    };
+
+    [Fact]
+    public void ClosingUpEnd_IsCutAlongTheOverhang_WhenItsPlanParentOnlyShavesAnEdge()
+    {
+        var view = Build("0", "2", "3", "5", "6", "7");
+        var end = Facet(view, "7");
+
+        Assert.NotNull(end.Outline);
+
+        // Behind the overhang, not the air in front of it: marker 28 on the floor in front must not flip it.
+        AssertPoints(ClosingUpEnd, end.Outline!, 1);
+        AssertBehind(end, Facet(view, "2"));
+    }
+
+    [Fact]
+    public void ClosingUpEnd_IsCutAlongTheOverhang_WithoutAnyCornerFacet()
+    {
+        var view = Build("0", "2", "3", "5", "7");
+        var end = Facet(view, "7");
+
+        Assert.NotNull(end.Outline);
+        AssertPoints(ClosingUpEnd, end.Outline!, 1);
+        AssertBehind(end, Facet(view, "2"));
+    }
+
+    [Fact]
+    public void LeftoverBit_FacesTheRoom()
+    {
+        var view = Build("0", "2", "5", "7");
+
+        // The overhang leans toward −y, so the climber stands at −y below it.
+        Assert.True(Facet(view, "2").Normal[1] < -0.5);
+        Assert.True(Facet(view, "0").Normal[1] < -0.5);
+    }
+
+    [Fact]
+    public void Sidewall_HasItsHypotenuseOnTheMainWall_WithoutAKickboard()
+    {
+        var view = Build("0", "1", "2", "5", "6", "7");
+        var side = Facet(view, "1");
+
+        Assert.NotNull(side.Outline);
+
+        // Without the kickboard (FacetFloorReach lowers it to that): right angle at the front, at the extent's bottom (a runs
+        // from the room toward the wall); the hypotenuse on the main wall.
+        AssertPoints([[-50, 2175.9], [-50, -50], [2279.0, -50]], side.Outline!, 1);
+        AssertInFront(side, Facet(view, "0"));
+    }
+
+    [Fact]
+    public void ClosingUpSpace_StaysCutAgainstItsPlanParent_AsATriangle()
+    {
+        var view = Build("0", "2", "3", "5", "6", "7");
+        var space = Facet(view, "5");
+
+        Assert.NotNull(space.Outline);
+
+        // Right angle at the top, back; completed past the extent's 50 mm margin at the hypotenuse's ends.
+        AssertPoints([[2112.9, -181.9], [2112.9, 2024.8], [-197.3, 2024.8]], space.Outline!, 1);
+        AssertBehind(space, Facet(view, "2"));
+    }
+
+    [Fact]
+    public void ParentSeamAtTheExtentEdge_CutsNothing()
+    {
+        var view = Build("6", "7");
+
+        var end = Facet(view, "7");
+        Assert.Null(Wall3DFacetOutlines.Clip(end, Facet(view, "6"), (1193, 852)));
+        Assert.Null(end.Outline);
+    }
+
+    [Fact]
+    public void OnlyDistantSeams_KeepTheRectangle()
+    {
+        // Without the overhang facets only the kickboard's seam cuts, ~1 m from the kickboard.
+        var view = Build("3", "6", "7");
+
+        var end = Facet(view, "7");
+        var kickboard = Facet(view, "3");
+        var outline = Wall3DFacetOutlines.Clip(end, kickboard, (1193, 852));
+        Assert.NotNull(outline);
+        Assert.True(Wall3DFacetOutlines.SeamGapMm(end, kickboard, outline!) > Wall3DFacetOutlines.MaxSeamGapMm);
+        Assert.Null(end.Outline);
+        Assert.Equal(4, end.Corners.Count);
+    }
+
+    private static Wall3DView Build(params string[] ids)
+    {
+        var json = $$"""
+            { "version": 1, "units": "mm", "markerSizeMm": 125.0,
+              "segments": [ {{string.Join(",\n", ids.Select(id => Segments[id]))}} ],
+              "markers": {{Markers}} }
+            """;
+        return Wall3DViewBuilder.Build(new Wall { Name = "The Attic" }, WallGeometryDocument.Parse(json), null, planTriangles: Triangles);
+    }
+
+    private static Wall3DFacet Facet(Wall3DView view, string id) => view.Facets.Single(f => f.Id == id);
+
+    /// <summary>Every corner lies on or behind <paramref name="plane"/> (against its room-facing normal), within 3 mm.</summary>
+    private static void AssertBehind(Wall3DFacet facet, Wall3DFacet plane)
+    {
+        foreach (var p in facet.Corners)
+        {
+            var d = Enumerable.Range(0, 3).Sum(i => plane.Normal[i] * (p[i] - plane.Origin[i]));
+            Assert.True(d < 3, $"corner ({p[0]:F0}, {p[1]:F0}, {p[2]:F0}) is {d:F1} mm in front of {plane.Name}");
+        }
+    }
+
+    /// <summary>Every corner lies on or in front of <paramref name=plane/> (along its room-facing normal), within 3 mm.</summary>
+    private static void AssertInFront(Wall3DFacet facet, Wall3DFacet plane)
+    {
+        foreach (var p in facet.Corners)
+        {
+            var d = Enumerable.Range(0, 3).Sum(i => plane.Normal[i] * (p[i] - plane.Origin[i]));
+            Assert.True(d > -3, $"corner ({p[0]:F0}, {p[1]:F0}, {p[2]:F0}) is {-d:F1} mm behind {plane.Name}");
+        }
+    }
+
+    private static void AssertPoints(double[][] expected, IReadOnlyList<double[]> actual, double tolerance)
+    {
+        Assert.Equal(expected.Length, actual.Count);
+        for (var i = 0; i < expected.Length; i++)
+        {
+            Assert.Equal(expected[i][0], actual[i][0], tolerance);
+            Assert.Equal(expected[i][1], actual[i][1], tolerance);
+        }
+    }
+}

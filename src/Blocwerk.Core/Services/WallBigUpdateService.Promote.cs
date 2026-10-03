@@ -1,5 +1,6 @@
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Detection.Enrichment;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -31,6 +32,12 @@ public partial class WallBigUpdateService
         // holds that no longer exist and its warp geometry is for a photo that was thrown away — so the
         // only safe answer is to refuse rather than to apply them to somebody else's capture.
         await WallUpdateSessions.EnsureCurrentAsync(db, wallId, expectedSessionId);
+        await EnsureShapeStepSettledAsync(db, wallId);
+
+        // Accepted "this hold moved" suggestions become Changed carry verdicts (decision D-A). Read from
+        // the session just verified as the caller's, so every accept is honoured once, by the one path
+        // that carries every other hold.
+        confirmation = await FoldAcceptedRelocationsAsync(db, wallId, confirmation);
 
         // Resume the SAME open wall-update batch the staging run (StageAsync) opened, so the staged-hold INSERTs
         // and this promote's carry writes are ONE self-contained, revertible/replayable unit — reverting
@@ -121,7 +128,11 @@ public partial class WallBigUpdateService
             confirmation.CarriedWarpPositions, confirmation.CarriedWarpShapes, panelPositions,
             newGenPanelByPosition, user.Id);
 
+        // Blind carries on a panel whose photo could not be aligned sit at their OLD coordinates: flag them.
+        await FlagUnalignedCarriesAsync(db, wallId);
+
         // Centre panel goes live at (0,0).
+        await WallMarkerObservationPromotion.PromoteStagedAsync(db, centerPanel.Id, newGen);
         centerPanel.Photo = centerPanel.StagedPhoto;
         centerPanel.PhotoContentType = centerPanel.StagedPhotoContentType;
         ClearStaged(centerPanel);
@@ -133,6 +144,9 @@ public partial class WallBigUpdateService
         // neighbour removal discarded have already had their links cleared. Without this a promote left
         // every link pointing at retained gen-N rows, i.e. wiped the wall's link set outright.
         await CarryHoldLinksAsync(db, wallId, carriedScopeHoldIds);
+
+        // The optional shape step's reviewed outlines, last so they win over the carry's warped ones.
+        var reshaped = await ApplyShapeDecisionsAsync(db, wallId, newGen);
 
         wall.Photo = centerPanel.Photo;
         wall.PhotoContentType = centerPanel.PhotoContentType;
@@ -153,6 +167,13 @@ public partial class WallBigUpdateService
         if (changeJournal is not null)
         {
             await changeJournal.SealWallUpdateBatchAsync(wallId);
+        }
+
+        // Reviewed outlines kept their facet position; their size, footprint and protrusion are redone
+        // off the request, against the now-committed generation.
+        if (reshaped.Count > 0)
+        {
+            refinementQueue?.Enqueue(wallId, reshaped);
         }
 
         logger.LogInformation(
@@ -202,6 +223,7 @@ public partial class WallBigUpdateService
                 hold.Generation = newGen;
             }
 
+            await WallMarkerObservationPromotion.PromoteStagedAsync(db, panel.Id, newGen);
             panel.Photo = panel.StagedPhoto;
             panel.PhotoContentType = panel.StagedPhotoContentType;
             ClearStaged(panel);

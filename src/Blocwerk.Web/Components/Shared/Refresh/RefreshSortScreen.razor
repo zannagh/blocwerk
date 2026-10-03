@@ -1,0 +1,80 @@
+@using Blocwerk.Core.Refresh
+@using Blocwerk.Web.Endpoints
+@* One screen, usually just "Start": the photo proposed for each panel, the current photo beside it, and a
+   choice to change it. Every photo also goes to the 3D model. *@
+
+<div class="refresh-sort">
+    <p>
+        Each panel shows the uploaded photo that matches it best. Check them, change any that is wrong, then start.
+        @if (View.CaptureAvailable)
+        {
+            <span>All @View.Photos.Count photos@(VideoText) also go to the 3D model.</span>
+        }
+        else
+        {
+            <span>3D is not set up for this wall, so only the panel photos are used.</span>
+        }
+    </p>
+
+    <div class="refresh-panels">
+        @foreach (var pick in View.Picks)
+        {
+            var chosen = Chosen(pick);
+            <div class="refresh-panel-card">
+                <div class="refresh-panel-head">
+                    <strong>@PanelName(pick)</strong>
+                    <span class="refresh-badge @BadgeClass(pick, chosen)">@BadgeText(pick, chosen)</span>
+                </div>
+                <div class="refresh-panel-photos">
+                    <figure>
+                        @if (pick.PanelId is { } panelId)
+                        {
+                            <img src="/api/walls/@View.WallId/panels/@panelId/photo" alt="Current photo of @PanelName(pick)" loading="lazy" />
+                        }
+                        <figcaption>Now</figcaption>
+                    </figure>
+                    <figure>
+                        @if (chosen is { } photoId && View.CaptureId is { } captureId)
+                        {
+                            <img src="@CapturePhotoEndpoint.Url(captureId, photoId)" alt="New photo for @PanelName(pick)" loading="lazy" />
+                        }
+                        else
+                        {
+                            <div class="refresh-keep">Keeps its photo</div>
+                        }
+                        <figcaption>@NewCaption(pick, chosen)</figcaption>
+                    </figure>
+                </div>
+                <select class="form-input refresh-photo-select" aria-label="New photo for @PanelName(pick)" value="@(chosen?.ToString() ?? string.Empty)"
+                        @onchange="e => Choose(pick, e.Value as string)">
+                    <option value="">Keep the current photo</option>
+                    @if (pick.Candidates.Count > 0)
+                    {
+                        <optgroup label="Matching photos (share of the panel they show)">
+                            @foreach (var candidate in pick.Candidates)
+                            {
+                                <option value="@candidate.PhotoId">@PhotoName(candidate.PhotoId) · @Percent(candidate.Coverage)</option>
+                            }
+                        </optgroup>
+                    }
+                    @if (Others(pick) is { Count: > 0 } others)
+                    {
+                        <optgroup label="@(pick.Candidates.Count > 0 ? "Other photos" : "All photos")">
+                            @foreach (var photo in others)
+                            {
+                                <option value="@photo.PhotoId">@PhotoName(photo.PhotoId)</option>
+                            }
+                        </optgroup>
+                    }
+                </select>
+            </div>
+        }
+    </div>
+
+    @if (View.Picks.Count == 0)
+    {
+        <p class="hint">This wall has no panel photos yet, so only the 3D model is updated.</p>
+    }
+
+    <button class="btn-primary" @onclick="StartAsync">Start</button>
+</div>

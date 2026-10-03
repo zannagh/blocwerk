@@ -1,0 +1,3 @@
+# The solver's pinned deps, plus matplotlib for the CLI-only figures.
+-r ../../../docker/wall-geometry/requirements.txt
+matplotlib>=3.8

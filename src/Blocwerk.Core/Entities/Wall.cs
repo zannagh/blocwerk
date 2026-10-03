@@ -113,6 +113,25 @@ public class Wall
     /// </remarks>
     public int? LinksFinalizedGeneration { get; set; }
 
+    /// <summary>
+    /// Opt-in switch for the experimental glyph (ArUco marker) wall geometry. <b>Default false.</b>
+    /// While false, every glyph-derived value (marker observations, geometry models, metric hold
+    /// fields) is ignored and the normalized per-panel pipeline behaves exactly as before.
+    /// </summary>
+    public bool GlyphsEnabled { get; set; }
+
+    /// <summary>
+    /// The printed marker size for this wall — the side of the black square, in millimetres. Null
+    /// when unknown. Sheets of several sizes share ids, so the scale can never be inferred from an id.
+    /// </summary>
+    public double? MarkerSizeMm { get; set; }
+
+    /// <summary>
+    /// "Volumes on this wall have flat sides" (default off): newly detected volumes get flat faces automatically when
+    /// they fit well (<see cref="WallVolume.HasFlatSides"/>); each volume can still be switched back.
+    /// </summary>
+    public bool VolumesHaveFlatSides { get; set; }
+
     public ICollection<WallMember> Members { get; set; } = [];
 
     public ICollection<Hold> Holds { get; set; } = [];

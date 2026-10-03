@@ -3,6 +3,7 @@
 // </copyright>
 
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Web.Components.Shared.ProfilePanes;
@@ -19,6 +20,13 @@ public partial class ProfileAccountPane
         emailBusy = true;
         emailError = null;
         emailInfo = null;
+        if (ApiKeySession.IsApiKeySession)
+        {
+            emailError = ApiKeySessionRestrictedException.UserMessage;
+            emailBusy = false;
+            return;
+        }
+
         try
         {
             var result = await EmailVerification.IssueCodeAsync(
@@ -100,6 +108,13 @@ public partial class ProfileAccountPane
         if (KioskContext.IsKiosk)
         {
             emailError = "Email can't be changed from a kiosk device.";
+            return;
+        }
+
+        // Nor from a session signed in with an API key: the address is how the account is recovered.
+        if (ApiKeySession.IsApiKeySession)
+        {
+            emailError = ApiKeySessionRestrictedException.UserMessage;
             return;
         }
 

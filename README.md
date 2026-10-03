@@ -92,6 +92,7 @@ A few things worth knowing before you run it:
 * **Mount `./dpkeys:/app/keys`.** That is the DataProtection key ring. Without it, every redeploy logs everyone out and makes kiosk registrations, TOTP secrets and TopLogger tokens unreadable.
 * **The detection model is not in the repository.** It is about 100 MB, so it is gitignored. Put `climbingcrux.onnx` at `src/Blocwerk.HoldDetection/models/` before building, or point `HOLDDETECTION__MODELPATH` at wherever you keep it. The model comes from [climbingcrux_model](https://github.com/mkurc1/climbingcrux_model).
 * **Email, push and TopLogger are all optional.** Leave `SMTP__*` and `VAPID__*` empty and those features stay dormant instead of breaking.
+* **Signing in with a personal API key is off by default.** It exists for automation (Playwright) against an instance you control. See [`docs/api-key-login.md`](docs/api-key-login.md) before setting `BLOCWERK__AUTH__APIKEYLOGIN__ENABLED`. It also needs an allow-list of user ids, and the same page covers `Blocwerk:Server:TrustedProxies` for the forwarded-headers trust.
 * Wall photos, panel photos and avatars live in Postgres. Gallery uploads, beta video clips and the derived image cache live on disk, so give them volumes.
 
 <p align="center">

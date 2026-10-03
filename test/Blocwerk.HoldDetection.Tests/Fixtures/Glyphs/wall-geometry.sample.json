@@ -1,0 +1,70 @@
+{
+  // Small v1 sample in the shape of tools/glyph/wall-geometry.schema.md (values invented).
+  "version": 1,
+  "units": "mm",
+  "dictionary": "DICT_4X4_50",
+  "idScheme": "segment*6+role",
+  "markerSizeMm": 125.0,
+  "world": { "origin": "seg 0 BL marker corner on the floor plane", "up": [0, 0, 1] },
+  "segments": [
+    {
+      "index": 0,
+      "name": "main wall",
+      "declaredAngleDeg": 45.0,
+      "measuredAngleDeg": 44.6,
+      "facets": [
+        {
+          "id": "0",
+          "origin": [0, 0, 0],
+          "u": [1, 0, 0],
+          "v": [0, 0.7071, 0.7071],
+          "normal": [0, -0.7071, 0.7071],
+          "measuredAngleDeg": 44.6,
+          "yawDeg": 0.0,
+          "extentMm": { "aMin": -50, "aMax": 3050, "bMin": -50, "bMax": 2550 },
+          "futureField": "ignored"
+        }
+      ]
+    },
+    {
+      "index": 5,
+      "name": "right piece",
+      "declaredAngleDeg": null,
+      "measuredAngleDeg": null,
+      "facets": [
+        { "id": "5a", "origin": [3100, 0, 0], "u": [0.8, 0.6, 0], "v": [0, 0, 1], "normal": [0.6, -0.8, 0] },
+        { "id": "5b", "origin": [3900, 600, 0], "u": [0, 1, 0], "v": [0, 0, 1], "normal": [1, 0, 0] }
+      ]
+    }
+  ],
+  "markers": [
+    {
+      "id": 0, "segment": 0, "role": "TL", "facet": "0",
+      "cornersPlaneMm": [[0, 2500], [125, 2500], [125, 2375], [0, 2375]],
+      "cornersWorldMm": [[0, 1767.8, 1767.8], [125, 1767.8, 1767.8], [125, 1679.4, 1679.4], [0, 1679.4, 1679.4]],
+      "observations": 2,
+      "reprojRmsPx": 0.8,
+      "synthetic": false
+    },
+    {
+      "id": 1, "segment": 0, "role": "TR", "facet": "0",
+      "cornersPlaneMm": [[2875, 2500], [3000, 2500], [3000, 2375], [2875, 2375]],
+      "observations": 1,
+      "reprojRmsPx": 1.9,
+      "synthetic": true
+    },
+    {
+      "id": 33, "segment": 5, "role": "BL", "facet": "5a",
+      "cornersPlaneMm": [[0, 125], [125, 125], [125, 0], [0, 0]],
+      "observations": 4
+    }
+  ],
+  "cameras": [
+    { "image": "IMG_2770", "K": [1, 0, 0, 0, 1, 0, 0, 0, 1], "dist": [0, 0], "R": [1, 0, 0, 0, 1, 0, 0, 0, 1], "t": [0, 0, 0], "reprojRmsPx": 0.9 }
+  ],
+  "quality": {
+    "reprojRmsPx": 0.9,
+    "gravity": "from seg1 x seg2 normals",
+    "checks": { "seg0DeclaredVsMeasuredDeg": 0.4, "markerSideRmsErrMm": 0.6 }
+  },
+}

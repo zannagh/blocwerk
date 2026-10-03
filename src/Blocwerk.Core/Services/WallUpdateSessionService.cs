@@ -55,9 +55,7 @@ public partial class WallUpdateSessionService : IWallUpdateSessionService
         await WallAdminGuard.EnsureWallAdminAsync(db, wallId, user.Id, CancellationToken.None);
 
         var session = await RequireOpenAsync(db, wallId);
-        session.Phase = phase;
-        session.NeighbourIndex = Math.Max(0, neighbourIndex);
-        WallUpdateSessions.Touch(session, user.Id);
+        WallUpdateSessions.MovePhase(session, phase, neighbourIndex, user.Id);
         await db.SaveChangesAsync();
 
         logger.LogDebug(

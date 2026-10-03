@@ -100,15 +100,17 @@ else
                         <p class="field-hint">While this is on, everyone except you sees a "currently being updated" notice instead of the wall.</p>
                     </div>
 
+                    @* Anchor for "where panel photos are managed" (linked from the capture section). *@
+                    <div id="wall-panels">
                     @if (_showBigUpdate)
                     {
-                        <BigWallUpdate WallId="WallId"
+                        <BigWallUpdate WallId="WallId" Prefill="_bigUpdatePrefill"
                                        OnClose="CloseBigUpdate" OnPromoted="OnBigUpdatePromoted" />
                     }
                     else
                     {
                         <div class="form-group">
-                            <WallPanelGrid WallId="WallId" />
+                            <WallPanelGrid @key="_panelGridKey" WallId="WallId" AutoResumePanelId="_resumePanelId" />
                             @* An update session belongs to the wall, so a second moderator should JOIN
                                it rather than collide with it — say who has it open and since when. *@
                             @if (_openUpdate is { } openUpdate)
@@ -128,11 +130,13 @@ else
                                     <span>Opening it continues where they left off.</span>
                                 </p>
                             }
+                            @* "Update panels + 3D" sits in the wall rail beside the panels; this is the step-by-step flow. *@
                             <button class="btn-secondary bigupdate-entry" @onclick="OpenBigUpdate">
                                 @(_openUpdate is null ? "Update wall with new photos" : "Continue the wall update")
                             </button>
                         </div>
                     }
+                    </div>
 
                     @* While the big-wall update wizard is open, hide the rest of the settings so its
                        Continue/Done buttons don't sit one tap above the destructive Delete Wall control.
@@ -207,6 +211,21 @@ else
                     {
                         <p class="empty-msg">Upload a wall photo to draw the border and segments on it.</p>
                     }
+
+                    @* Opt-in printed ArUco markers and the solved wall geometry. Admin-only like the
+                       rest of this card; the component hides itself on a kiosk tablet. *@
+                    <WallMarkerSettings WallId="_wall.Id" OnPanelStaged="OnCapturePanelStaged"
+                                        OnStartWallUpdate="OnCaptureWallUpdate" OnShowPanels="RevealPanelsAsync" />
+                    @* GPU machines that pull this wall's photo-real training. Admin desk task, never a tablet one. *@
+                    @if (_isAdmin && !KioskContext.IsKiosk)
+                    {
+                        <details class="segment-settings" id="wall-3d-runners">
+                            <summary>3D runners (photo-real view)</summary>
+                            <WallGpuRunnersPanel WallId="_wall.Id" />
+                        </details>
+                    }
+                    <WallOutlineUpgrade WallId="_wall.Id" ShareToken="@ShareToken" />
+                    <WallPhotoPrivacy WallId="_wall.Id" ShareToken="@ShareToken" />
                     </div>
                 </details>
 
@@ -378,13 +397,20 @@ else
                         <p class="description">@_wall.Description</p>
                     }
 
+                    @if (!_isEditing)
+                    {
+                        @* Photos | 3D: renders only for a wall with a measured 3D model (kiosk and
+                           share links included — the inline view reads the wall as this page does). *@
+                        <WallViewSwitch WallId="_wall.Id" @bind-Show3D="_show3D" />
+                    }
+
                     <div class="wall-photo-container">
                         @* Edit pencil overlaid on the image's top-right, co-located with the editor's
                            usage "lens" button — not in a separate row above. Rendered at the WallDetail
                            level (not inside WallPhotoEditor) so it covers every view path uniformly:
                            the single-image editor and the multi-panel viewer, where WallPhotoEditor
                            isn't the renderer. Shows an X while editing. *@
-                        @if (_canEditHolds)
+                        @if (_canEditHolds && (!_show3D || _isEditing))
                         {
                             <button class="btn-icon wall-edit-fab @(_isEditing ? "editing" : "")" @onclick="ToggleEditing" title="@(_isEditing ? "Exit edit mode" : "Edit wall")">
                                 @if (_isEditing)
@@ -403,7 +429,11 @@ else
                                 }
                             </button>
                         }
-                        @if (_livePanels.Count > 0 && _canEditHolds && _isEditing && _editingPanel != null)
+                        @if (_show3D && !_isEditing)
+                        {
+                            <Wall3DInline WallId="_wall.Id" ShareToken="@ShareToken" />
+                        }
+                        else if (_livePanels.Count > 0 && _canEditHolds && _isEditing && _editingPanel != null)
                         {
                             @* Big wall in edit mode: scope the single-image editor to one live panel
                                (its own photo + holds) and let the admin step between panels. Wall-level
@@ -549,6 +579,28 @@ else
                         }
                     </div>
 
+                    @* Renders only when the wall has a measured 3D model. A full-width button under
+                       the stats (a fifth stat tile does not fit a phone row); share-link viewers keep
+                       their token, and the kiosk may open it (Wall3D is on its allow-list). *@
+                    <Wall3DLink WallId="WallId" ShareToken="@ShareToken">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M12 2 3 7v10l9 5 9-5V7z"></path>
+                            <path d="M3 7l9 5 9-5"></path>
+                            <path d="M12 12v10"></path>
+                        </svg>
+                        View in 3D
+                    </Wall3DLink>
+
+                    @* Wall admins' main way to bring the wall up to date after a visit. Not on share links or the
+                       wall tablet (the page refuses kiosks too); the step-by-step "Update wall with new photos"
+                       stays in the Wall Settings card. *@
+                    @if (_isAdmin && !KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
+                    {
+                        <a class="btn-primary refresh-entry" href="/walls/@WallId/update">Update panels + 3D</a>
+                        <p class="field-hint refresh-entry-hint">After a visit: drop all its photos and videos, check the panels, confirm.</p>
+                    }
+
                     @if (_showInviteLink && !string.IsNullOrEmpty(_shareLink))
                     {
                         <div class="share-link">
@@ -586,6 +638,13 @@ else
                                 Finalize links
                             </button>
                         </div>
+                    }
+
+                    @* Holds of two panel photos on the same spot of the 3D model that are not linked yet: one quiet line
+                       with an in-place review. Wall admins only; renders nothing without suggestions or a 3D model. *@
+                    @if (_isAdmin && !KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
+                    {
+                        <HoldLinkSuggestionsHint WallId="WallId" ShareToken="@ShareToken" OnLinked="LoadHoldLinkCount" />
                     }
                     </div>
                 }
@@ -840,6 +899,10 @@ else
     private bool _isAnonymous;
     private Guid _currentUserId;
     private bool _isEditing;
+
+    // The "3D" side of the Photos | 3D switch: the inline schematic replaces the photo viewer. Edit
+    // mode always shows the photos (holds are edited on them), and a wall change resets it.
+    private bool _show3D;
 
     // Hold-editor access: owner, admin, or moderator. Mirrors WallAdminGuard.EnsureWallEditorAsync
     // on the server. Settings/photos/shape/API keys/border stay on _isAdmin.
@@ -1142,6 +1205,7 @@ else
         // recreates the carousel so it opens on the new wall's initial page rather than wherever the
         // user had swiped the previous one.
         _wall = null;
+        _show3D = false;
         StateHasChanged();
         await LoadCurrentWall();
     }
@@ -1400,6 +1464,7 @@ else
             && await BoulderService.CanCreateAnonymouslyAsync(WallId);
 
         await LoadOpenUpdateAsync();
+        OpenReviewFromDeepLink();
 
         if (_wall != null)
         {
@@ -1655,6 +1720,15 @@ else
                 flagBouldersOnMove: false));
         }
 
+        // Drafted "Mark changed" decisions arrive ONLY here when a batch handler is attached (the
+        // editor's immediate OnMarkHoldModified path is its no-handler fallback), so skipping this list
+        // silently dropped every mark made in the per-panel editor. Geometry first: the flag describes
+        // the hold as saved — same order as OnBatchSave.
+        foreach (var holdId in changes.MarkedChanged)
+        {
+            await WallService.MarkHoldModifiedAsync(holdId);
+        }
+
         foreach (var holdId in changes.Deleted)
         {
             await WallService.DeleteHoldAsync(holdId);
@@ -1899,6 +1973,28 @@ else
         }
     }
 
+    /// <summary>Deep link from "Update panels + 3D": <c>?update=review&amp;session={id}</c> opens that wall update once.</summary>
+    [SupplyParameterFromQuery(Name = "update")]
+    public string? Update { get; set; }
+
+    /// <summary>The update session the "Update panels + 3D" run prepared; the review opens only while it is still the open one.</summary>
+    [SupplyParameterFromQuery(Name = "session")]
+    public Guid? UpdateSession { get; set; }
+
+    private bool updateDeepLinkUsed;
+
+    private void OpenReviewFromDeepLink()
+    {
+        if (updateDeepLinkUsed || !_isAdmin || KioskContext.IsKiosk || _openUpdate is null || _openUpdate.Id != UpdateSession
+            || !string.Equals(Update, "review", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        updateDeepLinkUsed = true;
+        _showBigUpdate = true;
+    }
+
     private void OpenBigUpdate()
     {
         _showBigUpdate = true;
@@ -1907,6 +2003,7 @@ else
     private async Task CloseBigUpdate()
     {
         _showBigUpdate = false;
+        _bigUpdatePrefill = null;
         await LoadWall();
         await LoadOpenUpdateAsync();
     }

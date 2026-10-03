@@ -1,0 +1,23 @@
+.capture-panel { margin-top: 12px; }
+.capture-upload { display: flex; flex-direction: column; gap: 6px; }
+::deep .capture-warn { font-size: 0.78rem; color: var(--warning-text, var(--text-secondary)); }
+::deep .capture-photo-name { max-width: 14em; overflow-wrap: anywhere; }
+::deep .capture-declarations .checkbox-label { display: flex; gap: 6px; margin: 0; font-size: 0.85rem; }
+
+/* Phone width: each marker segment becomes a small card (range, then the name full width, then angle
+   and the vertical tick side by side) instead of a four-column table that scrolls sideways. */
+@media (max-width: 560px) {
+    ::deep .capture-declarations { min-width: 0; }
+    ::deep .capture-declarations thead { display: none; }
+    ::deep .capture-declarations tr {
+        display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px;
+        padding: 8px 0; border-bottom: 1px solid var(--border-light);
+    }
+    ::deep .capture-declarations td { display: block; padding: 0; border: 0; text-align: left; }
+    ::deep .capture-declarations td.capture-decl-markers { flex: 1 1 100%; font-weight: 600; }
+    ::deep .capture-declarations td.capture-decl-markers::before { content: "Markers "; font-weight: 400; color: var(--text-secondary); }
+    ::deep .capture-declarations td.capture-decl-name { flex: 1 1 100%; }
+    ::deep .capture-declarations td.capture-decl-name .form-input { width: 100%; }
+    ::deep .capture-declarations td.capture-decl-angle { display: flex; align-items: center; gap: 6px; }
+    ::deep .capture-declarations td.capture-decl-angle::before { content: "Angle (°)"; font-size: 0.85rem; color: var(--text-secondary); }
+}

@@ -1,0 +1,307 @@
+// Copyright (c) 2026, zannagh. All rights reserved.
+// See License in the project root for license information.
+
+using Blocwerk.Core.Entities;
+using Blocwerk.Core.Enums;
+using Blocwerk.Core.Geometry.TextureRegistration;
+using Blocwerk.Core.Holds;
+using Blocwerk.Core.Services;
+
+namespace Blocwerk.Core.Geometry.View3D;
+
+/// <summary>
+/// Pure projection of a wall (live holds + boulders, already access-checked and loaded) and its
+/// active <see cref="WallGeometryDocument"/> into the <see cref="Wall3DView"/> the renderer draws.
+/// No I/O, so the plane→world maths and the boulder roles are unit-testable on their own.
+/// </summary>
+public static class Wall3DViewBuilder
+{
+    /// <summary>How far a hold disc floats off its facet, so it never z-fights the plywood.</summary>
+    public const double HoldLiftMm = 12;
+
+    /// <summary>Stand-in size for a hand hold whose metric size was never measured.</summary>
+    public const double DefaultHandSizeMm = 90;
+
+    /// <summary>Stand-in size for a foot hold whose metric size was never measured.</summary>
+    public const double DefaultFootSizeMm = 55;
+
+    /// <summary>Margin around the marker bounds when a facet carries no <c>extentMm</c>.</summary>
+    public const double FallbackMarginMm = 150;
+
+    /// <summary>Builds the view. <paramref name="wall"/> must carry its holds and boulders (with BoulderHolds).</summary>
+    /// <param name="wall">The wall with holds and boulders.</param>
+    /// <param name="doc">Its active geometry model.</param>
+    /// <param name="boulderId">The boulder to highlight, if any.</param>
+    /// <param name="photoMarkers">
+    /// Stored marker observations per hold photo, so outlines map onto their facet through the same
+    /// homography ingest measured them with. Optional: without them the photo's own placed holds fit one.
+    /// </param>
+    /// <param name="holdLinks">
+    /// The wall's stored "same physical hold" links (<see cref="HoldLink"/>), so a hold photographed on two
+    /// overlapping panels is drawn once. Optional: without them only the geometric fallback merges copies.
+    /// </param>
+    /// <param name="planTriangles">Plan triangles by segment: parent and right angle (<see cref="Wall3DFacetOutlines"/>); optional.</param>
+    /// <returns>The view.</returns>
+    public static Wall3DView Build(
+        Wall wall,
+        WallGeometryDocument doc,
+        Guid? boulderId,
+        IReadOnlyDictionary<Wall3DPhotoKey, Wall3DPhotoMarkers>? photoMarkers = null,
+        IEnumerable<HoldLinkPair>? holdLinks = null,
+        IReadOnlyDictionary<int, PlanTriangle>? planTriangles = null)
+    {
+        var frames = new Dictionary<string, FacetFrame>(StringComparer.Ordinal);
+        var facets = Wall3DFacetOutlines.Apply(BuildFacets(doc, wall, frames), doc, planTriangles);
+        var markers = BuildMarkers(doc);
+
+        var boulder = boulderId is { } bid ? wall.Boulders.FirstOrDefault(b => b.Id == bid) : null;
+        var bounds = facets.GroupBy(f => f.Id, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => (frames[g.Key], g.First().Extent), StringComparer.Ordinal);
+        var (candidates, unplaced) = BuildHolds(wall, doc, frames, bounds, boulder, photoMarkers);
+        var twins = HoldTwinMerger.Group(candidates, holdLinks);
+        var bouldersByHold = LiveBouldersByHold(wall);
+        var holds = twins.Groups.Select(g => Fold(g, bouldersByHold)).ToList();
+
+        return new Wall3DView
+        {
+            WallId = wall.Id,
+            WallName = wall.Name,
+            BoulderId = boulder?.Id,
+            BoulderName = boulder?.Name,
+            MarkerSizeMm = doc.MarkerSizeMm,
+            Facets = facets,
+            Markers = markers,
+            Holds = holds,
+            UnplacedHoldCount = unplaced,
+            MultiPanelHoldCount = twins.Groups.Count(g => g.Count > 1),
+            Textures = [],
+            SplatUrl = null,
+        };
+    }
+
+    /// <summary>
+    /// The hold's part in <paramref name="boulder"/>, mirroring the 2D picker: its own BoulderHold
+    /// (start/top by type, foot-only by usage), else a foothold by the boulder's colour rule.
+    /// </summary>
+    public static Wall3DHoldRole? RoleOf(Hold hold, Boulder? boulder, IReadOnlyDictionary<Guid, BoulderHold> boulderHolds)
+    {
+        if (boulder is null)
+        {
+            return null;
+        }
+
+        if (boulderHolds.TryGetValue(hold.Id, out var bh))
+        {
+            return bh.Type switch
+            {
+                HoldType.Start => Wall3DHoldRole.Start,
+                HoldType.Top => Wall3DHoldRole.Top,
+                _ => bh.Usage == HoldUsage.FootOnly ? Wall3DHoldRole.Foot : Wall3DHoldRole.Hand,
+            };
+        }
+
+        return !string.IsNullOrEmpty(boulder.FootColorOnly) && hold.Color == boulder.FootColorOnly
+            ? Wall3DHoldRole.ColorFoot
+            : null;
+    }
+
+    /// <summary>
+    /// One physical hold, drawn as its representative (the group's first row): its role is the strongest
+    /// any copy has in the highlighted boulder, its usage the distinct live boulders using any copy.
+    /// </summary>
+    /// <param name="group">The rows of one physical hold, representative first.</param>
+    /// <param name="bouldersByHold">Live boulders per hold row.</param>
+    /// <returns>The hold to draw.</returns>
+    public static Wall3DHold Fold(IReadOnlyList<HoldTwinCandidate> group, IReadOnlyDictionary<Guid, HashSet<Guid>> bouldersByHold)
+    {
+        var rep = group[0].Placed;
+        var boulders = group.SelectMany(c => bouldersByHold.GetValueOrDefault(c.Hold.Id) ?? []).Distinct().Count();
+        if (group.Count == 1)
+        {
+            return rep with { UsageCount = boulders };
+        }
+
+        var role = group.Select(c => c.Placed.Role).Where(r => r.HasValue).OrderBy(r => r!.Value).FirstOrDefault();
+        return rep with
+        {
+            Role = role,
+            UsageCount = boulders,
+            DuplicateIds = group.Skip(1).Select(c => c.Hold.Id).ToList(),
+        };
+    }
+
+    /// <summary>The live (not archived, draft or historic) boulders using each hold row.</summary>
+    private static Dictionary<Guid, HashSet<Guid>> LiveBouldersByHold(Wall wall) =>
+        wall.Boulders
+            .Where(b => !b.IsArchived && !b.IsDraft && !b.IsHistoric)
+            .SelectMany(b => b.BoulderHolds.Select(bh => (bh.HoldId, BoulderId: b.Id)))
+            .GroupBy(p => p.HoldId)
+            .ToDictionary(g => g.Key, g => g.Select(p => p.BoulderId).ToHashSet());
+
+    /// <summary>Places every live hold row on its facet with its outline; counts the ones that cannot be placed or drawn on a facet.</summary>
+    private static (List<HoldTwinCandidate> Holds, int Unplaced) BuildHolds(
+        Wall wall,
+        WallGeometryDocument doc,
+        Dictionary<string, FacetFrame> frames,
+        IReadOnlyDictionary<string, (FacetFrame Frame, PlaneRectMm Extent)> bounds,
+        Boulder? boulder,
+        IReadOnlyDictionary<Wall3DPhotoKey, Wall3DPhotoMarkers>? photoMarkers)
+    {
+        var boulderHolds = boulder?.BoulderHolds.ToDictionary(bh => bh.HoldId) ?? [];
+
+        var live = LiveHolds(wall).ToList();
+        var projector = HoldPlaneProjector.Create(live.Where(h => h.FacetId is not null && frames.ContainsKey(h.FacetId)), doc, photoMarkers);
+        var extents = Wall3DFallbackPlacement.FacetExtents(doc);
+        var holds = new List<HoldTwinCandidate>();
+        var unplaced = 0;
+        foreach (var hold in live)
+        {
+            var role = RoleOf(hold, boulder, boulderHolds);
+            if (hold.FacetId is null || hold.PlaneAMm is not { } a || hold.PlaneBMm is not { } b
+                || !frames.TryGetValue(hold.FacetId, out var frame))
+            {
+                // Defence in depth: a hold with a panel position but no stored facet position is still
+                // drawn, placed through its photo's projector and flagged approximate — unless the placement run
+                // left it unmeasured on purpose because its photos contradict each other (a guess would be wrong too).
+                if (!HoldTexturePlacer.IsRejected(hold) && Wall3DFallbackPlacement.Place(hold, projector, extents, frames) is { } fallback)
+                {
+                    var fit = fallback.Fit;
+                    var drawn = Wall3DFallbackPlacement.Draw(hold, fit, ToHold(hold, fit.FacetId, fallback.Frame, fit.PlaneAMm, fit.PlaneBMm, role));
+                    unplaced += Add(holds, bounds, hold, drawn with { Protrusion = ProtrusionOf(hold, drawn.Shape!) }, null);
+                }
+                else
+                {
+                    unplaced++;
+                }
+
+                continue;
+            }
+
+            var placed = ToHold(hold, hold.FacetId, frame, a, b, role);
+            var mapping = projector.For(hold);
+            var shape = HoldShapeProjector.FromFootprint(HoldFootprint.For(hold))
+                ?? HoldShapeProjector.Project(hold, placed.WidthMm, placed.HeightMm, mapping);
+            var tilt = mapping is { } m ? PhotoViewTilt.At(m.Map, hold.X, hold.Y) : null;
+            unplaced += Add(holds, bounds, hold, placed with { Shape = shape, Protrusion = ProtrusionOf(hold, shape) }, tilt);
+        }
+
+        return (holds, unplaced);
+    }
+
+    /// <summary>Adds the hold as drawn when it stays on a facet; returns 1 (not measured) when it does not.</summary>
+    private static int Add(
+        List<HoldTwinCandidate> holds, IReadOnlyDictionary<string, (FacetFrame Frame, PlaneRectMm Extent)> bounds, Hold hold, Wall3DHold drawn, double? tilt)
+    {
+        if (Wall3DHoldGuard.Keep(drawn, bounds) is not { } kept)
+        {
+            return 1;
+        }
+
+        holds.Add(new HoldTwinCandidate(hold, kept, tilt));
+        return 0;
+    }
+
+    /// <summary>The stored protrusion when it still matches the hold, else an estimate from the drawn outline's size.</summary>
+    private static Wall3DHoldProtrusion ProtrusionOf(Hold hold, Wall3DHoldShape shape)
+    {
+        var p = HoldProtrusion.For(hold) ?? HoldProtrusion.Estimate(
+            shape.Outline.Max(v => v[0]) - shape.Outline.Min(v => v[0]),
+            shape.Outline.Max(v => v[1]) - shape.Outline.Min(v => v[1]),
+            string.Empty);
+        return new Wall3DHoldProtrusion(
+            p.BaseMm, p.HeightMm, p.ApexA, p.ApexB, p.ApexMm, p.Source != HoldProtrusionSource.Estimate, p.OnVolume, p.ShiftA, p.ShiftB);
+    }
+
+    /// <summary>The wall's live holds: everything at or below the wall generation (staged gen+1 rows excluded).</summary>
+    private static IEnumerable<Hold> LiveHolds(Wall wall) =>
+        wall.Holds.Where(h => h.Generation <= wall.CurrentGeneration);
+
+    private static Wall3DHold ToHold(Hold hold, string facetId, FacetFrame frame, double a, double b, Wall3DHoldRole? role)
+    {
+        var isFoot = hold.Category == HoldCategory.Foot;
+        var fallback = isFoot ? DefaultFootSizeMm : DefaultHandSizeMm;
+        var measured = hold.WidthMm is > 0 && hold.HeightMm is > 0;
+        var color = HoldPalette.Get(hold.Color);
+        return new Wall3DHold(
+            hold.Id,
+            facetId,
+            frame.ToWorld(a, b, HoldLiftMm),
+            a,
+            b,
+            measured ? hold.WidthMm!.Value : fallback,
+            measured ? hold.HeightMm!.Value : fallback,
+            measured,
+            hold.Color,
+            HoldPalette.DisplayName(hold.Color),
+            color.Hex,
+            isFoot,
+            0,
+            role);
+    }
+
+    private static List<Wall3DFacet> BuildFacets(WallGeometryDocument doc, Wall wall, Dictionary<string, FacetFrame> frames)
+    {
+        var result = new List<Wall3DFacet>();
+        foreach (var segment in doc.Segments)
+        {
+            foreach (var facet in segment.Facets)
+            {
+                var frame = FacetFrame.From(facet);
+                if (frame is null || string.IsNullOrEmpty(facet.Id))
+                {
+                    continue;
+                }
+
+                frames[facet.Id] = frame;
+                var extent = facet.ExtentMm is { Width: > 0, Height: > 0 } e ? e : FallbackExtent(doc, wall, facet.Id);
+                if (extent is null)
+                {
+                    continue;
+                }
+
+                var name = segment.Name ?? $"Segment {segment.Index}";
+                if (segment.Facets.Count > 1)
+                {
+                    name = $"{name} ({facet.Id})";
+                }
+
+                result.Add(new Wall3DFacet(
+                    facet.Id,
+                    segment.Index,
+                    name,
+                    frame.Origin,
+                    frame.U,
+                    frame.V,
+                    frame.Normal,
+                    frame.Corners(extent.Value),
+                    extent.Value,
+                    facet.MeasuredAngleDeg ?? segment.MeasuredAngleDeg ?? segment.DeclaredAngleDeg));
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>Bounds of the facet's marker corners and placed holds, plus a margin; null when it has neither.</summary>
+    private static PlaneRectMm? FallbackExtent(WallGeometryDocument doc, Wall wall, string facetId)
+    {
+        var points = doc.Markers
+            .Where(m => m.Facet == facetId)
+            .SelectMany(m => m.CornersPlaneMm)
+            .Where(c => c.Length >= 2)
+            .Select(c => (c[0], c[1]))
+            .Concat(LiveHolds(wall)
+                .Where(h => h.FacetId == facetId && h.PlaneAMm.HasValue && h.PlaneBMm.HasValue)
+                .Select(h => (h.PlaneAMm!.Value, h.PlaneBMm!.Value)));
+        var bounds = PlaneRectMm.Bounds(points);
+        return bounds is { } r
+            ? new PlaneRectMm(r.AMin - FallbackMarginMm, r.AMax + FallbackMarginMm, r.BMin - FallbackMarginMm, r.BMax + FallbackMarginMm)
+            : null;
+    }
+
+    private static List<Wall3DMarker> BuildMarkers(WallGeometryDocument doc) =>
+        doc.Markers
+            .Where(m => m.CornersWorldMm is { Count: 4 } c && c.All(p => p.Length == 3))
+            .Select(m => new Wall3DMarker(m.Id, m.Facet, m.CornersWorldMm!, m.Synthetic))
+            .ToList();
+}

@@ -173,6 +173,10 @@ public partial class ProfileAccountPane
                 totpError = "That code didn't match. Check your app's time and try again.";
             }
         }
+        catch (ApiKeySessionRestrictedException ex)
+        {
+            totpError = ex.Message;
+        }
         catch (Exception)
         {
             totpError = "Couldn't verify that code. Please try again.";
@@ -209,6 +213,10 @@ public partial class ProfileAccountPane
             {
                 totpError = "That code didn't match. Check your app's time and try again.";
             }
+        }
+        catch (ApiKeySessionRestrictedException ex)
+        {
+            totpError = ex.Message;
         }
         catch (Exception)
         {

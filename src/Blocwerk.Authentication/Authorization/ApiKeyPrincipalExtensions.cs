@@ -30,6 +30,18 @@ public static class ApiKeyPrincipalExtensions
         return scope;
     }
 
+    /// <summary>
+    /// True when the request authenticated with a PERSONAL key (User scope, no wall) that its owner
+    /// allowed to change walls. The one test the widened write routes apply to personal keys.
+    /// </summary>
+    public static bool IsWritablePersonalKey(this ClaimsPrincipal principal)
+    {
+        return principal.IsApiKeyPrincipal()
+            && principal.GetApiKeyScope() == ApiKeyScope.User
+            && principal.GetApiKeyWallId() is null
+            && principal.HasClaim(ApiKeyClaimTypes.AllowWrite, "true");
+    }
+
     /// <summary>The id of the API key the request authenticated with, or null when there is none.</summary>
     public static Guid? GetApiKeyId(this ClaimsPrincipal principal)
     {

@@ -1,0 +1,77 @@
+@page "/walls/{WallId:guid}/update"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@using Blocwerk.Core.Entities
+@using Blocwerk.Core.Refresh
+@using Blocwerk.Web.Components.Shared.Refresh
+@* "Update panels + 3D": one drop of a visit's photos and videos, one sort screen, one confirm, one timeline. *@
+
+<PageTitle>Update panels + 3D - Blocwerk</PageTitle>
+
+<SectionContent SectionName="TopBarTitle">Update panels + 3D</SectionContent>
+
+<div class="refresh-page">
+    <a href="/walls/@WallId" class="back-link">&larr; Back to the wall</a>
+    <h1>Update panels + 3D</h1>
+
+    @if (blocked is not null)
+    {
+        <p class="empty-msg">@blocked</p>
+    }
+    else if (loading)
+    {
+        <p class="loading">Loading...</p>
+    }
+    else
+    {
+        @if (error is not null)
+        {
+            <p class="field-error" role="alert">@error</p>
+        }
+        else if (view?.Error is { } failure)
+        {
+            <p class="field-error" role="alert">@failure</p>
+        }
+
+        @if (view is null || view.Status == WallRefreshStatus.Uploading)
+        {
+            <RefreshDropZone View="view" EnsureRefreshAsync="EnsureRefreshAsync" OnFilesChanged="ReloadAsync" OnContinue="SortAsync" />
+        }
+        else if (view.Status == WallRefreshStatus.ReadyToStart)
+        {
+            <RefreshSortScreen View="view" OnStart="StartAsync" />
+        }
+        else if (view.Status == WallRefreshStatus.ReadyToApply)
+        {
+            <RefreshConfirm View="view" OnApply="ApplyAsync" />
+        }
+        else if (view.Status == WallRefreshStatus.Done)
+        {
+            <p class="refresh-done" role="status">
+                Done. @(view.Capture is { IsRunning: true } ? "The 3D model keeps building in the background; you can leave this page." : string.Empty)
+            </p>
+        }
+
+        @if (view is not null && view.Status != WallRefreshStatus.Uploading)
+        {
+            <RefreshTimelineView View="view" />
+        }
+
+        <div class="refresh-actions">
+            @if (CanDiscard && confirmDiscard)
+            {
+                <span class="refresh-discard-question" role="alert">@DiscardQuestion</span>
+                <button class="btn-danger" @ref="discardButton" @onclick="DiscardAsync" disabled="@busy">Discard</button>
+                <button class="btn-secondary" @onclick="() => confirmDiscard = false" disabled="@busy">Keep</button>
+            }
+            else if (CanDiscard)
+            {
+                <button class="btn-secondary" @onclick="AskDiscard" disabled="@busy">Discard this update</button>
+            }
+            @if (view is { Status: WallRefreshStatus.Done or WallRefreshStatus.Failed })
+            {
+                <button class="btn-secondary" @onclick="StartOverAsync" disabled="@busy">Start another update</button>
+            }
+        </div>
+    }
+</div>

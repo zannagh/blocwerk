@@ -1,0 +1,17 @@
+@page "/access-denied"
+@attribute [AllowAnonymous]
+
+@* Where the cookie handler sends a SIGNED-IN user an [Authorize] endpoint forbade (e.g. a non-admin
+   on /administration) — CookieAuthenticationOptions.AccessDeniedPath in AuthenticationServices.
+   Without it the handler used its default, /Account/AccessDenied, which no route serves (404).
+   Kiosk refusals never come here: KioskRestrictionMiddleware answers those itself. *@
+
+<PageTitle>Access denied - Blocwerk</PageTitle>
+
+<div class="access-denied">
+    <div class="empty-state">
+        <h1>You don't have access to this page</h1>
+        <p>Your account isn't allowed to open it. If you think it should be, ask the person who runs this Blocwerk.</p>
+        <a href="/" class="btn-submit">Back to home</a>
+    </div>
+</div>

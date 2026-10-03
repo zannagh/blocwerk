@@ -1,0 +1,75 @@
+@* The wall update's "review shapes" step: every recognised outline, least confident first, each with
+   its crop and four verdicts. Verdicts are saved as they are made but only reach the holds when the
+   update is applied. See ShapeReviewStep.razor.cs. *@
+
+<div class="bigupdate-phase shape-review">
+    <div class="bigupdate-step-label">Review hold shapes</div>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <p class="staged-hint danger">@_error</p>
+    }
+
+    @if (_all is null)
+    {
+        <p class="loading-small">Loading the recognised shapes…</p>
+    }
+    else
+    {
+        <div class="bigupdate-summary">
+            <span class="bigupdate-chip">@_all.Count shapes</span>
+            <span class="bigupdate-chip remove">@Count(p => p.Confidence < 0.4) low</span>
+            <span class="bigupdate-chip changed">@Count(p => p.Confidence is >= 0.4 and < 0.7) medium</span>
+            <span class="bigupdate-chip carry">@Count(p => p.Confidence >= 0.7) high</span>
+            <span class="bigupdate-chip new">@Count(p => p.Decision == ShapeReviewDecision.Pending) to review</span>
+        </div>
+
+        <div class="shape-review-tools">
+            <label class="shape-slider">
+                <span>@(_below > 1 ? "Showing all shapes" : "Show only below") <strong>@(_below > 1 ? string.Empty : Pct(_below))</strong></span>
+                <input type="range" min="0.05" max="1.01" step="0.05" value="@_below.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                       @oninput="e => SetBelow(e.Value)" aria-label="Show only shapes below this confidence" />
+            </label>
+            <label class="shape-slider">
+                <span>Accept all at or above <strong>@Pct(_acceptAt)</strong></span>
+                <input type="range" min="0.2" max="1" step="0.05" value="@_acceptAt.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                       @oninput="e => SetAcceptAt(e.Value)" aria-label="Bulk accept threshold" />
+            </label>
+            <button class="btn-secondary shape-big-btn" disabled="@(_busy || BulkCount == 0)" @onclick="AcceptAboveAsync">
+                Accept @BulkCount at or above @Pct(_acceptAt)
+            </button>
+        </div>
+
+        @if (Visible.Count == 0)
+        {
+            <p class="staged-hint">No shapes below @Pct(_below).</p>
+        }
+
+        <div class="shape-grid">
+            @foreach (var p in Visible.Take(_shown))
+            {
+                <ShapeReviewCard @key="p.HoldId" Proposal="p" PhotoUrl="@StagedPhotoUrl(p.PanelId)"
+                                 OnDecide="d => DecideAsync(p, d)" OnAdjust="() => _adjusting = p" />
+            }
+        </div>
+
+        @if (Visible.Count > _shown)
+        {
+            <button class="btn-secondary shape-big-btn" @onclick="() => _shown += PageSize">
+                Show @Math.Min(PageSize, Visible.Count - _shown) more
+            </button>
+        }
+
+        <p class="staged-hint">Shapes still marked “to review” keep the shape they have now.</p>
+        <div class="staged-actions">
+            <button class="btn-primary shape-big-btn" @onclick="() => OnContinue.InvokeAsync()">Continue →</button>
+            <button class="btn-secondary shape-big-btn" @onclick="() => OnBack.InvokeAsync()">Back to recognition</button>
+        </div>
+    }
+</div>
+
+@if (_adjusting is { } adjusting)
+{
+    <ShapeAdjustOverlay WallId="WallId" Proposal="adjusting" PhotoUrl="@StagedPhotoUrl(adjusting.PanelId)"
+                        OnSave="shape => SaveAdjustedAsync(adjusting, shape)" OnCancel="() => _adjusting = null" />
+}

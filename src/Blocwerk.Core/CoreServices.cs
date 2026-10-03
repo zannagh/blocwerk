@@ -1,6 +1,10 @@
 using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Capture;
 using Blocwerk.Core.Configuration;
 using Blocwerk.Core.Data;
+using Blocwerk.Core.Detection.Enrichment;
+using Blocwerk.Core.MarkerPlanning;
+using Blocwerk.Core.Refresh;
 using Blocwerk.Core.Services;
 using Blocwerk.Core.Services.TopLogger;
 using Blocwerk.Core.Telemetry;
@@ -149,10 +153,34 @@ public static class CoreServices
         {
             var inner = sp.GetRequiredService<ApiKeyService>();
             var kioskContext = sp.GetService<IKioskContext>();
-            return kioskContext is null ? inner : new KioskGuardedApiKeyService(inner, kioskContext);
+            return kioskContext is null
+                ? inner
+                : new KioskGuardedApiKeyService(inner, kioskContext, sp.GetService<IApiKeySessionContext>());
         });
         builder.Services.AddScoped<IKioskService, KioskService>();
         builder.Services.AddScoped<IWallSegmentService, WallSegmentService>();
+        builder.Services.AddScoped<IWallGlyphService, WallGlyphService>();
+        builder.Services.AddScoped<IHoldOutlineUpgradeService, HoldOutlineUpgradeService>();
+        builder.Services.AddScoped<IHoldFootprintService, HoldFootprintService>();
+        builder.Services.AddScoped<IHoldTexturePlacementService, HoldTexturePlacementService>();
+        builder.Services.AddScoped<IHoldProtrusionService, HoldProtrusionService>();
+        builder.Services.AddScoped<IWallVolumeService, WallVolumeService>();
+
+        // Multi-view hold proposals: the first AVAILABLE detector wins; the GPU runner stub stays unavailable.
+        builder.Services.AddScoped<ICaptureHoldDetector, ComputeCaptureHoldDetector>();
+        builder.Services.AddScoped<ICaptureHoldDetector, InAppCaptureHoldDetector>();
+        builder.Services.AddScoped<IHoldProposalService, HoldProposalService>();
+        builder.Services.AddScoped<IHoldLinkSuggestionService, HoldLinks.HoldLinkSuggestionService>();
+        builder.Services.AddSingleton<HoldRefinementQueue>();
+        builder.Services.AddSingleton<IHoldRefinementQueue>(sp => sp.GetRequiredService<HoldRefinementQueue>());
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<HoldRefinementQueue>());
+        builder.Services.AddScoped<IWallPhotoPrivacyService, WallPhotoPrivacyService>();
+
+        // In-app glyph capture: photos in, 3D model out, computed by the GEOMETRYSERVICE__URL worker.
+        builder.Services.AddWallCapture();
+
+        // "Update panels + 3D": one drop per wall visit drives the capture and the panel update (see WallRefreshWorker).
+        builder.Services.AddWallRefresh();
         builder.Services.AddScoped<IProgressionService, ProgressionService>();
         builder.Services.AddScoped<ITrainingService, TrainingService>();
         builder.Services.AddScoped<ISessionService, SessionService>();
@@ -179,10 +207,22 @@ public static class CoreServices
         // Polls the DB for the "how many exist now" telemetry gauges (walls, boulders, users...).
         builder.Services.AddHostedService<TelemetryStatsCollector>();
 
+        // Post-detection hold outlines/fingerprints (all walls) and glyph metrics (glyph walls). Its CV
+        // dependencies come from the HoldDetection project and are optional; stateless, so a singleton.
+        builder.Services.AddSingleton<IHoldEnrichmentService, HoldEnrichmentService>();
+
         builder.Services.AddScoped<IWallService, WallService>();
+        builder.Services.AddWall3DView();
+        builder.Services.AddMarkerPlanning();
         builder.Services.AddScoped<IWallPanelService, WallPanelService>();
         builder.Services.AddScoped<IWallBigUpdateService, WallBigUpdateService>();
         builder.Services.AddScoped<IWallUpdateSessionService, WallUpdateSessionService>();
+
+        // The wall update's optional shape step: the run outlives its circuit/request, so the runner is a
+        // singleton on the root context factory; every check happens in the scoped service before it.
+        builder.Services.AddSingleton<WallShapeRecognitionRunner>();
+        builder.Services.AddScoped<IWallUpdateShapeService, WallUpdateShapeService>();
+        builder.Services.AddHostedService<WallShapeRecognitionResumer>();
 
         ConfigureTopLogger(builder);
 

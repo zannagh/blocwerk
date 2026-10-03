@@ -2,6 +2,7 @@ using System.Reflection;
 using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Configuration;
 using Blocwerk.HoldDetection.Matching;
+using Blocwerk.HoldDetection.Outlines;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -13,11 +14,20 @@ public static class HoldDetectionServices
     {
         var modelPath = ResolveModelPath(settings.HoldDetection.ModelPath);
 
-        builder.Services.AddSingleton<IHoldDetectionService>(_ => new YoloHoldDetectionService(modelPath));
+        builder.Services.AddSingleton<IHoldDetectionService>(_ => new YoloHoldDetectionService(modelPath, settings.HoldDetection.Tiling));
         builder.Services.AddSingleton<IImageAlignmentService, SkiaImageAlignmentService>();
 
         // Cross-panel hold re-recognition for big walls. Stateless in-process OpenCV, so a singleton.
         builder.Services.AddSingleton<IHoldOverlapMatcher, OpenCvHoldOverlapMatcher>();
+        builder.Services.AddSingleton<IHoldPresenceProbe, OpenCvHoldPresenceProbe>();
+
+        // Panel photo ↔ 3D-model facet texture registration ("place existing holds on the 3D model").
+        builder.Services.AddSingleton<IPhotoTextureMatcher, OpenCvPhotoTextureMatcher>();
+
+        // ArUco markers ("glyphs") and hold outlines + fingerprints. Registration only: marker work runs
+        // solely for walls that declare markers; outlines apply to every wall.
+        builder.Services.AddMarkerDetection();
+        builder.Services.AddHoldOutlines();
 
         return builder;
     }

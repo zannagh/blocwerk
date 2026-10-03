@@ -1,0 +1,3 @@
+three@0.186.0 (npm tarball registry.npmjs.org/three/-/three-0.186.0.tgz): build/three.module.js + build/three.core.js, minified here with esbuild 0.25.10 (--minify --format=esm)
+to three.module.min.js / three.core.min.js because three no longer ships .min builds; exports unchanged (444), examples/jsm/controls/OrbitControls.js
+and examples/jsm/postprocessing/Pass.js (bare 'three' import rewritten to ../three.module.min.js). 0.186 is what Spark 2.2 needs (>= 0.180).

@@ -13,6 +13,17 @@ public partial class ApiKeyService
 {
     public async Task<ApiKey?> ValidateAsync(string token, CancellationToken ct = default)
     {
+        var key = await FindActiveAsync(token, ct);
+        if (key is not null)
+        {
+            await MarkUsedAsync(key, ct);
+        }
+
+        return key;
+    }
+
+    public async Task<ApiKey?> FindActiveAsync(string token, CancellationToken ct = default)
+    {
         if (!ApiKeyTokens.LooksLikeApiKey(token))
         {
             return null;
@@ -24,7 +35,7 @@ public partial class ApiKeyService
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);
         db.CurrentUserId = Guid.Empty;
 
-        var key = await db.ApiKeys.IgnoreQueryFilters().FirstOrDefaultAsync(k => k.KeyHash == hash, ct);
+        var key = await db.ApiKeys.IgnoreQueryFilters().AsNoTracking().FirstOrDefaultAsync(k => k.KeyHash == hash, ct);
         if (key is null)
         {
             return null;
@@ -36,13 +47,23 @@ public partial class ApiKeyService
             return null;
         }
 
-        if (key.LastUsedAt is null || now - key.LastUsedAt.Value > LastUsedWriteInterval)
+        return key;
+    }
+
+    public async Task MarkUsedAsync(ApiKey key, CancellationToken ct = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+        if (key.LastUsedAt is not null && now - key.LastUsedAt.Value <= LastUsedWriteInterval)
         {
-            key.LastUsedAt = now;
-            await db.SaveChangesAsync(ct);
+            return;
         }
 
-        return key;
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+        db.CurrentUserId = Guid.Empty;
+        await db.ApiKeys.IgnoreQueryFilters()
+            .Where(k => k.Id == key.Id)
+            .ExecuteUpdateAsync(s => s.SetProperty(k => k.LastUsedAt, now), ct);
+        key.LastUsedAt = now;
     }
 
     public async Task<Guid?> ValidateKioskAsync(string token, CancellationToken ct = default)

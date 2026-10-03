@@ -1,0 +1,53 @@
+﻿using System;
+using Microsoft.EntityFrameworkCore.Migrations;
+
+#nullable disable
+
+namespace Blocwerk.Core.Migrations
+{
+    /// <inheritdoc />
+    public partial class AddHoldLinkSuggestions : Migration
+    {
+        /// <inheritdoc />
+        protected override void Up(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.CreateTable(
+                name: "HoldLinkSuggestions",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    WallId = table.Column<Guid>(type: "uuid", nullable: false),
+                    HoldAId = table.Column<Guid>(type: "uuid", nullable: false),
+                    HoldBId = table.Column<Guid>(type: "uuid", nullable: false),
+                    DistanceMm = table.Column<double>(type: "double precision", nullable: false),
+                    Status = table.Column<int>(type: "integer", nullable: false),
+                    ReviewedByUserId = table.Column<Guid>(type: "uuid", nullable: true),
+                    ReviewedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_HoldLinkSuggestions", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_HoldLinkSuggestions_Walls_WallId",
+                        column: x => x.WallId,
+                        principalTable: "Walls",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_HoldLinkSuggestions_WallId_HoldAId_HoldBId",
+                table: "HoldLinkSuggestions",
+                columns: new[] { "WallId", "HoldAId", "HoldBId" },
+                unique: true);
+        }
+
+        /// <inheritdoc />
+        protected override void Down(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.DropTable(
+                name: "HoldLinkSuggestions");
+        }
+    }
+}

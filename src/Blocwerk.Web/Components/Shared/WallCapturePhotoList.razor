@@ -1,0 +1,54 @@
+@using Blocwerk.Core.Capture
+@* The photos of the open capture draft: size, focal length and the markers found in each. *@
+
+<div class="leaderboard-scroll">
+    <table class="leaderboard-table capture-photos">
+        <thead>
+            <tr>
+                <th scope="col">Photo</th>
+                <th scope="col" class="num">Pixels</th>
+                <th scope="col" class="num">Focal</th>
+                <th scope="col">Markers</th>
+                <th scope="col" aria-label="Remove"></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var photo in Photos)
+            {
+                <tr>
+                    <td class="capture-photo-name">@(photo.FileName ?? $"Photo {photo.Index}")</td>
+                    <td class="num">@photo.Width×@photo.Height</td>
+                    <td class="num">@(photo.Focal35mm is { } f ? $"{f:0} mm" : "—")</td>
+                    <td>
+                        @if (photo.MarkerIds.Count == 0)
+                        {
+                            <span class="capture-warn">none</span>
+                        }
+                        else
+                        {
+                            @string.Join(" ", photo.MarkerIds)
+                        }
+                        @foreach (var warning in photo.Warnings)
+                        {
+                            <div class="capture-warn">@warning</div>
+                        }
+                    </td>
+                    <td class="glyph-history-action">
+                        <button class="btn-link" disabled="@Disabled" @onclick="() => OnRemove.InvokeAsync(photo.PhotoId)">Remove</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<CapturePhotoResult> Photos { get; set; } = [];
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    [Parameter]
+    public EventCallback<Guid> OnRemove { get; set; }
+}

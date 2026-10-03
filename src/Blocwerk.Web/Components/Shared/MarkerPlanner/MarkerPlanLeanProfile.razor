@@ -1,0 +1,46 @@
+@* A surface seen from the side, with you standing on the right: plumb is the dashed line, a slab
+   leans away from you, an overhang leans over you. Purely illustrative — it redraws as the angle
+   changes so the sign can't be misread. *@
+@using System.Globalization
+@using Blocwerk.Core.MarkerPlanning
+
+<svg class="mplan-lean-profile" viewBox="0 0 120 90" role="img" aria-label="Side view: @SurfaceAngle.Describe(OverhangDeg)">
+    <line class="floor" x1="6" y1="@F(BaseY)" x2="114" y2="@F(BaseY)" />
+    <line class="plumb" x1="@F(BaseX)" y1="@F(BaseY)" x2="@F(BaseX)" y2="@F(BaseY - Length)" />
+    @if (!SurfaceAngle.IsVertical(OverhangDeg))
+    {
+        <path class="arc" d="@Arc()" />
+    }
+    <line class="wall" x1="@F(BaseX)" y1="@F(BaseY)" x2="@F(BaseX + (Length * Math.Sin(Rad)))" y2="@F(BaseY - (Length * Math.Cos(Rad)))" />
+    <g class="you">
+        <circle cx="100" cy="46" r="5" />
+        <line x1="100" y1="51" x2="100" y2="68" />
+        <line x1="100" y1="68" x2="94" y2="@F(BaseY)" />
+        <line x1="100" y1="68" x2="106" y2="@F(BaseY)" />
+        <line x1="100" y1="56" x2="92" y2="50" />
+    </g>
+    <text x="100" y="36" text-anchor="middle">you</text>
+</svg>
+
+@code {
+    private const double BaseX = 34;
+    private const double BaseY = 84;
+    private const double Length = 70;
+    private const double ArcRadius = 26;
+
+    /// <summary>Signed tilt from vertical (+ overhang, − slab).</summary>
+    [Parameter]
+    public double OverhangDeg { get; set; }
+
+    private double Rad => Math.Clamp(OverhangDeg, -89, 89) * Math.PI / 180;
+
+    private string Arc()
+    {
+        var endX = BaseX + (ArcRadius * Math.Sin(Rad));
+        var endY = BaseY - (ArcRadius * Math.Cos(Rad));
+        var sweep = OverhangDeg > 0 ? 1 : 0;
+        return $"M {F(BaseX)} {F(BaseY - ArcRadius)} A {F(ArcRadius)} {F(ArcRadius)} 0 0 {sweep} {F(endX)} {F(endY)}";
+    }
+
+    private static string F(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
+}

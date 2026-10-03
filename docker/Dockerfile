@@ -37,6 +37,8 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
 # ffmpeg is used to scale oversized beta clips down toward the target size (see IVideoTranscoder).
+# heif-convert (libheif-examples + the libde265 decoder plugin) turns HEIC capture photos into JPEGs
+# (see HeifCapturePhotoConverter); Ubuntu's ffmpeg 6.1 cannot read HEIC stills.
 # The remaining libs are native dependencies of libOpenCvSharpExtern.so, used by the big-wall
 # hold overlap matcher. This image is multi-arch and the two OpenCvSharp runtime packages do
 # NOT need the same libs, so the list below is the union of both (see the csproj for which
@@ -46,7 +48,7 @@ WORKDIR /app
 #   amd64 (OpenCvSharp4.official.runtime.linux-x64) statically links those codecs but pulls in
 #     the full GTK/pango/cairo-gobject stack plus libatomic1, libX11, libdrm2 and libfreetype6.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
+    && apt-get install -y --no-install-recommends ffmpeg libheif-examples libheif-plugin-libde265 \
        libtesseract5 libgtk-3-0t64 libgdk-pixbuf-2.0-0 libcairo2 libglib2.0-0t64 \
        libjpeg-turbo8 libwebp7 libwebpmux3 libwebpdemux2 libpng16-16t64 libtiff6 \
        libatomic1 libx11-6 libatk1.0-0t64 libcairo-gobject2 libdrm2 libfreetype6 \

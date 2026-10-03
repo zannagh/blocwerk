@@ -61,6 +61,26 @@ public partial class CarryoverReview
         }
     }
 
+    /// <summary>
+    /// Discards by default the unpaired detections the service judged not to be new holds (on a marker,
+    /// outside the old photo, unchanged since it). Runs before the restored verdicts, and skips a hold the
+    /// user already chose to keep, so re-including one survives a resume.
+    /// </summary>
+    private void SeedSuggestedDiscards()
+    {
+        var suggested = Session.SuggestedNewDiscards;
+        if (suggested is null || suggested.Count == 0)
+        {
+            return;
+        }
+
+        var kept = Restored?.AcceptedNewCenterHoldIds.ToHashSet() ?? [];
+        foreach (var hold in _newHolds.Where(h => suggested.ContainsKey(h.Id) && !kept.Contains(h.Id)))
+        {
+            _newDiscarded.Add(hold.Id);
+        }
+    }
+
     // ---- Decision handlers (from the focused stepper) --------------------------
     /// <summary>
     /// The stepper's verdict for one old hold. Anything that arrives here — an accept, a "has

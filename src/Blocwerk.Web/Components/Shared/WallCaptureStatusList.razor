@@ -1,0 +1,156 @@
+@using Blocwerk.Core.Capture
+@using Blocwerk.Core.Entities
+@* The running capture (stage + progress, refreshed every ~2 s while this is open) and the wall's
+   capture history with any error in plain words. *@
+
+@if (running is not null)
+{
+    <div class="capture-running" role="status" aria-live="polite">
+        <div class="capture-running-head">
+            <strong>@StatusLabel(running.Status)</strong>
+            <span>@((int)Math.Round(running.Progress * 100))%</span>
+        </div>
+        <progress class="capture-progress" max="1" value="@running.Progress.ToString(System.Globalization.CultureInfo.InvariantCulture)"></progress>
+        <div class="hint">@(running.Stage ?? "Working…") · you can leave this page; you'll get a notification when it's done.</div>
+    </div>
+}
+
+@if (failure is not null)
+{
+    <p class="field-error" role="alert">@failure</p>
+}
+
+@if (LatestDone is { } latest)
+{
+    <WallCaptureCoverage WallId="WallId" CaptureId="latest.Id" StartOpen="true" Prominent="true" />
+}
+
+@if (history.Count > 0)
+{
+    <details class="segment-settings capture-history" open="@(running is null && history[0].Error is not null)">
+        <summary>
+            Capture history
+            <span class="segment-settings-count">@history.Count</span>
+        </summary>
+        <div class="leaderboard-scroll">
+            <table class="leaderboard-table">
+                <thead>
+                    <tr>
+                        <th scope="col">Started</th>
+                        <th scope="col" class="num">Photos</th>
+                        <th scope="col">Result</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var capture in history)
+                    {
+                        <tr @key="capture.Id">
+                            <td><LocalTime Value="@capture.CreatedAt" Format="LocalTimeFormat.DateTime" /></td>
+                            <td class="num">
+                                @capture.PhotoCount
+                                @if (capture.BlurryPhotoCount > 0)
+                                {
+                                    <div class="capture-blurry" title="Left out of feature matching and training: far less sharp than the capture's other photos, and no marker found in them.">@capture.BlurryPhotoCount too blurry</div>
+                                }
+                            </td>
+                            <td>
+                                <span class="@StatusClass(capture.Status)">@StatusLabel(capture.Status)</span>
+                                @if (capture.Error is not null)
+                                {
+                                    <div class="capture-error">@capture.Error</div>
+                                }
+                                @if (capture.FollowUp is not null)
+                                {
+                                    <div class="capture-follow-up">@capture.FollowUp</div>
+                                }
+                                @if (capture.FollowUpNote is not null)
+                                {
+                                    <div class="hint">@capture.FollowUpNote</div>
+                                }
+                                @if (IsDone(capture) && capture.Id != LatestDone?.Id)
+                                {
+                                    <WallCaptureCoverage WallId="WallId" CaptureId="capture.Id" />
+                                }
+                                @if (capture.PhotoRealPending is not null)
+                                {
+                                    @* Quiet on purpose: the capture is done; the view is added whenever a 3D runner delivers it. *@
+                                    <div class="hint capture-photo-real-pending">
+                                        @capture.PhotoRealPending ·
+                                        <a href="#wall-3d-runners">3D runners</a> ·
+                                        <button class="btn-link" @onclick="() => CancelRunnerJobAsync(capture.Id)" disabled="@retraining">Cancel it</button>
+                                    </div>
+                                }
+                                @if (capture.Notes is not null)
+                                {
+                                    <div class="hint">@capture.Notes</div>
+                                }
+                                @if (capture.PlacementCheck is { } check)
+                                {
+                                    <WallCapturePlacementCheck Check="check" />
+                                }
+                                @if (capture.ModelChecks is { Count: > 0 } modelChecks)
+                                {
+                                    @* The placement check already lists the ignored detections, with the admin's photo names. *@
+                                    <WallGeometryModelCheckList Checks="modelChecks"
+                                                                HideKinds="@(capture.PlacementCheck is null ? null : IgnoredDetectionKinds)" />
+                                }
+                                @if (!capture.IsRunning && capture.PhotoCount > 0)
+                                {
+                                    <button class="btn-link" @onclick="() => TogglePhotosAsync(capture.Id)"
+                                            aria-expanded="@(openCaptureId == capture.Id ? "true" : "false")">
+                                        @(openCaptureId == capture.Id ? "Hide photos" : "Use as panel photos…")
+                                    </button>
+                                }
+                                @if (running is null && CanRetrain(capture) && BetterQuality(capture) is { } better)
+                                {
+                                    <button class="btn-link" @onclick="() => RetrainAsync(capture.Id, better)" disabled="@retraining"
+                                            title="Trains the photo-real view again from this capture's photos; the current one stays until the new one is ready.">
+                                        Retrain photo-real at higher quality (@CaptureSplatDocuments.QualityName(better))
+                                    </button>
+                                }
+                                @if (running is null && capture.CanRefinish && capture.PhotoRealPending is null)
+                                {
+                                    <button class="btn-link" @onclick="() => RefinishAsync(capture.Id)" disabled="@retraining"
+                                            title="Finishes the trained photo-real view again on the server (crop, clean-up, export) and re-runs every follow-up step. Nothing is trained; takes minutes.">
+                                        Re-finish photo-real view (no retraining)
+                                    </button>
+                                }
+                                @if (capture.TexturesRerendering)
+                                {
+                                    <div class="hint" role="status">Rendering the wall textures again…</div>
+                                }
+                                else if (capture.CanRerenderTextures)
+                                {
+                                    <button class="btn-link" @onclick="() => RerenderTexturesAsync(capture.Id)" disabled="@retraining"
+                                            title="Renders only this capture's wall textures again from its photos and places the holds on them; the photo-real view is left alone (also while it trains). Takes minutes.">
+                                        Render wall textures again
+                                    </button>
+                                }
+                                @if (capture.ModelResolving)
+                                {
+                                    <div class="hint" role="status">Solving the 3D model again from this capture's photos…</div>
+                                }
+                                else if (running is null && capture.CanResolveModel)
+                                {
+                                    <button class="btn-link" @onclick="() => ResolveModelAsync(capture.Id)" disabled="@retraining"
+                                            title="Solves the 3D model again from this capture's photos with the current solver and activates it only if it lines up with the active model; the photo-real view is kept, the wall textures are rendered again and the holds re-placed. Nothing is trained; takes minutes.">
+                                        Re-solve 3D model (no retraining)
+                                    </button>
+                                }
+                            </td>
+                        </tr>
+                        @if (openCaptureId == capture.Id && openPhotos is not null)
+                        {
+                            <tr class="capture-photos-row" @key="(capture.Id, true)">
+                                <td colspan="3">
+                                    <WallCapturePanelPicker WallId="WallId" CaptureId="capture.Id" Photos="openPhotos" StartOpen="true"
+                                                            OnPanelStaged="OnPanelStaged" OnStartWallUpdate="OnStartWallUpdate" />
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </details>
+}

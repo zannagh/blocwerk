@@ -1,0 +1,109 @@
+@using System.Globalization
+@using Blocwerk.Core.Capture.Coverage
+@* One facet's coverage as a small SVG heatmap: a square per 200 mm cell, coloured by its rating (weak cells stand
+   out, good ones are a clear green, cells that are not rated a faint grey), the volumes' outlines coloured by their
+   weakest face and labelled with their number, the markers as small squares and the suggested new markers as rings.
+   Seen from the front, the facet's bottom at the bottom. *@
+
+<figure class="coverage-heatmap">
+    <svg viewBox="@ViewBox" role="img" aria-label="@AriaLabel" preserveAspectRatio="xMidYMid meet">
+        @for (var k = 0; k < Facet.Cells.Length; k++)
+        {
+            var cell = Facet.Cells[k];
+            <rect x="@Num(k % Facet.Cols)" y="@Num(Facet.Rows - 1 - (k / Facet.Cols))" width="1" height="1" class="@CellClass(cell)" />
+        }
+        @foreach (var volume in Volumes)
+        {
+            var (cx, cy) = Centroid(volume.Footprint);
+            <g>
+                <polygon points="@Points(volume.Footprint)" class="cov-volume cov-volume-@Worst(volume)">
+                    <title>Volume @volume.Index</title>
+                </polygon>
+                <text x="@Num(cx)" y="@Num(cy)" class="cov-volume-label" aria-hidden="true">@volume.Index</text>
+            </g>
+        }
+        @foreach (var marker in Facet.Markers.Markers)
+        {
+            <rect x="@Num(X(marker.A) - 0.25)" y="@Num(Y(marker.B) - 0.25)" width="0.5" height="0.5"
+                  class="@(marker.Photos < MarkerCoverageRater.MinPhotos ? "cov-marker cov-marker-weak" : "cov-marker")" />
+        }
+        @if (Facet.Markers.Suggestion is { } suggestion)
+        {
+            @foreach (var p in suggestion.Points)
+            {
+                <circle cx="@Num(X(p[0]))" cy="@Num(Y(p[1]))" r="0.45" class="cov-suggested" />
+            }
+        }
+    </svg>
+    <figcaption>
+        <strong>@Facet.Name</strong>
+        <span class="hint">@Caption</span>
+    </figcaption>
+</figure>
+
+@code {
+    [Parameter, EditorRequired]
+    public FacetCoverage Facet { get; set; } = default!;
+
+    [Parameter]
+    public IReadOnlyList<VolumeCoverage> Volumes { get; set; } = [];
+
+    private string ViewBox => $"0 0 {Num(Facet.Cols)} {Num(Facet.Rows)}";
+
+    private string AriaLabel =>
+        $"Coverage of {Facet.Name}: {Facet.Counts.Weak} of {Facet.Counts.Total} rated areas weak, {Facet.Markers.Markers.Count} markers";
+
+    private string Caption
+    {
+        get
+        {
+            if (Facet.Counts.Total == 0)
+            {
+                return "not rated";
+            }
+
+            var markers = $"{Facet.Markers.Markers.Count} markers";
+            var good = $"{100 * Facet.Counts.Good / Facet.Counts.Total}% of the rated area well covered";
+            var notRated = Facet.Cells.Length - Facet.Counts.Total;
+            return notRated <= 0
+                ? $"{good} · {markers}"
+                : string.Create(CultureInfo.InvariantCulture, $"{good} · {100 * notRated / Facet.Cells.Length}% not rated · {markers}");
+        }
+    }
+
+    private static string CellClass(char cell) => cell == '.' ? "cov-hidden" : $"cov-{cell}";
+
+    private double X(double a) => (a - Facet.ALo) / Facet.CellMm;
+
+    private double Y(double b) => Facet.Rows - ((b - Facet.BLo) / Facet.CellMm);
+
+    private string Points(IReadOnlyList<double[]> footprint) =>
+        string.Join(" ", footprint.Select(p => $"{Num(X(p[0]))},{Num(Y(p[1]))}"));
+
+    /// <summary>The footprint's area centroid in view units (its vertex mean when it has no area).</summary>
+    private (double X, double Y) Centroid(IReadOnlyList<double[]> footprint)
+    {
+        double area = 0, sa = 0, sb = 0;
+        for (var i = 0; i < footprint.Count; i++)
+        {
+            var p = footprint[i];
+            var q = footprint[(i + 1) % footprint.Count];
+            var cross = (p[0] * q[1]) - (q[0] * p[1]);
+            area += cross;
+            sa += (p[0] + q[0]) * cross;
+            sb += (p[1] + q[1]) * cross;
+        }
+
+        if (Math.Abs(area) < 1e-6)
+        {
+            return footprint.Count == 0 ? (0, 0) : (X(footprint.Average(p => p[0])), Y(footprint.Average(p => p[1])));
+        }
+
+        return (X(sa / (3 * area)), Y(sb / (3 * area)));
+    }
+
+    private static char Worst(VolumeCoverage volume) =>
+        CoverageCellCodes.Code(volume.Faces.Select(f => f.Status).DefaultIfEmpty(CoverageCellStatus.Good).Max());
+
+    private static string Num(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
+}

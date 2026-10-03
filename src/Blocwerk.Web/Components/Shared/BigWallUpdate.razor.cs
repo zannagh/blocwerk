@@ -264,11 +264,11 @@ public partial class BigWallUpdate : IDisposable
     }
 
     // ---- Phase 3: manual touch-up across every staged panel --------------------
-    // Both continue and skip land on Confirm; touch-up only edits staged-hold geometry and never
-    // emits a carryover decision, so there is nothing to fold back into the outcome here.
-    private Task OnTouchupContinue() => GoToPhaseAsync(WallUpdatePhase.Confirm);
+    // Both continue and skip land on the optional shape step (BigWallUpdate.Shapes.cs); touch-up only
+    // edits staged-hold geometry and never emits a carryover decision, so nothing folds back here.
+    private Task OnTouchupContinue() => GoToPhaseAsync(WallUpdatePhase.Shapes);
 
-    private Task OnTouchupSkip() => GoToPhaseAsync(WallUpdatePhase.Confirm);
+    private Task OnTouchupSkip() => GoToPhaseAsync(WallUpdatePhase.Shapes);
 
     // The confirm-step summary and the promote itself live in BigWallUpdate.Promote.cs.
 

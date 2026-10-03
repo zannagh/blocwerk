@@ -36,12 +36,17 @@ public interface IApiKeyService
     /// Issues a key scoped to the user's own access. A personal key has no admin path, so the
     /// acting user may only mint their own.
     /// </summary>
+    /// <remarks>
+    /// <paramref name="allowWrite"/> sets <see cref="ApiKey.AllowWrite"/>: whether the key may change
+    /// walls through the machine API (wall-update shape step, capture uploads) on the owner's behalf.
+    /// </remarks>
     /// <exception cref="UnauthorizedAccessException">The acting user is not the named user.</exception>
     Task<(ApiKey Key, string Token)> CreateUserKeyAsync(
         Guid userId,
         Guid actingUserId,
         string name,
         DateTimeOffset? expiresAt,
+        bool allowWrite = false,
         CancellationToken ct = default);
 
     /// <summary>
@@ -119,6 +124,16 @@ public interface IApiKeyService
     /// off the result. <see cref="ValidateKioskAsync"/> is the narrow convenience over exactly that.
     /// </remarks>
     Task<ApiKey?> ValidateAsync(string token, CancellationToken ct = default);
+
+    /// <summary>
+    /// <see cref="ValidateAsync"/> WITHOUT stamping <see cref="ApiKey.LastUsedAt"/>: for callers that
+    /// still have checks of their own (scope, owner) and must only record a use once those pass —
+    /// they call <see cref="MarkUsedAsync"/> afterwards.
+    /// </summary>
+    Task<ApiKey?> FindActiveAsync(string token, CancellationToken ct = default);
+
+    /// <summary>Stamps <see cref="ApiKey.LastUsedAt"/> (throttled to one write a minute per key).</summary>
+    Task MarkUsedAsync(ApiKey key, CancellationToken ct = default);
 
     /// <summary>
     /// Resolves a bearer token to the wall its kiosk key is registered to, or null when the token is

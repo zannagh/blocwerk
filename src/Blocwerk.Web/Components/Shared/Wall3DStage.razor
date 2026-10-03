@@ -1,0 +1,10 @@
+@* The three.js stage of the 3D wall view: mounts wwwroot/js/wall3d.js into one element and frees
+   its WebGL context again. Used full-page by Wall3D and inline by Wall3DInline (wall + boulder pages).
+   The stage element is rendered once and left alone: wall3d.js owns everything inside it. *@
+@implements IAsyncDisposable
+
+<div class="wall3d-stage-el" @ref="stage"></div>
+@if (mountFailed)
+{
+    <p class="wall3d-stage-failed">This device could not start the 3D view (WebGL is unavailable).</p>
+}

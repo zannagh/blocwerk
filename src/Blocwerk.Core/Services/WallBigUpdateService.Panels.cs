@@ -21,7 +21,7 @@ public partial class WallBigUpdateService
     /// hand the UI the exact set the matcher used instead of the UI re-deriving a wall-wide one.
     /// </summary>
     private static PanelHold ToPanelHold(Hold hold) =>
-        new(hold.Id, hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.ShapePoints, hold.IsVirtual);
+        new(hold.Id, hold.X, hold.Y, hold.Radius, hold.Color, hold.Category, hold.ShapePoints, hold.IsVirtual, hold.ShapeHoles);
 
     /// <summary>
     /// Pairs every re-photographed panel with its live ("before") panel and the old holds this update will
@@ -34,7 +34,8 @@ public partial class WallBigUpdateService
         BlocwerkDbContext db,
         Guid wallId,
         int stagedGen,
-        IReadOnlyDictionary<(int Col, int Row), List<Hold>> oldByPosition)
+        IReadOnlyDictionary<(int Col, int Row), List<Hold>> oldByPosition,
+        IReadOnlySet<Guid> unalignedPanelIds)
     {
         var staged = await db.WallPanels
             .Where(p => p.WallId == wallId && p.Generation == stagedGen && p.StagedPhoto != null)
@@ -59,7 +60,8 @@ public partial class WallBigUpdateService
                 panel.Row,
                 livePanelId,
                 panel.Id,
-                holds.Select(ToPanelHold).ToList()));
+                holds.Select(ToPanelHold).ToList(),
+                unalignedPanelIds.Contains(panel.Id)));
         }
 
         return panels;

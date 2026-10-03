@@ -118,7 +118,10 @@
        padding is `max(6px, env(safe-area-inset-bottom))` and — now that viewport-fit=cover
        makes that inset non-zero — a flat 72 under-budgets the bar by the whole home-indicator
        strip, which is how the Attempt/Send buttons ended up under the tab bar. */
-    --bottomnav-h: calc(66px + max(6px, env(safe-area-inset-bottom, 0px)));
+    --bw-tabbar-h: calc(66px + max(6px, env(safe-area-inset-bottom, 0px)));
+    /* What pages keep clear at the bottom: the tab bar plus the bottom banner showing, if any
+       (--bw-banner-h, set by wwwroot/js/bottom-banners.js), so a banner never covers the page. */
+    --bottomnav-h: calc(var(--bw-tabbar-h) + var(--bw-banner-h, 0px));
     --fold-peek: 140px;     /* reserve below the fold for boulder peek */
     /* Vertical space taken by the chrome ABOVE/around each photo box, subtracted from the window
        so the fullscreen/desktop layout can size the photo to fit without scrolling. Deliberately
@@ -233,10 +236,8 @@
 }
 .rule-group-label { font-size: 0.78rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; }
 .rules-block .radio-label { align-items: flex-start; }
-/* The shared .radio-label / .checkbox-label checked state hardcodes a light pink; use
-   the themed token here so the block stays readable in dark mode. */
-.rules-block .radio-label:has(input:checked),
-.rules-block .checkbox-label:has(input:checked) { background: var(--accent-soft); }
+/* The shared .radio-label / .checkbox-label checked state (pages.css) already uses the themed
+   --secondary tint; nothing to override here any more. */
 .radio-text { display: flex; flex-direction: column; gap: 2px; }
 .radio-text small { font-weight: 400; font-size: 0.75rem; color: var(--text-secondary); }
 .rule-sub { display: flex; flex-direction: column; gap: 6px; margin-left: 14px; padding-left: 10px; border-left: 2px solid var(--border); }
@@ -299,9 +300,10 @@ img.wall-photo {
 .bw-wall-focus img.wall-photo { filter: brightness(0.3) saturate(0.12) contrast(1.15); }
 
 /* Focus mode also thickens hold outlines on the read-only/picking surfaces. The
-   editor is left alone so its drag handles keep their calibrated hit sizes. */
-.bw-wall-focus .photo-section .hold-overlay :is(circle, rect, polygon),
-.bw-wall-focus .photo-picker .hold-overlay :is(circle, rect, polygon) {
+   editor is left alone so its drag handles keep their calibrated hit sizes.
+   A pocket hold draws its visible shape as path.hold-pocket (its polygon.hold-hit is transparent). */
+.bw-wall-focus .photo-section .hold-overlay :is(circle, rect, polygon, path.hold-pocket),
+.bw-wall-focus .photo-picker .hold-overlay :is(circle, rect, polygon, path.hold-pocket) {
     stroke-width: 0.75;
     paint-order: stroke fill;
 }
@@ -390,6 +392,54 @@ img.wall-photo {
     background: var(--accent-soft); border-radius: 999px; padding: 1px 8px;
 }
 .segment-angle-word { font-weight: 400; color: var(--text-secondary); }
+
+/* ========== Printed markers (glyphs) ==========
+   WallMarkerDeclaration (create / settings / every wall update) and the WallMarkerSettings section
+   of the Wall Shape card. Built from the shared form pieces (.checkbox-label, .form-input,
+   .leaderboard-table); only layout lives here. */
+.glyph-declaration { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+/* .form-group label forces display:block; the checkbox row must stay a flex row. */
+.glyph-declaration .checkbox-label { display: flex; margin-bottom: 0; }
+.glyph-size-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.glyph-size-row > label { margin: 0; font-weight: 600; font-size: 0.9rem; color: var(--text); }
+.glyph-size-input { width: 7em; }
+.glyph-size-unit { color: var(--text-secondary); font-size: 0.9rem; }
+.glyph-declaration .hint { margin-top: 0; }
+.glyph-settings { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-light); }
+.glyph-heading { font-size: 1rem; font-weight: 700; color: var(--text-heading); margin-bottom: 8px; }
+.glyph-subheading { font-size: 0.9rem; font-weight: 600; color: var(--text-heading); margin: 14px 0 6px; }
+.glyph-summary { font-size: 0.85rem; color: var(--text); margin-bottom: 6px; }
+.glyph-facet-table { font-size: 0.85rem; }
+.proposal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; margin: 8px 0; }
+.proposal-card { display: flex; flex-direction: column; gap: 6px; padding: 6px; border: 1px solid var(--border); border-radius: var(--r-md); }
+.proposal-card img { width: 100%; height: auto; border-radius: var(--r-sm, 4px); }
+.volume-settings { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 6px 0 10px; }
+.volume-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; margin: 8px 0; }
+.volume-card { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-md); }
+.volume-card-removed { opacity: 0.75; border-style: dashed; }
+.volume-card .glyph-summary { margin-bottom: 0; }
+.volume-title { font-weight: 600; color: var(--text-heading); font-size: 0.9rem; }
+.volume-title .hint { font-weight: 400; margin-left: 4px; }
+.volume-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin-top: 2px; }
+.volume-check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.85rem; }
+.glyph-ok {
+    padding: 8px 12px; margin: 8px 0; border-radius: var(--r-md); font-size: 0.85rem;
+    background: var(--success-bg); color: var(--success-text);
+}
+.glyph-import { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+.glyph-errors { margin: 4px 0 0; padding-left: 18px; }
+.glyph-binding-row {
+    display: grid; grid-template-columns: minmax(6em, 1fr) minmax(9em, 1.4fr); gap: 4px 8px;
+    align-items: center; margin-bottom: 8px;
+}
+.glyph-binding-row > label { margin: 0; font-weight: 600; font-size: 0.85rem; }
+.glyph-binding-measured { grid-column: 1 / -1; font-size: 0.78rem; color: var(--text-secondary); }
+.glyph-binding-measured:empty { display: none; }
+.glyph-history-action { text-align: right; white-space: nowrap; }
+.glyph-active-badge {
+    font-size: 0.72rem; font-weight: 600; color: var(--success-text);
+    background: var(--success-bg); border-radius: 999px; padding: 2px 8px;
+}
 
 /* ============================================================================
    New boulder-setting experience: experience toggle, radial classify overlay.

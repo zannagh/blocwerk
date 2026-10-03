@@ -17,6 +17,15 @@
         <button class="btn-secondary" @onclick="Discard" title="Cancel adding this panel entirely">Discard this panel</button>
     </div>
 
+    @if (AlignmentFailed)
+    {
+        <div class="bigupdate-banner" role="alert">
+            <strong>Couldn't line up this photo with the neighbouring one automatically.</strong>
+            <span>No overlapping holds could be suggested, so link the ones you care about by hand — or retake
+                  the photo with more overlap.</span>
+        </div>
+    }
+
     @if (_loading)
     {
         <p class="loading-small">Loading holds…</p>
@@ -24,6 +33,25 @@
     else if (_finishing)
     {
         <p class="loading-small">Adding panel…</p>
+    }
+    else if (suggestedMode)
+    {
+        <p class="panel-stepper-hint">
+            Detections on this panel that are most likely not new holds (on a marker, on the neighbouring panel,
+            outside or unchanged since the old photo). Red ones are discarded, green ones kept — tap one to switch.
+        </p>
+        <div class="panel-stepper-pair">
+            <PanelImageView WallId="WallId" Caption="New panel — tap to keep or discard"
+                            PhotoUrl="@PhotoUrl(PanelId, staged: true)"
+                            Holds="SuggestedHere" HoldColors="SuggestedColors"
+                            Interactive="true" OnHoldTap="ToggleSuggestedAsync" />
+        </div>
+        <div class="panel-stepper-actions">
+            <span class="panel-stepper-hint">@SuggestedKeptCount of @SuggestedHere.Count kept.</span>
+            <button class="btn-secondary" @onclick="() => SetAllSuggestedAsync(true)">Keep all</button>
+            <button class="btn-secondary" @onclick="() => SetAllSuggestedAsync(false)">Discard all</button>
+            <button class="btn-primary" @onclick="LeaveSuggested" title="Back to the proposals (Esc)">Done</button>
+        </div>
     }
     else if (_manualMode)
     {
@@ -84,6 +112,10 @@
             @if (_neighborPanels.Count > 0)
             {
                 <button class="btn-secondary" @onclick="EnterManual">Link holds manually@(_manualLinks.Count > 0 ? $" ({_manualLinks.Count})" : "")</button>
+            }
+            @if (SuggestedHere.Count > 0)
+            {
+                <button class="btn-secondary" @onclick="EnterSuggested">Discarded by default (@(SuggestedHere.Count - SuggestedKeptCount) of @SuggestedHere.Count)</button>
             }
             <button class="btn-secondary" @onclick="Discard">Cancel</button>
         </div>
@@ -175,6 +207,12 @@
                 {
                     <button class="btn-link" @onclick="GoToFirstUndecided" title="Go back to the first step whose confirmed match was dropped when you deleted a hold">
                         Decide again (@UndecidedByDeleteCount)
+                    </button>
+                }
+                @if (SuggestedHere.Count > 0)
+                {
+                    <button class="btn-link" @onclick="EnterSuggested" title="Review the detections on this panel that are discarded by default">
+                        Discarded by default (@(SuggestedHere.Count - SuggestedKeptCount) of @SuggestedHere.Count)
                     </button>
                 }
                 <button class="btn-link" @onclick="ConfirmAllHighConfidence" title="Auto-confirm every remaining match at 90% or higher, discard the rest, and finish">

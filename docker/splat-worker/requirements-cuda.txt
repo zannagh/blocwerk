@@ -1,0 +1,12 @@
+# The gsplat trainer's venv (Dockerfile.cuda, CPython 3.10): what gsplat 1.5.3 and the trainer script
+# (splatworker/gsplat_train.py) import besides torch (installed first from the PyTorch cu124 index)
+# and the gsplat wheel itself (sha256-pinned in the Dockerfile).
+jaxtyping==0.2.36
+ninja==1.11.1.4
+numpy==2.2.6
+packaging==25.0
+pillow==11.3.0
+rich==14.1.0
+# torch.utils.cpp_extension (imported by gsplat even with the prebuilt kernels) imports setuptools
+setuptools==75.8.0
+typing-extensions==4.15.0

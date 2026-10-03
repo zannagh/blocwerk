@@ -1,0 +1,21 @@
+@* Short, static capture guidance for a wall WITHOUT markers: the model is measured from the photos' features, so
+   coverage and overlap decide its quality. *@
+
+<div class="capture-guidance" role="note">
+    <p class="capture-guidance-title">How to photograph the wall</p>
+    <ul>
+        <li>Show the whole wall and a strip of floor below it.</li>
+        <li>Photograph every surface from at least 3 positions (left, straight on, right).</li>
+        <li>Let neighbouring photos overlap by about 60 %.</li>
+        @if (Video)
+        {
+            <li>Add a slow walk-along video if you can: it makes the photo-real view sharper.</li>
+        }
+    </ul>
+</div>
+
+@code {
+    /// <summary>Mention the optional video (only when the server can use one).</summary>
+    [Parameter]
+    public bool Video { get; set; }
+}

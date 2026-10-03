@@ -1,0 +1,7 @@
+.model-checks { margin-top: 4px; }
+.model-checks-head { font-size: 0.85rem; font-weight: 600; }
+.model-checks-count { font-weight: 400; color: var(--warning-text, var(--text-secondary)); }
+.model-checks-list { margin: 2px 0 0; padding-left: 1.2em; font-size: 0.8rem; overflow-wrap: anywhere; }
+.model-checks-list li { margin: 1px 0; }
+.model-check-info { color: var(--text-secondary, var(--text)); }
+.model-check-warning { color: var(--warning-text, var(--text)); }

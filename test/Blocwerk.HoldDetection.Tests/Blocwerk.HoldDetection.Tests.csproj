@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <Content Include="walls\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Fixtures\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

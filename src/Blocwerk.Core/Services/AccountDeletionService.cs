@@ -17,6 +17,7 @@ public partial class AccountDeletionService : IAccountDeletionService
     private readonly IBetaVideoStorage betaVideoStorage;
     private readonly ICurrentUserService currentUserService;
     private readonly IKioskContext? kioskContext;
+    private readonly IApiKeySessionContext? apiKeySession;
     private readonly ILogger<AccountDeletionService> logger;
 
     public AccountDeletionService(
@@ -24,19 +25,22 @@ public partial class AccountDeletionService : IAccountDeletionService
         IBetaVideoStorage betaVideoStorage,
         ICurrentUserService currentUserService,
         ILogger<AccountDeletionService> logger,
-        IKioskContext? kioskContext = null)
+        IKioskContext? kioskContext = null,
+        IApiKeySessionContext? apiKeySession = null)
     {
         this.dbContextFactory = dbContextFactory;
         this.betaVideoStorage = betaVideoStorage;
         this.currentUserService = currentUserService;
         this.logger = logger;
         this.kioskContext = kioskContext;
+        this.apiKeySession = apiKeySession;
     }
 
     public async Task<AccountDeletionPreview> PreviewAsync(Guid userId, CancellationToken ct = default)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);
 
+        ApiKeySessionGuard.EnsureNotApiKeySession(apiKeySession);
         KioskGuard.EnsureNotKiosk(kioskContext, db, "Previewing an account deletion");
         await EnsureSelfAsync(userId);
 
@@ -79,6 +83,9 @@ public partial class AccountDeletionService : IAccountDeletionService
         // merely kept off the tablet's route list, because the page is an interactive Blazor
         // component that calls straight in here inside the circuit where no middleware runs.
         KioskGuard.EnsureNotKiosk(kioskContext, db, "Deleting the account");
+
+        // Likewise for a session signed in with an API key: a leaked key must never erase its owner.
+        ApiKeySessionGuard.EnsureNotApiKeySession(apiKeySession);
         await EnsureSelfAsync(userId);
 
         db.CurrentUserId = Guid.Empty;

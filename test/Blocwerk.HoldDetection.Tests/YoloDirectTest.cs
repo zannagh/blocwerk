@@ -1,25 +1,19 @@
 using SkiaSharp;
-using YoloDotNet;
-using YoloDotNet.Models;
 #pragma warning disable CS0618
 
 namespace Blocwerk.HoldDetection.Tests;
 
-public class YoloDirectTest
+[Collection(OnnxRuntimeCollection.Name)]
+public class YoloDirectTest(OnnxRuntimeFixture onnx)
 {
     [SkippableFact]
     public void RunYoloDirectly()
     {
-        var modelPath = HoldDetectionServices.ResolveModelPath("models/climbingcrux.onnx");
-        Skip.If(!File.Exists(modelPath), $"Model not found at {modelPath}");
+        Skip.If(onnx.Yolo is null, "Model not found at models/climbingcrux.onnx");
+        var yolo = onnx.Yolo!;
 
         var imagePath = Path.Combine(AppContext.BaseDirectory, "walls", "Test-Wall.jpeg");
         Skip.If(!File.Exists(imagePath), "Test-Wall.jpeg not found");
-
-        using var yolo = new Yolo(new YoloOptions
-        {
-            OnnxModel = modelPath,
-        });
 
         var imageData = File.ReadAllBytes(imagePath);
         using var skImage = SKImage.FromEncodedData(imageData);

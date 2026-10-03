@@ -14,4 +14,10 @@ public static class ApiKeyClaimTypes
 
     /// <summary>The wall a wall-scoped key is bound to. Absent on user-scoped keys.</summary>
     public const string WallId = "blocwerk:wall_id";
+
+    /// <summary>
+    /// Present (value "true") only on a personal key its owner allowed to change walls
+    /// (<c>ApiKey.AllowWrite</c>). Absent otherwise.
+    /// </summary>
+    public const string AllowWrite = "blocwerk:apikey_write";
 }

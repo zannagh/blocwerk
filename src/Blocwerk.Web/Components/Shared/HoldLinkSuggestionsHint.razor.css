@@ -1,0 +1,130 @@
+/* The cross-panel link hint: one quiet line; the list opens beneath it. Phone-first: a row wraps to thumbnails,
+   then text, then buttons; from ~560px they sit side by side. Colours come from the shared tokens. */
+.link-hint {
+    margin: 8px 0;
+    padding: 6px 10px;
+    border-radius: var(--r-sm);
+    border: 1px solid var(--border);
+    background: var(--bg-surface);
+    font-size: 0.9rem;
+}
+
+.link-hint-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.link-hint-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: var(--text-secondary);
+}
+
+.link-hint-line .btn-link {
+    width: auto;
+    margin: 0;
+    padding: 4px 6px;
+}
+
+.link-hint-close {
+    border: 0;
+    background: none;
+    color: var(--text-secondary);
+    font-size: 1.1rem;
+    line-height: 1;
+    padding: 4px 6px;
+    cursor: pointer;
+}
+
+.link-hint-list {
+    list-style: none;
+    margin: 8px 0 2px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.link-hint-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 10px;
+    padding: 6px 8px;
+    border-radius: var(--r-sm);
+    border: 1px solid var(--border);
+}
+
+.link-hint-pair {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.link-hint-thumb {
+    position: relative;
+    display: block;
+    width: 72px;
+    height: 72px;
+    overflow: hidden;
+    border-radius: var(--r-sm);
+    background: var(--bg-surface-alt);
+    flex: none;
+}
+
+.link-hint-thumb img {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    max-width: none;
+    height: auto;
+    pointer-events: none;
+}
+
+.link-hint-ring {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 36%;
+    height: 36%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    border: 2px solid var(--ring, var(--status-info));
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+}
+
+.link-hint-eq { color: var(--text-secondary); }
+
+.link-hint-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1 1 120px;
+    min-width: 0;
+    font-size: 0.85rem;
+    color: var(--text-heading);
+}
+
+.link-hint-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-left: auto;
+}
+
+.link-hint-actions .btn-primary,
+.link-hint-actions .btn-secondary {
+    width: auto;
+    margin-bottom: 0;
+    padding: 6px 14px;
+    font-size: 0.9rem;
+    min-height: 36px;
+}
+
+/* On the 3D page the list must not push the stage away. */
+.link-hint-list {
+    max-height: 45vh;
+    overflow-y: auto;
+}

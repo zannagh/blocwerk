@@ -1,0 +1,214 @@
+using System.Text.Json;
+using Blocwerk.Core.Abstractions;
+using Blocwerk.Core.Capture.FollowUp;
+using Blocwerk.Core.Data;
+using Blocwerk.Core.Entities;
+using Blocwerk.Core.Geometry;
+using Blocwerk.Core.MarkerPlanning;
+using Microsoft.EntityFrameworkCore;
+
+namespace Blocwerk.Core.Capture;
+
+/// <summary>Capture status/history for the admin, and the active model's textures for viewers.</summary>
+public sealed partial class WallCaptureService
+{
+    public async Task<IReadOnlyList<WallCaptureSummary>> GetCapturesAsync(Guid wallId)
+    {
+        var (db, _) = await OpenForAdminAsync(wallId);
+        await using (db)
+        {
+            var captures = await db.WallCaptures.AsNoTracking()
+                .Where(c => c.WallId == wallId && c.Status != WallCaptureStatus.Draft)
+                .OrderByDescending(c => c.CreatedAt)
+                .Take(20)
+                .ToListAsync();
+            return await SummarizeAsync(db, captures);
+        }
+    }
+
+    public async Task<WallCaptureSummary?> GetCaptureAsync(Guid captureId)
+    {
+        var (db, _, capture) = await OpenCaptureAsync(captureId);
+        await using (db)
+        {
+            return (await SummarizeAsync(db, [capture]))[0];
+        }
+    }
+
+    public async Task<IReadOnlyList<WallGeometryTextureInfo>> GetActiveTexturesAsync(Guid wallId, string? shareToken = null)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync();
+        if (!await CanViewWallAsync(db, wallId, shareToken))
+        {
+            return [];
+        }
+
+        var textures = await db.WallGeometryTextures.AsNoTracking()
+            .Where(t => t.GeometryModel.WallId == wallId && t.GeometryModel.IsActive)
+            .OrderBy(t => t.FacetId)
+            .ToListAsync();
+        var query = string.IsNullOrEmpty(shareToken) ? string.Empty : $"?token={Uri.EscapeDataString(shareToken)}";
+        return textures.Select(t => new WallGeometryTextureInfo(
+            t.GeometryModelId,
+            t.FacetId,
+            $"{TextureUrl(wallId, t.GeometryModelId, t.FacetId)}{query}",
+            t.AMin,
+            t.AMax,
+            t.BMin,
+            t.BMax,
+            t.WidthPx,
+            t.HeightPx,
+            t.MaskStoredPath is null ? null : $"{MaskUrl(wallId, t.GeometryModelId, t.FacetId)}{query}")).ToList();
+    }
+
+    /// <summary>The texture byte route (served by the web layer under the wall-media policy).</summary>
+    public static string TextureUrl(Guid wallId, Guid modelId, string facetId) =>
+        $"/api/walls/{wallId}/geometry/{modelId}/textures/{Uri.EscapeDataString(facetId)}";
+
+    /// <summary>The coverage-mask byte route of a texture (same policy as <see cref="TextureUrl"/>).</summary>
+    public static string MaskUrl(Guid wallId, Guid modelId, string facetId) =>
+        $"{TextureUrl(wallId, modelId, facetId)}/mask";
+
+    /// <summary>
+    /// The texture row behind the byte route. The CALLER has already passed the wall-view gate for
+    /// <paramref name="wallId"/>; this only enforces that model and wall belong together.
+    /// </summary>
+    public static Task<WallGeometryTexture?> FindTextureAsync(
+        BlocwerkDbContext db, Guid wallId, Guid modelId, string facetId, CancellationToken ct) =>
+        db.WallGeometryTextures.AsNoTracking()
+            .Where(t => t.GeometryModelId == modelId && t.FacetId == facetId && t.GeometryModel.WallId == wallId)
+            .FirstOrDefaultAsync(ct);
+
+    /// <summary>A matching share token, the wall query filter for the signed-in user, or the wall's own kiosk.</summary>
+    /// <remarks>
+    /// A kiosk tablet only ever sees its own wall, share token or not: the token check runs through the
+    /// wall query filter with the member check neutralised (<see cref="BlocwerkDbContext.CurrentUserId"/>
+    /// still empty) but the kiosk pin kept — as <c>ActivityLogService</c> does — and, for a context the
+    /// kiosk factory did not stamp, the session's own kiosk wall is checked here as well.
+    /// </remarks>
+    private async Task<bool> CanViewWallAsync(BlocwerkDbContext db, Guid wallId, string? shareToken)
+    {
+        if (kioskContext is { IsKiosk: true } && KioskViewing.ViewableWallId(kioskContext) != wallId)
+        {
+            return false;
+        }
+
+        db.CurrentUserId = Guid.Empty;
+        if (!string.IsNullOrEmpty(shareToken)
+            && await db.Walls.AnyAsync(w => w.Id == wallId && w.ShareToken == shareToken))
+        {
+            return true;
+        }
+
+        try
+        {
+            db.CurrentUserId = (await currentUserService.GetCurrentUserAsync()).Id;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return kioskContext is not null && KioskViewing.AllowsAnonymousViewOf(kioskContext, wallId);
+        }
+
+        return await db.Walls.AnyAsync(w => w.Id == wallId);
+    }
+
+    private async Task<List<WallCaptureSummary>> SummarizeAsync(BlocwerkDbContext db, List<WallCapture> captures)
+    {
+        var ids = captures.Select(c => c.Id).ToList();
+        var counts = await db.WallCapturePhotos.Where(p => ids.Contains(p.CaptureId))
+            .GroupBy(p => p.CaptureId)
+            .Select(g => new { g.Key, Count = g.Count(), Blurry = g.Count(p => p.ExcludedBlurry) })
+            .ToDictionaryAsync(g => g.Key, g => (g.Count, g.Blurry));
+        var modelChecks = await ModelChecksAsync(db, captures);
+        var pending = await Runners.GpuJobText.PendingAsync(db, ids);
+        var refinishable = await Runners.GpuJobQueue.RefinishableAsync(db, files, ids);
+        var activeModels = await ActiveModelIdsAsync(db, captures);
+        var live = await LiveCountsAsync(db, captures, activeModels);
+        return captures.Select(c => new WallCaptureSummary(
+            c.Id, c.CreatedAt, c.Status, c.Progress, c.Stage, c.Error, c.Notes,
+            counts.GetValueOrDefault(c.Id).Count, c.GeometryModelId, c.CompletedAt, ReadPlacementCheck(c.PlacementCheckJson),
+            c.SplatQuality,
+            CaptureFollowUpText.Summary(CaptureFollowUpRecord.Parse(c.FollowUpJson), live.GetValueOrDefault(c.Id)),
+            CaptureFollowUpText.Note(CaptureFollowUpRecord.Parse(c.FollowUpJson)),
+            c.WallId,
+            c.GeometryModelId is { } modelId ? modelChecks.GetValueOrDefault(modelId, []) : [],
+            pending.GetValueOrDefault(c.Id),
+            refinishable.Contains(c.Id),
+            counts.GetValueOrDefault(c.Id).Blurry,
+            CaptureTextureOutcome.IsRerendering(c.TexturesJobId),
+            IsLive(c, activeModels, counts.GetValueOrDefault(c.Id).Count > 0) && MayRerenderTextures(c.Status)
+                && !CaptureTextureOutcome.IsRerendering(c.TexturesJobId) && !CaptureResolveMark.IsResolving(c.SolveJobId),
+            CaptureResolveMark.IsResolving(c.SolveJobId),
+            IsLive(c, activeModels, counts.GetValueOrDefault(c.Id).Count > 1) && MayResolveModel(c) && !pending.ContainsKey(c.Id))).ToList();
+    }
+
+    /// <summary>
+    /// For each capture of the active model whose record reports a count the wall now shows differently (proposals to review,
+    /// holds placed from photos, volumes and the holds on them): the live counts, read once per model, so the numbers stored
+    /// when the steps ran do not go stale.
+    /// </summary>
+    private async Task<Dictionary<Guid, CaptureLiveCounts>> LiveCountsAsync(BlocwerkDbContext db, List<WallCapture> captures, HashSet<Guid> activeModels)
+    {
+        var result = new Dictionary<Guid, CaptureLiveCounts>();
+        var wanted = captures
+            .Where(c => c.GeometryModelId is { } m && activeModels.Contains(m)
+                && CaptureLiveCountsLoader.IsWanted(CaptureFollowUpRecord.Parse(c.FollowUpJson)))
+            .GroupBy(c => (c.WallId, ModelId: c.GeometryModelId!.Value));
+        foreach (var group in wanted)
+        {
+            var live = await CaptureLiveCountsLoader.LoadAsync(db, group.Key.WallId, group.Key.ModelId, logger, CancellationToken.None);
+            foreach (var c in group)
+            {
+                result[c.Id] = live;
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>The capture's model is the active one, its photos are kept and there is a 3D computation service.</summary>
+    private bool IsLive(WallCapture capture, HashSet<Guid> activeModels, bool photosKept) =>
+        IsComputeConfigured && photosKept && capture.GeometryModelId is { } active && activeModels.Contains(active);
+
+    private static async Task<HashSet<Guid>> ActiveModelIdsAsync(BlocwerkDbContext db, List<WallCapture> captures)
+    {
+        var modelIds = captures.Where(c => c.GeometryModelId is not null).Select(c => c.GeometryModelId!.Value).Distinct().ToList();
+        return modelIds.Count == 0
+            ? []
+            : (await db.WallGeometryModels.Where(m => modelIds.Contains(m.Id) && m.IsActive).Select(m => m.Id).ToListAsync()).ToHashSet();
+    }
+
+    /// <summary>What the solver said about each capture's model (its stored JSON), by model id.</summary>
+    private static async Task<Dictionary<Guid, IReadOnlyList<WallGeometryModelCheck>>> ModelChecksAsync(
+        BlocwerkDbContext db, List<WallCapture> captures)
+    {
+        var modelIds = captures.Where(c => c.GeometryModelId is not null).Select(c => c.GeometryModelId!.Value).Distinct().ToList();
+        if (modelIds.Count == 0)
+        {
+            return [];
+        }
+
+        var models = await db.WallGeometryModels.AsNoTracking()
+            .Where(m => modelIds.Contains(m.Id))
+            .Select(m => new { m.Id, m.Json })
+            .ToListAsync();
+        return models.ToDictionary(m => m.Id, m => WallGeometryModelChecks.FromJson(m.Json));
+    }
+
+    private static MarkerPlacementCheck? ReadPlacementCheck(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<MarkerPlacementCheck>(json);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+}

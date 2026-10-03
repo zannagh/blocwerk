@@ -100,8 +100,13 @@ public class CookieAuthenticationStateProvider : AuthenticationStateProvider
             string ticketData = dataProtector.Unprotect(cookieValue);
             var ticket = TicketSerializer.Default.Deserialize(Encoding.UTF8.GetBytes(ticketData));
 
+            // A session signed in with an API key is never rebuilt from the raw cookie: this path
+            // bypasses the cookie handler's OnValidatePrincipal, which is the only place the key behind
+            // it is re-checked. A key session the handler accepted is already on HttpContext.User above;
+            // one it REJECTED (revoked key) must not come back to life here.
             if (ticket?.Principal != null &&
-                ticket.Properties.ExpiresUtc > DateTimeOffset.UtcNow)
+                ticket.Properties.ExpiresUtc > DateTimeOffset.UtcNow &&
+                !Services.ApiKeySessionClaims.IsApiKeySession(ticket.Principal))
             {
                 return ticket.Principal;
             }
