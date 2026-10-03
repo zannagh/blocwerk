@@ -1,0 +1,14 @@
+.runner-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.runner { padding: 0.6rem 0.75rem; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-surface); min-width: 0; }
+.runner-online { border-left: 4px solid var(--status-success); }
+.runner-paused { border-left: 4px solid var(--status-warning); }
+.runner-offline { border-left: 4px solid var(--border); }
+.runner-revoked { border-left: 4px solid var(--status-danger); opacity: 0.75; }
+.runner-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.5rem; }
+.runner-name { font-weight: 600; color: var(--text-heading); overflow-wrap: anywhere; }
+.runner-chip { font-size: 0.75rem; padding: 0.05rem 0.45rem; border-radius: var(--r-pill); background: var(--bg-surface-alt); border: 1px solid var(--border-light); }
+.runner-meta { font-size: 0.8rem; overflow-wrap: anywhere; }
+.runner-doing { margin-top: 0.3rem; font-size: 0.9rem; overflow-wrap: anywhere; }
+.runner-error { margin-top: 0.3rem; font-size: 0.85rem; color: var(--danger-text); overflow-wrap: anywhere; }
+.runner-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
+.job-progress { width: 100%; height: 8px; margin: 6px 0 2px; accent-color: var(--accent); }

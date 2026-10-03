@@ -1119,6 +1119,18 @@ prepared or queued at all.
 4. The runner appears as **online** (a green dot, seen within the last minute) with its GPU, memory,
    trainer and the highest quality it can train. It picks up waiting jobs within seconds.
 
+**Status page and pause.** On the runner machine, the runner serves a small page on
+`http://127.0.0.1:8190` (loopback only; in Docker add `-e RUNNER_UI_HOST=0.0.0.0 -p 127.0.0.1:8190:8190`)
+with the jobs it took on, the running job's progress and ETA, and a **pause switch** (open the link with the
+token from the runner's log once): *Pause now* hands the running job back at no cost (it resumes from its
+checkpoint later), *Finish this job, then pause* stops claiming after it, *Resume* takes jobs again. A paused
+runner stays up, does no GPU work and keeps telling the server it is paused, so no work is routed to it (a
+wall's shared runner may help meanwhile). The runner list shows it as paused (offline wins when it stops
+answering); its wall's waiting jobs read *waiting for a 3D runner (paused)*, and in `auto` mode new captures
+train their photo-real view on the splat worker, as when the runner is offline. The switch survives a
+restart. **Update the server before the runners**: an older server would count a pause as a shutdown. Details and settings: `docker/splat-worker/README.md`, "Status page and
+pause switch".
+
 **Quality.** A runner claims only jobs up to the quality it reported (draft < high < max < ultra; a
 runner that never said counts as high). **Ultra** (50000 steps on the photos at up to 4096 px, up
 to 6 M splats) is only offered in the capture panel and the retrain button when something can train
@@ -1196,6 +1208,69 @@ the upload and the hand-over to `splat-finish` all stream through files.
 
 The splat worker (`SPLATSERVICE__URL`) is still needed for the CPU steps; with `always` it no longer
 needs a GPU.
+
+### Runner overview
+
+*3D runners → Overview* (`/administration/runners`, linked from a wall's runner panel and the
+administration page) lists every runner you may see: its state (online, paused by its owner,
+offline, revoked; a runner that stopped calling is offline even if it was paused), owner, GPU and
+version, the walls it serves, what it trains now (wall, stage, step, remaining time, lease) and its
+recent failed trainings. Site admins see every runner and may revoke or share any; wall admins see the
+runners that serve their walls and their own (they may revoke their own). A runner busy with a wall
+you do not administer only says "busy with another wall's job", and its failures there carry no
+reason; on your own runner you see its jobs and the walls it serves, and another wall's failure
+reads "a job of another wall (wall name)". Failures are each runner's own (kept 30 days). The page
+refreshes every 5 s while it is visible.
+
+### Watching long-running work (progress API)
+
+Everything slow shows up in one list: captures (per stage), photo-real training on a 3D runner
+(step, total steps, previews, loss and splat count when the trainer prints them), the server's
+finish of a trained view, each follow-up step, texture re-renders, re-solves and capture imports.
+Each job has a state (`queued`, `running`, `succeeded`, `skipped`, `failed`, `cancelled`), a
+percentage, the time it has left, when it started and last moved, and its last error. A GPU training
+also says when its runner is paused (`runnerPaused`), or, while it waits, when every online runner that
+may take it is paused.
+
+- **In the app:** *Administration → Background jobs* lists every wall's jobs (app admins). A wall's
+  settings have a compact *Background jobs* panel for its admins. Both refresh every 4 s while they
+  are open and the tab is visible.
+- **For scripts:** `GET /api/v1/admin/jobs` with a personal API key (*Settings → API keys*; read
+  access is enough, the route never changes anything). An app admin's key sees every wall, a wall
+  admin's key only their walls; wall, kiosk and installation keys get 403. Optional query
+  parameters: `wallId` (one wall) and `recentHours` (how far back ended jobs are listed, default 24,
+  at most 168, `0` for running jobs only).
+
+```bash
+curl -s -H "Authorization: Bearer $BLOCWERK_KEY" \
+  "https://blocwerk.example.com/api/v1/admin/jobs?recentHours=6" \
+  | jq '.jobs[] | select(.state == "running") | {kind, stage, percent, etaSeconds, updatedAt, lastError}'
+```
+
+The JSON field names are stable (fields may be added, never renamed); the in-app API reference
+(*Settings → API keys*) shows a full example. Every value is derived when it is read, from the rows
+that already track the work plus a few facts stored for it: a capture's stage timeline (when each
+stage, re-render and re-solve started and ended), the runner's latest step and the step its current
+claim started at, and when each follow-up step started.
+
+**Remaining time** (`etaSeconds`) comes from the job's own rate when it has one (`etaSource:
+"rate"`: training steps, or bytes of an import, per second since the current claim started),
+otherwise from the median duration of the same stage over the last 60 runs (`"history"`). It is
+`null` when neither is known, or once a stage has run longer than its median; it is never guessed.
+
+**Telemetry.** The same numbers go to the OpenTelemetry exporter (meter `Blocwerk`), every 15 s:
+
+| Instrument | Kind | Tags |
+|---|---|---|
+| `blocwerk.jobs.active` | gauge `{job}` | `kind`, `stage`, `state` (queued/running) |
+| `blocwerk.jobs.progress` | gauge `%` (mean of the running jobs) | `kind`, `stage` |
+| `blocwerk.jobs.eta` | gauge `s` (the longest known remaining time) | `kind`, `stage` |
+| `blocwerk.jobs.stage.duration` | histogram `s` | `kind`, `stage`, `outcome` |
+| `blocwerk.jobs.failures` | counter `{failure}` | `kind`, `stage` |
+
+Each stage that ends is also exported as a span (`job <kind> <stage>`, activity source `Blocwerk`)
+with its real start and end, so a capture shows up in the trace view as its stages one after the
+other. Metrics carry no wall or job ids; spans carry the job id and the anonymized wall tag.
 
 ### Polling vs callbacks
 

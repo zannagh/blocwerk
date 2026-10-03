@@ -113,7 +113,7 @@ def test_happy_path_trains_through_the_worker_path_and_uploads_a_gzipped_slim_pl
     assert srv.claims[0] == {"maxQuality": "high", "maxBundleBytes": http.MAX_BUNDLE_BYTES}
     assert srv.hellos[0]["trainer"] == "brush"
     assert any(p.get("step") == 2500 and p["totalSteps"] == 5000 and p["stage"] == "train" for p in srv.progress)
-    assert [p.name for p in (tmp_path / "work").iterdir()] == []  # job dir and alive file are gone
+    assert [p.name for p in (tmp_path / "work").iterdir()] == ["state"]  # job dir and alive file are gone
 
 
 def gsplat_runner(monkeypatch, vram, seen):

@@ -282,6 +282,8 @@ public static class KioskRestrictions
 
         // Authority over every wall in the installation.
         "Blocwerk.Web.Components.Pages.Administration.Dashboard",
+        "Blocwerk.Web.Components.Pages.Administration.Jobs",
+        "Blocwerk.Web.Components.Pages.Administration.Runners",
 
         // Creating an account, and resetting the password of an existing one, from a public tablet.
         "Blocwerk.Web.Components.Pages.Signup",

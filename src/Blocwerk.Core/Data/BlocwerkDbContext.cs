@@ -126,9 +126,22 @@ public partial class BlocwerkDbContext : DbContext
     public DbSet<JournalBlob> JournalBlobs => Set<JournalBlob>();
 
     public BlocwerkDbContext(DbContextOptions<BlocwerkDbContext> options)
-        : base(options)
+        : this(options, keepsTimeline: true)
     {
     }
+
+    /// <summary>A context that does not keep capture timelines itself (the one that merges them, see <see cref="CaptureTimelineMerge"/>).</summary>
+    private BlocwerkDbContext(DbContextOptions<BlocwerkDbContext> options, bool keepsTimeline)
+        : base(options)
+    {
+        GivenOptions = options;
+        KeepsTimeline = keepsTimeline;
+    }
+
+    /// <summary>The options this context was built with (before <see cref="OnConfiguring"/> added anything).</summary>
+    internal DbContextOptions<BlocwerkDbContext> GivenOptions { get; }
+
+    private bool KeepsTimeline { get; }
 
     public async Task SetCurrentUserAsync(ICurrentUserService currentUserService)
     {
@@ -142,6 +155,18 @@ public partial class BlocwerkDbContext : DbContext
             CurrentUserId = Guid.Empty;
         }
     }
+
+    /// <summary>Captures' stage timeline is kept by every context, whatever factory built it (see <see cref="CaptureTimelineInterceptor"/>).</summary>
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    {
+        if (KeepsTimeline)
+        {
+            optionsBuilder.AddInterceptors(CaptureTimelineInterceptor.Instance, CaptureTimelineTransactionInterceptor.Instance);
+        }
+    }
+
+    /// <summary>A context over the same database that does not keep capture timelines itself (it only merges them).</summary>
+    internal BlocwerkDbContext CreateTimelineMergeContext() => new(GivenOptions, keepsTimeline: false);
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

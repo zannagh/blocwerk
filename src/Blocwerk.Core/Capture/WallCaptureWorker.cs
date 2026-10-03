@@ -23,7 +23,10 @@ public sealed class WallCaptureWorker(
     WallCaptureSweeper sweeper,
     ILogger<WallCaptureWorker> logger) : BackgroundService
 {
-    /// <summary>Re-enqueues unfinished captures and removes stale drafts. Public for tests.</summary>
+    /// <summary>When this process started: follow-up marks older than this are a previous process's.</summary>
+    private static readonly DateTimeOffset ProcessStart = new(System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime(), TimeSpan.Zero);
+
+    /// <summary>Re-enqueues unfinished captures, removes stale drafts and stale running marks. Public for tests.</summary>
     public async Task RecoverAsync(CancellationToken ct)
     {
         try
@@ -46,6 +49,13 @@ public sealed class WallCaptureWorker(
             }
 
             await sweeper.SweepDraftsAsync(DateTimeOffset.UtcNow, ct);
+
+            // A follow-up step marked running by an earlier process runs no more (the progress API must not say it does).
+            var stale = await FollowUp.CaptureFollowUpChain.ClearStaleRunningAsync(dbContextFactory, ProcessStart, ct);
+            if (stale > 0)
+            {
+                logger.LogInformation("Dropped {Count} stale running follow-up step mark(s) left by a previous run", stale);
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

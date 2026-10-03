@@ -49,7 +49,7 @@ public sealed partial class GpuJobQueue
         var walls = candidates.Select(j => j.WallId).Distinct().ToList();
         var online = Now - options.OnlineWindow;
         var ownOnline = await Assignments(db)
-            .Where(rw => walls.Contains(rw.WallId) && rw.RunnerId != runner.Id && rw.Runner.LastSeenAt >= online)
+            .Where(rw => walls.Contains(rw.WallId) && rw.RunnerId != runner.Id && rw.Runner.LastSeenAt >= online && rw.Runner.Paused != true)
             .Select(rw => new { rw.WallId, rw.RunnerId, rw.Runner.MaxQuality }).ToListAsync(ct);
 
         // An own runner that already failed the job does not keep a shared one from helping.
@@ -88,11 +88,11 @@ public sealed partial class GpuJobQueue
         var online = Now - options.OnlineWindow;
         var busy = db.GpuJobs.Where(j => j.Status == GpuJobStatus.Claimed || j.Status == GpuJobStatus.Running);
         var own = await Assignments(db)
-            .Where(rw => rw.WallId == job.WallId && rw.Runner.LastSeenAt >= online && !failed.Contains(rw.RunnerId)
+            .Where(rw => rw.WallId == job.WallId && rw.Runner.LastSeenAt >= online && rw.Runner.Paused != true && !failed.Contains(rw.RunnerId)
                          && !busy.Any(j => j.ClaimedByRunnerId == rw.RunnerId))
             .Select(rw => rw.Runner.MaxQuality).ToListAsync(ct);
         var shared = await Approvals(db)
-            .Where(a => a.WallId == job.WallId && a.Runner.LastSeenAt >= online && !failed.Contains(a.RunnerId)
+            .Where(a => a.WallId == job.WallId && a.Runner.LastSeenAt >= online && a.Runner.Paused != true && !failed.Contains(a.RunnerId)
                         && !busy.Any(j => j.ClaimedByRunnerId == a.RunnerId))
             .Select(a => a.Runner.MaxQuality).ToListAsync(ct);
         return own.Concat(shared).Any(q => QualityCap(q, null) >= job.Quality);

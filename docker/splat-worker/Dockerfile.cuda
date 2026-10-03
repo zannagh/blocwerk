@@ -4,8 +4,11 @@
 #   docker build -f docker/splat-worker/Dockerfile.cuda -t blocwerk-splat-worker-cuda .
 #   docker run --gpus all -p 8100:8100 -e COMPUTE_API_KEY=... blocwerk-splat-worker-cuda
 # The same image, two more roles (README "3D runner"):
-#   3D runner (pulls GPU training from a Blocwerk server; no ports; the key only from the env file):
+#   3D runner (pulls GPU training from a Blocwerk server; no inbound ports; the key only from the env file;
+#   the optional status page / pause switch published to the host's loopback only):
 #     docker run -d --name blocwerk-runner --restart unless-stopped --gpus all --env-file runner.env \
+#       -e RUNNER_UI_HOST=0.0.0.0 -p 127.0.0.1:8190:8190 -v blocwerk-runner-state:/var/lib/splat-worker/runner-state \
+#       -e RUNNER_STATE_DIR=/var/lib/splat-worker/runner-state \
 #       blocwerk-splat-worker-cuda python -m splatworker.gpurunner --server https://blocwerk.app
 #   CPU half next to the app (splat-prepare + splat-finish only, no GPU):
 #     -e SPLAT_WORKER_MODE=cpu -e COLMAP_USE_GPU=0 (and no --gpus)
@@ -122,7 +125,7 @@ COPY docker/splat-worker/splatworker/ splatworker/
 ENV GIT_SHA=${GIT_SHA} HOST=0.0.0.0 PORT=8100 WORK_DIR=/var/lib/splat-worker/jobs \
     NVIDIA_VISIBLE_DEVICES=all NVIDIA_DRIVER_CAPABILITIES=compute,utility
 RUN useradd --system --uid 10001 --no-create-home --home-dir /app app \
-    && mkdir -p /var/lib/splat-worker/jobs && chown -R app /var/lib/splat-worker
+    && mkdir -p /var/lib/splat-worker/jobs /var/lib/splat-worker/runner-state && chown -R app /var/lib/splat-worker
 USER app
 EXPOSE 8100
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \

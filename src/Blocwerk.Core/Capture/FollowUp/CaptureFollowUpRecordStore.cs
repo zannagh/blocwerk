@@ -10,7 +10,8 @@ namespace Blocwerk.Core.Capture.FollowUp;
 /// The one way to change a capture's <see cref="Entities.WallCapture.FollowUpJson"/>: several background services write
 /// it (the capture, re-solve, re-render and correction workers, the retrain request), so a change is a conditional write
 /// that lands only while the record (and the model the capture points at) is still what was read; else it reads again and
-/// applies the change again.
+/// applies the change again. Each write stamps <see cref="Entities.WallCapture.UpdatedAt"/> (the progress API reads follow-up
+/// activity from it).
 /// </summary>
 internal static class CaptureFollowUpRecordStore
 {
@@ -69,9 +70,14 @@ internal static class CaptureFollowUpRecordStore
                 await beforeWrite();
             }
 
+            var runningSince = record.Running?.StartedAt;
             var written = await db.WallCaptures
                 .Where(c => c.Id == captureId && c.GeometryModelId == model && c.FollowUpJson == read)
-                .ExecuteUpdateAsync(s => s.SetProperty(c => c.FollowUpJson, json), ct);
+                .ExecuteUpdateAsync(
+                    s => s.SetProperty(c => c.FollowUpJson, json)
+                        .SetProperty(c => c.FollowUpRunningSince, runningSince)
+                        .SetProperty(c => c.UpdatedAt, DateTimeOffset.UtcNow),
+                    ct);
             if (written == 1)
             {
                 return record;

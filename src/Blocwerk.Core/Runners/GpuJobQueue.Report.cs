@@ -93,6 +93,7 @@ public sealed partial class GpuJobQueue
         var lease = now + options.Lease < deadline ? now + options.Lease : deadline;
         var progress = report.Fraction is { } f && double.IsFinite(f) ? Math.Clamp(f, 0, 1) : job.Progress;
         var stage = Clip(Describe(report), 200);
+        var facts = GpuJobProgressFacts.From(job, report, now);
         var updated = await db.GpuJobs
             .Where(j => j.Id == jobId && j.ClaimedByRunnerId == runner.Id
                         && (j.Status == GpuJobStatus.Claimed || j.Status == GpuJobStatus.Running))
@@ -102,15 +103,21 @@ public sealed partial class GpuJobQueue
                     .SetProperty(j => j.Progress, progress)
                     .SetProperty(j => j.Stage, stage)
                     .SetProperty(j => j.HeartbeatAt, now)
+                    .SetProperty(j => j.Step, facts.Step)
+                    .SetProperty(j => j.TotalSteps, j => facts.TotalSteps ?? j.TotalSteps)
+                    .SetProperty(j => j.StepAnchor, facts.Anchor)
+                    .SetProperty(j => j.StepAnchorAt, facts.AnchorAt)
+                    .SetProperty(j => j.Loss, facts.Loss)
+                    .SetProperty(j => j.SplatCount, facts.Splats)
                     .SetProperty(j => j.Error, (string?)null),
                 ct);
         return updated == 0 ? RunnerJobOutcome.Gone : RunnerJobOutcome.Ok;
     }
 
     /// <summary>
-    /// The runner gave up. A shutdown requeues the job (for free while its checkpoint advances, else a few times); a
-    /// retryable failure requeues it while training attempts are left (for another runner first); anything else (or no
-    /// attempts left) fails the job.
+    /// The runner gave up. A pause requeues the job for free (the runner stays online, paused); a shutdown requeues it
+    /// (for free while its checkpoint advances, else a few times); a retryable failure requeues it while training attempts
+    /// are left (for another runner first); anything else (or no attempts left) fails the job.
     /// </summary>
     public async Task<RunnerJobOutcome> FailAsync(GpuRunner runner, Guid jobId, RunnerFailure failure, CancellationToken ct)
     {
@@ -130,14 +137,23 @@ public sealed partial class GpuJobQueue
         var kind = failure.Shutdown ? ShutdownKind(job, failure.CheckpointStep)
             : failure.Unreachable ? ReleaseKind.LostLease
             : failure.Retryable ? ReleaseKind.Failure : ReleaseKind.Fatal;
+        var paused = failure.Shutdown && failure.Pause;
+        if (paused && (kind == ReleaseKind.Pause || job.PauseCount < options.MaxStalledPauses))
+        {
+            // The owner paused the runner: free (capped by MaxPauses), and while its checkpoint did not advance only
+            // while the job has had fewer than MaxStalledPauses pauses; past that it costs a shutdown.
+            kind = ReleaseKind.Pause;
+        }
+
         logger.LogWarning(
             "Runner {RunnerId} ({Name}) gave GPU job {JobId} back ({Kind}; failures {Failures}, shutdowns {Shutdowns}): {Reason}",
             runner.Id, runner.Name, job.Id, kind, job.FailureCount, job.ShutdownCount, reason);
-        var text = failure.Shutdown ? "the 3D runner shut down"
+        var text = paused ? "the 3D runner was paused"
+            : failure.Shutdown ? "the 3D runner shut down"
             : failure.Unreachable ? $"the 3D runner gave the job back: {reason}"
             : $"training on the 3D runner failed: {reason}";
         var released = await ReleaseAsync(db, job, kind, text, ct);
-        if (failure.Shutdown)
+        if (failure.Shutdown && !paused)
         {
             await MarkStoppedAsync(db, runner.Id, ct);
         }

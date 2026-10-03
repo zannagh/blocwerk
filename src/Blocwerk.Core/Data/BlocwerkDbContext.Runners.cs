@@ -20,6 +20,8 @@ public partial class BlocwerkDbContext
 
     public DbSet<GpuRunnerApproval> GpuRunnerApprovals => Set<GpuRunnerApproval>();
 
+    public DbSet<GpuRunnerFailure> GpuRunnerFailures => Set<GpuRunnerFailure>();
+
     /// <remarks>
     /// Satellites hang off their principals with <c>WithMany()</c> (repo convention). Deleting a
     /// wall cascades its runner assignments and jobs; deleting a runner cascades its assignments and
@@ -51,6 +53,16 @@ public partial class BlocwerkDbContext
             entity.Property(j => j.ResultStatsJson).HasColumnType("text");
             entity.HasIndex(j => new { j.Status, j.CreatedAt });
             entity.HasIndex(j => j.CaptureId);
+            entity.HasIndex(j => j.CompletedAt);
+        });
+
+        // Satellite rows: deleting the runner, the job or the wall drops their failures.
+        modelBuilder.Entity<GpuRunnerFailure>(entity =>
+        {
+            entity.HasOne<GpuRunner>().WithMany().HasForeignKey(f => f.RunnerId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<GpuJob>().WithMany().HasForeignKey(f => f.JobId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(f => new { f.RunnerId, f.At });
+            entity.HasIndex(f => f.JobId);
         });
 
         modelBuilder.Entity<GpuRunnerApproval>(entity =>

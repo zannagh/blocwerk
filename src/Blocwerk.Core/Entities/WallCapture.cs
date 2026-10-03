@@ -147,4 +147,24 @@ public class WallCapture
 
     /// <summary>How often the worker picked this capture up (restarts included); caps resume loops.</summary>
     public int Attempts { get; set; }
+
+    /// <summary>
+    /// When the row was last written (stamped on save, see <c>CaptureTimeline</c>). Null for rows
+    /// not written since the column exists.
+    /// </summary>
+    public DateTimeOffset? UpdatedAt { get; set; }
+
+    /// <summary>
+    /// When each pipeline stage, texture re-render and re-solve of this capture started and ended (<c>CaptureTimeline</c>
+    /// as JSON, the newest entries only), stamped on save from the status and the job marks. The progress API reads the
+    /// current stage's start and the stages' historical durations from it. Null until the first change.
+    /// </summary>
+    public string? TimelineJson { get; set; }
+
+    /// <summary>
+    /// When the follow-up step running now started (the <c>running</c> mark of <see cref="FollowUpJson"/>), null when none
+    /// runs: kept beside the JSON by every write of it, so the progress API and the startup sweep find running steps by an
+    /// index instead of searching the JSON.
+    /// </summary>
+    public DateTimeOffset? FollowUpRunningSince { get; set; }
 }

@@ -40,6 +40,11 @@ public sealed partial class GpuJobQueue
     public async Task<RunnerClaim?> ClaimAsync(GpuRunner runner, TimeSpan wait, RunnerClaimRequest? request, CancellationToken ct)
     {
         var deadline = Now + wait;
+        if (runner.Paused is true)
+        {
+            await ClearPausedAsync(runner.Id, ct);
+        }
+
         while (true)
         {
             var (job, reattached) = await TryClaimOrReattachAsync(runner, request, ct);
@@ -47,7 +52,8 @@ public sealed partial class GpuJobQueue
             {
                 return new RunnerClaim(
                     job.Id, CaptureSplatDocuments.QualityName(job.Quality),
-                    (int)options.Lease.TotalSeconds, job.BundleBytes, job.BundleSha256, options.Previews, reattached);
+                    (int)options.Lease.TotalSeconds, job.BundleBytes, job.BundleSha256, options.Previews, reattached,
+                    job.WallId, job.CaptureId);
             }
 
             var left = deadline - Now;
@@ -79,9 +85,9 @@ public sealed partial class GpuJobQueue
     {
         await using var db = dbContextFactory.CreateDbContext();
         var online = Now - options.OnlineWindow;
-        var own = await Assignments(db).Where(rw => rw.WallId == wallId && rw.Runner.LastSeenAt >= online)
+        var own = await Assignments(db).Where(rw => rw.WallId == wallId && rw.Runner.LastSeenAt >= online && rw.Runner.Paused != true)
             .Select(rw => rw.Runner.MaxQuality).ToListAsync(ct);
-        var shared = await Approvals(db).Where(a => a.WallId == wallId && a.Runner.LastSeenAt >= online)
+        var shared = await Approvals(db).Where(a => a.WallId == wallId && a.Runner.LastSeenAt >= online && a.Runner.Paused != true)
             .Select(a => a.Runner.MaxQuality).ToListAsync(ct);
         return own.Concat(shared).Any(q => QualityCap(q, null) >= quality);
     }
@@ -93,6 +99,14 @@ public sealed partial class GpuJobQueue
         var ultra = CaptureSplatDocuments.QualityName(SplatQuality.Ultra);
         return await Assignments(db).AnyAsync(rw => rw.WallId == wallId && rw.Runner.MaxQuality == ultra, ct)
                || await Approvals(db).AnyAsync(a => a.WallId == wallId && a.Runner.MaxQuality == ultra, ct);
+    }
+
+    /// <summary>A runner that claims is not paused (any more), whatever its last hello said.</summary>
+    private async Task ClearPausedAsync(Guid runnerId, CancellationToken ct)
+    {
+        await using var db = dbContextFactory.CreateDbContext();
+        await db.GpuRunners.Where(r => r.Id == runnerId && r.Paused == true)
+            .ExecuteUpdateAsync(s => s.SetProperty(r => r.Paused, false), ct);
     }
 
     private static Task<bool> HoldsClaimAsync(BlocwerkDbContext db, Guid runnerId, CancellationToken ct) =>
