@@ -57,6 +57,13 @@ public class GpuRunnerJobStatusTests
         Assert.Equal(expected, GpuJobQueue.WaitingStage(SplatQuality.High, online, busy));
 
     [Fact]
+    public void WaitingStage_NamesAPausedRunner_OnlyWhenNoOtherIsAvailable()
+    {
+        Assert.Equal("waiting for a 3D runner (paused)", GpuJobQueue.WaitingStage(SplatQuality.High, 0, 0, paused: 1));
+        Assert.Equal("waiting for a 3D runner (1 online)", GpuJobQueue.WaitingStage(SplatQuality.High, 1, 0, paused: 1));
+    }
+
+    [Fact]
     public async Task AReclaim_ClearsTheShutdownError()
     {
         using var h = new WallTestHarness();

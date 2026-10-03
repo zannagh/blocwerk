@@ -17,8 +17,9 @@ TICK_S = 1.0
 
 
 class Heartbeat:
-    def __init__(self, client, job_id, stop, alive=None, clock=time.monotonic):
+    def __init__(self, client, job_id, stop, alive=None, clock=time.monotonic, observer=None):
         self.client, self.job_id, self.stop, self.alive, self.clock = client, job_id, stop, alive, clock
+        self.observer = observer  # called with a copy of the state on every change (the status page)
         self.state = {"fraction": 0.0, "step": None, "totalSteps": None, "stage": "download", "detail": None}
         self.changed, self.sent_at, self.lock = True, None, threading.Lock()
         self.cancelled = self.gone = self.revoked = False
@@ -32,9 +33,13 @@ class Heartbeat:
 
     def set(self, **kw):
         with self.lock:
-            if any(self.state.get(k) != v for k, v in kw.items()):
-                self.state.update(kw)
-                self.changed = True
+            if not any(self.state.get(k) != v for k, v in kw.items()):
+                return
+            self.state.update(kw)
+            self.changed = True
+            doc = dict(self.state)
+        if self.observer is not None:
+            self.observer(doc)
 
     def close(self):
         self.done.set()

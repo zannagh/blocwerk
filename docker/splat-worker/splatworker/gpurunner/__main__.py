@@ -12,7 +12,9 @@ from ..settings import settings  # loads the env (SPLAT_TRAINER, GSPLAT_PYTHON, 
 from .alive import work_dir
 from .caps import Capabilities
 from .client import Client, check_server
+from .control import PauseControl, state_dir
 from .loop import Runner
+from .web import start_status_page
 
 log = logging.getLogger("gpurunner")
 
@@ -55,24 +57,33 @@ def main(argv=None):
         caps = Capabilities()
     except ValueError as e:
         sys.exit(str(e))
-    if not caps.usable:
+    control = PauseControl(state_dir(work_dir()))
+    if control.paused:  # the trainer probe (torch, CUDA) waits for a resume
+        log.info("paused (pause switch in %s): taking no jobs until resumed", control.path)
+    elif not caps.usable:
         log.error("the %s trainer is not usable here (set GSPLAT_PYTHON / BRUSH_BIN; gsplat needs a CUDA GPU: "
                   "docker run --gpus all)", caps.trainer)
         return 2
     gzip_upload = not args.no_gzip and os.environ.get("RUNNER_UPLOAD_GZIP", "1").strip() not in ("0", "false", "no")
-    runner = Runner(Client(server, key, gzip_upload), work_dir(), caps, max_jobs=1 if args.once else None)
+    runner = Runner(Client(server, key, gzip_upload), work_dir(), caps, max_jobs=1 if args.once else None,
+                    control=control)
 
     def stop(signum, _frame):
         log.info("signal %d: handing back the running job and stopping", signum)
-        runner.shutdown.set()
+        runner.stop()
 
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
-    log.info("Blocwerk 3D runner %s -> %s (%s, work dir %s)", caps.version, server, caps.trainer, runner.work_dir)
+    log.info("Blocwerk 3D runner -> %s (%s, work dir %s)", server, caps.trainer, runner.work_dir)
     r = runner.resume
     log.info("checkpoints: %s; previews: %s", f"every {r.every} steps in {r.root}" if r.every else "off",
              ", ".join(f"{f:.0%}" for f in r.previews) or "off")
-    return runner.run()
+    page = start_status_page(runner)
+    try:
+        return runner.run()
+    finally:
+        if page is not None:
+            page.close()
 
 
 if __name__ == "__main__":

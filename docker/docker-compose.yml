@@ -299,7 +299,11 @@ services:
   # A 3D runner on THIS host's NVIDIA GPU (the CUDA image; it pulls jobs from the app like any runner, so
   # SERVER is the app's public https URL). The key comes from runner.env next to this file (one line
   # BWR_KEY=bwr_..., created in the wall's 3D runners settings); never put it into .env or here.
-  # `docker compose --profile gpu-runner up -d gpu-runner`. No ports.
+  # `docker compose --profile gpu-runner up -d gpu-runner`. No inbound ports for the work; its status page
+  # and pause switch (README "3D runner") on http://127.0.0.1:${RUNNER_UI_PUBLISH_PORT:-8190} of THIS host only
+  # (never publish it beyond loopback; the switch needs the token link from `docker compose logs gpu-runner`).
+  # The pause state and the job history live in a volume. Its own network: it talks only to the app's public
+  # URL (plain http to a compose service name is refused anyway), and no other container can reach its page.
   gpu-runner:
     image: blocwerk-splat-worker-cuda:local
     profiles: ["gpu-runner"]
@@ -312,6 +316,14 @@ services:
       RUNNER_MAX_QUALITY: ${RUNNER_MAX_QUALITY:-}
       # 1 = apply a bundle's zones.json even when the job did not opt in; 0 = plain unless it did.
       SPLAT_WALL_ZONES: ${SPLAT_WALL_ZONES:-0}
+      RUNNER_UI_HOST: 0.0.0.0  # inside the container; the port below is published to the host's loopback only
+      RUNNER_STATE_DIR: /var/lib/splat-worker/runner-state
+    ports:
+      - "127.0.0.1:${RUNNER_UI_PUBLISH_PORT:-8190}:8190"
+    volumes:
+      - gpu-runner-state:/var/lib/splat-worker/runner-state
+    networks:
+      - gpu-runner
     stop_grace_period: 30s
     deploy:
       resources:
@@ -371,3 +383,8 @@ services:
 
 volumes:
   splat-cache:
+  gpu-runner-state:
+
+networks:
+  # The 3D runner alone (outbound internet as on the default network; see gpu-runner).
+  gpu-runner:

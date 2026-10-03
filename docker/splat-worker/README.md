@@ -276,6 +276,9 @@ give the job memory to match (`SPLAT_MAX_MEMORY_MB` unset, container limit ≥ 1
 | `RUNNER_CHECKPOINT_EVERY` | 5000 | gsplat saves its whole state every n steps and at the end; a retry of the same job (same bundle) resumes there. `0` = off |
 | `RUNNER_CHECKPOINT_DIR` | `<work dir>/checkpoints` | one directory per job id + bundle sha (~1 GB at ultra). Inside the container `/tmp` survives `docker restart`, not a recreate: mount a volume here to keep them across both |
 | `RUNNER_CHECKPOINT_TTL_H` | 72 | checkpoint directories untouched for longer are removed at start (a job that succeeded, was cancelled or failed for good drops its own at once) |
+| `RUNNER_STATE_DIR` | `<work dir>/state` | the pause switch (`pause.json`) and the job history (`jobs.jsonl`, the newest 200 jobs). Inside the container mount a volume here (the CUDA image has `/var/lib/splat-worker/runner-state` for it) so both survive a recreate, not only a `docker restart` |
+| `RUNNER_UI_PORT` | 8190 | the local status page and pause switch (below); `0` = off. A taken port only logs a warning. Two runners on one machine: one port each |
+| `RUNNER_UI_HOST` | `127.0.0.1` | where the status page listens. Only its pause switch needs a token (below): keep it on loopback. In Docker set `0.0.0.0` (the container's own interface) and publish to the host's loopback only: `-p 127.0.0.1:8190:8190` |
 | `RUNNER_PREVIEWS` | `0.14,0.4` | fractions of the steps at which the splats so far are frame-checked and uploaded as a preview (ultra: 7000 and 20000; none before step 3000), when the server offers previews (`RUNNERS__PREVIEWS`). `0` = off |
 
 ## Run natively on a Mac (the "external GPU")
@@ -555,8 +558,10 @@ A **3D runner** trains the photo-real view on a GPU somewhere else, pulling work
    (tests/test_roundtrip.py checks they are byte-identical).
 
 ```
-# NVIDIA (the CUDA image; runner.env holds one line BWR_KEY=bwr_...)
+# NVIDIA (the CUDA image; runner.env holds one line BWR_KEY=bwr_...); status page on the host's 127.0.0.1:8190
 docker run -d --name blocwerk-runner --restart unless-stopped --stop-timeout 30 --gpus all \
+  -e RUNNER_UI_HOST=0.0.0.0 -p 127.0.0.1:8190:8190 \
+  -e RUNNER_STATE_DIR=/var/lib/splat-worker/runner-state -v blocwerk-runner-state:/var/lib/splat-worker/runner-state \
   --env-file runner.env blocwerk-splat-worker-cuda:local python -m splatworker.gpurunner --server https://blocwerk.app
 # AMD / Intel (Brush on Vulkan)
 docker run -d --name blocwerk-runner --restart unless-stopped --stop-timeout 30 --device /dev/dri \
@@ -568,7 +573,55 @@ docker run -e SPLAT_WORKER_MODE=cpu -e COMPUTE_API_KEY=... ghcr.io/zannagh/blocw
 ```
 
 Plain `http://` is refused except for localhost (`--insecure-http` overrides). Exit codes: 0 stopped,
-2 misconfigured (no key, trainer missing), 3 key refused. The image's HEALTHCHECK
+2 misconfigured (no key, trainer missing; also on a resume when the trainer turns out unusable), 3 key refused.
+
+### Status page and pause switch
+
+The runner serves a small page on `http://127.0.0.1:8190/` (`gpurunner/web.py`, stdlib `http.server`;
+`RUNNER_UI_PORT` / `RUNNER_UI_HOST`). It shows the runner (server, name, GPU, trainer, highest quality),
+the running job (stage, progress, step, ETA from the training rate since this process started it, time per
+stage, wall and capture ids, quality) and the jobs it took on, newest first: server, wall, capture, quality,
+start, total time and time per stage (download, train, upload), outcome, previews uploaded and the last
+error. It refreshes itself every 2 s; without JavaScript it is a plain page with plain forms.
+`/status.json` has the same as JSON (never the key). Requests naming a host other than loopback (DNS
+rebinding) and cross-site form posts are refused. Reading needs nothing else; the **pause switch needs a local
+token**: made at first start in `<RUNNER_STATE_DIR>/ui-token` (owner-only, kept across restarts) and logged
+as a link (`http://127.0.0.1:8190/?token=...`, see `docker logs blocwerk-runner`). Opening that link once sets
+an HttpOnly, SameSite=Strict cookie; scripts send the token as `X-Runner-Token`. A browser on the runner's
+own loopback (the native Mac runner) gets the cookie without the link. In Docker the page has to listen on
+the container's interface, so without the token any container on the same network could pause the runner;
+the compose service also gets its own network. Never publish the port beyond the host's loopback.
+
+The **pause switch** keeps the container up but stops taking jobs:
+
+- **Pause now**: the trainer is stopped and the job handed back (`fail` with `shutdown: true`,
+  `pause: true` and the newest checkpoint's step). The server requeues it at no cost (a pause, up to
+  `RUNNERS__MAXPAUSES` per job; an older server counts a free shutdown) and keeps the runner online; the
+  next claim, here or elsewhere, resumes from the checkpoint when it is this runner's.
+- **Finish this job, then pause**: no new claims; the running job ends normally first.
+- **Resume**: claims again.
+
+"Pause now" once training is done (the upload is running) acts as "finish this job, then pause": the trained
+result is not thrown away. The server keeps a job handed back by a pause whose checkpoint did not advance free
+only while the job had fewer than `RUNNERS__MAXSTALLEDPAUSES` (5) pauses; later ones count as shutdowns.
+
+**Deploy the server first.** A server from before the pause switch would count a pause as a shutdown and
+take a runner saying paused hellos for an idle online one (which keeps shared runners off its walls). The
+runner notices (the hello answer lacks `pauseAware`): against such a server it says `paused` once and then
+stays silent while paused, so it simply shows offline there.
+
+While a wall's only runners are paused, its waiting jobs read *waiting for a 3D runner (paused)* and stay
+queued until one resumes. In `RUNNERS__MODE=auto` a new capture treats a paused runner like an offline one:
+its photo-real view is trained by the splat worker as before (pausing means "not this GPU now", and a capture
+should not wait on it). `always` keeps queuing for the runners.
+
+While paused the loop makes no claims, does no GPU or CPU work and never probes the trainer (the gsplat
+probe imports torch in a child process; a runner that starts paused probes only on a resume). Every 30 s it
+says hello with its last capabilities and `paused: true`, so the server lists it as paused instead of
+offline and routes no work to it. The switch is kept in `<RUNNER_STATE_DIR>/pause.json` and survives a
+restart (a pending "after this job" becomes a pause, since a new process holds no job). Two runners on one
+PC (say an experimental and a production one): give each its own `RUNNER_UI_PORT` (or publish port) and its
+own state directory or volume. The image's HEALTHCHECK
 (`python -m splatworker.gpurunner.health`) checks the runner's `alive` file (touched every loop turn and
 by the heartbeat; unhealthy after 120 s) and falls back to the worker's `/health` when there is none.
 `/health` lists `splat-prepare` and `splat-finish` in `kinds` (the app uses the split only then) and, on a

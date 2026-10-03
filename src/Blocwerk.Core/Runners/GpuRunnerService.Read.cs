@@ -88,7 +88,8 @@ public sealed partial class GpuRunnerService
                 new GpuRunnerCapabilities(x.GpuName, x.VramMb, x.MaxQuality, x.MemoryBudgetMb, x.RunnerVersion, x.Platform),
                 current,
                 r.Walls.Count,
-                r.Approved);
+                r.Approved,
+                x.RevokedAt is null && x.LastSeenAt >= online && x.Paused is true);
         }).ToList();
     }
 }

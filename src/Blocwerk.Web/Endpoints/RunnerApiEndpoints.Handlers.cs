@@ -30,7 +30,13 @@ public static partial class RunnerApiEndpoints
         }
 
         await queue.HelloAsync(runner, hello, http.RequestAborted);
-        return Results.Ok(new { runnerId = runner.Id, name = runner.Name, pollSeconds = (int)queue.Options.ClaimWait.TotalSeconds });
+
+        // pauseAware: this server understands hello's "paused" and fail's "pause" (a runner pausing against an older
+        // server stops saying paused hellos, which would look like an idle online runner there).
+        return Results.Ok(new
+        {
+            runnerId = runner.Id, name = runner.Name, pollSeconds = (int)queue.Options.ClaimWait.TotalSeconds, pauseAware = true,
+        });
     }
 
     private static async Task<IResult> ClaimAsync(

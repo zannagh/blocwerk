@@ -6,7 +6,9 @@ namespace Blocwerk.Web.Components.Pages.Walls;
 /// <summary>
 /// The ready-to-copy commands that start a 3D runner. The key never appears in them: it is read from
 /// <c>runner.env</c> (<c>--env-file</c>), so it stays out of shell history and <c>ps</c>. The CUDA image is built from a
-/// checkout for now (not published); the Brush image serves AMD/Intel GPUs.
+/// checkout for now (not published); the Brush image serves AMD/Intel GPUs. The Docker commands publish the runner's
+/// status page and pause switch to the host's loopback only (<c>127.0.0.1:8190</c>) and keep its pause state and job
+/// history in a volume.
 /// </summary>
 public static class GpuRunnerCommands
 {
@@ -14,18 +16,23 @@ public static class GpuRunnerCommands
     public const string BrushImage = "ghcr.io/zannagh/blocwerk-splat-worker:latest";
     public const string EnvFile = "runner.env";
 
+    /// <summary>The status page on the host's loopback only, and a volume for the pause switch and the job history.</summary>
+    public const string StatusPageArgs =
+        "-e RUNNER_UI_HOST=0.0.0.0 -p 127.0.0.1:8190:8190 "
+        + "-e RUNNER_STATE_DIR=/var/lib/splat-worker/runner-state -v blocwerk-runner-state:/var/lib/splat-worker/runner-state";
+
     /// <summary>The one line of <c>runner.env</c>.</summary>
     public static string EnvLine(string key) => $"BWR_KEY={key}";
 
     /// <summary>NVIDIA: build the CUDA image once (from a Blocwerk checkout), then run it with the env file.</summary>
     public static string Cuda(string server) =>
         $"docker build -f docker/splat-worker/Dockerfile.cuda -t {CudaImage} .\n"
-        + $"docker run -d --name blocwerk-runner --restart unless-stopped --gpus all --env-file {EnvFile} {CudaImage} "
+        + $"docker run -d --name blocwerk-runner --restart unless-stopped --gpus all --env-file {EnvFile} {StatusPageArgs} {CudaImage} "
         + $"python -m splatworker.gpurunner --server {server}";
 
     /// <summary>AMD / Intel on Linux: the published Brush image with the GPU device.</summary>
     public static string Vulkan(string server) =>
-        $"docker run -d --name blocwerk-runner --restart unless-stopped --device /dev/dri --env-file {EnvFile} {BrushImage} "
+        $"docker run -d --name blocwerk-runner --restart unless-stopped --device /dev/dri --env-file {EnvFile} {StatusPageArgs} {BrushImage} "
         + $"python -m splatworker.gpurunner --server {server}";
 
     /// <summary>Apple Silicon, natively (Docker on a Mac has no GPU).</summary>

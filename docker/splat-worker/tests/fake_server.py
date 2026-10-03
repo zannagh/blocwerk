@@ -16,6 +16,7 @@ class FakeServer:
         self.requests, self.results, self.progress, self.fails, self.hellos, self.claims = [], [], [], [], [], []
         self.previews = []  # {"query", "body", "headers"} of every preview upload
         self.offer_previews = False  # the claim's "previews" flag
+        self.pause_aware = True  # hello answers pauseAware (False: a server older than the pause switch)
         self.jobs_left = 1
         self.errors = {"hello": [], "claim": [], "bundle": [], "progress": [], "result": [], "fail": [], "preview": []}
         self.drop_bundle_after = None  # bytes: the first download breaks off there (resume test)
@@ -57,7 +58,8 @@ class FakeServer:
 
     def _hello(self, _h, body, _headers):
         self.hellos.append(json.loads(body))
-        return 200, {"runnerId": "r", "name": "test", "pollSeconds": 25}, {}
+        doc = {"runnerId": "r", "name": "test", "pollSeconds": 25}
+        return 200, {**doc, "pauseAware": True} if self.pause_aware else doc, {}
 
     def _claim(self, _h, body, _headers):
         self.claims.append(json.loads(body) if body else None)

@@ -59,26 +59,42 @@ def max_quality(trainer, vram_mb, budget, cap=None):
 
 
 class Capabilities:
-    """hello's document; the tool versions are probed once (gsplat's probe imports torch: ~10 s)."""
+    """hello's document. The trainer's version is probed once, on first need (gsplat's probe imports torch in a child
+    process, ~10 s, and touches CUDA): a runner that starts paused probes only when it is resumed."""
+
+    UNPROBED = object()
 
     def __init__(self):
         self.trainer = trainers.select()
-        if self.trainer == "gsplat":
-            self.version = gsplat_trainer.tool_version(settings.gsplat_python)
-        else:
-            self.version = brush.tool_version(settings.brush_bin)
+        self._version = self.UNPROBED
+
+    @property
+    def version(self):
+        if self._version is self.UNPROBED:
+            if self.trainer == "gsplat":
+                self._version = gsplat_trainer.tool_version(settings.gsplat_python)
+            else:
+                self._version = brush.tool_version(settings.brush_bin)
+        return self._version
 
     @property
     def usable(self):
         return self.version is not None
 
     def __call__(self):
+        return self._doc(self.version)
+
+    def lite(self):
+        """The document without probing the trainer (while paused): its version stays unknown until a resume."""
+        return self._doc(None if self._version is self.UNPROBED else self._version)
+
+    def _doc(self, version):
         name, vram = gpu_info()
         budget = budget_mb()
         doc = {"runnerVersion": __version__, "gpuName": name, "vramMb": vram,
                "maxQuality": max_quality(self.trainer, vram, budget), "memoryBudgetMb": budget,
                "platform": f"{platform.system()} {platform.machine()}", "trainer": self.trainer,
-               "cuda": self.trainer == "gsplat" and self.version is not None, "trainerVersion": self.version}
+               "cuda": self.trainer == "gsplat" and version is not None, "trainerVersion": version}
         if self.trainer == "brush":
-            doc["brushVersion"] = self.version
+            doc["brushVersion"] = version
         return doc
