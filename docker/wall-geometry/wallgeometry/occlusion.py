@@ -7,16 +7,19 @@ plane" alone never hides anything (a far perpendicular panel whose plane merely 
 wall must not blank it).
 
 The region is the facet's extent rectangle (markers' bounding box + margin), cut along the seams with
-its neighbours where the facet's own markers all lie on one side: a triangle segment (side wall,
-closing piece) keeps only its real half, so its empty half-rectangle blocks nothing. A seam is only
-used where the neighbour really is (the seam line runs, on average, within `MAX_SEAM_GAP_MM` of the
-neighbour's extent), the same rule as the 3D viewer's triangle outlines (Wall3DFacetOutlines.cs).
+its neighbours where the facet's own voting markers (kernel.voting_corners: not the strays left out of
+its extent) all lie on one side: a triangle segment (side wall, closing piece) keeps only its real half,
+so its empty half-rectangle blocks nothing. A seam is only used where the neighbour really is (the seam
+line runs, on average, within `MAX_SEAM_GAP_MM` of the neighbour's extent). A model without markers
+(SfM) cuts along its exported fold clips (`outlineMm`, kernel.outline_halfplanes) instead.
+
+This is the geometry kernel's facet shape and line-of-sight rule (docs/geometry-kernel.md); the C# twin
+is CoverageOccluder / CoverageOccluderSeams, and test/geometry-golden holds the cases both must pass.
 """
 import numpy as np
 
-MIN_PLANE_ANGLE_SIN = 0.17  # ~10 deg: closer to parallel gives no reliable seam
-MAX_SEAM_GAP_MM = 800.0
-MARKER_SIDE_TOL_MM = 20.0  # a marker corner this close to a seam still counts as on either side
+from .kernel import (MARKER_SIDE_TOL_MM, MAX_SEAM_GAP_MM, MIN_PLANE_ANGLE_SIN, NEAR_PLANE_MM, ON_PLANE_MM,
+                     outline_halfplanes, voting_corners)
 
 
 class Occluder:
@@ -29,11 +32,19 @@ class Occluder:
         self.e = f["extentMm"]
         self.halfplanes = list(halfplanes)
 
-    def contains(self, a, b, pad=0.0):
+    def contains(self, a, b, inset=0.0):
+        """Whether (a, b) lies in the shape shrunk by `inset` mm (its rectangle and every half-plane)."""
+        return self.within_rect(a, b, inset) & self.within_cuts(a, b, inset)
+
+    def within_rect(self, a, b, inset=0.0):
         e = self.e
-        ok = (a >= e["aMin"] - pad) & (a <= e["aMax"] + pad) & (b >= e["bMin"] - pad) & (b <= e["bMax"] + pad)
+        return (a >= e["aMin"] + inset) & (a <= e["aMax"] - inset) & (b >= e["bMin"] + inset) & (b <= e["bMax"] - inset)
+
+    def within_cuts(self, a, b, inset=0.0):
+        """Whether (a, b) lies on the kept side of every half-plane by at least `inset` mm."""
+        ok = np.ones(np.broadcast(a, b).shape, bool)
         for al, be, ga in self.halfplanes:
-            ok &= al * a + be * b >= ga - pad
+            ok &= al * a + be * b >= ga + inset
         return ok
 
 
@@ -103,27 +114,24 @@ def _halfplanes(g, facets, corners):
 
 
 def occluders(facets, markers):
-    """Occluder per facet (region = extent cut by its marker-confirmed seams)."""
-    by_facet = {}
-    for m in markers or []:
-        if m.get("facet") is not None and m.get("cornersPlaneMm"):
-            by_facet.setdefault(str(m["facet"]), []).extend(m["cornersPlaneMm"])
-    return [Occluder(g, _halfplanes(g, facets, np.array(by_facet.get(str(g["id"]), []), float).reshape(-1, 2)))
-            for g in facets]
+    """Occluder per facet (region = extent cut by its marker-confirmed seams and its outline's fold clips)."""
+    return [Occluder(g, _halfplanes(g, facets, voting_corners(g, markers)) + outline_halfplanes(g)) for g in facets]
 
 
-def hidden(centre, occs, X, tol):
-    """Points X (N, 3) whose segment to the camera centre passes through another facet's region."""
+def hidden(centre, occs, X, near=NEAR_PLANE_MM, inset=0.0):
+    """Points X (N, 3) whose segment to the camera centre passes through another facet's region (shrunk by
+    `inset` mm). A point within `near` mm of an occluder's plane is on its seam and not hidden by it; a camera
+    on the occluder's plane crosses nothing."""
     out = np.zeros(len(X), bool)
     for o in occs:
         dX = (X - o.O) @ o.n
         dC = float((centre - o.O) @ o.n)
-        cross = (np.abs(dX) > tol) & (np.sign(dX) != np.sign(dC)) & (abs(dC) > 1e-6)
+        cross = (np.abs(dX) > near) & (np.sign(dX) != np.sign(dC)) & (abs(dC) > ON_PLANE_MM)
         if not cross.any():
             continue
         idx = np.nonzero(cross & ~out)[0]
         Xi = X[idx]
         t = dX[idx] / (dX[idx] - dC)
         P = Xi + t[:, None] * (centre - Xi)
-        out[idx] = o.contains((P - o.O) @ o.u, (P - o.O) @ o.v)
+        out[idx] = o.contains((P - o.O) @ o.u, (P - o.O) @ o.v, inset)
     return out

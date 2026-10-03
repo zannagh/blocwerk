@@ -13,11 +13,14 @@ from .cameras import doc_intrinsics, reprojection_rms
 
 
 def _facet_doc(F, ang, known):
-    return {"id": F["id"], "origin": _l(F["origin"], 2), "u": _l(F["u"], 6), "v": _l(F["v"], 6),
-            "normal": _l(F["n"], 6), "measuredAngleDeg": _r(ang["tiltDeg"]) if known else None,
-            "yawDeg": _r(ang["yawDeg"]) if known else None,
-            "angleToReferenceFacetDeg": _r(ang["angleToReferenceDeg"]),
-            "extentMm": {k: round(v, 1) for k, v in F["extent"].items()}, "markerIds": []}
+    doc = {"id": F["id"], "origin": _l(F["origin"], 2), "u": _l(F["u"], 6), "v": _l(F["v"], 6),
+           "normal": _l(F["n"], 6), "measuredAngleDeg": _r(ang["tiltDeg"]) if known else None,
+           "yawDeg": _r(ang["yawDeg"]) if known else None,
+           "angleToReferenceFacetDeg": _r(ang["angleToReferenceDeg"]),
+           "extentMm": {k: round(v, 1) for k, v in F["extent"].items()}, "markerIds": []}
+    if F.get("outline") is not None:
+        doc["outlineMm"] = [_l(p, 1) for p in F["outline"]]  # the fold-clipped shape (world.py)
+    return doc
 
 
 def _segments(sol):

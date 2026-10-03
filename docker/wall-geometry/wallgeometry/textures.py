@@ -29,10 +29,11 @@ import numpy as np
 
 from . import blend, consensus, exposure, flatten, occlusion, scale, seams, sourcemap, views
 from .camera import max_valid_radius2
+from .kernel import MIN_FACING_COS, NEAR_PLANE_MM
 from .markercheck import marker_check
 
-DEFAULTS = {"behindOtherFacetMm": 30.0, "mmPerPx": 2.0, "maxSidePx": 4096, "extraMarginMm": 100.0, "labelCellPx": 8,
-            "modeFilterCells": 5, "imageMarginPx": 16, "jpegQuality": 90, "maskFeatherPx": 4.0,
+DEFAULTS = {"behindOtherFacetMm": NEAR_PLANE_MM, "mmPerPx": 2.0, "maxSidePx": 4096, "extraMarginMm": 100.0,
+            "labelCellPx": 8, "modeFilterCells": 5, "imageMarginPx": 16, "jpegQuality": 90, "maskFeatherPx": 4.0,
             "blendMaxBytes": 2.0e9, **blend.BLEND_DEFAULTS, **exposure.GAIN_DEFAULTS,
             **consensus.CONSENSUS_DEFAULTS, **flatten.FLATTEN_DEFAULTS,
             **seams.SEAM_DEFAULTS}
@@ -137,7 +138,7 @@ def _score(cam, f, X, margin):
     ray = centre - X
     dist = np.linalg.norm(ray, axis=-1)
     cos = (ray @ n) / np.maximum(dist, 1e-9)
-    ok = (z > 1e-3) & (cos > 0.05)
+    ok = (z > 1e-3) & (cos > MIN_FACING_COS)
     ok &= (px[..., 0] >= margin) & (px[..., 0] <= cam["w"] - 1 - margin)
     ok &= (px[..., 1] >= margin) & (px[..., 1] <= cam["h"] - 1 - margin)
     return np.where(ok, cam["K"][0, 0] * cos / np.maximum(dist, 1e-9), 0.0)
@@ -203,7 +204,8 @@ def render_textures(doc, load_photo, available, params=None, progress=None):
         raise TextureError("none of the uploaded photos matches a camera of the geometry document")
     names = sorted(cams)
     facets = list(_facets(doc))
-    jobs = _score_facets(facets, cams, names, p, occluders(facets, doc))
+    occs = occluders(facets, doc)
+    jobs = _score_facets(facets, cams, names, p, occs)
     if int(p["blendViews"]) > 1 and blend_bytes(jobs, p) <= p["blendMaxBytes"]:
         from . import blended  # imports this module
         results = blended.render(doc, load_photo, cams, names, jobs, p, progress)
@@ -216,7 +218,7 @@ def render_textures(doc, load_photo, available, params=None, progress=None):
             if r["facet"] in shading:
                 r["shading"] = shading[r["facet"]]
     if p["seamHarmonise"] and len(results) > 1:
-        report = seams.harmonise(results, fid, p)
+        report = seams.harmonise(results, fid, p, {o.id: o for o in occs})
         for r in results:
             r["seams"] = {k: v for k, v in report.items() if r["facet"] in k.split("-")}
     return results

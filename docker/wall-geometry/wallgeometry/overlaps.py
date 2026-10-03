@@ -3,7 +3,10 @@
 Two facets are nearly coplanar when their normals are < mergeDeg apart and each one's markers lie < mergeMm off the
 other's plane (facets.py). When their extents (markers' box + margin) still overlap in-plane, e.g. two panels side by
 side whose margins reach over each other, both are clipped at the midline between their marker clusters, along the
-axis on which the clusters are separated most. Clusters may reach up to MAX_INTERLEAVE_MM into each other (an
+axis on which the clusters are separated most. Facets mergeDeg up to kernel.SEAM_MIN_ANGLE_DEG apart are clipped the
+same way when they meet at that midline (its ends < mergeMm off the other's plane): their planes are too close to
+parallel for a reliable seam line (occlusion.py, the 3D view's seam trim), so without the clip their margins would
+overlap uncut (docs/geometry-kernel.md). Clusters may reach up to MAX_INTERLEAVE_MM into each other (an
 L-shaped seam: The Attic's main wall reaches 15 mm past the left edge of the lower "leftover bit" beside it);
 clusters that interleave further on both axes are left alone (nothing to cut along). Every clip is recorded
 (`quality.checks.overlapClipped`).
@@ -13,6 +16,7 @@ import itertools
 import numpy as np
 
 from .facets import DEFAULTS, angle
+from .kernel import SEAM_MIN_ANGLE_DEG
 
 _TOL_MM = 1.0
 MAX_INTERLEAVE_MM = 100.0  # clusters may reach this far into each other (an L-shaped seam) and still be cut apart
@@ -71,7 +75,9 @@ def _cut(cf, cg):
 
 def _clip_pair(fid, gid, f, g, core, p):
     pf, pg = _cluster_world(f, core[fid]), _cluster_world(g, core[gid])
-    if not _coplanar(f, g, pf, pg, p):
+    deg = angle(f["normal"], g["normal"])
+    shallow = p["mergeDeg"] <= deg < SEAM_MIN_ANGLE_DEG  # a fold too shallow for a seam line
+    if not shallow and not _coplanar(f, g, pf, pg, p):
         return None
     flo, fhi = _lohi(f["extent"])
     gr = _to_plane(f, _to_world(g, _rect(g["extent"])))
@@ -82,6 +88,8 @@ def _clip_pair(fid, gid, f, g, core, p):
     k, side, mid = cut
     span = (max(flo[1 - k], gr[:, 1 - k].min()), min(fhi[1 - k], gr[:, 1 - k].max()))
     ends = _to_world(f, np.array([[mid, o] if k == 0 else [o, mid] for o in span]))
+    if shallow and np.abs((ends - g["origin"]) @ g["normal"]).max() >= p["mergeMm"]:
+        return None  # the planes do not meet at the midline: a step, not an overlap
     dots = [float(g["u"] @ _axis(f, k)), float(g["v"] @ _axis(f, k))]
     kg = 0 if abs(dots[0]) >= abs(dots[1]) else 1
     g_hi = side * np.sign(dots[kg]) < 0
@@ -91,8 +99,9 @@ def _clip_pair(fid, gid, f, g, core, p):
     if not changed:
         return None
     return {"facets": [fid, gid], "axis": "ab"[k], "overlapMm": [round(float(v), 1) for v in ov],
-            "clippedAtWorldMm": ends.mean(0), "reason": "nearly coplanar facets overlapped in-plane: both clipped at "
-                                                        "the midline between their marker clusters"}
+            "clippedAtWorldMm": ends.mean(0), "reason": ("facets meeting at a fold too shallow for a seam" if shallow
+                                                         else "nearly coplanar facets") + " overlapped in-plane: both "
+                                                        "clipped at the midline between their marker clusters"}
 
 
 def clip_overlaps(facets, core, params=None):

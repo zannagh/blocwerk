@@ -113,6 +113,13 @@ public sealed record WallGeometryFacet
 
     /// <summary>Bounding box of the facet's markers plus a margin. NOT an outline of the facet.</summary>
     public PlaneRectMm? ExtentMm { get; init; }
+
+    /// <summary>
+    /// The facet's fold-clipped shape, [a, b] mm (a convex polygon inside <see cref="ExtentMm"/>), when a fold cut a corner
+    /// off; only models solved from photo features have it (they have no markers to say which side of a seam the facet is
+    /// on). See <see cref="GeometryKernel.OutlineHalfPlanes"/>.
+    /// </summary>
+    public IReadOnlyList<double[]>? OutlineMm { get; init; }
 }
 
 public sealed record WallGeometryMarker

@@ -45,7 +45,9 @@ normalized 0..1 pipeline is reinterpreted.
           "u": [..], "v": [..], "normal": [..],
           "measuredAngleDeg": 44.6,         // angle between normal and horizontal plane, as tilt-from-vertical (+ overhang, − slab)
           "yawDeg": 0.0,                    // rotation of the facet about z relative to segment 0
-          "extentMm": { "aMin": .., "aMax": .., "bMin": .., "bMax": .. }  // bbox of its markers + margin; NOT an outline
+          "extentMm": { "aMin": .., "aMax": .., "bMin": .., "bMax": .. }, // bbox of its markers + margin; NOT an outline
+          "outlineMm": [[a,b], ...]         // optional, models solved from photo features only: the fold-clipped convex
+                                            // polygon when a fold cut a corner off the extent (docs/geometry-kernel.md)
         }
       ]
     }

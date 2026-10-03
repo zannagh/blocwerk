@@ -6,7 +6,10 @@ the biggest accepted plane (area, then points), the others are numbered by their
 anchors: the reference document's world (its up, its origin).
 
 Extents: the 1-99 % box of a facet's inliers in its own (a, b), clipped at the fold line with every adjacent
-facet (the half-plane on the facet's own side), origin at the box's (aMin, bMin), so extents start at 0.
+facet (the half-plane on the facet's own side), origin at the box's (aMin, bMin), so extents start at 0. The
+extent is the clipped polygon's bounding box; when a fold clip cut a corner off, the polygon itself is the facet's
+`outline` (exported as `outlineMm`): an SfM model has no markers to tell which side of a seam a facet is on, so
+the occlusion and the 3D view take its shape from the outline (docs/geometry-kernel.md).
 """
 import numpy as np
 from scipy.spatial import cKDTree
@@ -51,6 +54,12 @@ def _box(F):
     return np.array([[lo[0], lo[1]], [hi[0], lo[1]], [hi[0], hi[1]], [lo[0], hi[1]]])
 
 
+def _cut_corner(poly, lo, hi, tol=1.0):
+    """Whether a clip cut into the box: some vertex of the polygon lies on no corner of its bounding box."""
+    corners = np.array([[lo[0], lo[1]], [hi[0], lo[1]], [hi[0], hi[1]], [lo[0], hi[1]]])
+    return any(np.abs(corners - p).max(1).min() > tol for p in poly)
+
+
 def extents(facets):
     """Sets origin / extent on every facet (world frame): the clipped 1-99 % box."""
     trees = {id(F): cKDTree(F["P"][:: max(1, len(F["P"]) // 3000)]) for F in facets}
@@ -70,6 +79,8 @@ def extents(facets):
         lo, hi = poly.min(0), poly.max(0)
         F["origin"] = F["c"] + lo[0] * F["u"] + lo[1] * F["v"]
         F["extent"] = {"aMin": 0.0, "aMax": float(hi[0] - lo[0]), "bMin": 0.0, "bMax": float(hi[1] - lo[1])}
+        if _cut_corner(poly, lo, hi):
+            F["outline"] = poly - lo
     return facets
 
 
