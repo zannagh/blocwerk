@@ -28,11 +28,12 @@ public static class HoldShapeOverlapResolver
     public const double Tolerance = 0.0005;
 
     /// <summary>
-    /// Absolute smallest circle radius the resolver shrinks to: 0.008 of the longer side, about 32 px on a 4000 px
-    /// photo - the same size the outline upgrade treats as the smallest real hold (<c>MinManualSeedRadius</c>).
+    /// Absolute smallest circle radius the resolver shrinks to: 0.005 of the longer side, about 20 px on a 4000 px
+    /// photo (the editor's own lower bound is 0.003). Detected circles are mostly 0.01-0.02, and pairs of them that
+    /// overlap are typically one hold reported twice, so a floor much above this leaves them overlapping.
     /// A hold that is already smaller keeps its size.
     /// </summary>
-    public const double MinRadiusFloor = 0.008;
+    public const double MinRadiusFloor = 0.005;
 
     /// <summary>The uniform shrink fallback never goes below this share of the outline's size.</summary>
     public const double MinShrinkFactor = 0.5;
