@@ -31,7 +31,8 @@ public sealed partial class Wall3DViewService(
     IDbContextFactory<BlocwerkDbContext> dbContextFactory,
     IWallCaptureService captures,
     ILogger<Wall3DViewService> logger,
-    ICaptureFileStore? files = null) : IWall3DViewService
+    ICaptureFileStore? files = null,
+    Wall3DViewCache? cache = null) : IWall3DViewService
 {
     /// <inheritdoc />
     public async Task<Wall3DViewResult> BuildAsync(Guid wallId, Guid? boulderId, string? shareToken = null, CancellationToken ct = default)
@@ -189,7 +190,7 @@ public sealed partial class Wall3DViewService(
         var maps = new Dictionary<string, TextureSourceMap>(StringComparer.Ordinal);
         foreach (var t in stored)
         {
-            if (await files.ReadAsync(t.Path, ct) is { } bytes && TextureSourceMap.Parse(bytes) is { } map)
+            if (await SourceMapAsync(files, t.Path, ct) is { } map)
             {
                 maps[t.FacetId] = map;
             }
@@ -200,17 +201,28 @@ public sealed partial class Wall3DViewService(
             return view;
         }
 
-        var perHold = await PanelCameraPerHoldAsync(db, wall, doc, ct);
+        var perHold = await PanelCameraPerHoldAsync(db, wall, doc, cache, ct);
         return Wall3DPhotoOutlines.Apply(view, doc, maps, SolvedCamera.ParseAll(json), perHold);
+    }
+
+    /// <summary>A facet's parsed source map, from <see cref="Wall3DViewCache"/> when there is one.</summary>
+    private async Task<TextureSourceMap?> SourceMapAsync(ICaptureFileStore store, string storedName, CancellationToken ct)
+    {
+        if (cache is not null)
+        {
+            return await cache.SourceMapAsync(storedName, store.ReadAsync, ct);
+        }
+
+        return await store.ReadAsync(storedName, ct) is { } bytes ? TextureSourceMap.Parse(bytes) : null;
     }
 
     /// <summary>
     /// Each live hold's panel-photo camera centre (<see cref="PanelCameraEstimator"/>): resected from the placed
     /// holds of that photo, or a planar pose from the photo's size and EXIF focal length when they are coplanar.
-    /// Loaded once per view, reading only each photo's header.
+    /// Loaded once per view, reading only each photo's header, and only for photos not in <paramref name="photoCache"/>.
     /// </summary>
     private static async Task<Dictionary<Guid, double[]>> PanelCameraPerHoldAsync(
-        BlocwerkDbContext db, Wall wall, WallGeometryDocument doc, CancellationToken ct)
+        BlocwerkDbContext db, Wall wall, WallGeometryDocument doc, Wall3DViewCache? photoCache, CancellationToken ct)
     {
         var frames = doc.Segments.SelectMany(s => s.Facets)
             .Where(f => !string.IsNullOrEmpty(f.Id))
@@ -220,7 +232,7 @@ public sealed partial class Wall3DViewService(
             .ToDictionary(g => g.Key, g => g.First().Frame!, StringComparer.Ordinal);
         var live = wall.Holds.Where(h => h.Generation <= wall.CurrentGeneration).ToList();
         var placed = live.Where(h => h.FacetId is { } f && frames.ContainsKey(f) && h.PlaneAMm.HasValue && h.PlaneBMm.HasValue);
-        var photos = await PanelPhotoInfoLoader.LoadAsync(db, wall.Id, placed.Select(HoldPlaneProjector.PhotoOf), ct);
+        var photos = await PanelPhotoInfoLoader.LoadAsync(db, wall.Id, placed.Select(HoldPlaneProjector.PhotoOf), photoCache, ct);
         var cameras = HoldFootprintRefiner.PanelCameras(live, frames, photos);
         return live
             .Where(h => cameras.ContainsKey(HoldPlaneProjector.PhotoOf(h)))
