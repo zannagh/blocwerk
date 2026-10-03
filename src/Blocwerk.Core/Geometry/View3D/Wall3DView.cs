@@ -36,6 +36,12 @@ public sealed record Wall3DView
     public int UnplacedHoldCount { get; init; }
 
     /// <summary>
+    /// Live panels whose photo is newer than the active 3D model (a panels-only update keeps the model): their holds
+    /// are placed on the model's older textures where they register, the rest stay 2D-only.
+    /// </summary>
+    public int PanelsNewerThanModelCount { get; init; }
+
+    /// <summary>
     /// Physical holds drawn once although several overlapping panels each store a copy of them (each
     /// such <see cref="Wall3DHold"/> lists the folded copies in <see cref="Wall3DHold.DuplicateIds"/>).
     /// </summary>

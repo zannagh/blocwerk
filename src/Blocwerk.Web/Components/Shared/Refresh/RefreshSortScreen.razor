@@ -76,5 +76,13 @@
         <p class="hint">This wall has no panel photos yet, so only the 3D model is updated.</p>
     }
 
-    <button class="btn-primary" @onclick="StartAsync">Start</button>
+    <button class="btn-primary" @onclick="StartAsync">@(View.CaptureAvailable ? "Start (panels + 3D)" : "Start")</button>
+    @if (View.CaptureAvailable)
+    {
+        <button class="btn-secondary" @onclick="StartPanelsOnlyAsync">Update panels only (keep the 3D model)</button>
+        <p class="hint">
+            Panels only starts no 3D capture and needs no GPU runner. The current 3D model stays as it is; the holds are
+            placed on it from the new photos in the background, and holds it cannot place stay 2D-only.
+        </p>
+    }
 </div>
