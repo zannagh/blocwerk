@@ -28,6 +28,23 @@ public class PanelCropServiceTests
     private static readonly PanelCropRect CutsEdge = new(0.25, 0, 0.5, 1);
 
     [Fact]
+    public async Task Crop_WaitsForAnotherWriterOfTheWallsHolds()
+    {
+        using var f = new PanelCropFixture();
+        await f.SeedAsync();
+
+        Task<PanelCropResult> crop;
+        using (WallHoldWriteLock.TryAcquire(f.Harness.WallId, "busy"))
+        {
+            crop = f.Service.CropAsync(f.Harness.WallId, f.PanelId, KeepsAll, confirmRemovals: false);
+            await Task.Delay(300);
+            Assert.False(crop.IsCompleted);
+        }
+
+        Assert.True((await crop).Applied);
+    }
+
+    [Fact]
     public async Task Crop_RemapsHoldsInPlace_AndKeepsTheOriginal()
     {
         using var f = new PanelCropFixture();
