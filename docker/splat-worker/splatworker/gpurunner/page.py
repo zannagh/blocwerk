@@ -32,12 +32,25 @@ OUTCOME_CLASS = {"succeeded": "running", "paused": "paused", "shutdown": "paused
                  "abandoned": "bad"}
 
 
+def _num(value):
+    """A number from a history row, or None (a hand-edited or damaged row must not break the page)."""
+    try:
+        return float(value) if value is not None and not isinstance(value, bool) else None
+    except (TypeError, ValueError):
+        return None
+
+
 def when(ts):
-    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)) if ts else "–"
+    ts = _num(ts)
+    try:
+        return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)) if ts else "–"
+    except (OverflowError, OSError, ValueError):
+        return "–"
 
 
 def dur(seconds):
-    if seconds is None:
+    seconds = _num(seconds)
+    if seconds is None or seconds != seconds or abs(seconds) > 1e9:
         return "–"
     s = int(round(seconds))
     if s >= 3600:
@@ -65,7 +78,10 @@ def form(action, label, mode=None, primary=False):
     return f'<form method="post" action="{action}">{field}<button{cls}>{escape(label)}</button></form>'
 
 
-def controls(snap):
+def controls(snap, can_control=True):
+    if not can_control:
+        return ('<p class="sub">The pause switch needs this runner\'s token: open the link with <code>?token=</code> '
+                'from the runner log once (docker logs), or send it as the <code>X-Runner-Token</code> header.</p>')
     mode, busy = snap["pause"]["mode"], snap["busy"]
     if mode == "paused":
         return form("resume", "Resume", primary=True)
@@ -98,10 +114,17 @@ def current_job(cur):
 
 
 def job_row(j):
-    st = j.get("stages") or {}
+    try:
+        return _job_row(j)
+    except Exception:  # noqa: BLE001 - one bad history row must not blank the page
+        return '<tr><td colspan="12" class="sub">(an unreadable entry)</td></tr>'
+
+
+def _job_row(j):
+    st = j.get("stages") if isinstance(j.get("stages"), dict) else {}
     outcome = str(j.get("outcome") or "–")
     cls = OUTCOME_CLASS.get(outcome, "")
-    previews = j.get("previewsUploaded")
+    previews = _num(j.get("previewsUploaded"))
     return (f'<tr><td>{when(j.get("startedAt"))}</td><td>{escape(str(j.get("server") or "–"))}</td>'
             f'<td><code>{short(j.get("wallId"))}</code></td><td><code>{short(j.get("captureId"))}</code></td>'
             f'<td>{escape(str(j.get("quality") or "–"))}</td><td class="{cls}">{escape(outcome)}</td>'
@@ -115,27 +138,30 @@ def history(jobs):
         return '<div class="card"><h2>Jobs</h2><p class="sub">No jobs yet.</p></div>'
     head = "".join(f"<th>{h}</th>" for h in ("Started", "Server", "Wall", "Capture", "Quality", "Outcome",
                                                "Total", "Download", "Train", "Upload", "Previews", "Error"))
-    rows = "".join(job_row(j) for j in jobs)
+    rows = "".join(job_row(j) for j in jobs if isinstance(j, dict))
     return (f'<div class="card"><h2>Jobs (newest first)</h2><div class="scroll"><table><thead><tr>{head}</tr>'
             f'</thead><tbody>{rows}</tbody></table></div></div>')
 
 
-def render_main(snap):
+def render_main(snap, can_control=True):
     caps = snap.get("caps") or {}
     vram = f'{caps["vramMb"] / 1024:.1f} GB' if caps.get("vramMb") else "–"
     error = (f'<p class="bad">Server not reachable: {escape(str(snap["lastError"]))}</p>'
              if snap.get("lastError") else "")
+    if snap.get("serverKnowsPause") is False:
+        error += ('<p class="paused">This server does not know about pausing yet: it shows this runner as offline '
+                  'while paused, and "pause now" counts as a shutdown there.</p>')
     return f"""<div class="card"><div class="row">{state_badge(snap)}</div>
 <p class="sub">Runner {escape(str(snap.get("runnerName") or "(not connected yet)"))}
 · {escape(str(snap.get("server")))}
 · {escape(str(caps.get("gpuName") or "GPU unknown"))}, {vram} · {escape(str(caps.get("trainer") or ""))}
 · up to {escape(str(caps.get("maxQuality") or "–"))} · running since {when(snap.get("startedAt"))}</p>
-{error}{controls(snap)}</div>{current_job(snap.get("current"))}{history(snap.get("jobs"))}"""
+{error}{controls(snap, can_control)}</div>{current_job(snap.get("current"))}{history(snap.get("jobs"))}"""
 
 
-def render(snap):
+def render(snap, can_control=True):
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Blocwerk 3D runner</title>
 <style>{STYLE}</style></head><body><main><h1>Blocwerk 3D runner</h1>
 <p class="sub" id="stale" hidden>The runner is not answering; showing the last state.</p>
-<div id="live">{render_main(snap)}</div></main><script>{SCRIPT}</script></body></html>"""
+<div id="live">{render_main(snap, can_control)}</div></main><script>{SCRIPT}</script></body></html>"""

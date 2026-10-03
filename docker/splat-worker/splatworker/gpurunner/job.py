@@ -84,6 +84,8 @@ class JobRun:
         if status is not None:
             status.update(dict(self.hb.state))
         self.error, self.previews_uploaded = None, None  # for the job history
+        self.trained = False  # a "pause now" after training only stops new claims: the upload finishes
+        self.paused = False  # stopped by a "pause now"
         # checkpoints (kept for a retry unless the job is over for good) and previews: resume.py
         self.resume = resume.for_job(job, self.dir) if resume else checkpoints.TrainResume()
         self.over = False
@@ -107,17 +109,22 @@ class JobRun:
                 checkpoints.discard(self.resume.checkpoint_dir)
 
     def _pausing(self):
-        return self.pause is not None and self.pause.is_set()
+        return self.pause is not None and self.pause.is_set() and not self.trained
 
     def _watch_shutdown(self):
         while not self.stop.is_set() and not self.hb.done.is_set():
-            if self.shutdown.wait(0.5) or self._pausing():
+            if self.shutdown.wait(0.5):
+                self.stop.set()
+                return
+            if self._pausing():
+                self.paused = True
                 self.stop.set()
                 return
 
     def _run(self):
         try:
             ply, stats = self._download_and_train()
+            self.trained = True
             self.hb.set(stage="upload", fraction=1.0, detail="uploading the trained scene", step=None)
             sent = with_retries("upload", lambda: self.client.upload_result(self.id, ply, trim_stats(stats), self.stop),
                                 self.stop, UPLOAD_PATIENCE_S)
@@ -189,7 +196,7 @@ class JobRun:
         if self.hb.revoked:
             raise Unauthorized(str(why))
         over = self.hb.cancelled or (isinstance(why, Gone) and why.over)
-        pausing = self._pausing() and not self.shutdown.is_set()  # a process that stops is offline: a shutdown
+        pausing = self.paused and not self.shutdown.is_set()  # a process that stops is offline: a shutdown
         if (self.shutdown.is_set() or pausing) and not (self.hb.gone or over):
             step = checkpoints.newest_step(self.resume.checkpoint_dir)
             what = "paused" if pausing else "shutting down"

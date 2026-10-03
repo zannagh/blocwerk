@@ -4,7 +4,9 @@ One job at a time (the server hands a runner one claim). Every turn touches the 
 A 401 ends the loop with exit code 3 (the key was revoked or is wrong); a 404 / 410 on a job drops it and
 the loop goes on; SIGTERM / SIGINT hand the running job back (fail with shutdown: true) and exit 0.
 The pause switch (control.py) gates the claim: while paused the loop makes no claims, probes no trainer and only
-says hello (cached capabilities, `paused: true`) every PAUSED_HELLO_S. Every finished job goes to the job history
+says hello (cached capabilities, `paused: true`) every PAUSED_HELLO_S; a server that does not answer `pauseAware`
+(older than the pause switch) would take those for an idle online runner and keep shared runners off the wall, so
+there it says that hello once and then stays silent (offline). Every finished job goes to the job history
 (history.py) the local status page (web.py) shows."""
 import glob
 import logging
@@ -44,6 +46,7 @@ class Runner:
         self.history = history or JobHistory(state_dir(work_dir))
         self.current = None  # the running job's history.JobStatus
         self.reported_paused = None  # what the last hello told the server
+        self.pause_aware = None  # whether the server understands `paused` (its hello answer says pauseAware)
         self.name, self.last_error, self.started_at = None, None, time.time()
 
     def stop(self):
@@ -97,7 +100,8 @@ class Runner:
     def _idle(self):
         """Paused: no claim, no trainer probe, no GPU work; a hello now and then so the server shows "paused"."""
         self.control.settle()
-        if self._hello_due(PAUSED_HELLO_S):
+        old_server = self.pause_aware is False and self.reported_paused
+        if not old_server and self._hello_due(PAUSED_HELLO_S):
             self._hello()
         self.control.wait(IDLE_TICK_S)
 
@@ -121,6 +125,11 @@ class Runner:
             return False
         self.backoff.reset()
         self.hello_at, self.reported_paused, self.last_error = self.clock(), paused, None
+        aware = bool(me.get("pauseAware"))
+        if paused and not aware and self.pause_aware is not False:
+            log.warning("this server does not know about pausing: staying silent while paused (it shows the runner "
+                        "offline); update the server first")
+        self.pause_aware = aware
         if me.get("name") != self.name or not paused:
             log.info("connected as runner %r (%s, %s VRAM, %s trainer, up to %s)%s", me.get("name"),
                      self.caps.get("gpuName"), f"{(self.caps.get('vramMb') or 0) / 1024:.1f} GB",
@@ -179,6 +188,7 @@ class Runner:
         current = self.current
         return {"server": self.client.server, "runnerName": self.name, "startedAt": self.started_at,
                 "pause": self.control.doc(), "busy": current is not None, "lastError": self.last_error,
+                "serverKnowsPause": self.pause_aware,
                 "caps": {k: (self.caps or {}).get(k) for k in ("gpuName", "vramMb", "maxQuality", "trainer",
                                                                 "runnerVersion")},
                 "current": current.snapshot() if current else None, "jobs": self.history.recent(50)}

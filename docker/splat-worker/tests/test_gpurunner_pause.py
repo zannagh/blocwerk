@@ -155,6 +155,40 @@ def test_a_job_claimed_while_pausing_goes_straight_back(tmp_path, fast, server, 
     assert not [p for _, p, _, _ in srv.requests if p.endswith("/bundle")]
 
 
+def test_an_older_server_hears_paused_once_then_nothing(tmp_path, fast, server, idle_fast):  # noqa: F811
+    srv = server(make_bundle(tmp_path))
+    srv.pause_aware = False  # a server from before the pause switch would list an idle runner as online
+    work = str(tmp_path / "w")
+    PauseControl(state_dir(work)).pause()
+    runner = Runner(Client(srv.url, KEY), work, FakeCaps())
+    t, result = start(runner)
+    until(lambda: runner.pause_aware is False)
+    time.sleep(0.3)  # several paused-hello intervals
+    assert len(srv.hellos) == 1 and srv.claims == [] and runner.snapshot()["serverKnowsPause"] is False
+    stop(runner, t, result)
+
+
+def test_pause_now_during_the_upload_finishes_the_job_first(tmp_path, fast, server, idle_fast,  # noqa: F811
+                                                             monkeypatch):
+    monkeypatch.setattr(brush, "train", brush_ok)
+    srv = server(make_bundle(tmp_path))
+    srv.jobs_left = 2
+    client = Client(srv.url, KEY)
+    upload = client.upload_result
+
+    def pause_then_upload(*a, **k):
+        runner.control.pause()  # "pause now" pressed once training was done
+        time.sleep(0.7)  # longer than the job's stop watcher takes to look
+        return upload(*a, **k)
+
+    client.upload_result = pause_then_upload
+    runner = Runner(client, str(tmp_path / "w"), FakeCaps())
+    t, result = start(runner)
+    until(lambda: runner.outcomes and srv.hellos[-1]["paused"])
+    stop(runner, t, result)
+    assert runner.outcomes == ["succeeded"] and len(srv.results) == 1 and not srv.fails and len(srv.claims) == 1
+
+
 def test_a_finished_job_is_recorded_with_its_stages(tmp_path, fast, server, monkeypatch):  # noqa: F811
     monkeypatch.setattr(brush, "train", brush_ok)
     srv = server(make_bundle(tmp_path))

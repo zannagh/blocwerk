@@ -1121,11 +1121,14 @@ prepared or queued at all.
 
 **Status page and pause.** On the runner machine, the runner serves a small page on
 `http://127.0.0.1:8190` (loopback only; in Docker add `-e RUNNER_UI_HOST=0.0.0.0 -p 127.0.0.1:8190:8190`)
-with the jobs it took on, the running job's progress and ETA, and a **pause switch**: *Pause now* hands
-the running job back at no cost (it resumes from its checkpoint later), *Finish this job, then pause*
-stops claiming after it, *Resume* takes jobs again. A paused runner stays up, does no GPU work and keeps
-telling the server it is paused, so no work is routed to it (a wall's shared runner may help meanwhile).
-The switch survives a restart. Details and settings: `docker/splat-worker/README.md`, "Status page and
+with the jobs it took on, the running job's progress and ETA, and a **pause switch** (open the link with the
+token from the runner's log once): *Pause now* hands the running job back at no cost (it resumes from its
+checkpoint later), *Finish this job, then pause* stops claiming after it, *Resume* takes jobs again. A paused
+runner stays up, does no GPU work and keeps telling the server it is paused, so no work is routed to it (a
+wall's shared runner may help meanwhile). The runner list shows it as paused (offline wins when it stops
+answering); its wall's waiting jobs read *waiting for a 3D runner (paused)*, and in `auto` mode new captures
+train their photo-real view on the splat worker, as when the runner is offline. The switch survives a
+restart. **Update the server before the runners**: an older server would count a pause as a shutdown. Details and settings: `docker/splat-worker/README.md`, "Status page and
 pause switch".
 
 **Quality.** A runner claims only jobs up to the quality it reported (draft < high < max < ultra; a

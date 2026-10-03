@@ -6,10 +6,12 @@
     POST /pause        form field mode=now (stop the running job, handed back for free) or after-job
     POST /resume
 
-RUNNER_UI_PORT (8190; 0 = off) and RUNNER_UI_HOST (127.0.0.1). No authentication: it binds to loopback by
-default. In Docker the container's loopback is not the host's, so bind 0.0.0.0 inside and publish to the host's
-loopback only: `-e RUNNER_UI_HOST=0.0.0.0 -p 127.0.0.1:8190:8190`. Requests naming another host (DNS rebinding)
-and cross-site form posts are refused. Two runners on one machine: one port each."""
+RUNNER_UI_PORT (8190; 0 = off) and RUNNER_UI_HOST (127.0.0.1). It binds to loopback by default. In Docker the
+container's loopback is not the host's, so bind 0.0.0.0 inside and publish to the host's loopback only:
+`-e RUNNER_UI_HOST=0.0.0.0 -p 127.0.0.1:8190:8190`. Reading needs nothing; the switch (POST) needs the local token
+(uitoken.py: the link with `?token=` in the runner log sets a cookie; scripts send `X-Runner-Token`), so another
+container on the same Docker network cannot pause the runner. Requests naming another host (DNS rebinding) and
+cross-site form posts are refused. Two runners on one machine: one port each."""
 import json
 import logging
 import os
@@ -18,7 +20,7 @@ import threading
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import page
+from . import page, uitoken
 
 log = logging.getLogger("gpurunner")
 DEFAULT_HOST, DEFAULT_PORT = "127.0.0.1", 8190
@@ -50,6 +52,12 @@ def _hostname(value):
     return value.rsplit(":", 1)[0] if value.count(":") == 1 else value
 
 
+def is_loopback(address):
+    """A peer on this machine's (or, in Docker, this container's) own loopback; a browser on the Docker host comes
+    through the bridge, so it needs the token link."""
+    return address in ("127.0.0.1", "::1", "::ffff:127.0.0.1")
+
+
 class _Server(ThreadingHTTPServer):
     daemon_threads = True
 
@@ -59,8 +67,8 @@ class _Server(ThreadingHTTPServer):
 
 
 class StatusPage:
-    def __init__(self, runner, host=DEFAULT_HOST, port=DEFAULT_PORT):
-        self.runner = runner
+    def __init__(self, runner, host=DEFAULT_HOST, port=DEFAULT_PORT, token=None):
+        self.runner, self.token = runner, token or uitoken.load_or_create(os.path.dirname(runner.control.path))
         self.allowed = LOCAL_NAMES | ({host.lower()} if host not in ("0.0.0.0", "::", "") else set())
         family = socket.AF_INET6 if ":" in host else socket.AF_INET
         self.httpd = _Server((host, port), self._handler(), family)
@@ -70,7 +78,8 @@ class StatusPage:
 
     @property
     def url(self):
-        host = f"[{self.host}]" if ":" in self.host else self.host
+        host = {"0.0.0.0": "127.0.0.1", "": "127.0.0.1", "::": "::1"}.get(self.host, self.host)
+        host = f"[{host}]" if ":" in host else host
         return f"http://{host}:{self.port}/"
 
     def close(self):
@@ -96,6 +105,13 @@ class StatusPage:
                 if self.command != "HEAD":
                     self.wfile.write(body)
 
+            def _from_loopback(self):
+                return is_loopback(self.client_address[0])
+
+            def _authorized(self):
+                return (uitoken.matches(status.token, self.headers.get("X-Runner-Token"))
+                        or uitoken.matches(status.token, uitoken.from_cookie(self.headers.get("Cookie"))))
+
             def _local(self):
                 return _hostname(self.headers.get("Host")) in status.allowed
 
@@ -110,22 +126,38 @@ class StatusPage:
             def do_GET(self):  # noqa: N802 - http.server's naming
                 if not self._local():
                     return self._send(403, b"forbidden host", "text/plain")
-                path = self.path.split("?", 1)[0]
+                path, _, query = self.path.partition("?")
                 if path == "/status.json":
                     body = json.dumps(status.runner.snapshot(), default=str).encode()
                     return self._send(200, body, "application/json")
-                if path in ("/", "/fragment"):
-                    snap = status.runner.snapshot()
-                    html = page.render(snap) if path == "/" else page.render_main(snap)
-                    return self._send(200, html.encode())
-                return self._send(404, b"not found", "text/plain")
+                if path not in ("/", "/fragment"):
+                    return self._send(404, b"not found", "text/plain")
+                given = (urllib.parse.parse_qs(query).get("token") or [None])[0]
+                if given is not None:  # the link from the log: remember it, drop it from the address bar
+                    if not uitoken.matches(status.token, given):
+                        return self._send(403, b"wrong token: use the link in the runner log", "text/plain")
+                    cookie = uitoken.set_cookie(status.token)
+                    return self._send(303, b"", "text/plain", {"Location": path, "Set-Cookie": cookie})
+                authorized = self._authorized()
+                grant = not authorized and self._from_loopback()  # this machine's own browser (native runner)
+                snap = status.runner.snapshot()
+                can = authorized or grant
+                html = page.render(snap, can) if path == "/" else page.render_main(snap, can)
+                extra = {"Set-Cookie": uitoken.set_cookie(status.token)} if grant else None
+                return self._send(200, html.encode(), extra=extra)
 
             do_HEAD = do_GET
 
             def do_POST(self):  # noqa: N802
                 if not self._local() or not self._same_origin():
                     return self._send(403, b"forbidden", "text/plain")
-                n = int(self.headers.get("Content-Length") or 0)
+                if not self._authorized():
+                    return self._send(403, b"the pause switch needs the token: open the link in the runner log",
+                                      "text/plain")
+                try:
+                    n = max(0, int(self.headers.get("Content-Length") or 0))
+                except ValueError:
+                    return self._send(400, b"bad Content-Length", "text/plain")
                 if n > MAX_FORM_BYTES:
                     return self._send(413, b"too large", "text/plain")
                 form = urllib.parse.parse_qs(self.rfile.read(n).decode("utf-8", "replace")) if n else {}
@@ -152,5 +184,6 @@ def start_status_page(runner, env=None):
     except OSError as e:
         log.warning("status page not started on %s:%d (%s): set RUNNER_UI_PORT to a free port (0 = off)", host, port, e)
         return None
-    log.info("status page and pause switch: %s", ui.url)
+    log.info("status page: %s ; to use its pause switch open %s?token=%s once (sets a cookie; token kept in %s)",
+             ui.url, ui.url, ui.token, os.path.join(os.path.dirname(runner.control.path), "ui-token"))
     return ui
