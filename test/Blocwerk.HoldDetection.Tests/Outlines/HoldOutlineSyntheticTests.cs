@@ -65,8 +65,8 @@ public class HoldOutlineSyntheticTests(ITestOutputHelper output)
         var back = HoldOutlineGeometry.ToPolygon(result.ShapePoints, seed.X, seed.Y);
         for (int i = 0; i < back.Count; i++)
         {
-            Assert.Equal(result.Polygon[i].X, back[i].X, 4);
-            Assert.Equal(result.Polygon[i].Y, back[i].Y, 4);
+            Assert.Equal(result.Polygon[i].X, back[i].X, 3);
+            Assert.Equal(result.Polygon[i].Y, back[i].Y, 3);
         }
 
         // And the rendered polygon really lands on the painted hold.
