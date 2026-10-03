@@ -17,8 +17,13 @@ public sealed record RunnerHello(
     [property: JsonPropertyName("trainer")] string? Trainer = null,
     [property: JsonPropertyName("cuda")] bool? Cuda = null);
 
-/// <summary><c>POST /api/runners/claim</c> (optional body): the quality this runner will train at most right now.</summary>
-public sealed record RunnerClaimRequest([property: JsonPropertyName("maxQuality")] string? MaxQuality);
+/// <summary>
+/// <c>POST /api/runners/claim</c> (optional body): the quality this runner will train at most right now, and the largest
+/// training bundle it downloads (null: no limit).
+/// </summary>
+public sealed record RunnerClaimRequest(
+    [property: JsonPropertyName("maxQuality")] string? MaxQuality,
+    [property: JsonPropertyName("maxBundleBytes")] long? MaxBundleBytes = null);
 
 /// <summary><c>POST /api/runners/jobs/{id}/progress</c>.</summary>
 public sealed record RunnerProgress(
@@ -31,20 +36,26 @@ public sealed record RunnerProgress(
 /// <summary>
 /// <c>POST /api/runners/jobs/{id}/fail</c>. <c>Shutdown</c>: the runner is stopping (not the job failing), so the job goes
 /// back to the queue without using an attempt. <c>Retryable</c>: another try (maybe on another runner) may succeed.
+/// <c>CheckpointStep</c>: with a shutdown, the step of the newest checkpoint the runner keeps for the job (it resumes there).
 /// </summary>
 public sealed record RunnerFailure(
     [property: JsonPropertyName("reason")] string? Reason,
     [property: JsonPropertyName("retryable")] bool Retryable,
-    [property: JsonPropertyName("shutdown")] bool Shutdown = false);
+    [property: JsonPropertyName("shutdown")] bool Shutdown = false,
+    [property: JsonPropertyName("checkpointStep")] int? CheckpointStep = null);
 
-/// <summary>A claimed job as the runner receives it. <c>Previews</c>: the server takes intermediate splats (<c>PUT .../preview</c>).</summary>
+/// <summary>
+/// A claimed job as the runner receives it. <c>Previews</c>: the server takes intermediate splats (<c>PUT .../preview</c>).
+/// <c>Reattached</c>: the runner already held this job (it restarted) and gets it back.
+/// </summary>
 public sealed record RunnerClaim(
     [property: JsonPropertyName("jobId")] Guid JobId,
     [property: JsonPropertyName("quality")] string Quality,
     [property: JsonPropertyName("leaseSeconds")] int LeaseSeconds,
     [property: JsonPropertyName("bundleBytes")] long BundleBytes,
     [property: JsonPropertyName("bundleSha256")] string BundleSha256,
-    [property: JsonPropertyName("previews")] bool Previews = false);
+    [property: JsonPropertyName("previews")] bool Previews = false,
+    [property: JsonPropertyName("reattached")] bool Reattached = false);
 
 /// <summary>What a job-scoped runner call found.</summary>
 public enum RunnerJobOutcome
@@ -55,8 +66,14 @@ public enum RunnerJobOutcome
     /// <summary>Not this runner's job (never claimed by it, or unknown): 404.</summary>
     NotYours,
 
-    /// <summary>It was this runner's, but no longer (cancelled, requeued after the lease, finished): 410.</summary>
+    /// <summary>It was this runner's, but went back to the queue (lease, eligibility): 410 with reason <c>requeued</c>.</summary>
     Gone,
+
+    /// <summary>
+    /// It was this runner's and is over for good (cancelled, failed or finished): 410 with reason <c>over</c>, so the runner
+    /// drops what it kept to resume the job.
+    /// </summary>
+    Over,
 
     /// <summary>The upload is over the size cap: 413.</summary>
     TooLarge,

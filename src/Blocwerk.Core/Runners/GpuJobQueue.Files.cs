@@ -58,7 +58,7 @@ public sealed partial class GpuJobQueue
         var jobs = await db.GpuJobs.AsNoTracking()
             .Where(j => j.Status == GpuJobStatus.Queued || j.Status == GpuJobStatus.Claimed || j.Status == GpuJobStatus.Running
                         || (j.Status == GpuJobStatus.Succeeded && j.InstalledAt == null)
-                        || (j.Status != GpuJobStatus.Cancelled && (j.ResultPath != null || j.PreviewPath != null || j.InstalledPreviewPath != null)))
+                        || j.ResultPath != null || j.PreviewPath != null || j.InstalledPreviewPath != null)
             .ToListAsync(ct);
         return jobs.SelectMany(FilesOf).ToList();
     }
@@ -76,11 +76,11 @@ public sealed partial class GpuJobQueue
         }
     }
 
-    private void DeleteFiles(GpuJob job)
+    private void DeleteAll(IEnumerable<string> paths, Guid jobId)
     {
-        foreach (var path in FilesOf(job))
+        foreach (var path in paths)
         {
-            DeleteQuietly(path, job.Id);
+            DeleteQuietly(path, jobId);
         }
     }
 

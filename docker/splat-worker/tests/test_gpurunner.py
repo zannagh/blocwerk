@@ -110,7 +110,8 @@ def test_happy_path_trains_through_the_worker_path_and_uploads_a_gzipped_slim_pl
     (tmp_path / "r.ply").write_bytes(res["body"])
     cols = read_ply(str(tmp_path / "r.ply"))
     assert len(cols) == 14 and "f_rest_0" not in cols and len(cols["x"]) == 5
-    assert srv.claims[0] == {"maxQuality": "high"} and srv.hellos[0]["trainer"] == "brush"
+    assert srv.claims[0] == {"maxQuality": "high", "maxBundleBytes": http.MAX_BUNDLE_BYTES}
+    assert srv.hellos[0]["trainer"] == "brush"
     assert any(p.get("step") == 2500 and p["totalSteps"] == 5000 and p["stage"] == "train" for p in srv.progress)
     assert [p.name for p in (tmp_path / "work").iterdir()] == []  # job dir and alive file are gone
 
@@ -187,6 +188,7 @@ def test_bundle_checksum_mismatch_is_not_trained(tmp_path, fast, server, monkeyp
     srv.job = lambda: {**FakeServer.job(srv), "bundleSha256": "0" * 64}
     runner, _ = run_runner(srv, tmp_path)
     assert runner.outcomes == ["abandoned"] and not srv.results
+    assert srv.fails[0]["retryable"] is True and "checksum mismatch" in srv.fails[0]["reason"]
 
 
 def test_410_while_training_drops_the_job_and_the_loop_goes_on(tmp_path, fast, server, monkeypatch):

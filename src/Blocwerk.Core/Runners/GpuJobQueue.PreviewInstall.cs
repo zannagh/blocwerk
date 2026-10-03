@@ -20,7 +20,12 @@ public sealed partial class GpuJobQueue
         return await db.GpuJobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == jobId, ct);
     }
 
-    /// <summary>Jobs whose delivered preview still waits to be installed (for the worker's start).</summary>
+    /// <summary>How often the sweep hands still-pending previews to the preview worker again.</summary>
+    internal static readonly TimeSpan PreviewRetryInterval = TimeSpan.FromMinutes(5);
+
+    private DateTimeOffset? previewsRetriedAt;
+
+    /// <summary>Jobs whose delivered preview still waits to be installed (for the worker's start, and the sweep's retry).</summary>
     public async Task<List<Guid>> PendingPreviewsAsync(CancellationToken ct)
     {
         await using var db = dbContextFactory.CreateDbContext();
@@ -89,5 +94,31 @@ public sealed partial class GpuJobQueue
         return job is { PreviewInstalledStep: { } step, InstalledAt: null } && job.Status != GpuJobStatus.Cancelled
             ? (step, job.TotalSteps)
             : null;
+    }
+
+    /// <summary>
+    /// Every <see cref="PreviewRetryInterval"/>: re-enqueues the previews still pending. One the splat worker could not
+    /// finish (it was unreachable) stays pending, and nothing else would try it again before the next upload or restart.
+    /// A preview that is installed (or no longer may be) meanwhile is skipped by the worker.
+    /// </summary>
+    private async Task RetryPendingPreviewsAsync(DateTimeOffset now, CancellationToken ct)
+    {
+        if (previews is null)
+        {
+            return;
+        }
+
+        // The preview worker re-enqueues them itself on start.
+        previewsRetriedAt ??= now;
+        if (now - previewsRetriedAt < PreviewRetryInterval)
+        {
+            return;
+        }
+
+        previewsRetriedAt = now;
+        foreach (var jobId in await PendingPreviewsAsync(ct))
+        {
+            previews.Enqueue(jobId);
+        }
     }
 }

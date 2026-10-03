@@ -175,9 +175,10 @@ public class GpuRunnerQueueTests
             RunnerJobOutcome.NotYours,
             await f.Queue.AcceptResultAsync(b, job.Id, new MemoryStream(RunnerFixture.SlimPly()), null, null, CancellationToken.None));
 
+        // Cancelled: the holder learns the job is over for good (not merely requeued), so it drops its checkpoints.
         await f.Queue.CancelForCaptureAsync(job.CaptureId, "cancelled by an admin", CancellationToken.None);
-        Assert.Equal(RunnerJobOutcome.Gone, (await f.Queue.FindClaimedAsync(a, job.Id, CancellationToken.None)).Outcome);
-        Assert.Equal(RunnerJobOutcome.Gone, await f.Queue.ProgressAsync(a, job.Id, new RunnerProgress(1, null, null, "train", null), CancellationToken.None));
+        Assert.Equal(RunnerJobOutcome.Over, (await f.Queue.FindClaimedAsync(a, job.Id, CancellationToken.None)).Outcome);
+        Assert.Equal(RunnerJobOutcome.Over, await f.Queue.ProgressAsync(a, job.Id, new RunnerProgress(1, null, null, "train", null), CancellationToken.None));
 
         // Cancelling keeps the finished capture as it was (Model ready).
         await using var db = h.CreateContext();

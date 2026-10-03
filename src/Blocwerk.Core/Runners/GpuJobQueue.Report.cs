@@ -16,29 +16,14 @@ namespace Blocwerk.Core.Runners;
 /// </summary>
 public sealed partial class GpuJobQueue
 {
-    /// <summary>Why a claimed job goes back (or ends); decides which budget it costs.</summary>
-    internal enum ReleaseKind
-    {
-        /// <summary>The runner was revoked or lost its eligibility: requeued, costs nothing.</summary>
-        Free,
-
-        /// <summary>The runner shut down: free up to <see cref="GpuRunnerOptions.MaxFreeShutdowns"/>, then a failure.</summary>
-        Shutdown,
-
-        /// <summary>A retryable training failure: costs one of <see cref="GpuRunnerOptions.MaxAttempts"/>.</summary>
-        Failure,
-
-        /// <summary>The runner vanished (lease expired): costs one of <see cref="GpuRunnerOptions.MaxLostLeases"/>.</summary>
-        LostLease,
-
-        /// <summary>A failure no retry can fix: the job fails now.</summary>
-        Fatal,
-    }
+    /// <summary>What the stage text of a job says while its runner uploads the trained view.</summary>
+    internal const string UploadingStage = "is uploading the trained view";
 
     /// <summary>
-    /// The runner's claimed job, or why not: <see cref="RunnerJobOutcome.NotYours"/> when it never held it,
-    /// <see cref="RunnerJobOutcome.Gone"/> when it held it but no longer does, or may no longer train its wall (then
-    /// the claim goes back to the queue).
+    /// The runner's claimed job, or why not: <see cref="RunnerJobOutcome.NotYours"/> when it never held it (or it went
+    /// back to the queue), <see cref="RunnerJobOutcome.Over"/> when it held it and the job is over for good (cancelled,
+    /// failed, finished), <see cref="RunnerJobOutcome.Gone"/> when it may no longer train its wall (then the claim goes
+    /// back to the queue).
     /// </summary>
     public async Task<(RunnerJobOutcome Outcome, GpuJob? Job)> FindClaimedAsync(GpuRunner runner, Guid jobId, CancellationToken ct)
     {
@@ -49,20 +34,44 @@ public sealed partial class GpuJobQueue
             return (RunnerJobOutcome.NotYours, null);
         }
 
-        if (job.Status is not (GpuJobStatus.Claimed or GpuJobStatus.Running) || !await StillEligibleAsync(db, runner, job, ct))
+        if (job.Status is not (GpuJobStatus.Claimed or GpuJobStatus.Running))
         {
-            return (RunnerJobOutcome.Gone, null);
+            return (RunnerJobOutcome.Over, null);
         }
 
-        return (RunnerJobOutcome.Ok, job);
+        return await StillEligibleAsync(db, runner, job, ct) ? (RunnerJobOutcome.Ok, job) : (RunnerJobOutcome.Gone, null);
     }
 
-    /// <summary>A stored bundle's physical path, for streaming it to the runner that claimed the job.</summary>
-    public string? BundlePath(GpuJob job) => files.ResolvePhysicalPath(job.BundlePath);
+    /// <summary>
+    /// The claimed job's bundle file, for streaming it to its runner. A bundle that is missing (or not the size it was
+    /// stored at) cannot be trained by any runner: the job fails at once with that reason (<see cref="RunnerJobOutcome.Over"/>),
+    /// instead of every runner giving up on it until its lost-lease budget runs out.
+    /// </summary>
+    public async Task<(RunnerJobOutcome Outcome, string? Path)> BundleForRunnerAsync(GpuRunner runner, Guid jobId, CancellationToken ct)
+    {
+        var (found, job) = await FindClaimedAsync(runner, jobId, ct);
+        if (found != RunnerJobOutcome.Ok || job is null)
+        {
+            return (found, null);
+        }
+
+        var path = files.ResolvePhysicalPath(job.BundlePath);
+        if (path is not null && File.Exists(path) && new FileInfo(path).Length == job.BundleBytes)
+        {
+            return (RunnerJobOutcome.Ok, path);
+        }
+
+        logger.LogError("GPU job {JobId}: its training bundle {Bundle} is missing or damaged; the job fails", job.Id, job.BundlePath);
+        await using var db = dbContextFactory.CreateDbContext();
+        var released = await ReleaseAsync(db, job, ReleaseKind.Fatal, "the training bundle is missing or damaged on the server", ct);
+        return (released ? RunnerJobOutcome.Over : RunnerJobOutcome.Gone, null);
+    }
 
     /// <summary>
-    /// Records progress and extends the lease, never past <see cref="GpuRunnerOptions.MaxJobDuration"/> after the claim.
-    /// <see cref="RunnerJobOutcome.Gone"/> tells the runner to stop.
+    /// Records progress and extends the lease, never past <see cref="GpuRunnerOptions.MaxJobDuration"/> after the claim
+    /// (plus <see cref="GpuRunnerOptions.MaxUploadDuration"/> while the trained view uploads, so a training that ended
+    /// near the cap is not cut off mid-upload). <see cref="RunnerJobOutcome.Gone"/> or <see cref="RunnerJobOutcome.Over"/>
+    /// tells the runner to stop.
     /// </summary>
     public async Task<RunnerJobOutcome> ProgressAsync(GpuRunner runner, Guid jobId, RunnerProgress report, CancellationToken ct)
     {
@@ -74,12 +83,11 @@ public sealed partial class GpuJobQueue
 
         await using var db = dbContextFactory.CreateDbContext();
         var now = Now;
-        var deadline = (job.ClaimedAt ?? now) + options.MaxJobDuration;
+        var deadline = Deadline(job.ClaimedAt ?? now, report.Stage == "upload");
         if (now >= deadline)
         {
-            var hours = options.MaxJobDuration.TotalHours.ToString("0.#", CultureInfo.InvariantCulture);
-            await ReleaseAsync(db, job, ReleaseKind.Failure, $"the training took longer than {hours} h", ct);
-            return RunnerJobOutcome.Gone;
+            var released = await ReleaseAsync(db, job, ReleaseKind.Failure, TooLongReason(), ct);
+            return released && job.Status != GpuJobStatus.Queued ? RunnerJobOutcome.Over : RunnerJobOutcome.Gone;
         }
 
         var lease = now + options.Lease < deadline ? now + options.Lease : deadline;
@@ -93,14 +101,16 @@ public sealed partial class GpuJobQueue
                     .SetProperty(j => j.LeaseExpiresAt, lease)
                     .SetProperty(j => j.Progress, progress)
                     .SetProperty(j => j.Stage, stage)
+                    .SetProperty(j => j.HeartbeatAt, now)
                     .SetProperty(j => j.Error, (string?)null),
                 ct);
         return updated == 0 ? RunnerJobOutcome.Gone : RunnerJobOutcome.Ok;
     }
 
     /// <summary>
-    /// The runner gave up. A shutdown requeues the job (for free a few times); a retryable failure requeues it while
-    /// training attempts are left; anything else (or no attempts left) fails the job.
+    /// The runner gave up. A shutdown requeues the job (for free while its checkpoint advances, else a few times); a
+    /// retryable failure requeues it while training attempts are left (for another runner first); anything else (or no
+    /// attempts left) fails the job.
     /// </summary>
     public async Task<RunnerJobOutcome> FailAsync(GpuRunner runner, Guid jobId, RunnerFailure failure, CancellationToken ct)
     {
@@ -113,11 +123,12 @@ public sealed partial class GpuJobQueue
 
         if (job.Status is not (GpuJobStatus.Claimed or GpuJobStatus.Running))
         {
-            return RunnerJobOutcome.Gone;
+            return RunnerJobOutcome.Over;
         }
 
         var reason = Clip(failure.Reason, 1000) ?? "the runner reported a failure";
-        var kind = failure.Shutdown ? ReleaseKind.Shutdown : failure.Retryable ? ReleaseKind.Failure : ReleaseKind.Fatal;
+        var kind = failure.Shutdown ? ShutdownKind(job, failure.CheckpointStep)
+            : failure.Retryable ? ReleaseKind.Failure : ReleaseKind.Fatal;
         logger.LogWarning(
             "Runner {RunnerId} ({Name}) gave GPU job {JobId} back ({Kind}; failures {Failures}, shutdowns {Shutdowns}): {Reason}",
             runner.Id, runner.Name, job.Id, kind, job.FailureCount, job.ShutdownCount, reason);
@@ -132,83 +143,21 @@ public sealed partial class GpuJobQueue
     }
 
     /// <summary>
-    /// Back to the queue (within the budget <paramref name="kind"/> costs) or failed for good. Conditional on the job
-    /// still being in the state and hands <paramref name="job"/> was read in; false when something else moved it first.
+    /// Until when a claim made at <paramref name="claimedAt"/> may run: <see cref="GpuRunnerOptions.MaxJobDuration"/>, plus
+    /// <see cref="GpuRunnerOptions.MaxUploadDuration"/> once the trained view is <paramref name="uploading"/>.
     /// </summary>
-    internal async Task<bool> ReleaseAsync(BlocwerkDbContext db, GpuJob job, ReleaseKind kind, string reason, CancellationToken ct)
-    {
-        var (from, holder) = (job.Status, job.ClaimedByRunnerId);
-        var retry = ApplyBudget(job, kind);
-        var error = Clip(reason, 2048);
-        DateTimeOffset? completed = retry ? null : Now;
-        var status = retry ? GpuJobStatus.Queued : GpuJobStatus.Failed;
-        var progress = retry ? 0 : job.Progress;
-        var stage = retry ? "waiting for a 3D runner (retrying)" : job.Stage;
-        var changed = await db.GpuJobs.Where(j => j.Id == job.Id && j.Status == from && j.ClaimedByRunnerId == holder)
-            .ExecuteUpdateAsync(
-                s => s.SetProperty(j => j.Status, status)
-                    .SetProperty(j => j.ClaimedByRunnerId, (Guid?)null)
-                    .SetProperty(j => j.LeaseExpiresAt, (DateTimeOffset?)null)
-                    .SetProperty(j => j.Error, error)
-                    .SetProperty(j => j.FailureCount, job.FailureCount)
-                    .SetProperty(j => j.LostLeaseCount, job.LostLeaseCount)
-                    .SetProperty(j => j.ShutdownCount, job.ShutdownCount)
-                    .SetProperty(j => j.Progress, progress)
-                    .SetProperty(j => j.Stage, stage)
-                    .SetProperty(j => j.CompletedAt, completed)
-                    .SetProperty(j => j.PreviewPath, j => retry ? j.PreviewPath : null),
-                ct);
-        if (changed == 0)
-        {
-            return false;
-        }
+    private DateTimeOffset Deadline(DateTimeOffset claimedAt, bool uploading) =>
+        claimedAt + options.MaxJobDuration + (uploading ? options.MaxUploadDuration : TimeSpan.Zero);
 
-        if (retry)
-        {
-            signal.Pulse();
-            return true;
-        }
-
-        // A preview still pending went with the failure (same update); an installed one stays as the job's leftover.
-        await MarkCaptureWithoutSplatAsync(db, job, reason, ct);
-        DeleteSpent(await db.GpuJobs.AsNoTracking().FirstAsync(j => j.Id == job.Id, ct), job.PreviewPath);
-        return true;
-    }
-
-    /// <summary>Counts what <paramref name="kind"/> costs on <paramref name="job"/>; whether the job gets another try.</summary>
-    private bool ApplyBudget(GpuJob job, ReleaseKind kind)
-    {
-        if (kind == ReleaseKind.Shutdown && ++job.ShutdownCount > options.MaxFreeShutdowns)
-        {
-            kind = ReleaseKind.Failure;
-        }
-
-        return kind switch
-        {
-            ReleaseKind.Free or ReleaseKind.Shutdown => true,
-            ReleaseKind.Failure => ++job.FailureCount < options.MaxAttempts,
-            ReleaseKind.LostLease => ++job.LostLeaseCount < options.MaxLostLeases,
-            _ => false,
-        };
-    }
-
-    /// <summary>
-    /// A runner that said it is shutting down is offline now, not for another <see cref="GpuRunnerOptions.OnlineWindow"/>
-    /// ("1 online, busy" on the job it just handed back). Its next call marks it online again.
-    /// </summary>
-    private async Task MarkStoppedAsync(BlocwerkDbContext db, Guid runnerId, CancellationToken ct)
-    {
-        var offline = Now - options.OnlineWindow - TimeSpan.FromSeconds(1);
-        await db.GpuRunners.Where(r => r.Id == runnerId && r.LastSeenAt > offline)
-            .ExecuteUpdateAsync(s => s.SetProperty(r => r.LastSeenAt, offline), ct);
-    }
+    private string TooLongReason() =>
+        $"the training took longer than {options.MaxJobDuration.TotalHours.ToString("0.#", CultureInfo.InvariantCulture)} h";
 
     private static string Describe(RunnerProgress report)
     {
         var stage = report.Stage switch
         {
             "download" => "is downloading the photos",
-            "upload" => "is uploading the trained view",
+            "upload" => UploadingStage,
             _ => "is training",
         };
         if (report is { Step: { } step, TotalSteps: > 0 })

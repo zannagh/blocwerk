@@ -13,8 +13,9 @@ namespace Blocwerk.Core.Runners;
 /// Claiming: which queued job a runner gets. A runner may take a job up to its quality (draft &lt; high &lt; max &lt;
 /// ultra) when it serves the job's wall as the wall's OWN runner (see <see cref="GpuJobQueue.Assignments"/>), or when
 /// a site admin shared it, the wall's admin approved THIS runner (<see cref="GpuJobQueue.Approvals"/>) and no own
-/// runner of the wall that could train it is online. Own jobs come first, then shared ones; oldest first within each.
-/// A runner holds at most one claim at a time.
+/// runner of the wall that could train it is online. Own jobs come first, then shared ones; oldest first within each
+/// (<see cref="GpuJobQueue.PickAsync"/>). A runner holds at most one claim at a time; after a restart it gets that one
+/// back (<see cref="GpuJobQueue.ReattachAsync"/>).
 /// </summary>
 public sealed partial class GpuJobQueue
 {
@@ -35,18 +36,18 @@ public sealed partial class GpuJobQueue
         return CaptureSplatDocuments.ParseQuality(requested) is { } asked && asked < cap ? asked : cap;
     }
 
-    /// <summary>Long-poll: a claimed job, or null after <paramref name="wait"/>.</summary>
-    public async Task<RunnerClaim?> ClaimAsync(GpuRunner runner, TimeSpan wait, string? maxQuality, CancellationToken ct)
+    /// <summary>Long-poll: a claimed (or re-attached) job, or null after <paramref name="wait"/>.</summary>
+    public async Task<RunnerClaim?> ClaimAsync(GpuRunner runner, TimeSpan wait, RunnerClaimRequest? request, CancellationToken ct)
     {
         var deadline = Now + wait;
         while (true)
         {
-            var job = await TryClaimAsync(runner, maxQuality, ct);
+            var (job, reattached) = await TryClaimOrReattachAsync(runner, request, ct);
             if (job is not null)
             {
                 return new RunnerClaim(
                     job.Id, CaptureSplatDocuments.QualityName(job.Quality),
-                    (int)options.Lease.TotalSeconds, job.BundleBytes, job.BundleSha256, options.Previews);
+                    (int)options.Lease.TotalSeconds, job.BundleBytes, job.BundleSha256, options.Previews, reattached);
             }
 
             var left = deadline - Now;
@@ -60,28 +61,15 @@ public sealed partial class GpuJobQueue
     }
 
     /// <summary>One claim attempt. Public for tests.</summary>
-    public async Task<GpuJob?> TryClaimAsync(GpuRunner runner, string? maxQuality, CancellationToken ct)
-    {
-        await claimLock.WaitAsync(ct);
-        try
-        {
-            await using var db = dbContextFactory.CreateDbContext();
+    public Task<GpuJob?> TryClaimAsync(GpuRunner runner, string? maxQuality, CancellationToken ct) =>
+        TryClaimRequestAsync(runner, new RunnerClaimRequest(maxQuality), ct);
 
-            // Re-read: a long-poll outlives a revoke, a new hello, a change of the shared flag or a banned owner.
-            var current = await ActiveRunners(db).AsNoTracking().FirstOrDefaultAsync(r => r.Id == runner.Id, ct);
-            if (current is null || await HoldsClaimAsync(db, runner.Id, ct))
-            {
-                return null;
-            }
-
-            var pick = await PickAsync(db, current, QualityCap(current.MaxQuality, maxQuality), ct);
-            return pick is null ? null : await ClaimPickAsync(db, runner, pick, ct);
-        }
-        finally
-        {
-            claimLock.Release();
-        }
-    }
+    /// <summary>
+    /// One claim attempt: a queued job, or the job this runner already holds when it has been silent long enough to have
+    /// restarted (<see cref="ReattachAsync"/>). Public for tests.
+    /// </summary>
+    public async Task<GpuJob?> TryClaimRequestAsync(GpuRunner runner, RunnerClaimRequest? request, CancellationToken ct) =>
+        (await TryClaimOrReattachAsync(runner, request, ct)).Job;
 
     /// <summary>
     /// Whether the <see cref="GpuRunnerMode.Auto"/> mode sends this wall's photo-real view to a runner: one that may
@@ -121,6 +109,7 @@ public sealed partial class GpuJobQueue
                 s => s.SetProperty(j => j.Status, GpuJobStatus.Claimed)
                     .SetProperty(j => j.ClaimedByRunnerId, runner.Id)
                     .SetProperty(j => j.ClaimedAt, now)
+                    .SetProperty(j => j.HeartbeatAt, now)
                     .SetProperty(j => j.LeaseExpiresAt, lease)
                     .SetProperty(j => j.Progress, 0)
                     .SetProperty(j => j.Stage, "is downloading the photos")
@@ -140,32 +129,33 @@ public sealed partial class GpuJobQueue
         return await db.GpuJobs.AsNoTracking().FirstAsync(j => j.Id == pick.Id, ct);
     }
 
-    private async Task<GpuJob?> PickAsync(BlocwerkDbContext db, GpuRunner runner, SplatQuality cap, CancellationToken ct)
+    private async Task<(GpuJob? Job, bool Reattached)> TryClaimOrReattachAsync(GpuRunner runner, RunnerClaimRequest? request, CancellationToken ct)
     {
-        var served = await Assignments(db).Where(rw => rw.RunnerId == runner.Id).Select(rw => rw.WallId).ToListAsync(ct);
-        var queued = db.GpuJobs.AsNoTracking().Where(j => j.Status == GpuJobStatus.Queued && j.Quality <= cap);
-        var own = await queued.Where(j => served.Contains(j.WallId)).OrderBy(j => j.CreatedAt).FirstOrDefaultAsync(ct);
-        if (own is not null || !runner.SharedWithOtherWalls)
+        await claimLock.WaitAsync(ct);
+        try
         {
-            return own;
-        }
+            await using var db = dbContextFactory.CreateDbContext();
 
-        // Only walls whose admin approved THIS runner are candidates at all.
-        var approved = await Approvals(db).Where(a => a.RunnerId == runner.Id).Select(a => a.WallId).ToListAsync(ct);
-        var candidates = await queued.Where(j => !served.Contains(j.WallId) && approved.Contains(j.WallId))
-            .OrderBy(j => j.CreatedAt).Take(CandidateWindow).ToListAsync(ct);
-        if (candidates.Count == 0)
+            // Re-read: a long-poll outlives a revoke, a new hello, a change of the shared flag or a banned owner.
+            var current = await ActiveRunners(db).AsNoTracking().FirstOrDefaultAsync(r => r.Id == runner.Id, ct);
+            if (current is null)
+            {
+                return (null, false);
+            }
+
+            if (await HoldsClaimAsync(db, runner.Id, ct))
+            {
+                var held = await ReattachAsync(db, current, ct);
+                return (held, held is not null);
+            }
+
+            var cap = QualityCap(current.MaxQuality, request?.MaxQuality);
+            var pick = await PickAsync(db, current, cap, request?.MaxBundleBytes is > 0 ? request.MaxBundleBytes : null, ct);
+            return (pick is null ? null : await ClaimPickAsync(db, runner, pick, ct), false);
+        }
+        finally
         {
-            return null;
+            claimLock.Release();
         }
-
-        var walls = candidates.Select(j => j.WallId).Distinct().ToList();
-        var online = Now - options.OnlineWindow;
-        var ownOnline = await Assignments(db)
-            .Where(rw => walls.Contains(rw.WallId) && rw.RunnerId != runner.Id && rw.Runner.LastSeenAt >= online)
-            .Select(rw => new { rw.WallId, rw.Runner.MaxQuality }).ToListAsync(ct);
-        return candidates.FirstOrDefault(j => Rank(
-            false, true, true,
-            ownOnline.Any(o => o.WallId == j.WallId && QualityCap(o.MaxQuality, null) >= j.Quality)) is not null);
     }
 }

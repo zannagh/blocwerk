@@ -16,11 +16,12 @@ public sealed partial class GpuJobQueue
     {
         await using var db = dbContextFactory.CreateDbContext();
         var jobs = await CancelActiveAsync(db, captureId, reason, Now, ct);
+        var spent = jobs.Select(KeepOnlyInstalledPreview).ToList();
         await db.SaveChangesAsync(ct);
-        foreach (var job in jobs)
+        foreach (var (job, paths) in jobs.Zip(spent))
         {
             logger.LogInformation("GPU job {JobId} of capture {CaptureId} cancelled: {Reason}", job.Id, captureId, reason);
-            DeleteFiles(job);
+            DeleteAll(paths, job.Id);
         }
 
         return jobs.Count > 0;
@@ -64,10 +65,11 @@ public sealed partial class GpuJobQueue
         }
 
         MarkCancelled(jobs, reason, Now);
+        var spent = jobs.Select(KeepOnlyInstalledPreview).ToList();
         await db.SaveChangesAsync(ct);
-        foreach (var job in jobs)
+        foreach (var (job, paths) in jobs.Zip(spent))
         {
-            DeleteFiles(job);
+            DeleteAll(paths, job.Id);
         }
 
         foreach (var job in jobs)
@@ -90,6 +92,24 @@ public sealed partial class GpuJobQueue
         {
             await ReleaseAsync(db, job, ReleaseKind.Free, "the 3D runner was revoked", ct);
         }
+    }
+
+    /// <summary>
+    /// A cancelled job keeps only its installed preview (with the prepared state): it may still be the capture's view, and
+    /// is what a re-finish without training starts from. Everything else is unset (not saved) and returned for deleting
+    /// after the save. A retrain or photo retention drops the preview too (they delete <see cref="FilesOf"/>).
+    /// </summary>
+    internal static List<string> KeepOnlyInstalledPreview(GpuJob job)
+    {
+        var all = FilesOf(job).ToList();
+        if (job.InstalledPreviewPath is null)
+        {
+            return all;
+        }
+
+        job.ResultPath = null;
+        job.PreviewPath = null;
+        return all.Except(Leftover(job)).ToList();
     }
 
     private static void MarkCancelled(IEnumerable<GpuJob> jobs, string reason, DateTimeOffset now)

@@ -14,7 +14,8 @@ namespace Blocwerk.Web.Endpoints;
 /// <c>bwr_</c> key, says hello, long-polls for work, downloads its claimed job's bundle, reports
 /// progress (the lease heartbeat), uploads previews while it trains and then the trained splat. Nothing here authenticates a user:
 /// the key names a runner, never a person, and every job-scoped call re-checks that the job is the
-/// runner's own claim (a 404 otherwise, a 410 once it was taken away or the runner may no longer train its wall).
+/// runner's own claim (a 404 otherwise, a 410 once it was taken away or the runner may no longer train its wall; its
+/// <c>reason</c> says whether the job is over for good or went back to the queue).
 /// Not mapped at all with <c>RUNNERS__MODE=off</c>.
 /// </summary>
 public static partial class RunnerApiEndpoints
@@ -27,6 +28,15 @@ public static partial class RunnerApiEndpoints
 
     /// <summary>Calls one address may make in a burst (several runners may share a home NAT).</summary>
     public const int AddressBurst = 120;
+
+    /// <summary>
+    /// The <c>reason</c> of a 410: the job is over for good (the runner drops its checkpoints), or it went back to the
+    /// queue (the runner keeps them, it may claim the job again).
+    /// </summary>
+    public const string GoneOver = "over";
+
+    /// <inheritdoc cref="GoneOver"/>
+    public const string GoneRequeued = "requeued";
 
     private const string BearerPrefix = "Bearer ";
 
@@ -111,10 +121,14 @@ public static partial class RunnerApiEndpoints
         return Results.Problem(detail, statusCode: StatusCodes.Status429TooManyRequests);
     }
 
+    private static IResult Gone(string detail, string reason) => Results.Problem(
+        detail, statusCode: StatusCodes.Status410Gone, extensions: new Dictionary<string, object?> { ["reason"] = reason });
+
     private static IResult Outcome(HttpContext http, RunnerJobOutcome outcome) => outcome switch
     {
         RunnerJobOutcome.Ok => Results.Ok(new { ok = true }),
-        RunnerJobOutcome.Gone => Results.Problem("This job is no longer yours (cancelled or requeued).", statusCode: StatusCodes.Status410Gone),
+        RunnerJobOutcome.Gone => Gone("This job is no longer yours (it went back to the queue).", GoneRequeued),
+        RunnerJobOutcome.Over => Gone("This job is over (cancelled, failed or finished); drop what you kept for it.", GoneOver),
         RunnerJobOutcome.TooLarge => Results.Problem("The trained splat is too large.", statusCode: StatusCodes.Status413PayloadTooLarge),
         RunnerJobOutcome.Invalid => Results.Problem("The upload is not a valid .ply or .spz splat.", statusCode: StatusCodes.Status422UnprocessableEntity),
         RunnerJobOutcome.UnsupportedEncoding => Results.Problem(
