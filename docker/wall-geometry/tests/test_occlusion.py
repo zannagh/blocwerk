@@ -35,8 +35,8 @@ def _scores(others, markers=()):
     p = {**tx.DEFAULTS, "mmPerPx": 20.0, "extraMarginMm": 0.0, "imageMarginPx": 0}
     g = tx._grid(WALL, p)
     names = sorted(CAMS)
-    X, S = tx._cell_scores(WALL, g, CAMS, names, p, occlusion.occluders(facets, list(markers)))
-    return X, dict(zip(names, S))
+    X, views = tx._cell_views(WALL, g, CAMS, names, p, occlusion.occluders(facets, list(markers)))
+    return X, dict(zip(names, views.full("S", len(names))))
 
 
 def _at(X, S, x, z):

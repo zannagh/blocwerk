@@ -3,6 +3,9 @@
 One pass over the photos: each is loaded once, sampled at low resolution on every facet's label cells
 (for the exposure gains) and rendered at full resolution into the facet's sample slots wherever it is
 among the top-N views. Then the gains are fitted and every facet is combined in row tiles.
+
+Per-photo, per-cell data (scores, weights, low-res colours) lives in each facet's sparse views
+(views.py): only where a photo sees the facet, so memory follows the wall's coverage, not photos x cells.
 """
 import numpy as np
 
@@ -12,16 +15,16 @@ from . import textures as tx
 GAIN_DOWNSCALE = 8
 
 
-def _prepare(facets, cams, names, p, occs):
-    jobs = []
-    for f in facets:
-        g = tx._grid(f, p)
-        X, S = tx._cell_scores(f, g, cams, names, p, occs)
-        W = blend.view_weights(S, int(p["blendViews"]), float(p["blendSharpness"]))
-        acc = blend.FacetAccumulator(g, W, p["labelCellPx"], int(p["blendViews"]))
-        cells = np.full((len(names),) + S.shape[1:] + (3,), np.nan, np.float32)
-        jobs.append({"f": f, "g": g, "X": X, "S": S, "acc": acc, "cells": cells})
-    return jobs
+def _prepare(jobs, p):
+    """Per facet: the top-N blend weights (views field "W") and the sample slots."""
+    n, sharp = int(p["blendViews"]), float(p["blendSharpness"])
+    for j in jobs:
+        fv = j["views"]
+        for r0, r1, _, _ in fv.tiles():
+            idx, S = fv.dense("S", r0, r1, 0.0)
+            if S is not None:
+                fv.put("W", idx, blend.view_weights(S, n, sharp), r0)
+        j["acc"] = blend.FacetAccumulator(j["g"], fv, p["labelCellPx"], n)
 
 
 def _render_slots(img, cam, c, job, p):
@@ -43,22 +46,36 @@ def _render_slots(img, cam, c, job, p):
 
 
 def _sample_gain_cells(img, cam, c, jobs):
+    """Photo c's low-res colours on the cells it sees (views field "cells", NaN where it does not)."""
     small = blend.shrink(img, GAIN_DOWNSCALE)
     for j in jobs:
-        seen = j["S"][c] > 0
-        if seen.any():
-            col = blend.sample_cells(small, GAIN_DOWNSCALE, cam, j["X"], tx.project)
-            col[~seen] = np.nan
-            j["cells"][c] = col
+        v = j["views"].by_photo.get(c)
+        if v is None:
+            continue
+        col = blend.sample_cells(small, GAIN_DOWNSCALE, cam, j["X"][v.y0:v.y1, v.x0:v.x1], tx.project)
+        col[~(v.fields["S"] > 0)] = np.nan
+        v.fields["cells"] = col
 
 
-def render(doc, load_photo, cams, names, facets, p, progress, occs):
-    jobs = _prepare(facets, cams, names, p, occs)
+def _fit_gains(jobs, C, p):
+    blocks = [[(v.c, v.y0, v.x0, exposure.log_samples(v.fields["cells"])) for v in j["views"].views]
+              for j in jobs]
+    return exposure.fit_gains_blocks(blocks, C, int(p["gainMinOverlapCells"]), float(p["gainPriorLuma"]),
+                                     float(p["gainPriorChroma"]), int(p["gainMaxPairCells"]))
+
+
+def _wanted(c, jobs, balance):
+    """Photo c is needed: it has blend weight somewhere, or (balance) it sees a facet at all."""
+    return any(j["acc"].weights(c) is not None or (balance and c in j["views"].by_photo) for j in jobs)
+
+
+def render(doc, load_photo, cams, names, jobs, p, progress):
+    _prepare(jobs, p)
     balance = bool(p["exposureBalance"])
     for c, n in enumerate(names):
         if progress:
             progress(0.9 * c / len(names), f"rendering from {n}")
-        if not any((j["acc"].W[c] > 0).any() or (balance and (j["S"][c] > 0).any()) for j in jobs):
+        if not _wanted(c, jobs, balance):
             continue
         cam = cams[n]
         img = tx._checked_photo(load_photo, n, cam)
@@ -69,21 +86,29 @@ def render(doc, load_photo, cams, names, facets, p, progress, occs):
         del img
     gains, ref, npairs = np.ones((len(names), 3)), None, 0
     if balance:
-        gains, ref, npairs = exposure.fit_gains([j["cells"] for j in jobs], int(p["gainMinOverlapCells"]),
-                                                float(p["gainPriorLuma"]), float(p["gainPriorChroma"]))
+        gains, ref, npairs = _fit_gains(jobs, len(names), p)
     if progress:
         progress(0.92, "blending")
     report = _gain_report(gains, ref, npairs, names)
-    return [_result(doc, j, gains, names, p, _label(j, gains, names, p)) | {"exposure": report} for j in jobs]
+    results = []
+    for j in jobs:
+        results.append(_result(doc, j, gains, names, p, _label(j, gains, p)) | {"exposure": report})
+        del j["views"], j["acc"]  # this facet is done: free its views and sample slots
+    return results
 
 
-def _label(j, gains, names, p):
+def _label(j, gains, p):
     """(Consensus-penalised single-photo choice per label cell, the same upsampled to full resolution),
     or (the best-weighted photo per cell, None) in blend mode."""
+    fv = j["views"]
     if p["blendMode"] != "select":
-        return sourcemap.best_cells(j["acc"].W), None
-    S = consensus.penalised_scores(j["S"], j["cells"], gains, p) if p["exposureBalance"] else j["S"]
-    cells = tx._cell_labels(S, names, {**p, "modeFilterCells": p["selectModeFilterCells"]})
+        return fv.per_cell("W", sourcemap.best_cells), None
+    key = "S"
+    if p["exposureBalance"]:
+        consensus.penalise(fv, gains, p)
+        fv.drop("cells")
+        key = "P"
+    cells = fv.labels(key, int(p["selectModeFilterCells"]))
     return cells, tx._upsample(cells, j["g"], p["labelCellPx"])
 
 

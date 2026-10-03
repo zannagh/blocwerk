@@ -17,7 +17,8 @@ more than `outlierDeltaE` from it are dropped before the weighted mean. Two cand
 leave the better-weighted one.
 
 Memory: K = blendViews + 2 sample slots per pixel (uint8 colour, float16 weight, int16 photo index);
-the robust combine runs in row tiles. Photos are loaded once.
+the robust combine runs in row tiles. Photos are loaded once. The per-cell weights live in the facet's
+sparse views (views.py); textures.blend_bytes budgets both.
 """
 import math
 
@@ -47,10 +48,11 @@ def view_weights(S, n, sharp):
 
 
 class FacetAccumulator:
-    """Sample slots of one facet grid, filled photo by photo."""
+    """Sample slots of one facet grid, filled photo by photo. The per-cell blend weights come from the
+    facet's views.FacetViews (field "W")."""
 
-    def __init__(self, g, W_cells, cell, n):
-        self.g, self.W, self.cell = g, W_cells, cell
+    def __init__(self, g, views, cell, n):
+        self.g, self.views, self.cell = g, views, cell
         self.K = n + 2
         H, Wd = g["H"], g["W"]
         self.rgb = np.zeros((self.K, H, Wd, 3), np.uint8)
@@ -58,18 +60,26 @@ class FacetAccumulator:
         self.cam = np.full((self.K, H, Wd), -1, np.int16)
         self.count = np.zeros((H, Wd), np.uint8)
 
+    def weights(self, c):
+        """Photo c's view (views.View) when it has any blend weight on this facet, else None."""
+        v = self.views.by_photo.get(c)
+        return v if v is not None and (v.fields["W"] > 0).any() else None
+
     def region(self, c):
         """Full-res weight crop (y0, x0, weights) for photo index c, or None."""
-        Wc = self.W[c]
-        ys, xs = np.nonzero(Wc > 0)
-        if ys.size == 0:
+        v = self.weights(c)
+        if v is None:
             return None
+        # the view's crop reaches PAD_CELLS past every cell the photo sees, so the one-cell frame read
+        # here is the same as on the whole grid
+        Wc = v.fields["W"]
+        ys, xs = np.nonzero(Wc > 0)
         cy0, cy1 = max(ys.min() - 1, 0), min(ys.max() + 2, Wc.shape[0])
         cx0, cx1 = max(xs.min() - 1, 0), min(xs.max() + 2, Wc.shape[1])
         crop = Wc[cy0:cy1, cx0:cx1]
         cell = self.cell
         up = cv2.resize(crop, ((cx1 - cx0) * cell, (cy1 - cy0) * cell), interpolation=cv2.INTER_LINEAR)
-        y0, x0 = cy0 * cell, cx0 * cell
+        y0, x0 = (v.y0 + cy0) * cell, (v.x0 + cx0) * cell
         up = up[:max(0, self.g["H"] - y0), :max(0, self.g["W"] - x0)]
         return y0, x0, up
 

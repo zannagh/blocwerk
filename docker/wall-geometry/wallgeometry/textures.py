@@ -27,7 +27,7 @@ import math
 import cv2
 import numpy as np
 
-from . import blend, consensus, exposure, flatten, occlusion, scale, seams, sourcemap
+from . import blend, consensus, exposure, flatten, occlusion, scale, seams, sourcemap, views
 from .camera import max_valid_radius2
 from .markercheck import marker_check
 
@@ -142,43 +142,30 @@ def occluders(facets, doc):
     return occlusion.occluders(facets, doc.get("markers", []))
 
 
-def _cell_scores(f, g, cams, names, p, occs):
-    """Per label cell: world points X (ch, cw, 3) and every photo's score S (C, ch, cw); a photo scores
-    0 where another facet's region (`occs`, the other facets' occlusion.Occluder) blocks its view."""
+def _cell_views(f, g, cams, names, p, occs):
+    """Per label cell: world points X (ch, cw, 3) and every photo's score, kept sparse per photo
+    (views.FacetViews, field "S"); a photo scores 0 where another facet's region (`occs`, the other
+    facets' occlusion.Occluder) blocks its view."""
     X = blend.cell_points(f, g, p["labelCellPx"], _plane_points)
-    S = np.stack([_score(cams[n], f, X, p["imageMarginPx"]) for n in names])  # (C, ch, cw)
     others = [o for o in occs if o.id != f["id"]]
     flat = X.reshape(-1, 3)
+    fv = views.FacetViews(X.shape[:2])
     for k, n in enumerate(names):
-        sk = S[k].reshape(-1)
+        s = _score(cams[n], f, X, p["imageMarginPx"])  # (ch, cw): one photo at a time
+        sk = s.reshape(-1)
         seen = np.nonzero(sk > 0)[0]
         if seen.size and others:
             centre = -cams[n]["R"].T @ cams[n]["t"]
             sk[seen[occlusion.hidden(centre, others, flat[seen], p["behindOtherFacetMm"])]] = 0
-    return X, S
+        fv.add(k, s)
+    return X, fv
 
 
 def _upsample(lab, g, cell):
-    """Per-cell photo choice (_cell_labels) -> the full texture grid."""
+    """Per-cell photo choice (views.cell_labels) -> the full texture grid."""
     ch, cw = lab.shape
     full = cv2.resize(lab.astype(np.int16), (cw * cell, ch * cell), interpolation=cv2.INTER_NEAREST)
     return full[:g["H"], :g["W"]]
-
-
-def _cell_labels(S, names, p):
-    """Per label cell: the chosen photo index (-1 = none), mode-filtered."""
-    valid = S > 0
-    lab = np.where(valid.any(0), S.argmax(0), -1)
-    k = int(p["modeFilterCells"])
-    if k > 1 and len(names) > 1:
-        votes = np.stack([cv2.boxFilter((lab == c).astype(np.float32), -1, (k, k), normalize=False,
-                                        borderType=cv2.BORDER_REPLICATE) for c in range(len(names))])
-        # tie-break by quality so the filter never picks a poor photo over an equally common one
-        smax = S.max(0, keepdims=True)
-        votes = votes + 0.01 * S / np.where(smax > 0, smax, 1)
-        votes[~valid] = -1
-        lab = np.where(valid.any(0), votes.argmax(0), -1)
-    return lab
 
 
 def _render_part(img, cam, f, g, mask, out, filled):
@@ -210,12 +197,12 @@ def render_textures(doc, load_photo, available, params=None, progress=None):
         raise TextureError("none of the uploaded photos matches a camera of the geometry document")
     names = sorted(cams)
     facets = list(_facets(doc))
-    slot_bytes = (int(p["blendViews"]) + 2) * 7 * sum(_grid(f, p)["W"] * _grid(f, p)["H"] for f in facets)
-    if int(p["blendViews"]) > 1 and slot_bytes <= p["blendMaxBytes"]:
+    jobs = _score_facets(facets, cams, names, p, occluders(facets, doc))
+    if int(p["blendViews"]) > 1 and blend_bytes(jobs, p) <= p["blendMaxBytes"]:
         from . import blended  # imports this module
-        results = blended.render(doc, load_photo, cams, names, facets, p, progress, occluders(facets, doc))
+        results = blended.render(doc, load_photo, cams, names, jobs, p, progress)
     else:
-        results = _render_single(doc, load_photo, cams, names, facets, p, progress, occluders(facets, doc))
+        results = _render_single(doc, load_photo, cams, names, jobs, p, progress)
     fid = {f["id"]: f for f in facets}
     if p["flattenShading"]:
         shading = flatten.flatten(results, fid, p)
@@ -237,15 +224,28 @@ def _checked_photo(load_photo, n, cam):
     return img
 
 
-def _render_single(doc, load_photo, cams, names, facets, p, progress, occs):
+def _score_facets(facets, cams, names, p, occs):
     jobs = []
     for f in facets:
         g = _grid(f, p)
-        _, S = _cell_scores(f, g, cams, names, p, occs)
-        cells = _cell_labels(S, names, p)
-        lab = _upsample(cells, g, p["labelCellPx"])
-        jobs.append({"f": f, "g": g, "lab": lab, "cells": cells, "out": np.zeros((g["H"], g["W"], 3), np.uint8),
-                     "filled": np.zeros((g["H"], g["W"]), bool)})
+        X, fv = _cell_views(f, g, cams, names, p, occs)
+        jobs.append({"f": f, "g": g, "X": X, "views": fv})
+    return jobs
+
+
+def blend_bytes(jobs, p):
+    """Peak memory of the multi-view blend: the sample slots ((blendViews + 2) x 7 bytes per output pixel)
+    plus every photo's view crops (views.BYTES_PER_CELL per photo and label cell it sees)."""
+    pixels = sum(j["g"]["W"] * j["g"]["H"] for j in jobs)
+    return (int(p["blendViews"]) + 2) * 7 * pixels + views.BYTES_PER_CELL * sum(j["views"].cells() for j in jobs)
+
+
+def _render_single(doc, load_photo, cams, names, jobs, p, progress):
+    for j in jobs:
+        g = j["g"]
+        j["cells"] = j.pop("views").labels("S", int(p["modeFilterCells"]))
+        j.update(lab=_upsample(j["cells"], g, p["labelCellPx"]), out=np.zeros((g["H"], g["W"], 3), np.uint8),
+                 filled=np.zeros((g["H"], g["W"]), bool))
     for k, n in enumerate(names):
         if progress:
             progress(k / len(names), f"rendering from {n}")

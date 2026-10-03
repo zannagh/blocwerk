@@ -58,3 +58,15 @@ def penalised_scores(S, cells, gains, p):
     d = deviation(cells_lab(cells, gains), int(p["consensusBlurCells"]),
                   float(p["consensusReliefDeltaE"]))
     return S / (1.0 + (d / float(p["consensusDeltaE"])) ** 2) ** 2
+
+
+def penalise(fv, gains, p):
+    """penalised_scores on a facet's sparse views (views.FacetViews: fields "S" and "cells"), in row
+    tiles with the blur's halo -> field "P"."""
+    for r0, r1, a0, a1 in fv.tiles(halo=int(p["consensusBlurCells"]) // 2, channels=3):
+        idx, S = fv.dense("S", a0, a1, 0.0)
+        if S is None:
+            continue
+        cells = fv.dense("cells", a0, a1, np.nan)[1]
+        P = penalised_scores(S, cells, np.asarray(gains)[idx], p)
+        fv.put("P", idx, P[:, r0 - a0:r1 - a0], r0)
