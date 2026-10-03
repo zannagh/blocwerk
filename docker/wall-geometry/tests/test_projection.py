@@ -50,6 +50,11 @@ def test_skew_shears_x_by_the_distorted_y_like_solved_camera():
     assert np.abs(px[:, 1] - (K[1, 1] * yd + K[1, 2])).max() < 1e-6
 
 
+def test_short_dist_reads_missing_terms_as_zero_like_solved_camera():
+    cam = _cam([0.05, -0.07, 0.001])  # SolvedCamera.D(i): dist[i], 0 past the end
+    assert cam["p"] == (0.001, 0.0) and cam["k"] == (0.05, -0.07, 0.0)
+
+
 def test_radial_only_cameras_project_bit_identically_to_before():
     cam = _cam(DIST[:2] + [0.0, 0.0, DIST[4]])
     px, z, Xc = tx.project(cam, _points())

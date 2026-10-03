@@ -119,6 +119,12 @@ def _lab(rgb_u8, blur):
 def robust_combine(rgb, wt, delta_e, blur, smooth=0):
     """rgb (K, h, w, 3) uint8, wt (K, h, w) float -> (image (h, w, 3) float32, survivors (K, h, w) bool).
     Weighted-medoid outlier rejection in Lab, then the weighted mean of the survivors."""
+    out, keep, _ = robust_weights(rgb, wt, delta_e, blur, smooth)
+    return out, keep
+
+
+def robust_weights(rgb, wt, delta_e, blur, smooth=0):
+    """robust_combine -> (image, survivors, the per-slot weights (K, h, w) the mean actually used)."""
     valid = wt > 0
     lab = _lab(rgb, blur)
     K = rgb.shape[0]
@@ -144,7 +150,7 @@ def robust_combine(rgb, wt, delta_e, blur, smooth=0):
     w = np.where(keep, wv * keepf, 0)
     tot = w.sum(0)
     out = (rgb.astype(np.float32) * w[..., None]).sum(0) / np.where(tot > 0, tot, 1)[..., None]
-    return out, keep
+    return out, keep, w
 
 
 def select_combine(rgb, wt, cam, label, feather):
@@ -188,9 +194,8 @@ def finish(acc, gains, p, label=None):
             img, w = select_combine(rgb, wt, cam, label[sl], int(p["seamFeatherPx"]))
             keep = w > 0
         else:
-            img, keep = robust_combine(rgb, wt, p["outlierDeltaE"], p["outlierBlurPx"],
-                                       int(p["outlierSmoothPx"]))
-            w = np.where(keep, wt, 0)
+            img, keep, w = robust_weights(rgb, wt, p["outlierDeltaE"], p["outlierBlurPx"],
+                                          int(p["outlierSmoothPx"]))
         out[sl] = np.clip(img + 0.5, 0, 255).astype(np.uint8)
         drawn[sl] = _dominant(cam, w)
         kc = cam[keep]

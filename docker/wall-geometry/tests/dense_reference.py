@@ -1,9 +1,11 @@
 """The texture renderer as it was before views.py: every per-photo array dense over photos x label cells.
 
-Kept only as the reference the sparse renderer must reproduce exactly (test_texture_memory.py). The
-code is the previous textures / blended / exposure code (plus the rule that the consensus label only
-picks photos with rendered pixels); shared pieces that did not change (scoring of one photo, slot
-combine and its source map, flattening, seams) are imported.
+Kept only as the reference the sparse renderer must reproduce exactly (test_texture_memory.py). Its own
+code is the previous dense scoring, labels, accumulator and exposure fit, plus the later rule that the
+consensus label only picks photos with rendered pixels. Everything after the labels is NOT old code: it
+calls the current blended._result, blend.finish and source map (sourcemap.drawn_cells), so this module
+only proves the sparse views change nothing; regressions in that shared tail are caught by the frozen
+output in test_texture_golden.py.
 """
 import numpy as np
 

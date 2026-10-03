@@ -77,15 +77,16 @@ def _cam(c):
     K = np.array(c["K"], float).reshape(3, 3)
     d = np.array(c["dist"], float)
     k = (d[0], d[1], d[4] if len(d) > 4 else 0.0)
-    return {"K": K, "k": k, "p": (d[2], d[3]) if len(d) > 3 else (0.0, 0.0), "r2max": max_valid_radius2(k),
+    p = tuple(d[i] if len(d) > i else 0.0 for i in (2, 3))  # missing terms are 0, as SolvedCamera.D(i)
+    return {"K": K, "k": k, "p": p, "r2max": max_valid_radius2(k),
             "R": np.array(c["R"], float).reshape(3, 3), "t": np.array(c["t"], float),
             "w": int(c["width"]), "h": int(c["height"])}
 
 
 def project(cam, X):
     """World points (...,3) -> (pixels (...,2), depth (...), camera-frame points), with k1, k2, p1, p2, k3
-    and skew exactly as SolvedCamera.Project (C#). Past the radial fold (camera.max_valid_radius2) a
-    point gets a pixel far outside the image. p = 0 and skew = 0 add exact zeros (radial bits unchanged)."""
+    and skew as SolvedCamera.Project (C#; agrees to ~1 ulp). Past the radial fold (r2 > max_valid_radius2,
+    the same cut-off as C#) a point gets a pixel far outside the image. p = 0 and skew = 0 add exact zeros."""
     Xc = X @ cam["R"].T + cam["t"]
     z = Xc[..., 2]
     zs = np.where(z > 1e-6, z, 1e-6)
@@ -99,7 +100,7 @@ def project(cam, X):
     K = cam["K"]
     px = np.stack([K[0, 0] * xn * d + K[0, 0] * tx + K[0, 1] * (yn * d + ty) + K[0, 2],
                    K[1, 1] * yn * d + K[1, 1] * ty + K[1, 2]], -1)
-    px[r2 >= cam.get("r2max", np.inf)] = -1e6
+    px[r2 > cam.get("r2max", np.inf)] = -1e6
     return px, z, Xc
 
 
@@ -239,10 +240,12 @@ def _score_facets(facets, cams, names, p, occs):
 
 
 def blend_bytes(jobs, p):
-    """Peak memory of the multi-view blend: the sample slots ((blendViews + 2) x 7 bytes per output pixel)
-    plus every photo's view crops (views.BYTES_PER_CELL per photo and label cell it sees)."""
-    pixels = sum(j["g"]["W"] * j["g"]["H"] for j in jobs)
-    return (int(p["blendViews"]) + 2) * 7 * pixels + views.BYTES_PER_CELL * sum(j["views"].cells() for j in jobs)
+    """Peak memory of the multi-view blend: the sample slots ((blendViews + 2) x 7 bytes per output pixel),
+    every photo's view crops (views.BYTES_PER_CELL per photo and label cell it sees) and the int16 map of
+    who painted each pixel of one facet at a time (plus its per-cell reshape, sourcemap.drawn_cells)."""
+    pixels = [j["g"]["W"] * j["g"]["H"] for j in jobs]
+    return ((int(p["blendViews"]) + 2) * 7 * sum(pixels) + 4 * max(pixels, default=0)
+            + views.BYTES_PER_CELL * sum(j["views"].cells() for j in jobs))
 
 
 def _render_single(doc, load_photo, cams, names, jobs, p, progress):

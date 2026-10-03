@@ -52,8 +52,9 @@ def test_views_keep_only_what_each_photo_sees():
     held = sum(j["views"].cells() for j in jobs)
     assert held < 0.3 * dense
     # the blend budget counts them
-    pixels = sum(j["g"]["W"] * j["g"]["H"] for j in jobs)
-    assert tx.blend_bytes(jobs, p) == (p["blendViews"] + 2) * 7 * pixels + views.BYTES_PER_CELL * held
+    pixels = [j["g"]["W"] * j["g"]["H"] for j in jobs]
+    assert tx.blend_bytes(jobs, p) == ((p["blendViews"] + 2) * 7 * sum(pixels) + 4 * max(pixels)
+                                       + views.BYTES_PER_CELL * held)
 
 
 def _peak(fn, *args):
