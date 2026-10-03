@@ -41,6 +41,10 @@ else
             {
                 <span class="wall3d-note">@UnplacedText(view.UnplacedHoldCount)</span>
             }
+            @if (view.PanelsNewerThanModelCount > 0)
+            {
+                <span class="wall3d-note">@NewerPanelsText(view.PanelsNewerThanModelCount)</span>
+            }
         </div>
         @if (canReviewLinks)
         {

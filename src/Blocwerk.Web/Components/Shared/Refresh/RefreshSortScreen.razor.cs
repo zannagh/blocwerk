@@ -19,6 +19,9 @@ public partial class RefreshSortScreen
     [Parameter]
     public EventCallback<IReadOnlyList<PanelChoice>> OnStart { get; set; }
 
+    [Parameter]
+    public EventCallback<IReadOnlyList<PanelChoice>> OnStartPanelsOnly { get; set; }
+
     private string VideoText => View.Videos.Count == 0 ? string.Empty : $" and {View.Videos.Count} videos";
 
     private static string PanelName(PanelPick pick) => PanelPositionName.Describe(pick.Col, pick.Row);
@@ -70,6 +73,9 @@ public partial class RefreshSortScreen
     private void Choose(PanelPick pick, string? value) =>
         changes[(pick.Col, pick.Row)] = Guid.TryParse(value, out var id) ? id : null;
 
-    private Task StartAsync() =>
-        OnStart.InvokeAsync(View.Picks.Select(p => new PanelChoice(p.Col, p.Row, Chosen(p))).ToList());
+    private IReadOnlyList<PanelChoice> Choices() => View.Picks.Select(p => new PanelChoice(p.Col, p.Row, Chosen(p))).ToList();
+
+    private Task StartAsync() => OnStart.InvokeAsync(Choices());
+
+    private Task StartPanelsOnlyAsync() => OnStartPanelsOnly.InvokeAsync(Choices());
 }

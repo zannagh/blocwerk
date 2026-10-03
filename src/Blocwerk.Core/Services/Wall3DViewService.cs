@@ -92,6 +92,7 @@ public sealed partial class Wall3DViewService(
         var view = Wall3DViewBuilder.Build(wall, doc, boulderId, photoMarkers, holdLinks, triangles);
         view = await WithImageryAsync(view, shareToken, ct);
         view = await WithPhotoOutlinesAsync(wall, view, doc, json, ct);
+        view = view with { PanelsNewerThanModelCount = await NewerPanelCountAsync(wall.Id, ct) };
         return new Wall3DViewResult(Wall3DViewStatus.Ok, wall.Name, await WithVolumesAsync(wall, view, json, ct));
     }
 

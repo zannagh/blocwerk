@@ -39,7 +39,7 @@
         }
         else if (view.Status == WallRefreshStatus.ReadyToStart)
         {
-            <RefreshSortScreen View="view" OnStart="StartAsync" />
+            <RefreshSortScreen View="view" OnStart="StartAsync" OnStartPanelsOnly="StartPanelsOnlyAsync" />
         }
         else if (view.Status == WallRefreshStatus.ReadyToApply)
         {
