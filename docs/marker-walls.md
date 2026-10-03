@@ -722,7 +722,12 @@ The same sweep bounds the rest of the capture store:
   deleted. The installed view stays.
 - **Abandoned capture imports** (`captures/imports/`) are deleted after 3 days without activity.
 
-Set `CAPTURE__RETENTIONDRYRUN=true` to only log what these three rules would free; see section 10.
+**These three rules delete nothing until you turn them on.** By default (`CAPTURE__RETENTIONDRYRUN`
+unset or `true`) each sweep only logs what they would free, e.g. `Capture retention (dry run) would free
+3.2 GB: the 3D files of 4 retired model(s) (1.9 GB), 1 runner result(s) (1.3 GB), 0 abandoned import(s)
+(0 MB)`. Check that line in the app's log, then set `CAPTURE__RETENTIONDRYRUN=false` (in production:
+`docker/.env`, then `docker compose -f docker-compose.prod.yml up -d blocwerk`) to let the next sweep delete.
+Setting it back to `true` stops deleting again. See section 10 for the counts and ages.
 
 ---
 
@@ -1350,7 +1355,7 @@ The compose file maps `docker/.env` values onto these: `GEOMETRYSERVICE_URL` →
 | `Capture:SupersededModelGraceDays` | `CAPTURE__SUPERSEDEDMODELGRACEDAYS` | 14 | A retired model keeps its 3D files at least this many days, whatever the count above (0–3650). |
 | `Capture:RunnerLeftoverRetentionDays` | `CAPTURE__RUNNERLEFTOVERRETENTIONDAYS` | 30 | Days after a 3D runner's view was installed before its trained result and prepared state are deleted (no more "finish again" or replay export). `0` = keep forever. |
 | `Capture:ImportStagingDays` | `CAPTURE__IMPORTSTAGINGDAYS` | 3 | Days without activity before an abandoned capture import folder is deleted (1–365). |
-| `Capture:RetentionDryRun` | `CAPTURE__RETENTIONDRYRUN` | false | `true`: the three rules above only log what they would free ("Capture retention (dry run) would free …"). |
+| `Capture:RetentionDryRun` | `CAPTURE__RETENTIONDRYRUN` | true | The three rules above only log what they would free ("Capture retention (dry run) would free …"). `false` turns deleting on. Photo retention and the orphan sweep are not affected. |
 | `Capture:MaxVideoMb` | `CAPTURE__MAXVIDEOMB` | 2048 | Largest walk-along video (streamed to disk, 1–16384). A reverse proxy in front of the app must allow bodies this big on `/api/captures/*/video` (section 9). |
 | `Capture:MaxVideoFrames` | `CAPTURE__MAXVIDEOFRAMES` | 120 | Most frames taken from the video (3–400). |
 | `Capture:VideoFramesPerSecond` | `CAPTURE__VIDEOFRAMESPERSECOND` | 2.5 | Target frame rate (ffmpeg decodes 3 candidates per kept frame; the sharpest wins); lowered for long videos to stay under the cap. |

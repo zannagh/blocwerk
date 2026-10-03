@@ -24,7 +24,7 @@ public class CaptureRetentionRulesTests
         using var f = await RunnerFixture.CreateAsync(h);
         var old = await InstalledJobAsync(f, daysAgo: 40);
         var recent = await InstalledJobAsync(f, daysAgo: 5);
-        var options = new WallCapturePipelineOptions();
+        var options = new WallCapturePipelineOptions { RetentionDryRun = false };
 
         var outcome = await DropAsync(f, options);
 
@@ -54,13 +54,13 @@ public class CaptureRetentionRulesTests
 
         var dry = await DropAsync(f, new WallCapturePipelineOptions { RetentionDryRun = true });
         Assert.Equal(1, dry.Count);
-        Assert.Equal(0, (await DropAsync(f, new WallCapturePipelineOptions { RunnerLeftoverRetention = null })).Count);
+        Assert.Equal(0, (await DropAsync(f, new WallCapturePipelineOptions { RunnerLeftoverRetention = null, RetentionDryRun = false })).Count);
         await using (var db = h.CreateContext())
         {
             await db.GpuJobs.ExecuteUpdateAsync(s => s.SetProperty(j => j.RefinishStateJson, "{}"));
         }
 
-        Assert.Equal(0, (await DropAsync(f, new WallCapturePipelineOptions())).Count);
+        Assert.Equal(0, (await DropAsync(f, new WallCapturePipelineOptions { RetentionDryRun = false })).Count);
         Assert.True(Exists(f.Files, job.ResultPath!));
         Assert.True(Exists(f.Files, job.PreparedPath));
     }
@@ -110,9 +110,11 @@ public class CaptureRetentionRulesTests
     }
 
     [Theory]
-    [InlineData(null, null, null, null, 1, 30, 3, false)]
+    [InlineData(null, null, null, null, 1, 30, 3, true)]
     [InlineData("-1", "0", "7", "true", null, null, 7, true)]
     [InlineData("3", "14", "1", "false", 3, 14, 1, false)]
+    [InlineData(null, null, null, "", 1, 30, 3, true)]
+    [InlineData(null, null, null, "no", 1, 30, 3, true)]
     public void RetentionRules_AreSettings(
         string? keep, string? leftoverDays, string? importDays, string? dryRun, int? expectedKeep, int? expectedLeftover, int expectedImport,
         bool expectedDryRun)

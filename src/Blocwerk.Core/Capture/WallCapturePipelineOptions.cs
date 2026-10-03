@@ -115,10 +115,11 @@ public sealed class WallCapturePipelineOptions
     public TimeSpan ImportStagingLifetime { get; init; } = TimeSpan.FromDays(3);
 
     /// <summary>
-    /// The retention of retired models, runner leftovers and abandoned imports only logs what it would free. Setting
-    /// <c>Blocwerk:Capture:RetentionDryRun</c> / <c>CAPTURE__RETENTIONDRYRUN</c> (true/false); default false.
+    /// The retention of retired models, runner leftovers and abandoned imports only logs what it would free. On by
+    /// default: deleting is opt-in, after a look at the "would free" log. Setting <c>Blocwerk:Capture:RetentionDryRun</c> /
+    /// <c>CAPTURE__RETENTIONDRYRUN</c> (<c>false</c> turns deleting on; anything else keeps the dry run); default true.
     /// </summary>
-    public bool RetentionDryRun { get; init; }
+    public bool RetentionDryRun { get; init; } = true;
 
     /// <summary>How often <see cref="WallCaptureSweeper"/> runs.</summary>
     public TimeSpan SweepInterval { get; init; } = TimeSpan.FromHours(6);
@@ -201,7 +202,7 @@ public sealed class WallCapturePipelineOptions
                 ? (leftover == 0 ? null : TimeSpan.FromDays(leftover))
                 : defaults.RunnerLeftoverRetention,
             ImportStagingLifetime = ReadDays(configuration, "ImportStagingDays", 1, 365) ?? defaults.ImportStagingLifetime,
-            RetentionDryRun = bool.TryParse(Read(configuration, "RetentionDryRun"), out var dryRun) && dryRun,
+            RetentionDryRun = !bool.TryParse(Read(configuration, "RetentionDryRun"), out var dryRun) || dryRun,
         };
     }
 
