@@ -27,8 +27,15 @@ public sealed record GpuRunnerInfo(
 public sealed record GpuRunnerCapabilities(
     string? GpuName, int? VramMb, string? MaxQuality, int? MemoryBudgetMb, string? RunnerVersion, string? Platform);
 
-/// <summary>The job a runner holds right now.</summary>
-public sealed record GpuRunnerCurrentJob(Guid JobId, Guid WallId, string? WallName, double Progress, string? Stage);
+/// <summary>
+/// The job a runner holds right now. <c>OtherWall</c>: it belongs to a wall the viewer does not administer, so only the
+/// fact that the runner is busy is shown (no job id, wall, progress or stage).
+/// </summary>
+public sealed record GpuRunnerCurrentJob(Guid JobId, Guid WallId, string? WallName, double Progress, string? Stage, bool OtherWall = false)
+{
+    /// <summary>A job of another wall, as a viewer who may not see it is told about it.</summary>
+    public static GpuRunnerCurrentJob Busy { get; } = new(Guid.Empty, Guid.Empty, null, 0, null, OtherWall: true);
+}
 
 /// <summary>A freshly created runner and its key, shown exactly once.</summary>
 public sealed record GpuRunnerCreated(GpuRunnerInfo Runner, string Key);

@@ -79,6 +79,17 @@ def latest(directory, sig):
     return best
 
 
+def newest_step(directory):
+    """The step of the newest complete checkpoint in `directory` (any signature), or None. What a runner that hands
+    its job back on a shutdown tells the server it would resume from."""
+    best = None
+    for meta in glob.glob(os.path.join(glob.escape(directory or ""), "ckpt-*.json")):
+        m = CKPT_META.search(meta)
+        if m and os.path.exists(paths(directory, int(m.group(1)))[0]) and (best is None or int(m.group(1)) > best):
+            best = int(m.group(1))
+    return best
+
+
 def commit(directory, step, sig):
     """Marks the checkpoint after `step` complete (its .pt is already in place) and removes every other one."""
     pt, meta = paths(directory, step)

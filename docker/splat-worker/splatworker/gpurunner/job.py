@@ -1,6 +1,9 @@
 """One claimed job: download the bundle (resumable) -> train (train.py: the worker's own trainer path) ->
-upload the slim .ply (gzip). Outcomes: succeeded, failed (reported), cancelled / gone (dropped), shutdown
-(handed back with `shutdown: true`, no attempt used), abandoned (network lost for too long). A gsplat job saves
+upload the slim .ply (gzip). Outcomes: succeeded, failed (reported), cancelled (the server says the job is over
+for good: dropped with its checkpoints), gone (requeued or taken away: dropped, checkpoints kept), shutdown
+(handed back with `shutdown: true` and the newest checkpoint's step, no attempt used), abandoned (network lost
+for too long; reported as `unreachable` so the server need not wait for the lease, at no training attempt). A
+gsplat job saves
 checkpoints (a retry of the same job and bundle resumes from them; dropped once the job is over for good) and
 uploads previews while it trains (previews.py; resume.py)."""
 import json
@@ -20,7 +23,7 @@ from ..procs import ToolStopped
 from ..slimply import write_slim_ply
 from ..splatio import read_ply
 from . import client as http
-from .client import Backoff, Gone, Rejected, Stopped, Transient, Unauthorized
+from .client import Backoff, BundleCorrupt, BundleTooLarge, Gone, Rejected, Stopped, Transient, Unauthorized
 from .heartbeat import Heartbeat
 from .previews import PreviewUploader
 from .train import train_bundle
@@ -29,11 +32,17 @@ log = logging.getLogger("gpurunner")
 NETWORK_PATIENCE_S = 240  # how long a job waits out a lost connection (download / upload) before giving up
 UPLOAD_PATIENCE_S = 1800  # an upload waits longer: the server may be busy (429) or short of disk (507)
 MAX_STATS_BYTES = 8192
+MAX_CORRUPT_DOWNLOADS = 3  # a bundle that arrives damaged this often: handed back as a failure of this runner
 STEP = re.compile(r"step (\d+)/(\d+)")
 
 
 class JobAbandoned(Exception):
     """The job cannot go on here (stopped, network lost for too long)."""
+
+
+class BundleDamaged(Exception):
+    """The bundle kept arriving damaged: maybe this runner's disk or network, maybe the server's copy. Reported as a
+    retryable failure, so another runner tries it next and the attempt budget ends it if the server's copy is bad."""
 
 
 def with_retries(what, call, stop, patience=None, clock=time.monotonic):
@@ -73,6 +82,7 @@ class JobRun:
         # checkpoints (kept for a retry unless the job is over for good) and previews: resume.py
         self.resume = resume.for_job(job, self.dir) if resume else checkpoints.TrainResume()
         self.over = False
+        self.corrupt_downloads = 0
 
     def run(self):
         """Returns the outcome. Raises Unauthorized only when the key was refused (the loop exits then)."""
@@ -107,6 +117,8 @@ class JobRun:
             return "succeeded"
         except BundleError as e:
             return self._fail(f"bad bundle: {e}", retryable=False)
+        except (BundleTooLarge, BundleDamaged) as e:
+            return self._fail(str(e), retryable=True)
         except Rejected as e:
             return self._fail(f"the server refused the result: {e}", retryable=False)
         except (ToolStopped, JobAbandoned, Gone, Stopped) as e:
@@ -122,8 +134,7 @@ class JobRun:
 
     def _download_and_train(self):
         zip_path = os.path.join(self.dir, "bundle.zip")
-        size = with_retries("download", lambda: self.client.download_bundle(
-            self.id, zip_path, self.job.get("bundleBytes"), self.job.get("bundleSha256"), stop=self.stop), self.stop)
+        size = with_retries("download", lambda: self._download(zip_path), self.stop)
         log.info("job %s: bundle %.1f MB", self.id, size / 1e6)
         dataset, profile, zones = extract_bundle(zip_path, os.path.join(self.dir, "b"))
         os.remove(zip_path)
@@ -148,6 +159,18 @@ class JobRun:
         return slim, {**stats, "runnerGpu": self.caps.get("gpuName"), "runnerVersion": self.caps.get("runnerVersion"),
                       "runnerTrainer": self.caps.get("trainer"), "runnerPlatform": self.caps.get("platform")}
 
+    def _download(self, zip_path):
+        """One download attempt. A bundle that keeps arriving damaged (checksum, size) is given back as this
+        runner's failure after MAX_CORRUPT_DOWNLOADS, instead of retrying until the network patience runs out."""
+        try:
+            return self.client.download_bundle(self.id, zip_path, self.job.get("bundleBytes"),
+                                               self.job.get("bundleSha256"), stop=self.stop)
+        except BundleCorrupt as e:
+            self.corrupt_downloads += 1
+            if self.corrupt_downloads >= MAX_CORRUPT_DOWNLOADS:
+                raise BundleDamaged(f"{e} after {self.corrupt_downloads} downloads") from e
+            raise
+
     def _report(self, fraction, stage=None, detail=None):
         m = STEP.search(detail or "")
         step, total = (int(m.group(1)), int(m.group(2))) if m else (None, None)
@@ -157,14 +180,21 @@ class JobRun:
     def _stopped(self, why):
         if self.hb.revoked:
             raise Unauthorized(str(why))
-        if self.shutdown.is_set() and not (self.hb.gone or self.hb.cancelled):
-            log.info("job %s: the runner is shutting down; handing it back", self.id)
-            self._report_failure("the runner was shut down", retryable=True, shutdown=True)
+        over = self.hb.cancelled or (isinstance(why, Gone) and why.over)
+        if self.shutdown.is_set() and not (self.hb.gone or over):
+            step = checkpoints.newest_step(self.resume.checkpoint_dir)
+            log.info("job %s: the runner is shutting down; handing it back (checkpoint: %s)", self.id, step)
+            self._report_failure("the runner was shut down", retryable=True, shutdown=True, checkpoint_step=step)
             return "shutdown"
         log.info("job %s stopped: %s", self.id, why)
-        if self.hb.cancelled:
+        if over:
             return "cancelled"
-        return "gone" if self.hb.gone or isinstance(why, Gone) else "abandoned"
+        if self.hb.gone or isinstance(why, Gone):
+            return "gone"
+        # Given up (the server stayed out of reach or busy): reported as unreachable (no training attempt, this runner
+        # not marked as failing it), so the reason is stored and the job is requeued now, not when the lease runs out.
+        self._report_failure(f"the runner gave up: {why}", retryable=True, unreachable=True)
+        return "abandoned"
 
     def _fail(self, reason, retryable):
         log.warning("job %s failed: %s", self.id, reason)
@@ -172,8 +202,8 @@ class JobRun:
         self._report_failure(reason, retryable)
         return "failed"
 
-    def _report_failure(self, reason, retryable, shutdown=False):
+    def _report_failure(self, reason, retryable, shutdown=False, checkpoint_step=None, unreachable=False):
         try:
-            self.client.fail(self.id, reason, retryable, shutdown)
+            self.client.fail(self.id, reason, retryable, shutdown, checkpoint_step, unreachable)
         except (Transient, Gone, Rejected, Unauthorized) as e:
             log.info("could not report the failure (%s)", e)

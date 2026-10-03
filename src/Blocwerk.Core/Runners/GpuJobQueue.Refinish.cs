@@ -88,7 +88,7 @@ public sealed partial class GpuJobQueue
     }
 
     private static bool IsRefinishable(GpuJob job, ICaptureFileStore files) =>
-        (job.Status == GpuJobStatus.Failed || job is { Status: GpuJobStatus.Succeeded, InstalledAt: not null })
+        (job.Status is GpuJobStatus.Failed or GpuJobStatus.Cancelled || job is { Status: GpuJobStatus.Succeeded, InstalledAt: not null })
         && Leftover(job) is { Count: > 0 } kept
         && kept.All(p => files.ResolvePhysicalPath(p) is { } path && File.Exists(path));
 }

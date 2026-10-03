@@ -90,7 +90,8 @@ class Runner:
             if self.clock() - t0 < MIN_CLAIM_INTERVAL_S:
                 http.pause(self.shutdown, MIN_CLAIM_INTERVAL_S)
             return True
-        log.info("claimed job %s (%s)", job.get("jobId"), job.get("quality"))
+        log.info("claimed job %s (%s)%s", job.get("jobId"), job.get("quality"),
+                 ", again after a restart" if job.get("reattached") else "")
         outcome = JobRun(self.client, job, self.work_dir, self.caps, self.shutdown, self.alive, self.resume).run()
         self.outcomes.append(outcome)
         self.jobs_done += 1
