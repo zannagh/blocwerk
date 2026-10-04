@@ -7,7 +7,9 @@
         <h2>Update wall with new photos</h2>
         @if (!_superseded && _phase is not WallUpdatePhase.Done and not WallUpdatePhase.Working)
         {
-            <button class="btn-link" @onclick="Discard">Discard update</button>
+            <ConfirmAction Label="Discard update" TriggerClass="btn-link" ConfirmLabel="Yes, discard it"
+                               Question="Discard this update? The staged photos and every choice made so far are thrown away."
+                               OnConfirm="Discard" />
         }
     </div>
 
@@ -200,7 +202,9 @@
             </p>
             <div class="staged-actions">
                 <button class="btn-primary" @onclick="Apply" disabled="@ScopeResetsPending">Apply update</button>
-                <button class="btn-danger-soft" @onclick="Discard">Discard update</button>
+                <ConfirmAction Label="Discard update" TriggerClass="btn-danger-soft" ConfirmLabel="Yes, discard it"
+                               Question="Discard this update? The staged photos and every choice made so far are thrown away."
+                               OnConfirm="Discard" />
             </div>
             break;
 
