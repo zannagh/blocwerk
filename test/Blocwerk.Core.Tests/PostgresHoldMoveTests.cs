@@ -20,7 +20,7 @@ public class PostgresHoldMoveTests
         using var h = new WallTestHarness(PostgresTestDatabase.Create());
         var s = await HoldMovePromoteTests.SeedAsync(h, movedToA: 1340);
 
-        await s.Service.PromoteAsync(s.WallId, HoldMovePromoteTests.Confirm(s), s.SessionId);
+        await s.Service.PromoteAsync(s.WallId, HoldMovePromoteTests.Confirm(s, Blocwerk.Core.Enums.CarryKind.Changed), s.SessionId);
 
         await using (var db = h.CreateContext())
         {

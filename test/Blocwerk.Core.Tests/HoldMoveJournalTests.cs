@@ -83,6 +83,7 @@ public sealed class HoldMoveJournalTests : IDisposable
         wallId = Guid.NewGuid();
         boulderId = Guid.NewGuid();
         (oldMover, oldStayer, newMover, newStayer) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        var extra = Enumerable.Range(0, 3).Select(_ => (Old: Guid.NewGuid(), New: Guid.NewGuid())).ToList();
         await using (var db = CreateContext())
         {
             db.Users.Add(new User { Id = owner.Id, Identifier = owner.Identifier, DisplayName = owner.DisplayName });
@@ -93,7 +94,8 @@ public sealed class HoldMoveJournalTests : IDisposable
             db.WallMembers.Add(new WallMember { WallId = wallId, UserId = owner.Id, Role = WallRole.Admin });
             var live = new WallPanel { WallId = wallId, Col = 0, Row = 0, Photo = [1], PhotoContentType = "image/jpeg", Generation = 2 };
             db.WallPanels.Add(live);
-            db.Holds.AddRange(Placed(oldMover, live.Id, 2, 1000, 0.5), Placed(oldStayer, live.Id, 2, 2000, 0.2));
+            db.Holds.AddRange(Placed(oldMover, live.Id, 2, 1000, 0.5), Placed(oldStayer, live.Id, 2, 1200, 0.2));
+            db.Holds.AddRange(extra.Select((e, i) => Placed(e.Old, live.Id, 2, 1050 + (100 * i), 0.1)));
             db.Boulders.Add(new Boulder { Id = boulderId, WallId = wallId, Name = "Route", CreatedByUserId = owner.Id, Generation = 2 });
             db.BoulderHolds.AddRange(
                 new BoulderHold { BoulderId = boulderId, HoldId = oldMover, Type = HoldType.Start },
@@ -106,17 +108,22 @@ public sealed class HoldMoveJournalTests : IDisposable
             await using var db = CreateContext();
             var staged = new WallPanel { WallId = wallId, Col = 0, Row = 0, StagedPhoto = [7], StagedPhotoContentType = "image/jpeg", Generation = 3 };
             db.WallPanels.Add(staged);
-            db.Holds.AddRange(Placed(newMover, staged.Id, 3, 1340, 0.5), Placed(newStayer, staged.Id, 3, 2000, 0.2));
+            db.Holds.AddRange(Placed(newMover, staged.Id, 3, 1340, 0.5), Placed(newStayer, staged.Id, 3, 1200, 0.2));
+            db.Holds.AddRange(extra.Select((e, i) => Placed(e.New, staged.Id, 3, 1050 + (100 * i), 0.1)));
             await db.SaveChangesAsync();
         }
 
         var service = new WallBigUpdateService(
             factory, currentUser, Substitute.For<IHoldDetectionService>(), Substitute.For<IHoldOverlapMatcher>(),
-            NullLogger<WallBigUpdateService>.Instance, journal);
+            NullLogger<WallBigUpdateService>.Instance, journal, moveOptions: HoldMovePromoteTests.Loose);
         await service.PromoteAsync(
             wallId,
             new BigUpdateConfirmation(
-                [new CarryoverDecision(oldMover, CarryKind.Carried, newMover), new CarryoverDecision(oldStayer, CarryKind.Carried, newStayer)],
+                [
+                    new CarryoverDecision(oldMover, CarryKind.Changed, newMover),
+                    new CarryoverDecision(oldStayer, CarryKind.Carried, newStayer),
+                    .. extra.Select(e => new CarryoverDecision(e.Old, CarryKind.Carried, e.New)),
+                ],
                 [], [], []));
     }
 

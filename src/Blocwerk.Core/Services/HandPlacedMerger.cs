@@ -38,6 +38,18 @@ public static class HandPlacedMerger
     /// <returns>True for hand-placed or virtual holds.</returns>
     public static bool IsHandPlaced(Hold hold) => hold.IsVirtual || !hold.IsAutoDetected;
 
+    /// <summary>
+    /// How close (fraction of the photo's longer side) a detection must be to a VIRTUAL hold. A virtual hold has no pixels and
+    /// no real extent, so its stored radius means nothing; this is a small fixed reach (about 40 mm on a panel photo).
+    /// </summary>
+    public const double VirtualReach = 0.012;
+
+    /// <summary>A real hold's detection must be within this fraction of the hold's radius.</summary>
+    public const double RadiusReach = 0.5;
+
+    /// <summary>The detection's radius must be within this factor of a real hold's radius.</summary>
+    public const double SizeFactor = 2.0;
+
     /// <summary>Finds the merges and the contested spots.</summary>
     /// <param name="unpairedOld">Old holds on the panel the matcher found no twin for.</param>
     /// <param name="unpairedNew">Detections on the panel no old hold was paired with.</param>
@@ -80,7 +92,19 @@ public static class HandPlacedMerger
         var (sx, sy, sr) = size is { } s ? (s.Width, s.Height, Math.Max(s.Width, s.Height)) : (1.0, 1.0, 1.0);
         var dx = (detection.X - expected.Item1) * sx;
         var dy = (detection.Y - expected.Item2) * sy;
-        var reach = Math.Max(old.Radius, detection.Radius) * sr;
-        return (dx * dx) + (dy * dy) <= reach * reach;
+        var reach = (old.IsVirtual ? VirtualReach : RadiusReach * old.Radius) * sr;
+        return (dx * dx) + (dy * dy) <= reach * reach && Alike(old, detection);
+    }
+
+    /// <summary>Similar size and, when both are known, the same colour. A virtual hold has no size to compare.</summary>
+    private static bool Alike(Hold old, Hold detection)
+    {
+        if (!old.IsVirtual && old.Radius > 0 && detection.Radius > 0
+            && (detection.Radius > old.Radius * SizeFactor || detection.Radius < old.Radius / SizeFactor))
+        {
+            return false;
+        }
+
+        return old.Color is null || detection.Color is null || string.Equals(old.Color, detection.Color, StringComparison.OrdinalIgnoreCase);
     }
 }

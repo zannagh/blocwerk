@@ -15,4 +15,10 @@ public enum HoldMoveOutcome
 
     /// <summary>Moved beyond the cutoff: the hold is taken off the boulder, which is marked for revision.</summary>
     Removed = 2,
+
+    /// <summary>
+    /// Measured beyond the cutoff but not certain enough to take the hold off (a provisional or low-confidence measurement,
+    /// or not confirmed by a person): the boulder keeps the hold and is marked for review ("possibly moved, check").
+    /// </summary>
+    Possible = 3,
 }

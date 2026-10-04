@@ -2,6 +2,7 @@
 // Copyright (c) Blocwerk. All rights reserved.
 // </copyright>
 
+using Blocwerk.Core.Abstractions;
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
@@ -50,21 +51,61 @@ public partial class WallBigUpdateService
         var provisional = await ProvisionalPlacementsAsync(db, pairs);
         pairs = pairs.Select(p => (p.Old, WithPlacement(p.Twin, provisional))).ToList();
         var moves = new List<PlannedMove>();
+        var confirmed = decisions.Where(d => d.Kind == CarryKind.Changed).Select(d => d.OldHoldId).ToHashSet();
+
+        // 3D relative to each hold's unmoved neighbourhood: the registration error of the new photo is regional and
+        // systematic, so only what differs from the neighbours counts as the hold's own movement.
+        var threeD = DifferentialDisplacement.Measure(pairs, moveOptions);
         foreach (var byPanel in pairs.GroupBy(p => p.Twin.WallPanelId!.Value))
         {
             var size = sizes.TryGetValue(byPanel.Key, out var s) ? s : ((int, int)?)null;
             var scale = size is { } sz ? PanelScaleEstimator.Estimate(byPanel, sz) : null;
             foreach (var (old, twin) in byPanel.OrderBy(p => p.Old.Id))
             {
-                var warped = confirmation.CarriedWarpPositions?.GetValueOrDefault(old.Id);
-                if (HoldMoveCalculator.Measure(old, twin, warped, size, scale) is { } measure)
+                var two = HoldMoveCalculator.Distance2D(twin, confirmation.CarriedWarpPositions?.GetValueOrDefault(old.Id), size, scale);
+                var rotation = HoldMoveCalculator.Rotation(HoldFingerprint.FromJson(old.FingerprintJson), HoldFingerprint.FromJson(twin.FingerprintJson));
+                var photo = two is { } d2 ? new HoldMoveMeasure(d2, HoldMoveSource.TwoD, rotation) : null;
+                var measure = Reconcile(threeD.GetValueOrDefault(old.Id), photo, moveOptions);
+                if (measure is not null)
                 {
-                    moves.Add(new PlannedMove(old.Id, twin.Id, measure, HoldMovePolicy.Classify(measure, moveOptions)));
+                    moves.Add(new PlannedMove(old.Id, twin.Id, measure, HoldMovePolicy.Classify(measure, moveOptions, confirmed.Contains(old.Id))));
                 }
             }
         }
 
         return new HoldMovePlan(moves);
+    }
+
+    /// <summary>
+    /// The one measure used for a hold when 3D and the photo estimate may both exist. The photo estimate is independent of
+    /// stored placements and of the new photo's registration; when it says the hold stayed, a 3D "move" is a stale placement or
+    /// a registration artefact. When it says moved, the 3D number is used only if it agrees; otherwise the photo's.
+    /// </summary>
+    internal static HoldMoveMeasure? Reconcile(HoldMoveMeasure? threeD, HoldMoveMeasure? photo, HoldMoveOptions options)
+    {
+        if (threeD is null)
+        {
+            return photo;
+        }
+
+        if (!threeD.Confident && photo is not null)
+        {
+            return photo with { SpreadMm = threeD.SpreadMm, RawMm = threeD.RawMm, ThreeDMm = threeD.ThreeDMm };
+        }
+
+        if (photo is null)
+        {
+            return threeD;
+        }
+
+        var withDiagnostics = photo with { SpreadMm = threeD.SpreadMm, RawMm = threeD.RawMm, ThreeDMm = threeD.ThreeDMm };
+        if (photo.DistanceMm < options.NoiseMm2D)
+        {
+            return withDiagnostics;
+        }
+
+        var agree = Math.Abs(threeD.DistanceMm - photo.DistanceMm) <= Math.Max(options.AgreeMm, 0.5 * photo.DistanceMm);
+        return agree ? threeD : withDiagnostics;
     }
 
     /// <summary>

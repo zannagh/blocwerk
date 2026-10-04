@@ -94,7 +94,7 @@ public partial class WallBigUpdateService
             }
 
             link.Boulder.Generation = newGen;
-            if (changed || outcome == HoldMoveOutcome.Kept)
+            if (changed || outcome is HoldMoveOutcome.Kept or HoldMoveOutcome.Possible)
             {
                 link.Boulder.NeedsReview = true;
             }

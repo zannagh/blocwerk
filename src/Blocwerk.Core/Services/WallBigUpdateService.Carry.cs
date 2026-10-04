@@ -104,7 +104,8 @@ public partial class WallBigUpdateService
                 oldHold, centerPanel.Id, panelPositions, newGenPanelByPosition);
             var successor = await AdvanceCarriedHoldAsync(
                 db, wallId, destinationPanelId, newGen, oldHold, decision.Kind, decision.NewHoldId,
-                stagedTwins, claimedTwins, survivingCenterStaged, warpPositions, warpShapes, photoSizes, movePlan, userId);
+                stagedTwins, claimedTwins, survivingCenterStaged, warpPositions, warpShapes, photoSizes, movePlan, userId,
+                confirmation.HandPlacedMergeOldIds?.Contains(decision.OldHoldId) == true);
 
             // The confirm screen asked about this hold and nobody answered: it goes live as decided, marked for a look.
             if (confirmation.ReviewOldHoldIds?.Contains(decision.OldHoldId) == true)
@@ -160,7 +161,8 @@ public partial class WallBigUpdateService
         IReadOnlyDictionary<Guid, IReadOnlyList<HoldPositionNorm>>? warpShapes,
         IReadOnlyDictionary<Guid, (int Width, int Height)> photoSizes,
         HoldMovePlan movePlan,
-        Guid userId)
+        Guid userId,
+        bool handPlacedMerge = false)
     {
         var changed = kind == CarryKind.Changed;
         var linkKind = changed ? HoldGenerationLinkKind.Changed : HoldGenerationLinkKind.Same;
@@ -175,6 +177,10 @@ public partial class WallBigUpdateService
                 CopyPlacementFields(
                     oldHold, staged, changed, warpPositions?.GetValueOrDefault(oldHold.Id),
                     staged.WallPanelId is { } panelId && photoSizes.TryGetValue(panelId, out var size) ? size : null);
+                if (handPlacedMerge)
+                {
+                    CopyHandSetFields(oldHold, staged);
+                }
 
                 // Warp-carry (shapes): a matched twin is a fresh detection with NO custom outline. If the
                 // old hold carried one, transform it onto the twin (using the twin's OWN detected centre)

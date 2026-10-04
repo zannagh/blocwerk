@@ -22,17 +22,22 @@ public static class HoldMoveCalculator
     /// <param name="old">The old hold.</param>
     /// <param name="twin">Its successor.</param>
     /// <returns>The distance, or null.</returns>
-    public static double? Distance3D(Hold old, Hold twin)
+    public static double? Distance3D(Hold old, Hold twin) =>
+        Vector3D(old, twin) is { } v ? Math.Sqrt((v.Da * v.Da) + (v.Db * v.Db) + (v.Dh * v.Dh)) : null;
+
+    /// <summary>The raw displacement old to new on a shared facet (across, up, out of the wall), mm, or null.</summary>
+    /// <param name="old">The old hold.</param>
+    /// <param name="twin">Its successor.</param>
+    /// <returns>The vector, or null when the pair has no comparable placements.</returns>
+    public static (double Da, double Db, double Dh)? Vector3D(Hold old, Hold twin)
     {
         if (!HasPlacement(old) || !HasPlacement(twin) || old.FacetId != twin.FacetId)
         {
             return null;
         }
 
-        var da = old.PlaneAMm!.Value - twin.PlaneAMm!.Value;
-        var db = old.PlaneBMm!.Value - twin.PlaneBMm!.Value;
-        var dh = Height(old) is { } a && Height(twin) is { } b ? a - b : 0;
-        return Math.Sqrt((da * da) + (db * db) + (dh * dh));
+        var dh = Height(old) is { } a && Height(twin) is { } b ? b - a : 0;
+        return (twin.PlaneAMm!.Value - old.PlaneAMm!.Value, twin.PlaneBMm!.Value - old.PlaneBMm!.Value, dh);
     }
 
     /// <summary>The photo-warp estimate, mm, or null when the old hold has no predicted spot or the panel no scale.</summary>

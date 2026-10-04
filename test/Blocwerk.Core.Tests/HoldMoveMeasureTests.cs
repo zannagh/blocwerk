@@ -76,10 +76,10 @@ public class HoldMoveMeasureTests
     [InlineData(10, HoldMoveSource.ThreeD, HoldMoveOutcome.Stayed)]
     [InlineData(30, HoldMoveSource.ThreeD, HoldMoveOutcome.Kept)]
     [InlineData(100, HoldMoveSource.ThreeD, HoldMoveOutcome.Kept)]
-    [InlineData(100.1, HoldMoveSource.ThreeD, HoldMoveOutcome.Removed)]
-    [InlineData(40, HoldMoveSource.TwoD, HoldMoveOutcome.Stayed)]
-    [InlineData(60, HoldMoveSource.TwoD, HoldMoveOutcome.Kept)]
-    [InlineData(340, HoldMoveSource.TwoD, HoldMoveOutcome.Removed)]
+    [InlineData(100.1, HoldMoveSource.ThreeD, HoldMoveOutcome.Possible)]
+    [InlineData(20, HoldMoveSource.TwoD, HoldMoveOutcome.Stayed)]
+    [InlineData(30, HoldMoveSource.TwoD, HoldMoveOutcome.Kept)]
+    [InlineData(340, HoldMoveSource.TwoD, HoldMoveOutcome.Possible)]
     public void Policy_AppliesTheCutoffAndTheNoiseFloor(double mm, HoldMoveSource source, HoldMoveOutcome expected)
     {
         Assert.Equal(expected, HoldMovePolicy.Classify(new HoldMoveMeasure(mm, source, null), Options));
@@ -90,7 +90,41 @@ public class HoldMoveMeasureTests
     {
         var strict = new HoldMoveOptions { CutoffMm = 50 };
 
-        Assert.Equal(HoldMoveOutcome.Removed, HoldMovePolicy.Classify(new HoldMoveMeasure(60, HoldMoveSource.ThreeD, null), strict));
+        Assert.Equal(HoldMoveOutcome.Possible, HoldMovePolicy.Classify(new HoldMoveMeasure(60, HoldMoveSource.ThreeD, null), strict));
+    }
+
+    [Theory]
+    [InlineData(340, true, true, HoldMoveOutcome.Removed)]
+    [InlineData(340, false, true, HoldMoveOutcome.Possible)]
+    [InlineData(340, true, false, HoldMoveOutcome.Possible)]
+    [InlineData(120, true, true, HoldMoveOutcome.Possible)]
+    [InlineData(150, true, true, HoldMoveOutcome.Removed)]
+    public void Policy_OnlyAConfirmedConfidentMoveWellPastTheCutoffTakesTheHoldOff(double mm, bool confirmed, bool confident, HoldMoveOutcome expected)
+    {
+        Assert.Equal(expected, HoldMovePolicy.Classify(new HoldMoveMeasure(mm, HoldMoveSource.ThreeD, null, 5, confident), Options, confirmed));
+    }
+
+    [Fact]
+    public void Policy_TheFloorGrowsWithTheNeighbourhoodsSpread_AndAnUnsureSmallMoveIsNotFlagged()
+    {
+        Assert.Equal(HoldMoveOutcome.Stayed, HoldMovePolicy.Classify(new HoldMoveMeasure(60, HoldMoveSource.ThreeD, null, 20), Options));
+        Assert.Equal(HoldMoveOutcome.Kept, HoldMovePolicy.Classify(new HoldMoveMeasure(60, HoldMoveSource.ThreeD, null, 5), Options));
+        Assert.Equal(HoldMoveOutcome.Stayed, HoldMovePolicy.Classify(new HoldMoveMeasure(60, HoldMoveSource.ThreeD, null, 40, false), Options));
+    }
+
+    [Fact]
+    public void Reconcile_ThePhotoEstimateOverrulesAStale3DMove_AndAgreeingNumbersUse3D()
+    {
+        var three = new HoldMoveMeasure(90, HoldMoveSource.ThreeD, null, 6, true);
+
+        Assert.Equal(HoldMoveSource.TwoD, WallBigUpdateService.Reconcile(three, new HoldMoveMeasure(5, HoldMoveSource.TwoD, null), Options)!.Source);
+        Assert.Same(three, WallBigUpdateService.Reconcile(three, new HoldMoveMeasure(85, HoldMoveSource.TwoD, null), Options));
+        Assert.Equal(200, WallBigUpdateService.Reconcile(three, new HoldMoveMeasure(200, HoldMoveSource.TwoD, null), Options)!.DistanceMm);
+        Assert.Same(three, WallBigUpdateService.Reconcile(three, null, Options));
+        var onlyPhoto = new HoldMoveMeasure(70, HoldMoveSource.TwoD, null);
+        Assert.Same(onlyPhoto, WallBigUpdateService.Reconcile(null, onlyPhoto, Options));
+        var unsure = WallBigUpdateService.Reconcile(three with { Confident = false }, onlyPhoto, Options)!;
+        Assert.Equal((HoldMoveSource.TwoD, 70), (unsure.Source, unsure.DistanceMm));
     }
 
     [Fact]

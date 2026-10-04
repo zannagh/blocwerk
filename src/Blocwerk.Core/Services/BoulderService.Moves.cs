@@ -72,7 +72,7 @@ public partial class BoulderService
         }
 
         var cm = Math.Max(1, (int)Math.Round(measured / 10));
-        var tail = verdict == HoldMoveOutcome.Removed ? "farther than the limit, so check this hold" : "check this hold";
+        var tail = verdict is HoldMoveOutcome.Removed or HoldMoveOutcome.Possible ? "farther than the limit, so check this hold" : "check this hold";
         return $"{text}. Measured again in 3D after the new holds were placed: {cm} cm, {tail}";
     }
 

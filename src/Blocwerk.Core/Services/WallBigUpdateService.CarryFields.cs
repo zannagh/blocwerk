@@ -127,6 +127,22 @@ public partial class WallBigUpdateService
     }
 
     /// <summary>
+    /// A hand-placed or virtual hold merged onto a detection keeps what a person set that the detection cannot know: its wall
+    /// position (with its volume placement) and, when the detection has no traced contour, its hand-drawn outline.
+    /// </summary>
+    private static void CopyHandSetFields(Hold from, Hold to)
+    {
+        CopyWallPosition(from, to);
+        if (to.ShapePoints is not { Count: >= 3 } && from.ShapePoints is { Count: >= 3 })
+        {
+            to.ShapePoints = from.ShapePoints.Select(p => new ShapePoint { Dx = p.Dx, Dy = p.Dy }).ToList();
+            to.ShapeHoles = from.ShapeHoles;
+            to.OutlineSource = from.OutlineSource;
+            to.OutlineConfidence = from.OutlineConfidence;
+        }
+    }
+
+    /// <summary>
     /// A second old hold claiming a twin the first one already claimed (a physical merge). The first
     /// writer's curation stays, but the merged hold must not lose what the second one stood for: it is
     /// hand-added if either was, it needs review if either did (or the claim says "changed"), and curated

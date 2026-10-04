@@ -27,21 +27,16 @@ public class HoldMoveFollowUpTests
 
     private static WallBigUpdateService Service(WallTestHarness h, IStagedHoldPlacer? placer) =>
         new(
-            h.DbContextFactory, h.CurrentUser, h.HoldDetection, new PositionHoldMatcher(), NullLogger<WallBigUpdateService>.Instance,
-            stagedPlacer: placer);
+            h.DbContextFactory, h.CurrentUser, h.HoldDetection, new PositionHoldMatcher(), NullLogger<WallBigUpdateService>.Instance, moveOptions: HoldMovePromoteTests.Loose, stagedPlacer: placer);
 
     [Fact]
     public async Task ProvisionalPlacements_GiveThePlanItsDistanceIn3D_BeforeAnythingIsPromoted()
     {
         using var h = new WallTestHarness();
         var s = await HoldMovePromoteTests.SeedAsync(h, movedToA: 1000, placeStaged: false);
-        var placer = new FakePlacer(new()
-        {
-            [s.NewMover] = new StagedPlacement("0", 1340, 1000),
-            [s.NewStayer] = new StagedPlacement("0", 2000, 1000),
-        });
+        var placer = new FakePlacer(HoldMovePromoteTests.Provisional(s, 1340));
 
-        var plan = await Service(h, placer).PreviewHoldMovesAsync(s.WallId, HoldMovePromoteTests.Confirm(s));
+        var plan = await Service(h, placer).PreviewHoldMovesAsync(s.WallId, HoldMovePromoteTests.Confirm(s, CarryKind.Changed));
 
         var move = Assert.Single(plan.Moves, m => m.Outcome != HoldMoveOutcome.Stayed);
         Assert.Equal((s.OldMover, HoldMoveSource.ThreeD, HoldMoveOutcome.Removed), (move.OldHoldId, move.Measure.Source, move.Outcome));
@@ -57,9 +52,9 @@ public class HoldMoveFollowUpTests
     {
         using var h = new WallTestHarness();
         var s = await HoldMovePromoteTests.SeedAsync(h, movedToA: 1000, placeStaged: false);
-        var at340 = new FakePlacer(new() { [s.NewMover] = new StagedPlacement("0", 1340, 1000), [s.NewStayer] = new StagedPlacement("0", 2000, 1000) });
-        var at60 = new FakePlacer(new() { [s.NewMover] = new StagedPlacement("0", 1060, 1000), [s.NewStayer] = new StagedPlacement("0", 2000, 1000) });
-        var confirmation = HoldMovePromoteTests.Confirm(s);
+        var at340 = new FakePlacer(HoldMovePromoteTests.Provisional(s, 1340));
+        var at60 = new FakePlacer(HoldMovePromoteTests.Provisional(s, 1060));
+        var confirmation = HoldMovePromoteTests.Confirm(s, CarryKind.Changed);
 
         var confirmed = await Service(h, at340).PreviewHoldMovesAsync(s.WallId, confirmation);
         var changed = await Service(h, at60).PreviewHoldMovesAsync(s.WallId, confirmation);
@@ -93,16 +88,14 @@ public class HoldMoveFollowUpTests
         await using (var db = h.CreateContext())
         {
             Assert.False((await db.Boulders.SingleAsync(b => b.Id == s.BoulderId)).NeedsReview);
-            var moved = await db.Holds.SingleAsync(x => x.Id == s.NewMover);
 
             // The placement run puts the hold where the registration says it really is: 34 cm from where it was.
-            (moved.FacetId, moved.PlaneAMm, moved.PlaneBMm, moved.MetricSource) = ("0", 1340, 1000, HoldMetric.TextureRegistration);
-            await db.SaveChangesAsync();
+            await HoldMovePromoteTests.PlaceNewAsync(db, s, 1340);
         }
 
         await using (var db = h.CreateContext())
         {
-            var marked = await HoldMoveRemeasurer.RunAsync(db, s.WallId, new HoldMoveOptions(), NullLogger.Instance);
+            var marked = await HoldMoveRemeasurer.RunAsync(db, s.WallId, HoldMovePromoteTests.Loose, NullLogger.Instance);
             Assert.Equal(1, marked);
         }
 
@@ -113,10 +106,10 @@ public class HoldMoveFollowUpTests
         // Nothing was taken off the boulder: the decision is a person's.
         Assert.Equal(2, await check.BoulderHolds.CountAsync(b => b.BoulderId == s.BoulderId));
         var row = await check.BoulderHoldMoves.SingleAsync();
-        Assert.Equal((HoldMoveOutcome.Kept, HoldMoveOutcome.Removed), (row.Outcome, row.RemeasuredOutcome));
+        Assert.Equal((HoldMoveOutcome.Kept, HoldMoveOutcome.Possible), (row.Outcome, row.RemeasuredOutcome));
         Assert.Equal(340, row.RemeasuredDistanceMm!.Value, 1);
         var link = await check.HoldGenerationLinks.SingleAsync(l => l.OldHoldId == s.OldMover);
-        Assert.Equal((HoldMoveSource.ThreeD, HoldMoveOutcome.Removed), (link.MoveSource, link.MoveOutcome));
+        Assert.Equal((HoldMoveSource.ThreeD, HoldMoveOutcome.Possible), (link.MoveSource, link.MoveOutcome));
 
         var shown = Assert.Single(await h.BoulderService.GetBoulderMovesAsync(s.BoulderId));
         Assert.Contains("Measured again in 3D", shown.Text);
@@ -131,9 +124,55 @@ public class HoldMoveFollowUpTests
         await s.Service.PromoteAsync(s.WallId, HoldMovePromoteTests.Confirm(s), s.SessionId);
         await using (var db = h.CreateContext())
         {
-            var moved = await db.Holds.SingleAsync(x => x.Id == s.NewMover);
-            (moved.FacetId, moved.PlaneAMm, moved.PlaneBMm, moved.MetricSource) = ("0", 1005, 1000, HoldMetric.TextureRegistration);
-            await db.SaveChangesAsync();
+            await HoldMovePromoteTests.PlaceNewAsync(db, s, 1005);
+        }
+
+        await using (var db = h.CreateContext())
+        {
+            Assert.Equal(0, await HoldMoveRemeasurer.RunAsync(db, s.WallId, HoldMovePromoteTests.Loose, NullLogger.Instance));
+        }
+
+        await using var check = h.CreateContext();
+        Assert.False((await check.Boulders.SingleAsync(b => b.Id == s.BoulderId)).NeedsReview);
+        Assert.Empty(await check.BoulderHoldMoves.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Remeasure_ThatConfirmsTheHoldStayed_ClearsTheReviewMarkAnEarlierEstimateSet()
+    {
+        using var h = new WallTestHarness();
+        var s = await HoldMovePromoteTests.SeedAsync(h, movedToA: 1000, placeStaged: false);
+
+        // At confirm time the provisional registration put the hold 6 cm away: kept, boulder marked.
+        var provisional = new FakePlacer(HoldMovePromoteTests.Provisional(s, 1060));
+        await Service(h, provisional).PromoteAsync(s.WallId, HoldMovePromoteTests.Confirm(s), s.SessionId);
+        await using (var db = h.CreateContext())
+        {
+            Assert.True((await db.Boulders.SingleAsync(b => b.Id == s.BoulderId)).NeedsReview);
+
+            // The real placement run says it did not move at all.
+            await HoldMovePromoteTests.PlaceNewAsync(db, s, 1002);
+        }
+
+        await using (var db = h.CreateContext())
+        {
+            await HoldMoveRemeasurer.RunAsync(db, s.WallId, HoldMovePromoteTests.Loose, NullLogger.Instance);
+        }
+
+        await using var check = h.CreateContext();
+        Assert.False((await check.Boulders.SingleAsync(b => b.Id == s.BoulderId)).NeedsReview);
+        Assert.Equal(HoldMoveOutcome.Stayed, (await check.HoldGenerationLinks.SingleAsync(l => l.OldHoldId == s.OldMover)).MoveOutcome);
+    }
+
+    [Fact]
+    public async Task Remeasure_WithTooFewNeighbours_ChangesNothing()
+    {
+        using var h = new WallTestHarness();
+        var s = await HoldMovePromoteTests.SeedAsync(h, movedToA: 1000, placeStaged: false);
+        await s.Service.PromoteAsync(s.WallId, HoldMovePromoteTests.Confirm(s), s.SessionId);
+        await using (var db = h.CreateContext())
+        {
+            await HoldMovePromoteTests.PlaceNewAsync(db, s, 1340);
         }
 
         await using (var db = h.CreateContext())
@@ -143,6 +182,5 @@ public class HoldMoveFollowUpTests
 
         await using var check = h.CreateContext();
         Assert.False((await check.Boulders.SingleAsync(b => b.Id == s.BoulderId)).NeedsReview);
-        Assert.Empty(await check.BoulderHoldMoves.ToListAsync());
     }
 }

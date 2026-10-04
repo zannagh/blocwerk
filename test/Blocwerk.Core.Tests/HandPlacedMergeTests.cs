@@ -23,7 +23,7 @@ public class HandPlacedMergeTests
     public void Finder_OneManualOneDetection_Merges()
     {
         var old = Hand(0.5, 0.5);
-        var det = Detection(0.515, 0.5);
+        var det = Detection(0.505, 0.5);
 
         var result = HandPlacedMerger.Find([old], [det], null, null);
 
@@ -37,7 +37,7 @@ public class HandPlacedMergeTests
         var old = Hand(0.5, 0.5);
         old.IsAutoDetected = true;
 
-        var result = HandPlacedMerger.Find([old], [Detection(0.51, 0.5)], null, null);
+        var result = HandPlacedMerger.Find([old], [Detection(0.505, 0.5)], null, null);
 
         Assert.Empty(result.Merges);
     }
@@ -58,7 +58,7 @@ public class HandPlacedMergeTests
     [Fact]
     public void Finder_OneDetectionOverlappingTwoManualHolds_IsAmbiguousForBoth()
     {
-        var result = HandPlacedMerger.Find([Hand(0.50, 0.5), Hand(0.52, 0.5, virt: true)], [Detection(0.51, 0.5)], null, null);
+        var result = HandPlacedMerger.Find([Hand(0.50, 0.5), Hand(0.52, 0.5, virt: true)], [Detection(0.509, 0.5)], null, null);
 
         Assert.Empty(result.Merges);
         Assert.Equal(2, result.Ambiguous.Count);
@@ -81,7 +81,8 @@ public class HandPlacedMergeTests
     public async Task Promote_MergesOntoTheDetection_KeepingIdentityBoulderAndFlags(bool virt)
     {
         using var h = new WallTestHarness();
-        var s = await SeedAsync(h, virt, [(0.515, 0.5)]);
+        var offset = virt ? 0.5105 : 0.515;
+        var s = await SeedAsync(h, virt, [(offset, 0.5)]);
 
         var session = await s.Service.ResumeAsync(s.WallId);
         var merge = Assert.Single(session.HandPlacedMerges!);
@@ -101,8 +102,8 @@ public class HandPlacedMergeTests
         Assert.False(live.IsAutoDetected);
         Assert.Equal("Ring", live.Name);
         Assert.Equal(HoldCategory.Foot, live.Category);
-        Assert.Equal(0.515, live.X, 3);
-        Assert.Equal(0.025, live.Radius, 3);
+        Assert.Equal(offset, live.X, 3);
+        Assert.Equal(0.05, live.Radius, 3);
         var link = await db.HoldGenerationLinks.SingleAsync(l => l.OldHoldId == s.OldId);
         Assert.Equal(s.StagedIds[0], link.NewHoldId);
         var membership = await db.BoulderHolds.SingleAsync(b => b.BoulderId == s.BoulderId);
@@ -208,10 +209,10 @@ public class HandPlacedMergeTests
     }
 
     private static Hold Hand(double x, double y, bool virt = false) =>
-        new() { X = x, Y = y, Radius = 0.02, IsVirtual = virt, IsAutoDetected = false, Name = "Ring", Category = HoldCategory.Foot, Generation = 2 };
+        new() { X = x, Y = y, Radius = 0.04, IsVirtual = virt, IsAutoDetected = false, Name = "Ring", Category = HoldCategory.Foot, Generation = 2 };
 
     private static Hold Detection(double x, double y) =>
-        new() { X = x, Y = y, Radius = 0.025, IsAutoDetected = true, Generation = 3, NeedsReview = true };
+        new() { X = x, Y = y, Radius = 0.05, IsAutoDetected = true, Generation = 3, NeedsReview = true };
 
     private static async Task RecordAsync(Scenario s, BigUpdateSession session)
     {

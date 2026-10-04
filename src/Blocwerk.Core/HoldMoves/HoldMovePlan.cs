@@ -18,7 +18,7 @@ public sealed record HoldMovePlan(IReadOnlyList<PlannedMove> Moves)
     /// <summary>A plan with no moves.</summary>
     public static readonly HoldMovePlan Empty = new([]);
 
-    /// <summary>Gets a short, order-independent fingerprint of the moves that change anything (distance to the nearest cm).</summary>
+    /// <summary>Gets a short, order-independent fingerprint of the moves that change anything (by outcome class, not by millimetres, so a re-run that measures a hold a few millimetres differently does not change it).</summary>
     public string Version
     {
         get
@@ -26,7 +26,7 @@ public sealed record HoldMovePlan(IReadOnlyList<PlannedMove> Moves)
             var text = string.Join(
                 '\n',
                 Moves.Where(m => m.Outcome != Enums.HoldMoveOutcome.Stayed)
-                    .Select(m => $"{m.OldHoldId}>{m.NewHoldId}:{m.Outcome}:{(int)Math.Round(m.Measure.DistanceMm / 10)}:{m.Measure.Source}")
+                    .Select(m => $"{m.OldHoldId}>{m.NewHoldId}:{m.Outcome}")
                     .Order(StringComparer.Ordinal));
             return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)), 0, 8);
         }

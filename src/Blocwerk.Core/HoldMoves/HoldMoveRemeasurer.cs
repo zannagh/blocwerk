@@ -13,10 +13,15 @@ namespace Blocwerk.Core.HoldMoves;
 
 /// <summary>
 /// After the new holds were placed on the 3D model (the post-promote placement run), measures every carried pair of the
-/// latest update again with the real placements. The promote's measurement may have been a photo estimate; the placement
-/// is the better number. Boulders are never silently changed by it: where the verdict would differ, the boulder is marked
-/// for review and the new distance is recorded next to what it was told (<see cref="BoulderHoldMove.RemeasuredDistanceMm"/>).
-/// The lineage link keeps the better measurement.
+/// latest update again with the real placements, the same differential way as the plan (each hold against its unmoved
+/// neighbourhood), and only acts on a CONFIDENT change:
+/// <list type="bullet">
+/// <item>a hold that now clearly moved (more than it was told) marks its boulders for review and records the new distance
+/// next to what they were told; memberships are never changed here;</item>
+/// <item>a hold that now clearly stayed clears the review reason an earlier, rougher measurement set, when nothing else
+/// about the boulder asks for a look.</item>
+/// </list>
+/// An unsure measurement (too few or too noisy neighbours) changes nothing.
 /// </summary>
 public static class HoldMoveRemeasurer
 {
@@ -29,44 +34,51 @@ public static class HoldMoveRemeasurer
     public static async Task<int> RunAsync(BlocwerkDbContext db, Guid wallId, HoldMoveOptions options, ILogger logger)
     {
         var generation = await db.Walls.Where(w => w.Id == wallId).Select(w => w.CurrentGeneration).FirstOrDefaultAsync();
-        var links = await db.HoldGenerationLinks
-            .Include(l => l.OldHold)
-            .Include(l => l.NewHold)
-            .Where(l => l.WallId == wallId && l.ToGeneration == generation && l.OldHoldId != null && l.NewHoldId != null)
-            .ToListAsync();
+        var links = (await db.HoldGenerationLinks
+                .Include(l => l.OldHold)
+                .Include(l => l.NewHold)
+                .Where(l => l.WallId == wallId && l.ToGeneration == generation && l.OldHoldId != null && l.NewHoldId != null)
+                .ToListAsync())
+            .Where(l => l.NewHold is not null && l.OldHold is not null && HoldTexturePlacer.IsTexturePlaced(l.NewHold))
+            .ToList();
+        var measures = DifferentialDisplacement.Measure(links.Select(l => (l.OldHold!, l.NewHold!)).ToList(), options);
         var marked = 0;
-        foreach (var link in links.Where(l => l.NewHold is not null && l.OldHold is not null && HoldTexturePlacer.IsTexturePlaced(l.NewHold)))
+        var cleared = new List<Guid>();
+        foreach (var link in links.Where(l => measures.ContainsKey(l.OldHoldId!.Value)))
         {
-            if (HoldMoveCalculator.Distance3D(link.OldHold!, link.NewHold!) is not { } distance)
+            var measure = measures[link.OldHoldId!.Value];
+            if (!measure.Confident)
             {
                 continue;
             }
 
-            var measure = new HoldMoveMeasure(distance, HoldMoveSource.ThreeD, link.MoveRotationDeg);
-            var outcome = HoldMovePolicy.Classify(measure, options);
+            var outcome = HoldMovePolicy.Classify(measure, options, link.Kind == HoldGenerationLinkKind.Changed);
             var before = link.MoveOutcome ?? HoldMoveOutcome.Stayed;
-            if (link.MoveSource == HoldMoveSource.ThreeD && before == outcome)
+            if (link.MoveSource == HoldMoveSource.ThreeD && Rank(before) == Rank(outcome))
             {
                 continue;
             }
 
             var told = (link.MoveDistanceMm ?? 0, link.MoveSource ?? HoldMoveSource.TwoD);
-            (link.MoveDistanceMm, link.MoveSource, link.MoveOutcome) = (Math.Round(distance, 1), HoldMoveSource.ThreeD, outcome);
-            if (before != outcome)
+            (link.MoveDistanceMm, link.MoveSource, link.MoveOutcome) = (Math.Round(measure.DistanceMm, 1), HoldMoveSource.ThreeD, outcome);
+            if (Rank(outcome) > Rank(before))
             {
-                marked += await FlagBouldersAsync(db, link, told, measure, outcome, generation, logger);
+                marked += await EscalateAsync(db, link, told, measure, outcome, generation, logger);
+            }
+            else if (Rank(outcome) < Rank(before))
+            {
+                await SettleAsync(db, link, measure, outcome, generation, cleared, logger);
             }
         }
 
-        if (db.ChangeTracker.HasChanges())
-        {
-            await db.SaveChangesAsync();
-        }
-
+        await db.SaveChangesAsync();
+        await ClearSettledBouldersAsync(db, cleared, generation, logger);
         return marked;
     }
 
-    private static async Task<int> FlagBouldersAsync(
+    private static int Rank(HoldMoveOutcome o) => o == HoldMoveOutcome.Stayed ? 0 : 1;
+
+    private static async Task<int> EscalateAsync(
         BlocwerkDbContext db, HoldGenerationLink link, (double Mm, HoldMoveSource Source) told, HoldMoveMeasure measure, HoldMoveOutcome outcome, int generation, ILogger logger)
     {
         var rows = await db.BoulderHoldMoves
@@ -98,12 +110,45 @@ public static class HoldMoveRemeasurer
         foreach (var row in rows.Where(r => r.Outcome == HoldMoveOutcome.Removed))
         {
             (row.RemeasuredDistanceMm, row.RemeasuredOutcome) = (Math.Round(measure.DistanceMm, 1), outcome);
-            logger.LogInformation(
-                "Hold move re-measured in 3D: boulder {BoulderId} lost hold {HoldId}, which is now {Mm} mm ({Outcome})",
-                row.BoulderId, link.OldHoldId, Math.Round(measure.DistanceMm), outcome);
         }
 
         return marked;
+    }
+
+    private static async Task SettleAsync(
+        BlocwerkDbContext db, HoldGenerationLink link, HoldMoveMeasure measure, HoldMoveOutcome outcome, int generation, List<Guid> cleared, ILogger logger)
+    {
+        var rows = await db.BoulderHoldMoves
+            .Where(m => m.OldHoldId == link.OldHoldId && m.NewHoldId == link.NewHoldId && m.ToGeneration == generation && m.Outcome != HoldMoveOutcome.Removed)
+            .ToListAsync();
+        foreach (var row in rows)
+        {
+            (row.RemeasuredDistanceMm, row.RemeasuredOutcome) = (Math.Round(measure.DistanceMm, 1), outcome);
+            cleared.Add(row.BoulderId);
+            logger.LogInformation(
+                "Hold move re-measured in 3D: boulder {BoulderId} hold {HoldId} stayed ({Mm} mm); the earlier move is withdrawn",
+                row.BoulderId, link.NewHoldId, Math.Round(measure.DistanceMm));
+        }
+    }
+
+    /// <summary>Clears the review mark of a boulder whose every move was withdrawn, when nothing else asks for a look.</summary>
+    private static async Task ClearSettledBouldersAsync(BlocwerkDbContext db, List<Guid> candidates, int generation, ILogger logger)
+    {
+        foreach (var boulderId in candidates.Distinct())
+        {
+            var boulder = await db.Boulders.FirstOrDefaultAsync(b => b.Id == boulderId && b.NeedsReview && b.Generation == generation && !b.IsHistoric);
+            var open = boulder is null
+                || await db.BoulderHoldMoves.AnyAsync(m => m.BoulderId == boulderId && m.ToGeneration == generation && (m.Outcome == HoldMoveOutcome.Removed || m.RemeasuredOutcome != HoldMoveOutcome.Stayed))
+                || await db.BoulderHolds.AnyAsync(bh => bh.BoulderId == boulderId
+                    && (bh.Hold.NeedsReview || db.HoldGenerationLinks.Any(l => l.NewHoldId == bh.HoldId && l.Kind == HoldGenerationLinkKind.Changed)));
+            if (!open)
+            {
+                boulder!.NeedsReview = false;
+                logger.LogInformation("Boulder {BoulderId}: review mark cleared, the moved hold was measured again and stayed", boulderId);
+            }
+        }
+
+        await db.SaveChangesAsync();
     }
 
     private static BoulderHoldMove NewRow(HoldGenerationLink link, BoulderHold member, (double Mm, HoldMoveSource Source) told, int generation) => new()
