@@ -51,6 +51,8 @@
     <Content Include="View3D\attic-active-model.json" CopyToOutputDirectory="PreserveNewest" />
     <!-- The geometry kernel's golden cases, shared with the Python wall-geometry tests (docs/geometry-kernel.md). -->
     <Content Include="..\geometry-golden\*.json" Link="GeometryGolden\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The Attic's real model, marker plan and live hold geometry (no photos, no users), shared with the Python wall-geometry tests. -->
+    <Content Include="..\real-data\attic\*.json" Link="RealData\attic\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
