@@ -106,9 +106,9 @@
 }
 .password-submit {
     justify-content: center; width: 100%; margin-top: 4px;
-    background: var(--accent); border-color: var(--accent); color: white;
+    background: var(--accent); border-color: var(--accent); color: var(--on-accent);
 }
-.password-submit:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: white; }
+.password-submit:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--on-accent); }
 .password-remember {
     display: flex; align-items: center; gap: 8px; margin: 12px 0 4px;
     font-size: 0.85rem; color: var(--text-secondary); cursor: pointer;
@@ -129,7 +129,7 @@ body:has(.oauth-container) { background: linear-gradient(135deg, #1a1a2e 0%, #16
 .list-header h1 { font-size: 1.5rem; font-weight: 700; color: var(--text-heading); }
 
 .btn-create {
-    padding: 10px 20px; background: var(--accent); color: white;
+    padding: 10px 20px; background: var(--accent); color: var(--on-accent);
     text-decoration: none; border-radius: 8px; font-weight: 600;
     font-size: 0.9rem;
 }
@@ -640,7 +640,7 @@ a.wall3d-link {
 .filter-card .filter-count {
     display: inline-flex; align-items: center; justify-content: center;
     min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
-    background: var(--accent); color: #fff; font-size: 0.68rem; font-weight: 700;
+    background: var(--accent); color: var(--on-accent); font-size: 0.68rem; font-weight: 700;
     letter-spacing: 0;
 }
 .filter-card > .settings-card-body { margin-top: 12px; }
@@ -914,7 +914,7 @@ a.wall3d-link {
 }
 .btn-add-boulder {
     padding: 7px 14px;
-    background: var(--accent); color: white;
+    background: var(--accent); color: var(--on-accent);
     text-decoration: none;
     border-radius: var(--r-pill);
     font-weight: 600; font-size: 0.85rem;
@@ -954,7 +954,7 @@ a.wall3d-link {
 .boulder-meta { font-size: 0.78rem; color: var(--text-secondary); letter-spacing: 0.005em; }
 .boulder-grade {
     padding: 4px 12px;
-    background: var(--accent); color: white;
+    background: var(--accent); color: var(--on-accent);
     border-radius: var(--r-pill);
     font-family: var(--font-display);
     font-weight: 700; font-size: 0.85rem;
@@ -1153,7 +1153,7 @@ a.wall3d-link {
    pushes to the right edge, wrapping as a unit on narrow screens. */
 .title-actions { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; }
 .grade-badge {
-    padding: 4px 12px; background: var(--accent); color: white;
+    padding: 4px 12px; background: var(--accent); color: var(--on-accent);
     border-radius: 6px; font-weight: 700; font-size: 0.95rem;
 }
 .meta { color: var(--text-secondary); font-size: 0.85rem; margin-top: 2px; }
@@ -1163,7 +1163,7 @@ a.wall3d-link {
 }
 .bw-revision-notice p { color: var(--warning-text); font-size: 0.9rem; margin-bottom: 8px; }
 .btn-revise {
-    display: inline-block; padding: 8px 16px; background: #E65100; color: white;
+    display: inline-block; padding: 8px 16px; background: var(--warning-text); color: #fff;
     text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 0.85rem;
 }
 /* "3D" next to Revise on the boulder page (Wall3DLink): an outlined pill, secondary to Revise. */
@@ -1555,9 +1555,9 @@ a.wall3d-link {
 .draft-badge { background: var(--warning-bg); color: var(--warning-text); font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 2px 7px; border-radius: 5px; }
 .bw-draft-notice { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; background: var(--warning-bg); color: var(--warning-text); padding: 12px 14px; border-radius: 10px; margin-bottom: 12px; font-size: 0.88rem; }
 .bw-draft-notice .draft-actions { display: flex; gap: 8px; }
-.btn-publish { background: var(--accent); color: #fff; border: none; border-radius: 7px; padding: 7px 14px; font-size: 0.82rem; font-weight: 600; cursor: pointer; }
+.btn-publish { background: var(--accent); color: var(--on-accent); border: none; border-radius: 7px; padding: 7px 14px; font-size: 0.82rem; font-weight: 600; cursor: pointer; }
 .btn-publish:disabled { opacity: 0.5; cursor: not-allowed; }
-.card-publish { background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 4px 10px; font-size: 0.72rem; font-weight: 600; cursor: pointer; }
+.card-publish { background: var(--accent); color: var(--on-accent); border: none; border-radius: 6px; padding: 4px 10px; font-size: 0.72rem; font-weight: 600; cursor: pointer; }
 
 /* ========== Join ========== */
 
@@ -1577,7 +1577,7 @@ a.wall3d-link {
 
 .training-menu { position: relative; }
 .btn-add-training {
-    width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: white;
+    width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: var(--on-accent);
     border: none; cursor: pointer; display: flex; align-items: center; justify-content: center;
 }
 .btn-add-training:hover { background: var(--accent-hover); }
@@ -1646,7 +1646,7 @@ body:has(.panel-crop-modal) .bw-toolbar { display: none; }
     font-size: 0.8rem; font-weight: 600; cursor: pointer; text-align: center;
 }
 .year-btn:hover { border-color: var(--accent); }
-.year-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.year-btn.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .contribution-scroll { flex: 1; min-width: 0; overflow-x: auto; }
 .contribution-inner { display: inline-block; }
 .contribution-grid { display: flex; gap: 3px; }
@@ -1687,7 +1687,7 @@ body:has(.panel-crop-modal) .bw-toolbar { display: none; }
 }
 .summary-name { font-size: 0.85rem; color: var(--text); font-weight: 500; }
 .summary-meta { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; }
-.mini-grade { padding: 1px 6px; background: var(--accent); color: white; border-radius: 3px; font-weight: 700; }
+.mini-grade { padding: 1px 6px; background: var(--accent); color: var(--on-accent); border-radius: 3px; font-weight: 700; }
 .result-badge { padding: 1px 6px; border-radius: 3px; font-weight: 600; text-transform: uppercase; font-size: 0.65rem; }
 .result-badge.flash { background: #FBE9E7; color: #D84315; }
 .result-badge.send { background: var(--success-bg); color: var(--success-text); }
@@ -2253,7 +2253,7 @@ html.bw-compact {
 }
 .kiosk-consent-btn:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); }
 .kiosk-consent-btn:disabled { opacity: 0.55; cursor: default; }
-.kiosk-consent-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.kiosk-consent-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .kiosk-consent-btn.danger { color: var(--danger-text); border-color: var(--danger-text); }
 
 .kiosk-modal-text { font-size: 0.85rem; line-height: 1.6; color: var(--text-secondary); }
@@ -2290,7 +2290,7 @@ html.bw-compact {
 }
 
 .apikey-btn:disabled { opacity: 0.5; cursor: default; }
-.apikey-btn.primary { background: var(--accent, #e94560); border-color: var(--accent, #e94560); color: #fff; }
+.apikey-btn.primary { background: var(--accent, #cf2c49); border-color: var(--accent, #cf2c49); color: var(--on-accent, #fff); }
 .apikey-btn.danger { background: var(--danger, #c62828); border-color: var(--danger, #c62828); color: #fff; }
 .apikey-empty { font-size: 0.85rem; color: var(--text-secondary); }
 
@@ -2399,7 +2399,7 @@ html.bw-compact {
     color: var(--text-secondary); background: var(--bg-surface);
     border: 1px solid var(--border); border-radius: 999px;
 }
-.wall-range-btn.active { background: var(--accent, #e94560); border-color: var(--accent, #e94560); color: #fff; }
+.wall-range-btn.active { background: var(--accent, #cf2c49); border-color: var(--accent, #cf2c49); color: var(--on-accent, #fff); }
 .wall-range-btn:disabled { opacity: 0.5; cursor: default; }
 
 .wall-temp-latest { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
@@ -2428,9 +2428,9 @@ html.bw-compact {
     text-transform: uppercase; letter-spacing: 0.04em; padding: 2px 6px; border-radius: 4px;
     color: #fff; background: rgba(0, 0, 0, 0.55);
 }
-.wall-gallery-badge.uploaded { background: rgba(46, 158, 107, 0.85); }
-.wall-gallery-badge.current { background: rgba(233, 69, 96, 0.85); }
-.wall-gallery-badge.historic { background: rgba(15, 52, 96, 0.85); }
+.wall-gallery-badge.uploaded { background: #1d6f4a; }
+.wall-gallery-badge.current { background: #cf2c49; }
+.wall-gallery-badge.historic { background: #0f3460; }
 .wall-gallery-when {
     position: absolute; bottom: 0; left: 0; right: 0; padding: 3px 5px;
     font-size: 0.65rem; color: #fff; background: rgba(0, 0, 0, 0.45); text-align: right;
@@ -2537,7 +2537,7 @@ html.bw-compact {
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.03em;
-    color: #fff;
+    color: var(--on-accent);
     background: var(--accent);
 }
 .panel-staged-actions {
@@ -3438,7 +3438,7 @@ html.bw-fullscreen .panel-link-dialog .panel-step-viewport {
     color: var(--text-secondary); border: 1px solid var(--border);
     border-radius: 999px; padding: 3px 10px;
 }
-.kiosk-row-primary { justify-content: center; background: var(--accent); border-color: var(--accent); color: #fff; }
+.kiosk-row-primary { justify-content: center; background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .kiosk-row-primary:hover { background: var(--accent); border-color: var(--accent); filter: brightness(1.08); }
 .kiosk-row-secondary { justify-content: center; margin-top: 12px; color: var(--text-secondary); font-weight: 500; }
 .kiosk-row-danger { justify-content: center; color: var(--danger-text); }
@@ -3872,7 +3872,7 @@ html.bw-fullscreen .panel-link-dialog .panel-step-viewport {
     font-weight: 600;
     cursor: pointer;
 }
-.shape-act.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.shape-act.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .shape-act:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .shape-adjust-overlay {

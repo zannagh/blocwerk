@@ -70,7 +70,11 @@ public partial class JobProgressList : IAsyncDisposable
             parts.Add($"about {Duration(eta)} left{(job.EtaSource == JobEtaSources.History ? " (usual time)" : string.Empty)}");
         }
 
-        parts.Add(job.StartedAt is { } started ? $"started {Ago(started)}" : "start unknown");
+        if (job.StartedAt is { } started)
+        {
+            parts.Add($"started {Ago(started)}");
+        }
+
         parts.Add(job.EndedAt is { } ended ? $"ended {Ago(ended)}" : job.UpdatedAt is { } updated ? $"updated {Ago(updated)}" : string.Empty);
         if (job.RunnerName is not null)
         {
@@ -90,7 +94,7 @@ public partial class JobProgressList : IAsyncDisposable
 
     internal static string KindLabel(string kind) => kind switch
     {
-        JobKinds.Capture => "Capture",
+        JobKinds.Capture => "3D capture",
         JobKinds.GpuTraining => "Photo-real training",
         JobKinds.Finish => "Finishing the view",
         JobKinds.FollowUp => "Follow-up step",

@@ -63,7 +63,7 @@ else
         @if (ScopeResetCount > 0)
         {
             <div class="bigupdate-banner" role="alert">
-                <strong>@ScopeResetCount earlier hold decision(s) were reset to "carry in place".</strong>
+                <strong>@PlainCopy.Plural(ScopeResetCount, "earlier hold decision") @(ScopeResetCount == 1 ? "was" : "were") reset to "carry in place".</strong>
                 <span>
                     They were recorded against holds on other re-photographed panels, which this step
                     cannot show — so you could neither see nor undo them here. Left as they were, a

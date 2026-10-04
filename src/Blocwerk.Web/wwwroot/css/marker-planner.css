@@ -34,7 +34,7 @@
     padding: 8px 14px; border-radius: var(--r-md); border: 1.5px solid var(--border);
     background: var(--bg-surface); color: var(--text-heading); font-weight: 600; cursor: pointer;
 }
-.mplan-tool.active { border-color: var(--accent); background: var(--accent); color: white; }
+.mplan-tool.active { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
 
 .mplan-canvas {
     background: var(--bg-surface-alt); border: 1px solid var(--border); border-radius: var(--r-md);

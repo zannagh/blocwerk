@@ -37,7 +37,7 @@
                 else
                 {
                     <div class="volume-card">
-                        <p class="volume-title">Volume @v.Index <span class="hint">@PlaceText(v)</span></p>
+                        <p class="volume-title" title="Surface @v.FacetId">Volume @v.Index <span class="hint">@PlaceText(v)</span></p>
                         <p class="glyph-summary">@VolumeText(v)</p>
                         @if (ShapeText(v) is { } shape)
                         {
@@ -48,6 +48,7 @@
                                 <input type="checkbox" checked="@v.HasFlatSides" disabled="@busy" @onchange="e => SetFlatAsync(v, e)" />
                                 Has flat sides
                             </label>
+                            <a class="btn-link" href="@SpotOf(v).Url(WallId)">Show on wall</a>
                             <button class="btn-link" @onclick="() => ToggleHiddenAsync(v)" disabled="@busy">@(v.IsHidden ? "Show" : "Hide")</button>
                             <button class="btn-link" @onclick="() => SetRemovedAsync(v, true)" disabled="@busy">Remove</button>
                         </div>

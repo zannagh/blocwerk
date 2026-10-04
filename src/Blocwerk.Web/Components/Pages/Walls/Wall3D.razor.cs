@@ -30,6 +30,10 @@ public partial class Wall3D
     [SupplyParameterFromQuery(Name = "mode")]
     public string? Mode { get; set; }
 
+    /// <summary>"Show on wall": <c>?at=facet:a:b:h</c> marks that spot and looks at it (see <see cref="Shared.WallSpot"/>).</summary>
+    [SupplyParameterFromQuery(Name = "at")]
+    public string? At { get; set; }
+
     [Inject]
     private IWall3DViewService ViewService { get; set; } = null!;
 
@@ -51,6 +55,8 @@ public partial class Wall3D
         Wall3DViewStatus.UnderMaintenance => "This wall is currently being updated. Please check back in a little while.",
         _ => "Wall not found.",
     };
+
+    private Shared.WallSpot? Spot => Shared.WallSpot.Parse(At);
 
     private (Guid Wall, string? Token, Guid? Boulder) Key => (WallId, ShareToken, BoulderId);
 

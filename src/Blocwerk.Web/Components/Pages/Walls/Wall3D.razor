@@ -36,6 +36,10 @@ else
                     <span><i style="background:@BoulderHoldColors.Top"></i>Top</span>
                 </span>
             }
+            @if (Spot is not null)
+            {
+                <span class="wall3d-note">The red ring marks the spot you chose.</span>
+            }
             <span class="wall3d-note">@HoldCountText(view)</span>
             @if (view.UnplacedHoldCount > 0)
             {
@@ -61,7 +65,7 @@ else
             <Wall3DCorrectionBar Facet="tappedFacet" Busy="correcting" Message="@correctionMessage" OnVertical="VerticalAsync" OnDrop="DropAsync" />
         }
         <div class="wall3d-stage">
-            <Wall3DStage View="view" InitialMode="@Mode" OnFacetTap="FacetTap" />
+            <Wall3DStage View="view" InitialMode="@Mode" Highlight="Spot" OnFacetTap="FacetTap" />
         </div>
     </div>
 }

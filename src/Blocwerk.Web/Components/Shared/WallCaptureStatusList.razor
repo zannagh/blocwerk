@@ -65,7 +65,7 @@
                                 }
                                 @if (capture.FollowUpNote is not null)
                                 {
-                                    <div class="hint">@capture.FollowUpNote</div>
+                                    <div class="hint">Note: @capture.FollowUpNote</div>
                                 }
                                 @if (IsDone(capture) && capture.Id != LatestDone?.Id)
                                 {
