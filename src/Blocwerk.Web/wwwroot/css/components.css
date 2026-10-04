@@ -891,3 +891,12 @@ img.wall-photo {
     .wall-carousel-root.editing .wall-photo-container .bw-toolbar .editor-toolbar { padding-right: 12px; }
     .wall-carousel-root.editing .editor-shell.with-sidebar > .bw-toolbar { margin-top: 0; }
 }
+
+/* Possible duplicate holds (wall settings): two review crops side by side, stacked on a phone. */
+.dup-card { margin-top: 12px; padding: 10px; border: 1px solid var(--border-light); border-radius: 8px; }
+.dup-pair { display: flex; flex-wrap: wrap; gap: 10px; }
+.dup-side { flex: 1 1 200px; min-width: 0; margin: 0; }
+.dup-side img { width: 100%; max-width: 360px; aspect-ratio: 1 / 1; object-fit: cover; border-radius: 6px; background: #000; display: block; }
+.dup-side figcaption { font-size: 0.85rem; margin-top: 4px; color: var(--text-muted, inherit); overflow-wrap: anywhere; }
+.dup-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.dup-actions > button { flex: 1 1 200px; }

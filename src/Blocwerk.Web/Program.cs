@@ -420,6 +420,7 @@ public static class Program
 
         // The pictures of the confirm screen's cards, made on request (see WallRefreshCheckCropEndpoint).
         app.MapWallRefreshCheckCrops();
+        app.MapWallDuplicateHoldCrops();
 
         // HLS adaptive-bitrate ladder for a Ready clip that has one. Same wall/share-token gate as the
         // byte route above (see BetaVideoHlsEndpoints); a denial or an MP4-only clip is a 404 and the
