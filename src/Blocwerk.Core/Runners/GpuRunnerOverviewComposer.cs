@@ -78,7 +78,7 @@ public static class GpuRunnerOverviewComposer
         return new GpuRunnerOverviewRow(
             r.Id, r.Name, input.OwnerName, r.OwnerUserId == viewer.UserId, r.SharedWithOtherWalls,
             GpuRunnerStates.Of(r.RevokedAt, r.LastSeenAt, r.Paused, onlineSince), r.LastSeenAt, r.LastJobAt, r.CreatedAt,
-            new GpuRunnerCapabilities(r.GpuName, r.VramMb, r.MaxQuality, r.MemoryBudgetMb, r.RunnerVersion, r.Platform),
+            new GpuRunnerCapabilities(r.GpuName, r.VramMb, r.MaxQuality, r.MemoryBudgetMb, r.RunnerVersion, r.Platform, r.Capabilities, r.TexturesMemoryMb),
             visibleWalls, input.Walls.Count - visibleWalls.Count, current, failures,
             CanRevoke: r.RevokedAt is null && (viewer.IsAppAdmin || r.OwnerUserId == viewer.UserId),
             CanShare: r.RevokedAt is null && viewer.IsAppAdmin);

@@ -19,6 +19,13 @@ public sealed partial class GpuJobQueue
     /// <summary>What the stage text of a job says while its runner uploads the trained view.</summary>
     internal const string UploadingStage = "is uploading the trained view";
 
+    /// <summary>What the stage text of a textures job says while its runner uploads the rendered textures.</summary>
+    internal const string UploadingTexturesStage = "is uploading the textures";
+
+    /// <summary>Whether a job's stage text says its runner is uploading the result.</summary>
+    internal static bool IsUploadingStage(string? stage) =>
+        stage?.StartsWith(UploadingStage, StringComparison.Ordinal) == true || stage?.StartsWith(UploadingTexturesStage, StringComparison.Ordinal) == true;
+
     /// <summary>
     /// The runner's claimed job, or why not: <see cref="RunnerJobOutcome.NotYours"/> when it never held it (or it went
     /// back to the queue), <see cref="RunnerJobOutcome.Over"/> when it held it and the job is over for good (cancelled,
@@ -92,7 +99,7 @@ public sealed partial class GpuJobQueue
 
         var lease = now + options.Lease < deadline ? now + options.Lease : deadline;
         var progress = report.Fraction is { } f && double.IsFinite(f) ? Math.Clamp(f, 0, 1) : job.Progress;
-        var stage = Clip(Describe(report), 200);
+        var stage = Clip(Describe(report, job.Kind), 200);
         var facts = GpuJobProgressFacts.From(job, report, now);
         var updated = await db.GpuJobs
             .Where(j => j.Id == jobId && j.ClaimedByRunnerId == runner.Id
@@ -178,13 +185,13 @@ public sealed partial class GpuJobQueue
     private string TooLongReason() =>
         $"the training took longer than {options.MaxJobDuration.TotalHours.ToString("0.#", CultureInfo.InvariantCulture)} h";
 
-    private static string Describe(RunnerProgress report)
+    private static string Describe(RunnerProgress report, GpuJobKind kind = GpuJobKind.Splat)
     {
         var stage = report.Stage switch
         {
             "download" => "is downloading the photos",
-            "upload" => UploadingStage,
-            _ => "is training",
+            "upload" => kind == GpuJobKind.Textures ? UploadingTexturesStage : UploadingStage,
+            _ => kind == GpuJobKind.Textures ? "is rendering the wall textures" : "is training",
         };
         if (report is { Step: { } step, TotalSteps: > 0 })
         {

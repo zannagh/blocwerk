@@ -76,7 +76,7 @@ public sealed partial class GpuRunnerOverviewService(
         var snapshot = await progress.ReadAsync(new JobProgressScope(visible.Select(j => j.WallId).ToHashSet(), TimeSpan.Zero), ct);
         var ids = visible.Select(j => j.JobId).ToHashSet();
         return snapshot.Jobs
-            .Where(j => j.Kind == JobKinds.GpuTraining && j.GpuJobId is { } id && ids.Contains(id))
+            .Where(j => JobKinds.IsGpu(j.Kind) && j.GpuJobId is { } id && ids.Contains(id))
             .ToDictionary(j => j.GpuJobId!.Value);
     }
 }

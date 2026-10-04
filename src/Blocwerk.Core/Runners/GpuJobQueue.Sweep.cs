@@ -41,8 +41,9 @@ public sealed partial class GpuJobQueue
     /// The queued job's line for <paramref name="online"/> able runners, <paramref name="busy"/> of them on another job;
     /// with none available but <paramref name="paused"/> able ones online and paused by their owner, "(paused)".
     /// </summary>
-    internal static string WaitingStage(SplatQuality quality, int online, int busy, int paused = 0) =>
+    internal static string WaitingStage(SplatQuality quality, int online, int busy, int paused = 0, GpuJobKind kind = GpuJobKind.Splat) =>
         online == 0 && paused > 0 ? "waiting for a 3D runner (paused)"
+        : online == 0 && kind == GpuJobKind.Textures ? "waiting for a 3D runner that can render wall textures (none online)"
         : online == 0 ? $"waiting for a 3D runner that can train {CaptureSplatDocuments.QualityName(quality)} (none online)"
         : busy >= online ? $"waiting for a 3D runner ({online} online, busy)"
         : busy == 0 ? $"waiting for a 3D runner ({online} online)"
@@ -50,7 +51,7 @@ public sealed partial class GpuJobQueue
 
     private async Task ExpireLeaseAsync(BlocwerkDbContext db, GpuJob job, DateTimeOffset now, CancellationToken ct)
     {
-        var uploading = job.Stage?.StartsWith(UploadingStage, StringComparison.Ordinal) == true;
+        var uploading = IsUploadingStage(job.Stage);
         if (job.ClaimedAt is { } claimed && Deadline(claimed, uploading) <= now)
         {
             // Heartbeats alone never keep a claim past the wall-clock cap; that costs a training attempt.
@@ -77,7 +78,9 @@ public sealed partial class GpuJobQueue
         foreach (var job in stale)
         {
             var days = options.QueuedLifetime.TotalDays.ToString("0.#", CultureInfo.InvariantCulture);
-            var reason = $"no 3D runner took the photo-real view within {days} days";
+            var reason = job.Kind == GpuJobKind.Textures
+                ? $"no 3D runner rendered the wall textures within {days} days"
+                : $"no 3D runner took the photo-real view within {days} days";
             var cancelled = await db.GpuJobs.Where(j => j.Id == job.Id && j.Status == GpuJobStatus.Queued)
                 .ExecuteUpdateAsync(
                     s => s.SetProperty(j => j.Status, GpuJobStatus.Cancelled)
@@ -91,7 +94,14 @@ public sealed partial class GpuJobQueue
             }
 
             logger.LogInformation("GPU job {JobId} of capture {CaptureId} expired: {Reason}", job.Id, job.CaptureId, reason);
-            await MarkCaptureWithoutSplatAsync(db, job, reason, ct);
+            if (job.Kind == GpuJobKind.Textures)
+            {
+                NotifyTextures(job.CaptureId);
+            }
+            else
+            {
+                await MarkCaptureWithoutSplatAsync(db, job, reason, ct);
+            }
 
             // An installed preview stays the job's leftover: it may still be the capture's view, to finish again.
             DeleteAll(KeepOnlyInstalledPreview(job), job.Id);
@@ -109,6 +119,12 @@ public sealed partial class GpuJobQueue
             .ToListAsync(ct);
         foreach (var job in due)
         {
+            if (job.Kind == GpuJobKind.Textures)
+            {
+                await RetryTexturesDeliveryAsync(db, job, now, ct);
+                continue;
+            }
+
             if (job.CompletedAt < now - FinishGiveUp)
             {
                 // The capture's processor gives up (it tells the capture why, or restores a re-finish's state); only a
@@ -188,9 +204,9 @@ public sealed partial class GpuJobQueue
 
         // Paused runners are online but take no work: they only change "none online" into "paused".
         var own = await Assignments(db).Where(rw => walls.Contains(rw.WallId) && rw.Runner.LastSeenAt >= online)
-            .Select(rw => new { rw.WallId, rw.RunnerId, rw.Runner.MaxQuality, Paused = rw.Runner.Paused == true }).ToListAsync(ct);
+            .Select(rw => new { rw.WallId, rw.RunnerId, rw.Runner.MaxQuality, rw.Runner.Capabilities, rw.Runner.TexturesMemoryMb, Paused = rw.Runner.Paused == true }).ToListAsync(ct);
         var shared = await Approvals(db).Where(a => walls.Contains(a.WallId) && a.Runner.LastSeenAt >= online)
-            .Select(a => new { a.WallId, a.RunnerId, a.Runner.MaxQuality, Paused = a.Runner.Paused == true }).ToListAsync(ct);
+            .Select(a => new { a.WallId, a.RunnerId, a.Runner.MaxQuality, a.Runner.Capabilities, a.Runner.TexturesMemoryMb, Paused = a.Runner.Paused == true }).ToListAsync(ct);
         var busy = (await db.GpuJobs.AsNoTracking()
                 .Where(j => (j.Status == GpuJobStatus.Claimed || j.Status == GpuJobStatus.Running) && j.ClaimedByRunnerId != null)
                 .Select(j => j.ClaimedByRunnerId!.Value).ToListAsync(ct))
@@ -198,10 +214,10 @@ public sealed partial class GpuJobQueue
         foreach (var job in waiting)
         {
             var candidates = own.Concat(shared)
-                .Where(o => o.WallId == job.WallId && QualityCap(o.MaxQuality, null) >= job.Quality).ToList();
+                .Where(o => o.WallId == job.WallId && Able(job, o.MaxQuality, o.Capabilities, o.TexturesMemoryMb)).ToList();
             var able = candidates.Where(o => !o.Paused).Select(o => o.RunnerId).Distinct().ToList();
             var paused = candidates.Where(o => o.Paused).Select(o => o.RunnerId).Distinct().Count();
-            var stage = WaitingStage(job.Quality, able.Count, able.Count(busy.Contains), paused);
+            var stage = WaitingStage(job.Quality, able.Count, able.Count(busy.Contains), paused, job.Kind);
             if (stage != job.Stage)
             {
                 // Conditional: a runner may have claimed it meanwhile (its stage then says so).

@@ -123,16 +123,15 @@ class JobRun:
 
     def _run(self):
         try:
-            ply, stats = self._download_and_train()
+            ply, stats = self._produce()
             self.trained = True
-            self.hb.set(stage="upload", fraction=1.0, detail="uploading the trained scene", step=None)
-            sent = with_retries("upload", lambda: self.client.upload_result(self.id, ply, trim_stats(stats), self.stop),
-                                self.stop, UPLOAD_PATIENCE_S)
-            log.info("job %s uploaded (%.1f MB sent, %.1f MB scene)", self.id, sent / 1e6, os.path.getsize(ply) / 1e6)
+            self.hb.set(stage="upload", fraction=1.0, detail=self.UPLOAD_DETAIL, step=None)
+            sent = with_retries("upload", lambda: self._send(ply, stats), self.stop, UPLOAD_PATIENCE_S)
+            log.info("job %s uploaded (%.1f MB sent, %.1f MB result)", self.id, sent / 1e6, os.path.getsize(ply) / 1e6)
             return "succeeded"
-        except BundleError as e:
-            return self._fail(f"bad bundle: {e}", retryable=False)
-        except (BundleTooLarge, BundleDamaged) as e:
+        except self.BAD_INPUT as e:
+            return self._fail(f"bad bundle: {e}" if isinstance(e, BundleError) else str(e), retryable=False)
+        except self.CANNOT_HERE as e:
             return self._fail(str(e), retryable=True)
         except Rejected as e:
             return self._fail(f"the server refused the result: {e}", retryable=False)
@@ -146,6 +145,18 @@ class JobRun:
         except Exception as e:  # noqa: BLE001 - a bug here must not end the runner; the job may work elsewhere
             log.exception("job %s: unexpected error", self.id)
             return self._fail(f"runner error: {type(e).__name__}: {e}", retryable=True)
+
+    UPLOAD_DETAIL = "uploading the trained scene"
+    BAD_INPUT = (BundleError,)  # what no retry fixes: reported as a failure for good
+    CANNOT_HERE = (BundleTooLarge, BundleDamaged)  # what another runner may do better: a retryable failure
+
+    def _produce(self):
+        """Downloads and works the job; returns (the result file, the stats header). Textures jobs override it."""
+        return self._download_and_train()
+
+    def _send(self, path, stats):
+        """One upload attempt of the result; returns the bytes sent."""
+        return self.client.upload_result(self.id, path, trim_stats(stats), self.stop)
 
     def _download_and_train(self):
         zip_path = os.path.join(self.dir, "bundle.zip")

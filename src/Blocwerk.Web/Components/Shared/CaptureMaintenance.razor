@@ -22,7 +22,7 @@
     }
     @if (Rerendering)
     {
-        <li class="hint" role="status">Rendering the wall textures again&hellip;</li>
+        <li class="hint" role="status">Rendering the wall textures again&hellip;@(RerenderNote is { Length: > 0 } ? " " + RerenderNote : string.Empty)</li>
     }
     else if (CanRerender)
     {
@@ -46,7 +46,7 @@
                                 <span>
                                     <strong>@TextureQualityPresets.Label(quality)</strong>
                                     <span class="capture-maintenance-desc">@Describe(quality, estimate)</span>
-                                    @if (estimate is not null && Warning(estimate) is { } warning)
+                                    @if (estimate is not null && Warning(estimate, Routing.RouteOf(quality)) is { } warning)
                                     {
                                         <span class="texture-quality-warning" role="note">@warning</span>
                                     }
@@ -54,6 +54,36 @@
                             </label>
                         }
                     </fieldset>
+                    @if (Routing.RouteOf(chosen) is { Route: TextureRoute.Runner, Runner: { } runner })
+                    {
+                        <fieldset class="texture-quality-options">
+                            <legend class="texture-quality-legend">Where to render</legend>
+                            <label class="texture-quality-option">
+                                <input type="radio" name="texture-route" checked="@(!onHost)" @onchange="() => onHost = false" />
+                                <span>
+                                    <strong>Render on @runner.Name (more memory)</strong>
+                                    <span class="capture-maintenance-desc">Blends every view at @TextureQualityPresets.Label(chosen) quality. @QueueLine(runner)</span>
+                                </span>
+                            </label>
+                            <label class="texture-quality-option">
+                                <input type="radio" name="texture-route" checked="@onHost" @onchange="() => onHost = true" />
+                                <span>
+                                    <strong>Render on this server</strong>
+                                    <span class="capture-maintenance-desc">Starts now, but blends fewer views (see the note above).</span>
+                                </span>
+                            </label>
+                        </fieldset>
+                    }
+                    else if (Routing.RouteOf(chosen).Note is { } routeNote)
+                    {
+                        <p class="texture-quality-warning" role="note">@routeNote</p>
+                        @if (Routing.BestHostQuality < chosen)
+                        {
+                            <button type="button" class="btn-secondary" disabled="@Disabled" @onclick="() => chosen = Routing.BestHostQuality">
+                                Use @TextureQualityPresets.Label(Routing.BestHostQuality) instead (the best that fits this server)
+                            </button>
+                        }
+                    }
                     <div class="confirm-action-buttons">
                         <button type="button" class="btn-primary" disabled="@Disabled" @onclick="StartAsync">Render textures</button>
                         <button type="button" class="btn-secondary" disabled="@Disabled" @onclick="ClosePicker">Cancel</button>
@@ -81,8 +111,20 @@
 @code {
     private bool pickerOpen;
     private TextureQuality chosen = TextureQuality.Standard;
+    private bool onHost;
 
-    private TextureQualityEstimate? EstimateOf(TextureQuality quality) => Estimates.FirstOrDefault(e => e.Quality == quality);
+    private TextureQualityEstimate? EstimateOf(TextureQuality quality) => Routing.Estimates.FirstOrDefault(e => e.Quality == quality);
+
+    /// <summary>The queue state under the runner choice: paused, busy, how many wait.</summary>
+    private static string QueueLine(TextureRunnerOffer runner)
+    {
+        var state = runner.Paused ? "It is paused; the render starts when it is resumed."
+            : runner.Busy ? "It is busy with another job; this one starts after it."
+            : "It is idle and starts right away.";
+        return runner.Waiting + runner.Running > 0
+            ? $"{state} Texture jobs in the queue: {runner.Running} running, {runner.Waiting} waiting."
+            : state;
+    }
 
     private async Task OpenPickerAsync()
     {
@@ -95,7 +137,8 @@
     private async Task StartAsync()
     {
         pickerOpen = false;
-        await OnRerender.InvokeAsync(chosen);
+        var route = Routing.RouteOf(chosen).Route == TextureRoute.Runner && !onHost ? TextureRoute.Runner : TextureRoute.Host;
+        await OnRerender.InvokeAsync(new TextureRerenderChoice(chosen, route));
     }
 
     private static string Describe(TextureQuality quality, TextureQualityEstimate? e) => (quality, e) switch
@@ -108,8 +151,11 @@
                       + $"about {x.RelativeDuration:0.#}x the time of Standard.",
     };
 
-    private static string? Warning(TextureQualityEstimate e) => e.Fit switch
+    private static string? Warning(TextureQualityEstimate e, TextureQualityRoute route) => e.Fit switch
     {
+        _ when route.Route == TextureRoute.Runner => e.Fit == TextureBlendFit.FewerViews
+            ? $"On this server the photos would be blended from {e.BlendViews} views per spot instead of 6: it does not fit its memory."
+            : "Does not fit this server's memory: on this server it would be one photo per spot, with visible seams.",
         TextureBlendFit.FewerViews => $"The photos are blended from {e.BlendViews} views per spot here instead of 6 so it fits the server's memory.",
         TextureBlendFit.SingleView => "Too big to blend photos on this server: each spot is taken from one photo, with visible seams. Pick a lower quality.",
         TextureBlendFit.TooLarge => "Too big for the server to render in one go. Pick a lower quality.",
@@ -136,13 +182,16 @@
 
     [Parameter] public EventCallback OnRefinish { get; set; }
 
-    /// <summary>Raised with the quality picked.</summary>
-    [Parameter] public EventCallback<TextureQuality> OnRerender { get; set; }
+    /// <summary>Raised with the quality picked and where it runs.</summary>
+    [Parameter] public EventCallback<TextureRerenderChoice> OnRerender { get; set; }
 
-    /// <summary>What each quality would take (pixels, memory, blend fit); empty until loaded or when unknown.</summary>
-    [Parameter] public IReadOnlyList<TextureQualityEstimate> Estimates { get; set; } = [];
+    /// <summary>What each quality would take on the server, and which would go to a 3D runner; empty until loaded or when unknown.</summary>
+    [Parameter] public TextureRouting Routing { get; set; } = TextureRouting.None;
 
-    /// <summary>Raised when the picker opens, to load <see cref="Estimates"/>.</summary>
+    /// <summary>Where a re-render already queued stands (waiting for a runner, rendering on it), or null.</summary>
+    [Parameter] public string? RerenderNote { get; set; }
+
+    /// <summary>Raised when the picker opens, to load <see cref="Routing"/>.</summary>
     [Parameter] public EventCallback OnPickQuality { get; set; }
 
     [Parameter] public EventCallback OnResolve { get; set; }

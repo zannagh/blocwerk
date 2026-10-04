@@ -45,7 +45,10 @@ public sealed partial class JobProgressReader
                 items.Add(training);
             }
 
-            items.AddRange(FinishItems(row.Job, context));
+            if (row.Job.Kind == GpuJobKind.Splat)
+            {
+                items.AddRange(FinishItems(row.Job, context));
+            }
         }
 
         return items;
@@ -59,12 +62,14 @@ public sealed partial class JobProgressReader
             return null;
         }
 
+        var textures = job.Kind == GpuJobKind.Textures;
+        var kind = textures ? JobKinds.GpuTextures : JobKinds.GpuTraining;
         var stage = TrainingStage(job, state);
-        var (eta, source) = state == JobStates.Running ? TrainingEta(job, stage, context) : (null, null);
+        var (eta, source) = state == JobStates.Running && !textures ? TrainingEta(job, stage, context) : (null, null);
         return new JobProgressItem
         {
-            Id = $"{JobKinds.GpuTraining}:{job.Id}",
-            Kind = JobKinds.GpuTraining,
+            Id = $"{kind}:{job.Id}",
+            Kind = kind,
             State = state,
             Stage = stage,
             Detail = job.Stage,
@@ -82,7 +87,7 @@ public sealed partial class JobProgressReader
             GpuJobId = job.Id,
             RunnerName = state == JobStates.Running ? runner : null,
             Attempts = job.Attempts,
-            Training = Facts(job, context.Now),
+            Training = textures ? null : Facts(job, context.Now),
         };
     }
 
@@ -116,14 +121,14 @@ public sealed partial class JobProgressReader
             return state == JobStates.Queued ? "queued" : "done";
         }
 
-        if (job.Stage?.StartsWith(GpuJobQueue.UploadingStage, StringComparison.Ordinal) == true)
+        if (GpuJobQueue.IsUploadingStage(job.Stage))
         {
             return "upload";
         }
 
         return job.Status == GpuJobStatus.Claimed || (job.Step is null && job.Stage?.Contains("download", StringComparison.Ordinal) == true)
             ? "download"
-            : "training";
+            : job.Kind == GpuJobKind.Textures ? "rendering" : "training";
     }
 
     private static JobTrainingFacts Facts(GpuJob job, DateTimeOffset now)

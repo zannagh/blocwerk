@@ -41,12 +41,12 @@
 
     @if (jobs is { Count: > 0 })
     {
-        <h3 class="gpu-runner-heading">Photo-real views waiting for a runner</h3>
+        <h3 class="gpu-runner-heading">Work waiting for a runner</h3>
         @foreach (var job in jobs)
         {
             <div class="gpu-job-row">
                 <span class="gpu-job-status">@JobLabel(job)</span>
-                <span class="hint">@job.Quality quality · queued @Ago(job.CreatedAt)@(job.Attempts > 1 ? $" · claim {job.Attempts}" : "")</span>
+                <span class="hint">@(job.Kind == "textures" ? "Wall textures" : $"{job.Quality} quality") · queued @Ago(job.CreatedAt)@(job.Attempts > 1 ? $" · claim {job.Attempts}" : "")</span>
             </div>
         }
     }

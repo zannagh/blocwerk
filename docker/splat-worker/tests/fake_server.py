@@ -18,6 +18,7 @@ class FakeServer:
         self.offer_previews = False  # the claim's "previews" flag
         self.pause_aware = True  # hello answers pauseAware (False: a server older than the pause switch)
         self.jobs_left = 1
+        self.job_extra = {}  # more keys of the claim document (kind, requiredMemoryMb ...)
         self.errors = {"hello": [], "claim": [], "bundle": [], "progress": [], "result": [], "fail": [], "preview": []}
         self.drop_bundle_after = None  # bytes: the first download breaks off there (resume test)
         self.gone_on_stage = None  # progress with this stage answers 410
@@ -35,7 +36,7 @@ class FakeServer:
     def job(self):
         return {"jobId": self.job_id, "quality": self.quality, "leaseSeconds": 300, "bundleBytes": len(self.bundle),
                 "bundleSha256": hashlib.sha256(self.bundle).hexdigest(),
-                **({"previews": True} if self.offer_previews else {})}
+                **({"previews": True} if self.offer_previews else {}), **self.job_extra}
 
     def route(self, path):
         m = re.fullmatch(r"/api/runners/(hello|claim)|/api/runners/jobs/([^/]+)/(bundle|progress|result|fail|preview)",

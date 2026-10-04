@@ -12,6 +12,9 @@ public static class JobKinds
     /// <summary>A photo-real training on a 3D runner (queued, download, training, upload).</summary>
     public const string GpuTraining = "gpuTraining";
 
+    /// <summary>A capture's wall textures rendered on a 3D runner (queued, download, rendering, upload); the job's <c>gpuJobId</c> names it.</summary>
+    public const string GpuTextures = "gpuTextures";
+
     /// <summary>The server finishing a trained view (crop, export, LOD) and installing it.</summary>
     public const string Finish = "finish";
 
@@ -30,8 +33,11 @@ public static class JobKinds
     /// <summary>A wall admin's "Find holds from all photos" search (queued, then one photo after the other).</summary>
     public const string HoldSearch = "holdSearch";
 
+    /// <summary>Whether the kind is a job on a 3D runner (<see cref="GpuTraining"/> or <see cref="GpuTextures"/>).</summary>
+    public static bool IsGpu(string kind) => kind is GpuTraining or GpuTextures;
+
     /// <summary>Every kind, in display order.</summary>
-    public static IReadOnlyList<string> All { get; } = [Capture, GpuTraining, Finish, FollowUp, TextureRerender, Resolve, Import, HoldSearch];
+    public static IReadOnlyList<string> All { get; } = [Capture, GpuTraining, GpuTextures, Finish, FollowUp, TextureRerender, Resolve, Import, HoldSearch];
 }
 
 /// <summary>The <see cref="JobProgressItem.State"/> values. Part of the API contract: never rename one.</summary>

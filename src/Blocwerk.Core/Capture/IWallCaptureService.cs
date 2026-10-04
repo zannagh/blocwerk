@@ -118,7 +118,15 @@ public interface IWallCaptureService
     /// stored ones (kept while its model is the wall's active one), so nothing new has to be shot; <paramref name="quality"/>
     /// picks how fine the textures are (<see cref="TextureQualityPresets"/>).
     /// </summary>
-    Task<IReadOnlyList<string>> RerenderTexturesAsync(Guid captureId, TextureQuality quality = TextureQuality.Standard);
+    Task<IReadOnlyList<string>> RerenderTexturesAsync(
+        Guid captureId, TextureQuality quality = TextureQuality.Standard, TextureRoute route = TextureRoute.Host);
+
+    /// <summary>
+    /// Where each texture quality would run (<see cref="TextureRoutes"/>): the host's estimates, and for a quality that does not
+    /// fit the host's memory budget in full the online 3D runner that could render it (with the textures queue's state), or why
+    /// there is none. Admin only. <see cref="TextureRouting.None"/> when the capture has no readable model.
+    /// </summary>
+    Task<TextureRouting> GetTextureRoutingAsync(Guid captureId);
 
     /// <summary>
     /// What re-rendering the capture's textures would take at every quality (pixels, blend memory, whether the multi-view blend

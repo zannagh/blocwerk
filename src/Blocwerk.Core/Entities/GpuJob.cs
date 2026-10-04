@@ -34,6 +34,15 @@ public class GpuJob
 
     public SplatQuality Quality { get; set; } = SplatQuality.High;
 
+    /// <summary>What the job does (<see cref="GpuJobKind"/>); a textures job is only ever offered to a runner that advertises it.</summary>
+    public GpuJobKind Kind { get; set; } = GpuJobKind.Splat;
+
+    /// <summary>
+    /// A textures job: the memory its blend needs on the runner, MB (the quality's estimate); a runner whose usable memory
+    /// is lower is not offered it. Null for a splat job.
+    /// </summary>
+    public int? RequiredMemoryMb { get; set; }
+
     public GpuJobStatus Status { get; set; } = GpuJobStatus.Queued;
 
     public Guid? ClaimedByRunnerId { get; set; }

@@ -19,7 +19,9 @@ public sealed record RunnerHello(
     [property: JsonPropertyName("brushVersion")] string? BrushVersion,
     [property: JsonPropertyName("trainer")] string? Trainer = null,
     [property: JsonPropertyName("cuda")] bool? Cuda = null,
-    [property: JsonPropertyName("paused")] bool? Paused = null);
+    [property: JsonPropertyName("paused")] bool? Paused = null,
+    [property: JsonPropertyName("capabilities")] IReadOnlyList<string>? Capabilities = null,
+    [property: JsonPropertyName("texturesMemoryMb")] int? TexturesMemoryMb = null);
 
 /// <summary>
 /// <c>POST /api/runners/claim</c> (optional body): the quality this runner will train at most right now, and the largest
@@ -67,7 +69,9 @@ public sealed record RunnerClaim(
     [property: JsonPropertyName("previews")] bool Previews = false,
     [property: JsonPropertyName("reattached")] bool Reattached = false,
     [property: JsonPropertyName("wallId")] Guid? WallId = null,
-    [property: JsonPropertyName("captureId")] Guid? CaptureId = null);
+    [property: JsonPropertyName("captureId")] Guid? CaptureId = null,
+    [property: JsonPropertyName("kind")] string Kind = "splat",
+    [property: JsonPropertyName("requiredMemoryMb")] int? RequiredMemoryMb = null);
 
 /// <summary>What a job-scoped runner call found.</summary>
 public enum RunnerJobOutcome

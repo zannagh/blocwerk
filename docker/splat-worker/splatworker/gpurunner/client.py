@@ -255,18 +255,18 @@ class Client:
                     raise Transient(f"bundle download interrupted at {have} bytes: {e}") from e
         return have
 
-    def upload_result(self, job_id, path, stats, stop=None):
+    def upload_result(self, job_id, path, stats, stop=None, compress=True):
         """PUT the trained scene (gzip-compressed on the fly to a temp file unless disabled or refused with
-        415). Returns the bytes sent."""
-        return self._upload(f"/api/runners/jobs/{job_id}/result", path, stats, stop)
+        415; `compress=False` for a file that is compressed already, such as a textures zip). Returns the bytes sent."""
+        return self._upload(f"/api/runners/jobs/{job_id}/result", path, stats, stop, compress)
 
     def upload_preview(self, job_id, path, step, total, stats, stop=None):
         """PUT the splats after `step` of `total` steps as a preview, like upload_result."""
         query = f"step={int(step)}&total={int(total)}"
         return self._upload(f"/api/runners/jobs/{job_id}/preview?{query}", path, stats, stop)
 
-    def _upload(self, url_path, path, stats, stop):
-        if self.gzip_upload:
+    def _upload(self, url_path, path, stats, stop, compress=True):
+        if self.gzip_upload and compress:
             gz = path + ".gz"
             if not os.path.exists(gz):
                 gzip_file(path, gz + ".part", stop)

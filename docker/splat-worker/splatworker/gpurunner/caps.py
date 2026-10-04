@@ -1,5 +1,6 @@
 """What this runner can do: trainer (SPLAT_TRAINER: gsplat on CUDA, Brush on Vulkan / Metal), GPU and
-VRAM, host memory budget -> the highest quality profile it will train (hello, claim)."""
+VRAM, host memory budget -> the highest quality profile it will train (hello, claim); and whether it renders wall
+textures (`capabilities`, `texturesMemoryMb`: textures.py)."""
 import json
 import os
 import platform
@@ -9,6 +10,7 @@ from .. import __version__, brush, gpu, gsplat_trainer, trainers
 from ..profiles import QUALITIES
 from ..resources import memory_budget, system_memory
 from ..settings import settings
+from . import textures
 
 # Brush's host-memory needs per profile (README "quality profiles"): high 5-6 GB, max 12+ GB.
 BRUSH_FLOOR_MB = {"max": 12 * 1024, "high": 5 * 1024}
@@ -94,7 +96,8 @@ class Capabilities:
         doc = {"runnerVersion": __version__, "gpuName": name, "vramMb": vram,
                "maxQuality": max_quality(self.trainer, vram, budget), "memoryBudgetMb": budget,
                "platform": f"{platform.system()} {platform.machine()}", "trainer": self.trainer,
-               "cuda": self.trainer == "gsplat" and version is not None, "trainerVersion": version}
+               "cuda": self.trainer == "gsplat" and version is not None, "trainerVersion": version,
+               **textures.advertise()}
         if self.trainer == "brush":
             doc["brushVersion"] = version
         return doc

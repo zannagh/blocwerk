@@ -4,7 +4,7 @@
 #   docker build -f docker/splat-worker/Dockerfile --target test .                       # runs the tests
 #   docker run --gpus all -p 8100:8100 -e COMPUTE_API_KEY=... blocwerk-splat-worker     # NVIDIA
 #   docker run --device /dev/dri -p 8100:8100 -e COMPUTE_API_KEY=... blocwerk-splat-worker  # AMD / Intel
-# The same image, two more roles (README "3D runner"):
+# The same image, two more roles (README "3D runner"; a runner with enough memory also renders wall textures):
 #   3D runner (Brush on Vulkan; pulls training from a Blocwerk server; no inbound ports; status page: README):
 #     docker run -d --name blocwerk-runner --restart unless-stopped --device /dev/dri --env-file runner.env \
 #       blocwerk-splat-worker python -m splatworker.gpurunner --server https://blocwerk.app
@@ -38,11 +38,15 @@ COPY docker/splat-worker/requirements.lock .
 RUN python3 -m venv /opt/venv && pip install --require-hashes --no-deps -r requirements.lock
 COPY docker/compute-jobs-py/computejobs/ computejobs/
 COPY docker/splat-worker/splatworker/ splatworker/
+# wall-geometry's renderer: a 3D runner renders wall textures with it (splatworker/gpurunner/textures.py); its
+# numpy / scipy / OpenCV pins are in requirements.lock, equal to docker/wall-geometry's
+COPY docker/wall-geometry/wallgeometry/ wallgeometry/
 
 FROM base AS test
 COPY docker/splat-worker/requirements-dev.lock .
 RUN pip install --require-hashes --no-deps -r requirements-dev.lock
 COPY docker/splat-worker/tests/ tests/
+COPY docker/wall-geometry/tests/photowall.py docker/wall-geometry/tests/synthetic.py wg-tests/
 COPY docker/compute-jobs-py/tests/ tests-shared/
 RUN python -m pytest -q -p no:cacheprovider tests tests-shared
 

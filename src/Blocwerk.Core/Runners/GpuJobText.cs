@@ -23,7 +23,7 @@ public static class GpuJobText
         }
 
         var jobs = await db.GpuJobs.AsNoTracking()
-            .Where(j => captureIds.Contains(j.CaptureId)
+            .Where(j => captureIds.Contains(j.CaptureId) && j.Kind == GpuJobKind.Splat
                         && (j.Status == GpuJobStatus.Queued || j.Status == GpuJobStatus.Claimed || j.Status == GpuJobStatus.Running
                             || (j.Status == GpuJobStatus.Succeeded && j.InstalledAt == null)))
             .Select(j => new

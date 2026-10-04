@@ -57,7 +57,7 @@ public sealed class JobStageHistory
         }
 
         var jobs = await db.GpuJobs.AsNoTracking()
-            .Where(j => j.Status == GpuJobStatus.Succeeded && j.CompletedAt != null)
+            .Where(j => j.Kind == GpuJobKind.Splat && j.Status == GpuJobStatus.Succeeded && j.CompletedAt != null)
             .OrderByDescending(j => j.CompletedAt)
             .Take(Samples)
             .Select(j => new { j.Quality, j.ClaimedAt, j.CompletedAt, j.InstalledAt })

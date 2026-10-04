@@ -33,7 +33,7 @@ public sealed partial class GpuJobQueue
             return found;
         }
 
-        if (!options.Previews || !GpuJobPreviews.MayAccept(job, step, total, options, Now))
+        if (job.Kind != GpuJobKind.Splat || !options.Previews || !GpuJobPreviews.MayAccept(job, step, total, options, Now))
         {
             return RunnerJobOutcome.PreviewRefused;
         }
