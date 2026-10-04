@@ -15,7 +15,7 @@ import * as THREE from '../lib/three/three.module.min.js';
 import { facetOutline, v3 } from './wall3d-scene.js';
 
 export const BODY_FRONT_MM = 60;
-const BODY_DEPTH_MM = 1500;
+export const BODY_DEPTH_MM = 1500;
 /**
  * An enclosed recess (Wall3DRecesses): the closing triangle's block reaches this far outward, so nothing the capture
  * put beyond it shows, and the roof surface between the triangles' hypotenuses gets a block this deep behind it,
@@ -169,7 +169,7 @@ export function bodyPieces(facets, recesses = []) {
 }
 
 /** Backwards and level (an overhang's block must not rise over its top edge), or straight back for a roof. */
-function backwards(p) {
+export function backwards(p) {
     const level = p.n.clone().negate().setZ(0);
     return Math.abs(p.n.z) < 0.95 && level.lengthSq() > 1e-6 ? level.normalize() : p.n.clone().negate();
 }

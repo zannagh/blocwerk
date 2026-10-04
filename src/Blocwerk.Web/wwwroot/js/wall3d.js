@@ -115,7 +115,7 @@ function build(container, renderer, view, options) {
     // Photo-real mode swaps the modelled wall for the captured splat; the hold outlines and boulder
     // rings (wall3d-overlay.js), the selection and hold taps stay.
     const photo = createPhotoReal({
-        renderer, scene, view, clip,
+        renderer, scene, view, clip, body: view.splatMatrix?.length === 16 ? body : null,
         facetParts: [facets.group, textures, markers, holds.lit, holds.dim, volumes.plain, ...surroundings],
         photoTextures: textures,
         onGiveUp: message => modeCtl.fail(message),
