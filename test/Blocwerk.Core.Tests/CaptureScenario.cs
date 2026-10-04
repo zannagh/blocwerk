@@ -36,14 +36,15 @@ internal sealed class CaptureScenario : IDisposable
         Files = new FileSystemCaptureFileStore(Settings);
         Detector = detector ?? new FakeMarkerDetectionService(0, 1, 2, 6, 7, 12);
         MarkerPlans = new MarkerPlanService(harness.DbContextFactory, harness.CurrentUser, NullLogger<MarkerPlanService>.Instance, kiosk);
-        Service = new WallCaptureService(
-            harness.DbContextFactory, harness.CurrentUser, Files, Queue, new FakeComputeJobClientFactory(Client, SplatClient),
-            NullLogger<WallCaptureService>.Instance, kiosk, Detector, MarkerPlans, Video, Options, busyGate, photoConverter: photoConverter,
-            textureQueue: TextureQueue, resolveQueue: ResolveQueue);
         Runners = runnerOptions is null
             ? null
             : new GpuJobQueue(
-                harness.RootContextFactory, Files, Queue, runnerOptions, new GpuJobSignal(), NullLogger<GpuJobQueue>.Instance, busyGate, clock);
+                harness.RootContextFactory, Files, Queue, runnerOptions, new GpuJobSignal(), NullLogger<GpuJobQueue>.Instance, busyGate, clock,
+                textureQueue: TextureQueue);
+        Service = new WallCaptureService(
+            harness.DbContextFactory, harness.CurrentUser, Files, Queue, new FakeComputeJobClientFactory(Client, SplatClient),
+            NullLogger<WallCaptureService>.Instance, kiosk, Detector, MarkerPlans, Video, Options, busyGate, photoConverter: photoConverter,
+            textureQueue: TextureQueue, resolveQueue: ResolveQueue, settings: Settings, gpuJobs: Runners);
         Processor = new WallCaptureProcessor(
             harness.RootContextFactory, Settings, new FakeComputeJobClientFactory(Client, SplatClient), Files, Push,
             NullLoggerFactory.Instance, Options, Detector, Video, busyGate, followUps?.Invoke(harness), gpuJobs: Runners,

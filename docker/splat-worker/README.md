@@ -280,6 +280,9 @@ give the job memory to match (`SPLAT_MAX_MEMORY_MB` unset, container limit ≥ 1
 | `RUNNER_UI_PORT` | 8190 | the local status page and pause switch (below); `0` = off. A taken port only logs a warning. Two runners on one machine: one port each |
 | `RUNNER_UI_HOST` | `127.0.0.1` | where the status page listens. Only its pause switch needs a token (below): keep it on loopback. In Docker set `0.0.0.0` (the container's own interface) and publish to the host's loopback only: `-p 127.0.0.1:8190:8190` |
 | `RUNNER_PREVIEWS` | `0.14,0.4` | fractions of the steps at which the splats so far are frame-checked and uploaded as a preview (ultra: 7000 and 20000; none before step 3000), when the server offers previews (`RUNNERS__PREVIEWS`). `0` = off |
+| `RUNNER_TEXTURES` | 1 | `0` = never advertise the `textures` capability (below) |
+| `TEXTURES_BLEND_MAX_BYTES` | 50 % of the machine's memory | the multi-view blend's budget for a wall-textures job (the wall-geometry service's own variable); advertised as `texturesMemoryMb`. `RUNNER_TEXTURES_MEMORY_FRACTION` (0.1 to 0.9) changes the 50 % |
+| `RUNNER_TEXTURES_MAX_IMAGE_MP` | 200 | OpenCV's decode limit per photo of a textures job |
 
 ## Run natively on a Mac (the "external GPU")
 
@@ -574,6 +577,25 @@ docker run -e SPLAT_WORKER_MODE=cpu -e COMPUTE_API_KEY=... ghcr.io/zannagh/blocw
 
 Plain `http://` is refused except for localhost (`--insecure-http` overrides). Exit codes: 0 stopped,
 2 misconfigured (no key, trainer missing; also on a resume when the trainer turns out unusable), 3 key refused.
+
+### Wall textures (`textures` jobs)
+
+The server renders a capture's wall textures on its geometry worker, which has a 2 GB blend budget. A finer quality
+("Render textures again" > High / Maximum) or a bigger wall would blend fewer views there, so the admin may send it to a
+runner with more memory (a 48 GB Mac) instead. A runner takes such jobs when `wallgeometry` (the package in
+`docker/wall-geometry`, copied into the images and put on `PYTHONPATH` by `run-runner-native.sh`) and its libraries import
+and half the machine's memory is at least 3 GB; hello then says `"capabilities": ["splat", "textures"]` and
+`"texturesMemoryMb": <blend budget>`. An older runner (or `RUNNER_TEXTURES=0`) says no `textures`, and the server never
+offers it one: the claim filters by capability and memory.
+
+The job (`kind: "textures"` in the claim, with `requiredMemoryMb`) has a zip bundle: `textures-job.json`
+(`{"version": 1, "options": {...}}`, the wall-geometry `textures` options), `geometry.json` and `photos/<camera name>.jpg|png`
+(metadata stripped). The runner unpacks it (`gpurunner/textures_bundle.py`), runs `wallgeometry.jobrender.render_job` (the
+service's own job body) in a child process (`textures_child.py`) with the blend budget, reports progress (`stage: "textures"`),
+and uploads a flat zip with `textures.json` (the manifest) and every `facet_*.jpg`, `facet_*_mask.png`, `facet_*_source.json`
+it names, uncompressed again, to the usual `PUT .../result`. The server installs those files exactly like a render on the
+host. A pause kills the child and hands the job back free; a job that needs more than the runner's budget goes back as its
+(retryable) failure; inconsistent inputs fail for good.
 
 ### Status page and pause switch
 

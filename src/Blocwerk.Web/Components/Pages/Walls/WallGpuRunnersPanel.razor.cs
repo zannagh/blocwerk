@@ -78,7 +78,7 @@ public partial class WallGpuRunnersPanel : IAsyncDisposable
     private static string JobLabel(GpuJobInfo job) => job.Status switch
     {
         "Queued" => $"Waiting: {job.Stage ?? "for a 3D runner"}",
-        "Succeeded" => "Trained; finishing on the server",
+        "Succeeded" => job.Kind == "textures" ? "Rendered; installing on the server" : "Trained; finishing on the server",
         _ => $"On runner “{job.RunnerName}”: {job.Stage} ({job.Progress:P0})",
     };
 

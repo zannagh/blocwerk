@@ -18,7 +18,8 @@ public partial class WallCaptureStatusList : IAsyncDisposable
 
     private readonly CancellationTokenSource disposed = new();
     private readonly HashSet<Guid> notified = [];
-    private readonly Dictionary<Guid, IReadOnlyList<TextureQualityEstimate>> estimates = [];
+    private readonly Dictionary<Guid, TextureRouting> routings = [];
+    private Dictionary<Guid, Blocwerk.Core.Runners.GpuJobInfo> textureJobs = [];
     private Guid loadedWallId;
     private IReadOnlyList<WallCaptureSummary> history = [];
     private WallCaptureSummary? running;
@@ -100,22 +101,45 @@ public partial class WallCaptureStatusList : IAsyncDisposable
     private Task RefinishAsync(Guid captureId) => QueuePhotoRealAsync(() => Captures.RefinishPhotoRealAsync(captureId));
 
     /// <summary>Queues rendering the capture's wall textures again; its photo-real view is left alone.</summary>
-    private Task RerenderTexturesAsync(Guid captureId, TextureQuality quality) =>
-        QueuePhotoRealAsync(() => Captures.RerenderTexturesAsync(captureId, quality));
+    private Task RerenderTexturesAsync(Guid captureId, TextureRerenderChoice choice) =>
+        QueuePhotoRealAsync(() => Captures.RerenderTexturesAsync(captureId, choice.Quality, choice.Route));
 
-    private IReadOnlyList<TextureQualityEstimate> EstimatesOf(Guid captureId) =>
-        estimates.TryGetValue(captureId, out var found) ? found : [];
+    private TextureRouting RoutingOf(Guid captureId) => routings.TryGetValue(captureId, out var found) ? found : TextureRouting.None;
 
-    /// <summary>Loads what each texture quality would take for the capture (shown when the quality picker opens).</summary>
-    private async Task LoadEstimatesAsync(Guid captureId)
+    /// <summary>Loads what each texture quality would take for the capture, and where it would run (shown when the quality picker opens).</summary>
+    private async Task LoadRoutingAsync(Guid captureId)
     {
         try
         {
-            estimates[captureId] = await Captures.EstimateTextureQualitiesAsync(captureId);
+            routings[captureId] = await Captures.GetTextureRoutingAsync(captureId);
         }
         catch (Exception ex) when (ex is UserFacingException or UnauthorizedAccessException)
         {
-            estimates[captureId] = [];
+            routings[captureId] = TextureRouting.None;
+        }
+    }
+
+    /// <summary>Where a re-render that went to a 3D runner stands: waiting for one, rendering on it, installing.</summary>
+    private string? RerenderNoteOf(Guid captureId) => textureJobs.TryGetValue(captureId, out var job)
+        ? job.Status switch
+        {
+            "Queued" => $"On a 3D runner: {job.Stage ?? "waiting for one"}.",
+            "Succeeded" => "The 3D runner finished; installing the textures.",
+            _ => $"On 3D runner “{job.RunnerName}”: {job.Stage} ({job.Progress:P0}).",
+        }
+        : null;
+
+    /// <summary>The wall's textures jobs on 3D runners, by capture (for the re-render notes); none when they cannot be read.</summary>
+    private async Task LoadTextureJobsAsync()
+    {
+        try
+        {
+            textureJobs = (await GpuRunners.ListJobsForWallAsync(WallId)).Where(j => j.Kind == "textures")
+                .GroupBy(j => j.CaptureId).ToDictionary(g => g.Key, g => g.OrderByDescending(j => j.CreatedAt).First());
+        }
+        catch (Exception ex) when (ex is UserFacingException or UnauthorizedAccessException or KioskRestrictedException)
+        {
+            textureJobs = [];
         }
     }
 
@@ -188,6 +212,7 @@ public partial class WallCaptureStatusList : IAsyncDisposable
             running = history.FirstOrDefault(c => c.IsRunning);
             failure = null;
             ultraAvailable = Captures.IsSplatConfigured && await QualityOffer.UltraAvailableAsync(WallId, CancellationToken.None);
+            await LoadTextureJobsAsync();
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidOperationException or KioskRestrictedException)
         {

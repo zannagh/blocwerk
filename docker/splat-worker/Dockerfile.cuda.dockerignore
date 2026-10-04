@@ -6,6 +6,7 @@
 !docker/splat-worker/requirements-cuda.txt
 !docker/splat-worker/requirements-dev.lock
 !docker/splat-worker/splatworker/
+!docker/wall-geometry/wallgeometry/
 !docker/splat-worker/tests/
 **/__pycache__
 **/*.pyc

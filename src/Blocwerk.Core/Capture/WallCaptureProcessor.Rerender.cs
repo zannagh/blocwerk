@@ -31,8 +31,16 @@ public sealed partial class WallCaptureProcessor
         }
 
         var rendered = false;
-        await RedoCountedAsync(
-            captureId, CaptureRedoKind.Rerender, async () => rendered = await RenderAndEndAsync(captureId, target.ModelId, target.JobId, target.Quality, ct), ct);
+        if (target.OnRunner)
+        {
+            rendered = await RerenderOnRunnerAsync(captureId, target, ct);
+        }
+        else
+        {
+            await RedoCountedAsync(
+                captureId, CaptureRedoKind.Rerender, async () => rendered = await RenderAndEndAsync(captureId, target.ModelId, target.JobId, target.Quality, ct), ct);
+        }
+
         if (rendered && followUps is not null)
         {
             await followUps.RerunAsync(captureId, PlaceHoldsFollowUpStep.StepKey, ct);
@@ -87,8 +95,11 @@ public sealed partial class WallCaptureProcessor
         return status.JobId!;
     }
 
+    /// <summary>A pending re-render: the model, the submitted job (a compute job, or a GPU job when <see cref="OnRunner"/>) and the quality.</summary>
+    private sealed record RerenderTarget(Guid WallId, Guid ModelId, string? JobId, TextureQuality Quality, bool OnRunner);
+
     /// <summary>The model and the submitted job of a pending re-render; null (and the mark dropped) when it may not run.</summary>
-    private async Task<(Guid ModelId, string? JobId, TextureQuality Quality)?> RerenderTargetAsync(Guid captureId, CancellationToken ct)
+    private async Task<RerenderTarget?> RerenderTargetAsync(Guid captureId, CancellationToken ct)
     {
         await using var db = dbContextFactory.CreateDbContext();
         var capture = await db.WallCaptures.AsNoTracking().FirstOrDefaultAsync(c => c.Id == captureId, ct);
@@ -108,7 +119,9 @@ public sealed partial class WallCaptureProcessor
             return null;
         }
 
-        return (modelId!.Value, CaptureTextureOutcome.RerenderJobId(capture.TexturesJobId), CaptureTextureOutcome.RerenderQuality(capture.TexturesJobId));
+        return new RerenderTarget(
+            capture.WallId, modelId!.Value, CaptureTextureOutcome.RerenderJobId(capture.TexturesJobId), CaptureTextureOutcome.RerenderQuality(capture.TexturesJobId),
+            CaptureTextureOutcome.RerenderOnRunner(capture.TexturesJobId));
     }
 
     /// <summary>

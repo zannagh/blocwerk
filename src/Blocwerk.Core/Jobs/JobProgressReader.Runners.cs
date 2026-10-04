@@ -16,7 +16,7 @@ public sealed partial class JobProgressReader
     private async Task<List<JobProgressItem>> MarkPausedAsync(
         BlocwerkDbContext db, List<JobProgressItem> items, JobProgressReadContext context, CancellationToken ct)
     {
-        var training = items.Where(i => i.Kind == JobKinds.GpuTraining && JobStates.IsActive(i.State)).ToList();
+        var training = items.Where(i => JobKinds.IsGpu(i.Kind) && JobStates.IsActive(i.State)).ToList();
         if (runnerQueue is null || training.Count == 0)
         {
             return items;
@@ -32,7 +32,7 @@ public sealed partial class JobProgressReader
             .ToHashSet();
         var waitingWalls = training.Where(i => i.State == JobStates.Queued).Select(i => i.WallId).Distinct().ToList();
         var pausedWalls = await WallsWithOnlyPausedRunnersAsync(db, waitingWalls, online, ct);
-        return items.Select(i => i.Kind != JobKinds.GpuTraining || !JobStates.IsActive(i.State) ? i
+        return items.Select(i => !JobKinds.IsGpu(i.Kind) || !JobStates.IsActive(i.State) ? i
             : i with { RunnerPaused = i.State == JobStates.Running ? pausedJobs.Contains(i.GpuJobId!.Value) : pausedWalls.Contains(i.WallId) })
             .ToList();
     }

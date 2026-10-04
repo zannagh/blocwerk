@@ -837,6 +837,9 @@ namespace Blocwerk.Core.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer");
+
                     b.Property<DateTimeOffset?>("LeaseExpiresAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -898,6 +901,9 @@ namespace Blocwerk.Core.Migrations
 
                     b.Property<string>("RefinishStateJson")
                         .HasColumnType("text");
+
+                    b.Property<int?>("RequiredMemoryMb")
+                        .HasColumnType("integer");
 
                     b.Property<long?>("ResultBytes")
                         .HasColumnType("bigint");
@@ -962,6 +968,10 @@ namespace Blocwerk.Core.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("Capabilities")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1016,6 +1026,9 @@ namespace Blocwerk.Core.Migrations
 
                     b.Property<bool>("SharedWithOtherWalls")
                         .HasColumnType("boolean");
+
+                    b.Property<int?>("TexturesMemoryMb")
+                        .HasColumnType("integer");
 
                     b.Property<string>("Trainer")
                         .HasMaxLength(32)

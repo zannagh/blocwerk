@@ -36,7 +36,8 @@ public sealed partial class WallCaptureService(
     ICapturePhotoConverter? photoConverter = null,
     WallTextureRerenderQueue? textureQueue = null,
     WallModelResolveQueue? resolveQueue = null,
-    BlocwerkSettings? settings = null) : IWallCaptureService
+    BlocwerkSettings? settings = null,
+    Runners.GpuJobQueue? gpuJobs = null) : IWallCaptureService
 {
     private const string AdminAction = "Capturing wall photos";
 

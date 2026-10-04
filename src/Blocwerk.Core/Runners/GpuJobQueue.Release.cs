@@ -100,7 +100,15 @@ public sealed partial class GpuJobQueue
         }
 
         // A preview still pending went with the failure (same update); an installed one stays as the job's leftover.
-        await MarkCaptureWithoutSplatAsync(db, job, reason, ct);
+        if (job.Kind == GpuJobKind.Textures)
+        {
+            NotifyTextures(job.CaptureId);
+        }
+        else
+        {
+            await MarkCaptureWithoutSplatAsync(db, job, reason, ct);
+        }
+
         DeleteSpent(await db.GpuJobs.AsNoTracking().FirstAsync(j => j.Id == job.Id, ct), job.PreviewPath);
         return true;
     }

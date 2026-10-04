@@ -5,7 +5,10 @@
 !docker/splat-worker/requirements.lock
 !docker/splat-worker/requirements-dev.lock
 !docker/splat-worker/splatworker/
+!docker/wall-geometry/wallgeometry/
 !docker/splat-worker/tests/
+!docker/wall-geometry/tests/photowall.py
+!docker/wall-geometry/tests/synthetic.py
 **/__pycache__
 **/*.pyc
 **/.pytest_cache

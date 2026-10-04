@@ -42,8 +42,8 @@ public sealed partial class GpuJobQueue
             return RunnerJobOutcome.UnsupportedEncoding;
         }
 
-        var (found, _) = await FindClaimedAsync(runner, jobId, ct);
-        if (found != RunnerJobOutcome.Ok)
+        var (found, claimed) = await FindClaimedAsync(runner, jobId, ct);
+        if (found != RunnerJobOutcome.Ok || claimed is null)
         {
             return found;
         }
@@ -67,7 +67,7 @@ public sealed partial class GpuJobQueue
             return refused;
         }
 
-        var format = ValidateStored(stored, runner, jobId);
+        var format = claimed.Kind == GpuJobKind.Textures ? ValidateStoredTextures(stored, runner, jobId) : ValidateStored(stored, runner, jobId);
         if (format is null)
         {
             files.Delete(stored);
@@ -85,7 +85,7 @@ public sealed partial class GpuJobQueue
     {
         await using var db = dbContextFactory.CreateDbContext();
         var delivered = await db.GpuJobs.AnyAsync(
-            j => j.CaptureId == captureId && j.Status == GpuJobStatus.Succeeded && j.InstalledAt == null, ct);
+            j => j.CaptureId == captureId && j.Kind == GpuJobKind.Splat && j.Status == GpuJobStatus.Succeeded && j.InstalledAt == null, ct);
         if (delivered)
         {
             await HandBackAsync(db, captureId, ct);
@@ -150,6 +150,21 @@ public sealed partial class GpuJobQueue
         }
     }
 
+    private string? ValidateStoredTextures(string stored, GpuRunner runner, Guid jobId)
+    {
+        try
+        {
+            var path = files.ResolvePhysicalPath(stored) ?? throw new InvalidDataException("The upload was not stored.");
+            RunnerTexturesResult.Validate(path, options.MaxResultBytes);
+            return RunnerTexturesResult.Format;
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or EndOfStreamException)
+        {
+            logger.LogWarning("Runner {RunnerId} sent an invalid textures result for GPU job {JobId}: {Reason}", runner.Id, jobId, ex.Message);
+            return null;
+        }
+    }
+
     private string? ValidateStored(string stored, GpuRunner runner, Guid jobId)
     {
         try
@@ -172,6 +187,7 @@ public sealed partial class GpuJobQueue
         var now = Now;
         var retryAt = now + FinishRetryInterval;
         long? bytes = files.ResolvePhysicalPath(stored) is { } p ? new FileInfo(p).Length : null;
+        var kind = await db.GpuJobs.Where(j => j.Id == jobId).Select(j => j.Kind).FirstAsync(ct);
         var updated = await db.GpuJobs
             .Where(j => j.Id == jobId && j.ClaimedByRunnerId == runner.Id
                         && (j.Status == GpuJobStatus.Claimed || j.Status == GpuJobStatus.Running))
@@ -182,7 +198,7 @@ public sealed partial class GpuJobQueue
                     .SetProperty(j => j.ResultBytes, bytes)
                     .SetProperty(j => j.ResultStatsJson, stats)
                     .SetProperty(j => j.Progress, 1)
-                    .SetProperty(j => j.Stage, "trained; finishing on the server")
+                    .SetProperty(j => j.Stage, kind == GpuJobKind.Textures ? "rendered; installing on the server" : "trained; finishing on the server")
                     .SetProperty(j => j.LeaseExpiresAt, retryAt)
                     .SetProperty(j => j.CompletedAt, now)
                     .SetProperty(j => j.Error, (string?)null),
@@ -197,6 +213,12 @@ public sealed partial class GpuJobQueue
         var captureId = await db.GpuJobs.Where(j => j.Id == jobId).Select(j => j.CaptureId).FirstAsync(ct);
         logger.LogInformation(
             "Runner {RunnerId} ({Name}) delivered GPU job {JobId}: {Format}, {Bytes} bytes", runner.Id, runner.Name, jobId, format, bytes);
+        if (kind == GpuJobKind.Textures)
+        {
+            NotifyTextures(captureId);
+            return RunnerJobOutcome.Ok;
+        }
+
         await HandBackAsync(db, captureId, ct);
         return RunnerJobOutcome.Ok;
     }

@@ -35,26 +35,46 @@ public sealed record TextureQualityEstimate(
     private const double ViewBytesPerPhoto = 1.6e6;
 
     /// <summary>The estimates of every quality for the facets of <paramref name="geometryJson"/> and <paramref name="photoCount"/> photos.</summary>
-    public static IReadOnlyList<TextureQualityEstimate> ForAll(string geometryJson, int photoCount, GeometryTextureSettings configured)
+    public static IReadOnlyList<TextureQualityEstimate> ForAll(
+        string geometryJson, int photoCount, GeometryTextureSettings configured, double budgetBytes = BlendBudgetBytes, double maxPixels = MaxPixels)
     {
         var extents = FacetExtents(geometryJson);
-        return Enum.GetValues<TextureQuality>().Select(q => For(q, extents, photoCount, configured)).ToList();
+        return Enum.GetValues<TextureQuality>().Select(q => For(q, extents, photoCount, configured, budgetBytes, maxPixels)).ToList();
     }
 
+    /// <summary>
+    /// The memory the full multi-view blend of <paramref name="quality"/> needs, in bytes: what a 3D runner must have to render
+    /// it without dropping views (<see cref="Entities.GpuJob.RequiredMemoryMb"/>).
+    /// </summary>
+    public static double FullBlendBytes(TextureQuality quality, IReadOnlyList<(double A, double B)> extents, int photoCount, GeometryTextureSettings configured)
+    {
+        var (mm, side, views) = TextureQualityPresets.Resolve(quality, configured);
+        var sizes = extents.Select(e => Pixels(e, mm, side)).ToList();
+        return BlendBytes(views, sizes.Sum(s => s.W * s.H), sizes.Count == 0 ? 0 : sizes.Max(s => s.W * s.H), photoCount);
+    }
+
+    /// <summary>
+    /// <see cref="FullBlendBytes"/> of a geometry document in whole MB (rounded up, with 10 % for the rest of the renderer):
+    /// the memory a runner must advertise to be offered the job.
+    /// </summary>
+    public static int RequiredMb(string geometryJson, TextureQuality quality, int photoCount, GeometryTextureSettings configured) =>
+        (int)Math.Ceiling(FullBlendBytes(quality, FacetExtents(geometryJson), photoCount, configured) * 1.1 / 1e6);
+
     public static TextureQualityEstimate For(
-        TextureQuality quality, IReadOnlyList<(double A, double B)> extents, int photoCount, GeometryTextureSettings configured)
+        TextureQuality quality, IReadOnlyList<(double A, double B)> extents, int photoCount, GeometryTextureSettings configured,
+        double budgetBytes = BlendBudgetBytes, double maxPixels = MaxPixels)
     {
         var (mm, side, views) = TextureQualityPresets.Resolve(quality, configured);
         var sizes = extents.Select(e => Pixels(e, mm, side)).ToList();
         var total = sizes.Sum(s => s.W * s.H);
         var biggest = sizes.Count == 0 ? 0 : sizes.Max(s => s.W * s.H);
         var fitViews = views;
-        while (fitViews > 1 && BlendBytes(fitViews, total, biggest, photoCount) > BlendBudgetBytes)
+        while (fitViews > 1 && BlendBytes(fitViews, total, biggest, photoCount) > budgetBytes)
         {
             fitViews--;
         }
 
-        var fit = total > MaxPixels ? TextureBlendFit.TooLarge
+        var fit = total > maxPixels ? TextureBlendFit.TooLarge
             : fitViews <= 1 ? TextureBlendFit.SingleView
             : fitViews < views ? TextureBlendFit.FewerViews
             : TextureBlendFit.Full;

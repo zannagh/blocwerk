@@ -4,7 +4,8 @@ name: Splat worker
 # (Vulkan GPU) image of the splat worker. linux/amd64 only: Brush publishes no Linux arm64 build.
 # The unit tests run in the image's `test` stage (no GPU needed); the GPU path itself is NOT exercised
 # in CI (GitHub runners have no GPU), see docker/splat-worker/README.md.
-# Build context = repo root (Dockerfile.dockerignore keeps it to the worker + docker/compute-jobs-py).
+# Build context = repo root (Dockerfile.dockerignore keeps it to the worker + docker/compute-jobs-py + the wallgeometry
+# package a runner renders wall textures with).
 
 on:
   push:
@@ -13,11 +14,17 @@ on:
     paths:
       - 'docker/splat-worker/**'
       - 'docker/compute-jobs-py/**'
+      - 'docker/wall-geometry/wallgeometry/**'
+      - 'docker/wall-geometry/tests/photowall.py'
+      - 'docker/wall-geometry/tests/synthetic.py'
       - '.github/workflows/splat-worker.yml'
   pull_request:
     paths:
       - 'docker/splat-worker/**'
       - 'docker/compute-jobs-py/**'
+      - 'docker/wall-geometry/wallgeometry/**'
+      - 'docker/wall-geometry/tests/photowall.py'
+      - 'docker/wall-geometry/tests/synthetic.py'
       - '.github/workflows/splat-worker.yml'
   workflow_dispatch:
 

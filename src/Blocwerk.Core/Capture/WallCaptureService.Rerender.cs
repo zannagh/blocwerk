@@ -16,9 +16,10 @@ namespace Blocwerk.Core.Capture;
 /// </summary>
 public sealed partial class WallCaptureService
 {
-    public async Task<IReadOnlyList<string>> RerenderTexturesAsync(Guid captureId, TextureQuality quality = TextureQuality.Standard)
+    public async Task<IReadOnlyList<string>> RerenderTexturesAsync(
+        Guid captureId, TextureQuality quality = TextureQuality.Standard, TextureRoute route = TextureRoute.Host)
     {
-        if (!IsComputeConfigured)
+        if (route == TextureRoute.Host && !IsComputeConfigured)
         {
             return ["No 3D computation service is configured on this server."];
         }
@@ -37,10 +38,16 @@ public sealed partial class WallCaptureService
                 return problems;
             }
 
-            capture.TexturesJobId = CaptureTextureOutcome.Mark(quality);
+            if (route == TextureRoute.Runner && await RunnerProblemAsync(db, capture, quality) is { } runnerProblem)
+            {
+                return [runnerProblem];
+            }
+
+            capture.TexturesJobId = CaptureTextureOutcome.Mark(quality, null, route == TextureRoute.Runner);
             await db.SaveChangesAsync();
             textureQueue?.Enqueue(capture.Id);
-            logger.LogInformation("Textures of capture {CaptureId} queued to be rendered again ({Quality}) by {UserId}", capture.Id, quality, userId);
+            logger.LogInformation(
+                "Textures of capture {CaptureId} queued to be rendered again ({Quality}, on {Route}) by {UserId}", capture.Id, quality, route, userId);
             return [];
         }
     }
@@ -50,22 +57,29 @@ public sealed partial class WallCaptureService
         var (db, _, capture) = await OpenCaptureAsync(captureId);
         await using (db)
         {
-            if (capture.GeometryModelId is not { } modelId)
-            {
-                return [];
-            }
-
-            var stored = await db.WallGeometryModels.AsNoTracking().Where(m => m.Id == modelId).Select(m => m.Json).FirstOrDefaultAsync();
-            if (stored is null)
-            {
-                return [];
-            }
-
-            // As SubmitTexturesAsync: the facets carried over from an earlier model are not rendered again.
-            var geometry = RegisteredGeometry.WithoutFacets(stored, RegisteredGeometry.Carried(stored).CarriedFacets);
-            var photos = await db.WallCapturePhotos.CountAsync(p => p.CaptureId == capture.Id);
-            return TextureQualityEstimate.ForAll(geometry, photos, settings?.GeometryTextures ?? new GeometryTextureSettings());
+            return await TextureInputsAsync(db, capture) is { } inputs
+                ? TextureQualityEstimate.ForAll(inputs.Geometry, inputs.Photos, settings?.GeometryTextures ?? new GeometryTextureSettings())
+                : [];
         }
+    }
+
+    /// <summary>The geometry the textures job renders (as <c>SubmitTexturesAsync</c> sends it) and the capture's photo count, or null without a model.</summary>
+    private static async Task<(string Geometry, int Photos)?> TextureInputsAsync(Data.BlocwerkDbContext db, WallCapture capture)
+    {
+        if (capture.GeometryModelId is not { } modelId)
+        {
+            return null;
+        }
+
+        var stored = await db.WallGeometryModels.AsNoTracking().Where(m => m.Id == modelId).Select(m => m.Json).FirstOrDefaultAsync();
+        if (stored is null)
+        {
+            return null;
+        }
+
+        // As SubmitTexturesAsync: the facets carried over from an earlier model are not rendered again.
+        var geometry = RegisteredGeometry.WithoutFacets(stored, RegisteredGeometry.Carried(stored).CarriedFacets);
+        return (geometry, await db.WallCapturePhotos.CountAsync(p => p.CaptureId == capture.Id));
     }
 
     /// <summary>A capture whose model is live: finished with it, or on to the photo-real stage.</summary>
