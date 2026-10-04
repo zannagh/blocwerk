@@ -3,6 +3,7 @@ using Blocwerk.Core.Data;
 using Blocwerk.Core.Detection.Enrichment;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.HoldMoves;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -39,6 +40,14 @@ public partial class WallBigUpdateService
         // the session just verified as the caller's, so every accept is honoured once, by the one path
         // that carries every other hold.
         confirmation = await FoldAcceptedRelocationsAsync(db, wallId, confirmation);
+
+        // Which carried holds physically moved, derived BEFORE the staged twins are touched. Refused when it differs from
+        // what the user confirmed: the promote does only what was shown.
+        var movePlan = await PlanHoldMovesAsync(db, confirmation);
+        if (confirmation.ExpectedMovesVersion is { } confirmedMoves && confirmedMoves != movePlan.Version)
+        {
+            throw new InvalidOperationException("The moved holds changed since they were confirmed. Check the summary again.");
+        }
 
         // Resume the SAME open wall-update batch the staging run (StageAsync) opened, so the staged-hold INSERTs
         // and this promote's carry writes are ONE self-contained, revertible/replayable unit — reverting
@@ -126,7 +135,7 @@ public partial class WallBigUpdateService
         var survivingCenterStaged = await CarryCentreHoldsAsync(
             db, wallId, centerPanel, newGen, oldHolds, stagedTwins, centerStaged, confirmation,
             confirmation.CarriedWarpPositions, confirmation.CarriedWarpShapes, panelPositions,
-            newGenPanelByPosition, await LoadStagedPhotoSizesAsync(db, updatedPanelIds), user.Id);
+            newGenPanelByPosition, await LoadStagedPhotoSizesAsync(db, updatedPanelIds), movePlan, user.Id);
 
         // Blind carries on a panel whose photo could not be aligned sit at their OLD coordinates: flag them.
         await FlagUnalignedCarriesAsync(db, wallId);

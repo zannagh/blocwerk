@@ -1,6 +1,7 @@
 using Blocwerk.Core.Data;
 using Blocwerk.Core.Entities;
 using Blocwerk.Core.Enums;
+using Blocwerk.Core.HoldMoves;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blocwerk.Core.Services;
@@ -62,9 +63,17 @@ public partial class WallBigUpdateService
         IReadOnlyDictionary<Guid, (int Col, int Row)> panelPositions,
         IReadOnlyDictionary<(int Col, int Row), Guid> newGenPanelByPosition,
         IReadOnlyDictionary<Guid, (int Width, int Height)> photoSizes,
+        HoldMovePlan movePlan,
         Guid userId)
     {
         var survivingCenterStaged = new HashSet<Guid>();
+
+        // A hand-placed hold merged onto a detection adopts the detection's outline, not its own warped one.
+        if (warpShapes is not null && confirmation.HandPlacedMergeOldIds is { Count: > 0 } merged)
+        {
+            warpShapes = warpShapes.Where(kv => !merged.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
+        }
+
         var claimedTwins = new HashSet<Guid>();
 
         // PASS 0 — disposition: freeze every live boulder using a removed hold BEFORE any mutation, so
@@ -95,7 +104,8 @@ public partial class WallBigUpdateService
                 oldHold, centerPanel.Id, panelPositions, newGenPanelByPosition);
             var successor = await AdvanceCarriedHoldAsync(
                 db, wallId, destinationPanelId, newGen, oldHold, decision.Kind, decision.NewHoldId,
-                stagedTwins, claimedTwins, survivingCenterStaged, warpPositions, warpShapes, photoSizes, userId);
+                stagedTwins, claimedTwins, survivingCenterStaged, warpPositions, warpShapes, photoSizes, movePlan, userId,
+                confirmation.HandPlacedMergeOldIds?.Contains(decision.OldHoldId) == true);
 
             // The confirm screen asked about this hold and nobody answered: it goes live as decided, marked for a look.
             if (confirmation.ReviewOldHoldIds?.Contains(decision.OldHoldId) == true)
@@ -117,7 +127,7 @@ public partial class WallBigUpdateService
                 oldHold, centerPanel.Id, panelPositions, newGenPanelByPosition);
             var blind = await AdvanceCarriedHoldAsync(
                 db, wallId, destinationPanelId, newGen, oldHold, CarryKind.Carried, null,
-                stagedTwins, claimedTwins, survivingCenterStaged, warpPositions, warpShapes, photoSizes, userId);
+                stagedTwins, claimedTwins, survivingCenterStaged, warpPositions, warpShapes, photoSizes, movePlan, userId);
 
             // Nobody decided this hold: it is carried so nothing is lost, but flagged so a person looks at it.
             blind.NeedsReview = true;
@@ -150,7 +160,9 @@ public partial class WallBigUpdateService
         IReadOnlyDictionary<Guid, HoldPositionNorm>? warpPositions,
         IReadOnlyDictionary<Guid, IReadOnlyList<HoldPositionNorm>>? warpShapes,
         IReadOnlyDictionary<Guid, (int Width, int Height)> photoSizes,
-        Guid userId)
+        HoldMovePlan movePlan,
+        Guid userId,
+        bool handPlacedMerge = false)
     {
         var changed = kind == CarryKind.Changed;
         var linkKind = changed ? HoldGenerationLinkKind.Changed : HoldGenerationLinkKind.Same;
@@ -165,6 +177,10 @@ public partial class WallBigUpdateService
                 CopyPlacementFields(
                     oldHold, staged, changed, warpPositions?.GetValueOrDefault(oldHold.Id),
                     staged.WallPanelId is { } panelId && photoSizes.TryGetValue(panelId, out var size) ? size : null);
+                if (handPlacedMerge)
+                {
+                    CopyHandSetFields(oldHold, staged);
+                }
 
                 // Warp-carry (shapes): a matched twin is a fresh detection with NO custom outline. If the
                 // old hold carried one, transform it onto the twin (using the twin's OWN detected centre)
@@ -179,8 +195,9 @@ public partial class WallBigUpdateService
                 MergeCuratedFields(oldHold, staged, changed);
             }
 
-            await RepointBouldersAsync(db, oldHold.Id, staged.Id, newGen, changed);
-            AddGenerationLink(db, wallId, oldHold.Id, staged.Id, linkKind, oldHold.Generation, newGen, userId);
+            var move = movePlan.For(oldHold.Id) is { } m && m.NewHoldId == staged.Id ? m : null;
+            await RepointBouldersAsync(db, oldHold.Id, staged.Id, newGen, changed, move);
+            RecordMove(AddGenerationLink(db, wallId, oldHold.Id, staged.Id, linkKind, oldHold.Generation, newGen, userId), move);
             return staged;
         }
         else
@@ -432,7 +449,7 @@ public partial class WallBigUpdateService
         return (dx * dx) + (dy * dy) <= tolerance * tolerance;
     }
 
-    private static void AddGenerationLink(
+    private static HoldGenerationLink AddGenerationLink(
         BlocwerkDbContext db,
         Guid wallId,
         Guid oldHoldId,
@@ -442,7 +459,7 @@ public partial class WallBigUpdateService
         int toGen,
         Guid userId)
     {
-        db.HoldGenerationLinks.Add(new HoldGenerationLink
+        var link = new HoldGenerationLink
         {
             WallId = wallId,
             OldHoldId = oldHoldId,
@@ -451,6 +468,8 @@ public partial class WallBigUpdateService
             FromGeneration = fromGen,
             ToGeneration = toGen,
             CreatedByUserId = userId,
-        });
+        };
+        db.HoldGenerationLinks.Add(link);
+        return link;
     }
 }

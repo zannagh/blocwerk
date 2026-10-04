@@ -105,7 +105,7 @@ public sealed partial class WallRefreshProcessor
     }
 
     private async Task<RefreshSummary> SummarizeAsync(
-        Guid wallId, QuickDecisions quick, int relocations, IReadOnlyList<string> panels, CancellationToken ct)
+        Guid wallId, QuickDecisions quick, int relocations, IReadOnlyList<string> panels, CancellationToken ct, HoldMoves.HoldMovePlan? moves = null)
     {
         var kept = quick.Carryover.Where(d => d.Kind == CarryKind.Carried && d.NewHoldId is null).Select(d => d.OldHoldId).ToList();
         var linkedNew = quick.Neighbours.SelectMany(n => n.Links).Select(l => l.NewHoldId).ToHashSet();
@@ -127,7 +127,8 @@ public sealed partial class WallRefreshProcessor
             linkedNew.Count,
             quick.OverlapsLeftOut,
             boulders,
-            panels);
+            panels,
+            MovedHolds: await MovedLinesAsync(moves, ct));
     }
 
     private async Task<int> CountNeighbourNewAsync(

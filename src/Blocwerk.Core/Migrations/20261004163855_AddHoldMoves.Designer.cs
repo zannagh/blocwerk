@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Blocwerk.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blocwerk.Core.Migrations
 {
     [DbContext(typeof(BlocwerkDbContext))]
-    partial class BlocwerkDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261004163855_AddHoldMoves")]
+    partial class AddHoldMoves
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1311,35 +1314,6 @@ namespace Blocwerk.Core.Migrations
                     b.HasIndex("WallId", "Generation");
 
                     b.ToTable("Holds");
-                });
-
-            modelBuilder.Entity("Blocwerk.Core.Entities.HoldDuplicateDismissal", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("DismissedByUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("HoldAId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("HoldBId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("WallId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("WallId", "HoldAId", "HoldBId")
-                        .IsUnique();
-
-                    b.ToTable("HoldDuplicateDismissals");
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.HoldGenerationLink", b =>
@@ -3870,17 +3844,6 @@ namespace Blocwerk.Core.Migrations
                     b.Navigation("Wall");
 
                     b.Navigation("WallPanel");
-                });
-
-            modelBuilder.Entity("Blocwerk.Core.Entities.HoldDuplicateDismissal", b =>
-                {
-                    b.HasOne("Blocwerk.Core.Entities.Wall", "Wall")
-                        .WithMany()
-                        .HasForeignKey("WallId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Wall");
                 });
 
             modelBuilder.Entity("Blocwerk.Core.Entities.HoldGenerationLink", b =>

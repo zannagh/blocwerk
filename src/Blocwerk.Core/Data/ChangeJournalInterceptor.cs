@@ -35,6 +35,7 @@ public sealed class ChangeJournalInterceptor : SaveChangesInterceptor
         typeof(HoldGenerationLink),
         typeof(HoldLink),
         typeof(BoulderHold),
+        typeof(BoulderHoldMove),
         typeof(Boulder),
         typeof(WallReset),
     ];

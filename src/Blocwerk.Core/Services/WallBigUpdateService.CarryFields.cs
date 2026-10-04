@@ -24,8 +24,8 @@ public partial class WallBigUpdateService
 
     /// <summary>
     /// Copies the curated (user-set) fields from the old hold onto its successor row, leaving the
-    /// successor's own detected position and shape untouched. Virtual only carries forward from a
-    /// virtual predecessor; a real detection is never demoted to virtual.
+    /// successor's own detected position and shape untouched. A real detection is never demoted to
+    /// virtual: a virtual (or hand-placed) old hold that lands on a detection becomes a real hold.
     /// </summary>
     private static void CopyCuratedFields(Hold from, Hold to)
     {
@@ -36,10 +36,6 @@ public partial class WallBigUpdateService
         to.HandType = from.HandType;
         to.IsOnKickboard = from.IsOnKickboard;
         to.IsAutoDetected = from.IsAutoDetected;
-        if (from.IsVirtual)
-        {
-            to.IsVirtual = true;
-        }
     }
 
     /// <summary>
@@ -128,6 +124,22 @@ public partial class WallBigUpdateService
         var dy = (warped.Y - twin.Y) * size.Height;
         var window = Math.Max(radiusWindow * Math.Max(size.Width, size.Height), MatcherGatePx);
         return (dx * dx) + (dy * dy) <= window * window;
+    }
+
+    /// <summary>
+    /// A hand-placed or virtual hold merged onto a detection keeps what a person set that the detection cannot know: its wall
+    /// position (with its volume placement) and, when the detection has no traced contour, its hand-drawn outline.
+    /// </summary>
+    private static void CopyHandSetFields(Hold from, Hold to)
+    {
+        CopyWallPosition(from, to);
+        if (to.ShapePoints is not { Count: >= 3 } && from.ShapePoints is { Count: >= 3 })
+        {
+            to.ShapePoints = from.ShapePoints.Select(p => new ShapePoint { Dx = p.Dx, Dy = p.Dy }).ToList();
+            to.ShapeHoles = from.ShapeHoles;
+            to.OutlineSource = from.OutlineSource;
+            to.OutlineConfidence = from.OutlineConfidence;
+        }
     }
 
     /// <summary>

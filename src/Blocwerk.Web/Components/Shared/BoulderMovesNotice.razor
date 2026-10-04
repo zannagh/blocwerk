@@ -1,0 +1,64 @@
+@using Blocwerk.Core.Enums
+@using Blocwerk.Core.Services
+@inject IBoulderService BoulderService
+@* Shown on a boulder that needs a look because a hold it used physically moved when the panels were updated.
+   The old position stays visible in "Then"; the setter can revise the boulder or archive it from here. *@
+
+@if (moves.Count > 0)
+{
+    <div class="bw-revision-notice bw-moves-notice" role="status">
+        <p>
+            <strong>@(moves.Any(m => m.Outcome == HoldMoveOutcome.Removed) ? "A hold of this boulder moved and was taken off it." : "A hold of this boulder moved a little.")</strong>
+            Check that it still works.
+        </p>
+        <ul class="bw-moves-list">
+            @foreach (var move in moves)
+            {
+                <li class="@(move.Outcome == HoldMoveOutcome.Removed ? "is-removed" : "is-kept")">
+                    <span class="bw-moves-hold">@(move.HoldName ?? "A hold")</span>
+                    <span class="bw-moves-text">@move.Text</span>
+                    <span class="bw-moves-source">@(move.Source == HoldMoveSource.ThreeD ? "measured in 3D" : "estimated from the photo")</span>
+                </li>
+            }
+        </ul>
+        @if (HasThen)
+        {
+            <p class="bw-moves-hint">Use "Then" to see the boulder where the hold used to be.</p>
+        }
+        @if (CanManage)
+        {
+            <div class="revision-actions">
+                <a href="/walls/@WallId/boulders/@BoulderId/revise" class="btn-revise">@(moves.Any(m => m.Outcome == HoldMoveOutcome.Removed) ? "Pick another hold" : "Revise Boulder")</a>
+                <button class="btn-archive" @onclick="OnArchive">Archive</button>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private IReadOnlyList<BoulderMoveView> moves = [];
+
+    [Parameter]
+    public Guid WallId { get; set; }
+
+    [Parameter]
+    public Guid BoulderId { get; set; }
+
+    [Parameter]
+    public string? ShareToken { get; set; }
+
+    [Parameter]
+    public bool NeedsReview { get; set; }
+
+    [Parameter]
+    public bool CanManage { get; set; }
+
+    [Parameter]
+    public bool HasThen { get; set; }
+
+    [Parameter]
+    public EventCallback OnArchive { get; set; }
+
+    protected override async Task OnParametersSetAsync() =>
+        moves = NeedsReview ? await BoulderService.GetBoulderMovesAsync(BoulderId, ShareToken) : [];
+}

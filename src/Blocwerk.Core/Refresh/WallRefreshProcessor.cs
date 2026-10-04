@@ -24,7 +24,8 @@ public sealed partial class WallRefreshProcessor(
     ICaptureFileStore files,
     ILogger<WallRefreshProcessor> logger,
     ICaptureVideoJoiner? videoJoiner = null,
-    WallRefreshLocks? locks = null)
+    WallRefreshLocks? locks = null,
+    HoldMoves.HoldMoveOptions? moveOptions = null)
 {
     private readonly WallRefreshLocks wallLocks = locks ?? new WallRefreshLocks();
 

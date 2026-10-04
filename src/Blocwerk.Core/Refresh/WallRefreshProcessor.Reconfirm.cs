@@ -68,7 +68,7 @@ public sealed partial class WallRefreshProcessor
         WallRefresh refresh, RefreshSummary? summary, PromotableDecisions promotable, CancellationToken ct)
     {
         var counts = await SummarizeAsync(
-            refresh.WallId, RefreshDecisions.AsQuick(promotable), promotable.PendingRelocations, summary?.Panels ?? [], ct);
+            refresh.WallId, RefreshDecisions.AsQuick(promotable), promotable.PendingRelocations, summary?.Panels ?? [], ct, promotable.Moves);
         return RefreshDecisions.Stamp(counts, promotable) with
         {
             DroppedByThe3DModel = Math.Min(summary?.DroppedByThe3DModel ?? 0, counts.DroppedDetections),
