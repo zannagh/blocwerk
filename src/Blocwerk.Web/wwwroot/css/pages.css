@@ -682,7 +682,7 @@ a.wall3d-link {
 
 .boulder-rating { display: inline-flex; align-items: center; gap: 5px; margin-top: 3px; }
 .boulder-rating .rating-count { font-size: 0.72rem; color: var(--text-secondary); }
-.fav-icon { color: #f5b301; }
+.fav-icon { color: var(--star-gold); }
 .card-archive {
     background: var(--bg-surface); color: var(--text-secondary); border: 1px solid var(--border);
     border-radius: 6px; padding: 4px 10px; font-size: 0.72rem; font-weight: 600; cursor: pointer;
@@ -694,22 +694,22 @@ a.wall3d-link {
     position: relative; display: inline-block; font-size: 1.05rem; letter-spacing: 1px;
 }
 .star-rating.small.readonly .star-track { font-size: 0.85rem; }
-.star-back { color: var(--border); }
+.star-back { color: var(--star-off); }
 .star-fill {
-    position: absolute; top: 0; left: 0; overflow: hidden; white-space: nowrap; color: #f5b301;
+    position: absolute; top: 0; left: 0; overflow: hidden; white-space: nowrap; color: var(--star-gold);
 }
 .star-rating.interactive { gap: 3px; }
 .star-btn {
     background: none; border: none; padding: 0 1px; cursor: pointer;
-    font-size: 1.5rem; line-height: 1; color: var(--border); transition: color 0.1s ease;
+    font-size: 1.5rem; line-height: 1; color: var(--star-off); transition: color 0.1s ease;
 }
 .star-rating.small .star-btn { font-size: 1.05rem; }
-.star-btn.on, .star-btn:hover { color: #f5b301; }
+.star-btn.on, .star-btn:hover { color: var(--star-gold); }
 /* Offline-wired stars render their lit state AS `bw-opt-on` (see StarRating.razor), so the
    delegated DOM handler can lower a rating as well as raise it with the circuit down. This
    has to beat the generic `.bw-opt-on { color: var(--accent) }` rule in app.css, hence the
    container qualifier. Gold reads correctly against both themes' surfaces. */
-.star-rating .star-btn.bw-opt-on { color: #f5b301; opacity: 1; }
+.star-rating .star-btn.bw-opt-on { color: var(--star-gold); opacity: 1; }
 /* Thumb-friendly hit area without inflating the glyph. */
 .star-rating.interactive .star-btn { min-width: 34px; min-height: 40px; }
 
@@ -719,9 +719,9 @@ a.wall3d-link {
     min-width: 40px; min-height: 40px;
     transition: color 0.12s ease, transform 0.12s ease;
 }
-.fav-toggle.on { color: #f5b301; }
+.fav-toggle.on { color: var(--star-gold); }
 /* Clear tap/hover affordance on the star, gold like its lit state. */
-.fav-toggle:hover, .fav-toggle:focus-visible { color: #f5b301; transform: scale(1.15); }
+.fav-toggle:hover, .fav-toggle:focus-visible { color: var(--star-gold); transform: scale(1.15); }
 .fav-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
 
 /* Both directions of the favourite are always in the DOM; CSS picks the visible one from
@@ -974,10 +974,10 @@ a.wall3d-link {
     border-radius: 4px; font-weight: 600; margin-left: 6px; vertical-align: middle;
 }
 .status-icon { font-size: 1rem; }
-.flash-icon { color: #FF5722; }
-.send-icon { color: #4CAF50; font-weight: 700; }
+.flash-icon { color: var(--label-flash); }
+.send-icon { color: var(--label-send); font-weight: 700; }
 .try-icon {
-    font-size: 0.75rem; font-weight: 700; color: #FF9800;
+    font-size: 0.75rem; font-weight: 700; color: var(--label-try);
     background: var(--warning-bg); padding: 2px 6px; border-radius: 4px;
 }
 .empty-boulders {
@@ -1163,7 +1163,7 @@ a.wall3d-link {
 }
 .bw-revision-notice p { color: var(--warning-text); font-size: 0.9rem; margin-bottom: 8px; }
 .btn-revise {
-    display: inline-block; padding: 8px 16px; background: var(--warning-text); color: #fff;
+    display: inline-block; padding: 8px 16px; background: var(--warning-fill); color: var(--on-warning);
     text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 0.85rem;
 }
 /* "3D" next to Revise on the boulder page (Wall3DLink): an outlined pill, secondary to Revise. */
@@ -1291,12 +1291,12 @@ a.wall3d-link {
     transition: all 0.15s;
 }
 .attempt-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.attempt-btn.try { color: #FF9800; }
-.attempt-btn.try:hover:not(:disabled) { border-color: #FF9800; background: var(--warning-bg); }
-.attempt-btn.send { color: #4CAF50; }
-.attempt-btn.send:hover:not(:disabled) { border-color: #4CAF50; background: var(--success-bg); }
-.attempt-btn.flash { color: #FF5722; }
-.attempt-btn.flash:hover:not(:disabled) { border-color: #FF5722; background: #FBE9E7; }
+.attempt-btn.try { color: var(--label-try); }
+.attempt-btn.try:hover:not(:disabled) { border-color: var(--label-try); background: var(--warning-bg); }
+.attempt-btn.send { color: var(--label-send); }
+.attempt-btn.send:hover:not(:disabled) { border-color: var(--label-send); background: var(--success-bg); }
+.attempt-btn.flash { color: var(--label-flash); }
+.attempt-btn.flash:hover:not(:disabled) { border-color: var(--label-flash); background: var(--flash-bg); }
 
 .my-stats {
     display: flex; align-items: center; gap: 8px; padding: 10px 14px;
@@ -2216,14 +2216,14 @@ html.bw-compact {
 
 .apikey-reveal {
     background: var(--bg-surface);
-    border: 2px solid var(--accent, #e94560);
+    border: 2px solid var(--accent);
     border-radius: 12px;
     padding: 16px;
     margin-bottom: 18px;
     box-shadow: 0 6px 18px var(--shadow-lg, rgba(0, 0, 0, 0.18));
 }
 
-.apikey-reveal-warning { font-size: 0.8rem; font-weight: 600; color: var(--accent, #e94560); line-height: 1.5; margin-bottom: 10px; }
+.apikey-reveal-warning { font-size: 0.8rem; font-weight: 600; color: var(--accent); line-height: 1.5; margin-bottom: 10px; }
 
 .apikey-token {
     display: block;
@@ -2324,7 +2324,7 @@ html.bw-compact {
 }
 
 .apikey-btn:disabled { opacity: 0.5; cursor: default; }
-.apikey-btn.primary { background: var(--accent, #cf2c49); border-color: var(--accent, #cf2c49); color: var(--on-accent, #fff); }
+.apikey-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .apikey-btn.danger { background: var(--danger, #c62828); border-color: var(--danger, #c62828); color: #fff; }
 .apikey-empty { font-size: 0.85rem; color: var(--text-secondary); }
 
@@ -2346,8 +2346,8 @@ html.bw-compact {
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--accent, #e94560);
-    border: 1px solid var(--accent, #e94560);
+    color: var(--accent);
+    border: 1px solid var(--accent);
     border-radius: 999px;
     padding: 1px 8px;
 }
@@ -2433,7 +2433,7 @@ html.bw-compact {
     color: var(--text-secondary); background: var(--bg-surface);
     border: 1px solid var(--border); border-radius: 999px;
 }
-.wall-range-btn.active { background: var(--accent, #cf2c49); border-color: var(--accent, #cf2c49); color: var(--on-accent, #fff); }
+.wall-range-btn.active { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .wall-range-btn:disabled { opacity: 0.5; cursor: default; }
 
 .wall-temp-latest { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
@@ -2463,7 +2463,7 @@ html.bw-compact {
     color: #fff; background: rgba(0, 0, 0, 0.55);
 }
 .wall-gallery-badge.uploaded { background: #1d6f4a; }
-.wall-gallery-badge.current { background: #cf2c49; }
+.wall-gallery-badge.current { background: var(--accent); color: var(--on-accent); }
 .wall-gallery-badge.historic { background: #0f3460; }
 .wall-gallery-when {
     position: absolute; bottom: 0; left: 0; right: 0; padding: 3px 5px;
@@ -3681,7 +3681,7 @@ html.bw-fullscreen .panel-link-dialog .panel-step-viewport {
    A `kbd` style already existed but was scoped to `.panel-stepper-legend kbd`;
    this page needs a slightly larger, page-level variant. Everything is expressed
    in theme custom properties so light and dark both read correctly. Note that
-   --text-muted / --font-mono are NOT defined in app.css, so the fallbacks here
+   --font-mono is NOT defined in app.css, so its fallbacks here
    are what actually apply — keep them. */
 .keyshort-page {
     max-width: 780px;
@@ -3874,7 +3874,7 @@ html.bw-fullscreen .panel-link-dialog .panel-step-viewport {
 .shape-card.decision-accepted, .shape-card.decision-adjusted { border-color: var(--status-success); }
 .shape-card.decision-circle, .shape-card.decision-keepprevious { border-color: var(--text-secondary); }
 .shape-crop { width: 100%; aspect-ratio: 1; display: block; background: #111; image-rendering: auto; }
-.shape-recognised { fill: rgba(233, 69, 96, 0.08); stroke: #e94560; vector-effect: none; }
+.shape-recognised { fill: var(--accent-soft); stroke: var(--accent); vector-effect: none; }
 /* Nothing was recognised: an unfilled dashed ring, so no tint suggests a colour the hold does not have. */
 .shape-recognised.shape-none { fill: none; stroke: #fff; stroke-dasharray: 6 4; }
 .shape-previous { fill: none; stroke: #ffd700; stroke-dasharray: 4 3; }

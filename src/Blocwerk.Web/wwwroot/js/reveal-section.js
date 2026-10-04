@@ -26,3 +26,13 @@ export function revealElement(element) {
         element.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     }
 }
+
+/*
+ * Scrolls an element to the middle of the viewport (an inline confirmation that opened near the
+ * bottom of a short screen); CSS scroll-margin keeps it clear of the tab bar and banners.
+ */
+export function revealCentered(element) {
+    if (element && typeof element.scrollIntoView === 'function') {
+        element.scrollIntoView({ block: 'center', inline: 'nearest' });
+    }
+}

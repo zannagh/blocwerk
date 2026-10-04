@@ -174,6 +174,8 @@ else
                             </div>
                         }
 
+                        @if (!KioskContext.IsKiosk && string.IsNullOrEmpty(ShareToken))
+                        {
                         <section class="danger-zone" aria-labelledby="danger-zone-title">
                             <h3 id="danger-zone-title">Danger zone</h3>
                             <p class="hint">Deleting a wall removes its boulders, ascents, photos and members for good. This cannot be undone.</p>
@@ -182,6 +184,7 @@ else
                                            Question="@($"Delete \"{_wall.Name}\" with all its boulders, ascents and photos?")"
                                            OnConfirm="DeleteWall" />
                         </section>
+                        }
                     }
                     </div>
                 </details>

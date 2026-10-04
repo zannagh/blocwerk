@@ -333,7 +333,7 @@
             builder.AddAttribute(13, "text-anchor", "middle");
             builder.AddAttribute(14, "dominant-baseline", "middle");
             builder.AddAttribute(15, "font-size", F2(fontSize));
-            builder.AddAttribute(16, "fill", "var(--accent, #e94560)");
+            builder.AddAttribute(16, "fill", "var(--accent)");
             builder.AddAttribute(17, "font-weight", "600");
             builder.AddAttribute(18, "font-family", "sans-serif");
             builder.AddMarkupContent(19, $"{F(piece.EdgeLengths[i])}mm");
@@ -422,7 +422,7 @@
 
                 builder.OpenElement(10, "polygon");
                 builder.AddAttribute(11, "points", facePoints);
-                builder.AddAttribute(12, "fill", i % 2 == 0 ? "rgba(233,69,96,0.15)" : "rgba(15,52,96,0.15)");
+                builder.AddAttribute(12, "fill", i % 2 == 0 ? "var(--accent-soft)" : "rgba(15,52,96,0.15)");
                 builder.AddAttribute(13, "stroke", "var(--text-heading, #1a1a2e)");
                 builder.AddAttribute(14, "stroke-width", sw);
                 builder.CloseElement();
@@ -447,7 +447,7 @@
 
             builder.OpenElement(10, "polygon");
             builder.AddAttribute(11, "points", facePoints);
-            builder.AddAttribute(12, "fill", i % 2 == 0 ? "rgba(233,69,96,0.15)" : "rgba(15,52,96,0.15)");
+            builder.AddAttribute(12, "fill", i % 2 == 0 ? "var(--accent-soft)" : "rgba(15,52,96,0.15)");
             builder.AddAttribute(13, "stroke", "var(--text-heading, #1a1a2e)");
             builder.AddAttribute(14, "stroke-width", sw);
             builder.CloseElement();
@@ -470,7 +470,7 @@
 
                 builder.OpenElement(20, "polygon");
                 builder.AddAttribute(21, "points", facePoints);
-                builder.AddAttribute(22, "fill", i % 2 == 0 ? "rgba(233,69,96,0.1)" : "rgba(15,52,96,0.1)");
+                builder.AddAttribute(22, "fill", i % 2 == 0 ? "var(--accent-soft)" : "rgba(15,52,96,0.1)");
                 builder.AddAttribute(23, "stroke", "var(--text-heading, #1a1a2e)");
                 builder.AddAttribute(24, "stroke-width", sw);
                 builder.AddAttribute(25, "stroke-dasharray", $"{F2(Math.Max(vbW, vbH) * 0.02)} {F2(Math.Max(vbW, vbH) * 0.01)}");

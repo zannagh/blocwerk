@@ -29,7 +29,7 @@
     cursor: pointer;
     white-space: nowrap;
 }
-.w3d-btn:focus-visible { outline: 2px solid var(--accent, #e94560); outline-offset: 2px; }
+.w3d-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* Active = the heading colour on the surface colour: navy on white in light mode, and light on dark
    in dark mode (the top bar's navy, used before, is the dark page's own colour there: the active
    preset and mode could not be told apart). */
@@ -81,7 +81,7 @@
 .w3d-mode.active { background: var(--text-heading, #16162a); color: var(--bg-surface, #fff); }
 /* The pill is 36px inside the switch's 3px padding and border; the hit area reaches its edge (44px). */
 .w3d-mode::after { content: ''; position: absolute; inset: -4px -1px; }
-.w3d-mode:focus-visible { outline: 2px solid var(--accent, #e94560); outline-offset: 1px; }
+.w3d-mode:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .w3d-mode:disabled { cursor: progress; }
 .w3d-mode:disabled:not(.active) { opacity: 0.5; }
 
@@ -117,7 +117,7 @@
 }
 .w3d-map svg { width: 100%; height: 100%; display: block; }
 .w3d-map-facet { fill: #dcc7a1; stroke: #5b4630; stroke-width: 1; }
-.w3d-map-cam { fill: var(--accent, #e94560); opacity: 0.85; }
+.w3d-map-cam { fill: var(--accent); opacity: 0.85; }
 .w3d-map-you { fill: var(--secondary, #0f3460); }
 .w3d-map-label { font-size: 9px; font-weight: 700; text-anchor: middle; fill: var(--text, #2b2b33); }
 
